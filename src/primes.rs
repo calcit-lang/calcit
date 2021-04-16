@@ -1,4 +1,4 @@
-use cirru_parser::CirruNode;
+// use cirru_parser::CirruNode; // TODO for CalcitThunk
 use core::cmp::Ord;
 use im;
 use std::cmp::Eq;
@@ -8,18 +8,20 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 
 // String from nanoid!
-type NanoId = String;
+pub type NanoId = String;
 
-type CalcitScope = im::HashMap<String, CalcitData>;
+// scope
+pub type CalcitScope = im::HashMap<String, CalcitData>;
 
-type FnEvalFn = fn(CalcitData, CalcitScope) -> CalcitData;
+/// function type
+pub type FnEvalFn = fn(CalcitData, CalcitScope) -> CalcitData;
 
 #[derive(Debug, Clone)]
 pub enum CalcitData {
   CalcitNil,
   CalcitBool(bool),
   CalcitNumber(f32),
-  CalcitSymbol(String),
+  CalcitSymbol(String, String),
   CalcitKeyword(String),
   CalcitString(String),
   // CalcitRef(CalcitData), // TODO
@@ -44,7 +46,7 @@ impl fmt::Display for CalcitData {
       CalcitNil => f.write_str("nil"),
       CalcitBool(v) => f.write_str(&format!("{}", v)),
       CalcitNumber(n) => f.write_str(&format!("{}", n)),
-      CalcitSymbol(s) => f.write_str(&format!("\"|{}\"", s)), // TODO
+      CalcitSymbol(s, ns) => f.write_str(&format!("\"|{}\"", s)), // TODO
       CalcitKeyword(s) => f.write_str(&format!(":{}", s)),
       CalcitString(s) => f.write_str(&format!("'{}", s)),
       // CalcitThunk(v) => f.write_str(&format!("{}", v)),
@@ -100,8 +102,9 @@ impl Hash for CalcitData {
         // TODO https://stackoverflow.com/q/39638363/883571
         (*n as usize).hash(_state)
       }
-      CalcitSymbol(s) => {
+      CalcitSymbol(s, ns) => {
         "symbol:".hash(_state);
+        ns.hash(_state);
         s.hash(_state);
       }
       CalcitKeyword(s) => {
@@ -182,9 +185,9 @@ impl Ord for CalcitData {
       (CalcitNumber(_), _) => Less,
       (_, CalcitNumber(_)) => Greater,
 
-      (CalcitSymbol(a), CalcitSymbol(b)) => a.cmp(&b),
-      (CalcitSymbol(_), _) => Less,
-      (_, CalcitSymbol(_)) => Greater,
+      (CalcitSymbol(a, ns1), CalcitSymbol(b, ns2)) => a.cmp(&b),
+      (CalcitSymbol(_, _), _) => Less,
+      (_, CalcitSymbol(_, _)) => Greater,
 
       (CalcitKeyword(a), CalcitKeyword(b)) => a.cmp(&b),
       (CalcitKeyword(_), _) => Less,
@@ -249,7 +252,7 @@ impl PartialEq for CalcitData {
       (CalcitNil, CalcitNil) => true,
       (CalcitBool(a), CalcitBool(b)) => a == b,
       (CalcitNumber(a), CalcitNumber(b)) => a == b,
-      (CalcitSymbol(a), CalcitSymbol(b)) => a == b,
+      (CalcitSymbol(a, _ns), CalcitSymbol(b, _ns2)) => a == b,
       (CalcitKeyword(a), CalcitKeyword(b)) => a == b,
       (CalcitString(a), CalcitString(b)) => a == b,
       // (CalcitThunk(a), CalcitThunk(b)) => a == b,

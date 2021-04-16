@@ -2,7 +2,7 @@ use cirru_edn::CirruEdn;
 use cirru_parser::CirruNode;
 use std::collections::hash_map::HashMap;
 
-use crate::edn;
+use crate::data::edn;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SnapshotConfigs {
