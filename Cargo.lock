@@ -36,9 +36,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cirru_edn"
-version = "0.0.1"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fa4e2f261047ab3e6e6a8aac4e58001c5188d851b29c636aae61c3a5db1e754"
+checksum = "6c37da3bceb2a73b045343637e93d849939e0c94632cb0711b332f2353e447e5"
 dependencies = [
  "cirru_parser",
  "regex",

@@ -97,7 +97,8 @@ impl Hash for CalcitData {
       }
       CalcitNumber(n) => {
         "number:".hash(_state);
-        (*n as usize).hash(_state) // TODO inaccurate solution
+        // TODO https://stackoverflow.com/q/39638363/883571
+        (*n as usize).hash(_state)
       }
       CalcitSymbol(s) => {
         "symbol:".hash(_state);
