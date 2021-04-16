@@ -6,23 +6,23 @@ use crate::data::edn;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SnapshotConfigs {
-  init_fn: String,
-  reload_fn: String,
-  modules: Vec<String>,
-  version: String,
+  pub init_fn: String,
+  pub reload_fn: String,
+  pub modules: Vec<String>,
+  pub version: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FileInSnapShot {
-  ns: CirruNode,
-  defs: HashMap<String, CirruNode>,
+  pub ns: CirruNode,
+  pub defs: HashMap<String, CirruNode>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Snapshot {
-  package: String,
-  configs: SnapshotConfigs,
-  files: HashMap<String, FileInSnapShot>,
+  pub package: String,
+  pub configs: SnapshotConfigs,
+  pub files: HashMap<String, FileInSnapShot>,
 }
 
 fn load_configs(data: CirruEdn) -> Result<SnapshotConfigs, String> {

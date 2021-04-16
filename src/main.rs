@@ -15,9 +15,11 @@ fn main() -> Result<(), String> {
   let data = parse_cirru_edn(content.clone())?;
   // println!("reading: {}", content.clone());
 
-  let s = snapshot::load_snapshot_data(data);
+  let s = snapshot::load_snapshot_data(data)?;
 
   println!("{:?}", s);
+
+  println!("code: {:?}", program::extract_program_data(s)?);
 
   println!("{:?}", program::lookup_evaled_def("a", "b"));
   // TODO simulate program state

@@ -21,7 +21,7 @@ pub fn cirru_to_calcit(xs: CirruNode, ns: &str) -> Result<CalcitData, String> {
             let f: f32 = s.parse().unwrap();
             Ok(CalcitNumber(f))
           } else {
-            Err(format!("Unknown token: {:?}", s))
+            Ok(CalcitSymbol(s, format!("{}", ns)))
           }
         }
       },
