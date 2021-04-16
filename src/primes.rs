@@ -14,14 +14,14 @@ pub type NanoId = String;
 pub type CalcitScope = im::HashMap<String, CalcitData>;
 
 /// function type
-pub type FnEvalFn = fn(CalcitData, CalcitScope) -> CalcitData;
+pub type FnEvalFn = fn(CalcitData, CalcitScope) -> Result<CalcitData, String>;
 
 #[derive(Debug, Clone)]
 pub enum CalcitData {
   CalcitNil,
   CalcitBool(bool),
   CalcitNumber(f32),
-  CalcitSymbol(String, String),
+  CalcitSymbol(String, String), // content, ns
   CalcitKeyword(String),
   CalcitString(String),
   // CalcitRef(CalcitData), // TODO
@@ -30,11 +30,19 @@ pub enum CalcitData {
   CalcitSet(im::HashSet<CalcitData>),
   CalcitMap(im::HashMap<CalcitData, CalcitData>),
   CalcitRecord(String, Vec<String>, Vec<CalcitData>),
-  CalcitMacro(String, NanoId, fn(Vec<CalcitData>) -> CalcitData),
-  CalcitFn(String, NanoId, fn(Vec<CalcitData>) -> CalcitData),
+  CalcitMacro(
+    String,
+    NanoId,
+    fn(Vec<CalcitData>) -> Result<CalcitData, String>,
+  ),
+  CalcitFn(
+    String,
+    NanoId,
+    fn(Vec<CalcitData>) -> Result<CalcitData, String>,
+  ),
   CalcitSyntax(
     String,
-    fn(Vec<CalcitData>, CalcitScope, FnEvalFn) -> CalcitData,
+    fn(Vec<CalcitData>, CalcitScope, FnEvalFn) -> Result<CalcitData, String>,
   ),
 }
 

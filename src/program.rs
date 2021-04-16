@@ -26,8 +26,12 @@ pub struct ProgramFileData {
 
 pub type ProgramCodeData = HashMap<String, ProgramFileData>;
 
-pub type EvalFn =
-  fn(data: CalcitData, scope: CalcitScope, code: &str, program: ProgramCodeData) -> CalcitData;
+pub type EvalFn = fn(
+  data: CalcitData,
+  scope: CalcitScope,
+  code: &str,
+  program: ProgramCodeData,
+) -> Result<CalcitData, String>;
 
 lazy_static! {
   static ref PROGRAM_EVALED_DATA_STATE: Mutex<ProgramEvaledData> = Mutex::new(HashMap::new());
@@ -121,7 +125,7 @@ pub fn extract_program_data(s: Snapshot) -> Result<ProgramCodeData, String> {
   Ok(xs)
 }
 
-pub fn lookup_ns_def(ns: &str, def: &str, program: ProgramCodeData) -> Option<CalcitData> {
+pub fn lookup_ns_def(ns: &str, def: &str, program: &ProgramCodeData) -> Option<CalcitData> {
   let file = program.get(ns)?;
   let data = file.defs.get(def)?;
   Some(data.clone())
