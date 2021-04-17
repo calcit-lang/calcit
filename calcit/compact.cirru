@@ -22,6 +22,9 @@
             echo "\"quo:" 'demo $ quote 'demo
             echo "\"eval:" $ eval
               quote $ &+ 1 2
+            if true $ echo "\"true"
+            if false (echo "\"true") (echo "\"false")
+            if (&+ 1 2) (echo "\"3") (echo "\"?")
         |f1 $ quote
           defn f1 () $ echo "\"calling f1"
       :proc $ quote ()

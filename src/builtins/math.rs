@@ -16,3 +16,7 @@ pub fn is_odd(x: usize) -> bool {
 pub fn is_even(x: usize) -> bool {
   x & 1 == 0
 }
+
+pub fn is_integer(x: f32) -> bool {
+  x.fract() == 0.0
+}

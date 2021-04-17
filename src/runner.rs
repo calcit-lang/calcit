@@ -37,15 +37,7 @@ pub fn evaluate_expr(
             }
             builtins::handle_proc(&p, args)
           }
-          CalcitSyntax(s) if s == "eval" => {
-            if rest_nodes.len() == 1 {
-              let v = evaluate_expr(rest_nodes[0].clone(), scope.clone(), file_ns, program_code)?;
-              evaluate_expr(v, scope, file_ns, program_code)
-            } else {
-              Err(format!("unexpected data for evaling: {:?}", rest_nodes))
-            }
-          }
-          CalcitSyntax(s) => builtins::handle_syntax(&s, rest_nodes, scope),
+          CalcitSyntax(s) => builtins::handle_syntax(&s, rest_nodes, scope, file_ns, program_code),
           CalcitFn(_, _, scope, args, body) => {
             let mut values = im::Vector::new();
             for (idx, x) in xs.iter().enumerate() {

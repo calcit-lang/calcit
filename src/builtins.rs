@@ -6,6 +6,7 @@ mod sets;
 mod syntax;
 
 use crate::primes::{CalcitData, CalcitScope};
+use crate::program::ProgramCodeData;
 
 pub fn is_proc_name(s: &str) -> bool {
   matches!(s, "echo" | "echo-values" | "[]" | "&{}" | "#{}" | "&+")
@@ -43,11 +44,15 @@ pub fn handle_syntax(
   name: &str,
   nodes: im::Vector<CalcitData>,
   scope: CalcitScope,
+  file_ns: &str,
+  program: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
   match name {
-    "defn" => syntax::defn(nodes, scope),
-    "defmacro" => syntax::defmacro(nodes, scope),
-    "quote" => syntax::quote(nodes, scope),
+    "defn" => syntax::defn(nodes, scope, file_ns, program),
+    "eval" => syntax::eval(nodes, scope, file_ns, program),
+    "defmacro" => syntax::defmacro(nodes, scope, file_ns, program),
+    "quote" => syntax::quote(nodes, scope, file_ns, program),
+    "if" => syntax::syntax_if(nodes, scope, file_ns, program),
     a => Err(format!("TODO syntax: {}", a)),
   }
 }
