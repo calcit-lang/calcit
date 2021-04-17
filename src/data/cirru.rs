@@ -11,7 +11,7 @@ pub fn cirru_to_calcit(xs: CirruNode, ns: &str) -> Result<CalcitData, String> {
       "true" => Ok(CalcitBool(true)),
       "false" => Ok(CalcitBool(false)),
       "" => Err(String::from("Empty string is invalid")),
-      _ => match s.chars().nth(0).unwrap() {
+      _ => match s.chars().next().unwrap() {
         '\'' => Ok(CalcitSymbol(String::from(&s[1..]), String::from(ns))),
         ':' => Ok(CalcitKeyword(String::from(&s[1..]))),
         '"' | '|' => Ok(CalcitString(String::from(&s[1..]))),
@@ -21,7 +21,7 @@ pub fn cirru_to_calcit(xs: CirruNode, ns: &str) -> Result<CalcitData, String> {
             let f: f32 = s.parse().unwrap();
             Ok(CalcitNumber(f))
           } else {
-            Ok(CalcitSymbol(s, format!("{}", ns)))
+            Ok(CalcitSymbol(s, ns.to_string()))
           }
         }
       },

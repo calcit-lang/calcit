@@ -102,7 +102,7 @@ pub fn evaluate_symbol(
 fn parse_ns_def(s: &str) -> Option<(String, String)> {
   let pieces: Vec<&str> = s.split('/').collect();
   if pieces.len() == 2 {
-    if pieces[0].len() > 0 && pieces[1].len() > 0 {
+    if !pieces[0].is_empty() && !pieces[1].is_empty() {
       Some((pieces[0].to_string(), pieces[1].to_string()))
     } else {
       None
@@ -120,7 +120,11 @@ fn eval_symbol_from_program(
   match program::lookup_evaled_def(ns, sym) {
     Some(v) => Ok(v),
     None => match program::lookup_ns_def(ns, sym, program_code) {
-      Some(code) => evaluate_expr(code, im::HashMap::new(), ns, program_code),
+      Some(code) => {
+        let v = evaluate_expr(code, im::HashMap::new(), ns, program_code)?;
+        program::write_evaled_def(ns, sym, v.clone())?;
+        Ok(v)
+      }
       None => Err(String::from("cannot find code for def")),
     },
   }
@@ -134,7 +138,7 @@ pub fn run_fn(
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitData, String> {
-  let mut body_scope = scope.clone();
+  let mut body_scope = scope;
   // TODO arguments spreading syntax
   if values.len() != args.len() {
     return Err(String::from("arguments length mismatch"));

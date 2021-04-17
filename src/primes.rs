@@ -1,6 +1,5 @@
 // use cirru_parser::CirruNode; // TODO for CalcitThunk
 use core::cmp::Ord;
-use im;
 use std::cmp::Eq;
 use std::cmp::Ordering;
 use std::cmp::Ordering::*;
@@ -198,7 +197,7 @@ impl Ord for CalcitData {
       (CalcitNumber(_), _) => Less,
       (_, CalcitNumber(_)) => Greater,
 
-      (CalcitSymbol(a, ns1), CalcitSymbol(b, ns2)) => a.cmp(&b),
+      (CalcitSymbol(a, _ns1), CalcitSymbol(b, _ns2)) => a.cmp(&b),
       (CalcitSymbol(_, _), _) => Less,
       (_, CalcitSymbol(_, _)) => Greater,
 

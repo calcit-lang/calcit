@@ -12,20 +12,18 @@ mod runner;
 mod snapshot;
 
 use cirru_edn::parse_cirru_edn;
-use im;
-use primes::CalcitData;
 use primes::CalcitData::*;
 use std::fs;
 
 fn main() -> Result<(), String> {
   let content = fs::read_to_string("calcit/compact.cirru").expect("expected a Cirru snapshot");
-  let data = parse_cirru_edn(content.clone())?;
-  // println!("reading: {}", content.clone());
+  let data = parse_cirru_edn(content)?;
+  // println!("reading: {}", content);
 
   let bytes = include_bytes!("./cirru/calcit-core.cirru");
   print!("file: {}", String::from_utf8_lossy(bytes));
 
-  let s = snapshot::load_snapshot_data(data)?.clone();
+  let s = snapshot::load_snapshot_data(data)?;
 
   // println!("{:?}", s);
 

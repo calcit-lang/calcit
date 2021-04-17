@@ -37,7 +37,7 @@ lazy_static! {
   static ref PROGRAM_EVALED_DATA_STATE: Mutex<ProgramEvaledData> = Mutex::new(HashMap::new());
 }
 
-fn extract_import_rule(nodes: &CirruNode, ns: &str) -> Result<Vec<(String, ImportRule)>, String> {
+fn extract_import_rule(nodes: &CirruNode) -> Result<Vec<(String, ImportRule)>, String> {
   match nodes {
     CirruLeaf(_) => Err(String::from("Expected import rule in expr")),
     CirruList(xs) => match (xs[0].clone(), xs[1].clone(), xs[2].clone()) {
@@ -66,20 +66,17 @@ fn extract_import_rule(nodes: &CirruNode, ns: &str) -> Result<Vec<(String, Impor
   }
 }
 
-fn extract_import_map(
-  nodes: &CirruNode,
-  file_ns: &str,
-) -> Result<HashMap<String, ImportRule>, String> {
+fn extract_import_map(nodes: &CirruNode) -> Result<HashMap<String, ImportRule>, String> {
   match nodes {
     CirruLeaf(_) => unreachable!("Expected expr for ns"),
     CirruList(xs) => match (xs.get(0), xs.get(1), xs.get(2)) {
       // Too many clones
       (Some(x), Some(CirruLeaf(_)), Some(CirruList(xs))) if *x == CirruLeaf(String::from("ns")) => {
-        if xs.len() > 0 && xs[0] == CirruLeaf(String::from(":require")) {
+        if !xs.is_empty() && xs[0] == CirruLeaf(String::from(":require")) {
           let mut ys: HashMap<String, ImportRule> = HashMap::new();
           for (idx, x) in xs.iter().enumerate() {
             if idx > 0 {
-              let rules = extract_import_rule(x, file_ns)?;
+              let rules = extract_import_rule(x)?;
               for (target, rule) in rules {
                 ys.insert(target, rule);
               }
@@ -99,15 +96,12 @@ fn extract_import_map(
 pub fn extract_program_data(s: Snapshot) -> Result<ProgramCodeData, String> {
   let mut xs: ProgramCodeData = HashMap::new();
   for (ns, file) in s.files {
-    let import_map = extract_import_map(&file.ns, &ns)?;
+    let import_map = extract_import_map(&file.ns)?;
     let mut defs: HashMap<String, CalcitData> = HashMap::new();
     for (def, code) in file.defs {
       defs.insert(def, cirru_to_calcit(code, &ns)?);
     }
-    let file_info = ProgramFileData {
-      import_map: import_map,
-      defs: defs,
-    };
+    let file_info = ProgramFileData { import_map, defs };
     xs.insert(ns, file_info);
   }
   Ok(xs)
