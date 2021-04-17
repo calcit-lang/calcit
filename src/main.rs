@@ -39,12 +39,12 @@ fn main() -> Result<(), String> {
   match program::lookup_ns_def(&init_ns, &init_def, &program_code) {
     None => Err(String::from("Invalid entry")),
     Some(expr) => {
-      let entry = runner::evaluate_expr(expr, im::HashMap::new(), &init_ns, &program_code)?;
+      let entry = runner::evaluate_expr(&expr, &im::HashMap::new(), &init_ns, &program_code)?;
       match entry {
         CalcitFn(_, _, def_scope, args, body) => {
           let result = runner::run_fn(
             im::Vector::new(),
-            def_scope,
+            &def_scope,
             args,
             body,
             &init_ns,

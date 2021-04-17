@@ -1,7 +1,7 @@
-use crate::primes::CalcitData;
 use crate::primes::CalcitData::*;
+use crate::primes::{CalcitData, CalcitItems};
 
-pub fn binary_add(xs: im::Vector<CalcitData>) -> Result<CalcitData, String> {
+pub fn binary_add(xs: &CalcitItems) -> Result<CalcitData, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(CalcitNumber(a)), Some(CalcitNumber(b))) => Ok(CalcitNumber(a + b)),
     (Some(a), Some(b)) => Err(format!("invalid types for &+: {} {}", a, b)),

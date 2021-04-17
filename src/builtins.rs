@@ -5,7 +5,7 @@ mod math;
 mod sets;
 mod syntax;
 
-use crate::primes::{CalcitData, CalcitScope};
+use crate::primes::{CalcitData, CalcitItems, CalcitScope};
 use crate::program::ProgramCodeData;
 
 pub fn is_proc_name(s: &str) -> bool {
@@ -28,7 +28,7 @@ pub fn is_syntax_name(s: &str) -> bool {
   )
 }
 
-pub fn handle_proc(name: &str, args: im::Vector<CalcitData>) -> Result<CalcitData, String> {
+pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<CalcitData, String> {
   match name {
     "echo" => effects::echo(args),
     "echo-values" => effects::echo_values(args),
@@ -42,8 +42,8 @@ pub fn handle_proc(name: &str, args: im::Vector<CalcitData>) -> Result<CalcitDat
 
 pub fn handle_syntax(
   name: &str,
-  nodes: im::Vector<CalcitData>,
-  scope: CalcitScope,
+  nodes: &CalcitItems,
+  scope: &CalcitScope,
   file_ns: &str,
   program: &ProgramCodeData,
 ) -> Result<CalcitData, String> {

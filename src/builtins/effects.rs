@@ -1,7 +1,6 @@
-use crate::primes::CalcitData;
-use crate::primes::CalcitData::*;
+use crate::primes::{CalcitData, CalcitData::*, CalcitItems};
 
-pub fn echo(xs: im::Vector<CalcitData>) -> Result<CalcitData, String> {
+pub fn echo(xs: &CalcitItems) -> Result<CalcitData, String> {
   let mut s = String::from("");
   for (idx, x) in xs.iter().enumerate() {
     if idx > 0 {
@@ -13,7 +12,7 @@ pub fn echo(xs: im::Vector<CalcitData>) -> Result<CalcitData, String> {
   Ok(CalcitNil)
 }
 
-pub fn echo_values(xs: im::Vector<CalcitData>) -> Result<CalcitData, String> {
+pub fn echo_values(xs: &CalcitItems) -> Result<CalcitData, String> {
   let mut s = String::from("");
   for (idx, x) in xs.iter().enumerate() {
     if idx > 0 {

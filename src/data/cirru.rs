@@ -1,5 +1,5 @@
-use crate::primes::CalcitData;
 use crate::primes::CalcitData::*;
+use crate::primes::{CalcitData, CalcitItems};
 use cirru_parser::CirruNode;
 use cirru_parser::CirruNode::*;
 use regex::Regex;
@@ -38,7 +38,7 @@ pub fn cirru_to_calcit(xs: CirruNode, ns: &str) -> Result<CalcitData, String> {
       },
     },
     CirruList(ys) => {
-      let mut zs: im::Vector<CalcitData> = im::Vector::new();
+      let mut zs: CalcitItems = im::Vector::new();
       for y in ys {
         match cirru_to_calcit(y, ns) {
           Ok(v) => {

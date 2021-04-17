@@ -2,28 +2,28 @@ use crate::builtins;
 use crate::builtins::{is_proc_name, is_syntax_name};
 use crate::primes::CalcitData;
 use crate::primes::CalcitData::*;
-use crate::primes::{CalcitScope, CORE_NS};
+use crate::primes::{CalcitItems, CalcitScope, CORE_NS};
 use crate::program;
 
 pub fn evaluate_expr(
-  expr: CalcitData,
-  scope: CalcitScope,
+  expr: &CalcitData,
+  scope: &CalcitScope,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitData, String> {
   match expr {
-    CalcitNil => Ok(expr),
-    CalcitBool(_) => Ok(expr),
-    CalcitNumber(_) => Ok(expr),
+    CalcitNil => Ok(expr.clone()),
+    CalcitBool(_) => Ok(expr.clone()),
+    CalcitNumber(_) => Ok(expr.clone()),
     CalcitSymbol(s, ns) => evaluate_symbol(&s, scope, &ns, program_code),
-    CalcitKeyword(_) => Ok(expr),
-    CalcitString(_) => Ok(expr),
+    CalcitKeyword(_) => Ok(expr.clone()),
+    CalcitString(_) => Ok(expr.clone()),
     // CalcitRef(CalcitData), // TODO
     // CalcitThunk(CirruNode), // TODO
     CalcitList(xs) => match xs.get(0) {
       None => Err(String::from("cannot evaluate empty expr")),
       Some(x) => {
-        let v = evaluate_expr((*x).clone(), scope.clone(), file_ns, program_code)?;
+        let v = evaluate_expr(&x, scope, file_ns, program_code)?;
         let rest_nodes = xs.clone().slice(1..);
         match v {
           CalcitProc(p) => {
@@ -31,26 +31,26 @@ pub fn evaluate_expr(
             for (idx, x) in xs.iter().enumerate() {
               // TODO arguments spreading syntax
               if idx > 0 {
-                let v = evaluate_expr(x.clone(), scope.clone(), file_ns, program_code)?;
+                let v = evaluate_expr(x, scope, file_ns, program_code)?;
                 args.push_back(v)
               }
             }
-            builtins::handle_proc(&p, args)
+            builtins::handle_proc(&p, &args)
           }
-          CalcitSyntax(s) => builtins::handle_syntax(&s, rest_nodes, scope, file_ns, program_code),
-          CalcitFn(_, _, scope, args, body) => {
+          CalcitSyntax(s) => builtins::handle_syntax(&s, &rest_nodes, scope, file_ns, program_code),
+          CalcitFn(_, _, def_scope, args, body) => {
             let mut values = im::Vector::new();
             for (idx, x) in xs.iter().enumerate() {
               // TODO arguments spreading syntax
               if idx > 0 {
-                let v = evaluate_expr(x.clone(), scope.clone(), file_ns, program_code)?;
+                let v = evaluate_expr(x, &def_scope, file_ns, program_code)?;
                 values.push_back(v)
               }
             }
             run_fn(values, scope, args, body, file_ns, program_code)
           }
           CalcitMacro(_, _, args, body) => {
-            run_macro(rest_nodes, scope, args, body, file_ns, program_code)
+            run_macro(&rest_nodes, scope, args, body, file_ns, program_code)
           }
           CalcitSymbol(s, ns) => Err(format!("cannot evaluate symbol directly: {}/{}", ns, s)),
           a => Err(format!("cannot be used as operator: {}", a)),
@@ -60,16 +60,16 @@ pub fn evaluate_expr(
     CalcitSet(_) => Err(String::from("unexpected set for expr")),
     CalcitMap(_) => Err(String::from("unexpected map for expr")),
     CalcitRecord(..) => Err(String::from("unexpected record for expr")),
-    CalcitProc(_) => Ok(expr),
-    CalcitMacro(..) => Ok(expr),
-    CalcitFn(..) => Ok(expr),
-    CalcitSyntax(_) => Ok(expr),
+    CalcitProc(_) => Ok(expr.clone()),
+    CalcitMacro(..) => Ok(expr.clone()),
+    CalcitFn(..) => Ok(expr.clone()),
+    CalcitSyntax(_) => Ok(expr.clone()),
   }
 }
 
 pub fn evaluate_symbol(
   sym: &str,
-  scope: CalcitScope,
+  scope: &CalcitScope,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitData, String> {
@@ -129,7 +129,7 @@ fn eval_symbol_from_program(
     Some(v) => Ok(v),
     None => match program::lookup_ns_def(ns, sym, program_code) {
       Some(code) => {
-        let v = evaluate_expr(code, im::HashMap::new(), ns, program_code)?;
+        let v = evaluate_expr(&code, &im::HashMap::new(), ns, program_code)?;
         program::write_evaled_def(ns, sym, v.clone())?;
         Ok(v)
       }
@@ -139,14 +139,14 @@ fn eval_symbol_from_program(
 }
 
 pub fn run_fn(
-  values: im::Vector<CalcitData>,
-  scope: CalcitScope,
-  args: im::Vector<CalcitData>,
-  body: im::Vector<CalcitData>,
+  values: CalcitItems,
+  scope: &CalcitScope,
+  args: CalcitItems,
+  body: CalcitItems,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitData, String> {
-  let mut body_scope = scope;
+  let mut body_scope = scope.clone();
   // TODO arguments spreading syntax
   if values.len() != args.len() {
     return Err(String::from("arguments length mismatch"));
@@ -159,18 +159,18 @@ pub fn run_fn(
       _ => return Err(String::from("expected argument in a symbol")),
     }
   }
-  evaluate_lines(body, body_scope, file_ns, program_code)
+  evaluate_lines(&body, &body_scope, file_ns, program_code)
 }
 
 pub fn evaluate_lines(
-  lines: im::Vector<CalcitData>,
-  scope: CalcitScope,
+  lines: &CalcitItems,
+  scope: &CalcitScope,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitData, String> {
   let mut ret: CalcitData = CalcitNil;
   for line in lines {
-    match evaluate_expr(line, scope.clone(), file_ns, program_code) {
+    match evaluate_expr(line, scope, file_ns, program_code) {
       Ok(v) => ret = v,
       Err(e) => return Err(e),
     }
@@ -180,10 +180,10 @@ pub fn evaluate_lines(
 
 // TODO
 pub fn run_macro(
-  values: im::Vector<CalcitData>,
-  scope: CalcitScope,
-  args: im::Vector<CalcitData>,
-  body: im::Vector<CalcitData>,
+  values: &CalcitItems,
+  scope: &CalcitScope,
+  args: CalcitItems,
+  body: CalcitItems,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitData, String> {

@@ -1,12 +1,11 @@
-use crate::primes::CalcitData;
 use crate::primes::CalcitData::*;
-use crate::primes::CalcitScope;
+use crate::primes::{CalcitData, CalcitItems, CalcitScope};
 use crate::program::ProgramCodeData;
 use crate::runner;
 
 pub fn defn(
-  expr: im::Vector<CalcitData>,
-  scope: CalcitScope,
+  expr: &CalcitItems,
+  scope: &CalcitScope,
   _file_ns: &str,
   _program: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
@@ -14,7 +13,7 @@ pub fn defn(
     (Some(CalcitSymbol(s, _ns)), Some(CalcitList(xs))) => Ok(CalcitFn(
       s.to_string(),
       nanoid!(),
-      scope,
+      scope.clone(),
       xs.clone(),
       expr.clone().slice(2..),
     )),
@@ -24,8 +23,8 @@ pub fn defn(
 }
 
 pub fn defmacro(
-  expr: im::Vector<CalcitData>,
-  _scope: CalcitScope,
+  expr: &CalcitItems,
+  _scope: &CalcitScope,
   _file_ns: &str,
   _program: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
@@ -39,14 +38,14 @@ pub fn defmacro(
     (Some(a), Some(b)) => Err(format!("invalid structure for defmacro: {} {}", a, b)),
     _ => Err(format!(
       "invalid structure for defmacro: {}",
-      CalcitList(expr)
+      CalcitList(expr.clone())
     )),
   }
 }
 
 pub fn quote(
-  expr: im::Vector<CalcitData>,
-  _scope: CalcitScope,
+  expr: &CalcitItems,
+  _scope: &CalcitScope,
   _file_ns: &str,
   _program: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
@@ -58,23 +57,21 @@ pub fn quote(
 }
 
 pub fn syntax_if(
-  expr: im::Vector<CalcitData>,
-  scope: CalcitScope,
+  expr: &CalcitItems,
+  scope: &CalcitScope,
   file_ns: &str,
   program_code: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
   match (expr.get(0), expr.get(1)) {
     _ if expr.len() > 3 => Err(format!("too many nodes for if: {:?}", expr)),
     (Some(cond), Some(true_branch)) => {
-      let cond_value = runner::evaluate_expr(cond.clone(), scope.clone(), file_ns, program_code)?;
+      let cond_value = runner::evaluate_expr(cond, scope, file_ns, program_code)?;
       match cond_value {
         CalcitNil | CalcitBool(false) => match expr.get(2) {
-          Some(false_branch) => {
-            runner::evaluate_expr(false_branch.clone(), scope, file_ns, program_code)
-          }
+          Some(false_branch) => runner::evaluate_expr(false_branch, scope, file_ns, program_code),
           None => Ok(CalcitNil),
         },
-        _ => runner::evaluate_expr(true_branch.clone(), scope, file_ns, program_code),
+        _ => runner::evaluate_expr(true_branch, scope, file_ns, program_code),
       }
     }
     (None, _) => Err(format!("insufficient nodes for if: {:?}", expr)),
@@ -83,39 +80,39 @@ pub fn syntax_if(
 }
 
 pub fn eval(
-  expr: im::Vector<CalcitData>,
-  scope: CalcitScope,
+  expr: &CalcitItems,
+  scope: &CalcitScope,
   file_ns: &str,
   program_code: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
   if expr.len() == 1 {
-    let v = runner::evaluate_expr(expr[0].clone(), scope.clone(), file_ns, program_code)?;
-    runner::evaluate_expr(v, scope, file_ns, program_code)
+    let v = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
+    runner::evaluate_expr(&v, scope, file_ns, program_code)
   } else {
     Err(format!("unexpected data for evaling: {:?}", expr))
   }
 }
 
 pub fn syntax_let(
-  expr: im::Vector<CalcitData>,
-  scope: CalcitScope,
+  expr: &CalcitItems,
+  scope: &CalcitScope,
   file_ns: &str,
   program_code: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
   match expr.get(0) {
     Some(CalcitNil) => {
-      runner::evaluate_lines(expr.clone().slice(1..), scope, file_ns, program_code)
+      runner::evaluate_lines(&expr.clone().slice(1..), scope, file_ns, program_code)
     }
     Some(CalcitList(xs)) if xs.len() == 2 => {
       let mut body_scope = scope.clone();
       match (&xs[0], &xs[1]) {
         (CalcitSymbol(s, _ns), ys) => {
-          let value = runner::evaluate_expr(ys.clone(), scope, file_ns, program_code)?;
+          let value = runner::evaluate_expr(ys, scope, file_ns, program_code)?;
           body_scope.insert(s.to_string(), value);
         }
         (a, _) => return Err(format!("invalid binding name: {}", a)),
       }
-      runner::evaluate_lines(expr.clone().slice(1..), body_scope, file_ns, program_code)
+      runner::evaluate_lines(&expr.clone().slice(1..), &body_scope, file_ns, program_code)
     }
     Some(CalcitList(xs)) => Err(format!("invalid length: {:?}", xs)),
     Some(_) => Err(format!("invalid node for &let: {:?}", expr)),
@@ -126,11 +123,11 @@ pub fn syntax_let(
 /*
 
 
-pub fn quasiquote(expr: im::Vector<CalcitData>, _scope: CalcitScope,_file_ns: &str, _program: &ProgramCodeData) -> Result<CalcitData, String> {
+pub fn quasiquote(expr: &CalcitItems, _scope: CalcitScope,_file_ns: &str, _program: &ProgramCodeData) -> Result<CalcitData, String> {
 }
 
 // TODO macroexpand-all
-pub fn macroexpand(expr: im::Vector<CalcitData>, scope: CalcitScope,_file_ns: &str, _program: &ProgramCodeData) -> Result<CalcitData, String> {
+pub fn macroexpand(expr: &CalcitItems, scope: CalcitScope,_file_ns: &str, _program: &ProgramCodeData) -> Result<CalcitData, String> {
 }
 
 */

@@ -11,6 +11,7 @@ pub type NanoId = String;
 
 // scope
 pub type CalcitScope = im::HashMap<String, CalcitData>;
+pub type CalcitItems = im::Vector<CalcitData>;
 
 #[derive(Debug, Clone)]
 pub enum CalcitData {
@@ -22,7 +23,7 @@ pub enum CalcitData {
   CalcitString(String),
   // CalcitRef(CalcitData), // TODO
   // CalcitThunk(CirruNode), // TODO
-  CalcitList(im::Vector<CalcitData>),
+  CalcitList(CalcitItems),
   CalcitSet(im::HashSet<CalcitData>),
   CalcitMap(im::HashMap<CalcitData, CalcitData>),
   CalcitRecord(String, Vec<String>, Vec<CalcitData>),
@@ -30,15 +31,15 @@ pub enum CalcitData {
   CalcitMacro(
     String,
     NanoId,
-    im::Vector<CalcitData>, // args
-    im::Vector<CalcitData>, // body
+    CalcitItems, // args
+    CalcitItems, // body
   ),
   CalcitFn(
     String,
     NanoId,
     CalcitScope,
-    im::Vector<CalcitData>, // args
-    im::Vector<CalcitData>, // body
+    CalcitItems, // args
+    CalcitItems, // body
   ),
   CalcitSyntax(String),
 }
