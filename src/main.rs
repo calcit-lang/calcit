@@ -1,6 +1,9 @@
 #[macro_use]
 extern crate lazy_static;
 
+#[macro_use]
+extern crate nanoid;
+
 mod builtins;
 mod data;
 mod primes;
@@ -38,17 +41,21 @@ fn main() -> Result<(), String> {
   match program::lookup_ns_def(&init_ns, &init_def, &program_code) {
     None => Err(String::from("Invalid entry")),
     Some(expr) => {
-      // TODO faking test
-      return Ok(());
-
       let entry = runner::evaluate_expr(expr, im::HashMap::new(), &init_ns, &program_code)?;
       match entry {
-        CalcitFn(_, _, f) => {
-          let result = f(vec![])?;
-          println!("program result: {}", result);
+        CalcitFn(_, _, def_scope, args, body) => {
+          let result = runner::run_fn(
+            im::Vector::new(),
+            def_scope,
+            args,
+            body,
+            &init_ns,
+            &program_code,
+          )?;
+          println!("result: {}", result);
           Ok(())
         }
-        _ => Err(String::from("expected function entry")),
+        _ => Err(format!("expected function entry, got: {}", entry)),
       }
     }
   }
@@ -59,6 +66,6 @@ fn extract_ns_def(s: String) -> Result<(String, String), String> {
   if pieces.len() == 2 {
     Ok((pieces[0].to_string(), pieces[1].to_string()))
   } else {
-    Err(String::from("todo"))
+    Err(format!("invalid ns format: {}", s))
   }
 }

@@ -1,10 +1,7 @@
 
-{} $ :added
+{} $ :changed
   {} $ |app.main
-    {}
-      :ns $ quote (ns app.main)
-      :defs $ {}
-        |main! $ quote
-          defn main! () $ echo "\"demo"
-      :proc $ quote ()
-      :configs $ {}
+    {} $ :changed-defs
+      {} $ |main!
+        quote $ defn main! () (echo "\"demo")
+          echo $ &+ 1 2

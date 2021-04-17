@@ -13,9 +13,6 @@ pub type NanoId = String;
 // scope
 pub type CalcitScope = im::HashMap<String, CalcitData>;
 
-/// function type
-pub type FnEvalFn = fn(CalcitData, CalcitScope) -> Result<CalcitData, String>;
-
 #[derive(Debug, Clone)]
 pub enum CalcitData {
   CalcitNil,
@@ -30,20 +27,21 @@ pub enum CalcitData {
   CalcitSet(im::HashSet<CalcitData>),
   CalcitMap(im::HashMap<CalcitData, CalcitData>),
   CalcitRecord(String, Vec<String>, Vec<CalcitData>),
+  CalcitProc(String),
   CalcitMacro(
     String,
     NanoId,
-    fn(Vec<CalcitData>) -> Result<CalcitData, String>,
+    im::Vector<CalcitData>, // args
+    im::Vector<CalcitData>, // body
   ),
   CalcitFn(
     String,
     NanoId,
-    fn(Vec<CalcitData>) -> Result<CalcitData, String>,
+    CalcitScope,
+    im::Vector<CalcitData>, // args
+    im::Vector<CalcitData>, // body
   ),
-  CalcitSyntax(
-    String,
-    fn(Vec<CalcitData>, CalcitScope, FnEvalFn) -> Result<CalcitData, String>,
-  ),
+  CalcitSyntax(String),
 }
 
 use CalcitData::*;
@@ -54,9 +52,9 @@ impl fmt::Display for CalcitData {
       CalcitNil => f.write_str("nil"),
       CalcitBool(v) => f.write_str(&format!("{}", v)),
       CalcitNumber(n) => f.write_str(&format!("{}", n)),
-      CalcitSymbol(s, ns) => f.write_str(&format!("\"|{}\"", s)), // TODO
+      CalcitSymbol(s, _ns) => f.write_str(&format!("'{}", s)),
       CalcitKeyword(s) => f.write_str(&format!(":{}", s)),
-      CalcitString(s) => f.write_str(&format!("'{}", s)),
+      CalcitString(s) => f.write_str(&format!("\"|{}\"", s)), // TODO, escaping choices
       // CalcitThunk(v) => f.write_str(&format!("{}", v)),
       CalcitList(xs) => {
         f.write_str("([]")?;
@@ -80,16 +78,19 @@ impl fmt::Display for CalcitData {
       }
       CalcitRecord(name, fields, values) => {
         f.write_str(&format!("(%{{}} {}", name))?;
-
         for idx in 0..fields.len() {
           f.write_str(&format!("({} {})", fields[idx], values[idx]))?;
         }
-
         f.write_str(")")
       }
-      CalcitMacro(name, gen_id, _f) => f.write_str(&format!("(&macro {})", name)),
-      CalcitFn(name, gen_id, _f) => f.write_str(&format!("(&fn {})", name)),
-      CalcitSyntax(name, _f) => f.write_str(&format!("(&syntax {})", name)),
+      CalcitProc(name) => f.write_str(&format!("(&proc {})", name)),
+      CalcitMacro(name, _, args, _) => {
+        f.write_str(&format!("(&macro {} {})", name, CalcitList(args.clone())))
+      }
+      CalcitFn(name, _, _, args, _) => {
+        f.write_str(&format!("(&fn {} {})", name, CalcitList(args.clone())))
+      }
+      CalcitSyntax(name) => f.write_str(&format!("(&syntax {})", name)),
     }
   }
 }
@@ -151,17 +152,21 @@ impl Hash for CalcitData {
         fields.hash(_state);
         values.hash(_state);
       }
-      CalcitMacro(name, gen_id, _f) => {
+      CalcitProc(name) => {
+        "proc:".hash(_state);
+        name.hash(_state);
+      }
+      CalcitMacro(name, gen_id, ..) => {
         "macro:".hash(_state);
         name.hash(_state);
-        gen_id.hash(_state)
+        gen_id.hash(_state);
       }
-      CalcitFn(name, gen_id, _f) => {
+      CalcitFn(name, gen_id, ..) => {
         "fn:".hash(_state);
         name.hash(_state);
         gen_id.hash(_state);
       }
-      CalcitSyntax(name, _f) => {
+      CalcitSyntax(name) => {
         "syntax:".hash(_state);
         // syntax name can be used as identity
         name.hash(_state);
@@ -230,18 +235,22 @@ impl Ord for CalcitData {
       (CalcitRecord(_name1, _fields1, _values1), CalcitRecord(_name2, _fields2, _values2)) => {
         unreachable!("TODO records are not cmp ed") // TODO
       }
-      (CalcitRecord(_, _, _), _) => Less,
-      (_, CalcitRecord(_, _, _)) => Greater,
+      (CalcitRecord(..), _) => Less,
+      (_, CalcitRecord(..)) => Greater,
 
-      (CalcitMacro(_, a, _), CalcitMacro(_, b, _)) => a.cmp(b),
-      (CalcitMacro(_, _, _), _) => Less,
-      (_, CalcitMacro(_, _, _)) => Greater,
+      (CalcitProc(a), CalcitProc(b)) => a.cmp(b),
+      (CalcitProc(_), _) => Less,
+      (_, CalcitProc(_)) => Greater,
 
-      (CalcitFn(_, a, _), CalcitFn(_, b, _)) => a.cmp(&b), // compared with nanoid
-      (CalcitFn(_, _, _), _) => Less,
-      (_, CalcitFn(_, _, _)) => Greater,
+      (CalcitMacro(_, a, ..), CalcitMacro(_, b, ..)) => a.cmp(b),
+      (CalcitMacro(..), _) => Less,
+      (_, CalcitMacro(..)) => Greater,
 
-      (CalcitSyntax(a, _), CalcitSyntax(b, _)) => a.cmp(&b),
+      (CalcitFn(_, a, ..), CalcitFn(_, b, ..)) => a.cmp(&b), // compared with nanoid
+      (CalcitFn(..), _) => Less,
+      (_, CalcitFn(..)) => Greater,
+
+      (CalcitSyntax(a), CalcitSyntax(b)) => a.cmp(&b),
     }
   }
 }
@@ -272,10 +281,13 @@ impl PartialEq for CalcitData {
       }
 
       // functions compared with nanoid
-      (CalcitMacro(_, a, _), CalcitMacro(_, b, _)) => a == b,
-      (CalcitFn(_, a, _), CalcitFn(_, b, _)) => a == b,
-      (CalcitSyntax(a, _), CalcitSyntax(b, _)) => a == b,
+      (CalcitProc(a), CalcitProc(b)) => a == b,
+      (CalcitMacro(_, a, ..), CalcitMacro(_, b, ..)) => a == b,
+      (CalcitFn(_, a, ..), CalcitFn(_, b, ..)) => a == b,
+      (CalcitSyntax(a), CalcitSyntax(b)) => a == b,
       (_, _) => false,
     }
   }
 }
+
+pub const CORE_NS: &str = "calcit.core";
