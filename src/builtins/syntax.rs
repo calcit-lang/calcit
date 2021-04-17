@@ -1,7 +1,6 @@
 use crate::primes::CalcitData;
 use crate::primes::CalcitData::*;
 use crate::primes::CalcitScope;
-use im;
 
 pub fn defn(expr: im::Vector<CalcitData>, scope: CalcitScope) -> Result<CalcitData, String> {
   match (expr.get(0), expr.get(1)) {
@@ -17,7 +16,7 @@ pub fn defn(expr: im::Vector<CalcitData>, scope: CalcitScope) -> Result<CalcitDa
   }
 }
 
-pub fn defmacro(expr: im::Vector<CalcitData>, scope: CalcitScope) -> Result<CalcitData, String> {
+pub fn defmacro(expr: im::Vector<CalcitData>, _scope: CalcitScope) -> Result<CalcitData, String> {
   match (expr.get(0), expr.get(1)) {
     (Some(CalcitSymbol(s, _ns)), Some(CalcitList(xs))) => Ok(CalcitMacro(
       s.to_string(),
@@ -32,3 +31,26 @@ pub fn defmacro(expr: im::Vector<CalcitData>, scope: CalcitScope) -> Result<Calc
     )),
   }
 }
+
+pub fn quote(expr: im::Vector<CalcitData>, _scope: CalcitScope) -> Result<CalcitData, String> {
+  if expr.len() == 1 {
+    Ok(expr[0].clone())
+  } else {
+    Err(format!("unexpected data for quote: {:?}", expr))
+  }
+}
+
+/*
+
+pub fn syntax_if(expr: im::Vector<CalcitData>, _scope: CalcitScope) -> Result<CalcitData, String> {}
+
+pub fn syntax_let(expr: im::Vector<CalcitData>, _scope: CalcitScope) -> Result<CalcitData, String> {
+}
+pub fn quasiquote(expr: im::Vector<CalcitData>, _scope: CalcitScope) -> Result<CalcitData, String> {
+}
+
+// TODO macroexpand-all
+pub fn macroexpand(expr: im::Vector<CalcitData>, scope: CalcitScope) -> Result<CalcitData, String> {
+}
+
+*/

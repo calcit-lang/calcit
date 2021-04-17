@@ -18,7 +18,6 @@ pub fn is_syntax_name(s: &str) -> bool {
       | "defmacro"
       | "if"
       | "&let"
-      | ";"
       | "quote"
       | "quasiquote"
       | "eval"
@@ -48,6 +47,7 @@ pub fn handle_syntax(
   match name {
     "defn" => syntax::defn(nodes, scope),
     "defmacro" => syntax::defmacro(nodes, scope),
+    "quote" => syntax::quote(nodes, scope),
     a => Err(format!("TODO syntax: {}", a)),
   }
 }

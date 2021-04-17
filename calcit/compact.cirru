@@ -18,6 +18,10 @@
             echo $ #{} 1 2 3 |four
             lib/f2
             f3 "\"arg of 3"
+            echo "\"quote:" $ quote (&+ 1 2)
+            echo "\"quo:" 'demo $ quote 'demo
+            echo "\"eval:" $ eval
+              quote $ &+ 1 2
         |f1 $ quote
           defn f1 () $ echo "\"calling f1"
       :proc $ quote ()
@@ -29,5 +33,14 @@
           defn f2 () $ echo "\"f2 in lib"
         |f3 $ quote
           defn f3 (x) (echo "\"f3 in lib") (echo "\"v:" x)
+      :proc $ quote ()
+      :configs $ {}
+    |app.macro $ {}
+      :ns $ quote (ns app.macro)
+      :defs $ {}
+        |add-num $ quote
+          defmacro add-num (a b)
+            quasiquote $ &let nil
+              &+ (~ a) (~ b)
       :proc $ quote ()
       :configs $ {}
