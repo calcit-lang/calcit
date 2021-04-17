@@ -9,3 +9,10 @@ pub fn binary_add(xs: im::Vector<CalcitData>) -> Result<CalcitData, String> {
     _ => Err(String::from("invalid arguments")),
   }
 }
+
+pub fn is_odd(x: usize) -> bool {
+  x & 1 == 1
+}
+pub fn is_even(x: usize) -> bool {
+  x & 1 == 0
+}

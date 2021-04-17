@@ -70,9 +70,11 @@ impl fmt::Display for CalcitData {
         f.write_str(")")
       }
       CalcitMap(xs) => {
+        f.write_str("({}")?;
         for (k, v) in xs {
-          f.write_str(&format!("{} {}", k, v))?;
+          f.write_str(&format!(" ({} {})", k, v))?;
         }
+        f.write_str(")")?;
         Ok(())
       }
       CalcitRecord(name, fields, values) => {
@@ -290,3 +292,12 @@ impl PartialEq for CalcitData {
 }
 
 pub const CORE_NS: &str = "calcit.core";
+
+impl CalcitData {
+  pub fn turn_string(&self) -> String {
+    match self {
+      CalcitString(s) => s.clone(),
+      _ => format!("{}", self),
+    }
+  }
+}
