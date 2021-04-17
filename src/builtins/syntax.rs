@@ -96,10 +96,35 @@ pub fn eval(
   }
 }
 
+pub fn syntax_let(
+  expr: im::Vector<CalcitData>,
+  scope: CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<CalcitData, String> {
+  match expr.get(0) {
+    Some(CalcitNil) => {
+      runner::evaluate_lines(expr.clone().slice(1..), scope, file_ns, program_code)
+    }
+    Some(CalcitList(xs)) if xs.len() == 2 => {
+      let mut body_scope = scope.clone();
+      match (&xs[0], &xs[1]) {
+        (CalcitSymbol(s, _ns), ys) => {
+          let value = runner::evaluate_expr(ys.clone(), scope, file_ns, program_code)?;
+          body_scope.insert(s.to_string(), value);
+        }
+        (a, _) => return Err(format!("invalid binding name: {}", a)),
+      }
+      runner::evaluate_lines(expr.clone().slice(1..), body_scope, file_ns, program_code)
+    }
+    Some(CalcitList(xs)) => Err(format!("invalid length: {:?}", xs)),
+    Some(_) => Err(format!("invalid node for &let: {:?}", expr)),
+    None => Err(String::from("&let expected a pair or a nil")),
+  }
+}
+
 /*
 
-pub fn syntax_let(expr: im::Vector<CalcitData>, _scope: CalcitScope,_file_ns: &str, _program: &ProgramCodeData) -> Result<CalcitData, String> {
-}
 
 pub fn quasiquote(expr: im::Vector<CalcitData>, _scope: CalcitScope,_file_ns: &str, _program: &ProgramCodeData) -> Result<CalcitData, String> {
 }

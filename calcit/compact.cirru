@@ -25,6 +25,11 @@
             if true $ echo "\"true"
             if false (echo "\"true") (echo "\"false")
             if (&+ 1 2) (echo "\"3") (echo "\"?")
+            &let (a 1) (echo "\"a is:" a)
+            &let nil $ echo "\"a is none"
+            &let
+              a $ &+ 3 4
+              echo "\"a is:" a
         |f1 $ quote
           defn f1 () $ echo "\"calling f1"
       :proc $ quote ()

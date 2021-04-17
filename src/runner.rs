@@ -159,9 +159,18 @@ pub fn run_fn(
       _ => return Err(String::from("expected argument in a symbol")),
     }
   }
+  evaluate_lines(body, body_scope, file_ns, program_code)
+}
+
+pub fn evaluate_lines(
+  lines: im::Vector<CalcitData>,
+  scope: CalcitScope,
+  file_ns: &str,
+  program_code: &program::ProgramCodeData,
+) -> Result<CalcitData, String> {
   let mut ret: CalcitData = CalcitNil;
-  for line in body {
-    match evaluate_expr(line, body_scope.clone(), file_ns, program_code) {
+  for line in lines {
+    match evaluate_expr(line, scope.clone(), file_ns, program_code) {
       Ok(v) => ret = v,
       Err(e) => return Err(e),
     }

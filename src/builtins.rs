@@ -53,6 +53,7 @@ pub fn handle_syntax(
     "defmacro" => syntax::defmacro(nodes, scope, file_ns, program),
     "quote" => syntax::quote(nodes, scope, file_ns, program),
     "if" => syntax::syntax_if(nodes, scope, file_ns, program),
+    "&let" => syntax::syntax_let(nodes, scope, file_ns, program),
     a => Err(format!("TODO syntax: {}", a)),
   }
 }
