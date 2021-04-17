@@ -28,6 +28,19 @@
         :defs $ {}
           |main! $ {} (:type :expr) (:by |u0) (:at 1618539520156)
             :data $ {}
+              |yyyr $ {} (:type :expr) (:by |u0) (:at 1618681700994)
+                :data $ {}
+                  |T $ {} (:type :leaf) (:by |u0) (:at 1618681701504) (:text |echo)
+                  |j $ {} (:type :expr) (:by |u0) (:at 1618681701785)
+                    :data $ {}
+                      |T $ {} (:type :leaf) (:by |u0) (:at 1618681702755) (:text |rest)
+                      |j $ {} (:type :expr) (:by |u0) (:at 1618681703369)
+                        :data $ {}
+                          |T $ {} (:type :leaf) (:by |u0) (:at 1618681704264) (:text |[])
+                          |j $ {} (:type :leaf) (:by |u0) (:at 1618681704468) (:text |1)
+                          |r $ {} (:type :leaf) (:by |u0) (:at 1618681704653) (:text |2)
+                          |v $ {} (:type :leaf) (:by |u0) (:at 1618681705572) (:text |3)
+                          |x $ {} (:type :leaf) (:by |u0) (:at 1618681705808) (:text |4)
               |T $ {} (:type :leaf) (:by |u0) (:at 1618539520156) (:text |defn)
               |yr $ {} (:type :expr) (:by |u0) (:at 1618660963223)
                 :data $ {}
