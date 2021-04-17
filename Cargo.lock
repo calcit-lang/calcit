@@ -25,7 +25,9 @@ dependencies = [
  "cirru_edn",
  "cirru_parser",
  "im",
+ "lazy_static",
  "nanoid",
+ "regex",
 ]
 
 [[package]]
@@ -36,9 +38,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cirru_edn"
-version = "0.0.1"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fa4e2f261047ab3e6e6a8aac4e58001c5188d851b29c636aae61c3a5db1e754"
+checksum = "6c37da3bceb2a73b045343637e93d849939e0c94632cb0711b332f2353e447e5"
 dependencies = [
  "cirru_parser",
  "regex",
@@ -85,6 +87,12 @@ name = "itoa"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd25036021b0de88a0aff6b850051563c6516d0bf53f8638938edbb9de732736"
+
+[[package]]
+name = "lazy_static"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
