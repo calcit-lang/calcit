@@ -120,6 +120,36 @@ pub fn syntax_let(
   }
 }
 
+/// foldl using syntax for performance, theoretically it's not
+pub fn foldl(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<CalcitData, String> {
+  if expr.len() == 3 {
+    let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
+    let acc = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
+    let f = runner::evaluate_expr(&expr[2], scope, file_ns, program_code)?;
+    match (xs.clone(), f.clone()) {
+      (CalcitList(xs), CalcitFn(..)) | (CalcitList(xs), CalcitProc(..)) => {
+        let mut ret = acc.clone();
+        for x in xs {
+          let code = CalcitList(im::vector![f.clone(), ret.clone(), x.clone()]);
+          ret = runner::evaluate_expr(&code, scope, file_ns, program_code)?;
+        }
+        Ok(ret)
+      }
+      (_, _) => Err(format!(
+        "foldl expected list and function, got: {} {}",
+        xs, f
+      )),
+    }
+  } else {
+    Err(format!("foldl expected 3 arguments, got: {:?}", expr))
+  }
+}
+
 /*
 
 

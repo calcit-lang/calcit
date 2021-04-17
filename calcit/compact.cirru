@@ -31,6 +31,9 @@
               a $ &+ 3 4
               echo "\"a is:" a
             echo $ rest ([] 1 2 3 4)
+            echo $ type-of ([] 1)
+            echo "\"result:" $ foldl ([] 1 2 3 4) 0
+              defn f1 (acc x) (echo "\"adding:" acc x) (&+ acc x)
         |f1 $ quote
           defn f1 () $ echo "\"calling f1"
       :proc $ quote ()

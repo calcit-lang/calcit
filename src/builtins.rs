@@ -3,6 +3,7 @@ mod lists;
 mod logics;
 mod maps;
 mod math;
+mod meta;
 mod sets;
 mod syntax;
 
@@ -12,8 +13,10 @@ use crate::program::ProgramCodeData;
 pub fn is_proc_name(s: &str) -> bool {
   matches!(
     s,
-    // effecrs
-    "echo"
+    // meta
+    "type-of"
+      // effecrs
+      | "echo"
       | "echo-values"
       | "raise"
       // logics
@@ -56,11 +59,14 @@ pub fn is_syntax_name(s: &str) -> bool {
       | "macroexpand"
       | "macroexpand-1"
       | "macroexpand-all"
+      | "foldl" // for performance
   )
 }
 
 pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<CalcitData, String> {
   match name {
+    // meta
+    "type-of" => meta::type_of(args),
     // effects
     "echo" => effects::echo(args),
     "echo-values" => effects::echo_values(args),
@@ -107,6 +113,7 @@ pub fn handle_syntax(
     "quote" => syntax::quote(nodes, scope, file_ns, program),
     "if" => syntax::syntax_if(nodes, scope, file_ns, program),
     "&let" => syntax::syntax_let(nodes, scope, file_ns, program),
+    "foldl" => syntax::foldl(nodes, scope, file_ns, program),
     a => Err(format!("TODO syntax: {}", a)),
   }
 }
