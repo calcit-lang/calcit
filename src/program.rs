@@ -37,89 +37,71 @@ lazy_static! {
   static ref PROGRAM_EVALED_DATA_STATE: Mutex<ProgramEvaledData> = Mutex::new(HashMap::new());
 }
 
-fn extract_import_rule(nodes: &CirruNode, ns: &str) -> Result<Vec<(String, ImportRule)>, String> {
+fn extract_import_rule(nodes: &CirruNode) -> Result<Vec<(String, ImportRule)>, String> {
   match nodes {
     CirruLeaf(_) => Err(String::from("Expected import rule in expr")),
-    CirruList(xs) => {
-      if xs.len() != 3 {
-        Err(String::from("expected import rule hasl ength 3"))
-      } else {
-        match (xs[0].clone(), xs[1].clone(), xs[2].clone()) {
-          (CirruLeaf(ns), x, CirruLeaf(alias)) if x == CirruLeaf(String::from(":as")) => {
-            Ok(vec![(alias, ImportRule::ImportNsRule(ns))])
-          }
-          (CirruLeaf(ns), x, CirruList(ys)) if x == CirruLeaf(String::from(":refer")) => {
-            let mut rules: Vec<(String, ImportRule)> = vec![];
-            for y in ys {
-              match y {
-                CirruLeaf(s) => {
-                  rules.push((s.clone(), ImportRule::ImportDefRule(ns.clone(), s.clone())))
-                }
-                CirruList(_defs) => return Err(String::from("invalid refer values")),
-              }
-            }
-            Ok(rules)
-          }
-          (_, x, _) if x == CirruLeaf(String::from(":as")) => {
-            Err(String::from("invalid import rule"))
-          }
-          (_, x, _) if x == CirruLeaf(String::from(":refer")) => {
-            Err(String::from("invalid import rule"))
-          }
-          (_, _, _) => Err(String::from("unknown rule")),
-        }
+    CirruList(xs) => match (xs[0].clone(), xs[1].clone(), xs[2].clone()) {
+      (CirruLeaf(ns), x, CirruLeaf(alias)) if x == CirruLeaf(String::from(":as")) => {
+        Ok(vec![(alias, ImportRule::ImportNsRule(ns))])
       }
-    }
+      (CirruLeaf(ns), x, CirruList(ys)) if x == CirruLeaf(String::from(":refer")) => {
+        let mut rules: Vec<(String, ImportRule)> = vec![];
+        for y in ys {
+          match y {
+            CirruLeaf(s) => {
+              rules.push((s.clone(), ImportRule::ImportDefRule(ns.clone(), s.clone())))
+            }
+            CirruList(_defs) => return Err(String::from("invalid refer values")),
+          }
+        }
+        Ok(rules)
+      }
+      (_, x, _) if x == CirruLeaf(String::from(":as")) => Err(String::from("invalid import rule")),
+      (_, x, _) if x == CirruLeaf(String::from(":refer")) => {
+        Err(String::from("invalid import rule"))
+      }
+      _ if xs.len() != 3 => Err(String::from("expected import rule hasl ength 3")),
+      _ => Err(String::from("unknown rule")),
+    },
   }
 }
 
-fn extract_import_map(
-  nodes: &CirruNode,
-  file_ns: &str,
-) -> Result<HashMap<String, ImportRule>, String> {
+fn extract_import_map(nodes: &CirruNode) -> Result<HashMap<String, ImportRule>, String> {
   match nodes {
     CirruLeaf(_) => unreachable!("Expected expr for ns"),
-    CirruList(xs) => {
-      if xs.len() < 3 {
-        Ok(HashMap::new())
-      } else {
-        // Too many clones
-        match (xs[0].clone(), xs[1].clone(), xs[2].clone()) {
-          (x, CirruLeaf(_), CirruList(xs)) if x == CirruLeaf(String::from("ns")) => {
-            if xs.len() > 0 && xs[0] == CirruLeaf(String::from(":require")) {
-              let mut ys: HashMap<String, ImportRule> = HashMap::new();
-              for (idx, x) in xs.iter().enumerate() {
-                if idx > 0 {
-                  let rules = extract_import_rule(x, file_ns)?;
-                  for (target, rule) in rules {
-                    ys.insert(target, rule);
-                  }
-                }
+    CirruList(xs) => match (xs.get(0), xs.get(1), xs.get(2)) {
+      // Too many clones
+      (Some(x), Some(CirruLeaf(_)), Some(CirruList(xs))) if *x == CirruLeaf(String::from("ns")) => {
+        if !xs.is_empty() && xs[0] == CirruLeaf(String::from(":require")) {
+          let mut ys: HashMap<String, ImportRule> = HashMap::new();
+          for (idx, x) in xs.iter().enumerate() {
+            if idx > 0 {
+              let rules = extract_import_rule(x)?;
+              for (target, rule) in rules {
+                ys.insert(target, rule);
               }
-              Ok(ys)
-            } else {
-              Ok(HashMap::new())
             }
           }
-          _ => Err(String::from("invalid ns form")),
+          Ok(ys)
+        } else {
+          Ok(HashMap::new())
         }
       }
-    }
+      _ if xs.len() < 3 => Ok(HashMap::new()),
+      _ => Err(String::from("invalid ns form")),
+    },
   }
 }
 
 pub fn extract_program_data(s: Snapshot) -> Result<ProgramCodeData, String> {
   let mut xs: ProgramCodeData = HashMap::new();
   for (ns, file) in s.files {
-    let import_map = extract_import_map(&file.ns, &ns)?;
+    let import_map = extract_import_map(&file.ns)?;
     let mut defs: HashMap<String, CalcitData> = HashMap::new();
     for (def, code) in file.defs {
       defs.insert(def, cirru_to_calcit(code, &ns)?);
     }
-    let file_info = ProgramFileData {
-      import_map: import_map,
-      defs: defs,
-    };
+    let file_info = ProgramFileData { import_map, defs };
     xs.insert(ns, file_info);
   }
   Ok(xs)
@@ -134,7 +116,7 @@ pub fn lookup_ns_def(ns: &str, def: &str, program: &ProgramCodeData) -> Option<C
 pub fn lookup_def_target_in_import(
   ns: &str,
   def: &str,
-  program: ProgramCodeData,
+  program: &ProgramCodeData,
 ) -> Option<String> {
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(def)?;
@@ -144,7 +126,11 @@ pub fn lookup_def_target_in_import(
   }
 }
 
-pub fn lookup_ns_target_in_import(ns: &str, def: &str, program: ProgramCodeData) -> Option<String> {
+pub fn lookup_ns_target_in_import(
+  ns: &str,
+  def: &str,
+  program: &ProgramCodeData,
+) -> Option<String> {
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(def)?;
   match import_rule {

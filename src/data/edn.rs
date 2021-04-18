@@ -10,6 +10,7 @@ pub fn as_string(data: CirruEdn) -> Result<String, String> {
   }
 }
 
+#[allow(dead_code)]
 pub fn as_bool(data: CirruEdn) -> Result<bool, String> {
   match data {
     CirruEdnBool(b) => Ok(b),
@@ -17,6 +18,7 @@ pub fn as_bool(data: CirruEdn) -> Result<bool, String> {
   }
 }
 
+#[allow(dead_code)]
 pub fn as_number(data: CirruEdn) -> Result<f32, String> {
   match data {
     CirruEdnNumber(n) => Ok(n),
@@ -48,6 +50,7 @@ pub fn as_map(data: CirruEdn) -> Result<HashMap<CirruEdn, CirruEdn>, String> {
 }
 
 /// detects by index
+#[allow(dead_code)]
 pub fn vec_get(data: &CirruEdn, idx: usize) -> CirruEdn {
   match data {
     CirruEdnList(xs) => {
@@ -67,9 +70,9 @@ pub fn map_get(data: &CirruEdn, k: &str) -> CirruEdn {
   match data {
     CirruEdnMap(xs) => {
       if xs.contains_key(&CirruEdnKeyword(key.clone())) {
-        xs[&CirruEdnKeyword(key.clone())].clone()
+        xs[&CirruEdnKeyword(key)].clone()
       } else if xs.contains_key(&CirruEdnString(key.clone())) {
-        xs[&CirruEdnString(key.clone())].clone()
+        xs[&CirruEdnString(key)].clone()
       } else {
         CirruEdnNil
       }
