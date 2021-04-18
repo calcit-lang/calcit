@@ -1,3 +1,4 @@
+use crate::primes;
 use crate::primes::CalcitData::*;
 use crate::primes::{CalcitData, CalcitItems};
 
@@ -28,4 +29,11 @@ pub fn type_of(xs: &CalcitItems) -> Result<CalcitData, String> {
 
 pub fn recur(xs: &CalcitItems) -> Result<CalcitData, String> {
   Ok(CalcitRecur(xs.clone()))
+}
+
+pub fn format_to_lisp(xs: &CalcitItems) -> Result<CalcitData, String> {
+  match xs.get(0) {
+    Some(v) => Ok(CalcitString(primes::format_to_lisp(v))),
+    None => Err(String::from("format-to-lisp expected 1 argument")),
+  }
 }

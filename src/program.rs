@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::data::cirru::cirru_to_calcit;
-use crate::primes::{CalcitData, CalcitScope};
+use crate::primes::CalcitData;
 
 use cirru_parser::CirruNode;
 use cirru_parser::CirruNode::*;

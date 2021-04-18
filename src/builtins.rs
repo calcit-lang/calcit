@@ -16,6 +16,7 @@ pub fn is_proc_name(s: &str) -> bool {
     // meta
     "type-of"
       | "recur"
+      | "format-to-lisp"
       // effecrs
       | "echo"
       | "echo-values"
@@ -56,6 +57,7 @@ pub fn is_syntax_name(s: &str) -> bool {
       | "&let"
       | "quote"
       | "quasiquote"
+      | "quote-replace" // alias for quasiquote
       | "eval"
       | "macroexpand"
       | "macroexpand-1"
@@ -69,6 +71,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<CalcitData, String>
     // meta
     "type-of" => meta::type_of(args),
     "recur" => meta::recur(args),
+    "format-to-lisp" => meta::format_to_lisp(args),
     // effects
     "echo" => effects::echo(args),
     "echo-values" => effects::echo_values(args),
@@ -114,6 +117,7 @@ pub fn handle_syntax(
     "defmacro" => syntax::defmacro(nodes, scope, file_ns, program),
     "quote" => syntax::quote(nodes, scope, file_ns, program),
     "quasiquote" => syntax::quasiquote(nodes, scope, file_ns, program),
+    "quote-replace" => syntax::quasiquote(nodes, scope, file_ns, program), // alias
     "if" => syntax::syntax_if(nodes, scope, file_ns, program),
     "&let" => syntax::syntax_let(nodes, scope, file_ns, program),
     "foldl" => syntax::foldl(nodes, scope, file_ns, program),

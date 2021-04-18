@@ -41,11 +41,12 @@
               quote $ add-num 1 2
             echo "\"expand:" $ macroexpand
               quote $ add-num 1 2
-            echo "\"expand:" $ macroexpand
-              quote $ add-more 0 3 8
+            echo "\"expand:" $ format-to-lisp
+              macroexpand $ quote (add-more 0 3 8)
             echo "\"expand v:" $ add-more 0 3 8
             echo "\"call and call" $ add-by-2 10
-            ; assert= 1 2
+            ; echo $ macroexpand (assert= 1 2)
+            test-args
         |f1 $ quote
           defn f1 () $ echo "\"calling f1"
         |rec-sum $ quote
@@ -58,6 +59,21 @@
             if (&< times 1) acc $ recur
               quasiquote $ &+ (~ x) (~ acc)
               , x (&- times 1)
+        |test-args $ quote
+          defn test-args ()
+            call-3 & $ [] 1 2 3
+            call-many 1
+            call-many 1 2
+            call-many 1 2 3
+            echo $ macroexpand (call-macro 11 12 13)
+        |call-3 $ quote
+          defn call-3 (a b c) (echo "\"a is:" a) (echo "\"b is:" b) (echo "\"c is:" c)
+        |call-many $ quote
+          defn call-many (x0 & xs) (echo "\"many...") (echo "\"x0" x0) (echo "\"xs" xs)
+        |call-macro $ quote
+          defmacro call-macro (x0 & xs)
+            quasiquote $ &{} :a (~ x0) :b
+              [] $ ~@ xs
       :proc $ quote ()
       :configs $ {}
     |app.lib $ {}

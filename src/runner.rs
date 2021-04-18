@@ -2,7 +2,7 @@ use crate::builtins;
 use crate::builtins::{is_proc_name, is_syntax_name};
 use crate::primes::CalcitData;
 use crate::primes::CalcitData::*;
-use crate::primes::{CalcitItems, CalcitScope, CORE_NS};
+use crate::primes::{CalcitItems, CalcitScope, CrListWrap, CORE_NS};
 use crate::program;
 
 pub fn evaluate_expr(
@@ -15,6 +15,7 @@ pub fn evaluate_expr(
     CalcitNil => Ok(expr.clone()),
     CalcitBool(_) => Ok(expr.clone()),
     CalcitNumber(_) => Ok(expr.clone()),
+    CalcitSymbol(s, _) if s == "&" => Ok(expr.clone()),
     CalcitSymbol(s, ns) => evaluate_symbol(&s, scope, &ns, program_code),
     CalcitKeyword(_) => Ok(expr.clone()),
     CalcitString(_) => Ok(expr.clone()),
@@ -28,12 +29,12 @@ pub fn evaluate_expr(
         let rest_nodes = xs.clone().slice(1..);
         match v {
           CalcitProc(p) => {
-            let values = evaluate_items(&rest_nodes, scope, file_ns, program_code)?;
+            let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
             builtins::handle_proc(&p, &values)
           }
           CalcitSyntax(s) => builtins::handle_syntax(&s, &rest_nodes, scope, file_ns, program_code),
           CalcitFn(_, _, def_scope, args, body) => {
-            let values = evaluate_items(&rest_nodes, scope, file_ns, program_code)?;
+            let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
             run_fn(values, &def_scope, args, body, file_ns, program_code)
           }
           CalcitMacro(_, _, args, body) => {
@@ -159,30 +160,75 @@ pub fn run_fn(
   }
 }
 
+/// TODO support `?` for trailing optional arguments...
 /// create new scope by wrting new args
+/// notice that `&` is a mark for spreading
 pub fn bind_args(
   args: &CalcitItems,
   values: &CalcitItems,
   base_scope: &CalcitScope,
 ) -> Result<CalcitScope, String> {
-  let mut scope = base_scope.clone();
   // TODO arguments spreading syntax
-  if values.len() != args.len() {
-    return Err(format!(
-      "arguments length mismatch: {} ... {}",
-      CalcitList(values.clone()),
-      CalcitList(args.clone()),
-    ));
-  }
-  for idx in 0..args.len() {
-    match &args[idx] {
-      CalcitSymbol(k, _) => {
-        scope.insert(k.clone(), values[idx].clone());
+  // if values.len() != args.len() {
+  //   return Err(format!(
+  //     "arguments length mismatch: {} ... {}",
+  //     CalcitList(values.clone()),
+  //     CalcitList(args.clone()),
+  //   ));
+  // }
+  let mut scope = base_scope.clone();
+  let mut spreading = false;
+  let mut collected_args = args.clone();
+  let mut collected_values = values.clone();
+  while let Some(a) = collected_args.pop_front() {
+    if spreading {
+      match a {
+        CalcitSymbol(s, _) if s == "&" => return Err(format!("invalid & in values: {:?}", values)),
+        CalcitSymbol(s, _) => {
+          let mut chunk: CalcitItems = im::vector![];
+          while let Some(v) = collected_values.pop_front() {
+            chunk.push_back(v);
+          }
+          scope.insert(s, CalcitList(chunk));
+          if !collected_args.is_empty() {
+            return Err(format!(
+              "extra args `{}` after spreading in `{}`",
+              CrListWrap(collected_args),
+              CrListWrap(args.clone()),
+            ));
+          }
+        }
+        b => return Err(format!("invalid argument name: {}", b)),
       }
-      a => return Err(format!("expected argument({:?}) in a symbol: {}", args, a)),
+    } else {
+      match a {
+        CalcitSymbol(s, _) if s == "&" => spreading = true,
+        CalcitSymbol(s, _) => match collected_values.pop_front() {
+          Some(v) => {
+            scope.insert(s.clone(), v.clone());
+          }
+          None => {
+            return Err(format!(
+              "too few values `{}` passed to args `{}`",
+              CrListWrap(values.clone()),
+              CrListWrap(args.clone())
+            ))
+          }
+        },
+        b => return Err(format!("invalid argument name: {}", b)),
+      }
     }
   }
-  Ok(scope)
+  if collected_values.is_empty() {
+    Ok(scope)
+  } else {
+    Err(format!(
+      "extra args `{}` not handled while passing values `{}` to args `{}`",
+      CrListWrap(collected_values),
+      CrListWrap(values.clone()),
+      CrListWrap(args.clone()),
+    ))
+  }
 }
 
 pub fn evaluate_lines(
@@ -201,17 +247,43 @@ pub fn evaluate_lines(
   Ok(ret)
 }
 
-pub fn evaluate_items(
+/// evaluate symbols before calling a function
+/// notice that `&` is used to spread a list
+pub fn evaluate_args(
   lines: &CalcitItems,
   scope: &CalcitScope,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitItems, String> {
   let mut ret: CalcitItems = im::vector![];
+  let mut spreading = false;
   for line in lines {
-    match evaluate_expr(line, scope, file_ns, program_code) {
-      Ok(v) => ret.push_back(v),
-      Err(e) => return Err(e),
+    match &evaluate_expr(line, scope, file_ns, program_code) {
+      Ok(v) => {
+        if spreading {
+          match v {
+            CalcitSymbol(s, _) if s == "&" => {
+              return Err(format!(
+                "already in spread mode: {}",
+                CrListWrap(lines.clone())
+              ))
+            }
+            CalcitList(xs) => {
+              for x in xs {
+                ret.push_back(x.clone());
+              }
+              spreading = false
+            }
+            a => return Err(format!("expected list for spreading, got: {}", a)),
+          }
+        } else {
+          match v {
+            CalcitSymbol(s, _) if s == "&" => spreading = true,
+            _ => ret.push_back(v.clone()),
+          }
+        }
+      }
+      Err(e) => return Err(e.to_string()),
     }
   }
   Ok(ret)
