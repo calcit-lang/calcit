@@ -15,6 +15,7 @@ pub fn is_proc_name(s: &str) -> bool {
     s,
     // meta
     "type-of"
+      | "recur"
       // effecrs
       | "echo"
       | "echo-values"
@@ -67,6 +68,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<CalcitData, String>
   match name {
     // meta
     "type-of" => meta::type_of(args),
+    "recur" => meta::recur(args),
     // effects
     "echo" => effects::echo(args),
     "echo-values" => effects::echo_values(args),
@@ -111,9 +113,12 @@ pub fn handle_syntax(
     "eval" => syntax::eval(nodes, scope, file_ns, program),
     "defmacro" => syntax::defmacro(nodes, scope, file_ns, program),
     "quote" => syntax::quote(nodes, scope, file_ns, program),
+    "quasiquote" => syntax::quasiquote(nodes, scope, file_ns, program),
     "if" => syntax::syntax_if(nodes, scope, file_ns, program),
     "&let" => syntax::syntax_let(nodes, scope, file_ns, program),
     "foldl" => syntax::foldl(nodes, scope, file_ns, program),
+    "macroexpand" => syntax::macroexpand(nodes, scope, file_ns, program),
+    "macroexpand-1" => syntax::macroexpand_1(nodes, scope, file_ns, program),
     a => Err(format!("TODO syntax: {}", a)),
   }
 }

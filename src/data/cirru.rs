@@ -18,7 +18,11 @@ pub fn cirru_to_calcit(xs: CirruNode, ns: &str) -> Result<CalcitData, String> {
           CalcitSymbol(String::from("quote"), ns.to_string()),
           CalcitSymbol(String::from(&s[1..]), ns.to_string()),
         ])),
-        '~' => Ok(CalcitList(im::vector![
+        '~' if s.starts_with("~@") && s.len() > 2 => Ok(CalcitList(im::vector![
+          CalcitSymbol(String::from("~@"), ns.to_string()),
+          CalcitSymbol(String::from(&s[2..]), ns.to_string()),
+        ])),
+        '~' if s.len() > 1 => Ok(CalcitList(im::vector![
           CalcitSymbol(String::from("~"), ns.to_string()),
           CalcitSymbol(String::from(&s[1..]), ns.to_string()),
         ])),

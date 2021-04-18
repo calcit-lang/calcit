@@ -133,7 +133,7 @@ pub fn foldl(
     let f = runner::evaluate_expr(&expr[2], scope, file_ns, program_code)?;
     match (xs.clone(), f.clone()) {
       (CalcitList(xs), CalcitFn(..)) | (CalcitList(xs), CalcitProc(..)) => {
-        let mut ret = acc.clone();
+        let mut ret = acc;
         for x in xs {
           let code = CalcitList(im::vector![f.clone(), ret.clone(), x.clone()]);
           ret = runner::evaluate_expr(&code, scope, file_ns, program_code)?;
@@ -150,14 +150,138 @@ pub fn foldl(
   }
 }
 
-/*
-
-
-pub fn quasiquote(expr: &CalcitItems, _scope: CalcitScope,_file_ns: &str, _program: &ProgramCodeData) -> Result<CalcitData, String> {
+pub fn quasiquote(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<CalcitData, String> {
+  // println!("replacing: {:?}", expr);
+  match expr.get(0) {
+    None => Err(String::from("quasiquote expected a node")),
+    Some(code) => {
+      let ret = replace_code(code, scope, file_ns, program_code)?;
+      match ret.get(0) {
+        Some(v) => {
+          // println!("replace result: {:?}", v);
+          Ok(v.clone())
+        }
+        None => Err(String::from("missing quote expr")),
+      }
+    }
+  }
 }
 
-// TODO macroexpand-all
-pub fn macroexpand(expr: &CalcitItems, scope: CalcitScope,_file_ns: &str, _program: &ProgramCodeData) -> Result<CalcitData, String> {
+fn replace_code(
+  c: &CalcitData,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<CalcitItems, String> {
+  match c {
+    CalcitList(ys) => match (ys.get(0), ys.get(1)) {
+      (Some(CalcitSymbol(sym, _)), Some(expr)) if sym == "~" => {
+        let value = runner::evaluate_expr(expr, scope, file_ns, program_code)?;
+        Ok(im::vector![value])
+      }
+      (Some(CalcitSymbol(sym, _)), Some(expr)) if sym == "~@" => {
+        let ret = runner::evaluate_expr(expr, scope, file_ns, program_code)?;
+        match ret {
+          CalcitList(zs) => Ok(zs),
+          _ => Err(format!("unknown result from unquite-slice: {}", ret)),
+        }
+      }
+      (_, _) => {
+        let mut ret = im::vector![];
+        for y in ys {
+          let pieces = replace_code(y, scope, file_ns, program_code)?;
+          for piece in pieces {
+            ret.push_back(piece);
+          }
+        }
+        Ok(im::vector![CalcitList(ret)])
+      }
+    },
+    _ => Ok(im::vector![c.clone()]),
+  }
 }
 
-*/
+pub fn macroexpand(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<CalcitData, String> {
+  if expr.len() == 1 {
+    let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
+
+    match quoted_code.clone() {
+      CalcitList(xs) => {
+        if xs.is_empty() {
+          return Ok(quoted_code);
+        }
+        let v = runner::evaluate_expr(&xs[0], scope, file_ns, program_code)?;
+        match v {
+          CalcitMacro(_, _, args, body) => {
+            let mut xs_cloned = xs;
+            // mutable operation
+            let mut rest_nodes = xs_cloned.slice(1..);
+            // println!("macro: {:?} ... {:?}", args, rest_nodes);
+            // keep expanding until return value is not a recur
+            loop {
+              let body_scope = runner::bind_args(&args, &rest_nodes, scope)?;
+              let v = runner::evaluate_lines(&body, &body_scope, file_ns, program_code)?;
+              match v {
+                CalcitRecur(rest_code) => {
+                  rest_nodes = rest_code;
+                }
+                _ => return Ok(v),
+              }
+            }
+          }
+          _ => Ok(quoted_code),
+        }
+      }
+      a => Ok(a),
+    }
+  } else {
+    Err(format!(
+      "macroexpand expected excaclty 1 argument, got: {:?}",
+      expr
+    ))
+  }
+}
+
+pub fn macroexpand_1(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<CalcitData, String> {
+  if expr.len() == 1 {
+    let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
+    // println!("quoted: {}", quoted_code);
+    match quoted_code.clone() {
+      CalcitList(xs) => {
+        if xs.is_empty() {
+          return Ok(quoted_code);
+        }
+        let v = runner::evaluate_expr(&xs[0], scope, file_ns, program_code)?;
+        match v {
+          CalcitMacro(_, _, args, body) => {
+            let mut xs_cloned = xs;
+            let body_scope = runner::bind_args(&args, &xs_cloned.slice(1..), scope)?;
+            runner::evaluate_lines(&body, &body_scope, file_ns, program_code)
+          }
+          _ => Ok(quoted_code),
+        }
+      }
+      a => Ok(a),
+    }
+  } else {
+    Err(format!(
+      "macroexpand expected excaclty 1 argument, got: {:?}",
+      expr
+    ))
+  }
+}

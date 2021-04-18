@@ -12,6 +12,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<CalcitData, String> {
       CalcitSymbol(..) => Ok(CalcitKeyword(String::from("symbol"))),
       CalcitKeyword(..) => Ok(CalcitKeyword(String::from("keyword"))),
       CalcitString(..) => Ok(CalcitKeyword(String::from("string"))),
+      CalcitRecur(..) => Ok(CalcitKeyword(String::from("recur"))),
       CalcitList(..) => Ok(CalcitKeyword(String::from("list"))),
       CalcitSet(..) => Ok(CalcitKeyword(String::from("set"))),
       CalcitMap(..) => Ok(CalcitKeyword(String::from("map"))),
@@ -23,4 +24,8 @@ pub fn type_of(xs: &CalcitItems) -> Result<CalcitData, String> {
     },
     None => Err(String::from("type-of expected 1 argument")),
   }
+}
+
+pub fn recur(xs: &CalcitItems) -> Result<CalcitData, String> {
+  Ok(CalcitRecur(xs.clone()))
 }

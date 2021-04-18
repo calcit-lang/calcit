@@ -8,9 +8,9 @@ pub fn new_list(xs: &CalcitItems) -> Result<CalcitData, String> {
 pub fn empty_ques(xs: &CalcitItems) -> Result<CalcitData, String> {
   match xs.get(0) {
     Some(CalcitNil) => Ok(CalcitBool(true)),
-    Some(CalcitList(ys)) => Ok(CalcitBool(ys.len() == 0)),
-    Some(CalcitMap(ys)) => Ok(CalcitBool(ys.len() == 0)),
-    Some(CalcitString(s)) => Ok(CalcitBool(s.len() == 0)),
+    Some(CalcitList(ys)) => Ok(CalcitBool(ys.is_empty())),
+    Some(CalcitMap(ys)) => Ok(CalcitBool(ys.is_empty())),
+    Some(CalcitString(s)) => Ok(CalcitBool(s.is_empty())),
     Some(a) => Err(format!("empty? expected some seq, got: {}", a)),
     None => Err(String::from("empty? expected 1 argument")),
   }
@@ -29,7 +29,7 @@ pub fn count(xs: &CalcitItems) -> Result<CalcitData, String> {
 
 pub fn nth(xs: &CalcitItems) -> Result<CalcitData, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(CalcitNil), Some(CalcitNumber(n))) => Ok(CalcitNil),
+    (Some(CalcitNil), Some(CalcitNumber(_))) => Ok(CalcitNil),
     (Some(CalcitList(ys)), Some(CalcitNumber(n))) => {
       let idx: usize = unsafe { n.to_int_unchecked() };
       match ys.get(idx) {

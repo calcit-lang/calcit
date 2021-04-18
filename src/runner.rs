@@ -20,6 +20,7 @@ pub fn evaluate_expr(
     CalcitString(_) => Ok(expr.clone()),
     // CalcitRef(CalcitData), // TODO
     // CalcitThunk(CirruNode), // TODO
+    CalcitRecur(_) => unreachable!("recur not expected to be from symbol"),
     CalcitList(xs) => match xs.get(0) {
       None => Err(String::from("cannot evaluate empty expr")),
       Some(x) => {
@@ -27,30 +28,29 @@ pub fn evaluate_expr(
         let rest_nodes = xs.clone().slice(1..);
         match v {
           CalcitProc(p) => {
-            let mut args = im::Vector::new();
-            for (idx, x) in xs.iter().enumerate() {
-              // TODO arguments spreading syntax
-              if idx > 0 {
-                let v = evaluate_expr(x, scope, file_ns, program_code)?;
-                args.push_back(v)
-              }
-            }
-            builtins::handle_proc(&p, &args)
+            let values = evaluate_items(&rest_nodes, scope, file_ns, program_code)?;
+            builtins::handle_proc(&p, &values)
           }
           CalcitSyntax(s) => builtins::handle_syntax(&s, &rest_nodes, scope, file_ns, program_code),
           CalcitFn(_, _, def_scope, args, body) => {
-            let mut values = im::Vector::new();
-            for (idx, x) in xs.iter().enumerate() {
-              // TODO arguments spreading syntax
-              if idx > 0 {
-                let v = evaluate_expr(x, &def_scope, file_ns, program_code)?;
-                values.push_back(v)
-              }
-            }
-            run_fn(values, scope, args, body, file_ns, program_code)
+            let values = evaluate_items(&rest_nodes, scope, file_ns, program_code)?;
+            run_fn(values, &def_scope, args, body, file_ns, program_code)
           }
           CalcitMacro(_, _, args, body) => {
-            run_macro(&rest_nodes, scope, args, body, file_ns, program_code)
+            let mut current_values = rest_nodes;
+            loop {
+              // need to handle recursion
+              let body_scope = bind_args(&args, &current_values, scope)?;
+              let code = evaluate_lines(&body, &body_scope, file_ns, program_code)?;
+              match code {
+                CalcitRecur(ys) => {
+                  current_values = ys;
+                }
+                _ => {
+                  return evaluate_expr(&code, scope, file_ns, program_code);
+                }
+              }
+            }
           }
           CalcitSymbol(s, ns) => Err(format!("cannot evaluate symbol directly: {}/{}", ns, s)),
           a => Err(format!("cannot be used as operator: {}", a)),
@@ -146,20 +146,43 @@ pub fn run_fn(
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitData, String> {
-  let mut body_scope = scope.clone();
+  let mut current_values = values;
+  loop {
+    let body_scope = bind_args(&args, &current_values, scope)?;
+    let v = evaluate_lines(&body, &body_scope, file_ns, program_code)?;
+    match v {
+      CalcitRecur(xs) => {
+        current_values = xs;
+      }
+      result => return Ok(result),
+    }
+  }
+}
+
+/// create new scope by wrting new args
+pub fn bind_args(
+  args: &CalcitItems,
+  values: &CalcitItems,
+  base_scope: &CalcitScope,
+) -> Result<CalcitScope, String> {
+  let mut scope = base_scope.clone();
   // TODO arguments spreading syntax
   if values.len() != args.len() {
-    return Err(String::from("arguments length mismatch"));
+    return Err(format!(
+      "arguments length mismatch: {} ... {}",
+      CalcitList(values.clone()),
+      CalcitList(args.clone()),
+    ));
   }
   for idx in 0..args.len() {
     match &args[idx] {
       CalcitSymbol(k, _) => {
-        body_scope.insert(k.clone(), values[idx].clone());
+        scope.insert(k.clone(), values[idx].clone());
       }
-      _ => return Err(String::from("expected argument in a symbol")),
+      a => return Err(format!("expected argument({:?}) in a symbol: {}", args, a)),
     }
   }
-  evaluate_lines(&body, &body_scope, file_ns, program_code)
+  Ok(scope)
 }
 
 pub fn evaluate_lines(
@@ -178,14 +201,18 @@ pub fn evaluate_lines(
   Ok(ret)
 }
 
-// TODO
-pub fn run_macro(
-  values: &CalcitItems,
+pub fn evaluate_items(
+  lines: &CalcitItems,
   scope: &CalcitScope,
-  args: CalcitItems,
-  body: CalcitItems,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
-) -> Result<CalcitData, String> {
-  Err(String::from("TODO"))
+) -> Result<CalcitItems, String> {
+  let mut ret: CalcitItems = im::vector![];
+  for line in lines {
+    match evaluate_expr(line, scope, file_ns, program_code) {
+      Ok(v) => ret.push_back(v),
+      Err(e) => return Err(e),
+    }
+  }
+  Ok(ret)
 }
