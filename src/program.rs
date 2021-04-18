@@ -137,12 +137,14 @@ pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<CalcitData> {
   if s2.contains_key(ns) && s2[ns].contains_key(def) {
     Some(s2[ns][def].clone())
   } else {
+    // println!("failed to lookup {} {}", ns, def);
     None
   }
 }
 
 // Dirty mutating global states
 pub fn write_evaled_def(ns: &str, def: &str, value: CalcitData) -> Result<(), String> {
+  // println!("writing {} {}", ns, def);
   let program = &mut PROGRAM_EVALED_DATA_STATE.lock().unwrap();
   if !program.contains_key(ns) {
     program.insert(String::from(ns), HashMap::new());

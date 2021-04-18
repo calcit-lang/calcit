@@ -5,6 +5,7 @@ mod maps;
 mod math;
 mod meta;
 mod sets;
+mod strings;
 mod syntax;
 
 use crate::primes::{CalcitData, CalcitItems, CalcitScope};
@@ -17,7 +18,7 @@ pub fn is_proc_name(s: &str) -> bool {
     "type-of"
       | "recur"
       | "format-to-lisp"
-      // effecrs
+      // effects
       | "echo"
       | "echo-values"
       | "raise"
@@ -33,6 +34,8 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&/"
       | "round"
       | "fractional" // logics
+      // strings
+      | "&str-concat"
       // lists
       | "[]"
       | "&{}"
@@ -86,6 +89,8 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<CalcitData, String>
     "&-" => math::binary_minus(args),
     "&*" => math::binary_multiply(args),
     "&/" => math::binary_divide(args),
+    // strings
+    "&str-concat" => strings::binary_str_concat(args),
     // lists
     "[]" => lists::new_list(args),
     "empty?" => lists::empty_ques(args),

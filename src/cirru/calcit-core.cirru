@@ -32,11 +32,11 @@
 
         |when $ quote
           defmacro when (condition & body)
-            quote-replace $ if ~condition (do ~@body)
+            quote-replace $ if ~condition (&let nil ~@body)
 
         |when-not $ quote
           defmacro when-not (condition & body)
-            quote-replace $ if (not ~condition) (do ~@body)
+            quote-replace $ if (not ~condition) (&let nil ~@body)
 
         |+ $ quote
           defn + (x & ys) $ reduce &+ x ys
@@ -152,7 +152,7 @@
         |each $ quote
           defn each (f xs)
             if (not (empty? xs))
-              do
+              &let nil
                 f (first xs)
                 recur f (rest xs)
 
@@ -501,7 +501,7 @@
               args $ ->% (turn-string args-alias) (split % |.) (map turn-symbol %)
               &let
                 inner-body $ if (&= 1 (count xs)) (first xs)
-                  &concat ([] (quote-replace do)) xs
+                  &concat ([] (quote-replace &let nil)) xs
                 apply-args
                   [] inner-body args
                   fn (body ys)
@@ -638,7 +638,7 @@
                     ~va ~a
                     ~vb ~b
                   if (/= ~va ~vb)
-                    do
+                    &let nil
                       echo
                       echo "|Left: " ~va
                       echo "|      " $ quote ~a
@@ -654,7 +654,7 @@
                 &let
                   ~v ~code
                   if (~f ~v) nil
-                    do
+                    &let nil
                       echo
                       echo (quote ~code) "|does not satisfy:" (quote ~f) "| <--------"
                       echo "|  value is:" ~v
@@ -743,7 +743,7 @@
                   ~ $ first pairs
                   ~@ body
               if (empty? pairs)
-                quote-replace $ do ~@body
+                quote-replace $ &let nil ~@body
                 quote-replace
                   &let
                     ~ $ first pairs
@@ -755,7 +755,7 @@
           defmacro let-sugar (pairs & body)
             assert "|expects pairs in list for let" (list? pairs)
             if (empty? pairs)
-              quote-replace $ do ~@body
+              quote-replace $ &let nil ~@body
               &let
                 pair $ first pairs
                 assert "|expected pair length of 2" (&= 2 (count pair))
@@ -781,7 +781,7 @@
                   if (&= '{} (first pattern))
                     quote-replace
                       let{} (~ (rest pattern)) ~v ~@body
-                    do
+                    &let nil
                       echo pattern
                       raise "|Unknown pattern to destruct"
                 raise "|Unknown structure to destruct"
@@ -800,11 +800,11 @@
               if (string? xs) (not (string? message)) false
               quote-replace $ assert ~xs ~message
               quote-replace
-                do
+                &let nil
                   if (not (string? ~message))
                     raise "|expects 1st argument to be string"
                   if ~xs nil
-                    do
+                    &let nil
                       echo "|Failed assertion:" (quote ~xs)
                       raise
                         ~ $ &str-concat (&str-concat message "| ") xs
@@ -978,6 +978,13 @@
                   ~f-name $ defn ~f-name ~args ~@body
                   call-with-log ~f-name ~@args
 
+        |do $ quote
+          defmacro do (pair & body)
+            ; echo "|body:" (format-to-lisp body)
+            quasiquote
+              &let nil
+                ~@ body
+
         |let{} $ quote
           defmacro let{} (items base & body)
             assert (str "|expects symbol names in binding names: " items)
@@ -1007,12 +1014,12 @@
                   [] ([]) vars 0
                   defn let[]% (acc xs idx)
                     if (empty? xs) acc
-                      do
+                      &let nil
                         when-not
                           symbol? (first xs)
                           raise $ &str-concat "|Expected symbol for vars: " (first xs)
                         if (&= (first xs) '&)
-                          do
+                          &let nil
                             assert "|expected list spreading" (&= 2 (count xs))
                             conj acc $ [] (get xs 1) (quote-replace (slice ~v ~idx))
                           recur
