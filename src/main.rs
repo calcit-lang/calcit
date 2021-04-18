@@ -21,21 +21,26 @@ fn main() -> Result<(), String> {
   // println!("reading: {}", content);
 
   let bytes = include_bytes!("./cirru/calcit-core.cirru");
-  print!("file: {}", String::from_utf8_lossy(bytes));
+  let core_content = String::from_utf8_lossy(bytes).to_string();
+  let core_data = parse_cirru_edn(core_content)?;
+  let core_snapshot = snapshot::load_snapshot_data(core_data)?;
 
-  let s = snapshot::load_snapshot_data(data)?;
+  let mut snapshot = snapshot::load_snapshot_data(data)?;
+  for (k, v) in core_snapshot.files {
+    snapshot.files.insert(k, v.clone());
+  }
 
   // println!("{:?}", s);
 
   // println!("code: {:?}", );
-  let program_code = program::extract_program_data(s.clone())?;
+  let program_code = program::extract_program_data(&snapshot)?;
 
   // println!("{:?}", program::lookup_evaled_def("a", "b"));
   // TODO simulate program state
   // program::write_evaled_def("a", "b", CalcitBool(true))?;
   // println!("{:?}", program::lookup_evaled_def("a", "b"));
 
-  let (init_ns, init_def) = extract_ns_def(s.configs.init_fn)?;
+  let (init_ns, init_def) = extract_ns_def(snapshot.configs.init_fn)?;
   match program::lookup_ns_def(&init_ns, &init_def, &program_code) {
     None => Err(String::from("Invalid entry")),
     Some(expr) => {

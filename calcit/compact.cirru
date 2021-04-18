@@ -8,7 +8,7 @@
       :ns $ quote
         ns app.main $ :require (app.lib :as lib)
           app.lib :refer $ [] f3
-          app.macro :refer $ [] add-num
+          app.macro :refer $ [] add-num add-by-2
       :defs $ {}
         |main! $ quote
           defn main! () (echo "\"demo")
@@ -44,6 +44,8 @@
             echo "\"expand:" $ macroexpand
               quote $ add-more 0 3 8
             echo "\"expand v:" $ add-more 0 3 8
+            echo "\"call and call" $ add-by-2 10
+            ; assert= 1 2
         |f1 $ quote
           defn f1 () $ echo "\"calling f1"
         |rec-sum $ quote
@@ -74,5 +76,11 @@
           defmacro add-num (a b)
             quasiquote $ &let nil
               &+ (~ a) (~ b)
+        |add-by-1 $ quote
+          defmacro add-by-1 (x)
+            quasiquote $ &+ ~x 1
+        |add-by-2 $ quote
+          defmacro add-by-2 (x)
+            quasiquote $ &+ 2 (add-by-1 ~x)
       :proc $ quote ()
       :configs $ {}
