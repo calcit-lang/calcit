@@ -54,6 +54,18 @@
               |yyyyyT $ {} (:type :expr) (:by |u0) (:at 1618767923138)
                 :data $ {}
                   |T $ {} (:type :leaf) (:by |u0) (:at 1618767932151) (:text |test-args)
+              |w $ {} (:type :expr) (:by |u0) (:at 1618773567248)
+                :data $ {}
+                  |T $ {} (:type :leaf) (:by |u0) (:at 1618773567248) (:text |echo)
+                  |j $ {} (:type :expr) (:by |u0) (:at 1618773567248)
+                    :data $ {}
+                      |T $ {} (:type :leaf) (:by |u0) (:at 1618773567248) (:text |assert=)
+                      |j $ {} (:type :leaf) (:by |u0) (:at 1618802359423) (:text |3)
+                      |r $ {} (:type :expr) (:by |u0) (:at 1618802265215)
+                        :data $ {}
+                          |T $ {} (:type :leaf) (:by |u0) (:at 1618802267529) (:text |&+)
+                          |j $ {} (:type :leaf) (:by |u0) (:at 1618802267936) (:text |1)
+                          |r $ {} (:type :leaf) (:by |u0) (:at 1618802269986) (:text |2)
               |yr $ {} (:type :expr) (:by |u0) (:at 1618660963223)
                 :data $ {}
                   |T $ {} (:type :leaf) (:by |u0) (:at 1618660963956) (:text |echo)
@@ -324,18 +336,6 @@
                         :data $ {}
                           |T $ {} (:type :leaf) (:by |u0) (:at 1618682124941) (:text |[])
                           |j $ {} (:type :leaf) (:by |u0) (:at 1618682127480) (:text |1)
-              |yyyyy $ {} (:type :expr) (:by |u0) (:at 1618770028090)
-                :data $ {}
-                  |T $ {} (:type :expr) (:by |u0) (:at 1618770031138)
-                    :data $ {}
-                      |T $ {} (:type :expr) (:by |u0) (:at 1618752131764)
-                        :data $ {}
-                          |T $ {} (:type :leaf) (:by |u0) (:at 1618752133902) (:text |assert=)
-                          |j $ {} (:type :leaf) (:by |u0) (:at 1618752134923) (:text |1)
-                          |r $ {} (:type :leaf) (:by |u0) (:at 1618752135294) (:text |2)
-                      |D $ {} (:type :leaf) (:by |u0) (:at 1618770034555) (:text |macroexpand)
-                  |D $ {} (:type :leaf) (:by |u0) (:at 1618770030105) (:text |echo)
-                  |5 $ {} (:type :leaf) (:by |u0) (:at 1618772534094) (:text |;)
               |yyv $ {} (:type :expr) (:by |u0) (:at 1618673510188)
                 :data $ {}
                   |T $ {} (:type :leaf) (:by |u0) (:at 1618673510809) (:text |if)

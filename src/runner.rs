@@ -1,7 +1,6 @@
 use crate::builtins;
 use crate::builtins::{is_proc_name, is_syntax_name};
-use crate::primes::CalcitData;
-use crate::primes::CalcitData::*;
+use crate::primes::{CalcitData, CalcitData::*};
 use crate::primes::{CalcitItems, CalcitScope, CrListWrap, CORE_NS};
 use crate::program;
 
@@ -25,6 +24,8 @@ pub fn evaluate_expr(
     CalcitList(xs) => match xs.get(0) {
       None => Err(String::from("cannot evaluate empty expr")),
       Some(x) => {
+        // println!("eval expr: {}", primes::format_to_lisp(expr));
+
         let v = evaluate_expr(&x, scope, file_ns, program_code)?;
         let rest_nodes = xs.clone().slice(1..);
         match v {
@@ -130,6 +131,7 @@ fn eval_symbol_from_program(
     Some(v) => Ok(v),
     None => match program::lookup_ns_def(ns, sym, program_code) {
       Some(code) => {
+        program::write_evaled_def(ns, sym, CalcitNil)?; // TODO, fake value
         let v = evaluate_expr(&code, &im::HashMap::new(), ns, program_code)?;
         program::write_evaled_def(ns, sym, v.clone())?;
         Ok(v)

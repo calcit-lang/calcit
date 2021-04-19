@@ -17,7 +17,10 @@
               quote-replace $ if ~cond ~false-branch ~true-branch
 
         |/= $ quote
-          defn /= (x y) $ not $ &= x y
+          def /= not=
+
+        |not= $ quote
+          defn not= (x y) $ not $ &= x y
 
         |&<= $ quote
           defn &<= (a b)
@@ -630,21 +633,23 @@
 
         |assert= $ quote
           defmacro assert= (a b)
-            let
-                va $ gensym |va
+            &let
+              va $ gensym |va
+              &let
                 vb $ gensym |vb
-              quote-replace
-                let
+                quote-replace
+                  &let
                     ~va ~a
-                    ~vb ~b
-                  if (/= ~va ~vb)
-                    &let nil
-                      echo
-                      echo "|Left: " ~va
-                      echo "|      " $ quote ~a
-                      echo "|Right:" ~vb
-                      echo "|      " $ quote ~b
-                      raise "|Not equal in assertion!"
+                    &let
+                      ~vb ~b
+                      if (not= ~va ~vb)
+                        &let nil
+                          echo
+                          echo "|Left: " ~va
+                          echo "|      " $ format-to-lisp $ quote ~a
+                          echo "|Right:" ~vb
+                          echo "|      " $ format-to-lisp $ quote ~b
+                          raise "|not equal in assertion!"
 
         |assert-detect $ quote
           defmacro assert-detect (f code)
@@ -737,6 +742,8 @@
         |let $ quote
           defmacro let (pairs & body)
             assert "|expects pairs in list for let" (list? pairs)
+            echo "|let pairs:" (format-to-lisp pairs) (count pairs) (empty? pairs)
+              format-to-lisp (rest pairs)
             if (&= 1 (count pairs))
               quote-replace
                 &let
@@ -1049,9 +1056,6 @@
 
         |dbt $ quote
           def dbt dual-balanced-ternary
-
-        |not= $ quote
-          def not= /=
 
         |format-to-lisp $ quote
           defn format-to-list (xs)

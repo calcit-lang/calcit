@@ -12,6 +12,7 @@
       :defs $ {}
         |main! $ quote
           defn main! () (echo "\"demo")
+            echo $ assert= 3 (&+ 1 2)
             echo $ &+ 2 2
             echo "\"f1" $ f1
             echo-values 1 "\"1" :a $ [] 1 2
@@ -45,7 +46,6 @@
               macroexpand $ quote (add-more 0 3 8)
             echo "\"expand v:" $ add-more 0 3 8
             echo "\"call and call" $ add-by-2 10
-            ; echo $ macroexpand (assert= 1 2)
             test-args
         |f1 $ quote
           defn f1 () $ echo "\"calling f1"

@@ -16,7 +16,31 @@ use primes::CalcitData::*;
 use std::fs;
 
 fn main() -> Result<(), String> {
-  let content = fs::read_to_string("calcit/compact.cirru").expect("expected a Cirru snapshot");
+  let cli_matches = clap::App::new("Calcit Runner")
+    .version(primes::CALCI_VERSION)
+    .author("Jon. <jiyinyiyong@gmail.com>")
+    .about("Calcit Runner")
+    .arg(
+      clap::Arg::with_name("once")
+        .help("disable watching mode")
+        .default_value("false")
+        .short("1")
+        .long("once")
+        .takes_value(false),
+    )
+    .arg(
+      clap::Arg::with_name("input")
+        .help("entry file path, defaults to compact.cirru")
+        .default_value("compact.cirru")
+        .index(1),
+    )
+    .get_matches();
+
+  let eval_once = cli_matches.is_present("once");
+  println!("once: {}", eval_once);
+  let entry_file = cli_matches.value_of("input").unwrap();
+
+  let content = fs::read_to_string(entry_file).expect("expected a Cirru snapshot");
   let data = parse_cirru_edn(content)?;
   // println!("reading: {}", content);
 
