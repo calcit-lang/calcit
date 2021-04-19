@@ -202,12 +202,12 @@
         |test-foldl $ quote
           defn test-foldl ()
             assert= 1 $ get ([] 1 2 3) 0
-            assert= 6 $ foldl &+ 0 ([] 1 2 3)
+            assert= 6 $ foldl ([] 1 2 3) 0 &+
             assert= (+ 1 2 3 4 (+ 5 6 7)) 28
             assert= -1 (- 1 2)
             assert= -7 (- 4 5 6)
             assert= 91 (- 100 $ - 10 1)
-            assert-detect identity $ foldl-compare &< 0 ([] 1 2)
+            assert-detect identity $ foldl-compare ([] 1 2) 0 &<
             assert-detect identity (< 1 2 3 4)
             assert-detect not (< 3 2)
             assert= (* 2 3) 6

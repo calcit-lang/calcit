@@ -1,7 +1,7 @@
 
 {} (:package |test-cond)
   :configs $ {} (:init-fn |test-cond.main/main!) (:reload-fn |test-cond.main/reload!)
-    :modules $ |./util.cirru
+    :modules $ [] |./util.cirru
   :files $ {}
     |test-cond.main $ {}
       :ns $ quote

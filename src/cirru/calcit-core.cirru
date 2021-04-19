@@ -60,7 +60,7 @@
               reduce &/ x ys
 
         |foldl-compare $ quote
-          defn foldl-compare (f acc xs)
+          defn foldl-compare (xs acc f)
             if (empty? xs) true
               if (f acc (first xs))
                 recur f (first xs) (rest xs)
@@ -76,35 +76,35 @@
             if
               &= 1 (count ys)
               &< x (first ys)
-              foldl-compare &< x ys
+              foldl-compare ys x &<
 
         |> $ quote
           defn > (x & ys)
             if
               &= 1 (count ys)
               &> x (first ys)
-              foldl-compare &> x ys
+              foldl-compare ys x &>
 
         |= $ quote
           defn = (x & ys)
             if
               &= 1 (count ys)
               &= x (first ys)
-              foldl-compare &= x ys
+              foldl-compare ys x &=
 
         |>= $ quote
           defn >= (x & ys)
             if
               &= 1 (count ys)
               &>= x (first ys)
-              foldl-compare &>= x ys
+              foldl-compare ys x &>=
 
         |<= $ quote
           defn <= (x & ys)
             if
               &= 1 (count ys)
               &<= x (first ys)
-              foldl-compare &<= x ys
+              foldl-compare ys x &<=
 
         |apply $ quote
           defn apply (f args) $ f & args
@@ -279,17 +279,17 @@
           defmacro cond (pair & else)
             assert "|expects a pair"
               if (list? pair) (&= 2 (count pair)) false
-            let
-                expr $ first pair
-                branch $ last pair
-              quote-replace
-                if ~expr ~branch
-                  ~ $ if (empty? else) nil
-                    quote-replace
-                      cond
-                        ~ $ first else
-                        , &
-                        ~ $ rest else
+            &let
+              expr $ nth pair 0
+              &let
+                branch $ nth pair 1
+                quote-replace
+                  if ~expr ~branch
+                    ~ $ if (empty? else) nil
+                      quote-replace
+                        cond
+                          ~ $ nth else 0
+                          ~@ $ rest else
 
         |&case $ quote
           defmacro &case (item default pattern & others)

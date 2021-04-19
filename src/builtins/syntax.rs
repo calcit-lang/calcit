@@ -1,3 +1,4 @@
+use crate::primes;
 use crate::primes::CalcitData::*;
 use crate::primes::{CalcitData, CalcitItems, CalcitScope};
 use crate::program::ProgramCodeData;
@@ -156,7 +157,6 @@ pub fn quasiquote(
   file_ns: &str,
   program_code: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
-  // println!("replacing: {:?}", expr);
   match expr.get(0) {
     None => Err(String::from("quasiquote expected a node")),
     Some(code) => {
