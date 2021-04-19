@@ -100,11 +100,47 @@ impl fmt::Display for CalcitData {
         f.write_str(")")
       }
       CalcitProc(name) => f.write_str(&format!("(&proc {})", name)),
-      CalcitMacro(name, _def_ns, _, args, _) => {
-        f.write_str(&format!("(&macro {} {})", name, CalcitList(args.clone())))
+      CalcitMacro(name, _def_ns, _, args, body) => {
+        f.write_str(&format!("(&macro {} (", name))?;
+        let mut need_space = false;
+        for a in args {
+          if need_space {
+            f.write_str(" ")?;
+          }
+          f.write_str(&format_to_lisp(a))?;
+          need_space = true;
+        }
+        f.write_str(") (")?;
+        need_space = false;
+        for b in body {
+          if need_space {
+            f.write_str(" ")?;
+          }
+          f.write_str(&format_to_lisp(b))?;
+          need_space = true;
+        }
+        f.write_str("))")
       }
-      CalcitFn(name, _, _, _, args, _) => {
-        f.write_str(&format!("(&fn {} {})", name, CalcitList(args.clone())))
+      CalcitFn(name, _, _, _, args, body) => {
+        f.write_str(&format!("(&fn {} (", name))?;
+        let mut need_space = false;
+        for a in args {
+          if need_space {
+            f.write_str(" ")?;
+          }
+          f.write_str(&format_to_lisp(a))?;
+          need_space = true;
+        }
+        f.write_str(") (")?;
+        need_space = false;
+        for b in body {
+          if need_space {
+            f.write_str(" ")?;
+          }
+          f.write_str(&format_to_lisp(b))?;
+          need_space = true;
+        }
+        f.write_str("))")
       }
       CalcitSyntax(name, _ns) => f.write_str(&format!("(&syntax {})", name)),
     }

@@ -27,7 +27,7 @@ pub fn evaluate_expr(
     // CalcitThunk(CirruNode), // TODO
     CalcitRecur(_) => unreachable!("recur not expected to be from symbol"),
     CalcitList(xs) => match xs.get(0) {
-      None => Err(String::from("cannot evaluate empty expr")),
+      None => Err(format!("cannot evaluate empty expr: {}", expr)),
       Some(x) => {
         // println!("eval expr: {}", primes::format_to_lisp(expr));
         // println!("eval expr: {}", x);

@@ -1,3 +1,4 @@
+use crate::builtins;
 use crate::primes;
 use crate::primes::CalcitData::*;
 use crate::primes::{CalcitData, CalcitItems, CalcitScope};
@@ -134,15 +135,24 @@ pub fn foldl(
     let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
     let acc = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
     let f = runner::evaluate_expr(&expr[2], scope, file_ns, program_code)?;
-    match (xs.clone(), f.clone()) {
-      (CalcitList(xs), CalcitFn(..)) | (CalcitList(xs), CalcitProc(..)) => {
+    match (&xs, &f) {
+      // dirty since only functions being call directly then we become fast
+      (CalcitList(xs), CalcitFn(_, def_ns, _, def_scope, args, body)) => {
         let mut ret = acc;
         for x in xs {
-          let code = CalcitList(im::vector![f.clone(), ret.clone(), x.clone()]);
-          ret = runner::evaluate_expr(&code, scope, file_ns, program_code)?;
+          let values = im::vector![ret, x.clone()];
+          ret = runner::run_fn(values, &def_scope, args, body, def_ns, program_code)?;
         }
         Ok(ret)
       }
+      (CalcitList(xs), CalcitProc(proc)) => {
+        let mut ret = acc;
+        for x in xs {
+          ret = builtins::handle_proc(&proc, &im::vector![ret, x.clone()])?;
+        }
+        Ok(ret)
+      }
+
       (_, _) => Err(format!(
         "foldl expected list and function, got: {} {}",
         xs, f

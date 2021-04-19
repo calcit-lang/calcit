@@ -16,9 +16,6 @@
               false-branch $ either (first args) nil
               quote-replace $ if ~cond ~false-branch ~true-branch
 
-        |/= $ quote
-          def /= not=
-
         |not= $ quote
           defn not= (x y) $ not $ &= x y
 
@@ -42,34 +39,34 @@
             quote-replace $ if (not ~condition) (&let nil ~@body)
 
         |+ $ quote
-          defn + (x & ys) $ reduce &+ x ys
+          defn + (x & ys) $ reduce ys x &+
 
         |- $ quote
           defn - (x & ys)
             if (empty? ys)
               &- 0 x
-              reduce &- x ys
+              reduce ys x &-
 
         |* $ quote
-          defn * (x & ys) $ reduce &* x ys
+          defn * (x & ys) $ reduce ys x &*
 
         |/ $ quote
           defn / (x & ys)
             if (empty? ys)
               &/ 1 x
-              reduce &/ x ys
+              reduce ys x &/
 
         |foldl-compare $ quote
           defn foldl-compare (xs acc f)
             if (empty? xs) true
               if (f acc (first xs))
-                recur f (first xs) (rest xs)
+                recur (rest xs) (first xs) f
                 , false
 
         |foldl' $ quote
-          defn foldl' (f acc xs)
+          defn foldl' (xs acc f)
             if (empty? xs) acc
-              recur f (f acc (first xs)) (rest xs)
+              recur (rest xs) (f acc (first xs)) f
 
         |< $ quote
           defn < (x & ys)
@@ -153,31 +150,30 @@
               &= (type-of x) :proc
 
         |each $ quote
-          defn each (f xs)
+          defn each (xs f)
             if (not (empty? xs))
               &let nil
                 f (first xs)
-                recur f (rest xs)
+                recur (rest xs) f
 
         |map $ quote
-          defn map (f xs)
+          defn map (xs f)
             cond
               (list? xs)
-                &list-map f xs
+                &list-map xs f
               (set? xs)
-                reduce
+                reduce xs (#{})
                   fn (acc x) $ include acc (f x)
-                  , (#{}) xs
               true
                 raise "|expects list or set for map function"
 
         |take $ quote
-          defn take (n xs)
+          defn take (xs n)
             if (= n (count xs)) xs
               slice xs 0 n
 
         |drop $ quote
-          defn drop (n xs)
+          defn drop (xs n)
             slice xs n (count xs)
 
         |str $ quote
@@ -188,33 +184,28 @@
 
         |include $ quote
           defn include (base & xs)
-            reduce
+            reduce xs base
               fn (acc item) $ &include acc item
-              , base xs
 
         |exclude $ quote
           defn exclude (base & xs)
-            reduce
+            reduce xs base
               fn (acc item) $ &exclude acc item
-              , base xs
 
         |difference $ quote
           defn difference (base & xs)
-            reduce
+            reduce xs base
               fn (acc item) $ &difference acc item
-              , base xs
 
         |union $ quote
           defn union (base & xs)
-            reduce
+            reduce xs base
               fn (acc item) $ &union acc item
-              , base xs
 
         |intersection $ quote
           defn intersection (base & xs)
-            reduce
+            reduce xs base
               fn (acc item) $ &intersection acc item
-              , base xs
 
         |index-of $ quote
           defn index-of (xs0 item)
@@ -226,7 +217,7 @@
                     recur (&+ 1 idx) (rest xs)
 
         |find-index $ quote
-          defn find-index (f xs0)
+          defn find-index (xs0 f)
             apply-args
               [] 0 xs0
               fn (idx xs)
@@ -235,9 +226,9 @@
                     recur (&+ 1 idx) (rest xs)
 
         |find $ quote
-          defn find (f xs)
+          defn find (xs f)
             &let
-              idx (find-index f xs)
+              idx (find-index xs f)
               if (nil? idx) nil (get xs idx)
 
         |-> $ quote
@@ -270,8 +261,8 @@
                   pairs $ concat
                     [] $ [] '% base
                     map
-                      fn (x) ([] '% x)
                       butlast xs
+                      fn (x) ([] '% x)
                 quote-replace
                   let ~pairs ~tail
 
@@ -357,31 +348,27 @@
         |max $ quote
           defn max (xs)
             if (empty? xs) nil
-              reduce
+              reduce (rest xs) (first xs)
                 fn (acc x) (&max acc x)
-                first xs
-                rest xs
 
         |min $ quote
           defn min (xs)
             if (empty? xs) nil
-              reduce
+              reduce (rest xs) (first xs)
                 fn (acc x) (&min acc x)
-                first xs
-                rest xs
 
         |every? $ quote
-          defn every? (f xs)
+          defn every? (xs f)
             if (empty? xs) true
               if (f (first xs))
-                recur f (rest xs)
+                recur (rest xs) f
                 , false
 
         |any? $ quote
-          defn any? (f xs)
+          defn any? (xs f)
             if (empty? xs) false
               if (f (first xs)) true
-                recur f (rest xs)
+                recur (rest xs) f
 
         |concat $ quote
           defn concat (& xs)
@@ -391,22 +378,22 @@
                 recur (&concat (get xs 0) (get xs 1)) & (slice xs 2)
 
         |mapcat $ quote
-          defn mapcat (f xs)
-            concat & $ map f xs
+          defn mapcat (xs f)
+            concat & $ map xs f
 
         |merge $ quote
           defn merge (x0 & xs)
-            reduce &merge x0 xs
+            reduce xs x0 &merge
 
         |merge-non-nil $ quote
           defn merge-non-nil (x0 & xs)
-            reduce &merge-non-nil x0 xs
+            reduce xs x0 &merge-non-nil
 
         |identity $ quote
           defn identity (x) x
 
         |map-indexed $ quote
-          defn map-indexed (f xs)
+          defn map-indexed (xs f)
             apply-args
               [] ([]) 0 xs
               fn (acc idx ys)
@@ -417,32 +404,27 @@
                     rest ys
 
         |filter $ quote
-          defn filter (f xs)
-            reduce
+          defn filter (xs f)
+            echo |filtering xs f
+            foldl xs ([])
               fn (acc x)
                 if (f x) (append acc x) acc
-              []
-              , xs
 
         |filter-not $ quote
-          defn filter-not (f xs)
-            reduce
+          defn filter-not (xs f)
+            reduce xs ([])
               fn (acc x)
                 if-not (f x) (append acc x) acc
-              []
-              , xs
 
         |pairs-map $ quote
           defn pairs-map (xs)
-            reduce
+            reduce xs ({})
               fn (acc pair)
                 assert "|expects pair for pairs-map"
                   if (list? pair)
                     &= 2 (count pair)
                     , false
                 assoc acc (first pair) (last pair)
-              {}
-              , xs
 
         |some? $ quote
           defn some? (x) $ not $ nil? x
@@ -546,7 +528,7 @@
                 raise $ &str-concat "|Cannot update key on item: " x
 
         |group-by $ quote
-          defn group-by (f xs0)
+          defn group-by (xs0 f)
             apply-args
               [] ({}) xs0
               fn (acc xs)
@@ -562,7 +544,7 @@
 
         |keys $ quote
           defn keys (x)
-            map first (to-pairs x)
+            map (to-pairs x) first
 
         |keys-non-nil $ quote
           defn keys (x)
@@ -597,7 +579,7 @@
                       rest xs
 
         |section-by $ quote
-          defn section-by (n xs0)
+          defn section-by (xs0 n)
             apply-args
               [] ([]) xs0
               fn (acc xs)
@@ -610,9 +592,8 @@
         |[][] $ quote
           defmacro [][] (& xs)
             &let
-              items $ map
+              items $ map xs
                 fn (ys) $ quote-replace $ [] ~@ys
-                , xs
               quote-replace $ [] ~@items
 
         |{} $ quote
@@ -629,6 +610,7 @@
 
         |fn $ quote
           defmacro fn (args & body)
+            echo ":fn macro:" (format-to-lisp args) (format-to-lisp body)
             quote-replace $ defn f% ~args ~@body
 
         |assert= $ quote
@@ -731,8 +713,8 @@
                     , false
                 , pairs
             let
-                args $ map first pairs
-                values $ map last pairs
+                args $ map pairs first
+                values $ map pairs last
               assert "|loop requires symbols in pairs" (every? symbol? args)
               quote-replace
                 apply
@@ -742,18 +724,16 @@
         |let $ quote
           defmacro let (pairs & body)
             assert "|expects pairs in list for let" (list? pairs)
-            echo "|let pairs:" (format-to-lisp pairs) (count pairs) (empty? pairs)
-              format-to-lisp (rest pairs)
             if (&= 1 (count pairs))
               quote-replace
                 &let
-                  ~ $ first pairs
+                  ~ $ nth pairs 0
                   ~@ body
               if (empty? pairs)
                 quote-replace $ &let nil ~@body
                 quote-replace
                   &let
-                    ~ $ first pairs
+                    ~ $ nth pairs 0
                     let
                       ~ $ rest pairs
                       ~@ body
@@ -796,9 +776,8 @@
         |[,] $ quote
           defmacro [,] (& body)
             &let
-              xs $ filter
+              xs $ filter body
                 fn (x) (/= x ',)
-                , body
               quote-replace $ [] ~@xs
 
         |assert $ quote
@@ -827,7 +806,7 @@
           def echo println
 
         |join-str $ quote
-          defn join-str (sep xs0)
+          defn join-str (xs0 sep)
             apply-args
               [] | xs0 true
               fn (acc xs beginning?)
@@ -840,7 +819,7 @@
                     , false
 
         |join $ quote
-          defn join (sep xs0)
+          defn join (xs0 sep)
             apply-args
               [] ([]) xs0 true
               fn (acc xs beginning?)
@@ -853,7 +832,7 @@
                     , false
 
         |repeat $ quote
-          defn quote (n0 x)
+          defn quote (x n0)
             apply-args
               [] ([]) n0
               fn (acc n)
@@ -874,9 +853,9 @@
                     rest ys
 
         |map-kv $ quote
-          defn map-kv (f dict)
+          defn map-kv (dict f)
             assert "|expects a map" (map? dict)
-            ->> dict
+            -> dict
               to-pairs
               map $ fn (pair)
                 f (first pair) (last pair)
@@ -921,12 +900,13 @@
 
         |{,} $ quote
           defmacro {,} (& body)
+            echo "|inside body:" body
             &let
-              xs $ filter
-                fn (x) (/= x ',)
-                , body
+              xs $ filter body
+                fn (x) (not= x ',)
+              echo "|got xs:" xs
               quote-replace
-                pairs-map $ section-by 2 ([] ~@xs)
+                pairs-map $ section-by ([] ~@xs) 2
 
         |&doseq $ quote
           defmacro &doseq (pair & body)
@@ -1003,10 +983,9 @@
                   ~var-result ~base
                   assert (str "|expected map for destructing: " ~var-result) (map? ~var-result)
                   let
-                    ~ $ map
+                    ~ $ map items
                       defn gen-items% (x)
                         [] x ([] (turn-keyword x) var-result)
-                      , items
                     ~@ body
 
         |let[] $ quote
@@ -1057,12 +1036,5 @@
         |dbt $ quote
           def dbt dual-balanced-ternary
 
-        |format-to-lisp $ quote
-          defn format-to-list (xs)
-            case-default (type-of xs) (&str xs)
-              :list $ str "|(" (join-str "| " (map format-to-lisp xs)) "|)"
-              :symbol (turn-string xs)
-              :string (escape xs)
-              :number (&str xs)
-              :bool (&str xs)
-              :keyword (&str)
+        |/= $ quote
+          def /= not=
