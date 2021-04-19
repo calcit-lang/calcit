@@ -36,21 +36,23 @@ pub fn evaluate_expr(
 
         let v = evaluate_expr(&x, scope, file_ns, program_code)?;
         let rest_nodes = xs.clone().slice(1..);
-        let ret = match v.clone() {
+        let ret = match &v {
           CalcitProc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
             push_call_stack(file_ns, &p, StackKind::Proc, &None, &values);
             added_stack = true;
             builtins::handle_proc(&p, &values)
           }
-          CalcitSyntax(s) => builtins::handle_syntax(&s, &rest_nodes, scope, file_ns, program_code),
-          CalcitFn(name, _, def_scope, args, body) => {
+          CalcitSyntax(s, def_ns) => {
+            builtins::handle_syntax(&s, &rest_nodes, scope, def_ns, program_code)
+          }
+          CalcitFn(name, def_ns, _, def_scope, args, body) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
             push_call_stack(file_ns, &name, StackKind::Fn, &Some(expr.clone()), &values);
             added_stack = true;
-            run_fn(values, &def_scope, args, body, file_ns, program_code)
+            run_fn(values, &def_scope, args, body, def_ns, program_code)
           }
-          CalcitMacro(name, _, args, body) => {
+          CalcitMacro(name, def_ns, _, args, body) => {
             let mut current_values = rest_nodes.clone();
             let mut macro_ret = CalcitNil;
             // println!("eval macro: {} {}", x, primes::format_to_lisp(expr));
@@ -68,7 +70,7 @@ pub fn evaluate_expr(
             loop {
               // need to handle recursion
               let body_scope = bind_args(&args, &current_values, &im::HashMap::new())?;
-              let code = evaluate_lines(&body, &body_scope, file_ns, program_code)?;
+              let code = evaluate_lines(&body, &body_scope, def_ns, program_code)?;
               match code {
                 CalcitRecur(ys) => {
                   current_values = ys;
@@ -100,7 +102,7 @@ pub fn evaluate_expr(
     CalcitProc(_) => Ok(expr.clone()),
     CalcitMacro(..) => Ok(expr.clone()),
     CalcitFn(..) => Ok(expr.clone()),
-    CalcitSyntax(_) => Ok(expr.clone()),
+    CalcitSyntax(_, _) => Ok(expr.clone()),
   }
 }
 
@@ -122,7 +124,7 @@ pub fn evaluate_symbol(
     }
     None => {
       if is_syntax_name(sym) {
-        return Ok(CalcitSyntax(sym.to_string()));
+        return Ok(CalcitSyntax(sym.to_string(), file_ns.to_string()));
       }
       if is_proc_name(sym) {
         return Ok(CalcitProc(sym.to_string()));
@@ -178,15 +180,15 @@ fn eval_symbol_from_program(
 pub fn run_fn(
   values: CalcitItems,
   scope: &CalcitScope,
-  args: CalcitItems,
-  body: CalcitItems,
+  args: &CalcitItems,
+  body: &CalcitItems,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitData, String> {
   let mut current_values = values;
   loop {
-    let body_scope = bind_args(&args, &current_values, scope)?;
-    let v = evaluate_lines(&body, &body_scope, file_ns, program_code)?;
+    let body_scope = bind_args(args, &current_values, scope)?;
+    let v = evaluate_lines(body, &body_scope, file_ns, program_code)?;
     match v {
       CalcitRecur(xs) => {
         current_values = xs;

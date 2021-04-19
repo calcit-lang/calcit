@@ -90,13 +90,13 @@ fn main() -> Result<(), String> {
       );
       let entry = runner::evaluate_expr(&expr, &im::HashMap::new(), &init_ns, &program_code)?;
       match entry {
-        CalcitFn(_, _, def_scope, args, body) => {
+        CalcitFn(_, f_ns, _, def_scope, args, body) => {
           let result = runner::run_fn(
             im::Vector::new(),
             &def_scope,
-            args,
-            body,
-            &init_ns,
+            &args,
+            &body,
+            &f_ns,
             &program_code,
           );
           match result {
