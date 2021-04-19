@@ -12,6 +12,7 @@ mod program;
 mod runner;
 mod snapshot;
 
+use call_stack::StackKind;
 use cirru_edn::parse_cirru_edn;
 use dirs::home_dir;
 use primes::CalcitData::*;
@@ -80,7 +81,13 @@ fn main() -> Result<(), String> {
   match program::lookup_ns_def(&init_ns, &init_def, &program_code) {
     None => Err(String::from("Invalid entry")),
     Some(expr) => {
-      call_stack::push_call_stack(&init_ns, &init_def, &None, &im::Vector::new());
+      call_stack::push_call_stack(
+        &init_ns,
+        &init_def,
+        StackKind::Fn,
+        &None,
+        &im::Vector::new(),
+      );
       let entry = runner::evaluate_expr(&expr, &im::HashMap::new(), &init_ns, &program_code)?;
       match entry {
         CalcitFn(_, _, def_scope, args, body) => {
@@ -98,7 +105,7 @@ fn main() -> Result<(), String> {
             }
             Err(falure) => {
               println!("failed, {}", falure);
-              call_stack::display_stack();
+              call_stack::display_stack(&falure);
             }
           }
           Ok(())

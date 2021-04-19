@@ -1,7 +1,9 @@
+use crate::primes::{CalcitData, CalcitData::*};
 use cirru_edn::CirruEdn;
 use cirru_edn::CirruEdn::*;
 use cirru_parser::CirruNode;
 use std::collections::hash_map::HashMap;
+use std::collections::hash_set::HashSet;
 
 pub fn as_string(data: CirruEdn) -> Result<String, String> {
   match data {
@@ -79,4 +81,45 @@ pub fn map_get(data: &CirruEdn, k: &str) -> CirruEdn {
     }
     _ => CirruEdnNil,
   }
+}
+
+// values does not fit are just represented with specical indicates
+pub fn calcit_to_edn(x: &CalcitData) -> CirruEdn {
+  match x {
+    CalcitNil => CirruEdnNil,
+    CalcitBool(b) => CirruEdnBool(*b),
+    CalcitString(s) => CirruEdnString(s.clone()),
+    CalcitNumber(n) => CirruEdnNumber(*n),
+    CalcitKeyword(s) => CirruEdnKeyword(s.clone()),
+    CalcitSymbol(s, _ns) => CirruEdnSymbol(s.clone()),
+    CalcitList(xs) => {
+      let mut ys: Vec<CirruEdn> = vec![];
+      for x in xs {
+        ys.push(calcit_to_edn(x));
+      }
+      CirruEdnList(ys)
+    }
+    CalcitSet(xs) => {
+      let mut ys: HashSet<CirruEdn> = HashSet::new();
+      for x in xs {
+        ys.insert(calcit_to_edn(x));
+      }
+      CirruEdnSet(ys)
+    }
+    CalcitMap(xs) => {
+      let mut ys: HashMap<CirruEdn, CirruEdn> = HashMap::new();
+      for (k, x) in xs {
+        ys.insert(calcit_to_edn(k), calcit_to_edn(x));
+      }
+      CirruEdnMap(ys)
+    }
+    CalcitFn(name, ..) => CirruEdnString(format!("&fn {}", name)),
+    CalcitProc(name) => CirruEdnString(format!("&proc {}", name)),
+    a => CirruEdnString(format!("TODO {}", a)), // TODO more types to handle
+  }
+}
+
+// TODO
+pub fn edn_to_calcit(x: CirruEdn) -> CalcitData {
+  CalcitNil
 }

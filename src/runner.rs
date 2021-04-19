@@ -1,6 +1,7 @@
 use crate::builtins;
 use crate::builtins::{is_proc_name, is_syntax_name};
 use crate::call_stack;
+use crate::call_stack::{push_call_stack, StackKind};
 use crate::primes;
 use crate::primes::{CalcitData, CalcitData::*};
 use crate::primes::{CalcitItems, CalcitScope, CrListWrap, CORE_NS};
@@ -38,23 +39,30 @@ pub fn evaluate_expr(
         let ret = match v.clone() {
           CalcitProc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
-            call_stack::push_call_stack(file_ns, &p, &None, &values);
+            push_call_stack(file_ns, &p, StackKind::Proc, &None, &values);
             added_stack = true;
             builtins::handle_proc(&p, &values)
           }
           CalcitSyntax(s) => builtins::handle_syntax(&s, &rest_nodes, scope, file_ns, program_code),
           CalcitFn(name, _, def_scope, args, body) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
-            call_stack::push_call_stack(file_ns, &name, &Some(v), &values);
+            push_call_stack(file_ns, &name, StackKind::Fn, &Some(expr.clone()), &values);
             added_stack = true;
             run_fn(values, &def_scope, args, body, file_ns, program_code)
           }
           CalcitMacro(name, _, args, body) => {
             let mut current_values = rest_nodes.clone();
+            let mut macro_ret = CalcitNil;
             // println!("eval macro: {} {}", x, primes::format_to_lisp(expr));
             // println!("macro... {} {}", x, CrListWrap(current_values.clone()));
 
-            call_stack::push_call_stack(file_ns, &name, &Some(v), &rest_nodes);
+            push_call_stack(
+              file_ns,
+              &name,
+              StackKind::Macro,
+              &Some(expr.clone()),
+              &rest_nodes,
+            );
             added_stack = true;
 
             loop {
@@ -67,16 +75,19 @@ pub fn evaluate_expr(
                 }
                 _ => {
                   // println!("gen code: {} {}", x, primes::format_to_lisp(&code));
-                  return evaluate_expr(&code, scope, file_ns, program_code);
+                  macro_ret = evaluate_expr(&code, scope, file_ns, program_code)?;
+                  break;
                 }
               }
             }
+
+            Ok(macro_ret)
           }
           CalcitSymbol(s, ns) => Err(format!("cannot evaluate symbol directly: {}/{}", ns, s)),
           a => Err(format!("cannot be used as operator: {}", a)),
         };
 
-        if added_stack {
+        if added_stack && ret.is_ok() {
           call_stack::pop_call_stack();
         }
 
