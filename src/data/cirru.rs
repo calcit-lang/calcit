@@ -4,7 +4,7 @@ use cirru_parser::CirruNode;
 use cirru_parser::CirruNode::*;
 use regex::Regex;
 
-pub fn cirru_to_calcit(xs: CirruNode, ns: &str) -> Result<CalcitData, String> {
+pub fn cirru_to_calcit(xs: &CirruNode, ns: &str) -> Result<CalcitData, String> {
   match xs {
     CirruLeaf(s) => match s.as_str() {
       "nil" => Ok(CalcitNil),
@@ -18,7 +18,11 @@ pub fn cirru_to_calcit(xs: CirruNode, ns: &str) -> Result<CalcitData, String> {
           CalcitSymbol(String::from("quote"), ns.to_string()),
           CalcitSymbol(String::from(&s[1..]), ns.to_string()),
         ])),
-        '~' => Ok(CalcitList(im::vector![
+        '~' if s.starts_with("~@") && s.len() > 2 => Ok(CalcitList(im::vector![
+          CalcitSymbol(String::from("~@"), ns.to_string()),
+          CalcitSymbol(String::from(&s[2..]), ns.to_string()),
+        ])),
+        '~' if s.len() > 1 && !s.starts_with("~@") => Ok(CalcitList(im::vector![
           CalcitSymbol(String::from("~"), ns.to_string()),
           CalcitSymbol(String::from(&s[1..]), ns.to_string()),
         ])),
@@ -32,7 +36,7 @@ pub fn cirru_to_calcit(xs: CirruNode, ns: &str) -> Result<CalcitData, String> {
             let f: f32 = s.parse().unwrap();
             Ok(CalcitNumber(f))
           } else {
-            Ok(CalcitSymbol(s, ns.to_string()))
+            Ok(CalcitSymbol(s.clone(), ns.to_string()))
           }
         }
       },
@@ -55,9 +59,12 @@ pub fn cirru_to_calcit(xs: CirruNode, ns: &str) -> Result<CalcitData, String> {
   }
 }
 
+lazy_static! {
+  static ref RE_FLOAT: Regex = Regex::new("^-?[\\d]+(\\.[\\d]+)?$").unwrap(); // TODO special cases not handled
+}
+
 fn matches_float(x: &str) -> bool {
-  let re = Regex::new("^-?[\\d]+(\\.[\\d]+)?$").unwrap(); // TODO special cases not handled
-  re.is_match(x)
+  RE_FLOAT.is_match(x)
 }
 
 fn is_comment(x: &CalcitData) -> bool {

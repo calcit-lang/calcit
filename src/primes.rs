@@ -13,6 +13,10 @@ pub type NanoId = String;
 pub type CalcitScope = im::HashMap<String, CalcitData>;
 pub type CalcitItems = im::Vector<CalcitData>;
 
+/// special types wraps vector of calcit data for displaying
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct CrListWrap(pub im::Vector<CalcitData>);
+
 #[derive(Debug, Clone)]
 pub enum CalcitData {
   CalcitNil,
@@ -23,6 +27,7 @@ pub enum CalcitData {
   CalcitString(String),
   // CalcitRef(CalcitData), // TODO
   // CalcitThunk(CirruNode), // TODO
+  CalcitRecur(CalcitItems), // not data, but for recursion
   CalcitList(CalcitItems),
   CalcitSet(im::HashSet<CalcitData>),
   CalcitMap(im::HashMap<CalcitData, CalcitData>),
@@ -56,6 +61,13 @@ impl fmt::Display for CalcitData {
       CalcitKeyword(s) => f.write_str(&format!(":{}", s)),
       CalcitString(s) => f.write_str(&format!("\"|{}\"", s)), // TODO, escaping choices
       // CalcitThunk(v) => f.write_str(&format!("{}", v)),
+      CalcitRecur(xs) => {
+        f.write_str("(&recur")?;
+        for x in xs {
+          f.write_str(&format!(" {}", x))?;
+        }
+        f.write_str(")")
+      }
       CalcitList(xs) => {
         f.write_str("([]")?;
         for x in xs {
@@ -96,6 +108,32 @@ impl fmt::Display for CalcitData {
     }
   }
 }
+/// special types wraps vector of calcit data for displaying
+
+impl fmt::Display for CrListWrap {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str(&format_to_lisp(&CalcitList(self.0.clone()))) // TODO performance
+  }
+}
+
+/// display data into Lisp style for readability
+pub fn format_to_lisp(x: &CalcitData) -> String {
+  match x {
+    CalcitList(ys) => {
+      let mut s = String::from("(");
+      for (idx, y) in ys.iter().enumerate() {
+        if idx > 0 {
+          s.push(' ');
+        }
+        s.push_str(&format_to_lisp(y));
+      }
+      s.push(')');
+      s
+    }
+    CalcitSymbol(s, _) => s.clone(),
+    a => format!("{}", a),
+  }
+}
 
 impl Hash for CalcitData {
   fn hash<H>(&self, _state: &mut H)
@@ -130,6 +168,10 @@ impl Hash for CalcitData {
       //   "quote:".hash(_state);
       //   v.hash(_state);
       // }
+      CalcitRecur(v) => {
+        "list:".hash(_state);
+        v.hash(_state);
+      }
       CalcitList(v) => {
         "list:".hash(_state);
         v.hash(_state);
@@ -215,6 +257,10 @@ impl Ord for CalcitData {
       // (CalcitThunk(a), CalcitThunk(b)) => a.cmp(b),
       // (CalcitThunk(_), _) => Less,
       // (_, CalcitThunk(_)) => Greater,
+      (CalcitRecur(a), CalcitRecur(b)) => a.cmp(b),
+      (CalcitRecur(_), _) => Less,
+      (_, CalcitRecur(_)) => Greater,
+
       (CalcitList(a), CalcitList(b)) => a.cmp(b),
       (CalcitList(_), _) => Less,
       (_, CalcitList(_)) => Greater,

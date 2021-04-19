@@ -8,6 +8,7 @@
       :ns $ quote
         ns app.main $ :require (app.lib :as lib)
           app.lib :refer $ [] f3
+          app.macro :refer $ [] add-num add-by-2
       :defs $ {}
         |main! $ quote
           defn main! () (echo "\"demo")
@@ -34,8 +35,45 @@
             echo $ type-of ([] 1)
             echo "\"result:" $ foldl ([] 1 2 3 4) 0
               defn f1 (acc x) (echo "\"adding:" acc x) (&+ acc x)
+            echo "\"macro:" $ add-num 1 2
+            echo "\"sum:" $ rec-sum 0 ([] 1 2 3 4)
+            echo "\"expand-1:" $ macroexpand-1
+              quote $ add-num 1 2
+            echo "\"expand:" $ macroexpand
+              quote $ add-num 1 2
+            echo "\"expand:" $ format-to-lisp
+              macroexpand $ quote (add-more 0 3 8)
+            echo "\"expand v:" $ add-more 0 3 8
+            echo "\"call and call" $ add-by-2 10
+            ; echo $ macroexpand (assert= 1 2)
+            test-args
         |f1 $ quote
           defn f1 () $ echo "\"calling f1"
+        |rec-sum $ quote
+          defn rec-sum (acc xs)
+            if (empty? xs) acc $ recur
+              &+ acc $ nth xs 0
+              rest xs
+        |add-more $ quote
+          defmacro add-more (acc x times)
+            if (&< times 1) acc $ recur
+              quasiquote $ &+ (~ x) (~ acc)
+              , x (&- times 1)
+        |test-args $ quote
+          defn test-args ()
+            call-3 & $ [] 1 2 3
+            call-many 1
+            call-many 1 2
+            call-many 1 2 3
+            echo $ macroexpand (call-macro 11 12 13)
+        |call-3 $ quote
+          defn call-3 (a b c) (echo "\"a is:" a) (echo "\"b is:" b) (echo "\"c is:" c)
+        |call-many $ quote
+          defn call-many (x0 & xs) (echo "\"many...") (echo "\"x0" x0) (echo "\"xs" xs)
+        |call-macro $ quote
+          defmacro call-macro (x0 & xs)
+            quasiquote $ &{} :a (~ x0) :b
+              [] $ ~@ xs
       :proc $ quote ()
       :configs $ {}
     |app.lib $ {}
@@ -54,5 +92,11 @@
           defmacro add-num (a b)
             quasiquote $ &let nil
               &+ (~ a) (~ b)
+        |add-by-1 $ quote
+          defmacro add-by-1 (x)
+            quasiquote $ &+ ~x 1
+        |add-by-2 $ quote
+          defmacro add-by-2 (x)
+            quasiquote $ &+ 2 (add-by-1 ~x)
       :proc $ quote ()
       :configs $ {}

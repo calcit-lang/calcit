@@ -38,20 +38,22 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cirru_edn"
-version = "0.0.3"
+version = "0.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c37da3bceb2a73b045343637e93d849939e0c94632cb0711b332f2353e447e5"
+checksum = "8f696a101f5a517753d22a6560b2602f05ba95dd6b756d36b2a7d6d7b11ed3e8"
 dependencies = [
  "cirru_parser",
+ "lazy_static",
  "regex",
 ]
 
 [[package]]
 name = "cirru_parser"
-version = "0.0.6"
+version = "0.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c108f1c01b6db6afe0a74761c0441a21d186f3f62c06a3f79e7c3e935333e9c6"
+checksum = "f6973b3d45dd5133823820cc8ef945ef9fc32ee7de5a5917dde117b834fde7d1"
 dependencies = [
+ "lazy_static",
  "modulo",
  "regex",
  "serde_json",

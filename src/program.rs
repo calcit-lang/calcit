@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::data::cirru::cirru_to_calcit;
-use crate::primes::{CalcitData, CalcitScope};
+use crate::primes::CalcitData;
 
 use cirru_parser::CirruNode;
 use cirru_parser::CirruNode::*;
@@ -25,13 +25,6 @@ pub struct ProgramFileData {
 }
 
 pub type ProgramCodeData = HashMap<String, ProgramFileData>;
-
-pub type EvalFn = fn(
-  data: CalcitData,
-  scope: CalcitScope,
-  code: &str,
-  program: ProgramCodeData,
-) -> Result<CalcitData, String>;
 
 lazy_static! {
   static ref PROGRAM_EVALED_DATA_STATE: Mutex<ProgramEvaledData> = Mutex::new(HashMap::new());
@@ -93,13 +86,13 @@ fn extract_import_map(nodes: &CirruNode) -> Result<HashMap<String, ImportRule>, 
   }
 }
 
-pub fn extract_program_data(s: Snapshot) -> Result<ProgramCodeData, String> {
+pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
   let mut xs: ProgramCodeData = HashMap::new();
-  for (ns, file) in s.files {
+  for (ns, file) in s.files.clone() {
     let import_map = extract_import_map(&file.ns)?;
     let mut defs: HashMap<String, CalcitData> = HashMap::new();
     for (def, code) in file.defs {
-      defs.insert(def, cirru_to_calcit(code, &ns)?);
+      defs.insert(def, cirru_to_calcit(&code, &ns)?);
     }
     let file_info = ProgramFileData { import_map, defs };
     xs.insert(ns, file_info);
@@ -144,12 +137,14 @@ pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<CalcitData> {
   if s2.contains_key(ns) && s2[ns].contains_key(def) {
     Some(s2[ns][def].clone())
   } else {
+    // println!("failed to lookup {} {}", ns, def);
     None
   }
 }
 
 // Dirty mutating global states
 pub fn write_evaled_def(ns: &str, def: &str, value: CalcitData) -> Result<(), String> {
+  // println!("writing {} {}", ns, def);
   let program = &mut PROGRAM_EVALED_DATA_STATE.lock().unwrap();
   if !program.contains_key(ns) {
     program.insert(String::from(ns), HashMap::new());

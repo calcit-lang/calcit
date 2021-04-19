@@ -2,7 +2,7 @@ use crate::builtins;
 use crate::builtins::{is_proc_name, is_syntax_name};
 use crate::primes::CalcitData;
 use crate::primes::CalcitData::*;
-use crate::primes::{CalcitItems, CalcitScope, CORE_NS};
+use crate::primes::{CalcitItems, CalcitScope, CrListWrap, CORE_NS};
 use crate::program;
 
 pub fn evaluate_expr(
@@ -15,11 +15,13 @@ pub fn evaluate_expr(
     CalcitNil => Ok(expr.clone()),
     CalcitBool(_) => Ok(expr.clone()),
     CalcitNumber(_) => Ok(expr.clone()),
+    CalcitSymbol(s, _) if s == "&" => Ok(expr.clone()),
     CalcitSymbol(s, ns) => evaluate_symbol(&s, scope, &ns, program_code),
     CalcitKeyword(_) => Ok(expr.clone()),
     CalcitString(_) => Ok(expr.clone()),
     // CalcitRef(CalcitData), // TODO
     // CalcitThunk(CirruNode), // TODO
+    CalcitRecur(_) => unreachable!("recur not expected to be from symbol"),
     CalcitList(xs) => match xs.get(0) {
       None => Err(String::from("cannot evaluate empty expr")),
       Some(x) => {
@@ -27,30 +29,29 @@ pub fn evaluate_expr(
         let rest_nodes = xs.clone().slice(1..);
         match v {
           CalcitProc(p) => {
-            let mut args = im::Vector::new();
-            for (idx, x) in xs.iter().enumerate() {
-              // TODO arguments spreading syntax
-              if idx > 0 {
-                let v = evaluate_expr(x, scope, file_ns, program_code)?;
-                args.push_back(v)
-              }
-            }
-            builtins::handle_proc(&p, &args)
+            let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
+            builtins::handle_proc(&p, &values)
           }
           CalcitSyntax(s) => builtins::handle_syntax(&s, &rest_nodes, scope, file_ns, program_code),
           CalcitFn(_, _, def_scope, args, body) => {
-            let mut values = im::Vector::new();
-            for (idx, x) in xs.iter().enumerate() {
-              // TODO arguments spreading syntax
-              if idx > 0 {
-                let v = evaluate_expr(x, &def_scope, file_ns, program_code)?;
-                values.push_back(v)
-              }
-            }
-            run_fn(values, scope, args, body, file_ns, program_code)
+            let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
+            run_fn(values, &def_scope, args, body, file_ns, program_code)
           }
           CalcitMacro(_, _, args, body) => {
-            run_macro(&rest_nodes, scope, args, body, file_ns, program_code)
+            let mut current_values = rest_nodes;
+            loop {
+              // need to handle recursion
+              let body_scope = bind_args(&args, &current_values, scope)?;
+              let code = evaluate_lines(&body, &body_scope, file_ns, program_code)?;
+              match code {
+                CalcitRecur(ys) => {
+                  current_values = ys;
+                }
+                _ => {
+                  return evaluate_expr(&code, scope, file_ns, program_code);
+                }
+              }
+            }
           }
           CalcitSymbol(s, ns) => Err(format!("cannot evaluate symbol directly: {}/{}", ns, s)),
           a => Err(format!("cannot be used as operator: {}", a)),
@@ -146,20 +147,88 @@ pub fn run_fn(
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitData, String> {
-  let mut body_scope = scope.clone();
-  // TODO arguments spreading syntax
-  if values.len() != args.len() {
-    return Err(String::from("arguments length mismatch"));
-  }
-  for idx in 0..args.len() {
-    match &args[idx] {
-      CalcitSymbol(k, _) => {
-        body_scope.insert(k.clone(), values[idx].clone());
+  let mut current_values = values;
+  loop {
+    let body_scope = bind_args(&args, &current_values, scope)?;
+    let v = evaluate_lines(&body, &body_scope, file_ns, program_code)?;
+    match v {
+      CalcitRecur(xs) => {
+        current_values = xs;
       }
-      _ => return Err(String::from("expected argument in a symbol")),
+      result => return Ok(result),
     }
   }
-  evaluate_lines(&body, &body_scope, file_ns, program_code)
+}
+
+/// TODO support `?` for trailing optional arguments...
+/// create new scope by wrting new args
+/// notice that `&` is a mark for spreading
+pub fn bind_args(
+  args: &CalcitItems,
+  values: &CalcitItems,
+  base_scope: &CalcitScope,
+) -> Result<CalcitScope, String> {
+  // TODO arguments spreading syntax
+  // if values.len() != args.len() {
+  //   return Err(format!(
+  //     "arguments length mismatch: {} ... {}",
+  //     CalcitList(values.clone()),
+  //     CalcitList(args.clone()),
+  //   ));
+  // }
+  let mut scope = base_scope.clone();
+  let mut spreading = false;
+  let mut collected_args = args.clone();
+  let mut collected_values = values.clone();
+  while let Some(a) = collected_args.pop_front() {
+    if spreading {
+      match a {
+        CalcitSymbol(s, _) if s == "&" => return Err(format!("invalid & in values: {:?}", values)),
+        CalcitSymbol(s, _) => {
+          let mut chunk: CalcitItems = im::vector![];
+          while let Some(v) = collected_values.pop_front() {
+            chunk.push_back(v);
+          }
+          scope.insert(s, CalcitList(chunk));
+          if !collected_args.is_empty() {
+            return Err(format!(
+              "extra args `{}` after spreading in `{}`",
+              CrListWrap(collected_args),
+              CrListWrap(args.clone()),
+            ));
+          }
+        }
+        b => return Err(format!("invalid argument name: {}", b)),
+      }
+    } else {
+      match a {
+        CalcitSymbol(s, _) if s == "&" => spreading = true,
+        CalcitSymbol(s, _) => match collected_values.pop_front() {
+          Some(v) => {
+            scope.insert(s.clone(), v.clone());
+          }
+          None => {
+            return Err(format!(
+              "too few values `{}` passed to args `{}`",
+              CrListWrap(values.clone()),
+              CrListWrap(args.clone())
+            ))
+          }
+        },
+        b => return Err(format!("invalid argument name: {}", b)),
+      }
+    }
+  }
+  if collected_values.is_empty() {
+    Ok(scope)
+  } else {
+    Err(format!(
+      "extra args `{}` not handled while passing values `{}` to args `{}`",
+      CrListWrap(collected_values),
+      CrListWrap(values.clone()),
+      CrListWrap(args.clone()),
+    ))
+  }
 }
 
 pub fn evaluate_lines(
@@ -178,14 +247,44 @@ pub fn evaluate_lines(
   Ok(ret)
 }
 
-// TODO
-pub fn run_macro(
-  values: &CalcitItems,
+/// evaluate symbols before calling a function
+/// notice that `&` is used to spread a list
+pub fn evaluate_args(
+  lines: &CalcitItems,
   scope: &CalcitScope,
-  args: CalcitItems,
-  body: CalcitItems,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
-) -> Result<CalcitData, String> {
-  Err(String::from("TODO"))
+) -> Result<CalcitItems, String> {
+  let mut ret: CalcitItems = im::vector![];
+  let mut spreading = false;
+  for line in lines {
+    match &evaluate_expr(line, scope, file_ns, program_code) {
+      Ok(v) => {
+        if spreading {
+          match v {
+            CalcitSymbol(s, _) if s == "&" => {
+              return Err(format!(
+                "already in spread mode: {}",
+                CrListWrap(lines.clone())
+              ))
+            }
+            CalcitList(xs) => {
+              for x in xs {
+                ret.push_back(x.clone());
+              }
+              spreading = false
+            }
+            a => return Err(format!("expected list for spreading, got: {}", a)),
+          }
+        } else {
+          match v {
+            CalcitSymbol(s, _) if s == "&" => spreading = true,
+            _ => ret.push_back(v.clone()),
+          }
+        }
+      }
+      Err(e) => return Err(e.to_string()),
+    }
+  }
+  Ok(ret)
 }

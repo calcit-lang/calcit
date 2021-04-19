@@ -1,3 +1,4 @@
+use crate::primes;
 use crate::primes::CalcitData::*;
 use crate::primes::{CalcitData, CalcitItems};
 
@@ -12,6 +13,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<CalcitData, String> {
       CalcitSymbol(..) => Ok(CalcitKeyword(String::from("symbol"))),
       CalcitKeyword(..) => Ok(CalcitKeyword(String::from("keyword"))),
       CalcitString(..) => Ok(CalcitKeyword(String::from("string"))),
+      CalcitRecur(..) => Ok(CalcitKeyword(String::from("recur"))),
       CalcitList(..) => Ok(CalcitKeyword(String::from("list"))),
       CalcitSet(..) => Ok(CalcitKeyword(String::from("set"))),
       CalcitMap(..) => Ok(CalcitKeyword(String::from("map"))),
@@ -22,5 +24,16 @@ pub fn type_of(xs: &CalcitItems) -> Result<CalcitData, String> {
       CalcitSyntax(..) => Ok(CalcitKeyword(String::from("synta"))),
     },
     None => Err(String::from("type-of expected 1 argument")),
+  }
+}
+
+pub fn recur(xs: &CalcitItems) -> Result<CalcitData, String> {
+  Ok(CalcitRecur(xs.clone()))
+}
+
+pub fn format_to_lisp(xs: &CalcitItems) -> Result<CalcitData, String> {
+  match xs.get(0) {
+    Some(v) => Ok(CalcitString(primes::format_to_lisp(v))),
+    None => Err(String::from("format-to-lisp expected 1 argument")),
   }
 }
