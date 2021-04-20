@@ -1,4 +1,4 @@
-use crate::builtins::lists::f32_to_usize;
+use crate::builtins::math::f32_to_usize;
 use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
@@ -57,7 +57,11 @@ pub fn gensym(xs: &CalcitItems) -> Result<CalcitData, String> {
       chunk
     }
     Some(a) => return Err(format!("gensym expected a string, but got: {}", a)),
-    None => String::from("G__"),
+    None => {
+      let mut chunk = String::from("G__");
+      chunk.push_str(&idx.to_string());
+      chunk
+    }
   };
   Ok(CalcitSymbol(s, primes::GENERATED_NS.to_string()))
 }
@@ -144,5 +148,15 @@ pub fn write_cirru_edn(xs: &CalcitItems) -> Result<CalcitData, String> {
       edn::calcit_to_edn(a),
     ))),
     None => Err(String::from("write-cirru-edn expected 1 argument")),
+  }
+}
+
+pub fn turn_symbol(xs: &CalcitItems) -> Result<CalcitData, String> {
+  match xs.get(0) {
+    Some(CalcitString(s)) => Ok(CalcitSymbol(s.clone(), primes::GENERATED_NS.to_string())),
+    Some(CalcitKeyword(s)) => Ok(CalcitSymbol(s.clone(), primes::GENERATED_NS.to_string())),
+    Some(CalcitSymbol(s, ns)) => Ok(CalcitSymbol(s.clone(), ns.clone())),
+    Some(a) => Err(format!("turn-symbol cannot turn this to symbol: {}", a)),
+    None => Err(String::from("turn-symbol expected 1 argument, got nothing")),
   }
 }

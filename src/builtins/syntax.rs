@@ -297,3 +297,33 @@ pub fn macroexpand_1(
     ))
   }
 }
+
+pub fn call_try(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<CalcitData, String> {
+  if expr.len() == 2 {
+    let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code);
+
+    match &xs {
+      // dirty since only functions being call directly then we become fast
+      Ok(v) => Ok(v.clone()),
+      Err(failure) => {
+        let f = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
+        let err_data = CalcitString(failure.to_string());
+        match f {
+          CalcitFn(_, def_ns, _, def_scope, args, body) => {
+            let values = im::vector![err_data];
+            runner::run_fn(values, &def_scope, &args, &body, &def_ns, program_code)
+          }
+          CalcitProc(proc) => builtins::handle_proc(&proc, &im::vector![err_data]),
+          a => Err(format!("try expected a function handler, got: {}", a)),
+        }
+      }
+    }
+  } else {
+    Err(format!("try expected 2 arguments, got: {:?}", expr))
+  }
+}

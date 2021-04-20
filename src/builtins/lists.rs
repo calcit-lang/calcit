@@ -1,20 +1,9 @@
+use crate::builtins::math::{f32_to_i32, f32_to_usize};
 use crate::primes::CalcitData::*;
 use crate::primes::{CalcitData, CalcitItems};
 
 pub fn new_list(xs: &CalcitItems) -> Result<CalcitData, String> {
   Ok(CalcitList(xs.clone()))
-}
-
-pub fn f32_to_usize(f: f32) -> Result<usize, String> {
-  if f.fract() == 0.0 {
-    if f >= 0.0 {
-      Ok(f as usize)
-    } else {
-      Err(format!("usize expected a positive number, but got: {}", f))
-    }
-  } else {
-    Err(format!("cannot extract int from float: {}", f))
-  }
 }
 
 pub fn empty_ques(xs: &CalcitItems) -> Result<CalcitData, String> {
@@ -147,6 +136,44 @@ pub fn concat(xs: &CalcitItems) -> Result<CalcitData, String> {
       }
     } else {
       return Err(format!("concat expects list arguments, got: {}", x));
+    }
+  }
+  Ok(CalcitList(ys))
+}
+
+pub fn range(xs: &CalcitItems) -> Result<CalcitData, String> {
+  let (base, bound) = match (xs.get(0), xs.get(1)) {
+    (Some(CalcitNumber(bound)), None) => (0.0, *bound),
+    (Some(CalcitNumber(base)), Some(CalcitNumber(bound))) => (*base, *bound),
+    (Some(a), Some(b)) => return Err(format!("range expected 2 numbers, but got: {} {}", a, b)),
+    (_, _) => return Err(format!("invalid arguments for range: {:?}", xs)),
+  };
+
+  let step = match xs.get(2) {
+    Some(CalcitNumber(n)) => *n,
+    Some(a) => return Err(format!("range expected numbers, but got: {}", a)),
+    None => 1.0,
+  };
+
+  if (bound - base).abs() < f32::EPSILON {
+    return Ok(CalcitList(im::vector![CalcitNumber(base)]));
+  }
+
+  if step == 0.0 || (bound > base && step < 0.0) || (bound < base && step > 0.0) {
+    return Err(String::from("range cannot construct list with step 0"));
+  }
+
+  let mut ys: CalcitItems = im::vector![];
+  let mut i = base;
+  if step > 0.0 {
+    while i < bound {
+      ys.push_back(CalcitNumber(i));
+      i += step;
+    }
+  } else {
+    while i > bound {
+      ys.push_back(CalcitNumber(i));
+      i += step;
     }
   }
   Ok(CalcitList(ys))

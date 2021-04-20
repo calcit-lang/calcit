@@ -27,6 +27,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "write-cirru"
       | "parse-cirru-edn"
       | "write-cirru-edn"
+      | "turn-symbol"
       // effects
       | "echo"
       | "echo-values"
@@ -46,6 +47,9 @@ pub fn is_proc_name(s: &str) -> bool {
       // strings
       | "&str-concat"
       | "trim"
+      | "&str"
+      | "turn-string"
+      | "split"
       // lists
       | "[]"
       | "empty?"
@@ -57,6 +61,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "rest"
       | "butlast"
       | "concat"
+      | "range"
       // maps
       | "&{}"
       | "assoc"
@@ -82,6 +87,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<CalcitData, String>
     "write-cirru" => meta::write_cirru(args),
     "parse-cirru-edn" => meta::parse_cirru_edn(args),
     "write-cirru-edn" => meta::write_cirru_edn(args),
+    "turn-symbol" => meta::turn_symbol(args),
     // effects
     "echo" => effects::echo(args),
     "echo-values" => effects::echo_values(args),
@@ -99,6 +105,9 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<CalcitData, String>
     // strings
     "&str-concat" => strings::binary_str_concat(args),
     "trim" => strings::trim(args),
+    "&str" => strings::call_str(args),
+    "turn-string" => strings::turn_string(args),
+    "split" => strings::split(args),
     // lists
     "[]" => lists::new_list(args),
     "empty?" => lists::empty_ques(args),
@@ -110,6 +119,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<CalcitData, String>
     "rest" => lists::rest(args),
     "butlast" => lists::butlast(args),
     "concat" => lists::concat(args),
+    "range" => lists::range(args),
     // maps
     "&{}" => maps::call_new_map(args),
     "assoc" => maps::assoc(args),
@@ -136,6 +146,7 @@ pub fn is_syntax_name(s: &str) -> bool {
       | "macroexpand-1"
       | "macroexpand-all"
       | "foldl" // for performance
+      | "try"
   )
 }
 
@@ -158,6 +169,7 @@ pub fn handle_syntax(
     "foldl" => syntax::foldl(nodes, scope, file_ns, program),
     "macroexpand" => syntax::macroexpand(nodes, scope, file_ns, program),
     "macroexpand-1" => syntax::macroexpand_1(nodes, scope, file_ns, program),
+    "try" => syntax::call_try(nodes, scope, file_ns, program),
     a => Err(format!("TODO syntax: {}", a)),
   }
 }

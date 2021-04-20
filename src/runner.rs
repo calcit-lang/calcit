@@ -140,7 +140,7 @@ pub fn evaluate_symbol(
       }
       match program::lookup_def_target_in_import(file_ns, sym, program_code) {
         Some(target_ns) => eval_symbol_from_program(sym, &target_ns, program_code),
-        None => Err(format!("unknown builtin fn name: {}", sym)),
+        None => Err(format!("unknown symbol: {}", sym)),
       }
     }
   }
@@ -198,9 +198,8 @@ pub fn run_fn(
   }
 }
 
-/// TODO support `?` for trailing optional arguments...
 /// create new scope by wrting new args
-/// notice that `&` is a mark for spreading
+/// notice that `&` is a mark for spreading, `?` for optional arguments
 pub fn bind_args(
   args: &CalcitItems,
   values: &CalcitItems,
@@ -216,12 +215,14 @@ pub fn bind_args(
   // }
   let mut scope = base_scope.clone();
   let mut spreading = false;
+  let mut optional = false;
   let mut collected_args = args.clone();
   let mut collected_values = values.clone();
   while let Some(a) = collected_args.pop_front() {
     if spreading {
       match a {
-        CalcitSymbol(s, _) if s == "&" => return Err(format!("invalid & in values: {:?}", values)),
+        CalcitSymbol(s, _) if s == "&" => return Err(format!("invalid & in args: {:?}", args)),
+        CalcitSymbol(s, _) if s == "?" => return Err(format!("invalid ? in args: {:?}", args)),
         CalcitSymbol(s, _) => {
           let mut chunk: CalcitItems = im::vector![];
           while let Some(v) = collected_values.pop_front() {
@@ -241,16 +242,21 @@ pub fn bind_args(
     } else {
       match a {
         CalcitSymbol(s, _) if s == "&" => spreading = true,
+        CalcitSymbol(s, _) if s == "?" => optional = true,
         CalcitSymbol(s, _) => match collected_values.pop_front() {
           Some(v) => {
             scope.insert(s.clone(), v.clone());
           }
           None => {
-            return Err(format!(
-              "too few values `{}` passed to args `{}`",
-              CrListWrap(values.clone()),
-              CrListWrap(args.clone())
-            ))
+            if optional {
+              scope.insert(s.clone(), CalcitNil);
+            } else {
+              return Err(format!(
+                "too few values `{}` passed to args `{}`",
+                CrListWrap(values.clone()),
+                CrListWrap(args.clone())
+              ));
+            }
           }
         },
         b => return Err(format!("invalid argument name: {}", b)),
