@@ -1,3 +1,5 @@
+mod preprocess;
+
 use crate::builtins;
 use crate::builtins::{is_proc_name, is_syntax_name};
 use crate::call_stack;
@@ -19,8 +21,8 @@ pub fn evaluate_expr(
     CalcitNil => Ok(expr.clone()),
     CalcitBool(_) => Ok(expr.clone()),
     CalcitNumber(_) => Ok(expr.clone()),
-    CalcitSymbol(s, _) if s == "&" => Ok(expr.clone()),
-    CalcitSymbol(s, ns) => evaluate_symbol(&s, scope, &ns, program_code),
+    CalcitSymbol(s, ..) if s == "&" => Ok(expr.clone()),
+    CalcitSymbol(s, ns, _resolved) => evaluate_symbol(&s, scope, &ns, program_code),
     CalcitKeyword(_) => Ok(expr.clone()),
     CalcitString(_) => Ok(expr.clone()),
     // CalcitRef(CalcitData), // TODO
@@ -85,7 +87,10 @@ pub fn evaluate_expr(
 
             Ok(macro_ret)
           }
-          CalcitSymbol(s, ns) => Err(format!("cannot evaluate symbol directly: {}/{}", ns, s)),
+          CalcitSymbol(s, ns, resolved) => Err(format!(
+            "cannot evaluate symbol directly: {}/{} {:?}",
+            ns, s, resolved
+          )),
           a => Err(format!("cannot be used as operator: {}", a)),
         };
 
@@ -221,9 +226,9 @@ pub fn bind_args(
   while let Some(a) = collected_args.pop_front() {
     if spreading {
       match a {
-        CalcitSymbol(s, _) if s == "&" => return Err(format!("invalid & in args: {:?}", args)),
-        CalcitSymbol(s, _) if s == "?" => return Err(format!("invalid ? in args: {:?}", args)),
-        CalcitSymbol(s, _) => {
+        CalcitSymbol(s, ..) if s == "&" => return Err(format!("invalid & in args: {:?}", args)),
+        CalcitSymbol(s, ..) if s == "?" => return Err(format!("invalid ? in args: {:?}", args)),
+        CalcitSymbol(s, ..) => {
           let mut chunk: CalcitItems = im::vector![];
           while let Some(v) = collected_values.pop_front() {
             chunk.push_back(v);
@@ -241,9 +246,9 @@ pub fn bind_args(
       }
     } else {
       match a {
-        CalcitSymbol(s, _) if s == "&" => spreading = true,
-        CalcitSymbol(s, _) if s == "?" => optional = true,
-        CalcitSymbol(s, _) => match collected_values.pop_front() {
+        CalcitSymbol(s, ..) if s == "&" => spreading = true,
+        CalcitSymbol(s, ..) if s == "?" => optional = true,
+        CalcitSymbol(s, ..) => match collected_values.pop_front() {
           Some(v) => {
             scope.insert(s.clone(), v.clone());
           }
@@ -306,7 +311,7 @@ pub fn evaluate_args(
       Ok(v) => {
         if spreading {
           match v {
-            CalcitSymbol(s, _) if s == "&" => {
+            CalcitSymbol(s, ..) if s == "&" => {
               return Err(format!(
                 "already in spread mode: {}",
                 CrListWrap(lines.clone())
@@ -322,7 +327,7 @@ pub fn evaluate_args(
           }
         } else {
           match v {
-            CalcitSymbol(s, _) if s == "&" => spreading = true,
+            CalcitSymbol(s, ..) if s == "&" => spreading = true,
             _ => ret.push_back(v.clone()),
           }
         }

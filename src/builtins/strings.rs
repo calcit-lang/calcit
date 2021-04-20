@@ -49,7 +49,7 @@ pub fn turn_string(xs: &CalcitItems) -> Result<CalcitData, String> {
     Some(CalcitBool(b)) => Ok(CalcitString(b.to_string())),
     Some(CalcitString(s)) => Ok(CalcitString(s.clone())),
     Some(CalcitKeyword(s)) => Ok(CalcitString(s.clone())),
-    Some(CalcitSymbol(s, _ns)) => Ok(CalcitString(s.clone())),
+    Some(CalcitSymbol(s, ..)) => Ok(CalcitString(s.clone())),
     Some(a) => Err(format!("turn-string cannot turn this to string: {}", a)),
     None => Err(String::from("turn-string expected 1 argument, got nothing")),
   }
