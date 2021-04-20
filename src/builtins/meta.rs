@@ -1,3 +1,7 @@
+use crate::builtins::lists::f32_to_usize;
+use crate::call_stack;
+use crate::data::cirru;
+use crate::data::edn;
 use crate::primes;
 use crate::primes::CalcitData::*;
 use crate::primes::{CalcitData, CalcitItems};
@@ -61,4 +65,84 @@ pub fn gensym(xs: &CalcitItems) -> Result<CalcitData, String> {
 pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<CalcitData, String> {
   let _ = SYMBOL_INDEX.swap(0, Ordering::SeqCst);
   Ok(CalcitNil)
+}
+
+pub fn get_calcit_running_mode(_xs: &CalcitItems) -> Result<CalcitData, String> {
+  Ok(CalcitKeyword(String::from("eval")))
+}
+
+pub fn generate_id(xs: &CalcitItems) -> Result<CalcitData, String> {
+  let size = match xs.get(0) {
+    Some(CalcitNumber(n)) => match f32_to_usize(*n) {
+      Ok(size) => Some(size),
+      Err(e) => return Err(e),
+    },
+    Some(a) => return Err(format!("expected usize, got: {}", a)),
+    None => None, // nanoid defaults to 21
+  };
+
+  match (size, xs.get(1)) {
+    (None, None) => Ok(CalcitString(nanoid!())),
+    (Some(n), None) => Ok(CalcitString(nanoid!(n))),
+    (Some(n), Some(CalcitString(s))) => {
+      let mut charset: Vec<char> = vec![];
+      for c in s.chars() {
+        charset.push(c);
+      }
+      Ok(CalcitString(nanoid!(n, &charset)))
+    }
+    (a, b) => Err(format!(
+      "generate-id! expected size or charset, got: {:?} {:?}",
+      a, b
+    )),
+  }
+}
+
+pub fn display_stack(_xs: &CalcitItems) -> Result<CalcitData, String> {
+  call_stack::show_stack();
+  Ok(CalcitNil)
+}
+
+pub fn parse_cirru(xs: &CalcitItems) -> Result<CalcitData, String> {
+  match xs.get(0) {
+    Some(CalcitString(s)) => match cirru_parser::parse_cirru(s.clone()) {
+      Ok(nodes) => Ok(cirru::cirru_to_calcit(&nodes)),
+      Err(e) => Err(format!("parse-cirru failed, {}", e)),
+    },
+    Some(a) => Err(format!("parse-cirru expected a string, got: {}", a)),
+    None => Err(String::from("parse-cirru expected 1 argument")),
+  }
+}
+
+pub fn write_cirru(xs: &CalcitItems) -> Result<CalcitData, String> {
+  match xs.get(0) {
+    Some(a) => {
+      let options = cirru_parser::CirruWriterOptions { use_inline: false };
+      match cirru::calcit_data_to_cirru(a) {
+        Ok(v) => Ok(CalcitString(cirru_parser::write_cirru(&v, options))),
+        Err(e) => Err(format!("write-cirru failed, {}", e)),
+      }
+    }
+    None => Err(String::from("parse-cirru expected 1 argument")),
+  }
+}
+
+pub fn parse_cirru_edn(xs: &CalcitItems) -> Result<CalcitData, String> {
+  match xs.get(0) {
+    Some(CalcitString(s)) => match cirru_edn::parse_cirru_edn(s.clone()) {
+      Ok(nodes) => Ok(edn::edn_to_calcit(&nodes)),
+      Err(e) => Err(format!("parse-cirru-edn failed, {}", e)),
+    },
+    Some(a) => Err(format!("parse-cirru-edn expected a string, got: {}", a)),
+    None => Err(String::from("parse-cirru-edn expected 1 argument")),
+  }
+}
+
+pub fn write_cirru_edn(xs: &CalcitItems) -> Result<CalcitData, String> {
+  match xs.get(0) {
+    Some(a) => Ok(CalcitString(cirru_edn::write_cirru_edn(
+      edn::calcit_to_edn(a),
+    ))),
+    None => Err(String::from("write-cirru-edn expected 1 argument")),
+  }
 }

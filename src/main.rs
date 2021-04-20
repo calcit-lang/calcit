@@ -104,7 +104,7 @@ fn main() -> Result<(), String> {
               println!("result: {}", v);
             }
             Err(falure) => {
-              println!("failed, {}", falure);
+              println!("\nfailed, {}", falure);
               call_stack::display_stack(&falure);
             }
           }

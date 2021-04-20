@@ -205,7 +205,7 @@
               log-title "|Testing id"
               test-id
 
-            log-title "|Testing time"
+            ; log-title "|Testing time"
             ; "|skipped since CI uses a different timezone"
             ; test-time
 

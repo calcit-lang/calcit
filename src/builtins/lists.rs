@@ -5,6 +5,18 @@ pub fn new_list(xs: &CalcitItems) -> Result<CalcitData, String> {
   Ok(CalcitList(xs.clone()))
 }
 
+pub fn f32_to_usize(f: f32) -> Result<usize, String> {
+  if f.fract() == 0.0 {
+    if f >= 0.0 {
+      Ok(f as usize)
+    } else {
+      Err(format!("usize expected a positive number, but got: {}", f))
+    }
+  } else {
+    Err(format!("cannot extract int from float: {}", f))
+  }
+}
+
 pub fn empty_ques(xs: &CalcitItems) -> Result<CalcitData, String> {
   match xs.get(0) {
     Some(CalcitNil) => Ok(CalcitBool(true)),
@@ -124,4 +136,18 @@ pub fn butlast(xs: &CalcitItems) -> Result<CalcitData, String> {
     Some(a) => Err(format!("butlast expected a list, got: {}", a)),
     None => Err(String::from("butlast expected 1 argument")),
   }
+}
+
+pub fn concat(xs: &CalcitItems) -> Result<CalcitData, String> {
+  let mut ys: CalcitItems = im::vector![];
+  for x in xs {
+    if let CalcitList(zs) = x {
+      for z in zs {
+        ys.push_back(z.clone());
+      }
+    } else {
+      return Err(format!("concat expects list arguments, got: {}", x));
+    }
+  }
+  Ok(CalcitList(ys))
 }

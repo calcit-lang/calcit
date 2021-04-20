@@ -51,6 +51,22 @@ pub fn pop_call_stack() {
   stack.pop();
 }
 
+// show simplified version of stack
+pub fn show_stack() {
+  let stack: &Vec<CalcitStack> = &mut CALL_STACK.lock().unwrap();
+  println!("\ncall stack:");
+  for idx in 0..stack.len() {
+    let s = &stack[stack.len() - idx - 1];
+    let is_macro = s.kind == StackKind::Macro;
+    println!(
+      "  {}/{}{}",
+      s.ns,
+      s.def,
+      if is_macro { "\t ~macro" } else { "" }
+    );
+  }
+}
+
 pub fn display_stack(failure: &str) {
   let stack: &Vec<CalcitStack> = &mut CALL_STACK.lock().unwrap();
   println!("\ncall stack:");
