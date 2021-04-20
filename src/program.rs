@@ -33,29 +33,43 @@ lazy_static! {
 fn extract_import_rule(nodes: &CirruNode) -> Result<Vec<(String, ImportRule)>, String> {
   match nodes {
     CirruLeaf(_) => Err(String::from("Expected import rule in expr")),
-    CirruList(xs) => match (xs[0].clone(), xs[1].clone(), xs[2].clone()) {
-      (CirruLeaf(ns), x, CirruLeaf(alias)) if x == CirruLeaf(String::from(":as")) => {
-        Ok(vec![(alias, ImportRule::ImportNsRule(ns))])
+    CirruList(rule_nodes) => {
+      let mut xs = rule_nodes.clone();
+      match xs.get(0) {
+        // strip leading `[]` symbols
+        Some(CirruLeaf(s)) if s == "[]" => xs = xs[1..4].to_vec(),
+        _ => (),
       }
-      (CirruLeaf(ns), x, CirruList(ys)) if x == CirruLeaf(String::from(":refer")) => {
-        let mut rules: Vec<(String, ImportRule)> = vec![];
-        for y in ys {
-          match y {
-            CirruLeaf(s) => {
-              rules.push((s.clone(), ImportRule::ImportDefRule(ns.clone(), s.clone())))
-            }
-            CirruList(_defs) => return Err(String::from("invalid refer values")),
-          }
+      match (xs[0].clone(), xs[1].clone(), xs[2].clone()) {
+        (CirruLeaf(ns), x, CirruLeaf(alias)) if x == CirruLeaf(String::from(":as")) => {
+          Ok(vec![(alias, ImportRule::ImportNsRule(ns))])
         }
-        Ok(rules)
+        (CirruLeaf(ns), x, CirruList(ys)) if x == CirruLeaf(String::from(":refer")) => {
+          let mut rules: Vec<(String, ImportRule)> = vec![];
+          for y in ys {
+            match y {
+              CirruLeaf(s) if &s == "[]" => (), // `[]` symbol are ignored
+              CirruLeaf(s) => {
+                rules.push((s.clone(), ImportRule::ImportDefRule(ns.clone(), s.clone())))
+              }
+              CirruList(_defs) => return Err(String::from("invalid refer values")),
+            }
+          }
+          Ok(rules)
+        }
+        (_, x, _) if x == CirruLeaf(String::from(":as")) => {
+          Err(String::from("invalid import rule"))
+        }
+        (_, x, _) if x == CirruLeaf(String::from(":refer")) => {
+          Err(String::from("invalid import rule"))
+        }
+        _ if xs.len() != 3 => Err(format!(
+          "expected import rule has length 3: {}",
+          CirruList(xs.clone())
+        )),
+        _ => Err(String::from("unknown rule")),
       }
-      (_, x, _) if x == CirruLeaf(String::from(":as")) => Err(String::from("invalid import rule")),
-      (_, x, _) if x == CirruLeaf(String::from(":refer")) => {
-        Err(String::from("invalid import rule"))
-      }
-      _ if xs.len() != 3 => Err(String::from("expected import rule hasl ength 3")),
-      _ => Err(String::from("unknown rule")),
-    },
+    }
   }
 }
 

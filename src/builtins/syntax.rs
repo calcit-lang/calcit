@@ -1,3 +1,5 @@
+use crate::builtins;
+use crate::primes;
 use crate::primes::CalcitData::*;
 use crate::primes::{CalcitData, CalcitItems, CalcitScope};
 use crate::program::ProgramCodeData;
@@ -6,12 +8,13 @@ use crate::runner;
 pub fn defn(
   expr: &CalcitItems,
   scope: &CalcitScope,
-  _file_ns: &str,
+  file_ns: &str,
   _program: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
   match (expr.get(0), expr.get(1)) {
     (Some(CalcitSymbol(s, _ns)), Some(CalcitList(xs))) => Ok(CalcitFn(
       s.to_string(),
+      file_ns.to_string(),
       nanoid!(),
       scope.clone(),
       xs.clone(),
@@ -25,12 +28,13 @@ pub fn defn(
 pub fn defmacro(
   expr: &CalcitItems,
   _scope: &CalcitScope,
-  _file_ns: &str,
+  def_ns: &str,
   _program: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
   match (expr.get(0), expr.get(1)) {
     (Some(CalcitSymbol(s, _ns)), Some(CalcitList(xs))) => Ok(CalcitMacro(
       s.to_string(),
+      def_ns.to_string(),
       nanoid!(),
       xs.clone(),
       expr.clone().slice(2..),
@@ -131,15 +135,24 @@ pub fn foldl(
     let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
     let acc = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
     let f = runner::evaluate_expr(&expr[2], scope, file_ns, program_code)?;
-    match (xs.clone(), f.clone()) {
-      (CalcitList(xs), CalcitFn(..)) | (CalcitList(xs), CalcitProc(..)) => {
+    match (&xs, &f) {
+      // dirty since only functions being call directly then we become fast
+      (CalcitList(xs), CalcitFn(_, def_ns, _, def_scope, args, body)) => {
         let mut ret = acc;
         for x in xs {
-          let code = CalcitList(im::vector![f.clone(), ret.clone(), x.clone()]);
-          ret = runner::evaluate_expr(&code, scope, file_ns, program_code)?;
+          let values = im::vector![ret, x.clone()];
+          ret = runner::run_fn(values, &def_scope, args, body, def_ns, program_code)?;
         }
         Ok(ret)
       }
+      (CalcitList(xs), CalcitProc(proc)) => {
+        let mut ret = acc;
+        for x in xs {
+          ret = builtins::handle_proc(&proc, &im::vector![ret, x.clone()])?;
+        }
+        Ok(ret)
+      }
+
       (_, _) => Err(format!(
         "foldl expected list and function, got: {} {}",
         xs, f
@@ -156,7 +169,6 @@ pub fn quasiquote(
   file_ns: &str,
   program_code: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
-  // println!("replacing: {:?}", expr);
   match expr.get(0) {
     None => Err(String::from("quasiquote expected a node")),
     Some(code) => {
@@ -222,7 +234,7 @@ pub fn macroexpand(
         }
         let v = runner::evaluate_expr(&xs[0], scope, file_ns, program_code)?;
         match v {
-          CalcitMacro(_, _, args, body) => {
+          CalcitMacro(_, def_ns, _, args, body) => {
             let mut xs_cloned = xs;
             // mutable operation
             let mut rest_nodes = xs_cloned.slice(1..);
@@ -230,7 +242,7 @@ pub fn macroexpand(
             // keep expanding until return value is not a recur
             loop {
               let body_scope = runner::bind_args(&args, &rest_nodes, scope)?;
-              let v = runner::evaluate_lines(&body, &body_scope, file_ns, program_code)?;
+              let v = runner::evaluate_lines(&body, &body_scope, &def_ns, program_code)?;
               match v {
                 CalcitRecur(rest_code) => {
                   rest_nodes = rest_code;
@@ -268,10 +280,10 @@ pub fn macroexpand_1(
         }
         let v = runner::evaluate_expr(&xs[0], scope, file_ns, program_code)?;
         match v {
-          CalcitMacro(_, _, args, body) => {
+          CalcitMacro(_, def_ns, _, args, body) => {
             let mut xs_cloned = xs;
             let body_scope = runner::bind_args(&args, &xs_cloned.slice(1..), scope)?;
-            runner::evaluate_lines(&body, &body_scope, file_ns, program_code)
+            runner::evaluate_lines(&body, &body_scope, &def_ns, program_code)
           }
           _ => Ok(quoted_code),
         }

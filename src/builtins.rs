@@ -18,6 +18,8 @@ pub fn is_proc_name(s: &str) -> bool {
     "type-of"
       | "recur"
       | "format-to-lisp"
+      | "gensym"
+      | "reset-gensym-index!"
       // effects
       | "echo"
       | "echo-values"
@@ -75,6 +77,8 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<CalcitData, String>
     "type-of" => meta::type_of(args),
     "recur" => meta::recur(args),
     "format-to-lisp" => meta::format_to_lisp(args),
+    "gensym" => meta::gensym(args),
+    "reset-gensym-index!" => meta::reset_gensym_index(args),
     // effects
     "echo" => effects::echo(args),
     "echo-values" => effects::echo_values(args),

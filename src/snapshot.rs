@@ -1,4 +1,5 @@
 use cirru_edn::CirruEdn;
+use cirru_edn::CirruEdn::*;
 use cirru_parser::CirruNode;
 use std::collections::hash_map::HashMap;
 
@@ -27,21 +28,40 @@ pub struct Snapshot {
 
 fn load_configs(data: CirruEdn) -> Result<SnapshotConfigs, String> {
   let c = SnapshotConfigs {
-    init_fn: edn::as_string(edn::map_get(&data, "init-fn"))?,
-    reload_fn: edn::as_string(edn::map_get(&data, "reload-fn"))?,
-    version: edn::as_string(edn::map_get(&data, "version"))?,
-    modules: load_modules(edn::map_get(&data, "modules"))?,
+    init_fn: match edn::as_string(edn::map_get(&data, "init-fn")) {
+      Ok(v) => v,
+      Err(e) => return Err(format!("failed to load init-fn from: {}", e)),
+    },
+    reload_fn: match edn::as_string(edn::map_get(&data, "reload-fn")) {
+      Ok(v) => v,
+      Err(e) => return Err(format!("failed to load reload-fn from: {}", e)),
+    },
+    version: match edn::map_get(&data, "version") {
+      CirruEdnNil => String::from(""),
+      x => match edn::as_string(x) {
+        Ok(v) => v,
+        Err(e) => return Err(format!("failed to load version, {}", e)),
+      },
+    },
+    modules: match edn::map_get(&data, "modules") {
+      CirruEdnNil => vec![],
+      x => load_modules(x)?,
+    },
   };
   Ok(c)
 }
 
 fn load_modules(data: CirruEdn) -> Result<Vec<String>, String> {
-  let xs = edn::as_vec(data)?;
-  let mut ys: Vec<String> = vec![];
-  for x in xs {
-    ys.push(edn::as_string(x)?)
+  match edn::as_vec(data) {
+    Ok(xs) => {
+      let mut ys: Vec<String> = vec![];
+      for x in xs {
+        ys.push(edn::as_string(x)?)
+      }
+      Ok(ys)
+    }
+    Err(e) => Err(format!("failed to load modules, {}", e)),
   }
-  Ok(ys)
 }
 
 fn load_file_info(data: CirruEdn) -> Result<FileInSnapShot, String> {

@@ -15,7 +15,7 @@ jobs:
           toolchain: stable
 
       - run: cargo test
-      - run: cargo run
+      - run: cargo run calcit/compact.cirru
 
       - uses: katyo/publish-crates@v1
         with:

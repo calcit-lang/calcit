@@ -1,7 +1,9 @@
 use crate::builtins;
 use crate::builtins::{is_proc_name, is_syntax_name};
-use crate::primes::CalcitData;
-use crate::primes::CalcitData::*;
+use crate::call_stack;
+use crate::call_stack::{push_call_stack, StackKind};
+use crate::primes;
+use crate::primes::{CalcitData, CalcitData::*};
 use crate::primes::{CalcitItems, CalcitScope, CrListWrap, CORE_NS};
 use crate::program;
 
@@ -11,6 +13,8 @@ pub fn evaluate_expr(
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitData, String> {
+  // println!("eval code: {}", primes::format_to_lisp(expr));
+
   match expr {
     CalcitNil => Ok(expr.clone()),
     CalcitBool(_) => Ok(expr.clone()),
@@ -23,39 +27,73 @@ pub fn evaluate_expr(
     // CalcitThunk(CirruNode), // TODO
     CalcitRecur(_) => unreachable!("recur not expected to be from symbol"),
     CalcitList(xs) => match xs.get(0) {
-      None => Err(String::from("cannot evaluate empty expr")),
+      None => Err(format!("cannot evaluate empty expr: {}", expr)),
       Some(x) => {
+        // println!("eval expr: {}", primes::format_to_lisp(expr));
+        // println!("eval expr: {}", x);
+
+        let mut added_stack = false;
+
         let v = evaluate_expr(&x, scope, file_ns, program_code)?;
         let rest_nodes = xs.clone().slice(1..);
-        match v {
+        let ret = match &v {
           CalcitProc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
+            push_call_stack(file_ns, &p, StackKind::Proc, &None, &values);
+            added_stack = true;
             builtins::handle_proc(&p, &values)
           }
-          CalcitSyntax(s) => builtins::handle_syntax(&s, &rest_nodes, scope, file_ns, program_code),
-          CalcitFn(_, _, def_scope, args, body) => {
-            let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
-            run_fn(values, &def_scope, args, body, file_ns, program_code)
+          CalcitSyntax(s, def_ns) => {
+            builtins::handle_syntax(&s, &rest_nodes, scope, def_ns, program_code)
           }
-          CalcitMacro(_, _, args, body) => {
-            let mut current_values = rest_nodes;
+          CalcitFn(name, def_ns, _, def_scope, args, body) => {
+            let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
+            push_call_stack(file_ns, &name, StackKind::Fn, &Some(expr.clone()), &values);
+            added_stack = true;
+            run_fn(values, &def_scope, args, body, def_ns, program_code)
+          }
+          CalcitMacro(name, def_ns, _, args, body) => {
+            let mut current_values = rest_nodes.clone();
+            let mut macro_ret = CalcitNil;
+            // println!("eval macro: {} {}", x, primes::format_to_lisp(expr));
+            // println!("macro... {} {}", x, CrListWrap(current_values.clone()));
+
+            push_call_stack(
+              file_ns,
+              &name,
+              StackKind::Macro,
+              &Some(expr.clone()),
+              &rest_nodes,
+            );
+            added_stack = true;
+
             loop {
               // need to handle recursion
-              let body_scope = bind_args(&args, &current_values, scope)?;
-              let code = evaluate_lines(&body, &body_scope, file_ns, program_code)?;
+              let body_scope = bind_args(&args, &current_values, &im::HashMap::new())?;
+              let code = evaluate_lines(&body, &body_scope, def_ns, program_code)?;
               match code {
                 CalcitRecur(ys) => {
                   current_values = ys;
                 }
                 _ => {
-                  return evaluate_expr(&code, scope, file_ns, program_code);
+                  // println!("gen code: {} {}", x, primes::format_to_lisp(&code));
+                  macro_ret = evaluate_expr(&code, scope, file_ns, program_code)?;
+                  break;
                 }
               }
             }
+
+            Ok(macro_ret)
           }
           CalcitSymbol(s, ns) => Err(format!("cannot evaluate symbol directly: {}/{}", ns, s)),
           a => Err(format!("cannot be used as operator: {}", a)),
+        };
+
+        if added_stack && ret.is_ok() {
+          call_stack::pop_call_stack();
         }
+
+        ret
       }
     },
     CalcitSet(_) => Err(String::from("unexpected set for expr")),
@@ -64,7 +102,7 @@ pub fn evaluate_expr(
     CalcitProc(_) => Ok(expr.clone()),
     CalcitMacro(..) => Ok(expr.clone()),
     CalcitFn(..) => Ok(expr.clone()),
-    CalcitSyntax(_) => Ok(expr.clone()),
+    CalcitSyntax(_, _) => Ok(expr.clone()),
   }
 }
 
@@ -86,7 +124,7 @@ pub fn evaluate_symbol(
     }
     None => {
       if is_syntax_name(sym) {
-        return Ok(CalcitSyntax(sym.to_string()));
+        return Ok(CalcitSyntax(sym.to_string(), file_ns.to_string()));
       }
       if is_proc_name(sym) {
         return Ok(CalcitProc(sym.to_string()));
@@ -134,7 +172,7 @@ fn eval_symbol_from_program(
         program::write_evaled_def(ns, sym, v.clone())?;
         Ok(v)
       }
-      None => Err(String::from("cannot find code for def")),
+      None => Err(format!("cannot find code for def: {}/{}", ns, sym)),
     },
   }
 }
@@ -142,15 +180,15 @@ fn eval_symbol_from_program(
 pub fn run_fn(
   values: CalcitItems,
   scope: &CalcitScope,
-  args: CalcitItems,
-  body: CalcitItems,
+  args: &CalcitItems,
+  body: &CalcitItems,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitData, String> {
   let mut current_values = values;
   loop {
-    let body_scope = bind_args(&args, &current_values, scope)?;
-    let v = evaluate_lines(&body, &body_scope, file_ns, program_code)?;
+    let body_scope = bind_args(args, &current_values, scope)?;
+    let v = evaluate_lines(body, &body_scope, file_ns, program_code)?;
     match v {
       CalcitRecur(xs) => {
         current_values = xs;

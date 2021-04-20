@@ -17,4 +17,4 @@ jobs:
           toolchain: stable
 
       - run: cargo test
-      - run: cargo run
+      - run: cargo run calcit/compact.cirru

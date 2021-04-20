@@ -76,3 +76,26 @@ fn is_comment(x: &CalcitData) -> bool {
     _ => false,
   }
 }
+
+pub fn calcit_to_cirru(x: &CalcitData) -> CirruNode {
+  match x {
+    CalcitNil => CirruLeaf(String::from("nil")),
+    CalcitBool(true) => CirruLeaf(String::from("true")),
+    CalcitBool(false) => CirruLeaf(String::from("false")),
+    CalcitNumber(n) => CirruLeaf(n.to_string()),
+    CalcitString(s) => CirruLeaf(format!("|{}", s)), // TODO performance
+    CalcitSymbol(s, _ns) => CirruLeaf(s.to_string()), // TODO performance
+    CalcitKeyword(s) => CirruLeaf(format!(":{}", s)), // TODO performance
+    CalcitList(xs) => {
+      let mut ys: Vec<CirruNode> = vec![];
+      for x in xs {
+        ys.push(calcit_to_cirru(x));
+      }
+      CirruList(ys)
+    }
+    a => CirruList(vec![
+      CirruLeaf(String::from("TODO")),
+      CirruLeaf(a.to_string()),
+    ]),
+  }
+}

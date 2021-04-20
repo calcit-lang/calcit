@@ -34,19 +34,21 @@ pub enum CalcitData {
   CalcitRecord(String, Vec<String>, Vec<CalcitData>),
   CalcitProc(String),
   CalcitMacro(
-    String,
+    String, // name
+    String, // ns
     NanoId,
     CalcitItems, // args
     CalcitItems, // body
   ),
   CalcitFn(
     String,
+    String,
     NanoId,
     CalcitScope,
     CalcitItems, // args
     CalcitItems, // body
   ),
-  CalcitSyntax(String),
+  CalcitSyntax(String, String), // name, ns... notice that `ns` is a meta info
 }
 
 use CalcitData::*;
@@ -98,13 +100,49 @@ impl fmt::Display for CalcitData {
         f.write_str(")")
       }
       CalcitProc(name) => f.write_str(&format!("(&proc {})", name)),
-      CalcitMacro(name, _, args, _) => {
-        f.write_str(&format!("(&macro {} {})", name, CalcitList(args.clone())))
+      CalcitMacro(name, _def_ns, _, args, body) => {
+        f.write_str(&format!("(&macro {} (", name))?;
+        let mut need_space = false;
+        for a in args {
+          if need_space {
+            f.write_str(" ")?;
+          }
+          f.write_str(&format_to_lisp(a))?;
+          need_space = true;
+        }
+        f.write_str(") (")?;
+        need_space = false;
+        for b in body {
+          if need_space {
+            f.write_str(" ")?;
+          }
+          f.write_str(&format_to_lisp(b))?;
+          need_space = true;
+        }
+        f.write_str("))")
       }
-      CalcitFn(name, _, _, args, _) => {
-        f.write_str(&format!("(&fn {} {})", name, CalcitList(args.clone())))
+      CalcitFn(name, _, _, _, args, body) => {
+        f.write_str(&format!("(&fn {} (", name))?;
+        let mut need_space = false;
+        for a in args {
+          if need_space {
+            f.write_str(" ")?;
+          }
+          f.write_str(&format_to_lisp(a))?;
+          need_space = true;
+        }
+        f.write_str(") (")?;
+        need_space = false;
+        for b in body {
+          if need_space {
+            f.write_str(" ")?;
+          }
+          f.write_str(&format_to_lisp(b))?;
+          need_space = true;
+        }
+        f.write_str("))")
       }
-      CalcitSyntax(name) => f.write_str(&format!("(&syntax {})", name)),
+      CalcitSyntax(name, _ns) => f.write_str(&format!("(&syntax {})", name)),
     }
   }
 }
@@ -210,7 +248,7 @@ impl Hash for CalcitData {
         name.hash(_state);
         gen_id.hash(_state);
       }
-      CalcitSyntax(name) => {
+      CalcitSyntax(name, _ns) => {
         "syntax:".hash(_state);
         // syntax name can be used as identity
         name.hash(_state);
@@ -298,7 +336,7 @@ impl Ord for CalcitData {
       (CalcitFn(..), _) => Less,
       (_, CalcitFn(..)) => Greater,
 
-      (CalcitSyntax(a), CalcitSyntax(b)) => a.cmp(&b),
+      (CalcitSyntax(a, _), CalcitSyntax(b, _)) => a.cmp(&b),
     }
   }
 }
@@ -332,13 +370,16 @@ impl PartialEq for CalcitData {
       (CalcitProc(a), CalcitProc(b)) => a == b,
       (CalcitMacro(_, a, ..), CalcitMacro(_, b, ..)) => a == b,
       (CalcitFn(_, a, ..), CalcitFn(_, b, ..)) => a == b,
-      (CalcitSyntax(a), CalcitSyntax(b)) => a == b,
+      (CalcitSyntax(a, _), CalcitSyntax(b, _)) => a == b,
       (_, _) => false,
     }
   }
 }
 
 pub const CORE_NS: &str = "calcit.core";
+pub const GENERATED_NS: &str = "calcit.gen";
+
+pub const CALCI_VERSION: &str = "0.0.1";
 
 impl CalcitData {
   pub fn turn_string(&self) -> String {
