@@ -1,6 +1,6 @@
 use cirru_edn::CirruEdn;
 use cirru_edn::CirruEdn::*;
-use cirru_parser::CirruNode;
+use cirru_parser::{CirruNode, CirruNode::*};
 use std::collections::hash_map::HashMap;
 
 use crate::data::edn;
@@ -99,4 +99,52 @@ pub fn load_snapshot_data(data: CirruEdn) -> Result<Snapshot, String> {
     files: load_files(edn::map_get(&data, "files"))?,
   };
   Ok(s)
+}
+
+pub fn gen_default() -> Snapshot {
+  Snapshot {
+    package: String::from("app"),
+    configs: SnapshotConfigs {
+      init_fn: String::from("app.main/main!"),
+      reload_fn: String::from("app.main/reload!"),
+      version: String::from("0.0.0"),
+      modules: vec![],
+    },
+    files: HashMap::new(),
+  }
+}
+
+pub fn create_file_from_snippet(code: &str) -> Result<FileInSnapShot, String> {
+  match cirru_parser::parse_cirru(code.to_string()) {
+    Ok(lines) => {
+      let code = match lines {
+        CirruList(line) => {
+          if line.len() == 1 {
+            line[0].clone()
+          } else {
+            return Err(format!("unexpected snippet: {}", code));
+          }
+        }
+        CirruLeaf(s) => return Err(format!("unexpected snippet: {}", s)),
+      };
+      let mut def_dict: HashMap<String, CirruNode> = HashMap::new();
+      def_dict.insert(
+        String::from("main!"),
+        CirruList(vec![
+          CirruLeaf(String::from("defn")),
+          CirruLeaf(String::from("main!")),
+          CirruList(vec![]),
+          code,
+        ]),
+      );
+      Ok(FileInSnapShot {
+        ns: CirruList(vec![
+          CirruLeaf(String::from("ns")),
+          CirruLeaf(String::from("app.main")),
+        ]),
+        defs: def_dict,
+      })
+    }
+    Err(e) => Err(format!("failed to make snapshot: {}", e)),
+  }
 }

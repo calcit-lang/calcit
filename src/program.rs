@@ -2,7 +2,7 @@ use crate::snapshot::Snapshot;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::data::cirru::cirru_to_calcit;
+use crate::data::cirru::code_to_calcit;
 use crate::primes::CalcitData;
 
 use cirru_parser::CirruNode;
@@ -106,7 +106,7 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
     let import_map = extract_import_map(&file.ns)?;
     let mut defs: HashMap<String, CalcitData> = HashMap::new();
     for (def, code) in file.defs {
-      defs.insert(def, cirru_to_calcit(&code, &ns)?);
+      defs.insert(def, code_to_calcit(&code, &ns)?);
     }
     let file_info = ProgramFileData { import_map, defs };
     xs.insert(ns, file_info);

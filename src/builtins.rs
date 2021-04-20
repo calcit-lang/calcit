@@ -19,7 +19,14 @@ pub fn is_proc_name(s: &str) -> bool {
       | "recur"
       | "format-to-lisp"
       | "gensym"
-      | "reset-gensym-index!"
+      | "&reset-gensym-index!"
+      | "&get-calcit-running-mode"
+      | "generate-id!"
+      | "display-stack"
+      | "parse-cirru"
+      | "write-cirru"
+      | "parse-cirru-edn"
+      | "write-cirru-edn"
       // effects
       | "echo"
       | "echo-values"
@@ -38,10 +45,9 @@ pub fn is_proc_name(s: &str) -> bool {
       | "fractional" // logics
       // strings
       | "&str-concat"
+      | "trim"
       // lists
       | "[]"
-      | "&{}"
-      | "#{}"
       | "empty?"
       | "count"
       | "nth"
@@ -50,7 +56,69 @@ pub fn is_proc_name(s: &str) -> bool {
       | "prepend"
       | "rest"
       | "butlast"
+      | "concat"
+      // maps
+      | "&{}"
+      | "assoc"
+      | "&get"
+      | "contains?"
+      // sets
+      | "#{}"
   )
+}
+
+pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<CalcitData, String> {
+  match name {
+    // meta
+    "type-of" => meta::type_of(args),
+    "recur" => meta::recur(args),
+    "format-to-lisp" => meta::format_to_lisp(args),
+    "gensym" => meta::gensym(args),
+    "&reset-gensym-index!" => meta::reset_gensym_index(args),
+    "&get-calcit-running-mode" => meta::get_calcit_running_mode(args),
+    "generate-id!" => meta::generate_id(args),
+    "display-stack" => meta::display_stack(args),
+    "parse-cirru" => meta::parse_cirru(args),
+    "write-cirru" => meta::write_cirru(args),
+    "parse-cirru-edn" => meta::parse_cirru_edn(args),
+    "write-cirru-edn" => meta::write_cirru_edn(args),
+    // effects
+    "echo" => effects::echo(args),
+    "echo-values" => effects::echo_values(args),
+    "raise" => effects::raise(args),
+    // logics
+    "&=" => logics::binary_equal(args),
+    "&<" => logics::binary_less(args),
+    "&>" => logics::binary_greater(args),
+    "not" => logics::not(args),
+    // math
+    "&+" => math::binary_add(args),
+    "&-" => math::binary_minus(args),
+    "&*" => math::binary_multiply(args),
+    "&/" => math::binary_divide(args),
+    // strings
+    "&str-concat" => strings::binary_str_concat(args),
+    "trim" => strings::trim(args),
+    // lists
+    "[]" => lists::new_list(args),
+    "empty?" => lists::empty_ques(args),
+    "count" => lists::count(args),
+    "nth" => lists::nth(args),
+    "slice" => lists::slice(args),
+    "append" => lists::append(args),
+    "prepend" => lists::prepend(args),
+    "rest" => lists::rest(args),
+    "butlast" => lists::butlast(args),
+    "concat" => lists::concat(args),
+    // maps
+    "&{}" => maps::call_new_map(args),
+    "assoc" => maps::assoc(args),
+    "&get" => maps::map_get(args),
+    "contains?" => maps::contains_ques(args),
+    // sets
+    "#{}" => sets::new_set(args),
+    a => Err(format!("TODO proc: {}", a)),
+  }
 }
 
 pub fn is_syntax_name(s: &str) -> bool {
@@ -69,48 +137,6 @@ pub fn is_syntax_name(s: &str) -> bool {
       | "macroexpand-all"
       | "foldl" // for performance
   )
-}
-
-pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<CalcitData, String> {
-  match name {
-    // meta
-    "type-of" => meta::type_of(args),
-    "recur" => meta::recur(args),
-    "format-to-lisp" => meta::format_to_lisp(args),
-    "gensym" => meta::gensym(args),
-    "reset-gensym-index!" => meta::reset_gensym_index(args),
-    // effects
-    "echo" => effects::echo(args),
-    "echo-values" => effects::echo_values(args),
-    "raise" => effects::raise(args),
-    // logics
-    "&=" => logics::binary_equal(args),
-    "&<" => logics::binary_less(args),
-    "&>" => logics::binary_greater(args),
-    "not" => logics::not(args),
-    // math
-    "&+" => math::binary_add(args),
-    "&-" => math::binary_minus(args),
-    "&*" => math::binary_multiply(args),
-    "&/" => math::binary_divide(args),
-    // strings
-    "&str-concat" => strings::binary_str_concat(args),
-    // lists
-    "[]" => lists::new_list(args),
-    "empty?" => lists::empty_ques(args),
-    "count" => lists::count(args),
-    "nth" => lists::nth(args),
-    "slice" => lists::slice(args),
-    "append" => lists::append(args),
-    "prepend" => lists::prepend(args),
-    "rest" => lists::rest(args),
-    "butlast" => lists::butlast(args),
-    // maps
-    "&{}" => maps::call_new_map(args),
-    // sets
-    "#{}" => sets::new_set(args),
-    a => Err(format!("TODO proc: {}", a)),
-  }
 }
 
 pub fn handle_syntax(

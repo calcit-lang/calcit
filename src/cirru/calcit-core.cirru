@@ -30,6 +30,11 @@
         |first $ quote
           defn first (xs) (get xs 0)
 
+        |last $ quote
+          defn last (xs)
+            &get xs
+              &- (count xs) 1
+
         |when $ quote
           defmacro when (condition & body)
             quote-replace $ if ~condition (&let nil ~@body)
@@ -160,7 +165,8 @@
           defn map (xs f)
             cond
               (list? xs)
-                &list-map xs f
+                reduce xs ([])
+                  fn (acc x) $ append acc (f x)
               (set? xs)
                 reduce xs (#{})
                   fn (acc x) $ include acc (f x)
@@ -239,7 +245,7 @@
                 x0 (first xs)
                 if (list? x0)
                   recur
-                    &concat ([] (first x0) base) (rest x0)
+                    concat ([] (first x0) base) (rest x0)
                     , & (rest xs)
                   recur ([] x0 base) & (rest xs)
 
@@ -370,13 +376,6 @@
               if (f (first xs)) true
                 recur (rest xs) f
 
-        |concat $ quote
-          defn concat (& xs)
-            if (empty? xs)
-              []
-              if (&= 1 (count xs)) (first xs)
-                recur (&concat (get xs 0) (get xs 1)) & (slice xs 2)
-
         |mapcat $ quote
           defn mapcat (xs f)
             concat & $ map xs f
@@ -405,7 +404,6 @@
 
         |filter $ quote
           defn filter (xs f)
-            echo |filtering xs f
             foldl xs ([])
               fn (acc x)
                 if (f x) (append acc x) acc
@@ -486,7 +484,7 @@
               args $ ->% (turn-string args-alias) (split % |.) (map turn-symbol %)
               &let
                 inner-body $ if (&= 1 (count xs)) (first xs)
-                  &concat ([] (quote-replace &let nil)) xs
+                  concat ([] (quote-replace &let nil)) xs
                 apply-args
                   [] inner-body args
                   fn (body ys)
@@ -605,12 +603,11 @@
         |%{} $ quote
           defmacro %{} (R & xs)
             &let
-              args $ &concat & xs
+              args $ concat & xs
               quote-replace $ &%{} ~R ~@args
 
         |fn $ quote
           defmacro fn (args & body)
-            echo ":fn macro:" (format-to-lisp args) (format-to-lisp body)
             quote-replace $ defn f% ~args ~@body
 
         |assert= $ quote
@@ -900,11 +897,9 @@
 
         |{,} $ quote
           defmacro {,} (& body)
-            echo "|inside body:" body
             &let
               xs $ filter body
                 fn (x) (not= x ',)
-              echo "|got xs:" xs
               quote-replace
                 pairs-map $ section-by ([] ~@xs) 2
 

@@ -40,7 +40,7 @@
 
               &reset-gensym-index!
 
-              assert=
+              ; assert=
                 macroexpand-all $ quote
                   case (+ 1 2)
                     1 |one
@@ -165,19 +165,19 @@
                 [] 2 |2
 
             inside-nim:
-              assert=
+              ; assert=
                 macroexpand-all $ quote (\ + 2 %)
                 quote $ defn f% (? % %2) (+ 2 %)
 
-              assert=
+              ; assert=
                 macroexpand-all $ quote $ \ x
                 quote $ defn f% (? % %2) (x)
 
-              assert=
+              ; assert=
                 macroexpand-all $ quote $ \ + x %
                 quote $ defn f% (? % %2) (+ x %)
 
-              assert=
+              ; assert=
                 macroexpand-all $ quote $ \ + x % %2
                 quote $ defn f% (? % %2) (+ x % %2)
 

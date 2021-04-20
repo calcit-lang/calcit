@@ -6,6 +6,7 @@ extern crate nanoid;
 
 mod builtins;
 mod call_stack;
+mod cli_args;
 mod data;
 mod primes;
 mod program;
@@ -20,28 +21,10 @@ use std::fs;
 use std::path::Path;
 
 fn main() -> Result<(), String> {
-  let cli_matches = clap::App::new("Calcit Runner")
-    .version(primes::CALCI_VERSION)
-    .author("Jon. <jiyinyiyong@gmail.com>")
-    .about("Calcit Runner")
-    .arg(
-      clap::Arg::with_name("once")
-        .help("disable watching mode")
-        .default_value("false")
-        .short("1")
-        .long("once")
-        .takes_value(false),
-    )
-    .arg(
-      clap::Arg::with_name("input")
-        .help("entry file path, defaults to compact.cirru")
-        .default_value("compact.cirru")
-        .index(1),
-    )
-    .get_matches();
+  let cli_matches = cli_args::parse_cli();
 
-  let eval_once = cli_matches.is_present("once");
-  println!("once: {}", eval_once);
+  // let eval_once = cli_matches.is_present("once");
+  // println!("once: {}", eval_once);
 
   // load core libs
   let bytes = include_bytes!("./cirru/calcit-core.cirru");
@@ -49,37 +32,41 @@ fn main() -> Result<(), String> {
   let core_data = parse_cirru_edn(core_content)?;
   let core_snapshot = snapshot::load_snapshot_data(core_data)?;
 
-  // load entry file
-  let entry_path = Path::new(cli_matches.value_of("input").unwrap());
-  let content = fs::read_to_string(entry_path).expect("expected a Cirru snapshot");
-  let data = parse_cirru_edn(content)?;
-  // println!("reading: {}", content);
-  let mut snapshot = snapshot::load_snapshot_data(data)?;
+  let mut snapshot = snapshot::gen_default(); // placeholder data
 
-  // attach modules
-  for module_path in &snapshot.configs.modules {
-    let module_data = load_module(&module_path, entry_path.parent().unwrap())?;
-    for (k, v) in &module_data.files {
-      snapshot.files.insert(k.clone(), v.clone());
+  if let Some(snippet) = cli_matches.value_of("eval") {
+    match snapshot::create_file_from_snippet(snippet) {
+      Ok(main_file) => {
+        snapshot.files.insert(String::from("app.main"), main_file);
+      }
+      Err(e) => return Err(e),
+    }
+  } else {
+    // load entry file
+    let entry_path = Path::new(cli_matches.value_of("input").unwrap());
+    let content = fs::read_to_string(entry_path).expect("expected a Cirru snapshot");
+    let data = parse_cirru_edn(content)?;
+    // println!("reading: {}", content);
+    snapshot = snapshot::load_snapshot_data(data)?;
+
+    // attach modules
+    for module_path in &snapshot.configs.modules {
+      let module_data = load_module(&module_path, entry_path.parent().unwrap())?;
+      for (k, v) in &module_data.files {
+        snapshot.files.insert(k.clone(), v.clone());
+      }
     }
   }
+
   for (k, v) in core_snapshot.files {
     snapshot.files.insert(k.clone(), v.clone());
   }
 
-  // println!("{:?}", s);
-
-  // println!("code: {:?}", );
   let program_code = program::extract_program_data(&snapshot)?;
-
-  // println!("{:?}", program::lookup_evaled_def("a", "b"));
-  // TODO simulate program state
-  // program::write_evaled_def("a", "b", CalcitBool(true))?;
-  // println!("{:?}", program::lookup_evaled_def("a", "b"));
 
   let (init_ns, init_def) = extract_ns_def(&snapshot.configs.init_fn)?;
   match program::lookup_ns_def(&init_ns, &init_def, &program_code) {
-    None => Err(String::from("Invalid entry")),
+    None => Err(format!("Invalid entry: {}/{}", init_ns, init_def)),
     Some(expr) => {
       call_stack::push_call_stack(
         &init_ns,
@@ -104,7 +91,7 @@ fn main() -> Result<(), String> {
               println!("result: {}", v);
             }
             Err(falure) => {
-              println!("failed, {}", falure);
+              println!("\nfailed, {}", falure);
               call_stack::display_stack(&falure);
             }
           }

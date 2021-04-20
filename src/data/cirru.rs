@@ -4,7 +4,8 @@ use cirru_parser::CirruNode;
 use cirru_parser::CirruNode::*;
 use regex::Regex;
 
-pub fn cirru_to_calcit(xs: &CirruNode, ns: &str) -> Result<CalcitData, String> {
+/// code is CirruNode, and this function parse code(rather than data)
+pub fn code_to_calcit(xs: &CirruNode, ns: &str) -> Result<CalcitData, String> {
   match xs {
     CirruLeaf(s) => match s.as_str() {
       "nil" => Ok(CalcitNil),
@@ -44,7 +45,7 @@ pub fn cirru_to_calcit(xs: &CirruNode, ns: &str) -> Result<CalcitData, String> {
     CirruList(ys) => {
       let mut zs: CalcitItems = im::Vector::new();
       for y in ys {
-        match cirru_to_calcit(y, ns) {
+        match code_to_calcit(y, ns) {
           Ok(v) => {
             if !is_comment(&v) {
               zs.push_back(v.clone())
@@ -56,6 +57,43 @@ pub fn cirru_to_calcit(xs: &CirruNode, ns: &str) -> Result<CalcitData, String> {
       }
       Ok(CalcitList(zs))
     }
+  }
+}
+
+/// transform Cirru to Calcit data directly
+pub fn cirru_to_calcit(xs: &CirruNode) -> CalcitData {
+  match xs {
+    CirruLeaf(s) => CalcitString(s.clone()),
+    CirruList(ys) => {
+      let mut zs: CalcitItems = im::vector![];
+      for y in ys {
+        zs.push_back(cirru_to_calcit(y))
+      }
+      CalcitList(zs)
+    }
+  }
+}
+
+/// for generate Cirru via calcit data manually
+pub fn calcit_data_to_cirru(xs: &CalcitData) -> Result<CirruNode, String> {
+  match xs {
+    CalcitNil => Ok(CirruLeaf("nil".to_string())),
+    CalcitBool(b) => Ok(CirruLeaf(b.to_string())),
+    CalcitNumber(n) => Ok(CirruLeaf(n.to_string())),
+    CalcitString(s) => Ok(CirruLeaf(s.clone())),
+    CalcitList(ys) => {
+      let mut zs: Vec<CirruNode> = vec![];
+      for y in ys {
+        match calcit_data_to_cirru(y) {
+          Ok(v) => {
+            zs.push(v);
+          }
+          Err(e) => return Err(e),
+        }
+      }
+      Ok(CirruList(zs))
+    }
+    a => return Err(format!("unknown data for cirru: {}", a)),
   }
 }
 
@@ -77,6 +115,7 @@ fn is_comment(x: &CalcitData) -> bool {
   }
 }
 
+/// converting data for display in Cirru syntax
 pub fn calcit_to_cirru(x: &CalcitData) -> CirruNode {
   match x {
     CalcitNil => CirruLeaf(String::from("nil")),

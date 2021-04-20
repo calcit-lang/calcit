@@ -1,3 +1,5 @@
+use crate::data::cirru;
+use crate::primes;
 use crate::primes::{CalcitData, CalcitData::*};
 use cirru_edn::CirruEdn;
 use cirru_edn::CirruEdn::*;
@@ -119,7 +121,42 @@ pub fn calcit_to_edn(x: &CalcitData) -> CirruEdn {
   }
 }
 
-// TODO
-pub fn edn_to_calcit(x: CirruEdn) -> CalcitData {
-  CalcitNil
+pub fn edn_to_calcit(x: &CirruEdn) -> CalcitData {
+  match x {
+    CirruEdnNil => CalcitNil,
+    CirruEdnBool(b) => CalcitBool(*b),
+    CirruEdnNumber(n) => CalcitNumber(*n),
+    CirruEdnSymbol(s) => CalcitSymbol(s.clone(), primes::GENERATED_NS.to_string()),
+    CirruEdnKeyword(s) => CalcitKeyword(s.clone()),
+    CirruEdnString(s) => CalcitString(s.clone()),
+    CirruEdnQuote(nodes) => cirru::cirru_to_calcit(nodes),
+    CirruEdnList(xs) => {
+      let mut ys: primes::CalcitItems = im::vector![];
+      for x in xs {
+        ys.push_back(edn_to_calcit(x))
+      }
+      CalcitList(ys)
+    }
+    CirruEdnSet(xs) => {
+      let mut ys: im::HashSet<CalcitData> = im::HashSet::new();
+      for x in xs {
+        ys.insert(edn_to_calcit(x));
+      }
+      CalcitSet(ys)
+    }
+    CirruEdnMap(xs) => {
+      let mut ys: im::HashMap<CalcitData, CalcitData> = im::HashMap::new();
+      for (k, v) in xs {
+        ys.insert(edn_to_calcit(k), edn_to_calcit(v));
+      }
+      CalcitMap(ys)
+    }
+    CirruEdnRecord(name, fields, values) => {
+      let mut ys: Vec<CalcitData> = vec![];
+      for v in values {
+        ys.push(edn_to_calcit(v));
+      }
+      CalcitRecord(name.clone(), fields.clone(), ys)
+    }
+  }
 }
