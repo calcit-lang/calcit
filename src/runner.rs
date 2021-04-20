@@ -26,7 +26,7 @@ pub fn evaluate_expr(
     CalcitKeyword(_) => Ok(expr.clone()),
     CalcitString(_) => Ok(expr.clone()),
     // CalcitRef(CalcitData), // TODO
-    // CalcitThunk(CirruNode), // TODO
+    CalcitThunk(code) => evaluate_expr(code, scope, file_ns, program_code),
     CalcitRecur(_) => unreachable!("recur not expected to be from symbol"),
     CalcitList(xs) => match xs.get(0) {
       None => Err(format!("cannot evaluate empty expr: {}", expr)),
@@ -55,6 +55,7 @@ pub fn evaluate_expr(
             run_fn(values, &def_scope, args, body, def_ns, program_code)
           }
           CalcitMacro(name, def_ns, _, args, body) => {
+            // TODO moving to preprocess
             let mut current_values = rest_nodes.clone();
             let mut macro_ret = CalcitNil;
             // println!("eval macro: {} {}", x, primes::format_to_lisp(expr));
@@ -134,13 +135,13 @@ pub fn evaluate_symbol(
       if is_proc_name(sym) {
         return Ok(CalcitProc(sym.to_string()));
       }
-      if program::lookup_ns_def(CORE_NS, sym, program_code).is_some() {
+      if program::lookup_def_code(CORE_NS, sym, program_code).is_some() {
         return eval_symbol_from_program(sym, CORE_NS, program_code);
       }
       if scope.contains_key(sym) {
         return Ok(scope.get(sym).unwrap().clone());
       }
-      if program::lookup_ns_def(file_ns, sym, program_code).is_some() {
+      if program::has_def_code(file_ns, sym, program_code) {
         return eval_symbol_from_program(sym, file_ns, program_code);
       }
       match program::lookup_def_target_in_import(file_ns, sym, program_code) {
@@ -151,7 +152,7 @@ pub fn evaluate_symbol(
   }
 }
 
-fn parse_ns_def(s: &str) -> Option<(String, String)> {
+pub fn parse_ns_def(s: &str) -> Option<(String, String)> {
   let pieces: Vec<&str> = s.split('/').collect();
   if pieces.len() == 2 {
     if !pieces[0].is_empty() && !pieces[1].is_empty() {
@@ -171,7 +172,7 @@ fn eval_symbol_from_program(
 ) -> Result<CalcitData, String> {
   match program::lookup_evaled_def(ns, sym) {
     Some(v) => Ok(v),
-    None => match program::lookup_ns_def(ns, sym, program_code) {
+    None => match program::lookup_def_code(ns, sym, program_code) {
       Some(code) => {
         let v = evaluate_expr(&code, &im::HashMap::new(), ns, program_code)?;
         program::write_evaled_def(ns, sym, v.clone())?;

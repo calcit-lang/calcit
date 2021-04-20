@@ -32,7 +32,7 @@ pub enum CalcitData {
   CalcitKeyword(String),
   CalcitString(String),
   // CalcitRef(CalcitData), // TODO
-  // CalcitThunk(CirruNode), // TODO
+  CalcitThunk(Box<CalcitData>),
   CalcitRecur(CalcitItems), // not data, but for recursion
   CalcitList(CalcitItems),
   CalcitSet(im::HashSet<CalcitData>),
@@ -68,7 +68,7 @@ impl fmt::Display for CalcitData {
       CalcitSymbol(s, ..) => f.write_str(&format!("'{}", s)),
       CalcitKeyword(s) => f.write_str(&format!(":{}", s)),
       CalcitString(s) => f.write_str(&format!("\"|{}\"", s)), // TODO, escaping choices
-      // CalcitThunk(v) => f.write_str(&format!("{}", v)),
+      CalcitThunk(v) => f.write_str(&format!("(&thunk {})", v)),
       CalcitRecur(xs) => {
         f.write_str("(&recur")?;
         for x in xs {
@@ -195,7 +195,7 @@ impl Hash for CalcitData {
         // TODO https://stackoverflow.com/q/39638363/883571
         (*n as usize).hash(_state)
       }
-      CalcitSymbol(s, ns, _resolved) => {
+      CalcitSymbol(s, _ns, _resolved) => {
         "symbol:".hash(_state);
         s.hash(_state);
         // probaly no need, also won't be used in hashing
@@ -209,10 +209,10 @@ impl Hash for CalcitData {
         "string:".hash(_state);
         s.hash(_state);
       }
-      // CalcitThunk(v) => {
-      //   "quote:".hash(_state);
-      //   v.hash(_state);
-      // }
+      CalcitThunk(v) => {
+        "quote:".hash(_state);
+        v.hash(_state);
+      }
       CalcitRecur(v) => {
         "list:".hash(_state);
         v.hash(_state);
@@ -299,9 +299,10 @@ impl Ord for CalcitData {
       (CalcitString(_), _) => Less,
       (_, CalcitString(_)) => Greater,
 
-      // (CalcitThunk(a), CalcitThunk(b)) => a.cmp(b),
-      // (CalcitThunk(_), _) => Less,
-      // (_, CalcitThunk(_)) => Greater,
+      (CalcitThunk(a), CalcitThunk(b)) => a.cmp(b),
+      (CalcitThunk(_), _) => Less,
+      (_, CalcitThunk(_)) => Greater,
+
       (CalcitRecur(a), CalcitRecur(b)) => a.cmp(b),
       (CalcitRecur(_), _) => Less,
       (_, CalcitRecur(_)) => Greater,

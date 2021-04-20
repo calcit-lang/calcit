@@ -114,8 +114,16 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
   Ok(xs)
 }
 
-pub fn lookup_ns_def(ns: &str, def: &str, program: &ProgramCodeData) -> Option<CalcitData> {
-  let file = program.get(ns)?;
+// lookup without cloning
+pub fn has_def_code(ns: &str, def: &str, program_code: &ProgramCodeData) -> bool {
+  match program_code.get(ns) {
+    Some(v) => v.defs.contains_key(def),
+    None => false,
+  }
+}
+
+pub fn lookup_def_code(ns: &str, def: &str, program_code: &ProgramCodeData) -> Option<CalcitData> {
+  let file = program_code.get(ns)?;
   let data = file.defs.get(def)?;
   Some(data.clone())
 }
@@ -135,17 +143,24 @@ pub fn lookup_def_target_in_import(
 
 pub fn lookup_ns_target_in_import(
   ns: &str,
-  def: &str,
+  alias: &str,
   program: &ProgramCodeData,
 ) -> Option<String> {
   let file = program.get(ns)?;
-  let import_rule = file.import_map.get(def)?;
+  let import_rule = file.import_map.get(alias)?;
   match import_rule {
     ImportRule::ImportDefRule(_ns, _def) => None,
     ImportRule::ImportNsRule(ns) => Some(String::from(ns)),
   }
 }
 
+/// similar to lookup, but skipped cloning
+pub fn has_evaled_def(ns: &str, def: &str) -> bool {
+  let s2 = PROGRAM_EVALED_DATA_STATE.lock().unwrap();
+  s2.contains_key(ns) && s2[ns].contains_key(def)
+}
+
+/// lookup and return value
 pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<CalcitData> {
   let s2 = PROGRAM_EVALED_DATA_STATE.lock().unwrap();
   if s2.contains_key(ns) && s2[ns].contains_key(def) {

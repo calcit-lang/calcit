@@ -65,7 +65,7 @@ fn main() -> Result<(), String> {
   let program_code = program::extract_program_data(&snapshot)?;
 
   let (init_ns, init_def) = extract_ns_def(&snapshot.configs.init_fn)?;
-  match program::lookup_ns_def(&init_ns, &init_def, &program_code) {
+  match program::lookup_def_code(&init_ns, &init_def, &program_code) {
     None => Err(format!("Invalid entry: {}/{}", init_ns, init_def)),
     Some(expr) => {
       call_stack::push_call_stack(

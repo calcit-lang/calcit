@@ -20,6 +20,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<CalcitData, String> {
       CalcitSymbol(..) => Ok(CalcitKeyword(String::from("symbol"))),
       CalcitKeyword(..) => Ok(CalcitKeyword(String::from("keyword"))),
       CalcitString(..) => Ok(CalcitKeyword(String::from("string"))),
+      CalcitThunk(..) => Ok(CalcitKeyword(String::from("thunk"))), // internal
       CalcitRecur(..) => Ok(CalcitKeyword(String::from("recur"))),
       CalcitList(..) => Ok(CalcitKeyword(String::from("list"))),
       CalcitSet(..) => Ok(CalcitKeyword(String::from("set"))),
