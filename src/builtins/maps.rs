@@ -34,8 +34,20 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
       ys.insert(a.clone(), b.clone());
       Ok(Calcit::Map(ys.clone()))
     }
-    (Some(a), ..) => Err(format!("expected list or map, got: {}", a)),
-    (None, ..) => Err(format!("expected 3 arguments, got: {:?}", xs)),
+    (Some(a), ..) => Err(format!("assoc expected list or map, got: {}", a)),
+    (None, ..) => Err(format!("assoc expected 3 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Map(xs)), Some(a)) => {
+      let ys = &mut xs.clone();
+      ys.remove(a);
+      Ok(Calcit::Map(ys.clone()))
+    }
+    (Some(a), ..) => Err(format!("dissoc expected a map, got: {}", a)),
+    (_, _) => Err(format!("dissoc expected 2 arguments, got: {:?}", xs)),
   }
 }
 

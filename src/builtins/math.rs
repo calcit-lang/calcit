@@ -1,4 +1,6 @@
+use crate::primes;
 use crate::primes::{Calcit, CalcitItems};
+use rand::prelude::*;
 
 pub fn f32_to_usize(f: f32) -> Result<usize, String> {
   if f.fract() == 0.0 {
@@ -65,4 +67,44 @@ pub fn is_even(x: usize) -> bool {
 
 pub fn is_integer(x: f32) -> bool {
   x.fract() == 0.0
+}
+
+fn rand_number(n: f32) -> f32 {
+  let mut rng = rand::thread_rng();
+  let y: f32 = rng.gen(); // generates a float between 0 and 1
+  y * n
+}
+
+pub fn rand(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (None, None) => Ok(Calcit::Number(rand_number(100.0))),
+    (Some(Calcit::Number(n)), None) => Ok(Calcit::Number(rand_number(*n))),
+    (Some(Calcit::Number(from)), Some(Calcit::Number(to))) => {
+      let delta = to - from;
+
+      Ok(Calcit::Number(from + rand_number(delta)))
+    }
+    (a, b) => Err(format!("rand expected 0~2 numbers: {:?} {:?}", a, b)),
+  }
+}
+
+pub fn rand_int(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (None, None) => Ok(Calcit::Number(rand_number(100.0).floor())),
+    (Some(Calcit::Number(n)), None) => Ok(Calcit::Number(rand_number(*n).floor())),
+    (Some(Calcit::Number(from)), Some(Calcit::Number(to))) => {
+      let delta = to - from;
+
+      Ok(Calcit::Number((from + rand_number(delta)).floor()))
+    }
+    (a, b) => Err(format!("rand expected 0~2 numbers: {:?} {:?}", a, b)),
+  }
+}
+
+pub fn floor(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Number(n)) => Ok(Calcit::Number(n.floor())),
+    Some(a) => Err(format!("rand expected a number: {}", a)),
+    a => Err(format!("rand expected 1 number: {:?}", a)),
+  }
 }

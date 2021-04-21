@@ -47,6 +47,9 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&/"
       | "round"
       | "fractional" // logics
+      | "rand"
+      | "rand-int"
+      | "floor"
       // strings
       | "&str-concat"
       | "trim"
@@ -66,11 +69,13 @@ pub fn is_proc_name(s: &str) -> bool {
       | "butlast"
       | "concat"
       | "range"
+      | "reverse"
       // maps
       | "&{}"
       | "assoc"
       | "&get"
       | "contains?"
+      | "dissoc"
       // sets
       | "#{}"
       | "&include"
@@ -112,6 +117,9 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&-" => math::binary_minus(args),
     "&*" => math::binary_multiply(args),
     "&/" => math::binary_divide(args),
+    "rand" => math::rand(args),
+    "rand-int" => math::rand_int(args),
+    "floor" => math::floor(args),
     // strings
     "&str-concat" => strings::binary_str_concat(args),
     "trim" => strings::trim(args),
@@ -131,11 +139,13 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "butlast" => lists::butlast(args),
     "concat" => lists::concat(args),
     "range" => lists::range(args),
+    "reverse" => lists::reverse(args),
     // maps
     "&{}" => maps::call_new_map(args),
     "assoc" => maps::assoc(args),
     "&get" => maps::map_get(args),
     "contains?" => maps::contains_ques(args),
+    "dissoc" => maps::dissoc(args),
     // sets
     "#{}" => sets::new_set(args),
     "&include" => sets::call_include(args),

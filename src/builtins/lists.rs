@@ -171,3 +171,18 @@ pub fn range(xs: &CalcitItems) -> Result<Calcit, String> {
   }
   Ok(Calcit::List(ys))
 }
+
+pub fn reverse(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Nil) => Ok(Calcit::Nil),
+    Some(Calcit::List(ys)) => {
+      let mut zs: CalcitItems = im::vector![];
+      for y in ys {
+        zs.push_front(y.clone());
+      }
+      Ok(Calcit::List(zs))
+    }
+    Some(a) => Err(format!("butlast expected a list, got: {}", a)),
+    None => Err(String::from("butlast expected 1 argument")),
+  }
+}
