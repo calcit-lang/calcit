@@ -1,13 +1,12 @@
 use crate::primes;
-use crate::primes::CalcitData::*;
-use crate::primes::{CalcitData, CalcitItems};
+use crate::primes::{Calcit, CalcitItems};
 
-pub fn binary_str_concat(xs: &CalcitItems) -> Result<CalcitData, String> {
+pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(a), Some(b)) => {
       let mut s = a.turn_string();
       s.push_str(&b.turn_string());
-      Ok(CalcitString(s))
+      Ok(Calcit::Str(s))
     }
     (_, _) => Err(format!(
       "expected 2 arguments, got: {}",
@@ -16,13 +15,13 @@ pub fn binary_str_concat(xs: &CalcitItems) -> Result<CalcitData, String> {
   }
 }
 
-pub fn trim(xs: &CalcitItems) -> Result<CalcitData, String> {
+pub fn trim(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(CalcitString(s)), None) => Ok(CalcitString(s.trim().to_string())),
-    (Some(CalcitString(s)), Some(CalcitString(p))) => {
+    (Some(Calcit::Str(s)), None) => Ok(Calcit::Str(s.trim().to_string())),
+    (Some(Calcit::Str(s)), Some(Calcit::Str(p))) => {
       if p.len() == 1 {
         let c: char = p.chars().next().unwrap();
-        Ok(CalcitString(s.trim_matches(c).to_string()))
+        Ok(Calcit::Str(s.trim_matches(c).to_string()))
       } else {
         Err(format!("trim expected pattern in a char, got {}", p))
       }
@@ -36,34 +35,34 @@ pub fn trim(xs: &CalcitItems) -> Result<CalcitData, String> {
 }
 
 /// just format value to string
-pub fn call_str(xs: &CalcitItems) -> Result<CalcitData, String> {
+pub fn call_str(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(a) => Ok(CalcitString(a.to_string())),
+    Some(a) => Ok(Calcit::Str(a.to_string())),
     None => Err(String::from("&str expected 1 argument, got nothing")),
   }
 }
 
-pub fn turn_string(xs: &CalcitItems) -> Result<CalcitData, String> {
+pub fn turn_string(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(CalcitNil) => Ok(CalcitString(String::from(""))),
-    Some(CalcitBool(b)) => Ok(CalcitString(b.to_string())),
-    Some(CalcitString(s)) => Ok(CalcitString(s.clone())),
-    Some(CalcitKeyword(s)) => Ok(CalcitString(s.clone())),
-    Some(CalcitSymbol(s, ..)) => Ok(CalcitString(s.clone())),
+    Some(Calcit::Nil) => Ok(Calcit::Str(String::from(""))),
+    Some(Calcit::Bool(b)) => Ok(Calcit::Str(b.to_string())),
+    Some(Calcit::Str(s)) => Ok(Calcit::Str(s.clone())),
+    Some(Calcit::Keyword(s)) => Ok(Calcit::Str(s.clone())),
+    Some(Calcit::Symbol(s, ..)) => Ok(Calcit::Str(s.clone())),
     Some(a) => Err(format!("turn-string cannot turn this to string: {}", a)),
     None => Err(String::from("turn-string expected 1 argument, got nothing")),
   }
 }
 
-pub fn split(xs: &CalcitItems) -> Result<CalcitData, String> {
+pub fn split(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(CalcitString(s)), Some(CalcitString(pattern))) => {
+    (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => {
       let pieces = s.split(pattern);
       let mut ys: CalcitItems = im::vector![];
       for p in pieces {
-        ys.push_back(CalcitString(p.to_string()));
+        ys.push_back(Calcit::Str(p.to_string()));
       }
-      Ok(CalcitList(ys))
+      Ok(Calcit::List(ys))
     }
     (Some(a), Some(b)) => Err(format!("split expected 2 strings, got: {} {}", a, b)),
     (_, _) => Err(String::from("split expected 2 arguments, got nothing")),
