@@ -154,11 +154,11 @@
                 , '%
 
             assert=
-              map (\ + 1 %) (range 3)
+              map (range 3) (\ + 1 %)
               range 1 4
 
             assert=
-              map-indexed (\ [] % (&str %2)) (range 3)
+              map-indexed (range 3) (\ [] % (&str %2))
               []
                 [] 0 |0
                 [] 1 |1
@@ -191,7 +191,7 @@
 
               assert=
                 macroexpand $ quote $ \. x.y (echo x y) x
-                quote $ defn f_x (x) (defn f_y (y) (do (echo x y) x))
+                quote $ defn f_x (x) (defn f_y (y) (&let nil (echo x y) x))
 
             echo "|evaluating lambda alias"
 
@@ -207,6 +207,8 @@
         |test-gensym $ quote
           fn ()
             inside-nim:
+              log-title "|Testing gensym"
+
               &reset-gensym-index!
               assert= (gensym) 'G__1
               assert=
@@ -368,7 +370,6 @@
 
             test-lambda
 
-            log-title "|Testing gensym"
             test-gensym
 
             test-with-log

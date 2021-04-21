@@ -16,20 +16,20 @@ pub fn code_to_calcit(xs: &CirruNode, ns: &str) -> Result<CalcitData, String> {
         ':' => Ok(CalcitKeyword(String::from(&s[1..]))),
         '"' | '|' => Ok(CalcitString(String::from(&s[1..]))),
         '\'' => Ok(CalcitList(im::vector![
-          CalcitSymbol(String::from("quote"), ns.to_string()),
-          CalcitSymbol(String::from(&s[1..]), ns.to_string()),
+          CalcitSymbol(String::from("quote"), ns.to_string(), None),
+          CalcitSymbol(String::from(&s[1..]), ns.to_string(), None),
         ])),
         '~' if s.starts_with("~@") && s.len() > 2 => Ok(CalcitList(im::vector![
-          CalcitSymbol(String::from("~@"), ns.to_string()),
-          CalcitSymbol(String::from(&s[2..]), ns.to_string()),
+          CalcitSymbol(String::from("~@"), ns.to_string(), None),
+          CalcitSymbol(String::from(&s[2..]), ns.to_string(), None),
         ])),
         '~' if s.len() > 1 && !s.starts_with("~@") => Ok(CalcitList(im::vector![
-          CalcitSymbol(String::from("~"), ns.to_string()),
-          CalcitSymbol(String::from(&s[1..]), ns.to_string()),
+          CalcitSymbol(String::from("~"), ns.to_string(), None),
+          CalcitSymbol(String::from(&s[1..]), ns.to_string(), None),
         ])),
         '@' => Ok(CalcitList(im::vector![
-          CalcitSymbol(String::from("@"), ns.to_string()),
-          CalcitSymbol(String::from(&s[1..]), ns.to_string()),
+          CalcitSymbol(String::from("@"), ns.to_string(), None),
+          CalcitSymbol(String::from(&s[1..]), ns.to_string(), None),
         ])),
         // TODO future work of reader literal expanding
         _ => {
@@ -37,7 +37,7 @@ pub fn code_to_calcit(xs: &CirruNode, ns: &str) -> Result<CalcitData, String> {
             let f: f32 = s.parse().unwrap();
             Ok(CalcitNumber(f))
           } else {
-            Ok(CalcitSymbol(s.clone(), ns.to_string()))
+            Ok(CalcitSymbol(s.clone(), ns.to_string(), None))
           }
         }
       },
@@ -108,7 +108,7 @@ fn matches_float(x: &str) -> bool {
 fn is_comment(x: &CalcitData) -> bool {
   match x {
     CalcitList(ys) => match ys.get(0) {
-      Some(CalcitSymbol(s, _ns)) => s == ";",
+      Some(CalcitSymbol(s, ..)) => s == ";",
       _ => false,
     },
     _ => false,
@@ -123,7 +123,7 @@ pub fn calcit_to_cirru(x: &CalcitData) -> CirruNode {
     CalcitBool(false) => CirruLeaf(String::from("false")),
     CalcitNumber(n) => CirruLeaf(n.to_string()),
     CalcitString(s) => CirruLeaf(format!("|{}", s)), // TODO performance
-    CalcitSymbol(s, _ns) => CirruLeaf(s.to_string()), // TODO performance
+    CalcitSymbol(s, ..) => CirruLeaf(s.to_string()), // TODO performance
     CalcitKeyword(s) => CirruLeaf(format!(":{}", s)), // TODO performance
     CalcitList(xs) => {
       let mut ys: Vec<CirruNode> = vec![];

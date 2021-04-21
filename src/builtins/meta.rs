@@ -1,4 +1,4 @@
-use crate::builtins::lists::f32_to_usize;
+use crate::builtins::math::f32_to_usize;
 use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
@@ -20,6 +20,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<CalcitData, String> {
       CalcitSymbol(..) => Ok(CalcitKeyword(String::from("symbol"))),
       CalcitKeyword(..) => Ok(CalcitKeyword(String::from("keyword"))),
       CalcitString(..) => Ok(CalcitKeyword(String::from("string"))),
+      CalcitThunk(..) => Ok(CalcitKeyword(String::from("thunk"))), // internal
       CalcitRecur(..) => Ok(CalcitKeyword(String::from("recur"))),
       CalcitList(..) => Ok(CalcitKeyword(String::from("list"))),
       CalcitSet(..) => Ok(CalcitKeyword(String::from("set"))),
@@ -49,7 +50,7 @@ pub fn gensym(xs: &CalcitItems) -> Result<CalcitData, String> {
   let idx = SYMBOL_INDEX.fetch_add(1, Ordering::SeqCst);
 
   let s = match xs.get(0) {
-    Some(CalcitString(s)) | Some(CalcitKeyword(s)) | Some(CalcitSymbol(s, _)) => {
+    Some(CalcitString(s)) | Some(CalcitKeyword(s)) | Some(CalcitSymbol(s, ..)) => {
       let mut chunk = s.clone();
       chunk.push('_');
       chunk.push('_');
@@ -57,9 +58,13 @@ pub fn gensym(xs: &CalcitItems) -> Result<CalcitData, String> {
       chunk
     }
     Some(a) => return Err(format!("gensym expected a string, but got: {}", a)),
-    None => String::from("G__"),
+    None => {
+      let mut chunk = String::from("G__");
+      chunk.push_str(&idx.to_string());
+      chunk
+    }
   };
-  Ok(CalcitSymbol(s, primes::GENERATED_NS.to_string()))
+  Ok(CalcitSymbol(s, primes::GENERATED_NS.to_string(), None))
 }
 
 pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<CalcitData, String> {
@@ -144,5 +149,25 @@ pub fn write_cirru_edn(xs: &CalcitItems) -> Result<CalcitData, String> {
       edn::calcit_to_edn(a),
     ))),
     None => Err(String::from("write-cirru-edn expected 1 argument")),
+  }
+}
+
+pub fn turn_symbol(xs: &CalcitItems) -> Result<CalcitData, String> {
+  match xs.get(0) {
+    Some(CalcitString(s)) => Ok(CalcitSymbol(
+      s.clone(),
+      primes::GENERATED_NS.to_string(),
+      None,
+    )),
+    Some(CalcitKeyword(s)) => Ok(CalcitSymbol(
+      s.clone(),
+      primes::GENERATED_NS.to_string(),
+      None,
+    )),
+    Some(CalcitSymbol(s, ns, resolved)) => {
+      Ok(CalcitSymbol(s.clone(), ns.clone(), resolved.clone()))
+    }
+    Some(a) => Err(format!("turn-symbol cannot turn this to symbol: {}", a)),
+    None => Err(String::from("turn-symbol expected 1 argument, got nothing")),
   }
 }

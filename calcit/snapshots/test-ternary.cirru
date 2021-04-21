@@ -15,6 +15,7 @@
 
         |test-ternary $ quote
           fn ()
+            ; "TODO ternary not in Rust yet"
             log-title "|Testing ternary"
 
             assert= &1 &1

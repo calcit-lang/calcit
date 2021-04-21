@@ -481,10 +481,11 @@
         |\. $ quote
           defmacro \. (args-alias & xs)
             &let
-              args $ ->% (turn-string args-alias) (split % |.) (map turn-symbol %)
+              args $ ->% (turn-string args-alias) (split % |.) (map % turn-symbol)
               &let
                 inner-body $ if (&= 1 (count xs)) (first xs)
-                  concat ([] (quote-replace &let nil)) xs
+                  quasiquote
+                    &let nil ~@xs
                 apply-args
                   [] inner-body args
                   fn (body ys)
@@ -494,7 +495,7 @@
                         a0 (last ys)
                         &let
                           code
-                            [] (quote-replace defn) (turn-symbol (&str-concat |f_ a0)) ([] a0) body
+                            [] (quote-replace defn) (turn-symbol (&str-concat |f_ (turn-string a0))) ([] a0) body
                           recur code (butlast ys)
 
         |has-index? $ quote

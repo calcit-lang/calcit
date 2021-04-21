@@ -1,8 +1,7 @@
 use crate::primes::CalcitData::*;
 use crate::primes::{CalcitData, CalcitItems};
 
-use crate::builtins::lists::f32_to_usize;
-use crate::builtins::math::is_even;
+use crate::builtins::math::{f32_to_usize, is_even};
 
 pub fn call_new_map(xs: &CalcitItems) -> Result<CalcitData, String> {
   if is_even(xs.len()) {

@@ -93,7 +93,7 @@ pub fn calcit_to_edn(x: &CalcitData) -> CirruEdn {
     CalcitString(s) => CirruEdnString(s.clone()),
     CalcitNumber(n) => CirruEdnNumber(*n),
     CalcitKeyword(s) => CirruEdnKeyword(s.clone()),
-    CalcitSymbol(s, _ns) => CirruEdnSymbol(s.clone()),
+    CalcitSymbol(s, ..) => CirruEdnSymbol(s.clone()),
     CalcitList(xs) => {
       let mut ys: Vec<CirruEdn> = vec![];
       for x in xs {
@@ -126,7 +126,7 @@ pub fn edn_to_calcit(x: &CirruEdn) -> CalcitData {
     CirruEdnNil => CalcitNil,
     CirruEdnBool(b) => CalcitBool(*b),
     CirruEdnNumber(n) => CalcitNumber(*n),
-    CirruEdnSymbol(s) => CalcitSymbol(s.clone(), primes::GENERATED_NS.to_string()),
+    CirruEdnSymbol(s) => CalcitSymbol(s.clone(), primes::GENERATED_NS.to_string(), None),
     CirruEdnKeyword(s) => CalcitKeyword(s.clone()),
     CirruEdnString(s) => CalcitString(s.clone()),
     CirruEdnQuote(nodes) => cirru::cirru_to_calcit(nodes),

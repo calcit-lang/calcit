@@ -13,6 +13,12 @@ pub type NanoId = String;
 pub type CalcitScope = im::HashMap<String, CalcitData>;
 pub type CalcitItems = im::Vector<CalcitData>;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum SymbolResolved {
+  ResolvedLocal,
+  ResolvedDef(String, String), // ns, def
+}
+
 /// special types wraps vector of calcit data for displaying
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct CrListWrap(pub im::Vector<CalcitData>);
@@ -22,11 +28,11 @@ pub enum CalcitData {
   CalcitNil,
   CalcitBool(bool),
   CalcitNumber(f32),
-  CalcitSymbol(String, String), // content, ns
+  CalcitSymbol(String, String, Option<SymbolResolved>), // content, ns... so it has meta information
   CalcitKeyword(String),
   CalcitString(String),
   // CalcitRef(CalcitData), // TODO
-  // CalcitThunk(CirruNode), // TODO
+  CalcitThunk(Box<CalcitData>),
   CalcitRecur(CalcitItems), // not data, but for recursion
   CalcitList(CalcitItems),
   CalcitSet(im::HashSet<CalcitData>),
@@ -59,10 +65,10 @@ impl fmt::Display for CalcitData {
       CalcitNil => f.write_str("nil"),
       CalcitBool(v) => f.write_str(&format!("{}", v)),
       CalcitNumber(n) => f.write_str(&format!("{}", n)),
-      CalcitSymbol(s, _ns) => f.write_str(&format!("'{}", s)),
+      CalcitSymbol(s, ..) => f.write_str(&format!("'{}", s)),
       CalcitKeyword(s) => f.write_str(&format!(":{}", s)),
       CalcitString(s) => f.write_str(&format!("\"|{}\"", s)), // TODO, escaping choices
-      // CalcitThunk(v) => f.write_str(&format!("{}", v)),
+      CalcitThunk(v) => f.write_str(&format!("(&thunk {})", v)),
       CalcitRecur(xs) => {
         f.write_str("(&recur")?;
         for x in xs {
@@ -168,7 +174,7 @@ pub fn format_to_lisp(x: &CalcitData) -> String {
       s.push(')');
       s
     }
-    CalcitSymbol(s, _) => s.clone(),
+    CalcitSymbol(s, ..) => s.clone(),
     a => format!("{}", a),
   }
 }
@@ -189,10 +195,11 @@ impl Hash for CalcitData {
         // TODO https://stackoverflow.com/q/39638363/883571
         (*n as usize).hash(_state)
       }
-      CalcitSymbol(s, ns) => {
+      CalcitSymbol(s, _ns, _resolved) => {
         "symbol:".hash(_state);
-        ns.hash(_state);
         s.hash(_state);
+        // probaly no need, also won't be used in hashing
+        // ns.hash(_state);
       }
       CalcitKeyword(s) => {
         "keyword:".hash(_state);
@@ -202,10 +209,10 @@ impl Hash for CalcitData {
         "string:".hash(_state);
         s.hash(_state);
       }
-      // CalcitThunk(v) => {
-      //   "quote:".hash(_state);
-      //   v.hash(_state);
-      // }
+      CalcitThunk(v) => {
+        "quote:".hash(_state);
+        v.hash(_state);
+      }
       CalcitRecur(v) => {
         "list:".hash(_state);
         v.hash(_state);
@@ -280,9 +287,9 @@ impl Ord for CalcitData {
       (CalcitNumber(_), _) => Less,
       (_, CalcitNumber(_)) => Greater,
 
-      (CalcitSymbol(a, _ns1), CalcitSymbol(b, _ns2)) => a.cmp(&b),
-      (CalcitSymbol(_, _), _) => Less,
-      (_, CalcitSymbol(_, _)) => Greater,
+      (CalcitSymbol(a, ..), CalcitSymbol(b, ..)) => a.cmp(&b),
+      (CalcitSymbol(..), _) => Less,
+      (_, CalcitSymbol(..)) => Greater,
 
       (CalcitKeyword(a), CalcitKeyword(b)) => a.cmp(&b),
       (CalcitKeyword(_), _) => Less,
@@ -292,9 +299,10 @@ impl Ord for CalcitData {
       (CalcitString(_), _) => Less,
       (_, CalcitString(_)) => Greater,
 
-      // (CalcitThunk(a), CalcitThunk(b)) => a.cmp(b),
-      // (CalcitThunk(_), _) => Less,
-      // (_, CalcitThunk(_)) => Greater,
+      (CalcitThunk(a), CalcitThunk(b)) => a.cmp(b),
+      (CalcitThunk(_), _) => Less,
+      (_, CalcitThunk(_)) => Greater,
+
       (CalcitRecur(a), CalcitRecur(b)) => a.cmp(b),
       (CalcitRecur(_), _) => Less,
       (_, CalcitRecur(_)) => Greater,
@@ -355,7 +363,7 @@ impl PartialEq for CalcitData {
       (CalcitNil, CalcitNil) => true,
       (CalcitBool(a), CalcitBool(b)) => a == b,
       (CalcitNumber(a), CalcitNumber(b)) => a == b,
-      (CalcitSymbol(a, _ns), CalcitSymbol(b, _ns2)) => a == b,
+      (CalcitSymbol(a, ..), CalcitSymbol(b, ..)) => a == b,
       (CalcitKeyword(a), CalcitKeyword(b)) => a == b,
       (CalcitString(a), CalcitString(b)) => a == b,
       // (CalcitThunk(a), CalcitThunk(b)) => a == b,

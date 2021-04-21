@@ -12,7 +12,7 @@ pub fn defn(
   _program: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
   match (expr.get(0), expr.get(1)) {
-    (Some(CalcitSymbol(s, _ns)), Some(CalcitList(xs))) => Ok(CalcitFn(
+    (Some(CalcitSymbol(s, ..)), Some(CalcitList(xs))) => Ok(CalcitFn(
       s.to_string(),
       file_ns.to_string(),
       nanoid!(),
@@ -32,7 +32,7 @@ pub fn defmacro(
   _program: &ProgramCodeData,
 ) -> Result<CalcitData, String> {
   match (expr.get(0), expr.get(1)) {
-    (Some(CalcitSymbol(s, _ns)), Some(CalcitList(xs))) => Ok(CalcitMacro(
+    (Some(CalcitSymbol(s, ..)), Some(CalcitList(xs))) => Ok(CalcitMacro(
       s.to_string(),
       def_ns.to_string(),
       nanoid!(),
@@ -110,7 +110,7 @@ pub fn syntax_let(
     Some(CalcitList(xs)) if xs.len() == 2 => {
       let mut body_scope = scope.clone();
       match (&xs[0], &xs[1]) {
-        (CalcitSymbol(s, _ns), ys) => {
+        (CalcitSymbol(s, ..), ys) => {
           let value = runner::evaluate_expr(ys, scope, file_ns, program_code)?;
           body_scope.insert(s.to_string(), value);
         }
@@ -192,11 +192,11 @@ fn replace_code(
 ) -> Result<CalcitItems, String> {
   match c {
     CalcitList(ys) => match (ys.get(0), ys.get(1)) {
-      (Some(CalcitSymbol(sym, _)), Some(expr)) if sym == "~" => {
+      (Some(CalcitSymbol(sym, ..)), Some(expr)) if sym == "~" => {
         let value = runner::evaluate_expr(expr, scope, file_ns, program_code)?;
         Ok(im::vector![value])
       }
-      (Some(CalcitSymbol(sym, _)), Some(expr)) if sym == "~@" => {
+      (Some(CalcitSymbol(sym, ..)), Some(expr)) if sym == "~@" => {
         let ret = runner::evaluate_expr(expr, scope, file_ns, program_code)?;
         match ret {
           CalcitList(zs) => Ok(zs),
@@ -295,5 +295,35 @@ pub fn macroexpand_1(
       "macroexpand expected excaclty 1 argument, got: {:?}",
       expr
     ))
+  }
+}
+
+pub fn call_try(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<CalcitData, String> {
+  if expr.len() == 2 {
+    let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code);
+
+    match &xs {
+      // dirty since only functions being call directly then we become fast
+      Ok(v) => Ok(v.clone()),
+      Err(failure) => {
+        let f = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
+        let err_data = CalcitString(failure.to_string());
+        match f {
+          CalcitFn(_, def_ns, _, def_scope, args, body) => {
+            let values = im::vector![err_data];
+            runner::run_fn(values, &def_scope, &args, &body, &def_ns, program_code)
+          }
+          CalcitProc(proc) => builtins::handle_proc(&proc, &im::vector![err_data]),
+          a => Err(format!("try expected a function handler, got: {}", a)),
+        }
+      }
+    }
+  } else {
+    Err(format!("try expected 2 arguments, got: {:?}", expr))
   }
 }
