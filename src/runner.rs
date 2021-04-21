@@ -43,9 +43,12 @@ pub fn evaluate_expr(
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
             push_call_stack(file_ns, &p, StackKind::Proc, &None, &values);
             added_stack = true;
+            // println!("proc: {}", expr);
             builtins::handle_proc(&p, &values)
           }
           Calcit::Syntax(s, def_ns) => {
+            push_call_stack(file_ns, &s, StackKind::Syntax, &Some(expr.clone()), &rest_nodes);
+            added_stack = true;
             builtins::handle_syntax(&s, &rest_nodes, scope, def_ns, program_code)
           }
           Calcit::Fn(name, def_ns, _, def_scope, args, body) => {
@@ -55,19 +58,15 @@ pub fn evaluate_expr(
             run_fn(&values, &def_scope, args, body, def_ns, program_code)
           }
           Calcit::Macro(name, def_ns, _, args, body) => {
+            println!("[Warn] macro should already be handled during preprocessing");
+
             // TODO moving to preprocess
             let mut current_values = rest_nodes.clone();
             let mut macro_ret = Calcit::Nil;
             // println!("eval macro: {} {}", x, primes::format_to_lisp(expr));
             // println!("macro... {} {}", x, CrListWrap(current_values.clone()));
 
-            push_call_stack(
-              file_ns,
-              &name,
-              StackKind::Macro,
-              &Some(expr.clone()),
-              &rest_nodes,
-            );
+            push_call_stack(file_ns, &name, StackKind::Macro, &Some(expr.clone()), &rest_nodes);
             added_stack = true;
 
             loop {
@@ -88,10 +87,9 @@ pub fn evaluate_expr(
 
             Ok(macro_ret)
           }
-          Calcit::Symbol(s, ns, resolved) => Err(format!(
-            "cannot evaluate symbol directly: {}/{} {:?}",
-            ns, s, resolved
-          )),
+          Calcit::Symbol(s, ns, resolved) => {
+            Err(format!("cannot evaluate symbol directly: {}/{} {:?}", ns, s, resolved))
+          }
           a => Err(format!("cannot be used as operator: {}", a)),
         };
 
@@ -119,15 +117,13 @@ pub fn evaluate_symbol(
   program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, String> {
   match parse_ns_def(&sym) {
-    Some((ns_part, def_part)) => {
-      match program::lookup_ns_target_in_import(file_ns, &ns_part, program_code) {
-        Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, program_code) {
-          Ok(v) => Ok(v),
-          Err(e) => Err(e),
-        },
-        None => Err(String::from("unknown ns target")),
-      }
-    }
+    Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns, &ns_part, program_code) {
+      Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, program_code) {
+        Ok(v) => Ok(v),
+        Err(e) => Err(e),
+      },
+      None => Err(String::from("unknown ns target")),
+    },
     None => {
       if is_syntax_name(sym) {
         return Ok(Calcit::Syntax(sym.to_string(), file_ns.to_string()));
@@ -165,11 +161,7 @@ pub fn parse_ns_def(s: &str) -> Option<(String, String)> {
   }
 }
 
-fn eval_symbol_from_program(
-  sym: &str,
-  ns: &str,
-  program_code: &program::ProgramCodeData,
-) -> Result<Calcit, String> {
+fn eval_symbol_from_program(sym: &str, ns: &str, program_code: &program::ProgramCodeData) -> Result<Calcit, String> {
   match program::lookup_evaled_def(ns, sym) {
     Some(v) => Ok(v),
     None => match program::lookup_def_code(ns, sym, program_code) {
@@ -206,11 +198,7 @@ pub fn run_fn(
 
 /// create new scope by wrting new args
 /// notice that `&` is a mark for spreading, `?` for optional arguments
-pub fn bind_args(
-  args: &CalcitItems,
-  values: &CalcitItems,
-  base_scope: &CalcitScope,
-) -> Result<CalcitScope, String> {
+pub fn bind_args(args: &CalcitItems, values: &CalcitItems, base_scope: &CalcitScope) -> Result<CalcitScope, String> {
   // TODO arguments spreading syntax
   // if values.len() != args.len() {
   //   return Err(format!(
@@ -300,40 +288,36 @@ pub fn evaluate_lines(
 /// evaluate symbols before calling a function
 /// notice that `&` is used to spread a list
 pub fn evaluate_args(
-  lines: &CalcitItems,
+  items: &CalcitItems,
   scope: &CalcitScope,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<CalcitItems, String> {
   let mut ret: CalcitItems = im::vector![];
   let mut spreading = false;
-  for line in lines {
-    match &evaluate_expr(line, scope, file_ns, program_code) {
-      Ok(v) => {
-        if spreading {
-          match v {
-            Calcit::Symbol(s, ..) if s == "&" => {
-              return Err(format!(
-                "already in spread mode: {}",
-                CrListWrap(lines.clone())
-              ))
-            }
-            Calcit::List(xs) => {
-              for x in xs {
-                ret.push_back(x.clone());
+  for item in items {
+    match item {
+      Calcit::Symbol(s, ..) if s == "&" => {
+        spreading = true;
+      }
+      _ => match &evaluate_expr(item, scope, file_ns, program_code) {
+        Ok(v) => {
+          if spreading {
+            match v {
+              Calcit::List(xs) => {
+                for x in xs {
+                  ret.push_back(x.clone());
+                }
+                spreading = false
               }
-              spreading = false
+              a => return Err(format!("expected list for spreading, got: {}", a)),
             }
-            a => return Err(format!("expected list for spreading, got: {}", a)),
-          }
-        } else {
-          match v {
-            Calcit::Symbol(s, ..) if s == "&" => spreading = true,
-            _ => ret.push_back(v.clone()),
+          } else {
+            ret.push_back(v.clone())
           }
         }
-      }
-      Err(e) => return Err(e.to_string()),
+        Err(e) => return Err(e.to_string()),
+      },
     }
   }
   Ok(ret)

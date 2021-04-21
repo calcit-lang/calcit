@@ -44,14 +44,8 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
         None => Ok(Calcit::Nil),
       }
     }
-    (Some(_), None) => Err(format!(
-      "nth expected a ordered seq and index, got: {:?}",
-      xs
-    )),
-    (None, Some(_)) => Err(format!(
-      "nth expected a ordered seq and index, got: {:?}",
-      xs
-    )),
+    (Some(_), None) => Err(format!("nth expected a ordered seq and index, got: {:?}", xs)),
+    (None, Some(_)) => Err(format!("nth expected a ordered seq and index, got: {:?}", xs)),
     (_, _) => Err(String::from("nth expected 2 argument")),
   }
 }

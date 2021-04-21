@@ -1,4 +1,4 @@
-mod effects;
+pub mod effects;
 mod lists;
 mod logics;
 mod maps;
@@ -8,6 +8,7 @@ mod sets;
 mod strings;
 mod syntax;
 
+use crate::data::json;
 use crate::primes::{Calcit, CalcitItems, CalcitScope};
 use crate::program::ProgramCodeData;
 
@@ -28,10 +29,12 @@ pub fn is_proc_name(s: &str) -> bool {
       | "parse-cirru-edn"
       | "write-cirru-edn"
       | "turn-symbol"
+      | "turn-keyword"
       // effects
       | "echo"
       | "echo-values"
       | "raise"
+      | "cpu-time"
       // logics
       | "&="
       | "&<"
@@ -50,6 +53,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&str"
       | "turn-string"
       | "split"
+      | "format-number"
       // lists
       | "[]"
       | "empty?"
@@ -69,6 +73,10 @@ pub fn is_proc_name(s: &str) -> bool {
       | "contains?"
       // sets
       | "#{}"
+      | "&include"
+      // json
+      | "parse-json"
+      | "stringify-json"
   )
 }
 
@@ -88,10 +96,12 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "parse-cirru-edn" => meta::parse_cirru_edn(args),
     "write-cirru-edn" => meta::write_cirru_edn(args),
     "turn-symbol" => meta::turn_symbol(args),
+    "turn-keyword" => meta::turn_symbol(args),
     // effects
     "echo" => effects::echo(args),
     "echo-values" => effects::echo_values(args),
     "raise" => effects::raise(args),
+    "cpu-time" => effects::cpu_time(args),
     // logics
     "&=" => logics::binary_equal(args),
     "&<" => logics::binary_less(args),
@@ -108,6 +118,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&str" => strings::call_str(args),
     "turn-string" => strings::turn_string(args),
     "split" => strings::split(args),
+    "format-number" => strings::format_number(args),
     // lists
     "[]" => lists::new_list(args),
     "empty?" => lists::empty_ques(args),
@@ -127,6 +138,10 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "contains?" => maps::contains_ques(args),
     // sets
     "#{}" => sets::new_set(args),
+    "&include" => sets::call_include(args),
+    // json
+    "parse-json" => json::parse_json(args),
+    "stringify-json" => json::stringify_json(args),
     a => Err(format!("TODO proc: {}", a)),
   }
 }

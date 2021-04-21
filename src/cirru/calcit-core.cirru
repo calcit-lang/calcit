@@ -704,16 +704,15 @@
           defmacro loop (pairs & body)
             assert "|expects pairs in loop" (list? pairs)
             assert "|expects pairs in pairs in loop"
-              every?
+              every? pairs
                 defn detect-pairs? (x)
                   if (list? x)
                     &= 2 (count x)
                     , false
-                , pairs
             let
                 args $ map pairs first
                 values $ map pairs last
-              assert "|loop requires symbols in pairs" (every? symbol? args)
+              assert "|loop requires symbols in pairs" (every? args symbol?)
               quote-replace
                 apply
                   defn generated-loop ~args ~@body
@@ -962,7 +961,7 @@
                   call-with-log ~f-name ~@args
 
         |do $ quote
-          defmacro do (pair & body)
+          defmacro do (& body)
             ; echo "|body:" (format-to-lisp body)
             quasiquote
               &let nil
@@ -971,7 +970,7 @@
         |let{} $ quote
           defmacro let{} (items base & body)
             assert (str "|expects symbol names in binding names: " items)
-              if (list? items) (every? symbol? items) false
+              if (list? items) (every? items symbol?) false
             let
                 var-result $ gensym |result
               quote-replace
@@ -988,7 +987,7 @@
           defmacro let[] (vars data & body)
             assert "|expects a list of definitions"
               if (list? vars)
-                every? symbol? vars
+                every? vars symbol?
                 , false
             let
                 v $ gensym |v
@@ -1021,16 +1020,18 @@
               new-record (quote ~name) ~@xs
 
         |conj $ quote
-          def conj append
+          defn conj (xs a)
+            append xs a
 
         |turn-str $ quote
-          def turn-str turn-string
+          defn turn-str (x) (turn-string x)
 
         |reduce $ quote
-          def reduce foldl
+          defn reduce (xs x0 f)
+            foldl xs x0 f
 
         |dbt $ quote
           def dbt dual-balanced-ternary
 
         |/= $ quote
-          def /= not=
+          defn /= (a b) (not= a b)

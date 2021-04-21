@@ -20,7 +20,7 @@ pub enum StackKind {
   Fn,
   Proc,
   Macro,
-  // Syntax, // rarely used
+  Syntax, // rarely used
 }
 
 // TODO impl fmt
@@ -29,13 +29,7 @@ lazy_static! {
   static ref CALL_STACK: Mutex<Vec<CalcitStack>> = Mutex::new(vec![]);
 }
 
-pub fn push_call_stack(
-  ns: &str,
-  def: &str,
-  kind: StackKind,
-  code: &Option<Calcit>,
-  args: &CalcitItems,
-) {
+pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: &Option<Calcit>, args: &CalcitItems) {
   let stack = &mut CALL_STACK.lock().unwrap();
   stack.push(CalcitStack {
     ns: ns.to_string(),
@@ -58,12 +52,7 @@ pub fn show_stack() {
   for idx in 0..stack.len() {
     let s = &stack[stack.len() - idx - 1];
     let is_macro = s.kind == StackKind::Macro;
-    println!(
-      "  {}/{}{}",
-      s.ns,
-      s.def,
-      if is_macro { "\t ~macro" } else { "" }
-    );
+    println!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" });
   }
 }
 
@@ -74,12 +63,7 @@ pub fn display_stack(failure: &str) {
   for idx in 0..stack.len() {
     let s = &stack[stack.len() - idx - 1];
     let is_macro = s.kind == StackKind::Macro;
-    println!(
-      "  {}/{}{}",
-      s.ns,
-      s.def,
-      if is_macro { "\t ~macro" } else { "" }
-    );
+    println!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" });
   }
 
   let mut stack_list: Vec<Edn> = vec![];
@@ -102,19 +86,13 @@ pub fn display_stack(failure: &str) {
       args.push(edn::calcit_to_edn(a));
     }
     info.insert(Edn::Keyword(String::from("args")), Edn::List(args));
-    info.insert(
-      Edn::Keyword(String::from("kind")),
-      Edn::Keyword(name_kind(&s.kind)),
-    );
+    info.insert(Edn::Keyword(String::from("kind")), Edn::Keyword(name_kind(&s.kind)));
 
     stack_list.push(Edn::Map(info))
   }
 
   let mut data: HashMap<Edn, Edn> = HashMap::new();
-  data.insert(
-    Edn::Keyword(String::from("message")),
-    Edn::Str(failure.to_string()),
-  );
+  data.insert(Edn::Keyword(String::from("message")), Edn::Str(failure.to_string()));
   data.insert(Edn::Keyword(String::from("stack")), Edn::List(stack_list));
   let content = cirru_edn::format(&Edn::Map(data));
   let _ = fs::write(ERROR_SNAPSHOT, content);
@@ -128,5 +106,6 @@ fn name_kind(k: &StackKind) -> String {
     StackKind::Fn => String::from("fn"),
     StackKind::Proc => String::from("proc"),
     StackKind::Macro => String::from("macro"),
+    StackKind::Syntax => String::from("syntax"),
   }
 }

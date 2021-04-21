@@ -2,6 +2,7 @@ use crate::builtins::math::f32_to_usize;
 use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
+use crate::data::json;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -13,7 +14,6 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(a) => match a {
       Calcit::Nil => Ok(Calcit::Keyword(String::from("nil"))),
       // CalcitRef(Calcit), // TODO
-      // Calcit::Thunk(CirruNode), // TODO
       Calcit::Bool(..) => Ok(Calcit::Keyword(String::from("bool"))),
       Calcit::Number(..) => Ok(Calcit::Keyword(String::from("number"))),
       Calcit::Symbol(..) => Ok(Calcit::Keyword(String::from("symbol"))),
@@ -95,10 +95,7 @@ pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, String> {
       }
       Ok(Calcit::Str(nanoid!(n, &charset)))
     }
-    (a, b) => Err(format!(
-      "generate-id! expected size or charset, got: {:?} {:?}",
-      a, b
-    )),
+    (a, b) => Err(format!("generate-id! expected size or charset, got: {:?} {:?}", a, b)),
   }
 }
 
@@ -151,20 +148,20 @@ pub fn write_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Str(s)) => Ok(Calcit::Symbol(
-      s.clone(),
-      primes::GENERATED_NS.to_string(),
-      None,
-    )),
-    Some(Calcit::Keyword(s)) => Ok(Calcit::Symbol(
-      s.clone(),
-      primes::GENERATED_NS.to_string(),
-      None,
-    )),
-    Some(Calcit::Symbol(s, ns, resolved)) => {
-      Ok(Calcit::Symbol(s.clone(), ns.clone(), resolved.clone()))
-    }
+    Some(Calcit::Str(s)) => Ok(Calcit::Symbol(s.clone(), primes::GENERATED_NS.to_string(), None)),
+    Some(Calcit::Keyword(s)) => Ok(Calcit::Symbol(s.clone(), primes::GENERATED_NS.to_string(), None)),
+    Some(Calcit::Symbol(s, ns, resolved)) => Ok(Calcit::Symbol(s.clone(), ns.clone(), resolved.clone())),
     Some(a) => Err(format!("turn-symbol cannot turn this to symbol: {}", a)),
     None => Err(String::from("turn-symbol expected 1 argument, got nothing")),
+  }
+}
+
+pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => Ok(Calcit::Keyword(s.clone())),
+    Some(Calcit::Keyword(s)) => Ok(Calcit::Keyword(s.clone())),
+    Some(Calcit::Symbol(s, ..)) => Ok(Calcit::Keyword(s.clone())),
+    Some(a) => Err(format!("turn-keyword cannot turn this to keyword: {}", a)),
+    None => Err(String::from("turn-keyword expected 1 argument, got nothing")),
   }
 }

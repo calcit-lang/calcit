@@ -36,8 +36,7 @@ pub fn preprocess_ns_def(
 
           push_call_stack(ns, def, StackKind::Fn, &Some(code.clone()), &im::vector![]);
 
-          let (resolved_code, resolve_value) =
-            preprocess_expr(&code, &HashSet::new(), ns, program_code)?;
+          let (resolved_code, resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, program_code)?;
           let v = if is_fn_or_macro(&resolved_code) {
             match runner::evaluate_expr(&resolved_code, &im::HashMap::new(), ns, program_code) {
               Ok(ret) => ret,
@@ -115,10 +114,7 @@ pub fn preprocess_expr(
               // TODO js syntax to handle in future
               preprocess_ns_def(&target_ns, &def, program_code)
             }
-            None => Err(format!(
-              "unknown symbol in scope: {}/{} {:?}",
-              def_ns, def, scope_defs
-            )),
+            None => Err(format!("unknown symbol in scope: {}/{} {:?}", def_ns, def, scope_defs)),
           }
         }
       }
@@ -209,23 +205,16 @@ fn process_list_call(
     (Calcit::Syntax(name, _ns), _) => {
       match name.as_str() {
         "quote-replace" | "quasiquote" => Ok((Calcit::List(xs.clone()), None)),
-        "defn" | "defmacro" => Ok((
-          preprocess_defn(head, args, scope_defs, file_ns, program_code)?,
-          None,
-        )),
+        "defn" | "defmacro" => Ok((preprocess_defn(head, args, scope_defs, file_ns, program_code)?, None)),
         "&let" => Ok((
           preprocess_call_let(head, args, scope_defs, file_ns, program_code)?,
           None,
         )),
-        "if" | "assert" | "do" | "try" | "macroexpand" | "macroexpand-all" | "macroexpand-1"
-        | "foldl" => Ok((
+        "if" | "assert" | "do" | "try" | "macroexpand" | "macroexpand-all" | "macroexpand-1" | "foldl" => Ok((
           preprocess_each_items(head, args, scope_defs, file_ns, program_code)?,
           None,
         )),
-        "quote" | "eval" => Ok((
-          preprocess_quote(head, args, scope_defs, file_ns, program_code)?,
-          None,
-        )),
+        "quote" | "eval" => Ok((preprocess_quote(head, args, scope_defs, file_ns, program_code)?, None)),
         // TODO
         // "defatom" => {}
         _ => Err(format!("unknown syntax: {}", head)),
@@ -296,10 +285,7 @@ pub fn preprocess_defn(
       Ok(Calcit::List(xs))
     }
     (Some(a), Some(b)) => Err(format!("defn/defmacro expected name and args: {} {}", a, b)),
-    (a, b) => Err(format!(
-      "defn or defmacro expected name and args, got {:?} {:?}",
-      a, b,
-    )),
+    (a, b) => Err(format!("defn or defmacro expected name and args, got {:?} {:?}", a, b,)),
   }
 }
 

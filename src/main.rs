@@ -19,9 +19,12 @@ use dirs::home_dir;
 use primes::Calcit;
 use std::fs;
 use std::path::Path;
+use std::time::Instant;
 
 fn main() -> Result<(), String> {
+  builtins::effects::init_effects_states();
   let cli_matches = cli_args::parse_cli();
+  let started_time = Instant::now();
 
   // let eval_once = cli_matches.is_present("once");
   // println!("once: {}", eval_once);
@@ -80,17 +83,11 @@ fn main() -> Result<(), String> {
     None => Err(format!("entry not initialized: {}/{}", init_ns, init_def)),
     Some(entry) => match entry {
       Calcit::Fn(_, f_ns, _, def_scope, args, body) => {
-        let result = runner::run_fn(
-          &im::vector![],
-          &def_scope,
-          &args,
-          &body,
-          &f_ns,
-          &program_code,
-        );
+        let result = runner::run_fn(&im::vector![], &def_scope, &args, &body, &f_ns, &program_code);
         match result {
           Ok(v) => {
-            println!("result: {}", v);
+            let duration = Instant::now().duration_since(started_time);
+            println!("took {}ms: {}", duration.as_micros() as f32 / 1000.0, v);
             Ok(())
           }
           Err(failure) => {

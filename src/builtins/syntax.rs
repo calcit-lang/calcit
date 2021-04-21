@@ -103,9 +103,7 @@ pub fn syntax_let(
   program_code: &ProgramCodeData,
 ) -> Result<Calcit, String> {
   match expr.get(0) {
-    Some(Calcit::Nil) => {
-      runner::evaluate_lines(&expr.clone().slice(1..), scope, file_ns, program_code)
-    }
+    Some(Calcit::Nil) => runner::evaluate_lines(&expr.clone().slice(1..), scope, file_ns, program_code),
     Some(Calcit::List(xs)) if xs.len() == 2 => {
       let mut body_scope = scope.clone();
       match (&xs[0], &xs[1]) {
@@ -147,15 +145,13 @@ pub fn foldl(
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         let mut ret = acc;
         for x in xs {
+          // println!("foldl args, {} {}", ret, x.clone());
           ret = builtins::handle_proc(&proc, &im::vector![ret, x.clone()])?;
         }
         Ok(ret)
       }
 
-      (_, _) => Err(format!(
-        "foldl expected list and function, got: {} {}",
-        xs, f
-      )),
+      (_, _) => Err(format!("foldl expected list and function, got: {} {}", xs, f)),
     }
   } else {
     Err(format!("foldl expected 3 arguments, got: {:?}", expr))
@@ -256,10 +252,7 @@ pub fn macroexpand(
       a => Ok(a),
     }
   } else {
-    Err(format!(
-      "macroexpand expected excaclty 1 argument, got: {:?}",
-      expr
-    ))
+    Err(format!("macroexpand expected excaclty 1 argument, got: {:?}", expr))
   }
 }
 
@@ -290,10 +283,7 @@ pub fn macroexpand_1(
       a => Ok(a),
     }
   } else {
-    Err(format!(
-      "macroexpand expected excaclty 1 argument, got: {:?}",
-      expr
-    ))
+    Err(format!("macroexpand expected excaclty 1 argument, got: {:?}", expr))
   }
 }
 
@@ -317,7 +307,10 @@ pub fn call_try(
             let values = im::vector![err_data];
             runner::run_fn(&values, &def_scope, &args, &body, &def_ns, program_code)
           }
-          Calcit::Proc(proc) => builtins::handle_proc(&proc, &im::vector![err_data]),
+          Calcit::Proc(proc) => {
+            println!("TRY");
+            builtins::handle_proc(&proc, &im::vector![err_data])
+          }
           a => Err(format!("try expected a function handler, got: {}", a)),
         }
       }

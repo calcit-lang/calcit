@@ -319,7 +319,8 @@ impl Ord for Calcit {
       (_, Calcit::Set(_)) => Greater,
 
       (Calcit::Map(a), Calcit::Map(b)) => {
-        unreachable!(format!("TODO maps are not cmp ed {:?} {:?}", a, b)) // TODO
+        unreachable!(format!("TODO maps are not cmp ed {:?} {:?}", a, b))
+        // TODO
       }
       (Calcit::Map(_), _) => Less,
       (_, Calcit::Map(_)) => Greater,
@@ -364,7 +365,7 @@ impl PartialEq for Calcit {
       (Calcit::Symbol(a, ..), Calcit::Symbol(b, ..)) => a == b,
       (Calcit::Keyword(a), Calcit::Keyword(b)) => a == b,
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
-      // (Calcit::Thunk(a), Calcit::Thunk(b)) => a == b,
+      (Calcit::Thunk(a), Calcit::Thunk(b)) => a == b,
       (Calcit::List(a), Calcit::List(b)) => a == b,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,
