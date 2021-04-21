@@ -65,41 +65,43 @@ fn main() -> Result<(), String> {
   let program_code = program::extract_program_data(&snapshot)?;
 
   let (init_ns, init_def) = extract_ns_def(&snapshot.configs.init_fn)?;
-  match program::lookup_def_code(&init_ns, &init_def, &program_code) {
-    None => Err(format!("Invalid entry: {}/{}", init_ns, init_def)),
-    Some(expr) => {
-      call_stack::push_call_stack(
-        &init_ns,
-        &init_def,
-        StackKind::Fn,
-        &None,
-        &im::Vector::new(),
-      );
-      let entry = runner::evaluate_expr(&expr, &im::HashMap::new(), &init_ns, &program_code)?;
-      match entry {
-        Calcit::Fn(_, f_ns, _, def_scope, args, body) => {
-          let result = runner::run_fn(
-            im::Vector::new(),
-            &def_scope,
-            &args,
-            &body,
-            &f_ns,
-            &program_code,
-          );
-          match result {
-            Ok(v) => {
-              println!("result: {}", v);
-            }
-            Err(falure) => {
-              println!("\nfailed, {}", falure);
-              call_stack::display_stack(&falure);
-            }
-          }
-          Ok(())
-        }
-        _ => Err(format!("expected function entry, got: {}", entry)),
-      }
+
+  // preprocess to init
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code) {
+    Ok(_) => (),
+    Err(failure) => {
+      println!("\nfailed, {}", failure);
+      call_stack::display_stack(&failure);
+      return Err(failure);
     }
+  }
+
+  match program::lookup_evaled_def(&init_ns, &init_def) {
+    None => Err(format!("entry not initialized: {}/{}", init_ns, init_def)),
+    Some(entry) => match entry {
+      Calcit::Fn(_, f_ns, _, def_scope, args, body) => {
+        let result = runner::run_fn(
+          &im::vector![],
+          &def_scope,
+          &args,
+          &body,
+          &f_ns,
+          &program_code,
+        );
+        match result {
+          Ok(v) => {
+            println!("result: {}", v);
+            Ok(())
+          }
+          Err(failure) => {
+            println!("\nfailed, {}", failure);
+            call_stack::display_stack(&failure);
+            Err(failure)
+          }
+        }
+      }
+      _ => Err(format!("expected function entry, got: {}", entry)),
+    },
   }
 }
 

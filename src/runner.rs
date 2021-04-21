@@ -1,4 +1,4 @@
-mod preprocess;
+pub mod preprocess;
 
 use crate::builtins;
 use crate::builtins::{is_proc_name, is_syntax_name};
@@ -52,7 +52,7 @@ pub fn evaluate_expr(
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
             push_call_stack(file_ns, &name, StackKind::Fn, &Some(expr.clone()), &values);
             added_stack = true;
-            run_fn(values, &def_scope, args, body, def_ns, program_code)
+            run_fn(&values, &def_scope, args, body, def_ns, program_code)
           }
           Calcit::Macro(name, def_ns, _, args, body) => {
             // TODO moving to preprocess
@@ -184,14 +184,14 @@ fn eval_symbol_from_program(
 }
 
 pub fn run_fn(
-  values: CalcitItems,
+  values: &CalcitItems,
   scope: &CalcitScope,
   args: &CalcitItems,
   body: &CalcitItems,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, String> {
-  let mut current_values = values;
+  let mut current_values = values.clone();
   loop {
     let body_scope = bind_args(args, &current_values, scope)?;
     let v = evaluate_lines(body, &body_scope, file_ns, program_code)?;

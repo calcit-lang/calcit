@@ -217,8 +217,7 @@
 
             test-fn
 
-            ; TODO prepressing has affects to gemsym
-            ; test-macro/main!
+            test-macro/main!
 
             test-arguments
 

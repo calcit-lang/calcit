@@ -140,7 +140,7 @@ pub fn foldl(
         let mut ret = acc;
         for x in xs {
           let values = im::vector![ret, x.clone()];
-          ret = runner::run_fn(values, &def_scope, args, body, def_ns, program_code)?;
+          ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
         }
         Ok(ret)
       }
@@ -315,7 +315,7 @@ pub fn call_try(
         match f {
           Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
             let values = im::vector![err_data];
-            runner::run_fn(values, &def_scope, &args, &body, &def_ns, program_code)
+            runner::run_fn(&values, &def_scope, &args, &body, &def_ns, program_code)
           }
           Calcit::Proc(proc) => builtins::handle_proc(&proc, &im::vector![err_data]),
           a => Err(format!("try expected a function handler, got: {}", a)),
