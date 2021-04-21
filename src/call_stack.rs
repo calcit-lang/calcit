@@ -1,7 +1,7 @@
 use crate::data::cirru;
 use crate::data::edn;
-use crate::primes::{CalcitData, CalcitItems};
-use cirru_edn::{write_cirru_edn, CirruEdn, CirruEdn::*};
+use crate::primes::{Calcit, CalcitItems};
+use cirru_edn::Edn;
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Mutex;
@@ -10,7 +10,7 @@ use std::sync::Mutex;
 pub struct CalcitStack {
   pub ns: String,
   pub def: String,
-  pub code: Option<CalcitData>, // built in functions may not contain code
+  pub code: Option<Calcit>, // built in functions may not contain code
   pub args: CalcitItems,
   pub kind: StackKind,
 }
@@ -33,7 +33,7 @@ pub fn push_call_stack(
   ns: &str,
   def: &str,
   kind: StackKind,
-  code: &Option<CalcitData>,
+  code: &Option<Calcit>,
   args: &CalcitItems,
 ) {
   let stack = &mut CALL_STACK.lock().unwrap();
@@ -82,44 +82,41 @@ pub fn display_stack(failure: &str) {
     );
   }
 
-  let mut stack_list: Vec<CirruEdn> = vec![];
+  let mut stack_list: Vec<Edn> = vec![];
   for idx in 0..stack.len() {
     let s = &stack[stack.len() - idx - 1];
-    let mut info: HashMap<CirruEdn, CirruEdn> = HashMap::new();
+    let mut info: HashMap<Edn, Edn> = HashMap::new();
     info.insert(
-      CirruEdnKeyword(String::from("def")),
-      CirruEdnString(format!("{}/{}", s.ns, s.def)),
+      Edn::Keyword(String::from("def")),
+      Edn::Str(format!("{}/{}", s.ns, s.def)),
     );
     info.insert(
-      CirruEdnKeyword(String::from("code")),
+      Edn::Keyword(String::from("code")),
       match &s.code {
-        Some(code) => CirruEdnQuote(cirru::calcit_to_cirru(code)),
-        None => CirruEdnNil,
+        Some(code) => Edn::Quote(cirru::calcit_to_cirru(code)),
+        None => Edn::Nil,
       },
     );
-    let mut args: Vec<CirruEdn> = vec![];
+    let mut args: Vec<Edn> = vec![];
     for a in &s.args {
       args.push(edn::calcit_to_edn(a));
     }
-    info.insert(CirruEdnKeyword(String::from("args")), CirruEdnList(args));
+    info.insert(Edn::Keyword(String::from("args")), Edn::List(args));
     info.insert(
-      CirruEdnKeyword(String::from("kind")),
-      CirruEdnKeyword(name_kind(&s.kind)),
+      Edn::Keyword(String::from("kind")),
+      Edn::Keyword(name_kind(&s.kind)),
     );
 
-    stack_list.push(CirruEdnMap(info))
+    stack_list.push(Edn::Map(info))
   }
 
-  let mut data: HashMap<CirruEdn, CirruEdn> = HashMap::new();
+  let mut data: HashMap<Edn, Edn> = HashMap::new();
   data.insert(
-    CirruEdnKeyword(String::from("message")),
-    CirruEdnString(failure.to_string()),
+    Edn::Keyword(String::from("message")),
+    Edn::Str(failure.to_string()),
   );
-  data.insert(
-    CirruEdnKeyword(String::from("stack")),
-    CirruEdnList(stack_list),
-  );
-  let content = write_cirru_edn(CirruEdnMap(data));
+  data.insert(Edn::Keyword(String::from("stack")), Edn::List(stack_list));
+  let content = cirru_edn::format(&Edn::Map(data));
   let _ = fs::write(ERROR_SNAPSHOT, content);
   println!("\nrun `cat {}` to read stack details.", ERROR_SNAPSHOT);
 }

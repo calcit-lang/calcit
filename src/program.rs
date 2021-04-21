@@ -3,12 +3,11 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::data::cirru::code_to_calcit;
-use crate::primes::CalcitData;
+use crate::primes::Calcit;
 
-use cirru_parser::CirruNode;
-use cirru_parser::CirruNode::*;
+use cirru_parser::Cirru;
 
-pub type ProgramEvaledData = HashMap<String, HashMap<String, CalcitData>>;
+pub type ProgramEvaledData = HashMap<String, HashMap<String, Calcit>>;
 
 /// defRule: ns def
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,7 +20,7 @@ pub enum ImportRule {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgramFileData {
   import_map: HashMap<String, ImportRule>,
-  defs: HashMap<String, CalcitData>,
+  defs: HashMap<String, Calcit>,
 }
 
 pub type ProgramCodeData = HashMap<String, ProgramFileData>;
@@ -30,42 +29,42 @@ lazy_static! {
   static ref PROGRAM_EVALED_DATA_STATE: Mutex<ProgramEvaledData> = Mutex::new(HashMap::new());
 }
 
-fn extract_import_rule(nodes: &CirruNode) -> Result<Vec<(String, ImportRule)>, String> {
+fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, String> {
   match nodes {
-    CirruLeaf(_) => Err(String::from("Expected import rule in expr")),
-    CirruList(rule_nodes) => {
+    Cirru::Leaf(_) => Err(String::from("Expected import rule in expr")),
+    Cirru::List(rule_nodes) => {
       let mut xs = rule_nodes.clone();
       match xs.get(0) {
         // strip leading `[]` symbols
-        Some(CirruLeaf(s)) if s == "[]" => xs = xs[1..4].to_vec(),
+        Some(Cirru::Leaf(s)) if s == "[]" => xs = xs[1..4].to_vec(),
         _ => (),
       }
       match (xs[0].clone(), xs[1].clone(), xs[2].clone()) {
-        (CirruLeaf(ns), x, CirruLeaf(alias)) if x == CirruLeaf(String::from(":as")) => {
+        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::Leaf(String::from(":as")) => {
           Ok(vec![(alias, ImportRule::ImportNsRule(ns))])
         }
-        (CirruLeaf(ns), x, CirruList(ys)) if x == CirruLeaf(String::from(":refer")) => {
+        (Cirru::Leaf(ns), x, Cirru::List(ys)) if x == Cirru::Leaf(String::from(":refer")) => {
           let mut rules: Vec<(String, ImportRule)> = vec![];
           for y in ys {
             match y {
-              CirruLeaf(s) if &s == "[]" => (), // `[]` symbol are ignored
-              CirruLeaf(s) => {
+              Cirru::Leaf(s) if &s == "[]" => (), // `[]` symbol are ignored
+              Cirru::Leaf(s) => {
                 rules.push((s.clone(), ImportRule::ImportDefRule(ns.clone(), s.clone())))
               }
-              CirruList(_defs) => return Err(String::from("invalid refer values")),
+              Cirru::List(_defs) => return Err(String::from("invalid refer values")),
             }
           }
           Ok(rules)
         }
-        (_, x, _) if x == CirruLeaf(String::from(":as")) => {
+        (_, x, _) if x == Cirru::Leaf(String::from(":as")) => {
           Err(String::from("invalid import rule"))
         }
-        (_, x, _) if x == CirruLeaf(String::from(":refer")) => {
+        (_, x, _) if x == Cirru::Leaf(String::from(":refer")) => {
           Err(String::from("invalid import rule"))
         }
         _ if xs.len() != 3 => Err(format!(
           "expected import rule has length 3: {}",
-          CirruList(xs.clone())
+          Cirru::List(xs.clone())
         )),
         _ => Err(String::from("unknown rule")),
       }
@@ -73,13 +72,15 @@ fn extract_import_rule(nodes: &CirruNode) -> Result<Vec<(String, ImportRule)>, S
   }
 }
 
-fn extract_import_map(nodes: &CirruNode) -> Result<HashMap<String, ImportRule>, String> {
+fn extract_import_map(nodes: &Cirru) -> Result<HashMap<String, ImportRule>, String> {
   match nodes {
-    CirruLeaf(_) => unreachable!("Expected expr for ns"),
-    CirruList(xs) => match (xs.get(0), xs.get(1), xs.get(2)) {
+    Cirru::Leaf(_) => unreachable!("Expected expr for ns"),
+    Cirru::List(xs) => match (xs.get(0), xs.get(1), xs.get(2)) {
       // Too many clones
-      (Some(x), Some(CirruLeaf(_)), Some(CirruList(xs))) if *x == CirruLeaf(String::from("ns")) => {
-        if !xs.is_empty() && xs[0] == CirruLeaf(String::from(":require")) {
+      (Some(x), Some(Cirru::Leaf(_)), Some(Cirru::List(xs)))
+        if *x == Cirru::Leaf(String::from("ns")) =>
+      {
+        if !xs.is_empty() && xs[0] == Cirru::Leaf(String::from(":require")) {
           let mut ys: HashMap<String, ImportRule> = HashMap::new();
           for (idx, x) in xs.iter().enumerate() {
             if idx > 0 {
@@ -104,7 +105,7 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
   let mut xs: ProgramCodeData = HashMap::new();
   for (ns, file) in s.files.clone() {
     let import_map = extract_import_map(&file.ns)?;
-    let mut defs: HashMap<String, CalcitData> = HashMap::new();
+    let mut defs: HashMap<String, Calcit> = HashMap::new();
     for (def, code) in file.defs {
       defs.insert(def, code_to_calcit(&code, &ns)?);
     }
@@ -122,7 +123,7 @@ pub fn has_def_code(ns: &str, def: &str, program_code: &ProgramCodeData) -> bool
   }
 }
 
-pub fn lookup_def_code(ns: &str, def: &str, program_code: &ProgramCodeData) -> Option<CalcitData> {
+pub fn lookup_def_code(ns: &str, def: &str, program_code: &ProgramCodeData) -> Option<Calcit> {
   let file = program_code.get(ns)?;
   let data = file.defs.get(def)?;
   Some(data.clone())
@@ -161,7 +162,7 @@ pub fn has_evaled_def(ns: &str, def: &str) -> bool {
 }
 
 /// lookup and return value
-pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<CalcitData> {
+pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
   let s2 = PROGRAM_EVALED_DATA_STATE.lock().unwrap();
   if s2.contains_key(ns) && s2[ns].contains_key(def) {
     Some(s2[ns][def].clone())
@@ -172,7 +173,7 @@ pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<CalcitData> {
 }
 
 // Dirty mutating global states
-pub fn write_evaled_def(ns: &str, def: &str, value: CalcitData) -> Result<(), String> {
+pub fn write_evaled_def(ns: &str, def: &str, value: Calcit) -> Result<(), String> {
   // println!("writing {} {}", ns, def);
   let program = &mut PROGRAM_EVALED_DATA_STATE.lock().unwrap();
   if !program.contains_key(ns) {

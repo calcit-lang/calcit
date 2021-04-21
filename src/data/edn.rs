@@ -1,162 +1,161 @@
 use crate::data::cirru;
 use crate::primes;
-use crate::primes::{CalcitData, CalcitData::*};
-use cirru_edn::CirruEdn;
-use cirru_edn::CirruEdn::*;
-use cirru_parser::CirruNode;
+use crate::primes::Calcit;
+use cirru_edn::Edn;
+use cirru_parser::Cirru;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
 
-pub fn as_string(data: CirruEdn) -> Result<String, String> {
+pub fn as_string(data: Edn) -> Result<String, String> {
   match data {
-    CirruEdnString(s) => Ok(s),
+    Edn::Str(s) => Ok(s),
     a => Err(format!("failed to convert to string: {}", a)),
   }
 }
 
 #[allow(dead_code)]
-pub fn as_bool(data: CirruEdn) -> Result<bool, String> {
+pub fn as_bool(data: Edn) -> Result<bool, String> {
   match data {
-    CirruEdnBool(b) => Ok(b),
+    Edn::Bool(b) => Ok(b),
     a => Err(format!("failed to convert to bool: {}", a)),
   }
 }
 
 #[allow(dead_code)]
-pub fn as_number(data: CirruEdn) -> Result<f32, String> {
+pub fn as_number(data: Edn) -> Result<f32, String> {
   match data {
-    CirruEdnNumber(n) => Ok(n),
+    Edn::Number(n) => Ok(n),
     a => Err(format!("failed to convert to number: {}", a)),
   }
 }
 
-pub fn as_cirru(data: CirruEdn) -> Result<CirruNode, String> {
+pub fn as_cirru(data: Edn) -> Result<Cirru, String> {
   match data {
-    CirruEdnQuote(c) => Ok(c),
+    Edn::Quote(c) => Ok(c),
     a => Err(format!("failed to convert to cirru code: {}", a)),
   }
 }
 
-pub fn as_vec(data: CirruEdn) -> Result<Vec<CirruEdn>, String> {
+pub fn as_vec(data: Edn) -> Result<Vec<Edn>, String> {
   match data {
-    CirruEdnList(xs) => Ok(xs),
-    CirruEdnNil => Err(String::from("cannot get from nil")),
+    Edn::List(xs) => Ok(xs),
+    Edn::Nil => Err(String::from("cannot get from nil")),
     a => Err(format!("failed to convert to vec: {}", a)),
   }
 }
 
-pub fn as_map(data: CirruEdn) -> Result<HashMap<CirruEdn, CirruEdn>, String> {
+pub fn as_map(data: Edn) -> Result<HashMap<Edn, Edn>, String> {
   match data {
-    CirruEdnMap(xs) => Ok(xs),
-    CirruEdnNil => Err(String::from("cannot get from nil")),
+    Edn::Map(xs) => Ok(xs),
+    Edn::Nil => Err(String::from("cannot get from nil")),
     a => Err(format!("failed to convert to map: {}", a)),
   }
 }
 
 /// detects by index
 #[allow(dead_code)]
-pub fn vec_get(data: &CirruEdn, idx: usize) -> CirruEdn {
+pub fn vec_get(data: &Edn, idx: usize) -> Edn {
   match data {
-    CirruEdnList(xs) => {
+    Edn::List(xs) => {
       if idx < xs.len() {
         xs[idx].clone()
       } else {
-        CirruEdnNil
+        Edn::Nil
       }
     }
-    _ => CirruEdnNil,
+    _ => Edn::Nil,
   }
 }
 
 /// detects by keyword then string, return nil if not found
-pub fn map_get(data: &CirruEdn, k: &str) -> CirruEdn {
+pub fn map_get(data: &Edn, k: &str) -> Edn {
   let key: String = k.to_string();
   match data {
-    CirruEdnMap(xs) => {
-      if xs.contains_key(&CirruEdnKeyword(key.clone())) {
-        xs[&CirruEdnKeyword(key)].clone()
-      } else if xs.contains_key(&CirruEdnString(key.clone())) {
-        xs[&CirruEdnString(key)].clone()
+    Edn::Map(xs) => {
+      if xs.contains_key(&Edn::Keyword(key.clone())) {
+        xs[&Edn::Keyword(key)].clone()
+      } else if xs.contains_key(&Edn::Str(key.clone())) {
+        xs[&Edn::Str(key)].clone()
       } else {
-        CirruEdnNil
+        Edn::Nil
       }
     }
-    _ => CirruEdnNil,
+    _ => Edn::Nil,
   }
 }
 
 // values does not fit are just represented with specical indicates
-pub fn calcit_to_edn(x: &CalcitData) -> CirruEdn {
+pub fn calcit_to_edn(x: &Calcit) -> Edn {
   match x {
-    CalcitNil => CirruEdnNil,
-    CalcitBool(b) => CirruEdnBool(*b),
-    CalcitString(s) => CirruEdnString(s.clone()),
-    CalcitNumber(n) => CirruEdnNumber(*n),
-    CalcitKeyword(s) => CirruEdnKeyword(s.clone()),
-    CalcitSymbol(s, ..) => CirruEdnSymbol(s.clone()),
-    CalcitList(xs) => {
-      let mut ys: Vec<CirruEdn> = vec![];
+    Calcit::Nil => Edn::Nil,
+    Calcit::Bool(b) => Edn::Bool(*b),
+    Calcit::Str(s) => Edn::Str(s.clone()),
+    Calcit::Number(n) => Edn::Number(*n),
+    Calcit::Keyword(s) => Edn::Keyword(s.clone()),
+    Calcit::Symbol(s, ..) => Edn::Symbol(s.clone()),
+    Calcit::List(xs) => {
+      let mut ys: Vec<Edn> = vec![];
       for x in xs {
         ys.push(calcit_to_edn(x));
       }
-      CirruEdnList(ys)
+      Edn::List(ys)
     }
-    CalcitSet(xs) => {
-      let mut ys: HashSet<CirruEdn> = HashSet::new();
+    Calcit::Set(xs) => {
+      let mut ys: HashSet<Edn> = HashSet::new();
       for x in xs {
         ys.insert(calcit_to_edn(x));
       }
-      CirruEdnSet(ys)
+      Edn::Set(ys)
     }
-    CalcitMap(xs) => {
-      let mut ys: HashMap<CirruEdn, CirruEdn> = HashMap::new();
+    Calcit::Map(xs) => {
+      let mut ys: HashMap<Edn, Edn> = HashMap::new();
       for (k, x) in xs {
         ys.insert(calcit_to_edn(k), calcit_to_edn(x));
       }
-      CirruEdnMap(ys)
+      Edn::Map(ys)
     }
-    CalcitFn(name, ..) => CirruEdnString(format!("&fn {}", name)),
-    CalcitProc(name) => CirruEdnString(format!("&proc {}", name)),
-    a => CirruEdnString(format!("TODO {}", a)), // TODO more types to handle
+    Calcit::Fn(name, ..) => Edn::Str(format!("&fn {}", name)),
+    Calcit::Proc(name) => Edn::Str(format!("&proc {}", name)),
+    a => Edn::Str(format!("TODO {}", a)), // TODO more types to handle
   }
 }
 
-pub fn edn_to_calcit(x: &CirruEdn) -> CalcitData {
+pub fn edn_to_calcit(x: &Edn) -> Calcit {
   match x {
-    CirruEdnNil => CalcitNil,
-    CirruEdnBool(b) => CalcitBool(*b),
-    CirruEdnNumber(n) => CalcitNumber(*n),
-    CirruEdnSymbol(s) => CalcitSymbol(s.clone(), primes::GENERATED_NS.to_string(), None),
-    CirruEdnKeyword(s) => CalcitKeyword(s.clone()),
-    CirruEdnString(s) => CalcitString(s.clone()),
-    CirruEdnQuote(nodes) => cirru::cirru_to_calcit(nodes),
-    CirruEdnList(xs) => {
+    Edn::Nil => Calcit::Nil,
+    Edn::Bool(b) => Calcit::Bool(*b),
+    Edn::Number(n) => Calcit::Number(*n),
+    Edn::Symbol(s) => Calcit::Symbol(s.clone(), primes::GENERATED_NS.to_string(), None),
+    Edn::Keyword(s) => Calcit::Keyword(s.clone()),
+    Edn::Str(s) => Calcit::Str(s.clone()),
+    Edn::Quote(nodes) => cirru::cirru_to_calcit(nodes),
+    Edn::List(xs) => {
       let mut ys: primes::CalcitItems = im::vector![];
       for x in xs {
         ys.push_back(edn_to_calcit(x))
       }
-      CalcitList(ys)
+      Calcit::List(ys)
     }
-    CirruEdnSet(xs) => {
-      let mut ys: im::HashSet<CalcitData> = im::HashSet::new();
+    Edn::Set(xs) => {
+      let mut ys: im::HashSet<Calcit> = im::HashSet::new();
       for x in xs {
         ys.insert(edn_to_calcit(x));
       }
-      CalcitSet(ys)
+      Calcit::Set(ys)
     }
-    CirruEdnMap(xs) => {
-      let mut ys: im::HashMap<CalcitData, CalcitData> = im::HashMap::new();
+    Edn::Map(xs) => {
+      let mut ys: im::HashMap<Calcit, Calcit> = im::HashMap::new();
       for (k, v) in xs {
         ys.insert(edn_to_calcit(k), edn_to_calcit(v));
       }
-      CalcitMap(ys)
+      Calcit::Map(ys)
     }
-    CirruEdnRecord(name, fields, values) => {
-      let mut ys: Vec<CalcitData> = vec![];
+    Edn::Record(name, fields, values) => {
+      let mut ys: Vec<Calcit> = vec![];
       for v in values {
         ys.push(edn_to_calcit(v));
       }
-      CalcitRecord(name.clone(), fields.clone(), ys)
+      Calcit::Record(name.clone(), fields.clone(), ys)
     }
   }
 }

@@ -8,7 +8,7 @@ mod sets;
 mod strings;
 mod syntax;
 
-use crate::primes::{CalcitData, CalcitItems, CalcitScope};
+use crate::primes::{Calcit, CalcitItems, CalcitScope};
 use crate::program::ProgramCodeData;
 
 pub fn is_proc_name(s: &str) -> bool {
@@ -72,7 +72,7 @@ pub fn is_proc_name(s: &str) -> bool {
   )
 }
 
-pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<CalcitData, String> {
+pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
   match name {
     // meta
     "type-of" => meta::type_of(args),
@@ -156,7 +156,7 @@ pub fn handle_syntax(
   scope: &CalcitScope,
   file_ns: &str,
   program: &ProgramCodeData,
-) -> Result<CalcitData, String> {
+) -> Result<Calcit, String> {
   match name {
     "defn" => syntax::defn(nodes, scope, file_ns, program),
     "eval" => syntax::eval(nodes, scope, file_ns, program),

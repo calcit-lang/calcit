@@ -14,9 +14,9 @@ mod runner;
 mod snapshot;
 
 use call_stack::StackKind;
-use cirru_edn::parse_cirru_edn;
+use cirru_edn;
 use dirs::home_dir;
-use primes::CalcitData::*;
+use primes::Calcit;
 use std::fs;
 use std::path::Path;
 
@@ -29,7 +29,7 @@ fn main() -> Result<(), String> {
   // load core libs
   let bytes = include_bytes!("./cirru/calcit-core.cirru");
   let core_content = String::from_utf8_lossy(bytes).to_string();
-  let core_data = parse_cirru_edn(core_content)?;
+  let core_data = cirru_edn::parse(&core_content)?;
   let core_snapshot = snapshot::load_snapshot_data(core_data)?;
 
   let mut snapshot = snapshot::gen_default(); // placeholder data
@@ -45,7 +45,7 @@ fn main() -> Result<(), String> {
     // load entry file
     let entry_path = Path::new(cli_matches.value_of("input").unwrap());
     let content = fs::read_to_string(entry_path).expect("expected a Cirru snapshot");
-    let data = parse_cirru_edn(content)?;
+    let data = cirru_edn::parse(&content)?;
     // println!("reading: {}", content);
     snapshot = snapshot::load_snapshot_data(data)?;
 
@@ -77,7 +77,7 @@ fn main() -> Result<(), String> {
       );
       let entry = runner::evaluate_expr(&expr, &im::HashMap::new(), &init_ns, &program_code)?;
       match entry {
-        CalcitFn(_, f_ns, _, def_scope, args, body) => {
+        Calcit::Fn(_, f_ns, _, def_scope, args, body) => {
           let result = runner::run_fn(
             im::Vector::new(),
             &def_scope,
@@ -137,7 +137,7 @@ fn load_module(path: &str, base_dir: &Path) -> Result<snapshot::Snapshot, String
   println!("loading module: {}", fullpath);
 
   let content = fs::read_to_string(&fullpath).expect("expected a Cirru snapshot");
-  let data = parse_cirru_edn(content)?;
+  let data = cirru_edn::parse(&content)?;
   // println!("reading: {}", content);
   let snapshot = snapshot::load_snapshot_data(data)?;
   Ok(snapshot)

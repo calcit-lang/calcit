@@ -1,4 +1,4 @@
-// use cirru_parser::CirruNode; // TODO for CalcitThunk
+// use cirru_parser::CirruNode; // TODO for Calcit::Thunk
 use core::cmp::Ord;
 use std::cmp::Eq;
 use std::cmp::Ordering;
@@ -10,8 +10,8 @@ use std::hash::{Hash, Hasher};
 pub type NanoId = String;
 
 // scope
-pub type CalcitScope = im::HashMap<String, CalcitData>;
-pub type CalcitItems = im::Vector<CalcitData>;
+pub type CalcitScope = im::HashMap<String, Calcit>;
+pub type CalcitItems = im::Vector<Calcit>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolResolved {
@@ -21,32 +21,32 @@ pub enum SymbolResolved {
 
 /// special types wraps vector of calcit data for displaying
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct CrListWrap(pub im::Vector<CalcitData>);
+pub struct CrListWrap(pub im::Vector<Calcit>);
 
 #[derive(Debug, Clone)]
-pub enum CalcitData {
-  CalcitNil,
-  CalcitBool(bool),
-  CalcitNumber(f32),
-  CalcitSymbol(String, String, Option<SymbolResolved>), // content, ns... so it has meta information
-  CalcitKeyword(String),
-  CalcitString(String),
-  // CalcitRef(CalcitData), // TODO
-  CalcitThunk(Box<CalcitData>),
-  CalcitRecur(CalcitItems), // not data, but for recursion
-  CalcitList(CalcitItems),
-  CalcitSet(im::HashSet<CalcitData>),
-  CalcitMap(im::HashMap<CalcitData, CalcitData>),
-  CalcitRecord(String, Vec<String>, Vec<CalcitData>),
-  CalcitProc(String),
-  CalcitMacro(
+pub enum Calcit {
+  Nil,
+  Bool(bool),
+  Number(f32),
+  Symbol(String, String, Option<SymbolResolved>), // content, ns... so it has meta information
+  Keyword(String),
+  Str(String),
+  // CalcitRef(Calcit), // TODO
+  Thunk(Box<Calcit>),
+  Recur(CalcitItems), // not data, but for recursion
+  List(CalcitItems),
+  Set(im::HashSet<Calcit>),
+  Map(im::HashMap<Calcit, Calcit>),
+  Record(String, Vec<String>, Vec<Calcit>),
+  Proc(String),
+  Macro(
     String, // name
     String, // ns
     NanoId,
     CalcitItems, // args
     CalcitItems, // body
   ),
-  CalcitFn(
+  Fn(
     String,
     String,
     NanoId,
@@ -54,43 +54,41 @@ pub enum CalcitData {
     CalcitItems, // args
     CalcitItems, // body
   ),
-  CalcitSyntax(String, String), // name, ns... notice that `ns` is a meta info
+  Syntax(String, String), // name, ns... notice that `ns` is a meta info
 }
 
-use CalcitData::*;
-
-impl fmt::Display for CalcitData {
+impl fmt::Display for Calcit {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      CalcitNil => f.write_str("nil"),
-      CalcitBool(v) => f.write_str(&format!("{}", v)),
-      CalcitNumber(n) => f.write_str(&format!("{}", n)),
-      CalcitSymbol(s, ..) => f.write_str(&format!("'{}", s)),
-      CalcitKeyword(s) => f.write_str(&format!(":{}", s)),
-      CalcitString(s) => f.write_str(&format!("\"|{}\"", s)), // TODO, escaping choices
-      CalcitThunk(v) => f.write_str(&format!("(&thunk {})", v)),
-      CalcitRecur(xs) => {
+      Calcit::Nil => f.write_str("nil"),
+      Calcit::Bool(v) => f.write_str(&format!("{}", v)),
+      Calcit::Number(n) => f.write_str(&format!("{}", n)),
+      Calcit::Symbol(s, ..) => f.write_str(&format!("'{}", s)),
+      Calcit::Keyword(s) => f.write_str(&format!(":{}", s)),
+      Calcit::Str(s) => f.write_str(&format!("\"|{}\"", s)), // TODO, escaping choices
+      Calcit::Thunk(v) => f.write_str(&format!("(&thunk {})", v)),
+      Calcit::Recur(xs) => {
         f.write_str("(&recur")?;
         for x in xs {
           f.write_str(&format!(" {}", x))?;
         }
         f.write_str(")")
       }
-      CalcitList(xs) => {
+      Calcit::List(xs) => {
         f.write_str("([]")?;
         for x in xs {
           f.write_str(&format!(" {}", x))?;
         }
         f.write_str(")")
       }
-      CalcitSet(xs) => {
+      Calcit::Set(xs) => {
         f.write_str("(#{}")?;
         for x in xs {
           f.write_str(&format!(" {}", x))?;
         }
         f.write_str(")")
       }
-      CalcitMap(xs) => {
+      Calcit::Map(xs) => {
         f.write_str("({}")?;
         for (k, v) in xs {
           f.write_str(&format!(" ({} {})", k, v))?;
@@ -98,15 +96,15 @@ impl fmt::Display for CalcitData {
         f.write_str(")")?;
         Ok(())
       }
-      CalcitRecord(name, fields, values) => {
+      Calcit::Record(name, fields, values) => {
         f.write_str(&format!("(%{{}} {}", name))?;
         for idx in 0..fields.len() {
           f.write_str(&format!("({} {})", fields[idx], values[idx]))?;
         }
         f.write_str(")")
       }
-      CalcitProc(name) => f.write_str(&format!("(&proc {})", name)),
-      CalcitMacro(name, _def_ns, _, args, body) => {
+      Calcit::Proc(name) => f.write_str(&format!("(&proc {})", name)),
+      Calcit::Macro(name, _def_ns, _, args, body) => {
         f.write_str(&format!("(&macro {} (", name))?;
         let mut need_space = false;
         for a in args {
@@ -127,7 +125,7 @@ impl fmt::Display for CalcitData {
         }
         f.write_str("))")
       }
-      CalcitFn(name, _, _, _, args, body) => {
+      Calcit::Fn(name, _, _, _, args, body) => {
         f.write_str(&format!("(&fn {} (", name))?;
         let mut need_space = false;
         for a in args {
@@ -148,7 +146,7 @@ impl fmt::Display for CalcitData {
         }
         f.write_str("))")
       }
-      CalcitSyntax(name, _ns) => f.write_str(&format!("(&syntax {})", name)),
+      Calcit::Syntax(name, _ns) => f.write_str(&format!("(&syntax {})", name)),
     }
   }
 }
@@ -156,14 +154,14 @@ impl fmt::Display for CalcitData {
 
 impl fmt::Display for CrListWrap {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&format_to_lisp(&CalcitList(self.0.clone()))) // TODO performance
+    f.write_str(&format_to_lisp(&Calcit::List(self.0.clone()))) // TODO performance
   }
 }
 
 /// display data into Lisp style for readability
-pub fn format_to_lisp(x: &CalcitData) -> String {
+pub fn format_to_lisp(x: &Calcit) -> String {
   match x {
-    CalcitList(ys) => {
+    Calcit::List(ys) => {
       let mut s = String::from("(");
       for (idx, y) in ys.iter().enumerate() {
         if idx > 0 {
@@ -174,88 +172,88 @@ pub fn format_to_lisp(x: &CalcitData) -> String {
       s.push(')');
       s
     }
-    CalcitSymbol(s, ..) => s.clone(),
+    Calcit::Symbol(s, ..) => s.clone(),
     a => format!("{}", a),
   }
 }
 
-impl Hash for CalcitData {
+impl Hash for Calcit {
   fn hash<H>(&self, _state: &mut H)
   where
     H: Hasher,
   {
     match self {
-      CalcitNil => "nil:".hash(_state),
-      CalcitBool(v) => {
+      Calcit::Nil => "nil:".hash(_state),
+      Calcit::Bool(v) => {
         "bool:".hash(_state);
         v.hash(_state);
       }
-      CalcitNumber(n) => {
+      Calcit::Number(n) => {
         "number:".hash(_state);
         // TODO https://stackoverflow.com/q/39638363/883571
         (*n as usize).hash(_state)
       }
-      CalcitSymbol(s, _ns, _resolved) => {
+      Calcit::Symbol(s, _ns, _resolved) => {
         "symbol:".hash(_state);
         s.hash(_state);
         // probaly no need, also won't be used in hashing
         // ns.hash(_state);
       }
-      CalcitKeyword(s) => {
+      Calcit::Keyword(s) => {
         "keyword:".hash(_state);
         s.hash(_state);
       }
-      CalcitString(s) => {
+      Calcit::Str(s) => {
         "string:".hash(_state);
         s.hash(_state);
       }
-      CalcitThunk(v) => {
+      Calcit::Thunk(v) => {
         "quote:".hash(_state);
         v.hash(_state);
       }
-      CalcitRecur(v) => {
+      Calcit::Recur(v) => {
         "list:".hash(_state);
         v.hash(_state);
       }
-      CalcitList(v) => {
+      Calcit::List(v) => {
         "list:".hash(_state);
         v.hash(_state);
       }
-      CalcitSet(v) => {
+      Calcit::Set(v) => {
         "set:".hash(_state);
         // TODO order for set is stable
         for x in v {
           x.hash(_state)
         }
       }
-      CalcitMap(v) => {
+      Calcit::Map(v) => {
         "map:".hash(_state);
         // TODO order for map is not stable
         for x in v {
           x.hash(_state)
         }
       }
-      CalcitRecord(name, fields, values) => {
+      Calcit::Record(name, fields, values) => {
         "record:".hash(_state);
         name.hash(_state);
         fields.hash(_state);
         values.hash(_state);
       }
-      CalcitProc(name) => {
+      Calcit::Proc(name) => {
         "proc:".hash(_state);
         name.hash(_state);
       }
-      CalcitMacro(name, gen_id, ..) => {
+      Calcit::Macro(name, gen_id, ..) => {
         "macro:".hash(_state);
         name.hash(_state);
         gen_id.hash(_state);
       }
-      CalcitFn(name, gen_id, ..) => {
+      Calcit::Fn(name, gen_id, ..) => {
         "fn:".hash(_state);
         name.hash(_state);
         gen_id.hash(_state);
       }
-      CalcitSyntax(name, _ns) => {
+      Calcit::Syntax(name, _ns) => {
         "syntax:".hash(_state);
         // syntax name can be used as identity
         name.hash(_state);
@@ -264,18 +262,18 @@ impl Hash for CalcitData {
   }
 }
 
-impl Ord for CalcitData {
+impl Ord for Calcit {
   fn cmp(&self, other: &Self) -> Ordering {
     match (self, other) {
-      (CalcitNil, CalcitNil) => Equal,
-      (CalcitNil, _) => Less,
-      (_, CalcitNil) => Greater,
+      (Calcit::Nil, Calcit::Nil) => Equal,
+      (Calcit::Nil, _) => Less,
+      (_, Calcit::Nil) => Greater,
 
-      (CalcitBool(a), CalcitBool(b)) => a.cmp(b),
-      (CalcitBool(_), _) => Less,
-      (_, CalcitBool(_)) => Greater,
+      (Calcit::Bool(a), Calcit::Bool(b)) => a.cmp(b),
+      (Calcit::Bool(_), _) => Less,
+      (_, Calcit::Bool(_)) => Greater,
 
-      (CalcitNumber(a), CalcitNumber(b)) => {
+      (Calcit::Number(a), Calcit::Number(b)) => {
         if a < b {
           Less
         } else if a > b {
@@ -284,101 +282,101 @@ impl Ord for CalcitData {
           Equal
         }
       }
-      (CalcitNumber(_), _) => Less,
-      (_, CalcitNumber(_)) => Greater,
+      (Calcit::Number(_), _) => Less,
+      (_, Calcit::Number(_)) => Greater,
 
-      (CalcitSymbol(a, ..), CalcitSymbol(b, ..)) => a.cmp(&b),
-      (CalcitSymbol(..), _) => Less,
-      (_, CalcitSymbol(..)) => Greater,
+      (Calcit::Symbol(a, ..), Calcit::Symbol(b, ..)) => a.cmp(&b),
+      (Calcit::Symbol(..), _) => Less,
+      (_, Calcit::Symbol(..)) => Greater,
 
-      (CalcitKeyword(a), CalcitKeyword(b)) => a.cmp(&b),
-      (CalcitKeyword(_), _) => Less,
-      (_, CalcitKeyword(_)) => Greater,
+      (Calcit::Keyword(a), Calcit::Keyword(b)) => a.cmp(&b),
+      (Calcit::Keyword(_), _) => Less,
+      (_, Calcit::Keyword(_)) => Greater,
 
-      (CalcitString(a), CalcitString(b)) => a.cmp(&b),
-      (CalcitString(_), _) => Less,
-      (_, CalcitString(_)) => Greater,
+      (Calcit::Str(a), Calcit::Str(b)) => a.cmp(&b),
+      (Calcit::Str(_), _) => Less,
+      (_, Calcit::Str(_)) => Greater,
 
-      (CalcitThunk(a), CalcitThunk(b)) => a.cmp(b),
-      (CalcitThunk(_), _) => Less,
-      (_, CalcitThunk(_)) => Greater,
+      (Calcit::Thunk(a), Calcit::Thunk(b)) => a.cmp(b),
+      (Calcit::Thunk(_), _) => Less,
+      (_, Calcit::Thunk(_)) => Greater,
 
-      (CalcitRecur(a), CalcitRecur(b)) => a.cmp(b),
-      (CalcitRecur(_), _) => Less,
-      (_, CalcitRecur(_)) => Greater,
+      (Calcit::Recur(a), Calcit::Recur(b)) => a.cmp(b),
+      (Calcit::Recur(_), _) => Less,
+      (_, Calcit::Recur(_)) => Greater,
 
-      (CalcitList(a), CalcitList(b)) => a.cmp(b),
-      (CalcitList(_), _) => Less,
-      (_, CalcitList(_)) => Greater,
+      (Calcit::List(a), Calcit::List(b)) => a.cmp(b),
+      (Calcit::List(_), _) => Less,
+      (_, Calcit::List(_)) => Greater,
 
-      (CalcitSet(a), CalcitSet(b)) => match a.len().cmp(&b.len()) {
+      (Calcit::Set(a), Calcit::Set(b)) => match a.len().cmp(&b.len()) {
         Equal => {
           unreachable!("TODO sets are not cmp ed") // TODO
         }
         a => a,
       },
-      (CalcitSet(_), _) => Less,
-      (_, CalcitSet(_)) => Greater,
+      (Calcit::Set(_), _) => Less,
+      (_, Calcit::Set(_)) => Greater,
 
-      (CalcitMap(a), CalcitMap(b)) => {
+      (Calcit::Map(a), Calcit::Map(b)) => {
         unreachable!(format!("TODO maps are not cmp ed {:?} {:?}", a, b)) // TODO
       }
-      (CalcitMap(_), _) => Less,
-      (_, CalcitMap(_)) => Greater,
+      (Calcit::Map(_), _) => Less,
+      (_, Calcit::Map(_)) => Greater,
 
-      (CalcitRecord(_name1, _fields1, _values1), CalcitRecord(_name2, _fields2, _values2)) => {
+      (Calcit::Record(_name1, _fields1, _values1), Calcit::Record(_name2, _fields2, _values2)) => {
         unreachable!("TODO records are not cmp ed") // TODO
       }
-      (CalcitRecord(..), _) => Less,
-      (_, CalcitRecord(..)) => Greater,
+      (Calcit::Record(..), _) => Less,
+      (_, Calcit::Record(..)) => Greater,
 
-      (CalcitProc(a), CalcitProc(b)) => a.cmp(b),
-      (CalcitProc(_), _) => Less,
-      (_, CalcitProc(_)) => Greater,
+      (Calcit::Proc(a), Calcit::Proc(b)) => a.cmp(b),
+      (Calcit::Proc(_), _) => Less,
+      (_, Calcit::Proc(_)) => Greater,
 
-      (CalcitMacro(_, a, ..), CalcitMacro(_, b, ..)) => a.cmp(b),
-      (CalcitMacro(..), _) => Less,
-      (_, CalcitMacro(..)) => Greater,
+      (Calcit::Macro(_, a, ..), Calcit::Macro(_, b, ..)) => a.cmp(b),
+      (Calcit::Macro(..), _) => Less,
+      (_, Calcit::Macro(..)) => Greater,
 
-      (CalcitFn(_, a, ..), CalcitFn(_, b, ..)) => a.cmp(&b), // compared with nanoid
-      (CalcitFn(..), _) => Less,
-      (_, CalcitFn(..)) => Greater,
+      (Calcit::Fn(_, a, ..), Calcit::Fn(_, b, ..)) => a.cmp(&b), // compared with nanoid
+      (Calcit::Fn(..), _) => Less,
+      (_, Calcit::Fn(..)) => Greater,
 
-      (CalcitSyntax(a, _), CalcitSyntax(b, _)) => a.cmp(&b),
+      (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a.cmp(&b),
     }
   }
 }
 
-impl PartialOrd for CalcitData {
+impl PartialOrd for Calcit {
   fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
     Some(self.cmp(other))
   }
 }
 
-impl Eq for CalcitData {}
+impl Eq for Calcit {}
 
-impl PartialEq for CalcitData {
+impl PartialEq for Calcit {
   fn eq(&self, other: &Self) -> bool {
     match (self, other) {
-      (CalcitNil, CalcitNil) => true,
-      (CalcitBool(a), CalcitBool(b)) => a == b,
-      (CalcitNumber(a), CalcitNumber(b)) => a == b,
-      (CalcitSymbol(a, ..), CalcitSymbol(b, ..)) => a == b,
-      (CalcitKeyword(a), CalcitKeyword(b)) => a == b,
-      (CalcitString(a), CalcitString(b)) => a == b,
-      // (CalcitThunk(a), CalcitThunk(b)) => a == b,
-      (CalcitList(a), CalcitList(b)) => a == b,
-      (CalcitSet(a), CalcitSet(b)) => a == b,
-      (CalcitMap(a), CalcitMap(b)) => a == b,
-      (CalcitRecord(name1, fields1, values1), CalcitRecord(name2, fields2, values2)) => {
+      (Calcit::Nil, Calcit::Nil) => true,
+      (Calcit::Bool(a), Calcit::Bool(b)) => a == b,
+      (Calcit::Number(a), Calcit::Number(b)) => a == b,
+      (Calcit::Symbol(a, ..), Calcit::Symbol(b, ..)) => a == b,
+      (Calcit::Keyword(a), Calcit::Keyword(b)) => a == b,
+      (Calcit::Str(a), Calcit::Str(b)) => a == b,
+      // (Calcit::Thunk(a), Calcit::Thunk(b)) => a == b,
+      (Calcit::List(a), Calcit::List(b)) => a == b,
+      (Calcit::Set(a), Calcit::Set(b)) => a == b,
+      (Calcit::Map(a), Calcit::Map(b)) => a == b,
+      (Calcit::Record(name1, fields1, values1), Calcit::Record(name2, fields2, values2)) => {
         name1 == name2 && fields1 == fields2 && values1 == values2
       }
 
       // functions compared with nanoid
-      (CalcitProc(a), CalcitProc(b)) => a == b,
-      (CalcitMacro(_, a, ..), CalcitMacro(_, b, ..)) => a == b,
-      (CalcitFn(_, a, ..), CalcitFn(_, b, ..)) => a == b,
-      (CalcitSyntax(a, _), CalcitSyntax(b, _)) => a == b,
+      (Calcit::Proc(a), Calcit::Proc(b)) => a == b,
+      (Calcit::Macro(_, a, ..), Calcit::Macro(_, b, ..)) => a == b,
+      (Calcit::Fn(_, a, ..), Calcit::Fn(_, b, ..)) => a == b,
+      (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a == b,
       (_, _) => false,
     }
   }
@@ -389,10 +387,10 @@ pub const GENERATED_NS: &str = "calcit.gen";
 
 pub const CALCI_VERSION: &str = "0.0.1";
 
-impl CalcitData {
+impl Calcit {
   pub fn turn_string(&self) -> String {
     match self {
-      CalcitString(s) => s.clone(),
+      Calcit::Str(s) => s.clone(),
       _ => format!("{}", self),
     }
   }
