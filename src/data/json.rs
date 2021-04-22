@@ -6,7 +6,7 @@ pub fn json_to_calcit(data: &Value) -> Calcit {
   match data {
     Value::Null => Calcit::Nil,
     Value::Bool(b) => Calcit::Bool(*b),
-    Value::Number(n) => Calcit::Number(n.as_f64().unwrap() as f32), // why f32
+    Value::Number(n) => Calcit::Number(n.as_f64().unwrap() as f64), // why f64
     Value::String(s) => Calcit::Str(s.clone()),
     Value::Array(xs) => {
       let mut ys: CalcitItems = im::vector![];

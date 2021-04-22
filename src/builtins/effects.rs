@@ -52,7 +52,7 @@ pub fn cpu_time(_xs: &CalcitItems) -> Result<Calcit, String> {
   let started = STARTED_INSTANT.lock().unwrap().to_owned();
 
   let time = match now.checked_duration_since(started) {
-    Some(n) => (n.as_micros() as f32) / 1000.0,
+    Some(n) => (n.as_micros() as f64) / 1000.0,
     None => {
       println!("[Warn] got none CPU time from: {:?} -> {:?}", started, now);
       0.0

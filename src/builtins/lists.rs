@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-use crate::builtins::math::{f32_to_i32, f32_to_usize};
+use crate::builtins::math::{f64_to_i32, f64_to_usize};
 use crate::primes::{Calcit, CalcitItems, CalcitScope};
 
 use crate::builtins;
@@ -25,9 +25,9 @@ pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Nil) => Ok(Calcit::Number(0.0)),
-    Some(Calcit::List(ys)) => Ok(Calcit::Number(ys.len() as f32)),
-    Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.len() as f32)),
-    Some(Calcit::Str(s)) => Ok(Calcit::Number(s.len() as f32)),
+    Some(Calcit::List(ys)) => Ok(Calcit::Number(ys.len() as f64)),
+    Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.len() as f64)),
+    Some(Calcit::Str(s)) => Ok(Calcit::Number(s.len() as f64)),
     Some(a) => Err(format!("count expected some seq, got: {}", a)),
     None => Err(String::from("count expected 1 argument")),
   }
@@ -154,7 +154,7 @@ pub fn range(xs: &CalcitItems) -> Result<Calcit, String> {
     None => 1.0,
   };
 
-  if (bound - base).abs() < f32::EPSILON {
+  if (bound - base).abs() < f64::EPSILON {
     return Ok(Calcit::List(im::vector![Calcit::Number(base)]));
   }
 

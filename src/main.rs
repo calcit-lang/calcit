@@ -87,7 +87,7 @@ fn main() -> Result<(), String> {
         match result {
           Ok(v) => {
             let duration = Instant::now().duration_since(started_time);
-            println!("took {}ms: {}", duration.as_micros() as f32 / 1000.0, v);
+            println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
             Ok(())
           }
           Err(failure) => {

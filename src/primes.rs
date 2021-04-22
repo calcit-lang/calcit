@@ -27,7 +27,7 @@ pub struct CrListWrap(pub im::Vector<Calcit>);
 pub enum Calcit {
   Nil,
   Bool(bool),
-  Number(f32),
+  Number(f64),
   Symbol(String, String, Option<SymbolResolved>), // content, ns... so it has meta information
   Keyword(String),
   Str(String),

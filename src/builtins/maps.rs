@@ -1,6 +1,6 @@
 use crate::primes::{Calcit, CalcitItems};
 
-use crate::builtins::math::{f32_to_usize, is_even};
+use crate::builtins::math::{f64_to_usize, is_even};
 
 pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, String> {
   if is_even(xs.len()) {
@@ -17,7 +17,7 @@ pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
-    (Some(Calcit::List(xs)), Some(Calcit::Number(n)), Some(a)) => match f32_to_usize(*n) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n)), Some(a)) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx < xs.len() {
           let mut ys = xs.clone();
@@ -53,7 +53,7 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn map_get(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f32_to_usize(*n) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx < xs.len() {
           Ok(xs[idx].clone())
@@ -77,7 +77,7 @@ pub fn map_get(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f32_to_usize(*n) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx < xs.len() {
           Ok(Calcit::Bool(true))

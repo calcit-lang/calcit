@@ -1,4 +1,4 @@
-use crate::builtins::math::f32_to_usize;
+use crate::builtins::math::f64_to_usize;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems};
 
@@ -67,7 +67,7 @@ pub fn split(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn format_number(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(x))) => {
-      let size = f32_to_usize(*x)?;
+      let size = f64_to_usize(*x)?;
       Ok(Calcit::Str(format!("{n:.*}", size, n = n)))
     }
     (Some(a), Some(b)) => Err(format!("format-number expected numbers, got: {} {}", a, b)),

@@ -1,4 +1,4 @@
-use crate::builtins::math::f32_to_usize;
+use crate::builtins::math::f64_to_usize;
 use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
@@ -78,7 +78,7 @@ pub fn get_calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, String> {
   let size = match xs.get(0) {
-    Some(Calcit::Number(n)) => match f32_to_usize(*n) {
+    Some(Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(size) => Some(size),
       Err(e) => return Err(e),
     },
