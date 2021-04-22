@@ -47,51 +47,54 @@
               assert=
                 dissoc (range 10) 4
                 [] 0 1 2 3 5 6 7 8 9
-              assert= (take 4 $ range 10) $ [] 0 1 2 3
-              assert= (drop 4 $ range 10) ([] 4 5 6 7 8 9)
+              assert= (take (range 10) 4) $ [] 0 1 2 3
+              assert= (drop (range 10) 4) ([] 4 5 6 7 8 9)
               assert |reverse $ =
                 reverse $ [] |a |b |c |d |e
                 [] |e |d |c |b |a
 
               assert=
                 mapcat
-                  fn (x) (range x)
                   [] 1 2 3 4
+                  fn (x) (range x)
                 [] 0 0 1 0 1 2 0 1 2 3
 
               assert=
                 mapcat
-                  fn (x) (range x)
                   [] 1
+                  fn (x) (range x)
                 [] 0
 
               assert=
                 mapcat
-                  fn (x) (range x)
                   []
+                  fn (x) (range x)
                 []
 
               assert=
-                map identity $ range 10
+                map (range 10) identity
                 range 10
 
               assert=
-                map inc $ #{} 1 2 3
+                map (#{} 1 2 3) inc
                 #{} 2 3 4
 
               assert=
-                map-indexed (fn (idx x) ([] idx (&str x))) (range 3)
+                map-indexed (range 3)
+                  fn (idx x) ([] idx (&str x))
                 []
                   [] 0 |0
                   [] 1 |1
                   [] 2 |2
 
               assert=
-                filter (fn (x) (&> x 3)) (range 10)
+                filter (range 10)
+                  fn (x) (&> x 3)
                 [] 4 5 6 7 8 9
 
               assert=
-                filter-not (fn (x) (&> x 3)) (range 10)
+                filter-not (range 10)
+                  fn (x) (&> x 3)
                 [] 0 1 2 3
 
               assert-detect identity $ <= 0
@@ -123,21 +126,21 @@
 
               assert= 6
                 find
-                  fn (x) (> x 5)
                   range 10
+                  fn (x) (> x 5)
 
               assert= 6
                 find-index
-                  fn (x) (> x 5)
                   range 10
+                  fn (x) (> x 5)
 
         |test-groups $ quote
           defn test-groups ()
 
             assert=
               group-by
-                \ rem % 3
                 range 10
+                \ rem % 3
               {}
                 0 $ [] 0 3 6 9
                 1 $ [] 1 4 7
@@ -151,7 +154,7 @@
                 3 3
 
             assert=
-              section-by 2 $ range 10
+              section-by (range 10) 2
               []
                 [] 0 1
                 [] 2 3
@@ -159,7 +162,7 @@
                 [] 6 7
                 [] 8 9
             assert=
-              section-by 3 $ range 10
+              section-by (range 10) 3
               []
                 [] 0 1 2
                 [] 3 4 5
@@ -175,18 +178,14 @@
           defn test-every ()
             let
                 data $ [] 1 2 3 4
-              assert-detect not $ every?
+              assert-detect not $ every? data
                 fn (x) (&> x 1)
-                , data
-              assert-detect identity $ every?
+              assert-detect identity $ every? data
                 fn (x) (&> x 0)
-                , data
-              assert-detect identity $ any?
+              assert-detect identity $ any? data
                 fn (x) (&> x 3)
-                , data
-              assert-detect not $ any?
+              assert-detect not $ any? data
                 fn (x) (&> x 4)
-                , data
 
             assert-detect some? 1
             assert-detect not $ some? nil
@@ -208,7 +207,7 @@
             assert= (/ 2 3 4) (/ 1 6)
 
             assert=
-              reduce + 2 ([] 3 4 5)
+              reduce ([] 3 4 5) 2 +
               , 14
 
         |test-apply $ quote
@@ -218,17 +217,17 @@
 
         |test-join $ quote
           fn ()
-            assert= |1-2-3-4 $ join-str |- $ [] 1 2 3 4
-            assert= | $ join-str |- $ []
+            assert= |1-2-3-4 $ join-str ([] 1 2 3 4) |-
+            assert= | $ join-str ([]) |-
             assert=
               [] 1 10 2 10 3 10 4
-              join 10 $ [] 1 2 3 4
-            assert= ([]) $ join 10 $ []
+              join ([] 1 2 3 4) 10
+            assert= ([]) $ join ([]) 10
 
         |test-repeat $ quote
           fn ()
             assert=
-              repeat 5 :a
+              repeat :a 5
               [] :a :a :a :a :a
             assert=
               interleave ([] :a :b :c :d) ([] 1 2 3 4 5)

@@ -121,3 +121,19 @@ pub fn rem(xs: &CalcitItems) -> Result<Calcit, String> {
     (a, b) => Err(format!("mod expected 2 numbers, got: {:?} {:?}", a, b)),
   }
 }
+
+pub fn sin(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn cos(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn pow(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn ceil(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn sqrt(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}

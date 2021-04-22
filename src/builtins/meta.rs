@@ -48,19 +48,20 @@ pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
   let idx = SYMBOL_INDEX.fetch_add(1, Ordering::SeqCst);
+  let n = idx + 1; // use 1 as first value since previous implementation did this
 
   let s = match xs.get(0) {
     Some(Calcit::Str(s)) | Some(Calcit::Keyword(s)) | Some(Calcit::Symbol(s, ..)) => {
       let mut chunk = s.clone();
       chunk.push('_');
       chunk.push('_');
-      chunk.push_str(&idx.to_string());
+      chunk.push_str(&n.to_string());
       chunk
     }
     Some(a) => return Err(format!("gensym expected a string, but got: {}", a)),
     None => {
       let mut chunk = String::from("G__");
-      chunk.push_str(&idx.to_string());
+      chunk.push_str(&n.to_string());
       chunk
     }
   };

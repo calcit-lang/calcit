@@ -46,6 +46,14 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
       ys.remove(a);
       Ok(Calcit::Map(ys.clone()))
     }
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        let ys = &mut xs.clone();
+        ys.remove(idx);
+        Ok(Calcit::List(ys.clone()))
+      }
+      Err(e) => Err(format!("dissoc expected number, {}", e)),
+    },
     (Some(a), ..) => Err(format!("dissoc expected a map, got: {}", a)),
     (_, _) => Err(format!("dissoc expected 2 arguments, got: {:?}", xs)),
   }
@@ -125,4 +133,11 @@ pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     (Some(a), ..) => Err(format!("expected list, map, set, got: {}", a)),
     (None, ..) => Err(format!("expected 2 arguments, got: {:?}", xs)),
   }
+}
+
+pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn call_merge_non_nil(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
 }

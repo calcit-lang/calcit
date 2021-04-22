@@ -59,7 +59,7 @@ pub fn evaluate_expr(
             run_fn(&values, &def_scope, args, body, def_ns, program_code)
           }
           Calcit::Macro(name, def_ns, _, args, body) => {
-            println!("[Warn] macro should already be handled during preprocessing");
+            println!("[Warn] macro should already be handled during preprocessing: {}", x);
 
             // TODO moving to preprocess
             let mut current_values = rest_nodes.clone();
@@ -308,6 +308,11 @@ pub fn evaluate_args(
             match v {
               Calcit::List(xs) => {
                 for x in xs {
+                  // extract thunk before calling functions
+                  let x = match x {
+                    Calcit::Thunk(code) => evaluate_expr(code, scope, file_ns, program_code)?,
+                    _ => x.clone(),
+                  };
                   ret.push_back(x.clone());
                 }
                 spreading = false
@@ -315,7 +320,12 @@ pub fn evaluate_args(
               a => return Err(format!("expected list for spreading, got: {}", a)),
             }
           } else {
-            ret.push_back(v.clone())
+            // extract thunk before calling functions
+            let v = match v {
+              Calcit::Thunk(code) => evaluate_expr(code, scope, file_ns, program_code)?,
+              _ => v.clone(),
+            };
+            ret.push_back(v)
           }
         }
         Err(e) => return Err(e.to_string()),

@@ -104,9 +104,13 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Nil) => Ok(Calcit::Nil),
     Some(Calcit::List(ys)) => {
-      let mut zs = ys.clone();
-      zs.pop_front();
-      Ok(Calcit::List(zs))
+      if ys.is_empty() {
+        Ok(Calcit::Nil)
+      } else {
+        let mut zs = ys.clone();
+        zs.pop_front();
+        Ok(Calcit::List(zs))
+      }
     }
     Some(a) => Err(format!("rest expected a list, got: {}", a)),
     None => Err(String::from("rest expected 1 argument")),
@@ -117,9 +121,13 @@ pub fn butlast(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Nil) => Ok(Calcit::Nil),
     Some(Calcit::List(ys)) => {
-      let mut zs = ys.clone();
-      zs.pop_back();
-      Ok(Calcit::List(zs))
+      if ys.is_empty() {
+        Ok(Calcit::Nil)
+      } else {
+        let mut zs = ys.clone();
+        zs.pop_back();
+        Ok(Calcit::List(zs))
+      }
     }
     Some(a) => Err(format!("butlast expected a list, got: {}", a)),
     None => Err(String::from("butlast expected 1 argument")),
@@ -155,7 +163,7 @@ pub fn range(xs: &CalcitItems) -> Result<Calcit, String> {
   };
 
   if (bound - base).abs() < f64::EPSILON {
-    return Ok(Calcit::List(im::vector![Calcit::Number(base)]));
+    return Ok(Calcit::List(im::vector![]));
   }
 
   if step == 0.0 || (bound > base && step < 0.0) || (bound < base && step > 0.0) {
@@ -215,6 +223,23 @@ pub fn foldl(
         Ok(ret)
       }
       (Calcit::List(xs), Calcit::Proc(proc)) => {
+        let mut ret = acc;
+        for x in xs {
+          // println!("foldl args, {} {}", ret, x.clone());
+          ret = builtins::handle_proc(&proc, &im::vector![ret, x.clone()])?;
+        }
+        Ok(ret)
+      }
+      // also handles set
+      (Calcit::Set(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+        let mut ret = acc;
+        for x in xs {
+          let values = im::vector![ret, x.clone()];
+          ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+        }
+        Ok(ret)
+      }
+      (Calcit::Set(xs), Calcit::Proc(proc)) => {
         let mut ret = acc;
         for x in xs {
           // println!("foldl args, {} {}", ret, x.clone());

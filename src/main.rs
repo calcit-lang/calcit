@@ -14,7 +14,6 @@ mod runner;
 mod snapshot;
 
 use call_stack::StackKind;
-use cirru_edn;
 use dirs::home_dir;
 use primes::Calcit;
 use std::fs;
