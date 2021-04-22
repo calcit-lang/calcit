@@ -88,8 +88,8 @@
 
             assert=
               map-kv
-                fn (k v) ([] k (+ v 1))
                 {} (:a 1) (:b 2)
+                fn (k v) ([] k (+ v 1))
               #{}
                 [] :a 2
                 [] :b 3
@@ -109,7 +109,7 @@
             inside-nim:
               assert=
                 macroexpand $ quote $ {,} :a 1 , :b 2 , :c 3
-                quote $ pairs-map $ section-by 2 $ [] :a 1 :b 2 :c 3
+                quote $ pairs-map $ section-by ([] :a 1 :b 2 :c 3) 2
             assert=
               {,} :a 1 , :b 2 , :c 3
               {} (:a 1) (:b 2) (:c 3)

@@ -6,7 +6,7 @@ pub fn json_to_calcit(data: &Value) -> Calcit {
   match data {
     Value::Null => Calcit::Nil,
     Value::Bool(b) => Calcit::Bool(*b),
-    Value::Number(n) => Calcit::Number(n.as_f64().unwrap() as f64), // why f64
+    Value::Number(n) => Calcit::Number(n.as_f64().unwrap()), // why f64
     Value::String(s) => {
       if s.starts_with(':') {
         // special logic to parse keyword
@@ -42,7 +42,7 @@ pub fn calcit_to_json(data: &Calcit, add_colon: bool) -> Result<Value, String> {
   match data {
     Calcit::Nil => Ok(Value::Null),
     Calcit::Bool(b) => Ok(Value::Bool(*b)),
-    Calcit::Number(n) => match serde_json::value::Number::from_f64(*n as f64) {
+    Calcit::Number(n) => match serde_json::value::Number::from_f64(*n) {
       Some(v) => Ok(Value::Number(v)),
       None => Err(format!("failed to convert to number: {}", n)),
     },

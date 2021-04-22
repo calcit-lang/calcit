@@ -136,8 +136,31 @@ pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 
 pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match xs.get(0) {
+    // get a random order from internals
+    Some(Calcit::Map(ys)) => {
+      let mut zs: im::HashSet<Calcit> = im::HashSet::new();
+      for (k, v) in ys {
+        zs.insert(Calcit::List(im::vector![k.clone(), v.clone(),]));
+      }
+      Ok(Calcit::Set(zs))
+    }
+    Some(a) => Err(format!("to-pairs expected a map, got {}", a)),
+    None => Err(String::from("to-pairs expected 1 argument, got nothing")),
+  }
 }
 pub fn call_merge_non_nil(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
+      let mut zs: im::HashMap<Calcit, Calcit> = xs.clone();
+      for (k, v) in ys {
+        if *v != Calcit::Nil {
+          zs.insert(k.clone(), v.clone());
+        }
+      }
+      Ok(Calcit::Map(zs))
+    }
+    (Some(a), Some(b)) => Err(format!("expected 2 maps, got: {} {}", a, b)),
+    (_, _) => Err(format!("expected 2 arguments, got: {:?}", xs)),
+  }
 }

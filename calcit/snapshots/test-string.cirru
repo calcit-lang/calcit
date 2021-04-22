@@ -92,7 +92,8 @@
 
             inside-nim:
 
-              assert= "|({} (:c ([] 3)) (:a 1) (:b |2) (:d ({} (([] 1 2) 3))))"
+              ; TODO not stable
+              ; assert= "|({} (:c ([] 3)) (:a 1) (:b |2) (:d ({} (([] 1 2) 3))))"
                 pr-str $ {}
                   :a 1
                   :b |2

@@ -25,9 +25,6 @@
           defn &>= (a b)
             if (&> a b) true (&= a b)
 
-        |first $ quote
-          defn first (xs) (get xs 0)
-
         |last $ quote
           defn last (xs)
             if (empty? xs) nil
@@ -170,7 +167,9 @@
                 reduce xs (#{})
                   fn (acc x) $ include acc (f x)
               true
-                raise "|expects list or set for map function"
+                &let nil
+                  echo "|value:" xs
+                  raise "|expects list or set for map function"
 
         |take $ quote
           defn take (xs n)
@@ -327,7 +326,9 @@
               (map? base) (&get base k)
               (list? base) (nth base k)
               (record? base) (&get base k)
-              true $ raise "|Expected map or list for get"
+              true $ &let nil
+                echo "|Value:" base k
+                raise "|Expected map or list for get"
 
         |get-in $ quote
           defn get-in (base path)
@@ -545,7 +546,7 @@
             map (to-pairs x) first
 
         |keys-non-nil $ quote
-          defn keys (x)
+          defn keys-non-nil (x)
             apply-args
               [] (#{}) (to-pairs x)
               fn (acc pairs)
@@ -559,7 +560,7 @@
 
         |vals $ quote
           defn vals (x)
-            map last (to-pairs x)
+            map (to-pairs x) last
 
         |frequencies $ quote
           defn frequencies (xs0)

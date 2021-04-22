@@ -1,5 +1,6 @@
 // use cirru_parser::CirruNode; // TODO for Calcit::Thunk
 use core::cmp::Ord;
+use regex::Regex;
 use std::cmp::Eq;
 use std::cmp::Ordering;
 use std::cmp::Ordering::*;
@@ -66,7 +67,16 @@ impl fmt::Display for Calcit {
       Calcit::Number(n) => f.write_str(&format!("{}", n)),
       Calcit::Symbol(s, ..) => f.write_str(&format!("'{}", s)),
       Calcit::Keyword(s) => f.write_str(&format!(":{}", s)),
-      Calcit::Str(s) => f.write_str(&format!("\"|{}\"", s)), // TODO, escaping choices
+      Calcit::Str(s) => {
+        lazy_static! {
+          static ref RE_SIMPLE_TOKEN: Regex = Regex::new(r"^[\w\d\-\?!\|]+$").unwrap();
+        }
+        if RE_SIMPLE_TOKEN.is_match(s) {
+          write!(f, "|{}", s)
+        } else {
+          write!(f, "\"|{}\"", str::escape_debug(s))
+        }
+      } // TODO, escaping choices
       Calcit::Thunk(v) => f.write_str(&format!("(&thunk {})", v)),
       Calcit::Ref(name) => f.write_str(&format!("(&ref {})", name)),
       Calcit::Recur(xs) => {
