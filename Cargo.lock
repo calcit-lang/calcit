@@ -90,7 +90,9 @@ dependencies = [
  "im",
  "lazy_static",
  "nanoid",
+ "rand",
  "regex",
+ "serde_json",
 ]
 
 [[package]]

@@ -33,7 +33,7 @@
               assert= (slice (range 10) 0 10) (range 10)
               assert= (slice (range 10) 5 7) ([] 5 6)
               assert=
-                &concat (range 10) (range 4)
+                concat (range 10) (range 4)
                 [] 0 1 2 3 4 5 6 7 8 9 0 1 2 3
               assert=
                 concat $ [] 1 2 3
@@ -41,12 +41,6 @@
               assert "|concat lists" $ =
                 concat ([] 1 2) ([] 4 5) ([] 7 8)
                 [] 1 2 4 5 7 8
-              ; echo
-                format-ternary-tree $ &concat (range 10) (range 4)
-              ; echo $ format-ternary-tree
-                assoc-before (range 8) (, 4 22)
-              ; echo $ format-ternary-tree
-                assoc-after (range 8) (, 4 22)
               assert=
                 assoc (range 10) (, 4 55)
                 [] 0 1 2 3 55 5 6 7 8 9
@@ -55,8 +49,6 @@
                 [] 0 1 2 3 5 6 7 8 9
               assert= (take 4 $ range 10) $ [] 0 1 2 3
               assert= (drop 4 $ range 10) ([] 4 5 6 7 8 9)
-              echo $ format-ternary-tree $ reverse $ [] |a |b |c |d |e
-              echo $ format-ternary-tree $ [] |e |d |c |b a
               assert |reverse $ =
                 reverse $ [] |a |b |c |d |e
                 [] |e |d |c |b |a

@@ -130,9 +130,6 @@ pub fn calcit_to_cirru(x: &Calcit) -> Cirru {
       }
       Cirru::List(ys)
     }
-    a => Cirru::List(vec![
-      Cirru::Leaf(String::from("TODO")),
-      Cirru::Leaf(a.to_string()),
-    ]),
+    a => Cirru::List(vec![Cirru::Leaf(String::from("TODO")), Cirru::Leaf(a.to_string())]),
   }
 }

@@ -19,9 +19,12 @@ use dirs::home_dir;
 use primes::Calcit;
 use std::fs;
 use std::path::Path;
+use std::time::Instant;
 
 fn main() -> Result<(), String> {
+  builtins::effects::init_effects_states();
   let cli_matches = cli_args::parse_cli();
+  let started_time = Instant::now();
 
   // let eval_once = cli_matches.is_present("once");
   // println!("once: {}", eval_once);
@@ -65,41 +68,37 @@ fn main() -> Result<(), String> {
   let program_code = program::extract_program_data(&snapshot)?;
 
   let (init_ns, init_def) = extract_ns_def(&snapshot.configs.init_fn)?;
-  match program::lookup_def_code(&init_ns, &init_def, &program_code) {
-    None => Err(format!("Invalid entry: {}/{}", init_ns, init_def)),
-    Some(expr) => {
-      call_stack::push_call_stack(
-        &init_ns,
-        &init_def,
-        StackKind::Fn,
-        &None,
-        &im::Vector::new(),
-      );
-      let entry = runner::evaluate_expr(&expr, &im::HashMap::new(), &init_ns, &program_code)?;
-      match entry {
-        Calcit::Fn(_, f_ns, _, def_scope, args, body) => {
-          let result = runner::run_fn(
-            im::Vector::new(),
-            &def_scope,
-            &args,
-            &body,
-            &f_ns,
-            &program_code,
-          );
-          match result {
-            Ok(v) => {
-              println!("result: {}", v);
-            }
-            Err(falure) => {
-              println!("\nfailed, {}", falure);
-              call_stack::display_stack(&falure);
-            }
-          }
-          Ok(())
-        }
-        _ => Err(format!("expected function entry, got: {}", entry)),
-      }
+
+  // preprocess to init
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code) {
+    Ok(_) => (),
+    Err(failure) => {
+      println!("\nfailed, {}", failure);
+      call_stack::display_stack(&failure);
+      return Err(failure);
     }
+  }
+
+  match program::lookup_evaled_def(&init_ns, &init_def) {
+    None => Err(format!("entry not initialized: {}/{}", init_ns, init_def)),
+    Some(entry) => match entry {
+      Calcit::Fn(_, f_ns, _, def_scope, args, body) => {
+        let result = runner::run_fn(&im::vector![], &def_scope, &args, &body, &f_ns, &program_code);
+        match result {
+          Ok(v) => {
+            let duration = Instant::now().duration_since(started_time);
+            println!("took {}ms: {}", duration.as_micros() as f32 / 1000.0, v);
+            Ok(())
+          }
+          Err(failure) => {
+            println!("\nfailed, {}", failure);
+            call_stack::display_stack(&failure);
+            Err(failure)
+          }
+        }
+      }
+      _ => Err(format!("expected function entry, got: {}", entry)),
+    },
   }
 }
 

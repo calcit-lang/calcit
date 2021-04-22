@@ -44,14 +44,8 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
         None => Ok(Calcit::Nil),
       }
     }
-    (Some(_), None) => Err(format!(
-      "nth expected a ordered seq and index, got: {:?}",
-      xs
-    )),
-    (None, Some(_)) => Err(format!(
-      "nth expected a ordered seq and index, got: {:?}",
-      xs
-    )),
+    (Some(_), None) => Err(format!("nth expected a ordered seq and index, got: {:?}", xs)),
+    (None, Some(_)) => Err(format!("nth expected a ordered seq and index, got: {:?}", xs)),
     (_, _) => Err(String::from("nth expected 2 argument")),
   }
 }
@@ -176,4 +170,19 @@ pub fn range(xs: &CalcitItems) -> Result<Calcit, String> {
     }
   }
   Ok(Calcit::List(ys))
+}
+
+pub fn reverse(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Nil) => Ok(Calcit::Nil),
+    Some(Calcit::List(ys)) => {
+      let mut zs: CalcitItems = im::vector![];
+      for y in ys {
+        zs.push_front(y.clone());
+      }
+      Ok(Calcit::List(zs))
+    }
+    Some(a) => Err(format!("butlast expected a list, got: {}", a)),
+    None => Err(String::from("butlast expected 1 argument")),
+  }
 }

@@ -1,3 +1,4 @@
+use crate::builtins::math::f32_to_usize;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems};
 
@@ -8,10 +9,7 @@ pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, String> {
       s.push_str(&b.turn_string());
       Ok(Calcit::Str(s))
     }
-    (_, _) => Err(format!(
-      "expected 2 arguments, got: {}",
-      primes::CrListWrap(xs.clone())
-    )),
+    (_, _) => Err(format!("expected 2 arguments, got: {}", primes::CrListWrap(xs.clone()))),
   }
 }
 
@@ -27,10 +25,7 @@ pub fn trim(xs: &CalcitItems) -> Result<Calcit, String> {
       }
     }
     (Some(a), Some(b)) => Err(format!("trim expected 2 strings, but got: {} {}", a, b)),
-    (_, _) => Err(format!(
-      "expected 2 arguments, got: {}",
-      primes::CrListWrap(xs.clone())
-    )),
+    (_, _) => Err(format!("expected 2 arguments, got: {}", primes::CrListWrap(xs.clone()))),
   }
 }
 
@@ -66,5 +61,16 @@ pub fn split(xs: &CalcitItems) -> Result<Calcit, String> {
     }
     (Some(a), Some(b)) => Err(format!("split expected 2 strings, got: {} {}", a, b)),
     (_, _) => Err(String::from("split expected 2 arguments, got nothing")),
+  }
+}
+
+pub fn format_number(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Number(n)), Some(Calcit::Number(x))) => {
+      let size = f32_to_usize(*x)?;
+      Ok(Calcit::Str(format!("{n:.*}", size, n = n)))
+    }
+    (Some(a), Some(b)) => Err(format!("format-number expected numbers, got: {} {}", a, b)),
+    (_, _) => Err(String::from("format-number expected 2 arguments")),
   }
 }

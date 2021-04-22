@@ -48,20 +48,14 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, Strin
           for y in ys {
             match y {
               Cirru::Leaf(s) if &s == "[]" => (), // `[]` symbol are ignored
-              Cirru::Leaf(s) => {
-                rules.push((s.clone(), ImportRule::ImportDefRule(ns.clone(), s.clone())))
-              }
+              Cirru::Leaf(s) => rules.push((s.clone(), ImportRule::ImportDefRule(ns.clone(), s.clone()))),
               Cirru::List(_defs) => return Err(String::from("invalid refer values")),
             }
           }
           Ok(rules)
         }
-        (_, x, _) if x == Cirru::Leaf(String::from(":as")) => {
-          Err(String::from("invalid import rule"))
-        }
-        (_, x, _) if x == Cirru::Leaf(String::from(":refer")) => {
-          Err(String::from("invalid import rule"))
-        }
+        (_, x, _) if x == Cirru::Leaf(String::from(":as")) => Err(String::from("invalid import rule")),
+        (_, x, _) if x == Cirru::Leaf(String::from(":refer")) => Err(String::from("invalid import rule")),
         _ if xs.len() != 3 => Err(format!(
           "expected import rule has length 3: {}",
           Cirru::List(xs.clone())
@@ -77,9 +71,7 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<String, ImportRule>, Stri
     Cirru::Leaf(_) => unreachable!("Expected expr for ns"),
     Cirru::List(xs) => match (xs.get(0), xs.get(1), xs.get(2)) {
       // Too many clones
-      (Some(x), Some(Cirru::Leaf(_)), Some(Cirru::List(xs)))
-        if *x == Cirru::Leaf(String::from("ns")) =>
-      {
+      (Some(x), Some(Cirru::Leaf(_)), Some(Cirru::List(xs))) if *x == Cirru::Leaf(String::from("ns")) => {
         if !xs.is_empty() && xs[0] == Cirru::Leaf(String::from(":require")) {
           let mut ys: HashMap<String, ImportRule> = HashMap::new();
           for (idx, x) in xs.iter().enumerate() {
@@ -129,11 +121,7 @@ pub fn lookup_def_code(ns: &str, def: &str, program_code: &ProgramCodeData) -> O
   Some(data.clone())
 }
 
-pub fn lookup_def_target_in_import(
-  ns: &str,
-  def: &str,
-  program: &ProgramCodeData,
-) -> Option<String> {
+pub fn lookup_def_target_in_import(ns: &str, def: &str, program: &ProgramCodeData) -> Option<String> {
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(def)?;
   match import_rule {
@@ -142,11 +130,7 @@ pub fn lookup_def_target_in_import(
   }
 }
 
-pub fn lookup_ns_target_in_import(
-  ns: &str,
-  alias: &str,
-  program: &ProgramCodeData,
-) -> Option<String> {
+pub fn lookup_ns_target_in_import(ns: &str, alias: &str, program: &ProgramCodeData) -> Option<String> {
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(alias)?;
   match import_rule {
