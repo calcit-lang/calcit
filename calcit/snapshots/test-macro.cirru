@@ -40,7 +40,7 @@
 
               &reset-gensym-index!
 
-              ; assert=
+              assert=
                 macroexpand-all $ quote
                   case (+ 1 2)
                     1 |one
@@ -351,7 +351,7 @@
                   &let
                     v__1 (fn () 1)
                     if (fn? v__1) nil
-                      do (echo)
+                      &let nil (echo)
                         echo (quote (fn () 1)) "|does not satisfy:" (quote fn?) "| <--------"
                         echo "|  value is:" v__1
                         raise "|Not satisfied in assertion!"

@@ -11,10 +11,8 @@
         ns calcit.core $ :require
       :defs $ {}
         |if-not $ quote
-          defmacro if-not (cond true-branch & args)
-            &let
-              false-branch $ either (first args) nil
-              quote-replace $ if ~cond ~false-branch ~true-branch
+          defmacro if-not (condition true-branch ? false-branch)
+            quasiquote $ if ~condition ~false-branch ~true-branch
 
         |not= $ quote
           defn not= (x y) $ not $ &= x y
@@ -32,8 +30,9 @@
 
         |last $ quote
           defn last (xs)
-            &get xs
-              &- (count xs) 1
+            if (empty? xs) nil
+              &get xs
+                &- (count xs) 1
 
         |when $ quote
           defmacro when (condition & body)
@@ -585,8 +584,8 @@
                 if (&<= (count xs) n)
                   append acc xs
                   recur
-                    append acc (take n xs)
-                    drop n xs
+                    append acc (take xs n)
+                    drop xs n
 
         |[][] $ quote
           defmacro [][] (& xs)

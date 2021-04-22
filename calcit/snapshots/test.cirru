@@ -84,9 +84,9 @@
               when-not (> 1 2) 1 2
 
             assert= 1
-              if-not (> 1 2) 2 1
+              if-not (> 2 1) 2 1
             assert= nil
-              if-not (> 1 2) 2
+              if-not (> 2 1) 2
 
             assert-detect identity
               /= 1 2

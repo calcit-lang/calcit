@@ -2,7 +2,7 @@ use crate::primes;
 use crate::primes::{Calcit, CalcitItems};
 use rand::prelude::*;
 
-pub fn f32_to_usize(f: f32) -> Result<usize, String> {
+pub fn f64_to_usize(f: f64) -> Result<usize, String> {
   if f.fract() == 0.0 {
     if f >= 0.0 {
       Ok(f as usize)
@@ -14,7 +14,7 @@ pub fn f32_to_usize(f: f32) -> Result<usize, String> {
   }
 }
 
-pub fn f32_to_i32(f: f32) -> Result<i32, String> {
+pub fn f64_to_i32(f: f64) -> Result<i32, String> {
   if f.fract() == 0.0 {
     Ok(f as i32)
   } else {
@@ -65,13 +65,13 @@ pub fn is_even(x: usize) -> bool {
   x & 1 == 0
 }
 
-pub fn is_integer(x: f32) -> bool {
+pub fn is_integer(x: f64) -> bool {
   x.fract() == 0.0
 }
 
-fn rand_number(n: f32) -> f32 {
+fn rand_number(n: f64) -> f64 {
   let mut rng = rand::thread_rng();
-  let y: f32 = rng.gen(); // generates a float between 0 and 1
+  let y: f64 = rng.gen(); // generates a float between 0 and 1
   y * n
 }
 
@@ -107,4 +107,33 @@ pub fn floor(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(a) => Err(format!("rand expected a number: {}", a)),
     a => Err(format!("rand expected 1 number: {:?}", a)),
   }
+}
+
+// TODO mod or rem
+pub fn rem(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Number(base)), Some(Calcit::Number(step))) => match (f64_to_i32(*base), f64_to_i32(*step)) {
+      (Ok(a), Ok(b)) => Ok(Calcit::Number((a % b) as f64)),
+      (Err(a), _) => Err(a),
+      (_, Err(a)) => Err(a),
+    },
+    (Some(a), Some(b)) => Err(format!("mod expected 2 numbers, got: {:?} {:?}", a, b)),
+    (a, b) => Err(format!("mod expected 2 numbers, got: {:?} {:?}", a, b)),
+  }
+}
+
+pub fn sin(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn cos(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn pow(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn ceil(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn sqrt(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
 }

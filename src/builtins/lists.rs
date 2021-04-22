@@ -1,5 +1,11 @@
-use crate::builtins::math::{f32_to_i32, f32_to_usize};
-use crate::primes::{Calcit, CalcitItems};
+use core::cmp::Ordering;
+
+use crate::builtins::math::{f64_to_i32, f64_to_usize};
+use crate::primes::{Calcit, CalcitItems, CalcitScope};
+
+use crate::builtins;
+use crate::program::ProgramCodeData;
+use crate::runner;
 
 pub fn new_list(xs: &CalcitItems) -> Result<Calcit, String> {
   Ok(Calcit::List(xs.clone()))
@@ -19,9 +25,9 @@ pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Nil) => Ok(Calcit::Number(0.0)),
-    Some(Calcit::List(ys)) => Ok(Calcit::Number(ys.len() as f32)),
-    Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.len() as f32)),
-    Some(Calcit::Str(s)) => Ok(Calcit::Number(s.len() as f32)),
+    Some(Calcit::List(ys)) => Ok(Calcit::Number(ys.len() as f64)),
+    Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.len() as f64)),
+    Some(Calcit::Str(s)) => Ok(Calcit::Number(s.len() as f64)),
     Some(a) => Err(format!("count expected some seq, got: {}", a)),
     None => Err(String::from("count expected 1 argument")),
   }
@@ -98,9 +104,13 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Nil) => Ok(Calcit::Nil),
     Some(Calcit::List(ys)) => {
-      let mut zs = ys.clone();
-      zs.pop_front();
-      Ok(Calcit::List(zs))
+      if ys.is_empty() {
+        Ok(Calcit::Nil)
+      } else {
+        let mut zs = ys.clone();
+        zs.pop_front();
+        Ok(Calcit::List(zs))
+      }
     }
     Some(a) => Err(format!("rest expected a list, got: {}", a)),
     None => Err(String::from("rest expected 1 argument")),
@@ -111,9 +121,13 @@ pub fn butlast(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Nil) => Ok(Calcit::Nil),
     Some(Calcit::List(ys)) => {
-      let mut zs = ys.clone();
-      zs.pop_back();
-      Ok(Calcit::List(zs))
+      if ys.is_empty() {
+        Ok(Calcit::Nil)
+      } else {
+        let mut zs = ys.clone();
+        zs.pop_back();
+        Ok(Calcit::List(zs))
+      }
     }
     Some(a) => Err(format!("butlast expected a list, got: {}", a)),
     None => Err(String::from("butlast expected 1 argument")),
@@ -148,8 +162,8 @@ pub fn range(xs: &CalcitItems) -> Result<Calcit, String> {
     None => 1.0,
   };
 
-  if (bound - base).abs() < f32::EPSILON {
-    return Ok(Calcit::List(im::vector![Calcit::Number(base)]));
+  if (bound - base).abs() < f64::EPSILON {
+    return Ok(Calcit::List(im::vector![]));
   }
 
   if step == 0.0 || (bound > base && step < 0.0) || (bound < base && step > 0.0) {
@@ -184,5 +198,121 @@ pub fn reverse(xs: &CalcitItems) -> Result<Calcit, String> {
     }
     Some(a) => Err(format!("butlast expected a list, got: {}", a)),
     None => Err(String::from("butlast expected 1 argument")),
+  }
+}
+
+/// foldl using syntax for performance, it's supposed to be a function
+pub fn foldl(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<Calcit, String> {
+  if expr.len() == 3 {
+    let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
+    let acc = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
+    let f = runner::evaluate_expr(&expr[2], scope, file_ns, program_code)?;
+    match (&xs, &f) {
+      // dirty since only functions being call directly then we become fast
+      (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+        let mut ret = acc;
+        for x in xs {
+          let values = im::vector![ret, x.clone()];
+          ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+        }
+        Ok(ret)
+      }
+      (Calcit::List(xs), Calcit::Proc(proc)) => {
+        let mut ret = acc;
+        for x in xs {
+          // println!("foldl args, {} {}", ret, x.clone());
+          ret = builtins::handle_proc(&proc, &im::vector![ret, x.clone()])?;
+        }
+        Ok(ret)
+      }
+      // also handles set
+      (Calcit::Set(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+        let mut ret = acc;
+        for x in xs {
+          let values = im::vector![ret, x.clone()];
+          ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+        }
+        Ok(ret)
+      }
+      (Calcit::Set(xs), Calcit::Proc(proc)) => {
+        let mut ret = acc;
+        for x in xs {
+          // println!("foldl args, {} {}", ret, x.clone());
+          ret = builtins::handle_proc(&proc, &im::vector![ret, x.clone()])?;
+        }
+        Ok(ret)
+      }
+
+      (_, _) => Err(format!("foldl expected list and function, got: {} {}", xs, f)),
+    }
+  } else {
+    Err(format!("foldl expected 3 arguments, got: {:?}", expr))
+  }
+}
+
+// TODO as SYNTAX at current, not supposed to be a syntax
+pub fn sort(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<Calcit, String> {
+  if expr.len() == 2 {
+    let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
+    let f = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
+    match (&xs, &f) {
+      // dirty since only functions being call directly then we become fast
+      (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+        let mut ret = xs.clone();
+        ret.sort_by(|a, b| {
+          let values = im::vector![a.clone(), b.clone()];
+          let v = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code);
+          match v {
+            Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
+            Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
+            Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
+            Ok(a) => {
+              println!("expected number from sort comparator, got: {}", a);
+              panic!("failed to sort")
+            }
+            Err(e) => {
+              println!("sort failed, got: {}", e);
+              panic!("failed to sort")
+            }
+          }
+        });
+        Ok(Calcit::List(ret))
+      }
+      (Calcit::List(xs), Calcit::Proc(proc)) => {
+        let mut ret = xs.clone();
+        ret.sort_by(|a, b| {
+          let values = im::vector![a.clone(), b.clone()];
+          let v = builtins::handle_proc(&proc, &values);
+          match v {
+            Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
+            Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
+            Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
+            Ok(a) => {
+              println!("expected number from sort comparator, got: {}", a);
+              panic!("failed to sort")
+            }
+            Err(e) => {
+              println!("sort failed, got: {}", e);
+              panic!("failed to sort")
+            }
+          }
+        });
+        Ok(Calcit::List(ret))
+      }
+
+      (_, _) => Err(format!("sort expected list and function, got: {} {}", xs, f)),
+    }
+  } else {
+    Err(format!("sort expected 2 arguments, got: {:?}", expr))
   }
 }

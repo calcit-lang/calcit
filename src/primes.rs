@@ -27,12 +27,13 @@ pub struct CrListWrap(pub im::Vector<Calcit>);
 pub enum Calcit {
   Nil,
   Bool(bool),
-  Number(f32),
+  Number(f64),
   Symbol(String, String, Option<SymbolResolved>), // content, ns... so it has meta information
   Keyword(String),
   Str(String),
-  // CalcitRef(Calcit), // TODO
   Thunk(Box<Calcit>),
+  /// holding a path to its state
+  Ref(String),
   Recur(CalcitItems), // not data, but for recursion
   List(CalcitItems),
   Set(im::HashSet<Calcit>),
@@ -67,6 +68,7 @@ impl fmt::Display for Calcit {
       Calcit::Keyword(s) => f.write_str(&format!(":{}", s)),
       Calcit::Str(s) => f.write_str(&format!("\"|{}\"", s)), // TODO, escaping choices
       Calcit::Thunk(v) => f.write_str(&format!("(&thunk {})", v)),
+      Calcit::Ref(name) => f.write_str(&format!("(&ref {})", name)),
       Calcit::Recur(xs) => {
         f.write_str("(&recur")?;
         for x in xs {
@@ -211,6 +213,10 @@ impl Hash for Calcit {
         "quote:".hash(_state);
         v.hash(_state);
       }
+      Calcit::Ref(name) => {
+        "quote:".hash(_state);
+        name.hash(_state);
+      }
       Calcit::Recur(v) => {
         "list:".hash(_state);
         v.hash(_state);
@@ -301,6 +307,10 @@ impl Ord for Calcit {
       (Calcit::Thunk(_), _) => Less,
       (_, Calcit::Thunk(_)) => Greater,
 
+      (Calcit::Ref(a), Calcit::Ref(b)) => a.cmp(b),
+      (Calcit::Ref(_), _) => Less,
+      (_, Calcit::Ref(_)) => Greater,
+
       (Calcit::Recur(a), Calcit::Recur(b)) => a.cmp(b),
       (Calcit::Recur(_), _) => Less,
       (_, Calcit::Recur(_)) => Greater,
@@ -366,6 +376,7 @@ impl PartialEq for Calcit {
       (Calcit::Keyword(a), Calcit::Keyword(b)) => a == b,
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
       (Calcit::Thunk(a), Calcit::Thunk(b)) => a == b,
+      (Calcit::Ref(a), Calcit::Ref(b)) => a == b,
       (Calcit::List(a), Calcit::List(b)) => a == b,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,

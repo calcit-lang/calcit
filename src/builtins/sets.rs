@@ -19,3 +19,19 @@ pub fn call_include(xs: &CalcitItems) -> Result<Calcit, String> {
     (a, b) => Err(format!("invalid arguments for &include: {:?} {:?}", a, b)),
   }
 }
+
+pub fn call_exclude(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn call_difference(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn call_union(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn call_intersection(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn set_to_list(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}

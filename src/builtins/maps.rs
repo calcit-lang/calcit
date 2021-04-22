@@ -1,6 +1,6 @@
 use crate::primes::{Calcit, CalcitItems};
 
-use crate::builtins::math::{f32_to_usize, is_even};
+use crate::builtins::math::{f64_to_usize, is_even};
 
 pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, String> {
   if is_even(xs.len()) {
@@ -17,7 +17,7 @@ pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
-    (Some(Calcit::List(xs)), Some(Calcit::Number(n)), Some(a)) => match f32_to_usize(*n) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n)), Some(a)) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx < xs.len() {
           let mut ys = xs.clone();
@@ -46,6 +46,14 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
       ys.remove(a);
       Ok(Calcit::Map(ys.clone()))
     }
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        let ys = &mut xs.clone();
+        ys.remove(idx);
+        Ok(Calcit::List(ys.clone()))
+      }
+      Err(e) => Err(format!("dissoc expected number, {}", e)),
+    },
     (Some(a), ..) => Err(format!("dissoc expected a map, got: {}", a)),
     (_, _) => Err(format!("dissoc expected 2 arguments, got: {:?}", xs)),
   }
@@ -53,7 +61,7 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn map_get(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f32_to_usize(*n) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx < xs.len() {
           Ok(xs[idx].clone())
@@ -77,7 +85,7 @@ pub fn map_get(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f32_to_usize(*n) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx < xs.len() {
           Ok(Calcit::Bool(true))
@@ -91,4 +99,45 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     (Some(a), ..) => Err(format!("expected list or map, got: {}", a)),
     (None, ..) => Err(format!("expected 2 arguments, got: {:?}", xs)),
   }
+}
+
+pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
+      let mut zs: im::HashMap<Calcit, Calcit> = xs.clone();
+      for (k, v) in ys {
+        zs.insert(k.clone(), v.clone());
+      }
+      Ok(Calcit::Map(zs))
+    }
+    (Some(a), Some(b)) => Err(format!("expected 2 maps, got: {} {}", a, b)),
+    (_, _) => Err(format!("expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Nil), _) => Err(String::from("nil includes nothing")),
+    (Some(Calcit::Map(ys)), Some(a)) => {
+      for (_k, v) in ys {
+        if v == a {
+          return Ok(Calcit::Bool(true));
+        }
+      }
+      Ok(Calcit::Bool(false))
+    }
+    (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(Calcit::Set(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(Calcit::Str(xs)), Some(Calcit::Str(a))) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(Calcit::Str(_)), Some(a)) => Err(format!("string `contains?` expected a string, got: {}", a)),
+    (Some(a), ..) => Err(format!("expected list, map, set, got: {}", a)),
+    (None, ..) => Err(format!("expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
+}
+pub fn call_merge_non_nil(xs: &CalcitItems) -> Result<Calcit, String> {
+  Err(String::from("TODO"))
 }

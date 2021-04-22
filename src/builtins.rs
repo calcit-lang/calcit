@@ -4,6 +4,8 @@ mod logics;
 mod maps;
 mod math;
 mod meta;
+mod records;
+mod refs;
 mod sets;
 mod strings;
 mod syntax;
@@ -50,6 +52,12 @@ pub fn is_proc_name(s: &str) -> bool {
       | "rand"
       | "rand-int"
       | "floor"
+      | "rem"
+      | "sin"
+      | "cos"
+      | "pow"
+      | "ceil"
+      | "sqrt"
       // strings
       | "&str-concat"
       | "trim"
@@ -57,6 +65,21 @@ pub fn is_proc_name(s: &str) -> bool {
       | "turn-string"
       | "split"
       | "format-number"
+      | "replace"
+      | "split-lines"
+      | "substr"
+      | "compare-string"
+      | "str-find"
+      | "starts-with?"
+      | "ends-with?"
+      | "get-char-code"
+      | "re-matches"
+      | "re-find"
+      | "parse-float"
+      | "pr-str"
+      | "re-find-index"
+      | "re-find-all"
+      | "blank?"
       // lists
       | "[]"
       | "empty?"
@@ -76,12 +99,31 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&get"
       | "contains?"
       | "dissoc"
+      | "&merge"
+      | "includes?"
+      | "to-pairs"
+      | "&merge-non-nil"
       // sets
       | "#{}"
       | "&include"
+      | "&exclude"
+      | "&difference"
+      | "&union"
+      | "&intersection"
+      | "set->list"
       // json
       | "parse-json"
       | "stringify-json"
+      // refs
+      | "deref"
+      | "reset!"
+      // records
+      | "new-record"
+      | "&%{}"
+      | "make-record"
+      | "get-record-name"
+      | "turn-map"
+      | "relevant-record?"
   )
 }
 
@@ -101,7 +143,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "parse-cirru-edn" => meta::parse_cirru_edn(args),
     "write-cirru-edn" => meta::write_cirru_edn(args),
     "turn-symbol" => meta::turn_symbol(args),
-    "turn-keyword" => meta::turn_symbol(args),
+    "turn-keyword" => meta::turn_keyword(args),
     // effects
     "echo" => effects::echo(args),
     "echo-values" => effects::echo_values(args),
@@ -120,6 +162,12 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "rand" => math::rand(args),
     "rand-int" => math::rand_int(args),
     "floor" => math::floor(args),
+    "rem" => math::rem(args),
+    "sin" => math::sin(args),
+    "cos" => math::cos(args),
+    "pow" => math::pow(args),
+    "ceil" => math::ceil(args),
+    "sqrt" => math::sqrt(args),
     // strings
     "&str-concat" => strings::binary_str_concat(args),
     "trim" => strings::trim(args),
@@ -127,6 +175,21 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "turn-string" => strings::turn_string(args),
     "split" => strings::split(args),
     "format-number" => strings::format_number(args),
+    "replace" => strings::replace(args),
+    "split-lines" => strings::split_lines(args),
+    "substr" => strings::substr(args),
+    "compare-string" => strings::compare_string(args),
+    "str-find" => strings::str_find(args),
+    "starts-with?" => strings::starts_with_ques(args),
+    "ends-with?" => strings::ends_with_ques(args),
+    "get-char-code" => strings::get_char_code(args),
+    "re-matches" => strings::re_matches(args),
+    "re-find" => strings::re_find(args),
+    "parse-float" => strings::parse_float(args),
+    "pr-str" => strings::pr_str(args),
+    "re-find-index" => strings::re_find_index(args),
+    "re-find-all" => strings::re_find_all(args),
+    "blank?" => strings::blank_ques(args),
     // lists
     "[]" => lists::new_list(args),
     "empty?" => lists::empty_ques(args),
@@ -146,12 +209,31 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&get" => maps::map_get(args),
     "contains?" => maps::contains_ques(args),
     "dissoc" => maps::dissoc(args),
+    "&merge" => maps::call_merge(args),
+    "includes?" => maps::includes_ques(args),
+    "to-pairs" => maps::to_pairs(args),
+    "&merge-non-nil" => maps::call_merge_non_nil(args),
     // sets
     "#{}" => sets::new_set(args),
     "&include" => sets::call_include(args),
+    "&exclude" => sets::call_exclude(args),
+    "&difference" => sets::call_difference(args),
+    "&union" => sets::call_union(args),
+    "&intersection" => sets::call_intersection(args),
+    "set->list" => sets::set_to_list(args),
     // json
     "parse-json" => json::parse_json(args),
     "stringify-json" => json::stringify_json(args),
+    // refs
+    "deref" => refs::deref(args),
+    "reset!" => refs::reset_bang(args),
+    // records
+    "new-record" => records::new_record(args),
+    "&%{}" => records::call_record(args),
+    "make-record" => records::make_record(args),
+    "get-record-name" => records::get_record_name(args),
+    "turn-map" => records::turn_map(args),
+    "relevant-record?" => records::relevant_record_ques(args),
     a => Err(format!("TODO proc: {}", a)),
   }
 }
@@ -172,6 +254,8 @@ pub fn is_syntax_name(s: &str) -> bool {
       | "macroexpand-all"
       | "foldl" // for performance
       | "try"
+      | "sort" // TODO need better solution
+      | "defatom"
   )
 }
 
@@ -191,10 +275,13 @@ pub fn handle_syntax(
     "quote-replace" => syntax::quasiquote(nodes, scope, file_ns, program), // alias
     "if" => syntax::syntax_if(nodes, scope, file_ns, program),
     "&let" => syntax::syntax_let(nodes, scope, file_ns, program),
-    "foldl" => syntax::foldl(nodes, scope, file_ns, program),
+    "foldl" => lists::foldl(nodes, scope, file_ns, program),
     "macroexpand" => syntax::macroexpand(nodes, scope, file_ns, program),
     "macroexpand-1" => syntax::macroexpand_1(nodes, scope, file_ns, program),
+    "macroexpand-all" => syntax::macroexpand_all(nodes, scope, file_ns, program),
     "try" => syntax::call_try(nodes, scope, file_ns, program),
+    "sort" => lists::sort(nodes, scope, file_ns, program),
+    "defatom" => refs::defatom(nodes, scope, file_ns, program),
     a => Err(format!("TODO syntax: {}", a)),
   }
 }

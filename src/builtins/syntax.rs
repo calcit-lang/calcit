@@ -1,3 +1,9 @@
+//! this file does not cover all syntax instances.
+//! syntaxes related to data are maintained the corresponding files
+//! Rust has limits on Closures, callbacks need to be handled specifically
+
+use std::collections::HashSet;
+
 use crate::builtins;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems, CalcitScope};
@@ -121,43 +127,6 @@ pub fn syntax_let(
   }
 }
 
-/// foldl using syntax for performance, theoretically it's not
-pub fn foldl(
-  expr: &CalcitItems,
-  scope: &CalcitScope,
-  file_ns: &str,
-  program_code: &ProgramCodeData,
-) -> Result<Calcit, String> {
-  if expr.len() == 3 {
-    let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
-    let acc = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
-    let f = runner::evaluate_expr(&expr[2], scope, file_ns, program_code)?;
-    match (&xs, &f) {
-      // dirty since only functions being call directly then we become fast
-      (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
-        let mut ret = acc;
-        for x in xs {
-          let values = im::vector![ret, x.clone()];
-          ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
-        }
-        Ok(ret)
-      }
-      (Calcit::List(xs), Calcit::Proc(proc)) => {
-        let mut ret = acc;
-        for x in xs {
-          // println!("foldl args, {} {}", ret, x.clone());
-          ret = builtins::handle_proc(&proc, &im::vector![ret, x.clone()])?;
-        }
-        Ok(ret)
-      }
-
-      (_, _) => Err(format!("foldl expected list and function, got: {} {}", xs, f)),
-    }
-  } else {
-    Err(format!("foldl expected 3 arguments, got: {:?}", expr))
-  }
-}
-
 pub fn quasiquote(
   expr: &CalcitItems,
   scope: &CalcitScope,
@@ -278,6 +247,56 @@ pub fn macroexpand_1(
             runner::evaluate_lines(&body, &body_scope, &def_ns, program_code)
           }
           _ => Ok(quoted_code),
+        }
+      }
+      a => Ok(a),
+    }
+  } else {
+    Err(format!("macroexpand expected excaclty 1 argument, got: {:?}", expr))
+  }
+}
+
+pub fn macroexpand_all(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<Calcit, String> {
+  if expr.len() == 1 {
+    let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
+
+    match quoted_code.clone() {
+      Calcit::List(xs) => {
+        if xs.is_empty() {
+          return Ok(quoted_code);
+        }
+        let v = runner::evaluate_expr(&xs[0], scope, file_ns, program_code)?;
+        match v {
+          Calcit::Macro(_, def_ns, _, args, body) => {
+            let mut xs_cloned = xs;
+            // mutable operation
+            let mut rest_nodes = xs_cloned.slice(1..);
+            // println!("macro: {:?} ... {:?}", args, rest_nodes);
+            // keep expanding until return value is not a recur
+            loop {
+              let body_scope = runner::bind_args(&args, &rest_nodes, scope)?;
+              let v = runner::evaluate_lines(&body, &body_scope, &def_ns, program_code)?;
+              match v {
+                Calcit::Recur(rest_code) => {
+                  rest_nodes = rest_code;
+                }
+                _ => {
+                  let (resolved, _v) = runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, program_code)?;
+                  return Ok(resolved);
+                }
+              }
+            }
+          }
+          _ => {
+            let (resolved, _v) =
+              runner::preprocess::preprocess_expr(&quoted_code, &HashSet::new(), file_ns, program_code)?;
+            Ok(resolved)
+          }
         }
       }
       a => Ok(a),

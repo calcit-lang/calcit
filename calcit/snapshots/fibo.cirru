@@ -31,7 +31,7 @@
             if (&> n limit) acc $ if
               every?
                 fn (m)
-                  &> (mod n m) 0
+                  &> (rem n m) 0
                 , acc
               recur (conj acc n) (inc n) (, limit)
               recur acc (inc n) limit

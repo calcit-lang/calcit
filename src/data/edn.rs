@@ -22,9 +22,9 @@ pub fn as_bool(data: Edn) -> Result<bool, String> {
 }
 
 #[allow(dead_code)]
-pub fn as_number(data: Edn) -> Result<f32, String> {
+pub fn as_number(data: Edn) -> Result<f64, String> {
   match data {
-    Edn::Number(n) => Ok(n),
+    Edn::Number(n) => Ok(n as f64),
     a => Err(format!("failed to convert to number: {}", a)),
   }
 }
@@ -90,7 +90,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Edn {
     Calcit::Nil => Edn::Nil,
     Calcit::Bool(b) => Edn::Bool(*b),
     Calcit::Str(s) => Edn::Str(s.clone()),
-    Calcit::Number(n) => Edn::Number(*n),
+    Calcit::Number(n) => Edn::Number(*n as f32), // TODO
     Calcit::Keyword(s) => Edn::Keyword(s.clone()),
     Calcit::Symbol(s, ..) => Edn::Symbol(s.clone()),
     Calcit::List(xs) => {
@@ -124,7 +124,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
   match x {
     Edn::Nil => Calcit::Nil,
     Edn::Bool(b) => Calcit::Bool(*b),
-    Edn::Number(n) => Calcit::Number(*n),
+    Edn::Number(n) => Calcit::Number(*n as f64),
     Edn::Symbol(s) => Calcit::Symbol(s.clone(), primes::GENERATED_NS.to_string(), None),
     Edn::Keyword(s) => Calcit::Keyword(s.clone()),
     Edn::Str(s) => Calcit::Str(s.clone()),

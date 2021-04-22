@@ -9,10 +9,18 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
       "nil" => Ok(Calcit::Nil),
       "true" => Ok(Calcit::Bool(true)),
       "false" => Ok(Calcit::Bool(false)),
+      "&E" => Ok(Calcit::Number(std::f64::consts::E)),
+      "&PI" => Ok(Calcit::Number(std::f64::consts::PI)),
+      "&newline" => Ok(Calcit::Str(String::from("\n"))),
+      "&tab" => Ok(Calcit::Str(String::from("\t"))),
       "" => Err(String::from("Empty string is invalid")),
       _ => match s.chars().next().unwrap() {
         ':' => Ok(Calcit::Keyword(String::from(&s[1..]))),
         '"' | '|' => Ok(Calcit::Str(String::from(&s[1..]))),
+        '0' if s.starts_with("0x") => match u8::from_str_radix(&s[2..], 16) {
+          Ok(n) => Ok(Calcit::Number(n as f64)),
+          Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
+        },
         '\'' => Ok(Calcit::List(im::vector![
           Calcit::Symbol(String::from("quote"), ns.to_string(), None),
           Calcit::Symbol(String::from(&s[1..]), ns.to_string(), None),
@@ -26,13 +34,13 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
           Calcit::Symbol(String::from(&s[1..]), ns.to_string(), None),
         ])),
         '@' => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("@"), ns.to_string(), None),
+          Calcit::Symbol(String::from("deref"), ns.to_string(), None),
           Calcit::Symbol(String::from(&s[1..]), ns.to_string(), None),
         ])),
         // TODO future work of reader literal expanding
         _ => {
           if matches_float(&s) {
-            let f: f32 = s.parse().unwrap();
+            let f: f64 = s.parse().unwrap();
             Ok(Calcit::Number(f))
           } else {
             Ok(Calcit::Symbol(s.clone(), ns.to_string(), None))

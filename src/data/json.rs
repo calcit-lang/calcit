@@ -6,8 +6,15 @@ pub fn json_to_calcit(data: &Value) -> Calcit {
   match data {
     Value::Null => Calcit::Nil,
     Value::Bool(b) => Calcit::Bool(*b),
-    Value::Number(n) => Calcit::Number(n.as_f64().unwrap() as f32), // why f32
-    Value::String(s) => Calcit::Str(s.clone()),
+    Value::Number(n) => Calcit::Number(n.as_f64().unwrap() as f64), // why f64
+    Value::String(s) => {
+      if s.starts_with(':') {
+        // special logic to parse keyword
+        Calcit::Keyword(s.strip_prefix(":").unwrap().to_string())
+      } else {
+        Calcit::Str(s.clone())
+      }
+    }
     Value::Array(xs) => {
       let mut ys: CalcitItems = im::vector![];
       for x in xs {
@@ -18,7 +25,12 @@ pub fn json_to_calcit(data: &Value) -> Calcit {
     Value::Object(xs) => {
       let mut ys: im::HashMap<Calcit, Calcit> = im::HashMap::new();
       for (k, v) in xs {
-        ys.insert(Calcit::Str(k.clone()), json_to_calcit(v));
+        let key = if k.starts_with(':') {
+          Calcit::Keyword(k.strip_prefix(":").unwrap().to_string())
+        } else {
+          Calcit::Str(k.clone())
+        };
+        ys.insert(key, json_to_calcit(v));
       }
       Calcit::Map(ys)
     }
@@ -101,7 +113,8 @@ pub fn stringify_json(xs: &CalcitItems) -> Result<Calcit, String> {
         Some(a) => return Err(format!("expected a bool, got: {}", a)),
         None => false,
       };
-      match serde_json::to_string(&calcit_to_json(x, add_colon)) {
+      let ret = calcit_to_json(x, add_colon)?;
+      match serde_json::to_string(&ret) {
         Ok(s) => Ok(Calcit::Str(s)),
         Err(e) => Err(format!("failed to generate string: {}", e)),
       }
