@@ -27,6 +27,7 @@ pub fn evaluate_expr(
     Calcit::Str(_) => Ok(expr.clone()),
     // CalcitRef(Calcit), // TODO
     Calcit::Thunk(code) => evaluate_expr(code, scope, file_ns, program_code),
+    Calcit::Ref(_) => Ok(expr.clone()),
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
     Calcit::List(xs) => match xs.get(0) {
       None => Err(format!("cannot evaluate empty expr: {}", expr)),
@@ -128,14 +129,15 @@ pub fn evaluate_symbol(
       if is_syntax_name(sym) {
         return Ok(Calcit::Syntax(sym.to_string(), file_ns.to_string()));
       }
+      if scope.contains_key(sym) {
+        // although scope is detected first, it would trigger warning during preprocess
+        return Ok(scope.get(sym).unwrap().clone());
+      }
       if is_proc_name(sym) {
         return Ok(Calcit::Proc(sym.to_string()));
       }
       if program::lookup_def_code(CORE_NS, sym, program_code).is_some() {
         return eval_symbol_from_program(sym, CORE_NS, program_code);
-      }
-      if scope.contains_key(sym) {
-        return Ok(scope.get(sym).unwrap().clone());
       }
       if program::has_def_code(file_ns, sym, program_code) {
         return eval_symbol_from_program(sym, file_ns, program_code);

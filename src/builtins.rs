@@ -4,6 +4,7 @@ mod logics;
 mod maps;
 mod math;
 mod meta;
+mod refs;
 mod sets;
 mod strings;
 mod syntax;
@@ -50,6 +51,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "rand"
       | "rand-int"
       | "floor"
+      | "rem"
       // strings
       | "&str-concat"
       | "trim"
@@ -76,12 +78,17 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&get"
       | "contains?"
       | "dissoc"
+      | "&merge"
+      | "includes?"
       // sets
       | "#{}"
       | "&include"
       // json
       | "parse-json"
       | "stringify-json"
+      // refs
+      | "deref"
+      | "reset!"
   )
 }
 
@@ -101,7 +108,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "parse-cirru-edn" => meta::parse_cirru_edn(args),
     "write-cirru-edn" => meta::write_cirru_edn(args),
     "turn-symbol" => meta::turn_symbol(args),
-    "turn-keyword" => meta::turn_symbol(args),
+    "turn-keyword" => meta::turn_keyword(args),
     // effects
     "echo" => effects::echo(args),
     "echo-values" => effects::echo_values(args),
@@ -120,6 +127,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "rand" => math::rand(args),
     "rand-int" => math::rand_int(args),
     "floor" => math::floor(args),
+    "rem" => math::rem(args),
     // strings
     "&str-concat" => strings::binary_str_concat(args),
     "trim" => strings::trim(args),
@@ -146,12 +154,17 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&get" => maps::map_get(args),
     "contains?" => maps::contains_ques(args),
     "dissoc" => maps::dissoc(args),
+    "&merge" => maps::call_merge(args),
+    "includes" => maps::includes_ques(args),
     // sets
     "#{}" => sets::new_set(args),
     "&include" => sets::call_include(args),
     // json
     "parse-json" => json::parse_json(args),
     "stringify-json" => json::stringify_json(args),
+    // refs
+    "deref" => refs::deref(args),
+    "reset!" => refs::reset_bang(args),
     a => Err(format!("TODO proc: {}", a)),
   }
 }
@@ -172,6 +185,8 @@ pub fn is_syntax_name(s: &str) -> bool {
       | "macroexpand-all"
       | "foldl" // for performance
       | "try"
+      | "sort" // TODO need better solution
+      | "defatom"
   )
 }
 
@@ -191,10 +206,12 @@ pub fn handle_syntax(
     "quote-replace" => syntax::quasiquote(nodes, scope, file_ns, program), // alias
     "if" => syntax::syntax_if(nodes, scope, file_ns, program),
     "&let" => syntax::syntax_let(nodes, scope, file_ns, program),
-    "foldl" => syntax::foldl(nodes, scope, file_ns, program),
+    "foldl" => lists::foldl(nodes, scope, file_ns, program),
     "macroexpand" => syntax::macroexpand(nodes, scope, file_ns, program),
     "macroexpand-1" => syntax::macroexpand_1(nodes, scope, file_ns, program),
     "try" => syntax::call_try(nodes, scope, file_ns, program),
+    "sort" => lists::sort(nodes, scope, file_ns, program),
+    "defatom" => refs::defatom(nodes, scope, file_ns, program),
     a => Err(format!("TODO syntax: {}", a)),
   }
 }

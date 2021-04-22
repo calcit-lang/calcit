@@ -136,7 +136,7 @@
 
             assert=
               group-by
-                \ mod % 3
+                \ rem % 3
                 range 10
               {}
                 0 $ [] 0 3 6 9
@@ -238,8 +238,8 @@
           fn ()
             assert=
               sort
-                \ &- % %2
                 [] 4 3 2 1
+                \ &- % %2
               [] 1 2 3 4
 
         |*counted $ quote

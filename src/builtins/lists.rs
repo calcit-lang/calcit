@@ -1,5 +1,11 @@
+use core::cmp::Ordering;
+
 use crate::builtins::math::{f32_to_i32, f32_to_usize};
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::{Calcit, CalcitItems, CalcitScope};
+
+use crate::builtins;
+use crate::program::ProgramCodeData;
+use crate::runner;
 
 pub fn new_list(xs: &CalcitItems) -> Result<Calcit, String> {
   Ok(Calcit::List(xs.clone()))
@@ -184,5 +190,104 @@ pub fn reverse(xs: &CalcitItems) -> Result<Calcit, String> {
     }
     Some(a) => Err(format!("butlast expected a list, got: {}", a)),
     None => Err(String::from("butlast expected 1 argument")),
+  }
+}
+
+/// foldl using syntax for performance, it's supposed to be a function
+pub fn foldl(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<Calcit, String> {
+  if expr.len() == 3 {
+    let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
+    let acc = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
+    let f = runner::evaluate_expr(&expr[2], scope, file_ns, program_code)?;
+    match (&xs, &f) {
+      // dirty since only functions being call directly then we become fast
+      (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+        let mut ret = acc;
+        for x in xs {
+          let values = im::vector![ret, x.clone()];
+          ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+        }
+        Ok(ret)
+      }
+      (Calcit::List(xs), Calcit::Proc(proc)) => {
+        let mut ret = acc;
+        for x in xs {
+          // println!("foldl args, {} {}", ret, x.clone());
+          ret = builtins::handle_proc(&proc, &im::vector![ret, x.clone()])?;
+        }
+        Ok(ret)
+      }
+
+      (_, _) => Err(format!("foldl expected list and function, got: {} {}", xs, f)),
+    }
+  } else {
+    Err(format!("foldl expected 3 arguments, got: {:?}", expr))
+  }
+}
+
+// TODO as SYNTAX at current, not supposed to be a syntax
+pub fn sort(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<Calcit, String> {
+  if expr.len() == 2 {
+    let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
+    let f = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
+    match (&xs, &f) {
+      // dirty since only functions being call directly then we become fast
+      (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+        let mut ret = xs.clone();
+        ret.sort_by(|a, b| {
+          let values = im::vector![a.clone(), b.clone()];
+          let v = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code);
+          match v {
+            Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
+            Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
+            Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
+            Ok(a) => {
+              println!("expected number from sort comparator, got: {}", a);
+              panic!("failed to sort")
+            }
+            Err(e) => {
+              println!("sort failed, got: {}", e);
+              panic!("failed to sort")
+            }
+          }
+        });
+        Ok(Calcit::List(ret))
+      }
+      (Calcit::List(xs), Calcit::Proc(proc)) => {
+        let mut ret = xs.clone();
+        ret.sort_by(|a, b| {
+          let values = im::vector![a.clone(), b.clone()];
+          let v = builtins::handle_proc(&proc, &values);
+          match v {
+            Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
+            Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
+            Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
+            Ok(a) => {
+              println!("expected number from sort comparator, got: {}", a);
+              panic!("failed to sort")
+            }
+            Err(e) => {
+              println!("sort failed, got: {}", e);
+              panic!("failed to sort")
+            }
+          }
+        });
+        Ok(Calcit::List(ret))
+      }
+
+      (_, _) => Err(format!("sort expected list and function, got: {} {}", xs, f)),
+    }
+  } else {
+    Err(format!("sort expected 2 arguments, got: {:?}", expr))
   }
 }

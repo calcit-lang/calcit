@@ -92,3 +92,37 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     (None, ..) => Err(format!("expected 2 arguments, got: {:?}", xs)),
   }
 }
+
+pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
+      let mut zs: im::HashMap<Calcit, Calcit> = xs.clone();
+      for (k, v) in ys {
+        zs.insert(k.clone(), v.clone());
+      }
+      Ok(Calcit::Map(zs))
+    }
+    (Some(a), Some(b)) => Err(format!("expected 2 maps, got: {} {}", a, b)),
+    (_, _) => Err(format!("expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Nil), _) => Err(String::from("nil includes nothing")),
+    (Some(Calcit::Map(ys)), Some(a)) => {
+      for (_k, v) in ys {
+        if v == a {
+          return Ok(Calcit::Bool(true));
+        }
+      }
+      Ok(Calcit::Bool(false))
+    }
+    (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(Calcit::Set(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(Calcit::Str(xs)), Some(Calcit::Str(a))) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(Calcit::Str(_)), Some(a)) => Err(format!("string `contains?` expected a string, got: {}", a)),
+    (Some(a), ..) => Err(format!("expected list, map, set, got: {}", a)),
+    (None, ..) => Err(format!("expected 2 arguments, got: {:?}", xs)),
+  }
+}

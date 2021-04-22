@@ -26,7 +26,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
           Calcit::Symbol(String::from(&s[1..]), ns.to_string(), None),
         ])),
         '@' => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("@"), ns.to_string(), None),
+          Calcit::Symbol(String::from("deref"), ns.to_string(), None),
           Calcit::Symbol(String::from(&s[1..]), ns.to_string(), None),
         ])),
         // TODO future work of reader literal expanding

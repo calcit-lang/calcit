@@ -1,3 +1,7 @@
+//! this file does not cover all syntax instances.
+//! syntaxes related to data are maintained the corresponding files
+//! Rust has limits on Closures, callbacks need to be handled specifically
+
 use crate::builtins;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems, CalcitScope};
@@ -118,43 +122,6 @@ pub fn syntax_let(
     Some(Calcit::List(xs)) => Err(format!("invalid length: {:?}", xs)),
     Some(_) => Err(format!("invalid node for &let: {:?}", expr)),
     None => Err(String::from("&let expected a pair or a nil")),
-  }
-}
-
-/// foldl using syntax for performance, theoretically it's not
-pub fn foldl(
-  expr: &CalcitItems,
-  scope: &CalcitScope,
-  file_ns: &str,
-  program_code: &ProgramCodeData,
-) -> Result<Calcit, String> {
-  if expr.len() == 3 {
-    let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
-    let acc = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
-    let f = runner::evaluate_expr(&expr[2], scope, file_ns, program_code)?;
-    match (&xs, &f) {
-      // dirty since only functions being call directly then we become fast
-      (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
-        let mut ret = acc;
-        for x in xs {
-          let values = im::vector![ret, x.clone()];
-          ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
-        }
-        Ok(ret)
-      }
-      (Calcit::List(xs), Calcit::Proc(proc)) => {
-        let mut ret = acc;
-        for x in xs {
-          // println!("foldl args, {} {}", ret, x.clone());
-          ret = builtins::handle_proc(&proc, &im::vector![ret, x.clone()])?;
-        }
-        Ok(ret)
-      }
-
-      (_, _) => Err(format!("foldl expected list and function, got: {} {}", xs, f)),
-    }
-  } else {
-    Err(format!("foldl expected 3 arguments, got: {:?}", expr))
   }
 }
 

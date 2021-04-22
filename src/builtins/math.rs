@@ -108,3 +108,16 @@ pub fn floor(xs: &CalcitItems) -> Result<Calcit, String> {
     a => Err(format!("rand expected 1 number: {:?}", a)),
   }
 }
+
+// TODO mod or rem
+pub fn rem(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Number(base)), Some(Calcit::Number(step))) => match (f32_to_i32(*base), f32_to_i32(*step)) {
+      (Ok(a), Ok(b)) => Ok(Calcit::Number((a % b) as f32)),
+      (Err(a), _) => Err(a),
+      (_, Err(a)) => Err(a),
+    },
+    (Some(a), Some(b)) => Err(format!("mod expected 2 numbers, got: {:?} {:?}", a, b)),
+    (a, b) => Err(format!("mod expected 2 numbers, got: {:?} {:?}", a, b)),
+  }
+}

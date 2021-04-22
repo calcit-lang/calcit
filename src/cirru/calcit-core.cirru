@@ -11,10 +11,8 @@
         ns calcit.core $ :require
       :defs $ {}
         |if-not $ quote
-          defmacro if-not (cond true-branch & args)
-            &let
-              false-branch $ either (first args) nil
-              quote-replace $ if ~cond ~false-branch ~true-branch
+          defmacro if-not (condition true-branch ? false-branch)
+            quote-replace $ if ~condition ~false-branch ~true-branch
 
         |not= $ quote
           defn not= (x y) $ not $ &= x y
