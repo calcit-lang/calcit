@@ -16,6 +16,7 @@ pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Nil) => Ok(Calcit::Bool(true)),
     Some(Calcit::List(ys)) => Ok(Calcit::Bool(ys.is_empty())),
     Some(Calcit::Map(ys)) => Ok(Calcit::Bool(ys.is_empty())),
+    Some(Calcit::Set(ys)) => Ok(Calcit::Bool(ys.is_empty())),
     Some(Calcit::Str(s)) => Ok(Calcit::Bool(s.is_empty())),
     Some(a) => Err(format!("empty? expected some seq, got: {}", a)),
     None => Err(String::from("empty? expected 1 argument")),
@@ -27,6 +28,7 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Nil) => Ok(Calcit::Number(0.0)),
     Some(Calcit::List(ys)) => Ok(Calcit::Number(ys.len() as f64)),
     Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.len() as f64)),
+    Some(Calcit::Set(ys)) => Ok(Calcit::Number(ys.len() as f64)),
     Some(Calcit::Str(s)) => Ok(Calcit::Number(s.len() as f64)),
     Some(a) => Err(format!("count expected some seq, got: {}", a)),
     None => Err(String::from("count expected 1 argument")),
@@ -112,6 +114,14 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
         Ok(Calcit::List(zs))
       }
     }
+    Some(Calcit::Set(ys)) => match ys.iter().next() {
+      Some(y0) => {
+        let mut zs = ys.clone();
+        zs.remove(y0);
+        Ok(Calcit::Set(zs))
+      }
+      None => Ok(Calcit::Nil),
+    },
     Some(a) => Err(format!("rest expected a list, got: {}", a)),
     None => Err(String::from("rest expected 1 argument")),
   }
@@ -314,5 +324,26 @@ pub fn sort(
     }
   } else {
     Err(format!("sort expected 2 arguments, got: {:?}", expr))
+  }
+}
+
+/// use builtin function since sets need to be handled specifically
+pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Nil) => Ok(Calcit::Nil),
+    Some(Calcit::List(ys)) => {
+      if ys.is_empty() {
+        Ok(Calcit::Nil)
+      } else {
+        Ok(ys[0].clone())
+      }
+    }
+    Some(Calcit::Set(ys)) => match ys.iter().next() {
+      // TODO first element of a set.. need to be more sure...
+      Some(v) => Ok(v.clone()),
+      None => Ok(Calcit::Nil),
+    },
+    Some(a) => Err(format!("first expected a list, got: {}", a)),
+    None => Err(String::from("first expected 1 argument")),
   }
 }

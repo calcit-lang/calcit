@@ -122,18 +122,45 @@ pub fn rem(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
+pub fn round(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Number(n)) => Ok(Calcit::Number(n.round())),
+    Some(a) => Err(format!("round expected a number: {}", a)),
+    a => Err(format!("round expected 1 number: {:?}", a)),
+  }
+}
 pub fn sin(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match xs.get(0) {
+    Some(Calcit::Number(n)) => Ok(Calcit::Number(n.sin())),
+    Some(a) => Err(format!("sin expected a number: {}", a)),
+    a => Err(format!("sin expected 1 number: {:?}", a)),
+  }
 }
 pub fn cos(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match xs.get(0) {
+    Some(Calcit::Number(n)) => Ok(Calcit::Number(n.cos())),
+    Some(a) => Err(format!("cos expected a number: {}", a)),
+    a => Err(format!("cos expected 1 number: {:?}", a)),
+  }
 }
 pub fn pow(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Number(base)), Some(Calcit::Number(step))) => Ok(Calcit::Number(base.powf(*step))),
+    (Some(a), Some(b)) => Err(format!("pow expected 2 numbers, got: {:?} {:?}", a, b)),
+    (a, b) => Err(format!("pow expected 2 numbers, got: {:?} {:?}", a, b)),
+  }
 }
 pub fn ceil(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match xs.get(0) {
+    Some(Calcit::Number(n)) => Ok(Calcit::Number(n.ceil())),
+    Some(a) => Err(format!("ceil expected a number: {}", a)),
+    a => Err(format!("ceil expected 1 number: {:?}", a)),
+  }
 }
 pub fn sqrt(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match xs.get(0) {
+    Some(Calcit::Number(n)) => Ok(Calcit::Number(n.sqrt())),
+    Some(a) => Err(format!("sqrt expected a number: {}", a)),
+    a => Err(format!("sqrt expected 1 number: {:?}", a)),
+  }
 }

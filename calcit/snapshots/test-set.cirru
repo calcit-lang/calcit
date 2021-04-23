@@ -41,15 +41,15 @@
 
             assert=
               map
-                fn (x) (inc x)
                 #{} 1 2 3
+                fn (x) (inc x)
               #{} 2 3 4
 
             assert-detect identity
               every?
-                \ > % 0
                 #{} 1 2 3
-              
+                \ > % 0
+
             assert= (#{} 1 2 3) (#{} 1 2 (+ 1 2))
             assert-detect not $ = (#{} 1 2 3) (#{} 2 3 4)
 

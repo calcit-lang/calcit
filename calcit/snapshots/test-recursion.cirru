@@ -36,7 +36,7 @@
 
         |test-hole-series $ quote
           defn test-hole-series ()
-            assert "|hole series numbers" $ = (map hole-series (range 1 20))
+            assert "|hole series numbers" $ = (map (range 1 20) hole-series)
               [] 0 1 0 1 2 3 2 1 0 1 2 3 4 5 6 7 8 9 8
 
         |test-loop $ quote

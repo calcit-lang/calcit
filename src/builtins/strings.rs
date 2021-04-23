@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::builtins::math::f64_to_usize;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems};
@@ -32,7 +34,7 @@ pub fn trim(xs: &CalcitItems) -> Result<Calcit, String> {
 /// just format value to string
 pub fn call_str(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(a) => Ok(Calcit::Str(a.to_string())),
+    Some(a) => Ok(Calcit::Str(a.turn_string())),
     None => Err(String::from("&str expected 1 argument, got nothing")),
   }
 }
@@ -55,7 +57,9 @@ pub fn split(xs: &CalcitItems) -> Result<Calcit, String> {
       let pieces = s.split(pattern);
       let mut ys: CalcitItems = im::vector![];
       for p in pieces {
-        ys.push_back(Calcit::Str(p.to_string()));
+        if !p.is_empty() {
+          ys.push_back(Calcit::Str(p.to_string()));
+        }
       }
       Ok(Calcit::List(ys))
     }
@@ -76,47 +80,127 @@ pub fn format_number(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 
 pub fn replace(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match (xs.get(0), xs.get(1), xs.get(2)) {
+    (Some(Calcit::Str(s)), Some(Calcit::Str(p)), Some(Calcit::Str(r))) => Ok(Calcit::Str(s.replace(p, r))),
+    (Some(a), Some(b), Some(c)) => Err(format!("replace expected 3 strings, got: {} {} {}", a, b, c)),
+    (_, _, _) => Err(format!("expected 3 arguments, got: {}", primes::CrListWrap(xs.clone()))),
+  }
 }
 pub fn split_lines(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => {
+      let lines = s.split('\n');
+      let mut ys = im::vector![];
+      for line in lines {
+        ys.push_back(Calcit::Str(line.to_string()));
+      }
+      Ok(Calcit::List(ys))
+    }
+    Some(a) => Err(format!("split-lines expected 1 string, got: {}", a)),
+    _ => Err(String::from("split-lines expected 1 argument, got nothing")),
+  }
 }
 pub fn substr(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(from) => {
+        let to: usize = match xs.get(2) {
+          Some(Calcit::Number(n2)) => match f64_to_usize(*n2) {
+            Ok(idx2) => idx2,
+            Err(e) => return Err(format!("substr expected number, got: {}", e)),
+          },
+          Some(a) => return Err(format!("substr expected number, got: {}", a)),
+          None => s.len(),
+        };
+        if from >= to {
+          Ok(Calcit::Str(String::from("")))
+        } else {
+          Ok(Calcit::Str(s[from..to].to_string()))
+        }
+      }
+      Err(e) => Err(e),
+    },
+    (Some(a), Some(b)) => Err(format!("substr expected string and number, got: {} {}", a, b)),
+    (_, _) => Err(format!("substr expected string and numbers, got: {:?}", xs)),
+  }
 }
+
 pub fn compare_string(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Str(a)), Some(Calcit::Str(b))) => {
+      let v = match a.cmp(&b) {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
+      };
+      Ok(Calcit::Number(v as f64))
+    }
+    (Some(a), Some(b)) => Err(format!("compare-string expected 2 strings, got: {}, {}", a, b)),
+    (_, _) => Err(format!("compare-string expected 2 string, got: {:?}", xs)),
+  }
 }
+
 pub fn str_find(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => match s.find(pattern) {
+      Some(idx) => Ok(Calcit::Number(idx as f64)),
+      None => Ok(Calcit::Number(-1.0)), // TODO maybe nil?
+    },
+    (Some(a), Some(b)) => Err(format!("str-find expected 2 strings, got: {} {}", a, b)),
+    (_, _) => Err(String::from("str-find expected 2 arguments, got nothing")),
+  }
 }
 pub fn starts_with_ques(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool(s.starts_with(pattern))),
+    (Some(a), Some(b)) => Err(format!("starts-with? expected 2 strings, got: {} {}", a, b)),
+    (_, _) => Err(String::from("starts-with? expected 2 arguments, got nothing")),
+  }
 }
 pub fn ends_with_ques(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool(s.ends_with(pattern))),
+    (Some(a), Some(b)) => Err(format!("ends-with? expected 2 strings, got: {} {}", a, b)),
+    (_, _) => Err(String::from("ends-with? expected 2 arguments, got nothing")),
+  }
 }
 pub fn get_char_code(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
-}
-pub fn re_matches(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
-}
-pub fn re_find(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => {
+      if s.len() == 1 {
+        match s.chars().next() {
+          Some(c) => Ok(Calcit::Number((c as u32) as f64)),
+          None => unreachable!("expected a character"),
+        }
+      } else {
+        Err(format!("get-char-code expected a character, got: {}", s))
+      }
+    }
+    Some(a) => Err(format!("get-char-code expected 2 strings, got: {}", a)),
+    _ => Err(String::from("get-char-code expected 2 arguments, got nothing")),
+  }
 }
 pub fn parse_float(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => match s.parse::<f64>() {
+      Ok(n) => Ok(Calcit::Number(n)),
+      Err(e) => Err(format!("parse-float failed, {}", e)),
+    },
+    Some(a) => Err(format!("starts-with? expected 1 string, got: {}", a)),
+    _ => Err(String::from("starts-with? expected 1 argument, got nothing")),
+  }
 }
+
 pub fn pr_str(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
-}
-pub fn re_find_index(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
-}
-pub fn re_find_all(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match xs.get(0) {
+    Some(a) => Ok(Calcit::Str(a.to_string())),
+    None => Err(String::from("pr-str expected 1 argument, got nothing")),
+  }
 }
 pub fn blank_ques(xs: &CalcitItems) -> Result<Calcit, String> {
-  Err(String::from("TODO"))
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => Ok(Calcit::Bool(s.is_empty())),
+    Some(a) => Err(format!("blank? expected 1 string, got: {}", a)),
+    None => Err(String::from("blank? expected 1 argument, got nothing")),
+  }
 }

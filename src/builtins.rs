@@ -6,6 +6,7 @@ mod math;
 mod meta;
 mod records;
 mod refs;
+mod regexes;
 mod sets;
 mod strings;
 mod syntax;
@@ -93,6 +94,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "concat"
       | "range"
       | "reverse"
+      | "first"
       // maps
       | "&{}"
       | "assoc"
@@ -123,7 +125,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "make-record"
       | "get-record-name"
       | "turn-map"
-      | "relevant-record?"
+      | "relevant-record?" // regexs
   )
 }
 
@@ -168,6 +170,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "pow" => math::pow(args),
     "ceil" => math::ceil(args),
     "sqrt" => math::sqrt(args),
+    "round" => math::round(args),
     // strings
     "&str-concat" => strings::binary_str_concat(args),
     "trim" => strings::trim(args),
@@ -183,13 +186,14 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "starts-with?" => strings::starts_with_ques(args),
     "ends-with?" => strings::ends_with_ques(args),
     "get-char-code" => strings::get_char_code(args),
-    "re-matches" => strings::re_matches(args),
-    "re-find" => strings::re_find(args),
     "parse-float" => strings::parse_float(args),
     "pr-str" => strings::pr_str(args),
-    "re-find-index" => strings::re_find_index(args),
-    "re-find-all" => strings::re_find_all(args),
     "blank?" => strings::blank_ques(args),
+    // regex
+    "re-matches" => regexes::re_matches(args),
+    "re-find" => regexes::re_find(args),
+    "re-find-index" => regexes::re_find_index(args),
+    "re-find-all" => regexes::re_find_all(args),
     // lists
     "[]" => lists::new_list(args),
     "empty?" => lists::empty_ques(args),
@@ -203,6 +207,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "concat" => lists::concat(args),
     "range" => lists::range(args),
     "reverse" => lists::reverse(args),
+    "first" => lists::first(args),
     // maps
     "&{}" => maps::call_new_map(args),
     "assoc" => maps::assoc(args),

@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::primes::{Calcit, CalcitItems};
 
