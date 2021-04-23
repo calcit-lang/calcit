@@ -19,8 +19,8 @@ pub enum ImportRule {
 /// information extracted from snapshot
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgramFileData {
-  import_map: HashMap<String, ImportRule>,
-  defs: HashMap<String, Calcit>,
+  pub import_map: HashMap<String, ImportRule>,
+  pub defs: HashMap<String, Calcit>,
 }
 
 pub type ProgramCodeData = HashMap<String, ProgramFileData>;

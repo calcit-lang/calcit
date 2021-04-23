@@ -25,11 +25,11 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
           Calcit::Symbol(String::from("quote"), ns.to_string(), None),
           Calcit::Symbol(String::from(&s[1..]), ns.to_string(), None),
         ])),
-        '~' if s.starts_with("~@") && s.len() > 2 => Ok(Calcit::List(im::vector![
+        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(im::vector![
           Calcit::Symbol(String::from("~@"), ns.to_string(), None),
           Calcit::Symbol(String::from(&s[2..]), ns.to_string(), None),
         ])),
-        '~' if s.len() > 1 && !s.starts_with("~@") => Ok(Calcit::List(im::vector![
+        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(im::vector![
           Calcit::Symbol(String::from("~"), ns.to_string(), None),
           Calcit::Symbol(String::from(&s[1..]), ns.to_string(), None),
         ])),

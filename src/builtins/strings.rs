@@ -110,7 +110,7 @@ pub fn substr(xs: &CalcitItems) -> Result<Calcit, String> {
             Err(e) => return Err(format!("substr expected number, got: {}", e)),
           },
           Some(a) => return Err(format!("substr expected number, got: {}", a)),
-          None => s.len(),
+          None => s.chars().count(),
         };
         if from >= to {
           Ok(Calcit::Str(String::from("")))

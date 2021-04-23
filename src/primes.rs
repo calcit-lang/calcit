@@ -49,8 +49,8 @@ pub enum Calcit {
     CalcitItems, // body
   ),
   Fn(
-    String,
-    String,
+    String, // name
+    String, // ns
     NanoId,
     CalcitScope,
     CalcitItems, // args

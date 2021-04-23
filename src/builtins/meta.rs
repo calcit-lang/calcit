@@ -8,6 +8,7 @@ use crate::primes::{Calcit, CalcitItems};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
+static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 
 pub fn type_of(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
@@ -71,6 +72,20 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, String> {
   let _ = SYMBOL_INDEX.swap(0, Ordering::SeqCst);
   Ok(Calcit::Nil)
+}
+
+pub fn reset_js_gensym_index() {
+  let _ = JS_SYMBOL_INDEX.swap(0, Ordering::SeqCst);
+}
+
+// for emitting js
+pub fn js_gensym(name: &str) -> String {
+  let idx = SYMBOL_INDEX.fetch_add(1, Ordering::SeqCst);
+  let n = idx + 1; // use 1 as first value since previous implementation did this
+
+  let mut chunk = String::from(name);
+  chunk.push_str(&n.to_string());
+  chunk
 }
 
 pub fn get_calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, String> {
