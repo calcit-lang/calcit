@@ -167,7 +167,7 @@ pub fn ends_with_ques(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn get_char_code(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => {
-      if s.len() == 1 {
+      if s.chars().count() == 1 {
         match s.chars().next() {
           Some(c) => Ok(Calcit::Number((c as u32) as f64)),
           None => unreachable!("expected a character"),
@@ -199,7 +199,7 @@ pub fn pr_str(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 pub fn blank_ques(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Str(s)) => Ok(Calcit::Bool(s.is_empty())),
+    Some(Calcit::Str(s)) => Ok(Calcit::Bool(s.trim().is_empty())),
     Some(a) => Err(format!("blank? expected 1 string, got: {}", a)),
     None => Err(String::from("blank? expected 1 argument, got nothing")),
   }

@@ -16,6 +16,7 @@ jobs:
 
       - run: cargo test
       - run: cargo run calcit/compact.cirru
+      - run: cargo run calcit/snapshots/test.cirru
 
       - uses: katyo/publish-crates@v1
         with:

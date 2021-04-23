@@ -111,7 +111,7 @@ impl fmt::Display for Calcit {
       Calcit::Record(name, fields, values) => {
         f.write_str(&format!("(%{{}} {}", name))?;
         for idx in 0..fields.len() {
-          f.write_str(&format!("({} {})", fields[idx], values[idx]))?;
+          f.write_str(&format!(" ({} {})", fields[idx], values[idx]))?;
         }
         f.write_str(")")
       }

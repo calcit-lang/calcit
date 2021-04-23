@@ -114,6 +114,13 @@ pub fn calcit_to_edn(x: &Calcit) -> Edn {
       }
       Edn::Map(ys)
     }
+    Calcit::Record(name, fields, values) => {
+      let mut ys: Vec<Edn> = vec![];
+      for v in values {
+        ys.push(calcit_to_edn(v))
+      }
+      Edn::Record(name.clone(), fields.clone(), ys)
+    }
     Calcit::Fn(name, ..) => Edn::Str(format!("&fn {}", name)),
     Calcit::Proc(name) => Edn::Str(format!("&proc {}", name)),
     a => Edn::Str(format!("TODO {}", a)), // TODO more types to handle
