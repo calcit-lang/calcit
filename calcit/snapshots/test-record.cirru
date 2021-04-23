@@ -49,7 +49,7 @@
 
               assert=
                 keys p2
-                #{} 'position 'age 'name
+                [] |age |name |position
 
               assert-detect identity $ relevant-record? p1 p1
               assert-detect identity $ relevant-record? p1 p2
@@ -81,7 +81,7 @@
               assert= 3 $ count p1
               assert=
                 nth p1 1
-                [] 'name |Chen
+                [] |name |Chen
 
               assert= 21
                 get (update p1 :age inc) :age

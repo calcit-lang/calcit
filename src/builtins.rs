@@ -122,7 +122,7 @@ pub fn is_proc_name(s: &str) -> bool {
       // records
       | "new-record"
       | "&%{}"
-      | "make-record"
+      | "make-record" // TODO switch to (into-record xs r) ?
       | "get-record-name"
       | "turn-map"
       | "relevant-record?" // regexs
@@ -235,7 +235,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     // records
     "new-record" => records::new_record(args),
     "&%{}" => records::call_record(args),
-    "make-record" => records::make_record(args),
+    "make-record" => records::record_from_map(args), // TODO switch to (into-record xs r) ?
     "get-record-name" => records::get_record_name(args),
     "turn-map" => records::turn_map(args),
     "relevant-record?" => records::relevant_record_ques(args),

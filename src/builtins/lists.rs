@@ -29,7 +29,8 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::List(ys)) => Ok(Calcit::Number(ys.len() as f64)),
     Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.len() as f64)),
     Some(Calcit::Set(ys)) => Ok(Calcit::Number(ys.len() as f64)),
-    Some(Calcit::Str(s)) => Ok(Calcit::Number(s.len() as f64)),
+    Some(Calcit::Str(s)) => Ok(Calcit::Number(s.chars().count() as f64)),
+    Some(Calcit::Record(_name, fields, _)) => Ok(Calcit::Number(fields.len() as f64)),
     Some(a) => Err(format!("count expected some seq, got: {}", a)),
     None => Err(String::from("count expected 1 argument")),
   }
@@ -38,23 +39,36 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Nil), Some(Calcit::Number(_))) => Ok(Calcit::Nil),
-    (Some(Calcit::List(ys)), Some(Calcit::Number(n))) => {
-      let idx: usize = unsafe { n.to_int_unchecked() };
-      match ys.get(idx) {
+    (Some(Calcit::List(ys)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => match ys.get(idx) {
         Some(v) => Ok(v.clone()),
         None => Ok(Calcit::Nil),
-      }
-    }
-    (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => {
-      let idx: usize = unsafe { n.to_int_unchecked() };
-      match s.chars().nth(idx) {
+      },
+      Err(e) => Err(format!("nth expect usize, {}", e)),
+    },
+    (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => match s.chars().nth(idx) {
         Some(v) => Ok(Calcit::Str(v.to_string())),
         None => Ok(Calcit::Nil),
+      },
+      Err(e) => Err(format!("nth expect usize, {}", e)),
+    },
+    (Some(Calcit::Record(_name, fields, values)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        if idx < fields.len() {
+          Ok(Calcit::List(im::vector![
+            Calcit::Str(fields[idx].clone()),
+            values[idx].clone()
+          ]))
+        } else {
+          Ok(Calcit::Nil)
+        }
       }
-    }
+      Err(e) => Err(format!("nth expect usize, {}", e)),
+    },
     (Some(_), None) => Err(format!("nth expected a ordered seq and index, got: {:?}", xs)),
     (None, Some(_)) => Err(format!("nth expected a ordered seq and index, got: {:?}", xs)),
-    (_, _) => Err(String::from("nth expected 2 argument")),
+    (_, _) => Err(format!("nth expected 2 argument, got: {:?}", xs)),
   }
 }
 
@@ -341,6 +355,10 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Set(ys)) => match ys.iter().next() {
       // TODO first element of a set.. need to be more sure...
       Some(v) => Ok(v.clone()),
+      None => Ok(Calcit::Nil),
+    },
+    Some(Calcit::Str(s)) => match s.chars().next() {
+      Some(c) => Ok(Calcit::Str(c.to_string())),
       None => Ok(Calcit::Nil),
     },
     Some(a) => Err(format!("first expected a list, got: {}", a)),

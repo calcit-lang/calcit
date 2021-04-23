@@ -103,7 +103,7 @@
 
             let
                 Person $ new-record 'Person :name :age
-                edn-demo "|%{} Person (age 23)\n  name |Chen"
+                edn-demo "|%{} Person (age 23) (name |Chen)"
               assert=
                 pr-str $ %{} Person (:name |Chen) (:age 23)
                 , "|(%{} Person (age 23) (name |Chen))"
@@ -143,17 +143,17 @@
           fn ()
             log-title "|Test regular expression"
 
-            assert= true $ re-matches |\d |2
-            assert= true $ re-matches |\d+ |23
-            assert= false $ re-matches |\d |a
+            assert= true $ re-matches |2 |\d
+            assert= true $ re-matches |23 |\d+
+            assert= false $ re-matches |a |\d
 
-            assert= 1 $ re-find-index |\d |a1
-            assert= -1 $ re-find-index |\d |aa
+            assert= 1 $ re-find-index |a1 |\d
+            assert= -1 $ re-find-index |aa |\d
 
-            assert= ([] |1 |2 |3) $ re-find-all |\d |123
-            assert= ([] |123) $ re-find-all |\d+ |123
-            assert= ([] |1 |2 |3) $ re-find-all |\d+ |1a2a3
-            assert= ([] |1 |2 |34) $ re-find-all |\d+ |1a2a34
+            assert= ([] |1 |2 |3) $ re-find-all |123 |\d
+            assert= ([] |123) $ re-find-all |123 |\d+
+            assert= ([] |1 |2 |3) $ re-find-all |1a2a3 |\d+
+            assert= ([] |1 |2 |34) $ re-find-all |1a2a34 |\d+
 
         |test-whitespace $ quote
           fn ()
