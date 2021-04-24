@@ -36,7 +36,7 @@ pub fn preprocess_ns_def(
 
           push_call_stack(ns, def, StackKind::Fn, &Some(code.clone()), &im::vector![]);
 
-          let (resolved_code, resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, program_code)?;
+          let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, program_code)?;
           let v = if is_fn_or_macro(&resolved_code) {
             match runner::evaluate_expr(&resolved_code, &im::HashMap::new(), ns, program_code) {
               Ok(ret) => ret,
@@ -221,7 +221,7 @@ fn process_list_call(
     (_, _) => {
       let mut ys = im::vector![head.clone()];
       for a in args {
-        let (form, v) = preprocess_expr(&a, scope_defs, file_ns, program_code)?;
+        let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, program_code)?;
         ys.push_back(form);
       }
       Ok((Calcit::List(ys), None))
@@ -239,7 +239,7 @@ pub fn preprocess_each_items(
 ) -> Result<Calcit, String> {
   let mut xs: CalcitItems = im::vector![head.clone()];
   for a in args {
-    let (form, v) = preprocess_expr(a, scope_defs, file_ns, program_code)?;
+    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, program_code)?;
     xs.push_back(form);
   }
   Ok(Calcit::List(xs))
@@ -275,7 +275,7 @@ pub fn preprocess_defn(
             }
           }
           _ => {
-            let (form, v) = preprocess_expr(a, &body_defs, file_ns, program_code)?;
+            let (form, _v) = preprocess_expr(a, &body_defs, file_ns, program_code)?;
             xs.push_back(form);
           }
         }
@@ -309,7 +309,7 @@ pub fn preprocess_call_let(
       (Calcit::Symbol(sym, ..), a) => {
         check_symbol(sym, program_code);
         body_defs.insert(sym.clone());
-        let (form, v) = preprocess_expr(a, &body_defs, file_ns, program_code)?;
+        let (form, _v) = preprocess_expr(a, &body_defs, file_ns, program_code)?;
         Calcit::List(im::vector![ys[0].clone(), form])
       }
       (a, b) => return Err(format!("invalid pair for &let binding: {} {}", a, b)),

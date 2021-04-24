@@ -14,6 +14,20 @@ pub fn parse_cli<'a>() -> clap::ArgMatches<'a> {
         .takes_value(false),
     )
     .arg(
+      clap::Arg::with_name("emit-js")
+        .help("emit js rather than interpreting")
+        .default_value("false")
+        .long("emit-js")
+        .takes_value(false),
+    )
+    .arg(
+      clap::Arg::with_name("emit-ir")
+        .help("emit JSON representation of program to program-ir.json")
+        .default_value("false")
+        .long("emit-ir")
+        .takes_value(false),
+    )
+    .arg(
       clap::Arg::with_name("eval")
         .help("eval a snippet")
         .short("e")

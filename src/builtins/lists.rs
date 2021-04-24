@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-use crate::builtins::math::{f64_to_i32, f64_to_usize};
+use crate::builtins::math::f64_to_usize;
 use crate::primes::{Calcit, CalcitItems, CalcitScope};
 
 use crate::builtins;

@@ -10,9 +10,14 @@
           app.lib :refer $ [] f3
           app.macro :refer $ [] add-num add-by-2
       :defs $ {}
+        |call-macro $ quote
+          defmacro call-macro (x0 & xs)
+            quasiquote $ &{} :a (~ x0) :b
+              [] $ ~@ xs
+        |call-3 $ quote
+          defn call-3 (a b c) (echo "\"a is:" a) (echo "\"b is:" b) (echo "\"c is:" c)
         |main! $ quote
           defn main! () (echo "\"demo")
-            echo $ assert= 3 (&+ 1 2)
             echo $ &+ 2 2
             echo "\"f1" $ f1
             echo-values 1 "\"1" :a $ [] 1 2
@@ -46,19 +51,15 @@
               macroexpand $ quote (add-more 0 3 8)
             echo "\"expand v:" $ add-more 0 3 8
             echo "\"call and call" $ add-by-2 10
+            ; echo $ macroexpand (assert= 1 2)
             test-args
-        |f1 $ quote
-          defn f1 () $ echo "\"calling f1"
+        |call-many $ quote
+          defn call-many (x0 & xs) (echo "\"many...") (echo "\"x0" x0) (echo "\"xs" xs)
         |rec-sum $ quote
           defn rec-sum (acc xs)
             if (empty? xs) acc $ recur
               &+ acc $ nth xs 0
               rest xs
-        |add-more $ quote
-          defmacro add-more (acc x times)
-            if (&< times 1) acc $ recur
-              quasiquote $ &+ (~ x) (~ acc)
-              , x (&- times 1)
         |test-args $ quote
           defn test-args ()
             call-3 & $ [] 1 2 3
@@ -66,14 +67,15 @@
             call-many 1 2
             call-many 1 2 3
             echo $ macroexpand (call-macro 11 12 13)
-        |call-3 $ quote
-          defn call-3 (a b c) (echo "\"a is:" a) (echo "\"b is:" b) (echo "\"c is:" c)
-        |call-many $ quote
-          defn call-many (x0 & xs) (echo "\"many...") (echo "\"x0" x0) (echo "\"xs" xs)
-        |call-macro $ quote
-          defmacro call-macro (x0 & xs)
-            quasiquote $ &{} :a (~ x0) :b
-              [] $ ~@ xs
+        |f1 $ quote
+          defn f1 () $ echo "\"calling f1"
+        |reload! $ quote
+          defn reload! $
+        |add-more $ quote
+          defmacro add-more (acc x times)
+            if (&< times 1) acc $ recur
+              quasiquote $ &+ (~ x) (~ acc)
+              , x (&- times 1)
       :proc $ quote ()
       :configs $ {}
     |app.lib $ {}

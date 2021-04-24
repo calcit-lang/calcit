@@ -7,13 +7,15 @@ extern crate nanoid;
 mod builtins;
 mod call_stack;
 mod cli_args;
+mod codegen;
 mod data;
 mod primes;
 mod program;
 mod runner;
 mod snapshot;
+mod util;
 
-use call_stack::StackKind;
+use codegen::emit_js::emit_js;
 use dirs::home_dir;
 use primes::Calcit;
 use std::fs;
@@ -23,7 +25,6 @@ use std::time::Instant;
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
   let cli_matches = cli_args::parse_cli();
-  let started_time = Instant::now();
 
   // let eval_once = cli_matches.is_present("once");
   // println!("once: {}", eval_once);
@@ -66,10 +67,31 @@ fn main() -> Result<(), String> {
 
   let program_code = program::extract_program_data(&snapshot)?;
 
-  let (init_ns, init_def) = extract_ns_def(&snapshot.configs.init_fn)?;
+  if cli_matches.is_present("emit-js") {
+    emit_js(&program_code, &snapshot.configs.init_fn); // TODO entry ns
+  }
+
+  run_program(&snapshot.configs.init_fn, &snapshot.configs.reload_fn, &program_code)
+}
+
+fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCodeData) -> Result<(), String> {
+  let started_time = Instant::now();
+
+  let (init_ns, init_def) = extract_ns_def(init_fn)?;
+  let (reload_ns, reload_def) = extract_ns_def(reload_fn)?;
 
   // preprocess to init
   match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code) {
+    Ok(_) => (),
+    Err(failure) => {
+      println!("\nfailed, {}", failure);
+      call_stack::display_stack(&failure);
+      return Err(failure);
+    }
+  }
+
+  // preprocess to reload
+  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed, {}", failure);

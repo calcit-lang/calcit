@@ -1,4 +1,3 @@
-use crate::primes;
 use crate::primes::{Calcit, CalcitItems};
 use rand::prelude::*;
 
