@@ -5,7 +5,7 @@ use crate::builtins::{is_proc_name, is_syntax_name};
 use crate::call_stack;
 use crate::call_stack::{push_call_stack, StackKind};
 use crate::primes::Calcit;
-use crate::primes::{CalcitItems, CalcitScope, CrListWrap, CORE_NS};
+use crate::primes::{CalcitItems, CalcitScope, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
 
 pub fn evaluate_expr(
@@ -21,7 +21,10 @@ pub fn evaluate_expr(
     Calcit::Bool(_) => Ok(expr.clone()),
     Calcit::Number(_) => Ok(expr.clone()),
     Calcit::Symbol(s, ..) if s == "&" => Ok(expr.clone()),
-    Calcit::Symbol(s, ns, _resolved) => evaluate_symbol(&s, scope, &ns, program_code),
+    Calcit::Symbol(s, ns, resolved) => match resolved {
+      Some(ResolvedDef(r_ns, r_def)) => evaluate_symbol(&r_def, scope, &r_ns, program_code),
+      _ => evaluate_symbol(&s, scope, &ns, program_code),
+    },
     Calcit::Keyword(_) => Ok(expr.clone()),
     Calcit::Str(_) => Ok(expr.clone()),
     // CalcitRef(Calcit), // TODO
@@ -122,7 +125,7 @@ pub fn evaluate_symbol(
         Ok(v) => Ok(v),
         Err(e) => Err(e),
       },
-      None => Err(String::from("unknown ns target")),
+      None => Err(format!("unknown ns target: {}/{}", ns_part, def_part)),
     },
     None => {
       if is_syntax_name(sym) {

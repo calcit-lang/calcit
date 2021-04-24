@@ -18,6 +18,15 @@ jobs:
       - run: cargo run calcit/compact.cirru
       - run: cargo run calcit/snapshots/test.cirru
 
+      - name: "try js"
+        run: >
+          yarn
+          && yarn tsc
+          && cargo run calcit/snapshots/test.cirru --emit-js
+          && ln -s ../../ node_modules/@calcit/procs
+          && cp -v scripts/main.js js-out/
+          && target=node yarn webpack && node js-out/bundle.js
+
       - uses: katyo/publish-crates@v1
         with:
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}

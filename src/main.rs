@@ -15,6 +15,7 @@ mod runner;
 mod snapshot;
 mod util;
 
+use builtins::effects;
 use codegen::emit_js::emit_js;
 use dirs::home_dir;
 use primes::Calcit;
@@ -81,7 +82,7 @@ fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
   let (reload_ns, reload_def) = extract_ns_def(reload_fn)?;
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed, {}", failure);
@@ -91,7 +92,7 @@ fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code) {
+  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed, {}", failure);
@@ -129,8 +130,10 @@ fn run_codegen(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
   let (init_ns, init_def) = extract_ns_def(init_fn)?;
   let (reload_ns, reload_def) = extract_ns_def(reload_fn)?;
 
+  effects::modify_cli_running_mode(effects::CliRunningMode::Js)?;
+
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed, {}", failure);
@@ -140,7 +143,7 @@ fn run_codegen(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code) {
+  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed, {}", failure);
