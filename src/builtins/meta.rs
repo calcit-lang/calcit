@@ -2,7 +2,6 @@ use crate::builtins::math::f64_to_usize;
 use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
-use crate::data::json;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems};
 use std::sync::atomic::{AtomicUsize, Ordering};

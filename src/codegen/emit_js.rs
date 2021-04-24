@@ -9,14 +9,10 @@ use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems, SymbolResolved, SymbolResolved::*};
 use crate::program;
-use crate::util::string::matchesJsVar;
-
-const C_LINE: &str = "\n";
-const C_CURLYL: &str = "{";
-const C_CURLYR: &str = "}";
+use crate::util::string::matches_js_var;
 
 // track if it's the first compilation
-static first_compilation: AtomicBool = AtomicBool::new(true);
+static FIRST_COMPILATION: AtomicBool = AtomicBool::new(true);
 
 #[derive(Debug, PartialEq, Clone)]
 struct CollectedImportItem {
@@ -27,10 +23,10 @@ struct CollectedImportItem {
 
 lazy_static! {
   // caches program data for detecting incremental changes of libs
-  static ref global_previous_program_caches: Mutex<HashMap<String, HashSet<String>>> = Mutex::new(HashMap::new());
+  static ref GLOBAL_PREVIOUS_PROGRAM_CACHES: Mutex<HashMap<String, HashSet<String>>> = Mutex::new(HashMap::new());
 
   // TODO mutable way of collect things of a single tile
-  static ref global_collected_imports: Mutex <HashMap<String, CollectedImportItem>> = Mutex::new(HashMap::new());
+  static ref GLOBAL_COLLECTED_IMPORTS: Mutex <HashMap<String, CollectedImportItem>> = Mutex::new(HashMap::new());
 }
 
 fn to_js_import_name(ns: &str, mjs_mode: bool) -> String {
@@ -44,7 +40,7 @@ fn to_js_import_name(ns: &str, mjs_mode: bool) -> String {
 }
 
 fn to_js_file_name(ns: &str, mjs_mode: bool) -> String {
-  let mut xs: String = String::from("");
+  let mut xs: String = String::from(ns);
   if mjs_mode {
     xs.push_str(".mjs");
   } else {
@@ -64,52 +60,40 @@ fn escape_var(name: &str) -> String {
   if has_ns_part(name) {
     unreachable!(format!("Invalid variable name `{}`, use `escape_ns_var` instead", name));
   }
-
-  if name == "if" {
-    return String::from("_IF_");
+  match name {
+    "if" => String::from("_IF_"),
+    "do" => String::from("_DO_"),
+    "else" => String::from("_ELSE_"),
+    "let" => String::from("_LET_"),
+    "case" => String::from("_CASE_"),
+    "-" => String::from("_SUB_"),
+    _ => name
+      .replace("-", "_")
+      // dot might be part of variable `\.`. not confused with syntax
+      .replace(".", "_DOT_")
+      .replace("?", "_QUES_")
+      .replace("+", "_ADD_")
+      .replace("^", "_CRT_")
+      .replace("*", "_STAR_")
+      .replace("&", "_AND_")
+      .replace("{}", "_MAP_")
+      .replace("[]", "_LIST_")
+      .replace("{", "_CURL_")
+      .replace("}", "_CURR_")
+      .replace("'", "_SQUO_")
+      .replace("[", "_SQRL_")
+      .replace("]", "_SQRR_")
+      .replace("!", "_BANG_")
+      .replace("%", "_PCT_")
+      .replace("/", "_SLSH_")
+      .replace("=", "_EQ_")
+      .replace(">", "_GT_")
+      .replace("<", "_LT_")
+      .replace(":", "_COL_")
+      .replace(";", "_SCOL_")
+      .replace("#", "_SHA_")
+      .replace("\\", "_BSL_"),
   }
-  if name == "do" {
-    return String::from("_DO_");
-  }
-  if name == "else" {
-    return String::from("_ELSE_");
-  }
-  if name == "let" {
-    return String::from("_LET_");
-  }
-  if name == "case" {
-    return String::from("_CASE_");
-  }
-  if name == "-" {
-    return String::from("_SUB_");
-  }
-
-  return name
-    .replace("-", "_")
-    // dot might be part of variable `\.`. not confused with syntax
-    .replace(".", "_DOT_")
-    .replace("?", "_QUES_")
-    .replace("+", "_ADD_")
-    .replace("^", "_CRT_")
-    .replace("*", "_STAR_")
-    .replace("&", "_AND_")
-    .replace("{}", "_MAP_")
-    .replace("[]", "_LIST_")
-    .replace("{", "_CURL_")
-    .replace("}", "_CURR_")
-    .replace("'", "_SQUO_")
-    .replace("[", "_SQRL_")
-    .replace("]", "_SQRR_")
-    .replace("!", "_BANG_")
-    .replace("%", "_PCT_")
-    .replace("/", "_SLSH_")
-    .replace("=", "_EQ_")
-    .replace(">", "_GT_")
-    .replace("<", "_LT_")
-    .replace(":", "_COL_")
-    .replace(";", "_SCOL_")
-    .replace("#", "_SHA_")
-    .replace("\\", "_BSL_");
 }
 
 fn escape_ns(name: &str) -> String {
@@ -126,46 +110,56 @@ fn escape_ns_var(name: &str, ns: &str) -> String {
   if pieces.len() != 2 {
     unreachable!(format!("Expected format of ns/def {}", name))
   }
-  let nsPart = pieces[0];
-  let defPart = pieces[1];
-  if nsPart == "js" {
-    defPart.to_string()
-  } else if defPart == "@" {
+  let ns_part = pieces[0];
+  let def_part = pieces[1];
+  if ns_part == "js" {
+    def_part.to_string()
+  } else if def_part == "@" {
     // TODO special syntax for js, using module directly, need a better solution
     escape_ns(ns)
   } else {
-    format!("{}.{}", escape_ns(ns), escape_var(&defPart))
+    format!("{}.{}", escape_ns(ns), escape_var(&def_part))
   }
 }
 
 // tell compiler to handle namespace code generation
-fn is_builtIn_js_proc(name: &str) -> bool {
-  match name {
+fn is_builtin_js_proc(name: &str) -> bool {
+  matches!(
+    name,
     "aget"
-    | "aset"
-    | "extract-cirru-edn"
-    | "to-cirru-edn"
-    | "to-js-data"
-    | "to-calcit-data"
-    | "printable"
-    | "instance?"
-    | "timeout-call"
-    | "load-console-formatter!" => true,
-    _ => false,
-  }
+      | "aset"
+      | "extract-cirru-edn"
+      | "to-cirru-edn"
+      | "to-js-data"
+      | "to-calcit-data"
+      | "printable"
+      | "instance?"
+      | "timeout-call"
+      | "load-console-formatter!"
+  )
 }
 
 // code generated from calcit.core.cirru may not be faster enough,
 // possible way to use code from calcit.procs.ts
-fn is_preferredJsProc(name: &str) -> bool {
-  match name {
-    "number?" | "keyword?" | "map?" | "nil?" | "list?" | "set?" | "string?" | "fn?" | "bool?" | "atom?" | "record?"
-    | "starts-with?" => true,
-    _ => false,
-  }
+fn is_preferred_js_proc(name: &str) -> bool {
+  matches!(
+    name,
+    "number?"
+      | "keyword?"
+      | "map?"
+      | "nil?"
+      | "list?"
+      | "set?"
+      | "string?"
+      | "fn?"
+      | "bool?"
+      | "atom?"
+      | "record?"
+      | "starts-with?"
+  )
 }
 
-fn escapeCirruStr(s: &str) -> String {
+fn escape_cirru_str(s: &str) -> String {
   let mut result = String::from("\"");
   for c in s.chars() {
     match c {
@@ -184,24 +178,24 @@ fn escapeCirruStr(s: &str) -> String {
   result
 }
 
-fn quote_to_js(xs: &Calcit, varPrefix: &str) -> String {
+fn quote_to_js(xs: &Calcit, var_prefix: &str) -> String {
   match xs {
-    Calcit::Symbol(s, ..) => format!("new {}CrDataSymbol({})", varPrefix, escapeCirruStr(&s)),
-    Calcit::Str(s) => escapeCirruStr(&s),
+    Calcit::Symbol(s, ..) => format!("new {}CrDataSymbol({})", var_prefix, escape_cirru_str(&s)),
+    Calcit::Str(s) => escape_cirru_str(&s),
     Calcit::Bool(b) => b.to_string(),
     Calcit::Number(n) => n.to_string(),
     Calcit::Nil => String::from("null"),
     Calcit::List(ys) => {
       let mut chunk = String::from("");
       for y in ys {
-        if chunk.len() > 0 {
+        if !chunk.is_empty() {
           chunk.push_str(", ");
         }
-        chunk.push_str(&quote_to_js(y, varPrefix));
+        chunk.push_str(&quote_to_js(y, var_prefix));
       }
-      format!("new {}CrDataList([{}])", varPrefix, chunk)
+      format!("new {}CrDataList([{}])", var_prefix, chunk)
     }
-    Calcit::Keyword(s) => format!("{}kwd({})", varPrefix, escapeCirruStr(&s)),
+    Calcit::Keyword(s) => format!("{}kwd({})", var_prefix, escape_cirru_str(&s)),
     _ => unreachable!(format!("Unpexpected data in quote for js: {}", xs)),
   }
 }
@@ -214,21 +208,21 @@ fn make_let_with_wrapper(left: &str, right: &str, body: &str) -> String {
   format!("(function __let__(){{ \nlet {} = {};\n {} }})()", left, right, body)
 }
 
-fn makeFnWrapper(body: &str) -> String {
+fn make_fn_wrapper(body: &str) -> String {
   format!("(function __fn__(){{\n{}\n}})()", body)
 }
 
-fn toJsCode(xs: &Calcit, ns: &str, localDefs: &HashSet<String>) -> String {
-  let varPrefix = if ns == "calcit.core" { "" } else { "$calcit." };
+fn to_js_code(xs: &Calcit, ns: &str, local_defs: &HashSet<String>) -> String {
+  let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
   match xs {
-    Calcit::Symbol(s, def_ns, resolved) => gen_symbol_code(s, &def_ns, resolved, ns, xs, localDefs),
-    Calcit::Str(s) => escapeCirruStr(&s),
+    Calcit::Symbol(s, def_ns, resolved) => gen_symbol_code(s, &def_ns, resolved, ns, xs, local_defs),
+    Calcit::Str(s) => escape_cirru_str(&s),
     Calcit::Bool(b) => b.to_string(),
     Calcit::Number(n) => n.to_string(),
     Calcit::Nil => String::from("null"),
-    Calcit::Keyword(s) => format!("{}kwd(\"{}\")", varPrefix, s.escape_debug()),
+    Calcit::Keyword(s) => format!("{}kwd(\"{}\")", var_prefix, s.escape_debug()),
     Calcit::List(ys) => {
-      if ys.len() == 0 {
+      if ys.is_empty() {
         println!("[Warn] Unpexpected empty list");
         return String::from("()");
       }
@@ -243,81 +237,84 @@ fn toJsCode(xs: &Calcit, ns: &str, localDefs: &HashSet<String>) -> String {
                 println!("{}", xs);
                 panic!("need branches for if")
               }
-              let falseBranch = if body.len() >= 3 {
-                toJsCode(&body[2], ns, localDefs)
+              let false_branch = if body.len() >= 3 {
+                to_js_code(&body[2], ns, local_defs)
               } else {
                 String::from("null")
               };
               format!(
                 "( {} ? {} : {} )",
-                toJsCode(&body[0], ns, localDefs),
-                toJsCode(&body[1], ns, localDefs),
-                falseBranch
+                to_js_code(&body[0], ns, local_defs),
+                to_js_code(&body[1], ns, local_defs),
+                false_branch
               )
             }
-            "&let" => gen_let_code(&body, localDefs, &xs, ns),
+            "&let" => gen_let_code(&body, local_defs, &xs, ns),
             ";" => format!("(/* {} */ null)", Calcit::List(body)),
             "do" => {
               // TODO use nil
-              let mut bodyPart: String = String::from("");
+              let mut body_part: String = String::from("");
               for (idx, x) in body.iter().enumerate() {
                 if idx > 0 {
-                  bodyPart.push_str(";\n");
+                  body_part.push_str(";\n");
                 }
                 if idx == body.len() - 1 {
-                  bodyPart.push_str("return ");
-                  bodyPart.push_str(&toJsCode(&x, ns, localDefs));
+                  body_part.push_str("return ");
+                  body_part.push_str(&to_js_code(&x, ns, local_defs));
                 } else {
-                  bodyPart.push_str(&toJsCode(&x, ns, localDefs));
+                  body_part.push_str(&to_js_code(&x, ns, local_defs));
                 }
               }
-              return makeFnWrapper(&bodyPart);
+              make_fn_wrapper(&body_part)
             }
 
             "quote" => {
-              if body.len() < 1 {
-                panic!(format!("Unpexpected empty body, {}", xs));
+              if body.is_empty() {
+                println!("Unpexpected empty body, {}", xs);
+                panic!("Unpexpected empty body");
               }
-              return quote_to_js(&body[0], varPrefix);
+              quote_to_js(&body[0], var_prefix)
             }
             "defatom" => {
               if body.len() != 2 {
-                panic!(format!("defatom expects 2 nodes, {}", xs))
+                println!("defatom expects 2 nodes, {}", xs);
+                panic!("defatom expects 2 nodes")
               }
-              let atomName = body[0].clone();
-              let atomExpr = body[1].clone();
-              match &atomName {
+              let atom_name = body[0].clone();
+              let atom_expr = body[1].clone();
+              match &atom_name {
                 Calcit::Symbol(sym, ..) => {
                   // let _name = escape_var(sym); // TODO
-                  let atomPath = format!("\"{}\"", format!("{}/{}", ns, sym.clone()).escape_debug());
+                  let atom_path = format!("\"{}\"", format!("{}/{}", ns, sym.clone()).escape_debug());
                   format!(
                     "\n({}peekDefatom({}) ?? {}defatom({}, {}))\n",
-                    &varPrefix,
-                    &atomPath,
-                    &varPrefix,
-                    &atomPath,
-                    &toJsCode(&atomExpr, ns, localDefs)
+                    &var_prefix,
+                    &atom_path,
+                    &var_prefix,
+                    &atom_path,
+                    &to_js_code(&atom_expr, ns, local_defs)
                   )
                 }
-                _ => panic!(format!("expects atomName in symbol, {}", xs)),
+                _ => {
+                  println!("expects atomName in symbol, {}", xs);
+                  panic!("expects atomName in symbol")
+                }
               }
             }
 
             "defn" => {
               if body.len() < 2 {
-                panic!(format!(
-                  "Expected name, args, code for gennerating func, too short: {}",
-                  xs
-                ))
+                println!("Expected name, args, code for gennerating func, too short: {}", xs);
+                panic!("Expected name, args, code for gennerating func, too short");
               }
-              let funcName = body[0].clone();
-              let funcArgs = body[1].clone();
-              let funcBody = body.clone().slice(2..);
-              match (funcName, funcArgs) {
+              let func_name = body[0].clone();
+              let func_args = body[1].clone();
+              let func_body = body.slice(2..);
+              match (func_name, func_args) {
                 (Calcit::Symbol(sym, ..), Calcit::List(ys)) => {
-                  return genJsFunc(&sym, &ys, &funcBody, ns, false, localDefs)
+                  gen_js_func(&sym, &ys, &func_body, ns, false, local_defs)
                 }
-                (a, b) => panic!(format!("expected symbol and list, got: {} {}", a, b)),
+                (a, b) => panic!("expected symbol and list, got: {} {}", a, b),
               }
             }
 
@@ -325,50 +322,51 @@ fn toJsCode(xs: &Calcit, ns: &str, localDefs: &HashSet<String>) -> String {
             "quote-replace" => format!("/* Unpexpected quote-replace {} */", xs),
             "raise" => {
               // not core syntax, but treat as macro for better debugging experience
-              if body.len() < 1 || body.len() > 2 {
-                panic!(format!("expected 1~2 arguments: {:?}", body))
+              if body.is_empty() || body.len() > 2 {
+                println!("expected 1~2 arguments: {:?}", body);
+                panic!("expected 1~2 arguments:")
               }
-              let message: String = toJsCode(&body[0], ns, localDefs);
+              let message: String = to_js_code(&body[0], ns, local_defs);
               let mut data = String::from("null");
               if body.len() >= 2 {
-                data = toJsCode(&body[1], ns, localDefs);
+                data = to_js_code(&body[1], ns, local_defs);
               }
-              let errVar = js_gensym("err");
-              makeFnWrapper(&format!(
+              let err_var = js_gensym("err");
+              make_fn_wrapper(&format!(
                 "let {} = new Error({});\n {}.data = {};\n throw {};",
-                errVar, message, errVar, data, errVar
+                err_var, message, err_var, data, err_var
               ))
             }
             "try" => {
               if body.len() != 2 {
-                panic!(format!("expected 2 argument, {:?}", body))
+                panic!("expected 2 argument, {:?}", body)
               }
-              let code = toJsCode(&body[0], ns, localDefs);
-              let errVar = js_gensym("errMsg");
-              let handler = toJsCode(&body[1], ns, localDefs);
-              makeFnWrapper(&format!(
+              let code = to_js_code(&body[0], ns, local_defs);
+              let err_var = js_gensym("errMsg");
+              let handler = to_js_code(&body[1], ns, local_defs);
+              make_fn_wrapper(&format!(
                 "try {{\nreturn {}\n}} catch ({}) {{\nreturn ({})({}.toString())\n}}",
-                code, errVar, handler, errVar
+                code, err_var, handler, err_var
               ))
             }
             "echo" | "println" => {
               // not core syntax, but treat as macro for better debugging experience
               let args = ys.clone().slice(1..);
-              let argsCode = genArgsCode(&args, ns, localDefs);
-              format!("console.log({}printable({}))", varPrefix, argsCode)
+              let args_code = gen_args_code(&args, ns, local_defs);
+              format!("console.log({}printable({}))", var_prefix, args_code)
             }
             "exists?" => {
               // not core syntax, but treat as macro for availability
               if body.len() != 1 {
-                panic!(format!("expected 1 argument, {}", xs))
+                panic!("expected 1 argument, {}", xs)
               }
               let item = body[0].clone();
               match &item {
                 Calcit::Symbol(_sym, ..) => {
-                  let target = toJsCode(&item, ns, localDefs);
+                  let target = to_js_code(&item, ns, local_defs);
                   return format!("(typeof {} !== 'undefined')", target);
                 }
-                _ => panic!(format!("expected a symbol, got: {}", xs)),
+                _ => panic!("expected a symbol, got: {}", xs),
               }
             }
             "new" => {
@@ -377,61 +375,61 @@ fn toJsCode(xs: &Calcit, ns: &str, localDefs: &HashSet<String>) -> String {
               }
               let ctor = ys[1].clone();
               let args = ys.clone().slice(1..);
-              let argsCode = genArgsCode(&args, ns, localDefs);
-              format!("new {}({})", toJsCode(&ctor, ns, localDefs), argsCode)
+              let args_code = gen_args_code(&args, ns, local_defs);
+              format!("new {}({})", to_js_code(&ctor, ns, local_defs), args_code)
             }
             "instance?" => {
               if ys.len() != 3 {
-                panic!(format!("`instance?` takes a constructor and a value, {}", xs));
+                panic!("`instance?` takes a constructor and a value, {}", xs);
               }
               let ctor = ys[1].clone();
               let v = ys[2].clone();
 
               format!(
                 "({} instanceof {})",
-                toJsCode(&v, ns, localDefs),
-                toJsCode(&ctor, ns, localDefs)
+                to_js_code(&v, ns, local_defs),
+                to_js_code(&ctor, ns, local_defs)
               )
             }
             "set!" => {
               if ys.len() != 3 {
-                panic!(format!("set! takes a operand and a value, {}", xs));
+                panic!("set! takes a operand and a value, {}", xs);
               }
               format!(
                 "{} = {}",
-                toJsCode(&ys[1], ns, localDefs),
-                toJsCode(&ys[2], ns, localDefs)
+                to_js_code(&ys[1], ns, local_defs),
+                to_js_code(&ys[2], ns, local_defs)
               )
             }
             _ => {
               // TODO
               let token = s;
-              if token.len() > 2 && &token[0..1] == ".-" && matchesJsVar(&token[2..]) {
+              if token.len() > 2 && &token[0..1] == ".-" && matches_js_var(&token[2..]) {
                 let name = token[2..].to_string();
                 if ys.len() != 2 {
-                  panic!(format!("property accessor takes only 1 argument, {:?}", xs));
+                  panic!("property accessor takes only 1 argument, {:?}", xs);
                 }
                 let obj = ys[1].clone();
-                format!("{}.{}", toJsCode(&obj, ns, localDefs), name)
-              } else if token.len() > 1 && token.chars().next().unwrap() == '.' && matchesJsVar(&token[1..]) {
+                format!("{}.{}", to_js_code(&obj, ns, local_defs), name)
+              } else if token.len() > 1 && token.starts_with('.') && matches_js_var(&token[1..]) {
                 let name: String = token[1..].to_string();
                 if ys.len() < 2 {
-                  panic!(format!("property accessor takes at least 1 argument, {:?}", xs));
+                  panic!("property accessor takes at least 1 argument, {:?}", xs);
                 }
                 let obj = ys[1].clone();
                 let args = ys.clone().slice(2..);
-                let argsCode = genArgsCode(&args, ns, localDefs);
-                format!("{}.{}({})", toJsCode(&obj, ns, localDefs), name, argsCode)
+                let args_code = gen_args_code(&args, ns, local_defs);
+                format!("{}.{}({})", to_js_code(&obj, ns, local_defs), name, args_code)
               } else {
-                let argsCode = genArgsCode(&body, ns, &localDefs);
-                format!("{}({})", toJsCode(&head, ns, localDefs), argsCode)
+                let args_code = gen_args_code(&body, ns, &local_defs);
+                format!("{}({})", to_js_code(&head, ns, local_defs), args_code)
               }
             }
           }
         }
         _ => {
-          let argsCode = genArgsCode(&body, ns, &localDefs);
-          format!("{}({})", toJsCode(&head, ns, localDefs), argsCode)
+          let args_code = gen_args_code(&body, ns, &local_defs);
+          format!("{}({})", to_js_code(&head, ns, local_defs), args_code)
         }
       }
     }
@@ -445,23 +443,23 @@ fn gen_symbol_code(
   resolved: &Option<primes::SymbolResolved>,
   ns: &str,
   xs: &Calcit,
-  localDefs: &HashSet<String>,
+  local_defs: &HashSet<String>,
 ) -> String {
-  let varPrefix = if ns == "calcit.core" { "" } else { "$calcit." };
+  let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
   if has_ns_part(s) {
-    let nsPart = s.split("/").collect::<Vec<&str>>()[0]; // TODO
-    if nsPart == "js" {
-      return escape_ns_var(s, "js");
+    let ns_part = s.split('/').collect::<Vec<&str>>()[0]; // TODO
+    if ns_part == "js" {
+      escape_ns_var(s, "js")
     } else {
       // TODO ditry code
       match &resolved {
         Some(ResolvedDef(r_ns, _r_def)) => {
-          let collected_imports = &mut global_collected_imports.lock().unwrap();
+          let collected_imports = &mut GLOBAL_COLLECTED_IMPORTS.lock().unwrap();
           if collected_imports.contains_key(r_ns) {
             let prev = collected_imports[r_ns].clone();
             if (!prev.just_ns) || &prev.ns != r_ns {
               println!("conflicted imports: {:?} {:?}", prev, resolved);
-              panic!(format!("Conflicted implicit ns import, {:?}", xs));
+              panic!("Conflicted implicit ns import, {:?}", xs);
             }
           } else {
             collected_imports.insert(
@@ -473,28 +471,28 @@ fn gen_symbol_code(
               },
             );
           }
-          return escape_ns_var(s, r_ns);
+          escape_ns_var(s, r_ns)
         }
         Some(ResolvedLocal) => panic!("TODO"),
-        None => panic!(format!("Expected symbol with ns being resolved: {:?}", xs)),
+        None => panic!("Expected symbol with ns being resolved: {:?}", xs),
       }
     }
-  } else if is_builtIn_js_proc(s) {
-    return format!("{}{}", varPrefix, escape_var(s));
-  } else if is_local(resolved) && localDefs.contains(s) {
-    return escape_var(s);
+  } else if is_builtin_js_proc(s) {
+    return format!("{}{}", var_prefix, escape_var(s));
+  } else if matches!(resolved, Some(ResolvedLocal)) && local_defs.contains(s) {
+    escape_var(s)
   } else if let Some(ResolvedDef(r_ns, _r_def)) = resolved.clone() {
     if r_ns == primes::CORE_NS {
       // functions under core uses built $calcit module entry
-      return format!("{}{}", varPrefix, escape_var(s));
+      return format!("{}{}", var_prefix, escape_var(s));
     }
     // TODO ditry code
-    let collected_imports = &mut global_collected_imports.lock().unwrap();
+    let collected_imports = &mut GLOBAL_COLLECTED_IMPORTS.lock().unwrap();
     if collected_imports.contains_key(s) {
       let prev = collected_imports[s].clone();
       if prev.ns != r_ns {
         println!("{:?} {:?}", collected_imports, xs);
-        panic!(format!("Conflicted implicit imports, {:?}", xs));
+        panic!("Conflicted implicit imports, {:?}", xs);
       }
     } else {
       collected_imports.insert(
@@ -506,22 +504,22 @@ fn gen_symbol_code(
         },
       );
     }
-    return escape_var(s);
+    escape_var(s)
   } else if def_ns == primes::CORE_NS {
     // local variales inside calcit.core also uses this ns
     println!("[Warn] detected variable inside core not resolved");
-    format!("{}{}", varPrefix, escape_var(s))
-  } else if def_ns == "" {
-    panic!(format!("Unpexpected ns at symbol, {:?}", xs));
+    format!("{}{}", var_prefix, escape_var(s))
+  } else if def_ns.is_empty() {
+    panic!("Unpexpected ns at symbol, {:?}", xs);
   } else if def_ns != ns {
-    let collected_imports = &mut global_collected_imports.lock().unwrap(); // TODO
+    let collected_imports = &mut GLOBAL_COLLECTED_IMPORTS.lock().unwrap(); // TODO
                                                                            // probably via macro
                                                                            // TODO ditry code collecting imports
     if collected_imports.contains_key(s) {
       let prev = collected_imports[s].clone();
       if prev.ns != def_ns {
         println!("{:?} {:?}", collected_imports, xs);
-        panic!(format!("Conflicted implicit imports, probably via macro, {:?}", xs));
+        panic!("Conflicted implicit imports, probably via macro, {:?}", xs);
       }
       return escape_var(s);
     } else {
@@ -534,76 +532,69 @@ fn gen_symbol_code(
         },
       );
     }
-    return escape_var(s);
+    escape_var(s)
   } else if def_ns == ns {
     println!("[Warn] detected unresolved variable {:?} in {}", xs, ns);
-    return escape_var(s);
+    escape_var(s)
   } else {
     println!("[Warn] Unpexpected casecode gen for {:?} in {}", xs, ns);
-    format!("{}{}", varPrefix, escape_var(s))
+    format!("{}{}", var_prefix, escape_var(s))
   }
 }
 
-fn is_local(x: &Option<SymbolResolved>) -> bool {
-  match x {
-    Some(ResolvedLocal) => true,
-    _ => false,
-  }
-}
-
-fn gen_let_code(body: &CalcitItems, localDefs: &HashSet<String>, xs: &Calcit, ns: &str) -> String {
-  let mut letDefBody = body.clone();
+fn gen_let_code(body: &CalcitItems, local_defs: &HashSet<String>, xs: &Calcit, ns: &str) -> String {
+  let mut let_def_body = body.clone();
 
   // defined new local variable
-  let mut scopedDefs = localDefs.clone();
-  let mut defsCode = String::from("");
-  let mut variableExisted = false;
-  let mut bodyPart = String::from("");
+  let mut scoped_defs = local_defs.clone();
+  let mut defs_code = String::from("");
+  let mut variable_existed = false;
+  let mut body_part = String::from("");
 
   // break unless nested &let is found
   loop {
-    if letDefBody.len() <= 1 {
-      panic!(format!("Unpexpected empty content in let, {:?}", xs));
+    if let_def_body.len() <= 1 {
+      panic!("Unpexpected empty content in let, {:?}", xs);
     }
-    let pair = letDefBody[0].clone();
-    let content = letDefBody.slice(1..);
+    let pair = let_def_body[0].clone();
+    let content = let_def_body.slice(1..);
 
     match &pair {
       Calcit::List(xs) if xs.len() == 2 => {
-        let defName = xs[0].clone();
-        let exprCode = xs[1].clone();
+        let def_name = xs[0].clone();
+        let expr_code = xs[1].clone();
 
-        match defName {
+        match def_name {
           Calcit::Symbol(sym, ..) => {
             // TODO `let` inside expressions makes syntax error
             let left = escape_var(&sym);
-            let right = toJsCode(&exprCode, &ns, &scopedDefs);
+            let right = to_js_code(&expr_code, &ns, &scoped_defs);
 
-            defsCode.push_str(&format!("let {} = {};\n", left, right));
+            defs_code.push_str(&format!("let {} = {};\n", left, right));
 
-            if scopedDefs.contains(&sym) {
-              variableExisted = true;
+            if scoped_defs.contains(&sym) {
+              variable_existed = true;
             } else {
-              scopedDefs.insert(sym.clone());
+              scoped_defs.insert(sym.clone());
             }
 
-            if variableExisted {
+            if variable_existed {
               for (idx, x) in content.clone().slice(1..).iter().enumerate() {
                 if idx == content.len() - 1 {
-                  bodyPart.push_str("return ");
-                  bodyPart.push_str(&toJsCode(x, ns, &scopedDefs));
-                  bodyPart.push_str(";\n");
+                  body_part.push_str("return ");
+                  body_part.push_str(&to_js_code(x, ns, &scoped_defs));
+                  body_part.push_str(";\n");
                 } else {
-                  bodyPart.push_str(&toJsCode(x, ns, &scopedDefs));
-                  bodyPart.push_str(";\n");
+                  body_part.push_str(&to_js_code(x, ns, &scoped_defs));
+                  body_part.push_str(";\n");
                 }
               }
 
               // first variable is using conflicted name
-              if localDefs.contains(&sym) {
-                return make_let_with_bind(&left, &right, &bodyPart);
+              if local_defs.contains(&sym) {
+                return make_let_with_bind(&left, &right, &body_part);
               } else {
-                return make_let_with_wrapper(&left, &right, &bodyPart);
+                return make_let_with_wrapper(&left, &right, &body_part);
               }
             } else {
               if content.len() == 1 {
@@ -611,7 +602,7 @@ fn gen_let_code(body: &CalcitItems, localDefs: &HashSet<String>, xs: &Calcit, ns
                 match child {
                   Calcit::List(ys) if ys.len() == 2 => match (&ys[0], &ys[1]) {
                     (Calcit::Symbol(sym, ..), Calcit::List(zs)) if sym == "&let" && zs.len() == 2 => {
-                      letDefBody = ys.clone().slice(1..);
+                      let_def_body = ys.clone().slice(1..);
                     }
                     _ => (),
                   },
@@ -621,31 +612,31 @@ fn gen_let_code(body: &CalcitItems, localDefs: &HashSet<String>, xs: &Calcit, ns
 
               for (idx, x) in content.iter().enumerate() {
                 if idx == content.len() - 1 {
-                  bodyPart.push_str("return ");
-                  bodyPart.push_str(&toJsCode(x, ns, &scopedDefs));
-                  bodyPart.push_str(";\n");
+                  body_part.push_str("return ");
+                  body_part.push_str(&to_js_code(x, ns, &scoped_defs));
+                  body_part.push_str(";\n");
                 } else {
-                  bodyPart.push_str(&toJsCode(x, ns, &scopedDefs));
-                  bodyPart.push_str(";\n");
+                  body_part.push_str(&to_js_code(x, ns, &scoped_defs));
+                  body_part.push_str(";\n");
                 }
               }
 
               break;
             }
           }
-          _ => panic!(format!("Expected symbol behind let, got: {}", &pair)),
+          _ => panic!("Expected symbol behind let, got: {}", &pair),
         }
       }
-      Calcit::List(xs) => panic!(format!("expected pair of length 2, got: {}", &pair)),
-      _ => panic!(format!("expected pair of a list of length 2, got: {}", pair)),
+      Calcit::List(_xs) => panic!("expected pair of length 2, got: {}", &pair),
+      _ => panic!("expected pair of a list of length 2, got: {}", pair),
     }
   }
-  return makeFnWrapper(&format!("{}{}", defsCode, bodyPart));
+  return make_fn_wrapper(&format!("{}{}", defs_code, body_part));
 }
 
-fn genArgsCode(body: &CalcitItems, ns: &str, localDefs: &HashSet<String>) -> String {
+fn gen_args_code(body: &CalcitItems, ns: &str, local_defs: &HashSet<String>) -> String {
   let mut result = String::from("");
-  let varPrefix = if ns == "calcit.core" { "" } else { "$calcit." };
+  let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
   let mut spreading = false;
   for x in body {
     match x {
@@ -653,14 +644,18 @@ fn genArgsCode(body: &CalcitItems, ns: &str, localDefs: &HashSet<String>) -> Str
         spreading = true;
       }
       _ => {
-        if result != "" {
+        if !result.is_empty() {
           result.push_str(", ");
         }
         if spreading {
-          result.push_str(&format!("...{}listToArray({})", varPrefix, toJsCode(x, ns, localDefs)));
+          result.push_str(&format!(
+            "...{}listToArray({})",
+            var_prefix,
+            to_js_code(x, ns, local_defs)
+          ));
           spreading = false
         } else {
-          result.push_str(&toJsCode(&x, ns, &localDefs));
+          result.push_str(&to_js_code(&x, ns, &local_defs));
         }
       }
     }
@@ -668,29 +663,29 @@ fn genArgsCode(body: &CalcitItems, ns: &str, localDefs: &HashSet<String>) -> Str
   result
 }
 
-fn listToJsCode(xs: &CalcitItems, ns: &str, localDefs: HashSet<String>, returnLabel: &str) -> String {
+fn list_to_js_code(xs: &CalcitItems, ns: &str, local_defs: HashSet<String>, return_label: &str) -> String {
   // TODO default returnLabel="return "
   let mut result = String::from("");
   for (idx, x) in xs.iter().enumerate() {
     // result = result & "// " & $x & "\n"
     if idx == xs.len() - 1 {
-      result.push_str(returnLabel);
-      result.push_str(&toJsCode(&x, ns, &localDefs));
+      result.push_str(return_label);
+      result.push_str(&to_js_code(&x, ns, &local_defs));
       result.push_str(";\n");
     } else {
-      result.push_str(&toJsCode(x, ns, &localDefs));
+      result.push_str(&to_js_code(x, ns, &local_defs));
       result.push_str(";\n");
     }
   }
   result
 }
 
-fn usesRecur(xs: &Calcit) -> bool {
+fn uses_recur(xs: &Calcit) -> bool {
   match xs {
     Calcit::Symbol(s, ..) => s == "recur",
     Calcit::List(ys) => {
       for y in ys {
-        if usesRecur(y) {
+        if uses_recur(y) {
           return true;
         }
       }
@@ -700,127 +695,127 @@ fn usesRecur(xs: &Calcit) -> bool {
   }
 }
 
-fn genJsFunc(
+fn gen_js_func(
   name: &str,
   args: &CalcitItems,
   body: &CalcitItems,
   ns: &str,
   exported: bool,
-  outerDefs: &HashSet<String>,
+  outer_defs: &HashSet<String>,
 ) -> String {
-  let varPrefix = if ns == "calcit.core" { "" } else { "$calcit." };
-  let mut localDefs = outerDefs.clone();
-  let mut spreadingCode = String::from(""); // js list and calcit-js list are different, need to convert
-  let mut argsCode = String::from("");
+  let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
+  let mut local_defs = outer_defs.clone();
+  let mut spreading_code = String::from(""); // js list and calcit-js list are different, need to convert
+  let mut args_code = String::from("");
   let mut spreading = false;
-  let mut hasOptional = false;
-  let mut argsCount = 0;
-  let mut optionalCount = 0;
+  let mut has_optional = false;
+  let mut args_count = 0;
+  let mut optional_count = 0;
   for x in args {
     match x {
       Calcit::Symbol(sym, ..) => {
         if spreading {
-          if argsCode != "" {
-            argsCode.push_str(", ");
+          if !args_code.is_empty() {
+            args_code.push_str(", ");
           }
-          localDefs.insert(sym.clone());
-          let argName = escape_var(&sym);
-          argsCode.push_str("...");
-          argsCode.push_str(&argName);
+          local_defs.insert(sym.clone());
+          let arg_name = escape_var(&sym);
+          args_code.push_str("...");
+          args_code.push_str(&arg_name);
           // js list and calcit-js are different in spreading
-          spreadingCode.push_str(&format!("\n{} = {}arrayToList({});", argName, varPrefix, argName));
+          spreading_code.push_str(&format!("\n{} = {}arrayToList({});", arg_name, var_prefix, arg_name));
           break; // no more args after spreading argument
-        } else if hasOptional {
-          if argsCode != "" {
-            argsCode.push_str(", ");
+        } else if has_optional {
+          if !args_code.is_empty() {
+            args_code.push_str(", ");
           }
-          localDefs.insert(sym.clone());
-          argsCode.push_str(&escape_var(&sym));
-          optionalCount += 1;
+          local_defs.insert(sym.clone());
+          args_code.push_str(&escape_var(&sym));
+          optional_count += 1;
         } else {
           if sym == "&" {
             spreading = true;
             continue;
           }
           if sym == "?" {
-            hasOptional = true;
+            has_optional = true;
             continue;
           }
-          if argsCode != "" {
-            argsCode.push_str(", ");
+          if !args_code.is_empty() {
+            args_code.push_str(", ");
           }
-          localDefs.insert(sym.clone());
-          argsCode.push_str(&escape_var(&sym));
-          argsCount += 1;
+          local_defs.insert(sym.clone());
+          args_code.push_str(&escape_var(&sym));
+          args_count += 1;
         }
       }
-      _ => panic!(format!("Expected symbol for arg, {}", x)),
+      _ => panic!("Expected symbol for arg, {}", x),
     }
   }
 
-  let checkArgs = if spreading {
+  let check_args = if spreading {
     format!(
       "\nif (arguments.length < {}) {{ throw new Error('Too few arguments') }}",
-      argsCount
+      args_count
     )
-  } else if hasOptional {
-    format!("\nif (arguments.length < {}) {{ throw new Error('Too few arguments') }}\nif (arguments.length > {}) {{ throw new Error('Too many arguments') }}", argsCount, argsCount + optionalCount )
+  } else if has_optional {
+    format!("\nif (arguments.length < {}) {{ throw new Error('Too few arguments') }}\nif (arguments.length > {}) {{ throw new Error('Too many arguments') }}", args_count, args_count + optional_count )
   } else {
     format!(
       "\nif (arguments.length !== {}) {{ throw new Error('Args length mismatch') }}",
-      argsCount
+      args_count
     )
   };
 
-  if body.len() > 0 && usesRecur(&body[body.len() - 1]) {
+  if !body.is_empty() && uses_recur(&body[body.len() - 1]) {
     // ugliy code for inlining tail recursion template
-    let retVar = js_gensym("ret");
-    let timesVar = js_gensym("times");
-    let mut fnDefinition = format!("function {}({})", escape_var(name), argsCode);
-    fnDefinition.push_str(&format!("{{ {} {}", checkArgs, spreadingCode));
-    fnDefinition.push_str(&format!("\nlet {} = null;\n", retVar));
-    fnDefinition.push_str(&format!("let {} = 0;\n", timesVar));
-    fnDefinition.push_str(&format!("while(true) {{ /* Tail Recursion */\n"));
-    fnDefinition.push_str(&format!(
+    let ret_var = js_gensym("ret");
+    let times_var = js_gensym("times");
+    let mut fn_fefinition = format!("function {}({})", escape_var(name), args_code);
+    fn_fefinition.push_str(&format!("{{ {} {}", check_args, spreading_code));
+    fn_fefinition.push_str(&format!("\nlet {} = null;\n", ret_var));
+    fn_fefinition.push_str(&format!("let {} = 0;\n", times_var));
+    fn_fefinition.push_str("while(true) {{ /* Tail Recursion */\n");
+    fn_fefinition.push_str(&format!(
       "if ({} > 10000) {{ throw new Error('Expected tail recursion to exist quickly') }}\n",
-      timesVar
+      times_var
     ));
-    fnDefinition.push_str(&listToJsCode(&body, ns, localDefs, &format!("{} =", retVar)));
-    fnDefinition.push_str(&format!("if ({} instanceof {}CrDataRecur) {{\n", retVar, varPrefix));
-    fnDefinition.push_str(&checkArgs.replace("arguments.length", &format!("{}.args.length", retVar)));
-    fnDefinition.push_str(&format!("\n[ {} ] = {}.args;\n", argsCode, retVar));
-    fnDefinition.push_str(&spreadingCode);
-    fnDefinition.push_str(&format!("{} += 1;\ncontinue;\n", timesVar));
-    fnDefinition.push_str(&format!("}} else {{ return {} }}  ", retVar));
-    fnDefinition.push_str("}\n}");
+    fn_fefinition.push_str(&list_to_js_code(&body, ns, local_defs, &format!("{} =", ret_var)));
+    fn_fefinition.push_str(&format!("if ({} instanceof {}CrDataRecur) {{\n", ret_var, var_prefix));
+    fn_fefinition.push_str(&check_args.replace("arguments.length", &format!("{}.args.length", ret_var)));
+    fn_fefinition.push_str(&format!("\n[ {} ] = {}.args;\n", args_code, ret_var));
+    fn_fefinition.push_str(&spreading_code);
+    fn_fefinition.push_str(&format!("{} += 1;\ncontinue;\n", times_var));
+    fn_fefinition.push_str(&format!("}} else {{ return {} }}  ", ret_var));
+    fn_fefinition.push_str("}\n}");
 
-    let exportMark = if exported {
+    let export_mark = if exported {
       format!("export let = {}", escape_var(name))
     } else {
       String::from("")
     };
-    return format!("{}{}{}", exportMark, fnDefinition, C_LINE);
+    return format!("{}{}\n", export_mark, fn_fefinition);
   } else {
-    let fnDefinition = format!(
+    let fn_definition = format!(
       "function {}({}) {{ {}{}\n{} }}",
       escape_var(name),
-      argsCode,
-      checkArgs,
-      spreadingCode,
-      listToJsCode(&body, ns, localDefs, "return ")
+      args_code,
+      check_args,
+      spreading_code,
+      list_to_js_code(&body, ns, local_defs, "return ")
     );
-    let exportMark = if exported { "export " } else { "" };
-    return format!("{}{}\n", exportMark, fnDefinition);
+    let export_mark = if exported { "export " } else { "" };
+    return format!("{}{}\n", export_mark, fn_definition);
   }
 }
 
-fn containsSymbol(xs: &Calcit, y: &str) -> bool {
+fn contains_symbol(xs: &Calcit, y: &str) -> bool {
   match xs {
     Calcit::Symbol(s, ..) => s == y,
-    Calcit::Thunk(code) => containsSymbol(code, y),
+    Calcit::Thunk(code) => contains_symbol(code, y),
     Calcit::Fn(_, _, _, _, _, body) => {
       for x in body {
-        if containsSymbol(x, y) {
+        if contains_symbol(x, y) {
           return true;
         }
       }
@@ -828,7 +823,7 @@ fn containsSymbol(xs: &Calcit, y: &str) -> bool {
     }
     Calcit::List(zs) => {
       for z in zs {
-        if containsSymbol(z, y) {
+        if contains_symbol(z, y) {
           return true;
         }
       }
@@ -838,31 +833,31 @@ fn containsSymbol(xs: &Calcit, y: &str) -> bool {
   }
 }
 
-fn sortByDeps(deps: &HashMap<String, Calcit>) -> Vec<String> {
+fn sort_by_deps(deps: &HashMap<String, Calcit>) -> Vec<String> {
   let mut result: Vec<String> = vec![];
 
-  let mut depsGraph: HashMap<String, HashSet<String>> = HashMap::new();
-  let mut defNames: Vec<String> = vec![];
+  let mut deps_graph: HashMap<String, HashSet<String>> = HashMap::new();
+  let mut def_names: Vec<String> = vec![];
   for (k, v) in deps {
-    defNames.push(k.clone());
-    let mut depsInfo: HashSet<String> = HashSet::new();
-    for (k2, _v2) in deps {
+    def_names.push(k.clone());
+    let mut deps_info: HashSet<String> = HashSet::new();
+    for k2 in deps.keys() {
       if k2 == k {
         continue;
       }
       // echo "checking ", k, " -> ", k2, " .. ", v.containsSymbol(k2)
-      if containsSymbol(&v, &k2) {
-        depsInfo.insert(k2.clone());
+      if contains_symbol(&v, &k2) {
+        deps_info.insert(k2.clone());
       }
     }
-    depsGraph.insert(k.to_string(), depsInfo);
+    deps_graph.insert(k.to_string(), deps_info);
   }
   // echo depsGraph
-  defNames.sort();
-  for x in defNames {
+  def_names.sort();
+  for x in def_names {
     let mut inserted = false;
     for (idx, y) in result.iter().enumerate() {
-      if depsGraph.contains_key(y) && depsGraph[y].contains(&x) {
+      if deps_graph.contains_key(y) && deps_graph[y].contains(&x) {
         result.insert(idx, x.clone());
         inserted = true;
         break;
@@ -877,87 +872,87 @@ fn sortByDeps(deps: &HashMap<String, Calcit>) -> Vec<String> {
   result
 }
 
-fn writeFileIfChanged(filename: &str, content: &str) -> bool {
+fn write_file_if_changed(filename: &str, content: &str) -> bool {
   if Path::new(filename).exists() && fs::read_to_string(filename).unwrap() == content {
     return false;
   }
   let _ = fs::write(filename, content);
-  return true;
+  true
 }
 
-fn emitJs(programData: &HashMap<String, program::ProgramFileData>, entryNs: &str) {
-  let codeEmitPath = "js-out/"; // TODO
-  if !Path::new(codeEmitPath).exists() {
-    let _ = fs::create_dir(codeEmitPath);
+pub fn emit_js(program_data: &HashMap<String, program::ProgramFileData>, entry_ns: &str) {
+  let code_emit_path = "js-out/"; // TODO
+  if !Path::new(code_emit_path).exists() {
+    let _ = fs::create_dir(code_emit_path);
   }
 
-  let mut unchangedNs: HashSet<String> = HashSet::new();
+  let mut unchanged_ns: HashSet<String> = HashSet::new();
 
-  let collected_imports = &mut global_collected_imports.lock().unwrap();
-  let previous_program_caches = &mut global_previous_program_caches.lock().unwrap();
+  let collected_imports = &mut GLOBAL_COLLECTED_IMPORTS.lock().unwrap();
+  let previous_program_caches = &mut GLOBAL_PREVIOUS_PROGRAM_CACHES.lock().unwrap();
 
-  for (ns, file) in programData {
+  for (ns, file) in program_data {
     // side-effects, reset tracking state
     collected_imports.clear(); // reset
 
-    let mut defsInCurrent: HashSet<String> = HashSet::new();
-    for (k, _) in &file.defs {
-      defsInCurrent.insert(k.clone());
+    let mut defs_in_current: HashSet<String> = HashSet::new();
+    for k in file.defs.keys() {
+      defs_in_current.insert(k.clone());
     }
 
-    if !first_compilation.load(Ordering::Relaxed) {
-      let appPkgName = entryNs.split('.').collect::<Vec<&str>>()[0];
-      let pkgName = ns.split('.').collect::<Vec<&str>>()[0]; // TODO simpler
-      if appPkgName != pkgName
+    if !FIRST_COMPILATION.load(Ordering::Relaxed) {
+      let app_pkg_name = entry_ns.split('.').collect::<Vec<&str>>()[0];
+      let pkg_name = ns.split('.').collect::<Vec<&str>>()[0]; // TODO simpler
+      if app_pkg_name != pkg_name
         && previous_program_caches.contains_key(ns)
-        && (previous_program_caches[ns] == defsInCurrent)
+        && (previous_program_caches[ns] == defs_in_current)
       {
         continue; // since libraries do not have to be re-compiled
       }
     }
     // remember defs of each ns for comparing
-    previous_program_caches.insert(ns.to_string(), defsInCurrent);
+    previous_program_caches.insert(ns.to_string(), defs_in_current);
 
     // reset index each file
     reset_js_gensym_index();
 
     // let coreLib = "http://js.calcit-lang.org/calcit.core.js".escape()
-    let coreLib = to_js_import_name("calcit.core", false); // TODO js_mode
-    let procsLib = format!("\"{}\"", "@calcit/procs".escape_debug());
-    let mut importCode = String::from("");
+    let core_lib = to_js_import_name("calcit.core", false); // TODO js_mode
+    let procs_lib = format!("\"{}\"", "@calcit/procs".escape_debug());
+    let mut import_code = String::from("");
 
-    let mut defsCode = String::from(""); // code generated by functions
-    let mut valsCode = String::from(""); // code generated by thunks
+    let mut defs_code = String::from(""); // code generated by functions
+    let mut vals_code = String::from(""); // code generated by thunks
 
     if ns == "calcit.core" {
-      importCode.push_str(&format!(
+      import_code.push_str(&format!(
         "\nimport {{kwd, arrayToList, listToArray, CrDataRecur}} from {};\n",
-        procsLib
+        procs_lib
       ));
-      importCode.push_str(&format!("\"import * as $calcit_procs from {};\"", procsLib));
-      importCode.push_str(&format!("\"export * from {};\"", procsLib));
+      import_code.push_str(&format!("\"import * as $calcit_procs from {};\"", procs_lib));
+      import_code.push_str(&format!("\"export * from {};\"", procs_lib));
     } else {
-      importCode.push_str(&format!("\nimport * as $calcit from {};\n", coreLib));
+      import_code.push_str(&format!("\nimport * as $calcit from {};\n", core_lib));
     }
 
-    let mut defNames: HashSet<String> = HashSet::new(); // multiple parts of scoped defs need to be tracked
+    let mut def_names: HashSet<String> = HashSet::new(); // multiple parts of scoped defs need to be tracked
 
     // tracking top level scope definitions
-    for (def, _) in &file.defs {
-      defNames.insert(def.clone());
+    for def in file.defs.keys() {
+      def_names.insert(def.clone());
     }
 
-    let depsInOrder = sortByDeps(&file.defs);
-    // echo "deps order: ", depsInOrder
+    let deps_in_order = sort_by_deps(&file.defs);
+    // echo "deps order: ", deps_in_order
 
-    for def in depsInOrder {
+    for def in deps_in_order {
       if ns == primes::CORE_NS {
         // some defs from core can be replaced by calcit.procs
-        if is_jsUnavailableProcs(&def) {
+        if is_js_unavailable_procs(&def) {
           continue;
         }
-        if is_preferredJsProc(&def) {
-          defsCode.push_str(&format!(
+        if is_preferred_js_proc(&def) {
+          defs_code.push_str(&format!(
             "\nvar {} = $calcit_procs.{};\n",
             escape_var(&def),
             escape_var(&def)
@@ -970,28 +965,28 @@ fn emitJs(programData: &HashMap<String, program::ProgramFileData>, entryNs: &str
 
       match &f {
         Calcit::Proc(..) => {
-          defsCode.push_str(&format!(
+          defs_code.push_str(&format!(
             "\"var {} = $calcit_procs.{};\"",
             escape_var(&def),
             escape_var(&def)
           ));
         }
-        Calcit::Fn(name, def_ns, _, _, args, code) => {
-          defsCode.push_str(&genJsFunc(&def, args, code, def_ns, true, &defNames));
+        Calcit::Fn(_name, def_ns, _, _, args, code) => {
+          defs_code.push_str(&gen_js_func(&def, args, code, def_ns, true, &def_names));
         }
         Calcit::Thunk(code) => {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
-          valsCode.push_str(&format!(
+          vals_code.push_str(&format!(
             "\"export var {} = {};\"",
             escape_var(&def),
-            toJsCode(code, &ns, &defNames)
+            to_js_code(code, &ns, &def_names)
           ));
         }
         Calcit::Macro(..) => {
           // macro should be handled during compilation, psuedo code
-          defsCode.push_str(&format!("\"export var {} = () => {{/* Macro */}}\"", escape_var(&def)));
-          defsCode.push_str(&format!("\"{}.isMacro = true;\"", escape_var(&def)));
+          defs_code.push_str(&format!("\"export var {} = () => {{/* Macro */}}\"", escape_var(&def)));
+          defs_code.push_str(&format!("\"{}.isMacro = true;\"", escape_var(&def)));
         }
         Calcit::Syntax(_, _) => {
           // should he handled inside compiler
@@ -1007,51 +1002,51 @@ fn emitJs(programData: &HashMap<String, program::ProgramFileData>, entryNs: &str
           let item = collected_imports[def].clone();
           // echo "implicit import ", defNs, "/", def, " in ", ns
           if item.just_ns {
-            let importTarget = if item.ns_in_str {
+            let import_target = if item.ns_in_str {
               format!("\"{}\"", item.ns.escape_debug())
             } else {
               to_js_import_name(&item.ns, false) // TODO js_mode
             };
-            importCode.push_str(&format!(
+            import_code.push_str(&format!(
               "\"import * as {} from {};\"",
               escape_ns(&item.ns),
-              importTarget
+              import_target
             ));
           } else {
-            let importTarget = to_js_import_name(&item.ns, false); // TODO js_mode
-            importCode.push_str(&format!("\"import {{ {} }} from {};\"", escape_var(def), importTarget));
+            let import_target = to_js_import_name(&item.ns, false); // TODO js_mode
+            import_code.push_str(&format!("\"import {{ {} }} from {};\"", escape_var(def), import_target));
           }
         }
       }
 
-      let jsFilePath = format!("{}{}", codeEmitPath, to_js_file_name(&ns, false)); // TODO mjs_mode
-      let wroteNew = writeFileIfChanged(&jsFilePath, &format!("{}\n{}\n{}", importCode, defsCode, valsCode));
-      if wroteNew {
-        println!("Emitted js file: {}", jsFilePath);
+      let js_file_path = format!("{}{}", code_emit_path, to_js_file_name(&ns, false)); // TODO mjs_mode
+      let wrote_new = write_file_if_changed(&js_file_path, &format!("{}\n{}\n{}", import_code, defs_code, vals_code));
+      if wrote_new {
+        println!("Emitted js file: {}", js_file_path);
       } else {
-        unchangedNs.insert(ns.to_string());
+        unchanged_ns.insert(ns.to_string());
       }
     }
   }
 
-  if unchangedNs.len() > 0 {
-    println!("\n... and {} files not changed.", unchangedNs.len());
+  if !unchanged_ns.is_empty() {
+    println!("\n... and {} files not changed.", unchanged_ns.len());
   }
 
-  first_compilation.store(false, Ordering::SeqCst); // TODO
+  FIRST_COMPILATION.store(false, Ordering::SeqCst); // TODO
 }
 
-fn is_jsUnavailableProcs(name: &str) -> bool {
-  match name {
+fn is_js_unavailable_procs(name: &str) -> bool {
+  matches!(
+    name,
     "&reset-gensym-index!"
-    | "dbt->point"
-    | "dbt-digits"
-    | "dbt-balanced-ternary"
-    | "gensym"
-    | "macroexpand"
-    | "macroexpand-all"
-    | "to-cirru-edn"
-    | "extract-cirru-edn" => true,
-    _ => false,
-  }
+      | "dbt->point"
+      | "dbt-digits" // TODO none
+      | "dbt-balanced-ternary"
+      | "gensym"
+      | "macroexpand"
+      | "macroexpand-all"
+      | "to-cirru-edn"
+      | "extract-cirru-edn"
+  )
 }

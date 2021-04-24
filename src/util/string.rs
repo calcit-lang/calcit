@@ -1,4 +1,4 @@
-pub fn matchesJsVar(xs: &str) -> bool {
+pub fn matches_js_var(xs: &str) -> bool {
   // TODO
   return false;
 }

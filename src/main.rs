@@ -15,7 +15,7 @@ mod runner;
 mod snapshot;
 mod util;
 
-use call_stack::StackKind;
+use codegen::emit_js::emit_js;
 use dirs::home_dir;
 use primes::Calcit;
 use std::fs;
@@ -66,6 +66,10 @@ fn main() -> Result<(), String> {
   }
 
   let program_code = program::extract_program_data(&snapshot)?;
+
+  if cli_matches.is_present("emit-js") {
+    emit_js(&program_code, &snapshot.configs.init_fn); // TODO entry ns
+  }
 
   run_program(&snapshot.configs.init_fn, &snapshot.configs.reload_fn, &program_code)
 }
