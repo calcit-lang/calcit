@@ -59,6 +59,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "pow"
       | "ceil"
       | "sqrt"
+      | "integer?"
       // strings
       | "&str-concat"
       | "trim"
@@ -171,6 +172,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "ceil" => math::ceil(args),
     "sqrt" => math::sqrt(args),
     "round" => math::round(args),
+    "integer?" => math::integer_ques(args),
     // strings
     "&str-concat" => strings::binary_str_concat(args),
     "trim" => strings::trim(args),

@@ -12,8 +12,8 @@ pub type ProgramEvaledData = HashMap<String, HashMap<String, Calcit>>;
 /// defRule: ns def
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportRule {
-  ImportNsRule(String),
-  ImportDefRule(String, String),
+  ImportNsRule(String),          // ns
+  ImportDefRule(String, String), // ns, def
 }
 
 /// information extracted from snapshot
@@ -168,4 +168,15 @@ pub fn write_evaled_def(ns: &str, def: &str, value: Calcit) -> Result<(), String
   file.insert(String::from(def), value);
 
   Ok(())
+}
+
+// take a snapshot for codegen
+pub fn clone_evaled_program() -> ProgramEvaledData {
+  let program = &PROGRAM_EVALED_DATA_STATE.lock().unwrap();
+
+  let mut xs: ProgramEvaledData = HashMap::new();
+  for k in program.keys() {
+    xs.insert(k.clone(), program[k].clone());
+  }
+  xs
 }

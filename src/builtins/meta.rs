@@ -1,9 +1,9 @@
-use crate::builtins::math::f64_to_usize;
 use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems};
+use crate::util::number::f64_to_usize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);

@@ -67,6 +67,13 @@
             assert= 16 0x10
             assert= 15 0xf
 
+        |test-integer $ quote
+          fn ()
+            log-title "|Testing integer"
+
+            assert= true (integer? 1)
+            assert= false (integer? 1.1)
+
         |main! $ quote
           defn main! ()
             log-title "|Testing numbers"
@@ -79,6 +86,8 @@
             test-compare
 
             test-hex
+
+            test-integer
 
             do true
 

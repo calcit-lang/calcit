@@ -37,15 +37,16 @@ pub fn preprocess_ns_def(
           push_call_stack(ns, def, StackKind::Fn, &Some(code.clone()), &im::vector![]);
 
           let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, program_code)?;
+          // println!("\n resolve code to run: {:?}", resolved_code);
           let v = if is_fn_or_macro(&resolved_code) {
             match runner::evaluate_expr(&resolved_code, &im::HashMap::new(), ns, program_code) {
               Ok(ret) => ret,
               Err(e) => return Err(e),
             }
           } else {
-            Calcit::Thunk(Box::new(code))
+            Calcit::Thunk(Box::new(resolved_code))
           };
-          // println!("writing value to: {}/{}", ns, def);
+          // println!("\nwriting value to: {}/{} {:?}", ns, def, v);
           program::write_evaled_def(ns, def, v.clone())?;
           pop_call_stack();
           Ok((
@@ -67,6 +68,7 @@ fn is_fn_or_macro(code: &Calcit) -> bool {
   match code {
     Calcit::List(xs) => match xs.get(0) {
       Some(Calcit::Symbol(s, ..)) => s == "defn" || s == "defmacro",
+      Some(Calcit::Syntax(s, ..)) => s == "defn" || s == "defmacro",
       _ => false,
     },
     _ => false,
@@ -93,7 +95,7 @@ pub fn preprocess_expr(
       }
       None => {
         if def == "~" || def == "~@" || def == "&" || def == "?" {
-          Ok((expr.clone(), None))
+          Ok((Calcit::Symbol(def.clone(), def_ns.clone(), Some(ResolvedRaw)), None))
         } else if scope_defs.contains(def) {
           Ok((
             Calcit::Symbol(def.to_string(), def_ns.to_string(), Some(ResolvedLocal)),
@@ -165,7 +167,7 @@ fn process_list_call(
     (Calcit::Keyword(..), _) => {
       if args.len() == 1 {
         let code = Calcit::List(im::vector![
-          Calcit::Symbol("&get".to_string(), primes::GENERATED_NS.to_string(), None),
+          Calcit::Proc("&get".to_string()),
           args[0].clone(),
           head.clone()
         ]);
@@ -202,24 +204,34 @@ fn process_list_call(
         }
       }
     }
-    (Calcit::Syntax(name, _ns), _) => match name.as_str() {
+    (Calcit::Syntax(name, name_ns), _) => match name.as_str() {
       "quote-replace" | "quasiquote" => Ok((Calcit::List(xs.clone()), None)),
-      "defn" | "defmacro" => Ok((preprocess_defn(head, args, scope_defs, file_ns, program_code)?, None)),
+      "defn" | "defmacro" => Ok((
+        preprocess_defn(&name, &name_ns, args, scope_defs, file_ns, program_code)?,
+        None,
+      )),
       "&let" => Ok((
-        preprocess_call_let(head, args, scope_defs, file_ns, program_code)?,
+        preprocess_call_let(&name, &name_ns, args, scope_defs, file_ns, program_code)?,
         None,
       )),
       "if" | "assert" | "do" | "try" | "macroexpand" | "macroexpand-all" | "macroexpand-1" | "foldl" | "sort" => Ok((
-        preprocess_each_items(head, args, scope_defs, file_ns, program_code)?,
+        preprocess_each_items(&name, &name_ns, args, scope_defs, file_ns, program_code)?,
         None,
       )),
-      "quote" | "eval" => Ok((preprocess_quote(head, args, scope_defs, file_ns, program_code)?, None)),
-      "defatom" => Ok((preprocess_defatom(head, args, scope_defs, file_ns, program_code)?, None)),
+      "quote" | "eval" => Ok((
+        preprocess_quote(&name, &name_ns, args, scope_defs, file_ns, program_code)?,
+        None,
+      )),
+      "defatom" => Ok((
+        preprocess_defatom(&name, &name_ns, args, scope_defs, file_ns, program_code)?,
+        None,
+      )),
       _ => Err(format!("unknown syntax: {}", head)),
     },
     (Calcit::Thunk(..), _) => Err(format!("does not know how to preprocess a thunk: {}", head)),
     (_, _) => {
-      let mut ys = im::vector![head.clone()];
+      let (head_form, _v) = preprocess_expr(&head, scope_defs, file_ns, program_code)?;
+      let mut ys = im::vector![head_form];
       for a in args {
         let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, program_code)?;
         ys.push_back(form);
@@ -231,13 +243,14 @@ fn process_list_call(
 
 // tradition rule for processing exprs
 pub fn preprocess_each_items(
-  head: &Calcit,
+  head: &str,
+  head_ns: &str,
   args: &CalcitItems,
   scope_defs: &HashSet<String>,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, String> {
-  let mut xs: CalcitItems = im::vector![head.clone()];
+  let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_string(), head_ns.to_string())];
   for a in args {
     let (form, _v) = preprocess_expr(a, scope_defs, file_ns, program_code)?;
     xs.push_back(form);
@@ -246,38 +259,37 @@ pub fn preprocess_each_items(
 }
 
 pub fn preprocess_defn(
-  head: &Calcit,
+  head: &str,
+  head_ns: &str,
   args: &CalcitItems,
   scope_defs: &HashSet<String>,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, String> {
   // println!("defn args: {}", primes::CrListWrap(args.clone()));
-  let mut xs: CalcitItems = im::vector![head.clone()];
+  let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_string(), head_ns.to_string())];
   match (args.get(0), args.get(1)) {
-    (Some(Calcit::Symbol(..)), Some(Calcit::List(ys))) => {
+    (Some(Calcit::Symbol(def_name, def_name_ns, _)), Some(Calcit::List(ys))) => {
       let mut body_defs: HashSet<String> = scope_defs.clone();
+
+      xs.push_back(Calcit::Symbol(def_name.clone(), def_name_ns.clone(), Some(ResolvedRaw)));
+      let mut zs: CalcitItems = im::vector![];
+      for y in ys {
+        match y {
+          Calcit::Symbol(sym, def_ns, _) => {
+            check_symbol(sym, program_code);
+            zs.push_back(Calcit::Symbol(sym.clone(), def_ns.clone(), Some(ResolvedRaw)));
+            body_defs.insert(sym.clone());
+          }
+          _ => return Err(format!("expected defn args to be symbols, got: {}", y)),
+        }
+      }
+      xs.push_back(Calcit::List(zs));
+
       for (idx, a) in args.iter().enumerate() {
-        match idx {
-          0 => {
-            xs.push_back(a.clone());
-          }
-          1 => {
-            xs.push_back(a.clone());
-            for y in ys {
-              match y {
-                Calcit::Symbol(sym, ..) => {
-                  check_symbol(sym, program_code);
-                  body_defs.insert(sym.clone());
-                }
-                _ => return Err(format!("expected defn args to be symbols, got: {}", y)),
-              }
-            }
-          }
-          _ => {
-            let (form, _v) = preprocess_expr(a, &body_defs, file_ns, program_code)?;
-            xs.push_back(form);
-          }
+        if idx >= 2 {
+          let (form, _v) = preprocess_expr(a, &body_defs, file_ns, program_code)?;
+          xs.push_back(form);
         }
       }
       Ok(Calcit::List(xs))
@@ -295,13 +307,14 @@ fn check_symbol(sym: &str, program_code: &program::ProgramCodeData) {
 }
 
 pub fn preprocess_call_let(
-  head: &Calcit,
+  head: &str,
+  head_ns: &str,
   args: &CalcitItems,
   scope_defs: &HashSet<String>,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, String> {
-  let mut xs: CalcitItems = im::vector![head.clone()];
+  let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_string(), head_ns.to_string())];
   let mut body_defs: HashSet<String> = scope_defs.clone();
   let binding = match args.get(0) {
     Some(Calcit::Nil) => Calcit::Nil,
@@ -329,13 +342,14 @@ pub fn preprocess_call_let(
 }
 
 pub fn preprocess_quote(
-  head: &Calcit,
+  head: &str,
+  head_ns: &str,
   args: &CalcitItems,
   _scope_defs: &HashSet<String>,
   _file_ns: &str,
   _program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, String> {
-  let mut xs: CalcitItems = im::vector![head.clone()];
+  let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_string(), head_ns.to_string())];
   for a in args {
     xs.push_back(a.clone());
   }
@@ -343,14 +357,16 @@ pub fn preprocess_quote(
 }
 
 pub fn preprocess_defatom(
-  head: &Calcit,
+  head: &str,
+  head_ns: &str,
   args: &CalcitItems,
   scope_defs: &HashSet<String>,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, String> {
-  let mut xs: CalcitItems = im::vector![head.clone()];
+  let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_string(), head_ns.to_string())];
   for a in args {
+    // TODO
     let (form, _v) = preprocess_expr(a, &scope_defs, file_ns, program_code)?;
     xs.push_back(form.clone());
   }

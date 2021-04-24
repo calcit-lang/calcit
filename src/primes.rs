@@ -17,6 +17,7 @@ pub type CalcitItems = im::Vector<Calcit>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolResolved {
   ResolvedLocal,
+  ResolvedRaw,                 // raw syntax, no target
   ResolvedDef(String, String), // ns, def
 }
 

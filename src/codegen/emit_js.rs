@@ -1,33 +1,17 @@
+mod internal_states;
+
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::sync::Mutex;
 
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems, SymbolResolved, SymbolResolved::*};
 use crate::program;
+use crate::util::string::has_ns_part;
 use crate::util::string::matches_js_var;
 
-// track if it's the first compilation
-static FIRST_COMPILATION: AtomicBool = AtomicBool::new(true);
-
-#[derive(Debug, PartialEq, Clone)]
-struct CollectedImportItem {
-  ns: String,
-  just_ns: bool,
-  ns_in_str: bool,
-}
-
-lazy_static! {
-  // caches program data for detecting incremental changes of libs
-  static ref GLOBAL_PREVIOUS_PROGRAM_CACHES: Mutex<HashMap<String, HashSet<String>>> = Mutex::new(HashMap::new());
-
-  // TODO mutable way of collect things of a single tile
-  static ref GLOBAL_COLLECTED_IMPORTS: Mutex <HashMap<String, CollectedImportItem>> = Mutex::new(HashMap::new());
-}
+use internal_states::CollectedImportItem;
 
 fn to_js_import_name(ns: &str, mjs_mode: bool) -> String {
   let mut xs: String = String::from("./");
@@ -36,7 +20,7 @@ fn to_js_import_name(ns: &str, mjs_mode: bool) -> String {
     xs.push_str(".mjs");
   }
   // currently use `import "./ns.name"`
-  xs.escape_debug().to_string()
+  format!("\"{}\"", xs.escape_debug().to_string())
 }
 
 fn to_js_file_name(ns: &str, mjs_mode: bool) -> String {
@@ -47,13 +31,6 @@ fn to_js_file_name(ns: &str, mjs_mode: bool) -> String {
     xs.push_str(".js");
   }
   xs
-}
-
-fn has_ns_part(x: &str) -> bool {
-  match x.find('/') {
-    Some(try_slash_pos) => try_slash_pos >= 1 && try_slash_pos < x.len() - 1,
-    None => false,
-  }
 }
 
 fn escape_var(name: &str) -> String {
@@ -214,8 +191,25 @@ fn make_fn_wrapper(body: &str) -> String {
 
 fn to_js_code(xs: &Calcit, ns: &str, local_defs: &HashSet<String>) -> String {
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
-  match xs {
+  println!("gen... {}", xs);
+  let ret = match xs {
     Calcit::Symbol(s, def_ns, resolved) => gen_symbol_code(s, &def_ns, resolved, ns, xs, local_defs),
+    Calcit::Proc(s) => gen_symbol_code(
+      s,
+      primes::CORE_NS,
+      &Some(ResolvedDef(String::from(primes::CORE_NS), s.to_string())),
+      ns,
+      xs,
+      local_defs,
+    ),
+    Calcit::Syntax(s, ..) => gen_symbol_code(
+      s,
+      primes::CORE_NS,
+      &Some(ResolvedDef(String::from(primes::CORE_NS), s.to_string())),
+      ns,
+      xs,
+      local_defs,
+    ),
     Calcit::Str(s) => escape_cirru_str(&s),
     Calcit::Bool(b) => b.to_string(),
     Calcit::Number(n) => n.to_string(),
@@ -227,10 +221,12 @@ fn to_js_code(xs: &Calcit, ns: &str, local_defs: &HashSet<String>) -> String {
         return String::from("()");
       }
 
+      println!("gen list... {}", xs);
+
       let head = ys[0].clone();
       let body = ys.clone().slice(1..);
       match &head {
-        Calcit::Symbol(s, ..) => {
+        Calcit::Symbol(s, ..) | Calcit::Proc(s) | Calcit::Syntax(s, ..) => {
           match s.as_str() {
             "if" => {
               if body.len() < 2 {
@@ -434,7 +430,10 @@ fn to_js_code(xs: &Calcit, ns: &str, local_defs: &HashSet<String>) -> String {
       }
     }
     a => unreachable!(format!("[Warn] unknown kind to gen js code: {}", a)),
-  }
+  };
+
+  println!("to-js ok: {:?}", ret);
+  ret
 }
 
 fn gen_symbol_code(
@@ -445,6 +444,7 @@ fn gen_symbol_code(
   xs: &Calcit,
   local_defs: &HashSet<String>,
 ) -> String {
+  println!("gen symbol... {} {:?}", s, s);
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
   if has_ns_part(s) {
     let ns_part = s.split('/').collect::<Vec<&str>>()[0]; // TODO
@@ -452,29 +452,33 @@ fn gen_symbol_code(
       escape_ns_var(s, "js")
     } else {
       // TODO ditry code
-      match &resolved {
+      match resolved {
         Some(ResolvedDef(r_ns, _r_def)) => {
-          let collected_imports = &mut GLOBAL_COLLECTED_IMPORTS.lock().unwrap();
-          if collected_imports.contains_key(r_ns) {
-            let prev = collected_imports[r_ns].clone();
-            if (!prev.just_ns) || &prev.ns != r_ns {
-              println!("conflicted imports: {:?} {:?}", prev, resolved);
-              panic!("Conflicted implicit ns import, {:?}", xs);
+          println!("locking 1");
+
+          match internal_states::lookup_import(r_ns) {
+            Some(prev) => {
+              if (!prev.just_ns) || &prev.ns != r_ns {
+                println!("conflicted imports: {:?} {:?}", prev, resolved);
+                panic!("Conflicted implicit ns import, {:?}", xs);
+              }
             }
-          } else {
-            collected_imports.insert(
-              r_ns.to_string(),
-              CollectedImportItem {
-                ns: r_ns.clone(),
-                just_ns: true,
-                ns_in_str: false, /* TODO */
-              },
-            );
+            None => {
+              internal_states::track_import(
+                r_ns.to_string(),
+                CollectedImportItem {
+                  ns: r_ns.clone(),
+                  just_ns: true,
+                  ns_in_str: false, /* TODO */
+                },
+              );
+            }
           }
           escape_ns_var(s, r_ns)
         }
-        Some(ResolvedLocal) => panic!("TODO"),
-        None => panic!("Expected symbol with ns being resolved: {:?}", xs),
+        Some(ResolvedRaw) => panic!("not going to generate from raw symbol, {}", s),
+        Some(ResolvedLocal) => panic!("symbol with ns should not be local, {}", s),
+        None => panic!("expected symbol with ns being resolved: {:?}", xs),
       }
     }
   } else if is_builtin_js_proc(s) {
@@ -487,23 +491,26 @@ fn gen_symbol_code(
       return format!("{}{}", var_prefix, escape_var(s));
     }
     // TODO ditry code
-    let collected_imports = &mut GLOBAL_COLLECTED_IMPORTS.lock().unwrap();
-    if collected_imports.contains_key(s) {
-      let prev = collected_imports[s].clone();
-      if prev.ns != r_ns {
-        println!("{:?} {:?}", collected_imports, xs);
-        panic!("Conflicted implicit imports, {:?}", xs);
+
+    match internal_states::lookup_import(s) {
+      Some(prev) => {
+        if prev.ns != r_ns {
+          // println!("{:?} {:?}", collected_imports, xs);
+          panic!("Conflicted implicit imports, {:?}", xs);
+        }
       }
-    } else {
-      collected_imports.insert(
-        s.to_string(),
-        CollectedImportItem {
-          ns: r_ns,
-          just_ns: false,
-          ns_in_str: false, /* TODO */
-        },
-      );
+      None => {
+        internal_states::track_import(
+          s.to_string(),
+          CollectedImportItem {
+            ns: r_ns,
+            just_ns: false,
+            ns_in_str: false, /* TODO */
+          },
+        );
+      }
     }
+
     escape_var(s)
   } else if def_ns == primes::CORE_NS {
     // local variales inside calcit.core also uses this ns
@@ -512,26 +519,30 @@ fn gen_symbol_code(
   } else if def_ns.is_empty() {
     panic!("Unpexpected ns at symbol, {:?}", xs);
   } else if def_ns != ns {
-    let collected_imports = &mut GLOBAL_COLLECTED_IMPORTS.lock().unwrap(); // TODO
-                                                                           // probably via macro
-                                                                           // TODO ditry code collecting imports
-    if collected_imports.contains_key(s) {
-      let prev = collected_imports[s].clone();
-      if prev.ns != def_ns {
-        println!("{:?} {:?}", collected_imports, xs);
-        panic!("Conflicted implicit imports, probably via macro, {:?}", xs);
+    println!("locking 4");
+
+    match internal_states::lookup_import(s) {
+      Some(prev) => {
+        if prev.ns != def_ns {
+          // println!("{:?} {:?}", collected_imports, xs);
+          panic!("Conflicted implicit imports, probably via macro, {:?}", xs);
+        }
       }
-      return escape_var(s);
-    } else {
-      collected_imports.insert(
-        s.to_string(),
-        CollectedImportItem {
-          ns: def_ns.to_string(),
-          just_ns: false,
-          ns_in_str: false,
-        },
-      );
+      None => {
+        internal_states::track_import(
+          s.to_string(),
+          CollectedImportItem {
+            ns: def_ns.to_string(),
+            just_ns: false,
+            ns_in_str: false,
+          },
+        );
+      }
     }
+    // TODO
+    // probably via macro
+    // TODO ditry code collecting imports
+
     escape_var(s)
   } else if def_ns == ns {
     println!("[Warn] detected unresolved variable {:?} in {}", xs, ns);
@@ -560,6 +571,9 @@ fn gen_let_code(body: &CalcitItems, local_defs: &HashSet<String>, xs: &Calcit, n
     let content = let_def_body.clone().slice(1..);
 
     match &pair {
+      Calcit::Nil => {
+        break;
+      }
       Calcit::List(xs) if xs.len() == 2 => {
         let def_name = xs[0].clone();
         let expr_code = xs[1].clone();
@@ -880,7 +894,7 @@ fn write_file_if_changed(filename: &str, content: &str) -> bool {
   true
 }
 
-pub fn emit_js(program_data: &HashMap<String, program::ProgramFileData>, entry_ns: &str) {
+pub fn emit_js(entry_ns: &str) -> Result<(), String> {
   let code_emit_path = "js-out/"; // TODO
   if !Path::new(code_emit_path).exists() {
     let _ = fs::create_dir(code_emit_path);
@@ -888,30 +902,31 @@ pub fn emit_js(program_data: &HashMap<String, program::ProgramFileData>, entry_n
 
   let mut unchanged_ns: HashSet<String> = HashSet::new();
 
-  let collected_imports = &mut GLOBAL_COLLECTED_IMPORTS.lock().unwrap();
-  let previous_program_caches = &mut GLOBAL_PREVIOUS_PROGRAM_CACHES.lock().unwrap();
-
-  for (ns, file) in program_data {
+  let program = program::clone_evaled_program();
+  for (ns, file) in program {
     // side-effects, reset tracking state
-    collected_imports.clear(); // reset
+    let _ = internal_states::clear_imports(); // reset
 
     let mut defs_in_current: HashSet<String> = HashSet::new();
-    for k in file.defs.keys() {
+    for k in file.keys() {
       defs_in_current.insert(k.clone());
     }
 
-    if !FIRST_COMPILATION.load(Ordering::Relaxed) {
+    if !internal_states::is_first_compilation() {
       let app_pkg_name = entry_ns.split('.').collect::<Vec<&str>>()[0];
       let pkg_name = ns.split('.').collect::<Vec<&str>>()[0]; // TODO simpler
-      if app_pkg_name != pkg_name
-        && previous_program_caches.contains_key(ns)
-        && (previous_program_caches[ns] == defs_in_current)
-      {
-        continue; // since libraries do not have to be re-compiled
+      if app_pkg_name != pkg_name {
+        match internal_states::lookup_prev_ns_cache(&ns) {
+          Some(v) if v == defs_in_current => {
+            // same as last time, skip
+            continue;
+          }
+          _ => (),
+        }
       }
     }
     // remember defs of each ns for comparing
-    previous_program_caches.insert(ns.to_string(), defs_in_current);
+    internal_states::write_as_ns_cache(&ns, defs_in_current);
 
     // reset index each file
     reset_js_gensym_index();
@@ -929,8 +944,8 @@ pub fn emit_js(program_data: &HashMap<String, program::ProgramFileData>, entry_n
         "\nimport {{kwd, arrayToList, listToArray, CrDataRecur}} from {};\n",
         procs_lib
       ));
-      import_code.push_str(&format!("\"import * as $calcit_procs from {};\"", procs_lib));
-      import_code.push_str(&format!("\"export * from {};\"", procs_lib));
+      import_code.push_str(&format!("\nimport * as $calcit_procs from {};\n", procs_lib));
+      import_code.push_str(&format!("\nexport * from {};\n", procs_lib));
     } else {
       import_code.push_str(&format!("\nimport * as $calcit from {};\n", core_lib));
     }
@@ -938,14 +953,15 @@ pub fn emit_js(program_data: &HashMap<String, program::ProgramFileData>, entry_n
     let mut def_names: HashSet<String> = HashSet::new(); // multiple parts of scoped defs need to be tracked
 
     // tracking top level scope definitions
-    for def in file.defs.keys() {
+    for def in file.keys() {
       def_names.insert(def.clone());
     }
 
-    let deps_in_order = sort_by_deps(&file.defs);
-    // echo "deps order: ", deps_in_order
+    let deps_in_order = sort_by_deps(&file);
+    // println!("deps order: {:?}", deps_in_order);
 
     for def in deps_in_order {
+      println!("emitting: {}", def);
       if ns == primes::CORE_NS {
         // some defs from core can be replaced by calcit.procs
         if is_js_unavailable_procs(&def) {
@@ -961,12 +977,13 @@ pub fn emit_js(program_data: &HashMap<String, program::ProgramFileData>, entry_n
         }
       }
 
-      let f = file.defs[&def].clone();
+      let f = file[&def].clone();
+      println!("emitting: {} --> {}", def, f);
 
       match &f {
         Calcit::Proc(..) => {
           defs_code.push_str(&format!(
-            "\"var {} = $calcit_procs.{};\"",
+            "\nvar {} = $calcit_procs.{};\n",
             escape_var(&def),
             escape_var(&def)
           ));
@@ -978,15 +995,15 @@ pub fn emit_js(program_data: &HashMap<String, program::ProgramFileData>, entry_n
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
           vals_code.push_str(&format!(
-            "\"export var {} = {};\"",
+            "\nexport var {} = {};\n",
             escape_var(&def),
             to_js_code(code, &ns, &def_names)
           ));
         }
         Calcit::Macro(..) => {
           // macro should be handled during compilation, psuedo code
-          defs_code.push_str(&format!("\"export var {} = () => {{/* Macro */}}\"", escape_var(&def)));
-          defs_code.push_str(&format!("\"{}.isMacro = true;\"", escape_var(&def)));
+          defs_code.push_str(&format!("\nexport var {} = () => {{/* Macro */}}\n", escape_var(&def)));
+          defs_code.push_str(&format!("\n{}.isMacro = true;\n", escape_var(&def)));
         }
         Calcit::Syntax(_, _) => {
           // should he handled inside compiler
@@ -995,37 +1012,38 @@ pub fn emit_js(program_data: &HashMap<String, program::ProgramFileData>, entry_n
           println!("[Warn] strange case for generating a definition: {}", f)
         }
       }
+    }
 
-      if !collected_imports.is_empty() {
-        // echo "imports: ", collected_imports
-        for def in collected_imports.keys() {
-          let item = collected_imports[def].clone();
-          // echo "implicit import ", defNs, "/", def, " in ", ns
-          if item.just_ns {
-            let import_target = if item.ns_in_str {
-              format!("\"{}\"", item.ns.escape_debug())
-            } else {
-              to_js_import_name(&item.ns, false) // TODO js_mode
-            };
-            import_code.push_str(&format!(
-              "\"import * as {} from {};\"",
-              escape_ns(&item.ns),
-              import_target
-            ));
+    let collected_imports = internal_states::clone_imports().unwrap(); // ignore unlocking details
+    if !collected_imports.is_empty() {
+      // echo "imports: ", collected_imports
+      for def in collected_imports.keys() {
+        let item = collected_imports[def].clone();
+        // echo "implicit import ", defNs, "/", def, " in ", ns
+        if item.just_ns {
+          let import_target = if item.ns_in_str {
+            format!("\"{}\"", item.ns.escape_debug())
           } else {
-            let import_target = to_js_import_name(&item.ns, false); // TODO js_mode
-            import_code.push_str(&format!("\"import {{ {} }} from {};\"", escape_var(def), import_target));
-          }
+            to_js_import_name(&item.ns, false) // TODO js_mode
+          };
+          import_code.push_str(&format!(
+            "\nimport * as {} from {};\n",
+            escape_ns(&item.ns),
+            import_target
+          ));
+        } else {
+          let import_target = to_js_import_name(&item.ns, false); // TODO js_mode
+          import_code.push_str(&format!("\nimport {{ {} }} from {};\n", escape_var(def), import_target));
         }
       }
+    }
 
-      let js_file_path = format!("{}{}", code_emit_path, to_js_file_name(&ns, false)); // TODO mjs_mode
-      let wrote_new = write_file_if_changed(&js_file_path, &format!("{}\n{}\n{}", import_code, defs_code, vals_code));
-      if wrote_new {
-        println!("Emitted js file: {}", js_file_path);
-      } else {
-        unchanged_ns.insert(ns.to_string());
-      }
+    let js_file_path = format!("{}{}", code_emit_path, to_js_file_name(&ns, false)); // TODO mjs_mode
+    let wrote_new = write_file_if_changed(&js_file_path, &format!("{}\n{}\n{}", import_code, defs_code, vals_code));
+    if wrote_new {
+      println!("Emitted js file: {}", js_file_path);
+    } else {
+      unchanged_ns.insert(ns.to_string());
     }
   }
 
@@ -1033,7 +1051,9 @@ pub fn emit_js(program_data: &HashMap<String, program::ProgramFileData>, entry_n
     println!("\n... and {} files not changed.", unchanged_ns.len());
   }
 
-  FIRST_COMPILATION.store(false, Ordering::SeqCst); // TODO
+  let _ = internal_states::finish_compilation();
+
+  Ok(())
 }
 
 fn is_js_unavailable_procs(name: &str) -> bool {
