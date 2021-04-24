@@ -116,7 +116,10 @@ pub fn preprocess_expr(
               // TODO js syntax to handle in future
               preprocess_ns_def(&target_ns, &def, program_code)
             }
-            None => Err(format!("unknown symbol in scope: {}/{} {:?}", def_ns, def, scope_defs)),
+            None => {
+              println!("[Warn] unknown symbol in scope: {}/{} {:?}", def_ns, def, scope_defs);
+              Ok((expr.clone(), None))
+            }
           }
         }
       }
@@ -130,12 +133,12 @@ pub fn preprocess_expr(
         process_list_call(&xs, scope_defs, file_ns, program_code)
       }
     }
-    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) => {
+    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) | Calcit::Proc(..) => {
       Ok((expr.clone(), Some(expr.clone())))
     }
 
     _ => {
-      println!("[Warn] unexpected data during preprocess: {}", expr);
+      println!("[Warn] unexpected data during preprocess: {:?}", expr);
       Ok((expr.clone(), None))
     }
   }

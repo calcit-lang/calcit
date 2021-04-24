@@ -4,7 +4,6 @@ use crate::builtins;
 use crate::builtins::{is_proc_name, is_syntax_name};
 use crate::call_stack;
 use crate::call_stack::{push_call_stack, StackKind};
-use crate::primes;
 use crate::primes::Calcit;
 use crate::primes::{CalcitItems, CalcitScope, CrListWrap, CORE_NS};
 use crate::program;

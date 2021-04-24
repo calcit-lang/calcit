@@ -140,6 +140,7 @@ pub fn lookup_ns_target_in_import(ns: &str, alias: &str, program: &ProgramCodeDa
 }
 
 /// similar to lookup, but skipped cloning
+#[allow(dead_code)]
 pub fn has_evaled_def(ns: &str, def: &str) -> bool {
   let s2 = PROGRAM_EVALED_DATA_STATE.lock().unwrap();
   s2.contains_key(ns) && s2[ns].contains_key(def)

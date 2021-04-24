@@ -10,6 +10,7 @@ pub fn is_letter(c: char) -> bool {
 }
 
 // TODO, not ready to use
+#[allow(dead_code)]
 pub fn matches_float(xs: &str) -> bool {
   if xs.is_empty() {
     return false;
@@ -45,6 +46,7 @@ pub fn matches_float(xs: &str) -> bool {
   true
 }
 
+#[allow(dead_code)]
 pub fn matches_simple_var(xs: &str) -> bool {
   if xs.is_empty() {
     return false;

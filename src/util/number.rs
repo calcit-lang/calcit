@@ -1,5 +1,6 @@
 use rand::prelude::*;
 
+#[allow(dead_code)]
 pub fn is_odd(x: usize) -> bool {
   x & 1 == 1
 }
