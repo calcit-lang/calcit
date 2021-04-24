@@ -309,7 +309,7 @@ fn to_js_code(xs: &Calcit, ns: &str, local_defs: &HashSet<String>) -> String {
               }
               let func_name = body[0].clone();
               let func_args = body[1].clone();
-              let func_body = body.slice(2..);
+              let func_body = body.clone().slice(2..);
               match (func_name, func_args) {
                 (Calcit::Symbol(sym, ..), Calcit::List(ys)) => {
                   gen_js_func(&sym, &ys, &func_body, ns, false, local_defs)
@@ -557,7 +557,7 @@ fn gen_let_code(body: &CalcitItems, local_defs: &HashSet<String>, xs: &Calcit, n
       panic!("Unpexpected empty content in let, {:?}", xs);
     }
     let pair = let_def_body[0].clone();
-    let content = let_def_body.slice(1..);
+    let content = let_def_body.clone().slice(1..);
 
     match &pair {
       Calcit::List(xs) if xs.len() == 2 => {
