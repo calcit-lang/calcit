@@ -255,7 +255,7 @@ fn gen_call_code(
   }
 
   let head = ys[0].clone();
-  let body = ys.clone().slice(1..);
+  let body = ys.skip(1);
   match &head {
     Calcit::Symbol(s, ..) | Calcit::Proc(s) | Calcit::Syntax(s, ..) => {
       match s.as_str() {
@@ -296,7 +296,7 @@ fn gen_call_code(
 
         "defn" => match (body.get(0), body.get(1)) {
           (Some(Calcit::Symbol(sym, ..)), Some(Calcit::List(ys))) => {
-            let func_body = body.clone().slice(2..);
+            let func_body = body.skip(2);
             gen_js_func(sym, &ys, &func_body, ns, false, local_defs, file_imports)
           }
           (_, _) => Err(format!("defn expected name arguments, got: {:?}", body)),
@@ -335,7 +335,7 @@ fn gen_call_code(
         },
         "echo" | "println" => {
           // not core syntax, but treat as macro for better debugging experience
-          let args = ys.clone().slice(1..);
+          let args = ys.skip(1);
           let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
           Ok(format!("console.log({}printable({}))", var_prefix, args_code))
         }
@@ -352,7 +352,7 @@ fn gen_call_code(
         }
         "new" => match body.get(0) {
           Some(ctor) => {
-            let args = body.clone().slice(1..);
+            let args = body.skip(1);
             let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
             Ok(format!(
               "new {}({})",
@@ -394,7 +394,7 @@ fn gen_call_code(
           if matches_js_var(name) {
             match body.get(0) {
               Some(obj) => {
-                let args = body.clone().slice(1..);
+                let args = body.skip(1);
                 let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
                 Ok(format!(
                   "{}.{}({})",
@@ -544,7 +544,7 @@ fn gen_let_code(
       return Err(format!("Unexpected empty content in let, {:?}", xs));
     }
     let pair = let_def_body[0].clone();
-    let content = let_def_body.clone().slice(1..);
+    let content = let_def_body.skip(1);
 
     match &pair {
       Calcit::Nil => {
@@ -604,7 +604,7 @@ fn gen_let_code(
                 match child {
                   Calcit::List(ys) if ys.len() == 2 => match (&ys[0], &ys[1]) {
                     (Calcit::Symbol(sym, ..), Calcit::List(zs)) if sym == "&let" && zs.len() == 2 => {
-                      let_def_body = ys.clone().slice(1..);
+                      let_def_body = ys.skip(1);
                       continue;
                     }
                     _ => (),

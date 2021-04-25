@@ -40,7 +40,7 @@ pub fn evaluate_expr(
         let mut added_stack = false;
 
         let v = evaluate_expr(&x, scope, file_ns, program_code)?;
-        let rest_nodes = xs.clone().slice(1..);
+        let rest_nodes = xs.skip(1);
         let ret = match &v {
           Calcit::Proc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
