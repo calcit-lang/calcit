@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cirru_edn = "0.1.0"
+cirru_edn = "0.1.1"
 cirru_parser = "0.1.0"
 clap = "2.33.3"
 dirs = "3.0.1"
