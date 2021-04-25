@@ -126,6 +126,13 @@ pub fn syntax_let(
   }
 }
 
+// code replaced from `~` and `~@` returns different results
+#[derive(Clone, PartialEq, Debug)]
+enum SpanResult {
+  Single(Calcit),
+  Range(CalcitItems),
+}
+
 pub fn quasiquote(
   expr: &CalcitItems,
   scope: &CalcitScope,
@@ -135,13 +142,12 @@ pub fn quasiquote(
   match expr.get(0) {
     None => Err(String::from("quasiquote expected a node")),
     Some(code) => {
-      let ret = replace_code(code, scope, file_ns, program_code)?;
-      match ret.get(0) {
-        Some(v) => {
+      match replace_code(code, scope, file_ns, program_code)? {
+        SpanResult::Single(v) => {
           // println!("replace result: {:?}", v);
-          Ok(v.clone())
+          Ok(v)
         }
-        None => Err(String::from("missing quote expr")),
+        SpanResult::Range(xs) => Err(format!("expected single result from quasiquote, got {:?}", xs)),
       }
     }
   }
@@ -152,32 +158,36 @@ fn replace_code(
   scope: &CalcitScope,
   file_ns: &str,
   program_code: &ProgramCodeData,
-) -> Result<CalcitItems, String> {
+) -> Result<SpanResult, String> {
   match c {
     Calcit::List(ys) => match (ys.get(0), ys.get(1)) {
       (Some(Calcit::Symbol(sym, ..)), Some(expr)) if sym == "~" => {
         let value = runner::evaluate_expr(expr, scope, file_ns, program_code)?;
-        Ok(im::vector![value])
+        Ok(SpanResult::Single(value))
       }
       (Some(Calcit::Symbol(sym, ..)), Some(expr)) if sym == "~@" => {
         let ret = runner::evaluate_expr(expr, scope, file_ns, program_code)?;
         match ret {
-          Calcit::List(zs) => Ok(zs),
-          _ => Err(format!("unknown result from unquite-slice: {}", ret)),
+          Calcit::List(zs) => Ok(SpanResult::Range(zs)),
+          _ => Err(format!("unknown result from unquote-slice: {}", ret)),
         }
       }
       (_, _) => {
         let mut ret = im::vector![];
         for y in ys {
-          let pieces = replace_code(y, scope, file_ns, program_code)?;
-          for piece in pieces {
-            ret.push_back(piece);
+          match replace_code(y, scope, file_ns, program_code)? {
+            SpanResult::Single(z) => ret.push_back(z),
+            SpanResult::Range(pieces) => {
+              for piece in pieces {
+                ret.push_back(piece);
+              }
+            }
           }
         }
-        Ok(im::vector![Calcit::List(ret)])
+        Ok(SpanResult::Single(Calcit::List(ret)))
       }
     },
-    _ => Ok(im::vector![c.clone()]),
+    _ => Ok(SpanResult::Single(c.clone())),
   }
 }
 
