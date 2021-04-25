@@ -12,7 +12,7 @@ use crate::program;
 use crate::util::string::has_ns_part;
 use crate::util::string::matches_js_var;
 
-use internal_states::CollectedImportItem;
+use internal_states::ImportedTarget;
 
 fn to_js_import_name(ns: &str, mjs_mode: bool) -> String {
   let mut xs: String = String::from("./");
@@ -413,27 +413,10 @@ fn gen_symbol_code(
       Ok(escape_ns_var(s, "js"))
     } else {
       // TODO ditry code
-      // TODO namespace part would be parsed during preprocessing
+      // TODO namespace part supposed be parsed during preprocessing, this mimics old behaviors
       match resolved {
         Some(ResolvedDef(r_ns, _r_def)) => {
-          match internal_states::lookup_import(r_ns) {
-            Some(prev) => {
-              if (!prev.just_ns) || &prev.ns != r_ns {
-                println!("conflicted imports: {:?} {:?}", prev, resolved);
-                return Err(format!("Conflicted implicit ns import, {:?}", xs));
-              }
-            }
-            None => {
-              internal_states::track_import(
-                r_ns.to_string(),
-                CollectedImportItem {
-                  ns: r_ns.clone(),
-                  just_ns: true,
-                  ns_in_str: false, /* TODO */
-                },
-              )?;
-            }
-          }
+          track_ns_import(r_ns.clone(), ImportedTarget::JustNs(r_ns.to_string()))?;
           Ok(escape_ns_var(s, r_ns))
         }
         Some(ResolvedRaw) => Err(format!("not going to generate from raw symbol, {}", s)),
@@ -456,29 +439,7 @@ fn gen_symbol_code(
       // functions under core uses built $calcit module entry
       return Ok(format!("{}{}", var_prefix, escape_var(s)));
     }
-    // TODO ditry code
-
-    match internal_states::lookup_import(s) {
-      Some(prev) => {
-        if prev.ns != r_ns {
-          // println!("{:?} {:?}", collected_imports, xs);
-          println!("prev item: {:?}", prev);
-          println!("map: {:?}", internal_states::clone_imports());
-          return Err(format!("Conflicted implicit imports, {} {:?}", r_ns, xs,));
-        }
-      }
-      None => {
-        internal_states::track_import(
-          s.to_string(),
-          CollectedImportItem {
-            ns: r_ns,
-            just_ns: false,
-            ns_in_str: false, /* TODO */
-          },
-        )?;
-      }
-    }
-
+    track_ns_import(s.to_string(), ImportedTarget::FromNs(r_ns))?;
     Ok(escape_var(s))
   } else if def_ns == primes::CORE_NS {
     // local variales inside calcit.core also uses this ns
@@ -487,25 +448,8 @@ fn gen_symbol_code(
   } else if def_ns.is_empty() {
     Err(format!("Unexpected ns at symbol, {:?}", xs))
   } else if def_ns != ns {
-    match internal_states::lookup_import(s) {
-      Some(prev) => {
-        if prev.ns != def_ns {
-          // println!("{:?} {:?}", collected_imports, xs);
-          return Err(format!("Conflicted implicit imports, probably via macro, {:?}", xs));
-        }
-      }
-      None => {
-        internal_states::track_import(
-          s.to_string(),
-          CollectedImportItem {
-            ns: def_ns.to_string(),
-            just_ns: false,
-            ns_in_str: false,
-          },
-        )?;
-      }
-    }
-    // TODO
+    track_ns_import(s.to_string(), ImportedTarget::FromNs(def_ns.to_string()))?;
+
     // probably via macro
     // TODO ditry code collecting imports
 
@@ -516,6 +460,23 @@ fn gen_symbol_code(
   } else {
     println!("[Warn] Unexpected casecode gen for {:?} in {}", xs, ns);
     Ok(format!("{}{}", var_prefix, escape_var(s)))
+  }
+}
+
+// track but compare first, return Err if a different one existed
+fn track_ns_import(sym: String, import_rule: ImportedTarget) -> Result<(), String> {
+  match internal_states::lookup_import(&sym) {
+    Some(a) => {
+      if a == import_rule {
+        Ok(())
+      } else {
+        Err(format!(
+          "conflicted import rule, previous {:?}, now {:?}",
+          a, import_rule
+        ))
+      }
+    }
+    None => internal_states::track_import(sym.clone(), import_rule),
   }
 }
 
@@ -1002,23 +963,29 @@ pub fn emit_js(entry_ns: &str) -> Result<(), String> {
     let collected_imports = internal_states::clone_imports().unwrap(); // ignore unlocking details
     if !collected_imports.is_empty() {
       // echo "imports: ", collected_imports
-      for def in collected_imports.keys() {
-        let item = collected_imports[def].clone();
+      for (def, item) in collected_imports {
         // echo "implicit import ", defNs, "/", def, " in ", ns
-        if item.just_ns {
-          let import_target = if is_cirru_string(&item.ns) {
-            format!("\"{}\"", item.ns[1..].escape_debug())
-          } else {
-            to_js_import_name(&item.ns, false) // TODO js_mode
-          };
-          import_code.push_str(&format!(
-            "\nimport * as {} from {};\n",
-            escape_ns(&item.ns),
-            import_target
-          ));
-        } else {
-          let import_target = to_js_import_name(&item.ns, false); // TODO js_mode
-          import_code.push_str(&format!("\nimport {{ {} }} from {};\n", escape_var(def), import_target));
+        match item {
+          ImportedTarget::JustNs(target_ns) => {
+            let import_target = if is_cirru_string(&target_ns) {
+              format!("\"{}\"", target_ns[1..].escape_debug())
+            } else {
+              to_js_import_name(&target_ns, false) // TODO js_mode
+            };
+            import_code.push_str(&format!(
+              "\nimport * as {} from {};\n",
+              escape_ns(&target_ns),
+              import_target
+            ));
+          }
+          ImportedTarget::FromNs(target_ns) => {
+            let import_target = to_js_import_name(&target_ns, false); // TODO js_mode
+            import_code.push_str(&format!(
+              "\nimport {{ {} }} from {};\n",
+              escape_var(&def),
+              import_target
+            ));
+          }
         }
       }
     }
