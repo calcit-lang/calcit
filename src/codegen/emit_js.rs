@@ -1,4 +1,5 @@
 mod internal_states;
+mod snippets;
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -10,7 +11,7 @@ use crate::primes;
 use crate::primes::{format_to_lisp, Calcit, CalcitItems, SymbolResolved::*};
 use crate::program;
 use crate::util::string::has_ns_part;
-use crate::util::string::matches_js_var;
+use crate::util::string::{matches_js_var, wrap_js_str};
 
 use internal_states::ImportedTarget;
 
@@ -21,7 +22,7 @@ fn to_js_import_name(ns: &str, mjs_mode: bool) -> String {
     xs.push_str(".mjs");
   }
   // currently use `import "./ns.name"`
-  format!("\"{}\"", xs.escape_debug().to_string())
+  wrap_js_str(&xs)
 }
 
 fn to_js_file_name(ns: &str, mjs_mode: bool) -> String {
@@ -220,7 +221,7 @@ fn to_js_code(xs: &Calcit, ns: &str, local_defs: &HashSet<String>) -> Result<Str
     Calcit::Bool(b) => Ok(b.to_string()),
     Calcit::Number(n) => Ok(n.to_string()),
     Calcit::Nil => Ok(String::from("null")),
-    Calcit::Keyword(s) => Ok(format!("{}kwd(\"{}\")", var_prefix, s.escape_debug())),
+    Calcit::Keyword(s) => Ok(format!("{}kwd({})", var_prefix, wrap_js_str(s))),
     Calcit::List(ys) => gen_call_code(&ys, ns, local_defs, xs),
     a => unreachable!(format!("[Warn] unknown kind to gen js code: {}", a)),
   };
@@ -264,7 +265,7 @@ fn gen_call_code(ys: &CalcitItems, ns: &str, local_defs: &HashSet<String>, xs: &
             _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {:?}", body)),
             (Some(Calcit::Symbol(sym, ..)), Some(v)) => {
               // let _name = escape_var(sym); // TODO
-              let atom_path = format!("\"{}\"", format!("{}/{}", ns, sym.clone()).escape_debug());
+              let atom_path = wrap_js_str(&format!("{}/{}", ns, sym.clone()));
               let value_code = &to_js_code(v, ns, local_defs)?;
               Ok(format!(
                 "\n({}peekDefatom({}) ?? {}defatom({}, {}))\n",
@@ -309,10 +310,8 @@ fn gen_call_code(ys: &CalcitItems, ns: &str, local_defs: &HashSet<String>, xs: &
             let code = to_js_code(expr, ns, local_defs)?;
             let err_var = js_gensym("errMsg");
             let handler = to_js_code(handler, ns, local_defs)?;
-            Ok(make_fn_wrapper(&format!(
-              "try {{\nreturn {}\n}} catch ({}) {{\nreturn ({})({}.toString())\n}}",
-              code, err_var, handler, err_var
-            )))
+
+            Ok(snippets::tmpl_fn_wrapper(snippets::tmpl_try(err_var, code, handler)))
           }
           (_, _) => Err(format!("try expected 2 nodes, got {:?}", body)),
         },
@@ -714,40 +713,22 @@ fn gen_js_func(
   }
 
   let check_args = if spreading {
-    format!(
-      "\nif (arguments.length < {}) {{ throw new Error('Too few arguments') }}",
-      args_count
-    )
+    snippets::tmpl_args_fewer_than(args_count)
   } else if has_optional {
-    format!("\nif (arguments.length < {}) {{ throw new Error('Too few arguments') }}\nif (arguments.length > {}) {{ throw new Error('Too many arguments') }}", args_count, args_count + optional_count )
+    snippets::tmpl_args_between(args_count, args_count + optional_count)
   } else {
-    format!(
-      "\nif (arguments.length !== {}) {{ throw new Error('Args length mismatch') }}",
-      args_count
-    )
+    snippets::tmpl_args_exact(args_count)
   };
 
   if !body.is_empty() && uses_recur(&body[body.len() - 1]) {
-    // ugliy code for inlining tail recursion template
-    let ret_var = js_gensym("ret");
-    let times_var = js_gensym("times");
-    let mut fn_def = format!("function {}({})", escape_var(name), args_code);
-    fn_def.push_str(&format!("{{ {} {}", check_args, spreading_code));
-    fn_def.push_str(&format!("\nlet {} = null;\n", ret_var));
-    fn_def.push_str(&format!("let {} = 0;\n", times_var));
-    fn_def.push_str("while(true) { /* Tail Recursion */\n");
-    fn_def.push_str(&format!(
-      "if ({} > 10000) {{ throw new Error('Expected tail recursion to exist quickly') }}\n",
-      times_var
-    ));
-    fn_def.push_str(&list_to_js_code(&body, ns, local_defs, &format!("{} =", ret_var))?);
-    fn_def.push_str(&format!("if ({} instanceof {}CrDataRecur) {{\n", ret_var, var_prefix));
-    fn_def.push_str(&check_args.replace("arguments.length", &format!("{}.args.length", ret_var)));
-    fn_def.push_str(&format!("\n[ {} ] = {}.args;\n", args_code, ret_var));
-    fn_def.push_str(&spreading_code);
-    fn_def.push_str(&format!("{} += 1;\ncontinue;\n", times_var));
-    fn_def.push_str(&format!("}} else {{ return {} }} ", ret_var));
-    fn_def.push_str("}\n}");
+    let fn_def = snippets::tmpl_tail_recursion(
+      /* name = */ escape_var(name),
+      /* args_code = */ args_code,
+      /* check_args = */ check_args,
+      /* spreading_code = */ spreading_code,
+      /* body = */ list_to_js_code(&body, ns, local_defs, "%%return_mark%% =")?, // dirty trick
+      /* var_prefix = */ var_prefix.to_string(),
+    );
 
     let export_mark = if exported {
       format!("export let {} = ", escape_var(name))
@@ -880,22 +861,15 @@ pub fn emit_js(entry_ns: &str) -> Result<(), String> {
 
     // let coreLib = "http://js.calcit-lang.org/calcit.core.js".escape()
     let core_lib = to_js_import_name("calcit.core", false); // TODO js_mode
-    let procs_lib = format!("\"{}\"", "@calcit/procs".escape_debug());
-    let mut import_code = String::from("");
 
     let mut defs_code = String::from(""); // code generated by functions
     let mut vals_code = String::from(""); // code generated by thunks
 
-    if ns == "calcit.core" {
-      import_code.push_str(&format!(
-        "\nimport {{kwd, arrayToList, listToArray, CrDataRecur}} from {};\n",
-        procs_lib
-      ));
-      import_code.push_str(&format!("\nimport * as $calcit_procs from {};\n", procs_lib));
-      import_code.push_str(&format!("\nexport * from {};\n", procs_lib));
+    let mut import_code = if ns == "calcit.core" {
+      snippets::tmpl_import_procs(wrap_js_str("@calcit/procs"))
     } else {
-      import_code.push_str(&format!("\nimport * as $calcit from {};\n", core_lib));
-    }
+      format!("\nimport * as $calcit from {};\n", core_lib)
+    };
 
     let mut def_names: HashSet<String> = HashSet::new(); // multiple parts of scoped defs need to be tracked
 
@@ -948,8 +922,7 @@ pub fn emit_js(entry_ns: &str) -> Result<(), String> {
         }
         Calcit::Macro(..) => {
           // macro should be handled during compilation, psuedo code
-          defs_code.push_str(&format!("\nexport var {} = () => {{/* Macro */}}\n", escape_var(&def)));
-          defs_code.push_str(&format!("\n{}.isMacro = true;\n", escape_var(&def)));
+          defs_code.push_str(&snippets::tmpl_export_macro(escape_var(&def)));
         }
         Calcit::Syntax(_, _) => {
           // should he handled inside compiler
@@ -968,7 +941,7 @@ pub fn emit_js(entry_ns: &str) -> Result<(), String> {
         match item {
           ImportedTarget::JustNs(target_ns) => {
             let import_target = if is_cirru_string(&target_ns) {
-              format!("\"{}\"", target_ns[1..].escape_debug())
+              wrap_js_str(&target_ns[1..])
             } else {
               to_js_import_name(&target_ns, false) // TODO js_mode
             };
