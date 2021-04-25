@@ -2,7 +2,7 @@ mod internal_states;
 mod snippets;
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -14,7 +14,7 @@ use crate::program;
 use crate::util::string::has_ns_part;
 use crate::util::string::{matches_js_var, wrap_js_str};
 
-type ImportsDict = HashMap<String, ImportedTarget>;
+type ImportsDict = BTreeMap<String, ImportedTarget>;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ImportedTarget {
@@ -892,7 +892,7 @@ pub fn emit_js(entry_ns: &str) -> Result<(), String> {
     // println!("start handling: {}", ns);
     // side-effects, reset tracking state
 
-    let file_imports: RefCell<ImportsDict> = RefCell::new(HashMap::new());
+    let file_imports: RefCell<ImportsDict> = RefCell::new(BTreeMap::new());
 
     let mut defs_in_current: HashSet<String> = HashSet::new();
     for k in file.keys() {
