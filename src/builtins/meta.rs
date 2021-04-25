@@ -73,6 +73,11 @@ pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, String> {
   Ok(Calcit::Nil)
 }
 
+pub fn force_reset_gensym_index() -> Result<(), String> {
+  let _ = SYMBOL_INDEX.swap(0, Ordering::SeqCst);
+  Ok(())
+}
+
 pub fn reset_js_gensym_index() {
   let _ = JS_SYMBOL_INDEX.swap(0, Ordering::SeqCst);
 }
@@ -83,6 +88,7 @@ pub fn js_gensym(name: &str) -> String {
   let n = idx + 1; // use 1 as first value since previous implementation did this
 
   let mut chunk = String::from(name);
+  chunk.push_str("_AUTO_");
   chunk.push_str(&n.to_string());
   chunk
 }

@@ -1,6 +1,7 @@
 use cirru_edn::Edn;
 use cirru_parser::Cirru;
 use std::collections::hash_map::HashMap;
+use std::collections::hash_set::HashSet;
 
 use crate::data::edn;
 
@@ -146,4 +147,75 @@ pub fn create_file_from_snippet(code: &str) -> Result<FileInSnapShot, String> {
     }
     Err(e) => Err(format!("failed to make snapshot: {}", e)),
   }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct FileChangeInfo {
+  pub ns: Option<Cirru>,
+  pub added_defs: HashMap<String, Cirru>,
+  pub removed_defs: HashSet<String>,
+  pub changed_defs: HashMap<String, Cirru>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ChangesDict {
+  pub added: HashMap<String, FileInSnapShot>,
+  pub removed: HashSet<String>,
+  pub changed: HashMap<String, FileChangeInfo>,
+}
+
+pub fn load_changes_info(data: Edn) -> Result<ChangesDict, String> {
+  // println!("loading changes: {}", data);
+  let mut added: HashMap<String, FileInSnapShot> = HashMap::new();
+  for (ns, file) in edn::as_optional_map(edn::map_get(&data, "added"))? {
+    added.insert(edn::as_string(ns)?, load_file_info(file)?);
+  }
+
+  let mut removed: HashSet<String> = HashSet::new();
+  for item in edn::as_optional_set(edn::map_get(&data, "removed"))? {
+    removed.insert(edn::as_string(item)?);
+  }
+
+  let mut changed: HashMap<String, FileChangeInfo> = HashMap::new();
+  for (ns, file) in edn::as_optional_map(edn::map_get(&data, "changed"))? {
+    changed.insert(edn::as_string(ns)?, extract_changed_info(file)?);
+  }
+
+  Ok(ChangesDict {
+    added,
+    removed,
+    changed,
+  })
+}
+
+pub fn extract_changed_info(data: Edn) -> Result<FileChangeInfo, String> {
+  let ns_info = match edn::map_get(&data, "ns") {
+    Edn::Nil => Ok(None),
+    Edn::Quote(code) => Ok(Some(code)),
+    a => Err(format!("invalid information for ns code: {}", a)),
+  };
+
+  let mut added_defs: HashMap<String, Cirru> = HashMap::new();
+
+  for (def, code) in edn::as_optional_map(edn::map_get(&data, "added-defs"))? {
+    added_defs.insert(edn::as_string(def)?, edn::as_cirru(code)?);
+  }
+
+  let mut removed_defs: HashSet<String> = HashSet::new();
+
+  for def in edn::as_optional_set(edn::map_get(&data, "removed-defs"))? {
+    removed_defs.insert(edn::as_string(def)?);
+  }
+
+  let mut changed_defs: HashMap<String, Cirru> = HashMap::new();
+  for (def, code) in edn::as_optional_map(edn::map_get(&data, "changed-defs"))? {
+    changed_defs.insert(edn::as_string(def)?, edn::as_cirru(code)?);
+  }
+
+  Ok(FileChangeInfo {
+    ns: ns_info?,
+    added_defs,
+    removed_defs,
+    changed_defs,
+  })
 }

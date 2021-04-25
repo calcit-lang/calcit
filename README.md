@@ -15,6 +15,8 @@ USAGE:
     calcit_runner [FLAGS] [OPTIONS] [input]
 
 FLAGS:
+        --emit-ir    emit JSON representation of program to program-ir.json
+        --emit-js    emit js rather than interpreting
     -h, --help       Prints help information
     -1, --once       disable watching mode
     -V, --version    Prints version information

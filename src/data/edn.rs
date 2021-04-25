@@ -44,10 +44,36 @@ pub fn as_vec(data: Edn) -> Result<Vec<Edn>, String> {
   }
 }
 
+pub fn as_set(data: Edn) -> Result<HashSet<Edn>, String> {
+  match data {
+    Edn::Set(xs) => Ok(xs),
+    Edn::Nil => Err(String::from("cannot get set from nil")),
+    a => Err(format!("failed to convert to set: {}", a)),
+  }
+}
+
+// as_set, but allow nil
+pub fn as_optional_set(data: Edn) -> Result<HashSet<Edn>, String> {
+  match data {
+    Edn::Set(xs) => Ok(xs),
+    Edn::Nil => Ok(HashSet::new()),
+    a => Err(format!("failed to convert to set: {}", a)),
+  }
+}
+
 pub fn as_map(data: Edn) -> Result<HashMap<Edn, Edn>, String> {
   match data {
     Edn::Map(xs) => Ok(xs),
-    Edn::Nil => Err(String::from("cannot get from nil")),
+    Edn::Nil => Err(String::from("cannot map get from nil")),
+    a => Err(format!("failed to convert to map: {}", a)),
+  }
+}
+
+// as_map, but allow nil being treated as empty map
+pub fn as_optional_map(data: Edn) -> Result<HashMap<Edn, Edn>, String> {
+  match data {
+    Edn::Map(xs) => Ok(xs),
+    Edn::Nil => Ok(HashMap::new()),
     a => Err(format!("failed to convert to map: {}", a)),
   }
 }

@@ -4,6 +4,7 @@ use std::sync::Mutex;
 
 use crate::data::cirru::code_to_calcit;
 use crate::primes::Calcit;
+use crate::snapshot;
 
 use cirru_parser::Cirru;
 
@@ -93,15 +94,19 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<String, ImportRule>, Stri
   }
 }
 
+fn extract_file_data(file: snapshot::FileInSnapShot, ns: String) -> Result<ProgramFileData, String> {
+  let import_map = extract_import_map(&file.ns)?;
+  let mut defs: HashMap<String, Calcit> = HashMap::new();
+  for (def, code) in file.defs {
+    defs.insert(def, code_to_calcit(&code, &ns)?);
+  }
+  Ok(ProgramFileData { import_map, defs })
+}
+
 pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
   let mut xs: ProgramCodeData = HashMap::new();
   for (ns, file) in s.files.clone() {
-    let import_map = extract_import_map(&file.ns)?;
-    let mut defs: HashMap<String, Calcit> = HashMap::new();
-    for (def, code) in file.defs {
-      defs.insert(def, code_to_calcit(&code, &ns)?);
-    }
-    let file_info = ProgramFileData { import_map, defs };
+    let file_info = extract_file_data(file, ns.clone())?;
     xs.insert(ns, file_info);
   }
   Ok(xs)
@@ -180,4 +185,41 @@ pub fn clone_evaled_program() -> ProgramEvaledData {
     xs.insert(k.clone(), program[k].clone());
   }
   xs
+}
+
+pub fn apply_code_changes(base: &ProgramCodeData, changes: &snapshot::ChangesDict) -> Result<ProgramCodeData, String> {
+  let mut program_code = base.clone();
+
+  for (ns, file) in &changes.added {
+    program_code.insert(ns.to_string(), extract_file_data(file.clone(), ns.to_string())?);
+  }
+  for ns in &changes.removed {
+    program_code.remove(ns);
+  }
+  for (ns, info) in &changes.changed {
+    // println!("handling ns: {:?} {}", ns, program_code.contains_key(ns));
+    let file = program_code.get_mut(ns).unwrap();
+    if info.ns.is_some() {
+      file.import_map = extract_import_map(&info.ns.clone().unwrap())?;
+    }
+    for (def, code) in &info.added_defs {
+      file.defs.insert(def.to_string(), code_to_calcit(code, ns)?);
+    }
+    for def in &info.removed_defs {
+      file.defs.remove(def);
+    }
+    for (def, code) in &info.changed_defs {
+      file.defs.insert(def.to_string(), code_to_calcit(code, ns)?);
+    }
+  }
+
+  Ok(program_code)
+}
+
+/// clear all states for now, very little defs are surely reused
+pub fn clear_all_program_evaled_defs() -> Result<(), String> {
+  // TODO might cache for performance, but also prints warning when ns and macros change
+  let program = &mut PROGRAM_EVALED_DATA_STATE.lock().unwrap();
+  program.clear();
+  Ok(())
 }
