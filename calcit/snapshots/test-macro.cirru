@@ -46,11 +46,11 @@
                     1 |one
                     2 |two
                     3 |three
-                quote
-                  &let (v__1 (+ 1 2))
-                    if (&= v__1 1) |one
-                      if (&= v__1 2) |two
-                        if (&= v__1 3) |three nil
+                quasiquote
+                  ~&let (v__1 (+ 1 2))
+                    ~if (~&= v__1 1) |one
+                      ~if (~&= v__1 2) |two
+                        ~if (~&= v__1 3) |three nil
               assert=
                 macroexpand $ quote
                   case (+ 1 2)
@@ -165,25 +165,25 @@
                 [] 2 |2
 
             inside-nim:
-              ; assert=
+              assert=
                 macroexpand-all $ quote (\ + 2 %)
-                quote $ defn f% (? % %2) (+ 2 %)
+                quasiquote $ ~defn f% (? % %2) (+ 2 %)
 
               ; assert=
                 macroexpand-all $ quote $ \ x
-                quote $ defn f% (? % %2) (x)
+                quasiquote $ ~defn f% (? % %2) (x)
 
-              ; assert=
+              assert=
                 macroexpand-all $ quote $ \ + x %
-                quote $ defn f% (? % %2) (+ x %)
+                quasiquote $ ~defn f% (? % %2) (+ x %)
 
-              ; assert=
+              assert=
                 macroexpand-all $ quote $ \ + x % %2
-                quote $ defn f% (? % %2) (+ x % %2)
+                quasiquote $ ~defn f% (? % %2) (+ x % %2)
 
               assert=
                 macroexpand $ quote $ \. x x
-                quote $ defn f_x (x) x
+                quasiquote $ defn f_x (x) x
 
               assert=
                 macroexpand $ quote $ \. x.y x

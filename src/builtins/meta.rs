@@ -1,9 +1,9 @@
-use crate::builtins::math::f64_to_usize;
 use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems};
+use crate::util::number::f64_to_usize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
@@ -79,16 +79,12 @@ pub fn reset_js_gensym_index() {
 
 // for emitting js
 pub fn js_gensym(name: &str) -> String {
-  let idx = SYMBOL_INDEX.fetch_add(1, Ordering::SeqCst);
+  let idx = JS_SYMBOL_INDEX.fetch_add(1, Ordering::SeqCst);
   let n = idx + 1; // use 1 as first value since previous implementation did this
 
   let mut chunk = String::from(name);
   chunk.push_str(&n.to_string());
   chunk
-}
-
-pub fn get_calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, String> {
-  Ok(Calcit::Keyword(String::from("eval")))
 }
 
 pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, String> {

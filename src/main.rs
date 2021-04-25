@@ -15,6 +15,7 @@ mod runner;
 mod snapshot;
 mod util;
 
+use builtins::effects;
 use codegen::emit_js::emit_js;
 use dirs::home_dir;
 use primes::Calcit;
@@ -68,10 +69,10 @@ fn main() -> Result<(), String> {
   let program_code = program::extract_program_data(&snapshot)?;
 
   if cli_matches.is_present("emit-js") {
-    emit_js(&program_code, &snapshot.configs.init_fn); // TODO entry ns
+    run_codegen(&snapshot.configs.init_fn, &snapshot.configs.reload_fn, &program_code)
+  } else {
+    run_program(&snapshot.configs.init_fn, &snapshot.configs.reload_fn, &program_code)
   }
-
-  run_program(&snapshot.configs.init_fn, &snapshot.configs.reload_fn, &program_code)
 }
 
 fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCodeData) -> Result<(), String> {
@@ -81,7 +82,7 @@ fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
   let (reload_ns, reload_def) = extract_ns_def(reload_fn)?;
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed, {}", failure);
@@ -91,7 +92,7 @@ fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code) {
+  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed, {}", failure);
@@ -121,6 +122,39 @@ fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
       _ => Err(format!("expected function entry, got: {}", entry)),
     },
   }
+}
+
+fn run_codegen(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCodeData) -> Result<(), String> {
+  let started_time = Instant::now();
+
+  let (init_ns, init_def) = extract_ns_def(init_fn)?;
+  let (reload_ns, reload_def) = extract_ns_def(reload_fn)?;
+
+  effects::modify_cli_running_mode(effects::CliRunningMode::Js)?;
+
+  // preprocess to init
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def) {
+    Ok(_) => (),
+    Err(failure) => {
+      println!("\nfailed, {}", failure);
+      call_stack::display_stack(&failure);
+      return Err(failure);
+    }
+  }
+
+  // preprocess to reload
+  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def) {
+    Ok(_) => (),
+    Err(failure) => {
+      println!("\nfailed, {}", failure);
+      call_stack::display_stack(&failure);
+      return Err(failure);
+    }
+  }
+  emit_js(&init_ns)?; // TODO entry ns
+  let duration = Instant::now().duration_since(started_time);
+  println!("took {}ms", duration.as_micros() as f64 / 1000.0);
+  Ok(())
 }
 
 fn extract_ns_def(s: &str) -> Result<(String, String), String> {

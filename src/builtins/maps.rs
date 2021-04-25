@@ -1,7 +1,7 @@
 use crate::builtins::records::find_in_fields;
 use crate::primes::{Calcit, CalcitItems};
 
-use crate::builtins::math::{f64_to_usize, is_even};
+use crate::util::number::{f64_to_usize, is_even};
 
 pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, String> {
   if is_even(xs.len()) {

@@ -1,7 +1,7 @@
 use core::cmp::Ordering;
 
-use crate::builtins::math::f64_to_usize;
 use crate::primes::{Calcit, CalcitItems, CalcitScope};
+use crate::util::number::f64_to_usize;
 
 use crate::builtins;
 use crate::program::ProgramCodeData;

@@ -3,8 +3,16 @@ use std::time::Instant;
 
 use crate::primes::{Calcit, CalcitItems};
 
+#[derive(Clone, Debug)]
+pub enum CliRunningMode {
+  Eval,
+  Js,
+  Ir,
+}
+
 lazy_static! {
   static ref STARTED_INSTANT: Mutex<Instant> = Mutex::new(Instant::now());
+  static ref CLI_RUNNING_MODE: Mutex<CliRunningMode> = Mutex::new(CliRunningMode::Eval);
 }
 
 pub fn echo(xs: &CalcitItems) -> Result<Calcit, String> {
@@ -60,4 +68,19 @@ pub fn cpu_time(_xs: &CalcitItems) -> Result<Calcit, String> {
   };
 
   Ok(Calcit::Number(time))
+}
+
+pub fn modify_cli_running_mode(mode: CliRunningMode) -> Result<(), String> {
+  // obscure https://doc.rust-lang.org/std/sync/struct.Mutex.html#method.get_mut
+  *CLI_RUNNING_MODE.lock().unwrap() = mode;
+  Ok(())
+}
+
+pub fn calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, String> {
+  let mode = CLI_RUNNING_MODE.lock().unwrap().to_owned();
+  match mode {
+    CliRunningMode::Eval => Ok(Calcit::Keyword(String::from("eval"))),
+    CliRunningMode::Js => Ok(Calcit::Keyword(String::from("js"))),
+    CliRunningMode::Ir => Ok(Calcit::Keyword(String::from("ir"))),
+  }
 }

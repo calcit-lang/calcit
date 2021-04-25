@@ -59,6 +59,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "pow"
       | "ceil"
       | "sqrt"
+      | "integer?"
       // strings
       | "&str-concat"
       | "trim"
@@ -137,7 +138,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "format-to-lisp" => meta::format_to_lisp(args),
     "gensym" => meta::gensym(args),
     "&reset-gensym-index!" => meta::reset_gensym_index(args),
-    "&get-calcit-running-mode" => meta::get_calcit_running_mode(args),
+    "&get-calcit-running-mode" => effects::calcit_running_mode(args),
     "generate-id!" => meta::generate_id(args),
     "display-stack" => meta::display_stack(args),
     "parse-cirru" => meta::parse_cirru(args),
@@ -171,6 +172,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "ceil" => math::ceil(args),
     "sqrt" => math::sqrt(args),
     "round" => math::round(args),
+    "integer?" => math::integer_ques(args),
     // strings
     "&str-concat" => strings::binary_str_concat(args),
     "trim" => strings::trim(args),
@@ -289,4 +291,23 @@ pub fn handle_syntax(
     "defatom" => refs::defatom(nodes, scope, file_ns, program),
     a => Err(format!("TODO syntax: {}", a)),
   }
+}
+
+// detects extra javascript things in js mode
+pub fn is_js_syntax_procs(s: &str) -> bool {
+  matches!(
+    s,
+    "aget"
+      | "aset"
+      | "new"
+      | "set!"
+      | "exists?"
+      | "instance?"
+      | "to-calcit-data"
+      | "to-js-data"
+      | "to-cirru-edn"
+      | "extract-cirru-edn"
+      | "timeout-call"
+      | "load-console-formatter!"
+  )
 }

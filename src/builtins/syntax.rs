@@ -5,7 +5,6 @@
 use std::collections::HashSet;
 
 use crate::builtins;
-use crate::primes;
 use crate::primes::{Calcit, CalcitItems, CalcitScope};
 use crate::program::ProgramCodeData;
 use crate::runner;

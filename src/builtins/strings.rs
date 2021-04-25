@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
 
-use crate::builtins::math::f64_to_usize;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems};
+use crate::util::number::f64_to_usize;
 
 pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
