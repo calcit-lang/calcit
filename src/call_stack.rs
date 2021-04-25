@@ -94,7 +94,7 @@ pub fn display_stack(failure: &str) {
   let mut data: HashMap<Edn, Edn> = HashMap::new();
   data.insert(Edn::Keyword(String::from("message")), Edn::Str(failure.to_string()));
   data.insert(Edn::Keyword(String::from("stack")), Edn::List(stack_list));
-  let content = cirru_edn::format(&Edn::Map(data));
+  let content = cirru_edn::format(&Edn::Map(data), true);
   let _ = fs::write(ERROR_SNAPSHOT, content);
   println!("\nrun `cat {}` to read stack details.", ERROR_SNAPSHOT);
 }

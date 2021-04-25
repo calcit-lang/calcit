@@ -82,3 +82,14 @@ pub fn has_ns_part(x: &str) -> bool {
     None => false,
   }
 }
+
+/// js/JSON.stringify -like API
+pub fn wrap_js_str(s: &str) -> String {
+  let mut c: String = String::from("");
+  c.push('"');
+  for i in s.escape_default() {
+    c.push(i);
+  }
+  c.push('"');
+  c
+}

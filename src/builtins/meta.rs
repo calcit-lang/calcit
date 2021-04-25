@@ -153,7 +153,7 @@ pub fn parse_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn write_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)))),
+    Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a), true))),
     None => Err(String::from("write-cirru-edn expected 1 argument")),
   }
 }

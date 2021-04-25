@@ -9,18 +9,9 @@ use std::sync::Mutex;
 // track if it's the first compilation
 static FIRST_COMPILATION: AtomicBool = AtomicBool::new(true);
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum ImportedTarget {
-  JustNs(String),
-  FromNs(String),
-}
-
 lazy_static! {
   // caches program data for detecting incremental changes of libs
   static ref GLOBAL_PREVIOUS_PROGRAM_CACHES: Mutex<HashMap<String, HashSet<String>>> = Mutex::new(HashMap::new());
-
-  // TODO mutable way of collect things of a single tile
-  static ref GLOBAL_COLLECTED_IMPORTS: Mutex <HashMap<String, ImportedTarget>> = Mutex::new(HashMap::new());
 }
 
 pub fn lookup_prev_ns_cache(ns: &str) -> Option<HashSet<String>> {
@@ -44,33 +35,4 @@ pub fn is_first_compilation() -> bool {
 pub fn finish_compilation() -> Result<(), String> {
   FIRST_COMPILATION.store(false, Ordering::SeqCst);
   Ok(())
-}
-
-pub fn clone_imports() -> Result<HashMap<String, ImportedTarget>, String> {
-  let mut xs: HashMap<String, ImportedTarget> = HashMap::new();
-  let collected_imports = &GLOBAL_COLLECTED_IMPORTS.lock().unwrap();
-  for k in collected_imports.keys() {
-    xs.insert(k.to_string(), collected_imports[k].clone());
-  }
-  Ok(xs)
-}
-
-pub fn track_import(k: String, v: ImportedTarget) -> Result<(), String> {
-  let collected_imports = &mut GLOBAL_COLLECTED_IMPORTS.lock().unwrap();
-  collected_imports.insert(k, v);
-  Ok(())
-}
-
-pub fn clear_imports() -> Result<(), String> {
-  let collected_imports = &mut GLOBAL_COLLECTED_IMPORTS.lock().unwrap();
-  collected_imports.clear();
-  Ok(())
-}
-
-pub fn lookup_import(k: &str) -> Option<ImportedTarget> {
-  let collected_imports = &GLOBAL_COLLECTED_IMPORTS.lock().unwrap();
-  match collected_imports.get(k) {
-    Some(v) => Some(v.clone()),
-    None => None,
-  }
 }
