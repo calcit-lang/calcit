@@ -871,17 +871,17 @@ fn sort_by_deps(deps: &HashMap<String, Calcit>) -> Vec<String> {
   result
 }
 
-fn write_file_if_changed(filename: &str, content: &str) -> bool {
-  if Path::new(filename).exists() && fs::read_to_string(filename).unwrap() == content {
+fn write_file_if_changed(filename: &Path, content: &str) -> bool {
+  if filename.exists() && fs::read_to_string(filename).unwrap() == content {
     return false;
   }
   let _ = fs::write(filename, content);
   true
 }
 
-pub fn emit_js(entry_ns: &str) -> Result<(), String> {
-  let code_emit_path = "js-out/"; // TODO
-  if !Path::new(code_emit_path).exists() {
+pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
+  let code_emit_path = Path::new(emit_path);
+  if !code_emit_path.exists() {
     let _ = fs::create_dir(code_emit_path);
   }
 
@@ -1023,10 +1023,10 @@ pub fn emit_js(entry_ns: &str) -> Result<(), String> {
       }
     }
 
-    let js_file_path = format!("{}{}", code_emit_path, to_js_file_name(&ns, false)); // TODO mjs_mode
+    let js_file_path = code_emit_path.join(to_js_file_name(&ns, false)); // TODO mjs_mode
     let wrote_new = write_file_if_changed(&js_file_path, &format!("{}\n{}\n{}", import_code, defs_code, vals_code));
     if wrote_new {
-      println!("Emitted js file: {}", js_file_path);
+      println!("Emitted js file: {}", js_file_path.to_str().unwrap());
     } else {
       unchanged_ns.insert(ns.to_string());
     }

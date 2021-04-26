@@ -71,10 +71,23 @@ fn main() -> Result<(), String> {
 
   let mut program_code = program::extract_program_data(&snapshot)?;
 
+  let init_fn = match cli_matches.value_of("init-fn") {
+    Some(v) => v.to_owned(),
+    None => snapshot.configs.init_fn,
+  };
+  let reload_fn = match cli_matches.value_of("reload-fn") {
+    Some(v) => v.to_owned(),
+    None => snapshot.configs.reload_fn,
+  };
+  let emit_path = match cli_matches.value_of("emit-path") {
+    Some(v) => v.to_owned(),
+    None => "js-out".to_owned(),
+  };
+
   if cli_matches.is_present("emit-js") {
-    run_codegen(&snapshot.configs.init_fn, &snapshot.configs.reload_fn, &program_code)?;
+    run_codegen(&init_fn, &reload_fn, &program_code, &emit_path)?;
   } else {
-    run_program(&snapshot.configs.init_fn, &snapshot.configs.reload_fn, &program_code)?;
+    run_program(&init_fn, &reload_fn, &program_code)?;
   }
 
   if !eval_once {
@@ -118,10 +131,10 @@ fn main() -> Result<(), String> {
                 builtins::meta::force_reset_gensym_index()?;
 
                 let task = if cli_matches.is_present("emit-js") {
-                  run_codegen(&snapshot.configs.init_fn, &snapshot.configs.reload_fn, &new_code)
+                  run_codegen(&init_fn, &reload_fn, &new_code, &emit_path)
                 } else {
                   // run from `reload_fn` after reload
-                  run_program(&snapshot.configs.reload_fn, &snapshot.configs.init_fn, &new_code)
+                  run_program(&reload_fn, &init_fn, &new_code)
                 };
 
                 match task {
@@ -197,7 +210,12 @@ fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
   }
 }
 
-fn run_codegen(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCodeData) -> Result<(), String> {
+fn run_codegen(
+  init_fn: &str,
+  reload_fn: &str,
+  program_code: &program::ProgramCodeData,
+  emit_path: &str,
+) -> Result<(), String> {
   let started_time = Instant::now();
 
   let (init_ns, init_def) = extract_ns_def(init_fn)?;
@@ -224,7 +242,7 @@ fn run_codegen(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
       return Err(failure);
     }
   }
-  emit_js(&init_ns)?; // TODO entry ns
+  emit_js(&init_ns, &emit_path)?; // TODO entry ns
   let duration = Instant::now().duration_since(started_time);
   println!("took {}ms", duration.as_micros() as f64 / 1000.0);
   Ok(())

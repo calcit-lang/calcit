@@ -1,6 +1,6 @@
 ### Calcit Runner
 
-> An interpreter runtime for Calcit snapshot file.
+> An interpreter for Calcit snapshot file.
 
 - Home http://calcit-lang.org/
 - APIs http://apis.calcit-lang.org/
@@ -26,7 +26,7 @@ A `compact.cirru` file can be:
           defn reload! ()
 ```
 
-APIs implemented in Calcit Runner is mostly learning from Clojure.
+APIs implemented in Calcit Runner is mostly learning from Clojure. Major difference arguments order of list functions.
 
 ### Usage
 
@@ -34,31 +34,28 @@ Run:
 
 ```bash
 cargo run calcit/compact.cirru
-```
 
-_TODO_ previously implemented commands:
-
-```bash
-calcit_runner compact.cirru # watch by default
+# evaluate
 
 calcit_runner compact.cirru --once # run only once
+calcit_runner compact.cirru # watch mode enabled by default
 
 calcit_runner compact.cirru --init-fn='app.main/main!' # specifying init-fn
 
 calcit_runner -e="range 100" # eval from CLI
 
-calcit_runner --emit-js # compile to js
-calcit_runner --emit-js --mjs # compile to mjs
-calcit_runner --emit-js --emit-path=out/ # compile to js and save in `out/`
+# emit code
 
-calcit_runner --emit-ir # compile to intermediate representation
+calcit_runner compact.cirru --emit-js # compile to js
+calcit_runner compact.cirru --emit-js --emit-path=out/ # compile to js and save in `out/`
+
+calcit_runner compact.cirru --emit-js --mjs # TODO compile to mjs
+calcit_runner compact.cirru --emit-ir # TODO compile to intermediate representation
 ```
 
 For linux users, download pre-built binaries from http://bin.calcit-lang.org/linux/ .
 
 ### Development
-
-Dependent modules, besides SDL2 and Cairo:
 
 - [Cirru Parser](https://github.com/Cirru/parser.rs) for indentation-based syntax parsing.
 - [Cirru EDN](https://github.com/Cirru/cirru-edn.rs) for `compact.cirru` file parsing.
