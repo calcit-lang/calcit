@@ -8,11 +8,11 @@ import {
   CrDataKeyword,
   CrDataList,
   CrDataMap,
-  CrDataAtom,
+  CrDataRef,
   CrDataFn,
   CrDataRecur,
   kwd,
-  atomsRegistry,
+  refsRegistry,
   toString,
   CrDataSet,
   cloneSet,
@@ -48,8 +48,8 @@ export let type_of = (x: any): CrDataKeyword => {
   if (x == null) {
     return kwd("nil");
   }
-  if (x instanceof CrDataAtom) {
-    return kwd("atom");
+  if (x instanceof CrDataRef) {
+    return kwd("ref");
   }
   if (x instanceof CrDataSymbol) {
     return kwd("symbol");
@@ -139,19 +139,19 @@ export let _AND_list_map = (...xs: CrDataValue[]): CrDataList => {
 };
 
 export let defatom = (path: string, x: CrDataValue): CrDataValue => {
-  let v = new CrDataAtom(x, path);
-  atomsRegistry.set(path, v);
+  let v = new CrDataRef(x, path);
+  refsRegistry.set(path, v);
   return v;
 };
 
-export let peekDefatom = (path: string): CrDataAtom => {
-  return atomsRegistry.get(path);
+export let peekDefatom = (path: string): CrDataRef => {
+  return refsRegistry.get(path);
 };
 
-export let deref = (x: CrDataAtom): CrDataValue => {
-  let a = atomsRegistry.get(x.path);
-  if (!(a instanceof CrDataAtom)) {
-    console.warn("Can not find atom:", x);
+export let deref = (x: CrDataRef): CrDataValue => {
+  let a = refsRegistry.get(x.path);
+  if (!(a instanceof CrDataRef)) {
+    console.warn("Can not find ref:", x);
   }
   return a.value;
 };
@@ -267,8 +267,8 @@ export let _AND__EQ_ = (x: CrDataValue, y: CrDataValue): boolean => {
     }
     return false;
   }
-  if (x instanceof CrDataAtom) {
-    if (y instanceof CrDataAtom) {
+  if (x instanceof CrDataRef) {
+    if (y instanceof CrDataRef) {
       return x === y;
     }
     return false;
@@ -419,7 +419,7 @@ export let nth = function (xs: CrDataValue, k: CrDataValue) {
     if (k < 0 || k >= xs.fields.length) {
       throw new Error("Out of bound");
     }
-    return new CrDataList([xs.fields[k], xs.values[k]]);
+    return new CrDataList([kwd(xs.fields[k]), xs.values[k]]);
   }
   if (Array.isArray(xs)) {
     return xs[k];
@@ -520,9 +520,9 @@ export let dissoc = function (xs: CrDataValue, k: CrDataValue) {
   throw new Error("Does not support `dissoc` on this type");
 };
 
-export let reset_BANG_ = (a: CrDataAtom, v: CrDataValue): null => {
-  if (!(a instanceof CrDataAtom)) {
-    throw new Error("Expected atom for reset!");
+export let reset_BANG_ = (a: CrDataRef, v: CrDataValue): null => {
+  if (!(a instanceof CrDataRef)) {
+    throw new Error("Expected ref for reset!");
   }
   let prev = a.value;
   a.value = v;
@@ -532,9 +532,9 @@ export let reset_BANG_ = (a: CrDataAtom, v: CrDataValue): null => {
   return null;
 };
 
-export let add_watch = (a: CrDataAtom, k: CrDataKeyword, f: CrDataFn): null => {
-  if (!(a instanceof CrDataAtom)) {
-    throw new Error("Expected atom for add-watch!");
+export let add_watch = (a: CrDataRef, k: CrDataKeyword, f: CrDataFn): null => {
+  if (!(a instanceof CrDataRef)) {
+    throw new Error("Expected ref for add-watch!");
   }
   if (!(k instanceof CrDataKeyword)) {
     throw new Error("Expected watcher key in keyword");
@@ -546,7 +546,7 @@ export let add_watch = (a: CrDataAtom, k: CrDataKeyword, f: CrDataFn): null => {
   return null;
 };
 
-export let remove_watch = (a: CrDataAtom, k: CrDataKeyword): null => {
+export let remove_watch = (a: CrDataRef, k: CrDataKeyword): null => {
   a.listeners.delete(k);
   return null;
 };
@@ -886,7 +886,7 @@ export let to_pairs = (xs: CrDataValue): CrDataValue => {
   } else if (xs instanceof CrDataRecord) {
     let arr_result: Array<CrDataList> = [];
     for (let idx in xs.fields) {
-      arr_result.push(new CrDataList([xs.fields[idx], xs.values[idx]]));
+      arr_result.push(new CrDataList([kwd(xs.fields[idx]), xs.values[idx]]));
     }
     return new CrDataList(arr_result);
   } else {
@@ -1215,7 +1215,7 @@ export let pr_str = (...args: CrDataValue[]): string => {
   return args.map((x) => toString(x, true)).join(" ");
 };
 
-/** helper function for println */
+/** helper function for println, js only */
 export let printable = (...args: CrDataValue[]): string => {
   return args.map((x) => toString(x, false)).join(" ");
 };
@@ -1478,8 +1478,8 @@ export let set_QUES_ = (x: CrDataValue): boolean => {
 export let fn_QUES_ = (x: CrDataValue): boolean => {
   return typeof x === "function";
 };
-export let atom_QUES_ = (x: CrDataValue): boolean => {
-  return x instanceof CrDataAtom;
+export let ref_QUES_ = (x: CrDataValue): boolean => {
+  return x instanceof CrDataRef;
 };
 export let record_QUES_ = (x: CrDataValue): boolean => {
   return x instanceof CrDataRecord;

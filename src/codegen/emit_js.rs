@@ -145,7 +145,7 @@ fn is_preferred_js_proc(name: &str) -> bool {
       | "string?"
       | "fn?"
       | "bool?"
-      | "atom?"
+      | "ref?"
       | "record?"
       | "starts-with?"
       | "ends-with?"
@@ -249,6 +249,11 @@ fn gen_call_code(
   file_imports: &RefCell<ImportsDict>,
 ) -> Result<String, String> {
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
+  let proc_prefix = if ns == primes::CORE_NS {
+    "$calcit_procs."
+  } else {
+    "$calcit."
+  };
   if ys.is_empty() {
     println!("[Warn] Unexpected empty list inside {}", xs);
     return Ok(String::from("()"));
@@ -283,11 +288,11 @@ fn gen_call_code(
             _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {:?}", body)),
             (Some(Calcit::Symbol(sym, ..)), Some(v)) => {
               // let _name = escape_var(sym); // TODO
-              let atom_path = wrap_js_str(&format!("{}/{}", ns, sym.clone()));
+              let ref_path = wrap_js_str(&format!("{}/{}", ns, sym.clone()));
               let value_code = &to_js_code(v, ns, local_defs, file_imports)?;
               Ok(format!(
                 "\n({}peekDefatom({}) ?? {}defatom({}, {}))\n",
-                &var_prefix, &atom_path, &var_prefix, &atom_path, value_code
+                &var_prefix, &ref_path, &var_prefix, &ref_path, value_code
               ))
             }
             (_, _) => Err(format!("defatom expected name and value, got: {:?}", body)),
@@ -337,7 +342,7 @@ fn gen_call_code(
           // not core syntax, but treat as macro for better debugging experience
           let args = ys.skip(1);
           let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
-          Ok(format!("console.log({}printable({}))", var_prefix, args_code))
+          Ok(format!("console.log({}printable({}))", proc_prefix, args_code))
         }
         "exists?" => {
           // not core syntax, but treat as macro for availability

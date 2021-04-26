@@ -57,7 +57,7 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
       Ok(idx) => {
         if idx < fields.len() {
           Ok(Calcit::List(im::vector![
-            Calcit::Str(fields[idx].clone()),
+            Calcit::Keyword(fields[idx].clone()),
             values[idx].clone()
           ]))
         } else {

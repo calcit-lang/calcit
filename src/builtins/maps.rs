@@ -189,7 +189,7 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, String> {
       let mut zs: CalcitItems = im::vector![];
       for idx in 0..fields.len() {
         zs.push_back(Calcit::List(im::vector![
-          Calcit::Str(fields[idx].clone()),
+          Calcit::Keyword(fields[idx].clone()),
           values[idx].clone(),
         ]));
       }

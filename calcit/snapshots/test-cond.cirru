@@ -78,6 +78,25 @@
             echo title
             echo
 
+        |test-key-match $ quote
+          fn ()
+            log-title "|Testing key-match"
+            &let
+              match-ab $ fn (data)
+                key-match data
+                  (:a x) (' "|pattern a:" x)
+                  (:b x y) (' "|pattern b:" x y)
+                  _ (' "|no match")
+              assert=
+                match-ab (' :a 1 2)
+                [] "|pattern a:" 1
+              assert=
+                match-ab (' :b 1 2)
+                [] "|pattern b:" 1 2
+              assert=
+                match-ab (' :c 1 2)
+                [] "|no match"
+
         |main! $ quote
           defn main! ()
             log-title "|Testing cond"
@@ -86,6 +105,9 @@
             test-or
 
             test-case
+
+            test-key-match
+
             , true
 
       :proc $ quote ()

@@ -47,6 +47,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&<"
       | "&>"
       | "not"
+      | "identical?"
       // math
       | "&+"
       | "&-"
@@ -166,6 +167,8 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&<" => logics::binary_less(args),
     "&>" => logics::binary_greater(args),
     "not" => logics::not(args),
+    // in Rust, no real pointer `identical?`, fallback to value equal
+    "identical?" => logics::binary_equal(args),
     // math
     "&+" => math::binary_add(args),
     "&-" => math::binary_minus(args),
@@ -298,6 +301,7 @@ pub fn handle_syntax(
     "macroexpand-all" => syntax::macroexpand_all(nodes, scope, file_ns, program),
     "try" => syntax::call_try(nodes, scope, file_ns, program),
     "sort" => lists::sort(nodes, scope, file_ns, program),
+    // "define reference" although it uses a confusing name "atom"
     "defatom" => refs::defatom(nodes, scope, file_ns, program),
     a => Err(format!("TODO syntax: {}", a)),
   }

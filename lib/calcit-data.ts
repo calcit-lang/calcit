@@ -93,7 +93,7 @@ export let tipNestedCrData = (x: CrDataValue): string => {
   return x.toString();
 };
 
-export class CrDataAtom {
+export class CrDataRef {
   value: CrDataValue;
   path: string;
   listeners: Map<CrDataValue, CrDataFn>;
@@ -104,7 +104,7 @@ export class CrDataAtom {
     this.listeners = new Map();
   }
   toString(): string {
-    return `(&atom ${this.value.toString()})`;
+    return `(&ref ${this.value.toString()})`;
   }
 }
 
@@ -350,9 +350,9 @@ export class CrDataMap {
       if (shorter) {
         let keyPart = isNestedCrData(k) ? tipNestedCrData(k) : toString(k, true);
         let valuePart = isNestedCrData(v) ? tipNestedCrData(v) : toString(k, true);
-        itemsCode = ` (${itemsCode}${keyPart} ${valuePart})`;
+        itemsCode = `${itemsCode} (${keyPart} ${valuePart})`;
       } else {
-        itemsCode = ` (${itemsCode}${toString(k, true)} ${toString(v, true)})`;
+        itemsCode = `${itemsCode} (${toString(k, true)} ${toString(v, true)})`;
       }
     }
     return `({}${itemsCode})`;
@@ -498,7 +498,7 @@ export type CrDataValue =
   | CrDataSet
   | CrDataKeyword
   | CrDataSymbol
-  | CrDataAtom
+  | CrDataRef
   | CrDataFn
   | CrDataRecur // should not be exposed to function
   | CrDataRecord
@@ -517,7 +517,7 @@ export let kwd = (content: string) => {
   }
 };
 
-export var atomsRegistry = new Map<string, CrDataAtom>();
+export var refsRegistry = new Map<string, CrDataRef>();
 
 let defaultHash_nil = valueHash("nil:");
 let defaultHash_number = valueHash("number:");
@@ -527,7 +527,7 @@ let defaultHash_true = valueHash("true:");
 let defaultHash_false = valueHash("false:");
 let defaultHash_symbol = valueHash("symbol:");
 let defaultHash_fn = valueHash("fn:");
-let defaultHash_atom = valueHash("atom:");
+let defaultHash_ref = valueHash("ref:");
 let defaultHash_set = valueHash("set:");
 let defaultHash_list = valueHash("list:");
 let defaultHash_map = valueHash("map:");
@@ -570,8 +570,8 @@ let hashFunction = (x: CrDataValue): Hash => {
     (x as any).cachedHash = h;
     return h;
   }
-  if (x instanceof CrDataAtom) {
-    let h = mergeValueHash(defaultHash_atom, x.path);
+  if (x instanceof CrDataRef) {
+    let h = mergeValueHash(defaultHash_ref, x.path);
     x.cachedHash = h;
     return h;
   }
@@ -655,7 +655,7 @@ export let toString = (x: CrDataValue, escaped: boolean): string => {
   if (x instanceof CrDataRecord) {
     return x.toString();
   }
-  if (x instanceof CrDataAtom) {
+  if (x instanceof CrDataRef) {
     return x.toString();
   }
 

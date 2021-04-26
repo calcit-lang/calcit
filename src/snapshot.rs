@@ -137,6 +137,14 @@ pub fn create_file_from_snippet(code: &str) -> Result<FileInSnapShot, String> {
           code,
         ]),
       );
+      def_dict.insert(
+        String::from("reload!"),
+        Cirru::List(vec![
+          Cirru::Leaf(String::from("defn")),
+          Cirru::Leaf(String::from("reload!")),
+          Cirru::List(vec![]),
+        ]),
+      );
       Ok(FileInSnapShot {
         ns: Cirru::List(vec![
           Cirru::Leaf(String::from("ns")),
