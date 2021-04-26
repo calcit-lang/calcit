@@ -419,7 +419,7 @@ export let nth = function (xs: CrDataValue, k: CrDataValue) {
     if (k < 0 || k >= xs.fields.length) {
       throw new Error("Out of bound");
     }
-    return new CrDataList([xs.fields[k], xs.values[k]]);
+    return new CrDataList([kwd(xs.fields[k]), xs.values[k]]);
   }
   if (Array.isArray(xs)) {
     return xs[k];
@@ -886,7 +886,7 @@ export let to_pairs = (xs: CrDataValue): CrDataValue => {
   } else if (xs instanceof CrDataRecord) {
     let arr_result: Array<CrDataList> = [];
     for (let idx in xs.fields) {
-      arr_result.push(new CrDataList([xs.fields[idx], xs.values[idx]]));
+      arr_result.push(new CrDataList([kwd(xs.fields[idx]), xs.values[idx]]));
     }
     return new CrDataList(arr_result);
   } else {
