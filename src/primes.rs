@@ -408,7 +408,7 @@ impl PartialEq for Calcit {
 pub const CORE_NS: &str = "calcit.core";
 pub const GENERATED_NS: &str = "calcit.gen";
 
-pub const CALCI_VERSION: &str = "0.0.1";
+pub const CALCI_VERSION: &str = "0.3.0-a3";
 
 impl Calcit {
   pub fn turn_string(&self) -> String {
