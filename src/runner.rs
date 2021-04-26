@@ -141,7 +141,10 @@ pub fn evaluate_symbol(
       }
       match program::lookup_def_target_in_import(file_ns, sym, program_code) {
         Some(target_ns) => eval_symbol_from_program(sym, &target_ns, program_code),
-        None => Err(format!("unknown symbol: {}", sym)),
+        None => {
+          let vars: Vec<&String> = scope.keys().collect();
+          Err(format!("unknown symbol `{}` in {:?}", sym, vars))
+        }
       }
     }
   }

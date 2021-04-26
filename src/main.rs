@@ -30,7 +30,7 @@ fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
   let cli_matches = cli_args::parse_cli();
 
-  let eval_once = cli_matches.is_present("once");
+  let mut eval_once = cli_matches.is_present("once");
 
   // load core libs
   let bytes = include_bytes!("./cirru/calcit-core.cirru");
@@ -41,6 +41,7 @@ fn main() -> Result<(), String> {
   let mut snapshot = snapshot::gen_default(); // placeholder data
 
   if let Some(snippet) = cli_matches.value_of("eval") {
+    eval_once = true;
     match snapshot::create_file_from_snippet(snippet) {
       Ok(main_file) => {
         snapshot.files.insert(String::from("app.main"), main_file);

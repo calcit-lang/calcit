@@ -185,7 +185,9 @@ pub fn format_to_lisp(x: &Calcit) -> String {
       s.push(')');
       s
     }
-    Calcit::Symbol(s, ..) => s.clone(),
+    Calcit::Symbol(s, ..) => s.to_owned(),
+    Calcit::Syntax(s, _ns) => s.to_owned(),
+    Calcit::Proc(s) => s.to_owned(),
     a => format!("{}", a),
   }
 }

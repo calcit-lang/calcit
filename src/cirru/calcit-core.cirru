@@ -286,6 +286,33 @@
                           ~ $ nth else 0
                           ~@ $ rest else
 
+        |key-match $ quote
+          defmacro key-match (value & body)
+            if (empty? body)
+              quasiquote
+                &let nil
+                  echo "|[warn] key-match found no matched case, missing `_` case?" ~value
+              &let
+                pair (first body)
+                assert "|key-match expected pairs"
+                  and (list? pair) (&= 2 (count pair))
+                let[] (pattern branch) pair
+                  if (&= pattern '_) branch
+                    &let nil
+                      assert "|pattern in a list" (list? pattern)
+                      &let
+                        k (first pattern)
+                        &let (v# (gensym 'v))
+                          quasiquote
+                            &let (~v# ~value)
+                              if (&= (first ~v#) ~k)
+                                let
+                                  ~ $ map-indexed (rest pattern) $ fn (idx x)
+                                    [] x $ quasiquote
+                                      nth ~v# (~ (inc idx))
+                                  , ~branch
+                                key-match ~value (~@ (rest body))
+
         |&case $ quote
           defmacro &case (item default pattern & others)
             assert "|expects pattern in a pair"
