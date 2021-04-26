@@ -794,6 +794,7 @@
 
         |println $ quote
           defn println (& xs)
+            ; "TODO print not implemented, use syntax echo"
             print & xs
             when
               = (&get-calcit-backend) :nim

@@ -84,6 +84,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "blank?"
       // lists
       | "[]"
+      | "'" // used as an alias for `[]`, experimental
       | "empty?"
       | "count"
       | "nth"
@@ -198,6 +199,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "re-find-all" => regexes::re_find_all(args),
     // lists
     "[]" => lists::new_list(args),
+    "'" => lists::new_list(args), // alias
     "empty?" => lists::empty_ques(args),
     "count" => lists::count(args),
     "nth" => lists::nth(args),

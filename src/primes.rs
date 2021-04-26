@@ -75,7 +75,7 @@ impl fmt::Display for Calcit {
         if RE_SIMPLE_TOKEN.is_match(s) {
           write!(f, "|{}", s)
         } else {
-          write!(f, "\"|{}\"", str::escape_debug(s))
+          write!(f, "\"|{}\"", s.escape_default())
         }
       } // TODO, escaping choices
       Calcit::Thunk(v) => f.write_str(&format!("(&thunk {})", v)),

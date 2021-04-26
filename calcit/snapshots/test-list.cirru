@@ -288,6 +288,11 @@
               assert= 3 c
               assert= ([] 4 5) d
 
+        |test-alias $ quote
+          fn ()
+            log-title "|Testing alias"
+            assert= (' 1 2 3) ([] 1 2 3)
+
         |main! $ quote
           defn main! ()
 
@@ -314,6 +319,8 @@
 
             log-title "|Testing sort"
             test-sort
+
+            test-alias
 
             test-doseq
             test-let[]

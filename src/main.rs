@@ -18,17 +18,19 @@ mod util;
 use builtins::effects;
 use codegen::emit_js::emit_js;
 use dirs::home_dir;
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use primes::Calcit;
 use std::fs;
 use std::path::Path;
+use std::sync::mpsc::channel;
+use std::time::Duration;
 use std::time::Instant;
 
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
   let cli_matches = cli_args::parse_cli();
 
-  // let eval_once = cli_matches.is_present("once");
-  // println!("once: {}", eval_once);
+  let eval_once = cli_matches.is_present("once");
 
   // load core libs
   let bytes = include_bytes!("./cirru/calcit-core.cirru");
@@ -62,16 +64,100 @@ fn main() -> Result<(), String> {
     }
   }
 
+  // attach core
   for (k, v) in core_snapshot.files {
     snapshot.files.insert(k.clone(), v.clone());
   }
 
-  let program_code = program::extract_program_data(&snapshot)?;
+  let mut program_code = program::extract_program_data(&snapshot)?;
+
+  let init_fn = match cli_matches.value_of("init-fn") {
+    Some(v) => v.to_owned(),
+    None => snapshot.configs.init_fn,
+  };
+  let reload_fn = match cli_matches.value_of("reload-fn") {
+    Some(v) => v.to_owned(),
+    None => snapshot.configs.reload_fn,
+  };
+  let emit_path = match cli_matches.value_of("emit-path") {
+    Some(v) => v.to_owned(),
+    None => "js-out".to_owned(),
+  };
 
   if cli_matches.is_present("emit-js") {
-    run_codegen(&snapshot.configs.init_fn, &snapshot.configs.reload_fn, &program_code)
+    run_codegen(&init_fn, &reload_fn, &program_code, &emit_path)?;
   } else {
-    run_program(&snapshot.configs.init_fn, &snapshot.configs.reload_fn, &program_code)
+    run_program(&init_fn, &reload_fn, &program_code)?;
+  }
+
+  if !eval_once {
+    println!("\nRunner: in watch mode...\n");
+    let (tx, rx) = channel();
+    let entry_path = Path::new(cli_matches.value_of("input").unwrap());
+    let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).unwrap();
+
+    let inc_path = entry_path.parent().unwrap().join(".compact-inc.cirru");
+    if inc_path.exists() {
+      watcher.watch(&inc_path, RecursiveMode::Recursive).unwrap();
+
+      loop {
+        match rx.recv() {
+          Ok(event) => {
+            // println!("event: {:?}", event);
+            match event {
+              notify::DebouncedEvent::NoticeWrite(..) => {
+                // ignored
+              }
+              notify::DebouncedEvent::Write(_) => {
+                println!("\n-------- file change --------\n");
+
+                // Steps:
+                // 1. load changes file, and patch to program_code
+                // 2. clears evaled states, gensym counter
+                // 3. rerun program, and catch error
+
+                // load new program code
+                let content = fs::read_to_string(&inc_path).unwrap();
+                let data = cirru_edn::parse(&content)?;
+                let changes = snapshot::load_changes_info(data.clone())?;
+
+                // println!("\ndata: {}", &data);
+                // println!("\nchanges: {:?}", changes);
+                let new_code = program::apply_code_changes(&program_code, &changes)?;
+                // println!("\nprogram code: {:?}", new_code);
+
+                // clear data in evaled states
+                program::clear_all_program_evaled_defs()?;
+                builtins::meta::force_reset_gensym_index()?;
+
+                let task = if cli_matches.is_present("emit-js") {
+                  run_codegen(&init_fn, &reload_fn, &new_code, &emit_path)
+                } else {
+                  // run from `reload_fn` after reload
+                  run_program(&reload_fn, &init_fn, &new_code)
+                };
+
+                match task {
+                  Ok(_) => {}
+                  Err(e) => {
+                    println!("\nfailed to reload, {}", e)
+                  }
+                }
+
+                // overwrite previous state
+                program_code = new_code;
+              }
+              _ => println!("other file event: {:?}, ignored", event),
+            }
+          }
+          Err(e) => println!("watch error: {:?}", e),
+        }
+      }
+    } else {
+      Err(format!("path {:?} not existed", inc_path))
+    }
+  } else {
+    Ok(())
   }
 }
 
@@ -85,7 +171,7 @@ fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
   match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def) {
     Ok(_) => (),
     Err(failure) => {
-      println!("\nfailed, {}", failure);
+      println!("\nfailed preprocessing, {}", failure);
       call_stack::display_stack(&failure);
       return Err(failure);
     }
@@ -95,7 +181,7 @@ fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
   match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def) {
     Ok(_) => (),
     Err(failure) => {
-      println!("\nfailed, {}", failure);
+      println!("\nfailed preprocessing, {}", failure);
       call_stack::display_stack(&failure);
       return Err(failure);
     }
@@ -124,7 +210,12 @@ fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
   }
 }
 
-fn run_codegen(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCodeData) -> Result<(), String> {
+fn run_codegen(
+  init_fn: &str,
+  reload_fn: &str,
+  program_code: &program::ProgramCodeData,
+  emit_path: &str,
+) -> Result<(), String> {
   let started_time = Instant::now();
 
   let (init_ns, init_def) = extract_ns_def(init_fn)?;
@@ -136,7 +227,7 @@ fn run_codegen(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
   match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def) {
     Ok(_) => (),
     Err(failure) => {
-      println!("\nfailed, {}", failure);
+      println!("\nfailed preprocessing, {}", failure);
       call_stack::display_stack(&failure);
       return Err(failure);
     }
@@ -146,12 +237,12 @@ fn run_codegen(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
   match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def) {
     Ok(_) => (),
     Err(failure) => {
-      println!("\nfailed, {}", failure);
+      println!("\nfailed preprocessing, {}", failure);
       call_stack::display_stack(&failure);
       return Err(failure);
     }
   }
-  emit_js(&init_ns)?; // TODO entry ns
+  emit_js(&init_ns, &emit_path)?; // TODO entry ns
   let duration = Instant::now().duration_since(started_time);
   println!("took {}ms", duration.as_micros() as f64 / 1000.0);
   Ok(())

@@ -15,14 +15,14 @@ jobs:
           toolchain: stable
 
       - run: cargo test
-      - run: cargo run calcit/compact.cirru
-      - run: cargo run calcit/snapshots/test.cirru
+      - run: cargo run calcit/compact.cirru --once
+      - run: cargo run calcit/snapshots/test.cirru --once
 
       - name: "try js"
         run: >
           yarn
           && yarn tsc
-          && cargo run calcit/snapshots/test.cirru --emit-js
+          && cargo run calcit/snapshots/test.cirru --emit-js --once
           && ln -s ../../ node_modules/@calcit/procs
           && cp -v scripts/main.js js-out/
           && target=node yarn webpack && node js-out/bundle.js

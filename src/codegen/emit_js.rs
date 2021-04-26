@@ -2,7 +2,7 @@ mod internal_states;
 mod snippets;
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -14,7 +14,7 @@ use crate::program;
 use crate::util::string::has_ns_part;
 use crate::util::string::{matches_js_var, wrap_js_str};
 
-type ImportsDict = HashMap<String, ImportedTarget>;
+type ImportsDict = BTreeMap<String, ImportedTarget>;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ImportedTarget {
@@ -255,7 +255,7 @@ fn gen_call_code(
   }
 
   let head = ys[0].clone();
-  let body = ys.clone().slice(1..);
+  let body = ys.skip(1);
   match &head {
     Calcit::Symbol(s, ..) | Calcit::Proc(s) | Calcit::Syntax(s, ..) => {
       match s.as_str() {
@@ -296,7 +296,7 @@ fn gen_call_code(
 
         "defn" => match (body.get(0), body.get(1)) {
           (Some(Calcit::Symbol(sym, ..)), Some(Calcit::List(ys))) => {
-            let func_body = body.clone().slice(2..);
+            let func_body = body.skip(2);
             gen_js_func(sym, &ys, &func_body, ns, false, local_defs, file_imports)
           }
           (_, _) => Err(format!("defn expected name arguments, got: {:?}", body)),
@@ -335,7 +335,7 @@ fn gen_call_code(
         },
         "echo" | "println" => {
           // not core syntax, but treat as macro for better debugging experience
-          let args = ys.clone().slice(1..);
+          let args = ys.skip(1);
           let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
           Ok(format!("console.log({}printable({}))", var_prefix, args_code))
         }
@@ -352,7 +352,7 @@ fn gen_call_code(
         }
         "new" => match body.get(0) {
           Some(ctor) => {
-            let args = body.clone().slice(1..);
+            let args = body.skip(1);
             let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
             Ok(format!(
               "new {}({})",
@@ -394,7 +394,7 @@ fn gen_call_code(
           if matches_js_var(name) {
             match body.get(0) {
               Some(obj) => {
-                let args = body.clone().slice(1..);
+                let args = body.skip(1);
                 let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
                 Ok(format!(
                   "{}.{}({})",
@@ -544,7 +544,7 @@ fn gen_let_code(
       return Err(format!("Unexpected empty content in let, {:?}", xs));
     }
     let pair = let_def_body[0].clone();
-    let content = let_def_body.clone().slice(1..);
+    let content = let_def_body.skip(1);
 
     match &pair {
       Calcit::Nil => {
@@ -604,7 +604,7 @@ fn gen_let_code(
                 match child {
                   Calcit::List(ys) if ys.len() == 2 => match (&ys[0], &ys[1]) {
                     (Calcit::Symbol(sym, ..), Calcit::List(zs)) if sym == "&let" && zs.len() == 2 => {
-                      let_def_body = ys.clone().slice(1..);
+                      let_def_body = ys.skip(1);
                       continue;
                     }
                     _ => (),
@@ -871,17 +871,17 @@ fn sort_by_deps(deps: &HashMap<String, Calcit>) -> Vec<String> {
   result
 }
 
-fn write_file_if_changed(filename: &str, content: &str) -> bool {
-  if Path::new(filename).exists() && fs::read_to_string(filename).unwrap() == content {
+fn write_file_if_changed(filename: &Path, content: &str) -> bool {
+  if filename.exists() && fs::read_to_string(filename).unwrap() == content {
     return false;
   }
   let _ = fs::write(filename, content);
   true
 }
 
-pub fn emit_js(entry_ns: &str) -> Result<(), String> {
-  let code_emit_path = "js-out/"; // TODO
-  if !Path::new(code_emit_path).exists() {
+pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
+  let code_emit_path = Path::new(emit_path);
+  if !code_emit_path.exists() {
     let _ = fs::create_dir(code_emit_path);
   }
 
@@ -892,7 +892,7 @@ pub fn emit_js(entry_ns: &str) -> Result<(), String> {
     // println!("start handling: {}", ns);
     // side-effects, reset tracking state
 
-    let file_imports: RefCell<ImportsDict> = RefCell::new(HashMap::new());
+    let file_imports: RefCell<ImportsDict> = RefCell::new(BTreeMap::new());
 
     let mut defs_in_current: HashSet<String> = HashSet::new();
     for k in file.keys() {
@@ -1023,10 +1023,10 @@ pub fn emit_js(entry_ns: &str) -> Result<(), String> {
       }
     }
 
-    let js_file_path = format!("{}{}", code_emit_path, to_js_file_name(&ns, false)); // TODO mjs_mode
+    let js_file_path = code_emit_path.join(to_js_file_name(&ns, false)); // TODO mjs_mode
     let wrote_new = write_file_if_changed(&js_file_path, &format!("{}\n{}\n{}", import_code, defs_code, vals_code));
     if wrote_new {
-      println!("Emitted js file: {}", js_file_path);
+      println!("Emitted js file: {}", js_file_path.to_str().unwrap());
     } else {
       unchanged_ns.insert(ns.to_string());
     }

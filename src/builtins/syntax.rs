@@ -22,7 +22,7 @@ pub fn defn(
       nanoid!(),
       scope.clone(),
       xs.clone(),
-      expr.clone().slice(2..),
+      expr.skip(2),
     )),
     (Some(a), Some(b)) => Err(format!("invalid args type for defn: {} , {}", a, b)),
     _ => Err(String::from("inefficient arguments for defn")),
@@ -41,7 +41,7 @@ pub fn defmacro(
       def_ns.to_string(),
       nanoid!(),
       xs.clone(),
-      expr.clone().slice(2..),
+      expr.skip(2),
     )),
     (Some(a), Some(b)) => Err(format!("invalid structure for defmacro: {} {}", a, b)),
     _ => Err(format!(
@@ -108,7 +108,7 @@ pub fn syntax_let(
   program_code: &ProgramCodeData,
 ) -> Result<Calcit, String> {
   match expr.get(0) {
-    Some(Calcit::Nil) => runner::evaluate_lines(&expr.clone().slice(1..), scope, file_ns, program_code),
+    Some(Calcit::Nil) => runner::evaluate_lines(&expr.skip(1), scope, file_ns, program_code),
     Some(Calcit::List(xs)) if xs.len() == 2 => {
       let mut body_scope = scope.clone();
       match (&xs[0], &xs[1]) {
@@ -118,7 +118,7 @@ pub fn syntax_let(
         }
         (a, _) => return Err(format!("invalid binding name: {}", a)),
       }
-      runner::evaluate_lines(&expr.clone().slice(1..), &body_scope, file_ns, program_code)
+      runner::evaluate_lines(&expr.skip(1), &body_scope, file_ns, program_code)
     }
     Some(Calcit::List(xs)) => Err(format!("invalid length: {:?}", xs)),
     Some(_) => Err(format!("invalid node for &let: {:?}", expr)),

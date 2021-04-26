@@ -35,6 +35,24 @@ pub fn parse_cli<'a>() -> clap::ArgMatches<'a> {
         .takes_value(true),
     )
     .arg(
+      clap::Arg::with_name("emit-path")
+        .help("emit directory for js, defaults to `js-out/`")
+        .long("emit-path")
+        .takes_value(true),
+    )
+    .arg(
+      clap::Arg::with_name("init-fn")
+        .help("overwrite `init_fn`")
+        .long("init-fn")
+        .takes_value(true),
+    )
+    .arg(
+      clap::Arg::with_name("reload-fn")
+        .help("overwrite `reload_fn`")
+        .long("reload-fn")
+        .takes_value(true),
+    )
+    .arg(
       clap::Arg::with_name("input")
         .help("entry file path, defaults to compact.cirru")
         .default_value("compact.cirru")

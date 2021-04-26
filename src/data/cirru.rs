@@ -21,7 +21,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
           Ok(n) => Ok(Calcit::Number(n as f64)),
           Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
         },
-        '\'' => Ok(Calcit::List(im::vector![
+        '\'' if s.len() > 1 => Ok(Calcit::List(im::vector![
           Calcit::Symbol(String::from("quote"), ns.to_string(), None),
           Calcit::Symbol(String::from(&s[1..]), ns.to_string(), None),
         ])),

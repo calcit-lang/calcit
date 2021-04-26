@@ -27,7 +27,6 @@ pub fn evaluate_expr(
     },
     Calcit::Keyword(_) => Ok(expr.clone()),
     Calcit::Str(_) => Ok(expr.clone()),
-    // CalcitRef(Calcit), // TODO
     Calcit::Thunk(code) => evaluate_expr(code, scope, file_ns, program_code),
     Calcit::Ref(_) => Ok(expr.clone()),
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
@@ -40,7 +39,7 @@ pub fn evaluate_expr(
         let mut added_stack = false;
 
         let v = evaluate_expr(&x, scope, file_ns, program_code)?;
-        let rest_nodes = xs.clone().slice(1..);
+        let rest_nodes = xs.skip(1);
         let ret = match &v {
           Calcit::Proc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
@@ -65,14 +64,13 @@ pub fn evaluate_expr(
 
             // TODO moving to preprocess
             let mut current_values = rest_nodes.clone();
-            let mut macro_ret = Calcit::Nil;
             // println!("eval macro: {} {}", x, primes::format_to_lisp(expr));
             // println!("macro... {} {}", x, CrListWrap(current_values.clone()));
 
             push_call_stack(file_ns, &name, StackKind::Macro, &Some(expr.clone()), &rest_nodes);
             added_stack = true;
 
-            loop {
+            Ok(loop {
               // need to handle recursion
               let body_scope = bind_args(&args, &current_values, &im::HashMap::new())?;
               let code = evaluate_lines(&body, &body_scope, def_ns, program_code)?;
@@ -82,13 +80,10 @@ pub fn evaluate_expr(
                 }
                 _ => {
                   // println!("gen code: {} {}", x, primes::format_to_lisp(&code));
-                  macro_ret = evaluate_expr(&code, scope, file_ns, program_code)?;
-                  break;
+                  break evaluate_expr(&code, scope, file_ns, program_code)?;
                 }
               }
-            }
-
-            Ok(macro_ret)
+            })
           }
           Calcit::Symbol(s, ns, resolved) => {
             Err(format!("cannot evaluate symbol directly: {}/{} {:?}", ns, s, resolved))
