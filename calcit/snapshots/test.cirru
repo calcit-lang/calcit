@@ -190,6 +190,16 @@
 
             echo "|Finished testing try"
 
+        |test-fn-eq $ quote
+          fn ()
+            log-title "|Testing equality of functions"
+            let
+                a $ fn (x) x
+                b $ fn (x) x
+              assert= a a
+              assert= b b
+              assert= false (&= a b)
+
         |reload! $ quote
           defn reload! () nil
 
@@ -222,6 +232,8 @@
             test-arguments
 
             test-try
+
+            test-fn-eq
 
             inside-nim:
               test-gynienic/main!

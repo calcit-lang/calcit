@@ -260,14 +260,14 @@ impl Hash for Calcit {
         "proc:".hash(_state);
         name.hash(_state);
       }
-      Calcit::Macro(name, gen_id, ..) => {
+      Calcit::Macro(_name, _ns, gen_id, ..) => {
         "macro:".hash(_state);
-        name.hash(_state);
+        // name.hash(_state);
         gen_id.hash(_state);
       }
-      Calcit::Fn(name, gen_id, ..) => {
+      Calcit::Fn(_name, _ns, gen_id, ..) => {
         "fn:".hash(_state);
-        name.hash(_state);
+        // name.hash(_state);
         gen_id.hash(_state);
       }
       Calcit::Syntax(name, _ns) => {
@@ -356,11 +356,11 @@ impl Ord for Calcit {
       (Calcit::Proc(_), _) => Less,
       (_, Calcit::Proc(_)) => Greater,
 
-      (Calcit::Macro(_, a, ..), Calcit::Macro(_, b, ..)) => a.cmp(b),
+      (Calcit::Macro(_name1, _ns1, a, ..), Calcit::Macro(_name2, _ns2, b, ..)) => a.cmp(b),
       (Calcit::Macro(..), _) => Less,
       (_, Calcit::Macro(..)) => Greater,
 
-      (Calcit::Fn(_, a, ..), Calcit::Fn(_, b, ..)) => a.cmp(&b), // compared with nanoid
+      (Calcit::Fn(_name1, _ns1, a, ..), Calcit::Fn(_name2, _ns2, b, ..)) => a.cmp(&b), // compared with nanoid
       (Calcit::Fn(..), _) => Less,
       (_, Calcit::Fn(..)) => Greater,
 
@@ -397,8 +397,8 @@ impl PartialEq for Calcit {
 
       // functions compared with nanoid
       (Calcit::Proc(a), Calcit::Proc(b)) => a == b,
-      (Calcit::Macro(_, a, ..), Calcit::Macro(_, b, ..)) => a == b,
-      (Calcit::Fn(_, a, ..), Calcit::Fn(_, b, ..)) => a == b,
+      (Calcit::Macro(_name1, _ns1, a, ..), Calcit::Macro(_name2, _ns2, b, ..)) => a == b,
+      (Calcit::Fn(_name1, _ns1, a, ..), Calcit::Fn(_name2, _ns2, b, ..)) => a == b,
       (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a == b,
       (_, _) => false,
     }
@@ -408,7 +408,7 @@ impl PartialEq for Calcit {
 pub const CORE_NS: &str = "calcit.core";
 pub const GENERATED_NS: &str = "calcit.gen";
 
-pub const CALCI_VERSION: &str = "0.3.0-a5";
+pub const CALCI_VERSION: &str = "0.3.0-a6";
 
 impl Calcit {
   pub fn turn_string(&self) -> String {
