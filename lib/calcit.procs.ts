@@ -1215,7 +1215,7 @@ export let pr_str = (...args: CrDataValue[]): string => {
   return args.map((x) => toString(x, true)).join(" ");
 };
 
-/** helper function for println */
+/** helper function for println, js only */
 export let printable = (...args: CrDataValue[]): string => {
   return args.map((x) => toString(x, false)).join(" ");
 };
