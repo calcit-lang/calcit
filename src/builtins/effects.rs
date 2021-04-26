@@ -1,5 +1,9 @@
+use std::env;
+use std::process::exit;
 use std::sync::Mutex;
 use std::time::Instant;
+
+use crate::util::number::f64_to_i32;
 
 use crate::primes::{Calcit, CalcitItems};
 
@@ -82,5 +86,35 @@ pub fn calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, String> {
     CliRunningMode::Eval => Ok(Calcit::Keyword(String::from("eval"))),
     CliRunningMode::Js => Ok(Calcit::Keyword(String::from("js"))),
     CliRunningMode::Ir => Ok(Calcit::Keyword(String::from("ir"))),
+  }
+}
+
+// TODO
+pub fn call_get_calcit_backend(_xs: &CalcitItems) -> Result<Calcit, String> {
+  Ok(Calcit::Keyword(String::from("rust")))
+}
+
+pub fn quit(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Number(n)) => match f64_to_i32(*n) {
+      Ok(code) => exit(code),
+      Err(e) => unreachable!("quit failed to get code from f64, {}", e),
+    },
+    Some(a) => Err(format!("quit expected i32 value, got: {}", a)),
+    None => Err(String::from("quit expected a code, got nothing")),
+  }
+}
+
+pub fn get_env(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => match env::var(s) {
+      Ok(v) => Ok(Calcit::Str(v)),
+      Err(e) => {
+        println!("get-env {}", e);
+        Ok(Calcit::Nil)
+      }
+    },
+    Some(a) => Err(format!("get-env expected a string, got {}", a)),
+    None => Err(String::from("get-env expected an argument, got nothing")),
   }
 }

@@ -303,7 +303,10 @@ pub fn preprocess_defn(
           Calcit::Symbol(sym, def_ns, _) => {
             check_symbol(sym, program_code);
             zs.push_back(Calcit::Symbol(sym.clone(), def_ns.clone(), Some(ResolvedRaw)));
-            body_defs.insert(sym.clone());
+            // skip argument syntax marks
+            if sym != "&" && sym != "?" {
+              body_defs.insert(sym.clone());
+            }
           }
           _ => return Err(format!("expected defn args to be symbols, got: {}", y)),
         }

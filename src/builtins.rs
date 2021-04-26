@@ -35,9 +35,13 @@ pub fn is_proc_name(s: &str) -> bool {
       | "turn-keyword"
       // effects
       | "echo"
+      | "println" // alias for echo
       | "echo-values"
       | "raise"
       | "cpu-time"
+      | "quit"
+      | "get-env"
+      | "&get-calcit-backend"
       // logics
       | "&="
       | "&<"
@@ -150,9 +154,13 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "turn-keyword" => meta::turn_keyword(args),
     // effects
     "echo" => effects::echo(args),
+    "println" => effects::echo(args), // alias
     "echo-values" => effects::echo_values(args),
     "raise" => effects::raise(args),
     "cpu-time" => effects::cpu_time(args),
+    "quit" => effects::quit(args),
+    "get-env" => effects::get_env(args),
+    "&get-calcit-backend" => effects::call_get_calcit_backend(args),
     // logics
     "&=" => logics::binary_equal(args),
     "&<" => logics::binary_less(args),
