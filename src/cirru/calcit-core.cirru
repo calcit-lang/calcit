@@ -792,17 +792,6 @@
                       raise
                         ~ $ &str-concat (&str-concat message "| ") xs
 
-        |println $ quote
-          defn println (& xs)
-            ; "TODO print not implemented, use syntax echo"
-            print & xs
-            when
-              = (&get-calcit-backend) :nim
-              print "|\n"
-
-        |echo $ quote
-          def echo println
-
         |join-str $ quote
           defn join-str (xs0 sep)
             apply-args
