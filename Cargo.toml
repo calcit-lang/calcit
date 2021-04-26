@@ -1,8 +1,21 @@
 [package]
 name = "calcit_runner"
-version = "0.3.0-a1"
+version = "0.3.0-a2"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2018"
+license = "MIT"
+description = "Interpreter and js codegen for Calcit"
+homepage = "http://calcit-lang.org"
+documentation = "https://docs.rs/crate/calcit_runner/"
+repository = "https://github.com/calcit-lang/calcit_runner.rs"
+readme = "README.md"
+exclude = [
+  "lib/*",
+  "calcit/*",
+  "js-out/*",
+  "scripts/*"
+]
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

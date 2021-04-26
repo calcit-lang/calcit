@@ -5,6 +5,8 @@ js-out/
 src/
 tests/
 calcit/
+target/
+scripts/
 
 .calcit-error.cirru
 calcit_runner.nimble

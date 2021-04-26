@@ -42,3 +42,20 @@ jobs:
       - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{secrets.npm_token}}
+
+      - run: cargo build --release
+
+      - name: Deploy to server
+        id: deploy
+        uses: Pendect/action-rsyncer@v1.1.0
+        env:
+          DEPLOY_KEY: ${{secrets.rsync_private_key}}
+        with:
+          flags: "-avzr --progress"
+          options: ""
+          ssh_options: ""
+          src: "target/release/calcit_runner"
+          dest: "rsync-user@calcit-lang.org:/web-assets/repo/calcit-lang/binaries/linux/"
+
+      - name: Display status from deploy
+        run: echo "${{ steps.deploy.outputs.status }}"
