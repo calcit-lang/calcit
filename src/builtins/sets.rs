@@ -33,7 +33,15 @@ pub fn call_exclude(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 pub fn call_difference(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => Ok(Calcit::Set(a.clone().difference(b.clone()))),
+    (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => {
+      // im::HashSet::difference has different semantics
+      // https://docs.rs/im/12.2.0/im/struct.HashSet.html#method.difference
+      let mut ys = a.to_owned();
+      for item in b {
+        ys.remove(item);
+      }
+      Ok(Calcit::Set(ys))
+    }
     (Some(a), Some(b)) => Err(format!("&difference expected 2 sets: {} {}", a, b)),
     (a, b) => Err(format!("&difference expected 2 arguments: {:?} {:?}", a, b)),
   }
