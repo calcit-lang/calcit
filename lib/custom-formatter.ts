@@ -1,4 +1,4 @@
-import { CrDataAtom, CrDataValue, CrDataSymbol, CrDataKeyword, CrDataList, CrDataMap, CrDataRecord, CrDataSet } from "./calcit-data";
+import { CrDataRef, CrDataValue, CrDataSymbol, CrDataKeyword, CrDataList, CrDataMap, CrDataRecord, CrDataSet } from "./calcit-data";
 import { toPairs } from "@calcit/ternary-tree";
 
 declare global {
@@ -60,11 +60,11 @@ export let load_console_formatter_BANG_ = () => {
             }
             return ret;
           }
-          if (obj instanceof CrDataAtom) {
+          if (obj instanceof CrDataRef) {
             return [
               "div",
               { style: "color: hsl(280, 80%, 60%)" },
-              `Atom ${obj.path}`,
+              `Ref ${obj.path}`,
               ["div", { style: "color: hsl(280, 80%, 60%)" }, ["div", { style: "margin-left: 8px;" }, embedObject(obj.value)]],
             ];
           }

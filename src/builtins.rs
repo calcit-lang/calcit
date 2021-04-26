@@ -298,6 +298,7 @@ pub fn handle_syntax(
     "macroexpand-all" => syntax::macroexpand_all(nodes, scope, file_ns, program),
     "try" => syntax::call_try(nodes, scope, file_ns, program),
     "sort" => lists::sort(nodes, scope, file_ns, program),
+    // "define reference" although it uses a confusing name "atom"
     "defatom" => refs::defatom(nodes, scope, file_ns, program),
     a => Err(format!("TODO syntax: {}", a)),
   }

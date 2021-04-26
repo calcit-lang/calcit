@@ -145,7 +145,7 @@ fn is_preferred_js_proc(name: &str) -> bool {
       | "string?"
       | "fn?"
       | "bool?"
-      | "atom?"
+      | "ref?"
       | "record?"
       | "starts-with?"
       | "ends-with?"
@@ -288,11 +288,11 @@ fn gen_call_code(
             _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {:?}", body)),
             (Some(Calcit::Symbol(sym, ..)), Some(v)) => {
               // let _name = escape_var(sym); // TODO
-              let atom_path = wrap_js_str(&format!("{}/{}", ns, sym.clone()));
+              let ref_path = wrap_js_str(&format!("{}/{}", ns, sym.clone()));
               let value_code = &to_js_code(v, ns, local_defs, file_imports)?;
               Ok(format!(
                 "\n({}peekDefatom({}) ?? {}defatom({}, {}))\n",
-                &var_prefix, &atom_path, &var_prefix, &atom_path, value_code
+                &var_prefix, &ref_path, &var_prefix, &ref_path, value_code
               ))
             }
             (_, _) => Err(format!("defatom expected name and value, got: {:?}", body)),

@@ -200,6 +200,16 @@
               assert= b b
               assert= false (&= a b)
 
+        |*ref-demo $ quote
+          defatom *ref-demo 0
+        |test-refs $ quote
+          fn ()
+            log-title "|Testing refs"
+            assert= 0 @*ref-demo
+            reset! *ref-demo 2
+            assert= 2 @*ref-demo
+            assert= :ref (type-of *ref-demo)
+
         |reload! $ quote
           defn reload! () nil
 
@@ -234,6 +244,8 @@
             test-try
 
             test-fn-eq
+
+            test-refs
 
             inside-nim:
               test-gynienic/main!
