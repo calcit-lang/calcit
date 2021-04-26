@@ -106,6 +106,10 @@ export let count = (x: CrDataValue): number => {
 export let _LIST_ = (...xs: CrDataValue[]): CrDataList => {
   return new CrDataList(xs);
 };
+// single quote as alias for list
+export let _SQUO_ = (...xs: CrDataValue[]): CrDataList => {
+  return new CrDataList(xs);
+};
 
 export let _AND__MAP_ = (...xs: CrDataValue[]): CrDataMap => {
   if (xs.length % 2 !== 0) {
