@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::{is_proc_name, is_syntax_name};
 use crate::primes;
-use crate::primes::{format_to_lisp, Calcit, CalcitItems, SymbolResolved::*};
+use crate::primes::{Calcit, CalcitItems, SymbolResolved::*};
 use crate::program;
 use crate::util::string::has_ns_part;
 use crate::util::string::{matches_js_var, wrap_js_str};
@@ -308,7 +308,7 @@ fn gen_call_code(
         },
 
         "defmacro" => Ok(format!("/* Unexpected macro {} */", xs)),
-        "quote-replace" | "quasiquote" => Ok(format!("(/* Unexpected quasiquote {} */ null)", format_to_lisp(xs))),
+        "quote-replace" | "quasiquote" => Ok(format!("(/* Unexpected quasiquote {} */ null)", xs.lisp_str())),
 
         "raise" => {
           // not core syntax, but treat as macro for better debugging experience
@@ -546,7 +546,7 @@ fn gen_let_code(
   // break unless nested &let is found
   loop {
     if let_def_body.len() <= 1 {
-      return Err(format!("Unexpected empty content in let, {:?}", xs));
+      return Err(format!("unexpected empty content in let, {:?}", xs));
     }
     let pair = let_def_body[0].clone();
     let content = let_def_body.skip(1);

@@ -125,6 +125,10 @@
               assert= "|do 's"
                 trim $ write-cirru-edn 's
 
+              assert= (escape "|\n") "|\"\\n\""
+              assert= (escape "|\t") "|\"\\t\""
+              assert= (escape "|a") "|\"a\""
+
         |test-char $ quote
           fn ()
             log-title "|Test char"

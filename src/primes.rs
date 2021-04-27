@@ -410,13 +410,15 @@ impl PartialEq for Calcit {
 pub const CORE_NS: &str = "calcit.core";
 pub const GENERATED_NS: &str = "calcit.gen";
 
-pub const CALCI_VERSION: &str = "0.3.0-a8";
-
 impl Calcit {
   pub fn turn_string(&self) -> String {
     match self {
       Calcit::Str(s) => s.clone(),
       _ => format!("{}", self),
     }
+  }
+
+  pub fn lisp_str(&self) -> String {
+    format_to_lisp(self)
   }
 }

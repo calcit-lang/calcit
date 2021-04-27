@@ -42,6 +42,8 @@ pub fn is_proc_name(s: &str) -> bool {
       | "quit"
       | "get-env"
       | "&get-calcit-backend"
+      | "read-file"
+      | "write-file"
       // logics
       | "&="
       | "&<"
@@ -87,6 +89,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "re-find-index"
       | "re-find-all"
       | "blank?"
+      | "escape"
       // lists
       | "[]"
       | "'" // used as an alias for `[]`, experimental
@@ -126,6 +129,8 @@ pub fn is_proc_name(s: &str) -> bool {
       // refs
       | "deref"
       | "reset!"
+      | "add-watch"
+      | "remove-watch"
       // records
       | "new-record"
       | "&%{}"
@@ -162,6 +167,8 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "quit" => effects::quit(args),
     "get-env" => effects::get_env(args),
     "&get-calcit-backend" => effects::call_get_calcit_backend(args),
+    "read-file" => effects::read_file(args),
+    "write-file" => effects::write_file(args),
     // logics
     "&=" => logics::binary_equal(args),
     "&<" => logics::binary_less(args),
@@ -203,6 +210,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "parse-float" => strings::parse_float(args),
     "pr-str" => strings::pr_str(args),
     "blank?" => strings::blank_ques(args),
+    "escape" => strings::escape(args),
     // regex
     "re-matches" => regexes::re_matches(args),
     "re-find" => regexes::re_find(args),
@@ -247,6 +255,8 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     // refs
     "deref" => refs::deref(args),
     "reset!" => refs::reset_bang(args),
+    "add-watch" => refs::add_watch(args),
+    "remove-watch" => refs::add_watch(args),
     // records
     "new-record" => records::new_record(args),
     "&%{}" => records::call_record(args),

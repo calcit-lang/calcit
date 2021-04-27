@@ -220,7 +220,7 @@ fn process_list_call(
             current_values = ys;
           }
           _ => {
-            // println!("gen code: {} {}", code, primes::format_to_lisp(&code));
+            // println!("gen code: {} {}", code, &code.lisp_str());
             let (final_code, v) = preprocess_expr(&code, scope_defs, file_ns, program_code)?;
             pop_call_stack();
             return Ok((final_code, v));

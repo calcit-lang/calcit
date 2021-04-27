@@ -14,7 +14,7 @@ pub fn evaluate_expr(
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, String> {
-  // println!("eval code: {}", primes::format_to_lisp(expr));
+  // println!("eval code: {}", expr.lisp_str());
 
   match expr {
     Calcit::Nil => Ok(expr.clone()),
@@ -33,7 +33,7 @@ pub fn evaluate_expr(
     Calcit::List(xs) => match xs.get(0) {
       None => Err(format!("cannot evaluate empty expr: {}", expr)),
       Some(x) => {
-        // println!("eval expr: {}", primes::format_to_lisp(expr));
+        // println!("eval expr: {}", expr.lisp_str());
         // println!("eval expr: {}", x);
 
         let mut added_stack = false;
@@ -64,7 +64,7 @@ pub fn evaluate_expr(
 
             // TODO moving to preprocess
             let mut current_values = rest_nodes.clone();
-            // println!("eval macro: {} {}", x, primes::format_to_lisp(expr));
+            // println!("eval macro: {} {}", x, expr.lisp_str()));
             // println!("macro... {} {}", x, CrListWrap(current_values.clone()));
 
             push_call_stack(file_ns, &name, StackKind::Macro, &Some(expr.clone()), &rest_nodes);
@@ -79,7 +79,7 @@ pub fn evaluate_expr(
                   current_values = ys;
                 }
                 _ => {
-                  // println!("gen code: {} {}", x, primes::format_to_lisp(&code));
+                  // println!("gen code: {} {}", x, &code.lisp_str()));
                   break evaluate_expr(&code, scope, file_ns, program_code)?;
                 }
               }

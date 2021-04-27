@@ -56,6 +56,11 @@ pub fn show_stack() {
   }
 }
 
+pub fn clear_stack() {
+  let stack = &mut CALL_STACK.lock().unwrap();
+  stack.clear();
+}
+
 pub fn display_stack(failure: &str) {
   let stack: &Vec<CalcitStack> = &mut CALL_STACK.lock().unwrap();
   println!("\ncall stack:");

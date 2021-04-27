@@ -32,6 +32,8 @@ fn main() -> Result<(), String> {
 
   let mut eval_once = cli_matches.is_present("once");
 
+  println!("calcit_runner version: {}", cli_args::CALCIT_VERSION);
+
   // load core libs
   let bytes = include_bytes!("./cirru/calcit-core.cirru");
   let core_content = String::from_utf8_lossy(bytes).to_string();
@@ -85,10 +87,22 @@ fn main() -> Result<(), String> {
     None => "js-out".to_owned(),
   };
 
-  if cli_matches.is_present("emit-js") {
-    run_codegen(&init_fn, &reload_fn, &program_code, &emit_path)?;
+  let task = if cli_matches.is_present("emit-js") {
+    run_codegen(&init_fn, &reload_fn, &program_code, &emit_path)
   } else {
-    run_program(&init_fn, &reload_fn, &program_code)?;
+    run_program(&init_fn, &reload_fn, &program_code)
+  };
+
+  if eval_once {
+    task?;
+  } else {
+    // error are only printed in watch mode
+    match task {
+      Ok(_) => {}
+      Err(e) => {
+        println!("\nfailed to run, {}", e);
+      }
+    }
   }
 
   if !eval_once {
@@ -111,6 +125,7 @@ fn main() -> Result<(), String> {
               }
               notify::DebouncedEvent::Write(_) => {
                 println!("\n-------- file change --------\n");
+                call_stack::clear_stack();
 
                 // Steps:
                 // 1. load changes file, and patch to program_code

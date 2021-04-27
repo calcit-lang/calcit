@@ -204,3 +204,16 @@ pub fn blank_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("blank? expected 1 argument, got nothing")),
   }
 }
+
+pub fn escape(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => {
+      let mut chunk = String::from("\"");
+      chunk.push_str(&s.escape_default().to_string());
+      chunk.push('"');
+      Ok(Calcit::Str(chunk))
+    }
+    Some(a) => Err(format!("escape expected 1 string, got {}", a)),
+    None => Err(String::from("escape expected 1 argument, got nothing")),
+  }
+}
