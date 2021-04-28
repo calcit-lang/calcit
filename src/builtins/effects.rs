@@ -111,7 +111,7 @@ pub fn get_env(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Str(s)) => match env::var(s) {
       Ok(v) => Ok(Calcit::Str(v)),
       Err(e) => {
-        println!("get-env {}", e);
+        println!("(get-env {}): {}", s, e);
         Ok(Calcit::Nil)
       }
     },

@@ -20,7 +20,8 @@ pub enum StackKind {
   Fn,
   Proc,
   Macro,
-  Syntax, // rarely used
+  Syntax,  // rarely used
+  Codegen, // track preprocessing
 }
 
 // TODO impl fmt
@@ -112,5 +113,6 @@ fn name_kind(k: &StackKind) -> String {
     StackKind::Proc => String::from("proc"),
     StackKind::Macro => String::from("macro"),
     StackKind::Syntax => String::from("syntax"),
+    StackKind::Codegen => String::from("codegen"),
   }
 }
