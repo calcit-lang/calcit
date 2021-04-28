@@ -8,3 +8,4 @@ js-out/
 node_modules/
 
 lib/*.js
+builds/

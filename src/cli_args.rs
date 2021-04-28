@@ -1,4 +1,4 @@
-pub const CALCIT_VERSION: &str = "0.3.0-a9";
+pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn parse_cli<'a>() -> clap::ArgMatches<'a> {
   clap::App::new("Calcit Runner")

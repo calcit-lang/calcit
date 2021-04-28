@@ -54,7 +54,7 @@ jobs:
           flags: "-avzr --progress"
           options: ""
           ssh_options: ""
-          src: "target/release/calcit_runner"
+          src: "builds/*"
           dest: "rsync-user@calcit-lang.org:/web-assets/repo/calcit-lang/binaries/linux/"
 
       - name: Display status from deploy
