@@ -44,6 +44,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{secrets.npm_token}}
 
       - run: cargo build --release
+      - run: node scripts/cp-version.js
 
       - name: Deploy to server
         id: deploy
