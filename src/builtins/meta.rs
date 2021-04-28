@@ -41,7 +41,7 @@ pub fn recur(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(v) => Ok(Calcit::Str(primes::format_to_lisp(v))),
+    Some(v) => Ok(Calcit::Str(v.lisp_str())),
     None => Err(String::from("format-to-lisp expected 1 argument")),
   }
 }

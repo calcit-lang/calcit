@@ -74,4 +74,11 @@ pub fn reset_bang(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-// TODO add-watch remove-watch
+// TODO
+pub fn add_watch(_xs: &CalcitItems) -> Result<Calcit, String> {
+  Ok(Calcit::Nil)
+}
+// TODO
+pub fn remove_watch(_xs: &CalcitItems) -> Result<Calcit, String> {
+  Ok(Calcit::Nil)
+}

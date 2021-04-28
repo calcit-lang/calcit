@@ -1,8 +1,8 @@
-use crate::primes;
+pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn parse_cli<'a>() -> clap::ArgMatches<'a> {
   clap::App::new("Calcit Runner")
-    .version(primes::CALCI_VERSION)
+    .version(CALCIT_VERSION)
     .author("Jon. <jiyinyiyong@gmail.com>")
     .about("Calcit Runner")
     .arg(

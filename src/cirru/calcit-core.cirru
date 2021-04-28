@@ -315,7 +315,7 @@
 
         |&case $ quote
           defmacro &case (item default pattern & others)
-            assert "|expects pattern in a pair"
+            assert "|`case` expects pattern in a pair"
               if (list? pattern) (&= 2 (count pattern)) false
             let
                 x $ first pattern
@@ -817,7 +817,7 @@
                     &let nil
                       echo "|Failed assertion:" (quote ~xs)
                       raise
-                        ~ $ &str-concat (&str-concat message "| ") xs
+                        ~ $ &str-concat (&str-concat message "| ") (format-to-lisp xs)
 
         |join-str $ quote
           defn join-str (xs0 sep)

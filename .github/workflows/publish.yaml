@@ -44,6 +44,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{secrets.npm_token}}
 
       - run: cargo build --release
+      - run: node scripts/cp-version.js
 
       - name: Deploy to server
         id: deploy
@@ -54,7 +55,7 @@ jobs:
           flags: "-avzr --progress"
           options: ""
           ssh_options: ""
-          src: "target/release/calcit_runner"
+          src: "builds/*"
           dest: "rsync-user@calcit-lang.org:/web-assets/repo/calcit-lang/binaries/linux/"
 
       - name: Display status from deploy
