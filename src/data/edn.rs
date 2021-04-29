@@ -148,7 +148,8 @@ pub fn calcit_to_edn(x: &Calcit) -> Edn {
       Edn::Record(name.clone(), fields.clone(), ys)
     }
     Calcit::Fn(name, ..) => Edn::Str(format!("&fn {}", name)),
-    Calcit::Proc(name) => Edn::Str(format!("&proc {}", name)),
+    Calcit::Proc(name) => Edn::Symbol(name.to_owned()),
+    Calcit::Syntax(name, _ns) => Edn::Symbol(name.to_owned()),
     a => Edn::Str(format!("TODO {}", a)), // TODO more types to handle
   }
 }

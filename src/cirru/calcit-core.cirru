@@ -980,6 +980,7 @@
         |do $ quote
           defmacro do (& body)
             ; echo "|body:" (format-to-lisp body)
+            assert "|empty do is not okay" $ not $ empty? body
             quasiquote
               &let nil
                 ~@ body

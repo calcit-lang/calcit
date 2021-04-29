@@ -258,7 +258,15 @@ fn run_codegen(
       return Err(failure);
     }
   }
-  emit_js(&init_ns, &emit_path)?; // TODO entry ns
+  // TODO entry ns
+  match emit_js(&init_ns, &emit_path) {
+    Ok(_) => (),
+    Err(failure) => {
+      println!("\nfailed codegen, {}", failure);
+      call_stack::display_stack(&failure);
+      return Err(failure);
+    }
+  }
   let duration = Instant::now().duration_since(started_time);
   println!("took {}ms", duration.as_micros() as f64 / 1000.0);
   Ok(())

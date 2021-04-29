@@ -2,12 +2,15 @@ mod internal_states;
 mod snippets;
 
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::{is_proc_name, is_syntax_name};
+use crate::call_stack;
+use crate::call_stack::StackKind;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems, SymbolResolved::*};
 use crate::program;
@@ -266,12 +269,14 @@ fn gen_call_code(
       match s.as_str() {
         "if" => match (body.get(0), body.get(1)) {
           (Some(condition), Some(true_branch)) => {
+            call_stack::push_call_stack(ns, "if", StackKind::Codegen, &Some(xs.to_owned()), &im::vector![]);
             let false_code = match body.get(2) {
               Some(fal) => to_js_code(fal, ns, local_defs, file_imports)?,
               None => String::from("null"),
             };
             let cond_code = to_js_code(condition, ns, local_defs, file_imports)?;
             let true_code = to_js_code(true_branch, ns, local_defs, file_imports)?;
+            call_stack::pop_call_stack();
             Ok(format!("( {} ? {} : {} )", cond_code, true_code, false_code))
           }
           (_, _) => Err(format!("if expected 2~3 nodes, got: {:?}", body)),
@@ -289,7 +294,9 @@ fn gen_call_code(
             (Some(Calcit::Symbol(sym, ..)), Some(v)) => {
               // let _name = escape_var(sym); // TODO
               let ref_path = wrap_js_str(&format!("{}/{}", ns, sym.clone()));
+              call_stack::push_call_stack(ns, sym, StackKind::Codegen, &Some(xs.to_owned()), &im::vector![]);
               let value_code = &to_js_code(v, ns, local_defs, file_imports)?;
+              call_stack::pop_call_stack();
               Ok(format!(
                 "\n({}peekDefatom({}) ?? {}defatom({}, {}))\n",
                 &var_prefix, &ref_path, &var_prefix, &ref_path, value_code
@@ -302,7 +309,10 @@ fn gen_call_code(
         "defn" => match (body.get(0), body.get(1)) {
           (Some(Calcit::Symbol(sym, ..)), Some(Calcit::List(ys))) => {
             let func_body = body.skip(2);
-            gen_js_func(sym, &ys, &func_body, ns, false, local_defs, file_imports)
+            call_stack::push_call_stack(ns, sym, StackKind::Codegen, &Some(xs.to_owned()), &im::vector![]);
+            let ret = gen_js_func(sym, &ys, &func_body, ns, false, local_defs, file_imports);
+            call_stack::pop_call_stack();
+            ret
           }
           (_, _) => Err(format!("defn expected name arguments, got: {:?}", body)),
         },
@@ -330,9 +340,12 @@ fn gen_call_code(
         }
         "try" => match (body.get(0), body.get(1)) {
           (Some(expr), Some(handler)) => {
+            call_stack::push_call_stack(ns, "try", StackKind::Codegen, &Some(xs.to_owned()), &im::vector![]);
             let code = to_js_code(expr, ns, local_defs, file_imports)?;
             let err_var = js_gensym("errMsg");
             let handler = to_js_code(handler, ns, local_defs, file_imports)?;
+
+            call_stack::pop_call_stack();
 
             Ok(snippets::tmpl_fn_wrapper(snippets::tmpl_try(err_var, code, handler)))
           }
@@ -540,13 +553,12 @@ fn gen_let_code(
   // defined new local variable
   let mut scoped_defs = local_defs.clone();
   let mut defs_code = String::from("");
-  let mut variable_existed = false;
   let mut body_part = String::from("");
 
   // break unless nested &let is found
   loop {
     if let_def_body.len() <= 1 {
-      return Err(format!("unexpected empty content in let, {:?}", xs));
+      return Err(format!("&let expected body, but got empty, {}", xs.lisp_str()));
     }
     let pair = let_def_body[0].clone();
     let content = let_def_body.skip(1);
@@ -569,23 +581,16 @@ fn gen_let_code(
       }
       Calcit::List(xs) if xs.len() == 2 => {
         let def_name = xs[0].clone();
-        let expr_code = xs[1].clone();
+        let def_code = xs[1].clone();
 
         match def_name {
           Calcit::Symbol(sym, ..) => {
             // TODO `let` inside expressions makes syntax error
             let left = escape_var(&sym);
-            let right = to_js_code(&expr_code, &ns, &scoped_defs, file_imports)?;
-
+            let right = to_js_code(&def_code, &ns, &scoped_defs, file_imports)?;
             defs_code.push_str(&format!("let {} = {};\n", left, right));
 
             if scoped_defs.contains(&sym) {
-              variable_existed = true;
-            } else {
-              scoped_defs.insert(sym.clone());
-            }
-
-            if variable_existed {
               for (idx, x) in content.iter().enumerate() {
                 if idx == content.len() - 1 {
                   body_part.push_str("return ");
@@ -604,14 +609,19 @@ fn gen_let_code(
                 return Ok(make_let_with_wrapper(&left, &right, &body_part));
               }
             } else {
+              // track variable
+              scoped_defs.insert(sym.clone());
+
               if content.len() == 1 {
-                let child = content[0].clone();
-                match child {
-                  Calcit::List(ys) if ys.len() == 2 => match (&ys[0], &ys[1]) {
-                    (Calcit::Symbol(sym, ..), Calcit::List(zs)) if sym == "&let" && zs.len() == 2 => {
-                      let_def_body = ys.skip(1);
-                      continue;
-                    }
+                match &content[0] {
+                  Calcit::List(ys) if ys.len() > 2 => match (&ys[0], &ys[1]) {
+                    (Calcit::Syntax(sym, _ns), Calcit::List(zs)) if sym == "&let" && zs.len() == 2 => match &zs[0] {
+                      Calcit::Symbol(s2, ..) if !scoped_defs.contains(s2) => {
+                        let_def_body = ys.skip(1);
+                        continue;
+                      }
+                      _ => (),
+                    },
                     _ => (),
                   },
                   _ => (),
@@ -632,7 +642,7 @@ fn gen_let_code(
               break;
             }
           }
-          _ => return Err(format!("Expected symbol behind let, got: {}", &pair)),
+          _ => return Err(format!("Expected symbol in &let binding, got: {}", &pair)),
         }
       }
       Calcit::List(_xs) => return Err(format!("expected pair of length 2, got: {}", &pair)),
@@ -838,8 +848,6 @@ fn contains_symbol(xs: &Calcit, y: &str) -> bool {
 }
 
 fn sort_by_deps(deps: &HashMap<String, Calcit>) -> Vec<String> {
-  let mut result: Vec<String> = vec![];
-
   let mut deps_graph: HashMap<String, HashSet<String>> = HashMap::new();
   let mut def_names: Vec<String> = vec![];
   for (k, v) in deps {
@@ -856,24 +864,38 @@ fn sort_by_deps(deps: &HashMap<String, Calcit>) -> Vec<String> {
     }
     deps_graph.insert(k.to_string(), deps_info);
   }
-  // echo depsGraph
-  def_names.sort();
-  for x in def_names {
-    let mut inserted = false;
+  // println!("\ndefs graph {:?}", deps_graph);
+  def_names.sort(); // alphabet order first
+
+  let mut result: Vec<String> = vec![];
+  'outer: for x in def_names {
     for (idx, y) in result.iter().enumerate() {
-      if deps_graph.contains_key(y) && deps_graph[y].contains(&x) {
+      if depends_on(y, &x, &deps_graph, 3) {
         result.insert(idx, x.clone());
-        inserted = true;
-        break;
+        continue 'outer;
       }
-    }
-    if inserted {
-      continue;
     }
     result.push(x.clone());
   }
+  // println!("\ndef names {:?}", def_names);
 
   result
+}
+
+// could be slow, need real topology sorting
+fn depends_on(x: &str, y: &str, deps: &HashMap<String, HashSet<String>>, decay: usize) -> bool {
+  if decay == 0 {
+    false
+  } else {
+    for item in &deps[x] {
+      if item == y || depends_on(&item, y, &deps, decay - 1) {
+        return true;
+      } else {
+        // nothing
+      }
+    }
+    false
+  }
 }
 
 fn write_file_if_changed(filename: &Path, content: &str) -> bool {
@@ -972,17 +994,27 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
             escape_var(&def)
           ));
         }
-        Calcit::Fn(_name, _def_ns, _, _, args, code) => {
+        Calcit::Fn(name, def_ns, _, _, args, code) => {
+          call_stack::push_call_stack(def_ns, name, StackKind::Codegen, &Some(f.to_owned()), &im::vector![]);
           defs_code.push_str(&gen_js_func(&def, args, code, &ns, true, &def_names, &file_imports)?);
+          call_stack::pop_call_stack();
         }
         Calcit::Thunk(code) => {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
+          call_stack::push_call_stack(
+            &ns,
+            &def,
+            StackKind::Codegen,
+            &Some((**code).to_owned()),
+            &im::vector![],
+          );
           vals_code.push_str(&format!(
             "\nexport var {} = {};\n",
             escape_var(&def),
             to_js_code(code, &ns, &def_names, &file_imports)?
           ));
+          call_stack::pop_call_stack()
         }
         Calcit::Macro(..) => {
           // macro should be handled during compilation, psuedo code
@@ -1017,7 +1049,11 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
             ));
           }
           ImportedTarget::FromNs(target_ns) => {
-            let import_target = to_js_import_name(&target_ns, false); // TODO js_mode
+            let import_target = if is_cirru_string(&target_ns) {
+              wrap_js_str(&target_ns[1..])
+            } else {
+              to_js_import_name(&target_ns, false) // TODO js_mode
+            };
             import_code.push_str(&format!(
               "\nimport {{ {} }} from {};\n",
               escape_var(&def),

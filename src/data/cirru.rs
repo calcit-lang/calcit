@@ -17,7 +17,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
       _ => match s.chars().next().unwrap() {
         ':' => Ok(Calcit::Keyword(String::from(&s[1..]))),
         '"' | '|' => Ok(Calcit::Str(String::from(&s[1..]))),
-        '0' if s.starts_with("0x") => match u8::from_str_radix(&s[2..], 16) {
+        '0' if s.starts_with("0x") => match u32::from_str_radix(&s[2..], 16) {
           Ok(n) => Ok(Calcit::Number(n as f64)),
           Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
         },
@@ -139,6 +139,8 @@ pub fn calcit_to_cirru(x: &Calcit) -> Cirru {
       }
       Cirru::List(ys)
     }
+    Calcit::Proc(s) => Cirru::Leaf(s.to_owned()),
+    Calcit::Syntax(s, _ns) => Cirru::Leaf(s.to_owned()),
     a => Cirru::List(vec![Cirru::Leaf(String::from("TODO")), Cirru::Leaf(a.to_string())]),
   }
 }
