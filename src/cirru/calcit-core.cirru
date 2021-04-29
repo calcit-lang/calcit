@@ -108,7 +108,12 @@
           defn apply (f args) $ f & args
 
         |apply-args $ quote
-          defn apply-args (args f) $ f & args
+          defmacro apply-args (args f)
+            if (&= '[] (first args))
+              quasiquote
+                ~f (~@ (rest args))
+              quasiquote
+                ~f ~@args
 
         |list? $ quote
           defn list? (x) $ &= (type-of x) :list
@@ -213,8 +218,7 @@
 
         |index-of $ quote
           defn index-of (xs0 item)
-            apply-args
-              [] 0 xs0
+            apply-args (0 xs0)
               fn (idx xs)
                 if (empty? xs) nil
                   if (&= item (first xs)) idx
@@ -222,8 +226,7 @@
 
         |find-index $ quote
           defn find-index (xs0 f)
-            apply-args
-              [] 0 xs0
+            apply-args (0 xs0)
               fn (idx xs)
                 if (empty? xs) nil
                   if (f (first xs)) idx
@@ -421,7 +424,7 @@
         |map-indexed $ quote
           defn map-indexed (xs f)
             apply-args
-              [] ([]) 0 xs
+              ([]) 0 xs
               fn (acc idx ys)
                 if (empty? ys) acc
                   recur
@@ -473,7 +476,7 @@
         |zipmap $ quote
           defn zipmap (xs0 ys0)
             apply-args
-              [] ({})xs0 ys0
+              ({}) xs0 ys0
               fn (acc xs ys)
                 if
                   if (empty? xs) true (empty? ys)
@@ -491,8 +494,7 @@
         |contains-symbol? $ quote
           defn contains-symbol? (xs y)
             if (list? xs)
-              apply-args
-                [] xs
+              apply-args (xs)
                 fn (body)
                   if (empty? body) false
                     if
@@ -513,8 +515,7 @@
                 inner-body $ if (&= 1 (count xs)) (first xs)
                   quasiquote
                     &let nil ~@xs
-                apply-args
-                  [] inner-body args
+                apply-args (inner-body args)
                   fn (body ys)
                     if (empty? ys)
                       quote-replace ~body
@@ -556,7 +557,7 @@
         |group-by $ quote
           defn group-by (xs0 f)
             apply-args
-              [] ({}) xs0
+              ({}) xs0
               fn (acc xs)
                 if (empty? xs) acc
                   let
@@ -575,7 +576,7 @@
         |keys-non-nil $ quote
           defn keys-non-nil (x)
             apply-args
-              [] (#{}) (to-pairs x)
+              (#{}) (to-pairs x)
               fn (acc pairs)
                 if (empty? pairs) acc
                   &let
@@ -593,7 +594,7 @@
           defn frequencies (xs0)
             assert "|expects a list for frequencies" (list? xs0)
             apply-args
-              [] ({}) xs0
+              ({}) xs0
               fn (acc xs)
                 &let
                   x0 (first xs)
@@ -607,7 +608,7 @@
         |section-by $ quote
           defn section-by (xs0 n)
             apply-args
-              [] ([]) xs0
+              ([]) xs0
               fn (acc xs)
                 if (&<= (count xs) n)
                   append acc xs
@@ -821,8 +822,7 @@
 
         |join-str $ quote
           defn join-str (xs0 sep)
-            apply-args
-              [] | xs0 true
+            apply-args (| xs0 true)
               fn (acc xs beginning?)
                 if (empty? xs) acc
                   recur
@@ -835,7 +835,7 @@
         |join $ quote
           defn join (xs0 sep)
             apply-args
-              [] ([]) xs0 true
+              ([]) xs0 true
               fn (acc xs beginning?)
                 if (empty? xs) acc
                   recur
@@ -848,7 +848,7 @@
         |repeat $ quote
           defn quote (x n0)
             apply-args
-              [] ([]) n0
+              ([]) n0
               fn (acc n)
                 if (&<= n 0) acc
                   recur (append acc x) (&- n 1)
@@ -856,7 +856,7 @@
         |interleave $ quote
           defn interleave (xs0 ys0)
             apply-args
-              [] ([]) xs0 ys0
+              ([]) xs0 ys0
               fn (acc xs ys)
                 if
                   if (empty? xs) true (empty? ys)
