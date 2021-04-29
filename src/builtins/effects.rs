@@ -1,3 +1,4 @@
+use chrono::{DateTime, TimeZone, Utc};
 use std::env;
 use std::fs;
 use std::process::exit;
@@ -139,5 +140,33 @@ pub fn write_file(xs: &CalcitItems) -> Result<Calcit, String> {
     },
     (Some(a), Some(b)) => Err(format!("write-file expected 3 strings, got: {} {}", a, b)),
     (a, b) => Err(format!("write-file expected 2 strings, got: {:?} {:?}", a, b)),
+  }
+}
+
+/// calcit-js represents DateTime in f64
+pub fn parse_time(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => match DateTime::parse_from_rfc3339(s) {
+      Ok(time) => Ok(Calcit::Number(time.timestamp_millis() as f64)),
+      Err(e) => Err(format!("parse-time failed, {}", e)),
+    },
+    Some(a) => Err(format!("parse-time expected 1 string, got: {}", a)),
+    None => Err(String::from("parse-time expected 1 string, got nothing")),
+  }
+}
+
+pub fn now_bang(_xs: &CalcitItems) -> Result<Calcit, String> {
+  Ok(Calcit::Number(Utc::now().timestamp_millis() as f64))
+}
+
+pub fn format_time(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Number(n)), None) => {
+      let time = Utc.timestamp((n.floor() / 1000.0) as i64, (n.fract() * 1_000_000.0) as u32);
+      Ok(Calcit::Str(time.to_rfc3339()))
+    }
+    (Some(Calcit::Number(_)), Some(a)) => Err(format!("format-time Rust does not support dynamic format: {}", a)),
+    (Some(a), Some(b)) => Err(format!("format-time expected time and string, got: {} {}", a, b)),
+    (a, b) => Err(format!("format-time expected time and string, got: {:?} {:?}", a, b)),
   }
 }

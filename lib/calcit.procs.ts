@@ -911,6 +911,9 @@ export let ceil = (n: number) => {
 export let round = (n: number) => {
   return Math.round(n);
 };
+export let fractional = (n: number) => {
+  return n - Math.floor(n);
+};
 export let sqrt = (n: number) => {
   return Math.sqrt(n);
 };
