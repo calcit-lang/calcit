@@ -25,7 +25,7 @@ pub fn lookup_prev_ns_cache(ns: &str) -> Option<HashSet<String>> {
 
 pub fn write_as_ns_cache(ns: &str, v: HashSet<String>) {
   let previous_program_caches = &mut GLOBAL_PREVIOUS_PROGRAM_CACHES.lock().unwrap();
-  previous_program_caches.insert(ns.to_string(), v);
+  previous_program_caches.insert(ns.to_owned(), v);
 }
 
 pub fn is_first_compilation() -> bool {

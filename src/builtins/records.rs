@@ -13,7 +13,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, String> {
         if idx > 0 {
           match x {
             Calcit::Symbol(s, ..) | Calcit::Keyword(s) | Calcit::Str(s) => {
-              fields.push(s.to_string());
+              fields.push(s.to_owned());
               values.push(Calcit::Nil);
             }
             a => return Err(format!("new-record fields accepets keyword/string, got a {}", a)),
@@ -21,7 +21,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, String> {
         }
       }
       fields.sort();
-      Ok(Calcit::Record(s.to_string(), fields, values))
+      Ok(Calcit::Record(s.to_owned(), fields, values))
     }
     Some(a) => Err(format!("new-record expected a name, got {}", a)),
     None => Err(format!("new-record expected arguments, got {:?}", xs)),
@@ -105,7 +105,7 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn get_record_name(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Record(name, ..)) => Ok(Calcit::Str(name.to_string())),
+    Some(Calcit::Record(name, ..)) => Ok(Calcit::Str(name.to_owned())),
     Some(a) => Err(format!("get-record-name expected record, got: {}", a)),
     None => Err(String::from("get-record-name expected record, got nothing")),
   }
@@ -140,7 +140,7 @@ pub fn find_in_fields(xs: &[String], y: &str) -> Option<usize> {
   while (upper - lower) > 1 {
     let pos = (lower + upper) >> 1;
     let v = xs[pos].clone();
-    match y.cmp(&v.to_string()) {
+    match y.cmp(&v) {
       Ordering::Less => upper = pos - 1,
       Ordering::Greater => lower = pos + 1,
       Ordering::Equal => return Some(pos),

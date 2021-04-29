@@ -33,8 +33,8 @@ lazy_static! {
 pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: &Option<Calcit>, args: &CalcitItems) {
   let stack = &mut CALL_STACK.lock().unwrap();
   stack.push(CalcitStack {
-    ns: ns.to_string(),
-    def: def.to_string(),
+    ns: ns.to_owned(),
+    def: def.to_owned(),
     code: code.clone(),
     args: args.clone(),
     kind,
@@ -98,7 +98,7 @@ pub fn display_stack(failure: &str) {
   }
 
   let mut data: HashMap<Edn, Edn> = HashMap::new();
-  data.insert(Edn::Keyword(String::from("message")), Edn::Str(failure.to_string()));
+  data.insert(Edn::Keyword(String::from("message")), Edn::Str(failure.to_owned()));
   data.insert(Edn::Keyword(String::from("stack")), Edn::List(stack_list));
   let content = cirru_edn::format(&Edn::Map(data), true);
   let _ = fs::write(ERROR_SNAPSHOT, content);

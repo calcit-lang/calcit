@@ -17,11 +17,11 @@ pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn trim(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Str(s)), None) => Ok(Calcit::Str(s.trim().to_string())),
+    (Some(Calcit::Str(s)), None) => Ok(Calcit::Str(s.trim().to_owned())),
     (Some(Calcit::Str(s)), Some(Calcit::Str(p))) => {
       if p.len() == 1 {
         let c: char = p.chars().next().unwrap();
-        Ok(Calcit::Str(s.trim_matches(c).to_string()))
+        Ok(Calcit::Str(s.trim_matches(c).to_owned()))
       } else {
         Err(format!("trim expected pattern in a char, got {}", p))
       }
@@ -58,7 +58,7 @@ pub fn split(xs: &CalcitItems) -> Result<Calcit, String> {
       let mut ys: CalcitItems = im::vector![];
       for p in pieces {
         if !p.is_empty() {
-          ys.push_back(Calcit::Str(p.to_string()));
+          ys.push_back(Calcit::Str(p.to_owned()));
         }
       }
       Ok(Calcit::List(ys))
@@ -92,7 +92,7 @@ pub fn split_lines(xs: &CalcitItems) -> Result<Calcit, String> {
       let lines = s.split('\n');
       let mut ys = im::vector![];
       for line in lines {
-        ys.push_back(Calcit::Str(line.to_string()));
+        ys.push_back(Calcit::Str(line.to_owned()));
       }
       Ok(Calcit::List(ys))
     }

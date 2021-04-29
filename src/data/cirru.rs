@@ -22,21 +22,21 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
           Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
         },
         '\'' if s.len() > 1 => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("quote"), ns.to_string(), None),
-          Calcit::Symbol(String::from(&s[1..]), ns.to_string(), None),
+          Calcit::Symbol(String::from("quote"), ns.to_owned(), None),
+          Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), None),
         ])),
         // TODO also detect simple variables
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("~@"), ns.to_string(), None),
-          Calcit::Symbol(String::from(&s[2..]), ns.to_string(), None),
+          Calcit::Symbol(String::from("~@"), ns.to_owned(), None),
+          Calcit::Symbol(String::from(&s[2..]), ns.to_owned(), None),
         ])),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("~"), ns.to_string(), None),
-          Calcit::Symbol(String::from(&s[1..]), ns.to_string(), None),
+          Calcit::Symbol(String::from("~"), ns.to_owned(), None),
+          Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), None),
         ])),
         '@' => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("deref"), ns.to_string(), None),
-          Calcit::Symbol(String::from(&s[1..]), ns.to_string(), None),
+          Calcit::Symbol(String::from("deref"), ns.to_owned(), None),
+          Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), None),
         ])),
         // TODO future work of reader literal expanding
         _ => {
@@ -44,7 +44,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
             let f: f64 = s.parse().unwrap();
             Ok(Calcit::Number(f))
           } else {
-            Ok(Calcit::Symbol(s.clone(), ns.to_string(), None))
+            Ok(Calcit::Symbol(s.clone(), ns.to_owned(), None))
           }
         }
       },
@@ -84,7 +84,7 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
 /// for generate Cirru via calcit data manually
 pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
   match xs {
-    Calcit::Nil => Ok(Cirru::Leaf("nil".to_string())),
+    Calcit::Nil => Ok(Cirru::Leaf(String::from("nil"))),
     Calcit::Bool(b) => Ok(Cirru::Leaf(b.to_string())),
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string())),
     Calcit::Str(s) => Ok(Cirru::Leaf(s.clone())),
@@ -130,7 +130,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Cirru {
     Calcit::Bool(false) => Cirru::Leaf(String::from("false")),
     Calcit::Number(n) => Cirru::Leaf(n.to_string()),
     Calcit::Str(s) => Cirru::Leaf(format!("|{}", s)), // TODO performance
-    Calcit::Symbol(s, ..) => Cirru::Leaf(s.to_string()), // TODO performance
+    Calcit::Symbol(s, ..) => Cirru::Leaf(s.to_owned()), // TODO performance
     Calcit::Keyword(s) => Cirru::Leaf(format!(":{}", s)), // TODO performance
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = vec![];

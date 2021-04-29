@@ -46,15 +46,15 @@ pub fn calcit_to_json(data: &Calcit, add_colon: bool) -> Result<Value, String> {
       Some(v) => Ok(Value::Number(v)),
       None => Err(format!("failed to convert to number: {}", n)),
     },
-    Calcit::Symbol(s, ..) => Ok(Value::String(s.to_string())),
+    Calcit::Symbol(s, ..) => Ok(Value::String(s.to_owned())),
     Calcit::Keyword(s) => {
       if add_colon {
         Ok(Value::String(format!(":{}", s)))
       } else {
-        Ok(Value::String(s.to_string()))
+        Ok(Value::String(s.to_owned()))
       }
     }
-    Calcit::Str(s) => Ok(Value::String(s.to_string())),
+    Calcit::Str(s) => Ok(Value::String(s.to_owned())),
     Calcit::List(xs) => {
       let mut ys: Vec<Value> = vec![];
       for x in xs {
@@ -67,13 +67,13 @@ pub fn calcit_to_json(data: &Calcit, add_colon: bool) -> Result<Value, String> {
       for (k, v) in xs {
         match k {
           Calcit::Str(s) => {
-            data.insert(s.to_string(), calcit_to_json(v, add_colon)?);
+            data.insert(s.to_owned(), calcit_to_json(v, add_colon)?);
           }
           Calcit::Keyword(s) => {
             if add_colon {
               data.insert(format!(":{}", s), calcit_to_json(v, add_colon)?);
             } else {
-              data.insert(s.to_string(), calcit_to_json(v, add_colon)?);
+              data.insert(s.to_owned(), calcit_to_json(v, add_colon)?);
             }
           }
           a => return Err(format!("expected string/keyword for json keys, got: {}", a)),
