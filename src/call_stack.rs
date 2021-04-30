@@ -62,7 +62,7 @@ pub fn clear_stack() {
   stack.clear();
 }
 
-pub fn display_stack(failure: &str) {
+pub fn display_stack(failure: &str) -> Result<(), String> {
   let stack: &Vec<CalcitStack> = &mut CALL_STACK.lock().unwrap();
   println!("\ncall stack:");
 
@@ -100,9 +100,10 @@ pub fn display_stack(failure: &str) {
   let mut data: HashMap<Edn, Edn> = HashMap::new();
   data.insert(Edn::Keyword(String::from("message")), Edn::Str(failure.to_owned()));
   data.insert(Edn::Keyword(String::from("stack")), Edn::List(stack_list));
-  let content = cirru_edn::format(&Edn::Map(data), true);
+  let content = cirru_edn::format(&Edn::Map(data), true)?;
   let _ = fs::write(ERROR_SNAPSHOT, content);
   println!("\nrun `cat {}` to read stack details.", ERROR_SNAPSHOT);
+  Ok(())
 }
 
 const ERROR_SNAPSHOT: &str = ".calcit-error.cirru";

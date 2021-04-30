@@ -263,7 +263,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "deref" => refs::deref(args),
     "reset!" => refs::reset_bang(args),
     "add-watch" => refs::add_watch(args),
-    "remove-watch" => refs::add_watch(args),
+    "remove-watch" => refs::remove_watch(args),
     // records
     "new-record" => records::new_record(args),
     "&%{}" => records::call_record(args),

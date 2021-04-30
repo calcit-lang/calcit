@@ -535,6 +535,10 @@
               |j $ {} (:type :leaf) (:by |u0) (:at 1619207810174) (:text |reload!)
               |r $ {} (:type :expr) (:by |u0) (:at 1619207810174)
                 :data $ {}
+              |v $ {} (:type :expr) (:by |u0) (:at 1619766026889)
+                :data $ {}
+                  |T $ {} (:type :leaf) (:by |u0) (:at 1619766027788) (:text |println)
+                  |j $ {} (:type :leaf) (:by |u0) (:at 1619766033570) (:text "|\"reloaded 2")
           |add-more $ {} (:type :expr) (:by |u0) (:at 1618730350902)
             :data $ {}
               |T $ {} (:type :leaf) (:by |u0) (:at 1618730354052) (:text |defmacro)
