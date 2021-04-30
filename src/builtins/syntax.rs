@@ -17,8 +17,8 @@ pub fn defn(
 ) -> Result<Calcit, String> {
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol(s, ..)), Some(Calcit::List(xs))) => Ok(Calcit::Fn(
-      s.to_string(),
-      file_ns.to_string(),
+      s.to_owned(),
+      file_ns.to_owned(),
       nanoid!(),
       scope.clone(),
       xs.clone(),
@@ -37,8 +37,8 @@ pub fn defmacro(
 ) -> Result<Calcit, String> {
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol(s, ..)), Some(Calcit::List(xs))) => Ok(Calcit::Macro(
-      s.to_string(),
-      def_ns.to_string(),
+      s.to_owned(),
+      def_ns.to_owned(),
       nanoid!(),
       xs.clone(),
       expr.skip(2),
@@ -114,7 +114,7 @@ pub fn syntax_let(
       match (&xs[0], &xs[1]) {
         (Calcit::Symbol(s, ..), ys) => {
           let value = runner::evaluate_expr(ys, scope, file_ns, program_code)?;
-          body_scope.insert(s.to_string(), value);
+          body_scope.insert(s.to_owned(), value);
         }
         (a, _) => return Err(format!("invalid binding name: {}", a)),
       }
@@ -329,7 +329,7 @@ pub fn call_try(
       Ok(v) => Ok(v.clone()),
       Err(failure) => {
         let f = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
-        let err_data = Calcit::Str(failure.to_string());
+        let err_data = Calcit::Str(failure.to_owned());
         match f {
           Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
             let values = im::vector![err_data];

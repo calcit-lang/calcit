@@ -65,7 +65,7 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
       chunk
     }
   };
-  Ok(Calcit::Symbol(s, primes::GENERATED_NS.to_string(), None))
+  Ok(Calcit::Symbol(s, String::from(primes::GENERATED_NS), None))
 }
 
 pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, String> {
@@ -166,8 +166,8 @@ pub fn write_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Str(s)) => Ok(Calcit::Symbol(s.clone(), primes::GENERATED_NS.to_string(), None)),
-    Some(Calcit::Keyword(s)) => Ok(Calcit::Symbol(s.clone(), primes::GENERATED_NS.to_string(), None)),
+    Some(Calcit::Str(s)) => Ok(Calcit::Symbol(s.clone(), String::from(primes::GENERATED_NS), None)),
+    Some(Calcit::Keyword(s)) => Ok(Calcit::Symbol(s.clone(), String::from(primes::GENERATED_NS), None)),
     Some(Calcit::Symbol(s, ns, resolved)) => Ok(Calcit::Symbol(s.clone(), ns.clone(), resolved.clone())),
     Some(a) => Err(format!("turn-symbol cannot turn this to symbol: {}", a)),
     None => Err(String::from("turn-symbol expected 1 argument, got nothing")),

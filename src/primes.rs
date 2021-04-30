@@ -1,4 +1,3 @@
-// use cirru_parser::CirruNode; // TODO for Calcit::Thunk
 use core::cmp::Ord;
 use regex::Regex;
 use std::cmp::Eq;
@@ -334,7 +333,11 @@ impl Ord for Calcit {
 
       (Calcit::Set(a), Calcit::Set(b)) => match a.len().cmp(&b.len()) {
         Equal => {
-          unreachable!("TODO sets are not cmp ed") // TODO
+          if a == b {
+            Equal
+          } else {
+            unreachable!("TODO sets are not cmp ed") // TODO
+          }
         }
         a => a,
       },

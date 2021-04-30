@@ -80,7 +80,15 @@ pub fn floor(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-// TODO mod or rem
+// TODO semantics of Rust and JavaScript are different
+pub fn fractional(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Number(n)) => Ok(Calcit::Number(n - n.floor())),
+    Some(a) => Err(format!("fractional expected a number: {}", a)),
+    a => Err(format!("fractional expected 1 number: {:?}", a)),
+  }
+}
+
 pub fn rem(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(base)), Some(Calcit::Number(step))) => match (f64_to_i32(*base), f64_to_i32(*step)) {

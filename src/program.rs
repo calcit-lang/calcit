@@ -191,7 +191,7 @@ pub fn apply_code_changes(base: &ProgramCodeData, changes: &snapshot::ChangesDic
   let mut program_code = base.clone();
 
   for (ns, file) in &changes.added {
-    program_code.insert(ns.to_string(), extract_file_data(file.clone(), ns.to_string())?);
+    program_code.insert(ns.to_owned(), extract_file_data(file.clone(), ns.to_owned())?);
   }
   for ns in &changes.removed {
     program_code.remove(ns);
@@ -203,13 +203,13 @@ pub fn apply_code_changes(base: &ProgramCodeData, changes: &snapshot::ChangesDic
       file.import_map = extract_import_map(&info.ns.clone().unwrap())?;
     }
     for (def, code) in &info.added_defs {
-      file.defs.insert(def.to_string(), code_to_calcit(code, ns)?);
+      file.defs.insert(def.to_owned(), code_to_calcit(code, ns)?);
     }
     for def in &info.removed_defs {
       file.defs.remove(def);
     }
     for (def, code) in &info.changed_defs {
-      file.defs.insert(def.to_string(), code_to_calcit(code, ns)?);
+      file.defs.insert(def.to_owned(), code_to_calcit(code, ns)?);
     }
   }
 

@@ -2,7 +2,6 @@ mod internal_states;
 mod snippets;
 
 use std::cell::RefCell;
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
@@ -88,9 +87,9 @@ fn escape_var(name: &str) -> String {
 fn escape_ns(name: &str) -> String {
   // use `$` to tell namespace from normal variables, thus able to use same token like clj
   let piece = if is_cirru_string(name) {
-    name[1..].to_string() // TODO
+    name[1..].to_owned() // TODO
   } else {
-    name.to_string()
+    name.to_owned()
   };
   format!("${}", escape_var(&piece))
 }
@@ -107,7 +106,7 @@ fn escape_ns_var(name: &str, ns: &str) -> String {
   let ns_part = pieces[0];
   let def_part = pieces[1];
   if ns_part == "js" {
-    def_part.to_string()
+    def_part.to_owned()
   } else if def_part == "@" {
     // TODO special syntax for js, using module directly, need a better solution
     escape_ns(ns)
@@ -224,12 +223,12 @@ fn to_js_code(
         "$calcit."
       };
       // println!("gen proc {} under {}", s, ns,);
-      // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_string()));
+      // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
       // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
       Ok(format!("{}{}", proc_prefix, escape_var(s)))
     }
     Calcit::Syntax(s, ..) => {
-      let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_string()));
+      let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
       gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs, file_imports)
     }
     Calcit::Str(s) => Ok(escape_cirru_str(&s)),
@@ -469,7 +468,7 @@ fn gen_symbol_code(
       // TODO namespace part supposed be parsed during preprocessing, this mimics old behaviors
       match resolved {
         Some(ResolvedDef(r_ns, _r_def)) => {
-          track_ns_import(r_ns.clone(), ImportedTarget::JustNs(r_ns.to_string()), file_imports)?;
+          track_ns_import(r_ns.clone(), ImportedTarget::JustNs(r_ns.to_owned()), file_imports)?;
           Ok(escape_ns_var(s, r_ns))
         }
         Some(ResolvedRaw) => Err(format!("not going to generate from raw symbol, {}", s)),
@@ -492,7 +491,7 @@ fn gen_symbol_code(
       // functions under core uses built $calcit module entry
       return Ok(format!("{}{}", var_prefix, escape_var(s)));
     }
-    track_ns_import(s.to_string(), ImportedTarget::FromNs(r_ns), file_imports)?;
+    track_ns_import(s.to_owned(), ImportedTarget::FromNs(r_ns), file_imports)?;
     Ok(escape_var(s))
   } else if def_ns == primes::CORE_NS {
     // local variales inside calcit.core also uses this ns
@@ -501,10 +500,10 @@ fn gen_symbol_code(
   } else if def_ns.is_empty() {
     Err(format!("Unexpected ns at symbol, {:?}", xs))
   } else if def_ns != ns {
-    track_ns_import(s.to_string(), ImportedTarget::FromNs(def_ns.to_string()), file_imports)?;
+    track_ns_import(s.to_owned(), ImportedTarget::FromNs(def_ns.to_owned()), file_imports)?;
 
     // probably via macro
-    // TODO ditry code collecting imports
+    // TODO dirty code collecting imports
 
     Ok(escape_var(s))
   } else if def_ns == ns {
@@ -800,7 +799,7 @@ fn gen_js_func(
       /* spreading_code = */ spreading_code,
       /* body = */
       list_to_js_code(&body, ns, local_defs, "%%return_mark%% =", file_imports)?, // dirty trick
-      /* var_prefix = */ var_prefix.to_string(),
+      /* var_prefix = */ var_prefix.to_owned(),
     );
 
     let export_mark = if exported {
@@ -862,7 +861,7 @@ fn sort_by_deps(deps: &HashMap<String, Calcit>) -> Vec<String> {
         deps_info.insert(k2.clone());
       }
     }
-    deps_graph.insert(k.to_string(), deps_info);
+    deps_graph.insert(k.to_owned(), deps_info);
   }
   // println!("\ndefs graph {:?}", deps_graph);
   def_names.sort(); // alphabet order first
@@ -1069,7 +1068,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     if wrote_new {
       println!("Emitted js file: {}", js_file_path.to_str().unwrap());
     } else {
-      unchanged_ns.insert(ns.to_string());
+      unchanged_ns.insert(ns.to_owned());
     }
   }
 

@@ -275,7 +275,7 @@ fn run_codegen(
 fn extract_ns_def(s: &str) -> Result<(String, String), String> {
   let pieces: Vec<&str> = (&s).split('/').collect();
   if pieces.len() == 2 {
-    Ok((pieces[0].to_string(), pieces[1].to_string()))
+    Ok((pieces[0].to_owned(), pieces[1].to_owned()))
   } else {
     Err(format!("invalid ns format: {}", s))
   }

@@ -124,14 +124,14 @@ pub fn evaluate_symbol(
     },
     None => {
       if is_syntax_name(sym) {
-        return Ok(Calcit::Syntax(sym.to_string(), file_ns.to_string()));
+        return Ok(Calcit::Syntax(sym.to_owned(), file_ns.to_owned()));
       }
       if scope.contains_key(sym) {
         // although scope is detected first, it would trigger warning during preprocess
         return Ok(scope.get(sym).unwrap().clone());
       }
       if is_proc_name(sym) {
-        return Ok(Calcit::Proc(sym.to_string()));
+        return Ok(Calcit::Proc(sym.to_owned()));
       }
       if program::lookup_def_code(CORE_NS, sym, program_code).is_some() {
         return eval_symbol_from_program(sym, CORE_NS, program_code);
@@ -154,7 +154,7 @@ pub fn parse_ns_def(s: &str) -> Option<(String, String)> {
   let pieces: Vec<&str> = s.split('/').collect();
   if pieces.len() == 2 {
     if !pieces[0].is_empty() && !pieces[1].is_empty() {
-      Some((pieces[0].to_string(), pieces[1].to_string()))
+      Some((pieces[0].to_owned(), pieces[1].to_owned()))
     } else {
       None
     }
@@ -328,7 +328,7 @@ pub fn evaluate_args(
             ret.push_back(v)
           }
         }
-        Err(e) => return Err(e.to_string()),
+        Err(e) => return Err(e.to_owned()),
       },
     }
   }

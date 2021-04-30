@@ -44,6 +44,9 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&get-calcit-backend"
       | "read-file"
       | "write-file"
+      | "format-time"
+      | "parse-time"
+      | "now!"
       // logics
       | "&="
       | "&<"
@@ -56,7 +59,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&*"
       | "&/"
       | "round"
-      | "fractional" // logics
+      | "fractional" // TODO
       | "rand"
       | "rand-int"
       | "floor"
@@ -169,6 +172,9 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&get-calcit-backend" => effects::call_get_calcit_backend(args),
     "read-file" => effects::read_file(args),
     "write-file" => effects::write_file(args),
+    "parse-time" => effects::parse_time(args),
+    "format-time" => effects::format_time(args),
+    "now!" => effects::now_bang(args),
     // logics
     "&=" => logics::binary_equal(args),
     "&<" => logics::binary_less(args),
@@ -191,6 +197,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "ceil" => math::ceil(args),
     "sqrt" => math::sqrt(args),
     "round" => math::round(args),
+    "fractional" => math::fractional(args),
     "integer?" => math::integer_ques(args),
     // strings
     "&str-concat" => strings::binary_str_concat(args),

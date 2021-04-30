@@ -34,7 +34,7 @@ pub fn defatom(
 ) -> Result<Calcit, String> {
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol(s, ns, _)), Some(code)) => {
-      let mut path = ns.to_string();
+      let mut path = ns.to_owned();
       path.push('/');
       path.push_str(s);
 

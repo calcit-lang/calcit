@@ -95,7 +95,7 @@ pub fn vec_get(data: &Edn, idx: usize) -> Edn {
 
 /// detects by keyword then string, return nil if not found
 pub fn map_get(data: &Edn, k: &str) -> Edn {
-  let key: String = k.to_string();
+  let key: String = k.to_owned();
   match data {
     Edn::Map(xs) => {
       if xs.contains_key(&Edn::Keyword(key.clone())) {
@@ -159,7 +159,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Nil => Calcit::Nil,
     Edn::Bool(b) => Calcit::Bool(*b),
     Edn::Number(n) => Calcit::Number(*n as f64),
-    Edn::Symbol(s) => Calcit::Symbol(s.clone(), primes::GENERATED_NS.to_string(), None),
+    Edn::Symbol(s) => Calcit::Symbol(s.clone(), String::from(primes::GENERATED_NS), None),
     Edn::Keyword(s) => Calcit::Keyword(s.clone()),
     Edn::Str(s) => Calcit::Str(s.clone()),
     Edn::Quote(nodes) => cirru::cirru_to_calcit(nodes),
