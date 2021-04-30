@@ -365,3 +365,34 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("first expected 1 argument")),
   }
 }
+
+// real implementation relies of ternary-tree
+pub fn assoc_before(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1), xs.get(2)) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n)), Some(a)) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        let mut ys = xs.to_owned();
+        ys.insert(idx, a.to_owned());
+        Ok(Calcit::List(ys))
+      }
+      Err(e) => Err(format!("assoc-before expect usize, {}", e)),
+    },
+    (Some(a), Some(b), Some(c)) => Err(format!("assoc-before expected list and index, got: {} {} {}", a, b, c)),
+    (a, b, c) => Err(format!("invalid arguments to assoc-before: {:?} {:?} {:?}", a, b, c)),
+  }
+}
+
+pub fn assoc_after(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1), xs.get(2)) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n)), Some(a)) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        let mut ys = xs.to_owned();
+        ys.insert(idx + 1, a.to_owned());
+        Ok(Calcit::List(ys))
+      }
+      Err(e) => Err(format!("assoc-after expect usize, {}", e)),
+    },
+    (Some(a), Some(b), Some(c)) => Err(format!("assoc-after expected list and index, got: {} {} {}", a, b, c)),
+    (a, b, c) => Err(format!("invalid arguments to assoc-after: {:?} {:?} {:?}", a, b, c)),
+  }
+}
