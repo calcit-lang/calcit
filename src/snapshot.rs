@@ -3,8 +3,6 @@ use cirru_parser::Cirru;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
 
-use crate::data::edn;
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct SnapshotConfigs {
   pub init_fn: String,
@@ -28,22 +26,22 @@ pub struct Snapshot {
 
 fn load_configs(data: Edn) -> Result<SnapshotConfigs, String> {
   let c = SnapshotConfigs {
-    init_fn: match edn::as_string(edn::map_get(&data, "init-fn")) {
+    init_fn: match data.map_get("init-fn")?.read_string() {
       Ok(v) => v,
       Err(e) => return Err(format!("failed to load init-fn from: {}", e)),
     },
-    reload_fn: match edn::as_string(edn::map_get(&data, "reload-fn")) {
+    reload_fn: match data.map_get("reload-fn")?.read_string() {
       Ok(v) => v,
       Err(e) => return Err(format!("failed to load reload-fn from: {}", e)),
     },
-    version: match edn::map_get(&data, "version") {
+    version: match data.map_get("version")? {
       Edn::Nil => String::from(""),
-      x => match edn::as_string(x) {
+      x => match x.read_string() {
         Ok(v) => v,
         Err(e) => return Err(format!("failed to load version, {}", e)),
       },
     },
-    modules: match edn::map_get(&data, "modules") {
+    modules: match data.map_get("modules")? {
       Edn::Nil => vec![],
       x => load_modules(x)?,
     },
@@ -52,11 +50,11 @@ fn load_configs(data: Edn) -> Result<SnapshotConfigs, String> {
 }
 
 fn load_modules(data: Edn) -> Result<Vec<String>, String> {
-  match edn::as_vec(data) {
+  match data.read_list() {
     Ok(xs) => {
       let mut ys: Vec<String> = vec![];
       for x in xs {
-        ys.push(edn::as_string(x)?)
+        ys.push(x.read_string()?)
       }
       Ok(ys)
     }
@@ -65,12 +63,12 @@ fn load_modules(data: Edn) -> Result<Vec<String>, String> {
 }
 
 fn load_file_info(data: Edn) -> Result<FileInSnapShot, String> {
-  let ns_code = edn::as_cirru(edn::map_get(&data, "ns"))?;
-  let defs = edn::as_map(edn::map_get(&data, "defs"))?;
+  let ns_code = data.map_get("ns")?.read_quoted_cirru()?;
+  let defs = data.map_get("defs")?.read_map()?;
   let mut defs_info: HashMap<String, Cirru> = HashMap::new();
   for (k, v) in defs {
-    let var = edn::as_string(k)?;
-    let def_code = edn::as_cirru(v)?;
+    let var = k.read_string()?;
+    let def_code = v.read_quoted_cirru()?;
     defs_info.insert(var, def_code);
   }
   let file = FileInSnapShot {
@@ -81,10 +79,10 @@ fn load_file_info(data: Edn) -> Result<FileInSnapShot, String> {
 }
 
 fn load_files(data: Edn) -> Result<HashMap<String, FileInSnapShot>, String> {
-  let xs = edn::as_map(data)?;
+  let xs = data.read_map()?;
   let mut ys: HashMap<String, FileInSnapShot> = HashMap::new();
   for (k, v) in xs {
-    let key = edn::as_string(k)?;
+    let key = k.read_string()?;
     let file = load_file_info(v)?;
     ys.insert(key, file);
   }
@@ -94,9 +92,9 @@ fn load_files(data: Edn) -> Result<HashMap<String, FileInSnapShot>, String> {
 /// parse snapshot
 pub fn load_snapshot_data(data: Edn) -> Result<Snapshot, String> {
   let s = Snapshot {
-    package: edn::as_string(edn::map_get(&data, "package"))?,
-    configs: load_configs(edn::map_get(&data, "configs"))?,
-    files: load_files(edn::map_get(&data, "files"))?,
+    package: data.map_get("package")?.read_string()?,
+    configs: load_configs(data.map_get("configs")?)?,
+    files: load_files(data.map_get("files")?)?,
   };
   Ok(s)
 }
@@ -175,18 +173,18 @@ pub struct ChangesDict {
 pub fn load_changes_info(data: Edn) -> Result<ChangesDict, String> {
   // println!("loading changes: {}", data);
   let mut added: HashMap<String, FileInSnapShot> = HashMap::new();
-  for (ns, file) in edn::as_optional_map(edn::map_get(&data, "added"))? {
-    added.insert(edn::as_string(ns)?, load_file_info(file)?);
+  for (ns, file) in &data.map_get("added")?.read_map_or_nil()? {
+    added.insert(ns.read_string()?, load_file_info(file.to_owned())?);
   }
 
   let mut removed: HashSet<String> = HashSet::new();
-  for item in edn::as_optional_set(edn::map_get(&data, "removed"))? {
-    removed.insert(edn::as_string(item)?);
+  for item in &data.map_get("removed")?.read_set_or_nil()? {
+    removed.insert(item.read_string()?);
   }
 
   let mut changed: HashMap<String, FileChangeInfo> = HashMap::new();
-  for (ns, file) in edn::as_optional_map(edn::map_get(&data, "changed"))? {
-    changed.insert(edn::as_string(ns)?, extract_changed_info(file)?);
+  for (ns, file) in &data.map_get("changed")?.read_map_or_nil()? {
+    changed.insert(ns.read_string()?, extract_changed_info(file.to_owned())?);
   }
 
   Ok(ChangesDict {
@@ -197,7 +195,7 @@ pub fn load_changes_info(data: Edn) -> Result<ChangesDict, String> {
 }
 
 pub fn extract_changed_info(data: Edn) -> Result<FileChangeInfo, String> {
-  let ns_info = match edn::map_get(&data, "ns") {
+  let ns_info = match data.map_get("ns")? {
     Edn::Nil => Ok(None),
     Edn::Quote(code) => Ok(Some(code)),
     a => Err(format!("invalid information for ns code: {}", a)),
@@ -205,19 +203,19 @@ pub fn extract_changed_info(data: Edn) -> Result<FileChangeInfo, String> {
 
   let mut added_defs: HashMap<String, Cirru> = HashMap::new();
 
-  for (def, code) in edn::as_optional_map(edn::map_get(&data, "added-defs"))? {
-    added_defs.insert(edn::as_string(def)?, edn::as_cirru(code)?);
+  for (def, code) in data.map_get("added-defs")?.read_map_or_nil()? {
+    added_defs.insert(def.read_string()?, code.read_quoted_cirru()?);
   }
 
   let mut removed_defs: HashSet<String> = HashSet::new();
 
-  for def in edn::as_optional_set(edn::map_get(&data, "removed-defs"))? {
-    removed_defs.insert(edn::as_string(def)?);
+  for def in data.map_get("removed-defs")?.read_set_or_nil()? {
+    removed_defs.insert(def.read_string()?);
   }
 
   let mut changed_defs: HashMap<String, Cirru> = HashMap::new();
-  for (def, code) in edn::as_optional_map(edn::map_get(&data, "changed-defs"))? {
-    changed_defs.insert(edn::as_string(def)?, edn::as_cirru(code)?);
+  for (def, code) in data.map_get("changed-defs")?.read_map()? {
+    changed_defs.insert(def.read_string()?, code.read_quoted_cirru()?);
   }
 
   Ok(FileChangeInfo {

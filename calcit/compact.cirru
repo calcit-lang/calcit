@@ -70,7 +70,7 @@
         |f1 $ quote
           defn f1 () $ echo "\"calling f1"
         |reload! $ quote
-          defn reload! () $ echo "\"reloaded 2"
+          defn reload! () $ println "\"reloaded 2"
         |add-more $ quote
           defmacro add-more (acc x times)
             if (&< times 1) acc $ recur

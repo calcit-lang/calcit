@@ -2,113 +2,8 @@ use crate::data::cirru;
 use crate::primes;
 use crate::primes::Calcit;
 use cirru_edn::Edn;
-use cirru_parser::Cirru;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
-
-pub fn as_string(data: Edn) -> Result<String, String> {
-  match data {
-    Edn::Str(s) => Ok(s),
-    a => Err(format!("failed to convert to string: {}", a)),
-  }
-}
-
-#[allow(dead_code)]
-pub fn as_bool(data: Edn) -> Result<bool, String> {
-  match data {
-    Edn::Bool(b) => Ok(b),
-    a => Err(format!("failed to convert to bool: {}", a)),
-  }
-}
-
-#[allow(dead_code)]
-pub fn as_number(data: Edn) -> Result<f64, String> {
-  match data {
-    Edn::Number(n) => Ok(n as f64),
-    a => Err(format!("failed to convert to number: {}", a)),
-  }
-}
-
-pub fn as_cirru(data: Edn) -> Result<Cirru, String> {
-  match data {
-    Edn::Quote(c) => Ok(c),
-    a => Err(format!("failed to convert to cirru code: {}", a)),
-  }
-}
-
-pub fn as_vec(data: Edn) -> Result<Vec<Edn>, String> {
-  match data {
-    Edn::List(xs) => Ok(xs),
-    Edn::Nil => Err(String::from("cannot get from nil")),
-    a => Err(format!("failed to convert to vec: {}", a)),
-  }
-}
-
-pub fn as_set(data: Edn) -> Result<HashSet<Edn>, String> {
-  match data {
-    Edn::Set(xs) => Ok(xs),
-    Edn::Nil => Err(String::from("cannot get set from nil")),
-    a => Err(format!("failed to convert to set: {}", a)),
-  }
-}
-
-// as_set, but allow nil
-pub fn as_optional_set(data: Edn) -> Result<HashSet<Edn>, String> {
-  match data {
-    Edn::Set(xs) => Ok(xs),
-    Edn::Nil => Ok(HashSet::new()),
-    a => Err(format!("failed to convert to set: {}", a)),
-  }
-}
-
-pub fn as_map(data: Edn) -> Result<HashMap<Edn, Edn>, String> {
-  match data {
-    Edn::Map(xs) => Ok(xs),
-    Edn::Nil => Err(String::from("cannot map get from nil")),
-    a => Err(format!("failed to convert to map: {}", a)),
-  }
-}
-
-// as_map, but allow nil being treated as empty map
-pub fn as_optional_map(data: Edn) -> Result<HashMap<Edn, Edn>, String> {
-  match data {
-    Edn::Map(xs) => Ok(xs),
-    Edn::Nil => Ok(HashMap::new()),
-    a => Err(format!("failed to convert to map: {}", a)),
-  }
-}
-
-/// detects by index
-#[allow(dead_code)]
-pub fn vec_get(data: &Edn, idx: usize) -> Edn {
-  match data {
-    Edn::List(xs) => {
-      if idx < xs.len() {
-        xs[idx].clone()
-      } else {
-        Edn::Nil
-      }
-    }
-    _ => Edn::Nil,
-  }
-}
-
-/// detects by keyword then string, return nil if not found
-pub fn map_get(data: &Edn, k: &str) -> Edn {
-  let key: String = k.to_owned();
-  match data {
-    Edn::Map(xs) => {
-      if xs.contains_key(&Edn::Keyword(key.clone())) {
-        xs[&Edn::Keyword(key)].clone()
-      } else if xs.contains_key(&Edn::Str(key.clone())) {
-        xs[&Edn::Str(key)].clone()
-      } else {
-        Edn::Nil
-      }
-    }
-    _ => Edn::Nil,
-  }
-}
 
 // values does not fit are just represented with specical indicates
 pub fn calcit_to_edn(x: &Calcit) -> Edn {
@@ -116,7 +11,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Edn {
     Calcit::Nil => Edn::Nil,
     Calcit::Bool(b) => Edn::Bool(*b),
     Calcit::Str(s) => Edn::Str(s.clone()),
-    Calcit::Number(n) => Edn::Number(*n as f32), // TODO
+    Calcit::Number(n) => Edn::Number(*n), // TODO
     Calcit::Keyword(s) => Edn::Keyword(s.clone()),
     Calcit::Symbol(s, ..) => Edn::Symbol(s.clone()),
     Calcit::List(xs) => {

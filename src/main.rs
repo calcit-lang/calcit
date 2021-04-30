@@ -188,7 +188,7 @@ fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure);
+      call_stack::display_stack(&failure)?;
       return Err(failure);
     }
   }
@@ -198,7 +198,7 @@ fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure);
+      call_stack::display_stack(&failure)?;
       return Err(failure);
     }
   }
@@ -216,7 +216,7 @@ fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCo
           }
           Err(failure) => {
             println!("\nfailed, {}", failure);
-            call_stack::display_stack(&failure);
+            call_stack::display_stack(&failure)?;
             Err(failure)
           }
         }
@@ -244,7 +244,7 @@ fn run_codegen(
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure);
+      call_stack::display_stack(&failure)?;
       return Err(failure);
     }
   }
@@ -254,7 +254,7 @@ fn run_codegen(
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure);
+      call_stack::display_stack(&failure)?;
       return Err(failure);
     }
   }
@@ -263,7 +263,7 @@ fn run_codegen(
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed codegen, {}", failure);
-      call_stack::display_stack(&failure);
+      call_stack::display_stack(&failure)?;
       return Err(failure);
     }
   }
