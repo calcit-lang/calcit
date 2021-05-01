@@ -238,7 +238,8 @@ fn process_list_call(
         preprocess_call_let(&name, &name_ns, args, scope_defs, file_ns, program_code)?,
         None,
       )),
-      "if" | "assert" | "do" | "try" | "macroexpand" | "macroexpand-all" | "macroexpand-1" | "foldl" | "sort" => Ok((
+      "if" | "assert" | "do" | "try" | "macroexpand" | "macroexpand-all" | "macroexpand-1" | "foldl" | "sort"
+      | "reset!" => Ok((
         preprocess_each_items(&name, &name_ns, args, scope_defs, file_ns, program_code)?,
         None,
       )),

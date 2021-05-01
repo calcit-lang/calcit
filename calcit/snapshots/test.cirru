@@ -216,7 +216,10 @@
           fn ()
             log-title "|Testing refs"
             assert= 0 @*ref-demo
+            add-watch *ref-demo :change $ fn (prev current)
+              println "|change happened:" prev current
             reset! *ref-demo 2
+            remove-watch *ref-demo :change
             assert= 2 @*ref-demo
             assert= :ref (type-of *ref-demo)
 

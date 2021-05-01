@@ -22,7 +22,14 @@ pub fn evaluate_expr(
     Calcit::Number(_) => Ok(expr.clone()),
     Calcit::Symbol(s, ..) if s == "&" => Ok(expr.clone()),
     Calcit::Symbol(s, ns, resolved) => match resolved {
-      Some(ResolvedDef(r_ns, r_def)) => evaluate_symbol(&r_def, scope, &r_ns, program_code),
+      Some(ResolvedDef(r_ns, r_def)) => {
+        let v = evaluate_symbol(&r_def, scope, &r_ns, program_code)?;
+        match v {
+          // extra check to make sure thunks extracted
+          Calcit::Thunk(code) => evaluate_expr(&code, scope, file_ns, program_code),
+          _ => Ok(v),
+        }
+      }
       _ => evaluate_symbol(&s, scope, &ns, program_code),
     },
     Calcit::Keyword(_) => Ok(expr.clone()),

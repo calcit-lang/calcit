@@ -133,7 +133,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "stringify-json"
       // refs
       | "deref"
-      | "reset!"
       | "add-watch"
       | "remove-watch"
       // records
@@ -265,7 +264,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "stringify-json" => json::stringify_json(args),
     // refs
     "deref" => refs::deref(args),
-    "reset!" => refs::reset_bang(args),
     "add-watch" => refs::add_watch(args),
     "remove-watch" => refs::remove_watch(args),
     // records
@@ -297,6 +295,7 @@ pub fn is_syntax_name(s: &str) -> bool {
       | "try"
       | "sort" // TODO need better solution
       | "defatom"
+      | "reset!"
   )
 }
 
@@ -324,6 +323,7 @@ pub fn handle_syntax(
     "sort" => lists::sort(nodes, scope, file_ns, program),
     // "define reference" although it uses a confusing name "atom"
     "defatom" => refs::defatom(nodes, scope, file_ns, program),
+    "reset!" => refs::reset_bang(nodes, scope, file_ns, program),
     a => Err(format!("TODO syntax: {}", a)),
   }
 }
