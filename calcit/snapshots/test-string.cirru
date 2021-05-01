@@ -5,7 +5,7 @@
     |test-string.main $ {}
       :ns $ quote
         ns test-string.main $ :require
-          [] util.core :refer $ [] inside-nim:
+          [] util.core :refer $ [] inside-eval:
       :defs $ {}
 
         |test-str $ quote
@@ -90,7 +90,7 @@
             assert= |1.23 $ format-number 1.23456789 2
             assert= |1.2 $ format-number 1.23456789 1
 
-            inside-nim:
+            inside-eval:
 
               ; TODO not stable
               ; assert= "|({} (:c ([] 3)) (:a 1) (:b |2) (:d ({} (([] 1 2) 3))))"

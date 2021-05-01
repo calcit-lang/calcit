@@ -6,7 +6,7 @@
     |test-cond.main $ {}
       :ns $ quote
         ns test-cond.main $ :require
-          [] util.core :refer $ [] inside-nim:
+          [] util.core :refer $ [] inside-eval:
       :defs $ {}
 
         |test-cond $ quote
@@ -34,7 +34,7 @@
               assert= (detect-x 2) "|two"
               assert= (detect-x 3) "|else"
 
-            inside-nim:
+            inside-eval:
               assert=
                 macroexpand $ quote
                   case-default x |nothing

@@ -24,14 +24,14 @@
           [] test-ternary.main :as test-ternary
           [] test-js.main :as test-js
           [] test-record.main :as test-record
-          util.core :refer $ log-title inside-nim: inside-js:
+          util.core :refer $ log-title inside-eval: inside-js:
       :defs $ {}
         |test-keyword $ quote
           defn test-keyword ()
             ; assert "|keyword function" $ =
               :a ({} (:a 1))
               , 1
-            ; inside-nim:
+            ; inside-eval:
               &let
                 base $ {} (:a 1)
                 assert= 1 $ base :a
@@ -221,7 +221,7 @@
             log-title "|Testing detects"
             test-detects
 
-            inside-nim:
+            inside-eval:
               log-title "|Testing id"
               test-id
 
@@ -247,7 +247,7 @@
 
             test-refs
 
-            inside-nim:
+            inside-eval:
               test-gynienic/main!
 
             test-cond/main!
