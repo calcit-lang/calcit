@@ -1578,7 +1578,9 @@ export let parse_time = (text: string) => {
 };
 
 export let format_to_lisp = (x: CrDataValue): string => {
-  if (x instanceof CrDataSymbol) {
+  if (x == null) {
+    return "nil";
+  } else if (x instanceof CrDataSymbol) {
     return x.value;
   } else if (x instanceof CrDataList) {
     let chunk = "(";

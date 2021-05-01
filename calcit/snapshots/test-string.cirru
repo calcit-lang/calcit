@@ -181,6 +181,10 @@
               format-to-lisp $ quote (defn f1 (x) (+ x y))
               , "|(defn f1 (x) (+ x y))"
 
+            assert=
+              format-to-lisp $ quote $ nil? nil
+              , "|(nil? nil)"
+
         |main! $ quote
           defn main! ()
             log-title "|Testing str"
