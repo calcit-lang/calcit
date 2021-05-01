@@ -1226,8 +1226,10 @@ export let printable = (...args: CrDataValue[]): string => {
 // time from app start
 export let cpu_time = (): number => {
   if (inNodeJs) {
-    return process.uptime();
+    // uptime returns in seconds
+    return process.uptime() * 1000;
   }
+  // returns in milliseconds
   return performance.now();
 };
 

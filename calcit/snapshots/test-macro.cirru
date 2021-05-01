@@ -274,9 +274,9 @@
                       started__1 $ cpu-time
                       v__2 $ + 1 2
                     echo |[cpu-time]
-                      quote $ + 1 2
+                      format-to-lisp (quote $ + 1 2)
                       , |=>
-                      format-number (&* 1000 (&- (cpu-time) started__1)) 3
+                      format-number (&- (cpu-time) started__1) 3
                       , |ms
                     , v__2
 
@@ -352,7 +352,7 @@
                     v__1 (fn () 1)
                     if (fn? v__1) nil
                       &let nil (echo)
-                        echo (quote (fn () 1)) "|does not satisfy:" (quote fn?) "| <--------"
+                        echo (format-to-lisp (quote (fn () 1))) "|does not satisfy:" (format-to-lisp (quote fn?)) "| <--------"
                         echo "|  value is:" v__1
                         raise "|Not satisfied in assertion!"
 

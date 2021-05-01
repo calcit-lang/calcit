@@ -669,7 +669,7 @@
                   if (~f ~v) nil
                     &let nil
                       echo
-                      echo (quote ~code) "|does not satisfy:" (quote ~f) "| <--------"
+                      echo (format-to-lisp (quote ~code)) "|does not satisfy:" (format-to-lisp (quote ~f)) "| <--------"
                       echo "|  value is:" ~v
                       raise "|Not satisfied in assertion!"
 
@@ -816,7 +816,7 @@
                     raise "|expects 1st argument to be string"
                   if ~xs nil
                     &let nil
-                      echo "|Failed assertion:" (quote ~xs)
+                      echo "|Failed assertion:" (format-to-lisp (quote ~xs))
                       raise
                         ~ $ &str-concat (&str-concat message "| ") (format-to-lisp xs)
 
@@ -846,7 +846,7 @@
                     , false
 
         |repeat $ quote
-          defn quote (x n0)
+          defn repeat (x n0)
             apply-args
               ([]) n0
               fn (acc n)
@@ -946,9 +946,9 @@
                 let
                     ~started (cpu-time)
                     ~v ~x
-                  echo "|[cpu-time]" (quote ~x) |=>
+                  echo "|[cpu-time]" (format-to-lisp (quote ~x)) |=>
                     format-number
-                      &* 1000 (&- (cpu-time) ~started)
+                      &- (cpu-time) ~started
                       , 3
                     , |ms
                   ~ v
