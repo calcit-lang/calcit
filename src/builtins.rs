@@ -108,6 +108,8 @@ pub fn is_proc_name(s: &str) -> bool {
       | "range"
       | "reverse"
       | "first"
+      | "assoc-before"
+      | "assoc-after"
       // maps
       | "&{}"
       | "assoc"
@@ -238,6 +240,8 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "range" => lists::range(args),
     "reverse" => lists::reverse(args),
     "first" => lists::first(args),
+    "assoc-before" => lists::assoc_before(args),
+    "assoc-after" => lists::assoc_after(args),
     // maps
     "&{}" => maps::call_new_map(args),
     "assoc" => maps::assoc(args),

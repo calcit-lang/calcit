@@ -1,3 +1,4 @@
+use serde_json::json;
 use serde_json::Value;
 
 use crate::primes::{Calcit, CalcitItems};
@@ -89,6 +90,8 @@ pub fn calcit_to_json(data: &Calcit, add_colon: bool) -> Result<Value, String> {
       }
       Ok(Value::Object(data))
     }
+    Calcit::Macro(..) => Ok(json!("TODO macro")),
+    Calcit::Fn(..) => Ok(json!("TODO fn")),
     a => Err(format!("cannot convert to json: {}", a)),
   }
 }

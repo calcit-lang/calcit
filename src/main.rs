@@ -88,7 +88,9 @@ fn main() -> Result<(), String> {
   };
 
   let task = if cli_matches.is_present("emit-js") {
-    run_codegen(&init_fn, &reload_fn, &program_code, &emit_path)
+    run_codegen(&init_fn, &reload_fn, &program_code, &emit_path, false)
+  } else if cli_matches.is_present("emit-ir") {
+    run_codegen(&init_fn, &reload_fn, &program_code, &emit_path, true)
   } else {
     run_program(&init_fn, &reload_fn, &program_code)
   };
@@ -147,7 +149,9 @@ fn main() -> Result<(), String> {
                 builtins::meta::force_reset_gensym_index()?;
 
                 let task = if cli_matches.is_present("emit-js") {
-                  run_codegen(&init_fn, &reload_fn, &new_code, &emit_path)
+                  run_codegen(&init_fn, &reload_fn, &new_code, &emit_path, false)
+                } else if cli_matches.is_present("emit-ir") {
+                  run_codegen(&init_fn, &reload_fn, &new_code, &emit_path, true)
                 } else {
                   // run from `reload_fn` after reload
                   run_program(&reload_fn, &init_fn, &new_code)
@@ -231,13 +235,18 @@ fn run_codegen(
   reload_fn: &str,
   program_code: &program::ProgramCodeData,
   emit_path: &str,
+  ir_mode: bool,
 ) -> Result<(), String> {
   let started_time = Instant::now();
 
   let (init_ns, init_def) = extract_ns_def(init_fn)?;
   let (reload_ns, reload_def) = extract_ns_def(reload_fn)?;
 
-  effects::modify_cli_running_mode(effects::CliRunningMode::Js)?;
+  if ir_mode {
+    effects::modify_cli_running_mode(effects::CliRunningMode::Ir)?;
+  } else {
+    effects::modify_cli_running_mode(effects::CliRunningMode::Js)?;
+  }
 
   // preprocess to init
   match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def) {
@@ -258,13 +267,25 @@ fn run_codegen(
       return Err(failure);
     }
   }
-  // TODO entry ns
-  match emit_js(&init_ns, &emit_path) {
-    Ok(_) => (),
-    Err(failure) => {
-      println!("\nfailed codegen, {}", failure);
-      call_stack::display_stack(&failure)?;
-      return Err(failure);
+
+  if ir_mode {
+    match codegen::gen_ir::emit_ir(&init_ns, &emit_path, &emit_path) {
+      Ok(_) => (),
+      Err(failure) => {
+        println!("\nfailed codegen, {}", failure);
+        call_stack::display_stack(&failure)?;
+        return Err(failure);
+      }
+    }
+  } else {
+    // TODO entry ns
+    match emit_js(&init_ns, &emit_path) {
+      Ok(_) => (),
+      Err(failure) => {
+        println!("\nfailed codegen, {}", failure);
+        call_stack::display_stack(&failure)?;
+        return Err(failure);
+      }
     }
   }
   let duration = Instant::now().duration_since(started_time);
