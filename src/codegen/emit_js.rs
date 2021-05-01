@@ -268,7 +268,7 @@ fn gen_call_code(
       match s.as_str() {
         "if" => match (body.get(0), body.get(1)) {
           (Some(condition), Some(true_branch)) => {
-            call_stack::push_call_stack(ns, "if", StackKind::Codegen, &Some(xs.to_owned()), &im::vector![]);
+            call_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), &im::vector![]);
             let false_code = match body.get(2) {
               Some(fal) => to_js_code(fal, ns, local_defs, file_imports)?,
               None => String::from("null"),
@@ -293,7 +293,7 @@ fn gen_call_code(
             (Some(Calcit::Symbol(sym, ..)), Some(v)) => {
               // let _name = escape_var(sym); // TODO
               let ref_path = wrap_js_str(&format!("{}/{}", ns, sym.clone()));
-              call_stack::push_call_stack(ns, sym, StackKind::Codegen, &Some(xs.to_owned()), &im::vector![]);
+              call_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &im::vector![]);
               let value_code = &to_js_code(v, ns, local_defs, file_imports)?;
               call_stack::pop_call_stack();
               Ok(format!(
@@ -308,7 +308,7 @@ fn gen_call_code(
         "defn" => match (body.get(0), body.get(1)) {
           (Some(Calcit::Symbol(sym, ..)), Some(Calcit::List(ys))) => {
             let func_body = body.skip(2);
-            call_stack::push_call_stack(ns, sym, StackKind::Codegen, &Some(xs.to_owned()), &im::vector![]);
+            call_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &im::vector![]);
             let ret = gen_js_func(sym, &ys, &func_body, ns, false, local_defs, file_imports);
             call_stack::pop_call_stack();
             ret
@@ -339,7 +339,7 @@ fn gen_call_code(
         }
         "try" => match (body.get(0), body.get(1)) {
           (Some(expr), Some(handler)) => {
-            call_stack::push_call_stack(ns, "try", StackKind::Codegen, &Some(xs.to_owned()), &im::vector![]);
+            call_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), &im::vector![]);
             let code = to_js_code(expr, ns, local_defs, file_imports)?;
             let err_var = js_gensym("errMsg");
             let handler = to_js_code(handler, ns, local_defs, file_imports)?;
@@ -994,20 +994,14 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           ));
         }
         Calcit::Fn(name, def_ns, _, _, args, code) => {
-          call_stack::push_call_stack(def_ns, name, StackKind::Codegen, &Some(f.to_owned()), &im::vector![]);
+          call_stack::push_call_stack(def_ns, name, StackKind::Codegen, f.to_owned(), &im::vector![]);
           defs_code.push_str(&gen_js_func(&def, args, code, &ns, true, &def_names, &file_imports)?);
           call_stack::pop_call_stack();
         }
         Calcit::Thunk(code) => {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
-          call_stack::push_call_stack(
-            &ns,
-            &def,
-            StackKind::Codegen,
-            &Some((**code).to_owned()),
-            &im::vector![],
-          );
+          call_stack::push_call_stack(&ns, &def, StackKind::Codegen, (**code).to_owned(), &im::vector![]);
           vals_code.push_str(&format!(
             "\nexport var {} = {};\n",
             escape_var(&def),

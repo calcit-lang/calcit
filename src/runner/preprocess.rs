@@ -36,7 +36,7 @@ pub fn preprocess_ns_def(
           // write a nil value first to prevent dead loop
           program::write_evaled_def(ns, def, Calcit::Nil)?;
 
-          push_call_stack(ns, def, StackKind::Fn, &Some(code.clone()), &im::vector![]);
+          push_call_stack(ns, def, StackKind::Fn, code.clone(), &im::vector![]);
 
           let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, program_code)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
@@ -207,8 +207,8 @@ fn process_list_call(
       // println!("eval macro: {}", primes::CrListWrap(xs.clone()));
       // println!("macro... {} {}", x, CrListWrap(current_values.clone()));
 
-      let code = Some(Calcit::List(xs.clone()));
-      push_call_stack(&def_ns, &name, StackKind::Macro, &code, &args);
+      let code = Calcit::List(xs.clone());
+      push_call_stack(&def_ns, &name, StackKind::Macro, code, &args);
 
       loop {
         // need to handle recursion

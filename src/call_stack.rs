@@ -10,7 +10,7 @@ use std::sync::Mutex;
 pub struct CalcitStack {
   pub ns: String,
   pub def: String,
-  pub code: Option<Calcit>, // built in functions may not contain code
+  pub code: Calcit, // built in functions may not contain code
   pub args: CalcitItems,
   pub kind: StackKind,
 }
@@ -30,12 +30,12 @@ lazy_static! {
   static ref CALL_STACK: Mutex<Vec<CalcitStack>> = Mutex::new(vec![]);
 }
 
-pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: &Option<Calcit>, args: &CalcitItems) {
+pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: &CalcitItems) {
   let stack = &mut CALL_STACK.lock().unwrap();
   stack.push(CalcitStack {
     ns: ns.to_owned(),
     def: def.to_owned(),
-    code: code.clone(),
+    code,
     args: args.clone(),
     kind,
   })
@@ -82,10 +82,7 @@ pub fn display_stack(failure: &str) -> Result<(), String> {
     );
     info.insert(
       Edn::Keyword(String::from("code")),
-      match &s.code {
-        Some(code) => Edn::Quote(cirru::calcit_to_cirru(code)),
-        None => Edn::Nil,
-      },
+      Edn::Quote(cirru::calcit_to_cirru(&s.code)),
     );
     let mut args: Vec<Edn> = vec![];
     for a in &s.args {
