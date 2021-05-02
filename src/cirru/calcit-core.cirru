@@ -215,26 +215,25 @@
               fn (acc item) $ &intersection acc item
 
         |index-of $ quote
-          defn index-of (xs0 item)
-            apply-args (0 xs0)
-              fn (idx xs)
-                if (empty? xs) nil
-                  if (&= item (first xs)) idx
-                    recur (&+ 1 idx) (rest xs)
+          defn index-of (xs item)
+            foldl-shortcut xs 0 nil $ fn (idx x)
+              if (&= item x)
+                [] true idx
+                [] false (&+ 1 idx)
 
         |find-index $ quote
-          defn find-index (xs0 f)
-            apply-args (0 xs0)
-              fn (idx xs)
-                if (empty? xs) nil
-                  if (f (first xs)) idx
-                    recur (&+ 1 idx) (rest xs)
+          defn find-index (xs f)
+            foldl-shortcut xs 0 nil $ fn (idx x)
+              if (f x)
+                [] true idx
+                [] false (&+ 1 idx)
 
         |find $ quote
           defn find (xs f)
-            &let
-              idx (find-index xs f)
-              if (nil? idx) nil (get xs idx)
+            foldl-shortcut xs 0 nil $ fn (_acc x)
+              if (f x)
+                [] true x
+                [] false nil
 
         |-> $ quote
           defmacro -> (base & xs)
@@ -393,16 +392,17 @@
 
         |every? $ quote
           defn every? (xs f)
-            if (empty? xs) true
-              if (f (first xs))
-                recur (rest xs) f
-                , false
+            foldl-shortcut xs nil true $ fn (_acc x)
+              if (f x)
+                [] false nil
+                [] true false
 
         |any? $ quote
           defn any? (xs f)
-            if (empty? xs) false
-              if (f (first xs)) true
-                recur (rest xs) f
+            foldl-shortcut xs nil false $ fn (_acc x)
+              if (f x)
+                [] true true
+                [] false nil
 
         |mapcat $ quote
           defn mapcat (xs f)
@@ -421,14 +421,8 @@
 
         |map-indexed $ quote
           defn map-indexed (xs f)
-            apply-args
-              ([]) 0 xs
-              fn (acc idx ys)
-                if (empty? ys) acc
-                  recur
-                    append acc (f idx (first ys))
-                    &+ idx 1
-                    rest ys
+            foldl xs ([]) $ fn (acc x)
+              append acc $ f (count acc) x
 
         |filter $ quote
           defn filter (xs f)
@@ -908,6 +902,16 @@
                 &let
                   ~v ~x
                   echo (format-to-lisp (quote ~x)) |=> ~v
+                  ~ v
+
+        |with-js-log $ quote
+          defmacro with-js-log (x)
+            &let
+              v $ gensym |v
+              quote-replace
+                &let
+                  ~v ~x
+                  js/console.log (format-to-lisp (quote ~x)) |=> ~v
                   ~ v
 
         |{,} $ quote
