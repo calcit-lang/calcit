@@ -157,10 +157,8 @@
 
         |each $ quote
           defn each (xs f)
-            if (not (empty? xs))
-              &let nil
-                f (first xs)
-                recur (rest xs) f
+            foldl xs nil $ fn (_acc x)
+              f x
 
         |map $ quote
           defn map (xs f)
@@ -928,14 +926,7 @@
                 name $ first pair
                 xs0 $ last pair
               quote-replace
-                apply
-                  defn doseq-fn% (xs)
-                    if (empty? xs) nil
-                      &let
-                        ~name $ first xs
-                        ~@ body
-                        recur $ rest xs
-                  [] ~xs0
+                foldl ~xs0 nil $ defn doseq-fn% (_acc ~name) ~@body
 
         |with-cpu-time $ quote
           defmacro with-cpu-time (x)
