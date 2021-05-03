@@ -180,6 +180,7 @@ export let foldl = function (xs: CrDataValue, acc: CrDataValue, f: CrDataFn): Cr
     });
     return result;
   }
+  throw new Error("Unknow data for foldl");
 };
 
 export let foldl_shortcut = function (xs: CrDataValue, acc: CrDataValue, v0: CrDataValue, f: CrDataFn): CrDataValue {
@@ -228,6 +229,7 @@ export let foldl_shortcut = function (xs: CrDataValue, acc: CrDataValue, v0: CrD
     }
     return v0;
   }
+  throw new Error("Unknow data for foldl-shortcut");
 };
 
 export let _AND__ADD_ = (x: number, y: number): number => {
@@ -1150,8 +1152,14 @@ export let to_js_data = (x: CrDataValue, addColon: boolean = false): any => {
     }
     return result;
   }
-  console.error(x);
-  throw new Error("Unknown data to js");
+  if (x instanceof CrDataRef) {
+    throw new Error("Cannot convert ref to plain data");
+  }
+  if (x instanceof CrDataRecur) {
+    throw new Error("Cannot convert recur to plain data");
+  }
+
+  return x;
 };
 
 export let to_calcit_data = (x: any, noKeyword: boolean = false): CrDataValue => {
