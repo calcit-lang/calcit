@@ -751,4 +751,8 @@ export class CrDataSet {
     });
     return `(#{}${itemsCode})`;
   }
+
+  values() {
+    return this.value.values();
+  }
 }

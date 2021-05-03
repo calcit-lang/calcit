@@ -133,7 +133,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "stringify-json"
       // refs
       | "deref"
-      | "reset!"
       | "add-watch"
       | "remove-watch"
       // records
@@ -265,7 +264,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "stringify-json" => json::stringify_json(args),
     // refs
     "deref" => refs::deref(args),
-    "reset!" => refs::reset_bang(args),
     "add-watch" => refs::add_watch(args),
     "remove-watch" => refs::remove_watch(args),
     // records
@@ -294,9 +292,11 @@ pub fn is_syntax_name(s: &str) -> bool {
       | "macroexpand-1"
       | "macroexpand-all"
       | "foldl" // for performance
+      | "foldl-shortcut" // for performance
       | "try"
       | "sort" // TODO need better solution
       | "defatom"
+      | "reset!"
   )
 }
 
@@ -317,6 +317,7 @@ pub fn handle_syntax(
     "if" => syntax::syntax_if(nodes, scope, file_ns, program),
     "&let" => syntax::syntax_let(nodes, scope, file_ns, program),
     "foldl" => lists::foldl(nodes, scope, file_ns, program),
+    "foldl-shortcut" => lists::foldl_shortcut(nodes, scope, file_ns, program),
     "macroexpand" => syntax::macroexpand(nodes, scope, file_ns, program),
     "macroexpand-1" => syntax::macroexpand_1(nodes, scope, file_ns, program),
     "macroexpand-all" => syntax::macroexpand_all(nodes, scope, file_ns, program),
@@ -324,6 +325,7 @@ pub fn handle_syntax(
     "sort" => lists::sort(nodes, scope, file_ns, program),
     // "define reference" although it uses a confusing name "atom"
     "defatom" => refs::defatom(nodes, scope, file_ns, program),
+    "reset!" => refs::reset_bang(nodes, scope, file_ns, program),
     a => Err(format!("TODO syntax: {}", a)),
   }
 }

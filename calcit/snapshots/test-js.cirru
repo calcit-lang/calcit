@@ -67,6 +67,8 @@
               raise (str "|error of math" 2 1)
               raise "|base error"
 
+            with-js-log ({} (:a 1))
+
             do true
 
       :proc $ quote ()

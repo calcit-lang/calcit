@@ -22,7 +22,14 @@ pub fn evaluate_expr(
     Calcit::Number(_) => Ok(expr.clone()),
     Calcit::Symbol(s, ..) if s == "&" => Ok(expr.clone()),
     Calcit::Symbol(s, ns, resolved) => match resolved {
-      Some(ResolvedDef(r_ns, r_def)) => evaluate_symbol(&r_def, scope, &r_ns, program_code),
+      Some(ResolvedDef(r_ns, r_def)) => {
+        let v = evaluate_symbol(&r_def, scope, &r_ns, program_code)?;
+        match v {
+          // extra check to make sure thunks extracted
+          Calcit::Thunk(code) => evaluate_expr(&code, scope, file_ns, program_code),
+          _ => Ok(v),
+        }
+      }
       _ => evaluate_symbol(&s, scope, &ns, program_code),
     },
     Calcit::Keyword(_) => Ok(expr.clone()),
@@ -43,19 +50,19 @@ pub fn evaluate_expr(
         let ret = match &v {
           Calcit::Proc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
-            push_call_stack(file_ns, &p, StackKind::Proc, &None, &values);
+            push_call_stack(file_ns, &p, StackKind::Proc, Calcit::Nil, &values);
             added_stack = true;
             // println!("proc: {}", expr);
             builtins::handle_proc(&p, &values)
           }
           Calcit::Syntax(s, def_ns) => {
-            push_call_stack(file_ns, &s, StackKind::Syntax, &Some(expr.clone()), &rest_nodes);
+            push_call_stack(file_ns, &s, StackKind::Syntax, expr.to_owned(), &rest_nodes);
             added_stack = true;
             builtins::handle_syntax(&s, &rest_nodes, scope, def_ns, program_code)
           }
           Calcit::Fn(name, def_ns, _, def_scope, args, body) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
-            push_call_stack(file_ns, &name, StackKind::Fn, &Some(expr.clone()), &values);
+            push_call_stack(file_ns, &name, StackKind::Fn, expr.to_owned(), &values);
             added_stack = true;
             run_fn(&values, &def_scope, args, body, def_ns, program_code)
           }
@@ -67,7 +74,7 @@ pub fn evaluate_expr(
             // println!("eval macro: {} {}", x, expr.lisp_str()));
             // println!("macro... {} {}", x, CrListWrap(current_values.clone()));
 
-            push_call_stack(file_ns, &name, StackKind::Macro, &Some(expr.clone()), &rest_nodes);
+            push_call_stack(file_ns, &name, StackKind::Macro, expr.to_owned(), &rest_nodes);
             added_stack = true;
 
             Ok(loop {

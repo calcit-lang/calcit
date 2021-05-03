@@ -17,7 +17,9 @@
         |call-3 $ quote
           defn call-3 (a b c) (echo "\"a is:" a) (echo "\"b is:" b) (echo "\"c is:" c)
         |main! $ quote
-          defn main! () (echo "\"demo")
+          defn main! () (demos) (fib 10)
+        |demos $ quote
+          defn demos () (echo "\"demo")
             echo $ &+ 2 2
             echo "\"f1" $ f1
             echo-values 1 "\"1" :a $ [] 1 2
@@ -67,10 +69,15 @@
             call-many 1 2
             call-many 1 2 3
             echo $ macroexpand (call-macro 11 12 13)
+        |fib $ quote
+          defn fib (n)
+            if (< n 2) 1 $ +
+              fib $ - n 1
+              fib $ - n 2
         |f1 $ quote
           defn f1 () $ echo "\"calling f1"
         |reload! $ quote
-          defn reload! () $ println "\"reloaded 2"
+          defn reload! () (println "\"reloaded 2") (fib 40)
         |add-more $ quote
           defmacro add-more (acc x times)
             if (&< times 1) acc $ recur

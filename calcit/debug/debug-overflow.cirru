@@ -6,7 +6,7 @@
     |debug-overflow.main $ {}
       :ns $ quote
         ns debug-overflow.main $ :require
-          [] util.core :refer $ [] log-title inside-nim:
+          [] util.core :refer $ [] log-title inside-eval:
       :defs $ {}
 
         |rec $ quote

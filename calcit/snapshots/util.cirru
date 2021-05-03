@@ -14,8 +14,8 @@
             echo title
             echo
 
-        |inside-nim: $ quote
-          defmacro inside-nim: (& body)
+        |inside-eval: $ quote
+          defmacro inside-eval: (& body)
             if
               = :eval $ &get-calcit-running-mode
               quote-replace
@@ -24,7 +24,7 @@
                 do (echo "|env: not eval. tests skipped")
 
         |inside-js: $ quote
-          defmacro inside-nim: (& body)
+          defmacro inside-js: (& body)
             if
               not= :eval $ &get-calcit-running-mode
               quote-replace

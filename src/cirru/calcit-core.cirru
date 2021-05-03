@@ -157,10 +157,8 @@
 
         |each $ quote
           defn each (xs f)
-            if (not (empty? xs))
-              &let nil
-                f (first xs)
-                recur (rest xs) f
+            foldl xs nil $ fn (_acc x)
+              f x
 
         |map $ quote
           defn map (xs f)
@@ -217,26 +215,25 @@
               fn (acc item) $ &intersection acc item
 
         |index-of $ quote
-          defn index-of (xs0 item)
-            apply-args (0 xs0)
-              fn (idx xs)
-                if (empty? xs) nil
-                  if (&= item (first xs)) idx
-                    recur (&+ 1 idx) (rest xs)
+          defn index-of (xs item)
+            foldl-shortcut xs 0 nil $ fn (idx x)
+              if (&= item x)
+                [] true idx
+                [] false (&+ 1 idx)
 
         |find-index $ quote
-          defn find-index (xs0 f)
-            apply-args (0 xs0)
-              fn (idx xs)
-                if (empty? xs) nil
-                  if (f (first xs)) idx
-                    recur (&+ 1 idx) (rest xs)
+          defn find-index (xs f)
+            foldl-shortcut xs 0 nil $ fn (idx x)
+              if (f x)
+                [] true idx
+                [] false (&+ 1 idx)
 
         |find $ quote
           defn find (xs f)
-            &let
-              idx (find-index xs f)
-              if (nil? idx) nil (get xs idx)
+            foldl-shortcut xs 0 nil $ fn (_acc x)
+              if (f x)
+                [] true x
+                [] false nil
 
         |-> $ quote
           defmacro -> (base & xs)
@@ -395,16 +392,17 @@
 
         |every? $ quote
           defn every? (xs f)
-            if (empty? xs) true
-              if (f (first xs))
-                recur (rest xs) f
-                , false
+            foldl-shortcut xs nil true $ fn (_acc x)
+              if (f x)
+                [] false nil
+                [] true false
 
         |any? $ quote
           defn any? (xs f)
-            if (empty? xs) false
-              if (f (first xs)) true
-                recur (rest xs) f
+            foldl-shortcut xs nil false $ fn (_acc x)
+              if (f x)
+                [] true true
+                [] false nil
 
         |mapcat $ quote
           defn mapcat (xs f)
@@ -423,14 +421,8 @@
 
         |map-indexed $ quote
           defn map-indexed (xs f)
-            apply-args
-              ([]) 0 xs
-              fn (acc idx ys)
-                if (empty? ys) acc
-                  recur
-                    append acc (f idx (first ys))
-                    &+ idx 1
-                    rest ys
+            foldl xs ([]) $ fn (acc x)
+              append acc $ f (count acc) x
 
         |filter $ quote
           defn filter (xs f)
@@ -669,7 +661,7 @@
                   if (~f ~v) nil
                     &let nil
                       echo
-                      echo (quote ~code) "|does not satisfy:" (quote ~f) "| <--------"
+                      echo (format-to-lisp (quote ~code)) "|does not satisfy:" (format-to-lisp (quote ~f)) "| <--------"
                       echo "|  value is:" ~v
                       raise "|Not satisfied in assertion!"
 
@@ -816,7 +808,7 @@
                     raise "|expects 1st argument to be string"
                   if ~xs nil
                     &let nil
-                      echo "|Failed assertion:" (quote ~xs)
+                      echo "|Failed assertion:" (format-to-lisp (quote ~xs))
                       raise
                         ~ $ &str-concat (&str-concat message "| ") (format-to-lisp xs)
 
@@ -846,7 +838,7 @@
                     , false
 
         |repeat $ quote
-          defn quote (x n0)
+          defn repeat (x n0)
             apply-args
               ([]) n0
               fn (acc n)
@@ -912,6 +904,16 @@
                   echo (format-to-lisp (quote ~x)) |=> ~v
                   ~ v
 
+        |with-js-log $ quote
+          defmacro with-js-log (x)
+            &let
+              v $ gensym |v
+              quote-replace
+                &let
+                  ~v ~x
+                  js/console.log (format-to-lisp (quote ~x)) |=> ~v
+                  ~ v
+
         |{,} $ quote
           defmacro {,} (& body)
             &let
@@ -928,14 +930,7 @@
                 name $ first pair
                 xs0 $ last pair
               quote-replace
-                apply
-                  defn doseq-fn% (xs)
-                    if (empty? xs) nil
-                      &let
-                        ~name $ first xs
-                        ~@ body
-                        recur $ rest xs
-                  [] ~xs0
+                foldl ~xs0 nil $ defn doseq-fn% (_acc ~name) ~@body
 
         |with-cpu-time $ quote
           defmacro with-cpu-time (x)
@@ -946,9 +941,9 @@
                 let
                     ~started (cpu-time)
                     ~v ~x
-                  echo "|[cpu-time]" (quote ~x) |=>
+                  echo "|[cpu-time]" (format-to-lisp (quote ~x)) |=>
                     format-number
-                      &* 1000 (&- (cpu-time) ~started)
+                      &- (cpu-time) ~started
                       , 3
                     , |ms
                   ~ v

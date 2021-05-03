@@ -279,6 +279,85 @@ pub fn foldl(
   }
 }
 
+/// foldl-shortcut using syntax for performance, it's supposed to be a function
+/// by returning `[bool, acc]`, bool indicates where performace a shortcut return
+pub fn foldl_shortcut(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<Calcit, String> {
+  if expr.len() == 4 {
+    let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
+    let acc = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
+    let default_value = runner::evaluate_expr(&expr[2], scope, file_ns, program_code)?;
+    let f = runner::evaluate_expr(&expr[3], scope, file_ns, program_code)?;
+    match (&xs, &f) {
+      // dirty since only functions being call directly then we become fast
+      (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+        let mut state = acc;
+        for x in xs {
+          let values = im::vector![state, x.clone()];
+          let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+          match pair {
+            Calcit::List(ys) if ys.len() == 2 => match &ys[0] {
+              Calcit::Bool(b) => {
+                if *b {
+                  return Ok(ys[1].to_owned());
+                } else {
+                  state = ys[1].to_owned()
+                }
+              }
+              a => return Err(format!("return value in foldl-shortcut should be a bool, got: {}", a)),
+            },
+            _ => {
+              return Err(format!(
+                "return value for foldl-shortcut should be `[bool, acc]`, got: {}",
+                pair
+              ))
+            }
+          }
+        }
+        Ok(default_value)
+      }
+      // almost identical body, escept for the type
+      (Calcit::Set(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+        let mut state = acc;
+        for x in xs {
+          let values = im::vector![state, x.clone()];
+          let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+          match pair {
+            Calcit::List(ys) if ys.len() == 2 => match &ys[0] {
+              Calcit::Bool(b) => {
+                if *b {
+                  return Ok(ys[1].to_owned());
+                } else {
+                  state = ys[1].to_owned()
+                }
+              }
+              a => return Err(format!("return value in foldl-shortcut should be a bool, got: {}", a)),
+            },
+            _ => {
+              return Err(format!(
+                "return value for foldl-shortcut should be `[bool, acc]`, got: {}",
+                pair
+              ))
+            }
+          }
+        }
+        Ok(default_value)
+      }
+
+      (_, _) => Err(format!("foldl-shortcut expected list... and fn, got: {} {}", xs, f)),
+    }
+  } else {
+    Err(format!(
+      "foldl-shortcut expected 4 arguments list,state,default,fn, got: {:?}",
+      expr
+    ))
+  }
+}
+
 // TODO as SYNTAX at current, not supposed to be a syntax
 pub fn sort(
   expr: &CalcitItems,

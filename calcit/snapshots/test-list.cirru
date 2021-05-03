@@ -6,7 +6,7 @@
     |test-list.main $ {}
       :ns $ quote
         ns test-list.main $ :require
-          util.core :refer $ log-title inside-nim:
+          util.core :refer $ log-title inside-eval:
       :defs $ {}
 
         |test-list $ quote
@@ -248,7 +248,7 @@
           fn ()
             log-title "|Testing doseq"
 
-            inside-nim:
+            inside-eval:
               =
                 macroexpand $ quote
                   &doseq (n (range 5))
@@ -275,7 +275,7 @@
           fn ()
             log-title "|Testing let[]"
 
-            inside-nim:
+            inside-eval:
               echo $ macroexpand $ quote
                 let[] (a b c & d) ([] 1 2 3 4 5)
                   echo a

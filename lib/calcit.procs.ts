@@ -182,6 +182,54 @@ export let foldl = function (xs: CrDataValue, acc: CrDataValue, f: CrDataFn): Cr
   }
 };
 
+export let foldl_shortcut = function (xs: CrDataValue, acc: CrDataValue, v0: CrDataValue, f: CrDataFn): CrDataValue {
+  if (arguments.length !== 4) {
+    throw new Error("foldl-shortcut takes 4 arguments");
+  }
+
+  if (f == null) {
+    debugger;
+    throw new Error("Expected function for folding");
+  }
+  if (xs instanceof CrDataList) {
+    var state = acc;
+    for (let idx = 0; idx < xs.len(); idx++) {
+      let item = xs.get(idx);
+      let pair = f(state, item);
+      if (pair instanceof CrDataList && pair.len() == 2) {
+        if (typeof pair.get(0) == "boolean") {
+          if (pair.get(0)) {
+            return pair.get(1);
+          } else {
+            state = pair.get(1);
+          }
+        }
+      } else {
+        throw new Error("Expected return value in `[bool, acc]` structure");
+      }
+    }
+    return v0;
+  }
+  if (xs instanceof CrDataSet) {
+    let state = acc;
+    for (let item of xs.values()) {
+      let pair = f(state, item);
+      if (pair instanceof CrDataList && pair.len() == 2) {
+        if (typeof pair.get(0) == "boolean") {
+          if (pair.get(0)) {
+            return pair.get(1);
+          } else {
+            state = pair.get(1);
+          }
+        }
+      } else {
+        throw new Error("Expected return value in `[bool, acc]` structure");
+      }
+    }
+    return v0;
+  }
+};
+
 export let _AND__ADD_ = (x: number, y: number): number => {
   return x + y;
 };
@@ -1226,8 +1274,10 @@ export let printable = (...args: CrDataValue[]): string => {
 // time from app start
 export let cpu_time = (): number => {
   if (inNodeJs) {
-    return process.uptime();
+    // uptime returns in seconds
+    return process.uptime() * 1000;
   }
+  // returns in milliseconds
   return performance.now();
 };
 
@@ -1576,7 +1626,9 @@ export let parse_time = (text: string) => {
 };
 
 export let format_to_lisp = (x: CrDataValue): string => {
-  if (x instanceof CrDataSymbol) {
+  if (x == null) {
+    return "nil";
+  } else if (x instanceof CrDataSymbol) {
     return x.value;
   } else if (x instanceof CrDataList) {
     let chunk = "(";

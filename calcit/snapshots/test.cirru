@@ -24,14 +24,14 @@
           [] test-ternary.main :as test-ternary
           [] test-js.main :as test-js
           [] test-record.main :as test-record
-          util.core :refer $ log-title inside-nim: inside-js:
+          util.core :refer $ log-title inside-eval: inside-js:
       :defs $ {}
         |test-keyword $ quote
           defn test-keyword ()
             ; assert "|keyword function" $ =
               :a ({} (:a 1))
               , 1
-            ; inside-nim:
+            ; inside-eval:
               &let
                 base $ {} (:a 1)
                 assert= 1 $ base :a
@@ -105,12 +105,22 @@
 
         |test-time $ quote
           fn ()
-            assert= 1605024000 $ parse-time |2020-11-11
-            assert= "|2020-11-11 00:01:40 000000"
-              format-time 1605024100 "|yyyy-MM-dd HH:mm:ss ffffff"
-            assert= "|2020-11-11 00:01:40 123399"
-              format-time 1605024100.1234 "|yyyy-MM-dd HH:mm:ss ffffff"
-            echo $ format-time (now!) "|yyyy-MM-dd HH:mm:ss ffffff"
+            log-title "|Testing time"
+            inside-js:
+              ; "|println only since CI uses a different timezone"
+              println 1605024000 $ parse-time |2020-11-11
+              assert= "|2020-11-10T16:01:40.000Z"
+                format-time 1605024100
+              assert= "|2020-11-10T16:01:40.123Z"
+                format-time 1605024100.1234
+              echo $ format-time (now!) "|yyyy-MM-dd HH:mm:ss ffffff"
+
+            inside-eval:
+              echo |time: $ format-time (now!) "|%Y-%m-%d %H:%M:%S %z"
+              assert= 1417176009000
+                parse-time "|2014-11-28 21:00:09 +09:00" "|%Y-%m-%d %H:%M:%S %z"
+              assert= "|2014-11-28 12:00:09 +0000"
+                format-time 1417176009000 "|%Y-%m-%d %H:%M:%S %z"
 
         |test-if $ quote
           fn ()
@@ -206,7 +216,10 @@
           fn ()
             log-title "|Testing refs"
             assert= 0 @*ref-demo
+            add-watch *ref-demo :change $ fn (prev current)
+              println "|change happened:" prev current
             reset! *ref-demo 2
+            remove-watch *ref-demo :change
             assert= 2 @*ref-demo
             assert= :ref (type-of *ref-demo)
 
@@ -221,13 +234,11 @@
             log-title "|Testing detects"
             test-detects
 
-            inside-nim:
+            inside-eval:
               log-title "|Testing id"
               test-id
 
-            ; log-title "|Testing time"
-            ; "|skipped since CI uses a different timezone"
-            ; test-time
+            test-time
 
             test-if
 
@@ -247,7 +258,7 @@
 
             test-refs
 
-            inside-nim:
+            inside-eval:
               test-gynienic/main!
 
             test-cond/main!

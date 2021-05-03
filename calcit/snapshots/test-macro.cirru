@@ -6,7 +6,7 @@
     |test-macro.main $ {}
       :ns $ quote
         ns test-macro.main $ :require
-          [] util.core :refer $ [] log-title inside-nim:
+          [] util.core :refer $ [] log-title inside-eval:
       :defs $ {}
 
         |test-cond $ quote
@@ -36,7 +36,7 @@
               assert= (detect-x 2) "|two"
               assert= (detect-x 3) "|else"
 
-            inside-nim:
+            inside-eval:
 
               &reset-gensym-index!
 
@@ -90,7 +90,7 @@
           defn test-thread-macros ()
             log-title "|Testing thread macros"
 
-            inside-nim:
+            inside-eval:
               assert=
                 macroexpand $ quote $ -> a b c
                 quote (c (b a))
@@ -144,7 +144,7 @@
           fn ()
             log-title "|Testing lambda macro"
 
-            inside-nim:
+            inside-eval:
               assert-detect identity $ contains-symbol?
                 quote $ add $ + 1 %
                 , '%
@@ -164,7 +164,7 @@
                 [] 1 |1
                 [] 2 |2
 
-            inside-nim:
+            inside-eval:
               assert=
                 macroexpand-all $ quote (\ + 2 %)
                 quasiquote $ ~defn f% (? % %2) (+ 2 %)
@@ -206,7 +206,7 @@
 
         |test-gensym $ quote
           fn ()
-            inside-nim:
+            inside-eval:
               log-title "|Testing gensym"
 
               &reset-gensym-index!
@@ -224,7 +224,7 @@
 
             &reset-gensym-index!
 
-            inside-nim:
+            inside-eval:
               assert=
                 macroexpand $ quote $ with-log $ + 1 2
                 quote $ &let
@@ -240,7 +240,7 @@
             assert= 10 $ call-with-log + 1 2 3 4
 
 
-            inside-nim:
+            inside-eval:
               &reset-gensym-index!
 
               assert=
@@ -264,7 +264,7 @@
           fn ()
             log-title "|Testing with-cpu-time"
 
-            inside-nim:
+            inside-eval:
               &reset-gensym-index!
 
               assert=
@@ -274,9 +274,9 @@
                       started__1 $ cpu-time
                       v__2 $ + 1 2
                     echo |[cpu-time]
-                      quote $ + 1 2
+                      format-to-lisp (quote $ + 1 2)
                       , |=>
-                      format-number (&* 1000 (&- (cpu-time) started__1)) 3
+                      format-number (&- (cpu-time) started__1) 3
                       , |ms
                     , v__2
 
@@ -297,7 +297,7 @@
           fn ()
             log-title "|Extract map via keywords"
 
-            inside-nim:
+            inside-eval:
               &reset-gensym-index!
 
               assert=
@@ -317,7 +317,7 @@
               assert= 11 $ let{} (a b) base
                 + a b
 
-            inside-nim:
+            inside-eval:
               assert=
                 macroexpand $ quote
                   let-destruct ([] a b) ([] 3 4)
@@ -342,7 +342,7 @@
           fn ()
             log-title "|Detector function"
 
-            inside-nim:
+            inside-eval:
               &reset-gensym-index!
 
               assert=
@@ -352,7 +352,7 @@
                     v__1 (fn () 1)
                     if (fn? v__1) nil
                       &let nil (echo)
-                        echo (quote (fn () 1)) "|does not satisfy:" (quote fn?) "| <--------"
+                        echo (format-to-lisp (quote (fn () 1))) "|does not satisfy:" (format-to-lisp (quote fn?)) "| <--------"
                         echo "|  value is:" v__1
                         raise "|Not satisfied in assertion!"
 

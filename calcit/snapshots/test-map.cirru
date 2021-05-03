@@ -6,7 +6,7 @@
     |test-map.main $ {}
       :ns $ quote
         ns test-map.main $ :require
-          [] util.core :refer $ [] log-title inside-nim:
+          [] util.core :refer $ [] log-title inside-eval:
       :defs $ {}
 
         |test-maps $ quote
@@ -97,7 +97,7 @@
         |test-native-map-syntax $ quote
           defn test-native-map-syntax ()
 
-            inside-nim:
+            inside-eval:
               assert=
                 macroexpand $ quote $ {} (:a 1)
                 quote $ &{} :a 1
@@ -106,7 +106,7 @@
           fn ()
             log-title "|Testing {,}"
 
-            inside-nim:
+            inside-eval:
               assert=
                 macroexpand $ quote $ {,} :a 1 , :b 2 , :c 3
                 quote $ pairs-map $ section-by ([] :a 1 :b 2 :c 3) 2
