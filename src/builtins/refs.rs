@@ -35,7 +35,7 @@ fn modify_ref(path: String, v: Calcit, program_code: &ProgramCodeData) -> Result
   for f in listeners.values() {
     match f {
       Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
-        let values = im::vector![prev.to_owned(), v.to_owned()];
+        let values = im::vector![v.to_owned(), prev.to_owned()];
         runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
       }
       a => return Err(format!("expected fn to trigger after `reset!`, got {}", a)),
