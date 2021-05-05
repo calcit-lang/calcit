@@ -1696,6 +1696,31 @@ export let format_to_lisp = (x: CrDataValue): string => {
   }
 };
 
+/** for quickly creating js Array */
+export let js_array = (...xs: CrDataValue[]): CrDataValue[] => {
+  return xs;
+};
+
+export let _AND_js_object = (...xs: CrDataValue[]): Record<string, CrDataValue> => {
+  if (xs.length % 2 !== 0) {
+    throw new Error("&js-object expects even number of arguments");
+  }
+  var ret: Record<string, CrDataValue> = {}; // object
+  let halfLength = xs.length >> 1;
+  for (let idx = 0; idx < halfLength; idx++) {
+    let k = xs[idx << 1];
+    let v = xs[(idx << 1) + 1];
+    if (typeof k === "string") {
+      ret[k] = v;
+    } else if (k instanceof CrDataKeyword) {
+      ret[turn_string(k)] = v;
+    } else {
+      throw new Error("Invalid key for js Object");
+    }
+  }
+  return ret;
+};
+
 /** notice, Nim version of format-time takes format */
 export let format_time = (timeSecNumber: number, format?: string) => {
   if (format != null) {

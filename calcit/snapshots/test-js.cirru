@@ -57,11 +57,30 @@
                 d 5
               assert= 13 $ + a b c d
 
+        |test-collection $ quote
+          fn ()
+            log-title "|Testing quick collection syntax"
+
+            &let
+              a $ js-array 1 2 3 4
+              assert= 4 $ .-length a
+              assert= 1 $ aget a 0
+              assert= 4 $ aget a 3
+              assert= nil $ aget a 4
+            &let
+              b $ js-object (:a 1) (|b 2) (:c 3)
+              assert= 1 $ .-a b
+              assert= 2 $ .-b b
+              assert= 3 $ .-c b
+              assert= 2 $ aget b |b
+
         |main! $ quote
           defn main! ()
             log-title "|Testing js"
             test-js
             test-let-example
+
+            test-collection
 
             when (> 1 2)
               raise (str "|error of math" 2 1)

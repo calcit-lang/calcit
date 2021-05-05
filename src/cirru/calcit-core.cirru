@@ -456,7 +456,7 @@
                     let[] (k v) a
                       assoc xs k v
                   raise "|coll-append expected a collection"
-        
+
         |empty $ quote
           defn empty (x)
             if (list? x) ([])
@@ -649,6 +649,12 @@
             &let
               ys $ concat & xs
               quote-replace $ &{} ~@ys
+
+        |js-object $ quote
+          defmacro js-object (& xs)
+            &let
+              ys $ concat & xs
+              quote-replace $ &js-object ~@ys
 
         |%{} $ quote
           defmacro %{} (R & xs)
@@ -898,7 +904,7 @@
                     and (list? result) (&= 2 (count result))
                   let[] (k2 v2) result
                     assoc acc k2 v2
-            
+
         |either $ quote
           defmacro either (x y)
             quote-replace $ if (nil? ~x) ~y ~x
@@ -1068,7 +1074,7 @@
         |conj $ quote
           defn conj (xs a)
             append xs a
-          
+
         |turn-str $ quote
           defn turn-str (x) (turn-string x)
 

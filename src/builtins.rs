@@ -341,6 +341,8 @@ pub fn is_js_syntax_procs(s: &str) -> bool {
       | "extract-cirru-edn"
       | "foldl"
       | "instance?"
+      | "&js-object"
+      | "js-array"
       | "load-console-formatter!"
       | "printable"
       | "new"
