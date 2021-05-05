@@ -468,8 +468,17 @@ fn gen_symbol_code(
       // TODO namespace part supposed be parsed during preprocessing, this mimics old behaviors
       match resolved {
         Some(ResolvedDef(r_ns, _r_def)) => {
-          track_ns_import(r_ns.clone(), ImportedTarget::JustNs(r_ns.to_owned()), file_imports)?;
-          Ok(escape_ns_var(s, r_ns))
+          if is_cirru_string(r_ns) {
+            track_ns_import(
+              ns_part.to_owned(),
+              ImportedTarget::JustNs(r_ns.to_owned()),
+              file_imports,
+            )?;
+            Ok(escape_ns_var(s, ns_part))
+          } else {
+            track_ns_import(r_ns.clone(), ImportedTarget::JustNs(r_ns.to_owned()), file_imports)?;
+            Ok(escape_ns_var(s, r_ns))
+          }
         }
         Some(ResolvedRaw) => Err(format!("not going to generate from raw symbol, {}", s)),
         Some(ResolvedLocal) => Err(format!("symbol with ns should not be local, {}", s)),
@@ -1025,21 +1034,22 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     let collected_imports = file_imports.into_inner();
     //  internal_states::clone_imports().unwrap(); // ignore unlocking details
     if !collected_imports.is_empty() {
-      // echo "imports: ", collected_imports
+      // println!("imports: {:?}", collected_imports);
       for (def, item) in collected_imports {
-        // echo "implicit import ", defNs, "/", def, " in ", ns
+        // println!("implicit import {} in {} ", def, ns);
         match item {
           ImportedTarget::JustNs(target_ns) => {
-            let import_target = if is_cirru_string(&target_ns) {
-              wrap_js_str(&target_ns[1..])
+            if is_cirru_string(&target_ns) {
+              let import_target = wrap_js_str(&target_ns[1..]);
+              import_code.push_str(&format!("\nimport * as {} from {};\n", escape_ns(&def), import_target));
             } else {
-              to_js_import_name(&target_ns, false) // TODO js_mode
-            };
-            import_code.push_str(&format!(
-              "\nimport * as {} from {};\n",
-              escape_ns(&target_ns),
-              import_target
-            ));
+              let import_target = to_js_import_name(&target_ns, false); // TODO js_mode
+              import_code.push_str(&format!(
+                "\nimport * as {} from {};\n",
+                escape_ns(&target_ns),
+                import_target
+              ));
+            }
           }
           ImportedTarget::FromNs(target_ns) => {
             let import_target = if is_cirru_string(&target_ns) {

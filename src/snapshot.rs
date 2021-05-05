@@ -64,7 +64,10 @@ fn load_modules(data: Edn) -> Result<Vec<String>, String> {
 
 fn load_file_info(data: Edn) -> Result<FileInSnapShot, String> {
   let ns_code = data.map_get("ns")?.read_quoted_cirru()?;
-  let defs = data.map_get("defs")?.read_map()?;
+  let defs = data
+    .map_get("defs")?
+    .read_map()
+    .map_err(|e| format!("failed get `defs`:{}", e))?;
   let mut defs_info: HashMap<String, Cirru> = HashMap::new();
   for (k, v) in defs {
     let var = k.read_string()?;
@@ -79,7 +82,7 @@ fn load_file_info(data: Edn) -> Result<FileInSnapShot, String> {
 }
 
 fn load_files(data: Edn) -> Result<HashMap<String, FileInSnapShot>, String> {
-  let xs = data.read_map()?;
+  let xs = data.read_map().map_err(|e| format!("failed loading files, {}", e))?;
   let mut ys: HashMap<String, FileInSnapShot> = HashMap::new();
   for (k, v) in xs {
     let key = k.read_string()?;
@@ -214,7 +217,7 @@ pub fn extract_changed_info(data: Edn) -> Result<FileChangeInfo, String> {
   }
 
   let mut changed_defs: HashMap<String, Cirru> = HashMap::new();
-  for (def, code) in data.map_get("changed-defs")?.read_map()? {
+  for (def, code) in data.map_get("changed-defs")?.read_map_or_nil()? {
     changed_defs.insert(def.read_string()?, code.read_quoted_cirru()?);
   }
 
