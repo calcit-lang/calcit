@@ -463,7 +463,8 @@
               if (map? x) (&{})
                 if (set? x) (#{})
                   if (string? x) |
-                    raise $ &str-concat "|empty does not work on this type: " (&str x)
+                    if (nil? x) nil
+                      raise $ &str-concat "|empty does not work on this type: " (&str x)
 
         |pairs-map $ quote
           defn pairs-map (xs)

@@ -53,7 +53,7 @@ fn main() -> Result<(), String> {
   } else {
     // load entry file
     let entry_path = Path::new(cli_matches.value_of("input").unwrap());
-    let content = fs::read_to_string(entry_path).expect("expected a Cirru snapshot");
+    let content = fs::read_to_string(entry_path).expect(&format!("expected Cirru snapshot: {:?}", entry_path));
     let data = cirru_edn::parse(&content)?;
     // println!("reading: {}", content);
     snapshot = snapshot::load_snapshot_data(data)?;
@@ -326,7 +326,7 @@ fn load_module(path: &str, base_dir: &Path) -> Result<snapshot::Snapshot, String
 
   println!("loading module: {}", fullpath);
 
-  let content = fs::read_to_string(&fullpath).expect("expected a Cirru snapshot");
+  let content = fs::read_to_string(&fullpath).expect(&format!("expected Cirru snapshot {:?}", fullpath));
   let data = cirru_edn::parse(&content)?;
   // println!("reading: {}", content);
   let snapshot = snapshot::load_snapshot_data(data)?;
