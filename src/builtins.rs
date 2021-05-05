@@ -330,21 +330,24 @@ pub fn handle_syntax(
   }
 }
 
-// detects extra javascript things in js mode
+// detects extra javascript things in js mode,
+// mostly internal procs, also some syntaxs
 pub fn is_js_syntax_procs(s: &str) -> bool {
   matches!(
     s,
     "aget"
       | "aset"
+      | "exists?"
+      | "extract-cirru-edn"
+      | "foldl"
+      | "instance?"
+      | "load-console-formatter!"
+      | "printable"
       | "new"
       | "set!"
-      | "exists?"
-      | "instance?"
-      | "to-calcit-data"
-      | "to-js-data"
-      | "to-cirru-edn"
-      | "extract-cirru-edn"
       | "timeout-call"
-      | "load-console-formatter!"
+      | "to-calcit-data"
+      | "to-cirru-edn"
+      | "to-js-data"
   )
 }

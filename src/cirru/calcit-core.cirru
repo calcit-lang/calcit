@@ -164,11 +164,20 @@
           defn map (xs f)
             cond
               (list? xs)
-                reduce xs ([])
+                foldl xs ([])
                   fn (acc x) $ append acc (f x)
               (set? xs)
-                reduce xs (#{})
+                foldl xs (#{})
                   fn (acc x) $ include acc (f x)
+              (map? xs)
+                foldl xs ({})
+                  fn (acc pair) $ let[] (k v) pair
+                    &let
+                      result (f $ [] k v)
+                      assert "|expected pair returned when mapping hashmap"
+                        and (list? result) (&= 2 (count result))
+                      let[] (k2 v2) result
+                        assoc acc k2 v2
               true
                 &let nil
                   echo "|value:" xs
@@ -426,15 +435,35 @@
 
         |filter $ quote
           defn filter (xs f)
-            foldl xs ([])
+            foldl xs (empty xs)
               fn (acc x)
-                if (f x) (append acc x) acc
+                if (f x) (coll-append acc x) acc
 
         |filter-not $ quote
           defn filter-not (xs f)
-            reduce xs ([])
+            reduce xs (empty xs)
               fn (acc x)
-                if-not (f x) (append acc x) acc
+                if-not (f x) (coll-append acc x) acc
+
+        |coll-append $ quote
+          defn coll-append (xs a)
+            if (list? xs) (append xs a)
+              if (set? xs) (&include xs a)
+                if (map? xs)
+                  &let nil
+                    assert "|coll-append to map expected a pair" $ and (list? a)
+                      &= 2 (count a)
+                    let[] (k v) a
+                      assoc xs k v
+                  raise "|coll-append expected a collection"
+        
+        |empty $ quote
+          defn empty (x)
+            if (list? x) ([])
+              if (map? x) (&{})
+                if (set? x) (#{})
+                  if (string? x) |
+                    raise $ &str-concat "|empty does not work on this type: " (&str x)
 
         |pairs-map $ quote
           defn pairs-map (xs)
@@ -859,13 +888,17 @@
                     rest ys
 
         |map-kv $ quote
-          defn map-kv (dict f)
-            assert "|expects a map" (map? dict)
-            -> dict
-              to-pairs
-              map $ fn (pair)
-                f (first pair) (last pair)
-
+          defn map-kv (xs f)
+            assert "|expects a map" (map? xs)
+            foldl xs ({})
+              fn (acc pair) $ let[] (k v) pair
+                &let
+                  result (f k v)
+                  assert "|expected pair returned when mapping hashmap"
+                    and (list? result) (&= 2 (count result))
+                  let[] (k2 v2) result
+                    assoc acc k2 v2
+            
         |either $ quote
           defmacro either (x y)
             quote-replace $ if (nil? ~x) ~y ~x
@@ -1035,7 +1068,7 @@
         |conj $ quote
           defn conj (xs a)
             append xs a
-
+          
         |turn-str $ quote
           defn turn-str (x) (turn-string x)
 

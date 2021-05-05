@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
-use crate::builtins::{is_proc_name, is_syntax_name};
+use crate::builtins::{is_js_syntax_procs, is_proc_name, is_syntax_name};
 use crate::call_stack;
 use crate::call_stack::StackKind;
 use crate::primes;
@@ -113,24 +113,6 @@ fn escape_ns_var(name: &str, ns: &str) -> String {
   } else {
     format!("{}.{}", escape_ns(ns), escape_var(&def_part))
   }
-}
-
-// tell compiler to handle namespace code generation
-fn is_builtin_js_proc(name: &str) -> bool {
-  matches!(
-    name,
-    "aget"
-      | "aset"
-      | "extract-cirru-edn"
-      | "to-cirru-edn"
-      | "to-js-data"
-      | "to-calcit-data"
-      | "printable"
-      | "instance?"
-      | "timeout-call"
-      | "load-console-formatter!"
-      | "foldl"
-  )
 }
 
 // code generated from calcit.core.cirru may not be faster enough,
@@ -485,7 +467,7 @@ fn gen_symbol_code(
         None => Err(format!("expected symbol with ns being resolved: {:?}", xs)),
       }
     }
-  } else if is_builtin_js_proc(s) || is_proc_name(s) || is_syntax_name(s) {
+  } else if is_js_syntax_procs(s) || is_proc_name(s) || is_syntax_name(s) {
     // return Ok(format!("{}{}", var_prefix, escape_var(s)));
     let proc_prefix = if ns == primes::CORE_NS {
       "$calcit_procs."

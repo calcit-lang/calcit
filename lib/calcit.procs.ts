@@ -180,6 +180,13 @@ export let foldl = function (xs: CrDataValue, acc: CrDataValue, f: CrDataFn): Cr
     });
     return result;
   }
+  if (xs instanceof CrDataMap) {
+    let result = acc;
+    xs.pairs().forEach(([k, item]) => {
+      result = f(result, new CrDataList([k, item]));
+    });
+    return result;
+  }
   throw new Error("Unknow data for foldl");
 };
 
@@ -215,6 +222,25 @@ export let foldl_shortcut = function (xs: CrDataValue, acc: CrDataValue, v0: CrD
     let state = acc;
     for (let item of xs.values()) {
       let pair = f(state, item);
+      if (pair instanceof CrDataList && pair.len() == 2) {
+        if (typeof pair.get(0) == "boolean") {
+          if (pair.get(0)) {
+            return pair.get(1);
+          } else {
+            state = pair.get(1);
+          }
+        }
+      } else {
+        throw new Error("Expected return value in `[bool, acc]` structure");
+      }
+    }
+    return v0;
+  }
+
+  if (xs instanceof CrDataMap) {
+    let state = acc;
+    for (let item of xs.pairs()) {
+      let pair = f(state, new CrDataList(item));
       if (pair instanceof CrDataList && pair.len() == 2) {
         if (typeof pair.get(0) == "boolean") {
           if (pair.get(0)) {
@@ -659,6 +685,15 @@ export let first = (xs: CrDataValue): CrDataValue => {
   if (xs instanceof CrDataSet) {
     return xs.first();
   }
+  if (xs instanceof CrDataMap) {
+    // TODO order may not be stable enough
+    let ys = xs.pairs();
+    if (ys.length > 0) {
+      return new CrDataList(ys[0]);
+    } else {
+      return null;
+    }
+  }
   console.error(xs);
   throw new Error("Expects something sequential");
 };
@@ -686,6 +721,14 @@ export let rest = (xs: CrDataValue): CrDataValue => {
   }
   if (xs instanceof CrDataSet) {
     return xs.rest();
+  }
+  if (xs instanceof CrDataMap) {
+    if (xs.len() > 0) {
+      let k0 = xs.pairs()[0][0];
+      return xs.dissoc(k0);
+    } else {
+      return new CrDataMap(initTernaryTreeMap<CrDataValue, CrDataValue>([]));
+    }
   }
   console.error(xs);
 
