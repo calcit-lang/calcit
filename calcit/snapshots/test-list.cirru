@@ -100,7 +100,8 @@
               assert-detect identity $ <= 0
                 index-of (range 10) $ rand-nth $ range 10
 
-              assert-detect nil? $ rand-nth ([])
+              assert= nil $ rand-nth ([])
+              assert= nil (;nil anything)
 
               assert-detect identity $ contains? (range 10) 6
               assert-detect not $ contains? (range 10) 16
