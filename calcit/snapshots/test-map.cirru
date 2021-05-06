@@ -90,9 +90,14 @@
               map-kv
                 {} (:a 1) (:b 2)
                 fn (k v) ([] k (+ v 1))
-              #{}
-                [] :a 2
-                [] :b 3
+              {} (:a 2) (:b 3)
+
+            assert=
+              filter
+                {} (:a 1) (:b 2) (:c 3) (:d 4)
+                fn (pair) $ let[] (k v) pair
+                  &> v 2
+              {} (:c 3) (:d 4)
 
         |test-native-map-syntax $ quote
           defn test-native-map-syntax ()
@@ -139,6 +144,17 @@
             assert= nil $ get-in (&{}) $ [] :a :b
 
             assert= nil $ get nil :a
+
+            &let
+              m $ &{} :a 1 :b 2 :c 3 :d 4
+              assert= (first m) (first m)
+              assert= (rest m) (rest m)
+              assert= 3 (count $ rest m)
+
+              assert= 10
+                foldl m 0 $ fn (acc pair)
+                  let[] (k v) pair
+                    &+ acc v
 
         |main! $ quote
           defn main! ()

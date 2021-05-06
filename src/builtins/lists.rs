@@ -136,6 +136,26 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
       }
       None => Ok(Calcit::Nil),
     },
+    Some(Calcit::Map(ys)) => match ys.keys().next() {
+      Some(k0) => {
+        let mut zs = ys.clone();
+        zs.remove(k0);
+        Ok(Calcit::Map(zs))
+      }
+      None => Ok(Calcit::Nil),
+    },
+    Some(Calcit::Str(s)) => {
+      let mut buffer = String::from("");
+      let mut is_first = true;
+      for c in s.chars() {
+        if is_first {
+          is_first = false;
+          continue;
+        }
+        buffer.push(c)
+      }
+      Ok(Calcit::Str(s.to_owned()))
+    }
     Some(a) => Err(format!("rest expected a list, got: {}", a)),
     None => Err(String::from("rest expected 1 argument")),
   }
@@ -271,6 +291,26 @@ pub fn foldl(
         }
         Ok(ret)
       }
+      // also handles map
+      (Calcit::Map(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+        let mut ret = acc;
+        for (k, x) in xs {
+          let values = im::vector![ret, Calcit::List(im::vector![k.to_owned(), x.to_owned()])];
+          ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+        }
+        Ok(ret)
+      }
+      (Calcit::Map(xs), Calcit::Proc(proc)) => {
+        let mut ret = acc;
+        for (k, x) in xs {
+          // println!("foldl args, {} {}", ret, x.clone());
+          ret = builtins::handle_proc(
+            &proc,
+            &im::vector![ret, Calcit::List(im::vector![k.to_owned(), x.to_owned()])],
+          )?;
+        }
+        Ok(ret)
+      }
 
       (_, _) => Err(format!("foldl expected list and function, got: {} {}", xs, f)),
     }
@@ -325,6 +365,33 @@ pub fn foldl_shortcut(
         let mut state = acc;
         for x in xs {
           let values = im::vector![state, x.clone()];
+          let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+          match pair {
+            Calcit::List(ys) if ys.len() == 2 => match &ys[0] {
+              Calcit::Bool(b) => {
+                if *b {
+                  return Ok(ys[1].to_owned());
+                } else {
+                  state = ys[1].to_owned()
+                }
+              }
+              a => return Err(format!("return value in foldl-shortcut should be a bool, got: {}", a)),
+            },
+            _ => {
+              return Err(format!(
+                "return value for foldl-shortcut should be `[bool, acc]`, got: {}",
+                pair
+              ))
+            }
+          }
+        }
+        Ok(default_value)
+      }
+      // almost identical body, escept for the type
+      (Calcit::Map(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+        let mut state = acc;
+        for (k, x) in xs {
+          let values = im::vector![state, Calcit::List(im::vector![k.to_owned(), x.to_owned()])];
           let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
           match pair {
             Calcit::List(ys) if ys.len() == 2 => match &ys[0] {
@@ -434,6 +501,11 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Set(ys)) => match ys.iter().next() {
       // TODO first element of a set.. need to be more sure...
       Some(v) => Ok(v.clone()),
+      None => Ok(Calcit::Nil),
+    },
+    Some(Calcit::Map(ys)) => match ys.iter().next() {
+      // TODO order may not be stable enough
+      Some((k, v)) => Ok(Calcit::List(im::vector![k.to_owned(), v.to_owned()])),
       None => Ok(Calcit::Nil),
     },
     Some(Calcit::Str(s)) => match s.chars().next() {
