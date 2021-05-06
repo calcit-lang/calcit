@@ -1072,6 +1072,9 @@
             quote-replace
               new-record (quote ~name) ~@xs
 
+        |;nil $ quote
+          defmacro ;nil (& _body) nil
+
         |conj $ quote
           defn conj (xs a)
             append xs a

@@ -136,6 +136,10 @@ fn main() -> Result<(), String> {
 
                 // load new program code
                 let content = fs::read_to_string(&inc_path).unwrap();
+                if content.trim() == "" {
+                  println!("failed re-compiling, got empty inc file");
+                  continue;
+                }
                 let data = cirru_edn::parse(&content)?;
                 let changes = snapshot::load_changes_info(data.clone())?;
 
