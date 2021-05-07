@@ -1075,6 +1075,30 @@
         |;nil $ quote
           defmacro ;nil (& _body) nil
 
+        |strip-prefix $ quote
+          defn strip-prefix (s piece)
+            if (starts-with? s piece)
+              substr s (count piece)
+              , s
+
+        |strip-suffix $ quote
+          defn strip-suffix (s piece)
+            if (ends-with? s piece)
+              substr s 0 (&- (count s) (count piece))
+              , s
+
+        |select-keys $ quote
+          defn select-keys (m keys)
+            assert "|expectd map for selecting" $ map? m
+            foldl keys (&{}) $ fn (acc k)
+              assoc acc k (&get m k)
+
+        |unselect-keys $ quote
+          defn unselect-keys (m keys)
+            assert "|expectd map for unselecting" $ map? m
+            foldl keys m $ fn (acc k)
+              dissoc acc k
+
         |conj $ quote
           defn conj (xs a)
             append xs a
