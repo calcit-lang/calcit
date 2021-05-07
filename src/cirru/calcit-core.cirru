@@ -1088,15 +1088,15 @@
               , s
 
         |select-keys $ quote
-          defn select-keys (m keys)
+          defn select-keys (m xs)
             assert "|expectd map for selecting" $ map? m
-            foldl keys (&{}) $ fn (acc k)
+            foldl xs (&{}) $ fn (acc k)
               assoc acc k (&get m k)
 
         |unselect-keys $ quote
-          defn unselect-keys (m keys)
+          defn unselect-keys (m xs)
             assert "|expectd map for unselecting" $ map? m
-            foldl keys m $ fn (acc k)
+            foldl xs m $ fn (acc k)
               dissoc acc k
 
         |conj $ quote

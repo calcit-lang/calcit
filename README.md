@@ -7,7 +7,7 @@
 
 Running [Calcit Editor](https://github.com/Cirru/calcit-editor#compact-output) with `compact=true caclcit-editor` enables compact mode,
 which writes `compact.cirru` and `.compact-inc.cirru` instead of Clojure(Script).
-And this project provides a runner for `compact.cirru`, written on Nim for low overhead.
+And this project provides a runner for `compact.cirru`, written on Rust for low overhead.
 
 A `compact.cirru` file can be:
 
@@ -49,8 +49,9 @@ calcit_runner -e="range 100" # eval from CLI
 calcit_runner compact.cirru --emit-js # compile to js
 calcit_runner compact.cirru --emit-js --emit-path=out/ # compile to js and save in `out/`
 
+calcit_runner compact.cirru --emit-ir # compiles intermediate representation into program-ir.json
+
 calcit_runner compact.cirru --emit-js --mjs # TODO compile to mjs
-calcit_runner compact.cirru --emit-ir # TODO compile to intermediate representation
 ```
 
 For linux users, download pre-built binaries from http://bin.calcit-lang.org/linux/ .
@@ -69,7 +70,7 @@ For linux users, download pre-built binaries from http://bin.calcit-lang.org/lin
 
 Calcit Runner use `~/.config/calcit/modules/` as modules directory.
 Paths defined in `:modules` field are just loaded as files based on this directory,
-which is: `~/.config/calcit/modules/phlox.caclit.nim/compact.cirru`.
+which is: `~/.config/calcit/modules/phlox/compact.cirru`.
 
 To load modules in CI environment, create that folder and clone repos manually.
 
