@@ -156,6 +156,23 @@
                   let[] (k v) pair
                     &+ acc v
 
+        |test-select $ quote
+          fn ()
+            log-title "|Testing select"
+            assert=
+              select-keys ({} (:a 1) (:b 2) (:c 3)) ([] :a :b)
+              {} (:a 1) (:b 2)
+            assert=
+              select-keys ({} (:a 1) (:b 2) (:c 3)) ([] :d)
+              {} (:d nil)
+
+            assert=
+              unselect-keys ({} (:a 1) (:b 2) (:c 3)) ([] :a :b)
+              {} (:c 3)
+            assert=
+              unselect-keys ({} (:a 1) (:b 2) (:c 3)) ([] :c :d)
+              {} (:a 1) (:b 2)
+
         |main! $ quote
           defn main! ()
 
@@ -173,6 +190,8 @@
             test-keys
 
             test-get
+
+            test-select
 
             do true
 

@@ -62,6 +62,12 @@
             assert= true $ ends-with? |01234 |4
             assert= false $ ends-with? |01234 |23
 
+            assert= |abc $ strip-prefix |ababc |ab
+            assert= |0abc $ strip-prefix |0abc |ab
+
+            assert= |aba $ strip-suffix |ababc |bc
+            assert= |abc0 $ strip-suffix |abc0 |bc
+
         |test-parse $ quote
           fn ()
             assert= 0 $ parse-float |0

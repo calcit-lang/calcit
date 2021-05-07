@@ -154,7 +154,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
         }
         buffer.push(c)
       }
-      Ok(Calcit::Str(s.to_owned()))
+      Ok(Calcit::Str(buffer.to_owned()))
     }
     Some(a) => Err(format!("rest expected a list, got: {}", a)),
     None => Err(String::from("rest expected 1 argument")),
