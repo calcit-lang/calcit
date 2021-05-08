@@ -93,3 +93,26 @@ pub fn wrap_js_str(s: &str) -> String {
   c.push('"');
   c
 }
+
+pub fn extract_ns_def(s: &str) -> Result<(String, String), String> {
+  let pieces: Vec<&str> = (&s).split('/').collect();
+  if pieces.len() == 2 {
+    Ok((pieces[0].to_owned(), pieces[1].to_owned()))
+  } else {
+    Err(format!("invalid ns format: {}", s))
+  }
+}
+
+pub fn extract_pkg_from_def(s: &str) -> Option<String> {
+  let pieces: Vec<&str> = (&s).split('/').collect();
+  if pieces.len() >= 1 {
+    let p2: Vec<&str> = (pieces[0]).split('.').collect();
+    if p2.len() >= 1 {
+      Some(p2[0].to_string())
+    } else {
+      None
+    }
+  } else {
+    None
+  }
+}

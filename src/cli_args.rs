@@ -53,6 +53,12 @@ pub fn parse_cli<'a>() -> clap::ArgMatches<'a> {
         .takes_value(true),
     )
     .arg(
+      clap::Arg::with_name("reload-libs")
+        .help("reload libs data during code reload")
+        .long("reload-libs")
+        .takes_value(false),
+    )
+    .arg(
       clap::Arg::with_name("input")
         .help("entry file path, defaults to compact.cirru")
         .default_value("compact.cirru")

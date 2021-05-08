@@ -15,16 +15,18 @@ mod runner;
 mod snapshot;
 mod util;
 
-use builtins::effects;
-use codegen::emit_js::emit_js;
-use dirs::home_dir;
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use primes::Calcit;
 use std::fs;
 use std::path::Path;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::time::Instant;
+
+use builtins::effects;
+use codegen::emit_js::emit_js;
+use dirs::home_dir;
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use primes::Calcit;
+use util::string::extract_ns_def;
 
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
@@ -149,7 +151,8 @@ fn main() -> Result<(), String> {
                 // println!("\nprogram code: {:?}", new_code);
 
                 // clear data in evaled states
-                program::clear_all_program_evaled_defs()?;
+                let reload_libs = cli_matches.is_present("reload-libs");
+                program::clear_all_program_evaled_defs(&init_fn, &reload_fn, reload_libs)?;
                 builtins::meta::force_reset_gensym_index()?;
 
                 let task = if cli_matches.is_present("emit-js") {
@@ -295,15 +298,6 @@ fn run_codegen(
   let duration = Instant::now().duration_since(started_time);
   println!("took {}ms", duration.as_micros() as f64 / 1000.0);
   Ok(())
-}
-
-fn extract_ns_def(s: &str) -> Result<(String, String), String> {
-  let pieces: Vec<&str> = (&s).split('/').collect();
-  if pieces.len() == 2 {
-    Ok((pieces[0].to_owned(), pieces[1].to_owned()))
-  } else {
-    Err(format!("invalid ns format: {}", s))
-  }
 }
 
 fn load_module(path: &str, base_dir: &Path) -> Result<snapshot::Snapshot, String> {
