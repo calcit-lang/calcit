@@ -67,7 +67,10 @@ pub fn evaluate_expr(
             run_fn(&values, &def_scope, args, body, def_ns, program_code)
           }
           Calcit::Macro(name, def_ns, _, args, body) => {
-            println!("[Warn] macro should already be handled during preprocessing: {}", x);
+            println!(
+              "[Warn] macro should already be handled during preprocessing: {}",
+              Calcit::List(xs.to_owned()).lisp_str()
+            );
 
             // TODO moving to preprocess
             let mut current_values = rest_nodes.clone();
