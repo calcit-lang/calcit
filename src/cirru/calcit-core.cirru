@@ -316,7 +316,7 @@
                             &let (~v# ~value)
                               if (&= (first ~v#) ~k)
                                 let
-                                  ~ $ map-indexed (rest pattern) $ fn (idx x)
+                                  ~ $ map-indexed (rest pattern) $ defn args% (idx x)
                                     [] x $ quasiquote
                                       nth ~v# (~ (inc idx))
                                   , ~branch

@@ -1,12 +1,13 @@
-use crate::snapshot::Snapshot;
 use std::collections::HashMap;
 use std::sync::Mutex;
+
+use cirru_parser::Cirru;
 
 use crate::data::cirru::code_to_calcit;
 use crate::primes::Calcit;
 use crate::snapshot;
-
-use cirru_parser::Cirru;
+use crate::snapshot::Snapshot;
+use crate::util::string::extract_pkg_from_def;
 
 pub type ProgramEvaledData = HashMap<String, HashMap<String, Calcit>>;
 
@@ -216,10 +217,30 @@ pub fn apply_code_changes(base: &ProgramCodeData, changes: &snapshot::ChangesDic
   Ok(program_code)
 }
 
-/// clear all states for now, very little defs are surely reused
-pub fn clear_all_program_evaled_defs() -> Result<(), String> {
-  // TODO might cache for performance, but also prints warning when ns and macros change
+/// clear evaled data after reloading
+pub fn clear_all_program_evaled_defs(init_fn: &str, reload_fn: &str, reload_libs: bool) -> Result<(), String> {
   let program = &mut PROGRAM_EVALED_DATA_STATE.lock().unwrap();
-  program.clear();
+  if reload_libs {
+    program.clear();
+  } else {
+    // reduce changes of libs. could be dirty in some cases
+    let init_pkg = extract_pkg_from_def(init_fn).unwrap();
+    let reload_pkg = extract_pkg_from_def(reload_fn).unwrap();
+    let mut to_remove: Vec<String> = vec![];
+    for k in program.keys() {
+      if k == &init_pkg
+        || k == &reload_pkg
+        || k.starts_with(&format!("{}.", init_pkg))
+        || k.starts_with(&format!("{}.", reload_pkg))
+      {
+        to_remove.push(k.to_owned());
+      } else {
+        continue;
+      }
+    }
+    for k in to_remove {
+      program.remove(&k);
+    }
+  }
   Ok(())
 }

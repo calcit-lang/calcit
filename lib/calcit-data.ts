@@ -349,7 +349,7 @@ export class CrDataMap {
     for (let [k, v] of this.pairs()) {
       if (shorter) {
         let keyPart = isNestedCrData(k) ? tipNestedCrData(k) : toString(k, true);
-        let valuePart = isNestedCrData(v) ? tipNestedCrData(v) : toString(k, true);
+        let valuePart = isNestedCrData(v) ? tipNestedCrData(v) : toString(v, true);
         itemsCode = `${itemsCode} (${keyPart} ${valuePart})`;
       } else {
         itemsCode = `${itemsCode} (${toString(k, true)} ${toString(v, true)})`;
