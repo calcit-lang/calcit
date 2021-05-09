@@ -1,32 +1,13 @@
-#[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
-extern crate nanoid;
-
-mod builtins;
-mod call_stack;
-mod cli_args;
-mod codegen;
-mod data;
-mod primes;
-mod program;
-mod runner;
-mod snapshot;
-mod util;
-
 use std::fs;
 use std::path::Path;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::time::Instant;
 
-use builtins::effects;
-use codegen::emit_js::emit_js;
-use dirs::home_dir;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use primes::Calcit;
-use util::string::extract_ns_def;
+
+use calcit_runner;
+use calcit_runner::{builtins, call_stack, cli_args, codegen, program, runner, snapshot, util};
 
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
@@ -36,11 +17,7 @@ fn main() -> Result<(), String> {
 
   println!("calcit_runner version: {}", cli_args::CALCIT_VERSION);
 
-  // load core libs
-  let bytes = include_bytes!("./cirru/calcit-core.cirru");
-  let core_content = String::from_utf8_lossy(bytes).to_string();
-  let core_data = cirru_edn::parse(&core_content)?;
-  let core_snapshot = snapshot::load_snapshot_data(core_data)?;
+  let core_snapshot = calcit_runner::load_core_snapshot()?;
 
   let mut snapshot = snapshot::gen_default(); // placeholder data
 
@@ -62,7 +39,7 @@ fn main() -> Result<(), String> {
 
     // attach modules
     for module_path in &snapshot.configs.modules {
-      let module_data = load_module(&module_path, entry_path.parent().unwrap())?;
+      let module_data = calcit_runner::load_module(&module_path, entry_path.parent().unwrap())?;
       for (k, v) in &module_data.files {
         snapshot.files.insert(k.clone(), v.clone());
       }
@@ -76,25 +53,22 @@ fn main() -> Result<(), String> {
 
   let mut program_code = program::extract_program_data(&snapshot)?;
 
-  let init_fn = match cli_matches.value_of("init-fn") {
-    Some(v) => v.to_owned(),
-    None => snapshot.configs.init_fn,
-  };
-  let reload_fn = match cli_matches.value_of("reload-fn") {
-    Some(v) => v.to_owned(),
-    None => snapshot.configs.reload_fn,
-  };
-  let emit_path = match cli_matches.value_of("emit-path") {
-    Some(v) => v.to_owned(),
-    None => "js-out".to_owned(),
-  };
+  let init_fn = cli_matches
+    .value_of("init-fn")
+    .or(Some(&snapshot.configs.init_fn))
+    .unwrap();
+  let reload_fn = cli_matches
+    .value_of("reload-fn")
+    .or(Some(&snapshot.configs.reload_fn))
+    .unwrap();
+  let emit_path = cli_matches.value_of("emit-path").or(Some("js-out")).unwrap();
 
   let task = if cli_matches.is_present("emit-js") {
     run_codegen(&init_fn, &reload_fn, &program_code, &emit_path, false)
   } else if cli_matches.is_present("emit-ir") {
     run_codegen(&init_fn, &reload_fn, &program_code, &emit_path, true)
   } else {
-    run_program(&init_fn, &reload_fn, &program_code)
+    calcit_runner::run_program(&init_fn, &program_code)
   };
 
   if eval_once {
@@ -117,7 +91,7 @@ fn main() -> Result<(), String> {
 
     let inc_path = entry_path.parent().unwrap().join(".compact-inc.cirru");
     if inc_path.exists() {
-      watcher.watch(&inc_path, RecursiveMode::Recursive).unwrap();
+      watcher.watch(&inc_path, RecursiveMode::NonRecursive).unwrap();
 
       loop {
         match rx.recv() {
@@ -161,7 +135,7 @@ fn main() -> Result<(), String> {
                   run_codegen(&init_fn, &reload_fn, &new_code, &emit_path, true)
                 } else {
                   // run from `reload_fn` after reload
-                  run_program(&reload_fn, &init_fn, &new_code)
+                  calcit_runner::run_program(&reload_fn, &new_code)
                 };
 
                 match task {
@@ -188,55 +162,6 @@ fn main() -> Result<(), String> {
   }
 }
 
-fn run_program(init_fn: &str, reload_fn: &str, program_code: &program::ProgramCodeData) -> Result<(), String> {
-  let started_time = Instant::now();
-
-  let (init_ns, init_def) = extract_ns_def(init_fn)?;
-  let (reload_ns, reload_def) = extract_ns_def(reload_fn)?;
-
-  // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def) {
-    Ok(_) => (),
-    Err(failure) => {
-      println!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure)?;
-      return Err(failure);
-    }
-  }
-
-  // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def) {
-    Ok(_) => (),
-    Err(failure) => {
-      println!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure)?;
-      return Err(failure);
-    }
-  }
-
-  match program::lookup_evaled_def(&init_ns, &init_def) {
-    None => Err(format!("entry not initialized: {}/{}", init_ns, init_def)),
-    Some(entry) => match entry {
-      Calcit::Fn(_, f_ns, _, def_scope, args, body) => {
-        let result = runner::run_fn(&im::vector![], &def_scope, &args, &body, &f_ns, &program_code);
-        match result {
-          Ok(v) => {
-            let duration = Instant::now().duration_since(started_time);
-            println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
-            Ok(())
-          }
-          Err(failure) => {
-            println!("\nfailed, {}", failure);
-            call_stack::display_stack(&failure)?;
-            Err(failure)
-          }
-        }
-      }
-      _ => Err(format!("expected function entry, got: {}", entry)),
-    },
-  }
-}
-
 fn run_codegen(
   init_fn: &str,
   reload_fn: &str,
@@ -246,13 +171,13 @@ fn run_codegen(
 ) -> Result<(), String> {
   let started_time = Instant::now();
 
-  let (init_ns, init_def) = extract_ns_def(init_fn)?;
-  let (reload_ns, reload_def) = extract_ns_def(reload_fn)?;
+  let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
+  let (reload_ns, reload_def) = util::string::extract_ns_def(reload_fn)?;
 
   if ir_mode {
-    effects::modify_cli_running_mode(effects::CliRunningMode::Ir)?;
+    builtins::effects::modify_cli_running_mode(builtins::effects::CliRunningMode::Ir)?;
   } else {
-    effects::modify_cli_running_mode(effects::CliRunningMode::Js)?;
+    builtins::effects::modify_cli_running_mode(builtins::effects::CliRunningMode::Js)?;
   }
 
   // preprocess to init
@@ -286,7 +211,7 @@ fn run_codegen(
     }
   } else {
     // TODO entry ns
-    match emit_js(&init_ns, &emit_path) {
+    match codegen::emit_js::emit_js(&init_ns, &emit_path) {
       Ok(_) => (),
       Err(failure) => {
         println!("\nfailed codegen, {}", failure);
@@ -298,35 +223,4 @@ fn run_codegen(
   let duration = Instant::now().duration_since(started_time);
   println!("took {}ms", duration.as_micros() as f64 / 1000.0);
   Ok(())
-}
-
-fn load_module(path: &str, base_dir: &Path) -> Result<snapshot::Snapshot, String> {
-  let mut file_path = String::from(path);
-  if file_path.ends_with('/') {
-    file_path.push_str("compact.cirru");
-  }
-
-  let fullpath: String = if file_path.starts_with("./") {
-    let new_path = base_dir.join(file_path);
-    new_path.to_str().unwrap().to_string()
-  } else if file_path.starts_with('/') {
-    file_path
-  } else {
-    match home_dir() {
-      Some(buf) => {
-        let home = buf.as_path();
-        let p = home.join(".config/calcit/modules/").join(file_path);
-        p.to_str().unwrap().to_string()
-      }
-      None => return Err(String::from("failed to load $HOME")),
-    }
-  };
-
-  println!("loading module: {}", fullpath);
-
-  let content = fs::read_to_string(&fullpath).expect(&format!("expected Cirru snapshot {:?}", fullpath));
-  let data = cirru_edn::parse(&content)?;
-  // println!("reading: {}", content);
-  let snapshot = snapshot::load_snapshot_data(data)?;
-  Ok(snapshot)
 }
