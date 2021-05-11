@@ -47,6 +47,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "format-time"
       | "parse-time"
       | "now!"
+      | "&ffi-message"
       // logics
       | "&="
       | "&<"
@@ -176,6 +177,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "parse-time" => effects::parse_time(args),
     "format-time" => effects::format_time(args),
     "now!" => effects::now_bang(args),
+    "&ffi-message" => effects::ffi_message(args),
     // logics
     "&=" => logics::binary_equal(args),
     "&<" => logics::binary_less(args),
