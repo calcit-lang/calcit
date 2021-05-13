@@ -1,6 +1,6 @@
 [package]
 name = "calcit_runner"
-version = "0.3.13"
+version = "0.3.14"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -39,5 +39,5 @@ name = "calcit_runner"
 path = "src/lib.rs"
 
 [[bin]]
-name = "calcit_runner"
+name = "cr"
 path = "src/main.rs"
