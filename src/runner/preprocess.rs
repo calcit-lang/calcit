@@ -229,7 +229,10 @@ fn process_list_call(
       }
     }
     (Calcit::Syntax(name, name_ns), _) => match name.as_str() {
-      "quote-replace" | "quasiquote" => Ok((Calcit::List(xs.clone()), None)),
+      "quote-replace" | "quasiquote" => Ok((
+        preprocess_quasiquote(&name, &name_ns, args, scope_defs, file_ns, program_code)?,
+        None,
+      )),
       "defn" | "defmacro" => Ok((
         preprocess_defn(&name, &name_ns, args, scope_defs, file_ns, program_code)?,
         None,
@@ -399,4 +402,49 @@ pub fn preprocess_defatom(
     xs.push_back(form.clone());
   }
   Ok(Calcit::List(xs))
+}
+
+/// need to handle experssions inside unquote snippets
+pub fn preprocess_quasiquote(
+  head: &str,
+  head_ns: &str,
+  args: &CalcitItems,
+  scope_defs: &HashSet<String>,
+  file_ns: &str,
+  program_code: &program::ProgramCodeData,
+) -> Result<Calcit, String> {
+  let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
+  for a in args {
+    xs.push_back(preprocess_quasiquote_internal(a, scope_defs, file_ns, program_code)?);
+  }
+  Ok(Calcit::List(xs))
+}
+
+pub fn preprocess_quasiquote_internal(
+  x: &Calcit,
+  scope_defs: &HashSet<String>,
+  file_ns: &str,
+  program_code: &program::ProgramCodeData,
+) -> Result<Calcit, String> {
+  match x {
+    Calcit::List(ys) if ys.is_empty() => Ok(x.to_owned()),
+    Calcit::List(ys) => match &ys[0] {
+      Calcit::Symbol(s, _, _) if s == "~" || s == "~@" => {
+        let mut xs: CalcitItems = im::vector![];
+        for y in ys {
+          let (form, _) = preprocess_expr(y, scope_defs, file_ns, program_code)?;
+          xs.push_back(form.to_owned());
+        }
+        Ok(Calcit::List(xs))
+      }
+      _ => {
+        let mut xs: CalcitItems = im::vector![];
+        for y in ys {
+          xs.push_back(preprocess_quasiquote_internal(y, scope_defs, file_ns, program_code)?.to_owned());
+        }
+        Ok(Calcit::List(xs))
+      }
+    },
+    _ => Ok(x.to_owned()),
+  }
 }
