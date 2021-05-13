@@ -37,21 +37,21 @@ cargo run calcit/compact.cirru
 
 # evaluate
 
-calcit_runner compact.cirru --once # run only once
-calcit_runner compact.cirru # watch mode enabled by default
+cr compact.cirru --once # run only once
+cr compact.cirru # watch mode enabled by default
 
-calcit_runner compact.cirru --init-fn='app.main/main!' # specifying init-fn
+cr compact.cirru --init-fn='app.main/main!' # specifying init-fn
 
-calcit_runner -e="range 100" # eval from CLI
+cr -e="range 100" # eval from CLI
 
 # emit code
 
-calcit_runner compact.cirru --emit-js # compile to js
-calcit_runner compact.cirru --emit-js --emit-path=out/ # compile to js and save in `out/`
+cr compact.cirru --emit-js # compile to js
+cr compact.cirru --emit-js --emit-path=out/ # compile to js and save in `out/`
 
-calcit_runner compact.cirru --emit-ir # compiles intermediate representation into program-ir.json
+cr compact.cirru --emit-ir # compiles intermediate representation into program-ir.json
 
-calcit_runner compact.cirru --emit-js --mjs # TODO compile to mjs
+cr compact.cirru --emit-js --mjs # TODO compile to mjs
 ```
 
 For linux users, download pre-built binaries from http://bin.calcit-lang.org/linux/ .
