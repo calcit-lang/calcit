@@ -14,23 +14,22 @@ lazy_static! {
 }
 
 // need functions with shorter lifetime to escape dead lock
-fn read_ref(path: &str) -> Option<Calcit> {
+fn read_ref(path: &str) -> Option<ValueAndListeners> {
   let dict = &REFS_DICT.lock().unwrap();
   match dict.get(path) {
-    Some((v, _)) => Some(v.to_owned()),
+    Some(pair) => Some(pair.to_owned()),
     None => None,
   }
 }
 
-fn write_to_ref(path: String, v: Calcit) {
+fn write_to_ref(path: String, v: Calcit, listeners: HashMap<String, Calcit>) {
   let dict = &mut REFS_DICT.lock().unwrap();
-  let _ = dict.insert(path, (v, HashMap::new()));
+  let _ = dict.insert(path, (v, listeners));
 }
 
 fn modify_ref(path: String, v: Calcit, program_code: &ProgramCodeData) -> Result<(), String> {
-  let dict = &mut REFS_DICT.lock().unwrap();
-  let (prev, listeners) = &dict.get(&path).unwrap().clone();
-  let _ = dict.insert(path, (v.to_owned(), listeners.to_owned()));
+  let (prev, listeners) = read_ref(&path).unwrap();
+  write_to_ref(path, v.to_owned(), listeners.to_owned());
 
   for f in listeners.values() {
     match f {
@@ -59,7 +58,7 @@ pub fn defatom(
 
       if read_ref(&path).is_none() {
         let v = runner::evaluate_expr(code, scope, file_ns, program_code)?;
-        write_to_ref(path.to_owned(), v)
+        write_to_ref(path.to_owned(), v, HashMap::new())
       }
       Ok(Calcit::Ref(path))
     }
@@ -71,7 +70,7 @@ pub fn defatom(
 pub fn deref(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Ref(path)) => match read_ref(path) {
-      Some(v) => Ok(v),
+      Some((v, _)) => Ok(v),
       None => Err(format!("found nothing after refer &{}", path)),
     },
     Some(a) => Err(format!("deref expected a ref, got: {}", a)),
