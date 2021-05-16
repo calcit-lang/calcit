@@ -53,6 +53,13 @@ pub fn parse_cli<'a>() -> clap::ArgMatches<'a> {
         .takes_value(true),
     )
     .arg(
+      clap::Arg::with_name("event-entry")
+        .help("entry ns/def for handling events")
+        .long("event-entry")
+        .default_value("app.main/on-window-event")
+        .takes_value(true),
+    )
+    .arg(
       clap::Arg::with_name("reload-libs")
         .help("reload libs data during code reload")
         .long("reload-libs")

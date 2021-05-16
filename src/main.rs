@@ -68,7 +68,7 @@ fn main() -> Result<(), String> {
   } else if cli_matches.is_present("emit-ir") {
     run_codegen(&init_fn, &reload_fn, &program_code, &emit_path, true)
   } else {
-    calcit_runner::run_program(&init_fn, &program_code)
+    calcit_runner::run_program(&init_fn, im::vector![], &program_code)
   };
 
   if eval_once {
@@ -135,7 +135,7 @@ fn main() -> Result<(), String> {
                   run_codegen(&init_fn, &reload_fn, &new_code, &emit_path, true)
                 } else {
                   // run from `reload_fn` after reload
-                  calcit_runner::run_program(&reload_fn, &new_code)
+                  calcit_runner::run_program(&reload_fn, im::vector![], &new_code)
                 };
 
                 match task {
