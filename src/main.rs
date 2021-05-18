@@ -90,72 +90,72 @@ fn main() -> Result<(), String> {
     let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).unwrap();
 
     let inc_path = entry_path.parent().unwrap().join(".compact-inc.cirru");
-    if inc_path.exists() {
-      watcher.watch(&inc_path, RecursiveMode::NonRecursive).unwrap();
+    if !inc_path.exists() {
+      fs::write(&inc_path, "").map_err(|e| -> String { e.to_string() })?;
+    }
 
-      loop {
-        match rx.recv() {
-          Ok(event) => {
-            // println!("event: {:?}", event);
-            match event {
-              notify::DebouncedEvent::NoticeWrite(..) => {
-                // ignored
-              }
-              notify::DebouncedEvent::Write(_) => {
-                println!("\n-------- file change --------\n");
-                call_stack::clear_stack();
+    watcher.watch(&inc_path, RecursiveMode::NonRecursive).unwrap();
 
-                // Steps:
-                // 1. load changes file, and patch to program_code
-                // 2. clears evaled states, gensym counter
-                // 3. rerun program, and catch error
-
-                // load new program code
-                let content = fs::read_to_string(&inc_path).unwrap();
-                if content.trim() == "" {
-                  println!("failed re-compiling, got empty inc file");
-                  continue;
-                }
-                let data = cirru_edn::parse(&content)?;
-                let changes = snapshot::load_changes_info(data.clone())?;
-
-                // println!("\ndata: {}", &data);
-                // println!("\nchanges: {:?}", changes);
-                let new_code = program::apply_code_changes(&program_code, &changes)?;
-                // println!("\nprogram code: {:?}", new_code);
-
-                // clear data in evaled states
-                let reload_libs = cli_matches.is_present("reload-libs");
-                program::clear_all_program_evaled_defs(&init_fn, &reload_fn, reload_libs)?;
-                builtins::meta::force_reset_gensym_index()?;
-
-                let task = if cli_matches.is_present("emit-js") {
-                  run_codegen(&init_fn, &reload_fn, &new_code, &emit_path, false)
-                } else if cli_matches.is_present("emit-ir") {
-                  run_codegen(&init_fn, &reload_fn, &new_code, &emit_path, true)
-                } else {
-                  // run from `reload_fn` after reload
-                  calcit_runner::run_program(&reload_fn, im::vector![], &new_code)
-                };
-
-                match task {
-                  Ok(_) => {}
-                  Err(e) => {
-                    println!("\nfailed to reload, {}", e)
-                  }
-                }
-
-                // overwrite previous state
-                program_code = new_code;
-              }
-              _ => println!("other file event: {:?}, ignored", event),
+    loop {
+      match rx.recv() {
+        Ok(event) => {
+          // println!("event: {:?}", event);
+          match event {
+            notify::DebouncedEvent::NoticeWrite(..) => {
+              // ignored
             }
+            notify::DebouncedEvent::Write(_) => {
+              println!("\n-------- file change --------\n");
+              call_stack::clear_stack();
+
+              // Steps:
+              // 1. load changes file, and patch to program_code
+              // 2. clears evaled states, gensym counter
+              // 3. rerun program, and catch error
+
+              // load new program code
+              let content = fs::read_to_string(&inc_path).unwrap();
+              if content.trim() == "" {
+                println!("failed re-compiling, got empty inc file");
+                continue;
+              }
+              let data = cirru_edn::parse(&content)?;
+              let changes = snapshot::load_changes_info(data.clone())?;
+
+              // println!("\ndata: {}", &data);
+              // println!("\nchanges: {:?}", changes);
+              let new_code = program::apply_code_changes(&program_code, &changes)?;
+              // println!("\nprogram code: {:?}", new_code);
+
+              // clear data in evaled states
+              let reload_libs = cli_matches.is_present("reload-libs");
+              program::clear_all_program_evaled_defs(&init_fn, &reload_fn, reload_libs)?;
+              builtins::meta::force_reset_gensym_index()?;
+
+              let task = if cli_matches.is_present("emit-js") {
+                run_codegen(&init_fn, &reload_fn, &new_code, &emit_path, false)
+              } else if cli_matches.is_present("emit-ir") {
+                run_codegen(&init_fn, &reload_fn, &new_code, &emit_path, true)
+              } else {
+                // run from `reload_fn` after reload
+                calcit_runner::run_program(&reload_fn, im::vector![], &new_code)
+              };
+
+              match task {
+                Ok(_) => {}
+                Err(e) => {
+                  println!("\nfailed to reload, {}", e)
+                }
+              }
+
+              // overwrite previous state
+              program_code = new_code;
+            }
+            _ => println!("other file event: {:?}, ignored", event),
           }
-          Err(e) => println!("watch error: {:?}", e),
         }
+        Err(e) => println!("watch error: {:?}", e),
       }
-    } else {
-      Err(format!("path {:?} not existed", inc_path))
     }
   } else {
     Ok(())
