@@ -1,7 +1,7 @@
 use crate::builtins::{is_js_syntax_procs, is_proc_name, is_syntax_name};
 use crate::call_stack::{pop_call_stack, push_call_stack, StackKind};
 use crate::primes;
-use crate::primes::{Calcit, CalcitItems, SymbolResolved::*};
+use crate::primes::{Calcit, CalcitItems, ImportRule, SymbolResolved::*};
 use crate::program;
 use crate::runner;
 use std::collections::HashSet;
@@ -14,7 +14,7 @@ pub fn preprocess_ns_def(
   program_code: &program::ProgramCodeData,
   // pass original string representation, TODO codegen currently relies on this
   original_sym: &str,
-  // returns form and possible value
+  import_rule: Option<ImportRule>, // returns form and possible value
 ) -> Result<(Calcit, Option<Calcit>), String> {
   // println!("preprocessing def: {}/{}", ns, def);
   match program::lookup_evaled_def(ns, def) {
@@ -24,7 +24,7 @@ pub fn preprocess_ns_def(
         Calcit::Symbol(
           original_sym.to_owned(),
           ns.to_owned(),
-          Some(ResolvedDef(ns.to_owned(), def.to_owned())),
+          Some(ResolvedDef(ns.to_owned(), def.to_owned(), import_rule)),
         ),
         Some(v),
       ))
@@ -55,7 +55,11 @@ pub fn preprocess_ns_def(
             Calcit::Symbol(
               original_sym.to_owned(),
               ns.to_owned(),
-              Some(ResolvedDef(ns.to_owned(), def.to_owned())),
+              Some(ResolvedDef(
+                ns.to_owned(),
+                def.to_owned(),
+                Some(ImportRule::NsReferDef(ns.to_owned(), def.to_owned())),
+              )),
             ),
             Some(v),
           ))
@@ -64,7 +68,7 @@ pub fn preprocess_ns_def(
           Calcit::Symbol(
             original_sym.to_owned(),
             ns.to_owned(),
-            Some(ResolvedDef(ns.to_owned(), def.to_owned())),
+            Some(ResolvedDef(ns.to_owned(), def.to_owned(), import_rule)),
           ),
           None,
         )),
@@ -98,13 +102,13 @@ pub fn preprocess_expr(
         match program::lookup_ns_target_in_import(&def_ns, &ns_alias, program_code) {
           Some(target_ns) => {
             // TODO js syntax to handle in future
-            preprocess_ns_def(&target_ns, &def_part, program_code, def)
+            preprocess_ns_def(&target_ns, &def_part, program_code, def, None)
           }
           None if ns_alias == "js" => Ok((
             Calcit::Symbol(
               def.clone(),
               def_ns.clone(),
-              Some(ResolvedDef(String::from("js"), def_part)),
+              Some(ResolvedDef(String::from("js"), def_part, None)),
             ),
             None,
           )), // js code
@@ -124,22 +128,32 @@ pub fn preprocess_expr(
         } else if is_proc_name(def) {
           Ok((Calcit::Proc(def.to_owned()), None))
         } else if program::has_def_code(primes::CORE_NS, def, program_code) {
-          preprocess_ns_def(primes::CORE_NS, def, program_code, def)
+          preprocess_ns_def(primes::CORE_NS, def, program_code, def, None)
         } else if program::has_def_code(def_ns, def, program_code) {
-          preprocess_ns_def(def_ns, def, program_code, def)
+          preprocess_ns_def(def_ns, def, program_code, def, None)
         } else {
           match program::lookup_def_target_in_import(def_ns, def, program_code) {
             Some(target_ns) => {
               // effect
               // TODO js syntax to handle in future
-              preprocess_ns_def(&target_ns, &def, program_code, def)
+              preprocess_ns_def(&target_ns, &def, program_code, def, None)
             }
             // TODO check js_mode
             None if is_js_syntax_procs(def) => Ok((expr.clone(), None)),
             None if def.starts_with('.') => Ok((expr.clone(), None)),
             None => {
-              println!("[Warn] unknown symbol in scope: {}/{} {:?}", def_ns, def, scope_defs);
-              Ok((expr.clone(), None))
+              let from_default = program::lookup_default_target_in_import(def_ns, def, program_code);
+              if let Some(target_ns) = from_default {
+                let target = Some(ResolvedDef(
+                  target_ns.to_owned(),
+                  def.to_owned(),
+                  Some(ImportRule::NsDefault(target_ns)),
+                ));
+                Ok((Calcit::Symbol(def.to_owned(), def_ns.to_owned(), target), None))
+              } else {
+                println!("[Warn] unknown symbol in scope: {}/{} {:?}", def_ns, def, scope_defs);
+                Ok((expr.clone(), None))
+              }
             }
           }
         }

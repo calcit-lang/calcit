@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use crate::primes::{Calcit, CalcitItems, SymbolResolved::*};
+use crate::primes::{Calcit, CalcitItems, ImportRule, SymbolResolved::*};
 use crate::program;
 
 #[derive(Serialize, Deserialize)]
@@ -90,10 +90,16 @@ fn dump_code(code: &Calcit) -> serde_json::Value {
       "val": s,
       "ns": ns,
       "resolved": match resolved {
-        Some(ResolvedDef(r_def, r_ns)) => json!({
+        Some(ResolvedDef(r_def, r_ns, import_rule)) => json!({
           "kind": "def",
           "ns": r_ns,
           "def": r_def,
+          "rule": match import_rule {
+            Some(ImportRule::NsAs(_n)) => json!("ns"),
+            Some(ImportRule::NsDefault(_n)) => json!("default"),
+            Some(ImportRule::NsReferDef(_ns, _def)) => json!("def"),
+            None => serde_json::Value::Null,
+          }
         }),
         Some(ResolvedLocal) => json!({
           "kind": "local"

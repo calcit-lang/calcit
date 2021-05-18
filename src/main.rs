@@ -181,7 +181,7 @@ fn run_codegen(
   }
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def, None) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
@@ -191,7 +191,7 @@ fn run_codegen(
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def) {
+  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def, None) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);

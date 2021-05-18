@@ -36,7 +36,7 @@ pub fn run_program(init_fn: &str, params: CalcitItems, program_code: &program::P
 
   let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def, None) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
