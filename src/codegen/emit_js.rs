@@ -11,7 +11,7 @@ use crate::builtins::{is_js_syntax_procs, is_proc_name, is_syntax_name};
 use crate::call_stack;
 use crate::call_stack::StackKind;
 use crate::primes;
-use crate::primes::{Calcit, CalcitItems, SymbolResolved::*};
+use crate::primes::{Calcit, CalcitItems, ImportRule, SymbolResolved::*};
 use crate::program;
 use crate::util::string::has_ns_part;
 use crate::util::string::{matches_js_var, wrap_js_str};
@@ -20,8 +20,9 @@ type ImportsDict = BTreeMap<String, ImportedTarget>;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ImportedTarget {
-  JustNs(String),
-  FromNs(String),
+  AsNs(String),
+  DefaultNs(String),
+  ReferNs(String),
 }
 
 fn to_js_import_name(ns: &str, mjs_mode: bool) -> String {
@@ -107,9 +108,6 @@ fn escape_ns_var(name: &str, ns: &str) -> String {
   let def_part = pieces[1];
   if ns_part == "js" {
     def_part.to_owned()
-  } else if def_part == "@" {
-    // TODO special syntax for js, using module directly, need a better solution
-    escape_ns(ns)
   } else {
     format!("{}.{}", escape_ns(ns), escape_var(&def_part))
   }
@@ -210,7 +208,7 @@ fn to_js_code(
       Ok(format!("{}{}", proc_prefix, escape_var(s)))
     }
     Calcit::Syntax(s, ..) => {
-      let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
+      let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned(), None));
       gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs, file_imports)
     }
     Calcit::Str(s) => Ok(escape_cirru_str(&s)),
@@ -449,16 +447,12 @@ fn gen_symbol_code(
       // TODO ditry code
       // TODO namespace part supposed be parsed during preprocessing, this mimics old behaviors
       match resolved {
-        Some(ResolvedDef(r_ns, _r_def)) => {
+        Some(ResolvedDef(r_ns, _r_def, _import_rule /* None */)) => {
           if is_cirru_string(r_ns) {
-            track_ns_import(
-              ns_part.to_owned(),
-              ImportedTarget::JustNs(r_ns.to_owned()),
-              file_imports,
-            )?;
+            track_ns_import(ns_part.to_owned(), ImportedTarget::AsNs(r_ns.to_owned()), file_imports)?;
             Ok(escape_ns_var(s, ns_part))
           } else {
-            track_ns_import(r_ns.clone(), ImportedTarget::JustNs(r_ns.to_owned()), file_imports)?;
+            track_ns_import(r_ns.clone(), ImportedTarget::AsNs(r_ns.to_owned()), file_imports)?;
             Ok(escape_ns_var(s, r_ns))
           }
         }
@@ -477,12 +471,17 @@ fn gen_symbol_code(
     return Ok(format!("{}{}", proc_prefix, escape_var(s)));
   } else if matches!(resolved, Some(ResolvedLocal)) || local_defs.contains(s) {
     Ok(escape_var(s))
-  } else if let Some(ResolvedDef(r_ns, _r_def)) = resolved.clone() {
+  } else if let Some(ResolvedDef(r_ns, _r_def, import_rule)) = resolved.clone() {
     if r_ns == primes::CORE_NS {
       // functions under core uses built $calcit module entry
       return Ok(format!("{}{}", var_prefix, escape_var(s)));
     }
-    track_ns_import(s.to_owned(), ImportedTarget::FromNs(r_ns), file_imports)?;
+    if let Some(ImportRule::NsDefault(_s)) = import_rule {
+      // imports that using :default are special
+      track_ns_import(s.to_owned(), ImportedTarget::DefaultNs(r_ns), file_imports)?;
+    } else {
+      track_ns_import(s.to_owned(), ImportedTarget::ReferNs(r_ns), file_imports)?;
+    }
     Ok(escape_var(s))
   } else if def_ns == primes::CORE_NS {
     // local variales inside calcit.core also uses this ns
@@ -491,7 +490,7 @@ fn gen_symbol_code(
   } else if def_ns.is_empty() {
     Err(format!("Unexpected ns at symbol, {:?}", xs))
   } else if def_ns != ns {
-    track_ns_import(s.to_owned(), ImportedTarget::FromNs(def_ns.to_owned()), file_imports)?;
+    track_ns_import(s.to_owned(), ImportedTarget::ReferNs(def_ns.to_owned()), file_imports)?;
 
     // probably via macro
     // TODO dirty code collecting imports
@@ -1020,7 +1019,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       for (def, item) in collected_imports {
         // println!("implicit import {} in {} ", def, ns);
         match item {
-          ImportedTarget::JustNs(target_ns) => {
+          ImportedTarget::AsNs(target_ns) => {
             if is_cirru_string(&target_ns) {
               let import_target = wrap_js_str(&target_ns[1..]);
               import_code.push_str(&format!("\nimport * as {} from {};\n", escape_ns(&def), import_target));
@@ -1033,7 +1032,15 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
               ));
             }
           }
-          ImportedTarget::FromNs(target_ns) => {
+          ImportedTarget::DefaultNs(target_ns) => {
+            if is_cirru_string(&target_ns) {
+              let import_target = wrap_js_str(&target_ns[1..]);
+              import_code.push_str(&format!("\nimport {} from {};\n", escape_var(&def), import_target));
+            } else {
+              unreachable!(format!("only js import leads to default ns, but got: {}", target_ns))
+            }
+          }
+          ImportedTarget::ReferNs(target_ns) => {
             let import_target = if is_cirru_string(&target_ns) {
               wrap_js_str(&target_ns[1..])
             } else {

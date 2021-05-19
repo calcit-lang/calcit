@@ -16,8 +16,16 @@ pub type CalcitItems = im::Vector<Calcit>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolResolved {
   ResolvedLocal,
-  ResolvedRaw,                 // raw syntax, no target
-  ResolvedDef(String, String), // ns, def
+  ResolvedRaw,                                     // raw syntax, no target
+  ResolvedDef(String, String, Option<ImportRule>), // ns, def
+}
+
+/// defRule: ns def
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportRule {
+  NsAs(String),               // ns
+  NsReferDef(String, String), // ns, def
+  NsDefault(String),          // ns, js only
 }
 
 /// special types wraps vector of calcit data for displaying

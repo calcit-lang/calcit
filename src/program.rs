@@ -4,19 +4,12 @@ use std::sync::Mutex;
 use cirru_parser::Cirru;
 
 use crate::data::cirru::code_to_calcit;
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::{Calcit, CalcitItems, ImportRule};
 use crate::snapshot;
 use crate::snapshot::Snapshot;
 use crate::util::string::extract_pkg_from_def;
 
 pub type ProgramEvaledData = HashMap<String, HashMap<String, Calcit>>;
-
-/// defRule: ns def
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ImportRule {
-  ImportNsRule(String),          // ns
-  ImportDefRule(String, String), // ns, def
-}
 
 /// information extracted from snapshot
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,20 +39,24 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, Strin
       }
       match (xs[0].clone(), xs[1].clone(), xs[2].clone()) {
         (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::Leaf(String::from(":as")) => {
-          Ok(vec![(alias, ImportRule::ImportNsRule(ns))])
+          Ok(vec![(alias, ImportRule::NsAs(ns))])
+        }
+        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::Leaf(String::from(":default")) => {
+          Ok(vec![(alias, ImportRule::NsDefault(ns))])
         }
         (Cirru::Leaf(ns), x, Cirru::List(ys)) if x == Cirru::Leaf(String::from(":refer")) => {
           let mut rules: Vec<(String, ImportRule)> = vec![];
           for y in ys {
             match y {
               Cirru::Leaf(s) if &s == "[]" => (), // `[]` symbol are ignored
-              Cirru::Leaf(s) => rules.push((s.clone(), ImportRule::ImportDefRule(ns.clone(), s.clone()))),
+              Cirru::Leaf(s) => rules.push((s.clone(), ImportRule::NsReferDef(ns.clone(), s.clone()))),
               Cirru::List(_defs) => return Err(String::from("invalid refer values")),
             }
           }
           Ok(rules)
         }
         (_, x, _) if x == Cirru::Leaf(String::from(":as")) => Err(String::from("invalid import rule")),
+        (_, x, _) if x == Cirru::Leaf(String::from(":default")) => Err(String::from("invalid default rule")),
         (_, x, _) if x == Cirru::Leaf(String::from(":refer")) => Err(String::from("invalid import rule")),
         _ if xs.len() != 3 => Err(format!(
           "expected import rule has length 3: {}",
@@ -134,8 +131,9 @@ pub fn lookup_def_target_in_import(ns: &str, def: &str, program: &ProgramCodeDat
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(def)?;
   match import_rule {
-    ImportRule::ImportDefRule(ns, _def) => Some(String::from(ns)),
-    ImportRule::ImportNsRule(_ns) => None,
+    ImportRule::NsReferDef(ns, _def) => Some(ns.to_owned()),
+    ImportRule::NsAs(_ns) => None,
+    ImportRule::NsDefault(_ns) => None,
   }
 }
 
@@ -143,8 +141,20 @@ pub fn lookup_ns_target_in_import(ns: &str, alias: &str, program: &ProgramCodeDa
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(alias)?;
   match import_rule {
-    ImportRule::ImportDefRule(_ns, _def) => None,
-    ImportRule::ImportNsRule(ns) => Some(String::from(ns)),
+    ImportRule::NsReferDef(_ns, _def) => None,
+    ImportRule::NsAs(ns) => Some(ns.to_owned()),
+    ImportRule::NsDefault(_ns) => None,
+  }
+}
+
+// imported via :default
+pub fn lookup_default_target_in_import(ns: &str, alias: &str, program: &ProgramCodeData) -> Option<String> {
+  let file = program.get(ns)?;
+  let import_rule = file.import_map.get(alias)?;
+  match import_rule {
+    ImportRule::NsReferDef(_ns, _def) => None,
+    ImportRule::NsAs(_ns) => None,
+    ImportRule::NsDefault(ns) => Some(ns.to_owned()),
   }
 }
 
