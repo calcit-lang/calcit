@@ -88,7 +88,7 @@ pub fn reset_bang(
   if expr.len() < 2 {
     return Err(format!("reset! excepted 2 arguments, got: {:?}", expr));
   }
-  println!("reset! {:?}", expr[0]);
+  // println!("reset! {:?}", expr[0]);
   let target = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
   let new_value = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
   match (target, new_value) {
