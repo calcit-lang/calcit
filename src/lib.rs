@@ -19,7 +19,6 @@ pub mod util;
 use dirs::home_dir;
 use std::fs;
 use std::path::Path;
-use std::time::Instant;
 
 pub use primes::{Calcit, CalcitItems};
 
@@ -31,9 +30,11 @@ pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
   snapshot::load_snapshot_data(core_data)
 }
 
-pub fn run_program(init_fn: &str, params: CalcitItems, program_code: &program::ProgramCodeData) -> Result<(), String> {
-  let started_time = Instant::now();
-
+pub fn run_program(
+  init_fn: &str,
+  params: CalcitItems,
+  program_code: &program::ProgramCodeData,
+) -> Result<Calcit, String> {
   let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
   // preprocess to init
   match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def, None) {
@@ -51,11 +52,7 @@ pub fn run_program(init_fn: &str, params: CalcitItems, program_code: &program::P
       Calcit::Fn(_, f_ns, _, def_scope, args, body) => {
         let result = runner::run_fn(&params, &def_scope, &args, &body, &f_ns, &program_code);
         match result {
-          Ok(v) => {
-            let duration = Instant::now().duration_since(started_time);
-            println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
-            Ok(())
-          }
+          Ok(v) => Ok(v),
           Err(failure) => {
             println!("\nfailed, {}", failure);
             call_stack::display_stack(&failure)?;

@@ -68,7 +68,13 @@ fn main() -> Result<(), String> {
   } else if cli_matches.is_present("emit-ir") {
     run_codegen(&init_fn, &reload_fn, &program_code, &emit_path, true)
   } else {
-    calcit_runner::run_program(&init_fn, im::vector![], &program_code)
+    let started_time = Instant::now();
+
+    let v = calcit_runner::run_program(&init_fn, im::vector![], &program_code)?;
+
+    let duration = Instant::now().duration_since(started_time);
+    println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
+    Ok(())
   };
 
   if eval_once {
@@ -138,7 +144,11 @@ fn main() -> Result<(), String> {
                 run_codegen(&init_fn, &reload_fn, &new_code, &emit_path, true)
               } else {
                 // run from `reload_fn` after reload
-                calcit_runner::run_program(&reload_fn, im::vector![], &new_code)
+                let started_time = Instant::now();
+                let v = calcit_runner::run_program(&reload_fn, im::vector![], &new_code)?;
+                let duration = Instant::now().duration_since(started_time);
+                println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
+                Ok(())
               };
 
               match task {
