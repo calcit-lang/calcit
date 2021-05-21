@@ -1,6 +1,6 @@
 [package]
 name = "calcit_runner"
-version = "0.3.18"
+version = "0.3.19"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -33,6 +33,8 @@ rand = "0.8.3"
 regex = "1.4.5"
 serde = { version = "1.0.125", features = ["derive"] }
 serde_json = "1.0.64"
+walkdir = "2"
+
 
 [lib]
 name = "calcit_runner"
@@ -40,4 +42,8 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "cr"
-path = "src/main.rs"
+path = "src/bin/cr.rs"
+
+[[bin]]
+name = "bundle_calcit"
+path = "src/bin/bundle_calcit.rs"

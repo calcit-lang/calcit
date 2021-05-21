@@ -56,6 +56,36 @@ cr compact.cirru --emit-js --mjs # TODO compile to mjs
 
 For linux users, download pre-built binaries from http://bin.calcit-lang.org/linux/ .
 
+### Bundler
+
+There's also another command for bundling `compact.cirru` from separated files:
+
+```bash
+package.cirru
+src/
+  app.main.cirru
+  app.lib.cirru
+```
+
+`package.cirru` should contain fields like.
+
+```cirru
+{}
+  :package |app
+  :modules $ []
+  :init-fn |app.main/main!
+  :reload-fn |app.main/reload!
+  :version |0.0.1
+```
+
+and files in `src/` are source files of namespace form and definitions. Ny running:
+
+```bash
+bundle_calcit --src ./src --out ./compact.cirru
+```
+
+a bundled `compact.cirru` file will be included.
+
 ### Development
 
 - [Cirru Parser](https://github.com/Cirru/parser.rs) for indentation-based syntax parsing.
