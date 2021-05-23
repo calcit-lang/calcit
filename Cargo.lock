@@ -81,7 +81,7 @@ dependencies = [
 
 [[package]]
 name = "calcit_runner"
-version = "0.3.18"
+version = "0.3.19"
 dependencies = [
  "chrono",
  "cirru_edn",
@@ -96,6 +96,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "walkdir",
 ]
 
 [[package]]
