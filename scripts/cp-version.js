@@ -7,3 +7,6 @@ if (!fs.existsSync("builds")) {
 fs.copyFileSync("target/release/cr", "builds/cr");
 fs.copyFileSync("builds/cr", "builds/calcit_runner");
 fs.copyFileSync("builds/cr", `builds/cr_${pkg.version}`);
+
+fs.copyFileSync("target/release/bundle_calcit", "builds/bundle_calcit");
+fs.copyFileSync("builds/bundle_calcit", `builds/bundle_calcit_${pkg.version}`);
