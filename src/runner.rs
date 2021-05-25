@@ -23,10 +23,15 @@ pub fn evaluate_expr(
     Calcit::Symbol(s, ..) if s == "&" => Ok(expr.clone()),
     Calcit::Symbol(s, ns, resolved) => match resolved {
       Some(ResolvedDef(r_ns, r_def, _import_rule)) => {
-        let v = evaluate_symbol(&r_def, scope, &r_ns, program_code)?;
+        let v = evaluate_symbol(r_def, scope, r_ns, program_code)?;
         match v {
           // extra check to make sure thunks extracted
-          Calcit::Thunk(code) => evaluate_expr(&code, scope, file_ns, program_code),
+          Calcit::Thunk(code) => {
+            let evaled_v = evaluate_expr(&code, scope, file_ns, program_code)?;
+            // and write back to program state to fix duplicated evalution
+            program::write_evaled_def(r_ns, r_def, evaled_v.to_owned())?;
+            Ok(evaled_v)
+          }
           _ => Ok(v),
         }
       }
