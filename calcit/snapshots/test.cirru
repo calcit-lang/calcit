@@ -223,6 +223,25 @@
             assert= 2 @*ref-demo
             assert= :ref (type-of *ref-demo)
 
+        |%Num $ quote
+          defrecord %Num :inc :show
+        |Num $ quote
+          def Num $ %{} %Num
+            :inc $ fn (x) $ [] Num (&+ x 1)
+            :show $ fn (x) $ str x
+
+        |test-invoke $ quote
+          fn ()
+            log-title "|Testing invoke"
+
+            let
+                a $ [] Num 0
+              assert=
+                [] Num 2
+                -> a (invoke :inc) (invoke :inc)
+              assert= |1
+                -> a (invoke :inc) (invoke :show)
+
         |reload! $ quote
           defn reload! () nil
 
@@ -257,6 +276,8 @@
             test-fn-eq
 
             test-refs
+            
+            test-invoke
 
             inside-eval:
               test-gynienic/main!

@@ -9,6 +9,7 @@ use walkdir::WalkDir;
 
 pub fn main() -> io::Result<()> {
   let cli_matches = parse_cli();
+  let verbose = cli_matches.is_present("verbose");
   let base_dir = Path::new(cli_matches.value_of("src").unwrap());
   let out_path = Path::new(cli_matches.value_of("out").unwrap());
   let out_file = match out_path.extension() {
@@ -22,8 +23,9 @@ pub fn main() -> io::Result<()> {
     }
     None => out_path.join("compact.cirru").to_path_buf(),
   };
-
-  println!("reading from {}", base_dir.display());
+  if verbose {
+    println!("reading from {}", base_dir.display());
+  }
 
   let mut dict: HashMap<Edn, Edn> = HashMap::new();
   let mut a: Vec<String> = vec![];
@@ -77,7 +79,7 @@ pub fn main() -> io::Result<()> {
               if let Cirru::List(ys) = line {
                 match (ys.get(0), ys.get(1)) {
                   (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
-                    if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" {
+                    if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" {
                       defs.insert(Edn::Str(x1.to_owned()), Edn::Quote(line.to_owned()));
                     } else {
                       return Err(io_err(format!("invalid def op: {}", x0)));
@@ -100,7 +102,9 @@ pub fn main() -> io::Result<()> {
         } else {
           return Err(io_err(format!("file should be expressions, molformed, {}", file_data)));
         }
-        // println!("bunding {}", entry.path().display());
+        if verbose {
+          println!("bunding {}", entry.path().display());
+        }
         a.push(entry.path().to_str().unwrap().to_string());
       }
     }
@@ -111,7 +115,7 @@ pub fn main() -> io::Result<()> {
   // println!("data {}", Edn::Map(dict));
 
   write(&out_file, cirru_edn::format(&Edn::Map(dict.clone()), true).unwrap())?;
-  println!("\nfile created. you can run it with:\n\ncr -1 {}\n", out_file.display());
+  println!("file created at {}", out_file.display());
 
   Ok(())
 }
@@ -138,6 +142,13 @@ fn parse_cli<'a>() -> clap::ArgMatches<'a> {
         .short("o")
         .long("out")
         .takes_value(true),
+    )
+    .arg(
+      clap::Arg::with_name("verbose")
+        .help("verbose mode")
+        .short("v")
+        .long("verbose")
+        .takes_value(false),
     )
     .get_matches()
 }

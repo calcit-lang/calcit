@@ -1115,3 +1115,15 @@
 
         |/= $ quote
           defn /= (a b) (not= a b)
+
+        |invoke $ quote
+          defn invoke (pair name & params)
+            assert "|method! applies on a pair, leading a record"
+              and (list? pair) (= 2 (count pair)) (record? (first pair))
+            assert "|method by string or keyword"
+              or (string? name) (keyword? name) (symbol? name)
+            let
+                proto $ nth pair 0
+                f $ &get proto name
+              assert "|expected function" (fn? f)
+              f (nth pair 1) & params
