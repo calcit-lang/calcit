@@ -14,6 +14,7 @@ pub fn new_list(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Nil) => Ok(Calcit::Bool(true)),
+    Some(Calcit::Tuple(..)) => Ok(Calcit::Bool(false)),
     Some(Calcit::List(ys)) => Ok(Calcit::Bool(ys.is_empty())),
     Some(Calcit::Map(ys)) => Ok(Calcit::Bool(ys.is_empty())),
     Some(Calcit::Set(ys)) => Ok(Calcit::Bool(ys.is_empty())),
@@ -26,6 +27,7 @@ pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Nil) => Ok(Calcit::Number(0.0)),
+    Some(Calcit::Tuple(..)) => Ok(Calcit::Number(2.0)),
     Some(Calcit::List(ys)) => Ok(Calcit::Number(ys.len() as f64)),
     Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.len() as f64)),
     Some(Calcit::Set(ys)) => Ok(Calcit::Number(ys.len() as f64)),
@@ -39,6 +41,12 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Nil), Some(Calcit::Number(_))) => Ok(Calcit::Nil),
+    (Some(Calcit::Tuple(a, b)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(0) => Ok((**a).clone()),
+      Ok(1) => Ok((**b).to_owned()),
+      Ok(m) => Err(format!("Tuple only got 2 elements, trying to index with {}", m)),
+      Err(e) => Err(format!("nth expect usize, {}", e)),
+    },
     (Some(Calcit::List(ys)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => match ys.get(idx) {
         Some(v) => Ok(v.clone()),

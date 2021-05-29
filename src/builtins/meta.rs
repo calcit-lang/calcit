@@ -2,7 +2,7 @@ use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
 use crate::primes;
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::{Calcit, CalcitItems, CrListWrap};
 use crate::util::number::f64_to_usize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -21,6 +21,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, String> {
       Calcit::Str(..) => Ok(Calcit::Keyword(String::from("string"))),
       Calcit::Thunk(..) => Ok(Calcit::Keyword(String::from("thunk"))), // internal
       Calcit::Ref(..) => Ok(Calcit::Keyword(String::from("ref"))),
+      Calcit::Tuple(..) => Ok(Calcit::Keyword(String::from("tuple"))),
       Calcit::Recur(..) => Ok(Calcit::Keyword(String::from("recur"))),
       Calcit::List(..) => Ok(Calcit::Keyword(String::from("list"))),
       Calcit::Set(..) => Ok(Calcit::Keyword(String::from("set"))),
@@ -181,5 +182,13 @@ pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Symbol(s, ..)) => Ok(Calcit::Keyword(s.clone())),
     Some(a) => Err(format!("turn-keyword cannot turn this to keyword: {}", a)),
     None => Err(String::from("turn-keyword expected 1 argument, got nothing")),
+  }
+}
+
+pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, String> {
+  if xs.len() != 2 {
+    Err(format!("Tuple expected 2 arguments, got {}", CrListWrap(xs.to_owned())))
+  } else {
+    Ok(Calcit::Tuple(Box::new(xs[0].to_owned()), Box::new(xs[1].to_owned())))
   }
 }

@@ -139,6 +139,12 @@
         |nil? $ quote
           defn nil? (x) $ &= (type-of x) :nil
 
+        |ref? $ quote
+          defn ref? (x) $ &= (type-of x) :ref
+
+        |tuple? $ quote
+          defn tuple? (x) $ &= (type-of x) :tuple
+
         |record? $ quote
           defn record? (x) $ &= (type-of x) :record
 

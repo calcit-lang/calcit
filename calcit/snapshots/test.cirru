@@ -242,6 +242,15 @@
               assert= |1
                 -> a (invoke :inc) (invoke :show)
 
+        |test-tuple $ quote
+          fn ()
+            log-title "|Testing tuple"
+
+            assert= :tuple (type-of (:: :a :b))
+            assert= :a (nth (:: :a :b) 0)
+            assert= :b (nth (:: :a :b) 1)
+            assert= 2 (count (:: :a :b))
+
         |reload! $ quote
           defn reload! () nil
 
@@ -276,8 +285,10 @@
             test-fn-eq
 
             test-refs
-            
+
             test-invoke
+
+            test-tuple
 
             inside-eval:
               test-gynienic/main!

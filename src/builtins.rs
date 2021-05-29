@@ -33,6 +33,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "write-cirru-edn"
       | "turn-symbol"
       | "turn-keyword"
+      | "::" // unstable
       // effects
       | "echo"
       | "println" // alias for echo
@@ -163,6 +164,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "write-cirru-edn" => meta::write_cirru_edn(args),
     "turn-symbol" => meta::turn_symbol(args),
     "turn-keyword" => meta::turn_keyword(args),
+    "::" => meta::new_tuple(args), // unstable solution for the name
     // effects
     "echo" => effects::echo(args),
     "println" => effects::echo(args), // alias

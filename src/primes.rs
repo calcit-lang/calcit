@@ -43,6 +43,7 @@ pub enum Calcit {
   Thunk(Box<Calcit>),
   /// holding a path to its state
   Ref(String),
+  Tuple(Box<Calcit>, Box<Calcit>),
   Recur(CalcitItems), // not data, but for recursion
   List(CalcitItems),
   Set(im::HashSet<Calcit>),
@@ -87,6 +88,7 @@ impl fmt::Display for Calcit {
       } // TODO, escaping choices
       Calcit::Thunk(v) => f.write_str(&format!("(&thunk {})", v)),
       Calcit::Ref(name) => f.write_str(&format!("(&ref {})", name)),
+      Calcit::Tuple(a, b) => f.write_str(&format!("(:: {} {})", a, b)),
       Calcit::Recur(xs) => {
         f.write_str("(&recur")?;
         for x in xs {
@@ -234,8 +236,13 @@ impl Hash for Calcit {
         v.hash(_state);
       }
       Calcit::Ref(name) => {
-        "quote:".hash(_state);
+        "ref:".hash(_state);
         name.hash(_state);
+      }
+      Calcit::Tuple(a, b) => {
+        "tuple:".hash(_state);
+        a.hash(_state);
+        b.hash(_state);
       }
       Calcit::Recur(v) => {
         "list:".hash(_state);
@@ -331,6 +338,13 @@ impl Ord for Calcit {
       (Calcit::Ref(_), _) => Less,
       (_, Calcit::Ref(_)) => Greater,
 
+      (Calcit::Tuple(a, b), Calcit::Tuple(c, d)) => match a.cmp(c) {
+        Equal => b.cmp(d),
+        v => v,
+      },
+      (Calcit::Tuple(_, _), _) => Less,
+      (_, Calcit::Tuple(_, _)) => Greater,
+
       (Calcit::Recur(a), Calcit::Recur(b)) => a.cmp(b),
       (Calcit::Recur(_), _) => Less,
       (_, Calcit::Recur(_)) => Greater,
@@ -401,6 +415,7 @@ impl PartialEq for Calcit {
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
       (Calcit::Thunk(a), Calcit::Thunk(b)) => a == b,
       (Calcit::Ref(a), Calcit::Ref(b)) => a == b,
+      (Calcit::Tuple(a, b), Calcit::Tuple(c, d)) => a == c && b == d,
       (Calcit::List(a), Calcit::List(b)) => a == b,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,

@@ -15,7 +15,13 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
       "&tab" => Ok(Calcit::Str(String::from("\t"))),
       "" => Err(String::from("Empty string is invalid")),
       _ => match s.chars().next().unwrap() {
-        ':' => Ok(Calcit::Keyword(String::from(&s[1..]))),
+        ':' => {
+          if s == "::" {
+            Ok(Calcit::Proc(String::from("::"))) // special tuple syntax
+          } else {
+            Ok(Calcit::Keyword(String::from(&s[1..])))
+          }
+        }
         '"' | '|' => Ok(Calcit::Str(String::from(&s[1..]))),
         '0' if s.starts_with("0x") => match u32::from_str_radix(&s[2..], 16) {
           Ok(n) => Ok(Calcit::Number(n as f64)),
