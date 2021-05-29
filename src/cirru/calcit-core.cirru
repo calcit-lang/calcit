@@ -1170,6 +1170,7 @@
         |&core-set-class $ quote
           defrecord! &core-set-class
             :add coll-append
+            :count count
             :difference difference
             :exclude exclude
             :empty empty

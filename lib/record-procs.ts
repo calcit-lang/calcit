@@ -70,9 +70,9 @@ export let _AND__PCT__MAP_ = (proto: CrDataValue, ...xs: Array<CrDataValue>): Cr
   }
 };
 
-export let get_record_name = (x: CrDataRecord): CrDataSymbol => {
+export let get_record_name = (x: CrDataRecord): string => {
   if (x instanceof CrDataRecord) {
-    return new CrDataSymbol(x.name);
+    return x.name;
   } else {
     throw new Error("Expected a record");
   }

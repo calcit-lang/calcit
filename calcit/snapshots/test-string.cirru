@@ -193,9 +193,12 @@
 
         |test-methods $ quote
           defn test-methods ()
-            log-title "|Testing methods"
+            log-title "|Testing string methods"
 
             assert= 3 (.count |abc)
+            assert=
+              [] |a |c
+              .split |abc |b
 
         |main! $ quote
           defn main! ()

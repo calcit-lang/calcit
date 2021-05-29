@@ -352,7 +352,13 @@ export let _AND__EQ_ = (x: CrDataValue, y: CrDataValue): boolean => {
   }
   if (x instanceof CrDataRef) {
     if (y instanceof CrDataRef) {
-      return x === y;
+      return x.path === y.path;
+    }
+    return false;
+  }
+  if (x instanceof CrDataTuple) {
+    if (y instanceof CrDataTuple) {
+      return _AND__EQ_(x.fst, y.fst) && _AND__EQ_(x.snd, y.snd);
     }
     return false;
   }
@@ -1758,39 +1764,43 @@ export let register_calcit_builtin_classes = (options: typeof calcit_builtin_cla
   Object.assign(calcit_builtin_classes, options);
 };
 
-export let invoke_method = (p: string, obj: CrDataValue, ...args: CrDataValue[]) => {
-  let klass: CrDataRecord;
-  let rawValue = obj;
-  if (obj instanceof CrDataTuple) {
-    if (obj.fst instanceof CrDataRecord) {
-      klass = obj.fst;
-      rawValue = obj.snd;
+export let invoke_method =
+  (p: string) =>
+  (obj: CrDataValue, ...args: CrDataValue[]) => {
+    let klass: CrDataRecord;
+    let rawValue = obj;
+    if (obj instanceof CrDataTuple) {
+      if (obj.fst instanceof CrDataRecord) {
+        klass = obj.fst;
+        rawValue = obj.snd;
+      } else {
+        throw new Error("Method invoking expected a record as class");
+      }
+    } else if (typeof obj === "number") {
+      klass = calcit_builtin_classes.number;
+    } else if (typeof obj === "string") {
+      klass = calcit_builtin_classes.string;
+    } else if (obj instanceof CrDataSet) {
+      klass = calcit_builtin_classes.set;
+    } else if (obj instanceof CrDataList) {
+      klass = calcit_builtin_classes.list;
+    } else if (obj instanceof CrDataRecord) {
+      klass = calcit_builtin_classes.record;
+    } else if (obj instanceof CrDataMap) {
+      klass = calcit_builtin_classes.map;
     } else {
-      throw new Error("Method invoking expected a record as class");
+      return (obj as any)[p](...args); // trying to call JavaScript method
     }
-  } else if (typeof obj === "number") {
-    klass = calcit_builtin_classes.number;
-  } else if (typeof obj === "string") {
-    klass = calcit_builtin_classes.string;
-  } else if (obj instanceof CrDataSet) {
-    klass = calcit_builtin_classes.set;
-  } else if (obj instanceof CrDataList) {
-    klass = calcit_builtin_classes.list;
-  } else if (obj instanceof CrDataRecord) {
-    klass = calcit_builtin_classes.record;
-  } else {
-    return (obj as any)[p](...args); // trying to call JavaScript method
-  }
-  if (klass == null) {
-    throw new Error("Cannot find class for this object for invoking");
-  }
-  let method = klass.get(p);
-  if (typeof method === "function") {
-    return method(rawValue, ...args);
-  } else {
-    throw new Error("Method for invoking is not a function");
-  }
-};
+    if (klass == null) {
+      throw new Error("Cannot find class for this object for invoking");
+    }
+    let method = klass.get(p);
+    if (typeof method === "function") {
+      return method(rawValue, ...args);
+    } else {
+      throw new Error("Method for invoking is not a function");
+    }
+  };
 
 // special procs have to be defined manually
 export let reduce = foldl;

@@ -207,7 +207,22 @@ fn to_js_code(
       // println!("gen proc {} under {}", s, ns,);
       // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
       // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
-      Ok(format!("{}{}", proc_prefix, escape_var(s)))
+
+      if s.starts_with('.') {
+        if s.starts_with(".-") || s.starts_with(".!") {
+          Err(format!("invalid js method {} at this position", s))
+        } else {
+          // `.method` being used as a parameter
+          let name = s.strip_prefix('.').unwrap();
+          Ok(format!(
+            "{}invoke_method({})",
+            var_prefix,
+            escape_cirru_str(&name), // TODO need confirm
+          ))
+        }
+      } else {
+        Ok(format!("{}{}", proc_prefix, escape_var(s)))
+      }
     }
     Calcit::Syntax(s, ..) => {
       let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned(), None));
@@ -406,28 +421,24 @@ fn gen_call_code(
               None => Err(format!("expected 1 object, got {}", xs)),
             }
           } else {
-            Err(format!("invalid member accessor {}", s))
+            Err(format!("invalid static member accessor {}", s))
           }
         }
         _ if s.starts_with('.') => {
           let name = s.strip_prefix('.').unwrap();
-          if matches_js_var(name) {
-            match body.get(0) {
-              Some(obj) => {
-                let args = body.skip(1);
-                let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
-                Ok(format!(
-                  "{}invoke_method({},{},{})",
-                  var_prefix,
-                  escape_cirru_str(&name), // TODO need confirm
-                  to_js_code(&obj, ns, local_defs, file_imports)?,
-                  args_code
-                ))
-              }
-              None => Err(format!("expected 1 object, got {}", xs)),
+          match body.get(0) {
+            Some(obj) => {
+              let args = body.skip(1);
+              let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
+              Ok(format!(
+                "{}invoke_method({})({},{})",
+                var_prefix,
+                escape_cirru_str(&name), // TODO need confirm
+                to_js_code(&obj, ns, local_defs, file_imports)?,
+                args_code
+              ))
             }
-          } else {
-            Err(format!("invalid member accessor {}", s))
+            None => Err(format!("expected 1 object, got {}", xs)),
           }
         }
         _ => {

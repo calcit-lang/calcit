@@ -53,10 +53,17 @@
             assert= (#{} 1 2 3) (#{} 1 2 (+ 1 2))
             assert-detect not $ = (#{} 1 2 3) (#{} 2 3 4)
 
+        |test-methods $ quote
+          fn ()
+            assert= 3
+              .count $ #{} 1 2 3
+
         |main! $ quote
           defn main! ()
             log-title "|Testing set"
             test-set
+
+            test-methods
 
             do true
 

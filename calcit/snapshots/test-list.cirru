@@ -294,6 +294,18 @@
             log-title "|Testing alias"
             assert= (' 1 2 3) ([] 1 2 3)
 
+        |test-methods $ quote
+          fn ()
+            log-title "|Testing list methods"
+            assert= 3
+              .count $ [] 1 2 3
+            assert=
+              [] 4 5 6
+              .map ([] 1 2 3) $ fn (x) (+ x 3)
+            assert=
+              [] 2 3 4
+              .map ([] 1 2 3) .inc
+
         |main! $ quote
           defn main! ()
 
@@ -325,6 +337,8 @@
 
             test-doseq
             test-let[]
+
+            test-methods
 
             do true
 

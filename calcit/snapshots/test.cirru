@@ -227,20 +227,20 @@
           defrecord %Num :inc :show
         |Num $ quote
           def Num $ %{} %Num
-            :inc $ fn (x) $ [] Num (&+ x 1)
+            :inc $ fn (x) $ :: Num (&+ x 1)
             :show $ fn (x) $ str x
 
-        |test-invoke $ quote
+        |test-method $ quote
           fn ()
-            log-title "|Testing invoke"
+            log-title "|Testing method"
 
             let
-                a $ [] Num 0
+                a $ :: Num 0
               assert=
-                [] Num 2
-                -> a (invoke :inc) (invoke :inc)
+                :: Num 2
+                -> a .inc .inc
               assert= |1
-                -> a (invoke :inc) (invoke :show)
+                -> a .inc .show
 
         |test-tuple $ quote
           fn ()
@@ -286,7 +286,7 @@
 
             test-refs
 
-            test-invoke
+            test-method
 
             test-tuple
 
