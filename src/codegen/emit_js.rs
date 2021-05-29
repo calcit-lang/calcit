@@ -1035,11 +1035,10 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           println!("[Warn] strange case for generating a definition: {}", f)
         }
       }
-
-      if ns == primes::CORE_NS {
-        // add at end of file to register builtin classes
-        direct_code.push_str(&snippets::tmpl_classes_registering())
-      }
+    }
+    if ns == primes::CORE_NS {
+      // add at end of file to register builtin classes
+      direct_code.push_str(&snippets::tmpl_classes_registering())
     }
 
     let collected_imports = file_imports.into_inner();
