@@ -277,7 +277,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "get-record-name" => records::get_record_name(args),
     "turn-map" => records::turn_map(args),
     "relevant-record?" => records::relevant_record_ques(args),
-    a => Err(format!("TODO proc: {}", a)),
+    a => Err(format!("No such proc: {}", a)),
   }
 }
 
@@ -355,5 +355,6 @@ pub fn is_js_syntax_procs(s: &str) -> bool {
       | "to-calcit-data"
       | "to-cirru-edn"
       | "to-js-data"
+      | "invoke-method" // dynamically
   )
 }

@@ -1,8 +1,12 @@
+use crate::builtins;
+use crate::builtins::records::find_in_fields;
 use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems, CrListWrap};
+use crate::program;
+use crate::runner;
 use crate::util::number::f64_to_usize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -187,8 +191,91 @@ pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, String> {
   if xs.len() != 2 {
-    Err(format!("Tuple expected 2 arguments, got {}", CrListWrap(xs.to_owned())))
+    Err(format!("tuple expected 2 arguments, got {}", CrListWrap(xs.to_owned())))
   } else {
     Ok(Calcit::Tuple(Box::new(xs[0].to_owned()), Box::new(xs[1].to_owned())))
   }
+}
+
+pub fn invoke_method(
+  name: &str,
+  invoke_args: &CalcitItems,
+  program_code: &program::ProgramCodeData,
+) -> Result<Calcit, String> {
+  let (class, raw_value) = match invoke_args.get(0) {
+    Some(Calcit::Tuple(a, b)) => ((**a).to_owned(), (**b).to_owned()),
+    Some(Calcit::Number(..)) => {
+      // classed should already be preprocessed
+      let code = gen_sym("&core-number-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    Some(Calcit::Str(..)) => {
+      let code = gen_sym("&core-string-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    Some(Calcit::Set(..)) => {
+      let code = gen_sym("&core-set-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    Some(Calcit::List(..)) => {
+      let code = gen_sym("&core-list-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    Some(Calcit::Map(..)) => {
+      let code = gen_sym("&core-map-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    Some(Calcit::Record(..)) => {
+      let code = gen_sym("&core-record-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    x => return Err(format!("cannot decide a class from: {:?}", x)),
+  };
+  match &class {
+    Calcit::Record(_, fields, values) => {
+      match find_in_fields(&fields, name) {
+        Some(idx) => {
+          let mut method_args: im::Vector<Calcit> = im::vector![];
+          method_args.push_back(raw_value.to_owned());
+          let mut at_first = true;
+          for x in invoke_args {
+            if at_first {
+              at_first = false
+            } else {
+              method_args.push_back(x.to_owned())
+            }
+          }
+
+          match &values[idx] {
+            // dirty copy...
+            Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
+              runner::run_fn(&method_args, def_scope, args, body, def_ns, program_code)
+            }
+            Calcit::Proc(proc) => builtins::handle_proc(&proc, &method_args),
+            y => Err(format!("expected a function to invoke, got: {}", y)),
+          }
+        }
+        None => Err(format!("missing field `{}` in {:?}", name, fields)),
+      }
+    }
+    x => Err(format!("method invoking expected a record as class, got: {}", x)),
+  }
+}
+
+fn gen_sym(sym: &str) -> Calcit {
+  Calcit::Symbol(
+    String::from("&core-map-class"),
+    String::from(primes::CORE_NS),
+    Some(primes::SymbolResolved::ResolvedDef(
+      String::from(primes::CORE_NS),
+      String::from(sym),
+      None,
+    )),
+  )
 }

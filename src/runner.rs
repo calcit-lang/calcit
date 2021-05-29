@@ -58,8 +58,12 @@ pub fn evaluate_expr(
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
             push_call_stack(file_ns, &p, StackKind::Proc, Calcit::Nil, &values);
             added_stack = true;
-            // println!("proc: {}", expr);
-            builtins::handle_proc(&p, &values)
+            if p.starts_with('.') {
+              builtins::meta::invoke_method(&p.strip_prefix('.').unwrap(), &values, program_code)
+            } else {
+              // println!("proc: {}", expr);
+              builtins::handle_proc(&p, &values)
+            }
           }
           Calcit::Syntax(s, def_ns) => {
             push_call_stack(file_ns, &s, StackKind::Syntax, expr.to_owned(), &rest_nodes);

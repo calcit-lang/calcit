@@ -191,6 +191,12 @@
               format-to-lisp $ quote $ nil? nil
               , "|(nil? nil)"
 
+        |test-methods $ quote
+          defn test-methods ()
+            log-title "|Testing methods"
+
+            assert= 3 (.count |abc)
+
         |main! $ quote
           defn main! ()
             log-title "|Testing str"
@@ -213,6 +219,8 @@
             test-whitespace
 
             test-lisp-style
+
+            test-methods
 
             do true
 

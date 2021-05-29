@@ -63,6 +63,15 @@ fn main() -> Result<(), String> {
     .unwrap();
   let emit_path = cli_matches.value_of("emit-path").or(Some("js-out")).unwrap();
 
+  // make sure builtin classes are touched
+  runner::preprocess::preprocess_ns_def(
+    &calcit_runner::primes::CORE_NS,
+    &calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
+    &program_code,
+    &calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
+    None,
+  )?;
+
   let task = if cli_matches.is_present("emit-js") {
     run_codegen(&init_fn, &reload_fn, &program_code, &emit_path, false)
   } else if cli_matches.is_present("emit-ir") {

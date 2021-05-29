@@ -434,6 +434,7 @@ impl PartialEq for Calcit {
 }
 
 pub const CORE_NS: &str = "calcit.core";
+pub const BUILTIN_CLASSES_ENTRY: &str = "&init-builtin-classes!";
 pub const GENERATED_NS: &str = "calcit.gen";
 
 impl Calcit {

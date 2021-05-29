@@ -108,6 +108,28 @@ export class CrDataRef {
   }
 }
 
+export class CrDataTuple {
+  fst: CrDataValue;
+  snd: CrDataValue;
+  cachedHash: Hash;
+  constructor(a: CrDataValue, b: CrDataValue) {
+    this.fst = a;
+    this.snd = b;
+  }
+  get(n: number) {
+    if (n == 0) {
+      return this.fst;
+    } else if (n == 1) {
+      return this.snd;
+    } else {
+      throw new Error("Tuple only have 2 elements");
+    }
+  }
+  toString(): string {
+    return `(&tuple ${this.fst.toString()} ${this.snd.toString()})`;
+  }
+}
+
 export type CrDataFn = (...xs: CrDataValue[]) => CrDataValue;
 
 export class CrDataList {
@@ -499,6 +521,7 @@ export type CrDataValue =
   | CrDataKeyword
   | CrDataSymbol
   | CrDataRef
+  | CrDataTuple
   | CrDataFn
   | CrDataRecur // should not be exposed to function
   | CrDataRecord
@@ -528,6 +551,7 @@ let defaultHash_false = valueHash("false:");
 let defaultHash_symbol = valueHash("symbol:");
 let defaultHash_fn = valueHash("fn:");
 let defaultHash_ref = valueHash("ref:");
+let defaultHash_tuple = valueHash("tuple:");
 let defaultHash_set = valueHash("set:");
 let defaultHash_list = valueHash("list:");
 let defaultHash_map = valueHash("map:");
@@ -574,6 +598,13 @@ let hashFunction = (x: CrDataValue): Hash => {
     let h = mergeValueHash(defaultHash_ref, x.path);
     x.cachedHash = h;
     return h;
+  }
+  if (x instanceof CrDataTuple) {
+    let base = defaultHash_list;
+    base = mergeValueHash(base, hashFunction(x.fst));
+    base = mergeValueHash(base, hashFunction(x.snd));
+    x.cachedHash = base;
+    return base;
   }
   if (x instanceof CrDataSet) {
     // TODO not using dirty solution for code
@@ -656,6 +687,9 @@ export let toString = (x: CrDataValue, escaped: boolean): string => {
     return x.toString();
   }
   if (x instanceof CrDataRef) {
+    return x.toString();
+  }
+  if (x instanceof CrDataTuple) {
     return x.toString();
   }
 

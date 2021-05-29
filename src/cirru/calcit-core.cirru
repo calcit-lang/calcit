@@ -1078,6 +1078,11 @@
             quote-replace
               new-record (quote ~name) ~@xs
 
+        |defrecord! $ quote
+          defmacro defrecord! (name & pairs)
+            quasiquote
+              %{} (new-record (quote ~name) (~@ (map pairs first))) ~@pairs
+
         |;nil $ quote
           defmacro ;nil (& _body) nil
 
@@ -1133,3 +1138,122 @@
                 f $ &get proto name
               assert "|expected function" (fn? f)
               f (nth pair 1) & params
+
+        |&core-number-class $ quote
+          defrecord! &core-number-class
+            :ceil ceil
+            :floor floor
+            :format format-number
+            :inc inc
+            :pow pow
+            :round round
+            :sqrt sqrt
+
+        |&core-string-class $ quote
+          defrecord! &core-string-class
+            :blank? blank?
+            :count count
+            :empty empty
+            :ends-with? ends-with?
+            :get nth
+            :parse-float parse-float
+            :parse-json parse-json
+            :replace replace
+            :split split
+            :split-lines split-lines
+            :starts-with? starts-with?
+            :strip-prefix strip-prefix
+            :strip-suffix strip-suffix
+            :substr substr
+            :trim trim
+
+        |&core-set-class $ quote
+          defrecord! &core-set-class
+            :add coll-append
+            :difference difference
+            :exclude exclude
+            :empty empty
+            :empty? empty?
+            :include include
+            :includes? includes?
+            :intersection intersection
+            :to-list set->list
+            :union union
+
+        |&core-map-class $ quote
+          defrecord! &core-map-class
+            :assoc assoc
+            :contains? contains?
+            :count count
+            :dissoc dissoc
+            :empty empty
+            :empty? empty?
+            :get &get
+            :get-in get-in
+            :includes? includes?
+            :keys keys
+            :keys-non-nil keys-non-nil
+            :map-kv map-kv
+            :merge merge
+            :select-keys select-keys
+            :to-pairs to-pairs
+            :unselect-keys unselect-keys
+
+        |&core-record-class $ quote
+          defrecord! &core-record-class
+            :get-name get-record-name
+            :same-kind? relevant-record?
+            :turn-map turn-map
+
+        |&core-list-class $ quote
+          defrecord! &core-list-class
+            :any? any?
+            :add coll-append
+            :append append
+            :assoc assoc
+            :assoc-after assoc-after
+            :assoc-before assoc-before
+            :butlast butlast
+            :concat concat
+            :count count
+            :drop drop
+            :each each
+            :empty empty
+            :empty? empty?
+            :filter filter
+            :filter-not filter-not
+            :find-index find-index
+            :foldl foldl
+            :frequencies frequencies
+            :get nth
+            :get-in get-in
+            :group-by group-by
+            :has-index? has-index?
+            :index-of index-of
+            :interleave interleave
+            :join join
+            :map map
+            :map-indexed map-indexed
+            :max max
+            :min min
+            :nth nth
+            :pairs-map pairs-map
+            :prepend prepend
+            :reduce reduce
+            :rest rest
+            :reverse reverse
+            :section-by section-by
+            :slice slice
+            :sort sort
+            :take take
+            :zipmap zipmap
+
+        |&init-builtin-classes! $ quote
+          defn &init-builtin-classes! ()
+            ; "this function to make sure builtin classes are loaded"
+            identity &core-number-class
+            identity &core-string-class
+            identity &core-set-class
+            identity &core-list-class
+            identity &core-map-class
+            identity &core-record-class

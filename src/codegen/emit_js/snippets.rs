@@ -97,7 +97,7 @@ pub fn tmpl_tail_recursion(
 pub fn tmpl_import_procs(name: String) -> String {
   format!(
     "
-import {{kwd, arrayToList, listToArray, CrDataRecur}} from {};
+import {{kwd, arrayToList, listToArray, CrDataList, CrDataSymbol, CrDataRecur}} from {};
 import * as $calcit_procs from {};
 export * from {};
 ",
@@ -112,5 +112,20 @@ export var {} = () => {{/* Macro */}}
 {}.isMacro = true;
 ",
     name, name
+  )
+}
+
+pub fn tmpl_classes_registering() -> String {
+  String::from(
+    "
+$calcit_procs.register_calcit_builtin_classes({
+  list: _AND_core_list_class,
+  map: _AND_core_map_class,
+  number: _AND_core_number_class,
+  record: _AND_core_record_class,
+  set: _AND_core_set_class,
+  string: _AND_core_string_class,
+});
+",
   )
 }
