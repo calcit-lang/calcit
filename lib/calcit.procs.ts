@@ -1802,6 +1802,28 @@ export let invoke_method =
     }
   };
 
+export let _AND_map_to_list = (m: CrDataValue): CrDataList => {
+  if (m instanceof CrDataMap) {
+    let ys = [];
+    for (let pair of m.pairs()) {
+      ys.push(new CrDataList(pair));
+    }
+    return new CrDataList(ys);
+  } else {
+    throw new Error("&map-to-list expected a Map");
+  }
+};
+
+export let _AND_compare = (a: CrDataValue, b: CrDataValue): number => {
+  if (a < b) {
+    return -1;
+  } else if (a > b) {
+    return 1;
+  } else {
+    return 0;
+  }
+};
+
 // special procs have to be defined manually
 export let reduce = foldl;
 export let conj = append;

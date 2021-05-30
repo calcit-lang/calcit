@@ -183,6 +183,16 @@
               {} (:a 11)
               .map-kv ({} (:a 1)) $ fn (k v)
                 [] k (+ v 10)
+             
+            assert=
+              [] ([] :a 1)
+              .to-list $ {} (:a 1)
+            
+            assert= 2
+              .count $ .to-list $ {}
+                :a 1
+                :b 2
+               
 
         |main! $ quote
 

@@ -34,6 +34,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "turn-symbol"
       | "turn-keyword"
       | "::" // unstable
+      | "&compare"
       // effects
       | "echo"
       | "println" // alias for echo
@@ -122,6 +123,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "includes?"
       | "to-pairs"
       | "&merge-non-nil"
+      | "&map-to-list"
       // sets
       | "#{}"
       | "&include"
@@ -164,7 +166,8 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "write-cirru-edn" => meta::write_cirru_edn(args),
     "turn-symbol" => meta::turn_symbol(args),
     "turn-keyword" => meta::turn_keyword(args),
-    "::" => meta::new_tuple(args), // unstable solution for the name
+    "::" => meta::new_tuple(args),            // unstable solution for the name
+    "&compare" => meta::native_compare(args), // unstable solution for the name
     // effects
     "echo" => effects::echo(args),
     "println" => effects::echo(args), // alias
@@ -255,6 +258,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "includes?" => maps::includes_ques(args),
     "to-pairs" => maps::to_pairs(args),
     "&merge-non-nil" => maps::call_merge_non_nil(args),
+    "&map-to-list" => maps::to_list(args),
     // sets
     "#{}" => sets::new_set(args),
     "&include" => sets::call_include(args),

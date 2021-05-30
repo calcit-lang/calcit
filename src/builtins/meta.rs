@@ -8,7 +8,9 @@ use crate::primes::{Calcit, CalcitItems, CrListWrap};
 use crate::program;
 use crate::runner;
 use crate::util::number::f64_to_usize;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cmp::Ordering;
+use std::sync::atomic;
+use std::sync::atomic::AtomicUsize;
 
 static SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
@@ -52,7 +54,7 @@ pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 
 pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
-  let idx = SYMBOL_INDEX.fetch_add(1, Ordering::SeqCst);
+  let idx = SYMBOL_INDEX.fetch_add(1, atomic::Ordering::SeqCst);
   let n = idx + 1; // use 1 as first value since previous implementation did this
 
   let s = match xs.get(0) {
@@ -74,22 +76,22 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 
 pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, String> {
-  let _ = SYMBOL_INDEX.swap(0, Ordering::SeqCst);
+  let _ = SYMBOL_INDEX.swap(0, atomic::Ordering::SeqCst);
   Ok(Calcit::Nil)
 }
 
 pub fn force_reset_gensym_index() -> Result<(), String> {
-  let _ = SYMBOL_INDEX.swap(0, Ordering::SeqCst);
+  let _ = SYMBOL_INDEX.swap(0, atomic::Ordering::SeqCst);
   Ok(())
 }
 
 pub fn reset_js_gensym_index() {
-  let _ = JS_SYMBOL_INDEX.swap(0, Ordering::SeqCst);
+  let _ = JS_SYMBOL_INDEX.swap(0, atomic::Ordering::SeqCst);
 }
 
 // for emitting js
 pub fn js_gensym(name: &str) -> String {
-  let idx = JS_SYMBOL_INDEX.fetch_add(1, Ordering::SeqCst);
+  let idx = JS_SYMBOL_INDEX.fetch_add(1, atomic::Ordering::SeqCst);
   let n = idx + 1; // use 1 as first value since previous implementation did this
 
   let mut chunk = String::from(name);
@@ -278,4 +280,15 @@ fn gen_sym(sym: &str) -> Calcit {
       None,
     )),
   )
+}
+
+pub fn native_compare(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(a), Some(b)) => match a.cmp(b) {
+      Ordering::Less => Ok(Calcit::Number(-1.0)),
+      Ordering::Greater => Ok(Calcit::Number(1.0)),
+      Ordering::Equal => Ok(Calcit::Number(0.0)),
+    },
+    (a, b) => Err(format!("&compare expected 2 values, got {:?} {:?}", a, b)),
+  }
 }

@@ -1138,6 +1138,15 @@
                 f $ &get proto name
               assert "|expected function" (fn? f)
               f (nth pair 1) & params
+        
+        |&list-sort-by $ quote
+          defn &list-sort-by (xs f)
+            sort xs $ fn (a b)
+              &compare (f a) (f b)
+        
+        |negate $ quote
+          defn negate (x)
+            &- 0 x
 
         |&core-number-class $ quote
           defrecord! &core-number-class
@@ -1197,8 +1206,10 @@
             :map-kv map-kv
             :merge merge
             :select-keys select-keys
+            :to-list &map-to-list
             :to-pairs to-pairs
             :unselect-keys unselect-keys
+            :vals vals
 
         |&core-record-class $ quote
           defrecord! &core-record-class
@@ -1246,6 +1257,7 @@
             :section-by section-by
             :slice slice
             :sort sort
+            :sort-by &list-sort-by
             :take take
             :zipmap zipmap
 

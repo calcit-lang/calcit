@@ -306,6 +306,14 @@
               [] 2 3 4
               .map ([] 1 2 3) .inc
 
+            assert=
+              [] 4 3 2 1
+              .sort-by ([] 1 2 3 4) negate
+
+            assert=
+              [] 1 2 3 4
+              .sort-by ([] 1 2 3 4) inc
+
         |main! $ quote
           defn main! ()
 
