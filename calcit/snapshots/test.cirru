@@ -41,6 +41,12 @@
             assert-detect not $ > :a :b
             assert-detect not $ > :aa :ab
 
+            inside-eval:
+              assert= ([] 1)
+                .map
+                  [] $ &{} :a 1
+                  , :a
+
         |test-id $ quote
           fn ()
             assert= 9 $ count $ generate-id! 9

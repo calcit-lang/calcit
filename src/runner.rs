@@ -105,6 +105,25 @@ pub fn evaluate_expr(
               }
             })
           }
+          Calcit::Keyword(k) => {
+            if rest_nodes.len() == 1 {
+              let v = evaluate_expr(&rest_nodes[0], scope, file_ns, program_code)?;
+
+              if let Calcit::Map(m) = v {
+                match m.get(&Calcit::Keyword(k.to_owned())) {
+                  Some(value) => Ok(value.to_owned()),
+                  None => Ok(Calcit::Nil),
+                }
+              } else {
+                Err(format!("expected a hashmap, got {}", v))
+              }
+            } else {
+              Err(format!(
+                "keyword only takes 1 argument, got: {}",
+                CrListWrap(rest_nodes)
+              ))
+            }
+          }
           Calcit::Symbol(s, ns, resolved) => {
             Err(format!("cannot evaluate symbol directly: {}/{} {:?}", ns, s, resolved))
           }
