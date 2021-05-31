@@ -9,3 +9,6 @@ node_modules/
 
 lib/*.js
 builds/
+
+
+.compact-inc.cirru

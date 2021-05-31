@@ -41,6 +41,12 @@
             assert-detect not $ > :a :b
             assert-detect not $ > :aa :ab
 
+            inside-eval:
+              assert= ([] 1)
+                .map
+                  [] $ &{} :a 1
+                  , :a
+
         |test-id $ quote
           fn ()
             assert= 9 $ count $ generate-id! 9
@@ -227,20 +233,29 @@
           defrecord %Num :inc :show
         |Num $ quote
           def Num $ %{} %Num
-            :inc $ fn (x) $ [] Num (&+ x 1)
+            :inc $ fn (x) $ :: Num (&+ x 1)
             :show $ fn (x) $ str x
 
-        |test-invoke $ quote
+        |test-method $ quote
           fn ()
-            log-title "|Testing invoke"
+            log-title "|Testing method"
 
             let
-                a $ [] Num 0
+                a $ :: Num 0
               assert=
-                [] Num 2
-                -> a (invoke :inc) (invoke :inc)
+                :: Num 2
+                -> a .inc .inc
               assert= |1
-                -> a (invoke :inc) (invoke :show)
+                -> a .inc .show
+
+        |test-tuple $ quote
+          fn ()
+            log-title "|Testing tuple"
+
+            assert= :tuple (type-of (:: :a :b))
+            assert= :a (nth (:: :a :b) 0)
+            assert= :b (nth (:: :a :b) 1)
+            assert= 2 (count (:: :a :b))
 
         |reload! $ quote
           defn reload! () nil
@@ -276,8 +291,10 @@
             test-fn-eq
 
             test-refs
-            
-            test-invoke
+
+            test-method
+
+            test-tuple
 
             inside-eval:
               test-gynienic/main!

@@ -74,6 +74,13 @@
             assert= true (integer? 1)
             assert= false (integer? 1.1)
 
+        |test-methods $ quote
+          fn ()
+            log-title "|Testing number methods"
+
+            assert= 1 $ .floor 1.1
+            assert= 16 $ .pow 2 4
+
         |main! $ quote
           defn main! ()
             log-title "|Testing numbers"
@@ -88,6 +95,8 @@
             test-hex
 
             test-integer
+
+            test-methods
 
             do true
 

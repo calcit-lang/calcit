@@ -7,7 +7,7 @@ use crate::runner;
 use std::collections::HashSet;
 
 /// returns the resolved symbol,
-/// if code related is not preprocessed, do it internal
+/// if code related is not preprocessed, do it internally
 pub fn preprocess_ns_def(
   ns: &str,
   def: &str,

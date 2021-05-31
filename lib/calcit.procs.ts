@@ -19,6 +19,7 @@ import {
   CrDataRecord,
   getStringName,
   findInFields,
+  CrDataTuple,
 } from "./calcit-data";
 
 import { fieldsEqual } from "./record-procs";
@@ -50,6 +51,9 @@ export let type_of = (x: any): CrDataKeyword => {
   }
   if (x instanceof CrDataRef) {
     return kwd("ref");
+  }
+  if (x instanceof CrDataTuple) {
+    return kwd("tuple");
   }
   if (x instanceof CrDataSymbol) {
     return kwd("symbol");
@@ -90,6 +94,9 @@ export let count = (x: CrDataValue): number => {
   }
   if (x instanceof CrDataList) {
     return x.len();
+  }
+  if (x instanceof CrDataTuple) {
+    return 2;
   }
   if (x instanceof CrDataMap) {
     return x.len();
@@ -345,7 +352,13 @@ export let _AND__EQ_ = (x: CrDataValue, y: CrDataValue): boolean => {
   }
   if (x instanceof CrDataRef) {
     if (y instanceof CrDataRef) {
-      return x === y;
+      return x.path === y.path;
+    }
+    return false;
+  }
+  if (x instanceof CrDataTuple) {
+    if (y instanceof CrDataTuple) {
+      return _AND__EQ_(x.fst, y.fst) && _AND__EQ_(x.snd, y.snd);
     }
     return false;
   }
@@ -489,6 +502,9 @@ export let nth = function (xs: CrDataValue, k: CrDataValue) {
     return xs[k];
   }
   if (xs instanceof CrDataList) {
+    return xs.get(k);
+  }
+  if (xs instanceof CrDataTuple) {
     return xs.get(k);
   }
   if (xs instanceof CrDataRecord) {
@@ -1722,11 +1738,90 @@ export let _AND_js_object = (...xs: CrDataValue[]): Record<string, CrDataValue> 
 };
 
 /** notice, Nim version of format-time takes format */
-export let format_time = (timeSecNumber: number, format?: string) => {
+export let format_time = (timeSecNumber: number, format?: string): string => {
   if (format != null) {
     console.error("format of calcit-js not implemented");
   }
   return new Date(timeSecNumber * 1000).toISOString();
+};
+
+export let _COL__COL_ = (a: CrDataValue, b: CrDataValue): CrDataTuple => {
+  return new CrDataTuple(a, b);
+};
+
+// mutable place for core to register
+let calcit_builtin_classes = {
+  number: null as CrDataRecord,
+  string: null as CrDataRecord,
+  set: null as CrDataRecord,
+  list: null as CrDataRecord,
+  map: null as CrDataRecord,
+  record: null as CrDataRecord,
+};
+
+// need to register code from outside
+export let register_calcit_builtin_classes = (options: typeof calcit_builtin_classes) => {
+  Object.assign(calcit_builtin_classes, options);
+};
+
+export let invoke_method =
+  (p: string) =>
+  (obj: CrDataValue, ...args: CrDataValue[]) => {
+    let klass: CrDataRecord;
+    let rawValue = obj;
+    if (obj instanceof CrDataTuple) {
+      if (obj.fst instanceof CrDataRecord) {
+        klass = obj.fst;
+        rawValue = obj.snd;
+      } else {
+        throw new Error("Method invoking expected a record as class");
+      }
+    } else if (typeof obj === "number") {
+      klass = calcit_builtin_classes.number;
+    } else if (typeof obj === "string") {
+      klass = calcit_builtin_classes.string;
+    } else if (obj instanceof CrDataSet) {
+      klass = calcit_builtin_classes.set;
+    } else if (obj instanceof CrDataList) {
+      klass = calcit_builtin_classes.list;
+    } else if (obj instanceof CrDataRecord) {
+      klass = calcit_builtin_classes.record;
+    } else if (obj instanceof CrDataMap) {
+      klass = calcit_builtin_classes.map;
+    } else {
+      return (obj as any)[p](...args); // trying to call JavaScript method
+    }
+    if (klass == null) {
+      throw new Error("Cannot find class for this object for invoking");
+    }
+    let method = klass.get(p);
+    if (typeof method === "function") {
+      return method(rawValue, ...args);
+    } else {
+      throw new Error("Method for invoking is not a function");
+    }
+  };
+
+export let _AND_map_to_list = (m: CrDataValue): CrDataList => {
+  if (m instanceof CrDataMap) {
+    let ys = [];
+    for (let pair of m.pairs()) {
+      ys.push(new CrDataList(pair));
+    }
+    return new CrDataList(ys);
+  } else {
+    throw new Error("&map-to-list expected a Map");
+  }
+};
+
+export let _AND_compare = (a: CrDataValue, b: CrDataValue): number => {
+  if (a < b) {
+    return -1;
+  } else if (a > b) {
+    return 1;
+  } else {
+    return 0;
+  }
 };
 
 // special procs have to be defined manually

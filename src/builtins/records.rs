@@ -134,6 +134,9 @@ pub fn relevant_record_ques(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 
 pub fn find_in_fields(xs: &[String], y: &str) -> Option<usize> {
+  if xs.is_empty() {
+    return None;
+  }
   let mut lower = 0;
   let mut upper = xs.len() - 1;
 

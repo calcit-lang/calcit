@@ -17,7 +17,7 @@
         |call-3 $ quote
           defn call-3 (a b c) (echo "\"a is:" a) (echo "\"b is:" b) (echo "\"c is:" c)
         |main! $ quote
-          defn main! () (demos) (fib 10)
+          defn main! () (demos) (; fib 10) (try-method)
         |demos $ quote
           defn demos () (echo "\"demo")
             echo $ &+ 2 2
@@ -57,6 +57,9 @@
             test-args
         |call-many $ quote
           defn call-many (x0 & xs) (echo "\"many...") (echo "\"x0" x0) (echo "\"xs" xs)
+        |try-method $ quote
+          defn try-method () $ println
+            .count $ range 11
         |rec-sum $ quote
           defn rec-sum (acc xs)
             if (empty? xs) acc $ recur
@@ -77,7 +80,7 @@
         |f1 $ quote
           defn f1 () $ echo "\"calling f1"
         |reload! $ quote
-          defn reload! () (println "\"reloaded 2") (fib 40)
+          defn reload! () (println "\"reloaded 2") (; fib 40) (try-method)
         |add-more $ quote
           defmacro add-more (acc x times)
             if (&< times 1) acc $ recur

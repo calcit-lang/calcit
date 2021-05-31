@@ -41,6 +41,7 @@ pub fn evaluate_expr(
     Calcit::Str(_) => Ok(expr.clone()),
     Calcit::Thunk(code) => evaluate_expr(code, scope, file_ns, program_code),
     Calcit::Ref(_) => Ok(expr.clone()),
+    Calcit::Tuple(..) => Ok(expr.clone()),
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
     Calcit::List(xs) => match xs.get(0) {
       None => Err(format!("cannot evaluate empty expr: {}", expr)),
@@ -57,8 +58,12 @@ pub fn evaluate_expr(
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
             push_call_stack(file_ns, &p, StackKind::Proc, Calcit::Nil, &values);
             added_stack = true;
-            // println!("proc: {}", expr);
-            builtins::handle_proc(&p, &values)
+            if p.starts_with('.') {
+              builtins::meta::invoke_method(&p.strip_prefix('.').unwrap(), &values, program_code)
+            } else {
+              // println!("proc: {}", expr);
+              builtins::handle_proc(&p, &values)
+            }
           }
           Calcit::Syntax(s, def_ns) => {
             push_call_stack(file_ns, &s, StackKind::Syntax, expr.to_owned(), &rest_nodes);
@@ -99,6 +104,25 @@ pub fn evaluate_expr(
                 }
               }
             })
+          }
+          Calcit::Keyword(k) => {
+            if rest_nodes.len() == 1 {
+              let v = evaluate_expr(&rest_nodes[0], scope, file_ns, program_code)?;
+
+              if let Calcit::Map(m) = v {
+                match m.get(&Calcit::Keyword(k.to_owned())) {
+                  Some(value) => Ok(value.to_owned()),
+                  None => Ok(Calcit::Nil),
+                }
+              } else {
+                Err(format!("expected a hashmap, got {}", v))
+              }
+            } else {
+              Err(format!(
+                "keyword only takes 1 argument, got: {}",
+                CrListWrap(rest_nodes)
+              ))
+            }
           }
           Calcit::Symbol(s, ns, resolved) => {
             Err(format!("cannot evaluate symbol directly: {}/{} {:?}", ns, s, resolved))

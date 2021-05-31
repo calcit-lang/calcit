@@ -335,10 +335,7 @@ pub fn call_try(
             let values = im::vector![err_data];
             runner::run_fn(&values, &def_scope, &args, &body, &def_ns, program_code)
           }
-          Calcit::Proc(proc) => {
-            println!("TRY");
-            builtins::handle_proc(&proc, &im::vector![err_data])
-          }
+          Calcit::Proc(proc) => builtins::handle_proc(&proc, &im::vector![err_data]),
           a => Err(format!("try expected a function handler, got: {}", a)),
         }
       }

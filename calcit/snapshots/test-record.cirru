@@ -92,9 +92,18 @@
         |Cat $ quote
           defrecord Cat :name :color
 
+        |test-methods $ quote
+          fn ()
+            log-title "|Testing record methods"
+
+            assert= |Cat
+              .get-name Cat
+
         |main! $ quote
           defn main! ()
             test-record
+
+            test-methods
 
             do true
 

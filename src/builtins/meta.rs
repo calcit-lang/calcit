@@ -1,10 +1,16 @@
+use crate::builtins;
+use crate::builtins::records::find_in_fields;
 use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
 use crate::primes;
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::{Calcit, CalcitItems, CrListWrap};
+use crate::program;
+use crate::runner;
 use crate::util::number::f64_to_usize;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cmp::Ordering;
+use std::sync::atomic;
+use std::sync::atomic::AtomicUsize;
 
 static SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
@@ -21,6 +27,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, String> {
       Calcit::Str(..) => Ok(Calcit::Keyword(String::from("string"))),
       Calcit::Thunk(..) => Ok(Calcit::Keyword(String::from("thunk"))), // internal
       Calcit::Ref(..) => Ok(Calcit::Keyword(String::from("ref"))),
+      Calcit::Tuple(..) => Ok(Calcit::Keyword(String::from("tuple"))),
       Calcit::Recur(..) => Ok(Calcit::Keyword(String::from("recur"))),
       Calcit::List(..) => Ok(Calcit::Keyword(String::from("list"))),
       Calcit::Set(..) => Ok(Calcit::Keyword(String::from("set"))),
@@ -47,7 +54,7 @@ pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 
 pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
-  let idx = SYMBOL_INDEX.fetch_add(1, Ordering::SeqCst);
+  let idx = SYMBOL_INDEX.fetch_add(1, atomic::Ordering::SeqCst);
   let n = idx + 1; // use 1 as first value since previous implementation did this
 
   let s = match xs.get(0) {
@@ -69,22 +76,22 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 
 pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, String> {
-  let _ = SYMBOL_INDEX.swap(0, Ordering::SeqCst);
+  let _ = SYMBOL_INDEX.swap(0, atomic::Ordering::SeqCst);
   Ok(Calcit::Nil)
 }
 
 pub fn force_reset_gensym_index() -> Result<(), String> {
-  let _ = SYMBOL_INDEX.swap(0, Ordering::SeqCst);
+  let _ = SYMBOL_INDEX.swap(0, atomic::Ordering::SeqCst);
   Ok(())
 }
 
 pub fn reset_js_gensym_index() {
-  let _ = JS_SYMBOL_INDEX.swap(0, Ordering::SeqCst);
+  let _ = JS_SYMBOL_INDEX.swap(0, atomic::Ordering::SeqCst);
 }
 
 // for emitting js
 pub fn js_gensym(name: &str) -> String {
-  let idx = JS_SYMBOL_INDEX.fetch_add(1, Ordering::SeqCst);
+  let idx = JS_SYMBOL_INDEX.fetch_add(1, atomic::Ordering::SeqCst);
   let n = idx + 1; // use 1 as first value since previous implementation did this
 
   let mut chunk = String::from(name);
@@ -181,5 +188,107 @@ pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Symbol(s, ..)) => Ok(Calcit::Keyword(s.clone())),
     Some(a) => Err(format!("turn-keyword cannot turn this to keyword: {}", a)),
     None => Err(String::from("turn-keyword expected 1 argument, got nothing")),
+  }
+}
+
+pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, String> {
+  if xs.len() != 2 {
+    Err(format!("tuple expected 2 arguments, got {}", CrListWrap(xs.to_owned())))
+  } else {
+    Ok(Calcit::Tuple(Box::new(xs[0].to_owned()), Box::new(xs[1].to_owned())))
+  }
+}
+
+pub fn invoke_method(
+  name: &str,
+  invoke_args: &CalcitItems,
+  program_code: &program::ProgramCodeData,
+) -> Result<Calcit, String> {
+  let (class, raw_value) = match invoke_args.get(0) {
+    Some(Calcit::Tuple(a, b)) => ((**a).to_owned(), (**b).to_owned()),
+    Some(Calcit::Number(..)) => {
+      // classed should already be preprocessed
+      let code = gen_sym("&core-number-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    Some(Calcit::Str(..)) => {
+      let code = gen_sym("&core-string-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    Some(Calcit::Set(..)) => {
+      let code = gen_sym("&core-set-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    Some(Calcit::List(..)) => {
+      let code = gen_sym("&core-list-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    Some(Calcit::Map(..)) => {
+      let code = gen_sym("&core-map-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    Some(Calcit::Record(..)) => {
+      let code = gen_sym("&core-record-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    x => return Err(format!("cannot decide a class from: {:?}", x)),
+  };
+  match &class {
+    Calcit::Record(_, fields, values) => {
+      match find_in_fields(&fields, name) {
+        Some(idx) => {
+          let mut method_args: im::Vector<Calcit> = im::vector![];
+          method_args.push_back(raw_value.to_owned());
+          let mut at_first = true;
+          for x in invoke_args {
+            if at_first {
+              at_first = false
+            } else {
+              method_args.push_back(x.to_owned())
+            }
+          }
+
+          match &values[idx] {
+            // dirty copy...
+            Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
+              runner::run_fn(&method_args, def_scope, args, body, def_ns, program_code)
+            }
+            Calcit::Proc(proc) => builtins::handle_proc(&proc, &method_args),
+            y => Err(format!("expected a function to invoke, got: {}", y)),
+          }
+        }
+        None => Err(format!("missing field `{}` in {:?}", name, fields)),
+      }
+    }
+    x => Err(format!("method invoking expected a record as class, got: {}", x)),
+  }
+}
+
+fn gen_sym(sym: &str) -> Calcit {
+  Calcit::Symbol(
+    String::from("&core-map-class"),
+    String::from(primes::CORE_NS),
+    Some(primes::SymbolResolved::ResolvedDef(
+      String::from(primes::CORE_NS),
+      String::from(sym),
+      None,
+    )),
+  )
+}
+
+pub fn native_compare(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(a), Some(b)) => match a.cmp(b) {
+      Ordering::Less => Ok(Calcit::Number(-1.0)),
+      Ordering::Greater => Ok(Calcit::Number(1.0)),
+      Ordering::Equal => Ok(Calcit::Number(0.0)),
+    },
+    (a, b) => Err(format!("&compare expected 2 values, got {:?} {:?}", a, b)),
   }
 }

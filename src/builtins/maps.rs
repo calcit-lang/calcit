@@ -199,6 +199,7 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("to-pairs expected 1 argument, got nothing")),
   }
 }
+
 pub fn call_merge_non_nil(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
@@ -212,5 +213,21 @@ pub fn call_merge_non_nil(xs: &CalcitItems) -> Result<Calcit, String> {
     }
     (Some(a), Some(b)) => Err(format!("expected 2 maps, got: {} {}", a, b)),
     (_, _) => Err(format!("expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+/// out to list, but with a arbitrary order
+pub fn to_list(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Map(m)) => {
+      let mut ys: im::Vector<Calcit> = im::vector![];
+      for (k, v) in m {
+        let zs: im::Vector<Calcit> = im::vector![k.to_owned(), v.to_owned()];
+        ys.push_back(Calcit::List(zs));
+      }
+      Ok(Calcit::List(ys))
+    }
+    Some(a) => Err(format!("&map-to-list expected a map, got: {}", a)),
+    None => Err(String::from("&map-to-list expected a map, got nothing")),
   }
 }

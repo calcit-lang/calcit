@@ -173,7 +173,29 @@
               unselect-keys ({} (:a 1) (:b 2) (:c 3)) ([] :c :d)
               {} (:a 1) (:b 2)
 
+        |test-methods $ quote
+          fn ()
+            log-title "|Testing map methods"
+
+            assert= 2
+              .count $ {} (:a 1) (:b 2)
+            assert=
+              {} (:a 11)
+              .map-kv ({} (:a 1)) $ fn (k v)
+                [] k (+ v 10)
+             
+            assert=
+              [] ([] :a 1)
+              .to-list $ {} (:a 1)
+            
+            assert= 2
+              .count $ .to-list $ {}
+                :a 1
+                :b 2
+               
+
         |main! $ quote
+
           defn main! ()
 
             log-title "|Testing maps"
@@ -192,6 +214,8 @@
             test-get
 
             test-select
+
+            test-methods
 
             do true
 
