@@ -1141,8 +1141,12 @@
         
         |&list-sort-by $ quote
           defn &list-sort-by (xs f)
-            sort xs $ fn (a b)
-              &compare (f a) (f b)
+            if (keyword? f)
+              sort xs $ fn (a b)
+                &compare (&get a f) (&get b f)
+      
+              sort xs $ fn (a b)
+                &compare (f a) (f b)
         
         |negate $ quote
           defn negate (x)

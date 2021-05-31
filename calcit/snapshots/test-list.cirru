@@ -313,6 +313,18 @@
             assert=
               [] 1 2 3 4
               .sort-by ([] 1 2 3 4) inc
+             
+            assert=
+              []
+                {} (:v :a) (:n 1)
+                {} (:v :c) (:n 2)
+                {} (:v :b) (:n 3)
+              .sort-by
+                []
+                  {} (:v :a) (:n 1)
+                  {} (:v :b) (:n 3)
+                  {} (:v :c) (:n 2)
+                , :n
 
         |main! $ quote
           defn main! ()
