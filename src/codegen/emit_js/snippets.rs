@@ -1,5 +1,7 @@
 use crate::builtins::meta::js_gensym;
 
+pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub fn tmpl_try(err_var: String, body: String, handler: String) -> String {
   format!(
     "try {{
@@ -116,16 +118,24 @@ export var {} = () => {{/* Macro */}}
 }
 
 pub fn tmpl_classes_registering() -> String {
-  String::from(
+  format!(
     "
-$calcit_procs.register_calcit_builtin_classes({
+$calcit_procs.register_calcit_builtin_classes({{
   list: _AND_core_list_class,
   map: _AND_core_map_class,
   number: _AND_core_number_class,
   record: _AND_core_record_class,
   set: _AND_core_set_class,
   string: _AND_core_string_class,
-});
+}});
+
+let runtimeVersion = $calcit_procs.calcit_version;
+let cli_version = '{}';
+
+if (runtimeVersion !== cli_version) {{
+  console.warn(`[Warning] versions mismatch, CLI using: ${{cli_version}}, runtime using: ${{runtimeVersion}}`)
+}}
 ",
+    CALCIT_VERSION
   )
 }
