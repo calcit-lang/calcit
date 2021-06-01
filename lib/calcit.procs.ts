@@ -28,6 +28,8 @@ export * from "./calcit-data";
 export * from "./record-procs";
 export * from "./custom-formatter";
 
+export const calcit_version = "0.3.25";
+
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
 export let type_of = (x: any): CrDataKeyword => {
@@ -921,12 +923,12 @@ export let rand = (n: number, m: number): number => {
 
 export let rand_int = (n: number, m: number): number => {
   if (m != null) {
-    return Math.round(n + Math.random() * (m - n));
+    return Math.floor(n + Math.random() * (m - n));
   }
   if (n != null) {
-    return Math.round(Math.random() * n);
+    return Math.floor(Math.random() * n);
   }
-  return Math.round(Math.random() * 100);
+  return Math.floor(Math.random() * 100);
 };
 
 export let floor = (n: number): number => {
