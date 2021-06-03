@@ -169,6 +169,9 @@
                 [] 3 4 5
                 [] 6 7 8
                 [] 9
+            assert=
+              section-by ([]) 2
+              []
 
         |test-comma $ quote
           assert=
@@ -313,7 +316,7 @@
             assert=
               [] 1 2 3 4
               .sort-by ([] 1 2 3 4) inc
-             
+
             assert=
               []
                 {} (:v :a) (:n 1)
