@@ -635,14 +635,17 @@
 
         |section-by $ quote
           defn section-by (xs0 n)
-            apply-args
-              ([]) xs0
-              fn (acc xs)
-                if (&<= (count xs) n)
-                  append acc xs
-                  recur
-                    append acc (take xs n)
-                    drop xs n
+            if (>= n 1)
+              apply-args
+                ([]) xs0
+                fn (acc xs)
+                  if (&<= (count xs) n)
+                    if (empty? xs) acc
+                      append acc xs
+                    recur
+                      append acc (take xs n)
+                      drop xs n
+              raise "|expected positive number"
 
         |[][] $ quote
           defmacro [][] (& xs)
@@ -1138,16 +1141,16 @@
                 f $ &get proto name
               assert "|expected function" (fn? f)
               f (nth pair 1) & params
-        
+
         |&list-sort-by $ quote
           defn &list-sort-by (xs f)
             if (keyword? f)
               sort xs $ fn (a b)
                 &compare (&get a f) (&get b f)
-      
+
               sort xs $ fn (a b)
                 &compare (f a) (f b)
-        
+
         |negate $ quote
           defn negate (x)
             &- 0 x
