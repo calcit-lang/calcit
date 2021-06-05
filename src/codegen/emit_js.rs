@@ -263,20 +263,29 @@ fn gen_call_code(
   match &head {
     Calcit::Symbol(s, ..) | Calcit::Proc(s) | Calcit::Syntax(s, ..) => {
       match s.as_str() {
-        "if" => match (body.get(0), body.get(1)) {
-          (Some(condition), Some(true_branch)) => {
-            call_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), &im::vector![]);
-            let false_code = match body.get(2) {
-              Some(fal) => to_js_code(fal, ns, local_defs, file_imports)?,
-              None => String::from("null"),
-            };
-            let cond_code = to_js_code(condition, ns, local_defs, file_imports)?;
-            let true_code = to_js_code(true_branch, ns, local_defs, file_imports)?;
-            call_stack::pop_call_stack();
-            Ok(format!("( {} ? {} : {} )", cond_code, true_code, false_code))
+        "if" => {
+          if let Some(Calcit::List(ys)) = body.get(2) {
+            if let Some(Calcit::Syntax(syn, ..)) = ys.get(0) {
+              if syn == "if" {
+                return gen_if_code(&body, local_defs, &xs, ns, file_imports);
+              }
+            }
           }
-          (_, _) => Err(format!("if expected 2~3 nodes, got: {:?}", body)),
-        },
+          return match (body.get(0), body.get(1)) {
+            (Some(condition), Some(true_branch)) => {
+              call_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), &im::vector![]);
+              let false_code = match body.get(2) {
+                Some(fal) => to_js_code(fal, ns, local_defs, file_imports)?,
+                None => String::from("null"),
+              };
+              let cond_code = to_js_code(condition, ns, local_defs, file_imports)?;
+              let true_code = to_js_code(true_branch, ns, local_defs, file_imports)?;
+              call_stack::pop_call_stack();
+              Ok(format!("( {} ? {} : {} )", cond_code, true_code, false_code))
+            }
+            (_, _) => Err(format!("if expected 2~3 nodes, got: {:?}", body)),
+          };
+        }
         "&let" => gen_let_code(&body, local_defs, &xs, ns, file_imports),
         ";" => Ok(format!("(/* {} */ null)", Calcit::List(body))),
 
@@ -674,6 +683,54 @@ fn gen_let_code(
     }
   }
   return Ok(make_fn_wrapper(&format!("{}{}", defs_code, body_part)));
+}
+
+fn gen_if_code(
+  body: &CalcitItems,
+  local_defs: &HashSet<String>,
+  _xs: &Calcit,
+  ns: &str,
+  file_imports: &RefCell<ImportsDict>,
+) -> Result<String, String> {
+  if body.len() < 2 || body.len() > 3 {
+    Err(format!("if expected 2~3 nodes, got: {:?}", body))
+  } else {
+    let mut chunk: String = String::from("");
+    let mut cond_node = body[0].to_owned();
+    let mut true_node = body[1].to_owned();
+    let mut some_false_node = body.get(2);
+
+    loop {
+      let cond_code = to_js_code(&cond_node, ns, local_defs, file_imports)?;
+      let true_code = to_js_code(&true_node, ns, local_defs, file_imports)?;
+      chunk.push_str(&format!("\nif ({}) {{ return {}; }}", cond_code, true_code));
+
+      if let Some(false_node) = some_false_node {
+        if let Calcit::List(ys) = false_node {
+          if let Some(Calcit::Syntax(syn, _ns)) = ys.get(0) {
+            if syn == "if" {
+              if ys.len() < 3 || ys.len() > 4 {
+                return Err(format!("if expected 2~3 nodes, got: {:?}", ys));
+              }
+              cond_node = ys[1].to_owned();
+              true_node = ys[2].to_owned();
+              some_false_node = ys.get(3);
+              continue;
+            }
+          }
+        }
+
+        let false_code = to_js_code(&false_node, ns, local_defs, file_imports)?;
+        chunk.push_str(&format!("\nreturn {}", false_code));
+        break;
+      } else {
+        chunk.push_str("\nreturn null;");
+        break;
+      }
+    }
+
+    Ok(make_fn_wrapper(&chunk))
+  }
 }
 
 fn gen_args_code(
