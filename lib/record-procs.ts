@@ -15,6 +15,7 @@ import {
   cloneSet,
   getStringName,
   CrDataRecord,
+  findInFields,
 } from "./calcit-data";
 
 export let new_record = (name: CrDataValue, ...fields: Array<CrDataValue>): CrDataValue => {
@@ -39,7 +40,7 @@ export let fieldsEqual = (xs: Array<string>, ys: Array<string>): boolean => {
   if (xs.length !== ys.length) {
     return false;
   }
-  for (let idx in xs) {
+  for (let idx = 0; idx < xs.length; idx++) {
     if (xs[idx] !== ys[idx]) {
       return false;
     }
@@ -52,18 +53,31 @@ export let _AND__PCT__MAP_ = (proto: CrDataValue, ...xs: Array<CrDataValue>): Cr
     if (xs.length % 2 !== 0) {
       throw new Error("Expected even number of key/value");
     }
-    let pairs: Array<[string, CrDataValue]> = [];
-    for (let i = 0; i < xs.length >> 1; i++) {
-      let idx = i << 1;
-      pairs.push([getStringName(xs[idx]), xs[idx + 1]]);
+    if (xs.length !== proto.fields.length * 2) {
+      throw new Error("fields size does not match");
     }
-    // mutable sort for perf
-    pairs.sort(fieldPairOrder);
-    let fields = pairs.map((ys) => ys[0]);
-    if (!fieldsEqual(fields, proto.fields)) {
-      throw new Error("Fields does not match prototype");
+
+    let values = new Array(proto.fields.length);
+
+    for (let i = 0; i < proto.fields.length; i++) {
+      let idx = -1;
+      let k = proto.fields[i];
+      for (let j = 0; j < proto.fields.length; j++) {
+        if (k === getStringName(xs[j * 2])) {
+          idx = j;
+          break;
+        }
+      }
+
+      if (idx < 0) {
+        throw new Error("invalid field name for this record");
+      }
+      if (values[i] != null) {
+        throw new Error("record field already has value, probably duplicated key");
+      }
+      values[i] = xs[idx * 2 + 1];
     }
-    let values = pairs.map((ys) => ys[1]);
+
     return new CrDataRecord(proto.name, proto.fields, values);
   } else {
     throw new Error("Expected prototype to be a record");
