@@ -916,8 +916,8 @@
                     assoc acc k2 v2
 
         |either $ quote
-          defmacro either (x y)
-            quote-replace $ if (nil? ~x) ~y ~x
+          defmacro either (& body)
+            quasiquote $ or ~@body
 
         |def $ quote
           defmacro def (name x) x
@@ -938,10 +938,15 @@
           defmacro or (item & xs)
             if (empty? xs) item
               quote-replace
-                if ~item ~item
+                if (nil? ~item)
                   or
                     ~ $ first xs
                     ~@ $ rest xs
+                  if (= false ~item)
+                    or
+                      ~ $ first xs
+                      ~@ $ rest xs
+                    ~ item
 
         |with-log $ quote
           defmacro with-log (x)
