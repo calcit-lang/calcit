@@ -440,6 +440,7 @@ export let getStringName = (x: CrDataValue): string => {
   throw new Error("Cannot get string as name");
 };
 
+/** returns -1 when not found */
 export function findInFields(xs: Array<string>, y: string): number {
   let lower = 0;
   let upper = xs.length - 1;
