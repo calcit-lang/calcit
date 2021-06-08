@@ -104,8 +104,8 @@ export let load_console_formatter_BANG_ = () => {
           }
           if (obj instanceof CrDataMap) {
             let ret: any[] = ["div", { style: "color: hsl(280, 80%, 60%)" }];
-            obj.turnSingleMap();
-            for (let [k, v] of toPairs(obj.chain.value)) {
+            obj.turnMap();
+            for (let [k, v] of toPairs(obj.value)) {
               ret.push([
                 "div",
                 { style: "margin-left: 8px; display: flex;" },

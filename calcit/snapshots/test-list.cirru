@@ -41,6 +41,12 @@
               assert "|concat lists" $ =
                 concat ([] 1 2) ([] 4 5) ([] 7 8)
                 [] 1 2 4 5 7 8
+              
+              assert=
+                [] 3 4 5 2 3
+                concat
+                  slice ([] 1 2 3 4 5 6) 2 5
+                  slice ([] 1 2 3 4 5 6) 1 3
               assert=
                 assoc (range 10) (, 4 55)
                 [] 0 1 2 3 55 5 6 7 8 9

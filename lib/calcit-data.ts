@@ -28,6 +28,15 @@ import {
   mapGetDefault,
 } from "@calcit/ternary-tree";
 
+/** need to compare by Calcit */
+let DATA_EQUAL = (x: CrDataValue, y: CrDataValue): boolean => {
+  return x == y;
+};
+
+export let overwriteDataComparator = (f: typeof DATA_EQUAL): void => {
+  DATA_EQUAL = f;
+};
+
 export class CrDataKeyword {
   value: string;
   cachedHash: Hash;
@@ -271,9 +280,22 @@ export class CrDataList {
     if (!(ys instanceof CrDataList)) {
       throw new Error("Expected list");
     }
-    this.turnListMode();
-    ys.turnListMode();
-    return new CrDataList(ternaryTree.concat(this.value, ys.value));
+    if (this.arrayMode && ys.arrayMode) {
+      let size = this.arrayEnd - this.arrayStart;
+      let otherSize = ys.arrayEnd - ys.arrayStart;
+      let combined = new Array(size + otherSize);
+      for (let i = 0; i < size; i++) {
+        combined[i] = this.get(i);
+      }
+      for (let i = 0; i < otherSize; i++) {
+        combined[i + size] = ys.get(i);
+      }
+      return new CrDataList(combined);
+    } else {
+      this.turnListMode();
+      ys.turnListMode();
+      return new CrDataList(ternaryTree.concat(this.value, ys.value));
+    }
   }
   map(f: (v: CrDataValue) => CrDataValue): CrDataList {
     if (this.arrayMode) {
@@ -295,76 +317,85 @@ export class CrDataList {
   }
 }
 
-type MapChain = {
-  value: TernaryTreeMap<CrDataValue, CrDataValue>;
-  next: MapChain | null;
-};
-
-// just create a reference that equals to no other value
-let fakeUniqueSymbol = [] as any;
-
 export class CrDataMap {
   cachedHash: Hash;
-  chain: MapChain;
-  depth: number;
-  /** make sure it's primative */
+  /** in arrayMode, only flatten values, not tree structure */
+  arrayMode: boolean;
+  arrayValue: CrDataValue[];
+  value: TernaryTreeMap<CrDataValue, CrDataValue>;
   skipValue: CrDataValue;
-  constructor(value: TernaryTreeMap<CrDataValue, CrDataValue>) {
-    this.chain = { value: value, next: null };
-    this.depth = 1;
-    this.skipValue = fakeUniqueSymbol;
+  constructor(value: CrDataValue[] | TernaryTreeMap<CrDataValue, CrDataValue>) {
+    if (Array.isArray(value)) {
+      this.arrayMode = true;
+      this.arrayValue = value;
+    } else {
+      this.arrayMode = false;
+      this.value = value;
+    }
   }
-  turnSingleMap() {
-    if (this.depth === 1) {
-      return;
-    }
-    // squash down to a single level of map
-    let ret = this.chain.value;
-    let cursor = this.chain.next;
-    while (cursor != null) {
-      if (!isMapEmpty(cursor.value)) {
-        ret = ternaryTree.mergeSkip(cursor.value, ret, this.skipValue);
+  turnMap() {
+    if (this.arrayMode) {
+      var dict: Array<[CrDataValue, CrDataValue]> = [];
+      let halfLength = this.arrayValue.length >> 1;
+      for (let idx = 0; idx < halfLength; idx++) {
+        dict.push([this.arrayValue[idx << 1], this.arrayValue[(idx << 1) + 1]]);
       }
-      cursor = cursor.next;
+      this.value = initTernaryTreeMap(dict);
+      this.arrayMode = false;
+      this.arrayValue = null;
     }
-    this.chain = {
-      value: ret,
-      next: null,
-    };
-    this.depth = 1;
   }
   len() {
-    this.turnSingleMap();
-    return mapLen(this.chain.value);
+    if (this.arrayMode) {
+      return this.arrayValue.length >> 1;
+    } else {
+      return mapLen(this.value);
+    }
   }
   get(k: CrDataValue) {
-    let cursor = this.chain;
-    while (cursor != null) {
-      let v = mapGetDefault(cursor.value, k, fakeUniqueSymbol);
-      if (v === fakeUniqueSymbol) {
-        cursor = cursor.next;
-        continue; // cannot found a value
-      } else if (v !== this.skipValue) {
-        return v;
-      } else {
-        cursor = cursor.next;
+    if (this.arrayMode && this.arrayValue.length <= 16) {
+      let size = this.arrayValue.length >> 1;
+      for (let i = 0; i < size; i++) {
+        let pos = i << 1;
+        if (DATA_EQUAL(this.arrayValue[pos], k)) {
+          return this.arrayValue[pos + 1];
+        }
       }
+      return null;
+    } else {
+      this.turnMap();
+      return mapGetDefault(this.value, k, null);
     }
-    return null;
   }
   assoc(k: CrDataValue, v: CrDataValue) {
-    let cursor = this.chain;
-    // mutable way of creating another map value
-    let result = new CrDataMap(null);
-    result.chain = {
-      value: assocMap(cursor.value, k, v),
-      next: cursor.next,
-    };
-    return result;
+    if (this.arrayMode && this.arrayValue.length <= 16) {
+      let ret = this.arrayValue.slice(0);
+      for (let i = 0; i < ret.length; i += 2) {
+        if (DATA_EQUAL(k, ret[i])) {
+          ret[i + 1] = v;
+          return new CrDataMap(ret);
+        }
+      }
+      ret.push(k, v);
+      return new CrDataMap(ret);
+    } else {
+      this.turnMap();
+      return new CrDataMap(assocMap(this.value, k, v));
+    }
   }
   dissoc(k: CrDataValue) {
-    this.turnSingleMap();
-    return new CrDataMap(dissocMap(this.chain.value, k));
+    if (this.arrayMode && this.arrayValue.length <= 16) {
+      let ret: CrDataValue[] = [];
+      for (let i = 0; i < this.arrayValue.length; i += 2) {
+        if (!DATA_EQUAL(k, this.arrayValue[i])) {
+          ret.push(this.arrayValue[i], this.arrayValue[i + 1]);
+        }
+      }
+      return new CrDataMap(ret);
+    } else {
+      this.turnMap();
+      return new CrDataMap(dissocMap(this.value, k));
+    }
   }
   toString(shorter = false) {
     let itemsCode = "";
@@ -380,50 +411,88 @@ export class CrDataMap {
     return `({}${itemsCode})`;
   }
   isEmpty() {
-    let cursor = this.chain;
-    while (cursor != null) {
-      if (!isMapEmpty(cursor.value)) {
-        return false;
-      }
-      cursor = cursor.next;
+    if (this.arrayMode) {
+      return this.arrayValue.length == 0;
+    } else {
+      return isMapEmpty(this.value);
     }
-    return true;
   }
   pairs(): Array<[CrDataValue, CrDataValue]> {
-    this.turnSingleMap();
-    return toPairsArray(this.chain.value);
+    if (this.arrayMode) {
+      let ret: Array<[CrDataValue, CrDataValue]> = [];
+      let size = this.arrayValue.length >> 1;
+      for (let i = 0; i < size; i++) {
+        let pos = i << 1;
+        ret.push([this.arrayValue[pos], this.arrayValue[pos + 1]]);
+      }
+      return ret;
+    } else {
+      return toPairsArray(this.value);
+    }
   }
   contains(k: CrDataValue) {
-    let cursor = this.chain;
-    while (cursor != null) {
-      if (ternaryTree.contains(cursor.value, k)) {
-        return true;
+    if (this.arrayMode && this.arrayValue.length <= 16) {
+      // guessed number
+      let size = this.arrayValue.length >> 1;
+      for (let i = 0; i < size; i++) {
+        let pos = i << 1;
+        if (DATA_EQUAL(this.arrayValue[pos], k)) {
+          return true;
+        }
       }
-      cursor = cursor.next;
+      return false;
+    } else {
+      this.turnMap();
+      return ternaryTree.contains(this.value, k);
     }
-    return false;
   }
   merge(ys: CrDataMap) {
-    return this.mergeSkip(ys, fakeUniqueSymbol);
+    return this.mergeSkip(ys, null);
   }
   mergeSkip(ys: CrDataMap, v: CrDataValue) {
-    if (!(ys instanceof CrDataMap)) {
-      throw new Error("Expected map");
+    if (ys == null) {
+      return this;
     }
 
-    let result = new CrDataMap(null);
-    result.skipValue = v;
-    ys.turnSingleMap();
-    result.chain = {
-      value: ys.chain.value,
-      next: this.chain,
-    };
-    result.depth = this.depth + 1;
-    if (result.depth > 5) {
-      // 5 by experience, limit to suqash linked list to value
-      result.turnSingleMap();
+    if (!(ys instanceof CrDataMap)) {
+      console.error("value:", v);
+      throw new Error("Expected map to merge");
     }
-    return result;
+
+    if (this.arrayMode && ys.arrayMode && this.arrayValue.length + ys.arrayValue.length <= 24) {
+      // probably this length < 16, ys length < 8
+      let ret = this.arrayValue.slice(0);
+      outer: for (let i = 0; i < ys.arrayValue.length; i = i + 2) {
+        if (ys.arrayValue[i + 1] == v) {
+          continue;
+        }
+        for (let k = 0; k < ret.length; k = k + 2) {
+          if (DATA_EQUAL(ys.arrayValue[i], ret[k])) {
+            ret[k + 1] = ys.arrayValue[i + 1];
+            continue outer;
+          }
+        }
+        ret.push(ys.arrayValue[i], ys.arrayValue[i + 1]);
+      }
+      return new CrDataMap(ret);
+    }
+
+    this.turnMap();
+
+    if (ys.arrayMode) {
+      let ret = this.value;
+      let size = ys.arrayValue.length >> 1;
+      for (let i = 0; i < size; i++) {
+        let pos = i << 1;
+        if (ys.arrayValue[pos + 1] == v) {
+          continue;
+        }
+        ret = assocMap(ret, ys.arrayValue[pos], ys.arrayValue[pos + 1]);
+      }
+      return new CrDataMap(ret);
+    } else {
+      return new CrDataMap(ternaryTree.mergeSkip(this.value, ys.value, v));
+    }
   }
 }
 
