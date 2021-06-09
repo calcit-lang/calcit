@@ -1801,7 +1801,7 @@ export let invoke_method =
     }
   };
 
-export let _AND_map_to_list = (m: CrDataValue): CrDataList => {
+export let _AND_map_COL_to_list = (m: CrDataValue): CrDataList => {
   if (m instanceof CrDataMap) {
     let ys = [];
     for (let pair of m.pairs()) {
@@ -1809,7 +1809,7 @@ export let _AND_map_to_list = (m: CrDataValue): CrDataList => {
     }
     return new CrDataList(ys);
   } else {
-    throw new Error("&map-to-list expected a Map");
+    throw new Error("&map:to-list expected a Map");
   }
 };
 

@@ -1159,6 +1159,17 @@
         |negate $ quote
           defn negate (x)
             &- 0 x
+        
+        |&number:rand-shift $ quote
+          defn &number:rand-shift (x y)
+            &+
+              &- x y
+              rand $ &* 2 y
+
+        |&number:rand-between $ quote
+          defn &number:rand-between (x y)
+            &+ x
+              rand (&- y x)
 
         |&core-number-class $ quote
           defrecord! &core-number-class
@@ -1169,6 +1180,8 @@
             :pow pow
             :round round
             :sqrt sqrt
+            :rand-shift &number:rand-shift
+            :rand-between &number:rand-between
 
         |&core-string-class $ quote
           defrecord! &core-string-class
@@ -1218,13 +1231,14 @@
             :map-kv map-kv
             :merge merge
             :select-keys select-keys
-            :to-list &map-to-list
+            :to-list &map:to-list
             :to-pairs to-pairs
             :unselect-keys unselect-keys
             :vals vals
 
         |&core-record-class $ quote
           defrecord! &core-record-class
+            :get &get
             :get-name get-record-name
             :same-kind? relevant-record?
             :turn-map turn-map

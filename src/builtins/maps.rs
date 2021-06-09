@@ -227,7 +227,7 @@ pub fn to_list(xs: &CalcitItems) -> Result<Calcit, String> {
       }
       Ok(Calcit::List(ys))
     }
-    Some(a) => Err(format!("&map-to-list expected a map, got: {}", a)),
-    None => Err(String::from("&map-to-list expected a map, got nothing")),
+    Some(a) => Err(format!("&map:to-list expected a map, got: {}", a)),
+    None => Err(String::from("&map:to-list expected a map, got nothing")),
   }
 }
