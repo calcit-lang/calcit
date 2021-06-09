@@ -20,6 +20,7 @@ import {
   getStringName,
   findInFields,
   CrDataTuple,
+  overwriteDataComparator,
 } from "./calcit-data";
 
 import { fieldsEqual } from "./record-procs";
@@ -28,7 +29,7 @@ export * from "./calcit-data";
 export * from "./record-procs";
 export * from "./custom-formatter";
 
-export const calcit_version = "0.3.29";
+export const calcit_version = "0.3.30";
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
@@ -124,12 +125,7 @@ export let _AND__MAP_ = (...xs: CrDataValue[]): CrDataMap => {
   if (xs.length % 2 !== 0) {
     throw new Error("&map expects even number of arguments");
   }
-  var dict: Array<[CrDataValue, CrDataValue]> = [];
-  let halfLength = xs.length >> 1;
-  for (let idx = 0; idx < halfLength; idx++) {
-    dict.push([xs[idx << 1], xs[(idx << 1) + 1]]);
-  }
-  return new CrDataMap(initTernaryTreeMap(dict));
+  return new CrDataMap(xs);
 };
 
 export let _AND_list_map = (...xs: CrDataValue[]): CrDataList => {
@@ -421,6 +417,7 @@ export let _AND__EQ_ = (x: CrDataValue, y: CrDataValue): boolean => {
 
 // overwrite internary comparator of ternary-tree
 overwriteComparator(_AND__EQ_);
+overwriteDataComparator(_AND__EQ_);
 
 export let _AND_str = (x: CrDataValue): string => {
   return `${x}`;
