@@ -75,3 +75,11 @@ pub fn set_to_list(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("set->list expected 1 argument, got none")),
   }
 }
+
+pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Set(ys)) => Ok(Calcit::Number(ys.len() as f64)),
+    Some(a) => Err(format!("set count expected a set, got: {}", a)),
+    None => Err(String::from("set count expected 1 argument")),
+  }
+}

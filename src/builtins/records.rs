@@ -156,3 +156,11 @@ pub fn find_in_fields(xs: &[String], y: &str) -> Option<usize> {
     _ => None,
   }
 }
+
+pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Record(_name, fields, _)) => Ok(Calcit::Number(fields.len() as f64)),
+    Some(a) => Err(format!("record count expected a record, got: {}", a)),
+    None => Err(String::from("record count expected 1 argument")),
+  }
+}

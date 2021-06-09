@@ -216,7 +216,7 @@ fn to_js_code(
           let name = s.strip_prefix('.').unwrap();
           Ok(format!(
             "{}invoke_method({})",
-            var_prefix,
+            proc_prefix,
             escape_cirru_str(&name), // TODO need confirm
           ))
         }
@@ -247,7 +247,7 @@ fn gen_call_code(
   xs: &Calcit,
   file_imports: &RefCell<ImportsDict>,
 ) -> Result<String, String> {
-  let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
+  let var_prefix = if ns == primes::CORE_NS { "" } else { "$calcit." };
   let proc_prefix = if ns == primes::CORE_NS {
     "$calcit_procs."
   } else {
@@ -441,7 +441,7 @@ fn gen_call_code(
               let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
               Ok(format!(
                 "{}invoke_method({})({},{})",
-                var_prefix,
+                proc_prefix,
                 escape_cirru_str(&name), // TODO need confirm
                 to_js_code(&obj, ns, local_defs, file_imports)?,
                 args_code

@@ -26,15 +26,9 @@ pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Nil) => Ok(Calcit::Number(0.0)),
-    Some(Calcit::Tuple(..)) => Ok(Calcit::Number(2.0)),
     Some(Calcit::List(ys)) => Ok(Calcit::Number(ys.len() as f64)),
-    Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.len() as f64)),
-    Some(Calcit::Set(ys)) => Ok(Calcit::Number(ys.len() as f64)),
-    Some(Calcit::Str(s)) => Ok(Calcit::Number(s.chars().count() as f64)),
-    Some(Calcit::Record(_name, fields, _)) => Ok(Calcit::Number(fields.len() as f64)),
-    Some(a) => Err(format!("count expected some seq, got: {}", a)),
-    None => Err(String::from("count expected 1 argument")),
+    Some(a) => Err(format!("list count expected a list, got: {}", a)),
+    None => Err(String::from("list count expected 1 argument")),
   }
 }
 

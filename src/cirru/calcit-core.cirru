@@ -1186,7 +1186,7 @@
         |&core-string-class $ quote
           defrecord! &core-string-class
             :blank? blank?
-            :count count
+            :count &str:count
             :empty empty
             :ends-with? ends-with?
             :get nth
@@ -1204,7 +1204,7 @@
         |&core-set-class $ quote
           defrecord! &core-set-class
             :add coll-append
-            :count count
+            :count &set:count
             :difference difference
             :exclude exclude
             :empty empty
@@ -1219,7 +1219,7 @@
           defrecord! &core-map-class
             :assoc assoc
             :contains? contains?
-            :count count
+            :count &map:count
             :dissoc dissoc
             :empty empty
             :empty? empty?
@@ -1242,6 +1242,7 @@
             :get-name get-record-name
             :same-kind? relevant-record?
             :turn-map turn-map
+            :count &record:count
 
         |&core-list-class $ quote
           defrecord! &core-list-class
@@ -1253,7 +1254,7 @@
             :assoc-before assoc-before
             :butlast butlast
             :concat concat
-            :count count
+            :count &list:count
             :drop drop
             :each each
             :empty empty
@@ -1296,3 +1297,11 @@
             identity &core-list-class
             identity &core-map-class
             identity &core-record-class
+        
+        |count $ quote
+          defn count (x)
+            if (nil? x) 0
+              if (tuple? x) 2
+                if (list? x)
+                  &list:count x
+                  .count x
