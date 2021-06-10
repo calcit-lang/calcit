@@ -159,6 +159,9 @@ export class CrDataList {
   arrayEnd: number;
   cachedHash: Hash;
   constructor(value: Array<CrDataValue> | TernaryTreeList<CrDataValue>) {
+    if (value == null) {
+      value = []; // dirty, better handled from outside
+    }
     if (Array.isArray(value)) {
       this.arrayMode = true;
       this.arrayValue = value;
@@ -337,7 +340,10 @@ export class CrDataMap {
   value: TernaryTreeMap<CrDataValue, CrDataValue>;
   skipValue: CrDataValue;
   constructor(value: CrDataValue[] | TernaryTreeMap<CrDataValue, CrDataValue>) {
-    if (Array.isArray(value)) {
+    if (value == null) {
+      this.arrayMode = true;
+      this.arrayValue = [];
+    } else if (Array.isArray(value)) {
       this.arrayMode = true;
       this.arrayValue = value;
     } else {

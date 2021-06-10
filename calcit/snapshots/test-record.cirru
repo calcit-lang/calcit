@@ -33,6 +33,7 @@
               assert= 20 (get p1 :age)
               assert= 20 (get p2 :age)
               assert= 23 (get p3 :age)
+              assert= 23 (.get p3 :age)
 
               assert= :record $ type-of p1
               assert=
