@@ -510,3 +510,18 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
     (None, ..) => Err(format!("list:assoc expected 3 arguments, got: {:?}", xs)),
   }
 }
+
+pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        let ys = &mut xs.clone();
+        ys.remove(idx);
+        Ok(Calcit::List(ys.clone()))
+      }
+      Err(e) => Err(format!("dissoc expected number, {}", e)),
+    },
+    (Some(a), ..) => Err(format!("list dissoc expected a list, got: {}", a)),
+    (_, _) => Err(format!("list dissoc expected 2 arguments, got: {:?}", xs)),
+  }
+}

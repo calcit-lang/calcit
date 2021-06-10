@@ -125,10 +125,11 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&list:first"
       | "&list:rest"
       | "&list:assoc"
+      | "&list:dissoc"
       // maps
       | "&{}"
       | "&map:get"
-      | "dissoc"
+      | "&map:dissoc"
       | "&merge"
       | "to-pairs"
       | "&merge-non-nil"
@@ -287,9 +288,9 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&list:first" => lists::first(args),
     "&list:rest" => lists::rest(args),
     "&list:assoc" => lists::assoc(args),
+    "&list:dissoc" => lists::dissoc(args),
     // maps
     "&{}" => maps::call_new_map(args),
-    "dissoc" => maps::dissoc(args),
     "&merge" => maps::call_merge(args),
     "to-pairs" => maps::to_pairs(args),
     "&merge-non-nil" => maps::call_merge_non_nil(args),
@@ -302,6 +303,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&map:rest" => maps::rest(args),
     "&map:get" => maps::get(args),
     "&map:assoc" => maps::assoc(args),
+    "&map:dissoc" => maps::dissoc(args),
     // sets
     "#{}" => sets::new_set(args),
     "&include" => sets::call_include(args),

@@ -1230,7 +1230,7 @@
             :assoc &map:assoc
             :contains? &map:contains?
             :count &map:count
-            :dissoc dissoc
+            :dissoc &map:dissoc
             :empty $ defn &map:empty (x) (&{})
             :empty? &map:empty?
             :get &map:get
@@ -1305,6 +1305,7 @@
             :zipmap zipmap
             :first &list:first
             :rest &list:rest
+            :dissoc &list:dissoc
 
         |&init-builtin-classes! $ quote
           defn &init-builtin-classes! ()
@@ -1368,3 +1369,9 @@
               if (tuple? x) (&tuple:assoc x k v)
                 if (list? x) (&list:assoc x k v)
                   .assoc x k v
+
+        |dissoc $ quote
+          defn dissoc (x k)
+            if (nil? x) nil
+              if (list? x) (&list:dissoc x k)
+                .dissoc x k

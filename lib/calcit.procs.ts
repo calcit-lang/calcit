@@ -639,22 +639,23 @@ export let assoc_after = function (xs: CrDataList, k: number, v: CrDataValue): C
   throw new Error("Does not support `assoc-after` on this type");
 };
 
-export let dissoc = function (xs: CrDataValue, k: CrDataValue) {
-  if (arguments.length !== 2) {
-    throw new Error("dissoc takes 2 arguments");
-  }
+export let _AND_list_COL_dissoc = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) throw new Error("dissoc takes 2 arguments");
 
   if (xs instanceof CrDataList) {
-    if (typeof k !== "number") {
-      throw new Error("Expected number index for lists");
-    }
-    return xs.dissoc(k);
-  }
-  if (xs instanceof CrDataMap) {
+    if (typeof k !== "number") throw new Error("Expected number index for lists");
+
     return xs.dissoc(k);
   }
 
-  throw new Error("Does not support `dissoc` on this type");
+  throw new Error("`dissoc` expected a list");
+};
+export let _AND_map_COL_dissoc = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) throw new Error("dissoc takes 2 arguments");
+
+  if (xs instanceof CrDataMap) return xs.dissoc(k);
+
+  throw new Error("`dissoc` expected a map");
 };
 
 export let reset_BANG_ = (a: CrDataRef, v: CrDataValue): null => {

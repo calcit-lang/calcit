@@ -1,7 +1,7 @@
 use crate::builtins::records::find_in_fields;
 use crate::primes::{Calcit, CalcitItems};
 
-use crate::util::number::{f64_to_usize, is_even};
+use crate::util::number::is_even;
 
 pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, String> {
   if is_even(xs.len()) {
@@ -23,16 +23,8 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
       ys.remove(a);
       Ok(Calcit::Map(ys.clone()))
     }
-    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(idx) => {
-        let ys = &mut xs.clone();
-        ys.remove(idx);
-        Ok(Calcit::List(ys.clone()))
-      }
-      Err(e) => Err(format!("dissoc expected number, {}", e)),
-    },
-    (Some(a), ..) => Err(format!("dissoc expected a map, got: {}", a)),
-    (_, _) => Err(format!("dissoc expected 2 arguments, got: {:?}", xs)),
+    (Some(a), ..) => Err(format!("map dissoc expected a map, got: {}", a)),
+    (_, _) => Err(format!("map dissoc expected 2 arguments, got: {:?}", xs)),
   }
 }
 
