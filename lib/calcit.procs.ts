@@ -29,7 +29,7 @@ export * from "./calcit-data";
 export * from "./record-procs";
 export * from "./custom-formatter";
 
-export const calcit_version = "0.3.31";
+export const calcit_version = "0.3.32";
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
