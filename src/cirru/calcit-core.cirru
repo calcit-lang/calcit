@@ -1203,6 +1203,7 @@
             :substr substr
             :trim trim
             :empty? &str:empty?
+            :contains? &str:contains?
 
         |&core-set-class $ quote
           defrecord! &core-set-class
@@ -1217,11 +1218,12 @@
             :intersection intersection
             :to-list set->list
             :union union
+            :includes? includes?
 
         |&core-map-class $ quote
           defrecord! &core-map-class
             :assoc assoc
-            :contains? contains?
+            :contains? &map:contains?
             :count &map:count
             :dissoc dissoc
             :empty $ defn &map:empty (x) (&{})
@@ -1246,6 +1248,7 @@
             :same-kind? relevant-record?
             :turn-map turn-map
             :count &record:count
+            :contains? &record:contains?
 
         |&core-list-class $ quote
           defrecord! &core-list-class
@@ -1257,6 +1260,7 @@
             :assoc-before assoc-before
             :butlast butlast
             :concat concat
+            :contains? &list:contains?
             :count &list:count
             :drop drop
             :each each
@@ -1315,3 +1319,9 @@
               if (list? x)
                 &list:empty? x
                 .empty? x
+
+        |contains? $ quote
+          defn contains? (x k)
+            if (nil? x) false
+              if (list? x) (&list:contains? x k)
+                .contains? x k

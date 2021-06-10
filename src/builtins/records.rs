@@ -164,3 +164,16 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("record count expected 1 argument")),
   }
 }
+
+pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Record(_name, fields, _)), Some(a)) => match a {
+      Calcit::Str(k) | Calcit::Keyword(k) | Calcit::Symbol(k, ..) => {
+        Ok(Calcit::Bool(find_in_fields(fields, k).is_some()))
+      }
+      a => Err(format!("contains? got invalid field for record: {}", a)),
+    },
+    (Some(a), ..) => Err(format!("record contains? expected a record, got: {}", a)),
+    (None, ..) => Err(format!("record contains? expected 2 arguments, got: {:?}", xs)),
+  }
+}

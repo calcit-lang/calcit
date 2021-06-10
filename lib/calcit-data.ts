@@ -584,6 +584,11 @@ export class CrDataRecord {
   merge() {
     // TODO
   }
+  contains(k: CrDataValue) {
+    let field = getStringName(k);
+    let idx = findInFields(this.fields, field);
+    return idx >= 0;
+  }
   toString(): string {
     let ret = "(%{} " + this.name;
     for (let idx in this.fields) {

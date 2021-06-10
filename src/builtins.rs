@@ -98,6 +98,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "escape"
       | "&str:count"
       | "&str:empty?"
+      | "&str:contains?"
       // lists
       | "[]"
       | "'" // used as an alias for `[]`, experimental
@@ -115,11 +116,11 @@ pub fn is_proc_name(s: &str) -> bool {
       | "first"
       | "assoc-before"
       | "assoc-after"
+      | "&list:contains?"
       // maps
       | "&{}"
       | "assoc"
       | "&get"
-      | "contains?"
       | "dissoc"
       | "&merge"
       | "includes?"
@@ -128,6 +129,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&map:to-list"
       | "&map:count"
       | "&map:empty?"
+      | "&map:contains?"
       // sets
       | "#{}"
       | "&include"
@@ -153,6 +155,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "turn-map"
       | "relevant-record?" // regexs
       | "&record:count"
+      | "&record:contains?"
   )
 }
 
@@ -235,6 +238,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "escape" => strings::escape(args),
     "&str:count" => strings::count(args),
     "&str:empty?" => strings::empty_ques(args),
+    "&str:contains?" => strings::contains_ques(args),
     // regex
     "re-matches" => regexes::re_matches(args),
     "re-find" => regexes::re_find(args),
@@ -243,8 +247,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     // lists
     "[]" => lists::new_list(args),
     "'" => lists::new_list(args), // alias
-    "&list:count" => lists::count(args),
-    "&list:empty?" => lists::empty_ques(args),
     "nth" => lists::nth(args),
     "slice" => lists::slice(args),
     "append" => lists::append(args),
@@ -257,11 +259,13 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "first" => lists::first(args),
     "assoc-before" => lists::assoc_before(args),
     "assoc-after" => lists::assoc_after(args),
+    "&list:count" => lists::count(args),
+    "&list:empty?" => lists::empty_ques(args),
+    "&list:contains?" => lists::contains_ques(args),
     // maps
     "&{}" => maps::call_new_map(args),
     "assoc" => maps::assoc(args),
     "&get" => maps::map_get(args),
-    "contains?" => maps::contains_ques(args),
     "dissoc" => maps::dissoc(args),
     "&merge" => maps::call_merge(args),
     "includes?" => maps::includes_ques(args),
@@ -270,6 +274,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&map:to-list" => maps::to_list(args),
     "&map:count" => maps::count(args),
     "&map:empty?" => maps::empty_ques(args),
+    "&map:contains?" => maps::contains_ques(args),
     // sets
     "#{}" => sets::new_set(args),
     "&include" => sets::call_include(args),
@@ -295,6 +300,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "turn-map" => records::turn_map(args),
     "relevant-record?" => records::relevant_record_ques(args),
     "&record:count" => records::count(args),
+    "&record:contains?" => records::contains_ques(args),
     a => Err(format!("No such proc: {}", a)),
   }
 }

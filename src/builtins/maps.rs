@@ -118,28 +118,6 @@ pub fn map_get(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(idx) => Ok(Calcit::Bool(idx < xs.len())),
-      Err(e) => Err(e),
-    },
-    (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(idx) => Ok(Calcit::Bool(idx < s.chars().count())),
-      Err(e) => Err(e),
-    },
-    (Some(Calcit::Map(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains_key(a))),
-    (Some(Calcit::Record(_name, fields, _)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Keyword(k) | Calcit::Symbol(k, ..) => {
-        Ok(Calcit::Bool(find_in_fields(fields, k).is_some()))
-      }
-      a => Err(format!("contains? got invalid field for record: {}", a)),
-    },
-    (Some(a), ..) => Err(format!("contains? expected list or map, got: {}", a)),
-    (None, ..) => Err(format!("contains? expected 2 arguments, got: {:?}", xs)),
-  }
-}
-
 pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
@@ -258,5 +236,13 @@ pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Set(ys)) => Ok(Calcit::Bool(ys.is_empty())),
     Some(a) => Err(format!("map empty? expected some map, got: {}", a)),
     None => Err(String::from("map empty? expected 1 argument")),
+  }
+}
+
+pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Map(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains_key(a))),
+    (Some(a), ..) => Err(format!("map contains? expected a map, got: {}", a)),
+    (None, ..) => Err(format!("map contains? expected 2 arguments, got: {:?}", xs)),
   }
 }

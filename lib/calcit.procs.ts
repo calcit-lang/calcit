@@ -424,7 +424,7 @@ export let _AND_str = (x: CrDataValue): string => {
   return `${x}`;
 };
 
-export let contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
+export let _AND_str_COL_contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
   if (typeof xs === "string") {
     if (typeof x != "number") {
       throw new Error("Expected number index for detecting");
@@ -435,6 +435,11 @@ export let contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
     }
     return false;
   }
+
+  throw new Error("string `contains?` expected a string");
+};
+
+export let _AND_list_COL_contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
   if (xs instanceof CrDataList) {
     if (typeof x != "number") {
       throw new Error("Expected number index for detecting");
@@ -445,18 +450,20 @@ export let contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
     }
     return false;
   }
-  if (xs instanceof CrDataMap) {
-    return xs.contains(x);
-  }
-  if (xs instanceof CrDataRecord) {
-    let pos = findInFields(xs.fields, getStringName(x));
-    return pos >= 0;
-  }
-  if (xs instanceof CrDataSet) {
-    throw new Error("Set expected `includes?` for detecting");
-  }
 
-  throw new Error("`contains?` expected a structure");
+  throw new Error("list `contains?` expected a list");
+};
+
+export let _AND_map_COL_contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
+  if (xs instanceof CrDataMap) return xs.contains(x);
+
+  throw new Error("map `contains?` expected a map");
+};
+
+export let _AND_record_COL_contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
+  if (xs instanceof CrDataRecord) return xs.contains(x);
+
+  throw new Error("record `contains?` expected a record");
 };
 
 export let includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {

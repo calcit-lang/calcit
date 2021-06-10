@@ -234,3 +234,14 @@ pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("string empty? expected 1 argument")),
   }
 }
+
+pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => Ok(Calcit::Bool(idx < s.chars().count())),
+      Err(e) => Err(e),
+    },
+    (Some(a), ..) => Err(format!("strings contains? expected a string, got: {}", a)),
+    (None, ..) => Err(format!("strings contains? expected 2 arguments, got: {:?}", xs)),
+  }
+}
