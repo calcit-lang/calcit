@@ -183,7 +183,7 @@
                       assert "|expected pair returned when mapping hashmap"
                         and (list? result) (&= 2 (&list:count result))
                       let[] (k2 v2) result
-                        assoc acc k2 v2
+                        &map:assoc acc k2 v2
               true
                 &let nil
                   echo "|value:" xs
@@ -464,7 +464,7 @@
             assert "|&map:add-entry expected value in a pair" $ and (list? pair)
               &= 2 (count pair)
             let[] (k v) pair
-              assoc xs k v
+              &map:assoc xs k v
 
         |empty $ quote
           defn empty (x)
@@ -480,7 +480,7 @@
                   if (list? pair)
                     &= 2 (&list:count pair)
                     , false
-                assoc acc (&list:first pair) (last pair)
+                &map:assoc acc (&list:first pair) (last pair)
 
         |some? $ quote
           defn some? (x) $ not $ nil? x
@@ -510,7 +510,7 @@
                   if (&list:empty? xs) true (&list:empty? ys)
                   , acc
                   recur
-                    assoc acc (&list:first xs) (&list:first ys)
+                    &map:assoc acc (&list:first xs) (&list:first ys)
                     rest xs
                     rest ys
 
@@ -598,7 +598,7 @@
                     recur
                       if (contains? acc key)
                         update acc key $ \ append % x0
-                        assoc acc key $ [] x0
+                        &map:assoc acc key $ [] x0
                       rest xs
 
         |keys $ quote
@@ -634,7 +634,7 @@
                     recur
                       if (contains? acc (&list:first xs))
                         update acc (&list:first xs) (\ &+ % 1)
-                        assoc acc (&list:first xs) 1
+                        &map:assoc acc (&list:first xs) 1
                       rest xs
 
         |section-by $ quote
@@ -917,7 +917,7 @@
                   assert "|expected pair returned when mapping hashmap"
                     and (list? result) (&= 2 (&list:count result))
                   let[] (k2 v2) result
-                    assoc acc k2 v2
+                    &map:assoc acc k2 v2
 
         |either $ quote
           defmacro either (& body)
@@ -1114,13 +1114,13 @@
           defn select-keys (m xs)
             assert "|expectd map for selecting" $ map? m
             foldl xs (&{}) $ fn (acc k)
-              assoc acc k (&map:get m k)
+              &map:assoc acc k (&map:get m k)
 
         |unselect-keys $ quote
           defn unselect-keys (m xs)
             assert "|expectd map for unselecting" $ map? m
             foldl xs m $ fn (acc k)
-              dissoc acc k
+              &map:dissoc acc k
 
         |conj $ quote
           defn conj (xs a)
