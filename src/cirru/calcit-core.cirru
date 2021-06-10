@@ -1254,7 +1254,7 @@
 
         |&core-record-class $ quote
           defrecord! &core-record-class
-            :get &map:get
+            :get &record:get
             :get-name get-record-name
             :same-kind? relevant-record?
             :turn-map turn-map
