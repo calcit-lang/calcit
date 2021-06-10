@@ -227,7 +227,15 @@ pub fn to_list(xs: &CalcitItems) -> Result<Calcit, String> {
       }
       Ok(Calcit::List(ys))
     }
-    Some(a) => Err(format!("&map-to-list expected a map, got: {}", a)),
-    None => Err(String::from("&map-to-list expected a map, got nothing")),
+    Some(a) => Err(format!("&map:to-list expected a map, got: {}", a)),
+    None => Err(String::from("&map:to-list expected a map, got nothing")),
+  }
+}
+
+pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.len() as f64)),
+    Some(a) => Err(format!("map count expected a map, got: {}", a)),
+    None => Err(String::from("map count expected 1 argument")),
   }
 }

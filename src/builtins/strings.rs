@@ -218,3 +218,11 @@ pub fn escape(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("escape expected 1 argument, got nothing")),
   }
 }
+
+pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => Ok(Calcit::Number(s.chars().count() as f64)),
+    Some(a) => Err(format!("string count expected a string, got: {}", a)),
+    None => Err(String::from("string count expected 1 argument")),
+  }
+}

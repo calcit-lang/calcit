@@ -168,7 +168,11 @@ pub fn preprocess_expr(
         process_list_call(&xs, scope_defs, file_ns, program_code)
       }
     }
-    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) | Calcit::Proc(..) => {
+    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) => {
+      Ok((expr.clone(), Some(expr.clone())))
+    }
+    Calcit::Proc(..) => {
+      // maybe detect method in future
       Ok((expr.clone(), Some(expr.clone())))
     }
 

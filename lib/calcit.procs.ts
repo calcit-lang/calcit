@@ -29,7 +29,7 @@ export * from "./calcit-data";
 export * from "./record-procs";
 export * from "./custom-formatter";
 
-export const calcit_version = "0.3.30";
+export const calcit_version = "0.3.31";
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
@@ -88,30 +88,31 @@ export let print = (...xs: CrDataValue[]): void => {
   console.log(xs.map((x) => toString(x, false)).join(" "));
 };
 
-export let count = (x: CrDataValue): number => {
-  if (x == null) {
-    return 0;
-  }
-  if (typeof x === "string") {
-    return x.length;
-  }
-  if (x instanceof CrDataList) {
-    return x.len();
-  }
-  if (x instanceof CrDataTuple) {
-    return 2;
-  }
-  if (x instanceof CrDataMap) {
-    return x.len();
-  }
-  if (x instanceof CrDataRecord) {
-    return x.fields.length;
-  }
-  if (x instanceof CrDataSet) {
-    return x.len();
-  }
-  throw new Error(`Unknown data ${x}`);
-};
+export function _AND_list_COL_count(x: CrDataValue): number {
+  if (x instanceof CrDataList) return x.len();
+
+  throw new Error(`expected a list ${x}`);
+}
+export function _AND_str_COL_count(x: CrDataValue): number {
+  if (typeof x === "string") return x.length;
+
+  throw new Error(`expected a string ${x}`);
+}
+export function _AND_map_COL_count(x: CrDataValue): number {
+  if (x instanceof CrDataMap) return x.len();
+
+  throw new Error(`expected a map ${x}`);
+}
+export function _AND_record_COL_count(x: CrDataValue): number {
+  if (x instanceof CrDataRecord) return x.fields.length;
+
+  throw new Error(`expected a record ${x}`);
+}
+export function _AND_set_COL_count(x: CrDataValue): number {
+  if (x instanceof CrDataSet) return x.len();
+
+  throw new Error(`expected a set ${x}`);
+}
 
 export let _LIST_ = (...xs: CrDataValue[]): CrDataList => {
   return new CrDataList(xs);
@@ -1763,9 +1764,8 @@ export let register_calcit_builtin_classes = (options: typeof calcit_builtin_cla
   Object.assign(calcit_builtin_classes, options);
 };
 
-export let invoke_method =
-  (p: string) =>
-  (obj: CrDataValue, ...args: CrDataValue[]) => {
+export function invoke_method(p: string) {
+  return (obj: CrDataValue, ...args: CrDataValue[]) => {
     let klass: CrDataRecord;
     let rawValue = obj;
     if (obj instanceof CrDataTuple) {
@@ -1800,8 +1800,9 @@ export let invoke_method =
       throw new Error("Method for invoking is not a function");
     }
   };
+}
 
-export let _AND_map_to_list = (m: CrDataValue): CrDataList => {
+export let _AND_map_COL_to_list = (m: CrDataValue): CrDataList => {
   if (m instanceof CrDataMap) {
     let ys = [];
     for (let pair of m.pairs()) {
@@ -1809,7 +1810,7 @@ export let _AND_map_to_list = (m: CrDataValue): CrDataList => {
     }
     return new CrDataList(ys);
   } else {
-    throw new Error("&map-to-list expected a Map");
+    throw new Error("&map:to-list expected a Map");
   }
 };
 

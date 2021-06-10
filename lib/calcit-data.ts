@@ -211,6 +211,9 @@ export class CrDataList {
       if (to > this.len()) {
         throw new Error(`end index too large: ${to}`);
       }
+      if (to < from) {
+        throw new Error("end index too small");
+      }
       let result = new CrDataList(this.arrayValue);
       result.arrayStart = this.arrayStart + from;
       result.arrayEnd = this.arrayStart + to;
@@ -242,7 +245,7 @@ export class CrDataList {
     }
   }
   append(v: CrDataValue) {
-    if (this.arrayMode && this.arrayEnd === this.arrayValue.length) {
+    if (this.arrayMode && this.arrayEnd === this.arrayValue.length && this.arrayStart < 32) {
       // dirty trick to reuse list memory, data storage actually appended at existing array
       this.arrayValue.push(v);
       let newList = new CrDataList(this.arrayValue);

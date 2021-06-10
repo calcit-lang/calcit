@@ -127,7 +127,11 @@ pub fn evaluate_expr(
           Calcit::Symbol(s, ns, resolved) => {
             Err(format!("cannot evaluate symbol directly: {}/{} {:?}", ns, s, resolved))
           }
-          a => Err(format!("cannot be used as operator: {}", a)),
+          a => Err(format!(
+            "cannot be used as operator: {} in {}",
+            a,
+            CrListWrap(xs.to_owned())
+          )),
         };
 
         if added_stack && ret.is_ok() {
