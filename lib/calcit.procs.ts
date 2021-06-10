@@ -721,22 +721,24 @@ export function _AND_set_COL_empty_QUES_(xs: CrDataValue): boolean {
   throw new Error(`expected a list ${xs}`);
 }
 
-export let first = (xs: CrDataValue): CrDataValue => {
-  if (xs == null) {
-    return null;
-  }
+export let _AND_list_COL_first = (xs: CrDataValue): CrDataValue => {
   if (xs instanceof CrDataList) {
     if (xs.isEmpty()) {
       return null;
     }
     return xs.first();
   }
+  console.error(xs);
+  throw new Error("Expected a list");
+};
+export let _AND_str_COL_first = (xs: CrDataValue): CrDataValue => {
   if (typeof xs === "string") {
     return xs[0];
   }
-  if (xs instanceof CrDataSet) {
-    return xs.first();
-  }
+  console.error(xs);
+  throw new Error("Expected a string");
+};
+export let _AND_map_COL_first = (xs: CrDataValue): CrDataValue => {
   if (xs instanceof CrDataMap) {
     // TODO order may not be stable enough
     let ys = xs.pairs();
@@ -747,7 +749,15 @@ export let first = (xs: CrDataValue): CrDataValue => {
     }
   }
   console.error(xs);
-  throw new Error("Expects something sequential");
+  throw new Error("Expected a map");
+};
+export let _AND_set_COL_first = (xs: CrDataValue): CrDataValue => {
+  if (xs instanceof CrDataSet) {
+    return xs.first();
+  }
+
+  console.error(xs);
+  throw new Error("Expected a set");
 };
 
 export let timeout_call = (duration: number, f: CrDataFn): null => {

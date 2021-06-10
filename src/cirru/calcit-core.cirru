@@ -1206,6 +1206,7 @@
             :contains? &str:contains?
             :includes? &str:includes?
             :nth &str:nth
+            :first &str:first
 
         |&core-set-class $ quote
           defrecord! &core-set-class
@@ -1220,6 +1221,7 @@
             :intersection intersection
             :to-list set->list
             :union union
+            :first &set:first
 
         |&core-map-class $ quote
           defrecord! &core-map-class
@@ -1241,6 +1243,7 @@
             :to-pairs to-pairs
             :unselect-keys unselect-keys
             :vals vals
+            :first &map:first
 
         |&core-record-class $ quote
           defrecord! &core-record-class
@@ -1297,6 +1300,7 @@
             :sort-by &list-sort-by
             :take take
             :zipmap zipmap
+            :first &list:first
 
         |&init-builtin-classes! $ quote
           defn &init-builtin-classes! ()
@@ -1340,3 +1344,9 @@
             if (tuple? x) (&tuple:nth x i)
               if (list? x) (&list:nth x i)
                 .nth x i
+
+        |first $ quote
+          defn nth (x)
+            if (tuple? x) (&tuple:nth x 0)
+              if (list? x) (&list:nth x 0)
+                .first x

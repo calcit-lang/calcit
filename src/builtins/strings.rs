@@ -268,3 +268,14 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
     (_, _) => Err(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
   }
 }
+
+pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => match s.chars().next() {
+      Some(c) => Ok(Calcit::Str(c.to_string())),
+      None => Ok(Calcit::Nil),
+    },
+    Some(a) => Err(format!("str:first expected a string, got: {}", a)),
+    None => Err(String::from("str:first expected 1 argument")),
+  }
+}

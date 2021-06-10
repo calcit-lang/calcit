@@ -449,10 +449,8 @@ pub fn sort(
   }
 }
 
-/// use builtin function since sets need to be handled specifically
 pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Nil) => Ok(Calcit::Nil),
     Some(Calcit::List(ys)) => {
       if ys.is_empty() {
         Ok(Calcit::Nil)
@@ -460,22 +458,8 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
         Ok(ys[0].clone())
       }
     }
-    Some(Calcit::Set(ys)) => match ys.iter().next() {
-      // TODO first element of a set.. need to be more sure...
-      Some(v) => Ok(v.clone()),
-      None => Ok(Calcit::Nil),
-    },
-    Some(Calcit::Map(ys)) => match ys.iter().next() {
-      // TODO order may not be stable enough
-      Some((k, v)) => Ok(Calcit::List(im::vector![k.to_owned(), v.to_owned()])),
-      None => Ok(Calcit::Nil),
-    },
-    Some(Calcit::Str(s)) => match s.chars().next() {
-      Some(c) => Ok(Calcit::Str(c.to_string())),
-      None => Ok(Calcit::Nil),
-    },
-    Some(a) => Err(format!("first expected a list, got: {}", a)),
-    None => Err(String::from("first expected 1 argument")),
+    Some(a) => Err(format!("list:first expected a list, got: {}", a)),
+    None => Err(String::from("list:first expected 1 argument")),
   }
 }
 

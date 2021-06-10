@@ -213,7 +213,6 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Map(ys)) => Ok(Calcit::Bool(ys.is_empty())),
-    Some(Calcit::Set(ys)) => Ok(Calcit::Bool(ys.is_empty())),
     Some(a) => Err(format!("map empty? expected some map, got: {}", a)),
     None => Err(String::from("map empty? expected 1 argument")),
   }
@@ -239,5 +238,18 @@ pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     }
     (Some(a), ..) => Err(format!("map `includes?` expected a map, got: {}", a)),
     (None, ..) => Err(format!("map `includes?` expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+/// use builtin function since maps need to be handled specifically
+pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Map(ys)) => match ys.iter().next() {
+      // TODO order may not be stable enough
+      Some((k, v)) => Ok(Calcit::List(im::vector![k.to_owned(), v.to_owned()])),
+      None => Ok(Calcit::Nil),
+    },
+    Some(a) => Err(format!("map:first expected a map, got: {}", a)),
+    None => Err(String::from("map:first expected 1 argument")),
   }
 }

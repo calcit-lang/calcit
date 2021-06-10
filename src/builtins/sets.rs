@@ -99,3 +99,16 @@ pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     (None, ..) => Err(format!("sets `includes?` expected 2 arguments, got: {:?}", xs)),
   }
 }
+
+/// use builtin function since sets need to be handled specifically
+pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Set(ys)) => match ys.iter().next() {
+      // TODO first element of a set.. need to be more sure...
+      Some(v) => Ok(v.clone()),
+      None => Ok(Calcit::Nil),
+    },
+    Some(a) => Err(format!("set:first expected a set, got: {}", a)),
+    None => Err(String::from("set:first expected 1 argument")),
+  }
+}
