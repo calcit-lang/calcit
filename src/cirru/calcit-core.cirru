@@ -324,7 +324,7 @@
                                 let
                                   ~ $ map-indexed (&list:rest pattern) $ fn (idx x)
                                     [] x $ quasiquote
-                                      nth ~v# (~ (inc idx))
+                                      &list:nth ~v# (~ (inc idx))
                                   , ~branch
                                 key-match ~value (~@ (&list:rest body))
 
@@ -364,9 +364,9 @@
           defn get (base k)
             cond
               (nil? base) nil
-              (string? base) (nth base k)
+              (string? base) (&str:nth base k)
               (map? base) (&map:get base k)
-              (list? base) (nth base k)
+              (list? base) (&list:nth base k)
               (record? base) (&record:get base k)
               true $ &let nil
                 echo "|Value:" base k
@@ -793,7 +793,7 @@
             if (&= 1 (&list:count pairs))
               quote-replace
                 &let
-                  ~ $ nth pairs 0
+                  ~ $ &list:nth pairs 0
                   ~@ body
               if (&list:empty? pairs)
                 quote-replace $ &let nil ~@body
@@ -1146,10 +1146,10 @@
             assert "|method by string or keyword"
               or (string? name) (keyword? name) (symbol? name)
             let
-                proto $ nth pair 0
+                proto $ &tuple:nth pair 0
                 f $ &record:get proto name
               assert "|expected function" (fn? f)
-              f (nth pair 1) & params
+              f (&list:nth pair 1) & params
 
         |&list-sort-by $ quote
           defn &list-sort-by (xs f)
@@ -1355,7 +1355,7 @@
                 .nth x i
 
         |first $ quote
-          defn nth (x)
+          defn first (x)
             if (nil? x) nil
               if (tuple? x) (&tuple:nth x 0)
                 if (list? x) (&list:nth x 0)
