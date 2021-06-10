@@ -573,16 +573,20 @@ export let _AND_record_COL_get = function (xs: CrDataValue, k: CrDataValue) {
   throw new Error("Does not support `&get` on this type");
 };
 
-export let assoc = function (xs: CrDataValue, k: CrDataValue, v: CrDataValue) {
-  if (arguments.length !== 3) {
-    throw new Error("assoc takes 3 arguments");
-  }
+export let _AND_list_COL_assoc = function (xs: CrDataValue, k: CrDataValue, v: CrDataValue) {
+  if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
+
   if (xs instanceof CrDataList) {
     if (typeof k !== "number") {
       throw new Error("Expected number index for lists");
     }
     return xs.assoc(k, v);
   }
+  throw new Error("list `assoc` expected a list");
+};
+export let _AND_tuple_COL_assoc = function (xs: CrDataValue, k: CrDataValue, v: CrDataValue) {
+  if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
+
   if (xs instanceof CrDataTuple) {
     if (typeof k !== "number") {
       throw new Error("Expected number index for lists");
@@ -590,15 +594,21 @@ export let assoc = function (xs: CrDataValue, k: CrDataValue, v: CrDataValue) {
     return xs.assoc(k, v);
   }
 
-  if (xs instanceof CrDataMap) {
-    return xs.assoc(k, v);
-  }
+  throw new Error("tuple `assoc` expected a tuple");
+};
+export let _AND_map_COL_assoc = function (xs: CrDataValue, k: CrDataValue, v: CrDataValue) {
+  if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
 
-  if (xs instanceof CrDataRecord) {
-    return xs.assoc(k, v);
-  }
+  if (xs instanceof CrDataMap) return xs.assoc(k, v);
 
-  throw new Error("Does not support `assoc` on this type");
+  throw new Error("map `assoc` expected a map");
+};
+export let _AND_record_COL_assoc = function (xs: CrDataValue, k: CrDataValue, v: CrDataValue) {
+  if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
+
+  if (xs instanceof CrDataRecord) return xs.assoc(k, v);
+
+  throw new Error("record `assoc` expected a record");
 };
 
 export let assoc_before = function (xs: CrDataList, k: number, v: CrDataValue): CrDataList {

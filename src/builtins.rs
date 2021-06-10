@@ -36,6 +36,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "::" // unstable
       | "&compare"
       | "&tuple:nth"
+      | "&tuple:assoc"
       // effects
       | "echo"
       | "println" // alias for echo
@@ -123,9 +124,9 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&list:nth"
       | "&list:first"
       | "&list:rest"
+      | "&list:assoc"
       // maps
       | "&{}"
-      | "assoc"
       | "&map:get"
       | "dissoc"
       | "&merge"
@@ -138,6 +139,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&map:includes?"
       | "&map:first"
       | "&map:rest"
+      | "&map:assoc"
       // sets
       | "#{}"
       | "&include"
@@ -151,6 +153,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&set:includes?"
       | "&set:first"
       | "&set:rest"
+      | "&set:assoc"
       // json
       | "parse-json"
       | "stringify-json"
@@ -169,6 +172,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&record:contains?"
       | "&record:nth"
       | "&record:get"
+      | "&record:assoc"
   )
 }
 
@@ -189,9 +193,10 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "write-cirru-edn" => meta::write_cirru_edn(args),
     "turn-symbol" => meta::turn_symbol(args),
     "turn-keyword" => meta::turn_keyword(args),
-    "::" => meta::new_tuple(args),            // unstable solution for the name
-    "&compare" => meta::native_compare(args), // unstable solution for the name
-    "&tuple:nth" => meta::tuple_nth(args),    // unstable solution for the name
+    "::" => meta::new_tuple(args), // unstable solution for the name
+    "&compare" => meta::native_compare(args),
+    "&tuple:nth" => meta::tuple_nth(args),
+    "&tuple:assoc" => meta::assoc(args),
     // effects
     "echo" => effects::echo(args),
     "println" => effects::echo(args), // alias
@@ -281,9 +286,9 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&list:nth" => lists::nth(args),
     "&list:first" => lists::first(args),
     "&list:rest" => lists::rest(args),
+    "&list:assoc" => lists::assoc(args),
     // maps
     "&{}" => maps::call_new_map(args),
-    "assoc" => maps::assoc(args),
     "dissoc" => maps::dissoc(args),
     "&merge" => maps::call_merge(args),
     "to-pairs" => maps::to_pairs(args),
@@ -296,6 +301,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&map:first" => maps::first(args),
     "&map:rest" => maps::rest(args),
     "&map:get" => maps::get(args),
+    "&map:assoc" => maps::assoc(args),
     // sets
     "#{}" => sets::new_set(args),
     "&include" => sets::call_include(args),
@@ -327,6 +333,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&record:contains?" => records::contains_ques(args),
     "&record:nth" => records::nth(args),
     "&record:get" => records::get(args),
+    "&record:assoc" => records::assoc(args),
     a => Err(format!("No such proc: {}", a)),
   }
 }

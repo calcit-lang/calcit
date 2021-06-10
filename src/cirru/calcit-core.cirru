@@ -1227,7 +1227,7 @@
 
         |&core-map-class $ quote
           defrecord! &core-map-class
-            :assoc assoc
+            :assoc &map:assoc
             :contains? &map:contains?
             :count &map:count
             :dissoc dissoc
@@ -1257,13 +1257,14 @@
             :count &record:count
             :contains? &record:contains?
             :nth &record:nth
+            :assoc &record:assoc
 
         |&core-list-class $ quote
           defrecord! &core-list-class
             :any? any?
             :add coll-append
             :append append
-            :assoc assoc
+            :assoc &list:assoc
             :assoc-after assoc-after
             :assoc-before assoc-before
             :butlast butlast
@@ -1295,7 +1296,6 @@
             :pairs-map pairs-map
             :prepend prepend
             :reduce reduce
-            :rest rest
             :reverse reverse
             :section-by section-by
             :slice slice
@@ -1361,3 +1361,10 @@
             if (nil? x) nil
               if (list? x) (&list:rest x)
                 .rest x
+
+        |assoc $ quote
+          defn assoc (x k v)
+            if (nil? x) (raise "|assoc does not work on nil")
+              if (tuple? x) (&tuple:assoc x k v)
+                if (list? x) (&list:assoc x k v)
+                  .assoc x k v

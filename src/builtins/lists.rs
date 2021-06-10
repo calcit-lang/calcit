@@ -491,3 +491,22 @@ pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     (None, ..) => Err(format!("list `includes?` expected 2 arguments, got: {:?}", xs)),
   }
 }
+
+pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1), xs.get(2)) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n)), Some(a)) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        if idx < xs.len() {
+          let mut ys = xs.clone();
+          ys[idx] = a.clone();
+          Ok(Calcit::List(ys))
+        } else {
+          Ok(Calcit::Nil)
+        }
+      }
+      Err(e) => Err(e),
+    },
+    (Some(a), ..) => Err(format!("list:assoc expected list, got: {}", a)),
+    (None, ..) => Err(format!("list:assoc expected 3 arguments, got: {:?}", xs)),
+  }
+}

@@ -213,3 +213,21 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, String> {
     (None, ..) => Err(format!("record &get expected 2 arguments, got: {:?}", xs)),
   }
 }
+
+pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1), xs.get(2)) {
+    (Some(Calcit::Record(name, fields, values)), Some(a), Some(b)) => match a {
+      Calcit::Str(s) | Calcit::Keyword(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
+        Some(pos) => {
+          let mut new_values = values.clone();
+          new_values[pos] = b.clone();
+          Ok(Calcit::Record(name.clone(), fields.clone(), new_values))
+        }
+        None => Err(format!("invalid field `{}` for {:?}", s, fields)),
+      },
+      a => Err(format!("invalid field `{}` for {:?}", a, fields)),
+    },
+    (Some(a), ..) => Err(format!("record:assoc expected a record, got: {}", a)),
+    (None, ..) => Err(format!("record:assoc expected 3 arguments, got: {:?}", xs)),
+  }
+}

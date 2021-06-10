@@ -16,53 +16,6 @@ pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
-  match (xs.get(0), xs.get(1), xs.get(2)) {
-    (Some(Calcit::List(xs)), Some(Calcit::Number(n)), Some(a)) => match f64_to_usize(*n) {
-      Ok(idx) => {
-        if idx < xs.len() {
-          let mut ys = xs.clone();
-          ys[idx] = a.clone();
-          Ok(Calcit::List(ys))
-        } else {
-          Ok(Calcit::Nil)
-        }
-      }
-      Err(e) => Err(e),
-    },
-    (Some(Calcit::Tuple(a0, a1)), Some(Calcit::Number(n)), Some(a)) => match f64_to_usize(*n) {
-      Ok(idx) => {
-        if idx == 0 {
-          Ok(Calcit::Tuple(Box::new(a.to_owned()), a1.to_owned()))
-        } else if idx == 1 {
-          Ok(Calcit::Tuple(a0.to_owned(), Box::new(a.to_owned())))
-        } else {
-          Err(format!("Tuple only has fields of 0,1 , unknown index: {}", idx))
-        }
-      }
-      Err(e) => Err(e),
-    },
-    (Some(Calcit::Map(xs)), Some(a), Some(b)) => {
-      let ys = &mut xs.clone();
-      ys.insert(a.clone(), b.clone());
-      Ok(Calcit::Map(ys.clone()))
-    }
-    (Some(Calcit::Record(name, fields, values)), Some(a), Some(b)) => match a {
-      Calcit::Str(s) | Calcit::Keyword(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
-        Some(pos) => {
-          let mut new_values = values.clone();
-          new_values[pos] = b.clone();
-          Ok(Calcit::Record(name.clone(), fields.clone(), new_values))
-        }
-        None => Err(format!("invalid field `{}` for {:?}", s, fields)),
-      },
-      a => Err(format!("invalid field `{}` for {:?}", a, fields)),
-    },
-    (Some(a), ..) => Err(format!("assoc expected list or map, got: {}", a)),
-    (None, ..) => Err(format!("assoc expected 3 arguments, got: {:?}", xs)),
-  }
-}
-
 pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(a)) => {
@@ -245,5 +198,17 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
     },
     Some(a) => Err(format!("map:rest expected a map, got: {}", a)),
     None => Err(String::from("map:rest expected 1 argument")),
+  }
+}
+
+pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1), xs.get(2)) {
+    (Some(Calcit::Map(xs)), Some(a), Some(b)) => {
+      let ys = &mut xs.clone();
+      ys.insert(a.clone(), b.clone());
+      Ok(Calcit::Map(ys.clone()))
+    }
+    (Some(a), ..) => Err(format!("map:assoc expected a map, got: {}", a)),
+    (None, ..) => Err(format!("map:assoc expected 3 arguments, got: {:?}", xs)),
   }
 }
