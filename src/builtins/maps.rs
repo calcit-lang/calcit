@@ -145,26 +145,6 @@ pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Nil), _) => Err(String::from("nil includes nothing")),
-    (Some(Calcit::Map(ys)), Some(a)) => {
-      for (_k, v) in ys {
-        if v == a {
-          return Ok(Calcit::Bool(true));
-        }
-      }
-      Ok(Calcit::Bool(false))
-    }
-    (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
-    (Some(Calcit::Set(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
-    (Some(Calcit::Str(xs)), Some(Calcit::Str(a))) => Ok(Calcit::Bool(xs.contains(a))),
-    (Some(Calcit::Str(_)), Some(a)) => Err(format!("string `contains?` expected a string, got: {}", a)),
-    (Some(a), ..) => Err(format!("expected list, map, set, got: {}", a)),
-    (None, ..) => Err(format!("expected 2 arguments, got: {:?}", xs)),
-  }
-}
-
 pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     // get a random order from internals
@@ -244,5 +224,20 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     (Some(Calcit::Map(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains_key(a))),
     (Some(a), ..) => Err(format!("map contains? expected a map, got: {}", a)),
     (None, ..) => Err(format!("map contains? expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Map(ys)), Some(a)) => {
+      for (_k, v) in ys {
+        if v == a {
+          return Ok(Calcit::Bool(true));
+        }
+      }
+      Ok(Calcit::Bool(false))
+    }
+    (Some(a), ..) => Err(format!("map `includes?` expected a map, got: {}", a)),
+    (None, ..) => Err(format!("map `includes?` expected 2 arguments, got: {:?}", xs)),
   }
 }

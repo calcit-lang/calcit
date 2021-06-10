@@ -245,3 +245,12 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     (None, ..) => Err(format!("strings contains? expected 2 arguments, got: {:?}", xs)),
   }
 }
+
+pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Str(xs)), Some(Calcit::Str(a))) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(Calcit::Str(_)), Some(a)) => Err(format!("string `includes?` expected a string, got: {}", a)),
+    (Some(a), ..) => Err(format!("string `includes?` expected string, got: {}", a)),
+    (None, ..) => Err(format!("string `includes?` expected 2 arguments, got: {:?}", xs)),
+  }
+}

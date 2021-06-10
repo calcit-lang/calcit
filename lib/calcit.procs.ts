@@ -466,13 +466,18 @@ export let _AND_record_COL_contains_QUES_ = (xs: CrDataValue, x: CrDataValue): b
   throw new Error("record `contains?` expected a record");
 };
 
-export let includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
+export let _AND_str_COL_includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
   if (typeof xs === "string") {
     if (typeof x !== "string") {
       throw new Error("Expected string");
     }
     return xs.includes(x as string);
   }
+
+  throw new Error("string includes? expected a string");
+};
+
+export let _AND_list_COL_includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
   if (xs instanceof CrDataList) {
     let size = xs.len();
     for (let v of xs.items()) {
@@ -482,6 +487,11 @@ export let includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
     }
     return false;
   }
+
+  throw new Error("list includes? expected a list");
+};
+
+export let _AND_map_COL_includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
   if (xs instanceof CrDataMap) {
     for (let [k, v] of xs.pairs()) {
       if (_AND__EQ_(v, x)) {
@@ -490,11 +500,16 @@ export let includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
     }
     return false;
   }
+
+  throw new Error("map includes? expected a map");
+};
+
+export let _AND_set_COL_includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
   if (xs instanceof CrDataSet) {
     return xs.contains(x);
   }
 
-  throw new Error("includes? expected a structure");
+  throw new Error("set includes? expected a set");
 };
 
 export let nth = function (xs: CrDataValue, k: CrDataValue) {

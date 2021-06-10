@@ -91,3 +91,11 @@ pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("set empty? expected 1 argument")),
   }
 }
+
+pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Set(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(a), ..) => Err(format!("sets `includes?` expected set, got: {}", a)),
+    (None, ..) => Err(format!("sets `includes?` expected 2 arguments, got: {:?}", xs)),
+  }
+}

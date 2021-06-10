@@ -555,3 +555,11 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     (None, ..) => Err(format!("list contains? expected 2 arguments, got: {:?}", xs)),
   }
 }
+
+pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(a), ..) => Err(format!("list `includes?` expected list, list, got: {}", a)),
+    (None, ..) => Err(format!("list `includes?` expected 2 arguments, got: {:?}", xs)),
+  }
+}

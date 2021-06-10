@@ -1204,6 +1204,7 @@
             :trim trim
             :empty? &str:empty?
             :contains? &str:contains?
+            :includes? &str:includes?
 
         |&core-set-class $ quote
           defrecord! &core-set-class
@@ -1214,11 +1215,10 @@
             :empty $ defn &set:empty (x) (#{})
             :empty? &set:empty?
             :include include
-            :includes? includes?
+            :includes? &set:includes?
             :intersection intersection
             :to-list set->list
             :union union
-            :includes? includes?
 
         |&core-map-class $ quote
           defrecord! &core-map-class
@@ -1230,7 +1230,7 @@
             :empty? &map:empty?
             :get &get
             :get-in get-in
-            :includes? includes?
+            :includes? &map:includes?
             :keys keys
             :keys-non-nil keys-non-nil
             :map-kv map-kv
@@ -1261,6 +1261,7 @@
             :butlast butlast
             :concat concat
             :contains? &list:contains?
+            :includes? &list:includes?
             :count &list:count
             :drop drop
             :each each
@@ -1325,3 +1326,9 @@
             if (nil? x) false
               if (list? x) (&list:contains? x k)
                 .contains? x k
+
+        |includes? $ quote
+          defn includes? (x k)
+            if (nil? x) false
+              if (list? x) (&list:includes? x k)
+                .includes? x k

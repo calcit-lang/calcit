@@ -99,6 +99,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&str:count"
       | "&str:empty?"
       | "&str:contains?"
+      | "&str:includes?"
       // lists
       | "[]"
       | "'" // used as an alias for `[]`, experimental
@@ -117,19 +118,20 @@ pub fn is_proc_name(s: &str) -> bool {
       | "assoc-before"
       | "assoc-after"
       | "&list:contains?"
+      | "&list:includes?"
       // maps
       | "&{}"
       | "assoc"
       | "&get"
       | "dissoc"
       | "&merge"
-      | "includes?"
       | "to-pairs"
       | "&merge-non-nil"
       | "&map:to-list"
       | "&map:count"
       | "&map:empty?"
       | "&map:contains?"
+      | "&map:includes?"
       // sets
       | "#{}"
       | "&include"
@@ -140,6 +142,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "set->list"
       | "&set:count"
       | "&set:empty?"
+      | "&set:includes?"
       // json
       | "parse-json"
       | "stringify-json"
@@ -239,6 +242,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&str:count" => strings::count(args),
     "&str:empty?" => strings::empty_ques(args),
     "&str:contains?" => strings::contains_ques(args),
+    "&str:includes?" => strings::includes_ques(args),
     // regex
     "re-matches" => regexes::re_matches(args),
     "re-find" => regexes::re_find(args),
@@ -262,19 +266,20 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&list:count" => lists::count(args),
     "&list:empty?" => lists::empty_ques(args),
     "&list:contains?" => lists::contains_ques(args),
+    "&list:includes?" => lists::includes_ques(args),
     // maps
     "&{}" => maps::call_new_map(args),
     "assoc" => maps::assoc(args),
     "&get" => maps::map_get(args),
     "dissoc" => maps::dissoc(args),
     "&merge" => maps::call_merge(args),
-    "includes?" => maps::includes_ques(args),
     "to-pairs" => maps::to_pairs(args),
     "&merge-non-nil" => maps::call_merge_non_nil(args),
     "&map:to-list" => maps::to_list(args),
     "&map:count" => maps::count(args),
     "&map:empty?" => maps::empty_ques(args),
     "&map:contains?" => maps::contains_ques(args),
+    "&map:includes?" => maps::includes_ques(args),
     // sets
     "#{}" => sets::new_set(args),
     "&include" => sets::call_include(args),
@@ -285,6 +290,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "set->list" => sets::set_to_list(args),
     "&set:count" => sets::count(args),
     "&set:empty?" => sets::empty_ques(args),
+    "&set:includes?" => sets::includes_ques(args),
     // json
     "parse-json" => json::parse_json(args),
     "stringify-json" => json::stringify_json(args),
