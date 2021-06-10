@@ -279,3 +279,22 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("str:first expected 1 argument")),
   }
 }
+
+pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => {
+      let mut buffer = String::from("");
+      let mut is_first = true;
+      for c in s.chars() {
+        if is_first {
+          is_first = false;
+          continue;
+        }
+        buffer.push(c)
+      }
+      Ok(Calcit::Str(buffer.to_owned()))
+    }
+    Some(a) => Err(format!("str:rest expected a string, got: {}", a)),
+    None => Err(String::from("str:rest expected 1 argument")),
+  }
+}

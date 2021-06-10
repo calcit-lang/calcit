@@ -112,3 +112,18 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("set:first expected 1 argument")),
   }
 }
+
+pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Set(ys)) => match ys.iter().next() {
+      Some(y0) => {
+        let mut zs = ys.clone();
+        zs.remove(y0);
+        Ok(Calcit::Set(zs))
+      }
+      None => Ok(Calcit::Nil),
+    },
+    Some(a) => Err(format!("set:rest expected a set, got: {}", a)),
+    None => Err(String::from("set:rest expected 1 argument")),
+  }
+}

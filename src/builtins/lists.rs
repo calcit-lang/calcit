@@ -80,7 +80,6 @@ pub fn prepend(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Nil) => Ok(Calcit::Nil),
     Some(Calcit::List(ys)) => {
       if ys.is_empty() {
         Ok(Calcit::Nil)
@@ -90,36 +89,8 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
         Ok(Calcit::List(zs))
       }
     }
-    Some(Calcit::Set(ys)) => match ys.iter().next() {
-      Some(y0) => {
-        let mut zs = ys.clone();
-        zs.remove(y0);
-        Ok(Calcit::Set(zs))
-      }
-      None => Ok(Calcit::Nil),
-    },
-    Some(Calcit::Map(ys)) => match ys.keys().next() {
-      Some(k0) => {
-        let mut zs = ys.clone();
-        zs.remove(k0);
-        Ok(Calcit::Map(zs))
-      }
-      None => Ok(Calcit::Nil),
-    },
-    Some(Calcit::Str(s)) => {
-      let mut buffer = String::from("");
-      let mut is_first = true;
-      for c in s.chars() {
-        if is_first {
-          is_first = false;
-          continue;
-        }
-        buffer.push(c)
-      }
-      Ok(Calcit::Str(buffer.to_owned()))
-    }
-    Some(a) => Err(format!("rest expected a list, got: {}", a)),
-    None => Err(String::from("rest expected 1 argument")),
+    Some(a) => Err(format!("list:rest expected a list, got: {}", a)),
+    None => Err(String::from("list:rest expected 1 argument")),
   }
 }
 

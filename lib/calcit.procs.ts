@@ -771,19 +771,30 @@ export let timeout_call = (duration: number, f: CrDataFn): null => {
   return null;
 };
 
-export let rest = (xs: CrDataValue): CrDataValue => {
+export let _AND_list_COL_rest = (xs: CrDataValue): CrDataValue => {
   if (xs instanceof CrDataList) {
     if (xs.len() === 0) {
       return null;
     }
     return xs.rest();
   }
-  if (typeof xs === "string") {
-    return xs.substr(1);
-  }
-  if (xs instanceof CrDataSet) {
-    return xs.rest();
-  }
+  console.error(xs);
+  throw new Error("Expected a list");
+};
+
+export let _AND_str_COL_rest = (xs: CrDataValue): CrDataValue => {
+  if (typeof xs === "string") return xs.substr(1);
+
+  console.error(xs);
+  throw new Error("Expects a string");
+};
+export let _AND_set_COL_rest = (xs: CrDataValue): CrDataValue => {
+  if (xs instanceof CrDataSet) return xs.rest();
+
+  console.error(xs);
+  throw new Error("Expect a set");
+};
+export let _AND_map_COL_rest = (xs: CrDataValue): CrDataValue => {
   if (xs instanceof CrDataMap) {
     if (xs.len() > 0) {
       let k0 = xs.pairs()[0][0];
@@ -793,8 +804,7 @@ export let rest = (xs: CrDataValue): CrDataValue => {
     }
   }
   console.error(xs);
-
-  throw new Error("Expects something sequential");
+  throw new Error("Expected map");
 };
 
 export let recur = (...xs: CrDataValue[]): CrDataRecur => {

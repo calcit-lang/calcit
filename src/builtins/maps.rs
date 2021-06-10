@@ -253,3 +253,18 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("map:first expected 1 argument")),
   }
 }
+
+pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Map(ys)) => match ys.keys().next() {
+      Some(k0) => {
+        let mut zs = ys.clone();
+        zs.remove(k0);
+        Ok(Calcit::Map(zs))
+      }
+      None => Ok(Calcit::Nil),
+    },
+    Some(a) => Err(format!("map:rest expected a map, got: {}", a)),
+    None => Err(String::from("map:rest expected 1 argument")),
+  }
+}

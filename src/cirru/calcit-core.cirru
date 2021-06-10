@@ -1207,6 +1207,7 @@
             :includes? &str:includes?
             :nth &str:nth
             :first &str:first
+            :rest &str:rest
 
         |&core-set-class $ quote
           defrecord! &core-set-class
@@ -1222,6 +1223,7 @@
             :to-list set->list
             :union union
             :first &set:first
+            :rest &set:rest
 
         |&core-map-class $ quote
           defrecord! &core-map-class
@@ -1244,6 +1246,7 @@
             :unselect-keys unselect-keys
             :vals vals
             :first &map:first
+            :rest &map:rest
 
         |&core-record-class $ quote
           defrecord! &core-record-class
@@ -1301,6 +1304,7 @@
             :take take
             :zipmap zipmap
             :first &list:first
+            :rest &list:rest
 
         |&init-builtin-classes! $ quote
           defn &init-builtin-classes! ()
@@ -1347,6 +1351,13 @@
 
         |first $ quote
           defn nth (x)
-            if (tuple? x) (&tuple:nth x 0)
-              if (list? x) (&list:nth x 0)
-                .first x
+            if (nil? x) nil
+              if (tuple? x) (&tuple:nth x 0)
+                if (list? x) (&list:nth x 0)
+                  .first x
+         
+        |rest $ quote
+          defn rest (x)
+            if (nil? x) nil
+              if (list? x) (&list:rest x)
+                .rest x
