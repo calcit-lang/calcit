@@ -324,7 +324,7 @@ fn gen_call_code(
         },
 
         "defmacro" => Ok(format!("/* Unexpected macro {} */", xs)),
-        "quote-replace" | "quasiquote" => Ok(format!("(/* Unexpected quasiquote {} */ null)", xs.lisp_str())),
+        "quasiquote" | "quote-replace" => Ok(format!("(/* Unexpected quasiquote {} */ null)", xs.lisp_str())),
 
         "raise" => {
           // not core syntax, but treat as macro for better debugging experience

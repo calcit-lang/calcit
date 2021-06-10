@@ -33,11 +33,11 @@
 
         |when $ quote
           defmacro when (condition & body)
-            quote-replace $ if ~condition (&let nil ~@body)
+            quasiquote $ if ~condition (&let nil ~@body)
 
         |when-not $ quote
           defmacro when-not (condition & body)
-            quote-replace $ if (not ~condition) (&let nil ~@body)
+            quasiquote $ if (not ~condition) (&let nil ~@body)
 
         |+ $ quote
           defn + (x & ys) $ reduce ys x &+
@@ -201,8 +201,8 @@
         |str $ quote
           defmacro str (x0 & xs)
             if (&list:empty? xs)
-              quote-replace $ &str ~x0
-              quote-replace $ &str-concat ~x0 $ str ~@xs
+              quasiquote $ &str ~x0
+              quasiquote $ &str-concat ~x0 $ str ~@xs
 
         |include $ quote
           defn include (base & xs)
@@ -253,7 +253,7 @@
         |-> $ quote
           defmacro -> (base & xs)
             if (&list:empty? xs)
-              quote-replace ~base
+              quasiquote ~base
               &let
                 x0 (&list:first xs)
                 if (list? x0)
@@ -265,7 +265,7 @@
         |->> $ quote
           defmacro ->> (base & xs)
             if (&list:empty? xs)
-              quote-replace ~base
+              quasiquote ~base
               &let
                 x0 (&list:first xs)
                 if (list? x0)
@@ -282,7 +282,7 @@
                     map
                       butlast xs
                       fn (x) ([] '% x)
-                quote-replace
+                quasiquote
                   let ~pairs ~tail
 
         |cond $ quote
@@ -293,10 +293,10 @@
               expr $ &list:nth pair 0
               &let
                 branch $ &list:nth pair 1
-                quote-replace
+                quasiquote
                   if ~expr ~branch
                     ~ $ if (&list:empty? else) nil
-                      quote-replace
+                      quasiquote
                         cond
                           ~ $ &list:nth else 0
                           ~@ $ &list:rest else
@@ -335,17 +335,17 @@
             let
                 x $ &list:first pattern
                 branch $ last pattern
-              quote-replace
+              quasiquote
                 if (&= ~item ~x) ~branch
                   ~ $ if (&list:empty? others) default
-                    quote-replace
+                    quasiquote
                       &case ~item ~default ~@others
 
         |case $ quote
           defmacro case (item & patterns)
             &let
               v (gensym |v)
-              quote-replace
+              quasiquote
                 &let
                   ~v ~item
                   &case ~v nil ~@patterns
@@ -356,7 +356,7 @@
               raise "|Expected patterns for case-default, got empty"
             &let
               v (gensym |v)
-              quote-replace
+              quasiquote
                 &let (~v ~item)
                   &case ~v ~default ~@patterns
 
@@ -533,7 +533,7 @@
 
         |\ $ quote
           defmacro \ (& xs)
-            quote-replace $ fn (? % %2) ~xs
+            quasiquote $ fn (? % %2) ~xs
 
         |\. $ quote
           defmacro \. (args-alias & xs)
@@ -546,12 +546,12 @@
                 apply-args (inner-body args)
                   fn (body ys)
                     if (&list:empty? ys)
-                      quote-replace ~body
+                      quasiquote ~body
                       &let
                         a0 (last ys)
                         &let
                           code
-                            [] (quote-replace defn) (turn-symbol (&str-concat |f_ (turn-string a0))) ([] a0) body
+                            [] (quasiquote defn) (turn-symbol (&str-concat |f_ (turn-string a0))) ([] a0) body
                           recur code (butlast ys)
 
         |has-index? $ quote
@@ -655,30 +655,30 @@
           defmacro [][] (& xs)
             &let
               items $ map xs
-                fn (ys) $ quote-replace $ [] ~@ys
-              quote-replace $ [] ~@items
+                fn (ys) $ quasiquote $ [] ~@ys
+              quasiquote $ [] ~@items
 
         |{} $ quote
           defmacro {} (& xs)
             &let
               ys $ concat & xs
-              quote-replace $ &{} ~@ys
+              quasiquote $ &{} ~@ys
 
         |js-object $ quote
           defmacro js-object (& xs)
             &let
               ys $ concat & xs
-              quote-replace $ &js-object ~@ys
+              quasiquote $ &js-object ~@ys
 
         |%{} $ quote
           defmacro %{} (R & xs)
             &let
               args $ concat & xs
-              quote-replace $ &%{} ~R ~@args
+              quasiquote $ &%{} ~R ~@args
 
         |fn $ quote
           defmacro fn (args & body)
-            quote-replace $ defn f% ~args ~@body
+            quasiquote $ defn f% ~args ~@body
 
         |assert= $ quote
           defmacro assert= (a b)
@@ -686,7 +686,7 @@
               va $ gensym |va
               &let
                 vb $ gensym |vb
-                quote-replace
+                quasiquote
                   &let
                     ~va ~a
                     &let
@@ -704,7 +704,7 @@
           defmacro assert-detect (f code)
             &let
               v $ gensym |v
-              quote-replace
+              quasiquote
                 &let
                   ~v ~code
                   if (~f ~v) nil
@@ -716,7 +716,7 @@
 
         |swap! $ quote
           defmacro swap! (a f & args)
-            quote-replace
+            quasiquote
               reset! ~a
                 ~f (deref ~a) ~@args
 
@@ -782,7 +782,7 @@
                 args $ map pairs &list:first
                 values $ map pairs last
               assert "|loop requires symbols in pairs" (every? args symbol?)
-              quote-replace
+              quasiquote
                 apply
                   defn generated-loop ~args ~@body
                   [] ~@values
@@ -791,13 +791,13 @@
           defmacro let (pairs & body)
             assert "|expects pairs in list for let" (list? pairs)
             if (&= 1 (&list:count pairs))
-              quote-replace
+              quasiquote
                 &let
                   ~ $ &list:nth pairs 0
                   ~@ body
               if (&list:empty? pairs)
-                quote-replace $ &let nil ~@body
-                quote-replace
+                quasiquote $ &let nil ~@body
+                quasiquote
                   &let
                     ~ $ &list:nth pairs 0
                     let
@@ -808,15 +808,15 @@
           defmacro let-sugar (pairs & body)
             assert "|expects pairs in list for let" (list? pairs)
             if (&list:empty? pairs)
-              quote-replace $ &let nil ~@body
+              quasiquote $ &let nil ~@body
               &let
                 pair $ &list:first pairs
                 assert "|expected pair length of 2" (&= 2 (&list:count pair))
                 if (&= 1 (&list:count pairs))
-                  quote-replace
+                  quasiquote
                     let-destruct ~@pair
                       ~@ body
-                  quote-replace
+                  quasiquote
                     let-destruct ~@pair
                       let-sugar
                         ~ $ &list:rest pairs
@@ -825,14 +825,14 @@
         |let-destruct $ quote
           defmacro let-destruct (pattern v & body)
             if (symbol? pattern)
-              quote-replace
+              quasiquote
                 &let (~pattern ~v) ~@body
               if (list? pattern)
                 if (&= '[] (&list:first pattern))
-                  quote-replace
+                  quasiquote
                     let[] (~ (&list:rest pattern)) ~v ~@body
                   if (&= '{} (&list:first pattern))
-                    quote-replace
+                    quasiquote
                       let{} (~ (&list:rest pattern)) ~v ~@body
                     &let nil
                       echo pattern
@@ -844,14 +844,14 @@
             &let
               xs $ filter body
                 fn (x) (/= x ',)
-              quote-replace $ [] ~@xs
+              quasiquote $ [] ~@xs
 
         |assert $ quote
           defmacro assert (message xs)
             if
               if (string? xs) (not (string? message)) false
-              quote-replace $ assert ~xs ~message
-              quote-replace
+              quasiquote $ assert ~xs ~message
+              quasiquote
                 &let nil
                   if (not (string? ~message))
                     raise "|expects 1st argument to be string"
@@ -929,9 +929,9 @@
         |and $ quote
           defmacro and (item & xs)
             if (&list:empty? xs)
-              quote-replace
+              quasiquote
                 if ~item ~item false
-              quote-replace
+              quasiquote
                 if ~item
                   and
                     ~ $ &list:first xs
@@ -941,7 +941,7 @@
         |or $ quote
           defmacro or (item & xs)
             if (&list:empty? xs) item
-              quote-replace
+              quasiquote
                 if (nil? ~item)
                   or
                     ~ $ &list:first xs
@@ -956,7 +956,7 @@
           defmacro with-log (x)
             &let
               v $ gensym |v
-              quote-replace
+              quasiquote
                 &let
                   ~v ~x
                   echo (format-to-lisp (quote ~x)) |=> ~v
@@ -966,7 +966,7 @@
           defmacro with-js-log (x)
             &let
               v $ gensym |v
-              quote-replace
+              quasiquote
                 &let
                   ~v ~x
                   js/console.log (format-to-lisp (quote ~x)) |=> ~v
@@ -977,7 +977,7 @@
             &let
               xs $ filter body
                 fn (x) (not= x ',)
-              quote-replace
+              quasiquote
                 pairs-map $ section-by ([] ~@xs) 2
 
         |&doseq $ quote
@@ -987,7 +987,7 @@
             let
                 name $ &list:first pair
                 xs0 $ last pair
-              quote-replace
+              quasiquote
                 foldl ~xs0 nil $ defn doseq-fn% (_acc ~name) ~@body
 
         |with-cpu-time $ quote
@@ -995,7 +995,7 @@
             let
                 started $ gensym |started
                 v $ gensym |v
-              quote-replace
+              quasiquote
                 let
                     ~started (cpu-time)
                     ~v ~x
@@ -1011,7 +1011,7 @@
             let
                 v $ gensym |v
                 args-value $ gensym |args-value
-              quote-replace
+              quasiquote
                 let
                     ~args-value $ [] ~@xs
                     ~v $ ~f & ~args-value
@@ -1024,7 +1024,7 @@
 
         |defn-with-log $ quote
           defmacro defn-with-log (f-name args & body)
-            quote-replace
+            quasiquote
               defn ~f-name ~args
                 &let
                   ~f-name $ defn ~f-name ~args ~@body
@@ -1044,7 +1044,7 @@
               if (list? items) (every? items symbol?) false
             let
                 var-result $ gensym |result
-              quote-replace
+              quasiquote
                 &let
                   ~var-result ~base
                   assert (str "|expected map for destructing: " ~var-result) (map? ~var-result)
@@ -1073,12 +1073,12 @@
                         if (&= (&list:first xs) '&)
                           &let nil
                             assert "|expected list spreading" (&= 2 (&list:count xs))
-                            conj acc $ [] (&list:nth xs 1) (quote-replace (slice ~v ~idx))
+                            conj acc $ [] (&list:nth xs 1) (quasiquote (slice ~v ~idx))
                           recur
-                            conj acc $ [] (&list:first xs) (quote-replace (&list:nth ~v ~idx))
+                            conj acc $ [] (&list:first xs) (quasiquote (&list:nth ~v ~idx))
                             rest xs
                             inc idx
-              quote-replace
+              quasiquote
                 &let
                   ~v ~data
                   let
@@ -1087,7 +1087,7 @@
 
         |defrecord $ quote
           defmacro defrecord (name & xs)
-            quote-replace
+            quasiquote
               new-record (quote ~name) ~@xs
 
         |defrecord! $ quote

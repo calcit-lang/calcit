@@ -18,18 +18,18 @@
           defmacro inside-eval: (& body)
             if
               = :eval $ &get-calcit-running-mode
-              quote-replace
+              quasiquote
                 do (echo "|env: eval") ~@body
-              quote-replace
+              quasiquote
                 do (echo "|env: not eval. tests skipped")
 
         |inside-js: $ quote
           defmacro inside-js: (& body)
             if
               not= :eval $ &get-calcit-running-mode
-              quote-replace
+              quasiquote
                 do (echo "|env: js") ~@body
-              quote-replace
+              quasiquote
                 do (echo "|env: not js. tests skipped")
 
         |main! $ quote
