@@ -443,25 +443,28 @@
           defn filter (xs f)
             foldl xs (empty xs)
               fn (acc x)
-                if (f x) (coll-append acc x) acc
+                if (f x) (&coll-append acc x) acc
 
         |filter-not $ quote
           defn filter-not (xs f)
             reduce xs (empty xs)
               fn (acc x)
-                if-not (f x) (coll-append acc x) acc
+                if-not (f x) (&coll-append acc x) acc
 
-        |coll-append $ quote
-          defn coll-append (xs a)
+        |&coll-append $ quote
+          defn &coll-append (xs a)
             if (list? xs) (append xs a)
               if (set? xs) (&include xs a)
                 if (map? xs)
-                  &let nil
-                    assert "|coll-append to map expected a pair" $ and (list? a)
-                      &= 2 (count a)
-                    let[] (k v) a
-                      assoc xs k v
-                  raise "|coll-append expected a collection"
+                  &map:add-entry xs a
+                  raise "|&coll-append expected a collection"
+
+        |&map:add-entry $ quote
+          defn &map:add-entry (xs pair)
+            assert "|&map:add-entry expected value in a pair" $ and (list? pair)
+              &= 2 (count pair)
+            let[] (k v) pair
+              assoc xs k v
 
         |empty $ quote
           defn empty (x)
@@ -1211,7 +1214,7 @@
 
         |&core-set-class $ quote
           defrecord! &core-set-class
-            :add coll-append
+            :add include
             :count &set:count
             :difference difference
             :exclude exclude
@@ -1227,6 +1230,7 @@
 
         |&core-map-class $ quote
           defrecord! &core-map-class
+            :add &map:add-entry
             :assoc &map:assoc
             :contains? &map:contains?
             :count &map:count
@@ -1262,7 +1266,7 @@
         |&core-list-class $ quote
           defrecord! &core-list-class
             :any? any?
-            :add coll-append
+            :add append
             :append append
             :assoc &list:assoc
             :assoc-after assoc-after
