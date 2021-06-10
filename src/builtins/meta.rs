@@ -292,3 +292,17 @@ pub fn native_compare(xs: &CalcitItems) -> Result<Calcit, String> {
     (a, b) => Err(format!("&compare expected 2 values, got {:?} {:?}", a, b)),
   }
 }
+
+pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Tuple(a, b)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(0) => Ok((**a).clone()),
+      Ok(1) => Ok((**b).to_owned()),
+      Ok(m) => Err(format!("Tuple only got 2 elements, trying to index with {}", m)),
+      Err(e) => Err(format!("nth expect usize, {}", e)),
+    },
+    (Some(_), None) => Err(format!("nth expected a tuple and an index, got: {:?}", xs)),
+    (None, Some(_)) => Err(format!("nth expected a tuple and an index, got: {:?}", xs)),
+    (_, _) => Err(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
+  }
+}

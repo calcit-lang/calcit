@@ -512,31 +512,42 @@ export let _AND_set_COL_includes_QUES_ = (xs: CrDataValue, x: CrDataValue): bool
   throw new Error("set includes? expected a set");
 };
 
-export let nth = function (xs: CrDataValue, k: CrDataValue) {
-  if (arguments.length !== 2) {
-    throw new Error("nth takes 2 arguments");
-  }
-  if (typeof k !== "number") {
-    throw new Error("Expected number index for a list");
-  }
+export let _AND_str_COL_nth = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
+  if (typeof k !== "number") throw new Error("Expected number index for a list");
 
-  if (typeof xs === "string") {
-    return xs[k];
-  }
-  if (xs instanceof CrDataList) {
-    return xs.get(k);
-  }
-  if (xs instanceof CrDataTuple) {
-    return xs.get(k);
-  }
+  if (typeof xs === "string") return xs[k];
+
+  throw new Error("Does not support `nth` on this type");
+};
+
+export let _AND_list_COL_nth = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
+  if (typeof k !== "number") throw new Error("Expected number index for a list");
+
+  if (xs instanceof CrDataList) return xs.get(k);
+
+  throw new Error("Does not support `nth` on this type");
+};
+
+export let _AND_tuple_COL_nth = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
+  if (typeof k !== "number") throw new Error("Expected number index for a list");
+
+  if (xs instanceof CrDataTuple) return xs.get(k);
+
+  throw new Error("Does not support `nth` on this type");
+};
+
+export let _AND_record_COL_nth = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
+  if (typeof k !== "number") throw new Error("Expected number index for a list");
+
   if (xs instanceof CrDataRecord) {
     if (k < 0 || k >= xs.fields.length) {
       throw new Error("Out of bound");
     }
     return new CrDataList([kwd(xs.fields[k]), xs.values[k]]);
-  }
-  if (Array.isArray(xs)) {
-    return xs[k];
   }
 
   throw new Error("Does not support `nth` on this type");
@@ -554,10 +565,10 @@ export let _AND_get = function (xs: CrDataValue, k: CrDataValue) {
     throw new Error("`&get` does not work on `nil`, need to use `get`");
   }
   if (typeof xs === "string") {
-    return nth(xs, k);
+    return _AND_str_COL_nth(xs, k);
   }
   if (xs instanceof CrDataList) {
-    return nth(xs, k);
+    return _AND_list_COL_nth(xs, k);
   }
   if (xs instanceof CrDataRecord) {
     return xs.get(k);

@@ -1,7 +1,8 @@
 use std::cmp::Ordering;
 use std::ops::Rem;
 
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::{Calcit, CalcitItems, CrListWrap};
+use crate::util::number::f64_to_usize;
 
 pub fn new_record(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
@@ -175,5 +176,26 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     },
     (Some(a), ..) => Err(format!("record contains? expected a record, got: {}", a)),
     (None, ..) => Err(format!("record contains? expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Record(_name, fields, values)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        if idx < fields.len() {
+          Ok(Calcit::List(im::vector![
+            Calcit::Keyword(fields[idx].clone()),
+            values[idx].clone()
+          ]))
+        } else {
+          Ok(Calcit::Nil)
+        }
+      }
+      Err(e) => Err(format!("nth expect usize, {}", e)),
+    },
+    (Some(_), None) => Err(format!("record nth expected a record and index, got: {:?}", xs)),
+    (None, Some(_)) => Err(format!("record nth expected a record and index, got: {:?}", xs)),
+    (_, _) => Err(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
   }
 }

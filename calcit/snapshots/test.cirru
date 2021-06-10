@@ -236,7 +236,7 @@
             :inc $ fn (x)
               update x 1 inc
             :show $ fn (x)
-              str $ nth x 1
+              str $ &tuple:nth x 1
 
         |test-method $ quote
           fn ()

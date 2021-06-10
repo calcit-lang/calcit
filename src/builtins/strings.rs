@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::primes;
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::{Calcit, CalcitItems, CrListWrap};
 use crate::util::number::f64_to_usize;
 
 pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, String> {
@@ -252,5 +252,19 @@ pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     (Some(Calcit::Str(_)), Some(a)) => Err(format!("string `includes?` expected a string, got: {}", a)),
     (Some(a), ..) => Err(format!("string `includes?` expected string, got: {}", a)),
     (None, ..) => Err(format!("string `includes?` expected 2 arguments, got: {:?}", xs)),
+  }
+}
+pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => match s.chars().nth(idx) {
+        Some(v) => Ok(Calcit::Str(v.to_string())),
+        None => Ok(Calcit::Nil),
+      },
+      Err(e) => Err(format!("nth expect usize, {}", e)),
+    },
+    (Some(_), None) => Err(format!("string nth expected a string and index, got: {:?}", xs)),
+    (None, Some(_)) => Err(format!("string nth expected a string and index, got: {:?}", xs)),
+    (_, _) => Err(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
   }
 }

@@ -495,7 +495,7 @@
                       if (number? k)
                         recur (get x k) (rest path)
                         , false
-                      raise $ &str-concat "|Unknown structure for some-in? detection" x
+                      raise $ &str-concat "|Unknown structure for some-in? detection: " x
 
 
         |zipmap $ quote
@@ -566,11 +566,11 @@
             cond
               (list? x)
                 if (has-index? x k)
-                  assoc x k $ f (nth x k)
+                  assoc x k $ f (&list:nth x k)
                   , x
               (tuple? x)
                 if (or (&= k 1) (&= k 2))
-                  assoc x k $ f (nth x k)
+                  assoc x k $ f (&tuple:nth x k)
                   raise $ &str-concat "|tuple only has 0,1 fields, unknown field: " k
               (map? x)
                 if (contains? x k)
@@ -1191,7 +1191,7 @@
             :count &str:count
             :empty $ defn &str:empty (x) |
             :ends-with? ends-with?
-            :get nth
+            :get &str:nth
             :parse-float parse-float
             :parse-json parse-json
             :replace replace
@@ -1205,6 +1205,7 @@
             :empty? &str:empty?
             :contains? &str:contains?
             :includes? &str:includes?
+            :nth &str:nth
 
         |&core-set-class $ quote
           defrecord! &core-set-class
@@ -1249,6 +1250,7 @@
             :turn-map turn-map
             :count &record:count
             :contains? &record:contains?
+            :nth &record:nth
 
         |&core-list-class $ quote
           defrecord! &core-list-class
@@ -1272,7 +1274,7 @@
             :find-index find-index
             :foldl foldl
             :frequencies frequencies
-            :get nth
+            :get &list:nth
             :get-in get-in
             :group-by group-by
             :has-index? has-index?
@@ -1283,7 +1285,7 @@
             :map-indexed map-indexed
             :max max
             :min min
-            :nth nth
+            :nth &list:nth
             :pairs-map pairs-map
             :prepend prepend
             :reduce reduce
@@ -1332,3 +1334,9 @@
             if (nil? x) false
               if (list? x) (&list:includes? x k)
                 .includes? x k
+
+        |nth $ quote
+          defn nth (x i)
+            if (tuple? x) (&tuple:nth x i)
+              if (list? x) (&list:nth x i)
+                .nth x i

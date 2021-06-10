@@ -35,6 +35,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "turn-keyword"
       | "::" // unstable
       | "&compare"
+      | "&tuple:nth"
       // effects
       | "echo"
       | "println" // alias for echo
@@ -100,12 +101,12 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&str:empty?"
       | "&str:contains?"
       | "&str:includes?"
+      | "&str:nth"
       // lists
       | "[]"
       | "'" // used as an alias for `[]`, experimental
       | "&list:count"
       | "&list:empty?"
-      | "nth"
       | "slice"
       | "append"
       | "prepend"
@@ -119,6 +120,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "assoc-after"
       | "&list:contains?"
       | "&list:includes?"
+      | "&list:nth"
       // maps
       | "&{}"
       | "assoc"
@@ -159,6 +161,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "relevant-record?" // regexs
       | "&record:count"
       | "&record:contains?"
+      | "&record:nth"
   )
 }
 
@@ -181,6 +184,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "turn-keyword" => meta::turn_keyword(args),
     "::" => meta::new_tuple(args),            // unstable solution for the name
     "&compare" => meta::native_compare(args), // unstable solution for the name
+    "&tuple:nth" => meta::tuple_nth(args),    // unstable solution for the name
     // effects
     "echo" => effects::echo(args),
     "println" => effects::echo(args), // alias
@@ -243,6 +247,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&str:empty?" => strings::empty_ques(args),
     "&str:contains?" => strings::contains_ques(args),
     "&str:includes?" => strings::includes_ques(args),
+    "&str:nth" => strings::nth(args),
     // regex
     "re-matches" => regexes::re_matches(args),
     "re-find" => regexes::re_find(args),
@@ -251,7 +256,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     // lists
     "[]" => lists::new_list(args),
     "'" => lists::new_list(args), // alias
-    "nth" => lists::nth(args),
     "slice" => lists::slice(args),
     "append" => lists::append(args),
     "prepend" => lists::prepend(args),
@@ -267,6 +271,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&list:empty?" => lists::empty_ques(args),
     "&list:contains?" => lists::contains_ques(args),
     "&list:includes?" => lists::includes_ques(args),
+    "&list:nth" => lists::nth(args),
     // maps
     "&{}" => maps::call_new_map(args),
     "assoc" => maps::assoc(args),
@@ -307,6 +312,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "relevant-record?" => records::relevant_record_ques(args),
     "&record:count" => records::count(args),
     "&record:contains?" => records::contains_ques(args),
+    "&record:nth" => records::nth(args),
     a => Err(format!("No such proc: {}", a)),
   }
 }

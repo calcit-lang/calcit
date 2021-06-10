@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-use crate::primes::{Calcit, CalcitItems, CalcitScope};
+use crate::primes::{Calcit, CalcitItems, CalcitScope, CrListWrap};
 use crate::util::number::f64_to_usize;
 
 use crate::builtins;
@@ -21,13 +21,6 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Nil), Some(Calcit::Number(_))) => Ok(Calcit::Nil),
-    (Some(Calcit::Tuple(a, b)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(0) => Ok((**a).clone()),
-      Ok(1) => Ok((**b).to_owned()),
-      Ok(m) => Err(format!("Tuple only got 2 elements, trying to index with {}", m)),
-      Err(e) => Err(format!("nth expect usize, {}", e)),
-    },
     (Some(Calcit::List(ys)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => match ys.get(idx) {
         Some(v) => Ok(v.clone()),
@@ -35,29 +28,9 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
       },
       Err(e) => Err(format!("nth expect usize, {}", e)),
     },
-    (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(idx) => match s.chars().nth(idx) {
-        Some(v) => Ok(Calcit::Str(v.to_string())),
-        None => Ok(Calcit::Nil),
-      },
-      Err(e) => Err(format!("nth expect usize, {}", e)),
-    },
-    (Some(Calcit::Record(_name, fields, values)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(idx) => {
-        if idx < fields.len() {
-          Ok(Calcit::List(im::vector![
-            Calcit::Keyword(fields[idx].clone()),
-            values[idx].clone()
-          ]))
-        } else {
-          Ok(Calcit::Nil)
-        }
-      }
-      Err(e) => Err(format!("nth expect usize, {}", e)),
-    },
-    (Some(_), None) => Err(format!("nth expected a ordered seq and index, got: {:?}", xs)),
-    (None, Some(_)) => Err(format!("nth expected a ordered seq and index, got: {:?}", xs)),
-    (_, _) => Err(format!("nth expected 2 argument, got: {:?}", xs)),
+    (Some(_), None) => Err(format!("string nth expected a list and index, got: {:?}", xs)),
+    (None, Some(_)) => Err(format!("string nth expected a list and index, got: {:?}", xs)),
+    (_, _) => Err(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
   }
 }
 
