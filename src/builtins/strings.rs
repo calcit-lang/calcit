@@ -226,3 +226,11 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("string count expected 1 argument")),
   }
 }
+
+pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => Ok(Calcit::Bool(s.is_empty())),
+    Some(a) => Err(format!("string empty? expected a string, got: {}", a)),
+    None => Err(String::from("string empty? expected 1 argument")),
+  }
+}

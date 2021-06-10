@@ -97,11 +97,12 @@ pub fn is_proc_name(s: &str) -> bool {
       | "blank?"
       | "escape"
       | "&str:count"
+      | "&str:empty?"
       // lists
       | "[]"
       | "'" // used as an alias for `[]`, experimental
-      | "empty?"
       | "&list:count"
+      | "&list:empty?"
       | "nth"
       | "slice"
       | "append"
@@ -126,6 +127,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&merge-non-nil"
       | "&map:to-list"
       | "&map:count"
+      | "&map:empty?"
       // sets
       | "#{}"
       | "&include"
@@ -135,6 +137,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&intersection"
       | "set->list"
       | "&set:count"
+      | "&set:empty?"
       // json
       | "parse-json"
       | "stringify-json"
@@ -231,6 +234,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "blank?" => strings::blank_ques(args),
     "escape" => strings::escape(args),
     "&str:count" => strings::count(args),
+    "&str:empty?" => strings::empty_ques(args),
     // regex
     "re-matches" => regexes::re_matches(args),
     "re-find" => regexes::re_find(args),
@@ -239,8 +243,8 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     // lists
     "[]" => lists::new_list(args),
     "'" => lists::new_list(args), // alias
-    "empty?" => lists::empty_ques(args),
     "&list:count" => lists::count(args),
+    "&list:empty?" => lists::empty_ques(args),
     "nth" => lists::nth(args),
     "slice" => lists::slice(args),
     "append" => lists::append(args),
@@ -265,6 +269,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&merge-non-nil" => maps::call_merge_non_nil(args),
     "&map:to-list" => maps::to_list(args),
     "&map:count" => maps::count(args),
+    "&map:empty?" => maps::empty_ques(args),
     // sets
     "#{}" => sets::new_set(args),
     "&include" => sets::call_include(args),
@@ -274,6 +279,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&intersection" => sets::call_intersection(args),
     "set->list" => sets::set_to_list(args),
     "&set:count" => sets::count(args),
+    "&set:empty?" => sets::empty_ques(args),
     // json
     "parse-json" => json::parse_json(args),
     "stringify-json" => json::stringify_json(args),

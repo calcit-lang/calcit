@@ -1204,6 +1204,7 @@
             :strip-suffix strip-suffix
             :substr substr
             :trim trim
+            :empty? &str:empty?
 
         |&core-set-class $ quote
           defrecord! &core-set-class
@@ -1212,7 +1213,7 @@
             :difference difference
             :exclude exclude
             :empty empty
-            :empty? empty?
+            :empty? &set:empty?
             :include include
             :includes? includes?
             :intersection intersection
@@ -1226,7 +1227,7 @@
             :count &map:count
             :dissoc dissoc
             :empty empty
-            :empty? empty?
+            :empty? &map:empty?
             :get &get
             :get-in get-in
             :includes? includes?
@@ -1262,7 +1263,7 @@
             :drop drop
             :each each
             :empty empty
-            :empty? empty?
+            :empty? &list:empty?
             :filter filter
             :filter-not filter-not
             :find-index find-index
@@ -1309,3 +1310,10 @@
                 if (list? x)
                   &list:count x
                   .count x
+
+        |empty? $ quote
+          defn empty? (x)
+            if (nil? x) true
+              if (list? x)
+                &list:empty? x
+                .empty? x

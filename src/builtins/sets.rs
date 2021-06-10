@@ -83,3 +83,11 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("set count expected 1 argument")),
   }
 }
+
+pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Set(ys)) => Ok(Calcit::Bool(ys.is_empty())),
+    Some(a) => Err(format!("set empty? expected some set, got: {}", a)),
+    None => Err(String::from("set empty? expected 1 argument")),
+  }
+}

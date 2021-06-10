@@ -670,26 +670,23 @@ export let range = (n: number, m: number, m2: number): CrDataList => {
   return result;
 };
 
-export let empty_QUES_ = (xs: CrDataValue): boolean => {
-  if (typeof xs == "string") {
-    return xs.length == 0;
-  }
-  if (xs instanceof CrDataList) {
-    return xs.isEmpty();
-  }
-  if (xs instanceof CrDataMap) {
-    return xs.isEmpty();
-  }
-  if (xs instanceof CrDataSet) {
-    return xs.len() === 0;
-  }
-  if (xs == null) {
-    return true;
-  }
+export function _AND_list_COL_empty_QUES_(xs: CrDataValue): boolean {
+  if (xs instanceof CrDataList) return xs.isEmpty();
+  throw new Error(`expected a list ${xs}`);
+}
+export function _AND_str_COL_empty_QUES_(xs: CrDataValue): boolean {
+  if (typeof xs == "string") return xs.length == 0;
+  throw new Error(`expected a string ${xs}`);
+}
+export function _AND_map_COL_empty_QUES_(xs: CrDataValue): boolean {
+  if (xs instanceof CrDataMap) return xs.isEmpty();
 
-  console.error(xs);
-  throw new Error("Does not support `empty?` on this type");
-};
+  throw new Error(`expected a list ${xs}`);
+}
+export function _AND_set_COL_empty_QUES_(xs: CrDataValue): boolean {
+  if (xs instanceof CrDataSet) return xs.len() === 0;
+  throw new Error(`expected a list ${xs}`);
+}
 
 export let first = (xs: CrDataValue): CrDataValue => {
   if (xs == null) {

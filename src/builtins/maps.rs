@@ -251,3 +251,12 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("map count expected 1 argument")),
   }
 }
+
+pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Map(ys)) => Ok(Calcit::Bool(ys.is_empty())),
+    Some(Calcit::Set(ys)) => Ok(Calcit::Bool(ys.is_empty())),
+    Some(a) => Err(format!("map empty? expected some map, got: {}", a)),
+    None => Err(String::from("map empty? expected 1 argument")),
+  }
+}

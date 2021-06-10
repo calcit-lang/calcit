@@ -11,19 +11,6 @@ pub fn new_list(xs: &CalcitItems) -> Result<Calcit, String> {
   Ok(Calcit::List(xs.clone()))
 }
 
-pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
-  match xs.get(0) {
-    Some(Calcit::Nil) => Ok(Calcit::Bool(true)),
-    Some(Calcit::Tuple(..)) => Ok(Calcit::Bool(false)),
-    Some(Calcit::List(ys)) => Ok(Calcit::Bool(ys.is_empty())),
-    Some(Calcit::Map(ys)) => Ok(Calcit::Bool(ys.is_empty())),
-    Some(Calcit::Set(ys)) => Ok(Calcit::Bool(ys.is_empty())),
-    Some(Calcit::Str(s)) => Ok(Calcit::Bool(s.is_empty())),
-    Some(a) => Err(format!("empty? expected some seq, got: {}", a)),
-    None => Err(String::from("empty? expected 1 argument")),
-  }
-}
-
 pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::List(ys)) => Ok(Calcit::Number(ys.len() as f64)),
@@ -547,5 +534,13 @@ pub fn assoc_after(xs: &CalcitItems) -> Result<Calcit, String> {
     },
     (Some(a), Some(b), Some(c)) => Err(format!("assoc-after expected list and index, got: {} {} {}", a, b, c)),
     (a, b, c) => Err(format!("invalid arguments to assoc-after: {:?} {:?} {:?}", a, b, c)),
+  }
+}
+
+pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::List(ys)) => Ok(Calcit::Bool(ys.is_empty())),
+    Some(a) => Err(format!("list empty? expected a list, got: {}", a)),
+    None => Err(String::from("list empty? expected 1 argument")),
   }
 }
