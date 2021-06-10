@@ -465,12 +465,9 @@
 
         |empty $ quote
           defn empty (x)
-            if (list? x) ([])
-              if (map? x) (&{})
-                if (set? x) (#{})
-                  if (string? x) |
-                    if (nil? x) nil
-                      raise $ &str-concat "|empty does not work on this type: " (&str x)
+            if (nil? x) nil
+              if (list? x) ([])
+                .empty x
 
         |pairs-map $ quote
           defn pairs-map (xs)
@@ -1178,6 +1175,7 @@
         |&core-number-class $ quote
           defrecord! &core-number-class
             :ceil ceil
+            :empty $ defn &number:empty (x) 0
             :floor floor
             :format format-number
             :inc inc
@@ -1191,7 +1189,7 @@
           defrecord! &core-string-class
             :blank? blank?
             :count &str:count
-            :empty empty
+            :empty $ defn &str:empty (x) |
             :ends-with? ends-with?
             :get nth
             :parse-float parse-float
@@ -1212,7 +1210,7 @@
             :count &set:count
             :difference difference
             :exclude exclude
-            :empty empty
+            :empty $ defn &set:empty (x) (#{})
             :empty? &set:empty?
             :include include
             :includes? includes?
@@ -1226,7 +1224,7 @@
             :contains? contains?
             :count &map:count
             :dissoc dissoc
-            :empty empty
+            :empty $ defn &map:empty (x) (&{})
             :empty? &map:empty?
             :get &get
             :get-in get-in
@@ -1262,7 +1260,7 @@
             :count &list:count
             :drop drop
             :each each
-            :empty empty
+            :empty $ defn &list:empty (x) ([])
             :empty? &list:empty?
             :filter filter
             :filter-not filter-not
