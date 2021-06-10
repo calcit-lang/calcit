@@ -29,7 +29,7 @@ export * from "./calcit-data";
 export * from "./record-procs";
 export * from "./custom-formatter";
 
-export const calcit_version = "0.3.32";
+export const calcit_version = "0.3.33";
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
@@ -1214,7 +1214,12 @@ export let re_find_index = (content: string, re: string): number => {
 };
 
 export let re_find_all = (content: string, re: string): CrDataList => {
-  return new CrDataList(content.match(new RegExp(re, "g")));
+  let ys = content.match(new RegExp(re, "g"));
+  if (ys == null) {
+    return new CrDataList([]);
+  } else {
+    return new CrDataList(ys);
+  }
 };
 
 export let to_js_data = (x: CrDataValue, addColon: boolean = false): any => {
