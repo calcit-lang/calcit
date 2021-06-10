@@ -134,6 +134,15 @@ export class CrDataTuple {
       throw new Error("Tuple only have 2 elements");
     }
   }
+  assoc(n: number, v: CrDataValue) {
+    if (n == 0) {
+      return new CrDataTuple(v, this.snd);
+    } else if (n == 1) {
+      return new CrDataTuple(this.fst, v);
+    } else {
+      throw new Error("Tuple only have 2 elements");
+    }
+  }
   toString(): string {
     return `(&tuple ${this.fst.toString()} ${this.snd.toString()})`;
   }
@@ -574,6 +583,11 @@ export class CrDataRecord {
   }
   merge() {
     // TODO
+  }
+  contains(k: CrDataValue) {
+    let field = getStringName(k);
+    let idx = findInFields(this.fields, field);
+    return idx >= 0;
   }
   toString(): string {
     let ret = "(%{} " + this.name;

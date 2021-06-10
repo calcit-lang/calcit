@@ -209,7 +209,11 @@ fn process_list_call(
     (Calcit::Keyword(..), _) => {
       if args.len() == 1 {
         let code = Calcit::List(im::vector![
-          Calcit::Proc(String::from("&get")),
+          Calcit::Symbol(
+            String::from("get"),
+            String::from(primes::CORE_NS),
+            Some(ResolvedDef(String::from(primes::CORE_NS), String::from("get"), None))
+          ),
           args[0].clone(),
           head.clone()
         ]);
@@ -247,7 +251,7 @@ fn process_list_call(
       }
     }
     (Calcit::Syntax(name, name_ns), _) => match name.as_str() {
-      "quote-replace" | "quasiquote" => Ok((
+      "quasiquote" | "quote-replace" => Ok((
         preprocess_quasiquote(&name, &name_ns, args, scope_defs, file_ns, program_code)?,
         None,
       )),

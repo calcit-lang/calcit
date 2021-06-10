@@ -204,8 +204,8 @@ pub fn invoke_method(
   invoke_args: &CalcitItems,
   program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, String> {
-  let (class, raw_value) = match invoke_args.get(0) {
-    Some(Calcit::Tuple(a, b)) => ((**a).to_owned(), (**b).to_owned()),
+  let (class, value) = match invoke_args.get(0) {
+    Some(Calcit::Tuple(a, _b)) => ((**a).to_owned(), invoke_args.get(0).unwrap().to_owned()),
     Some(Calcit::Number(..)) => {
       // classed should already be preprocessed
       let code = gen_sym("&core-number-class");
@@ -244,7 +244,7 @@ pub fn invoke_method(
       match find_in_fields(&fields, name) {
         Some(idx) => {
           let mut method_args: im::Vector<Calcit> = im::vector![];
-          method_args.push_back(raw_value.to_owned());
+          method_args.push_back(value.to_owned());
           let mut at_first = true;
           for x in invoke_args {
             if at_first {
@@ -290,5 +290,38 @@ pub fn native_compare(xs: &CalcitItems) -> Result<Calcit, String> {
       Ordering::Equal => Ok(Calcit::Number(0.0)),
     },
     (a, b) => Err(format!("&compare expected 2 values, got {:?} {:?}", a, b)),
+  }
+}
+
+pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Tuple(a, b)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(0) => Ok((**a).clone()),
+      Ok(1) => Ok((**b).to_owned()),
+      Ok(m) => Err(format!("Tuple only got 2 elements, trying to index with {}", m)),
+      Err(e) => Err(format!("nth expect usize, {}", e)),
+    },
+    (Some(_), None) => Err(format!("nth expected a tuple and an index, got: {:?}", xs)),
+    (None, Some(_)) => Err(format!("nth expected a tuple and an index, got: {:?}", xs)),
+    (_, _) => Err(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
+  }
+}
+
+pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1), xs.get(2)) {
+    (Some(Calcit::Tuple(a0, a1)), Some(Calcit::Number(n)), Some(a)) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        if idx == 0 {
+          Ok(Calcit::Tuple(Box::new(a.to_owned()), a1.to_owned()))
+        } else if idx == 1 {
+          Ok(Calcit::Tuple(a0.to_owned(), Box::new(a.to_owned())))
+        } else {
+          Err(format!("Tuple only has fields of 0,1 , unknown index: {}", idx))
+        }
+      }
+      Err(e) => Err(e),
+    },
+    (Some(a), ..) => Err(format!("tuplu:assoc expected a tuple, got: {}", a)),
+    (None, ..) => Err(format!("tuplu:assoc expected 3 arguments, got: {:?}", xs)),
   }
 }

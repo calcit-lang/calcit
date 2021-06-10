@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::primes;
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::{Calcit, CalcitItems, CrListWrap};
 use crate::util::number::f64_to_usize;
 
 pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, String> {
@@ -224,5 +224,77 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Str(s)) => Ok(Calcit::Number(s.chars().count() as f64)),
     Some(a) => Err(format!("string count expected a string, got: {}", a)),
     None => Err(String::from("string count expected 1 argument")),
+  }
+}
+
+pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => Ok(Calcit::Bool(s.is_empty())),
+    Some(a) => Err(format!("string empty? expected a string, got: {}", a)),
+    None => Err(String::from("string empty? expected 1 argument")),
+  }
+}
+
+pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => Ok(Calcit::Bool(idx < s.chars().count())),
+      Err(e) => Err(e),
+    },
+    (Some(a), ..) => Err(format!("strings contains? expected a string, got: {}", a)),
+    (None, ..) => Err(format!("strings contains? expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Str(xs)), Some(Calcit::Str(a))) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(Calcit::Str(_)), Some(a)) => Err(format!("string `includes?` expected a string, got: {}", a)),
+    (Some(a), ..) => Err(format!("string `includes?` expected string, got: {}", a)),
+    (None, ..) => Err(format!("string `includes?` expected 2 arguments, got: {:?}", xs)),
+  }
+}
+pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => match s.chars().nth(idx) {
+        Some(v) => Ok(Calcit::Str(v.to_string())),
+        None => Ok(Calcit::Nil),
+      },
+      Err(e) => Err(format!("nth expect usize, {}", e)),
+    },
+    (Some(_), None) => Err(format!("string nth expected a string and index, got: {:?}", xs)),
+    (None, Some(_)) => Err(format!("string nth expected a string and index, got: {:?}", xs)),
+    (_, _) => Err(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
+  }
+}
+
+pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => match s.chars().next() {
+      Some(c) => Ok(Calcit::Str(c.to_string())),
+      None => Ok(Calcit::Nil),
+    },
+    Some(a) => Err(format!("str:first expected a string, got: {}", a)),
+    None => Err(String::from("str:first expected 1 argument")),
+  }
+}
+
+pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => {
+      let mut buffer = String::from("");
+      let mut is_first = true;
+      for c in s.chars() {
+        if is_first {
+          is_first = false;
+          continue;
+        }
+        buffer.push(c)
+      }
+      Ok(Calcit::Str(buffer.to_owned()))
+    }
+    Some(a) => Err(format!("str:rest expected a string, got: {}", a)),
+    None => Err(String::from("str:rest expected 1 argument")),
   }
 }

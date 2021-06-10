@@ -35,6 +35,8 @@ pub fn is_proc_name(s: &str) -> bool {
       | "turn-keyword"
       | "::" // unstable
       | "&compare"
+      | "&tuple:nth"
+      | "&tuple:assoc"
       // effects
       | "echo"
       | "println" // alias for echo
@@ -97,35 +99,48 @@ pub fn is_proc_name(s: &str) -> bool {
       | "blank?"
       | "escape"
       | "&str:count"
+      | "&str:empty?"
+      | "&str:contains?"
+      | "&str:includes?"
+      | "&str:nth"
+      | "&str:first"
+      | "&str:rest"
       // lists
       | "[]"
       | "'" // used as an alias for `[]`, experimental
-      | "empty?"
       | "&list:count"
-      | "nth"
+      | "&list:empty?"
       | "slice"
       | "append"
       | "prepend"
-      | "rest"
       | "butlast"
       | "concat"
       | "range"
       | "reverse"
-      | "first"
       | "assoc-before"
       | "assoc-after"
+      | "&list:contains?"
+      | "&list:includes?"
+      | "&list:nth"
+      | "&list:first"
+      | "&list:rest"
+      | "&list:assoc"
+      | "&list:dissoc"
       // maps
       | "&{}"
-      | "assoc"
-      | "&get"
-      | "contains?"
-      | "dissoc"
+      | "&map:get"
+      | "&map:dissoc"
       | "&merge"
-      | "includes?"
       | "to-pairs"
       | "&merge-non-nil"
       | "&map:to-list"
       | "&map:count"
+      | "&map:empty?"
+      | "&map:contains?"
+      | "&map:includes?"
+      | "&map:first"
+      | "&map:rest"
+      | "&map:assoc"
       // sets
       | "#{}"
       | "&include"
@@ -135,6 +150,11 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&intersection"
       | "set->list"
       | "&set:count"
+      | "&set:empty?"
+      | "&set:includes?"
+      | "&set:first"
+      | "&set:rest"
+      | "&set:assoc"
       // json
       | "parse-json"
       | "stringify-json"
@@ -150,6 +170,10 @@ pub fn is_proc_name(s: &str) -> bool {
       | "turn-map"
       | "relevant-record?" // regexs
       | "&record:count"
+      | "&record:contains?"
+      | "&record:nth"
+      | "&record:get"
+      | "&record:assoc"
   )
 }
 
@@ -170,8 +194,10 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "write-cirru-edn" => meta::write_cirru_edn(args),
     "turn-symbol" => meta::turn_symbol(args),
     "turn-keyword" => meta::turn_keyword(args),
-    "::" => meta::new_tuple(args),            // unstable solution for the name
-    "&compare" => meta::native_compare(args), // unstable solution for the name
+    "::" => meta::new_tuple(args), // unstable solution for the name
+    "&compare" => meta::native_compare(args),
+    "&tuple:nth" => meta::tuple_nth(args),
+    "&tuple:assoc" => meta::assoc(args),
     // effects
     "echo" => effects::echo(args),
     "println" => effects::echo(args), // alias
@@ -231,6 +257,12 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "blank?" => strings::blank_ques(args),
     "escape" => strings::escape(args),
     "&str:count" => strings::count(args),
+    "&str:empty?" => strings::empty_ques(args),
+    "&str:contains?" => strings::contains_ques(args),
+    "&str:includes?" => strings::includes_ques(args),
+    "&str:nth" => strings::nth(args),
+    "&str:first" => strings::first(args),
+    "&str:rest" => strings::rest(args),
     // regex
     "re-matches" => regexes::re_matches(args),
     "re-find" => regexes::re_find(args),
@@ -239,32 +271,39 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     // lists
     "[]" => lists::new_list(args),
     "'" => lists::new_list(args), // alias
-    "empty?" => lists::empty_ques(args),
-    "&list:count" => lists::count(args),
-    "nth" => lists::nth(args),
     "slice" => lists::slice(args),
     "append" => lists::append(args),
     "prepend" => lists::prepend(args),
-    "rest" => lists::rest(args),
     "butlast" => lists::butlast(args),
     "concat" => lists::concat(args),
     "range" => lists::range(args),
     "reverse" => lists::reverse(args),
-    "first" => lists::first(args),
     "assoc-before" => lists::assoc_before(args),
     "assoc-after" => lists::assoc_after(args),
+    "&list:count" => lists::count(args),
+    "&list:empty?" => lists::empty_ques(args),
+    "&list:contains?" => lists::contains_ques(args),
+    "&list:includes?" => lists::includes_ques(args),
+    "&list:nth" => lists::nth(args),
+    "&list:first" => lists::first(args),
+    "&list:rest" => lists::rest(args),
+    "&list:assoc" => lists::assoc(args),
+    "&list:dissoc" => lists::dissoc(args),
     // maps
     "&{}" => maps::call_new_map(args),
-    "assoc" => maps::assoc(args),
-    "&get" => maps::map_get(args),
-    "contains?" => maps::contains_ques(args),
-    "dissoc" => maps::dissoc(args),
     "&merge" => maps::call_merge(args),
-    "includes?" => maps::includes_ques(args),
     "to-pairs" => maps::to_pairs(args),
     "&merge-non-nil" => maps::call_merge_non_nil(args),
     "&map:to-list" => maps::to_list(args),
     "&map:count" => maps::count(args),
+    "&map:empty?" => maps::empty_ques(args),
+    "&map:contains?" => maps::contains_ques(args),
+    "&map:includes?" => maps::includes_ques(args),
+    "&map:first" => maps::first(args),
+    "&map:rest" => maps::rest(args),
+    "&map:get" => maps::get(args),
+    "&map:assoc" => maps::assoc(args),
+    "&map:dissoc" => maps::dissoc(args),
     // sets
     "#{}" => sets::new_set(args),
     "&include" => sets::call_include(args),
@@ -274,6 +313,10 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&intersection" => sets::call_intersection(args),
     "set->list" => sets::set_to_list(args),
     "&set:count" => sets::count(args),
+    "&set:empty?" => sets::empty_ques(args),
+    "&set:includes?" => sets::includes_ques(args),
+    "&set:first" => sets::first(args),
+    "&set:rest" => sets::rest(args),
     // json
     "parse-json" => json::parse_json(args),
     "stringify-json" => json::stringify_json(args),
@@ -289,6 +332,10 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "turn-map" => records::turn_map(args),
     "relevant-record?" => records::relevant_record_ques(args),
     "&record:count" => records::count(args),
+    "&record:contains?" => records::contains_ques(args),
+    "&record:nth" => records::nth(args),
+    "&record:get" => records::get(args),
+    "&record:assoc" => records::assoc(args),
     a => Err(format!("No such proc: {}", a)),
   }
 }

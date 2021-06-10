@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-use crate::primes::{Calcit, CalcitItems, CalcitScope};
+use crate::primes::{Calcit, CalcitItems, CalcitScope, CrListWrap};
 use crate::util::number::f64_to_usize;
 
 use crate::builtins;
@@ -9,19 +9,6 @@ use crate::runner;
 
 pub fn new_list(xs: &CalcitItems) -> Result<Calcit, String> {
   Ok(Calcit::List(xs.clone()))
-}
-
-pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
-  match xs.get(0) {
-    Some(Calcit::Nil) => Ok(Calcit::Bool(true)),
-    Some(Calcit::Tuple(..)) => Ok(Calcit::Bool(false)),
-    Some(Calcit::List(ys)) => Ok(Calcit::Bool(ys.is_empty())),
-    Some(Calcit::Map(ys)) => Ok(Calcit::Bool(ys.is_empty())),
-    Some(Calcit::Set(ys)) => Ok(Calcit::Bool(ys.is_empty())),
-    Some(Calcit::Str(s)) => Ok(Calcit::Bool(s.is_empty())),
-    Some(a) => Err(format!("empty? expected some seq, got: {}", a)),
-    None => Err(String::from("empty? expected 1 argument")),
-  }
 }
 
 pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
@@ -34,13 +21,6 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Nil), Some(Calcit::Number(_))) => Ok(Calcit::Nil),
-    (Some(Calcit::Tuple(a, b)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(0) => Ok((**a).clone()),
-      Ok(1) => Ok((**b).to_owned()),
-      Ok(m) => Err(format!("Tuple only got 2 elements, trying to index with {}", m)),
-      Err(e) => Err(format!("nth expect usize, {}", e)),
-    },
     (Some(Calcit::List(ys)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => match ys.get(idx) {
         Some(v) => Ok(v.clone()),
@@ -48,29 +28,9 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
       },
       Err(e) => Err(format!("nth expect usize, {}", e)),
     },
-    (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(idx) => match s.chars().nth(idx) {
-        Some(v) => Ok(Calcit::Str(v.to_string())),
-        None => Ok(Calcit::Nil),
-      },
-      Err(e) => Err(format!("nth expect usize, {}", e)),
-    },
-    (Some(Calcit::Record(_name, fields, values)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(idx) => {
-        if idx < fields.len() {
-          Ok(Calcit::List(im::vector![
-            Calcit::Keyword(fields[idx].clone()),
-            values[idx].clone()
-          ]))
-        } else {
-          Ok(Calcit::Nil)
-        }
-      }
-      Err(e) => Err(format!("nth expect usize, {}", e)),
-    },
-    (Some(_), None) => Err(format!("nth expected a ordered seq and index, got: {:?}", xs)),
-    (None, Some(_)) => Err(format!("nth expected a ordered seq and index, got: {:?}", xs)),
-    (_, _) => Err(format!("nth expected 2 argument, got: {:?}", xs)),
+    (Some(_), None) => Err(format!("string nth expected a list and index, got: {:?}", xs)),
+    (None, Some(_)) => Err(format!("string nth expected a list and index, got: {:?}", xs)),
+    (_, _) => Err(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
   }
 }
 
@@ -120,7 +80,6 @@ pub fn prepend(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Nil) => Ok(Calcit::Nil),
     Some(Calcit::List(ys)) => {
       if ys.is_empty() {
         Ok(Calcit::Nil)
@@ -130,36 +89,8 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
         Ok(Calcit::List(zs))
       }
     }
-    Some(Calcit::Set(ys)) => match ys.iter().next() {
-      Some(y0) => {
-        let mut zs = ys.clone();
-        zs.remove(y0);
-        Ok(Calcit::Set(zs))
-      }
-      None => Ok(Calcit::Nil),
-    },
-    Some(Calcit::Map(ys)) => match ys.keys().next() {
-      Some(k0) => {
-        let mut zs = ys.clone();
-        zs.remove(k0);
-        Ok(Calcit::Map(zs))
-      }
-      None => Ok(Calcit::Nil),
-    },
-    Some(Calcit::Str(s)) => {
-      let mut buffer = String::from("");
-      let mut is_first = true;
-      for c in s.chars() {
-        if is_first {
-          is_first = false;
-          continue;
-        }
-        buffer.push(c)
-      }
-      Ok(Calcit::Str(buffer.to_owned()))
-    }
-    Some(a) => Err(format!("rest expected a list, got: {}", a)),
-    None => Err(String::from("rest expected 1 argument")),
+    Some(a) => Err(format!("list:rest expected a list, got: {}", a)),
+    None => Err(String::from("list:rest expected 1 argument")),
   }
 }
 
@@ -489,10 +420,8 @@ pub fn sort(
   }
 }
 
-/// use builtin function since sets need to be handled specifically
 pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Nil) => Ok(Calcit::Nil),
     Some(Calcit::List(ys)) => {
       if ys.is_empty() {
         Ok(Calcit::Nil)
@@ -500,22 +429,8 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
         Ok(ys[0].clone())
       }
     }
-    Some(Calcit::Set(ys)) => match ys.iter().next() {
-      // TODO first element of a set.. need to be more sure...
-      Some(v) => Ok(v.clone()),
-      None => Ok(Calcit::Nil),
-    },
-    Some(Calcit::Map(ys)) => match ys.iter().next() {
-      // TODO order may not be stable enough
-      Some((k, v)) => Ok(Calcit::List(im::vector![k.to_owned(), v.to_owned()])),
-      None => Ok(Calcit::Nil),
-    },
-    Some(Calcit::Str(s)) => match s.chars().next() {
-      Some(c) => Ok(Calcit::Str(c.to_string())),
-      None => Ok(Calcit::Nil),
-    },
-    Some(a) => Err(format!("first expected a list, got: {}", a)),
-    None => Err(String::from("first expected 1 argument")),
+    Some(a) => Err(format!("list:first expected a list, got: {}", a)),
+    None => Err(String::from("list:first expected 1 argument")),
   }
 }
 
@@ -547,5 +462,66 @@ pub fn assoc_after(xs: &CalcitItems) -> Result<Calcit, String> {
     },
     (Some(a), Some(b), Some(c)) => Err(format!("assoc-after expected list and index, got: {} {} {}", a, b, c)),
     (a, b, c) => Err(format!("invalid arguments to assoc-after: {:?} {:?} {:?}", a, b, c)),
+  }
+}
+
+pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::List(ys)) => Ok(Calcit::Bool(ys.is_empty())),
+    Some(a) => Err(format!("list empty? expected a list, got: {}", a)),
+    None => Err(String::from("list empty? expected 1 argument")),
+  }
+}
+
+pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => Ok(Calcit::Bool(idx < xs.len())),
+      Err(e) => Err(e),
+    },
+    (Some(a), ..) => Err(format!("list contains? expected list, got: {}", a)),
+    (None, ..) => Err(format!("list contains? expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(a), ..) => Err(format!("list `includes?` expected list, list, got: {}", a)),
+    (None, ..) => Err(format!("list `includes?` expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1), xs.get(2)) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n)), Some(a)) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        if idx < xs.len() {
+          let mut ys = xs.clone();
+          ys[idx] = a.clone();
+          Ok(Calcit::List(ys))
+        } else {
+          Ok(Calcit::Nil)
+        }
+      }
+      Err(e) => Err(e),
+    },
+    (Some(a), ..) => Err(format!("list:assoc expected list, got: {}", a)),
+    (None, ..) => Err(format!("list:assoc expected 3 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        let ys = &mut xs.clone();
+        ys.remove(idx);
+        Ok(Calcit::List(ys.clone()))
+      }
+      Err(e) => Err(format!("dissoc expected number, {}", e)),
+    },
+    (Some(a), ..) => Err(format!("list dissoc expected a list, got: {}", a)),
+    (_, _) => Err(format!("list dissoc expected 2 arguments, got: {:?}", xs)),
   }
 }

@@ -13,7 +13,7 @@
             let
                 c 11
               echo "\"internal c:" a b c
-              quote-replace $ do (echo "\"c is:" c)
+              quasiquote $ do (echo "\"c is:" c)
                 [] (~ a) (~ b) (, c) (~ c) (add-2 8)
     |test-gynienic.main $ {}
       :ns $ quote

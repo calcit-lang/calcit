@@ -1,7 +1,8 @@
 use std::cmp::Ordering;
 use std::ops::Rem;
 
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::{Calcit, CalcitItems, CrListWrap};
+use crate::util::number::f64_to_usize;
 
 pub fn new_record(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
@@ -162,5 +163,71 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Record(_name, fields, _)) => Ok(Calcit::Number(fields.len() as f64)),
     Some(a) => Err(format!("record count expected a record, got: {}", a)),
     None => Err(String::from("record count expected 1 argument")),
+  }
+}
+
+pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Record(_name, fields, _)), Some(a)) => match a {
+      Calcit::Str(k) | Calcit::Keyword(k) | Calcit::Symbol(k, ..) => {
+        Ok(Calcit::Bool(find_in_fields(fields, k).is_some()))
+      }
+      a => Err(format!("contains? got invalid field for record: {}", a)),
+    },
+    (Some(a), ..) => Err(format!("record contains? expected a record, got: {}", a)),
+    (None, ..) => Err(format!("record contains? expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Record(_name, fields, values)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        if idx < fields.len() {
+          Ok(Calcit::List(im::vector![
+            Calcit::Keyword(fields[idx].clone()),
+            values[idx].clone()
+          ]))
+        } else {
+          Ok(Calcit::Nil)
+        }
+      }
+      Err(e) => Err(format!("nth expect usize, {}", e)),
+    },
+    (Some(_), None) => Err(format!("record nth expected a record and index, got: {:?}", xs)),
+    (None, Some(_)) => Err(format!("record nth expected a record and index, got: {:?}", xs)),
+    (_, _) => Err(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
+  }
+}
+
+pub fn get(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Record(_name, fields, values)), Some(a)) => match a {
+      Calcit::Str(k) | Calcit::Keyword(k) | Calcit::Symbol(k, ..) => match find_in_fields(fields, k) {
+        Some(idx) => Ok(values[idx].clone()),
+        None => Ok(Calcit::Nil),
+      },
+      a => Err(format!("record field expected to be string/keyword, got {}", a)),
+    },
+    (Some(a), ..) => Err(format!("record &get expected record, got: {}", a)),
+    (None, ..) => Err(format!("record &get expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1), xs.get(2)) {
+    (Some(Calcit::Record(name, fields, values)), Some(a), Some(b)) => match a {
+      Calcit::Str(s) | Calcit::Keyword(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
+        Some(pos) => {
+          let mut new_values = values.clone();
+          new_values[pos] = b.clone();
+          Ok(Calcit::Record(name.clone(), fields.clone(), new_values))
+        }
+        None => Err(format!("invalid field `{}` for {:?}", s, fields)),
+      },
+      a => Err(format!("invalid field `{}` for {:?}", a, fields)),
+    },
+    (Some(a), ..) => Err(format!("record:assoc expected a record, got: {}", a)),
+    (None, ..) => Err(format!("record:assoc expected 3 arguments, got: {:?}", xs)),
   }
 }

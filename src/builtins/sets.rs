@@ -83,3 +83,47 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
     None => Err(String::from("set count expected 1 argument")),
   }
 }
+
+pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Set(ys)) => Ok(Calcit::Bool(ys.is_empty())),
+    Some(a) => Err(format!("set empty? expected some set, got: {}", a)),
+    None => Err(String::from("set empty? expected 1 argument")),
+  }
+}
+
+pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Set(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(a), ..) => Err(format!("sets `includes?` expected set, got: {}", a)),
+    (None, ..) => Err(format!("sets `includes?` expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+/// use builtin function since sets need to be handled specifically
+pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Set(ys)) => match ys.iter().next() {
+      // TODO first element of a set.. need to be more sure...
+      Some(v) => Ok(v.clone()),
+      None => Ok(Calcit::Nil),
+    },
+    Some(a) => Err(format!("set:first expected a set, got: {}", a)),
+    None => Err(String::from("set:first expected 1 argument")),
+  }
+}
+
+pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Set(ys)) => match ys.iter().next() {
+      Some(y0) => {
+        let mut zs = ys.clone();
+        zs.remove(y0);
+        Ok(Calcit::Set(zs))
+      }
+      None => Ok(Calcit::Nil),
+    },
+    Some(a) => Err(format!("set:rest expected a set, got: {}", a)),
+    None => Err(String::from("set:rest expected 1 argument")),
+  }
+}

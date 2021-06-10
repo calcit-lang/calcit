@@ -26,13 +26,13 @@
 
               assert= Person p0
 
-              assert= nil (&get Person :age)
-              assert= nil (&get Person 'age)
-              assert= nil (&get Person |age)
+              assert= nil (get Person :age)
+              assert= nil (get Person 'age)
+              assert= nil (get Person |age)
 
-              assert= 20 (&get p1 :age)
-              assert= 20 (&get p2 :age)
-              assert= 23 (&get p3 :age)
+              assert= 20 (get p1 :age)
+              assert= 20 (get p2 :age)
+              assert= 23 (get p3 :age)
 
               assert= :record $ type-of p1
               assert=
@@ -40,7 +40,7 @@
                 {} (:name |Chen) (:age 20) (:position :mainland)
 
               assert= 21
-                &get
+                get
                   make-record Person $ {}
                     :name |Chen
                     :age 21
@@ -57,8 +57,8 @@
 
               &let
                 p4 $ assoc p1 :age 30
-                assert= 20 $ &get p1 :age
-                assert= 30 $ &get p4 :age
+                assert= 20 $ get p1 :age
+                assert= 30 $ get p4 :age
 
               inside-js:
                 js/console.log $ to-js-data p1

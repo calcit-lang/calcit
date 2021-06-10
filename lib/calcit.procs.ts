@@ -29,7 +29,7 @@ export * from "./calcit-data";
 export * from "./record-procs";
 export * from "./custom-formatter";
 
-export const calcit_version = "0.3.31";
+export const calcit_version = "0.3.32";
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
@@ -341,7 +341,7 @@ export let _AND__EQ_ = (x: CrDataValue, y: CrDataValue): boolean => {
         if (!y.contains(k)) {
           return false;
         }
-        if (!_AND__EQ_(v, _AND_get(y, k))) {
+        if (!_AND__EQ_(v, _AND_map_COL_get(y, k))) {
           return false;
         }
       }
@@ -424,7 +424,7 @@ export let _AND_str = (x: CrDataValue): string => {
   return `${x}`;
 };
 
-export let contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
+export let _AND_str_COL_contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
   if (typeof xs === "string") {
     if (typeof x != "number") {
       throw new Error("Expected number index for detecting");
@@ -435,6 +435,11 @@ export let contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
     }
     return false;
   }
+
+  throw new Error("string `contains?` expected a string");
+};
+
+export let _AND_list_COL_contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
   if (xs instanceof CrDataList) {
     if (typeof x != "number") {
       throw new Error("Expected number index for detecting");
@@ -445,27 +450,34 @@ export let contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
     }
     return false;
   }
-  if (xs instanceof CrDataMap) {
-    return xs.contains(x);
-  }
-  if (xs instanceof CrDataRecord) {
-    let pos = findInFields(xs.fields, getStringName(x));
-    return pos >= 0;
-  }
-  if (xs instanceof CrDataSet) {
-    throw new Error("Set expected `includes?` for detecting");
-  }
 
-  throw new Error("`contains?` expected a structure");
+  throw new Error("list `contains?` expected a list");
 };
 
-export let includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
+export let _AND_map_COL_contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
+  if (xs instanceof CrDataMap) return xs.contains(x);
+
+  throw new Error("map `contains?` expected a map");
+};
+
+export let _AND_record_COL_contains_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
+  if (xs instanceof CrDataRecord) return xs.contains(x);
+
+  throw new Error("record `contains?` expected a record");
+};
+
+export let _AND_str_COL_includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
   if (typeof xs === "string") {
     if (typeof x !== "string") {
       throw new Error("Expected string");
     }
     return xs.includes(x as string);
   }
+
+  throw new Error("string includes? expected a string");
+};
+
+export let _AND_list_COL_includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
   if (xs instanceof CrDataList) {
     let size = xs.len();
     for (let v of xs.items()) {
@@ -475,6 +487,11 @@ export let includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
     }
     return false;
   }
+
+  throw new Error("list includes? expected a list");
+};
+
+export let _AND_map_COL_includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
   if (xs instanceof CrDataMap) {
     for (let [k, v] of xs.pairs()) {
       if (_AND__EQ_(v, x)) {
@@ -483,87 +500,115 @@ export let includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
     }
     return false;
   }
+
+  throw new Error("map includes? expected a map");
+};
+
+export let _AND_set_COL_includes_QUES_ = (xs: CrDataValue, x: CrDataValue): boolean => {
   if (xs instanceof CrDataSet) {
     return xs.contains(x);
   }
 
-  throw new Error("includes? expected a structure");
+  throw new Error("set includes? expected a set");
 };
 
-export let nth = function (xs: CrDataValue, k: CrDataValue) {
-  if (arguments.length !== 2) {
-    throw new Error("nth takes 2 arguments");
-  }
-  if (typeof k !== "number") {
-    throw new Error("Expected number index for a list");
-  }
+export let _AND_str_COL_nth = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
+  if (typeof k !== "number") throw new Error("Expected number index for a list");
 
-  if (typeof xs === "string") {
-    return xs[k];
-  }
-  if (xs instanceof CrDataList) {
-    return xs.get(k);
-  }
-  if (xs instanceof CrDataTuple) {
-    return xs.get(k);
-  }
+  if (typeof xs === "string") return xs[k];
+
+  throw new Error("Does not support `nth` on this type");
+};
+
+export let _AND_list_COL_nth = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
+  if (typeof k !== "number") throw new Error("Expected number index for a list");
+
+  if (xs instanceof CrDataList) return xs.get(k);
+
+  throw new Error("Does not support `nth` on this type");
+};
+
+export let _AND_tuple_COL_nth = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
+  if (typeof k !== "number") throw new Error("Expected number index for a list");
+
+  if (xs instanceof CrDataTuple) return xs.get(k);
+
+  throw new Error("Does not support `nth` on this type");
+};
+
+export let _AND_record_COL_nth = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
+  if (typeof k !== "number") throw new Error("Expected number index for a list");
+
   if (xs instanceof CrDataRecord) {
     if (k < 0 || k >= xs.fields.length) {
       throw new Error("Out of bound");
     }
     return new CrDataList([kwd(xs.fields[k]), xs.values[k]]);
   }
-  if (Array.isArray(xs)) {
-    return xs[k];
-  }
 
   throw new Error("Does not support `nth` on this type");
 };
 
-export let _AND_get = function (xs: CrDataValue, k: CrDataValue) {
+export let _AND_map_COL_get = function (xs: CrDataValue, k: CrDataValue) {
   if (arguments.length !== 2) {
-    throw new Error("&get takes 2 arguments");
+    throw new Error("map &get takes 2 arguments");
   }
 
-  if (xs instanceof CrDataMap) {
-    return xs.get(k);
-  }
-  if (xs == null) {
-    throw new Error("`&get` does not work on `nil`, need to use `get`");
-  }
-  if (typeof xs === "string") {
-    return nth(xs, k);
-  }
-  if (xs instanceof CrDataList) {
-    return nth(xs, k);
-  }
-  if (xs instanceof CrDataRecord) {
-    return xs.get(k);
-  }
+  if (xs instanceof CrDataMap) return xs.get(k);
 
   throw new Error("Does not support `&get` on this type");
 };
 
-export let assoc = function (xs: CrDataValue, k: CrDataValue, v: CrDataValue) {
-  if (arguments.length !== 3) {
-    throw new Error("assoc takes 3 arguments");
+export let _AND_record_COL_get = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) {
+    throw new Error("record &get takes 2 arguments");
   }
+
+  if (xs instanceof CrDataRecord) return xs.get(k);
+
+  throw new Error("Does not support `&get` on this type");
+};
+
+export let _AND_list_COL_assoc = function (xs: CrDataValue, k: CrDataValue, v: CrDataValue) {
+  if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
+
   if (xs instanceof CrDataList) {
     if (typeof k !== "number") {
       throw new Error("Expected number index for lists");
     }
     return xs.assoc(k, v);
   }
+  throw new Error("list `assoc` expected a list");
+};
+export let _AND_tuple_COL_assoc = function (xs: CrDataValue, k: CrDataValue, v: CrDataValue) {
+  if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
 
-  if (xs instanceof CrDataMap) {
+  if (xs instanceof CrDataTuple) {
+    if (typeof k !== "number") {
+      throw new Error("Expected number index for lists");
+    }
     return xs.assoc(k, v);
   }
 
-  if (xs instanceof CrDataRecord) {
-    return xs.assoc(k, v);
-  }
+  throw new Error("tuple `assoc` expected a tuple");
+};
+export let _AND_map_COL_assoc = function (xs: CrDataValue, k: CrDataValue, v: CrDataValue) {
+  if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
 
-  throw new Error("Does not support `assoc` on this type");
+  if (xs instanceof CrDataMap) return xs.assoc(k, v);
+
+  throw new Error("map `assoc` expected a map");
+};
+export let _AND_record_COL_assoc = function (xs: CrDataValue, k: CrDataValue, v: CrDataValue) {
+  if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
+
+  if (xs instanceof CrDataRecord) return xs.assoc(k, v);
+
+  throw new Error("record `assoc` expected a record");
 };
 
 export let assoc_before = function (xs: CrDataList, k: number, v: CrDataValue): CrDataList {
@@ -594,22 +639,23 @@ export let assoc_after = function (xs: CrDataList, k: number, v: CrDataValue): C
   throw new Error("Does not support `assoc-after` on this type");
 };
 
-export let dissoc = function (xs: CrDataValue, k: CrDataValue) {
-  if (arguments.length !== 2) {
-    throw new Error("dissoc takes 2 arguments");
-  }
+export let _AND_list_COL_dissoc = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) throw new Error("dissoc takes 2 arguments");
 
   if (xs instanceof CrDataList) {
-    if (typeof k !== "number") {
-      throw new Error("Expected number index for lists");
-    }
-    return xs.dissoc(k);
-  }
-  if (xs instanceof CrDataMap) {
+    if (typeof k !== "number") throw new Error("Expected number index for lists");
+
     return xs.dissoc(k);
   }
 
-  throw new Error("Does not support `dissoc` on this type");
+  throw new Error("`dissoc` expected a list");
+};
+export let _AND_map_COL_dissoc = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) throw new Error("dissoc takes 2 arguments");
+
+  if (xs instanceof CrDataMap) return xs.dissoc(k);
+
+  throw new Error("`dissoc` expected a map");
 };
 
 export let reset_BANG_ = (a: CrDataRef, v: CrDataValue): null => {
@@ -664,43 +710,42 @@ export let range = (n: number, m: number, m2: number): CrDataList => {
   return result;
 };
 
-export let empty_QUES_ = (xs: CrDataValue): boolean => {
-  if (typeof xs == "string") {
-    return xs.length == 0;
-  }
-  if (xs instanceof CrDataList) {
-    return xs.isEmpty();
-  }
-  if (xs instanceof CrDataMap) {
-    return xs.isEmpty();
-  }
-  if (xs instanceof CrDataSet) {
-    return xs.len() === 0;
-  }
-  if (xs == null) {
-    return true;
-  }
+export function _AND_list_COL_empty_QUES_(xs: CrDataValue): boolean {
+  if (xs instanceof CrDataList) return xs.isEmpty();
+  throw new Error(`expected a list ${xs}`);
+}
+export function _AND_str_COL_empty_QUES_(xs: CrDataValue): boolean {
+  if (typeof xs == "string") return xs.length == 0;
+  throw new Error(`expected a string ${xs}`);
+}
+export function _AND_map_COL_empty_QUES_(xs: CrDataValue): boolean {
+  if (xs instanceof CrDataMap) return xs.isEmpty();
 
-  console.error(xs);
-  throw new Error("Does not support `empty?` on this type");
-};
+  throw new Error(`expected a list ${xs}`);
+}
+export function _AND_set_COL_empty_QUES_(xs: CrDataValue): boolean {
+  if (xs instanceof CrDataSet) return xs.len() === 0;
+  throw new Error(`expected a list ${xs}`);
+}
 
-export let first = (xs: CrDataValue): CrDataValue => {
-  if (xs == null) {
-    return null;
-  }
+export let _AND_list_COL_first = (xs: CrDataValue): CrDataValue => {
   if (xs instanceof CrDataList) {
     if (xs.isEmpty()) {
       return null;
     }
     return xs.first();
   }
+  console.error(xs);
+  throw new Error("Expected a list");
+};
+export let _AND_str_COL_first = (xs: CrDataValue): CrDataValue => {
   if (typeof xs === "string") {
     return xs[0];
   }
-  if (xs instanceof CrDataSet) {
-    return xs.first();
-  }
+  console.error(xs);
+  throw new Error("Expected a string");
+};
+export let _AND_map_COL_first = (xs: CrDataValue): CrDataValue => {
   if (xs instanceof CrDataMap) {
     // TODO order may not be stable enough
     let ys = xs.pairs();
@@ -711,7 +756,15 @@ export let first = (xs: CrDataValue): CrDataValue => {
     }
   }
   console.error(xs);
-  throw new Error("Expects something sequential");
+  throw new Error("Expected a map");
+};
+export let _AND_set_COL_first = (xs: CrDataValue): CrDataValue => {
+  if (xs instanceof CrDataSet) {
+    return xs.first();
+  }
+
+  console.error(xs);
+  throw new Error("Expected a set");
 };
 
 export let timeout_call = (duration: number, f: CrDataFn): null => {
@@ -725,19 +778,30 @@ export let timeout_call = (duration: number, f: CrDataFn): null => {
   return null;
 };
 
-export let rest = (xs: CrDataValue): CrDataValue => {
+export let _AND_list_COL_rest = (xs: CrDataValue): CrDataValue => {
   if (xs instanceof CrDataList) {
     if (xs.len() === 0) {
       return null;
     }
     return xs.rest();
   }
-  if (typeof xs === "string") {
-    return xs.substr(1);
-  }
-  if (xs instanceof CrDataSet) {
-    return xs.rest();
-  }
+  console.error(xs);
+  throw new Error("Expected a list");
+};
+
+export let _AND_str_COL_rest = (xs: CrDataValue): CrDataValue => {
+  if (typeof xs === "string") return xs.substr(1);
+
+  console.error(xs);
+  throw new Error("Expects a string");
+};
+export let _AND_set_COL_rest = (xs: CrDataValue): CrDataValue => {
+  if (xs instanceof CrDataSet) return xs.rest();
+
+  console.error(xs);
+  throw new Error("Expect a set");
+};
+export let _AND_map_COL_rest = (xs: CrDataValue): CrDataValue => {
   if (xs instanceof CrDataMap) {
     if (xs.len() > 0) {
       let k0 = xs.pairs()[0][0];
@@ -747,8 +811,7 @@ export let rest = (xs: CrDataValue): CrDataValue => {
     }
   }
   console.error(xs);
-
-  throw new Error("Expects something sequential");
+  throw new Error("Expected map");
 };
 
 export let recur = (...xs: CrDataValue[]): CrDataRecur => {
@@ -1604,6 +1667,9 @@ export let ref_QUES_ = (x: CrDataValue): boolean => {
 export let record_QUES_ = (x: CrDataValue): boolean => {
   return x instanceof CrDataRecord;
 };
+export let tuple_QUES_ = (x: CrDataValue): boolean => {
+  return x instanceof CrDataTuple;
+};
 
 export let escape = (x: string) => JSON.stringify(x);
 
@@ -1767,11 +1833,10 @@ export let register_calcit_builtin_classes = (options: typeof calcit_builtin_cla
 export function invoke_method(p: string) {
   return (obj: CrDataValue, ...args: CrDataValue[]) => {
     let klass: CrDataRecord;
-    let rawValue = obj;
+    let value = obj;
     if (obj instanceof CrDataTuple) {
       if (obj.fst instanceof CrDataRecord) {
         klass = obj.fst;
-        rawValue = obj.snd;
       } else {
         throw new Error("Method invoking expected a record as class");
       }
@@ -1795,7 +1860,7 @@ export function invoke_method(p: string) {
     }
     let method = klass.get(p);
     if (typeof method === "function") {
-      return method(rawValue, ...args);
+      return method(value, ...args);
     } else {
       throw new Error("Method for invoking is not a function");
     }
