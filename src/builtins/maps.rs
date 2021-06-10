@@ -30,6 +30,18 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
       }
       Err(e) => Err(e),
     },
+    (Some(Calcit::Tuple(a0, a1)), Some(Calcit::Number(n)), Some(a)) => match f64_to_usize(*n) {
+      Ok(idx) => {
+        if idx == 0 {
+          Ok(Calcit::Tuple(Box::new(a.to_owned()), a1.to_owned()))
+        } else if idx == 1 {
+          Ok(Calcit::Tuple(a0.to_owned(), Box::new(a.to_owned())))
+        } else {
+          Err(format!("Tuple only has fields of 0,1 , unknown index: {}", idx))
+        }
+      }
+      Err(e) => Err(e),
+    },
     (Some(Calcit::Map(xs)), Some(a), Some(b)) => {
       let ys = &mut xs.clone();
       ys.insert(a.clone(), b.clone());

@@ -233,8 +233,10 @@
           defrecord %Num :inc :show
         |Num $ quote
           def Num $ %{} %Num
-            :inc $ fn (x) $ :: Num (&+ x 1)
-            :show $ fn (x) $ str x
+            :inc $ fn (x)
+              update x 1 inc
+            :show $ fn (x)
+              str $ nth x 1
 
         |test-method $ quote
           fn ()

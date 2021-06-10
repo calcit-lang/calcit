@@ -554,6 +554,12 @@ export let assoc = function (xs: CrDataValue, k: CrDataValue, v: CrDataValue) {
     }
     return xs.assoc(k, v);
   }
+  if (xs instanceof CrDataTuple) {
+    if (typeof k !== "number") {
+      throw new Error("Expected number index for lists");
+    }
+    return xs.assoc(k, v);
+  }
 
   if (xs instanceof CrDataMap) {
     return xs.assoc(k, v);
@@ -1767,11 +1773,10 @@ export let register_calcit_builtin_classes = (options: typeof calcit_builtin_cla
 export function invoke_method(p: string) {
   return (obj: CrDataValue, ...args: CrDataValue[]) => {
     let klass: CrDataRecord;
-    let rawValue = obj;
+    let value = obj;
     if (obj instanceof CrDataTuple) {
       if (obj.fst instanceof CrDataRecord) {
         klass = obj.fst;
-        rawValue = obj.snd;
       } else {
         throw new Error("Method invoking expected a record as class");
       }
@@ -1795,7 +1800,7 @@ export function invoke_method(p: string) {
     }
     let method = klass.get(p);
     if (typeof method === "function") {
-      return method(rawValue, ...args);
+      return method(value, ...args);
     } else {
       throw new Error("Method for invoking is not a function");
     }

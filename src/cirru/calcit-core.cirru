@@ -571,6 +571,10 @@
                 if (has-index? x k)
                   assoc x k $ f (nth x k)
                   , x
+              (tuple? x)
+                if (or (&= k 1) (&= k 2))
+                  assoc x k $ f (nth x k)
+                  raise $ &str-concat "|tuple only has 0,1 fields, unknown field: " k
               (map? x)
                 if (contains? x k)
                   assoc x k $ f (&get x k)
@@ -1159,7 +1163,7 @@
         |negate $ quote
           defn negate (x)
             &- 0 x
-        
+
         |&number:rand-shift $ quote
           defn &number:rand-shift (x y)
             &+
@@ -1297,7 +1301,7 @@
             identity &core-list-class
             identity &core-map-class
             identity &core-record-class
-        
+
         |count $ quote
           defn count (x)
             if (nil? x) 0
