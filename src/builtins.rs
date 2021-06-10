@@ -126,7 +126,7 @@ pub fn is_proc_name(s: &str) -> bool {
       // maps
       | "&{}"
       | "assoc"
-      | "&get"
+      | "&map:get"
       | "dissoc"
       | "&merge"
       | "to-pairs"
@@ -168,6 +168,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&record:count"
       | "&record:contains?"
       | "&record:nth"
+      | "&record:get"
   )
 }
 
@@ -283,7 +284,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     // maps
     "&{}" => maps::call_new_map(args),
     "assoc" => maps::assoc(args),
-    "&get" => maps::map_get(args),
     "dissoc" => maps::dissoc(args),
     "&merge" => maps::call_merge(args),
     "to-pairs" => maps::to_pairs(args),
@@ -295,6 +295,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&map:includes?" => maps::includes_ques(args),
     "&map:first" => maps::first(args),
     "&map:rest" => maps::rest(args),
+    "&map:get" => maps::get(args),
     // sets
     "#{}" => sets::new_set(args),
     "&include" => sets::call_include(args),
@@ -325,6 +326,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&record:count" => records::count(args),
     "&record:contains?" => records::contains_ques(args),
     "&record:nth" => records::nth(args),
+    "&record:get" => records::get(args),
     a => Err(format!("No such proc: {}", a)),
   }
 }

@@ -129,6 +129,7 @@ fn is_preferred_js_proc(name: &str) -> bool {
       | "bool?"
       | "ref?"
       | "record?"
+      | "tuple?"
       | "starts-with?"
       | "ends-with?"
   )

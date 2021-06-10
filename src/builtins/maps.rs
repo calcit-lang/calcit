@@ -83,22 +83,8 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn map_get(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn get(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(idx) => match xs.get(idx) {
-        Some(v) => Ok(v.clone()),
-        None => Ok(Calcit::Nil),
-      },
-      Err(e) => Err(e),
-    },
-    (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(idx) => match s.chars().nth(idx) {
-        Some(v) => Ok(Calcit::Str(v.to_string())),
-        None => Ok(Calcit::Nil),
-      },
-      Err(e) => Err(e),
-    },
     (Some(Calcit::Map(xs)), Some(a)) => {
       let ys = &mut xs.clone();
       match ys.get(a) {
@@ -106,15 +92,8 @@ pub fn map_get(xs: &CalcitItems) -> Result<Calcit, String> {
         None => Ok(Calcit::Nil),
       }
     }
-    (Some(Calcit::Record(_name, fields, values)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Keyword(k) | Calcit::Symbol(k, ..) => match find_in_fields(fields, k) {
-        Some(idx) => Ok(values[idx].clone()),
-        None => Ok(Calcit::Nil),
-      },
-      a => Err(format!("record field expected to be string/keyword, got {}", a)),
-    },
-    (Some(a), ..) => Err(format!("&get expected list or map, got: {}", a)),
-    (None, ..) => Err(format!("&get expected 2 arguments, got: {:?}", xs)),
+    (Some(a), ..) => Err(format!("map &get expected map, got: {}", a)),
+    (None, ..) => Err(format!("map &get expected 2 arguments, got: {:?}", xs)),
   }
 }
 

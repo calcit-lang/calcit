@@ -209,7 +209,11 @@ fn process_list_call(
     (Calcit::Keyword(..), _) => {
       if args.len() == 1 {
         let code = Calcit::List(im::vector![
-          Calcit::Proc(String::from("&get")),
+          Calcit::Symbol(
+            String::from("get"),
+            String::from(primes::CORE_NS),
+            Some(ResolvedDef(String::from(primes::CORE_NS), String::from("get"), None))
+          ),
           args[0].clone(),
           head.clone()
         ]);

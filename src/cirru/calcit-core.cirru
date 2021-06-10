@@ -28,7 +28,7 @@
         |last $ quote
           defn last (xs)
             if (empty? xs) nil
-              &get xs
+              nth xs
                 &- (count xs) 1
 
         |when $ quote
@@ -365,9 +365,9 @@
             cond
               (nil? base) nil
               (string? base) (nth base k)
-              (map? base) (&get base k)
+              (map? base) (&map:get base k)
               (list? base) (nth base k)
-              (record? base) (&get base k)
+              (record? base) (&record:get base k)
               true $ &let nil
                 echo "|Value:" base k
                 raise "|Expected map or list for get"
@@ -574,11 +574,11 @@
                   raise $ &str-concat "|tuple only has 0,1 fields, unknown field: " k
               (map? x)
                 if (contains? x k)
-                  assoc x k $ f (&get x k)
+                  assoc x k $ f (&map:get x k)
                   , x
               (record? x)
                 if (contains? x k)
-                  assoc x k $ f (&get x k)
+                  assoc x k $ f (&record:get x k)
                   , x
               true
                 raise $ &str-concat "|Cannot update key on item: " x
@@ -1111,7 +1111,7 @@
           defn select-keys (m xs)
             assert "|expectd map for selecting" $ map? m
             foldl xs (&{}) $ fn (acc k)
-              assoc acc k (&get m k)
+              assoc acc k (&map:get m k)
 
         |unselect-keys $ quote
           defn unselect-keys (m xs)
@@ -1144,7 +1144,7 @@
               or (string? name) (keyword? name) (symbol? name)
             let
                 proto $ nth pair 0
-                f $ &get proto name
+                f $ &record:get proto name
               assert "|expected function" (fn? f)
               f (nth pair 1) & params
 
@@ -1152,7 +1152,7 @@
           defn &list-sort-by (xs f)
             if (keyword? f)
               sort xs $ fn (a b)
-                &compare (&get a f) (&get b f)
+                &compare (get a f) (get b f)
 
               sort xs $ fn (a b)
                 &compare (f a) (f b)
@@ -1233,7 +1233,7 @@
             :dissoc dissoc
             :empty $ defn &map:empty (x) (&{})
             :empty? &map:empty?
-            :get &get
+            :get &map:get
             :get-in get-in
             :includes? &map:includes?
             :keys keys
@@ -1250,7 +1250,7 @@
 
         |&core-record-class $ quote
           defrecord! &core-record-class
-            :get &get
+            :get &map:get
             :get-name get-record-name
             :same-kind? relevant-record?
             :turn-map turn-map
@@ -1355,7 +1355,7 @@
               if (tuple? x) (&tuple:nth x 0)
                 if (list? x) (&list:nth x 0)
                   .first x
-         
+
         |rest $ quote
           defn rest (x)
             if (nil? x) nil

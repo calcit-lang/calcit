@@ -341,7 +341,7 @@ export let _AND__EQ_ = (x: CrDataValue, y: CrDataValue): boolean => {
         if (!y.contains(k)) {
           return false;
         }
-        if (!_AND__EQ_(v, _AND_get(y, k))) {
+        if (!_AND__EQ_(v, _AND_map_COL_get(y, k))) {
           return false;
         }
       }
@@ -553,26 +553,22 @@ export let _AND_record_COL_nth = function (xs: CrDataValue, k: CrDataValue) {
   throw new Error("Does not support `nth` on this type");
 };
 
-export let _AND_get = function (xs: CrDataValue, k: CrDataValue) {
+export let _AND_map_COL_get = function (xs: CrDataValue, k: CrDataValue) {
   if (arguments.length !== 2) {
-    throw new Error("&get takes 2 arguments");
+    throw new Error("map &get takes 2 arguments");
   }
 
-  if (xs instanceof CrDataMap) {
-    return xs.get(k);
+  if (xs instanceof CrDataMap) return xs.get(k);
+
+  throw new Error("Does not support `&get` on this type");
+};
+
+export let _AND_record_COL_get = function (xs: CrDataValue, k: CrDataValue) {
+  if (arguments.length !== 2) {
+    throw new Error("record &get takes 2 arguments");
   }
-  if (xs == null) {
-    throw new Error("`&get` does not work on `nil`, need to use `get`");
-  }
-  if (typeof xs === "string") {
-    return _AND_str_COL_nth(xs, k);
-  }
-  if (xs instanceof CrDataList) {
-    return _AND_list_COL_nth(xs, k);
-  }
-  if (xs instanceof CrDataRecord) {
-    return xs.get(k);
-  }
+
+  if (xs instanceof CrDataRecord) return xs.get(k);
 
   throw new Error("Does not support `&get` on this type");
 };
@@ -1659,6 +1655,9 @@ export let ref_QUES_ = (x: CrDataValue): boolean => {
 };
 export let record_QUES_ = (x: CrDataValue): boolean => {
   return x instanceof CrDataRecord;
+};
+export let tuple_QUES_ = (x: CrDataValue): boolean => {
+  return x instanceof CrDataTuple;
 };
 
 export let escape = (x: string) => JSON.stringify(x);

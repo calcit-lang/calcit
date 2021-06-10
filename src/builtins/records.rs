@@ -199,3 +199,17 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
     (_, _) => Err(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
   }
 }
+
+pub fn get(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Record(_name, fields, values)), Some(a)) => match a {
+      Calcit::Str(k) | Calcit::Keyword(k) | Calcit::Symbol(k, ..) => match find_in_fields(fields, k) {
+        Some(idx) => Ok(values[idx].clone()),
+        None => Ok(Calcit::Nil),
+      },
+      a => Err(format!("record field expected to be string/keyword, got {}", a)),
+    },
+    (Some(a), ..) => Err(format!("record &get expected record, got: {}", a)),
+    (None, ..) => Err(format!("record &get expected 2 arguments, got: {:?}", xs)),
+  }
+}
