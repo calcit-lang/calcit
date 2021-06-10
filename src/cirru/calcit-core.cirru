@@ -44,7 +44,7 @@
 
         |- $ quote
           defn - (x & ys)
-            if (empty? ys)
+            if (&list:empty? ys)
               &- 0 x
               reduce ys x &-
 
@@ -53,55 +53,55 @@
 
         |/ $ quote
           defn / (x & ys)
-            if (empty? ys)
+            if (&list:empty? ys)
               &/ 1 x
               reduce ys x &/
 
         |foldl-compare $ quote
           defn foldl-compare (xs acc f)
-            if (empty? xs) true
-              if (f acc (first xs))
-                recur (rest xs) (first xs) f
+            if (&list:empty? xs) true
+              if (f acc (&list:first xs))
+                recur (&list:rest xs) (&list:first xs) f
                 , false
 
         |foldl' $ quote
           defn foldl' (xs acc f)
-            if (empty? xs) acc
-              recur (rest xs) (f acc (first xs)) f
+            if (&list:empty? xs) acc
+              recur (&list:rest xs) (f acc (&list:first xs)) f
 
         |< $ quote
           defn < (x & ys)
             if
-              &= 1 (count ys)
-              &< x (first ys)
+              &= 1 (&list:count ys)
+              &< x (&list:first ys)
               foldl-compare ys x &<
 
         |> $ quote
           defn > (x & ys)
             if
-              &= 1 (count ys)
-              &> x (first ys)
+              &= 1 (&list:count ys)
+              &> x (&list:first ys)
               foldl-compare ys x &>
 
         |= $ quote
           defn = (x & ys)
             if
-              &= 1 (count ys)
-              &= x (first ys)
+              &= 1 (&list:count ys)
+              &= x (&list:first ys)
               foldl-compare ys x &=
 
         |>= $ quote
           defn >= (x & ys)
             if
-              &= 1 (count ys)
-              &>= x (first ys)
+              &= 1 (&list:count ys)
+              &>= x (&list:first ys)
               foldl-compare ys x &>=
 
         |<= $ quote
           defn <= (x & ys)
             if
-              &= 1 (count ys)
-              &<= x (first ys)
+              &= 1 (&list:count ys)
+              &<= x (&list:first ys)
               foldl-compare ys x &<=
 
         |apply $ quote
@@ -109,9 +109,9 @@
 
         |apply-args $ quote
           defmacro apply-args (args f)
-            if (&= '[] (first args))
+            if (&= '[] (&list:first args))
               quasiquote
-                ~f (~@ (rest args))
+                ~f (~@ (&list:rest args))
               quasiquote
                 ~f ~@args
 
@@ -181,7 +181,7 @@
                     &let
                       result (f $ [] k v)
                       assert "|expected pair returned when mapping hashmap"
-                        and (list? result) (&= 2 (count result))
+                        and (list? result) (&= 2 (&list:count result))
                       let[] (k2 v2) result
                         assoc acc k2 v2
               true
@@ -191,16 +191,16 @@
 
         |take $ quote
           defn take (xs n)
-            if (= n (count xs)) xs
+            if (= n (&list:count xs)) xs
               slice xs 0 n
 
         |drop $ quote
           defn drop (xs n)
-            slice xs n (count xs)
+            slice xs n (&list:count xs)
 
         |str $ quote
           defmacro str (x0 & xs)
-            if (empty? xs)
+            if (&list:empty? xs)
               quote-replace $ &str ~x0
               quote-replace $ &str-concat ~x0 $ str ~@xs
 
@@ -252,29 +252,29 @@
 
         |-> $ quote
           defmacro -> (base & xs)
-            if (empty? xs)
+            if (&list:empty? xs)
               quote-replace ~base
               &let
-                x0 (first xs)
+                x0 (&list:first xs)
                 if (list? x0)
                   recur
-                    concat ([] (first x0) base) (rest x0)
-                    , & (rest xs)
-                  recur ([] x0 base) & (rest xs)
+                    concat ([] (&list:first x0) base) (&list:rest x0)
+                    , & (&list:rest xs)
+                  recur ([] x0 base) & (&list:rest xs)
 
         |->> $ quote
           defmacro ->> (base & xs)
-            if (empty? xs)
+            if (&list:empty? xs)
               quote-replace ~base
               &let
-                x0 (first xs)
+                x0 (&list:first xs)
                 if (list? x0)
-                  recur (append x0 base) & (rest xs)
-                  recur ([] x0 base) & (rest xs)
+                  recur (append x0 base) & (&list:rest xs)
+                  recur ([] x0 base) & (&list:rest xs)
 
         |->% $ quote
           defmacro ->% (base & xs)
-            if (empty? xs) base
+            if (&list:empty? xs) base
               let
                   tail $ last xs
                   pairs $ concat
@@ -288,56 +288,56 @@
         |cond $ quote
           defmacro cond (pair & else)
             assert "|expects a pair"
-              if (list? pair) (&= 2 (count pair)) false
+              if (list? pair) (&= 2 (&list:count pair)) false
             &let
-              expr $ nth pair 0
+              expr $ &list:nth pair 0
               &let
-                branch $ nth pair 1
+                branch $ &list:nth pair 1
                 quote-replace
                   if ~expr ~branch
-                    ~ $ if (empty? else) nil
+                    ~ $ if (&list:empty? else) nil
                       quote-replace
                         cond
-                          ~ $ nth else 0
-                          ~@ $ rest else
+                          ~ $ &list:nth else 0
+                          ~@ $ &list:rest else
 
         |key-match $ quote
           defmacro key-match (value & body)
-            if (empty? body)
+            if (&list:empty? body)
               quasiquote
                 &let nil
                   echo "|[warn] key-match found no matched case, missing `_` case?" ~value
               &let
-                pair (first body)
+                pair (&list:first body)
                 assert "|key-match expected pairs"
-                  and (list? pair) (&= 2 (count pair))
+                  and (list? pair) (&= 2 (&list:count pair))
                 let[] (pattern branch) pair
                   if (&= pattern '_) branch
                     &let nil
                       assert "|pattern in a list" (list? pattern)
                       &let
-                        k (first pattern)
+                        k (&list:first pattern)
                         &let (v# (gensym 'v))
                           quasiquote
                             &let (~v# ~value)
-                              if (&= (first ~v#) ~k)
+                              if (&= (&list:first ~v#) ~k)
                                 let
-                                  ~ $ map-indexed (rest pattern) $ fn (idx x)
+                                  ~ $ map-indexed (&list:rest pattern) $ fn (idx x)
                                     [] x $ quasiquote
                                       nth ~v# (~ (inc idx))
                                   , ~branch
-                                key-match ~value (~@ (rest body))
+                                key-match ~value (~@ (&list:rest body))
 
         |&case $ quote
           defmacro &case (item default pattern & others)
             assert "|`case` expects pattern in a pair"
-              if (list? pattern) (&= 2 (count pattern)) false
+              if (list? pattern) (&= 2 (&list:count pattern)) false
             let
-                x $ first pattern
+                x $ &list:first pattern
                 branch $ last pattern
               quote-replace
                 if (&= ~item ~x) ~branch
-                  ~ $ if (empty? others) default
+                  ~ $ if (&list:empty? others) default
                     quote-replace
                       &case ~item ~default ~@others
 
@@ -352,7 +352,7 @@
 
         |case-default $ quote
           defmacro case (item default & patterns)
-            if (empty? patterns)
+            if (&list:empty? patterns)
               raise "|Expected patterns for case-default, got empty"
             &let
               v (gensym |v)
@@ -377,10 +377,10 @@
             assert "|expects path in a list" (list? path)
             cond
               (nil? base) nil
-              (empty? path) base
+              (&list:empty? path) base
               true
                 recur
-                  get base (first path)
+                  get base (&list:first path)
                   rest path
 
         |&max $ quote
@@ -395,14 +395,14 @@
 
         |max $ quote
           defn max (xs)
-            if (empty? xs) nil
-              reduce (rest xs) (first xs)
+            if (&list:empty? xs) nil
+              reduce (&list:rest xs) (&list:first xs)
                 fn (acc x) (&max acc x)
 
         |min $ quote
           defn min (xs)
-            if (empty? xs) nil
-              reduce (rest xs) (first xs)
+            if (&list:empty? xs) nil
+              reduce (&list:rest xs) (&list:first xs)
                 fn (acc x) (&min acc x)
 
         |every? $ quote
@@ -475,9 +475,9 @@
               fn (acc pair)
                 assert "|expects pair for pairs-map"
                   if (list? pair)
-                    &= 2 (count pair)
+                    &= 2 (&list:count pair)
                     , false
-                assoc acc (first pair) (last pair)
+                assoc acc (&list:first pair) (last pair)
 
         |some? $ quote
           defn some? (x) $ not $ nil? x
@@ -485,15 +485,15 @@
         |some-in? $ quote
           defn some-in? (x path)
             if (nil? x) false
-              if (empty? path) true
-                &let (k $ first path)
+              if (&list:empty? path) true
+                &let (k $ &list:first path)
                   if (map? x)
                     if (contains? x k)
-                      recur (get x k) (rest path)
+                      recur (get x k) (&list:rest path)
                       , false
                     if (list? x)
                       if (number? k)
-                        recur (get x k) (rest path)
+                        recur (get x k) (&list:rest path)
                         , false
                       raise $ &str-concat "|Unknown structure for some-in? detection: " x
 
@@ -504,28 +504,28 @@
               ({}) xs0 ys0
               fn (acc xs ys)
                 if
-                  if (empty? xs) true (empty? ys)
+                  if (&list:empty? xs) true (&list:empty? ys)
                   , acc
                   recur
-                    assoc acc (first xs) (first ys)
+                    assoc acc (&list:first xs) (&list:first ys)
                     rest xs
                     rest ys
 
         |rand-nth $ quote
           defn rand-nth (xs)
-            if (empty? xs) nil
-              get xs $ rand-int $ &- (count xs) 1
+            if (&list:empty? xs) nil
+              get xs $ rand-int $ &- (&list:count xs) 1
 
         |contains-symbol? $ quote
           defn contains-symbol? (xs y)
             if (list? xs)
               apply-args (xs)
                 fn (body)
-                  if (empty? body) false
+                  if (&list:empty? body) false
                     if
-                      contains-symbol? (first body) y
+                      contains-symbol? (&list:first body) y
                       , true
-                      recur (rest body)
+                      recur (&list:rest body)
               &= xs y
 
         |\ $ quote
@@ -537,12 +537,12 @@
             &let
               args $ ->% (turn-string args-alias) (split % |.) (map % turn-symbol)
               &let
-                inner-body $ if (&= 1 (count xs)) (first xs)
+                inner-body $ if (&= 1 (&list:count xs)) (&list:first xs)
                   quasiquote
                     &let nil ~@xs
                 apply-args (inner-body args)
                   fn (body ys)
-                    if (empty? ys)
+                    if (&list:empty? ys)
                       quote-replace ~body
                       &let
                         a0 (last ys)
@@ -558,7 +558,7 @@
             assert "|expects list key to be an integer" (&= idx (floor idx))
             if
               &> idx 0
-              &< idx (count xs)
+              &< idx (&list:count xs)
               , false
 
         |update $ quote
@@ -588,9 +588,9 @@
             apply-args
               ({}) xs0
               fn (acc xs)
-                if (empty? xs) acc
+                if (&list:empty? xs) acc
                   let
-                      x0 $ first xs
+                      x0 $ &list:first xs
                       key $ f x0
                     recur
                       if (contains? acc key)
@@ -600,19 +600,19 @@
 
         |keys $ quote
           defn keys (x)
-            map (to-pairs x) first
+            map (to-pairs x) &list:first
 
         |keys-non-nil $ quote
           defn keys-non-nil (x)
             apply-args
               (#{}) (to-pairs x)
               fn (acc pairs)
-                if (empty? pairs) acc
+                if (&set:empty? pairs) acc
                   &let
-                    pair $ first pairs
+                    pair $ &set:first pairs
                     if (nil? (last pair))
-                      recur acc (rest pairs)
-                      recur (include acc (first pair))
+                      recur acc (&set:rest pairs)
+                      recur (include acc (&list:first pair))
                         rest pairs
 
         |vals $ quote
@@ -626,12 +626,12 @@
               ({}) xs0
               fn (acc xs)
                 &let
-                  x0 (first xs)
-                  if (empty? xs) acc
+                  x0 (&list:first xs)
+                  if (&list:empty? xs) acc
                     recur
-                      if (contains? acc (first xs))
-                        update acc (first xs) (\ &+ % 1)
-                        assoc acc (first xs) 1
+                      if (contains? acc (&list:first xs))
+                        update acc (&list:first xs) (\ &+ % 1)
+                        assoc acc (&list:first xs) 1
                       rest xs
 
         |section-by $ quote
@@ -640,8 +640,8 @@
               apply-args
                 ([]) xs0
                 fn (acc xs)
-                  if (&<= (count xs) n)
-                    if (empty? xs) acc
+                  if (&<= (&list:count xs) n)
+                    if (&list:empty? xs) acc
                       append acc xs
                     recur
                       append acc (take xs n)
@@ -719,9 +719,9 @@
 
         |assoc-in $ quote
           defn assoc-in (data path v)
-            if (empty? path) v
+            if (&list:empty? path) v
               let
-                  p0 $ first path
+                  p0 $ &list:first path
                   d $ either data $ &{}
                 assoc d p0
                   assoc-in
@@ -731,24 +731,24 @@
 
         |update-in $ quote
           defn update-in (data path f)
-            if (empty? path)
+            if (&list:empty? path)
               f data
               &let
-                p0 $ first path
+                p0 $ &list:first path
                 assoc data p0
-                  update-in (get data p0) (rest path) f
+                  update-in (get data p0) (&list:rest path) f
 
         |dissoc-in $ quote
           defn dissoc-in (data path)
             cond
-              (empty? path) nil
-              (&= 1 (count path))
-                dissoc data (first path)
+              (&list:empty? path) nil
+              (&= 1 (&list:count path))
+                dissoc data (&list:first path)
               true
                 &let
-                  p0 $ first path
+                  p0 $ &list:first path
                   assoc data p0
-                    dissoc-in (get data p0) (rest path)
+                    dissoc-in (get data p0) (&list:rest path)
 
         |inc $ quote
           defn inc (x) $ &+ x 1
@@ -763,7 +763,7 @@
         |ends-with? $ quote
           defn ends-with? (x y)
             &=
-              &- (count x) (count y)
+              &- (&str:count x) (&str:count y)
               str-find x y
 
         |loop $ quote
@@ -773,10 +773,10 @@
               every? pairs
                 defn detect-pairs? (x)
                   if (list? x)
-                    &= 2 (count x)
+                    &= 2 (&list:count x)
                     , false
             let
-                args $ map pairs first
+                args $ map pairs &list:first
                 values $ map pairs last
               assert "|loop requires symbols in pairs" (every? args symbol?)
               quote-replace
@@ -787,36 +787,36 @@
         |let $ quote
           defmacro let (pairs & body)
             assert "|expects pairs in list for let" (list? pairs)
-            if (&= 1 (count pairs))
+            if (&= 1 (&list:count pairs))
               quote-replace
                 &let
                   ~ $ nth pairs 0
                   ~@ body
-              if (empty? pairs)
+              if (&list:empty? pairs)
                 quote-replace $ &let nil ~@body
                 quote-replace
                   &let
-                    ~ $ nth pairs 0
+                    ~ $ &list:nth pairs 0
                     let
-                      ~ $ rest pairs
+                      ~ $ &list:rest pairs
                       ~@ body
 
         |let-sugar $ quote
           defmacro let-sugar (pairs & body)
             assert "|expects pairs in list for let" (list? pairs)
-            if (empty? pairs)
+            if (&list:empty? pairs)
               quote-replace $ &let nil ~@body
               &let
-                pair $ first pairs
-                assert "|expected pair length of 2" (&= 2 (count pair))
-                if (&= 1 (count pairs))
+                pair $ &list:first pairs
+                assert "|expected pair length of 2" (&= 2 (&list:count pair))
+                if (&= 1 (&list:count pairs))
                   quote-replace
                     let-destruct ~@pair
                       ~@ body
                   quote-replace
                     let-destruct ~@pair
                       let-sugar
-                        ~ $ rest pairs
+                        ~ $ &list:rest pairs
                         ~@ body
 
         |let-destruct $ quote
@@ -825,12 +825,12 @@
               quote-replace
                 &let (~pattern ~v) ~@body
               if (list? pattern)
-                if (&= '[] (first pattern))
+                if (&= '[] (&list:first pattern))
                   quote-replace
-                    let[] (~ (rest pattern)) ~v ~@body
-                  if (&= '{} (first pattern))
+                    let[] (~ (&list:rest pattern)) ~v ~@body
+                  if (&= '{} (&list:first pattern))
                     quote-replace
-                      let{} (~ (rest pattern)) ~v ~@body
+                      let{} (~ (&list:rest pattern)) ~v ~@body
                     &let nil
                       echo pattern
                       raise "|Unknown pattern to destruct"
@@ -862,12 +862,12 @@
           defn join-str (xs0 sep)
             apply-args (| xs0 true)
               fn (acc xs beginning?)
-                if (empty? xs) acc
+                if (&list:empty? xs) acc
                   recur
                     &str-concat
                       if beginning? acc $ &str-concat acc sep
-                      first xs
-                    rest xs
+                      &list:first xs
+                    &list:rest xs
                     , false
 
         |join $ quote
@@ -875,12 +875,12 @@
             apply-args
               ([]) xs0 true
               fn (acc xs beginning?)
-                if (empty? xs) acc
+                if (&list:empty? xs) acc
                   recur
                     append
                       if beginning? acc (append acc sep)
-                      first xs
-                    rest xs
+                      &list:first xs
+                    &list:rest xs
                     , false
 
         |repeat $ quote
@@ -897,10 +897,10 @@
               ([]) xs0 ys0
               fn (acc xs ys)
                 if
-                  if (empty? xs) true (empty? ys)
+                  if (&list:empty? xs) true (&list:empty? ys)
                   , acc
                   recur
-                    -> acc (append (first xs)) (append (first ys))
+                    -> acc (append (&list:first xs)) (append (&list:first ys))
                     rest xs
                     rest ys
 
@@ -912,7 +912,7 @@
                 &let
                   result (f k v)
                   assert "|expected pair returned when mapping hashmap"
-                    and (list? result) (&= 2 (count result))
+                    and (list? result) (&= 2 (&list:count result))
                   let[] (k2 v2) result
                     assoc acc k2 v2
 
@@ -925,28 +925,28 @@
 
         |and $ quote
           defmacro and (item & xs)
-            if (empty? xs)
+            if (&list:empty? xs)
               quote-replace
                 if ~item ~item false
               quote-replace
                 if ~item
                   and
-                    ~ $ first xs
-                    ~@ $ rest xs
+                    ~ $ &list:first xs
+                    ~@ $ &list:rest xs
                   , false
 
         |or $ quote
           defmacro or (item & xs)
-            if (empty? xs) item
+            if (&list:empty? xs) item
               quote-replace
                 if (nil? ~item)
                   or
-                    ~ $ first xs
-                    ~@ $ rest xs
+                    ~ $ &list:first xs
+                    ~@ $ &list:rest xs
                   if (= false ~item)
                     or
-                      ~ $ first xs
-                      ~@ $ rest xs
+                      ~ $ &list:first xs
+                      ~@ $ &list:rest xs
                     ~ item
 
         |with-log $ quote
@@ -980,9 +980,9 @@
         |&doseq $ quote
           defmacro &doseq (pair & body)
             assert "|doseq expects a pair"
-              if (list? pair) (&= 2 (count pair)) false
+              if (list? pair) (&= 2 (&list:count pair)) false
             let
-                name $ first pair
+                name $ &list:first pair
                 xs0 $ last pair
               quote-replace
                 foldl ~xs0 nil $ defn doseq-fn% (_acc ~name) ~@body
@@ -1062,17 +1062,17 @@
                 defs $ apply-args
                   [] ([]) vars 0
                   defn let[]% (acc xs idx)
-                    if (empty? xs) acc
+                    if (&list:empty? xs) acc
                       &let nil
                         when-not
-                          symbol? (first xs)
-                          raise $ &str-concat "|Expected symbol for vars: " (first xs)
-                        if (&= (first xs) '&)
+                          symbol? (&list:first xs)
+                          raise $ &str-concat "|Expected symbol for vars: " (&list:first xs)
+                        if (&= (&list:first xs) '&)
                           &let nil
-                            assert "|expected list spreading" (&= 2 (count xs))
-                            conj acc $ [] (get xs 1) (quote-replace (slice ~v ~idx))
+                            assert "|expected list spreading" (&= 2 (&list:count xs))
+                            conj acc $ [] (&list:nth xs 1) (quote-replace (slice ~v ~idx))
                           recur
-                            conj acc $ [] (first xs) (quote-replace (get ~v ~idx))
+                            conj acc $ [] (&list:first xs) (quote-replace (&list:nth ~v ~idx))
                             rest xs
                             inc idx
               quote-replace
@@ -1090,7 +1090,7 @@
         |defrecord! $ quote
           defmacro defrecord! (name & pairs)
             quasiquote
-              %{} (new-record (quote ~name) (~@ (map pairs first))) ~@pairs
+              %{} (new-record (quote ~name) (~@ (map pairs &list:first))) ~@pairs
 
         |;nil $ quote
           defmacro ;nil (& _body) nil
@@ -1098,13 +1098,13 @@
         |strip-prefix $ quote
           defn strip-prefix (s piece)
             if (starts-with? s piece)
-              substr s (count piece)
+              substr s (&str:count piece)
               , s
 
         |strip-suffix $ quote
           defn strip-suffix (s piece)
             if (ends-with? s piece)
-              substr s 0 (&- (count s) (count piece))
+              substr s 0 (&- (&str:count s) (&str:count piece))
               , s
 
         |select-keys $ quote
@@ -1139,7 +1139,7 @@
         |invoke $ quote
           defn invoke (pair name & params)
             assert "|method! applies on a pair, leading a record"
-              and (list? pair) (= 2 (count pair)) (record? (first pair))
+              and (list? pair) (= 2 (&list:count pair)) (record? (&list:first pair))
             assert "|method by string or keyword"
               or (string? name) (keyword? name) (symbol? name)
             let
