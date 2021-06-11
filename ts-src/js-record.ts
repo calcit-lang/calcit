@@ -27,7 +27,7 @@ export class CrDataRecord {
     if (idx >= 0) {
       return this.values[idx];
     } else {
-      throw new Error(`Cannot find :${field} among (${this.values.join(",")})`);
+      throw new Error(`Cannot find :${field} among (${this.fields.join(",")})`);
     }
   }
   assoc(k: CrDataValue, v: CrDataValue): CrDataRecord {
