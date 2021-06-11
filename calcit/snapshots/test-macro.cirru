@@ -218,26 +218,30 @@
                 gensym |a
                 , 'a__3
 
-        |test-with-log $ quote
+        |test-w-log $ quote
           fn ()
-            log-title "|Testing with-log"
+            log-title "|Testing w-log"
 
             &reset-gensym-index!
 
             inside-eval:
               assert=
-                macroexpand $ quote $ with-log $ + 1 2
+                macroexpand $ quote $ w-log $ + 1 2
                 quote $ &let
                   v__1 $ + 1 2
                   echo (format-to-lisp (quote $ + 1 2)) |=> v__1
                   , v__1
 
             assert=
-              with-log $ + 1 2
+              w-log $ + 1 2
+              , 3
+            assert=
+              wo-log $ + 1 2
               , 3
 
-            ; echo $ macroexpand $ quote $ call-with-log + 1 2 3 4
-            assert= 10 $ call-with-log + 1 2 3 4
+            ; echo $ macroexpand $ quote $ call-w-log + 1 2 3 4
+            assert= 10 $ call-w-log + 1 2 3 4
+            assert= 10 $ call-wo-log + 1 2 3 4
 
 
             inside-eval:
@@ -245,20 +249,23 @@
 
               assert=
                 macroexpand $ quote
-                  defn-with-log f1 (a b) (+ a b)
+                  defn-w-log f1 (a b) (+ a b)
                 quote
                   defn f1 (a b)
                     &let
                       f1 (defn f1 (a b) (+ a b))
-                      call-with-log f1 a b
+                      call-w-log f1 a b
 
               ; echo $ macroexpand $ quote
-                defn-with-log f1 (a b) (+ a b)
+                defn-w-log f1 (a b) (+ a b)
 
             let
-                f2 $ defn-with-log f1 (a b) (+ a b)
+                f2 $ defn-w-log f2 (a b) (+ a b)
+                f3 $ defn-wo-log f3 (a b) (+ a b)
               assert= 7 $ f2 3 4
               assert= 11 $ f2 & ([] 5 6)
+
+              assert= 7 $ f3 3 4
 
         |test-with-cpu-time $ quote
           fn ()
@@ -372,7 +379,7 @@
 
             test-gensym
 
-            test-with-log
+            test-w-log
 
             test-with-cpu-time
 
