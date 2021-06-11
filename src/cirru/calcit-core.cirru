@@ -761,13 +761,13 @@
 
         |starts-with? $ quote
           defn starts-with? (x y)
-            &= 0 (str-find x y)
+            &= 0 (&str:find-index x y)
 
         |ends-with? $ quote
           defn ends-with? (x y)
             &=
               &- (&str:count x) (&str:count y)
-              str-find x y
+              &str:find-index x y
 
         |loop $ quote
           defmacro loop (pairs & body)
@@ -1202,6 +1202,7 @@
             :sqrt sqrt
             :rand-shift &number:rand-shift
             :rand-between &number:rand-between
+            :negate negate
 
         |&core-string-class $ quote
           defrecord! &core-string-class
@@ -1212,7 +1213,7 @@
             :get &str:nth
             :parse-float parse-float
             :parse-json parse-json
-            :replace replace
+            :replace &str:replace
             :split split
             :split-lines split-lines
             :starts-with? starts-with?
@@ -1226,6 +1227,7 @@
             :nth &str:nth
             :first &str:first
             :rest &str:rest
+            :find-index &str:find-index
 
         |&core-set-class $ quote
           defrecord! &core-set-class

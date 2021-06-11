@@ -16,7 +16,7 @@
             assert= (str 1 2 3) |123
             assert= (type-of (&str 1)) :string
             assert=
-              replace "|this is a" |is |IS
+              .replace "|this is a" |is |IS
               , "|thIS IS a"
             assert=
               split "|a,b,c" "|,"
@@ -48,11 +48,11 @@
             assert= true $ includes? |abc |abc
             assert= false $ includes? |abd |abc
 
-            assert= 3 $ str-find |0123456 |3
-            assert= 3 $ str-find |0123456 |34
-            assert= 0 $ str-find |0123456 |01
-            assert= 4 $ str-find |0123456 |456
-            assert= -1 $ str-find |0123456 |98
+            assert= 3 $ .find-index |0123456 |3
+            assert= 3 $ .find-index |0123456 |34
+            assert= 0 $ .find-index |0123456 |01
+            assert= 4 $ .find-index |0123456 |456
+            assert= -1 $ .find-index |0123456 |98
 
             assert= true $ starts-with? |01234 |0
             assert= true $ starts-with? |01234 |01

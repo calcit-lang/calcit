@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.3.35";
+export const calcit_version = "0.3.36";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -133,21 +133,6 @@ export let _AND__MAP_ = (...xs: CrDataValue[]): CrDataMap => {
     throw new Error("&map expects even number of arguments");
   }
   return new CrDataMap(xs);
-};
-
-export let _AND_list_map = (...xs: CrDataValue[]): CrDataList => {
-  if (xs.length != 2) {
-    throw new Error("&list-map expected 2 arguments");
-  }
-  if (typeof xs[0] !== "function") {
-    throw new Error("&list-map expected a function");
-  }
-  let f = xs[0];
-  if (!(xs[1] instanceof CrDataList)) {
-    throw new Error("&list-map expected a list");
-  }
-  //Array.prototype.map proviced 3 arguments, only one is needed
-  return xs[1].map((x) => f(x));
 };
 
 export let defatom = (path: string, x: CrDataValue): CrDataValue => {
@@ -888,7 +873,7 @@ export let _AND_intersection = (xs: CrDataSet, ys: CrDataSet): CrDataSet => {
   return xs.intersection(ys);
 };
 
-export let replace = (x: string, y: string, z: string): string => {
+export let _AND_str_COL_replace = (x: string, y: string, z: string): string => {
   var result = x;
   while (result.indexOf(y) >= 0) {
     result = result.replace(y, z);
@@ -910,7 +895,7 @@ export let substr = (xs: string, m: number, n: number): string => {
   return xs.substring(m, n);
 };
 
-export let str_find = (x: string, y: string): number => {
+export let _AND_str_COL_find_index = (x: string, y: string): number => {
   return x.indexOf(y);
 };
 
