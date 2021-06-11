@@ -1,22 +1,63 @@
 import { initTernaryTreeMap, valueHash } from "@calcit/ternary-tree";
-import {
-  CrDataSymbol,
-  CrDataValue,
-  CrDataKeyword,
-  CrDataList,
-  CrDataMap,
-  CrDataRef,
-  CrDataFn,
-  CrDataRecur,
-  kwd,
-  refsRegistry,
-  toString,
-  CrDataSet,
-  cloneSet,
-  getStringName,
-  CrDataRecord,
-  findInFields,
-} from "./calcit-data";
+import { CrDataValue } from "./js-primes";
+import { kwd, toString, getStringName, findInFields } from "./calcit-data";
+
+import { CrDataMap } from "./js-map";
+
+export class CrDataRecord {
+  name: string;
+  fields: Array<string>;
+  values: Array<CrDataValue>;
+  constructor(name: string, fields: Array<CrDataValue>, values?: Array<CrDataValue>) {
+    this.name = name;
+    let fieldNames = fields.map(getStringName);
+    this.fields = fieldNames;
+    if (values != null) {
+      if (values.length != fields.length) {
+        throw new Error("value length not match");
+      }
+      this.values = values;
+    } else {
+      this.values = new Array(fieldNames.length);
+    }
+  }
+  get(k: CrDataValue) {
+    let field = getStringName(k);
+    let idx = findInFields(this.fields, field);
+    if (idx >= 0) {
+      return this.values[idx];
+    } else {
+      throw new Error(`Cannot find :${field} among (${this.values.join(",")})`);
+    }
+  }
+  assoc(k: CrDataValue, v: CrDataValue): CrDataRecord {
+    let values: Array<CrDataValue> = new Array(this.fields.length);
+    let name = getStringName(k);
+    for (let idx in this.fields) {
+      if (this.fields[idx] === name) {
+        values[idx] = v;
+      } else {
+        values[idx] = this.values[idx];
+      }
+    }
+    return new CrDataRecord(this.name, this.fields, values);
+  }
+  merge() {
+    // TODO
+  }
+  contains(k: CrDataValue) {
+    let field = getStringName(k);
+    let idx = findInFields(this.fields, field);
+    return idx >= 0;
+  }
+  toString(): string {
+    let ret = "(%{} " + this.name;
+    for (let idx in this.fields) {
+      ret += " (" + this.fields[idx] + " " + toString(this.values[idx], true) + ")";
+    }
+    return ret + ")";
+  }
+}
 
 export let new_record = (name: CrDataValue, ...fields: Array<CrDataValue>): CrDataValue => {
   let fieldNames = fields.map(getStringName).sort();

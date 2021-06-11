@@ -1,5 +1,12 @@
-import { CrDataRef, CrDataValue, CrDataSymbol, CrDataKeyword, CrDataList, CrDataMap, CrDataRecord, CrDataSet } from "./calcit-data";
+import { CrDataValue } from "./js-primes";
+import { CrDataRef, CrDataSymbol, CrDataKeyword } from "./calcit-data";
 import { toPairs } from "@calcit/ternary-tree";
+
+import { CrDataRecord } from "./js-record";
+import { CrDataMap } from "./js-map";
+import { CrDataList } from "./js-list";
+import { CrDataSet } from "./js-set";
+import { CrDataTuple } from "./js-tuple";
 
 declare global {
   interface Window {
@@ -100,6 +107,12 @@ export let load_console_formatter_BANG_ = () => {
             for (let x of obj.value.values()) {
               ret.push(["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(x)]);
             }
+            return ret;
+          }
+          if (obj instanceof CrDataTuple) {
+            let ret: any[] = ["div", { style: "color: hsl(200, 90%, 60%)" }];
+            ret.push(["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(obj.fst)]);
+            ret.push(["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(obj.snd)]);
             return ret;
           }
           if (obj instanceof CrDataMap) {

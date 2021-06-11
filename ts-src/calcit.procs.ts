@@ -1,35 +1,41 @@
+// CALCIT VERSION
+export const calcit_version = "0.3.35";
+
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
-import { CirruWriterNode, writeCirruCode } from "@cirru/writer.ts";
 
+import { CrDataValue } from "./js-primes";
 import {
   CrDataSymbol,
-  CrDataValue,
   CrDataKeyword,
-  CrDataList,
-  CrDataMap,
   CrDataRef,
   CrDataFn,
   CrDataRecur,
   kwd,
   refsRegistry,
   toString,
-  CrDataSet,
-  cloneSet,
-  CrDataRecord,
   getStringName,
-  findInFields,
-  CrDataTuple,
-  overwriteDataComparator,
+  to_js_data,
+  _AND__EQ_,
 } from "./calcit-data";
 
-import { fieldsEqual } from "./record-procs";
+import { fieldsEqual, CrDataRecord } from "./js-record";
 
 export * from "./calcit-data";
-export * from "./record-procs";
+export * from "./js-record";
+export * from "./js-map";
+export * from "./js-list";
+export * from "./js-set";
+export * from "./js-primes";
+export * from "./js-tuple";
 export * from "./custom-formatter";
+export * from "./js-cirru";
 
-export const calcit_version = "0.3.34";
+import { CrDataList, foldl } from "./js-list";
+import { CrDataMap } from "./js-map";
+import { CrDataSet } from "./js-set";
+import { CrDataTuple } from "./js-tuple";
+import { to_calcit_data, extract_cirru_edn } from "./js-cirru";
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
@@ -162,108 +168,6 @@ export let deref = (x: CrDataRef): CrDataValue => {
   return a.value;
 };
 
-export let foldl = function (xs: CrDataValue, acc: CrDataValue, f: CrDataFn): CrDataValue {
-  if (arguments.length !== 3) {
-    throw new Error("foldl takes 3 arguments");
-  }
-
-  if (f == null) {
-    debugger;
-    throw new Error("Expected function for folding");
-  }
-  if (xs instanceof CrDataList) {
-    var result = acc;
-    for (let idx = 0; idx < xs.len(); idx++) {
-      let item = xs.get(idx);
-      result = f(result, item);
-    }
-    return result;
-  }
-  if (xs instanceof CrDataSet) {
-    let result = acc;
-    xs.value.forEach((item) => {
-      result = f(result, item);
-    });
-    return result;
-  }
-  if (xs instanceof CrDataMap) {
-    let result = acc;
-    xs.pairs().forEach(([k, item]) => {
-      result = f(result, new CrDataList([k, item]));
-    });
-    return result;
-  }
-  throw new Error("Unknow data for foldl");
-};
-
-export let foldl_shortcut = function (xs: CrDataValue, acc: CrDataValue, v0: CrDataValue, f: CrDataFn): CrDataValue {
-  if (arguments.length !== 4) {
-    throw new Error("foldl-shortcut takes 4 arguments");
-  }
-
-  if (f == null) {
-    debugger;
-    throw new Error("Expected function for folding");
-  }
-  if (xs instanceof CrDataList) {
-    var state = acc;
-    for (let idx = 0; idx < xs.len(); idx++) {
-      let item = xs.get(idx);
-      let pair = f(state, item);
-      if (pair instanceof CrDataList && pair.len() == 2) {
-        if (typeof pair.get(0) == "boolean") {
-          if (pair.get(0)) {
-            return pair.get(1);
-          } else {
-            state = pair.get(1);
-          }
-        }
-      } else {
-        throw new Error("Expected return value in `[bool, acc]` structure");
-      }
-    }
-    return v0;
-  }
-  if (xs instanceof CrDataSet) {
-    let state = acc;
-    for (let item of xs.values()) {
-      let pair = f(state, item);
-      if (pair instanceof CrDataList && pair.len() == 2) {
-        if (typeof pair.get(0) == "boolean") {
-          if (pair.get(0)) {
-            return pair.get(1);
-          } else {
-            state = pair.get(1);
-          }
-        }
-      } else {
-        throw new Error("Expected return value in `[bool, acc]` structure");
-      }
-    }
-    return v0;
-  }
-
-  if (xs instanceof CrDataMap) {
-    let state = acc;
-    for (let item of xs.pairs()) {
-      let pair = f(state, new CrDataList(item));
-      if (pair instanceof CrDataList && pair.len() == 2) {
-        if (typeof pair.get(0) == "boolean") {
-          if (pair.get(0)) {
-            return pair.get(1);
-          } else {
-            state = pair.get(1);
-          }
-        }
-      } else {
-        throw new Error("Expected return value in `[bool, acc]` structure");
-      }
-    }
-    return v0;
-  }
-  throw new Error("Unknow data for foldl-shortcut");
-};
-
 export let _AND__ADD_ = (x: number, y: number): number => {
   return x + y;
 };
@@ -271,154 +175,6 @@ export let _AND__ADD_ = (x: number, y: number): number => {
 export let _AND__STAR_ = (x: number, y: number): number => {
   return x * y;
 };
-
-export let _AND__EQ_ = (x: CrDataValue, y: CrDataValue): boolean => {
-  if (x === y) {
-    return true;
-  }
-  if (x == null) {
-    if (y == null) {
-      return true;
-    }
-    return false;
-  }
-
-  let tx = typeof x;
-  let ty = typeof y;
-
-  if (tx !== ty) {
-    return false;
-  }
-
-  if (tx === "string") {
-    return (x as string) === (y as string);
-  }
-  if (tx === "boolean") {
-    return (x as boolean) === (y as boolean);
-  }
-  if (tx === "number") {
-    return x === y;
-  }
-  if (tx === "function") {
-    // comparing functions by reference
-    return x === y;
-  }
-  if (x instanceof CrDataKeyword) {
-    if (y instanceof CrDataKeyword) {
-      return x === y;
-    }
-    return false;
-  }
-  if (x instanceof CrDataSymbol) {
-    if (y instanceof CrDataSymbol) {
-      return x.value === y.value;
-    }
-    return false;
-  }
-  if (x instanceof CrDataList) {
-    if (y instanceof CrDataList) {
-      if (x.len() !== y.len()) {
-        return false;
-      }
-      let size = x.len();
-      for (let idx = 0; idx < size; idx++) {
-        let xItem = x.get(idx);
-        let yItem = y.get(idx);
-        if (!_AND__EQ_(xItem, yItem)) {
-          return false;
-        }
-      }
-      return true;
-    }
-    return false;
-  }
-  if (x instanceof CrDataMap) {
-    if (y instanceof CrDataMap) {
-      if (x.len() !== y.len()) {
-        return false;
-      }
-      for (let [k, v] of x.pairs()) {
-        if (!y.contains(k)) {
-          return false;
-        }
-        if (!_AND__EQ_(v, _AND_map_COL_get(y, k))) {
-          return false;
-        }
-      }
-      return true;
-    }
-    return false;
-  }
-  if (x instanceof CrDataRef) {
-    if (y instanceof CrDataRef) {
-      return x.path === y.path;
-    }
-    return false;
-  }
-  if (x instanceof CrDataTuple) {
-    if (y instanceof CrDataTuple) {
-      return _AND__EQ_(x.fst, y.fst) && _AND__EQ_(x.snd, y.snd);
-    }
-    return false;
-  }
-  if (x instanceof CrDataSet) {
-    if (y instanceof CrDataSet) {
-      if (x.len() !== y.len()) {
-        return false;
-      }
-      for (let v of x.value) {
-        let found = false;
-        // testing by doing iteration is O(n2), could be slow
-        // but Set::contains does not satisfy here
-        for (let yv of y.value) {
-          if (_AND__EQ_(v, yv)) {
-            found = true;
-            break;
-          }
-        }
-        if (found) {
-          continue;
-        } else {
-          return false;
-        }
-      }
-      return true;
-    }
-    return false;
-  }
-  if (x instanceof CrDataRecur) {
-    if (y instanceof CrDataRecur) {
-      console.warn("Do not compare Recur");
-      return false;
-    }
-    return false;
-  }
-  if (x instanceof CrDataRecord) {
-    if (y instanceof CrDataRecord) {
-      if (x.name !== y.name) {
-        return false;
-      }
-      if (!fieldsEqual(x.fields, y.fields)) {
-        return false;
-      }
-      if (x.values.length !== y.values.length) {
-        return false;
-      }
-      for (let idx in x.fields) {
-        if (!_AND__EQ_(x.values[idx], y.values[idx])) {
-          return false;
-        }
-      }
-      return true;
-    }
-    return false;
-  }
-  throw new Error("Missing handler for this type");
-};
-
-// overwrite internary comparator of ternary-tree
-overwriteComparator(_AND__EQ_);
-overwriteDataComparator(_AND__EQ_);
 
 export let _AND_str = (x: CrDataValue): string => {
   return `${x}`;
@@ -551,16 +307,6 @@ export let _AND_record_COL_nth = function (xs: CrDataValue, k: CrDataValue) {
   }
 
   throw new Error("Does not support `nth` on this type");
-};
-
-export let _AND_map_COL_get = function (xs: CrDataValue, k: CrDataValue) {
-  if (arguments.length !== 2) {
-    throw new Error("map &get takes 2 arguments");
-  }
-
-  if (xs instanceof CrDataMap) return xs.get(k);
-
-  throw new Error("Does not support `&get` on this type");
 };
 
 export let _AND_record_COL_get = function (xs: CrDataValue, k: CrDataValue) {
@@ -1222,119 +968,6 @@ export let re_find_all = (content: string, re: string): CrDataList => {
   }
 };
 
-export let to_js_data = (x: CrDataValue, addColon: boolean = false): any => {
-  if (x == null) {
-    return null;
-  }
-  if (x === true || x === false) {
-    return x;
-  }
-  if (typeof x === "string") {
-    return x;
-  }
-  if (typeof x === "number") {
-    return x;
-  }
-  if (typeof x === "function") {
-    return x;
-  }
-  if (x instanceof CrDataKeyword) {
-    if (addColon) {
-      return `:${x.value}`;
-    }
-    return x.value;
-  }
-  if (x instanceof CrDataSymbol) {
-    if (addColon) {
-      return `:${x.value}`;
-    }
-    return Symbol(x.value);
-  }
-  if (x instanceof CrDataList) {
-    var result: any[] = [];
-    for (let item of x.items()) {
-      result.push(to_js_data(item, addColon));
-    }
-    return result;
-  }
-  if (x instanceof CrDataMap) {
-    let result: Record<string, CrDataValue> = {};
-    for (let [k, v] of x.pairs()) {
-      var key = to_js_data(k, addColon);
-      result[key] = to_js_data(v, addColon);
-    }
-    return result;
-  }
-  if (x instanceof CrDataSet) {
-    let result = new Set();
-    x.value.forEach((v) => {
-      result.add(to_js_data(v, addColon));
-    });
-    return result;
-  }
-  if (x instanceof CrDataRecord) {
-    let result: Record<string, CrDataValue> = {};
-    for (let idx in x.fields) {
-      result[x.fields[idx]] = to_js_data(x.values[idx]);
-    }
-    return result;
-  }
-  if (x instanceof CrDataRef) {
-    throw new Error("Cannot convert ref to plain data");
-  }
-  if (x instanceof CrDataRecur) {
-    throw new Error("Cannot convert recur to plain data");
-  }
-
-  return x;
-};
-
-export let to_calcit_data = (x: any, noKeyword: boolean = false): CrDataValue => {
-  if (x == null) {
-    return null;
-  }
-  if (typeof x === "number") {
-    return x;
-  }
-  if (typeof x === "string") {
-    if (!noKeyword && x[0] === ":" && x.slice(1).match(/^[\w\d_\?\!\-]+$/)) {
-      return kwd(x.slice(1));
-    }
-    return x;
-  }
-  if (x === true || x === false) {
-    return x;
-  }
-  if (typeof x === "function") {
-    return x;
-  }
-  if (Array.isArray(x)) {
-    var result: any[] = [];
-    x.forEach((v) => {
-      result.push(to_calcit_data(v, noKeyword));
-    });
-    return new CrDataList(result);
-  }
-  if (x instanceof Set) {
-    let result: Set<CrDataValue> = new Set();
-    x.forEach((v) => {
-      result.add(to_calcit_data(v, noKeyword));
-    });
-    return new CrDataSet(result);
-  }
-  // detects object
-  if (x === Object(x)) {
-    let result: Array<[CrDataValue, CrDataValue]> = [];
-    Object.keys(x).forEach((k) => {
-      result.push([to_calcit_data(k, noKeyword), to_calcit_data(x[k], noKeyword)]);
-    });
-    return new CrDataMap(initTernaryTreeMap(result));
-  }
-
-  console.error(x);
-  throw new Error("Unexpected data for converting");
-};
-
 export let parse_json = (x: string): CrDataValue => {
   return to_calcit_data(JSON.parse(x), false);
 };
@@ -1458,151 +1091,6 @@ export let ends_with_QUES_ = (xs: string, y: string): boolean => {
   return xs.endsWith(y);
 };
 
-type CirruEdnFormat = string | CirruEdnFormat[];
-
-/** better use string version of Cirru EDN in future */
-export let to_cirru_edn = (x: CrDataValue): CirruEdnFormat => {
-  if (x == null) {
-    return "nil";
-  }
-  if (typeof x === "string") {
-    return `|${x}`;
-  }
-  if (typeof x === "number") {
-    return x.toString();
-  }
-  if (typeof x === "boolean") {
-    return x.toString();
-  }
-  if (x instanceof CrDataKeyword) {
-    return x.toString();
-  }
-  if (x instanceof CrDataSymbol) {
-    return x.toString();
-  }
-  if (x instanceof CrDataList) {
-    // TODO can be faster
-    return (["[]"] as CirruEdnFormat[]).concat(x.toArray().map(to_cirru_edn));
-  }
-  if (x instanceof CrDataMap) {
-    let buffer: CirruEdnFormat = ["{}"];
-    for (let [k, v] of x.pairs()) {
-      buffer.push([to_cirru_edn(k), to_cirru_edn(v)]);
-    }
-    return buffer;
-  }
-  if (x instanceof CrDataRecord) {
-    let result: Record<string, CrDataValue> = {};
-    let buffer: CirruEdnFormat = ["%{}", x.name];
-    for (let idx in x.fields) {
-      buffer.push([x.fields[idx], to_cirru_edn(x.values[idx])]);
-    }
-    return buffer;
-  }
-  if (x instanceof CrDataSet) {
-    let buffer: CirruEdnFormat = ["#{}"];
-    for (let y of x.value) {
-      buffer.push(to_cirru_edn(y));
-    }
-    return buffer;
-  }
-  console.error(x);
-  throw new Error("Unexpected data to to-cirru-edn");
-};
-
-export let extract_cirru_edn = (x: CirruEdnFormat): CrDataValue => {
-  if (typeof x === "string") {
-    if (x === "nil") {
-      return null;
-    }
-    if (x === "true") {
-      return true;
-    }
-    if (x === "false") {
-      return false;
-    }
-    if (x == "") {
-      throw new Error("cannot be empty");
-    }
-    if (x[0] === "|" || x[0] === '"') {
-      return x.slice(1);
-    }
-    if (x[0] === ":") {
-      return kwd(x.substr(1));
-    }
-    if (x[0] === "'") {
-      return new CrDataSymbol(x.substr(1));
-    }
-    if (x.match(/^(-?)\d+(\.\d*$)?/)) {
-      return parseFloat(x);
-    }
-    // allow things cannot be parsed accepted as raw strings
-    // turned on since Cirru nodes passed from macros uses this
-    return x;
-  }
-  if (x instanceof Array) {
-    if (x.length === 0) {
-      throw new Error("Cannot be empty");
-    }
-    if (x[0] === "{}") {
-      let result: Array<[CrDataValue, CrDataValue]> = [];
-      x.forEach((pair, idx) => {
-        if (idx == 0) {
-          return; // skip first `{}` symbol
-        }
-        if (pair instanceof Array && pair.length == 2) {
-          result.push([extract_cirru_edn(pair[0]), extract_cirru_edn(pair[1])]);
-        } else {
-          throw new Error("Expected pairs for map");
-        }
-      });
-      return new CrDataMap(initTernaryTreeMap(result));
-    }
-    if (x[0] === "%{}") {
-      let name = x[1];
-      if (typeof name != "string") {
-        throw new Error("Expected string for record name");
-      }
-      let fields: Array<string> = [];
-      let values: Array<CrDataValue> = [];
-      x.forEach((pair, idx) => {
-        if (idx <= 1) {
-          return; // skip %{} name
-        }
-
-        if (pair instanceof Array && pair.length == 2) {
-          if (typeof pair[0] === "string") {
-            fields.push(pair[0]);
-          } else {
-            throw new Error("Expected string as field");
-          }
-          values.push(extract_cirru_edn(pair[1]));
-        } else {
-          throw new Error("Expected pairs for map");
-        }
-      });
-      return new CrDataRecord(name, fields, values);
-    }
-    if (x[0] === "[]") {
-      return new CrDataList(x.slice(1).map(extract_cirru_edn));
-    }
-    if (x[0] === "#{}") {
-      return new CrDataSet(new Set(x.slice(1).map(extract_cirru_edn)));
-    }
-    if (x[0] === "do" && x.length === 2) {
-      return extract_cirru_edn(x[1]);
-    }
-    if (x[0] === "quote") {
-      if (x.length !== 2) {
-        throw new Error("quote expects 1 argument");
-      }
-      return to_calcit_data(x[1], true);
-    }
-  }
-  console.error(x);
-  throw new Error("Unexpected data from cirru-edn");
-};
-
 export let blank_QUES_ = (x: string): boolean => {
   if (x == null) {
     return true;
@@ -1703,52 +1191,6 @@ export let parse_cirru = (code: string): CrDataList => {
 
 export let parse_cirru_edn = (code: string) => {
   return extract_cirru_edn(parse(code)[0]);
-};
-
-let toWriterNode = (xs: CrDataList): CirruWriterNode => {
-  if (typeof xs === "string") {
-    return xs;
-  }
-  if (xs instanceof CrDataList) {
-    return xs.toArray().map(toWriterNode);
-  } else {
-    throw new Error("Unexpected type for CirruWriteNode");
-  }
-};
-
-export let write_cirru = (data: CrDataList, useInline: boolean): string => {
-  let chunk = toWriterNode(data);
-  if (!Array.isArray(chunk)) {
-    throw new Error("Expected data of list");
-  }
-  for (let item of chunk) {
-    if (!Array.isArray(item)) {
-      throw new Error("Expected data in a list of lists");
-    }
-  }
-  return writeCirruCode(chunk, { useInline });
-};
-
-export let write_cirru_edn = (data: CrDataValue, useInline: boolean = true): string => {
-  if (data == null) {
-    return "\ndo nil" + "\n";
-  }
-  if (typeof data === "string") {
-    return "\ndo " + to_cirru_edn(data) + "\n";
-  }
-  if (typeof data == "boolean") {
-    return "\ndo " + to_cirru_edn(data) + "\n";
-  }
-  if (typeof data == "string") {
-    return "\ndo " + to_cirru_edn(data) + "\n";
-  }
-  if (data instanceof CrDataSymbol) {
-    return "\ndo " + to_cirru_edn(data) + "\n";
-  }
-  if (data instanceof CrDataKeyword) {
-    return "\ndo " + to_cirru_edn(data) + "\n";
-  }
-  return writeCirruCode([to_cirru_edn(data)], { useInline: useInline });
 };
 
 /** return in seconds, like from Nim */
