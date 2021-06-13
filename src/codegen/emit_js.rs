@@ -792,7 +792,7 @@ fn gen_if_code(
         chunk.push_str(&format!("else {{ {} }}", false_code));
         break;
       } else {
-        chunk.push_str(&format!("\n{} null;", return_label.unwrap()));
+        chunk.push_str(&format!("else {{ {} null; }}", return_label.unwrap()));
         break;
       }
     }
