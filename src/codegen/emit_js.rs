@@ -190,55 +190,68 @@ fn make_fn_wrapper(body: &str) -> String {
   format!("(function __fn__(){{\n{}\n}})()", body)
 }
 
+/// lexical block to simulate an expression
+fn make_curly_wrapper(body: &str) -> String {
+  format!("{{; \n{}\n }}", body)
+}
+
 fn to_js_code(
   xs: &Calcit,
   ns: &str,
   local_defs: &HashSet<String>,
   file_imports: &RefCell<ImportsDict>,
+  return_label: &Option<String>,
 ) -> Result<String, String> {
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
-  let ret = match xs {
-    Calcit::Symbol(s, def_ns, resolved) => gen_symbol_code(s, &def_ns, resolved, ns, xs, local_defs, file_imports),
-    Calcit::Proc(s) => {
-      let proc_prefix = if ns == primes::CORE_NS {
-        "$calcit_procs."
-      } else {
-        "$calcit."
-      };
-      // println!("gen proc {} under {}", s, ns,);
-      // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
-      // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
 
-      if s.starts_with('.') {
-        if s.starts_with(".-") || s.starts_with(".!") {
-          Err(format!("invalid js method {} at this position", s))
+  if let Calcit::List(ys) = xs {
+    gen_call_code(&ys, ns, local_defs, xs, file_imports, return_label)
+  } else {
+    let ret = match xs {
+      Calcit::Symbol(s, def_ns, resolved) => gen_symbol_code(s, &def_ns, resolved, ns, xs, local_defs, file_imports),
+      Calcit::Proc(s) => {
+        let proc_prefix = if ns == primes::CORE_NS {
+          "$calcit_procs."
         } else {
-          // `.method` being used as a parameter
-          let name = s.strip_prefix('.').unwrap();
-          Ok(format!(
-            "{}invoke_method({})",
-            proc_prefix,
-            escape_cirru_str(&name), // TODO need confirm
-          ))
+          "$calcit."
+        };
+        // println!("gen proc {} under {}", s, ns,);
+        // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
+        // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
+        if s.starts_with('.') {
+          if s.starts_with(".-") || s.starts_with(".!") {
+            Err(format!("invalid js method {} at this position", s))
+          } else {
+            // `.method` being used as a parameter
+            let name = s.strip_prefix('.').unwrap();
+            Ok(format!(
+              "{}invoke_method({})",
+              proc_prefix,
+              escape_cirru_str(&name), // TODO need confirm
+            ))
+          }
+        } else {
+          Ok(format!("{}{}", proc_prefix, escape_var(s)))
         }
-      } else {
-        Ok(format!("{}{}", proc_prefix, escape_var(s)))
       }
-    }
-    Calcit::Syntax(s, ..) => {
-      let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned(), None));
-      gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs, file_imports)
-    }
-    Calcit::Str(s) => Ok(escape_cirru_str(&s)),
-    Calcit::Bool(b) => Ok(b.to_string()),
-    Calcit::Number(n) => Ok(n.to_string()),
-    Calcit::Nil => Ok(String::from("null")),
-    Calcit::Keyword(s) => Ok(format!("{}kwd({})", var_prefix, wrap_js_str(s))),
-    Calcit::List(ys) => gen_call_code(&ys, ns, local_defs, xs, file_imports),
-    a => unreachable!(format!("[Warn] unknown kind to gen js code: {}", a)),
-  };
+      Calcit::Syntax(s, ..) => {
+        let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned(), None));
+        gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs, file_imports)
+      }
+      Calcit::Str(s) => Ok(escape_cirru_str(&s)),
+      Calcit::Bool(b) => Ok(b.to_string()),
+      Calcit::Number(n) => Ok(n.to_string()),
+      Calcit::Nil => Ok(String::from("null")),
+      Calcit::Keyword(s) => Ok(format!("{}kwd({})", var_prefix, wrap_js_str(s))),
+      Calcit::List(_) => unreachable!("[Error] list handled in another branch"),
+      a => unreachable!(format!("[Error] unknown kind to gen js code: {}", a)),
+    };
 
-  ret
+    match (return_label, &ret) {
+      (Some(label), Ok(code)) => Ok(format!("{}{}", label, code)),
+      (_, _) => ret,
+    }
+  }
 }
 
 fn gen_call_code(
@@ -247,7 +260,12 @@ fn gen_call_code(
   local_defs: &HashSet<String>,
   xs: &Calcit,
   file_imports: &RefCell<ImportsDict>,
+  return_label: &Option<String>,
 ) -> Result<String, String> {
+  let return_code = match &return_label {
+    Some(label) => label.to_owned(),
+    None => String::from(""),
+  };
   let var_prefix = if ns == primes::CORE_NS { "" } else { "$calcit." };
   let proc_prefix = if ns == primes::CORE_NS {
     "$calcit_procs."
@@ -268,26 +286,32 @@ fn gen_call_code(
           if let Some(Calcit::List(ys)) = body.get(2) {
             if let Some(Calcit::Syntax(syn, ..)) = ys.get(0) {
               if syn == "if" {
-                return gen_if_code(&body, local_defs, &xs, ns, file_imports);
+                return gen_if_code(&body, local_defs, &xs, ns, file_imports, return_label);
               }
             }
+          }
+          if return_label.is_some() {
+            return gen_if_code(&body, local_defs, &xs, ns, file_imports, return_label);
           }
           return match (body.get(0), body.get(1)) {
             (Some(condition), Some(true_branch)) => {
               call_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), &im::vector![]);
               let false_code = match body.get(2) {
-                Some(fal) => to_js_code(fal, ns, local_defs, file_imports)?,
+                Some(fal) => to_js_code(fal, ns, local_defs, file_imports, &None)?,
                 None => String::from("null"),
               };
-              let cond_code = to_js_code(condition, ns, local_defs, file_imports)?;
-              let true_code = to_js_code(true_branch, ns, local_defs, file_imports)?;
+              let cond_code = to_js_code(condition, ns, local_defs, file_imports, &None)?;
+              let true_code = to_js_code(true_branch, ns, local_defs, file_imports, &None)?;
               call_stack::pop_call_stack();
-              Ok(format!("( {} ? {} : {} )", cond_code, true_code, false_code))
+              Ok(format!(
+                "{}( {} ? {} : {} )",
+                return_code, cond_code, true_code, false_code
+              ))
             }
             (_, _) => Err(format!("if expected 2~3 nodes, got: {:?}", body)),
           };
         }
-        "&let" => gen_let_code(&body, local_defs, &xs, ns, file_imports),
+        "&let" => gen_let_code(&body, local_defs, &xs, ns, file_imports, return_label),
         ";" => Ok(format!("(/* {} */ null)", Calcit::List(body))),
 
         "quote" => match body.get(0) {
@@ -301,7 +325,7 @@ fn gen_call_code(
               // let _name = escape_var(sym); // TODO
               let ref_path = wrap_js_str(&format!("{}/{}", ns, sym.clone()));
               call_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &im::vector![]);
-              let value_code = &to_js_code(v, ns, local_defs, file_imports)?;
+              let value_code = &to_js_code(v, ns, local_defs, file_imports, &None)?;
               call_stack::pop_call_stack();
               Ok(format!(
                 "\n({}peekDefatom({}) ?? {}defatom({}, {}))\n",
@@ -318,7 +342,10 @@ fn gen_call_code(
             call_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &im::vector![]);
             let ret = gen_js_func(sym, &ys, &func_body, ns, false, local_defs, file_imports);
             call_stack::pop_call_stack();
-            ret
+            match ret {
+              Ok(code) => Ok(format!("{}{}", return_code, code)),
+              _ => ret,
+            }
           }
           (_, _) => Err(format!("defn expected name arguments, got: {:?}", body)),
         },
@@ -330,16 +357,21 @@ fn gen_call_code(
           // not core syntax, but treat as macro for better debugging experience
           match body.get(0) {
             Some(m) => {
-              let message: String = to_js_code(m, ns, local_defs, file_imports)?;
+              let message: String = to_js_code(m, ns, local_defs, file_imports, &None)?;
               let data_code = match body.get(1) {
-                Some(d) => to_js_code(d, ns, local_defs, file_imports)?,
+                Some(d) => to_js_code(d, ns, local_defs, file_imports, &None)?,
                 None => String::from("null"),
               };
               let err_var = js_gensym("err");
-              Ok(make_fn_wrapper(&format!(
+              let ret = format!(
                 "let {} = new Error({});\n {}.data = {};\n throw {};",
                 err_var, message, err_var, data_code, err_var
-              )))
+              );
+              // println!("inside raise: {:?} {}", return_label, xs);
+              match return_label {
+                Some(_) => Ok(ret),
+                _ => Ok(make_fn_wrapper(&ret)),
+              }
             }
             None => Err(format!("raise expected 1~2 arguments, got {:?}", body)),
           }
@@ -347,9 +379,9 @@ fn gen_call_code(
         "try" => match (body.get(0), body.get(1)) {
           (Some(expr), Some(handler)) => {
             call_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), &im::vector![]);
-            let code = to_js_code(expr, ns, local_defs, file_imports)?;
+            let code = to_js_code(expr, ns, local_defs, file_imports, &None)?;
             let err_var = js_gensym("errMsg");
-            let handler = to_js_code(handler, ns, local_defs, file_imports)?;
+            let handler = to_js_code(handler, ns, local_defs, file_imports, return_label)?;
 
             call_stack::pop_call_stack();
 
@@ -367,8 +399,8 @@ fn gen_call_code(
           // not core syntax, but treat as macro for availability
           match body.get(0) {
             Some(Calcit::Symbol(_sym, ..)) => {
-              let target = to_js_code(&body[0], ns, local_defs, file_imports)?; // TODO could be simpler
-              return Ok(format!("(typeof {} !== 'undefined')", target));
+              let target = to_js_code(&body[0], ns, local_defs, file_imports, &None)?; // TODO could be simpler
+              return Ok(format!("{}(typeof {} !== 'undefined')", return_code, target));
             }
             Some(a) => Err(format!("exists? expected a symbol, got {}", a)),
             None => Err(format!("exists? expected 1 node, got {:?}", body)),
@@ -379,8 +411,9 @@ fn gen_call_code(
             let args = body.skip(1);
             let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
             Ok(format!(
-              "new {}({})",
-              to_js_code(&ctor, ns, local_defs, file_imports)?,
+              "{}new {}({})",
+              return_code,
+              to_js_code(&ctor, ns, local_defs, file_imports, &None)?,
               args_code
             ))
           }
@@ -388,17 +421,18 @@ fn gen_call_code(
         },
         "instance?" => match (body.get(0), body.get(1)) {
           (Some(ctor), Some(v)) => Ok(format!(
-            "({} instanceof {})",
-            to_js_code(v, ns, local_defs, file_imports)?,
-            to_js_code(ctor, ns, local_defs, file_imports)?
+            "{}({} instanceof {})",
+            return_code,
+            to_js_code(v, ns, local_defs, file_imports, &None)?,
+            to_js_code(ctor, ns, local_defs, file_imports, &None)?
           )),
           (_, _) => Err(format!("instance? expected 2 arguments, got {:?}", body)),
         },
         "set!" => match (body.get(0), body.get(1)) {
           (Some(target), Some(v)) => Ok(format!(
             "{} = {}",
-            to_js_code(target, ns, local_defs, file_imports)?,
-            to_js_code(v, ns, local_defs, file_imports)?
+            to_js_code(target, ns, local_defs, file_imports, &None)?,
+            to_js_code(v, ns, local_defs, file_imports, &None)?
           )),
           (_, _) => Err(format!("set! expected 2 nodes, got {:?}", body)),
         },
@@ -408,7 +442,12 @@ fn gen_call_code(
             Err(format!("invalid property accessor {}", s))
           } else {
             match body.get(0) {
-              Some(obj) => Ok(format!("{}.{}", to_js_code(&obj, ns, local_defs, file_imports)?, name)),
+              Some(obj) => Ok(format!(
+                "{}{}.{}",
+                return_code,
+                to_js_code(&obj, ns, local_defs, file_imports, &None)?,
+                name,
+              )),
               None => Err(format!("property accessor takes only 1 argument, {:?}", xs)),
             }
           }
@@ -422,8 +461,9 @@ fn gen_call_code(
                 let args = body.skip(1);
                 let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
                 Ok(format!(
-                  "{}.{}({})",
-                  to_js_code(&obj, ns, local_defs, file_imports)?,
+                  "{}{}.{}({})",
+                  return_code,
+                  to_js_code(&obj, ns, local_defs, file_imports, &None)?,
                   name,
                   args_code
                 ))
@@ -441,10 +481,11 @@ fn gen_call_code(
               let args = body.skip(1);
               let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
               Ok(format!(
-                "{}invoke_method({})({},{})",
+                "{}{}invoke_method({})({},{})",
+                return_code,
                 proc_prefix,
                 escape_cirru_str(&name), // TODO need confirm
-                to_js_code(&obj, ns, local_defs, file_imports)?,
+                to_js_code(&obj, ns, local_defs, file_imports, &None)?,
                 args_code
               ))
             }
@@ -455,8 +496,9 @@ fn gen_call_code(
           // TODO
           let args_code = gen_args_code(&body, ns, &local_defs, file_imports)?;
           Ok(format!(
-            "{}({})",
-            to_js_code(&head, ns, local_defs, file_imports)?,
+            "{}{}({})",
+            return_code,
+            to_js_code(&head, ns, local_defs, file_imports, &None)?,
             args_code
           ))
         }
@@ -465,8 +507,9 @@ fn gen_call_code(
     _ => {
       let args_code = gen_args_code(&body, ns, &local_defs, file_imports)?;
       Ok(format!(
-        "{}({})",
-        to_js_code(&head, ns, local_defs, file_imports)?,
+        "{}{}({})",
+        return_code,
+        to_js_code(&head, ns, local_defs, file_imports, &None)?,
         args_code
       ))
     }
@@ -581,8 +624,13 @@ fn gen_let_code(
   xs: &Calcit,
   ns: &str,
   file_imports: &RefCell<ImportsDict>,
+  base_return_label: &Option<String>,
 ) -> Result<String, String> {
   let mut let_def_body = body.clone();
+  let return_label = match base_return_label {
+    Some(t) => Some(t.to_owned()),
+    None => Some(String::from("return ")),
+  };
 
   // defined new local variable
   let mut scoped_defs = local_defs.clone();
@@ -603,11 +651,10 @@ fn gen_let_code(
 
         for (idx, x) in content.iter().enumerate() {
           if idx == content.len() - 1 {
-            body_part.push_str("return ");
-            body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports)?);
-            body_part.push_str(";\n");
+            body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &return_label)?);
+            body_part.push_str("\n");
           } else {
-            body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports)?);
+            body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &None)?);
             body_part.push_str(";\n");
           }
         }
@@ -621,27 +668,30 @@ fn gen_let_code(
           Calcit::Symbol(sym, ..) => {
             // TODO `let` inside expressions makes syntax error
             let left = escape_var(&sym);
-            let right = to_js_code(&def_code, &ns, &scoped_defs, file_imports)?;
+            let right = to_js_code(&def_code, &ns, &scoped_defs, file_imports, &None)?;
             defs_code.push_str(&format!("let {} = {};\n", left, right));
 
             if scoped_defs.contains(&sym) {
               for (idx, x) in content.iter().enumerate() {
                 if idx == content.len() - 1 {
-                  body_part.push_str("return ");
-                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports)?);
-                  body_part.push_str(";\n");
+                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &return_label)?);
+                  body_part.push_str("\n");
                 } else {
-                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports)?);
+                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &None)?);
                   body_part.push_str(";\n");
                 }
               }
 
               // first variable is using conflicted name
-              if local_defs.contains(&sym) {
-                return Ok(make_let_with_bind(&left, &right, &body_part));
+              let ret = if local_defs.contains(&sym) {
+                make_let_with_bind(&left, &right, &body_part)
               } else {
-                return Ok(make_let_with_wrapper(&left, &right, &body_part));
-              }
+                make_let_with_wrapper(&left, &right, &body_part)
+              };
+              return match base_return_label {
+                Some(label) => Ok(format!("{}{}", label, ret)),
+                None => Ok(ret),
+              };
             } else {
               // track variable
               scoped_defs.insert(sym.clone());
@@ -664,11 +714,10 @@ fn gen_let_code(
 
               for (idx, x) in content.iter().enumerate() {
                 if idx == content.len() - 1 {
-                  body_part.push_str("return ");
-                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports)?);
-                  body_part.push_str(";\n");
+                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &return_label)?);
+                  body_part.push_str("\n");
                 } else {
-                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports)?);
+                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &None)?);
                   body_part.push_str(";\n");
                 }
               }
@@ -683,7 +732,11 @@ fn gen_let_code(
       _ => return Err(format!("expected pair of a list of length 2, got: {}", pair)),
     }
   }
-  return Ok(make_fn_wrapper(&format!("{}{}", defs_code, body_part)));
+  if base_return_label.is_some() {
+    Ok(format!("{}{}", defs_code, body_part))
+  } else {
+    Ok(make_fn_wrapper(&format!("{}{}", defs_code, body_part)))
+  }
 }
 
 fn gen_if_code(
@@ -692,6 +745,7 @@ fn gen_if_code(
   _xs: &Calcit,
   ns: &str,
   file_imports: &RefCell<ImportsDict>,
+  base_return_label: &Option<String>,
 ) -> Result<String, String> {
   if body.len() < 2 || body.len() > 3 {
     Err(format!("if expected 2~3 nodes, got: {:?}", body))
@@ -700,11 +754,19 @@ fn gen_if_code(
     let mut cond_node = body[0].to_owned();
     let mut true_node = body[1].to_owned();
     let mut some_false_node = body.get(2);
+    let mut need_else = false;
+
+    let return_label = match base_return_label {
+      Some(t) => Some(t.to_owned()),
+      None => Some(String::from("return ")),
+    };
 
     loop {
-      let cond_code = to_js_code(&cond_node, ns, local_defs, file_imports)?;
-      let true_code = to_js_code(&true_node, ns, local_defs, file_imports)?;
-      chunk.push_str(&format!("\nif ({}) {{ return {}; }}", cond_code, true_code));
+      let cond_code = to_js_code(&cond_node, ns, local_defs, file_imports, &None)?;
+      let true_code = to_js_code(&true_node, ns, local_defs, file_imports, &return_label)?;
+      let else_mark = if need_else { " else " } else { "" };
+
+      chunk.push_str(&format!("\n{}if ({}) {{ {} }}", else_mark, cond_code, true_code));
 
       if let Some(false_node) = some_false_node {
         if let Calcit::List(ys) = false_node {
@@ -716,21 +778,26 @@ fn gen_if_code(
               cond_node = ys[1].to_owned();
               true_node = ys[2].to_owned();
               some_false_node = ys.get(3);
+              need_else = true;
               continue;
             }
           }
         }
 
-        let false_code = to_js_code(&false_node, ns, local_defs, file_imports)?;
-        chunk.push_str(&format!("\nreturn {}", false_code));
+        let false_code = to_js_code(&false_node, ns, local_defs, file_imports, &return_label)?;
+        chunk.push_str(&format!("else {{ {} }}", false_code));
         break;
       } else {
-        chunk.push_str("\nreturn null;");
+        chunk.push_str(&format!("\n{} null;", return_label.unwrap()));
         break;
       }
     }
 
-    Ok(make_fn_wrapper(&chunk))
+    if base_return_label.is_some() {
+      Ok(chunk)
+    } else {
+      Ok(make_fn_wrapper(&chunk))
+    }
   }
 }
 
@@ -756,11 +823,11 @@ fn gen_args_code(
           result.push_str(&format!(
             "...{}listToArray({})",
             var_prefix,
-            to_js_code(x, ns, local_defs, file_imports)?
+            to_js_code(x, ns, local_defs, file_imports, &None)?
           ));
           spreading = false
         } else {
-          result.push_str(&to_js_code(&x, ns, &local_defs, file_imports)?);
+          result.push_str(&to_js_code(&x, ns, &local_defs, file_imports, &None)?);
         }
       }
     }
@@ -780,11 +847,17 @@ fn list_to_js_code(
   for (idx, x) in xs.iter().enumerate() {
     // result = result & "// " & $x & "\n"
     if idx == xs.len() - 1 {
-      result.push_str(return_label);
-      result.push_str(&to_js_code(&x, ns, &local_defs, file_imports)?);
-      result.push_str(";\n");
+      result.push_str(&to_js_code(
+        &x,
+        ns,
+        &local_defs,
+        file_imports,
+        &Some(return_label.to_owned()),
+      )?);
+      result.push_str("\n");
     } else {
-      result.push_str(&to_js_code(x, ns, &local_defs, file_imports)?);
+      let line = to_js_code(&x, ns, &local_defs, file_imports, &None)?;
+      result.push_str(&make_curly_wrapper(&line));
       result.push_str(";\n");
     }
   }
@@ -795,14 +868,18 @@ fn uses_recur(xs: &Calcit) -> bool {
   match xs {
     Calcit::Symbol(s, ..) => s == "recur",
     Calcit::Proc(s) => s == "recur",
-    Calcit::List(ys) => {
-      for y in ys {
-        if uses_recur(y) {
-          return true;
+    Calcit::List(ys) => match &ys.get(0) {
+      Some(Calcit::Syntax(syn, _)) if syn == "defn" => false,
+      Some(Calcit::Symbol(sym, ..)) if sym == "defn" => false,
+      _ => {
+        for y in ys {
+          if uses_recur(y) {
+            return true;
+          }
         }
+        false
       }
-      false
-    }
+    },
     _ => false,
   }
 }
@@ -875,14 +952,17 @@ fn gen_js_func(
   };
 
   if !body.is_empty() && uses_recur(&body[body.len() - 1]) {
+    let return_var = js_gensym("return_mark");
     let fn_def = snippets::tmpl_tail_recursion(
       /* name = */ escape_var(name),
       /* args_code = */ args_code,
       /* check_args = */ check_args,
       /* spreading_code = */ spreading_code,
       /* body = */
-      list_to_js_code(&body, ns, local_defs, "%%return_mark%% =", file_imports)?, // dirty trick
+      list_to_js_code(&body, ns, local_defs, &format!("%%{}%% =", return_var), file_imports)?, // dirty trick
       /* var_prefix = */ var_prefix.to_owned(),
+      /* return_mark */
+      &format!("%%{}%%", return_var),
     );
 
     let export_mark = if exported {
@@ -1089,7 +1169,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           vals_code.push_str(&format!(
             "\nexport var {} = {};\n",
             escape_var(&def),
-            to_js_code(code, &ns, &def_names, &file_imports)?
+            to_js_code(code, &ns, &def_names, &file_imports, &None)?
           ));
           call_stack::pop_call_stack()
         }

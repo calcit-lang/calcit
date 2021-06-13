@@ -54,10 +54,11 @@ pub fn tmpl_tail_recursion(
   spreading_code: String,
   body0: String,
   var_prefix: String,
+  return_mark: &str,
 ) -> String {
   let ret_var = js_gensym("ret");
   let times_var = js_gensym("times");
-  let body = body0.replace("%%return_mark%%", &ret_var); // dirty trick for injection
+  let body = body0.replace(return_mark, &ret_var); // dirty trick for injection
 
   let check_recur_args = check_args.replace("arguments.length", &format!("{}.args.length", ret_var));
 
