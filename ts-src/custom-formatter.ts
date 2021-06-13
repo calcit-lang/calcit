@@ -1,12 +1,12 @@
-import { CrDataValue } from "./js-primes";
-import { CrDataRef, CrDataSymbol, CrDataKeyword } from "./calcit-data";
+import { CalcitValue } from "./js-primes";
+import { CalcitRef, CalcitSymbol, CalcitKeyword } from "./calcit-data";
 import { toPairs } from "@calcit/ternary-tree";
 
-import { CrDataRecord } from "./js-record";
-import { CrDataMap } from "./js-map";
-import { CrDataList } from "./js-list";
-import { CrDataSet } from "./js-set";
-import { CrDataTuple } from "./js-tuple";
+import { CalcitRecord } from "./js-record";
+import { CalcitMap } from "./js-map";
+import { CalcitList } from "./js-list";
+import { CalcitSet } from "./js-set";
+import { CalcitTuple } from "./js-tuple";
 
 declare global {
   interface Window {
@@ -18,7 +18,7 @@ declare global {
   }
 }
 
-let embedObject = (x: CrDataValue) => {
+let embedObject = (x: CalcitValue) => {
   if (x == null) {
     return null;
   }
@@ -35,13 +35,13 @@ export let load_console_formatter_BANG_ = () => {
     window["devtoolsFormatters"] = [
       {
         header: (obj, config) => {
-          if (obj instanceof CrDataKeyword) {
+          if (obj instanceof CalcitKeyword) {
             return ["div", { style: "color: hsl(240, 80%, 60%)" }, obj.toString()];
           }
-          if (obj instanceof CrDataSymbol) {
+          if (obj instanceof CalcitSymbol) {
             return ["div", { style: "color: hsl(340, 80%, 60%)" }, obj.toString()];
           }
-          if (obj instanceof CrDataList) {
+          if (obj instanceof CalcitList) {
             return [
               "div",
               { style: "color: hsl(280, 80%, 60%, 0.4)" },
@@ -49,13 +49,13 @@ export let load_console_formatter_BANG_ = () => {
               ["span", { style: "font-size: 80%; vertical-align: 0.7em; color: hsl(280, 80%, 60%, 0.8)" }, `${obj.len()}`],
             ];
           }
-          if (obj instanceof CrDataMap) {
+          if (obj instanceof CalcitMap) {
             return ["div", { style: "color: hsl(280, 80%, 60%, 0.4)" }, obj.toString(true)];
           }
-          if (obj instanceof CrDataSet) {
+          if (obj instanceof CalcitSet) {
             return ["div", { style: "color: hsl(280, 80%, 60%, 0.4)" }, obj.toString()];
           }
-          if (obj instanceof CrDataRecord) {
+          if (obj instanceof CalcitRecord) {
             let ret: any[] = ["div", { style: "color: hsl(280, 80%, 60%)" }, `%{} ${obj.name}`];
             for (let idx in obj.fields) {
               ret.push([
@@ -67,7 +67,7 @@ export let load_console_formatter_BANG_ = () => {
             }
             return ret;
           }
-          if (obj instanceof CrDataRef) {
+          if (obj instanceof CalcitRef) {
             return [
               "div",
               { style: "color: hsl(280, 80%, 60%)" },
@@ -78,19 +78,19 @@ export let load_console_formatter_BANG_ = () => {
           return null;
         },
         hasBody: (obj) => {
-          if (obj instanceof CrDataList) {
+          if (obj instanceof CalcitList) {
             return obj.len() > 0;
           }
-          if (obj instanceof CrDataMap) {
+          if (obj instanceof CalcitMap) {
             return obj.len() > 0;
           }
-          if (obj instanceof CrDataSet) {
+          if (obj instanceof CalcitSet) {
             return obj.len() > 0;
           }
           return false;
         },
         body: (obj, config) => {
-          if (obj instanceof CrDataList) {
+          if (obj instanceof CalcitList) {
             return ["div", { style: "color: hsl(280, 80%, 60%)" }].concat(
               obj.toArray().map((x, idx) => {
                 return [
@@ -102,20 +102,20 @@ export let load_console_formatter_BANG_ = () => {
               }) as any[]
             );
           }
-          if (obj instanceof CrDataSet) {
+          if (obj instanceof CalcitSet) {
             let ret: any[] = ["div", { style: "color: hsl(280, 80%, 60%)" }];
             for (let x of obj.value.values()) {
               ret.push(["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(x)]);
             }
             return ret;
           }
-          if (obj instanceof CrDataTuple) {
+          if (obj instanceof CalcitTuple) {
             let ret: any[] = ["div", { style: "color: hsl(200, 90%, 60%)" }];
             ret.push(["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(obj.fst)]);
             ret.push(["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(obj.snd)]);
             return ret;
           }
-          if (obj instanceof CrDataMap) {
+          if (obj instanceof CalcitMap) {
             let ret: any[] = ["div", { style: "color: hsl(280, 80%, 60%)" }];
             obj.turnMap();
             for (let [k, v] of toPairs(obj.value)) {

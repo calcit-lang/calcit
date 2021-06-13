@@ -1,6 +1,6 @@
 import * as ternaryTree from "@calcit/ternary-tree";
 
-import { CrDataValue } from "./js-primes";
+import { CalcitValue } from "./js-primes";
 
 import {
   TernaryTreeList,
@@ -15,21 +15,21 @@ import {
   assocAfter,
 } from "@calcit/ternary-tree";
 
-import { CrDataMap } from "./js-map";
-import { CrDataSet } from "./js-set";
-import { CrDataFn } from "./calcit.procs";
+import { CalcitMap } from "./js-map";
+import { CalcitSet } from "./js-set";
+import { CalcitFn } from "./calcit.procs";
 
-import { isNestedCrData, tipNestedCrData, toString } from "./calcit-data";
+import { isNestedCalcitData, tipNestedCalcitData, toString } from "./calcit-data";
 
-export class CrDataList {
-  value: TernaryTreeList<CrDataValue>;
+export class CalcitList {
+  value: TernaryTreeList<CalcitValue>;
   // array mode store bare array for performance
-  arrayValue: Array<CrDataValue>;
+  arrayValue: Array<CalcitValue>;
   arrayMode: boolean;
   arrayStart: number;
   arrayEnd: number;
   cachedHash: Hash;
-  constructor(value: Array<CrDataValue> | TernaryTreeList<CrDataValue>) {
+  constructor(value: Array<CalcitValue> | TernaryTreeList<CalcitValue>) {
     if (value == null) {
       value = []; // dirty, better handled from outside
     }
@@ -70,21 +70,21 @@ export class CrDataList {
       return listGet(this.value, idx);
     }
   }
-  assoc(idx: number, v: CrDataValue) {
+  assoc(idx: number, v: CalcitValue) {
     this.turnListMode();
-    return new CrDataList(assocList(this.value, idx, v));
+    return new CalcitList(assocList(this.value, idx, v));
   }
-  assocBefore(idx: number, v: CrDataValue) {
+  assocBefore(idx: number, v: CalcitValue) {
     this.turnListMode();
-    return new CrDataList(assocBefore(this.value, idx, v));
+    return new CalcitList(assocBefore(this.value, idx, v));
   }
-  assocAfter(idx: number, v: CrDataValue) {
+  assocAfter(idx: number, v: CalcitValue) {
     this.turnListMode();
-    return new CrDataList(assocAfter(this.value, idx, v));
+    return new CalcitList(assocAfter(this.value, idx, v));
   }
   dissoc(idx: number) {
     this.turnListMode();
-    return new CrDataList(dissocList(this.value, idx));
+    return new CalcitList(dissocList(this.value, idx));
   }
   slice(from: number, to: number) {
     if (this.arrayMode) {
@@ -97,19 +97,19 @@ export class CrDataList {
       if (to < from) {
         throw new Error("end index too small");
       }
-      let result = new CrDataList(this.arrayValue);
+      let result = new CalcitList(this.arrayValue);
       result.arrayStart = this.arrayStart + from;
       result.arrayEnd = this.arrayStart + to;
       return result;
     } else {
-      return new CrDataList(ternaryTree.slice(this.value, from, to));
+      return new CalcitList(ternaryTree.slice(this.value, from, to));
     }
   }
   toString(shorter = false): string {
     let result = "";
     for (let item of this.items()) {
-      if (shorter && isNestedCrData(item)) {
-        result = `${result} ${tipNestedCrData(item)}`;
+      if (shorter && isNestedCalcitData(item)) {
+        result = `${result} ${tipNestedCalcitData(item)}`;
       } else {
         result = `${result} ${toString(item, true)}`;
       }
@@ -120,29 +120,29 @@ export class CrDataList {
     return this.len() === 0;
   }
   /** usage: `for of` */
-  items(): Generator<CrDataValue> {
+  items(): Generator<CalcitValue> {
     if (this.arrayMode) {
       return sliceGenerator(this.arrayValue, this.arrayStart, this.arrayEnd);
     } else {
       return listToItems(this.value);
     }
   }
-  append(v: CrDataValue) {
+  append(v: CalcitValue) {
     if (this.arrayMode && this.arrayEnd === this.arrayValue.length && this.arrayStart < 32) {
       // dirty trick to reuse list memory, data storage actually appended at existing array
       this.arrayValue.push(v);
-      let newList = new CrDataList(this.arrayValue);
+      let newList = new CalcitList(this.arrayValue);
       newList.arrayStart = this.arrayStart;
       newList.arrayEnd = this.arrayEnd + 1;
       return newList;
     } else {
       this.turnListMode();
-      return new CrDataList(ternaryTree.append(this.value, v));
+      return new CalcitList(ternaryTree.append(this.value, v));
     }
   }
-  prepend(v: CrDataValue) {
+  prepend(v: CalcitValue) {
     this.turnListMode();
-    return new CrDataList(ternaryTree.prepend(this.value, v));
+    return new CalcitList(ternaryTree.prepend(this.value, v));
   }
   first() {
     if (this.arrayMode) {
@@ -159,11 +159,11 @@ export class CrDataList {
     if (this.arrayMode) {
       return this.slice(1, this.arrayEnd - this.arrayStart);
     } else {
-      return new CrDataList(ternaryTree.rest(this.value));
+      return new CalcitList(ternaryTree.rest(this.value));
     }
   }
-  concat(ys: CrDataList) {
-    if (!(ys instanceof CrDataList)) {
+  concat(ys: CalcitList) {
+    if (!(ys instanceof CalcitList)) {
       throw new Error("Expected list");
     }
     if (this.arrayMode && ys.arrayMode) {
@@ -176,21 +176,21 @@ export class CrDataList {
       for (let i = 0; i < otherSize; i++) {
         combined[i + size] = ys.get(i);
       }
-      return new CrDataList(combined);
+      return new CalcitList(combined);
     } else {
       this.turnListMode();
       ys.turnListMode();
-      return new CrDataList(ternaryTree.concat(this.value, ys.value));
+      return new CalcitList(ternaryTree.concat(this.value, ys.value));
     }
   }
-  map(f: (v: CrDataValue) => CrDataValue): CrDataList {
+  map(f: (v: CalcitValue) => CalcitValue): CalcitList {
     if (this.arrayMode) {
-      return new CrDataList(this.arrayValue.slice(this.arrayStart, this.arrayEnd).map(f));
+      return new CalcitList(this.arrayValue.slice(this.arrayStart, this.arrayEnd).map(f));
     } else {
-      return new CrDataList(ternaryTree.listMapValues(this.value, f));
+      return new CalcitList(ternaryTree.listMapValues(this.value, f));
     }
   }
-  toArray(): CrDataValue[] {
+  toArray(): CalcitValue[] {
     if (this.arrayMode) {
       return this.arrayValue.slice(this.arrayStart, this.arrayEnd);
     } else {
@@ -199,17 +199,17 @@ export class CrDataList {
   }
   reverse() {
     this.turnListMode();
-    return new CrDataList(ternaryTree.reverse(this.value));
+    return new CalcitList(ternaryTree.reverse(this.value));
   }
 }
 
-function* sliceGenerator(xs: Array<CrDataValue>, start: number, end: number): Generator<CrDataValue> {
+function* sliceGenerator(xs: Array<CalcitValue>, start: number, end: number): Generator<CalcitValue> {
   for (let idx = start; idx < end; idx++) {
     yield xs[idx];
   }
 }
 
-export let foldl = function (xs: CrDataValue, acc: CrDataValue, f: CrDataFn): CrDataValue {
+export let foldl = function (xs: CalcitValue, acc: CalcitValue, f: CalcitFn): CalcitValue {
   if (arguments.length !== 3) {
     throw new Error("foldl takes 3 arguments");
   }
@@ -218,7 +218,7 @@ export let foldl = function (xs: CrDataValue, acc: CrDataValue, f: CrDataFn): Cr
     debugger;
     throw new Error("Expected function for folding");
   }
-  if (xs instanceof CrDataList) {
+  if (xs instanceof CalcitList) {
     var result = acc;
     for (let idx = 0; idx < xs.len(); idx++) {
       let item = xs.get(idx);
@@ -226,24 +226,24 @@ export let foldl = function (xs: CrDataValue, acc: CrDataValue, f: CrDataFn): Cr
     }
     return result;
   }
-  if (xs instanceof CrDataSet) {
+  if (xs instanceof CalcitSet) {
     let result = acc;
     xs.value.forEach((item) => {
       result = f(result, item);
     });
     return result;
   }
-  if (xs instanceof CrDataMap) {
+  if (xs instanceof CalcitMap) {
     let result = acc;
     xs.pairs().forEach(([k, item]) => {
-      result = f(result, new CrDataList([k, item]));
+      result = f(result, new CalcitList([k, item]));
     });
     return result;
   }
   throw new Error("Unknow data for foldl");
 };
 
-export let foldl_shortcut = function (xs: CrDataValue, acc: CrDataValue, v0: CrDataValue, f: CrDataFn): CrDataValue {
+export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: CalcitValue, f: CalcitFn): CalcitValue {
   if (arguments.length !== 4) {
     throw new Error("foldl-shortcut takes 4 arguments");
   }
@@ -252,12 +252,12 @@ export let foldl_shortcut = function (xs: CrDataValue, acc: CrDataValue, v0: CrD
     debugger;
     throw new Error("Expected function for folding");
   }
-  if (xs instanceof CrDataList) {
+  if (xs instanceof CalcitList) {
     var state = acc;
     for (let idx = 0; idx < xs.len(); idx++) {
       let item = xs.get(idx);
       let pair = f(state, item);
-      if (pair instanceof CrDataList && pair.len() == 2) {
+      if (pair instanceof CalcitList && pair.len() == 2) {
         if (typeof pair.get(0) == "boolean") {
           if (pair.get(0)) {
             return pair.get(1);
@@ -271,11 +271,11 @@ export let foldl_shortcut = function (xs: CrDataValue, acc: CrDataValue, v0: CrD
     }
     return v0;
   }
-  if (xs instanceof CrDataSet) {
+  if (xs instanceof CalcitSet) {
     let state = acc;
     for (let item of xs.values()) {
       let pair = f(state, item);
-      if (pair instanceof CrDataList && pair.len() == 2) {
+      if (pair instanceof CalcitList && pair.len() == 2) {
         if (typeof pair.get(0) == "boolean") {
           if (pair.get(0)) {
             return pair.get(1);
@@ -290,11 +290,11 @@ export let foldl_shortcut = function (xs: CrDataValue, acc: CrDataValue, v0: CrD
     return v0;
   }
 
-  if (xs instanceof CrDataMap) {
+  if (xs instanceof CalcitMap) {
     let state = acc;
     for (let item of xs.pairs()) {
-      let pair = f(state, new CrDataList(item));
-      if (pair instanceof CrDataList && pair.len() == 2) {
+      let pair = f(state, new CalcitList(item));
+      if (pair instanceof CalcitList && pair.len() == 2) {
         if (typeof pair.get(0) == "boolean") {
           if (pair.get(0)) {
             return pair.get(1);

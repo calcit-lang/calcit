@@ -1,13 +1,13 @@
 import * as ternaryTree from "@calcit/ternary-tree";
 
-import { CrDataValue } from "./js-primes";
+import { CalcitValue } from "./js-primes";
 
 import { TernaryTreeMap, initTernaryTreeMap, mapLen, assocMap, dissocMap, isMapEmpty, Hash, toPairsArray, mapGetDefault } from "@calcit/ternary-tree";
 
-import { isNestedCrData, tipNestedCrData, toString } from "./calcit-data";
+import { isNestedCalcitData, tipNestedCalcitData, toString } from "./calcit-data";
 
 /** need to compare by Calcit */
-let DATA_EQUAL = (x: CrDataValue, y: CrDataValue): boolean => {
+let DATA_EQUAL = (x: CalcitValue, y: CalcitValue): boolean => {
   return x == y;
 };
 
@@ -15,14 +15,14 @@ export let overwriteDataComparator = (f: typeof DATA_EQUAL): void => {
   DATA_EQUAL = f;
 };
 
-export class CrDataMap {
+export class CalcitMap {
   cachedHash: Hash;
   /** in arrayMode, only flatten values, not tree structure */
   arrayMode: boolean;
-  arrayValue: CrDataValue[];
-  value: TernaryTreeMap<CrDataValue, CrDataValue>;
-  skipValue: CrDataValue;
-  constructor(value: CrDataValue[] | TernaryTreeMap<CrDataValue, CrDataValue>) {
+  arrayValue: CalcitValue[];
+  value: TernaryTreeMap<CalcitValue, CalcitValue>;
+  skipValue: CalcitValue;
+  constructor(value: CalcitValue[] | TernaryTreeMap<CalcitValue, CalcitValue>) {
     if (value == null) {
       this.arrayMode = true;
       this.arrayValue = [];
@@ -36,7 +36,7 @@ export class CrDataMap {
   }
   turnMap() {
     if (this.arrayMode) {
-      var dict: Array<[CrDataValue, CrDataValue]> = [];
+      var dict: Array<[CalcitValue, CalcitValue]> = [];
       let halfLength = this.arrayValue.length >> 1;
       for (let idx = 0; idx < halfLength; idx++) {
         dict.push([this.arrayValue[idx << 1], this.arrayValue[(idx << 1) + 1]]);
@@ -53,7 +53,7 @@ export class CrDataMap {
       return mapLen(this.value);
     }
   }
-  get(k: CrDataValue) {
+  get(k: CalcitValue) {
     if (this.arrayMode && this.arrayValue.length <= 16) {
       let size = this.arrayValue.length >> 1;
       for (let i = 0; i < size; i++) {
@@ -68,42 +68,42 @@ export class CrDataMap {
       return mapGetDefault(this.value, k, null);
     }
   }
-  assoc(k: CrDataValue, v: CrDataValue) {
+  assoc(k: CalcitValue, v: CalcitValue) {
     if (this.arrayMode && this.arrayValue.length <= 16) {
       let ret = this.arrayValue.slice(0);
       for (let i = 0; i < ret.length; i += 2) {
         if (DATA_EQUAL(k, ret[i])) {
           ret[i + 1] = v;
-          return new CrDataMap(ret);
+          return new CalcitMap(ret);
         }
       }
       ret.push(k, v);
-      return new CrDataMap(ret);
+      return new CalcitMap(ret);
     } else {
       this.turnMap();
-      return new CrDataMap(assocMap(this.value, k, v));
+      return new CalcitMap(assocMap(this.value, k, v));
     }
   }
-  dissoc(k: CrDataValue) {
+  dissoc(k: CalcitValue) {
     if (this.arrayMode && this.arrayValue.length <= 16) {
-      let ret: CrDataValue[] = [];
+      let ret: CalcitValue[] = [];
       for (let i = 0; i < this.arrayValue.length; i += 2) {
         if (!DATA_EQUAL(k, this.arrayValue[i])) {
           ret.push(this.arrayValue[i], this.arrayValue[i + 1]);
         }
       }
-      return new CrDataMap(ret);
+      return new CalcitMap(ret);
     } else {
       this.turnMap();
-      return new CrDataMap(dissocMap(this.value, k));
+      return new CalcitMap(dissocMap(this.value, k));
     }
   }
   toString(shorter = false) {
     let itemsCode = "";
     for (let [k, v] of this.pairs()) {
       if (shorter) {
-        let keyPart = isNestedCrData(k) ? tipNestedCrData(k) : toString(k, true);
-        let valuePart = isNestedCrData(v) ? tipNestedCrData(v) : toString(v, true);
+        let keyPart = isNestedCalcitData(k) ? tipNestedCalcitData(k) : toString(k, true);
+        let valuePart = isNestedCalcitData(v) ? tipNestedCalcitData(v) : toString(v, true);
         itemsCode = `${itemsCode} (${keyPart} ${valuePart})`;
       } else {
         itemsCode = `${itemsCode} (${toString(k, true)} ${toString(v, true)})`;
@@ -118,9 +118,9 @@ export class CrDataMap {
       return isMapEmpty(this.value);
     }
   }
-  pairs(): Array<[CrDataValue, CrDataValue]> {
+  pairs(): Array<[CalcitValue, CalcitValue]> {
     if (this.arrayMode) {
-      let ret: Array<[CrDataValue, CrDataValue]> = [];
+      let ret: Array<[CalcitValue, CalcitValue]> = [];
       let size = this.arrayValue.length >> 1;
       for (let i = 0; i < size; i++) {
         let pos = i << 1;
@@ -131,7 +131,7 @@ export class CrDataMap {
       return toPairsArray(this.value);
     }
   }
-  contains(k: CrDataValue) {
+  contains(k: CalcitValue) {
     if (this.arrayMode && this.arrayValue.length <= 16) {
       // guessed number
       let size = this.arrayValue.length >> 1;
@@ -147,15 +147,15 @@ export class CrDataMap {
       return ternaryTree.contains(this.value, k);
     }
   }
-  merge(ys: CrDataMap) {
+  merge(ys: CalcitMap) {
     return this.mergeSkip(ys, null);
   }
-  mergeSkip(ys: CrDataMap, v: CrDataValue) {
+  mergeSkip(ys: CalcitMap, v: CalcitValue) {
     if (ys == null) {
       return this;
     }
 
-    if (!(ys instanceof CrDataMap)) {
+    if (!(ys instanceof CalcitMap)) {
       console.error("value:", v);
       throw new Error("Expected map to merge");
     }
@@ -175,7 +175,7 @@ export class CrDataMap {
         }
         ret.push(ys.arrayValue[i], ys.arrayValue[i + 1]);
       }
-      return new CrDataMap(ret);
+      return new CalcitMap(ret);
     }
 
     this.turnMap();
@@ -190,9 +190,9 @@ export class CrDataMap {
         }
         ret = assocMap(ret, ys.arrayValue[pos], ys.arrayValue[pos + 1]);
       }
-      return new CrDataMap(ret);
+      return new CalcitMap(ret);
     } else {
-      return new CrDataMap(ternaryTree.mergeSkip(this.value, ys.value, v));
+      return new CalcitMap(ternaryTree.mergeSkip(this.value, ys.value, v));
     }
   }
 }

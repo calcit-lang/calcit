@@ -156,13 +156,13 @@ fn escape_cirru_str(s: &str) -> String {
 
 fn quote_to_js(xs: &Calcit, var_prefix: &str) -> Result<String, String> {
   match xs {
-    Calcit::Symbol(s, ..) => Ok(format!("new {}CrDataSymbol({})", var_prefix, escape_cirru_str(&s))),
+    Calcit::Symbol(s, ..) => Ok(format!("new {}CalcitSymbol({})", var_prefix, escape_cirru_str(&s))),
     Calcit::Str(s) => Ok(escape_cirru_str(&s)),
     Calcit::Bool(b) => Ok(b.to_string()),
     Calcit::Number(n) => Ok(n.to_string()),
     Calcit::Nil => Ok(String::from("null")),
     // mainly for methods, which are recognized during reading
-    Calcit::Proc(p) => Ok(format!("new {}CrDataSymbol({})", var_prefix, escape_cirru_str(&p))),
+    Calcit::Proc(p) => Ok(format!("new {}CalcitSymbol({})", var_prefix, escape_cirru_str(&p))),
     Calcit::List(ys) => {
       let mut chunk = String::from("");
       for y in ys {
@@ -171,7 +171,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str) -> Result<String, String> {
         }
         chunk.push_str(&quote_to_js(y, var_prefix)?);
       }
-      Ok(format!("new {}CrDataList([{}])", var_prefix, chunk))
+      Ok(format!("new {}CalcitList([{}])", var_prefix, chunk))
     }
     Calcit::Keyword(s) => Ok(format!("{}kwd({})", var_prefix, escape_cirru_str(&s))),
     _ => unreachable!(format!("Unexpected data in quote for js: {}", xs)),

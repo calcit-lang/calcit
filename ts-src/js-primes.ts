@@ -1,22 +1,22 @@
-import { CrDataKeyword, CrDataSymbol, CrDataRef, CrDataFn, CrDataRecur } from "./calcit-data";
-import { CrDataList } from "./js-list";
-import { CrDataRecord } from "./js-record";
-import { CrDataMap } from "./js-map";
-import { CrDataSet } from "./js-set";
-import { CrDataTuple } from "./js-tuple";
+import { CalcitKeyword, CalcitSymbol as CalcitSymbol, CalcitRef, CalcitFn, CalcitRecur } from "./calcit-data";
+import { CalcitList } from "./js-list";
+import { CalcitRecord } from "./js-record";
+import { CalcitMap } from "./js-map";
+import { CalcitSet as CalcitSet } from "./js-set";
+import { CalcitTuple } from "./js-tuple";
 
-export type CrDataValue =
+export type CalcitValue =
   | string
   | number
   | boolean
-  | CrDataMap
-  | CrDataList
-  | CrDataSet
-  | CrDataKeyword
-  | CrDataSymbol
-  | CrDataRef
-  | CrDataTuple
-  | CrDataFn
-  | CrDataRecur // should not be exposed to function
-  | CrDataRecord
+  | CalcitMap
+  | CalcitList
+  | CalcitSet
+  | CalcitKeyword
+  | CalcitSymbol
+  | CalcitRef
+  | CalcitTuple
+  | CalcitFn
+  | CalcitRecur // should not be exposed to function
+  | CalcitRecord
   | null;

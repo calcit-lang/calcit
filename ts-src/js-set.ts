@@ -1,69 +1,69 @@
-import { CrDataValue } from "./js-primes";
+import { CalcitValue } from "./js-primes";
 import { toString } from "./calcit-data";
 
-export let cloneSet = (xs: Set<CrDataValue>): Set<CrDataValue> => {
+export let cloneSet = (xs: Set<CalcitValue>): Set<CalcitValue> => {
   if (!(xs instanceof Set)) {
     throw new Error("Expected a set");
   }
-  var result: Set<CrDataValue> = new Set();
+  var result: Set<CalcitValue> = new Set();
   for (let v of xs) {
     result.add(v);
   }
   return result;
 };
 
-export class CrDataSet {
-  value: Set<CrDataValue>;
-  constructor(value: Set<CrDataValue>) {
+export class CalcitSet {
+  value: Set<CalcitValue>;
+  constructor(value: Set<CalcitValue>) {
     this.value = value;
   }
   len() {
     return this.value.size;
   }
-  contains(y: CrDataValue) {
+  contains(y: CalcitValue) {
     return this.value.has(y);
   }
-  include(y: CrDataValue): CrDataSet {
+  include(y: CalcitValue): CalcitSet {
     var result = cloneSet(this.value);
     result.add(y);
-    return new CrDataSet(result);
+    return new CalcitSet(result);
   }
-  exclude(y: CrDataValue): CrDataSet {
+  exclude(y: CalcitValue): CalcitSet {
     var result = cloneSet(this.value);
     result.delete(y);
-    return new CrDataSet(result);
+    return new CalcitSet(result);
   }
 
-  difference(ys: CrDataSet): CrDataSet {
+  difference(ys: CalcitSet): CalcitSet {
     var result = cloneSet(this.value);
     ys.value.forEach((y) => {
       if (result.has(y)) {
         result.delete(y);
       }
     });
-    return new CrDataSet(result);
+    return new CalcitSet(result);
   }
-  union(ys: CrDataSet): CrDataSet {
+  union(ys: CalcitSet): CalcitSet {
     var result = cloneSet(this.value);
     ys.value.forEach((y) => {
       if (!result.has(y)) {
         result.add(y);
       }
     });
-    return new CrDataSet(result);
+    return new CalcitSet(result);
   }
-  intersection(ys: CrDataSet): CrDataSet {
+  intersection(ys: CalcitSet): CalcitSet {
     let xs = this.value;
-    var result: Set<CrDataValue> = new Set();
+    var result: Set<CalcitValue> = new Set();
     ys.value.forEach((y) => {
       if (xs.has(y)) {
         result.add(y);
       }
     });
-    return new CrDataSet(result);
+    return new CalcitSet(result);
   }
 
-  first(): CrDataValue {
+  first(): CalcitValue {
     // rather suspicious solution since set has no logic order
     if (this.value.size === 0) {
       return null;
@@ -72,14 +72,14 @@ export class CrDataSet {
       return x;
     }
   }
-  rest(): CrDataSet {
+  rest(): CalcitSet {
     if (this.value.size == 0) {
       return null;
     }
     let x0 = this.first();
     let ys = cloneSet(this.value);
     ys.delete(x0);
-    return new CrDataSet(ys);
+    return new CalcitSet(ys);
   }
 
   toString() {

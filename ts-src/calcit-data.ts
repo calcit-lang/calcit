@@ -2,15 +2,15 @@ import { Hash, overwriteHashGenerator, valueHash, mergeValueHash } from "@calcit
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { overwriteDataComparator } from "./js-map";
 
-import { CrDataRecord, fieldsEqual } from "./js-record";
-import { CrDataMap } from "./js-map";
+import { CalcitRecord, fieldsEqual } from "./js-record";
+import { CalcitMap } from "./js-map";
 
-import { CrDataValue } from "./js-primes";
-import { CrDataList } from "./js-list";
-import { CrDataSet } from "./js-set";
-import { CrDataTuple } from "./js-tuple";
+import { CalcitValue } from "./js-primes";
+import { CalcitList } from "./js-list";
+import { CalcitSet } from "./js-set";
+import { CalcitTuple } from "./js-tuple";
 
-export class CrDataKeyword {
+export class CalcitKeyword {
   value: string;
   cachedHash: Hash;
   constructor(x: string) {
@@ -21,7 +21,7 @@ export class CrDataKeyword {
   }
 }
 
-export class CrDataSymbol {
+export class CalcitSymbol {
   value: string;
   cachedHash: Hash;
   constructor(x: string) {
@@ -32,9 +32,9 @@ export class CrDataSymbol {
   }
 }
 
-export class CrDataRecur {
-  args: CrDataValue[];
-  constructor(xs: CrDataValue[]) {
+export class CalcitRecur {
+  args: CalcitValue[];
+  constructor(xs: CalcitValue[]) {
     this.args = xs;
   }
 
@@ -43,44 +43,44 @@ export class CrDataRecur {
   }
 }
 
-export let isNestedCrData = (x: CrDataValue): boolean => {
-  if (x instanceof CrDataList) {
+export let isNestedCalcitData = (x: CalcitValue): boolean => {
+  if (x instanceof CalcitList) {
     return x.len() > 0;
   }
-  if (x instanceof CrDataMap) {
+  if (x instanceof CalcitMap) {
     return x.len() > 0;
   }
-  if (x instanceof CrDataRecord) {
+  if (x instanceof CalcitRecord) {
     return x.fields.length > 0;
   }
-  if (x instanceof CrDataSet) {
+  if (x instanceof CalcitSet) {
     return false;
   }
   return false;
 };
 
-export let tipNestedCrData = (x: CrDataValue): string => {
-  if (x instanceof CrDataList) {
+export let tipNestedCalcitData = (x: CalcitValue): string => {
+  if (x instanceof CalcitList) {
     return "'[]...";
   }
-  if (x instanceof CrDataMap) {
+  if (x instanceof CalcitMap) {
     return "'{}...";
   }
-  if (x instanceof CrDataRecord) {
+  if (x instanceof CalcitRecord) {
     return "'%{}...";
   }
-  if (x instanceof CrDataSet) {
+  if (x instanceof CalcitSet) {
     return "'#{}...";
   }
   return x.toString();
 };
 
-export class CrDataRef {
-  value: CrDataValue;
+export class CalcitRef {
+  value: CalcitValue;
   path: string;
-  listeners: Map<CrDataValue, CrDataFn>;
+  listeners: Map<CalcitValue, CalcitFn>;
   cachedHash: Hash;
-  constructor(x: CrDataValue, path: string) {
+  constructor(x: CalcitValue, path: string) {
     this.value = x;
     this.path = path;
     this.listeners = new Map();
@@ -90,16 +90,16 @@ export class CrDataRef {
   }
 }
 
-export type CrDataFn = (...xs: CrDataValue[]) => CrDataValue;
+export type CalcitFn = (...xs: CalcitValue[]) => CalcitValue;
 
-export let getStringName = (x: CrDataValue): string => {
+export let getStringName = (x: CalcitValue): string => {
   if (typeof x === "string") {
     return x;
   }
-  if (x instanceof CrDataKeyword) {
+  if (x instanceof CalcitKeyword) {
     return x.value;
   }
-  if (x instanceof CrDataSymbol) {
+  if (x instanceof CalcitSymbol) {
     return x.value;
   }
   throw new Error("Cannot get string as name");
@@ -127,20 +127,20 @@ export function findInFields(xs: Array<string>, y: string): number {
   return -1;
 }
 
-var keywordRegistery: Record<string, CrDataKeyword> = {};
+var keywordRegistery: Record<string, CalcitKeyword> = {};
 
 export let kwd = (content: string) => {
   let item = keywordRegistery[content];
   if (item != null) {
     return item;
   } else {
-    let v = new CrDataKeyword(content);
+    let v = new CalcitKeyword(content);
     keywordRegistery[content] = v;
     return v;
   }
 };
 
-export var refsRegistry = new Map<string, CrDataRef>();
+export var refsRegistry = new Map<string, CalcitRef>();
 
 let defaultHash_nil = valueHash("nil:");
 let defaultHash_number = valueHash("number:");
@@ -158,7 +158,7 @@ let defaultHash_map = valueHash("map:");
 
 let fnHashCounter = 0;
 
-let hashFunction = (x: CrDataValue): Hash => {
+let hashFunction = (x: CalcitValue): Hash => {
   if (x == null) {
     return defaultHash_nil;
   }
@@ -172,7 +172,7 @@ let hashFunction = (x: CrDataValue): Hash => {
   if ((x as any).cachedHash != null) {
     return (x as any).cachedHash;
   }
-  if (x instanceof CrDataKeyword) {
+  if (x instanceof CalcitKeyword) {
     let h = mergeValueHash(defaultHash_keyword, x.value);
     x.cachedHash = h;
     return h;
@@ -183,7 +183,7 @@ let hashFunction = (x: CrDataValue): Hash => {
   if (x === false) {
     return defaultHash_false;
   }
-  if (x instanceof CrDataSymbol) {
+  if (x instanceof CalcitSymbol) {
     let h = mergeValueHash(defaultHash_symbol, x.value);
     x.cachedHash = h;
     return h;
@@ -194,19 +194,19 @@ let hashFunction = (x: CrDataValue): Hash => {
     (x as any).cachedHash = h;
     return h;
   }
-  if (x instanceof CrDataRef) {
+  if (x instanceof CalcitRef) {
     let h = mergeValueHash(defaultHash_ref, x.path);
     x.cachedHash = h;
     return h;
   }
-  if (x instanceof CrDataTuple) {
+  if (x instanceof CalcitTuple) {
     let base = defaultHash_tuple;
     base = mergeValueHash(base, hashFunction(x.fst));
     base = mergeValueHash(base, hashFunction(x.snd));
     x.cachedHash = base;
     return base;
   }
-  if (x instanceof CrDataSet) {
+  if (x instanceof CalcitSet) {
     // TODO not using dirty solution for code
     let base = defaultHash_set;
     for (let item of x.value) {
@@ -214,7 +214,7 @@ let hashFunction = (x: CrDataValue): Hash => {
     }
     return base;
   }
-  if (x instanceof CrDataList) {
+  if (x instanceof CalcitList) {
     let base = defaultHash_list;
     for (let item of x.items()) {
       base = mergeValueHash(base, hashFunction(item));
@@ -222,7 +222,7 @@ let hashFunction = (x: CrDataValue): Hash => {
     x.cachedHash = base;
     return base;
   }
-  if (x instanceof CrDataMap) {
+  if (x instanceof CalcitMap) {
     let base = defaultHash_map;
     for (let [k, v] of x.pairs()) {
       base = mergeValueHash(base, hashFunction(k));
@@ -237,7 +237,7 @@ let hashFunction = (x: CrDataValue): Hash => {
 // Dirty code to change ternary-tree behavior
 overwriteHashGenerator(hashFunction);
 
-export let toString = (x: CrDataValue, escaped: boolean): string => {
+export let toString = (x: CalcitValue, escaped: boolean): string => {
   if (x == null) {
     return "nil";
   }
@@ -262,28 +262,28 @@ export let toString = (x: CrDataValue, escaped: boolean): string => {
   if (typeof x === "function") {
     return `(&fn ...)`;
   }
-  if (x instanceof CrDataSymbol) {
+  if (x instanceof CalcitSymbol) {
     return x.toString();
   }
-  if (x instanceof CrDataKeyword) {
+  if (x instanceof CalcitKeyword) {
     return x.toString();
   }
-  if (x instanceof CrDataList) {
+  if (x instanceof CalcitList) {
     return x.toString();
   }
-  if (x instanceof CrDataMap) {
+  if (x instanceof CalcitMap) {
     return x.toString();
   }
-  if (x instanceof CrDataSet) {
+  if (x instanceof CalcitSet) {
     return x.toString();
   }
-  if (x instanceof CrDataRecord) {
+  if (x instanceof CalcitRecord) {
     return x.toString();
   }
-  if (x instanceof CrDataRef) {
+  if (x instanceof CalcitRef) {
     return x.toString();
   }
-  if (x instanceof CrDataTuple) {
+  if (x instanceof CalcitTuple) {
     return x.toString();
   }
 
@@ -291,7 +291,7 @@ export let toString = (x: CrDataValue, escaped: boolean): string => {
   return `${x}`;
 };
 
-export let to_js_data = (x: CrDataValue, addColon: boolean = false): any => {
+export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
   if (x == null) {
     return null;
   }
@@ -307,68 +307,68 @@ export let to_js_data = (x: CrDataValue, addColon: boolean = false): any => {
   if (typeof x === "function") {
     return x;
   }
-  if (x instanceof CrDataKeyword) {
+  if (x instanceof CalcitKeyword) {
     if (addColon) {
       return `:${x.value}`;
     }
     return x.value;
   }
-  if (x instanceof CrDataSymbol) {
+  if (x instanceof CalcitSymbol) {
     if (addColon) {
       return `:${x.value}`;
     }
     return Symbol(x.value);
   }
-  if (x instanceof CrDataList) {
+  if (x instanceof CalcitList) {
     var result: any[] = [];
     for (let item of x.items()) {
       result.push(to_js_data(item, addColon));
     }
     return result;
   }
-  if (x instanceof CrDataMap) {
-    let result: Record<string, CrDataValue> = {};
+  if (x instanceof CalcitMap) {
+    let result: Record<string, CalcitValue> = {};
     for (let [k, v] of x.pairs()) {
       var key = to_js_data(k, addColon);
       result[key] = to_js_data(v, addColon);
     }
     return result;
   }
-  if (x instanceof CrDataSet) {
+  if (x instanceof CalcitSet) {
     let result = new Set();
     x.value.forEach((v) => {
       result.add(to_js_data(v, addColon));
     });
     return result;
   }
-  if (x instanceof CrDataRecord) {
-    let result: Record<string, CrDataValue> = {};
+  if (x instanceof CalcitRecord) {
+    let result: Record<string, CalcitValue> = {};
     for (let idx in x.fields) {
       result[x.fields[idx]] = to_js_data(x.values[idx]);
     }
     return result;
   }
-  if (x instanceof CrDataRef) {
+  if (x instanceof CalcitRef) {
     throw new Error("Cannot convert ref to plain data");
   }
-  if (x instanceof CrDataRecur) {
+  if (x instanceof CalcitRecur) {
     throw new Error("Cannot convert recur to plain data");
   }
 
   return x;
 };
 
-export let _AND_map_COL_get = function (xs: CrDataValue, k: CrDataValue) {
+export let _AND_map_COL_get = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) {
     throw new Error("map &get takes 2 arguments");
   }
 
-  if (xs instanceof CrDataMap) return xs.get(k);
+  if (xs instanceof CalcitMap) return xs.get(k);
 
   throw new Error("Does not support `&get` on this type");
 };
 
-export let _AND__EQ_ = (x: CrDataValue, y: CrDataValue): boolean => {
+export let _AND__EQ_ = (x: CalcitValue, y: CalcitValue): boolean => {
   if (x === y) {
     return true;
   }
@@ -399,20 +399,20 @@ export let _AND__EQ_ = (x: CrDataValue, y: CrDataValue): boolean => {
     // comparing functions by reference
     return x === y;
   }
-  if (x instanceof CrDataKeyword) {
-    if (y instanceof CrDataKeyword) {
+  if (x instanceof CalcitKeyword) {
+    if (y instanceof CalcitKeyword) {
       return x === y;
     }
     return false;
   }
-  if (x instanceof CrDataSymbol) {
-    if (y instanceof CrDataSymbol) {
+  if (x instanceof CalcitSymbol) {
+    if (y instanceof CalcitSymbol) {
       return x.value === y.value;
     }
     return false;
   }
-  if (x instanceof CrDataList) {
-    if (y instanceof CrDataList) {
+  if (x instanceof CalcitList) {
+    if (y instanceof CalcitList) {
       if (x.len() !== y.len()) {
         return false;
       }
@@ -428,8 +428,8 @@ export let _AND__EQ_ = (x: CrDataValue, y: CrDataValue): boolean => {
     }
     return false;
   }
-  if (x instanceof CrDataMap) {
-    if (y instanceof CrDataMap) {
+  if (x instanceof CalcitMap) {
+    if (y instanceof CalcitMap) {
       if (x.len() !== y.len()) {
         return false;
       }
@@ -445,20 +445,20 @@ export let _AND__EQ_ = (x: CrDataValue, y: CrDataValue): boolean => {
     }
     return false;
   }
-  if (x instanceof CrDataRef) {
-    if (y instanceof CrDataRef) {
+  if (x instanceof CalcitRef) {
+    if (y instanceof CalcitRef) {
       return x.path === y.path;
     }
     return false;
   }
-  if (x instanceof CrDataTuple) {
-    if (y instanceof CrDataTuple) {
+  if (x instanceof CalcitTuple) {
+    if (y instanceof CalcitTuple) {
       return _AND__EQ_(x.fst, y.fst) && _AND__EQ_(x.snd, y.snd);
     }
     return false;
   }
-  if (x instanceof CrDataSet) {
-    if (y instanceof CrDataSet) {
+  if (x instanceof CalcitSet) {
+    if (y instanceof CalcitSet) {
       if (x.len() !== y.len()) {
         return false;
       }
@@ -482,15 +482,15 @@ export let _AND__EQ_ = (x: CrDataValue, y: CrDataValue): boolean => {
     }
     return false;
   }
-  if (x instanceof CrDataRecur) {
-    if (y instanceof CrDataRecur) {
+  if (x instanceof CalcitRecur) {
+    if (y instanceof CalcitRecur) {
       console.warn("Do not compare Recur");
       return false;
     }
     return false;
   }
-  if (x instanceof CrDataRecord) {
-    if (y instanceof CrDataRecord) {
+  if (x instanceof CalcitRecord) {
+    if (y instanceof CalcitRecord) {
       if (x.name !== y.name) {
         return false;
       }

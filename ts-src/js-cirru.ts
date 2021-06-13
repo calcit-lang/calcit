@@ -1,16 +1,16 @@
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { CirruWriterNode, writeCirruCode } from "@cirru/writer.ts";
 
-import { CrDataValue } from "./js-primes";
-import { CrDataList } from "./js-list";
-import { CrDataRecord } from "./js-record";
-import { CrDataMap } from "./js-map";
-import { CrDataSet } from "./js-set";
-import { CrDataKeyword, CrDataSymbol, kwd } from "./calcit-data";
+import { CalcitValue } from "./js-primes";
+import { CalcitList } from "./js-list";
+import { CalcitRecord } from "./js-record";
+import { CalcitMap } from "./js-map";
+import { CalcitSet } from "./js-set";
+import { CalcitKeyword, CalcitSymbol, kwd } from "./calcit-data";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
 
-export let write_cirru = (data: CrDataList, useInline: boolean): string => {
+export let write_cirru = (data: CalcitList, useInline: boolean): string => {
   let chunk = toWriterNode(data);
   if (!Array.isArray(chunk)) {
     throw new Error("Expected data of list");
@@ -24,7 +24,7 @@ export let write_cirru = (data: CrDataList, useInline: boolean): string => {
 };
 
 /** better use string version of Cirru EDN in future */
-export let to_cirru_edn = (x: CrDataValue): CirruEdnFormat => {
+export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
   if (x == null) {
     return "nil";
   }
@@ -37,32 +37,32 @@ export let to_cirru_edn = (x: CrDataValue): CirruEdnFormat => {
   if (typeof x === "boolean") {
     return x.toString();
   }
-  if (x instanceof CrDataKeyword) {
+  if (x instanceof CalcitKeyword) {
     return x.toString();
   }
-  if (x instanceof CrDataSymbol) {
+  if (x instanceof CalcitSymbol) {
     return x.toString();
   }
-  if (x instanceof CrDataList) {
+  if (x instanceof CalcitList) {
     // TODO can be faster
     return (["[]"] as CirruEdnFormat[]).concat(x.toArray().map(to_cirru_edn));
   }
-  if (x instanceof CrDataMap) {
+  if (x instanceof CalcitMap) {
     let buffer: CirruEdnFormat = ["{}"];
     for (let [k, v] of x.pairs()) {
       buffer.push([to_cirru_edn(k), to_cirru_edn(v)]);
     }
     return buffer;
   }
-  if (x instanceof CrDataRecord) {
-    let result: Record<string, CrDataValue> = {};
+  if (x instanceof CalcitRecord) {
+    let result: Record<string, CalcitValue> = {};
     let buffer: CirruEdnFormat = ["%{}", x.name];
     for (let idx in x.fields) {
       buffer.push([x.fields[idx], to_cirru_edn(x.values[idx])]);
     }
     return buffer;
   }
-  if (x instanceof CrDataSet) {
+  if (x instanceof CalcitSet) {
     let buffer: CirruEdnFormat = ["#{}"];
     for (let y of x.value) {
       buffer.push(to_cirru_edn(y));
@@ -73,7 +73,7 @@ export let to_cirru_edn = (x: CrDataValue): CirruEdnFormat => {
   throw new Error("Unexpected data to to-cirru-edn");
 };
 
-export let extract_cirru_edn = (x: CirruEdnFormat): CrDataValue => {
+export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
   if (typeof x === "string") {
     if (x === "nil") {
       return null;
@@ -94,7 +94,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CrDataValue => {
       return kwd(x.substr(1));
     }
     if (x[0] === "'") {
-      return new CrDataSymbol(x.substr(1));
+      return new CalcitSymbol(x.substr(1));
     }
     if (x.match(/^(-?)\d+(\.\d*$)?/)) {
       return parseFloat(x);
@@ -108,7 +108,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CrDataValue => {
       throw new Error("Cannot be empty");
     }
     if (x[0] === "{}") {
-      let result: Array<[CrDataValue, CrDataValue]> = [];
+      let result: Array<[CalcitValue, CalcitValue]> = [];
       x.forEach((pair, idx) => {
         if (idx == 0) {
           return; // skip first `{}` symbol
@@ -119,7 +119,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CrDataValue => {
           throw new Error("Expected pairs for map");
         }
       });
-      return new CrDataMap(initTernaryTreeMap(result));
+      return new CalcitMap(initTernaryTreeMap(result));
     }
     if (x[0] === "%{}") {
       let name = x[1];
@@ -127,7 +127,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CrDataValue => {
         throw new Error("Expected string for record name");
       }
       let fields: Array<string> = [];
-      let values: Array<CrDataValue> = [];
+      let values: Array<CalcitValue> = [];
       x.forEach((pair, idx) => {
         if (idx <= 1) {
           return; // skip %{} name
@@ -144,13 +144,13 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CrDataValue => {
           throw new Error("Expected pairs for map");
         }
       });
-      return new CrDataRecord(name, fields, values);
+      return new CalcitRecord(name, fields, values);
     }
     if (x[0] === "[]") {
-      return new CrDataList(x.slice(1).map(extract_cirru_edn));
+      return new CalcitList(x.slice(1).map(extract_cirru_edn));
     }
     if (x[0] === "#{}") {
-      return new CrDataSet(new Set(x.slice(1).map(extract_cirru_edn)));
+      return new CalcitSet(new Set(x.slice(1).map(extract_cirru_edn)));
     }
     if (x[0] === "do" && x.length === 2) {
       return extract_cirru_edn(x[1]);
@@ -166,7 +166,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CrDataValue => {
   throw new Error("Unexpected data from cirru-edn");
 };
 
-export let write_cirru_edn = (data: CrDataValue, useInline: boolean = true): string => {
+export let write_cirru_edn = (data: CalcitValue, useInline: boolean = true): string => {
   if (data == null) {
     return "\ndo nil" + "\n";
   }
@@ -179,16 +179,16 @@ export let write_cirru_edn = (data: CrDataValue, useInline: boolean = true): str
   if (typeof data == "string") {
     return "\ndo " + to_cirru_edn(data) + "\n";
   }
-  if (data instanceof CrDataSymbol) {
+  if (data instanceof CalcitSymbol) {
     return "\ndo " + to_cirru_edn(data) + "\n";
   }
-  if (data instanceof CrDataKeyword) {
+  if (data instanceof CalcitKeyword) {
     return "\ndo " + to_cirru_edn(data) + "\n";
   }
   return writeCirruCode([to_cirru_edn(data)], { useInline: useInline });
 };
 
-export let to_calcit_data = (x: any, noKeyword: boolean = false): CrDataValue => {
+export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue => {
   if (x == null) {
     return null;
   }
@@ -212,33 +212,33 @@ export let to_calcit_data = (x: any, noKeyword: boolean = false): CrDataValue =>
     x.forEach((v) => {
       result.push(to_calcit_data(v, noKeyword));
     });
-    return new CrDataList(result);
+    return new CalcitList(result);
   }
   if (x instanceof Set) {
-    let result: Set<CrDataValue> = new Set();
+    let result: Set<CalcitValue> = new Set();
     x.forEach((v) => {
       result.add(to_calcit_data(v, noKeyword));
     });
-    return new CrDataSet(result);
+    return new CalcitSet(result);
   }
   // detects object
   if (x === Object(x)) {
-    let result: Array<[CrDataValue, CrDataValue]> = [];
+    let result: Array<[CalcitValue, CalcitValue]> = [];
     Object.keys(x).forEach((k) => {
       result.push([to_calcit_data(k, noKeyword), to_calcit_data(x[k], noKeyword)]);
     });
-    return new CrDataMap(initTernaryTreeMap(result));
+    return new CalcitMap(initTernaryTreeMap(result));
   }
 
   console.error(x);
   throw new Error("Unexpected data for converting");
 };
 
-let toWriterNode = (xs: CrDataList): CirruWriterNode => {
+let toWriterNode = (xs: CalcitList): CirruWriterNode => {
   if (typeof xs === "string") {
     return xs;
   }
-  if (xs instanceof CrDataList) {
+  if (xs instanceof CalcitList) {
     return xs.toArray().map(toWriterNode);
   } else {
     throw new Error("Unexpected type for CirruWriteNode");

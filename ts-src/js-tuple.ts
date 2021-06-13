@@ -1,12 +1,12 @@
-import { CrDataValue } from "./js-primes";
+import { CalcitValue } from "./js-primes";
 
 import { Hash } from "@calcit/ternary-tree";
 
-export class CrDataTuple {
-  fst: CrDataValue;
-  snd: CrDataValue;
+export class CalcitTuple {
+  fst: CalcitValue;
+  snd: CalcitValue;
   cachedHash: Hash;
-  constructor(a: CrDataValue, b: CrDataValue) {
+  constructor(a: CalcitValue, b: CalcitValue) {
     this.fst = a;
     this.snd = b;
   }
@@ -19,11 +19,11 @@ export class CrDataTuple {
       throw new Error("Tuple only have 2 elements");
     }
   }
-  assoc(n: number, v: CrDataValue) {
+  assoc(n: number, v: CalcitValue) {
     if (n == 0) {
-      return new CrDataTuple(v, this.snd);
+      return new CalcitTuple(v, this.snd);
     } else if (n == 1) {
-      return new CrDataTuple(this.fst, v);
+      return new CalcitTuple(this.fst, v);
     } else {
       throw new Error("Tuple only have 2 elements");
     }

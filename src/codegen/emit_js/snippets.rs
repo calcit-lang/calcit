@@ -72,7 +72,7 @@ pub fn tmpl_tail_recursion(
       throw new Error('Expected tail recursion to exist quickly')
     }}
     {body}
-    if ({ret_var} instanceof {var_prefix}CrDataRecur) {{
+    if ({ret_var} instanceof {var_prefix}CalcitRecur) {{
       {check_recur_args}
       [ {args_code} ] = {ret_var}.args;
       {spreading_code}
@@ -99,7 +99,7 @@ pub fn tmpl_tail_recursion(
 pub fn tmpl_import_procs(name: String) -> String {
   format!(
     "
-import {{kwd, arrayToList, listToArray, CrDataList, CrDataSymbol, CrDataRecur}} from {};
+import {{kwd, arrayToList, listToArray, CalcitList, CalcitSymbol, CalcitRecur}} from {};
 import * as $calcit_procs from {};
 export * from {};
 ",

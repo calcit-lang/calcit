@@ -1,14 +1,14 @@
 import { initTernaryTreeMap, valueHash } from "@calcit/ternary-tree";
-import { CrDataValue } from "./js-primes";
+import { CalcitValue } from "./js-primes";
 import { kwd, toString, getStringName, findInFields } from "./calcit-data";
 
-import { CrDataMap } from "./js-map";
+import { CalcitMap } from "./js-map";
 
-export class CrDataRecord {
+export class CalcitRecord {
   name: string;
   fields: Array<string>;
-  values: Array<CrDataValue>;
-  constructor(name: string, fields: Array<CrDataValue>, values?: Array<CrDataValue>) {
+  values: Array<CalcitValue>;
+  constructor(name: string, fields: Array<CalcitValue>, values?: Array<CalcitValue>) {
     this.name = name;
     let fieldNames = fields.map(getStringName);
     this.fields = fieldNames;
@@ -21,7 +21,7 @@ export class CrDataRecord {
       this.values = new Array(fieldNames.length);
     }
   }
-  get(k: CrDataValue) {
+  get(k: CalcitValue) {
     let field = getStringName(k);
     let idx = findInFields(this.fields, field);
     if (idx >= 0) {
@@ -30,8 +30,8 @@ export class CrDataRecord {
       throw new Error(`Cannot find :${field} among (${this.fields.join(",")})`);
     }
   }
-  assoc(k: CrDataValue, v: CrDataValue): CrDataRecord {
-    let values: Array<CrDataValue> = new Array(this.fields.length);
+  assoc(k: CalcitValue, v: CalcitValue): CalcitRecord {
+    let values: Array<CalcitValue> = new Array(this.fields.length);
     let name = getStringName(k);
     for (let idx in this.fields) {
       if (this.fields[idx] === name) {
@@ -40,12 +40,12 @@ export class CrDataRecord {
         values[idx] = this.values[idx];
       }
     }
-    return new CrDataRecord(this.name, this.fields, values);
+    return new CalcitRecord(this.name, this.fields, values);
   }
   merge() {
     // TODO
   }
-  contains(k: CrDataValue) {
+  contains(k: CalcitValue) {
     let field = getStringName(k);
     let idx = findInFields(this.fields, field);
     return idx >= 0;
@@ -59,12 +59,12 @@ export class CrDataRecord {
   }
 }
 
-export let new_record = (name: CrDataValue, ...fields: Array<CrDataValue>): CrDataValue => {
+export let new_record = (name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
   let fieldNames = fields.map(getStringName).sort();
-  return new CrDataRecord(getStringName(name), fieldNames);
+  return new CalcitRecord(getStringName(name), fieldNames);
 };
 
-let fieldPairOrder = (a: [string, CrDataValue], b: [string, CrDataValue]) => {
+let fieldPairOrder = (a: [string, CalcitValue], b: [string, CalcitValue]) => {
   if (a[0] < b[0]) {
     return -1;
   } else if (a[0] > b[0]) {
@@ -89,8 +89,8 @@ export let fieldsEqual = (xs: Array<string>, ys: Array<string>): boolean => {
   return true;
 };
 
-export let _AND__PCT__MAP_ = (proto: CrDataValue, ...xs: Array<CrDataValue>): CrDataValue => {
-  if (proto instanceof CrDataRecord) {
+export let _AND__PCT__MAP_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => {
+  if (proto instanceof CalcitRecord) {
     if (xs.length % 2 !== 0) {
       throw new Error("Expected even number of key/value");
     }
@@ -119,27 +119,27 @@ export let _AND__PCT__MAP_ = (proto: CrDataValue, ...xs: Array<CrDataValue>): Cr
       values[i] = xs[idx * 2 + 1];
     }
 
-    return new CrDataRecord(proto.name, proto.fields, values);
+    return new CalcitRecord(proto.name, proto.fields, values);
   } else {
     throw new Error("Expected prototype to be a record");
   }
 };
 
-export let get_record_name = (x: CrDataRecord): string => {
-  if (x instanceof CrDataRecord) {
+export let get_record_name = (x: CalcitRecord): string => {
+  if (x instanceof CalcitRecord) {
     return x.name;
   } else {
     throw new Error("Expected a record");
   }
 };
 
-export let make_record = (proto: CrDataValue, data: CrDataValue): CrDataValue => {
-  if (proto instanceof CrDataRecord) {
-    if (data instanceof CrDataRecord) {
+export let make_record = (proto: CalcitValue, data: CalcitValue): CalcitValue => {
+  if (proto instanceof CalcitRecord) {
+    if (data instanceof CalcitRecord) {
       if (fieldsEqual(proto.fields, data.fields)) {
-        return new CrDataRecord(proto.name, proto.fields, data.values);
+        return new CalcitRecord(proto.name, proto.fields, data.values);
       } else {
-        let values: Array<CrDataValue> = [];
+        let values: Array<CalcitValue> = [];
         for (let field of proto.fields) {
           let idx = data.fields.indexOf(field);
           if (idx < 0) {
@@ -147,17 +147,17 @@ export let make_record = (proto: CrDataValue, data: CrDataValue): CrDataValue =>
           }
           values.push(data.values[idx]);
         }
-        return new CrDataRecord(proto.name, proto.fields, values);
+        return new CalcitRecord(proto.name, proto.fields, values);
       }
-    } else if (data instanceof CrDataMap) {
-      let pairs: Array<[string, CrDataValue]> = [];
+    } else if (data instanceof CalcitMap) {
+      let pairs: Array<[string, CalcitValue]> = [];
       for (let [k, v] of data.pairs()) {
         pairs.push([getStringName(k), v]);
       }
       // mutable sort
       pairs.sort(fieldPairOrder);
 
-      let values: Array<CrDataValue> = [];
+      let values: Array<CalcitValue> = [];
       outerLoop: for (let field of proto.fields) {
         for (let pair of pairs) {
           if (pair[0] === field) {
@@ -167,7 +167,7 @@ export let make_record = (proto: CrDataValue, data: CrDataValue): CrDataValue =>
         }
         throw new Error(`Cannot find field ${field} among ${pairs}`);
       }
-      return new CrDataRecord(proto.name, proto.fields, values);
+      return new CalcitRecord(proto.name, proto.fields, values);
     } else {
       throw new Error("Expected record or data for making a record");
     }
@@ -176,23 +176,23 @@ export let make_record = (proto: CrDataValue, data: CrDataValue): CrDataValue =>
   }
 };
 
-export let turn_map = (x: CrDataValue): CrDataValue => {
-  if (x instanceof CrDataRecord) {
-    var dict: Array<[CrDataValue, CrDataValue]> = [];
+export let turn_map = (x: CalcitValue): CalcitValue => {
+  if (x instanceof CalcitRecord) {
+    var dict: Array<[CalcitValue, CalcitValue]> = [];
     for (let idx in x.fields) {
       dict.push([kwd(x.fields[idx]), x.values[idx]]);
     }
-    return new CrDataMap(initTernaryTreeMap(dict));
+    return new CalcitMap(initTernaryTreeMap(dict));
   } else {
     throw new Error("Expected record");
   }
 };
 
-export let relevant_record_QUES_ = (x: CrDataValue, y: CrDataValue): boolean => {
-  if (!(x instanceof CrDataRecord)) {
+export let relevant_record_QUES_ = (x: CalcitValue, y: CalcitValue): boolean => {
+  if (!(x instanceof CalcitRecord)) {
     throw new Error("Expected record");
   }
-  if (!(y instanceof CrDataRecord)) {
+  if (!(y instanceof CalcitRecord)) {
     throw new Error("Expected record");
   }
 
