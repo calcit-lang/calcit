@@ -1,6 +1,8 @@
 import { CalcitValue } from "./js-primes";
 import { toString } from "./calcit-data";
 
+import { Hash } from "@calcit/ternary-tree";
+
 export let cloneSet = (xs: Set<CalcitValue>): Set<CalcitValue> => {
   if (!(xs instanceof Set)) {
     throw new Error("Expected a set");
@@ -14,7 +16,9 @@ export let cloneSet = (xs: Set<CalcitValue>): Set<CalcitValue> => {
 
 export class CalcitSet {
   value: Set<CalcitValue>;
+  cachedHash: Hash;
   constructor(value: Set<CalcitValue>) {
+    this.cachedHash = null;
     this.value = value;
   }
   len() {

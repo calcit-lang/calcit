@@ -1,4 +1,4 @@
-import { initTernaryTreeMap, valueHash } from "@calcit/ternary-tree";
+import { initTernaryTreeMap, Hash } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes";
 import { kwd, toString, getStringName, findInFields } from "./calcit-data";
 
@@ -8,6 +8,7 @@ export class CalcitRecord {
   name: string;
   fields: Array<string>;
   values: Array<CalcitValue>;
+  cachedHash: Hash;
   constructor(name: string, fields: Array<CalcitValue>, values?: Array<CalcitValue>) {
     this.name = name;
     let fieldNames = fields.map(getStringName);
@@ -20,6 +21,7 @@ export class CalcitRecord {
     } else {
       this.values = new Array(fieldNames.length);
     }
+    this.cachedHash = null;
   }
   get(k: CalcitValue) {
     let field = getStringName(k);

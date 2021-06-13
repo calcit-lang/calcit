@@ -15,6 +15,7 @@ export class CalcitKeyword {
   cachedHash: Hash;
   constructor(x: string) {
     this.value = x;
+    this.cachedHash = null;
   }
   toString() {
     return `:${this.value}`;
@@ -26,6 +27,7 @@ export class CalcitSymbol {
   cachedHash: Hash;
   constructor(x: string) {
     this.value = x;
+    this.cachedHash = null;
   }
   toString() {
     return `'${this.value}`;
@@ -34,8 +36,10 @@ export class CalcitSymbol {
 
 export class CalcitRecur {
   args: CalcitValue[];
+  cachedHash: Hash;
   constructor(xs: CalcitValue[]) {
     this.args = xs;
+    this.cachedHash = null;
   }
 
   toString() {
@@ -84,6 +88,7 @@ export class CalcitRef {
     this.value = x;
     this.path = path;
     this.listeners = new Map();
+    this.cachedHash = null;
   }
   toString(): string {
     return `(&ref ${this.value.toString()})`;

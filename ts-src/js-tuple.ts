@@ -9,6 +9,7 @@ export class CalcitTuple {
   constructor(a: CalcitValue, b: CalcitValue) {
     this.fst = a;
     this.snd = b;
+    this.cachedHash = null;
   }
   get(n: number) {
     if (n == 0) {

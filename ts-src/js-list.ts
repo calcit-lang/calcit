@@ -33,6 +33,7 @@ export class CalcitList {
     if (value == null) {
       value = []; // dirty, better handled from outside
     }
+    this.cachedHash = null;
     if (Array.isArray(value)) {
       this.arrayMode = true;
       this.arrayValue = value;
