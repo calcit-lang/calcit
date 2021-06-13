@@ -941,16 +941,18 @@
         |or $ quote
           defmacro or (item & xs)
             if (&list:empty? xs) item
-              quasiquote
-                if (nil? ~item)
-                  or
-                    ~ $ &list:first xs
-                    ~@ $ &list:rest xs
-                  if (= false ~item)
-                    or
-                      ~ $ &list:first xs
-                      ~@ $ &list:rest xs
-                    ~ item
+              &let (v1# (gensym |v1))
+                quasiquote
+                  &let (~v1# ~item)
+                    if (nil? ~v1#)
+                      or
+                        ~ $ &list:first xs
+                        ~@ $ &list:rest xs
+                      if (= false ~v1#)
+                        or
+                          ~ $ &list:first xs
+                          ~@ $ &list:rest xs
+                        ~ v1#
 
         |w-log $ quote
           defmacro w-log (x)
