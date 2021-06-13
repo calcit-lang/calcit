@@ -68,6 +68,7 @@
               assert= 1 $ aget a 0
               assert= 4 $ aget a 3
               assert= nil $ aget a 4
+              assert= 2 (.-1 a)
             &let
               b $ js-object (:a 1) (|b 2) (:c 3)
               assert= 1 $ .-a b

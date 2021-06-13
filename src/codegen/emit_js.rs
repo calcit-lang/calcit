@@ -13,8 +13,7 @@ use crate::call_stack::StackKind;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems, ImportRule, SymbolResolved::*};
 use crate::program;
-use crate::util::string::has_ns_part;
-use crate::util::string::{matches_js_var, wrap_js_str};
+use crate::util::string::{has_ns_part, matches_digits, matches_js_var, wrap_js_str};
 
 type ImportsDict = BTreeMap<String, ImportedTarget>;
 
@@ -188,11 +187,6 @@ fn make_let_with_wrapper(left: &str, right: &str, body: &str) -> String {
 
 fn make_fn_wrapper(body: &str) -> String {
   format!("(function __fn__(){{\n{}\n}})()", body)
-}
-
-/// lexical block to simulate an expression
-fn make_curly_wrapper(body: &str) -> String {
-  format!("{{; \n{}\n }}", body)
 }
 
 fn to_js_code(
@@ -440,6 +434,16 @@ fn gen_call_code(
           let name = s.strip_prefix(".-").unwrap();
           if name.is_empty() {
             Err(format!("invalid property accessor {}", s))
+          } else if matches_digits(name) {
+            match body.get(0) {
+              Some(obj) => Ok(format!(
+                "{}{}[{}]",
+                return_code,
+                to_js_code(&obj, ns, local_defs, file_imports, &None)?,
+                name,
+              )),
+              None => Err(format!("property accessor takes only 1 argument, {:?}", xs)),
+            }
           } else {
             match body.get(0) {
               Some(obj) => Ok(format!(
@@ -847,17 +851,16 @@ fn list_to_js_code(
   for (idx, x) in xs.iter().enumerate() {
     // result = result & "// " & $x & "\n"
     if idx == xs.len() - 1 {
-      result.push_str(&to_js_code(
-        &x,
-        ns,
-        &local_defs,
-        file_imports,
-        &Some(return_label.to_owned()),
-      )?);
+      let line = to_js_code(&x, ns, &local_defs, file_imports, &Some(return_label.to_owned()))?;
+      result.push_str(&line);
       result.push_str("\n");
     } else {
       let line = to_js_code(&x, ns, &local_defs, file_imports, &None)?;
-      result.push_str(&make_curly_wrapper(&line));
+      // if is_let_call(&x) {
+      //   result.push_str(&make_curly_wrapper(&line));
+      // } else {
+      result.push_str(&line);
+      // }
       result.push_str(";\n");
     }
   }
