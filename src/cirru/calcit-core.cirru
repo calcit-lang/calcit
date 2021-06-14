@@ -197,7 +197,7 @@
         |drop $ quote
           defn drop (xs n)
             slice xs n (&list:count xs)
-        
+
         |slice $ quote
           defn slice (xs n ? m)
             if (nil? xs) nil
@@ -1285,7 +1285,7 @@
           defrecord! &core-record-class
             :get &record:get
             :get-name &record:get-name
-            :same-kind? &record:matches?
+            :matches? &record:matches?
             :to-map &record:to-map
             :count &record:count
             :contains? &record:contains?

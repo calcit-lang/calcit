@@ -54,7 +54,9 @@
 
               assert-detect identity $ &record:matches? p1 p1
               assert-detect identity $ &record:matches? p1 p2
+              assert-detect identity $ .matches? p1 p2
               assert-detect not $ &record:matches? p1 c1
+              assert-detect not $ .matches? p1 c1
 
               &let
                 p4 $ assoc p1 :age 30
