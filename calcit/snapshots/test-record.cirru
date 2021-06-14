@@ -37,12 +37,12 @@
 
               assert= :record $ type-of p1
               assert=
-                turn-map p1
+                .to-map p1
                 {} (:name |Chen) (:age 20) (:position :mainland)
 
               assert= 21
                 get
-                  make-record Person $ {}
+                  .from-map Person $ {}
                     :name |Chen
                     :age 21
                     :position :mainland
@@ -52,9 +52,9 @@
                 keys p2
                 [] :age :name :position
 
-              assert-detect identity $ relevant-record? p1 p1
-              assert-detect identity $ relevant-record? p1 p2
-              assert-detect not $ relevant-record? p1 c1
+              assert-detect identity $ &record:matches? p1 p1
+              assert-detect identity $ &record:matches? p1 p2
+              assert-detect not $ &record:matches? p1 c1
 
               &let
                 p4 $ assoc p1 :age 30

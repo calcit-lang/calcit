@@ -119,10 +119,10 @@
                 format-time 1605024100
               assert= "|2020-11-10T16:01:40.123Z"
                 format-time 1605024100.1234
-              echo $ format-time (now!) "|yyyy-MM-dd HH:mm:ss ffffff"
+              echo $ format-time (get-time!) "|yyyy-MM-dd HH:mm:ss ffffff"
 
             inside-eval:
-              echo |time: $ format-time (now!) "|%Y-%m-%d %H:%M:%S %z"
+              echo |time: $ format-time (get-time!) "|%Y-%m-%d %H:%M:%S %z"
               assert= 1417176009000
                 parse-time "|2014-11-28 21:00:09 +09:00" "|%Y-%m-%d %H:%M:%S %z"
               assert= "|2014-11-28 12:00:09 +0000"
@@ -137,7 +137,7 @@
         |test-display-stack $ quote
           fn ()
             log-title "|Testing display stack"
-            display-stack "|show stack here"
+            &display-stack "|show stack here"
 
         |test-cirru-parser $ quote
           fn ()
@@ -158,9 +158,9 @@
                 :b $ [] 3 |4 nil
 
             assert= "|[] |a |b $ [] |c |d"
-              trim $ write-cirru-edn $ [] |a |b $ [] |c |d
+              trim $ format-cirru-edn $ [] |a |b $ [] |c |d
             assert= "|a b $ c d"
-              trim $ write-cirru $ [] $ [] |a |b $ [] |c |d
+              trim $ format-cirru $ [] $ [] |a |b $ [] |c |d
 
         |test-fn $ quote
           fn ()

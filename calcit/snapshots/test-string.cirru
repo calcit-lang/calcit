@@ -10,8 +10,8 @@
 
         |test-str $ quote
           defn test-str ()
-            assert= (&str-concat |a |b) |ab
-            assert= (&str-concat 1 2) |12
+            assert= (&str:concat |a |b) |ab
+            assert= (&str:concat 1 2) |12
             assert= (str |a |b |c) |abc
             assert= (str 1 2 3) |123
             assert= (type-of (&str 1)) :string
@@ -29,13 +29,13 @@
               [] |a |中 |b |文 |c
             assert= 4
               count |good
-            assert= |56789 $ substr |0123456789 5
-            assert= |567 $ substr |0123456789 5 8
-            assert= | $ substr |0123456789 10
-            assert= | $ substr |0123456789 9 1
-            assert= -1 $ compare-string |a |b
-            assert= 1 $ compare-string |b |a
-            assert= 0 $ compare-string |a |a
+            assert= |56789 $ .slice |0123456789 5
+            assert= |567 $ .slice |0123456789 5 8
+            assert= | $ .slice |0123456789 10
+            assert= | $ .slice |0123456789 9 1
+            assert= -1 $ &str:compare |a |b
+            assert= 1 $ &str:compare |b |a
+            assert= 0 $ &str:compare |a |a
 
             assert-detect identity $ < |a |b
             assert-detect identity $ < |aa |ab
@@ -91,10 +91,10 @@
           fn ()
             log-title "|Testing format"
 
-            assert= |1.2346 $ format-number 1.23456789 4
-            assert= |1.235 $ format-number 1.23456789 3
-            assert= |1.23 $ format-number 1.23456789 2
-            assert= |1.2 $ format-number 1.23456789 1
+            assert= |1.2346 $ .format 1.23456789 4
+            assert= |1.235 $ .format 1.23456789 3
+            assert= |1.23 $ .format 1.23456789 2
+            assert= |1.2 $ .format 1.23456789 1
 
             inside-eval:
 
@@ -114,7 +114,7 @@
                 pr-str $ %{} Person (:name |Chen) (:age 23)
                 , "|(%{} Person (age 23) (name |Chen))"
               assert= edn-demo
-                trim $ write-cirru-edn $ %{} Person (:name |Chen) (:age 23)
+                trim $ format-cirru-edn $ %{} Person (:name |Chen) (:age 23)
 
               assert=
                 parse-cirru-edn edn-demo
@@ -123,24 +123,24 @@
               assert= 'a
                 parse-cirru-edn "|do 'a"
               assert= "|[] 'a"
-                trim $ write-cirru-edn $ [] 'a
+                trim $ format-cirru-edn $ [] 'a
 
               assert= "|do nil"
-                trim $ write-cirru-edn nil
+                trim $ format-cirru-edn nil
 
               assert= "|do 's"
-                trim $ write-cirru-edn 's
+                trim $ format-cirru-edn 's
 
-              assert= (escape "|\n") "|\"\\n\""
-              assert= (escape "|\t") "|\"\\t\""
-              assert= (escape "|a") "|\"a\""
+              assert= (.escape "|\n") "|\"\\n\""
+              assert= (.escape "|\t") "|\"\\t\""
+              assert= (.escape "|a") "|\"a\""
 
         |test-char $ quote
           fn ()
             log-title "|Test char"
 
-            assert= 97 $ get-char-code |a
-            assert= 27721 $ get-char-code |汉
+            assert= 97 $ .get-char-code |a
+            assert= 27721 $ .get-char-code |汉
 
             assert= |a $ nth |abc 0
             assert= |b $ nth |abc 1

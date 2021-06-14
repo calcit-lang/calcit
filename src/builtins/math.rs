@@ -38,11 +38,11 @@ pub fn binary_divide(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn integer_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn round_ques(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Number(n)) => Ok(Calcit::Bool(is_integer(*n))),
-    Some(a) => Err(format!("integer? expected a number: {}", a)),
-    a => Err(format!("integer? expected 1 number: {:?}", a)),
+    Some(a) => Err(format!("round? expected a number: {}", a)),
+    a => Err(format!("round? expected 1 number: {:?}", a)),
   }
 }
 

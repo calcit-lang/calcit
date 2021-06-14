@@ -33,18 +33,21 @@
               assert= (slice (range 10) 0 10) (range 10)
               assert= (slice (range 10) 5 7) ([] 5 6)
               assert=
-                concat (range 10) (range 4)
+                &list:concat (range 10) (range 4)
                 [] 0 1 2 3 4 5 6 7 8 9 0 1 2 3
               assert=
-                concat $ [] 1 2 3
+                &list:concat $ [] 1 2 3
                 [] 1 2 3
+              assert "|&list:concat lists" $ =
+                &list:concat ([] 1 2) ([] 4 5) ([] 7 8)
+                [] 1 2 4 5 7 8
               assert "|concat lists" $ =
                 concat ([] 1 2) ([] 4 5) ([] 7 8)
                 [] 1 2 4 5 7 8
               
               assert=
                 [] 3 4 5 2 3
-                concat
+                &list:concat
                   slice ([] 1 2 3 4 5 6) 2 5
                   slice ([] 1 2 3 4 5 6) 1 3
               assert=
@@ -56,7 +59,7 @@
               assert= (take (range 10) 4) $ [] 0 1 2 3
               assert= (drop (range 10) 4) ([] 4 5 6 7 8 9)
               assert |reverse $ =
-                reverse $ [] |a |b |c |d |e
+                .reverse $ [] |a |b |c |d |e
                 [] |e |d |c |b |a
 
               assert=
@@ -147,7 +150,7 @@
             assert=
               group-by
                 range 10
-                \ rem % 3
+                \ .rem % 3
               {}
                 0 $ [] 0 3 6 9
                 1 $ [] 1 4 7
@@ -286,7 +289,7 @@
             log-title "|Testing let[]"
 
             inside-eval:
-              echo $ macroexpand $ quote
+              echo $ format-to-lisp $ macroexpand $ quote
                 let[] (a b c & d) ([] 1 2 3 4 5)
                   echo a
                   echo b

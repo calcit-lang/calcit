@@ -57,8 +57,10 @@
             assert= 2 $ ceil 1.1
             assert= 1 $ round 1.1
             assert= 2 $ round 1.8
+            assert= 2 $ .round 1.8
+            assert= 0.8 $ .fract 1.8
             assert= 81 $ pow 3 4
-            assert= 1 $ rem 33 4
+            assert= 1 $ &number:rem 33 4
             assert= 9 $ sqrt 81
             echo |PI &PI
             echo |E &E
@@ -81,8 +83,8 @@
           fn ()
             log-title "|Testing integer"
 
-            assert= true (integer? 1)
-            assert= false (integer? 1.1)
+            assert= true (round? 1)
+            assert= false (round? 1.1)
 
         |test-methods $ quote
           fn ()

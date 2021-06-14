@@ -197,12 +197,17 @@
         |drop $ quote
           defn drop (xs n)
             slice xs n (&list:count xs)
+        
+        |slice $ quote
+          defn slice (xs n ? m)
+            if (nil? xs) nil
+              .slice xs n m
 
         |str $ quote
           defmacro str (x0 & xs)
             if (&list:empty? xs)
               quasiquote $ &str ~x0
-              quasiquote $ &str-concat ~x0 $ str ~@xs
+              quasiquote $ &str:concat ~x0 $ str ~@xs
 
         |include $ quote
           defn include (base & xs)
@@ -227,7 +232,7 @@
         |intersection $ quote
           defn intersection (base & xs)
             reduce xs base
-              fn (acc item) $ &intersection acc item
+              fn (acc item) $ &set:intersection acc item
 
         |index-of $ quote
           defn index-of (xs item)
@@ -258,7 +263,7 @@
                 x0 (&list:first xs)
                 if (list? x0)
                   recur
-                    concat ([] (&list:first x0) base) (&list:rest x0)
+                    &list:concat ([] (&list:first x0) base) (&list:rest x0)
                     , & (&list:rest xs)
                   recur ([] x0 base) & (&list:rest xs)
 
@@ -277,7 +282,7 @@
             if (&list:empty? xs) base
               let
                   tail $ last xs
-                  pairs $ concat
+                  pairs $ &list:concat
                     [] $ [] '% base
                     map
                       butlast xs
@@ -421,7 +426,7 @@
 
         |mapcat $ quote
           defn mapcat (xs f)
-            concat & $ map xs f
+            &list:concat & $ map xs f
 
         |merge $ quote
           defn merge (x0 & xs)
@@ -498,7 +503,7 @@
                       if (number? k)
                         recur (get x k) (&list:rest path)
                         , false
-                      raise $ &str-concat "|Unknown structure for some-in? detection: " x
+                      raise $ &str:concat "|Unknown structure for some-in? detection: " x
 
 
         |zipmap $ quote
@@ -551,7 +556,7 @@
                         a0 (last ys)
                         &let
                           code
-                            [] (quasiquote defn) (turn-symbol (&str-concat |f_ (turn-string a0))) ([] a0) body
+                            [] (quasiquote defn) (turn-symbol (&str:concat |f_ (turn-string a0))) ([] a0) body
                           recur code (butlast ys)
 
         |has-index? $ quote
@@ -574,7 +579,7 @@
               (tuple? x)
                 if (or (&= k 1) (&= k 2))
                   assoc x k $ f (&tuple:nth x k)
-                  raise $ &str-concat "|tuple only has 0,1 fields, unknown field: " k
+                  raise $ &str:concat "|tuple only has 0,1 fields, unknown field: " k
               (map? x)
                 if (contains? x k)
                   assoc x k $ f (&map:get x k)
@@ -584,7 +589,7 @@
                   assoc x k $ f (&record:get x k)
                   , x
               true
-                raise $ &str-concat "|Cannot update key on item: " x
+                raise $ &str:concat "|Cannot update key on item: " x
 
         |group-by $ quote
           defn group-by (xs0 f)
@@ -661,19 +666,19 @@
         |{} $ quote
           defmacro {} (& xs)
             &let
-              ys $ concat & xs
+              ys $ &list:concat & xs
               quasiquote $ &{} ~@ys
 
         |js-object $ quote
           defmacro js-object (& xs)
             &let
-              ys $ concat & xs
+              ys $ &list:concat & xs
               quasiquote $ &js-object ~@ys
 
         |%{} $ quote
           defmacro %{} (R & xs)
             &let
-              args $ concat & xs
+              args $ &list:concat & xs
               quasiquote $ &%{} ~R ~@args
 
         |fn $ quote
@@ -859,7 +864,7 @@
                     &let nil
                       echo "|Failed assertion:" (format-to-lisp (quote ~xs))
                       raise
-                        ~ $ &str-concat (&str-concat message "| ") (format-to-lisp xs)
+                        ~ $ &str:concat (&str:concat message "| ") (format-to-lisp xs)
 
         |join-str $ quote
           defn join-str (xs0 sep)
@@ -867,8 +872,8 @@
               fn (acc xs beginning?)
                 if (&list:empty? xs) acc
                   recur
-                    &str-concat
-                      if beginning? acc $ &str-concat acc sep
+                    &str:concat
+                      if beginning? acc $ &str:concat acc sep
                       &list:first xs
                     &list:rest xs
                     , false
@@ -1008,7 +1013,7 @@
                     ~started (cpu-time)
                     ~v ~x
                   echo "|[cpu-time]" (format-to-lisp (quote ~x)) |=>
-                    format-number
+                    .format
                       &- (cpu-time) ~started
                       , 3
                     , |ms
@@ -1086,11 +1091,11 @@
                       &let nil
                         when-not
                           symbol? (&list:first xs)
-                          raise $ &str-concat "|Expected symbol for vars: " (&list:first xs)
+                          raise $ &str:concat "|Expected symbol for vars: " (&list:first xs)
                         if (&= (&list:first xs) '&)
                           &let nil
                             assert "|expected list spreading" (&= 2 (&list:count xs))
-                            conj acc $ [] (&list:nth xs 1) (quasiquote (slice ~v ~idx))
+                            conj acc $ [] (&list:nth xs 1) (quasiquote (&list:slice ~v ~idx))
                           recur
                             conj acc $ [] (&list:first xs) (quasiquote (&list:nth ~v ~idx))
                             rest xs
@@ -1118,13 +1123,13 @@
         |strip-prefix $ quote
           defn strip-prefix (s piece)
             if (starts-with? s piece)
-              substr s (&str:count piece)
+              &str:slice s (&str:count piece)
               , s
 
         |strip-suffix $ quote
           defn strip-suffix (s piece)
             if (ends-with? s piece)
-              substr s 0 (&- (&str:count s) (&str:count piece))
+              &str:slice s 0 (&- (&str:count s) (&str:count piece))
               , s
 
         |select-keys $ quote
@@ -1166,10 +1171,10 @@
                 proto $ &tuple:nth pair 0
                 f $ &record:get proto name
               assert "|expected function" (fn? f)
-              f (&list:nth pair 1) & params
+              f pair & params
 
-        |&list-sort-by $ quote
-          defn &list-sort-by (xs f)
+        |&list:sort-by $ quote
+          defn &list:sort-by (xs f)
             if (keyword? f)
               sort xs $ fn (a b)
                 &compare (get a f) (get b f)
@@ -1197,14 +1202,17 @@
             :ceil ceil
             :empty $ defn &number:empty (x) 0
             :floor floor
-            :format format-number
+            :format &number:format
             :inc inc
             :pow pow
             :round round
+            :round? round?
+            :fract &number:fract
             :sqrt sqrt
             :rand-shift &number:rand-shift
             :rand-between &number:rand-between
             :negate negate
+            :rem &number:rem
 
         |&core-string-class $ quote
           defrecord! &core-string-class
@@ -1221,7 +1229,7 @@
             :starts-with? starts-with?
             :strip-prefix strip-prefix
             :strip-suffix strip-suffix
-            :substr substr
+            :slice &str:slice
             :trim trim
             :empty? &str:empty?
             :contains? &str:contains?
@@ -1230,6 +1238,8 @@
             :first &str:first
             :rest &str:rest
             :find-index &str:find-index
+            :get-char-code get-char-code
+            :escape &str:escape
 
         |&core-set-class $ quote
           defrecord! &core-set-class
@@ -1242,7 +1252,7 @@
             :include include
             :includes? &set:includes?
             :intersection intersection
-            :to-list set->list
+            :to-list &set:to-list
             :union union
             :first &set:first
             :rest &set:rest
@@ -1274,13 +1284,14 @@
         |&core-record-class $ quote
           defrecord! &core-record-class
             :get &record:get
-            :get-name get-record-name
-            :same-kind? relevant-record?
-            :turn-map turn-map
+            :get-name &record:get-name
+            :same-kind? &record:matches?
+            :to-map &record:to-map
             :count &record:count
             :contains? &record:contains?
             :nth &record:nth
             :assoc &record:assoc
+            :from-map &record:from-map
 
         |&core-list-class $ quote
           defrecord! &core-list-class
@@ -1288,10 +1299,10 @@
             :add append
             :append append
             :assoc &list:assoc
-            :assoc-after assoc-after
-            :assoc-before assoc-before
+            :assoc-after &list:assoc-after
+            :assoc-before &list:assoc-before
             :butlast butlast
-            :concat concat
+            :concat &list:concat
             :contains? &list:contains?
             :includes? &list:includes?
             :count &list:count
@@ -1319,16 +1330,17 @@
             :pairs-map pairs-map
             :prepend prepend
             :reduce reduce
-            :reverse reverse
+            :reverse &list:reverse
             :section-by section-by
-            :slice slice
+            :slice &list:slice
             :sort sort
-            :sort-by &list-sort-by
+            :sort-by &list:sort-by
             :take take
             :zipmap zipmap
             :first &list:first
             :rest &list:rest
             :dissoc &list:dissoc
+            :each each
 
         |&init-builtin-classes! $ quote
           defn &init-builtin-classes! ()
@@ -1398,3 +1410,7 @@
             if (nil? x) nil
               if (list? x) (&list:dissoc x k)
                 .dissoc x k
+
+        |concat $ quote
+          defn concat (a & args)
+            .concat a & args

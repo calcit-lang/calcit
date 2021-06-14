@@ -75,8 +75,8 @@ pub fn format_number(xs: &CalcitItems) -> Result<Calcit, String> {
       let size = f64_to_usize(*x)?;
       Ok(Calcit::Str(format!("{n:.*}", size, n = n)))
     }
-    (Some(a), Some(b)) => Err(format!("format-number expected numbers, got: {} {}", a, b)),
-    (_, _) => Err(String::from("format-number expected 2 arguments")),
+    (Some(a), Some(b)) => Err(format!("&number:format expected numbers, got: {} {}", a, b)),
+    (_, _) => Err(String::from("&number:format expected 2 arguments")),
   }
 }
 
@@ -104,16 +104,16 @@ pub fn split_lines(xs: &CalcitItems) -> Result<Calcit, String> {
     _ => Err(String::from("split-lines expected 1 argument, got nothing")),
   }
 }
-pub fn substr(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn str_slice(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(from) => {
         let to: usize = match xs.get(2) {
           Some(Calcit::Number(n2)) => match f64_to_usize(*n2) {
             Ok(idx2) => idx2,
-            Err(e) => return Err(format!("substr expected number, got: {}", e)),
+            Err(e) => return Err(format!("&str:slice expected number, got: {}", e)),
           },
-          Some(a) => return Err(format!("substr expected number, got: {}", a)),
+          Some(a) => return Err(format!("&str:slice expected number, got: {}", a)),
           None => s.chars().count(),
         };
         if from >= to {
@@ -124,8 +124,8 @@ pub fn substr(xs: &CalcitItems) -> Result<Calcit, String> {
       }
       Err(e) => Err(e),
     },
-    (Some(a), Some(b)) => Err(format!("substr expected string and number, got: {} {}", a, b)),
-    (_, _) => Err(format!("substr expected string and numbers, got: {:?}", xs)),
+    (Some(a), Some(b)) => Err(format!("&str:slice expected string and number, got: {} {}", a, b)),
+    (_, _) => Err(format!("&str:slice expected string and numbers, got: {:?}", xs)),
   }
 }
 
@@ -139,8 +139,8 @@ pub fn compare_string(xs: &CalcitItems) -> Result<Calcit, String> {
       };
       Ok(Calcit::Number(v as f64))
     }
-    (Some(a), Some(b)) => Err(format!("compare-string expected 2 strings, got: {}, {}", a, b)),
-    (_, _) => Err(format!("compare-string expected 2 string, got: {:?}", xs)),
+    (Some(a), Some(b)) => Err(format!("&str:compare expected 2 strings, got: {}, {}", a, b)),
+    (_, _) => Err(format!("&str:compare expected 2 string, got: {:?}", xs)),
   }
 }
 

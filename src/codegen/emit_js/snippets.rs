@@ -120,12 +120,12 @@ pub fn tmpl_classes_registering() -> String {
   format!(
     "
 $calcit_procs.register_calcit_builtin_classes({{
-  list: _AND_core_list_class,
-  map: _AND_core_map_class,
-  number: _AND_core_number_class,
-  record: _AND_core_record_class,
-  set: _AND_core_set_class,
-  string: _AND_core_string_class,
+  list: _$n_core_list_class,
+  map: _$n_core_map_class,
+  number: _$n_core_number_class,
+  record: _$n_core_record_class,
+  set: _$n_core_set_class,
+  string: _$n_core_string_class,
 }});
 
 let runtimeVersion = $calcit_procs.calcit_version;
