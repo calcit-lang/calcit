@@ -61,6 +61,20 @@ pub fn matches_simple_var(xs: &str) -> bool {
   true
 }
 
+pub fn matches_digits(xs: &str) -> bool {
+  if xs.is_empty() {
+    return false;
+  }
+  for x in xs.chars() {
+    if is_digit(x) {
+      // ok
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
 pub fn matches_js_var(xs: &str) -> bool {
   if xs.is_empty() {
     false

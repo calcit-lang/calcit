@@ -761,13 +761,13 @@
 
         |starts-with? $ quote
           defn starts-with? (x y)
-            &= 0 (str-find x y)
+            &= 0 (&str:find-index x y)
 
         |ends-with? $ quote
           defn ends-with? (x y)
             &=
               &- (&str:count x) (&str:count y)
-              str-find x y
+              &str:find-index x y
 
         |loop $ quote
           defmacro loop (pairs & body)
@@ -941,19 +941,21 @@
         |or $ quote
           defmacro or (item & xs)
             if (&list:empty? xs) item
-              quasiquote
-                if (nil? ~item)
-                  or
-                    ~ $ &list:first xs
-                    ~@ $ &list:rest xs
-                  if (= false ~item)
-                    or
-                      ~ $ &list:first xs
-                      ~@ $ &list:rest xs
-                    ~ item
+              &let (v1# (gensym |v1))
+                quasiquote
+                  &let (~v1# ~item)
+                    if (nil? ~v1#)
+                      or
+                        ~ $ &list:first xs
+                        ~@ $ &list:rest xs
+                      if (= false ~v1#)
+                        or
+                          ~ $ &list:first xs
+                          ~@ $ &list:rest xs
+                        ~ v1#
 
-        |with-log $ quote
-          defmacro with-log (x)
+        |w-log $ quote
+          defmacro w-log (x)
             &let
               v $ gensym |v
               quasiquote
@@ -962,8 +964,11 @@
                   echo (format-to-lisp (quote ~x)) |=> ~v
                   ~ v
 
-        |with-js-log $ quote
-          defmacro with-js-log (x)
+        |wo-log $ quote
+          defmacro wo-log (x) x
+
+        |w-js-log $ quote
+          defmacro w-js-log (x)
             &let
               v $ gensym |v
               quasiquote
@@ -971,6 +976,9 @@
                   ~v ~x
                   js/console.log (format-to-lisp (quote ~x)) |=> ~v
                   ~ v
+
+        |wo-js-log $ quote
+          defmacro w-js-log (x) x
 
         |{,} $ quote
           defmacro {,} (& body)
@@ -1006,8 +1014,8 @@
                     , |ms
                   ~ v
 
-        |call-with-log $ quote
-          defmacro call-with-log (f & xs)
+        |call-w-log $ quote
+          defmacro call-w-log (f & xs)
             let
                 v $ gensym |v
                 args-value $ gensym |args-value
@@ -1016,19 +1024,28 @@
                     ~args-value $ [] ~@xs
                     ~v $ ~f & ~args-value
                   echo "|call:"
-                    format-to-lisp $ quote (call-with-log ~f ~@xs)
+                    format-to-lisp $ quote (call-w-log ~f ~@xs)
                     , |=> ~v
                   echo "|f:   " ~f
                   echo "|args:" ~args-value
                   ~ v
 
-        |defn-with-log $ quote
-          defmacro defn-with-log (f-name args & body)
+        |call-wo-log $ quote
+          defmacro call-wo-log (f & xs)
+            quasiquote $ ~f ~@xs
+
+        |defn-w-log $ quote
+          defmacro defn-w-log (f-name args & body)
             quasiquote
               defn ~f-name ~args
                 &let
                   ~f-name $ defn ~f-name ~args ~@body
-                  call-with-log ~f-name ~@args
+                  call-w-log ~f-name ~@args
+
+        |defn-wo-log $ quote
+          defmacro defn-wo-log (f-name args & body)
+            quasiquote
+              defn ~f-name ~args ~@body
 
         |do $ quote
           defmacro do (& body)
@@ -1187,6 +1204,7 @@
             :sqrt sqrt
             :rand-shift &number:rand-shift
             :rand-between &number:rand-between
+            :negate negate
 
         |&core-string-class $ quote
           defrecord! &core-string-class
@@ -1197,7 +1215,7 @@
             :get &str:nth
             :parse-float parse-float
             :parse-json parse-json
-            :replace replace
+            :replace &str:replace
             :split split
             :split-lines split-lines
             :starts-with? starts-with?
@@ -1211,6 +1229,7 @@
             :nth &str:nth
             :first &str:first
             :rest &str:rest
+            :find-index &str:find-index
 
         |&core-set-class $ quote
           defrecord! &core-set-class

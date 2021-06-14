@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "outDir": "lib/",
     "allowSyntheticDefaultImports": true,
     "experimentalDecorators": true,
     "sourceMap": false,
@@ -12,8 +13,8 @@
     "jsx": "react",
     "lib": ["es2016", "dom"],
     "types": ["node"],
-    "baseUrl": "./lib/",
+    "baseUrl": "./ts-src/",
     "importsNotUsedAsValues": "preserve"
   },
-  "include": ["./lib/*"]
+  "include": ["./ts-src/*"]
 }

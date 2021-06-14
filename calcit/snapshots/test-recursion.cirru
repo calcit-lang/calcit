@@ -39,6 +39,9 @@
             assert "|hole series numbers" $ = (map (range 1 20) hole-series)
               [] 0 1 0 1 2 3 2 1 0 1 2 3 4 5 6 7 8 9 8
 
+        |*count-effects $ quote
+          defatom *count-effects 0
+
         |test-loop $ quote
           fn ()
             assert= 55 $ apply
@@ -52,6 +55,14 @@
                 to 10
               if (> from to) acc
                 recur (&+ acc from) (inc from) to
+
+            reset! *count-effects 0
+            loop ((x 3))
+              if (> x 0)
+                do
+                  swap! *count-effects + x
+                  recur (dec x)
+            assert= 6 @*count-effects
 
         |main! $ quote
           defn main! ()

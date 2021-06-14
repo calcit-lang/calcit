@@ -82,11 +82,11 @@ pub fn is_proc_name(s: &str) -> bool {
       | "turn-string"
       | "split"
       | "format-number"
-      | "replace"
+      | "&str:replace"
       | "split-lines"
       | "substr"
       | "compare-string"
-      | "str-find"
+      | "&str:find-index"
       | "starts-with?"
       | "ends-with?"
       | "get-char-code"
@@ -244,11 +244,11 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "turn-string" => strings::turn_string(args),
     "split" => strings::split(args),
     "format-number" => strings::format_number(args),
-    "replace" => strings::replace(args),
+    "&str:replace" => strings::replace(args),
     "split-lines" => strings::split_lines(args),
     "substr" => strings::substr(args),
     "compare-string" => strings::compare_string(args),
-    "str-find" => strings::str_find(args),
+    "&str:find-index" => strings::find_index(args),
     "starts-with?" => strings::starts_with_ques(args),
     "ends-with?" => strings::ends_with_ques(args),
     "get-char-code" => strings::get_char_code(args),

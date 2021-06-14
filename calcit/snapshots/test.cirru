@@ -264,6 +264,9 @@
 
         |main! $ quote
           defn main! ()
+            inside-js:
+              load-console-formatter!
+          
             log-title "|Testing keyword function"
             test-keyword
 

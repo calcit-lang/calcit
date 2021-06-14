@@ -81,6 +81,8 @@ pub fn main() -> io::Result<()> {
                   (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
                     if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" {
                       defs.insert(Edn::Str(x1.to_owned()), Edn::Quote(line.to_owned()));
+                    } else if x0.starts_with("def") {
+                      defs.insert(Edn::Str(x1.to_owned()), Edn::Quote(line.to_owned()));
                     } else {
                       return Err(io_err(format!("invalid def op: {}", x0)));
                     }

@@ -83,8 +83,11 @@ pub fn format_number(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn replace(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(p)), Some(Calcit::Str(r))) => Ok(Calcit::Str(s.replace(p, r))),
-    (Some(a), Some(b), Some(c)) => Err(format!("replace expected 3 strings, got: {} {} {}", a, b, c)),
-    (_, _, _) => Err(format!("expected 3 arguments, got: {}", primes::CrListWrap(xs.clone()))),
+    (Some(a), Some(b), Some(c)) => Err(format!("str:replace expected 3 strings, got: {} {} {}", a, b, c)),
+    (_, _, _) => Err(format!(
+      "str:replace expected 3 arguments, got: {}",
+      primes::CrListWrap(xs.clone())
+    )),
   }
 }
 pub fn split_lines(xs: &CalcitItems) -> Result<Calcit, String> {
@@ -141,14 +144,14 @@ pub fn compare_string(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn str_find(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn find_index(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => match s.find(pattern) {
       Some(idx) => Ok(Calcit::Number(idx as f64)),
       None => Ok(Calcit::Number(-1.0)), // TODO maybe nil?
     },
-    (Some(a), Some(b)) => Err(format!("str-find expected 2 strings, got: {} {}", a, b)),
-    (_, _) => Err(String::from("str-find expected 2 arguments, got nothing")),
+    (Some(a), Some(b)) => Err(format!("str:find-index expected 2 strings, got: {} {}", a, b)),
+    (_, _) => Err(String::from("str:find-index expected 2 arguments, got nothing")),
   }
 }
 pub fn starts_with_ques(xs: &CalcitItems) -> Result<Calcit, String> {

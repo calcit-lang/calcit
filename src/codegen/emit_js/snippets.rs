@@ -25,7 +25,7 @@ pub fn tmpl_fn_wrapper(body: String) -> String {
 pub fn tmpl_args_fewer_than(args_count: usize) -> String {
   format!(
     "
-if (arguments.length < {}) {{ throw new Error('Too few arguments') }}",
+if (arguments.length < {}) throw new Error('too few arguments')",
     args_count
   )
 }
@@ -33,8 +33,8 @@ if (arguments.length < {}) {{ throw new Error('Too few arguments') }}",
 pub fn tmpl_args_between(a: usize, b: usize) -> String {
   format!(
     "
-if (arguments.length < {}) {{ throw new Error('Too few arguments') }}
-if (arguments.length > {}) {{ throw new Error('Too many arguments') }}",
+if (arguments.length < {}) throw new Error('too few arguments');
+if (arguments.length > {}) throw new Error('too many arguments');",
     a, b
   )
 }
@@ -42,7 +42,7 @@ if (arguments.length > {}) {{ throw new Error('Too many arguments') }}",
 pub fn tmpl_args_exact(args_count: usize) -> String {
   format!(
     "
-if (arguments.length !== {}) {{ throw new Error('Args length mismatch') }}",
+if (arguments.length !== {}) throw new Error('argument sizes do not match');",
     args_count
   )
 }
@@ -54,10 +54,11 @@ pub fn tmpl_tail_recursion(
   spreading_code: String,
   body0: String,
   var_prefix: String,
+  return_mark: &str,
 ) -> String {
   let ret_var = js_gensym("ret");
   let times_var = js_gensym("times");
-  let body = body0.replace("%%return_mark%%", &ret_var); // dirty trick for injection
+  let body = body0.replace(return_mark, &ret_var); // dirty trick for injection
 
   let check_recur_args = check_args.replace("arguments.length", &format!("{}.args.length", ret_var));
 
@@ -68,18 +69,16 @@ pub fn tmpl_tail_recursion(
   let {ret_var} = null;
   let {times_var} = 0;
   while(true) {{ /* Tail Recursion */
-    if ({times_var} > 10000) {{
-      throw new Error('Expected tail recursion to exist quickly')
-    }}
+    if ({times_var} > 10000) throw new Error('tail recursion not stopping');
     {body}
-    if ({ret_var} instanceof {var_prefix}CrDataRecur) {{
+    if ({ret_var} instanceof {var_prefix}CalcitRecur) {{
       {check_recur_args}
       [ {args_code} ] = {ret_var}.args;
       {spreading_code}
       {times_var} += 1;
       continue;
     }} else {{
-      return {ret_var}
+      return {ret_var};
     }}
   }}
 }}
@@ -99,7 +98,7 @@ pub fn tmpl_tail_recursion(
 pub fn tmpl_import_procs(name: String) -> String {
   format!(
     "
-import {{kwd, arrayToList, listToArray, CrDataList, CrDataSymbol, CrDataRecur}} from {};
+import {{kwd, arrayToList, listToArray, CalcitList, CalcitSymbol, CalcitRecur}} from {};
 import * as $calcit_procs from {};
 export * from {};
 ",
