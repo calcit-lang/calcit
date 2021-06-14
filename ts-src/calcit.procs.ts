@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.0-a1";
+export const calcit_version = "0.4.0-a2";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -1022,11 +1022,11 @@ export let cpu_time = (): number => {
   return performance.now();
 };
 
-export let quit = (): void => {
+export let quit_$x_ = (): void => {
   if (inNodeJs) {
     process.exit(1);
   } else {
-    throw new Error("quit()");
+    throw new Error("quit!()");
   }
 };
 
