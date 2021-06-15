@@ -67,7 +67,6 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-/// TODO the name is current `make-record`
 pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(name, fields, _values)), Some(Calcit::Map(ys))) => {
@@ -99,16 +98,16 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, String> {
       pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
       Ok(Calcit::Record(name.clone(), fields.clone(), values))
     }
-    (Some(a), Some(b)) => Err(format!("make-record expected a record and a map, got {} {}", a, b)),
-    (_, _) => Err(format!("make-record expected 2 arguments, got {:?}", xs)),
+    (Some(a), Some(b)) => Err(format!("&record:from-map expected a record and a map, got {} {}", a, b)),
+    (_, _) => Err(format!("&record:from-map expected 2 arguments, got {:?}", xs)),
   }
 }
 
 pub fn get_record_name(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Record(name, ..)) => Ok(Calcit::Str(name.to_owned())),
-    Some(a) => Err(format!("get-record-name expected record, got: {}", a)),
-    None => Err(String::from("get-record-name expected record, got nothing")),
+    Some(a) => Err(format!("&record:get-name expected record, got: {}", a)),
+    None => Err(String::from("&record:get-name expected record, got nothing")),
   }
 }
 pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, String> {
@@ -120,17 +119,17 @@ pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, String> {
       }
       Ok(Calcit::Map(ys))
     }
-    Some(a) => Err(format!("turn-map expected a record, got {}", a)),
-    None => Err(String::from("turn-map expected 1 argument, got nothing")),
+    Some(a) => Err(format!("&record:to-map expected a record, got {}", a)),
+    None => Err(String::from("&record:to-map expected 1 argument, got nothing")),
   }
 }
-pub fn relevant_record_ques(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn matches(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(left, left_fields, ..)), Some(Calcit::Record(right, right_fields, ..))) => {
       Ok(Calcit::Bool(left == right && left_fields == right_fields))
     }
-    (Some(a), Some(b)) => Err(format!("relevant-record? expected 2 records, got {} {}", a, b)),
-    (_, _) => Err(format!("relevant-record? expected 2 arguments, got {:?}", xs)),
+    (Some(a), Some(b)) => Err(format!("&record:matches? expected 2 records, got {} {}", a, b)),
+    (_, _) => Err(format!("&record:matches? expected 2 arguments, got {:?}", xs)),
   }
 }
 

@@ -30,7 +30,7 @@ let embedObject = (x: CalcitValue) => {
   ];
 };
 
-export let load_console_formatter_BANG_ = () => {
+export let load_console_formatter_$x_ = () => {
   if (typeof window === "object") {
     window["devtoolsFormatters"] = [
       {

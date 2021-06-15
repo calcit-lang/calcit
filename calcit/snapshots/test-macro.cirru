@@ -283,7 +283,7 @@
                     echo |[cpu-time]
                       format-to-lisp (quote $ + 1 2)
                       , |=>
-                      format-number (&- (cpu-time) started__1) 3
+                      .format (&- (cpu-time) started__1) 3
                       , |ms
                     , v__2
 

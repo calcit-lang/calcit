@@ -81,7 +81,7 @@ dependencies = [
 
 [[package]]
 name = "calcit_runner"
-version = "0.3.39"
+version = "0.4.0-a5"
 dependencies = [
  "chrono",
  "cirru_edn",

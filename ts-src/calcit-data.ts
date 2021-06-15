@@ -363,7 +363,7 @@ export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
   return x;
 };
 
-export let _AND_map_COL_get = function (xs: CalcitValue, k: CalcitValue) {
+export let _$n_map_$o_get = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) {
     throw new Error("map &get takes 2 arguments");
   }
@@ -373,7 +373,7 @@ export let _AND_map_COL_get = function (xs: CalcitValue, k: CalcitValue) {
   throw new Error("Does not support `&get` on this type");
 };
 
-export let _AND__EQ_ = (x: CalcitValue, y: CalcitValue): boolean => {
+export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   if (x === y) {
     return true;
   }
@@ -425,7 +425,7 @@ export let _AND__EQ_ = (x: CalcitValue, y: CalcitValue): boolean => {
       for (let idx = 0; idx < size; idx++) {
         let xItem = x.get(idx);
         let yItem = y.get(idx);
-        if (!_AND__EQ_(xItem, yItem)) {
+        if (!_$n__$e_(xItem, yItem)) {
           return false;
         }
       }
@@ -442,7 +442,7 @@ export let _AND__EQ_ = (x: CalcitValue, y: CalcitValue): boolean => {
         if (!y.contains(k)) {
           return false;
         }
-        if (!_AND__EQ_(v, _AND_map_COL_get(y, k))) {
+        if (!_$n__$e_(v, _$n_map_$o_get(y, k))) {
           return false;
         }
       }
@@ -458,7 +458,7 @@ export let _AND__EQ_ = (x: CalcitValue, y: CalcitValue): boolean => {
   }
   if (x instanceof CalcitTuple) {
     if (y instanceof CalcitTuple) {
-      return _AND__EQ_(x.fst, y.fst) && _AND__EQ_(x.snd, y.snd);
+      return _$n__$e_(x.fst, y.fst) && _$n__$e_(x.snd, y.snd);
     }
     return false;
   }
@@ -472,7 +472,7 @@ export let _AND__EQ_ = (x: CalcitValue, y: CalcitValue): boolean => {
         // testing by doing iteration is O(n2), could be slow
         // but Set::contains does not satisfy here
         for (let yv of y.value) {
-          if (_AND__EQ_(v, yv)) {
+          if (_$n__$e_(v, yv)) {
             found = true;
             break;
           }
@@ -506,7 +506,7 @@ export let _AND__EQ_ = (x: CalcitValue, y: CalcitValue): boolean => {
         return false;
       }
       for (let idx in x.fields) {
-        if (!_AND__EQ_(x.values[idx], y.values[idx])) {
+        if (!_$n__$e_(x.values[idx], y.values[idx])) {
           return false;
         }
       }
@@ -518,5 +518,5 @@ export let _AND__EQ_ = (x: CalcitValue, y: CalcitValue): boolean => {
 };
 
 // overwrite internary comparator of ternary-tree
-overwriteComparator(_AND__EQ_);
-overwriteDataComparator(_AND__EQ_);
+overwriteComparator(_$n__$e_);
+overwriteDataComparator(_$n__$e_);

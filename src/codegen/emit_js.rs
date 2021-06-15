@@ -59,25 +59,25 @@ fn escape_var(name: &str) -> String {
       .replace("-", "_")
       // dot might be part of variable `\.`. not confused with syntax
       .replace(".", "_DOT_")
-      .replace("?", "_QUES_")
+      .replace("?", "_$q_")
       .replace("+", "_ADD_")
       .replace("^", "_CRT_")
-      .replace("*", "_STAR_")
-      .replace("&", "_AND_")
-      .replace("{}", "_MAP_")
-      .replace("[]", "_LIST_")
+      .replace("*", "_$s_")
+      .replace("&", "_$n_")
+      .replace("{}", "_$M_")
+      .replace("[]", "_$L_")
       .replace("{", "_CURL_")
       .replace("}", "_CURR_")
       .replace("'", "_SQUO_")
       .replace("[", "_SQRL_")
       .replace("]", "_SQRR_")
-      .replace("!", "_BANG_")
+      .replace("!", "_$x_")
       .replace("%", "_PCT_")
       .replace("/", "_SLSH_")
-      .replace("=", "_EQ_")
+      .replace("=", "_$e_")
       .replace(">", "_GT_")
       .replace("<", "_LT_")
-      .replace(":", "_COL_")
+      .replace(":", "_$o_")
       .replace(";", "_SCOL_")
       .replace("#", "_SHA_")
       .replace("\\", "_BSL_"),
@@ -345,7 +345,7 @@ fn gen_call_code(
         },
 
         "defmacro" => Ok(format!("/* Unexpected macro {} */", xs)),
-        "quasiquote" | "quote-replace" => Ok(format!("(/* Unexpected quasiquote {} */ null)", xs.lisp_str())),
+        "quasiquote" => Ok(format!("(/* Unexpected quasiquote {} */ null)", xs.lisp_str())),
 
         "raise" => {
           // not core syntax, but treat as macro for better debugging experience
@@ -373,13 +373,20 @@ fn gen_call_code(
         "try" => match (body.get(0), body.get(1)) {
           (Some(expr), Some(handler)) => {
             call_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), &im::vector![]);
-            let code = to_js_code(expr, ns, local_defs, file_imports, &None)?;
+            let next_return_label = match return_label {
+              Some(x) => Some(x.to_owned()),
+              None => Some(String::from("return ")),
+            };
+            let try_code = to_js_code(expr, ns, local_defs, file_imports, &next_return_label)?;
             let err_var = js_gensym("errMsg");
-            let handler = to_js_code(handler, ns, local_defs, file_imports, return_label)?;
+            let handler = to_js_code(handler, ns, local_defs, file_imports, &None)?;
 
             call_stack::pop_call_stack();
-
-            Ok(snippets::tmpl_fn_wrapper(snippets::tmpl_try(err_var, code, handler)))
+            let code = snippets::tmpl_try(err_var, try_code, handler, &next_return_label.unwrap());
+            match return_label {
+              Some(_) => Ok(code),
+              None => Ok(snippets::tmpl_fn_wrapper(code)),
+            }
           }
           (_, _) => Err(format!("try expected 2 nodes, got {:?}", body)),
         },

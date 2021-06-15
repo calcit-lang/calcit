@@ -69,6 +69,7 @@ pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
+/// to set
 pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     // get a random order from internals

@@ -91,7 +91,7 @@ export let fieldsEqual = (xs: Array<string>, ys: Array<string>): boolean => {
   return true;
 };
 
-export let _AND__PCT__MAP_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => {
+export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => {
   if (proto instanceof CalcitRecord) {
     if (xs.length % 2 !== 0) {
       throw new Error("Expected even number of key/value");
@@ -127,7 +127,7 @@ export let _AND__PCT__MAP_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Ca
   }
 };
 
-export let get_record_name = (x: CalcitRecord): string => {
+export let _$n_record_$o_get_name = (x: CalcitRecord): string => {
   if (x instanceof CalcitRecord) {
     return x.name;
   } else {
@@ -135,7 +135,7 @@ export let get_record_name = (x: CalcitRecord): string => {
   }
 };
 
-export let make_record = (proto: CalcitValue, data: CalcitValue): CalcitValue => {
+export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): CalcitValue => {
   if (proto instanceof CalcitRecord) {
     if (data instanceof CalcitRecord) {
       if (fieldsEqual(proto.fields, data.fields)) {
@@ -178,7 +178,7 @@ export let make_record = (proto: CalcitValue, data: CalcitValue): CalcitValue =>
   }
 };
 
-export let turn_map = (x: CalcitValue): CalcitValue => {
+export let _$n_record_$o_to_map = (x: CalcitValue): CalcitValue => {
   if (x instanceof CalcitRecord) {
     var dict: Array<[CalcitValue, CalcitValue]> = [];
     for (let idx in x.fields) {
@@ -190,7 +190,7 @@ export let turn_map = (x: CalcitValue): CalcitValue => {
   }
 };
 
-export let relevant_record_QUES_ = (x: CalcitValue, y: CalcitValue): boolean => {
+export let _$n_record_$o_matches_$q_ = (x: CalcitValue, y: CalcitValue): boolean => {
   if (!(x instanceof CalcitRecord)) {
     throw new Error("Expected record");
   }

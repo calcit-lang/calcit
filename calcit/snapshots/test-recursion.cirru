@@ -19,7 +19,7 @@
               if (&= x 1) (, 0)
                 if (&= x 2) (, 1)
                   let
-                      extra $ rem x 3
+                      extra $ .rem x 3
                     if (&= extra 0)
                       let
                           unit $ &/ x 3

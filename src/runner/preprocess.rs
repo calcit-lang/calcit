@@ -251,7 +251,7 @@ fn process_list_call(
       }
     }
     (Calcit::Syntax(name, name_ns), _) => match name.as_str() {
-      "quasiquote" | "quote-replace" => Ok((
+      "quasiquote" => Ok((
         preprocess_quasiquote(&name, &name_ns, args, scope_defs, file_ns, program_code)?,
         None,
       )),

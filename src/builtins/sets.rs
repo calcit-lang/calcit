@@ -56,8 +56,8 @@ pub fn call_union(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn call_intersection(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => Ok(Calcit::Set(a.clone().intersection(b.clone()))),
-    (Some(a), Some(b)) => Err(format!("&intersection expected 2 sets: {} {}", a, b)),
-    (a, b) => Err(format!("&intersection expected 2 arguments: {:?} {:?}", a, b)),
+    (Some(a), Some(b)) => Err(format!("&set:intersection expected 2 sets: {} {}", a, b)),
+    (a, b) => Err(format!("&set:intersection expected 2 arguments: {:?} {:?}", a, b)),
   }
 }
 
@@ -71,8 +71,8 @@ pub fn set_to_list(xs: &CalcitItems) -> Result<Calcit, String> {
       }
       Ok(Calcit::List(ys))
     }
-    Some(a) => Err(format!("set->list expected a set: {}", a)),
-    None => Err(String::from("set->list expected 1 argument, got none")),
+    Some(a) => Err(format!("&set:to-list expected a set: {}", a)),
+    None => Err(String::from("&set:to-list expected 1 argument, got none")),
   }
 }
 

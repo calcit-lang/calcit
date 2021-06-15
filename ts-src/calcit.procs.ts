@@ -1,23 +1,11 @@
 // CALCIT VERSION
-export const calcit_version = "0.3.39";
+export const calcit_version = "0.4.0-a5";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
 
 import { CalcitValue } from "./js-primes";
-import {
-  CalcitSymbol,
-  CalcitKeyword,
-  CalcitRef,
-  CalcitFn,
-  CalcitRecur,
-  kwd,
-  refsRegistry,
-  toString,
-  getStringName,
-  to_js_data,
-  _AND__EQ_,
-} from "./calcit-data";
+import { CalcitSymbol, CalcitKeyword, CalcitRef, CalcitFn, CalcitRecur, kwd, refsRegistry, toString, getStringName, to_js_data, _$n__$e_ } from "./calcit-data";
 
 import { fieldsEqual, CalcitRecord } from "./js-record";
 
@@ -94,33 +82,33 @@ export let print = (...xs: CalcitValue[]): void => {
   console.log(xs.map((x) => toString(x, false)).join(" "));
 };
 
-export function _AND_list_COL_count(x: CalcitValue): number {
+export function _$n_list_$o_count(x: CalcitValue): number {
   if (x instanceof CalcitList) return x.len();
 
   throw new Error(`expected a list ${x}`);
 }
-export function _AND_str_COL_count(x: CalcitValue): number {
+export function _$n_str_$o_count(x: CalcitValue): number {
   if (typeof x === "string") return x.length;
 
   throw new Error(`expected a string ${x}`);
 }
-export function _AND_map_COL_count(x: CalcitValue): number {
+export function _$n_map_$o_count(x: CalcitValue): number {
   if (x instanceof CalcitMap) return x.len();
 
   throw new Error(`expected a map ${x}`);
 }
-export function _AND_record_COL_count(x: CalcitValue): number {
+export function _$n_record_$o_count(x: CalcitValue): number {
   if (x instanceof CalcitRecord) return x.fields.length;
 
   throw new Error(`expected a record ${x}`);
 }
-export function _AND_set_COL_count(x: CalcitValue): number {
+export function _$n_set_$o_count(x: CalcitValue): number {
   if (x instanceof CalcitSet) return x.len();
 
   throw new Error(`expected a set ${x}`);
 }
 
-export let _LIST_ = (...xs: CalcitValue[]): CalcitList => {
+export let _$L_ = (...xs: CalcitValue[]): CalcitList => {
   return new CalcitList(xs);
 };
 // single quote as alias for list
@@ -128,7 +116,7 @@ export let _SQUO_ = (...xs: CalcitValue[]): CalcitList => {
   return new CalcitList(xs);
 };
 
-export let _AND__MAP_ = (...xs: CalcitValue[]): CalcitMap => {
+export let _$n__$M_ = (...xs: CalcitValue[]): CalcitMap => {
   if (xs.length % 2 !== 0) {
     throw new Error("&map expects even number of arguments");
   }
@@ -153,19 +141,19 @@ export let deref = (x: CalcitRef): CalcitValue => {
   return a.value;
 };
 
-export let _AND__ADD_ = (x: number, y: number): number => {
+export let _$n__ADD_ = (x: number, y: number): number => {
   return x + y;
 };
 
-export let _AND__STAR_ = (x: number, y: number): number => {
+export let _$n__$s_ = (x: number, y: number): number => {
   return x * y;
 };
 
-export let _AND_str = (x: CalcitValue): string => {
+export let _$n_str = (x: CalcitValue): string => {
   return `${x}`;
 };
 
-export let _AND_str_COL_contains_QUES_ = (xs: CalcitValue, x: CalcitValue): boolean => {
+export let _$n_str_$o_contains_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
   if (typeof xs === "string") {
     if (typeof x != "number") {
       throw new Error("Expected number index for detecting");
@@ -180,7 +168,7 @@ export let _AND_str_COL_contains_QUES_ = (xs: CalcitValue, x: CalcitValue): bool
   throw new Error("string `contains?` expected a string");
 };
 
-export let _AND_list_COL_contains_QUES_ = (xs: CalcitValue, x: CalcitValue): boolean => {
+export let _$n_list_$o_contains_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
   if (xs instanceof CalcitList) {
     if (typeof x != "number") {
       throw new Error("Expected number index for detecting");
@@ -195,19 +183,19 @@ export let _AND_list_COL_contains_QUES_ = (xs: CalcitValue, x: CalcitValue): boo
   throw new Error("list `contains?` expected a list");
 };
 
-export let _AND_map_COL_contains_QUES_ = (xs: CalcitValue, x: CalcitValue): boolean => {
+export let _$n_map_$o_contains_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
   if (xs instanceof CalcitMap) return xs.contains(x);
 
   throw new Error("map `contains?` expected a map");
 };
 
-export let _AND_record_COL_contains_QUES_ = (xs: CalcitValue, x: CalcitValue): boolean => {
+export let _$n_record_$o_contains_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
   if (xs instanceof CalcitRecord) return xs.contains(x);
 
   throw new Error("record `contains?` expected a record");
 };
 
-export let _AND_str_COL_includes_QUES_ = (xs: CalcitValue, x: CalcitValue): boolean => {
+export let _$n_str_$o_includes_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
   if (typeof xs === "string") {
     if (typeof x !== "string") {
       throw new Error("Expected string");
@@ -218,11 +206,11 @@ export let _AND_str_COL_includes_QUES_ = (xs: CalcitValue, x: CalcitValue): bool
   throw new Error("string includes? expected a string");
 };
 
-export let _AND_list_COL_includes_QUES_ = (xs: CalcitValue, x: CalcitValue): boolean => {
+export let _$n_list_$o_includes_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
   if (xs instanceof CalcitList) {
     let size = xs.len();
     for (let v of xs.items()) {
-      if (_AND__EQ_(v, x)) {
+      if (_$n__$e_(v, x)) {
         return true;
       }
     }
@@ -232,10 +220,10 @@ export let _AND_list_COL_includes_QUES_ = (xs: CalcitValue, x: CalcitValue): boo
   throw new Error("list includes? expected a list");
 };
 
-export let _AND_map_COL_includes_QUES_ = (xs: CalcitValue, x: CalcitValue): boolean => {
+export let _$n_map_$o_includes_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
   if (xs instanceof CalcitMap) {
     for (let [k, v] of xs.pairs()) {
-      if (_AND__EQ_(v, x)) {
+      if (_$n__$e_(v, x)) {
         return true;
       }
     }
@@ -245,7 +233,7 @@ export let _AND_map_COL_includes_QUES_ = (xs: CalcitValue, x: CalcitValue): bool
   throw new Error("map includes? expected a map");
 };
 
-export let _AND_set_COL_includes_QUES_ = (xs: CalcitValue, x: CalcitValue): boolean => {
+export let _$n_set_$o_includes_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
   if (xs instanceof CalcitSet) {
     return xs.contains(x);
   }
@@ -253,7 +241,7 @@ export let _AND_set_COL_includes_QUES_ = (xs: CalcitValue, x: CalcitValue): bool
   throw new Error("set includes? expected a set");
 };
 
-export let _AND_str_COL_nth = function (xs: CalcitValue, k: CalcitValue) {
+export let _$n_str_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
   if (typeof k !== "number") throw new Error("Expected number index for a list");
 
@@ -262,7 +250,7 @@ export let _AND_str_COL_nth = function (xs: CalcitValue, k: CalcitValue) {
   throw new Error("Does not support `nth` on this type");
 };
 
-export let _AND_list_COL_nth = function (xs: CalcitValue, k: CalcitValue) {
+export let _$n_list_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
   if (typeof k !== "number") throw new Error("Expected number index for a list");
 
@@ -271,7 +259,7 @@ export let _AND_list_COL_nth = function (xs: CalcitValue, k: CalcitValue) {
   throw new Error("Does not support `nth` on this type");
 };
 
-export let _AND_tuple_COL_nth = function (xs: CalcitValue, k: CalcitValue) {
+export let _$n_tuple_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
   if (typeof k !== "number") throw new Error("Expected number index for a list");
 
@@ -280,7 +268,7 @@ export let _AND_tuple_COL_nth = function (xs: CalcitValue, k: CalcitValue) {
   throw new Error("Does not support `nth` on this type");
 };
 
-export let _AND_record_COL_nth = function (xs: CalcitValue, k: CalcitValue) {
+export let _$n_record_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
   if (typeof k !== "number") throw new Error("Expected number index for a list");
 
@@ -294,7 +282,7 @@ export let _AND_record_COL_nth = function (xs: CalcitValue, k: CalcitValue) {
   throw new Error("Does not support `nth` on this type");
 };
 
-export let _AND_record_COL_get = function (xs: CalcitValue, k: CalcitValue) {
+export let _$n_record_$o_get = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) {
     throw new Error("record &get takes 2 arguments");
   }
@@ -304,7 +292,7 @@ export let _AND_record_COL_get = function (xs: CalcitValue, k: CalcitValue) {
   throw new Error("Does not support `&get` on this type");
 };
 
-export let _AND_list_COL_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
+export let _$n_list_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
   if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
 
   if (xs instanceof CalcitList) {
@@ -315,7 +303,7 @@ export let _AND_list_COL_assoc = function (xs: CalcitValue, k: CalcitValue, v: C
   }
   throw new Error("list `assoc` expected a list");
 };
-export let _AND_tuple_COL_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
+export let _$n_tuple_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
   if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
 
   if (xs instanceof CalcitTuple) {
@@ -327,14 +315,14 @@ export let _AND_tuple_COL_assoc = function (xs: CalcitValue, k: CalcitValue, v: 
 
   throw new Error("tuple `assoc` expected a tuple");
 };
-export let _AND_map_COL_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
+export let _$n_map_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
   if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
 
   if (xs instanceof CalcitMap) return xs.assoc(k, v);
 
   throw new Error("map `assoc` expected a map");
 };
-export let _AND_record_COL_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
+export let _$n_record_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
   if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
 
   if (xs instanceof CalcitRecord) return xs.assoc(k, v);
@@ -342,7 +330,7 @@ export let _AND_record_COL_assoc = function (xs: CalcitValue, k: CalcitValue, v:
   throw new Error("record `assoc` expected a record");
 };
 
-export let assoc_before = function (xs: CalcitList, k: number, v: CalcitValue): CalcitList {
+export let _$n_list_$o_assoc_before = function (xs: CalcitList, k: number, v: CalcitValue): CalcitList {
   if (arguments.length !== 3) {
     throw new Error("assoc takes 3 arguments");
   }
@@ -356,7 +344,7 @@ export let assoc_before = function (xs: CalcitList, k: number, v: CalcitValue): 
   throw new Error("Does not support `assoc-before` on this type");
 };
 
-export let assoc_after = function (xs: CalcitList, k: number, v: CalcitValue): CalcitList {
+export let _$n_list_$o_assoc_after = function (xs: CalcitList, k: number, v: CalcitValue): CalcitList {
   if (arguments.length !== 3) {
     throw new Error("assoc takes 3 arguments");
   }
@@ -370,7 +358,7 @@ export let assoc_after = function (xs: CalcitList, k: number, v: CalcitValue): C
   throw new Error("Does not support `assoc-after` on this type");
 };
 
-export let _AND_list_COL_dissoc = function (xs: CalcitValue, k: CalcitValue) {
+export let _$n_list_$o_dissoc = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) throw new Error("dissoc takes 2 arguments");
 
   if (xs instanceof CalcitList) {
@@ -381,7 +369,7 @@ export let _AND_list_COL_dissoc = function (xs: CalcitValue, k: CalcitValue) {
 
   throw new Error("`dissoc` expected a list");
 };
-export let _AND_map_COL_dissoc = function (xs: CalcitValue, k: CalcitValue) {
+export let _$n_map_$o_dissoc = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) throw new Error("dissoc takes 2 arguments");
 
   if (xs instanceof CalcitMap) return xs.dissoc(k);
@@ -389,7 +377,7 @@ export let _AND_map_COL_dissoc = function (xs: CalcitValue, k: CalcitValue) {
   throw new Error("`dissoc` expected a map");
 };
 
-export let reset_BANG_ = (a: CalcitRef, v: CalcitValue): null => {
+export let reset_$x_ = (a: CalcitRef, v: CalcitValue): null => {
   if (!(a instanceof CalcitRef)) {
     throw new Error("Expected ref for reset!");
   }
@@ -441,25 +429,25 @@ export let range = (n: number, m: number, m2: number): CalcitList => {
   return result;
 };
 
-export function _AND_list_COL_empty_QUES_(xs: CalcitValue): boolean {
+export function _$n_list_$o_empty_$q_(xs: CalcitValue): boolean {
   if (xs instanceof CalcitList) return xs.isEmpty();
   throw new Error(`expected a list ${xs}`);
 }
-export function _AND_str_COL_empty_QUES_(xs: CalcitValue): boolean {
+export function _$n_str_$o_empty_$q_(xs: CalcitValue): boolean {
   if (typeof xs == "string") return xs.length == 0;
   throw new Error(`expected a string ${xs}`);
 }
-export function _AND_map_COL_empty_QUES_(xs: CalcitValue): boolean {
+export function _$n_map_$o_empty_$q_(xs: CalcitValue): boolean {
   if (xs instanceof CalcitMap) return xs.isEmpty();
 
   throw new Error(`expected a list ${xs}`);
 }
-export function _AND_set_COL_empty_QUES_(xs: CalcitValue): boolean {
+export function _$n_set_$o_empty_$q_(xs: CalcitValue): boolean {
   if (xs instanceof CalcitSet) return xs.len() === 0;
   throw new Error(`expected a list ${xs}`);
 }
 
-export let _AND_list_COL_first = (xs: CalcitValue): CalcitValue => {
+export let _$n_list_$o_first = (xs: CalcitValue): CalcitValue => {
   if (xs instanceof CalcitList) {
     if (xs.isEmpty()) {
       return null;
@@ -469,14 +457,14 @@ export let _AND_list_COL_first = (xs: CalcitValue): CalcitValue => {
   console.error(xs);
   throw new Error("Expected a list");
 };
-export let _AND_str_COL_first = (xs: CalcitValue): CalcitValue => {
+export let _$n_str_$o_first = (xs: CalcitValue): CalcitValue => {
   if (typeof xs === "string") {
     return xs[0];
   }
   console.error(xs);
   throw new Error("Expected a string");
 };
-export let _AND_map_COL_first = (xs: CalcitValue): CalcitValue => {
+export let _$n_map_$o_first = (xs: CalcitValue): CalcitValue => {
   if (xs instanceof CalcitMap) {
     // TODO order may not be stable enough
     let ys = xs.pairs();
@@ -489,7 +477,7 @@ export let _AND_map_COL_first = (xs: CalcitValue): CalcitValue => {
   console.error(xs);
   throw new Error("Expected a map");
 };
-export let _AND_set_COL_first = (xs: CalcitValue): CalcitValue => {
+export let _$n_set_$o_first = (xs: CalcitValue): CalcitValue => {
   if (xs instanceof CalcitSet) {
     return xs.first();
   }
@@ -509,7 +497,7 @@ export let timeout_call = (duration: number, f: CalcitFn): null => {
   return null;
 };
 
-export let _AND_list_COL_rest = (xs: CalcitValue): CalcitValue => {
+export let _$n_list_$o_rest = (xs: CalcitValue): CalcitValue => {
   if (xs instanceof CalcitList) {
     if (xs.len() === 0) {
       return null;
@@ -520,19 +508,19 @@ export let _AND_list_COL_rest = (xs: CalcitValue): CalcitValue => {
   throw new Error("Expected a list");
 };
 
-export let _AND_str_COL_rest = (xs: CalcitValue): CalcitValue => {
+export let _$n_str_$o_rest = (xs: CalcitValue): CalcitValue => {
   if (typeof xs === "string") return xs.substr(1);
 
   console.error(xs);
   throw new Error("Expects a string");
 };
-export let _AND_set_COL_rest = (xs: CalcitValue): CalcitValue => {
+export let _$n_set_$o_rest = (xs: CalcitValue): CalcitValue => {
   if (xs instanceof CalcitSet) return xs.rest();
 
   console.error(xs);
   throw new Error("Expect a set");
 };
-export let _AND_map_COL_rest = (xs: CalcitValue): CalcitValue => {
+export let _$n_map_$o_rest = (xs: CalcitValue): CalcitValue => {
   if (xs instanceof CalcitMap) {
     if (xs.len() > 0) {
       let k0 = xs.pairs()[0][0];
@@ -549,7 +537,7 @@ export let recur = (...xs: CalcitValue[]): CalcitRecur => {
   return new CalcitRecur(xs);
 };
 
-export let _AND_get_calcit_backend = () => {
+export let _$n_get_calcit_backend = () => {
   return kwd("js");
 };
 
@@ -604,7 +592,7 @@ export let initCrTernary = (x: string): CalcitValue => {
   return null;
 };
 
-export let _SHA__MAP_ = (...xs: CalcitValue[]): CalcitValue => {
+export let _SHA__$M_ = (...xs: CalcitValue[]): CalcitValue => {
   var result = new Set<CalcitValue>();
   for (let idx in xs) {
     result.add(xs[idx]);
@@ -614,18 +602,18 @@ export let _SHA__MAP_ = (...xs: CalcitValue[]): CalcitValue => {
 
 let idCounter = 0;
 
-export let generate_id_BANG_ = (): string => {
+export let generate_id_$x_ = (): string => {
   // TODO use nanoid.. this code is wrong
   idCounter = idCounter + 1;
   return `gen_id_${idCounter}`;
 };
 
-export let display_stack = (): null => {
+export let _$n_display_stack = (): null => {
   console.trace();
   return null;
 };
 
-export let slice = (xs: CalcitList, from: number, to: number): CalcitList => {
+export let _$n_list_$o_slice = (xs: CalcitList, from: number, to: number): CalcitList => {
   if (xs == null) {
     return null;
   }
@@ -640,7 +628,7 @@ export let slice = (xs: CalcitList, from: number, to: number): CalcitList => {
   return xs.slice(from, to);
 };
 
-export let concat = (...lists: CalcitList[]): CalcitList => {
+export let _$n_list_$o_concat = (...lists: CalcitList[]): CalcitList => {
   let result: CalcitList = new CalcitList([]);
   for (let item of lists) {
     if (item == null) {
@@ -659,7 +647,7 @@ export let concat = (...lists: CalcitList[]): CalcitList => {
   return result;
 };
 
-export let reverse = (xs: CalcitList): CalcitList => {
+export let _$n_list_$o_reverse = (xs: CalcitList): CalcitList => {
   if (xs == null) {
     return null;
   }
@@ -671,25 +659,25 @@ export let format_ternary_tree = (): null => {
   return null;
 };
 
-export let _AND__GT_ = (a: number, b: number): boolean => {
+export let _$n__GT_ = (a: number, b: number): boolean => {
   return a > b;
 };
-export let _AND__LT_ = (a: number, b: number): boolean => {
+export let _$n__LT_ = (a: number, b: number): boolean => {
   return a < b;
 };
-export let _AND__ = (a: number, b: number): number => {
+export let _$n__ = (a: number, b: number): number => {
   return a - b;
 };
-export let _AND__SLSH_ = (a: number, b: number): number => {
+export let _$n__SLSH_ = (a: number, b: number): number => {
   return a / b;
 };
-export let rem = (a: number, b: number): number => {
+export let _$n_number_$o_rem = (a: number, b: number): number => {
   return a % b;
 };
-export let integer_QUES_ = (a: number) => {
+export let round_$q_ = (a: number) => {
   return a == Math.round(a);
 };
-export let _AND_str_concat = (a: string, b: string) => {
+export let _$n_str_$o_concat = (a: string, b: string) => {
   return `${toString(a, false)}${toString(b, false)}`;
 };
 export let sort = (xs: CalcitList, f: CalcitFn): CalcitList => {
@@ -727,7 +715,7 @@ export let floor = (n: number): number => {
   return Math.floor(n);
 };
 
-export let _AND_merge = (a: CalcitValue, b: CalcitMap): CalcitValue => {
+export let _$n_merge = (a: CalcitValue, b: CalcitMap): CalcitValue => {
   if (a == null) {
     return b;
   }
@@ -762,7 +750,7 @@ export let _AND_merge = (a: CalcitValue, b: CalcitMap): CalcitValue => {
   throw new Error("Expected map or record");
 };
 
-export let _AND_merge_non_nil = (a: CalcitMap, b: CalcitMap): CalcitMap => {
+export let _$n_merge_non_nil = (a: CalcitMap, b: CalcitMap): CalcitMap => {
   if (a == null) {
     return b;
   }
@@ -814,7 +802,7 @@ export let ceil = (n: number) => {
 export let round = (n: number) => {
   return Math.round(n);
 };
-export let fractional = (n: number) => {
+export let _$n_number_$o_fract = (n: number) => {
   return n - Math.floor(n);
 };
 export let sqrt = (n: number) => {
@@ -823,7 +811,7 @@ export let sqrt = (n: number) => {
 
 // Set functions
 
-export let _AND_include = (xs: CalcitSet, y: CalcitValue): CalcitSet => {
+export let _$n_include = (xs: CalcitSet, y: CalcitValue): CalcitSet => {
   if (!(xs instanceof CalcitSet)) {
     throw new Error("Expected a set");
   }
@@ -833,7 +821,7 @@ export let _AND_include = (xs: CalcitSet, y: CalcitValue): CalcitSet => {
   return xs.include(y);
 };
 
-export let _AND_exclude = (xs: CalcitSet, y: CalcitValue): CalcitSet => {
+export let _$n_exclude = (xs: CalcitSet, y: CalcitValue): CalcitSet => {
   if (!(xs instanceof CalcitSet)) {
     throw new Error("Expected a set");
   }
@@ -843,7 +831,7 @@ export let _AND_exclude = (xs: CalcitSet, y: CalcitValue): CalcitSet => {
   return xs.exclude(y);
 };
 
-export let _AND_difference = (xs: CalcitSet, ys: CalcitSet): CalcitSet => {
+export let _$n_difference = (xs: CalcitSet, ys: CalcitSet): CalcitSet => {
   if (!(xs instanceof CalcitSet)) {
     throw new Error("Expected a set");
   }
@@ -853,7 +841,7 @@ export let _AND_difference = (xs: CalcitSet, ys: CalcitSet): CalcitSet => {
   return xs.difference(ys);
 };
 
-export let _AND_union = (xs: CalcitSet, ys: CalcitSet): CalcitSet => {
+export let _$n_union = (xs: CalcitSet, ys: CalcitSet): CalcitSet => {
   if (!(xs instanceof CalcitSet)) {
     throw new Error("Expected a set");
   }
@@ -863,7 +851,7 @@ export let _AND_union = (xs: CalcitSet, ys: CalcitSet): CalcitSet => {
   return xs.union(ys);
 };
 
-export let _AND_intersection = (xs: CalcitSet, ys: CalcitSet): CalcitSet => {
+export let _$n_set_$o_intersection = (xs: CalcitSet, ys: CalcitSet): CalcitSet => {
   if (!(xs instanceof CalcitSet)) {
     throw new Error("Expected a set");
   }
@@ -873,7 +861,7 @@ export let _AND_intersection = (xs: CalcitSet, ys: CalcitSet): CalcitSet => {
   return xs.intersection(ys);
 };
 
-export let _AND_str_COL_replace = (x: string, y: string, z: string): string => {
+export let _$n_str_$o_replace = (x: string, y: string, z: string): string => {
   var result = x;
   while (result.indexOf(y) >= 0) {
     result = result.replace(y, z);
@@ -887,7 +875,7 @@ export let split = (xs: string, x: string): CalcitList => {
 export let split_lines = (xs: string): CalcitList => {
   return new CalcitList(xs.split("\n"));
 };
-export let substr = (xs: string, m: number, n: number): string => {
+export let _$n_str_$o_slice = (xs: string, m: number, n: number): string => {
   if (n <= m) {
     console.warn("endIndex too small");
     return "";
@@ -895,7 +883,7 @@ export let substr = (xs: string, m: number, n: number): string => {
   return xs.substring(m, n);
 };
 
-export let _AND_str_COL_find_index = (x: string, y: string): number => {
+export let _$n_str_$o_find_index = (x: string, y: string): number => {
   return x.indexOf(y);
 };
 
@@ -925,7 +913,7 @@ export let trim = (x: string, c: string): string => {
   return x.trim();
 };
 
-export let format_number = (x: number, n: number): string => {
+export let _$n_number_$o_format = (x: number, n: number): string => {
   return x.toFixed(n);
 };
 
@@ -961,7 +949,7 @@ export let stringify_json = (x: CalcitValue, addColon: boolean = false): string 
   return JSON.stringify(to_js_data(x, addColon));
 };
 
-export let set__GT_list = (x: CalcitSet): CalcitList => {
+export let _$n_set_$o_to_list = (x: CalcitSet): CalcitList => {
   var result: CalcitValue[] = [];
   x.value.forEach((item) => {
     result.push(item);
@@ -1034,11 +1022,11 @@ export let cpu_time = (): number => {
   return performance.now();
 };
 
-export let quit = (): void => {
+export let quit_$x_ = (): void => {
   if (inNodeJs) {
     process.exit(1);
   } else {
-    throw new Error("quit()");
+    throw new Error("quit!()");
   }
 };
 
@@ -1065,18 +1053,18 @@ export let turn_string = (x: CalcitValue): string => {
   throw new Error("Unexpected data to turn string");
 };
 
-export let identical_QUES_ = (x: CalcitValue, y: CalcitValue): boolean => {
+export let identical_$q_ = (x: CalcitValue, y: CalcitValue): boolean => {
   return x === y;
 };
 
-export let starts_with_QUES_ = (xs: string, y: string): boolean => {
+export let starts_with_$q_ = (xs: string, y: string): boolean => {
   return xs.startsWith(y);
 };
-export let ends_with_QUES_ = (xs: string, y: string): boolean => {
+export let ends_with_$q_ = (xs: string, y: string): boolean => {
   return xs.endsWith(y);
 };
 
-export let blank_QUES_ = (x: string): boolean => {
+export let blank_$q_ = (x: string): boolean => {
   if (x == null) {
     return true;
   }
@@ -1087,7 +1075,7 @@ export let blank_QUES_ = (x: string): boolean => {
   }
 };
 
-export let compare_string = (x: string, y: string) => {
+export let _$n_str_$o_compare = (x: string, y: string) => {
   if (x < y) {
     return -1;
   }
@@ -1112,44 +1100,44 @@ export let listToArray = (xs: CalcitList): Array<CalcitValue> => {
   }
 };
 
-export let number_QUES_ = (x: CalcitValue): boolean => {
+export let number_$q_ = (x: CalcitValue): boolean => {
   return typeof x === "number";
 };
-export let string_QUES_ = (x: CalcitValue): boolean => {
+export let string_$q_ = (x: CalcitValue): boolean => {
   return typeof x === "string";
 };
-export let bool_QUES_ = (x: CalcitValue): boolean => {
+export let bool_$q_ = (x: CalcitValue): boolean => {
   return typeof x === "boolean";
 };
-export let nil_QUES_ = (x: CalcitValue): boolean => {
+export let nil_$q_ = (x: CalcitValue): boolean => {
   return x == null;
 };
-export let keyword_QUES_ = (x: CalcitValue): boolean => {
+export let keyword_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitKeyword;
 };
-export let map_QUES_ = (x: CalcitValue): boolean => {
+export let map_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitMap;
 };
-export let list_QUES_ = (x: CalcitValue): boolean => {
+export let list_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitList;
 };
-export let set_QUES_ = (x: CalcitValue): boolean => {
+export let set_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitSet;
 };
-export let fn_QUES_ = (x: CalcitValue): boolean => {
+export let fn_$q_ = (x: CalcitValue): boolean => {
   return typeof x === "function";
 };
-export let ref_QUES_ = (x: CalcitValue): boolean => {
+export let ref_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitRef;
 };
-export let record_QUES_ = (x: CalcitValue): boolean => {
+export let record_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitRecord;
 };
-export let tuple_QUES_ = (x: CalcitValue): boolean => {
+export let tuple_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitTuple;
 };
 
-export let escape = (x: string) => JSON.stringify(x);
+export let _$n_str_$o_escape = (x: string) => JSON.stringify(x);
 
 export let read_file = (path: string): string => {
   if (inNodeJs) {
@@ -1179,7 +1167,7 @@ export let parse_cirru_edn = (code: string) => {
 };
 
 /** return in seconds, like from Nim */
-export let now_BANG_ = () => {
+export let get_time_$x_ = () => {
   return Date.now() / 1000;
 };
 
@@ -1215,7 +1203,7 @@ export let js_array = (...xs: CalcitValue[]): CalcitValue[] => {
   return xs;
 };
 
-export let _AND_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> => {
+export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> => {
   if (xs.length % 2 !== 0) {
     throw new Error("&js-object expects even number of arguments");
   }
@@ -1243,7 +1231,7 @@ export let format_time = (timeSecNumber: number, format?: string): string => {
   return new Date(timeSecNumber * 1000).toISOString();
 };
 
-export let _COL__COL_ = (a: CalcitValue, b: CalcitValue): CalcitTuple => {
+export let _$o__$o_ = (a: CalcitValue, b: CalcitValue): CalcitTuple => {
   return new CalcitTuple(a, b);
 };
 
@@ -1299,7 +1287,7 @@ export function invoke_method(p: string) {
   };
 }
 
-export let _AND_map_COL_to_list = (m: CalcitValue): CalcitList => {
+export let _$n_map_$o_to_list = (m: CalcitValue): CalcitList => {
   if (m instanceof CalcitMap) {
     let ys = [];
     for (let pair of m.pairs()) {
@@ -1311,7 +1299,7 @@ export let _AND_map_COL_to_list = (m: CalcitValue): CalcitList => {
   }
 };
 
-export let _AND_compare = (a: CalcitValue, b: CalcitValue): number => {
+export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
   if (a < b) {
     return -1;
   } else if (a > b) {
@@ -1330,14 +1318,14 @@ let unavailableProc = (...xs: []) => {
 };
 
 // not available for calcit-js
-export let _AND_reset_gensym_index_BANG_ = unavailableProc;
+export let _$n_reset_gensym_index_$x_ = unavailableProc;
 export let dbt__GT_point = unavailableProc;
 export let dbt_digits = unavailableProc;
 export let dual_balanced_ternary = unavailableProc;
 export let gensym = unavailableProc;
 export let macroexpand = unavailableProc;
 export let macroexpand_all = unavailableProc;
-export let _AND_get_calcit_running_mode = unavailableProc;
+export let _$n_get_calcit_running_mode = unavailableProc;
 
 // already handled in code emitter
 export let raise = unavailableProc;

@@ -10,7 +10,7 @@ import { CalcitKeyword, CalcitSymbol, kwd } from "./calcit-data";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
 
-export let write_cirru = (data: CalcitList, useInline: boolean): string => {
+export let format_cirru = (data: CalcitList, useInline: boolean): string => {
   let chunk = toWriterNode(data);
   if (!Array.isArray(chunk)) {
     throw new Error("Expected data of list");
@@ -166,7 +166,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
   throw new Error("Unexpected data from cirru-edn");
 };
 
-export let write_cirru_edn = (data: CalcitValue, useInline: boolean = true): string => {
+export let format_cirru_edn = (data: CalcitValue, useInline: boolean = true): string => {
   if (data == null) {
     return "\ndo nil" + "\n";
   }
