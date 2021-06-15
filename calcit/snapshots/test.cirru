@@ -204,6 +204,12 @@
                     echo "|Caught error:" error
                     , :false
 
+            fn ()
+              try
+                raise |false
+                fn (error)
+                  str :a
+
             echo "|Finished testing try"
 
         |test-fn-eq $ quote
@@ -266,7 +272,7 @@
           defn main! ()
             inside-js:
               load-console-formatter!
-          
+
             log-title "|Testing keyword function"
             test-keyword
 

@@ -2,14 +2,14 @@ use crate::builtins::meta::js_gensym;
 
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub fn tmpl_try(err_var: String, body: String, handler: String) -> String {
+pub fn tmpl_try(err_var: String, body: String, handler: String, return_code: &str) -> String {
   format!(
     "try {{
-  return {}
+  {}
 }} catch ({}) {{
-  return ({})({}.toString())
+  {} ({})({}.toString())
 }}",
-    body, err_var, handler, err_var,
+    body, err_var, return_code, handler, err_var,
   )
 }
 

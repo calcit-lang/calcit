@@ -373,13 +373,24 @@ fn gen_call_code(
         "try" => match (body.get(0), body.get(1)) {
           (Some(expr), Some(handler)) => {
             call_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), &im::vector![]);
-            let code = to_js_code(expr, ns, local_defs, file_imports, &None)?;
+            let next_return_label = match return_label {
+              Some(x) => Some(x.to_owned()),
+              None => Some(String::from("return ")),
+            };
+            let code = to_js_code(expr, ns, local_defs, file_imports, &next_return_label)?;
             let err_var = js_gensym("errMsg");
-            let handler = to_js_code(handler, ns, local_defs, file_imports, return_label)?;
+            let handler = to_js_code(handler, ns, local_defs, file_imports, &None)?;
 
             call_stack::pop_call_stack();
-
-            Ok(snippets::tmpl_fn_wrapper(snippets::tmpl_try(err_var, code, handler)))
+            match return_label {
+              Some(_) => Ok(snippets::tmpl_try(err_var, code, handler, "")),
+              None => Ok(snippets::tmpl_fn_wrapper(snippets::tmpl_try(
+                err_var,
+                code,
+                handler,
+                &next_return_label.unwrap(),
+              ))),
+            }
           }
           (_, _) => Err(format!("try expected 2 nodes, got {:?}", body)),
         },
