@@ -54,6 +54,13 @@
                 {} (:a 1) (:b 2) (:c 3) (:d 4)
 
               assert=
+                merge
+                  {,} :a 1 , :b 2 , :c 3
+                  {,} :a nil , :b 12
+                  {,} :c nil , :d 14
+                {,} :a nil , :b 12 , :c nil , :d 14
+
+              assert=
                 merge-non-nil
                   {,} :a 1 , :b 2 , :c 3
                   {,} :a nil , :b 12

@@ -15,6 +15,9 @@ export let overwriteDataComparator = (f: typeof DATA_EQUAL): void => {
   DATA_EQUAL = f;
 };
 
+// a reference that equals to no other value(mainly for telling from `null`)
+let fakeUniqueSymbol = [] as any;
+
 export class CalcitMap {
   cachedHash: Hash;
   /** in arrayMode, only flatten values, not tree structure */
@@ -148,7 +151,7 @@ export class CalcitMap {
     }
   }
   merge(ys: CalcitMap) {
-    return this.mergeSkip(ys, null);
+    return this.mergeSkip(ys, fakeUniqueSymbol);
   }
   mergeSkip(ys: CalcitMap, v: CalcitValue) {
     if (ys == null) {
