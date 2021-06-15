@@ -204,11 +204,12 @@
                     echo "|Caught error:" error
                     , :false
 
-            fn ()
-              try
-                raise |false
-                fn (error)
-                  str :a
+            assert= |:a
+              apply-args () $ fn ()
+                try
+                  raise |false
+                  fn (error)
+                    str :a
 
             echo "|Finished testing try"
 

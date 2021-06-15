@@ -377,19 +377,15 @@ fn gen_call_code(
               Some(x) => Some(x.to_owned()),
               None => Some(String::from("return ")),
             };
-            let code = to_js_code(expr, ns, local_defs, file_imports, &next_return_label)?;
+            let try_code = to_js_code(expr, ns, local_defs, file_imports, &next_return_label)?;
             let err_var = js_gensym("errMsg");
             let handler = to_js_code(handler, ns, local_defs, file_imports, &None)?;
 
             call_stack::pop_call_stack();
+            let code = snippets::tmpl_try(err_var, try_code, handler, &next_return_label.unwrap());
             match return_label {
-              Some(_) => Ok(snippets::tmpl_try(err_var, code, handler, "")),
-              None => Ok(snippets::tmpl_fn_wrapper(snippets::tmpl_try(
-                err_var,
-                code,
-                handler,
-                &next_return_label.unwrap(),
-              ))),
+              Some(_) => Ok(code),
+              None => Ok(snippets::tmpl_fn_wrapper(code)),
             }
           }
           (_, _) => Err(format!("try expected 2 nodes, got {:?}", body)),
