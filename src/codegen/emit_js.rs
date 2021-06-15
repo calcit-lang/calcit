@@ -1190,8 +1190,11 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         Calcit::Syntax(_, _) => {
           // should he handled inside compiler
         }
+        Calcit::Bool(_) | Calcit::Number(_) => {
+          println!("[Warn] `{}/{} = {}` skipped, probably used by macro", ns, def, f)
+        }
         _ => {
-          println!("[Warn] strange case for generating a definition: {}", f)
+          println!("[Warn] unhandled `{}/{} = {}` for generating js def", ns, def, f)
         }
       }
     }
