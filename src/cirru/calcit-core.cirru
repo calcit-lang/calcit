@@ -1280,6 +1280,8 @@
             :vals vals
             :first &map:first
             :rest &map:rest
+            :diff &map:diff
+            :diff-keys &map:diff-keys
 
         |&core-record-class $ quote
           defrecord! &core-record-class

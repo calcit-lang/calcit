@@ -1,6 +1,7 @@
 import * as ternaryTree from "@calcit/ternary-tree";
 
 import { CalcitValue } from "./js-primes";
+import { CalcitSet } from "./js-set";
 
 import { TernaryTreeMap, initTernaryTreeMap, mapLen, assocMap, dissocMap, isMapEmpty, Hash, toPairsArray, mapGetDefault } from "@calcit/ternary-tree";
 
@@ -134,6 +135,19 @@ export class CalcitMap {
       return toPairsArray(this.value);
     }
   }
+  keysArray(): Array<CalcitValue> {
+    if (this.arrayMode) {
+      let ret: Array<CalcitValue> = [];
+      let size = this.arrayValue.length >> 1;
+      for (let i = 0; i < size; i++) {
+        let pos = i << 1;
+        ret.push(this.arrayValue[pos]);
+      }
+      return ret;
+    } else {
+      return [...ternaryTree.toKeys(this.value)];
+    }
+  }
   contains(k: CalcitValue) {
     if (this.arrayMode && this.arrayValue.length <= 16) {
       // guessed number
@@ -197,5 +211,49 @@ export class CalcitMap {
     } else {
       return new CalcitMap(ternaryTree.mergeSkip(this.value, ys.value, v));
     }
+  }
+
+  /** TODO implement diff with low level code, opens opportunity for future optimizations */
+  diff(ys: CalcitMap): CalcitMap {
+    this.turnMap();
+    let zs = this.value;
+    if (ys.arrayMode) {
+      let size = ys.arrayValue.length >> 1;
+      for (let i = 0; i < size; i++) {
+        let pos = i << 1;
+        let k = ys.arrayValue[pos];
+        let v = ys.arrayValue[pos + 1];
+        if (ternaryTree.contains(zs, k) && DATA_EQUAL(ternaryTree.mapGetDefault(zs, k, null), k)) {
+          zs = ternaryTree.dissocMap(zs, k);
+        }
+
+        return new CalcitMap(zs);
+      }
+    } else {
+      let ysPairs = ys.pairs();
+      for (let i = 0; i < ysPairs.length; i++) {
+        let pair = ysPairs[i];
+        let k = pair[0];
+        let v = pair[1];
+        if (ternaryTree.contains(zs, k) && DATA_EQUAL(ternaryTree.mapGetDefault(zs, k, null), k)) {
+          zs = ternaryTree.dissocMap(zs, k);
+        }
+
+        return new CalcitMap(zs);
+      }
+    }
+  }
+
+  /** TODO implement diff with low level code, opens opportunity for future optimizations */
+  diffKeys(ys: CalcitMap): CalcitSet {
+    let ret: Set<CalcitValue> = new Set();
+    let ks = this.keysArray();
+    for (let i = 0; i < ks.length; i++) {
+      let k = ks[i];
+      if (!ys.contains(k)) {
+        ret.add(k);
+      }
+    }
+    return new CalcitSet(ret);
   }
 }

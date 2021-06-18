@@ -147,6 +147,8 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&map:first"
       | "&map:rest"
       | "&map:assoc"
+      | "&map:diff"
+      | "&map:diff-keys"
       // sets
       | "#{}"
       | "&include"
@@ -312,6 +314,8 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&map:get" => maps::get(args),
     "&map:assoc" => maps::assoc(args),
     "&map:dissoc" => maps::dissoc(args),
+    "&map:diff" => maps::diff(args),
+    "&map:diff-keys" => maps::diff_keys(args),
     // sets
     "#{}" => sets::new_set(args),
     "&include" => sets::call_include(args),
