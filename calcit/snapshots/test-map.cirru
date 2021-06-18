@@ -39,6 +39,16 @@
                 :d 5
                 :h 10
               assert=
+                assoc (&{} :a 1 :b 2) :a 3
+                &{} :a 3 :b 2
+              assert=
+                assoc (&{} :a 1 :b 2) :b 3
+                &{} :a 1 :b 3
+              assert=
+                assoc (&{} :a 1 :b 2) :c 3
+                &{} :a 1 :b 2 :c 3
+
+              assert=
                 dissoc dict :a
                 {,} :b 2 , :c 3 , :d 5
               assert= dict (dissoc dict :h)
@@ -66,6 +76,12 @@
                   {,} :a nil , :b 12
                   {,} :c nil , :d 14
                 {,} :a 1 , :b 12 , :c 3 , :d 14
+
+              assert=
+                merge
+                  {} (:a true) (:b false) (:c true) (:d false)
+                  {} (:a false) (:b false) (:c true) (:d true)
+                {} (:a false) (:b false) (:c true) (:d true)
 
         |test-pairs $ quote
           fn ()

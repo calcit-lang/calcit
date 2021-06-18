@@ -8,7 +8,7 @@ import { isNestedCalcitData, tipNestedCalcitData, toString } from "./calcit-data
 
 /** need to compare by Calcit */
 let DATA_EQUAL = (x: CalcitValue, y: CalcitValue): boolean => {
-  return x == y;
+  return x === y;
 };
 
 export let overwriteDataComparator = (f: typeof DATA_EQUAL): void => {
@@ -116,7 +116,7 @@ export class CalcitMap {
   }
   isEmpty() {
     if (this.arrayMode) {
-      return this.arrayValue.length == 0;
+      return this.arrayValue.length === 0;
     } else {
       return isMapEmpty(this.value);
     }
@@ -167,7 +167,7 @@ export class CalcitMap {
       // probably this length < 16, ys length < 8
       let ret = this.arrayValue.slice(0);
       outer: for (let i = 0; i < ys.arrayValue.length; i = i + 2) {
-        if (ys.arrayValue[i + 1] == v) {
+        if (ys.arrayValue[i + 1] === v) {
           continue;
         }
         for (let k = 0; k < ret.length; k = k + 2) {
@@ -188,7 +188,7 @@ export class CalcitMap {
       let size = ys.arrayValue.length >> 1;
       for (let i = 0; i < size; i++) {
         let pos = i << 1;
-        if (ys.arrayValue[pos + 1] == v) {
+        if (ys.arrayValue[pos + 1] === v) {
           continue;
         }
         ret = assocMap(ret, ys.arrayValue[pos], ys.arrayValue[pos + 1]);

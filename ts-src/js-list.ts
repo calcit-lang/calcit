@@ -258,8 +258,8 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     for (let idx = 0; idx < xs.len(); idx++) {
       let item = xs.get(idx);
       let pair = f(state, item);
-      if (pair instanceof CalcitList && pair.len() == 2) {
-        if (typeof pair.get(0) == "boolean") {
+      if (pair instanceof CalcitList && pair.len() === 2) {
+        if (typeof pair.get(0) === "boolean") {
           if (pair.get(0)) {
             return pair.get(1);
           } else {
@@ -276,8 +276,8 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     let state = acc;
     for (let item of xs.values()) {
       let pair = f(state, item);
-      if (pair instanceof CalcitList && pair.len() == 2) {
-        if (typeof pair.get(0) == "boolean") {
+      if (pair instanceof CalcitList && pair.len() === 2) {
+        if (typeof pair.get(0) === "boolean") {
           if (pair.get(0)) {
             return pair.get(1);
           } else {
@@ -295,8 +295,8 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     let state = acc;
     for (let item of xs.pairs()) {
       let pair = f(state, new CalcitList(item));
-      if (pair instanceof CalcitList && pair.len() == 2) {
-        if (typeof pair.get(0) == "boolean") {
+      if (pair instanceof CalcitList && pair.len() === 2) {
+        if (typeof pair.get(0) === "boolean") {
           if (pair.get(0)) {
             return pair.get(1);
           } else {
