@@ -205,3 +205,35 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
     (None, ..) => Err(format!("map:assoc expected 3 arguments, got: {:?}", xs)),
   }
 }
+
+pub fn diff(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
+      let zs = &mut xs.clone();
+      for (k, v) in ys {
+        if zs.contains_key(&k) && zs[&k] == v.to_owned() {
+          zs.remove(&k).unwrap();
+        }
+      }
+      Ok(Calcit::Map(zs.to_owned()))
+    }
+    (Some(a), Some(b)) => Err(format!("map:diff expected 2 maps, got: {} {}", a, b)),
+    (..) => Err(format!("map:diff expected 2 arguments, got: {:?}", xs)),
+  }
+}
+
+pub fn diff_keys(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
+      let mut ks: im::HashSet<Calcit> = im::HashSet::new();
+      for k in xs.keys() {
+        if !ys.contains_key(&k) {
+          ks.insert(k.to_owned());
+        }
+      }
+      Ok(Calcit::Set(ks))
+    }
+    (Some(a), Some(b)) => Err(format!("map:diff-keys expected 2 maps, got: {} {}", a, b)),
+    (..) => Err(format!("map:diff-keys expected 2 arguments, got: {:?}", xs)),
+  }
+}

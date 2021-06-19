@@ -72,6 +72,17 @@
 
             assert-detect identity $ /= 1 2
 
+            assert= (&compare 1 |1) -1
+            assert= (&compare |1 1) 1
+            assert= (&compare 1 1) 0
+            assert= (&compare |1 |1) 0
+            assert= (&compare 1 :k) -1
+            assert= (&compare :k |k) -1
+            assert= (&compare :k ({})) -1
+            assert= (&compare :k ([])) -1
+            assert= (&compare :k (#{})) -1
+            assert= (&compare :k (:: 0 0)) -1
+
         |test-hex $ quote
           fn ()
             log-title "|Testing hex"

@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.0-a10";
+export const calcit_version = "0.4.0-a11";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -1299,13 +1299,101 @@ export let _$n_map_$o_to_list = (m: CalcitValue): CalcitList => {
   }
 };
 
-export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
-  if (a < b) {
+enum PseudoTypeIndex {
+  nil,
+  bool,
+  number,
+  symbol,
+  keyword,
+  string,
+  ref,
+  tuple,
+  recur,
+  list,
+  set,
+  map,
+  record,
+  fn,
+}
+
+let typeAsInt = (x: CalcitValue): number => {
+  // based on order used in Ord traint
+  if (x == null) return PseudoTypeIndex.nil;
+  let t = typeof x;
+  if (t === "boolean") return PseudoTypeIndex.bool;
+  if (t === "number") return PseudoTypeIndex.number;
+  if (x instanceof CalcitSymbol) return PseudoTypeIndex.symbol;
+  if (x instanceof CalcitKeyword) return PseudoTypeIndex.keyword;
+  if (t === "string") return PseudoTypeIndex.string;
+  if (x instanceof CalcitRef) return PseudoTypeIndex.ref;
+  if (x instanceof CalcitTuple) return PseudoTypeIndex.tuple;
+  if (x instanceof CalcitRecur) return PseudoTypeIndex.recur;
+  if (x instanceof CalcitList) return PseudoTypeIndex.list;
+  if (x instanceof CalcitSet) return PseudoTypeIndex.set;
+  if (x instanceof CalcitMap) return PseudoTypeIndex.map;
+  if (x instanceof CalcitRecord) return PseudoTypeIndex.record;
+  // proc, fn, macro, syntax, not distinguished
+  if (t === "function") return PseudoTypeIndex.fn;
+  throw new Error("unknown type to compare");
+};
+
+let rawCompare = (x: any, y: any): number => {
+  if (x < y) {
     return -1;
-  } else if (a > b) {
+  } else if (x > y) {
     return 1;
   } else {
     return 0;
+  }
+};
+
+export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
+  let ta = typeAsInt(a);
+  let tb = typeAsInt(b);
+  if (ta === tb) {
+    switch (ta) {
+      case PseudoTypeIndex.nil:
+        return 0;
+      case PseudoTypeIndex.bool:
+        return rawCompare(a, b);
+      case PseudoTypeIndex.number:
+        return rawCompare(a, b);
+      case PseudoTypeIndex.symbol:
+        return rawCompare(a, b);
+      case PseudoTypeIndex.keyword:
+        return rawCompare(a, b);
+      case PseudoTypeIndex.string:
+        return rawCompare(a, b);
+      case PseudoTypeIndex.ref:
+        return rawCompare((a as CalcitRef).path, (b as CalcitRef).path);
+      default:
+        // TODO, need more accurate solution
+        if (a < b) {
+          return -1;
+        } else if (a > b) {
+          return 1;
+        } else {
+          return 0;
+        }
+    }
+  } else {
+    return rawCompare(ta, tb);
+  }
+};
+
+export let _$n_map_$o_diff = (a: CalcitValue, b: CalcitValue): CalcitMap => {
+  if (a instanceof CalcitMap && b instanceof CalcitMap) {
+    return a.diff(b);
+  } else {
+    throw new Error("expected 2 maps");
+  }
+};
+
+export let _$n_map_$o_diff_keys = (a: CalcitValue, b: CalcitValue): CalcitSet => {
+  if (a instanceof CalcitMap && b instanceof CalcitMap) {
+    return a.diffKeys(b);
+  } else {
+    throw new Error("expected 2 maps");
   }
 };
 
