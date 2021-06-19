@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.0-a12";
+export const calcit_version = "0.4.0-a13";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -965,14 +965,17 @@ export let aset = (x: any, name: string, v: any): any => {
 };
 
 export let get_env = (name: string): string => {
+  let v = undefined;
   if (inNodeJs) {
     // only available for Node.js
-    return process.env[name];
+    v = process.env[name];
+  } else if (typeof URLSearchParams != null && typeof location != null) {
+    v = new URLSearchParams(location.search).get(name);
   }
-  if (typeof URLSearchParams != null) {
-    return new URLSearchParams(location.search).get("env");
+  if (v == null) {
+    console.warn(`(get-env "${name}"): ${v}`);
   }
-  return null;
+  return v;
 };
 
 export let turn_keyword = (x: CalcitValue): CalcitKeyword => {

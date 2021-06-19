@@ -266,6 +266,11 @@
             assert= :b (nth (:: :a :b) 1)
             assert= 2 (count (:: :a :b))
 
+        |test-effect $ quote
+          fn ()
+            log-title "|Testing effect"
+            echo "|Env mode:" $ get-env |mode
+
         |reload! $ quote
           defn reload! () nil
 
@@ -307,6 +312,8 @@
             test-method
 
             test-tuple
+
+            test-effect
 
             inside-eval:
               test-gynienic/main!
