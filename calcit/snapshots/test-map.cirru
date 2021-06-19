@@ -221,22 +221,22 @@
             log-title "|Testing diff"
 
             assert=
-              &map:diff
+              &map:diff-new
                 &{} :a 1 :b 2
                 &{} :a 2 :b 3
-              &{} :a 1 :b 2
+              &{}
 
             assert=
-              &map:diff
+              &map:diff-new
                 &{} :a 1 :b 2 :c 3
                 &{} :a 2 :b 3
-              &{} :a 1 :b 2 :c 3
+              &{} :c 3
 
             assert=
-              &map:diff
+              &map:diff-new
                 &{} :a 1 :b 2
                 &{} :a 2 :b 3 :c 4
-              &{} :a 1 :b 2
+              &{}
 
             assert=
               &map:diff-keys
@@ -249,6 +249,12 @@
                 &{} :a 1 :b 2
                 &{} :a 2 :c 3
               #{} :b
+
+            assert=
+              &map:common-keys
+                &{} :a 1 :b 2
+                &{} :a 2 :c 3
+              #{} :a
 
         |main! $ quote
 

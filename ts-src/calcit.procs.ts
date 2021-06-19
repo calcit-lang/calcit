@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.0-a11";
+export const calcit_version = "0.4.0-a12";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -1381,9 +1381,9 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
   }
 };
 
-export let _$n_map_$o_diff = (a: CalcitValue, b: CalcitValue): CalcitMap => {
+export let _$n_map_$o_diff_new = (a: CalcitValue, b: CalcitValue): CalcitMap => {
   if (a instanceof CalcitMap && b instanceof CalcitMap) {
-    return a.diff(b);
+    return a.diffNew(b);
   } else {
     throw new Error("expected 2 maps");
   }
@@ -1392,6 +1392,14 @@ export let _$n_map_$o_diff = (a: CalcitValue, b: CalcitValue): CalcitMap => {
 export let _$n_map_$o_diff_keys = (a: CalcitValue, b: CalcitValue): CalcitSet => {
   if (a instanceof CalcitMap && b instanceof CalcitMap) {
     return a.diffKeys(b);
+  } else {
+    throw new Error("expected 2 maps");
+  }
+};
+
+export let _$n_map_$o_common_keys = (a: CalcitValue, b: CalcitValue): CalcitSet => {
+  if (a instanceof CalcitMap && b instanceof CalcitMap) {
+    return a.commonKeys(b);
   } else {
     throw new Error("expected 2 maps");
   }
