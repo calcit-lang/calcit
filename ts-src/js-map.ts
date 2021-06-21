@@ -214,7 +214,7 @@ export class CalcitMap {
   }
 
   /** TODO implement diff with low level code, opens opportunity for future optimizations */
-  diff(ys: CalcitMap): CalcitMap {
+  diffNew(ys: CalcitMap): CalcitMap {
     this.turnMap();
     let zs = this.value;
     if (ys.arrayMode) {
@@ -222,25 +222,20 @@ export class CalcitMap {
       for (let i = 0; i < size; i++) {
         let pos = i << 1;
         let k = ys.arrayValue[pos];
-        let v = ys.arrayValue[pos + 1];
-        if (ternaryTree.contains(zs, k) && DATA_EQUAL(ternaryTree.mapGetDefault(zs, k, null), k)) {
+        if (ternaryTree.contains(zs, k)) {
           zs = ternaryTree.dissocMap(zs, k);
         }
-
-        return new CalcitMap(zs);
       }
+      return new CalcitMap(zs);
     } else {
-      let ysPairs = ys.pairs();
-      for (let i = 0; i < ysPairs.length; i++) {
-        let pair = ysPairs[i];
-        let k = pair[0];
-        let v = pair[1];
-        if (ternaryTree.contains(zs, k) && DATA_EQUAL(ternaryTree.mapGetDefault(zs, k, null), k)) {
+      let ysKeys = ys.keysArray();
+      for (let i = 0; i < ysKeys.length; i++) {
+        let k = ysKeys[i];
+        if (ternaryTree.contains(zs, k)) {
           zs = ternaryTree.dissocMap(zs, k);
         }
-
-        return new CalcitMap(zs);
       }
+      return new CalcitMap(zs);
     }
   }
 
@@ -251,6 +246,19 @@ export class CalcitMap {
     for (let i = 0; i < ks.length; i++) {
       let k = ks[i];
       if (!ys.contains(k)) {
+        ret.add(k);
+      }
+    }
+    return new CalcitSet(ret);
+  }
+
+  /** TODO implement diff with low level code, opens opportunity for future optimizations */
+  commonKeys(ys: CalcitMap): CalcitSet {
+    let ret: Set<CalcitValue> = new Set();
+    let ks = this.keysArray();
+    for (let i = 0; i < ks.length; i++) {
+      let k = ks[i];
+      if (ys.contains(k)) {
         ret.add(k);
       }
     }

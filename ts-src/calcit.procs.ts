@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.0-a11";
+export const calcit_version = "0.4.0-a13";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -965,14 +965,17 @@ export let aset = (x: any, name: string, v: any): any => {
 };
 
 export let get_env = (name: string): string => {
+  let v = undefined;
   if (inNodeJs) {
     // only available for Node.js
-    return process.env[name];
+    v = process.env[name];
+  } else if (typeof URLSearchParams != null && typeof location != null) {
+    v = new URLSearchParams(location.search).get(name);
   }
-  if (typeof URLSearchParams != null) {
-    return new URLSearchParams(location.search).get("env");
+  if (v == null) {
+    console.warn(`(get-env "${name}"): ${v}`);
   }
-  return null;
+  return v;
 };
 
 export let turn_keyword = (x: CalcitValue): CalcitKeyword => {
@@ -1381,9 +1384,9 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
   }
 };
 
-export let _$n_map_$o_diff = (a: CalcitValue, b: CalcitValue): CalcitMap => {
+export let _$n_map_$o_diff_new = (a: CalcitValue, b: CalcitValue): CalcitMap => {
   if (a instanceof CalcitMap && b instanceof CalcitMap) {
-    return a.diff(b);
+    return a.diffNew(b);
   } else {
     throw new Error("expected 2 maps");
   }
@@ -1392,6 +1395,14 @@ export let _$n_map_$o_diff = (a: CalcitValue, b: CalcitValue): CalcitMap => {
 export let _$n_map_$o_diff_keys = (a: CalcitValue, b: CalcitValue): CalcitSet => {
   if (a instanceof CalcitMap && b instanceof CalcitMap) {
     return a.diffKeys(b);
+  } else {
+    throw new Error("expected 2 maps");
+  }
+};
+
+export let _$n_map_$o_common_keys = (a: CalcitValue, b: CalcitValue): CalcitSet => {
+  if (a instanceof CalcitMap && b instanceof CalcitMap) {
+    return a.commonKeys(b);
   } else {
     throw new Error("expected 2 maps");
   }
