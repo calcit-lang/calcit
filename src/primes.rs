@@ -40,7 +40,7 @@ pub enum Calcit {
   Symbol(String, String, Option<SymbolResolved>), // content, ns... so it has meta information
   Keyword(String),
   Str(String),
-  Thunk(Box<Calcit>),
+  Thunk(Box<Calcit>, Option<Box<Calcit>>),
   /// holding a path to its state
   Ref(String),
   Tuple(Box<Calcit>, Box<Calcit>),
@@ -86,7 +86,10 @@ impl fmt::Display for Calcit {
           write!(f, "\"|{}\"", s.escape_default())
         }
       } // TODO, escaping choices
-      Calcit::Thunk(v) => f.write_str(&format!("(&thunk {})", v)),
+      Calcit::Thunk(code, v) => match v {
+        Some(data) => f.write_str(&format!("(&thunk {} {})", data, code)),
+        None => f.write_str(&format!("(&thunk _ {})", code)),
+      },
       Calcit::Ref(name) => f.write_str(&format!("(&ref {})", name)),
       Calcit::Tuple(a, b) => f.write_str(&format!("(:: {} {})", a, b)),
       Calcit::Recur(xs) => {
@@ -231,7 +234,7 @@ impl Hash for Calcit {
         "string:".hash(_state);
         s.hash(_state);
       }
-      Calcit::Thunk(v) => {
+      Calcit::Thunk(v, _) => {
         "quote:".hash(_state);
         v.hash(_state);
       }
@@ -330,9 +333,9 @@ impl Ord for Calcit {
       (Calcit::Str(_), _) => Less,
       (_, Calcit::Str(_)) => Greater,
 
-      (Calcit::Thunk(a), Calcit::Thunk(b)) => a.cmp(b),
-      (Calcit::Thunk(_), _) => Less,
-      (_, Calcit::Thunk(_)) => Greater,
+      (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a.cmp(b),
+      (Calcit::Thunk(_, _), _) => Less,
+      (_, Calcit::Thunk(_, _)) => Greater,
 
       (Calcit::Ref(a), Calcit::Ref(b)) => a.cmp(b),
       (Calcit::Ref(_), _) => Less,
@@ -413,7 +416,7 @@ impl PartialEq for Calcit {
       (Calcit::Symbol(a, ..), Calcit::Symbol(b, ..)) => a == b,
       (Calcit::Keyword(a), Calcit::Keyword(b)) => a == b,
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
-      (Calcit::Thunk(a), Calcit::Thunk(b)) => a == b,
+      (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
       (Calcit::Ref(a), Calcit::Ref(b)) => a == b,
       (Calcit::Tuple(a, b), Calcit::Tuple(c, d)) => a == c && b == d,
       (Calcit::List(a), Calcit::List(b)) => a == b,

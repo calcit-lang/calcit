@@ -144,7 +144,7 @@ fn dump_code(code: &Calcit) -> serde_json::Value {
         "name": name,
       })
     }
-    Calcit::Thunk(code) => dump_code(code),
+    Calcit::Thunk(code, _) => dump_code(code),
     Calcit::List(xs) => {
       let mut ys: Vec<serde_json::Value> = vec![];
       for x in xs {
