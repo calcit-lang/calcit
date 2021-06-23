@@ -46,7 +46,7 @@ pub fn preprocess_ns_def(
               Err(e) => return Err(e),
             }
           } else {
-            Calcit::Thunk(Box::new(resolved_code))
+            Calcit::Thunk(Box::new(resolved_code), None)
           };
           // println!("\nwriting value to: {}/{} {:?}", ns, def, v);
           program::write_evaled_def(ns, def, v.clone())?;

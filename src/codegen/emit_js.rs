@@ -998,7 +998,7 @@ fn gen_js_func(
 fn contains_symbol(xs: &Calcit, y: &str) -> bool {
   match xs {
     Calcit::Symbol(s, ..) => s == y,
-    Calcit::Thunk(code) => contains_symbol(code, y),
+    Calcit::Thunk(code, _) => contains_symbol(code, y),
     Calcit::Fn(_, _, _, _, _, body) => {
       for x in body {
         if contains_symbol(x, y) {
@@ -1172,7 +1172,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           defs_code.push_str(&gen_js_func(&def, args, code, &ns, true, &def_names, &file_imports)?);
           call_stack::pop_call_stack();
         }
-        Calcit::Thunk(code) => {
+        Calcit::Thunk(code, _) => {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
           call_stack::push_call_stack(&ns, &def, StackKind::Codegen, (**code).to_owned(), &im::vector![]);
@@ -1191,10 +1191,10 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           // should he handled inside compiler
         }
         Calcit::Bool(_) | Calcit::Number(_) => {
-          println!("[Warn] `{}/{} = {}` skipped, probably used by macro", ns, def, f)
+          println!("[Warn] expected thunk, got macro. skipped `{}/{} {}`", ns, def, f)
         }
         _ => {
-          println!("[Warn] unhandled `{}/{} = {}` for generating js def", ns, def, f)
+          println!("[Warn] expected thunk for js, skipped `{}/{} {}`", ns, def, f)
         }
       }
     }

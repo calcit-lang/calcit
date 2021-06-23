@@ -25,11 +25,13 @@ pub fn evaluate_expr(
       Some(ResolvedDef(r_ns, r_def, _import_rule)) => {
         let v = evaluate_symbol(r_def, scope, r_ns, program_code)?;
         match v {
-          // extra check to make sure thunks extracted
-          Calcit::Thunk(code) => {
+          Calcit::Thunk(_code, Some(data)) => Ok(*data.to_owned()),
+          // extra check to make sure code in thunks evaluated
+          Calcit::Thunk(code, None) => {
             let evaled_v = evaluate_expr(&code, scope, file_ns, program_code)?;
             // and write back to program state to fix duplicated evalution
-            program::write_evaled_def(r_ns, r_def, evaled_v.to_owned())?;
+            // still using thunk since js and IR requires bare code
+            program::write_evaled_def(r_ns, r_def, Calcit::Thunk(code, Some(Box::new(evaled_v.to_owned()))))?;
             Ok(evaled_v)
           }
           _ => Ok(v),
@@ -39,7 +41,10 @@ pub fn evaluate_expr(
     },
     Calcit::Keyword(_) => Ok(expr.clone()),
     Calcit::Str(_) => Ok(expr.clone()),
-    Calcit::Thunk(code) => evaluate_expr(code, scope, file_ns, program_code),
+    Calcit::Thunk(code, v) => match v {
+      None => evaluate_expr(code, scope, file_ns, program_code),
+      Some(data) => Ok(*data.to_owned()),
+    },
     Calcit::Ref(_) => Ok(expr.clone()),
     Calcit::Tuple(..) => Ok(expr.clone()),
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
@@ -352,11 +357,14 @@ pub fn evaluate_args(
               Calcit::List(xs) => {
                 for x in xs {
                   // extract thunk before calling functions
-                  let x = match x {
-                    Calcit::Thunk(code) => evaluate_expr(code, scope, file_ns, program_code)?,
+                  let y = match x {
+                    Calcit::Thunk(code, v) => match v {
+                      None => evaluate_expr(code, scope, file_ns, program_code)?,
+                      Some(data) => *data.to_owned(),
+                    },
                     _ => x.clone(),
                   };
-                  ret.push_back(x.clone());
+                  ret.push_back(y.clone());
                 }
                 spreading = false
               }
@@ -364,11 +372,14 @@ pub fn evaluate_args(
             }
           } else {
             // extract thunk before calling functions
-            let v = match v {
-              Calcit::Thunk(code) => evaluate_expr(code, scope, file_ns, program_code)?,
+            let y = match v {
+              Calcit::Thunk(code, value) => match value {
+                None => evaluate_expr(code, scope, file_ns, program_code)?,
+                Some(data) => *data.to_owned(),
+              },
               _ => v.clone(),
             };
-            ret.push_back(v)
+            ret.push_back(y)
           }
         }
         Err(e) => return Err(e.to_owned()),
