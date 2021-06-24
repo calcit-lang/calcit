@@ -60,6 +60,12 @@ pub fn parse_cli<'a>() -> clap::ArgMatches<'a> {
         .takes_value(true),
     )
     .arg(
+      clap::Arg::with_name("watch-dir")
+        .help("a folder of assets that also being watched")
+        .long("watch-dir")
+        .takes_value(true),
+    )
+    .arg(
       clap::Arg::with_name("reload-libs")
         .help("reload libs data during code reload")
         .long("reload-libs")
