@@ -1277,7 +1277,7 @@
             :to-list &map:to-list
             :to-pairs to-pairs
             :unselect-keys unselect-keys
-            :vals vals
+            :values vals
             :first &map:first
             :rest &map:rest
             :diff-new &map:diff-new

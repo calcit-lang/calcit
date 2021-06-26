@@ -102,6 +102,35 @@
             assert= |Cat
               .get-name Cat
 
+            let
+                kitty $ %{} Cat
+                  :name |kitty
+                  :color :red
+
+              assert= :red
+                .get kitty :color
+              assert= true
+                .matches? kitty Cat
+              assert=
+                .to-map kitty
+                &{} :name |kitty :color :red
+              assert= 2
+                .count kitty
+              assert= true
+                .contains? kitty :color
+              assert= false
+                .contains? kitty :age
+              assert=
+                %{} kitty (:name |kitty) (:color :blue)
+                .assoc kitty :color :blue
+              assert=
+                .from-map kitty $ &{} :name |kitty :color :red
+                %{} kitty (:name |kitty) (:color :red)
+              assert=
+                [] :color :red
+                .nth kitty 0
+
+
         |main! $ quote
           defn main! ()
             test-record
