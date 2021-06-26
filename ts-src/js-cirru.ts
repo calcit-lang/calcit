@@ -64,7 +64,9 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
   }
   if (x instanceof CalcitSet) {
     let buffer: CirruEdnFormat = ["#{}"];
-    for (let y of x.value) {
+    let values = x.values();
+    for (let idx = 0; idx < values.length; idx++) {
+      let y = values[idx];
       buffer.push(to_cirru_edn(y));
     }
     return buffer;
@@ -150,7 +152,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       return new CalcitList(x.slice(1).map(extract_cirru_edn));
     }
     if (x[0] === "#{}") {
-      return new CalcitSet(new Set(x.slice(1).map(extract_cirru_edn)));
+      return new CalcitSet(x.slice(1).map(extract_cirru_edn));
     }
     if (x[0] === "do" && x.length === 2) {
       return extract_cirru_edn(x[1]);
@@ -215,9 +217,9 @@ export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue =>
     return new CalcitList(result);
   }
   if (x instanceof Set) {
-    let result: Set<CalcitValue> = new Set();
+    let result: Array<CalcitValue> = [];
     x.forEach((v) => {
-      result.add(to_calcit_data(v, noKeyword));
+      result.push(to_calcit_data(v, noKeyword));
     });
     return new CalcitSet(result);
   }

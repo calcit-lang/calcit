@@ -241,12 +241,12 @@ export class CalcitMap {
 
   /** TODO implement diff with low level code, opens opportunity for future optimizations */
   diffKeys(ys: CalcitMap): CalcitSet {
-    let ret: Set<CalcitValue> = new Set();
+    let ret: Array<CalcitValue> = [];
     let ks = this.keysArray();
     for (let i = 0; i < ks.length; i++) {
       let k = ks[i];
       if (!ys.contains(k)) {
-        ret.add(k);
+        ret.push(k);
       }
     }
     return new CalcitSet(ret);
@@ -254,12 +254,12 @@ export class CalcitMap {
 
   /** TODO implement diff with low level code, opens opportunity for future optimizations */
   commonKeys(ys: CalcitMap): CalcitSet {
-    let ret: Set<CalcitValue> = new Set();
+    let ret: Array<CalcitValue> = [];
     let ks = this.keysArray();
     for (let i = 0; i < ks.length; i++) {
       let k = ks[i];
       if (ys.contains(k)) {
-        ret.add(k);
+        ret.push(k);
       }
     }
     return new CalcitSet(ret);

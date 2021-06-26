@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.0";
+export const calcit_version = "0.4.1";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -593,9 +593,9 @@ export let initCrTernary = (x: string): CalcitValue => {
 };
 
 export let _SHA__$M_ = (...xs: CalcitValue[]): CalcitValue => {
-  var result = new Set<CalcitValue>();
+  var result: CalcitValue[] = [];
   for (let idx in xs) {
-    result.add(xs[idx]);
+    result.push(xs[idx]);
   }
   return new CalcitSet(result);
 };
@@ -769,9 +769,9 @@ export let _$n_merge_non_nil = (a: CalcitMap, b: CalcitMap): CalcitMap => {
 
 export let to_pairs = (xs: CalcitValue): CalcitValue => {
   if (xs instanceof CalcitMap) {
-    let result: Set<CalcitList> = new Set();
+    let result: Array<CalcitList> = [];
     for (let [k, v] of xs.pairs()) {
-      result.add(new CalcitList([k, v]));
+      result.push(new CalcitList([k, v]));
     }
     return new CalcitSet(result);
   } else if (xs instanceof CalcitRecord) {
@@ -950,11 +950,7 @@ export let stringify_json = (x: CalcitValue, addColon: boolean = false): string 
 };
 
 export let _$n_set_$o_to_list = (x: CalcitSet): CalcitList => {
-  var result: CalcitValue[] = [];
-  x.value.forEach((item) => {
-    result.push(item);
-  });
-  return new CalcitList(result);
+  return new CalcitList(x.values());
 };
 
 export let aget = (x: any, name: string): any => {

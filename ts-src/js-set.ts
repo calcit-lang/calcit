@@ -1,100 +1,91 @@
 import { CalcitValue } from "./js-primes";
 import { toString } from "./calcit-data";
-
-import { Hash } from "@calcit/ternary-tree";
-
-export let cloneSet = (xs: Set<CalcitValue>): Set<CalcitValue> => {
-  if (!(xs instanceof Set)) {
-    throw new Error("Expected a set");
-  }
-  var result: Set<CalcitValue> = new Set();
-  for (let v of xs) {
-    result.add(v);
-  }
-  return result;
-};
+import { TernaryTreeMap, initTernaryTreeMap, mapLen, assocMap, dissocMap, isMapEmpty, Hash, toPairsArray, mapGetDefault, contains } from "@calcit/ternary-tree";
+import * as ternaryTree from "@calcit/ternary-tree";
 
 export class CalcitSet {
-  value: Set<CalcitValue>;
+  value: TernaryTreeMap<CalcitValue, boolean>;
   cachedHash: Hash;
-  constructor(value: Set<CalcitValue>) {
+  constructor(value: TernaryTreeMap<CalcitValue, boolean> | Array<CalcitValue>) {
     this.cachedHash = null;
-    this.value = value;
+    if (Array.isArray(value)) {
+      let pairs: [CalcitValue, boolean][] = [];
+      for (let idx = 0; idx < value.length; idx++) {
+        pairs.push([value[idx], true]);
+      }
+      this.value = initTernaryTreeMap(pairs);
+    } else {
+      this.value = value;
+    }
   }
   len() {
-    return this.value.size;
+    return mapLen(this.value);
   }
   contains(y: CalcitValue) {
-    return this.value.has(y);
+    return contains(this.value, y);
   }
   include(y: CalcitValue): CalcitSet {
-    var result = cloneSet(this.value);
-    result.add(y);
+    var result = this.value;
+    result = assocMap(result, y, true);
     return new CalcitSet(result);
   }
   exclude(y: CalcitValue): CalcitSet {
-    var result = cloneSet(this.value);
-    result.delete(y);
+    var result = this.value;
+    result = dissocMap(result, y);
     return new CalcitSet(result);
   }
 
   difference(ys: CalcitSet): CalcitSet {
-    var result = cloneSet(this.value);
-    ys.value.forEach((y) => {
-      if (result.has(y)) {
-        result.delete(y);
-      }
-    });
+    let result = this.value;
+    for (let k of ternaryTree.toKeys(ys.value)) {
+      result = dissocMap(result, k);
+    }
     return new CalcitSet(result);
   }
   union(ys: CalcitSet): CalcitSet {
-    var result = cloneSet(this.value);
-    ys.value.forEach((y) => {
-      if (!result.has(y)) {
-        result.add(y);
-      }
-    });
+    let result = this.value;
+    for (let k of ternaryTree.toKeys(ys.value)) {
+      result = assocMap(result, k, true);
+    }
     return new CalcitSet(result);
   }
   intersection(ys: CalcitSet): CalcitSet {
-    let xs = this.value;
-    var result: Set<CalcitValue> = new Set();
-    ys.value.forEach((y) => {
-      if (xs.has(y)) {
-        result.add(y);
+    let result: TernaryTreeMap<CalcitValue, boolean> = initTernaryTreeMap([]);
+    for (let k of ternaryTree.toKeys(this.value)) {
+      if (ys.contains(k)) {
+        result = assocMap(result, k, true);
       }
-    });
+    }
     return new CalcitSet(result);
   }
 
   first(): CalcitValue {
-    // rather suspicious solution since set has no logic order
-    if (this.value.size === 0) {
+    // rather suspicious solution since set has no logical order
+
+    if (mapLen(this.value) == 0) {
       return null;
     }
-    for (let x of this.value) {
-      return x;
-    }
+
+    return toPairsArray(this.value)[0][0];
   }
   rest(): CalcitSet {
-    if (this.value.size == 0) {
+    if (mapLen(this.value) == 0) {
       return null;
     }
     let x0 = this.first();
-    let ys = cloneSet(this.value);
-    ys.delete(x0);
-    return new CalcitSet(ys);
+    let result = dissocMap(this.value, x0);
+    return new CalcitSet(result);
   }
 
   toString() {
     let itemsCode = "";
-    this.value.forEach((child, idx) => {
-      itemsCode = `${itemsCode} ${toString(child, true)}`;
-    });
+    for (let k of ternaryTree.toKeys(this.value)) {
+      itemsCode = `${itemsCode} ${toString(k, true)}`;
+    }
     return `(#{}${itemsCode})`;
   }
 
   values() {
-    return this.value.values();
+    return [...ternaryTree.toKeys(this.value)];
   }
 }
