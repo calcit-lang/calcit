@@ -214,7 +214,9 @@ let hashFunction = (x: CalcitValue): Hash => {
   if (x instanceof CalcitSet) {
     // TODO not using dirty solution for code
     let base = defaultHash_set;
-    for (let item of x.value) {
+    let values = x.values();
+    for (let idx = 0; idx < values.length; idx++) {
+      let item = values[idx];
       base = mergeValueHash(base, hashFunction(item));
     }
     return base;
@@ -341,7 +343,7 @@ export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
   }
   if (x instanceof CalcitSet) {
     let result = new Set();
-    x.value.forEach((v) => {
+    x.values().forEach((v) => {
       result.add(to_js_data(v, addColon));
     });
     return result;
@@ -467,11 +469,15 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
       if (x.len() !== y.len()) {
         return false;
       }
-      for (let v of x.value) {
+      let values = x.values();
+      for (let idx = 0; idx < values.length; idx++) {
+        let v = values[idx];
         let found = false;
         // testing by doing iteration is O(n2), could be slow
         // but Set::contains does not satisfy here
-        for (let yv of y.value) {
+        let yValues = y.values();
+        for (let idx = 0; idx < yValues.length; idx++) {
+          let yv = yValues[idx];
           if (_$n__$e_(v, yv)) {
             found = true;
             break;

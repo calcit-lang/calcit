@@ -103,6 +103,18 @@
 
             assert= 1 $ .floor 1.1
             assert= 16 $ .pow 2 4
+            assert= 2 $ .ceil 1.1
+            assert= 0 $ .empty 1.1
+            assert= 2.1 $ .inc 1.1
+            assert= 1 $ .round 1.1
+            assert= false $ .round? 1.1
+            assert= true $ .round? 1
+            assert= 2 $ .sqrt 4
+            assert= 3 $ .rem 3 6
+            assert= 2 $ .rem 11 3
+
+            ; "has problem in comparing float numbers"
+              assert= 0.1 $ .fract 1.1
 
         |main! $ quote
           defn main! ()

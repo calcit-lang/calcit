@@ -104,7 +104,9 @@ export let load_console_formatter_$x_ = () => {
           }
           if (obj instanceof CalcitSet) {
             let ret: any[] = ["div", { style: "color: hsl(280, 80%, 60%)" }];
-            for (let x of obj.value.values()) {
+            let values = obj.values();
+            for (let idx = 0; idx < values.length; idx++) {
+              let x = values[idx];
               ret.push(["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(x)]);
             }
             return ret;

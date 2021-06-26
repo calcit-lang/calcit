@@ -1,5 +1,5 @@
 use crate::builtins::records::find_in_fields;
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::{Calcit, CalcitItems, CrListWrap};
 
 use crate::util::number::is_even;
 
@@ -12,7 +12,10 @@ pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, String> {
     }
     Ok(Calcit::Map(ys))
   } else {
-    Err(String::from("&{} expected even number of arguments"))
+    Err(format!(
+      "&{{}} expected even number of arguments, got {}",
+      CrListWrap(xs.to_owned())
+    ))
   }
 }
 

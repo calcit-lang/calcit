@@ -195,10 +195,51 @@
           defn test-methods ()
             log-title "|Testing string methods"
 
+            assert= true $ .blank? |
+            assert= true $ .blank? "| "
+            assert= false $ .blank? |a
             assert= 3 (.count |abc)
+            assert= | (.empty |a)
+            assert= true $ .ends-with? |abc |c
+            assert= false $ .ends-with? |abc |b
+            assert= |a $ .get |abc 0
+            assert= |b $ .get |abc 1
+            assert= 1 $ .parse-float |1
+            assert= 1.1 $ .parse-float |1.1
+            assert= 1.1 $ .parse-json |1.1
+            assert= ([]) $ .parse-json "|[]"
+            assert= |Abcd $ .replace |abcd |a |A
+            assert= |AbAd $ .replace |abad |a |A
+
             assert=
               [] |a |c
               .split |abc |b
+            assert=
+              [] |a |c
+              .split-lines "|a\nc"
+
+            assert= true $ .starts-with? |abcd |a
+            assert= false $ .starts-with? |abcd |b
+            assert= |bcd $ .strip-prefix |abcd |a
+            assert= |abc $ .strip-suffix |abcd |d
+            assert= |abcd $ .strip-suffix |abcd |a
+            assert= |bc $ .slice |abcd 1 3
+            assert= |bcd $ .slice |abcd 1
+            assert= "|ab cd" $ .trim "| ab cd"
+            assert= true $ .empty? |
+            assert= false $ .empty? "|a"
+            assert= true $ .contains? |abcd 0
+            assert= false $ .contains? |abcd 4
+            assert= true $ .includes? |abcd |a
+            assert= false $ .includes? |abcd |e
+            assert= |a $ .nth |abc 0
+            assert= |b $ .nth |abc 1
+            assert= |a $ .first |abc
+            assert= nil $ .first |
+            assert= |bc $ .rest |abc
+            assert= 0 $ .find-index |abc |a
+            assert= 1 $ .find-index |abc |b
+            assert= "|\"a \\\"\"" $ .escape "|a \""
 
         |main! $ quote
           defn main! ()

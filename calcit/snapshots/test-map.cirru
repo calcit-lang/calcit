@@ -200,21 +200,121 @@
           fn ()
             log-title "|Testing map methods"
 
+            assert=
+              &{} :a 1 :b 2
+              .add (&{} :a 1) ([] :b 2)
+
+            assert=
+              &{} :a 1 :b 2
+              .assoc (&{} :a 1) :b 2
+
+            assert= true
+              .contains? (&{} :a 1) :a
+            assert= false
+              .contains? (&{} :a 1) :b
+
             assert= 2
               .count $ {} (:a 1) (:b 2)
+
+            assert=
+              &{} :a 1
+              .dissoc (&{} :a 1 :b 2) :b
+
+            assert=
+              &{}
+              .empty $ &{} :a 1 :b 2
+
+            assert= false
+              .empty? $ &{} :a 1 :b 2
+            assert= true
+              .empty? $ &{}
+
+            assert= 1
+              .get (&{} :a 1) :a
+            assert= nil
+              .get (&{} :a 1) :b
+
+            assert= 2
+              .get-in
+                {}
+                  :a $ {}
+                    :b 2
+                [] :a :b
+
+            assert= nil
+              .get-in (&{})
+                [] :a :b
+
+            assert= true
+              .includes? (&{} :a 1 :b 2) 1
+            assert= false
+              .includes? (&{} :a 1 :b 2) 3
+
+            assert=
+              #{} :a :b
+              .keys $ &{} :a 1 :b 2
+            assert=
+              #{} :a :b
+              .keys-non-nil $ &{} :a 1 :b 2 :c nil
+
             assert=
               {} (:a 11)
               .map-kv ({} (:a 1)) $ fn (k v)
                 [] k (+ v 10)
-             
+
+            assert=
+              &{} :a 1 :b 2
+              .merge
+                &{} :a 1
+                &{} :b 2
+
+            assert=
+              &{} :a 1 :b 2
+              .select-keys
+                &{} :a 1 :b 2 :c 3
+                [] :a :b
+
             assert=
               [] ([] :a 1)
               .to-list $ {} (:a 1)
-            
+
             assert= 2
               .count $ .to-list $ {}
                 :a 1
                 :b 2
+
+            assert= 2
+              .count $ .to-pairs $ {}
+                :a 1
+                :b 2
+
+            assert=
+              &{} :a 1 :b 2
+              .unselect-keys
+                &{} :a 1 :b 2 :c 3
+                [] :c
+
+            assert=
+              #{} 1 2 3
+              .values $ &{} :a 1 :b 2 :c 3
+
+            assert= true
+              list? $ .first $ &{} :a 1 :b 2 :c 3
+            assert= 2
+              count $ .first $ &{} :a 1 :b 2 :c 3
+
+            assert= 2
+              .count $ .rest $ &{} :a 1 :b 2 :c 3
+
+            assert=
+              &{} :c 3
+              .diff-new (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
+            assert=
+              #{} :c
+              .diff-keys (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
+            assert=
+              #{} :a :b
+              .common-keys (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
 
         |test-diff $ quote
           fn ()

@@ -229,7 +229,7 @@ export let foldl = function (xs: CalcitValue, acc: CalcitValue, f: CalcitFn): Ca
   }
   if (xs instanceof CalcitSet) {
     let result = acc;
-    xs.value.forEach((item) => {
+    xs.values().forEach((item) => {
       result = f(result, item);
     });
     return result;
