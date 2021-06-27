@@ -477,7 +477,7 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => Ok(Calcit::Bool(idx < xs.len())),
-      Err(e) => Err(e),
+      Err(_) => Ok(Calcit::Bool(false)),
     },
     (Some(a), ..) => Err(format!("list contains? expected list, got: {}", a)),
     (None, ..) => Err(format!("list contains? expected 2 arguments, got: {:?}", xs)),
