@@ -10,6 +10,9 @@ import { CalcitList } from "./js-list";
 import { CalcitSet } from "./js-set";
 import { CalcitTuple } from "./js-tuple";
 
+// we have to inject cache in a dirty way in some cases
+const calcit_dirty_hash_key = "_calcit_cached_hash";
+
 export class CalcitKeyword {
   value: string;
   cachedHash: Hash;
@@ -151,8 +154,8 @@ let defaultHash_nil = valueHash("nil:");
 let defaultHash_number = valueHash("number:");
 let defaultHash_string = valueHash("string:");
 let defaultHash_keyword = valueHash("keyword:");
-let defaultHash_true = valueHash("true:");
-let defaultHash_false = valueHash("false:");
+let defaultHash_true = valueHash("bool:true");
+let defaultHash_false = valueHash("bool:false");
 let defaultHash_symbol = valueHash("symbol:");
 let defaultHash_fn = valueHash("fn:");
 let defaultHash_ref = valueHash("ref:");
@@ -160,8 +163,12 @@ let defaultHash_tuple = valueHash("tuple:");
 let defaultHash_set = valueHash("set:");
 let defaultHash_list = valueHash("list:");
 let defaultHash_map = valueHash("map:");
+let defaultHash_record = valueHash("record:");
+
+let defaultHash_unknown = valueHash("unknown:");
 
 let fnHashCounter = 0;
+let jsObjectHashCounter = 0;
 
 let hashFunction = (x: CalcitValue): Hash => {
   if (x == null) {
@@ -177,6 +184,10 @@ let hashFunction = (x: CalcitValue): Hash => {
   if ((x as any).cachedHash != null) {
     return (x as any).cachedHash;
   }
+  if ((x as any)[calcit_dirty_hash_key] != null) {
+    return (x as any)[calcit_dirty_hash_key];
+  }
+
   if (x instanceof CalcitKeyword) {
     let h = mergeValueHash(defaultHash_keyword, x.value);
     x.cachedHash = h;
@@ -196,7 +207,7 @@ let hashFunction = (x: CalcitValue): Hash => {
   if (typeof x === "function") {
     fnHashCounter = fnHashCounter + 1;
     let h = mergeValueHash(defaultHash_fn, fnHashCounter);
-    (x as any).cachedHash = h;
+    (x as any)[calcit_dirty_hash_key] = h;
     return h;
   }
   if (x instanceof CalcitRef) {
@@ -238,7 +249,24 @@ let hashFunction = (x: CalcitValue): Hash => {
     x.cachedHash = base;
     return base;
   }
-  throw new Error("Unknown data for hashing");
+  if (x instanceof CalcitRecord) {
+    let base = defaultHash_record;
+    for (let idx = 0; idx < x.fields.length; idx++) {
+      base = mergeValueHash(base, hashFunction(x.fields[idx]));
+      base = mergeValueHash(base, hashFunction(x.values[idx]));
+    }
+    x.cachedHash = base;
+    return base;
+  }
+  console.warn(`[warn] calcit-js has no method for hashing this: ${x}`);
+  // currently we use dirty solution here to generate a custom hash
+  // probably happening in .to-pairs of maps, putting a js object into a set
+  // better forbid this, use .to-list instead
+  let hashJsObject = defaultHash_unknown;
+  jsObjectHashCounter = jsObjectHashCounter + 1;
+  hashJsObject = mergeValueHash(hashJsObject, jsObjectHashCounter);
+  (x as any)[calcit_dirty_hash_key] = hashJsObject;
+  return hashJsObject;
 };
 
 // Dirty code to change ternary-tree behavior
