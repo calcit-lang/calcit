@@ -115,9 +115,9 @@
               assert-detect identity $ contains? (range 10) 6
               assert-detect not $ contains? (range 10) 16
 
-              assert-detect identity $ has-index? (range 4) 3
-              assert-detect not $ has-index? (range 4) 4
-              assert-detect not $ has-index? (range 4) -1
+              assert-detect identity $ &list:contains? (range 4) 3
+              assert-detect not $ &list:contains? (range 4) 4
+              assert-detect not $ &list:contains? (range 4) -1
 
               assert=
                 update ({} (:a 1)) :a $ \ + % 10
@@ -309,18 +309,185 @@
         |test-methods $ quote
           fn ()
             log-title "|Testing list methods"
+
+            assert= true
+              .any? ([] 1 2 3 4)
+                fn (x) (> x 3)
+            assert= false
+              .any? ([] 1 2 3 4)
+                fn (x) (> x 4)
+
+            assert=
+              [] 1 2
+              .add ([] 1) 2
+            assert=
+              [] 1 2
+              .append ([] 1) 2
+            assert=
+              [] 1 3
+              .assoc ([] 1 2) 1 3
+
+            assert=
+              [] 1 3 2
+              .assoc-after ([] 1 2) 0 3
+            assert=
+              [] 1 2 3
+              .assoc-after ([] 1 2) 1 3
+
+            assert=
+              [] 3 1 2
+              .assoc-before ([] 1 2) 0 3
+            assert=
+              [] 1 3 2
+              .assoc-before ([] 1 2) 1 3
+
+            assert=
+              [] 1 2
+              .butlast ([] 1 2 3)
+
+            assert=
+              [] 1 2 3 4
+              .concat ([] 1 2) ([] 3 4)
+
+            assert= true
+              .contains? ([] :a :b :c) 1
+            assert= false
+              .contains? ([] :a :b :c) 3
+            assert= true
+              .has-index? ([] :a :b :c) 1
+
+            assert= true
+              .includes? ([] :a :b :c) :a
+            assert= false
+              .includes? ([] :a :b :c) 3
+
+
             assert= 3
               .count $ [] 1 2 3
+
+            assert=
+              [] 2 3 4
+              .drop ([] 1 2 3 4) 1
+
+            assert=
+              []
+              .empty $ [] 1 2 3
+            assert= true
+              .empty? $ []
+            assert= false
+              .empty? $ [] 1 2 3
+
+            assert=
+              [] 3 4
+              .filter ([] 1 2 3 4)
+                fn (x) (> x 2)
+
+            assert=
+              [] 1 2
+              .filter-not ([] 1 2 3 4)
+                fn (x) (> x 2)
+
+            assert= 0
+              .find-index ([] :a :b :c) $ fn (x) (= x :a)
+            assert= nil
+              .find-index ([] :a :b :c) $ fn (x) (= x :d)
+
+            assert= 10
+              .foldl ([] 1 2 3 4) 0 +
+
+            assert=
+              {}
+                1 1
+                2 2
+                3 3
+              .frequencies ([] 1 2 2 3 3 3)
+
+            assert= :b
+              .get ([] :a :b :c :d) 1
+
+            assert= :c
+              .get-in ([] :a ([] :b ([] :c))) ([] 1 1 0)
+            assert= nil
+              .get-in ([] :a ([] :b ([] :c))) ([] 1 1 1)
+            assert=
+              {}
+                1 $ [] 1 4
+                2 $ [] 2
+                0 $ [] 3
+              .group-by ([] 1 2 3 4) $ fn (x)
+                .rem x 3
+
+            assert= 0
+              .index-of ([] :a :b :c :d) :a
+            assert= nil
+              .index-of ([] :a :b :c :d) :e
+            assert=
+              [] :a 1 :b 2 :c 3 :d 4
+              .interleave ([] :a :b :c :d) ([] 1 2 3 4)
+            assert=
+              [] 1 :sep 2 :sep 3 :sep 4 :sep 5
+              .join ([] 1 2 3 4 5) :sep
+
             assert=
               [] 4 5 6
               .map ([] 1 2 3) $ fn (x) (+ x 3)
             assert=
               [] 2 3 4
               .map ([] 1 2 3) .inc
+            assert=
+              []
+                [] 0 :a
+                [] 1 :b
+                [] 2 :c
+              .map-indexed ([] :a :b :c) $ fn (idx x)
+                [] idx x
+
+            assert= 4
+              .max ([] 1 2 3 4)
+            assert= 1
+              .min ([] 1 2 3 4)
+
+            assert= :b
+              .nth ([] :a :b :c :d) 1
+            assert= nil
+              .nth ([] :a :b :c :d) 5
 
             assert=
               [] 4 3 2 1
               .sort-by ([] 1 2 3 4) negate
+
+            assert=
+              {}
+                :a 1
+                :b 2
+              .pairs-map $ []
+                [] :a 1
+                [] :b 2
+
+            assert=
+              [] 5 1 2 3 4
+              .prepend ([] 1 2 3 4) 5
+
+            assert= 10
+              .reduce ([] 1 2 3 4) 0 +
+            assert=
+              [] 4 3 2 1
+              .reverse $ [] 1 2 3 4
+            assert=
+              []
+                [] 1 2
+                [] 3 4
+                [] 5
+              .section-by ([] 1 2 3 4 5) 2
+
+            assert=
+              [] :b :c :d
+              .slice ([] :a :b :c :d) 1 4
+
+            assert=
+              [] 1 2 3 4 5
+              .sort ([] 1 4 2 5 3) $ fn (x y)
+                - x y
 
             assert=
               [] 1 2 3 4
@@ -337,6 +504,23 @@
                   {} (:v :b) (:n 3)
                   {} (:v :c) (:n 2)
                 , :n
+
+            assert=
+              [] :a :b
+              .take ([] :a :b :c :d) 2
+
+            assert=
+              &{} :a 1 :b 2 :c 3
+              .zipmap ([] :a :b :c) ([] 1 2 3)
+
+            assert= 1
+              .first $ [] 1 2 3 4
+            assert=
+              [] 2 3 4
+              .rest $ [] 1 2 3 4
+            assert=
+              [] :a :b
+              .dissoc ([] :a :b :c) 2
 
         |main! $ quote
           defn main! ()

@@ -260,6 +260,10 @@ pub fn invoke_method(
               runner::run_fn(&method_args, def_scope, args, body, def_ns, program_code)
             }
             Calcit::Proc(proc) => builtins::handle_proc(&proc, &method_args),
+            Calcit::Syntax(syn, _ns) => Err(format!(
+              "cannot get syntax here since instance is always evaluated, got: {}",
+              syn
+            )),
             y => Err(format!("expected a function to invoke, got: {}", y)),
           }
         }

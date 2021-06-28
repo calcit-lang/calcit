@@ -559,21 +559,11 @@
                             [] (quasiquote defn) (turn-symbol (&str:concat |f_ (turn-string a0))) ([] a0) body
                           recur code (butlast ys)
 
-        |has-index? $ quote
-          defn has-index? (xs idx)
-            assert "|expects a list" (list? xs)
-            assert "|expects list key to be a number" (number? idx)
-            assert "|expects list key to be an integer" (&= idx (floor idx))
-            if
-              &> idx 0
-              &< idx (&list:count xs)
-              , false
-
         |update $ quote
           defn update (x k f)
             cond
               (list? x)
-                if (has-index? x k)
+                if (&list:contains? x k)
                   assoc x k $ f (&list:nth x k)
                   , x
               (tuple? x)
@@ -1316,12 +1306,12 @@
             :filter filter
             :filter-not filter-not
             :find-index find-index
-            :foldl foldl
+            :foldl $ defn foldl (xs v0 f) (foldl xs v0 f)
             :frequencies frequencies
             :get &list:nth
             :get-in get-in
             :group-by group-by
-            :has-index? has-index?
+            :has-index? &list:contains?
             :index-of index-of
             :interleave interleave
             :join join
@@ -1336,14 +1326,13 @@
             :reverse &list:reverse
             :section-by section-by
             :slice &list:slice
-            :sort sort
+            :sort $ defn sort (x y) (sort x y)
             :sort-by &list:sort-by
             :take take
             :zipmap zipmap
             :first &list:first
             :rest &list:rest
             :dissoc &list:dissoc
-            :each each
 
         |&init-builtin-classes! $ quote
           defn &init-builtin-classes! ()
