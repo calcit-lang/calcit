@@ -1315,6 +1315,7 @@
             :index-of index-of
             :interleave interleave
             :join join
+            :join-str join-str
             :map map
             :map-indexed map-indexed
             :max max

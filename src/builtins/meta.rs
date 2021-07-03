@@ -267,7 +267,7 @@ pub fn invoke_method(
             y => Err(format!("expected a function to invoke, got: {}", y)),
           }
         }
-        None => Err(format!("missing field `{}` in {:?}", name, fields)),
+        None => Err(format!("missing field `{}` in {}", name, fields.join(","))),
       }
     }
     x => Err(format!("method invoking expected a record as class, got: {}", x)),

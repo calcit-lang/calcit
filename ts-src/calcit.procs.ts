@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.3";
+export const calcit_version = "0.4.4";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -1402,6 +1402,13 @@ export let _$n_map_$o_common_keys = (a: CalcitValue, b: CalcitValue): CalcitSet 
   } else {
     throw new Error("expected 2 maps");
   }
+};
+
+export let bit_shr = (base: number, step: number): number => {
+  return base >> step;
+};
+export let bit_shl = (base: number, step: number): number => {
+  return base << step;
 };
 
 // special procs have to be defined manually

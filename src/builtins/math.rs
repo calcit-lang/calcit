@@ -143,3 +143,27 @@ pub fn sqrt(xs: &CalcitItems) -> Result<Calcit, String> {
     a => Err(format!("sqrt expected 1 number: {:?}", a)),
   }
 }
+
+pub fn bit_shr(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
+      (Ok(value), Ok(step)) => Ok(Calcit::Number((value >> step) as f64)),
+      (Err(e), _) => Err(format!("bit-shr expect int as initial value: {}", e)),
+      (_, Err(e)) => Err(format!("bit-shr expect int as step: {}", e)),
+    },
+    (Some(a), Some(b)) => Err(format!("bit-shr expected 2 numbers, got: {} {}", a, b)),
+    (a, b) => Err(format!("bit-shr expected 2 number: {:?} {:?}", a, b)),
+  }
+}
+
+pub fn bit_shl(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
+      (Ok(value), Ok(step)) => Ok(Calcit::Number((value << step) as f64)),
+      (Err(e), _) => Err(format!("bit-shl expect int as initial value: {}", e)),
+      (_, Err(e)) => Err(format!("bit-shl expect int as step: {}", e)),
+    },
+    (Some(a), Some(b)) => Err(format!("bit-shl expected 2 numbers, got: {} {}", a, b)),
+    (a, b) => Err(format!("bit-shl expected 2 number: {:?} {:?}", a, b)),
+  }
+}
