@@ -116,6 +116,18 @@
             ; "has problem in comparing float numbers"
               assert= 0.1 $ .fract 1.1
 
+        |test-bit-math $ quote
+          fn ()
+            log-title "|testing bit math"
+
+            assert= 0 $ bit-shr 1 1
+            assert= 1 $ bit-shr 2 1
+            assert= 1 $ bit-shr 4 2
+
+            assert= 2 $ bit-shl 1 1
+            assert= 4 $ bit-shl 2 1
+            assert= 16 $ bit-shl 4 2
+
         |main! $ quote
           defn main! ()
             log-title "|Testing numbers"
@@ -132,6 +144,8 @@
             test-integer
 
             test-methods
+
+            test-bit-math
 
             do true
 

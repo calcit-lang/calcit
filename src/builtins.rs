@@ -86,6 +86,8 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&number:fract"
       | "&number:rem"
       | "&number:format"
+      | "bit-shl"
+      | "bit-shr"
       // strings
       | "&str:concat"
       | "trim"
@@ -254,6 +256,8 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&number:rem" => math::rem(args),
     "&number:fract" => math::fractional(args),
     "&number:format" => strings::format_number(args),
+    "bit-shr" => math::bit_shr(args),
+    "bit-shl" => math::bit_shl(args),
     // strings
     "trim" => strings::trim(args),
     "&str" => strings::call_str(args),

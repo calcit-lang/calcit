@@ -231,6 +231,7 @@
         |test-join $ quote
           fn ()
             assert= |1-2-3-4 $ join-str ([] 1 2 3 4) |-
+            assert= |1-2-3-4 $ .join-str ([] 1 2 3 4) |-
             assert= | $ join-str ([]) |-
             assert=
               [] 1 10 2 10 3 10 4
