@@ -119,7 +119,9 @@ pub fn str_slice(xs: &CalcitItems) -> Result<Calcit, String> {
         if from >= to {
           Ok(Calcit::Str(String::from("")))
         } else {
-          Ok(Calcit::Str(s[from..to].to_string()))
+          // turn into vec first to also handle UTF8
+          let s_vec = s.chars().collect::<Vec<_>>();
+          Ok(Calcit::Str(s_vec[from..to].iter().cloned().collect::<String>()))
         }
       }
       Err(e) => Err(e),

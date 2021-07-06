@@ -225,6 +225,8 @@
             assert= |abcd $ .strip-suffix |abcd |a
             assert= |bc $ .slice |abcd 1 3
             assert= |bcd $ .slice |abcd 1
+            assert= |文字 $ .slice |中文字符串 1 3
+            assert= |文字符串 $ .slice |中文字符串 1
             assert= "|ab cd" $ .trim "| ab cd"
             assert= true $ .empty? |
             assert= false $ .empty? "|a"
