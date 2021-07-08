@@ -909,10 +909,14 @@
               fn (acc pair) $ let[] (k v) pair
                 &let
                   result (f k v)
-                  assert "|expected pair returned when mapping hashmap"
-                    and (list? result) (&= 2 (&list:count result))
-                  let[] (k2 v2) result
-                    &map:assoc acc k2 v2
+                  if (list? result)
+                    do
+                      assert "|expected pair returned when mapping hashmap"
+                        &= 2 (&list:count result)
+                      let[] (k2 v2) result
+                        &map:assoc acc k2 v2
+                    if (nil? result) acc
+                      raise $ str "|map-kv expected list or nil, got: " result
 
         |either $ quote
           defmacro either (& body)
