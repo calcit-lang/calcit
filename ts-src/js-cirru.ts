@@ -7,6 +7,7 @@ import { CalcitRecord } from "./js-record";
 import { CalcitMap } from "./js-map";
 import { CalcitSet } from "./js-set";
 import { CalcitKeyword, CalcitSymbol, kwd } from "./calcit-data";
+import { CalcitTuple } from "./js-tuple";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
 
@@ -70,6 +71,14 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
       buffer.push(to_cirru_edn(y));
     }
     return buffer;
+  }
+  if (x instanceof CalcitTuple) {
+    if (x.fst instanceof CalcitSymbol && x.fst.value === "quote") {
+      // turn `x.snd` with CalcitList into raw Cirru nodes, which is in plain Array
+      return ["quote", toWriterNode(x.snd as any)] as CirruEdnFormat;
+    } else {
+      throw new Error(`Unsupported tag for EDN: ${x.fst}`);
+    }
   }
   console.error(x);
   throw new Error("Unexpected data to to-cirru-edn");
@@ -161,7 +170,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       if (x.length !== 2) {
         throw new Error("quote expects 1 argument");
       }
-      return to_calcit_data(x[1], true);
+      return new CalcitTuple(new CalcitSymbol("quote"), to_calcit_data(x[1], true));
     }
   }
   console.error(x);

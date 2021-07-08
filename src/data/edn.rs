@@ -6,63 +6,63 @@ use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
 
 // values does not fit are just represented with specical indicates
-pub fn calcit_to_edn(x: &Calcit) -> Edn {
+pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
   match x {
-    Calcit::Nil => Edn::Nil,
-    Calcit::Bool(b) => Edn::Bool(*b),
-    Calcit::Str(s) => Edn::Str(s.clone()),
-    Calcit::Number(n) => Edn::Number(*n), // TODO
-    Calcit::Keyword(s) => Edn::Keyword(s.clone()),
-    Calcit::Symbol(s, ..) => Edn::Symbol(s.clone()),
+    Calcit::Nil => Ok(Edn::Nil),
+    Calcit::Bool(b) => Ok(Edn::Bool(*b)),
+    Calcit::Str(s) => Ok(Edn::Str(s.clone())),
+    Calcit::Number(n) => Ok(Edn::Number(*n)), // TODO
+    Calcit::Keyword(s) => Ok(Edn::Keyword(s.clone())),
+    Calcit::Symbol(s, ..) => Ok(Edn::Symbol(s.clone())),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = vec![];
       for x in xs {
-        ys.push(calcit_to_edn(x));
+        ys.push(calcit_to_edn(x)?);
       }
-      Edn::List(ys)
+      Ok(Edn::List(ys))
     }
     Calcit::Set(xs) => {
       let mut ys: HashSet<Edn> = HashSet::new();
       for x in xs {
-        ys.insert(calcit_to_edn(x));
+        ys.insert(calcit_to_edn(x)?);
       }
-      Edn::Set(ys)
+      Ok(Edn::Set(ys))
     }
     Calcit::Map(xs) => {
       let mut ys: HashMap<Edn, Edn> = HashMap::new();
       for (k, x) in xs {
-        ys.insert(calcit_to_edn(k), calcit_to_edn(x));
+        ys.insert(calcit_to_edn(k)?, calcit_to_edn(x)?);
       }
-      Edn::Map(ys)
+      Ok(Edn::Map(ys))
     }
     Calcit::Record(name, fields, values) => {
       let mut ys: Vec<Edn> = vec![];
       for v in values {
-        ys.push(calcit_to_edn(v))
+        ys.push(calcit_to_edn(v)?)
       }
-      Edn::Record(name.clone(), fields.clone(), ys)
+      Ok(Edn::Record(name.clone(), fields.clone(), ys))
     }
-    Calcit::Fn(name, ..) => Edn::Str(format!("&fn {}", name)),
-    Calcit::Proc(name) => Edn::Symbol(name.to_owned()),
-    Calcit::Syntax(name, _ns) => Edn::Symbol(name.to_owned()),
+    Calcit::Fn(name, ..) => Err(format!("unable to generate EDN from function: {}", name)),
+    Calcit::Proc(name) => Ok(Edn::Symbol(name.to_owned())),
+    Calcit::Syntax(name, _ns) => Ok(Edn::Symbol(name.to_owned())),
     Calcit::Tuple(tag, data) => {
       match &**tag {
         Calcit::Symbol(sym, ..) => {
           if sym == "quote" {
             match cirru::calcit_data_to_cirru(&**data) {
-              Ok(v) => Edn::Quote(v),
-              Err(e) => Edn::Str(format!("TODO quote {}", e)), // TODO more types to handle
+              Ok(v) => Ok(Edn::Quote(v)),
+              Err(e) => Err(format!("failed to create quote: {}", e)), // TODO more types to handle
             }
           } else {
-            Edn::Str(format!("TODO {}", sym)) // TODO more types to handle
+            Err(format!("unknown tag for EDN: {}", sym)) // TODO more types to handle
           }
         }
         v => {
-          Edn::Str(format!("TODO {}", v)) // TODO more types to handle
+          Err(format!("unknonwn tag type for EDN: {}", v)) // TODO more types to handle
         }
       }
     }
-    a => Edn::Str(format!("TODO {}", a)), // TODO more types to handle
+    a => Err(format!("not able to generate EDN: {}", a)), // TODO more types to handle
   }
 }
 

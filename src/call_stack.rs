@@ -86,7 +86,7 @@ pub fn display_stack(failure: &str) -> Result<(), String> {
     );
     let mut args: Vec<Edn> = vec![];
     for a in &s.args {
-      args.push(edn::calcit_to_edn(a));
+      args.push(edn::calcit_to_edn(a)?);
     }
     info.insert(Edn::Keyword(String::from("args")), Edn::List(args));
     info.insert(Edn::Keyword(String::from("kind")), Edn::Keyword(name_kind(&s.kind)));
