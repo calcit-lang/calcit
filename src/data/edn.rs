@@ -45,6 +45,23 @@ pub fn calcit_to_edn(x: &Calcit) -> Edn {
     Calcit::Fn(name, ..) => Edn::Str(format!("&fn {}", name)),
     Calcit::Proc(name) => Edn::Symbol(name.to_owned()),
     Calcit::Syntax(name, _ns) => Edn::Symbol(name.to_owned()),
+    Calcit::Tuple(tag, data) => {
+      match &**tag {
+        Calcit::Symbol(sym, ..) => {
+          if sym == "quote" {
+            match cirru::calcit_data_to_cirru(&**data) {
+              Ok(v) => Edn::Quote(v),
+              Err(e) => Edn::Str(format!("TODO quote {}", e)), // TODO more types to handle
+            }
+          } else {
+            Edn::Str(format!("TODO {}", sym)) // TODO more types to handle
+          }
+        }
+        v => {
+          Edn::Str(format!("TODO {}", v)) // TODO more types to handle
+        }
+      }
+    }
     a => Edn::Str(format!("TODO {}", a)), // TODO more types to handle
   }
 }
@@ -54,10 +71,23 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Nil => Calcit::Nil,
     Edn::Bool(b) => Calcit::Bool(*b),
     Edn::Number(n) => Calcit::Number(*n as f64),
-    Edn::Symbol(s) => Calcit::Symbol(s.clone(), String::from(primes::GENERATED_NS), None),
+    Edn::Symbol(s) => Calcit::Symbol(
+      s.clone(),
+      String::from(primes::GENERATED_NS),
+      String::from(primes::GENERATED_DEF),
+      None,
+    ),
     Edn::Keyword(s) => Calcit::Keyword(s.clone()),
     Edn::Str(s) => Calcit::Str(s.clone()),
-    Edn::Quote(nodes) => cirru::cirru_to_calcit(nodes),
+    Edn::Quote(nodes) => Calcit::Tuple(
+      Box::new(Calcit::Symbol(
+        String::from("quote"),
+        String::from(primes::GENERATED_NS),
+        String::from(primes::GENERATED_DEF),
+        None,
+      )),
+      Box::new(cirru::cirru_to_calcit(nodes)),
+    ),
     Edn::List(xs) => {
       let mut ys: primes::CalcitItems = im::vector![];
       for x in xs {

@@ -909,10 +909,14 @@
               fn (acc pair) $ let[] (k v) pair
                 &let
                   result (f k v)
-                  assert "|expected pair returned when mapping hashmap"
-                    and (list? result) (&= 2 (&list:count result))
-                  let[] (k2 v2) result
-                    &map:assoc acc k2 v2
+                  if (list? result)
+                    do
+                      assert "|expected pair returned when mapping hashmap"
+                        &= 2 (&list:count result)
+                      let[] (k2 v2) result
+                        &map:assoc acc k2 v2
+                    if (nil? result) acc
+                      raise $ str "|map-kv expected list or nil, got: " result
 
         |either $ quote
           defmacro either (& body)
@@ -1330,10 +1334,12 @@
             :sort $ defn sort (x y) (sort x y)
             :sort-by &list:sort-by
             :take take
+            :to-set &list:to-set
             :zipmap zipmap
             :first &list:first
             :rest &list:rest
             :dissoc &list:dissoc
+            :distinct &list:distinct
 
         |&init-builtin-classes! $ quote
           defn &init-builtin-classes! ()

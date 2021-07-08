@@ -263,6 +263,14 @@
                 [] k (+ v 10)
 
             assert=
+              {} (:a 11) (:b 12)
+              .map-kv ({} (:a 1) (:b 2) (:c 13))
+                fn (k v)
+                  if (< v 10)
+                    [] k (+ v 10)
+                    , nil
+
+            assert=
               &{} :a 1 :b 2
               .merge
                 &{} :a 1

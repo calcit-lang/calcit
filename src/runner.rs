@@ -21,7 +21,7 @@ pub fn evaluate_expr(
     Calcit::Bool(_) => Ok(expr.clone()),
     Calcit::Number(_) => Ok(expr.clone()),
     Calcit::Symbol(s, ..) if s == "&" => Ok(expr.clone()),
-    Calcit::Symbol(s, ns, resolved) => match resolved {
+    Calcit::Symbol(s, ns, _at_def, resolved) => match resolved {
       Some(ResolvedDef(r_ns, r_def, _import_rule)) => {
         let v = evaluate_symbol(r_def, scope, r_ns, program_code)?;
         match v {
@@ -129,9 +129,10 @@ pub fn evaluate_expr(
               ))
             }
           }
-          Calcit::Symbol(s, ns, resolved) => {
-            Err(format!("cannot evaluate symbol directly: {}/{} {:?}", ns, s, resolved))
-          }
+          Calcit::Symbol(s, ns, at_def, resolved) => Err(format!(
+            "cannot evaluate symbol directly: {}/{} in {}, {:?}",
+            ns, s, at_def, resolved
+          )),
           a => Err(format!(
             "cannot be used as operator: {} in {}",
             a,

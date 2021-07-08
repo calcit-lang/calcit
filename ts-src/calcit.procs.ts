@@ -1411,6 +1411,29 @@ export let bit_shl = (base: number, step: number): number => {
   return base << step;
 };
 
+export let _$n_list_$o_to_set = (xs: CalcitList): CalcitSet => {
+  var result: CalcitValue[] = [];
+  let data = xs.toArray();
+  for (let idx = 0; idx < data.length; idx++) {
+    result.push(data[idx]);
+  }
+  return new CalcitSet(result);
+};
+
+export let _$n_list_$o_distinct = (xs: CalcitList): CalcitList => {
+  var result: CalcitValue[] = [];
+  let data = xs.toArray();
+  outer: for (let idx in data) {
+    for (let j = 0; j < result.length; j++) {
+      if (_$n__$e_(data[idx], result[j])) {
+        continue outer;
+      }
+    }
+    result.push(data[idx]);
+  }
+  return new CalcitList(result);
+};
+
 // special procs have to be defined manually
 export let reduce = foldl;
 export let conj = append;

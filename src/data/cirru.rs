@@ -3,7 +3,7 @@ use cirru_parser::Cirru;
 use regex::Regex;
 
 /// code is CirruNode, and this function parse code(rather than data)
-pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
+pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String> {
   match xs {
     Cirru::Leaf(s) => match s.as_str() {
       "nil" => Ok(Calcit::Nil),
@@ -17,7 +17,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
       _ => match s.chars().next().unwrap() {
         ':' => {
           if s == "::" {
-            Ok(Calcit::Symbol(s.clone(), ns.to_owned(), None)) // special tuple syntax
+            Ok(Calcit::Symbol(s.clone(), ns.to_owned(), def.to_owned(), None)) // special tuple syntax
           } else {
             Ok(Calcit::Keyword(String::from(&s[1..])))
           }
@@ -25,7 +25,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
         '.' => {
           if s.starts_with(".-") || s.starts_with(".!") {
             // try not to break js interop
-            Ok(Calcit::Symbol(s.clone(), ns.to_owned(), None))
+            Ok(Calcit::Symbol(s.clone(), ns.to_owned(), def.to_owned(), None))
           } else {
             Ok(Calcit::Proc(s.to_owned())) // as native method syntax
           }
@@ -36,21 +36,21 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
           Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
         },
         '\'' if s.len() > 1 => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("quote"), ns.to_owned(), None),
-          Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), None),
+          Calcit::Symbol(String::from("quote"), ns.to_owned(), def.to_owned(), None),
+          Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), def.to_owned(), None),
         ])),
         // TODO also detect simple variables
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("~@"), ns.to_owned(), None),
-          Calcit::Symbol(String::from(&s[2..]), ns.to_owned(), None),
+          Calcit::Symbol(String::from("~@"), ns.to_owned(), def.to_owned(), None),
+          Calcit::Symbol(String::from(&s[2..]), ns.to_owned(), def.to_owned(), None),
         ])),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("~"), ns.to_owned(), None),
-          Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), None),
+          Calcit::Symbol(String::from("~"), ns.to_owned(), def.to_owned(), None),
+          Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), def.to_owned(), None),
         ])),
         '@' => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("deref"), ns.to_owned(), None),
-          Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), None),
+          Calcit::Symbol(String::from("deref"), ns.to_owned(), def.to_owned(), None),
+          Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), def.to_owned(), None),
         ])),
         // TODO future work of reader literal expanding
         _ => {
@@ -58,7 +58,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
             let f: f64 = s.parse().unwrap();
             Ok(Calcit::Number(f))
           } else {
-            Ok(Calcit::Symbol(s.clone(), ns.to_owned(), None))
+            Ok(Calcit::Symbol(s.clone(), ns.to_owned(), def.to_owned(), None))
           }
         }
       },
@@ -66,7 +66,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str) -> Result<Calcit, String> {
     Cirru::List(ys) => {
       let mut zs: CalcitItems = im::Vector::new();
       for y in ys {
-        match code_to_calcit(y, ns) {
+        match code_to_calcit(y, ns, def) {
           Ok(v) => {
             if !is_comment(&v) {
               zs.push_back(v.clone())

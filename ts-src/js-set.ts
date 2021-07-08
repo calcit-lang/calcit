@@ -3,6 +3,15 @@ import { toString } from "./calcit-data";
 import { TernaryTreeMap, initTernaryTreeMap, mapLen, assocMap, dissocMap, isMapEmpty, Hash, toPairsArray, mapGetDefault, contains } from "@calcit/ternary-tree";
 import * as ternaryTree from "@calcit/ternary-tree";
 
+/** need to compare by Calcit */
+let DATA_EQUAL = (x: CalcitValue, y: CalcitValue): boolean => {
+  return x === y;
+};
+
+export let overwriteSetComparator = (f: typeof DATA_EQUAL): void => {
+  DATA_EQUAL = f;
+};
+
 export class CalcitSet {
   value: TernaryTreeMap<CalcitValue, boolean>;
   cachedHash: Hash;
@@ -10,7 +19,13 @@ export class CalcitSet {
     this.cachedHash = null;
     if (Array.isArray(value)) {
       let pairs: [CalcitValue, boolean][] = [];
-      for (let idx = 0; idx < value.length; idx++) {
+      outer: for (let idx = 0; idx < value.length; idx++) {
+        for (let j = 0; j < pairs.length; j++) {
+          if (DATA_EQUAL(pairs[j][0], value[idx])) {
+            // skip existed elements
+            continue outer;
+          }
+        }
         pairs.push([value[idx], true]);
       }
       this.value = initTernaryTreeMap(pairs);

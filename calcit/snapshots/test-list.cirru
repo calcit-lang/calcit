@@ -523,6 +523,10 @@
               [] :a :b
               .dissoc ([] :a :b :c) 2
 
+            assert=
+              [] 1 2 3
+              .distinct ([] 1 2 3 1 2)
+
         |main! $ quote
           defn main! ()
 
