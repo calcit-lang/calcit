@@ -135,6 +135,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&list:assoc"
       | "&list:dissoc"
       | "&list:to-set"
+      | "&list:distinct"
       // maps
       | "&{}"
       | "&merge"
@@ -306,6 +307,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&list:assoc" => lists::assoc(args),
     "&list:dissoc" => lists::dissoc(args),
     "&list:to-set" => lists::list_to_set(args),
+    "&list:distinct" => lists::distinct(args),
     // maps
     "&{}" => maps::call_new_map(args),
     "&merge" => maps::call_merge(args),

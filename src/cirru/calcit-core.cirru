@@ -1339,6 +1339,7 @@
             :first &list:first
             :rest &list:rest
             :dissoc &list:dissoc
+            :distinct &list:distinct
 
         |&init-builtin-classes! $ quote
           defn &init-builtin-classes! ()

@@ -541,3 +541,21 @@ pub fn list_to_set(xs: &CalcitItems) -> Result<Calcit, String> {
     a => Err(format!("&list:to-set expected a list, got {}", a)),
   }
 }
+
+pub fn distinct(xs: &CalcitItems) -> Result<Calcit, String> {
+  if xs.len() != 1 {
+    return Err(format!("&list:to-set expected a single argument in list, got {:?}", xs));
+  }
+  match &xs[0] {
+    Calcit::List(ys) => {
+      let mut zs = im::Vector::new();
+      for y in ys {
+        if !zs.contains(y) {
+          zs.push_back(y.clone());
+        }
+      }
+      Ok(Calcit::List(zs))
+    }
+    a => Err(format!("&list:to-set expected a list, got {}", a)),
+  }
+}
