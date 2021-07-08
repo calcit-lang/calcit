@@ -54,7 +54,12 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Nil => Calcit::Nil,
     Edn::Bool(b) => Calcit::Bool(*b),
     Edn::Number(n) => Calcit::Number(*n as f64),
-    Edn::Symbol(s) => Calcit::Symbol(s.clone(), String::from(primes::GENERATED_NS), None),
+    Edn::Symbol(s) => Calcit::Symbol(
+      s.clone(),
+      String::from(primes::GENERATED_NS),
+      String::from(primes::GENERATED_DEF),
+      None,
+    ),
     Edn::Keyword(s) => Calcit::Keyword(s.clone()),
     Edn::Str(s) => Calcit::Str(s.clone()),
     Edn::Quote(nodes) => cirru::cirru_to_calcit(nodes),

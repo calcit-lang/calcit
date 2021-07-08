@@ -202,7 +202,9 @@ fn to_js_code(
     gen_call_code(&ys, ns, local_defs, xs, file_imports, return_label)
   } else {
     let ret = match xs {
-      Calcit::Symbol(s, def_ns, resolved) => gen_symbol_code(s, &def_ns, resolved, ns, xs, local_defs, file_imports),
+      Calcit::Symbol(s, def_ns, at_def, resolved) => {
+        gen_symbol_code(s, &def_ns, &at_def, resolved, ns, xs, local_defs, file_imports)
+      }
       Calcit::Proc(s) => {
         let proc_prefix = if ns == primes::CORE_NS {
           "$calcit_procs."
@@ -230,7 +232,16 @@ fn to_js_code(
       }
       Calcit::Syntax(s, ..) => {
         let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned(), None));
-        gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs, file_imports)
+        gen_symbol_code(
+          s,
+          primes::CORE_NS,
+          primes::GENERATED_DEF,
+          &resolved,
+          ns,
+          xs,
+          local_defs,
+          file_imports,
+        )
       }
       Calcit::Str(s) => Ok(escape_cirru_str(&s)),
       Calcit::Bool(b) => Ok(b.to_string()),
@@ -530,6 +541,7 @@ fn gen_call_code(
 fn gen_symbol_code(
   s: &str,
   def_ns: &str,
+  at_def: &str,
   resolved: &Option<primes::SymbolResolved>,
   ns: &str,
   xs: &Calcit,
@@ -596,10 +608,10 @@ fn gen_symbol_code(
 
     Ok(escape_var(s))
   } else if def_ns == ns {
-    println!("[Warn] detected unresolved variable {:?} in {}", xs, ns);
+    println!("[Warn] detected unresolved variable `{}` in {}/{}", s, ns, at_def);
     Ok(escape_var(s))
   } else {
-    println!("[Warn] Unexpected casecode gen for {:?} in {}", xs, ns);
+    println!("[Warn] Unexpected case, code gen for `{}` in {}/{}", s, ns, at_def);
     Ok(format!("{}{}", var_prefix, escape_var(s)))
   }
 }

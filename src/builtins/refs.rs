@@ -51,7 +51,7 @@ pub fn defatom(
   program_code: &ProgramCodeData,
 ) -> Result<Calcit, String> {
   match (expr.get(0), expr.get(1)) {
-    (Some(Calcit::Symbol(s, ns, _)), Some(code)) => {
+    (Some(Calcit::Symbol(s, ns, _def, _)), Some(code)) => {
       let mut path = ns.to_owned();
       path.push('/');
       path.push_str(s);

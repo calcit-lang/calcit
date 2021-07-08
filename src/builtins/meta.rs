@@ -72,7 +72,12 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
       chunk
     }
   };
-  Ok(Calcit::Symbol(s, String::from(primes::GENERATED_NS), None))
+  Ok(Calcit::Symbol(
+    s,
+    String::from(primes::GENERATED_NS),
+    String::from(primes::GENERATED_DEF),
+    None,
+  ))
 }
 
 pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, String> {
@@ -173,9 +178,21 @@ pub fn write_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Str(s)) => Ok(Calcit::Symbol(s.clone(), String::from(primes::GENERATED_NS), None)),
-    Some(Calcit::Keyword(s)) => Ok(Calcit::Symbol(s.clone(), String::from(primes::GENERATED_NS), None)),
-    Some(Calcit::Symbol(s, ns, resolved)) => Ok(Calcit::Symbol(s.clone(), ns.clone(), resolved.clone())),
+    Some(Calcit::Str(s)) => Ok(Calcit::Symbol(
+      s.clone(),
+      String::from(primes::GENERATED_NS),
+      String::from(primes::GENERATED_DEF),
+      None,
+    )),
+    Some(Calcit::Keyword(s)) => Ok(Calcit::Symbol(
+      s.clone(),
+      String::from(primes::GENERATED_NS),
+      String::from(primes::GENERATED_DEF),
+      None,
+    )),
+    Some(Calcit::Symbol(s, ns, def, resolved)) => {
+      Ok(Calcit::Symbol(s.clone(), ns.clone(), def.clone(), resolved.clone()))
+    }
     Some(a) => Err(format!("turn-symbol cannot turn this to symbol: {}", a)),
     None => Err(String::from("turn-symbol expected 1 argument, got nothing")),
   }
@@ -278,6 +295,7 @@ fn gen_sym(sym: &str) -> Calcit {
   Calcit::Symbol(
     String::from("&core-map-class"),
     String::from(primes::CORE_NS),
+    String::from(primes::GENERATED_DEF),
     Some(primes::SymbolResolved::ResolvedDef(
       String::from(primes::CORE_NS),
       String::from(sym),

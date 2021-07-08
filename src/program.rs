@@ -99,7 +99,8 @@ fn extract_file_data(file: snapshot::FileInSnapShot, ns: String) -> Result<Progr
   let import_map = extract_import_map(&file.ns)?;
   let mut defs: HashMap<String, Calcit> = HashMap::new();
   for (def, code) in file.defs {
-    defs.insert(def, code_to_calcit(&code, &ns)?);
+    let at_def = def.to_owned();
+    defs.insert(def, code_to_calcit(&code, &ns, &at_def)?);
   }
   Ok(ProgramFileData { import_map, defs })
 }
@@ -217,13 +218,13 @@ pub fn apply_code_changes(base: &ProgramCodeData, changes: &snapshot::ChangesDic
       file.import_map = extract_import_map(&info.ns.clone().unwrap())?;
     }
     for (def, code) in &info.added_defs {
-      file.defs.insert(def.to_owned(), code_to_calcit(code, ns)?);
+      file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def)?);
     }
     for def in &info.removed_defs {
       file.defs.remove(def);
     }
     for (def, code) in &info.changed_defs {
-      file.defs.insert(def.to_owned(), code_to_calcit(code, ns)?);
+      file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def)?);
     }
   }
 

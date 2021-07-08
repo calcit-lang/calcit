@@ -37,7 +37,7 @@ pub enum Calcit {
   Nil,
   Bool(bool),
   Number(f64),
-  Symbol(String, String, Option<SymbolResolved>), // content, ns... so it has meta information
+  Symbol(String, String, String, Option<SymbolResolved>), // content, ns... so it has meta information
   Keyword(String),
   Str(String),
   Thunk(Box<Calcit>, Option<Box<Calcit>>),
@@ -220,7 +220,7 @@ impl Hash for Calcit {
         // TODO https://stackoverflow.com/q/39638363/883571
         (*n as usize).hash(_state)
       }
-      Calcit::Symbol(s, _ns, _resolved) => {
+      Calcit::Symbol(s, _ns, _at_def, _resolved) => {
         "symbol:".hash(_state);
         s.hash(_state);
         // probaly no need, also won't be used in hashing
@@ -439,6 +439,7 @@ impl PartialEq for Calcit {
 pub const CORE_NS: &str = "calcit.core";
 pub const BUILTIN_CLASSES_ENTRY: &str = "&init-builtin-classes!";
 pub const GENERATED_NS: &str = "calcit.gen";
+pub const GENERATED_DEF: &str = "gen%";
 
 impl Calcit {
   pub fn turn_string(&self) -> String {

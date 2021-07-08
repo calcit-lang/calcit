@@ -24,6 +24,7 @@ pub fn preprocess_ns_def(
         Calcit::Symbol(
           original_sym.to_owned(),
           ns.to_owned(),
+          def.to_owned(),
           Some(ResolvedDef(ns.to_owned(), def.to_owned(), import_rule)),
         ),
         Some(v),
@@ -55,6 +56,7 @@ pub fn preprocess_ns_def(
             Calcit::Symbol(
               original_sym.to_owned(),
               ns.to_owned(),
+              def.to_owned(),
               Some(ResolvedDef(
                 ns.to_owned(),
                 def.to_owned(),
@@ -68,6 +70,7 @@ pub fn preprocess_ns_def(
           Calcit::Symbol(
             original_sym.to_owned(),
             ns.to_owned(),
+            def.to_owned(),
             Some(ResolvedDef(ns.to_owned(), def.to_owned(), import_rule)),
           ),
           None,
@@ -97,7 +100,7 @@ pub fn preprocess_expr(
 ) -> Result<(Calcit, Option<Calcit>), String> {
   // println!("preprocessing @{} {}", file_ns, expr);
   match expr {
-    Calcit::Symbol(def, def_ns, _) => match runner::parse_ns_def(def) {
+    Calcit::Symbol(def, def_ns, at_def, _) => match runner::parse_ns_def(def) {
       Some((ns_alias, def_part)) => {
         match program::lookup_ns_target_in_import(&def_ns, &ns_alias, program_code) {
           Some(target_ns) => {
@@ -108,6 +111,7 @@ pub fn preprocess_expr(
             Calcit::Symbol(
               def.clone(),
               def_ns.clone(),
+              at_def.to_owned(),
               Some(ResolvedDef(String::from("js"), def_part, None)),
             ),
             None,
@@ -117,10 +121,18 @@ pub fn preprocess_expr(
       }
       None => {
         if def == "~" || def == "~@" || def == "&" || def == "?" {
-          Ok((Calcit::Symbol(def.clone(), def_ns.clone(), Some(ResolvedRaw)), None))
+          Ok((
+            Calcit::Symbol(def.clone(), def_ns.clone(), at_def.to_owned(), Some(ResolvedRaw)),
+            None,
+          ))
         } else if scope_defs.contains(def) {
           Ok((
-            Calcit::Symbol(def.to_owned(), def_ns.to_owned(), Some(ResolvedLocal)),
+            Calcit::Symbol(
+              def.to_owned(),
+              def_ns.to_owned(),
+              at_def.to_owned(),
+              Some(ResolvedLocal),
+            ),
             None,
           ))
         } else if is_syntax_name(def) {
@@ -149,9 +161,22 @@ pub fn preprocess_expr(
                   def.to_owned(),
                   Some(ImportRule::NsDefault(target_ns)),
                 ));
-                Ok((Calcit::Symbol(def.to_owned(), def_ns.to_owned(), target), None))
+                Ok((
+                  Calcit::Symbol(def.to_owned(), def_ns.to_owned(), at_def.to_owned(), target),
+                  None,
+                ))
               } else {
-                println!("[Warn] unknown symbol in scope: {}/{} {:?}", def_ns, def, scope_defs);
+                let mut names: Vec<String> = vec![];
+                for def in scope_defs {
+                  names.push(def.to_owned());
+                }
+                println!(
+                  "[Warn] unknown `{}` in {}/{}, locales {{ {} }}",
+                  def,
+                  def_ns,
+                  at_def,
+                  names.join(" ")
+                );
                 Ok((expr.clone(), None))
               }
             }
@@ -212,6 +237,7 @@ fn process_list_call(
           Calcit::Symbol(
             String::from("get"),
             String::from(primes::CORE_NS),
+            String::from(primes::GENERATED_DEF),
             Some(ResolvedDef(String::from(primes::CORE_NS), String::from("get"), None))
           ),
           args[0].clone(),
@@ -319,16 +345,26 @@ pub fn preprocess_defn(
   // println!("defn args: {}", primes::CrListWrap(args.clone()));
   let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
   match (args.get(0), args.get(1)) {
-    (Some(Calcit::Symbol(def_name, def_name_ns, _)), Some(Calcit::List(ys))) => {
+    (Some(Calcit::Symbol(def_name, def_name_ns, at_def, _)), Some(Calcit::List(ys))) => {
       let mut body_defs: HashSet<String> = scope_defs.clone();
 
-      xs.push_back(Calcit::Symbol(def_name.clone(), def_name_ns.clone(), Some(ResolvedRaw)));
+      xs.push_back(Calcit::Symbol(
+        def_name.clone(),
+        def_name_ns.clone(),
+        at_def.to_owned(),
+        Some(ResolvedRaw),
+      ));
       let mut zs: CalcitItems = im::vector![];
       for y in ys {
         match y {
-          Calcit::Symbol(sym, def_ns, _) => {
+          Calcit::Symbol(sym, def_ns, at_def, _) => {
             check_symbol(sym, program_code);
-            zs.push_back(Calcit::Symbol(sym.clone(), def_ns.clone(), Some(ResolvedRaw)));
+            zs.push_back(Calcit::Symbol(
+              sym.clone(),
+              def_ns.clone(),
+              at_def.to_owned(),
+              Some(ResolvedRaw),
+            ));
             // skip argument syntax marks
             if sym != "&" && sym != "?" {
               body_defs.insert(sym.clone());
@@ -451,7 +487,7 @@ pub fn preprocess_quasiquote_internal(
   match x {
     Calcit::List(ys) if ys.is_empty() => Ok(x.to_owned()),
     Calcit::List(ys) => match &ys[0] {
-      Calcit::Symbol(s, _, _) if s == "~" || s == "~@" => {
+      Calcit::Symbol(s, _, _, _) if s == "~" || s == "~@" => {
         let mut xs: CalcitItems = im::vector![];
         for y in ys {
           let (form, _) = preprocess_expr(y, scope_defs, file_ns, program_code)?;

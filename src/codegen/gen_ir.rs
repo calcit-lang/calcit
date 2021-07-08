@@ -85,7 +85,7 @@ fn dump_code(code: &Calcit) -> serde_json::Value {
       "kind": "keyword",
       "val": s,
     }),
-    Calcit::Symbol(s, ns, resolved) => json!({
+    Calcit::Symbol(s, ns, at_def, resolved) => json!({
       "kind": "symbol",
       "val": s,
       "ns": ns,
@@ -93,6 +93,7 @@ fn dump_code(code: &Calcit) -> serde_json::Value {
         Some(ResolvedDef(r_def, r_ns, import_rule)) => json!({
           "kind": "def",
           "ns": r_ns,
+          "at_def": at_def,
           "def": r_def,
           "rule": match import_rule {
             Some(ImportRule::NsAs(_n)) => json!("ns"),
