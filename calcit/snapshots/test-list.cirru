@@ -57,6 +57,9 @@
                 dissoc (range 10) 4
                 [] 0 1 2 3 5 6 7 8 9
               assert= (take (range 10) 4) $ [] 0 1 2 3
+              assert= (take-last (range 10) 4) $ [] 6 7 8 9
+              assert= (.take-last (range 10) 4) $ [] 6 7 8 9
+              assert= (take-last (range 3) 4) $ [] 0 1 2
               assert= (drop (range 10) 4) ([] 4 5 6 7 8 9)
               assert |reverse $ =
                 .reverse $ [] |a |b |c |d |e

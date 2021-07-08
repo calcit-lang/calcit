@@ -191,8 +191,13 @@
 
         |take $ quote
           defn take (xs n)
-            if (= n (&list:count xs)) xs
+            if (>= n (&list:count xs)) xs
               slice xs 0 n
+
+        |take-last $ quote
+          defn take-last (xs n)
+            if (>= n (&list:count xs)) xs
+              slice xs (- (&list:count xs) n) (&list:count xs)
 
         |drop $ quote
           defn drop (xs n)
@@ -1334,6 +1339,7 @@
             :sort $ defn sort (x y) (sort x y)
             :sort-by &list:sort-by
             :take take
+            :take-last take-last
             :to-set &list:to-set
             :zipmap zipmap
             :first &list:first
