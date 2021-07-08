@@ -12,7 +12,7 @@ let DATA_EQUAL = (x: CalcitValue, y: CalcitValue): boolean => {
   return x === y;
 };
 
-export let overwriteDataComparator = (f: typeof DATA_EQUAL): void => {
+export let overwriteMapComparator = (f: typeof DATA_EQUAL): void => {
   DATA_EQUAL = f;
 };
 

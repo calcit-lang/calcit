@@ -1,13 +1,13 @@
 import { Hash, overwriteHashGenerator, valueHash, mergeValueHash } from "@calcit/ternary-tree";
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
-import { overwriteDataComparator } from "./js-map";
+import { overwriteMapComparator } from "./js-map";
 
 import { CalcitRecord, fieldsEqual } from "./js-record";
 import { CalcitMap } from "./js-map";
 
 import { CalcitValue } from "./js-primes";
 import { CalcitList } from "./js-list";
-import { CalcitSet } from "./js-set";
+import { CalcitSet, overwriteSetComparator } from "./js-set";
 import { CalcitTuple } from "./js-tuple";
 
 // we have to inject cache in a dirty way in some cases
@@ -553,4 +553,5 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
 
 // overwrite internary comparator of ternary-tree
 overwriteComparator(_$n__$e_);
-overwriteDataComparator(_$n__$e_);
+overwriteMapComparator(_$n__$e_);
+overwriteSetComparator(_$n__$e_);

@@ -1330,6 +1330,7 @@
             :sort $ defn sort (x y) (sort x y)
             :sort-by &list:sort-by
             :take take
+            :to-set &list:to-set
             :zipmap zipmap
             :first &list:first
             :rest &list:rest

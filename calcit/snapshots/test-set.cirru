@@ -53,6 +53,17 @@
             assert= (#{} 1 2 3) (#{} 1 2 (+ 1 2))
             assert-detect not $ = (#{} 1 2 3) (#{} 2 3 4)
 
+            assert=
+              #{} 1 2 3 4
+              &list:to-set $ [] 1 2 3 4
+
+            assert=
+              #{} 1
+              &list:to-set $ [] 1 1 1 1
+            assert=
+              #{} 1
+              .to-set $ [] 1 1 1 1
+
         |test-methods $ quote
           fn ()
             assert=
