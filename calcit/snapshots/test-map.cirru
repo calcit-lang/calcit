@@ -268,6 +268,24 @@
               .keys-non-nil $ &{} :a 1 :b 2 :c nil
 
             assert=
+              {} (:a 11) (:b 12)
+              .map (&{} :a 1 :b 2) $ fn (entry)
+                []
+                  first entry
+                  + 10 $ last entry
+
+            assert=
+              []
+                [] :a 11
+                [] :b 12
+              .sort-by
+                .map-list (&{} :a 1 :b 2) $ fn (entry)
+                  []
+                    first entry
+                    + 10 $ last entry
+                , first
+
+            assert=
               {} (:a 11)
               .map-kv ({} (:a 1)) $ fn (k v)
                 [] k (+ v 10)

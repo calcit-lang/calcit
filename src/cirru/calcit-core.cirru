@@ -189,6 +189,15 @@
                   echo "|value:" xs
                   raise "|expects list or set for map function"
 
+        |&map:map-list $ quote
+          defn &map:map-list (xs f)
+            echo |map-list xs f
+            if (map? xs)
+              foldl xs ([])
+                fn (acc pair)
+                  conj acc $ f pair
+              raise "|&map:map-list expected a map"
+
         |take $ quote
           defn take (xs n)
             if (>= n (&list:count xs)) xs
@@ -1270,7 +1279,9 @@
             :includes? &map:includes?
             :keys keys
             :keys-non-nil keys-non-nil
+            :map map
             :map-kv map-kv
+            :map-list &map:map-list
             :merge merge
             :select-keys select-keys
             :to-list &map:to-list
