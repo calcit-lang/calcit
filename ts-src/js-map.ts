@@ -74,16 +74,16 @@ export class CalcitMap {
   }
   assoc(...args: CalcitValue[]) {
     if (args.length % 2 !== 0) throw new Error("expected even arguments");
-    let size = Math.round(args.length / 2);
+    let size = Math.floor(args.length / 2);
     if (this.arrayMode && this.arrayValue.length <= 16) {
       let ret = this.arrayValue.slice(0);
-      for (let j = 0; j < size; j++) {
+      outer: for (let j = 0; j < size; j++) {
         let k = args[j << 1];
         let v = args[(j << 1) + 1];
         for (let i = 0; i < ret.length; i += 2) {
           if (DATA_EQUAL(k, ret[i])) {
             ret[i + 1] = v;
-            return new CalcitMap(ret);
+            continue outer; // data recorded, goto next loop
           }
         }
         ret.push(k, v);
@@ -93,7 +93,9 @@ export class CalcitMap {
       this.turnMap();
       let result = this.value;
       for (let idx = 0; idx < size; idx++) {
-        result = assocMap(this.value, idx + idx, idx + idx + 1);
+        let k = args[idx << 1];
+        let v = args[(idx << 1) + 1];
+        result = assocMap(result, k, v);
       }
       return new CalcitMap(result);
     }
