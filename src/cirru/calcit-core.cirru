@@ -1259,6 +1259,7 @@
             :empty? &set:empty?
             :include include
             :includes? &set:includes?
+            :contains? &set:includes?
             :intersection intersection
             :to-list &set:to-list
             :union union
