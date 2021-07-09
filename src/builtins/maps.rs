@@ -20,14 +20,24 @@ pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 
 pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Map(xs)), Some(a)) => {
-      let ys = &mut xs.clone();
-      ys.remove(a);
+  if xs.len() < 2 {
+    return Err(format!("map dissoc expected at least 2 arguments: {:?}", xs));
+  }
+  match xs.get(0) {
+    Some(Calcit::Map(base)) => {
+      let ys = &mut base.clone();
+      let mut skip_first = true;
+      for x in xs {
+        if skip_first {
+          skip_first = false;
+          continue;
+        }
+        ys.remove(&x);
+      }
       Ok(Calcit::Map(ys.clone()))
     }
-    (Some(a), ..) => Err(format!("map dissoc expected a map, got: {}", a)),
-    (_, _) => Err(format!("map dissoc expected 2 arguments, got: {:?}", xs)),
+    Some(a) => Err(format!("map dissoc expected a map, got: {}", a)),
+    _ => Err(format!("map dissoc expected 2 arguments, got: {:?}", xs)),
   }
 }
 
@@ -198,14 +208,21 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 
 pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
-  match (xs.get(0), xs.get(1), xs.get(2)) {
-    (Some(Calcit::Map(xs)), Some(a), Some(b)) => {
-      let ys = &mut xs.clone();
-      ys.insert(a.clone(), b.clone());
-      Ok(Calcit::Map(ys.clone()))
+  match xs.get(0) {
+    Some(Calcit::Map(base)) => {
+      if xs.len() % 2 != 1 {
+        Err(format!("map:assoc expected odd number of arguments, got {:?}", xs))
+      } else {
+        let size = (xs.len() - 1) / 2;
+        let mut ys = base.to_owned();
+        for idx in 0..size {
+          ys.insert(xs[idx * 2 + 1].to_owned(), xs[idx * 2 + 2].to_owned());
+        }
+        Ok(Calcit::Map(ys.clone()))
+      }
     }
-    (Some(a), ..) => Err(format!("map:assoc expected a map, got: {}", a)),
-    (None, ..) => Err(format!("map:assoc expected 3 arguments, got: {:?}", xs)),
+    Some(a) => Err(format!("map:assoc expected a map, got: {}", a)),
+    None => Err(format!("map:assoc expected 3 arguments, got: {:?}", xs)),
   }
 }
 

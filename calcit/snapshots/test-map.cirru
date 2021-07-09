@@ -47,11 +47,18 @@
               assert=
                 assoc (&{} :a 1 :b 2) :c 3
                 &{} :a 1 :b 2 :c 3
+              assert=
+                assoc (&{} :a 1) :b 2 :c 3
+                &{} :a 1 :b 2 :c 3
 
               assert=
                 dissoc dict :a
                 {,} :b 2 , :c 3 , :d 5
               assert= dict (dissoc dict :h)
+              assert=
+                dissoc dict :a :b :c
+                &{} :d 5
+
               assert=
                 merge
                   {}
@@ -219,6 +226,9 @@
             assert=
               &{} :a 1
               .dissoc (&{} :a 1 :b 2) :b
+            assert=
+              &{} :a 1
+              .dissoc (&{} :a 1 :b 2 :c 3) :b :c
 
             assert=
               &{}

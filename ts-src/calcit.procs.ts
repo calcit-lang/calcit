@@ -315,10 +315,11 @@ export let _$n_tuple_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: Ca
 
   throw new Error("tuple `assoc` expected a tuple");
 };
-export let _$n_map_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: CalcitValue) {
-  if (arguments.length !== 3) throw new Error("assoc takes 3 arguments");
+export let _$n_map_$o_assoc = function (xs: CalcitValue, ...args: CalcitValue[]) {
+  if (arguments.length < 3) throw new Error("assoc takes at least 3 arguments");
+  if (args.length % 2 !== 0) throw new Error("assoc expected odd arguments");
 
-  if (xs instanceof CalcitMap) return xs.assoc(k, v);
+  if (xs instanceof CalcitMap) return xs.assoc(...args);
 
   throw new Error("map `assoc` expected a map");
 };
@@ -369,10 +370,12 @@ export let _$n_list_$o_dissoc = function (xs: CalcitValue, k: CalcitValue) {
 
   throw new Error("`dissoc` expected a list");
 };
-export let _$n_map_$o_dissoc = function (xs: CalcitValue, k: CalcitValue) {
-  if (arguments.length !== 2) throw new Error("dissoc takes 2 arguments");
+export let _$n_map_$o_dissoc = function (xs: CalcitValue, ...args: CalcitValue[]) {
+  if (args.length < 1) throw new Error("dissoc takes at least 2 arguments");
 
-  if (xs instanceof CalcitMap) return xs.dissoc(k);
+  if (xs instanceof CalcitMap) {
+    return xs.dissoc(...args);
+  }
 
   throw new Error("`dissoc` expected a map");
 };
