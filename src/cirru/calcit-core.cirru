@@ -179,7 +179,7 @@
                 foldl xs ({})
                   fn (acc pair) $ let[] (k v) pair
                     &let
-                      result (f $ [] k v)
+                      result $ f $ [] k v
                       assert "|expected pair returned when mapping hashmap"
                         and (list? result) (&= 2 (&list:count result))
                       let[] (k2 v2) result
@@ -188,6 +188,15 @@
                 &let nil
                   echo "|value:" xs
                   raise "|expects list or set for map function"
+
+        |&map:map-list $ quote
+          defn &map:map-list (xs f)
+            echo |map-list xs f
+            if (map? xs)
+              foldl xs ([])
+                fn (acc pair)
+                  conj acc $ f pair
+              raise "|&map:map-list expected a map"
 
         |take $ quote
           defn take (xs n)
@@ -1250,6 +1259,7 @@
             :empty? &set:empty?
             :include include
             :includes? &set:includes?
+            :contains? &set:includes?
             :intersection intersection
             :to-list &set:to-list
             :union union
@@ -1270,7 +1280,9 @@
             :includes? &map:includes?
             :keys keys
             :keys-non-nil keys-non-nil
+            :map map
             :map-kv map-kv
+            :map-list &map:map-list
             :merge merge
             :select-keys select-keys
             :to-list &map:to-list
@@ -1404,17 +1416,17 @@
                 .rest x
 
         |assoc $ quote
-          defn assoc (x k v)
+          defn assoc (x & args)
             if (nil? x) (raise "|assoc does not work on nil")
-              if (tuple? x) (&tuple:assoc x k v)
-                if (list? x) (&list:assoc x k v)
-                  .assoc x k v
+              if (tuple? x) (&tuple:assoc x & args)
+                if (list? x) (&list:assoc x & args)
+                  .assoc x & args
 
         |dissoc $ quote
-          defn dissoc (x k)
+          defn dissoc (x & args)
             if (nil? x) nil
-              if (list? x) (&list:dissoc x k)
-                .dissoc x k
+              if (list? x) (&list:dissoc x & args)
+                .dissoc x & args
 
         |concat $ quote
           defn concat (a & args)

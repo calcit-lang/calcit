@@ -72,34 +72,54 @@ export class CalcitMap {
       return mapGetDefault(this.value, k, null);
     }
   }
-  assoc(k: CalcitValue, v: CalcitValue) {
+  assoc(...args: CalcitValue[]) {
+    if (args.length % 2 !== 0) throw new Error("expected even arguments");
+    let size = Math.floor(args.length / 2);
     if (this.arrayMode && this.arrayValue.length <= 16) {
       let ret = this.arrayValue.slice(0);
-      for (let i = 0; i < ret.length; i += 2) {
-        if (DATA_EQUAL(k, ret[i])) {
-          ret[i + 1] = v;
-          return new CalcitMap(ret);
+      outer: for (let j = 0; j < size; j++) {
+        let k = args[j << 1];
+        let v = args[(j << 1) + 1];
+        for (let i = 0; i < ret.length; i += 2) {
+          if (DATA_EQUAL(k, ret[i])) {
+            ret[i + 1] = v;
+            continue outer; // data recorded, goto next loop
+          }
         }
+        ret.push(k, v);
       }
-      ret.push(k, v);
       return new CalcitMap(ret);
     } else {
       this.turnMap();
-      return new CalcitMap(assocMap(this.value, k, v));
+      let result = this.value;
+      for (let idx = 0; idx < size; idx++) {
+        let k = args[idx << 1];
+        let v = args[(idx << 1) + 1];
+        result = assocMap(result, k, v);
+      }
+      return new CalcitMap(result);
     }
   }
-  dissoc(k: CalcitValue) {
+  dissoc(...args: CalcitValue[]) {
     if (this.arrayMode && this.arrayValue.length <= 16) {
       let ret: CalcitValue[] = [];
-      for (let i = 0; i < this.arrayValue.length; i += 2) {
-        if (!DATA_EQUAL(k, this.arrayValue[i])) {
-          ret.push(this.arrayValue[i], this.arrayValue[i + 1]);
+      outer: for (let i = 0; i < this.arrayValue.length; i += 2) {
+        for (let j = 0; j < args.length; j++) {
+          let k = args[j];
+          if (DATA_EQUAL(k, this.arrayValue[i])) {
+            continue outer;
+          }
         }
+        ret.push(this.arrayValue[i], this.arrayValue[i + 1]);
       }
       return new CalcitMap(ret);
     } else {
       this.turnMap();
-      return new CalcitMap(dissocMap(this.value, k));
+      let ret = this.value;
+      for (let idx = 0; idx < args.length; idx++) {
+        ret = dissocMap(ret, args[idx]);
+      }
+      return new CalcitMap(ret);
     }
   }
   toString(shorter = false) {

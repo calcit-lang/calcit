@@ -6,7 +6,7 @@
     |test-map.main $ {}
       :ns $ quote
         ns test-map.main $ :require
-          [] util.core :refer $ [] log-title inside-eval:
+          [] util.core :refer $ [] log-title inside-eval: inside-js:
       :defs $ {}
 
         |test-maps $ quote
@@ -47,11 +47,26 @@
               assert=
                 assoc (&{} :a 1 :b 2) :c 3
                 &{} :a 1 :b 2 :c 3
+              assert=
+                assoc (&{} :a 1) :b 2 :c 3
+                &{} :a 1 :b 2 :c 3
+
+              inside-js:
+                &let
+                  data $ &{} :a 1
+                  .!turnMap data
+                  assert=
+                    assoc data :b 2 :c 3
+                    &{} :a 1 :b 2 :c 3
 
               assert=
                 dissoc dict :a
                 {,} :b 2 , :c 3 , :d 5
               assert= dict (dissoc dict :h)
+              assert=
+                dissoc dict :a :b :c
+                &{} :d 5
+
               assert=
                 merge
                   {}
@@ -219,6 +234,9 @@
             assert=
               &{} :a 1
               .dissoc (&{} :a 1 :b 2) :b
+            assert=
+              &{} :a 1
+              .dissoc (&{} :a 1 :b 2 :c 3) :b :c
 
             assert=
               &{}
@@ -256,6 +274,24 @@
             assert=
               #{} :a :b
               .keys-non-nil $ &{} :a 1 :b 2 :c nil
+
+            assert=
+              {} (:a 11) (:b 12)
+              .map (&{} :a 1 :b 2) $ fn (entry)
+                []
+                  first entry
+                  + 10 $ last entry
+
+            assert=
+              []
+                [] :a 11
+                [] :b 12
+              .sort-by
+                .map-list (&{} :a 1 :b 2) $ fn (entry)
+                  []
+                    first entry
+                    + 10 $ last entry
+                , first
 
             assert=
               {} (:a 11)
