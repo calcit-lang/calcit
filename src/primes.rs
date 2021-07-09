@@ -43,8 +43,10 @@ pub enum Calcit {
   Thunk(Box<Calcit>, Option<Box<Calcit>>),
   /// holding a path to its state
   Ref(String),
+  /// more tagged union type, more like an internal structure
   Tuple(Box<Calcit>, Box<Calcit>),
-  Recur(CalcitItems), // not data, but for recursion
+  /// not for data, but for recursion
+  Recur(CalcitItems),
   List(CalcitItems),
   Set(im::HashSet<Calcit>),
   Map(im::HashMap<Calcit, Calcit>),

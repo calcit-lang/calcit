@@ -358,7 +358,7 @@ pub fn preprocess_defn(
       for y in ys {
         match y {
           Calcit::Symbol(sym, def_ns, at_def, _) => {
-            check_symbol(sym, program_code);
+            check_symbol(sym, program_code, args);
             zs.push_back(Calcit::Symbol(
               sym.clone(),
               def_ns.clone(),
@@ -389,9 +389,14 @@ pub fn preprocess_defn(
 }
 
 // warn if this symbol is used
-fn check_symbol(sym: &str, program_code: &program::ProgramCodeData) {
+fn check_symbol(sym: &str, program_code: &program::ProgramCodeData, args: &CalcitItems) {
   if is_proc_name(sym) || is_syntax_name(sym) || program::has_def_code(primes::CORE_NS, sym, program_code) {
-    println!("[Warn] local binding `{}` shadowed `calcit.core/{}`", sym, sym);
+    println!(
+      "[Warn] local binding `{}` shadowed `calcit.core/{}`, with {}",
+      sym,
+      sym,
+      primes::CrListWrap(args.to_owned())
+    );
   }
 }
 
@@ -409,7 +414,7 @@ pub fn preprocess_call_let(
     Some(Calcit::Nil) => Calcit::Nil,
     Some(Calcit::List(ys)) if ys.len() == 2 => match (&ys[0], &ys[1]) {
       (Calcit::Symbol(sym, ..), a) => {
-        check_symbol(sym, program_code);
+        check_symbol(sym, program_code, args);
         body_defs.insert(sym.clone());
         let (form, _v) = preprocess_expr(a, &body_defs, file_ns, program_code)?;
         Calcit::List(im::vector![ys[0].clone(), form])
