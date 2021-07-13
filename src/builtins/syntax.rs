@@ -2,6 +2,7 @@
 //! syntaxes related to data are maintained the corresponding files
 //! Rust has limits on Closures, callbacks need to be handled specifically
 
+use std::cell::RefCell;
 use std::collections::HashSet;
 
 use crate::builtins;
@@ -285,6 +286,7 @@ pub fn macroexpand_all(
             let mut xs_cloned = xs;
             // mutable operation
             let mut rest_nodes = xs_cloned.slice(1..);
+            let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
@@ -295,15 +297,35 @@ pub fn macroexpand_all(
                   rest_nodes = rest_code;
                 }
                 _ => {
-                  let (resolved, _v) = runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, program_code)?;
+                  let (resolved, _v) =
+                    runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, program_code, check_warnings)?;
+                  let warnings = check_warnings.to_owned().into_inner();
+                  if warnings.len() > 0 {
+                    for message in &warnings {
+                      println!("{}", message);
+                    }
+                  }
+
                   return Ok(resolved);
                 }
               }
             }
           }
           _ => {
-            let (resolved, _v) =
-              runner::preprocess::preprocess_expr(&quoted_code, &HashSet::new(), file_ns, program_code)?;
+            let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+            let (resolved, _v) = runner::preprocess::preprocess_expr(
+              &quoted_code,
+              &HashSet::new(),
+              file_ns,
+              program_code,
+              check_warnings,
+            )?;
+            let warnings = check_warnings.to_owned().into_inner();
+            if warnings.len() > 0 {
+              for message in &warnings {
+                println!("{}", message);
+              }
+            }
             Ok(resolved)
           }
         }

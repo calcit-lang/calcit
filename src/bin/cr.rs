@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
@@ -16,6 +17,8 @@ struct ProgramSettings {
   emit_js: bool,
   emit_ir: bool,
 }
+
+pub const COMPILE_ERRORS_FILE: &str = "calcit.build-errors";
 
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
@@ -74,6 +77,7 @@ fn main() -> Result<(), String> {
   }
 
   let mut program_code = program::extract_program_data(&snapshot)?;
+  let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
 
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
@@ -82,6 +86,7 @@ fn main() -> Result<(), String> {
     &program_code,
     &calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
     None,
+    check_warnings,
   )?;
 
   let task = if settings.emit_js {
@@ -230,8 +235,10 @@ fn run_codegen(
     builtins::effects::modify_cli_running_mode(builtins::effects::CliRunningMode::Js)?;
   }
 
+  let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def, None) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def, None, check_warnings) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
@@ -240,18 +247,49 @@ fn run_codegen(
     }
   }
 
+  let code_emit_path = Path::new(emit_path);
+  if !code_emit_path.exists() {
+    let _ = fs::create_dir(code_emit_path);
+  }
+
+  let js_file_path = code_emit_path.join(format!("{}.js", COMPILE_ERRORS_FILE)); // TODO mjs_mode
+
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def, None) {
+  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def, None, check_warnings) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
       call_stack::display_stack(&failure)?;
       return Err(failure);
     }
+  }
+  let warnings = check_warnings.to_owned().into_inner();
+  let mut content: String = String::from("");
+  if warnings.len() > 0 {
+    for message in &warnings {
+      println!("{}", message);
+      content = format!("{}\n{}", content, message);
+    }
+
+    let _ = fs::write(
+      &js_file_path,
+      format!("export default \"{}\";", content.trim().escape_default()),
+    );
+    return Err(format!(
+      "Found {} warnings, codegen blocked. errors in {}.js",
+      warnings.len(),
+      COMPILE_ERRORS_FILE,
+    ));
+  }
+
+  // clear if there are no errors
+  let no_error_code = format!("export default null;");
+  if !(js_file_path.exists() && fs::read_to_string(js_file_path.to_owned()).unwrap() == no_error_code) {
+    let _ = fs::write(&js_file_path, no_error_code);
   }
 
   if ir_mode {
-    match codegen::gen_ir::emit_ir(&init_ns, &emit_path, &emit_path) {
+    match codegen::gen_ir::emit_ir(&init_fn, &reload_fn, &emit_path) {
       Ok(_) => (),
       Err(failure) => {
         println!("\nfailed codegen, {}", failure);

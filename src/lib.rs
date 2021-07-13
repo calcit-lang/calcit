@@ -17,6 +17,7 @@ pub mod snapshot;
 pub mod util;
 
 use dirs::home_dir;
+use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 
@@ -36,8 +37,11 @@ pub fn run_program(
   program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, String> {
   let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
+
+  let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def, None) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def, None, check_warnings) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
@@ -46,6 +50,13 @@ pub fn run_program(
     }
   }
 
+  let warnings = check_warnings.to_owned().into_inner();
+  if warnings.len() > 0 {
+    for message in &warnings {
+      println!("{}", message);
+    }
+    return Err(format!("Found {} warnings, runner blocked", warnings.len()));
+  }
   match program::lookup_evaled_def(&init_ns, &init_def) {
     None => Err(format!("entry not initialized: {}/{}", init_ns, init_def)),
     Some(entry) => match entry {
