@@ -25,7 +25,7 @@ pub fn tmpl_fn_wrapper(body: String) -> String {
 pub fn tmpl_args_fewer_than(args_count: usize) -> String {
   format!(
     "
-if (arguments.length < {}) throw new Error('too few arguments')",
+if (arguments.length < {}) throw new Error('too few arguments');",
     args_count
   )
 }

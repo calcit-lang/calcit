@@ -17,6 +17,7 @@
               assert= (prepend a 4) $ [] 4 1 2 3
               assert= (append a 4) $ [] 1 2 3 4
               assert= (conj a 4) $ [] 1 2 3 4
+              assert= (conj a 4 5 6 7) $ [] 1 2 3 4 5 6 7
               assert= 1 (first a)
               assert= 3 (last a)
               assert-detect nil? (first $ [])
@@ -44,7 +45,7 @@
               assert "|concat lists" $ =
                 concat ([] 1 2) ([] 4 5) ([] 7 8)
                 [] 1 2 4 5 7 8
-              
+
               assert=
                 [] 3 4 5 2 3
                 &list:concat

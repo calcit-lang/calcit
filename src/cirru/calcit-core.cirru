@@ -1153,8 +1153,11 @@
               &map:dissoc acc k
 
         |conj $ quote
-          defn conj (xs a)
-            append xs a
+          defn conj (xs y0 & ys)
+            if (empty? ys) (append xs y0)
+              recur
+                append xs y0
+                , & ys
 
         |turn-str $ quote
           defn turn-str (x) (turn-string x)

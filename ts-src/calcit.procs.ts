@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.9";
+export const calcit_version = "0.4.10";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -1446,7 +1446,6 @@ export let _$n_list_$o_distinct = (xs: CalcitList): CalcitList => {
 
 // special procs have to be defined manually
 export let reduce = foldl;
-export let conj = append;
 
 let unavailableProc = (...xs: []) => {
   console.warn("NOT available for calcit-js");
