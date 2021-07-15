@@ -13,6 +13,7 @@
             assert= (&str:concat |a |b) |ab
             assert= (&str:concat 1 2) |12
             assert= (str |a |b |c) |abc
+            assert= (str |a nil |c) |ac
             assert= (str 1 2 3) |123
             assert= (type-of (&str 1)) :string
             assert=

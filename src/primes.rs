@@ -446,6 +446,7 @@ pub const GENERATED_DEF: &str = "gen%";
 impl Calcit {
   pub fn turn_string(&self) -> String {
     match self {
+      Calcit::Nil => String::from(""),
       Calcit::Str(s) => s.clone(),
       _ => format!("{}", self),
     }

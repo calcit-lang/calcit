@@ -681,7 +681,14 @@ export let round_$q_ = (a: number) => {
   return a == Math.round(a);
 };
 export let _$n_str_$o_concat = (a: string, b: string) => {
-  return `${toString(a, false)}${toString(b, false)}`;
+  let buffer = "";
+  if (a != null) {
+    buffer += toString(a, false);
+  }
+  if (b != null) {
+    buffer += toString(b, false);
+  }
+  return buffer;
 };
 export let sort = (xs: CalcitList, f: CalcitFn): CalcitList => {
   if (xs == null) {

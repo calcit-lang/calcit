@@ -220,7 +220,7 @@
         |str $ quote
           defmacro str (x0 & xs)
             if (&list:empty? xs)
-              quasiquote $ &str ~x0
+              quasiquote $ &str:concat ~x0 |
               quasiquote $ &str:concat ~x0 $ str ~@xs
 
         |include $ quote
