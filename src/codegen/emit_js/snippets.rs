@@ -25,7 +25,7 @@ pub fn tmpl_fn_wrapper(body: String) -> String {
 pub fn tmpl_args_fewer_than(args_count: usize) -> String {
   format!(
     "
-if (arguments.length < {}) throw new Error('too few arguments')",
+if (arguments.length < {}) throw new Error('too few arguments');",
     args_count
   )
 }
@@ -69,7 +69,7 @@ pub fn tmpl_tail_recursion(
   let {ret_var} = null;
   let {times_var} = 0;
   while(true) {{ /* Tail Recursion */
-    if ({times_var} > 10000) throw new Error('tail recursion not stopping');
+    if ({times_var} > 100000) throw new Error('tail recursion not stopping');
     {body}
     if ({ret_var} instanceof {var_prefix}CalcitRecur) {{
       {check_recur_args}

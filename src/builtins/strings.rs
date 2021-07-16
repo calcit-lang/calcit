@@ -6,6 +6,9 @@ use crate::util::number::f64_to_usize;
 
 pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Nil), Some(Calcit::Nil)) => Ok(Calcit::Str(String::from(""))),
+    (Some(Calcit::Nil), Some(b)) => Ok(Calcit::Str(b.turn_string())),
+    (Some(a), Some(Calcit::Nil)) => Ok(Calcit::Str(a.turn_string())),
     (Some(a), Some(b)) => {
       let mut s = a.turn_string();
       s.push_str(&b.turn_string());
