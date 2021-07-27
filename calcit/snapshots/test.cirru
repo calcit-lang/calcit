@@ -266,6 +266,9 @@
             assert= :b (nth (:: :a :b) 1)
             assert= 2 (count (:: :a :b))
 
+            assert= :a (get (:: :a :b) 0)
+            assert= :b (get (:: :a :b) 1)
+
         |test-effect $ quote
           fn ()
             log-title "|Testing effect"
