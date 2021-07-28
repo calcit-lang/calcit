@@ -386,6 +386,7 @@
               (string? base) (&str:nth base k)
               (map? base) (&map:get base k)
               (list? base) (&list:nth base k)
+              (tuple? base) (&tuple:nth base k)
               (record? base) (&record:get base k)
               true $ &let nil
                 echo "|Value:" base k
