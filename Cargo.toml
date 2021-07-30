@@ -1,6 +1,6 @@
 [package]
 name = "calcit_runner"
-version = "0.4.12"
+version = "0.4.13"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2018"
 license = "MIT"

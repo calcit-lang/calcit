@@ -433,7 +433,7 @@ fn gen_call_code(
         },
         "js-await" => match body.get(0) {
           Some(body) => Ok(format!(
-            "await {}",
+            "(await {})",
             to_js_code(&body, ns, local_defs, file_imports, &None)?,
           )),
           None => Err(format!("`new` expected constructor, got nothing, {}", xs)),
