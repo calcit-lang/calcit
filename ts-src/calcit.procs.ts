@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.11";
+export const calcit_version = "0.4.13";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -1263,7 +1263,9 @@ export function invoke_method(p: string) {
   return (obj: CalcitValue, ...args: CalcitValue[]) => {
     let klass: CalcitRecord;
     let value = obj;
-    if (obj instanceof CalcitTuple) {
+    if (obj == null) {
+      throw new Error(`Cannot invoke method \`${p}\` on nil`);
+    } else if (obj instanceof CalcitTuple) {
       if (obj.fst instanceof CalcitRecord) {
         klass = obj.fst;
       } else {
@@ -1282,6 +1284,9 @@ export function invoke_method(p: string) {
     } else if (obj instanceof CalcitMap) {
       klass = calcit_builtin_classes.map;
     } else {
+      if ((obj as any)[p] == null) {
+        throw new Error(`Missing method \`${p}\` on object`);
+      }
       return (obj as any)[p](...args); // trying to call JavaScript method
     }
     if (klass == null) {

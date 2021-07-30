@@ -347,3 +347,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
     (None, ..) => Err(format!("tuplu:assoc expected 3 arguments, got: {:?}", xs)),
   }
 }
+
+pub fn no_op() -> Result<Calcit, String> {
+  Ok(Calcit::Nil)
+}

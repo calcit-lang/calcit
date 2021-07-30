@@ -378,6 +378,7 @@ pub fn is_syntax_name(s: &str) -> bool {
       | "sort" // TODO need better solution
       | "defatom"
       | "reset!"
+      | "hint-fn"
   )
 }
 
@@ -406,6 +407,8 @@ pub fn handle_syntax(
     // "define reference" although it uses a confusing name "atom"
     "defatom" => refs::defatom(nodes, scope, file_ns, program),
     "reset!" => refs::reset_bang(nodes, scope, file_ns, program),
+    // different behavoirs, in Rust interpreter it's nil, in js codegen it's nothing
+    "hint-fn" => meta::no_op(),
     a => Err(format!("TODO syntax: {}", a)),
   }
 }
@@ -423,6 +426,7 @@ pub fn is_js_syntax_procs(s: &str) -> bool {
       | "instance?"
       | "&js-object"
       | "js-array"
+      | "js-await"
       | "load-console-formatter!"
       | "printable"
       | "new"

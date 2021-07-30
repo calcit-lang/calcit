@@ -301,7 +301,7 @@ fn process_list_call(
         preprocess_each_items(&name, &name_ns, args, scope_defs, file_ns, program_code, check_warnings)?,
         None,
       )),
-      "quote" | "eval" => Ok((
+      "quote" | "eval" | "hint-fn" => Ok((
         preprocess_quote(&name, &name_ns, args, scope_defs, file_ns, program_code)?,
         None,
       )),

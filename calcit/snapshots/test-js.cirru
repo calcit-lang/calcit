@@ -76,6 +76,22 @@
               assert= 3 $ .-c b
               assert= 2 $ aget b |b
 
+        |test-async $ quote
+          fn ()
+            let
+                f1 $ fn ()
+                  hint-fn async
+                  new js/Promise $ fn (resolve reject)
+                    js/setTimeout
+                      fn ()
+                        println "|async code finished after 1s"
+                        resolve true
+                      , 1000
+                f2 $ fn ()
+                  hint-fn async
+                  js-await $ f1
+              f2
+
         |main! $ quote
           defn main! ()
             log-title "|Testing js"
@@ -83,6 +99,8 @@
             test-let-example
 
             test-collection
+
+            test-async
 
             when (> 1 2)
               raise (str "|error of math" 2 1)

@@ -431,6 +431,13 @@ fn gen_call_code(
           }
           None => Err(format!("`new` expected constructor, got nothing, {}", xs)),
         },
+        "js-await" => match body.get(0) {
+          Some(body) => Ok(format!(
+            "(await {})",
+            to_js_code(&body, ns, local_defs, file_imports, &None)?,
+          )),
+          None => Err(format!("`new` expected constructor, got nothing, {}", xs)),
+        },
         "instance?" => match (body.get(0), body.get(1)) {
           (Some(ctor), Some(v)) => Ok(format!(
             "{}({} instanceof {})",
@@ -909,7 +916,7 @@ fn uses_recur(xs: &Calcit) -> bool {
 fn gen_js_func(
   name: &str,
   args: &CalcitItems,
-  body: &CalcitItems,
+  raw_body: &CalcitItems,
   ns: &str,
   exported: bool,
   outer_defs: &HashSet<String>,
@@ -973,6 +980,23 @@ fn gen_js_func(
     snippets::tmpl_args_exact(args_count)
   };
 
+  let mut body: CalcitItems = im::Vector::new();
+  let mut async_prefix: String = String::from("");
+
+  for line in raw_body {
+    if let Calcit::List(xs) = line {
+      if let Some(Calcit::Syntax(sym, _ns)) = xs.get(0) {
+        if sym == "hint-fn" {
+          if hinted_async(xs) {
+            async_prefix = String::from("async ")
+          }
+          continue;
+        }
+      }
+    }
+    body.push_back(line.to_owned());
+  }
+
   if !body.is_empty() && uses_recur(&body[body.len() - 1]) {
     let return_var = js_gensym("return_mark");
     let fn_def = snippets::tmpl_tail_recursion(
@@ -983,8 +1007,8 @@ fn gen_js_func(
       /* body = */
       list_to_js_code(&body, ns, local_defs, &format!("%%{}%% =", return_var), file_imports)?, // dirty trick
       /* var_prefix = */ var_prefix.to_owned(),
-      /* return_mark */
-      &format!("%%{}%%", return_var),
+      /* return_mark */ &format!("%%{}%%", return_var),
+      /* async_prefix */ &async_prefix,
     );
 
     let export_mark = if exported {
@@ -995,7 +1019,8 @@ fn gen_js_func(
     Ok(format!("{}{}\n", export_mark, fn_def))
   } else {
     let fn_definition = format!(
-      "function {}({}) {{ {}{}\n{} }}",
+      "{}function {}({}) {{ {}{}\n{} }}",
+      async_prefix,
       escape_var(name),
       args_code,
       check_args,
@@ -1005,6 +1030,17 @@ fn gen_js_func(
     let export_mark = if exported { "export " } else { "" };
     Ok(format!("{}{}\n", export_mark, fn_definition))
   }
+}
+
+/// this is a very rough implementation for now
+fn hinted_async(xs: &im::Vector<Calcit>) -> bool {
+  for x in xs {
+    match x {
+      Calcit::Symbol(sym, ..) if sym == "async" => return true,
+      _ => {}
+    }
+  }
+  return false;
 }
 
 fn contains_symbol(xs: &Calcit, y: &str) -> bool {
