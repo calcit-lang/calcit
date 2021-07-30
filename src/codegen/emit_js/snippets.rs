@@ -55,6 +55,7 @@ pub fn tmpl_tail_recursion(
   body0: String,
   var_prefix: String,
   return_mark: &str,
+  async_prefix: &str,
 ) -> String {
   let ret_var = js_gensym("ret");
   let times_var = js_gensym("times");
@@ -63,7 +64,7 @@ pub fn tmpl_tail_recursion(
   let check_recur_args = check_args.replace("arguments.length", &format!("{}.args.length", ret_var));
 
   format!(
-    "function {name}({args_code}) {{
+    "{async_prefix}function {name}({args_code}) {{
   {check_args}
   {spreading_code}
   let {ret_var} = null;
@@ -91,7 +92,8 @@ pub fn tmpl_tail_recursion(
     var_prefix = var_prefix,
     ret_var = ret_var,
     times_var = times_var,
-    check_recur_args = check_recur_args
+    check_recur_args = check_recur_args,
+    async_prefix = async_prefix
   )
 }
 
