@@ -28,4 +28,4 @@ jobs:
           && cargo run --bin cr calcit/snapshots/test.cirru --emit-js --once
           && ln -s ../../ node_modules/@calcit/procs
           && cp -v scripts/main.js js-out/
-          && target=node yarn webpack && node js-out/bundle.js
+          && yarn webpack && node js-out/bundle.js
