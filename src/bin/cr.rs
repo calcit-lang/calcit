@@ -235,6 +235,13 @@ fn run_codegen(
     builtins::effects::modify_cli_running_mode(builtins::effects::CliRunningMode::Js)?;
   }
 
+  let code_emit_path = Path::new(emit_path);
+  if !code_emit_path.exists() {
+    let _ = fs::create_dir(code_emit_path);
+  }
+
+  let js_file_path = code_emit_path.join(format!("{}.js", COMPILE_ERRORS_FILE)); // TODO mjs_mode
+
   let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
 
   // preprocess to init
@@ -243,16 +250,18 @@ fn run_codegen(
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
       call_stack::display_stack(&failure)?;
+
+      let _ = fs::write(
+        &js_file_path,
+        format!(
+          "export default \"Preprocessing failed:\\n{}\";",
+          failure.trim().escape_default()
+        ),
+      );
+
       return Err(failure);
     }
   }
-
-  let code_emit_path = Path::new(emit_path);
-  if !code_emit_path.exists() {
-    let _ = fs::create_dir(code_emit_path);
-  }
-
-  let js_file_path = code_emit_path.join(format!("{}.js", COMPILE_ERRORS_FILE)); // TODO mjs_mode
 
   // preprocess to reload
   match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def, None, check_warnings) {
