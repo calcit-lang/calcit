@@ -469,10 +469,21 @@ fn gen_call_code(
               )),
               None => Err(format!("property accessor takes only 1 argument, {:?}", xs)),
             }
-          } else {
+          } else if matches_js_var(name) {
             match body.get(0) {
               Some(obj) => Ok(format!(
                 "{}{}.{}",
+                return_code,
+                to_js_code(&obj, ns, local_defs, file_imports, &None)?,
+                name,
+              )),
+              None => Err(format!("property accessor takes only 1 argument, {:?}", xs)),
+            }
+          } else {
+            // includes characters that need to be escaped
+            match body.get(0) {
+              Some(obj) => Ok(format!(
+                "{}{}[\"{}\"]",
                 return_code,
                 to_js_code(&obj, ns, local_defs, file_imports, &None)?,
                 name,

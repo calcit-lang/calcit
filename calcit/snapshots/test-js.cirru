@@ -22,7 +22,7 @@
               = |number (js/typeof 1)
               js/console.log "|is a Number"
 
-            .log js/console |demo
+            .!log js/console |demo
             js/console.log "|Dates in difference syntax" (.!now js/Date) (.now js/Date)
             js/console.log $ .-PI js/Math
 
@@ -41,6 +41,9 @@
                 a $ new js/Object
               set! (.-a a) 2
               assert= (.-a a) 2
+
+              set! (.-a-b a) 3
+              assert= (.-a-b a) 3
 
             assert= 2 $ aget (to-js-data $ [] 1 2 3) 1
 

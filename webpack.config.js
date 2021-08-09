@@ -1,6 +1,6 @@
 let path = require("path");
 
-let bundleTarget = process.env.target === "node" ? "node" : "web";
+let bundleTarget = process.env.target === "web" ? "web" : "node";
 
 console.log("bundle mode:", bundleTarget);
 
