@@ -131,7 +131,7 @@
                 .nth kitty 0
 
               &let
-                persian $ .extend kitty :Persian :age 10
+                persian $ .extend-as kitty :Persian :age 10
                 assert= 10 $ .get persian :age
                 assert= |Persian $ .get-name persian
 
