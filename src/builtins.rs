@@ -184,6 +184,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&record:nth"
       | "&record:get"
       | "&record:assoc"
+      | "&record:extend-as"
   )
 }
 
@@ -355,6 +356,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&record:nth" => records::nth(args),
     "&record:get" => records::get(args),
     "&record:assoc" => records::assoc(args),
+    "&record:extend-as" => records::extend_as(args),
     a => Err(format!("No such proc: {}", a)),
   }
 }

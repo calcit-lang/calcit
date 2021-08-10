@@ -1,4 +1,4 @@
-import { initTernaryTreeMap, Hash } from "@calcit/ternary-tree";
+import { initTernaryTreeMap, Hash, insert } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes";
 import { kwd, toString, getStringName, findInFields } from "./calcit-data";
 
@@ -203,3 +203,40 @@ export let _$n_record_$o_matches_$q_ = (x: CalcitValue, y: CalcitValue): boolean
   }
   return fieldsEqual(x.fields, y.fields);
 };
+
+export function _$n_record_$o_extend_as(obj: CalcitValue, new_name: CalcitValue, new_key: CalcitValue, new_value: CalcitValue) {
+  if (arguments.length !== 4) throw new Error(`Expected 4 arguments, got ${arguments.length}`);
+  if (!(obj instanceof CalcitRecord)) throw new Error("Expected record");
+  let field = getStringName(new_key);
+  let new_name_string = getStringName(new_name);
+  let new_fields: string[] = [];
+  let new_values: CalcitValue[] = [];
+  let inserted = false;
+
+  for (let i in new_fields) {
+    let k = new_fields[i];
+    if (inserted) {
+      new_fields.push(k);
+      new_values.push(obj.values[i]);
+    } else {
+      if (field < k) {
+        new_fields.push(field);
+        new_values.push(new_value);
+
+        new_fields.push(k);
+        new_values.push(obj.values[i]);
+      } else if (field > k) {
+        new_fields.push(k);
+        new_values.push(obj.values[i]);
+      } else {
+        throw new Error("Does not extend existed record field");
+      }
+    }
+  }
+  if (!inserted) {
+    new_fields.push(field);
+    new_values.push(new_value);
+  }
+
+  return new CalcitRecord(new_name_string, new_fields, new_values);
+}

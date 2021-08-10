@@ -130,6 +130,10 @@
                 [] :color :red
                 .nth kitty 0
 
+              &let
+                persian $ .extend kitty :Persian :age 10
+                assert= 10 $ .get persian :age
+                assert= |Persian $ .get-name persian
 
         |main! $ quote
           defn main! ()
