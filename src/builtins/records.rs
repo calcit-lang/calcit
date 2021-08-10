@@ -230,3 +230,64 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
     (None, ..) => Err(format!("record:assoc expected 3 arguments, got: {:?}", xs)),
   }
 }
+
+pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, String> {
+  if xs.len() != 4 {
+    return Err(format!("record:extend-as expected 4 arguments, got: {:?}", xs));
+  }
+  match (xs.get(0), xs.get(1), xs.get(2), xs.get(3)) {
+    (Some(Calcit::Record(_name, fields, values)), Some(n), Some(a), Some(new_value)) => match a {
+      Calcit::Str(s) | Calcit::Keyword(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
+        Some(_pos) => Err(format!("field `{}` already existed", s)),
+        None => {
+          let mut next_fields: Vec<String> = vec![];
+          let mut next_values: Vec<Calcit> = vec![];
+          let mut inserted: bool = false;
+
+          for (i, k) in fields.iter().enumerate() {
+            if inserted {
+              next_fields.push(k.to_owned());
+              next_values.push(values[i].to_owned());
+            } else {
+              match s.cmp(k) {
+                Ordering::Less => {
+                  next_fields.push(s.to_owned());
+                  next_values.push(new_value.to_owned());
+
+                  next_fields.push(k.to_owned());
+                  next_values.push(values[i].to_owned());
+                  inserted = true;
+                }
+                Ordering::Greater => {
+                  next_fields.push(k.to_owned());
+                  next_values.push(values[i].to_owned());
+                }
+                Ordering::Equal => {
+                  unreachable!("does not equal")
+                }
+              }
+            }
+          }
+          if !inserted {
+            next_fields.push(s.to_owned());
+            next_values.push(new_value.to_owned());
+          }
+
+          let new_name: Result<String, String> = match n {
+            Calcit::Str(s) | Calcit::Keyword(s) | Calcit::Symbol(s, ..) => Ok(s.to_owned()),
+            _ => Err(format!("")),
+          };
+
+          Ok(Calcit::Record(
+            new_name?.to_owned(),
+            next_fields.to_owned(),
+            next_values.to_owned(),
+          ))
+        }
+      },
+      a => Err(format!("invalid field `{}` for {:?}", a, fields)),
+    },
+    (Some(a), ..) => Err(format!("record:extend-as expected a record, got: {}", a)),
+    (None, ..) => Err(format!("record:extend-as expected 4 arguments, got: {:?}", xs)),
+  }
+}

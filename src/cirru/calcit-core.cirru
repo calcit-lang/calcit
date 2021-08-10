@@ -1310,6 +1310,7 @@
             :nth &record:nth
             :assoc &record:assoc
             :from-map &record:from-map
+            :extend-as &record:extend-as
 
         |&core-list-class $ quote
           defrecord! &core-list-class
