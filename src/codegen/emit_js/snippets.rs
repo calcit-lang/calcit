@@ -67,9 +67,9 @@ pub fn tmpl_tail_recursion(
     "{async_prefix}function {name}({args_code}) {{
   {check_args}
   {spreading_code}
-  let {ret_var} = null;
   let {times_var} = 0;
   while(true) {{ /* Tail Recursion */
+    let {ret_var} = null;
     if ({times_var} > 100000) throw new Error('tail recursion not stopping');
     {body}
     if ({ret_var} instanceof {var_prefix}CalcitRecur) {{
