@@ -254,6 +254,16 @@ pub fn invoke_method(
       let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
       (class, invoke_args[0].to_owned())
     }
+    Some(Calcit::Nil) => {
+      let code = gen_sym("&core-nil-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
+    Some(Calcit::Fn(..)) | Some(Calcit::Proc(..)) => {
+      let code = gen_sym("&core-fn-class");
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      (class, invoke_args[0].to_owned())
+    }
     x => return Err(format!("cannot decide a class from: {:?}", x)),
   };
   match &class {

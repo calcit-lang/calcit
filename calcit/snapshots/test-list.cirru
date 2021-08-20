@@ -311,6 +311,32 @@
             log-title "|Testing alias"
             assert= (' 1 2 3) ([] 1 2 3)
 
+        |test-pair $ quote
+          fn ()
+            assert=
+              []
+                [] :a 1
+                [] :b 11
+                [] :b 111
+              .map-pair
+                []
+                  [] :a 2
+                  [] :b 12
+                  [] :b 112
+                fn (k n)
+                  [] k (- n 1)
+            assert=
+              []
+                [] :b 12
+                [] :b 112
+              .filter-pair
+                []
+                  [] :a 2
+                  [] :b 12
+                  [] :b 112
+                fn (k n)
+                  > n 10
+
         |test-methods $ quote
           fn ()
             log-title "|Testing list methods"
@@ -564,6 +590,8 @@
             test-let[]
 
             test-methods
+
+            test-pair
 
             do true
 

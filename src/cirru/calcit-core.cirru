@@ -1363,6 +1363,22 @@
             :rest &list:rest
             :dissoc &list:dissoc
             :distinct &list:distinct
+            :to-list identity
+            :map-pair &list:map-pair
+            :filter-pair &list:filter-pair
+
+        |&core-nil-class $ quote
+          defrecord! &core-nil-class
+            :to-list $ fn (_) ([])
+            :to-map $ fn (_) (&{})
+            :pairs-map $ fn (_) (&{})
+            :to-set $ fn (_) (#{})
+            :to-string $ fn (_) |
+            :to-number $ fn (_) 0
+
+        |&core-fn-class $ quote
+          defrecord! &core-fn-class
+            :call $ fn (f & args) (f & args)
 
         |&init-builtin-classes! $ quote
           defn &init-builtin-classes! ()
@@ -1373,6 +1389,8 @@
             identity &core-list-class
             identity &core-map-class
             identity &core-record-class
+            identity &core-nil-class
+            identity &core-fn-class
 
         |count $ quote
           defn count (x)
@@ -1434,5 +1452,22 @@
                 .dissoc x & args
 
         |concat $ quote
-          defn concat (a & args)
-            .concat a & args
+          defn concat (& args)
+            if (&list:empty? args) ([])
+              .concat (first args) & (rest args)
+
+        |&list:map-pair $ quote
+          defn &list:map-pair (xs f)
+            if (list? xs)
+              map xs $ defn %map-pair (pair)
+                assert "|expected a pair" $ and (list? pair) $ = 2 $ count pair
+                f (nth pair 0) (nth pair 1)
+              raise "|expected list or map from `map-pair`"
+
+        |&list:filter-pair $ quote
+          defn &list:filter-pair (xs f)
+            if (list? xs)
+              filter xs $ defn %filter-pair (pair)
+                assert "|expected a pair" $ and (list? pair) $ = 2 $ count pair
+                f (nth pair 0) (nth pair 1)
+              raise "|expected list or map from `filter-pair`"

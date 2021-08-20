@@ -23,7 +23,7 @@
               js/console.log "|is a Number"
 
             .!log js/console |demo
-            js/console.log "|Dates in difference syntax" (.!now js/Date) (.now js/Date)
+            js/console.log "|Dates in difference syntax" (.!now js/Date)
             js/console.log $ .-PI js/Math
 
             js/console.log $ aget js/Math |PI

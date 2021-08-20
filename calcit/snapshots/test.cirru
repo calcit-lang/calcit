@@ -5,6 +5,7 @@
       , |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru
       , |./test-math.cirru |./test-recursion.cirru |./test-set.cirru
       , |./test-string.cirru |./test-ternary.cirru |./test-js.cirru |./test-record.cirru
+      , |./test-nil.cirru |./test-fn.cirru
       , |./util.cirru
   :files $ {}
     |app.main $ {}
@@ -24,6 +25,8 @@
           [] test-ternary.main :as test-ternary
           [] test-js.main :as test-js
           [] test-record.main :as test-record
+          [] test-nil.main :as test-nil
+          [] test-fn.main :as test-fn
           util.core :refer $ log-title inside-eval: inside-js:
       :defs $ {}
         |test-keyword $ quote
@@ -331,6 +334,8 @@
             test-set/main!
             test-string/main!
             test-record/main!
+            test-nil/main!
+            test-fn/main!
 
             inside-js:
               test-js/main!
