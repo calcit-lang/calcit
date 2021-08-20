@@ -5,16 +5,14 @@
   "devDependencies": {
     "@types/node": "^16.4.13",
     "estrella": "^1.4.1",
-    "typescript": "^4.3.2",
-    "webpack": "^5.49.0",
-    "webpack-cli": "^4.7.2"
+    "typescript": "^4.3.2"
   },
   "scripts": {
     "compile": "rm -rfv lib/* && tsc",
     "procs-link": "ln -s ../../ node_modules/@calcit/procs",
     "cp-mac": "cargo build --release && rm -rfv builds/* && node scripts/cp-version.js && scp builds/* rsync-user@calcit-lang.org:/web-assets/repo/calcit-lang/binaries/macos/",
     "try-rs": "cargo run --bin cr -- calcit/snapshots/test.cirru -1",
-    "try-js": "cargo run --bin cr -- calcit/snapshots/test.cirru --emit-js -1 && yarn webpack && node js-out/bundle.js"
+    "try-js": "cargo run --bin cr -- calcit/snapshots/test.cirru --emit-js -1 && node build.js && node js-out/bundle.js"
   },
   "dependencies": {
     "@calcit/ternary-tree": "0.0.16",
