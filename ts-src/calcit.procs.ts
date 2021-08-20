@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.17";
+export const calcit_version = "0.4.18";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
