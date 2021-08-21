@@ -128,6 +128,8 @@ $calcit_procs.register_calcit_builtin_classes({{
   record: _$n_core_record_class,
   set: _$n_core_set_class,
   string: _$n_core_string_class,
+  nil: _$n_core_nil_class,
+  fn: _$n_core_fn_class,
 }});
 
 let runtimeVersion = $calcit_procs.calcit_version;

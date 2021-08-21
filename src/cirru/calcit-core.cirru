@@ -1230,7 +1230,7 @@
           defrecord! &core-string-class
             :blank? blank?
             :count &str:count
-            :empty $ defn &str:empty (x) |
+            :empty $ defn &str:empty (_) |
             :ends-with? ends-with?
             :get &str:nth
             :parse-float parse-float
@@ -1252,6 +1252,7 @@
             :find-index &str:find-index
             :get-char-code get-char-code
             :escape &str:escape
+            :mappend &str:concat
 
         |&core-set-class $ quote
           defrecord! &core-set-class
@@ -1269,6 +1270,8 @@
             :union union
             :first &set:first
             :rest &set:rest
+            :to-set identity
+            :mappend union
 
         |&core-map-class $ quote
           defrecord! &core-map-class
@@ -1287,6 +1290,7 @@
             :map map
             :map-kv map-kv
             :map-list &map:map-list
+            :mappend merge
             :merge merge
             :select-keys select-keys
             :to-list &map:to-list
@@ -1298,6 +1302,7 @@
             :diff-new &map:diff-new
             :diff-keys &map:diff-keys
             :common-keys &map:common-keys
+            :to-map identity
 
         |&core-record-class $ quote
           defrecord! &core-record-class
@@ -1320,6 +1325,7 @@
             :assoc &list:assoc
             :assoc-after &list:assoc-after
             :assoc-before &list:assoc-before
+            :bind mapcat
             :butlast butlast
             :concat &list:concat
             :contains? &list:contains?
@@ -1337,13 +1343,13 @@
             :get &list:nth
             :get-in get-in
             :group-by group-by
-            :has-index? &list:contains?
             :index-of index-of
             :interleave interleave
             :join join
             :join-str join-str
             :map map
             :map-indexed map-indexed
+            :mappend $ defn &list:mappend (x y) $ &list:concat x y
             :max max
             :min min
             :nth &list:nth
@@ -1363,6 +1369,39 @@
             :rest &list:rest
             :dissoc &list:dissoc
             :distinct &list:distinct
+            :to-list identity
+            :map-pair &list:map-pair
+            :filter-pair &list:filter-pair
+            :apply $ defn &fn:apply (xs fs)
+              &list:concat &
+                map fs $ defn &fn:ap-gen (f)
+                  map xs $ defn &fn:ap-gen (x)
+                    f x
+
+        |&core-nil-class $ quote
+          defrecord! &core-nil-class
+            :to-list $ defn &nil:to-list (_) ([])
+            :to-map $ defn &nil:to-map (_) (&{})
+            :pairs-map $ defn &nil:pairs-map (_) (&{})
+            :to-set $ defn &nil:to-set (_) (#{})
+            :to-string $ defn &nil:to-string (_) |
+            :to-number $ defn &nil:to-number (_) 0
+            :map $ defn &nil:map (_ _f) nil
+            :bind $ defn &nil:bind (_ _f) nil
+            :mappend $ defn &nil:mappend (_ x) x
+            :apply $ defn &nil:apply (_ _f) nil
+
+        |&core-fn-class $ quote
+          defrecord! &core-fn-class
+            :call $ defn &fn:call (f & args) (f & args)
+            :call-args $ defn &fn:call-args (f args) (f & args)
+            :map $ defn &fn:map (f g) $ defn &fn:map (x) $ f (g x)
+            :bind $ defn &fn:bind (m f) $ defn %&fn:bind (x) $ f (m x) x
+            :mappend $ defn &fn:mappend (f g)
+              defn %&fn:mappend (x) $ .mappend (f x) (g x)
+            :apply $ defn &fn:apply (f g)
+              defn %*fn:apply (x)
+                g x (f x)
 
         |&init-builtin-classes! $ quote
           defn &init-builtin-classes! ()
@@ -1373,6 +1412,8 @@
             identity &core-list-class
             identity &core-map-class
             identity &core-record-class
+            identity &core-nil-class
+            identity &core-fn-class
 
         |count $ quote
           defn count (x)
@@ -1434,5 +1475,22 @@
                 .dissoc x & args
 
         |concat $ quote
-          defn concat (a & args)
-            .concat a & args
+          defn concat (& args)
+            if (&list:empty? args) ([])
+              .concat (first args) & (rest args)
+
+        |&list:map-pair $ quote
+          defn &list:map-pair (xs f)
+            if (list? xs)
+              map xs $ defn %map-pair (pair)
+                assert "|expected a pair" $ and (list? pair) $ = 2 $ count pair
+                f (nth pair 0) (nth pair 1)
+              raise "|expected list or map from `map-pair`"
+
+        |&list:filter-pair $ quote
+          defn &list:filter-pair (xs f)
+            if (list? xs)
+              filter xs $ defn %filter-pair (pair)
+                assert "|expected a pair" $ and (list? pair) $ = 2 $ count pair
+                f (nth pair 0) (nth pair 1)
+              raise "|expected list or map from `filter-pair`"

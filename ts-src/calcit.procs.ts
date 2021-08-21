@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.17";
+export const calcit_version = "0.4.19";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -1252,6 +1252,8 @@ let calcit_builtin_classes = {
   list: null as CalcitRecord,
   map: null as CalcitRecord,
   record: null as CalcitRecord,
+  nil: null as CalcitRecord,
+  fn: null as CalcitRecord,
 };
 
 // need to register code from outside
@@ -1264,7 +1266,7 @@ export function invoke_method(p: string) {
     let klass: CalcitRecord;
     let value = obj;
     if (obj == null) {
-      throw new Error(`Cannot invoke method \`${p}\` on nil`);
+      klass = calcit_builtin_classes.nil;
     } else if (obj instanceof CalcitTuple) {
       if (obj.fst instanceof CalcitRecord) {
         klass = obj.fst;
@@ -1275,6 +1277,8 @@ export function invoke_method(p: string) {
       klass = calcit_builtin_classes.number;
     } else if (typeof obj === "string") {
       klass = calcit_builtin_classes.string;
+    } else if (typeof obj === "function") {
+      klass = calcit_builtin_classes.fn;
     } else if (obj instanceof CalcitSet) {
       klass = calcit_builtin_classes.set;
     } else if (obj instanceof CalcitList) {
@@ -1287,11 +1291,12 @@ export function invoke_method(p: string) {
       if ((obj as any)[p] == null) {
         throw new Error(`Missing method \`${p}\` on object`);
       }
-      return (obj as any)[p](...args); // trying to call JavaScript method
+      return (obj as any)[p](...args); // trying to call native JavaScript method
     }
-    if (klass == null) {
-      throw new Error("Cannot find class for this object for invoking");
-    }
+    if (klass == null) throw new Error("Cannot find class for this object for invoking");
+
+    if (!klass.contains(p)) throw new Error(`Missing method '${p}' for object:` + obj.toString());
+
     let method = klass.get(p);
     if (typeof method === "function") {
       return method(value, ...args);
