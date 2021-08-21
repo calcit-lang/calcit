@@ -33,7 +33,7 @@ fn main() -> Result<(), String> {
   let mut eval_once = cli_matches.is_present("once");
   let assets_watch = cli_matches.value_of("watch-dir");
 
-  println!("calcit_runner version: {}", cli_args::CALCIT_VERSION);
+  println!("calcit version: {}", cli_args::CALCIT_VERSION);
 
   let core_snapshot = calcit_runner::load_core_snapshot()?;
 

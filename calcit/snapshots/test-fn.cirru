@@ -15,3 +15,4 @@
 
             assert= 1 (.call identity 1)
             assert= 3 (.call &+ 1 2)
+            assert= 3 (.call-args &+ ([] 1 2))
