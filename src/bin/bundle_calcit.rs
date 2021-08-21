@@ -21,7 +21,7 @@ pub fn main() -> io::Result<()> {
         return Err(io_err(format!("expected *.cirru file, got {}", ext_str)));
       }
     }
-    None => out_path.join("compact.cirru").to_path_buf(),
+    None => out_path.join("compact.cirru"),
   };
   if verbose {
     println!("reading from {}", base_dir.display());
@@ -35,13 +35,13 @@ pub fn main() -> io::Result<()> {
     .join("package.cirru");
 
   let content = read_to_string(package_file)?;
-  let package_data = cirru_edn::parse(&content).map_err(|e| io_err(e))?;
+  let package_data = cirru_edn::parse(&content).map_err(io_err)?;
 
   let pkg = package_data
     .map_get("package")
-    .map_err(|e| io_err(e))?
+    .map_err(io_err)?
     .read_string()
-    .map_err(|e| io_err(e))?;
+    .map_err(io_err)?;
 
   dict.insert(Edn::Keyword(String::from("package")), Edn::Str(pkg));
   dict.insert(Edn::Keyword(String::from("configs")), package_data);
@@ -54,7 +54,7 @@ pub fn main() -> io::Result<()> {
     if let Some(ext) = entry.path().extension() {
       if ext.to_str().unwrap() == "cirru" {
         let content = read_to_string(entry.path())?;
-        let file_data = cirru_parser::parse(&content).map_err(|e| io_err(e))?;
+        let file_data = cirru_parser::parse(&content).map_err(io_err)?;
         if let Cirru::List(xs) = file_data {
           let mut file: HashMap<Edn, Edn> = HashMap::new();
           let (ns_name, ns_code) = if let Some(Cirru::List(ns_form)) = xs.get(0) {
@@ -99,7 +99,6 @@ pub fn main() -> io::Result<()> {
                 return Err(io_err(format!("file line not an expr {}", line)));
               }
             } else {
-              ()
             }
           }
 
@@ -120,7 +119,7 @@ pub fn main() -> io::Result<()> {
 
   // println!("data {}", Edn::Map(dict));
 
-  write(&out_file, cirru_edn::format(&Edn::Map(dict.clone()), true).unwrap())?;
+  write(&out_file, cirru_edn::format(&Edn::Map(dict), true).unwrap())?;
   println!("file created at {}", out_file.display());
 
   Ok(())

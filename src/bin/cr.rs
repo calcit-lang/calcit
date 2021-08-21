@@ -7,7 +7,6 @@ use std::time::Instant;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
-use calcit_runner;
 use calcit_runner::{builtins, call_stack, cli_args, codegen, program, runner, snapshot, util};
 
 struct ProgramSettings {
@@ -51,7 +50,8 @@ fn main() -> Result<(), String> {
   } else {
     // load entry file
     let content = fs::read_to_string(settings.entry_path.to_owned())
-      .expect(&format!("expected Cirru snapshot: {:?}", settings.entry_path));
+      .unwrap_or_else(|_| panic!("expected Cirru snapshot: {:?}", settings.entry_path));
+
     let data = cirru_edn::parse(&content)?;
     // println!("reading: {}", content);
     snapshot = snapshot::load_snapshot_data(data)?;
@@ -180,7 +180,7 @@ fn recall_program(
   // 3. rerun program, and catch error
 
   let data = cirru_edn::parse(&content)?;
-  let changes = snapshot::load_changes_info(data.clone())?;
+  let changes = snapshot::load_changes_info(data)?;
 
   // println!("\ndata: {}", &data);
   // println!("\nchanges: {:?}", changes);
@@ -274,7 +274,7 @@ fn run_codegen(
   }
   let warnings = check_warnings.to_owned().into_inner();
   let mut content: String = String::from("");
-  if warnings.len() > 0 {
+  if !warnings.is_empty() {
     for message in &warnings {
       println!("{}", message);
       content = format!("{}\n{}", content, message);
@@ -292,7 +292,7 @@ fn run_codegen(
   }
 
   // clear if there are no errors
-  let no_error_code = format!("export default null;");
+  let no_error_code = String::from("export default null;");
   if !(js_file_path.exists() && fs::read_to_string(js_file_path.to_owned()).unwrap() == no_error_code) {
     let _ = fs::write(&js_file_path, no_error_code);
   }

@@ -544,7 +544,10 @@ pub fn list_to_set(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn distinct(xs: &CalcitItems) -> Result<Calcit, String> {
   if xs.len() != 1 {
-    return Err(format!("&list:to-set expected a single argument in list, got {:?}", xs));
+    return Err(format!(
+      "&list:distinct expected a single argument in list, got {:?}",
+      xs
+    ));
   }
   match &xs[0] {
     Calcit::List(ys) => {
@@ -556,6 +559,6 @@ pub fn distinct(xs: &CalcitItems) -> Result<Calcit, String> {
       }
       Ok(Calcit::List(zs))
     }
-    a => Err(format!("&list:to-set expected a list, got {}", a)),
+    a => Err(format!("&list:distinct expected a list, got {}", a)),
   }
 }
