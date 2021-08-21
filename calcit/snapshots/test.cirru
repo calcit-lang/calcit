@@ -5,7 +5,7 @@
       , |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru
       , |./test-math.cirru |./test-recursion.cirru |./test-set.cirru
       , |./test-string.cirru |./test-ternary.cirru |./test-js.cirru |./test-record.cirru
-      , |./test-nil.cirru |./test-fn.cirru
+      , |./test-nil.cirru |./test-fn.cirru |./test-algebra.cirru
       , |./util.cirru
   :files $ {}
     |app.main $ {}
@@ -27,6 +27,7 @@
           [] test-record.main :as test-record
           [] test-nil.main :as test-nil
           [] test-fn.main :as test-fn
+          [] test-algebra.main :as test-algebra
           util.core :refer $ log-title inside-eval: inside-js:
       :defs $ {}
         |test-keyword $ quote
@@ -336,6 +337,7 @@
             test-record/main!
             test-nil/main!
             test-fn/main!
+            test-algebra/main!
 
             inside-js:
               test-js/main!

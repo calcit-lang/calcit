@@ -1230,7 +1230,7 @@
           defrecord! &core-string-class
             :blank? blank?
             :count &str:count
-            :empty $ defn &str:empty (x) |
+            :empty $ defn &str:empty (_) |
             :ends-with? ends-with?
             :get &str:nth
             :parse-float parse-float
@@ -1252,6 +1252,7 @@
             :find-index &str:find-index
             :get-char-code get-char-code
             :escape &str:escape
+            :mappend &str:concat
 
         |&core-set-class $ quote
           defrecord! &core-set-class
@@ -1270,6 +1271,7 @@
             :first &set:first
             :rest &set:rest
             :to-set identity
+            :mappend union
 
         |&core-map-class $ quote
           defrecord! &core-map-class
@@ -1288,6 +1290,7 @@
             :map map
             :map-kv map-kv
             :map-list &map:map-list
+            :mappend merge
             :merge merge
             :select-keys select-keys
             :to-list &map:to-list
@@ -1322,6 +1325,7 @@
             :assoc &list:assoc
             :assoc-after &list:assoc-after
             :assoc-before &list:assoc-before
+            :bind mapcat
             :butlast butlast
             :concat &list:concat
             :contains? &list:contains?
@@ -1345,6 +1349,7 @@
             :join-str join-str
             :map map
             :map-indexed map-indexed
+            :mappend $ defn &list:mappend (x y) $ &list:concat x y
             :max max
             :min min
             :nth &list:nth
@@ -1367,19 +1372,36 @@
             :to-list identity
             :map-pair &list:map-pair
             :filter-pair &list:filter-pair
+            :apply $ defn &fn:apply (xs fs)
+              &list:concat &
+                map fs $ defn &fn:ap-gen (f)
+                  map xs $ defn &fn:ap-gen (x)
+                    f x
 
         |&core-nil-class $ quote
           defrecord! &core-nil-class
-            :to-list $ fn (_) ([])
-            :to-map $ fn (_) (&{})
-            :pairs-map $ fn (_) (&{})
-            :to-set $ fn (_) (#{})
-            :to-string $ fn (_) |
-            :to-number $ fn (_) 0
+            :to-list $ defn &nil:to-list (_) ([])
+            :to-map $ defn &nil:to-map (_) (&{})
+            :pairs-map $ defn &nil:pairs-map (_) (&{})
+            :to-set $ defn &nil:to-set (_) (#{})
+            :to-string $ defn &nil:to-string (_) |
+            :to-number $ defn &nil:to-number (_) 0
+            :map $ defn &nil:map (_ _f) nil
+            :bind $ defn &nil:bind (_ _f) nil
+            :mappend $ defn &nil:mappend (_ x) x
+            :apply $ defn &nil:apply (_ _f) nil
 
         |&core-fn-class $ quote
           defrecord! &core-fn-class
-            :call $ fn (f & args) (f & args)
+            :call $ defn &fn:call (f & args) (f & args)
+            :call-args $ defn &fn:call-args (f args) (f & args)
+            :map $ defn &fn:map (f g) $ defn &fn:map (x) $ f (g x)
+            :bind $ defn &fn:bind (m f) $ defn %&fn:bind (x) $ f (m x) x
+            :mappend $ defn &fn:mappend (f g)
+              defn %&fn:mappend (x) $ .mappend (f x) (g x)
+            :apply $ defn &fn:apply (f g)
+              defn %*fn:apply (x)
+                g x (f x)
 
         |&init-builtin-classes! $ quote
           defn &init-builtin-classes! ()
