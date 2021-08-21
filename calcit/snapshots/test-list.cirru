@@ -385,7 +385,7 @@
             assert= false
               .contains? ([] :a :b :c) 3
             assert= true
-              .has-index? ([] :a :b :c) 1
+              .contains? ([] :a :b :c) 1
 
             assert= true
               .includes? ([] :a :b :c) :a

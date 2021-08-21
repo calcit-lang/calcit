@@ -360,6 +360,10 @@
               #{} :a :b
               .common-keys (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
 
+            assert=
+              &{} :a 1
+              .to-map (&{} :a 1)
+
         |test-diff $ quote
           fn ()
             log-title "|Testing diff"

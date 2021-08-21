@@ -110,6 +110,10 @@
             assert= 2
               count $ .rest $ #{} 1 2 3
 
+            assert=
+              #{} 1 3 5
+              .to-set $ #{} 1 3 5
+
         |main! $ quote
           defn main! ()
             log-title "|Testing set"

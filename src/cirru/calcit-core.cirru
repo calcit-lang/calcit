@@ -1269,6 +1269,7 @@
             :union union
             :first &set:first
             :rest &set:rest
+            :to-set identity
 
         |&core-map-class $ quote
           defrecord! &core-map-class
@@ -1298,6 +1299,7 @@
             :diff-new &map:diff-new
             :diff-keys &map:diff-keys
             :common-keys &map:common-keys
+            :to-map identity
 
         |&core-record-class $ quote
           defrecord! &core-record-class
@@ -1337,7 +1339,6 @@
             :get &list:nth
             :get-in get-in
             :group-by group-by
-            :has-index? &list:contains?
             :index-of index-of
             :interleave interleave
             :join join
