@@ -934,8 +934,16 @@
                       raise $ str "|map-kv expected list or nil, got: " result
 
         |either $ quote
-          defmacro either (& body)
-            quasiquote $ or ~@body
+          defmacro either (item & xs)
+            if (&list:empty? xs) item
+              &let (v1# (gensym |v1))
+                quasiquote
+                  &let (~v1# ~item)
+                    if (nil? ~v1#)
+                      either
+                        ~ $ &list:first xs
+                        ~@ $ &list:rest xs
+                      ~ v1#
 
         |def $ quote
           defmacro def (name x) x
