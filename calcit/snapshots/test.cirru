@@ -69,6 +69,10 @@
             assert= 1 (either nil 1)
             assert= 2 (either 2 1)
             assert= nil (either nil nil)
+            assert= false (either false true)
+            assert= false (either nil false true)
+            assert= true (either nil true)
+            assert= true (either nil nil true)
 
             assert= 2 $ either 2
               raise "|should not be called"
@@ -82,6 +86,8 @@
             assert= false $ or false false false
             assert= true $ or false true false
             assert= true $ or false false true
+            assert= true (or false true)
+            assert= true (or nil true)
 
             assert=
               or true (raise "|raise in or")
