@@ -6,7 +6,7 @@ import { CalcitList } from "./js-list";
 import { CalcitRecord } from "./js-record";
 import { CalcitMap } from "./js-map";
 import { CalcitSet } from "./js-set";
-import { CalcitKeyword, CalcitSymbol, kwd } from "./calcit-data";
+import { CalcitKeyword, CalcitSymbol, CalcitRecur, CalcitRef, kwd } from "./calcit-data";
 import { CalcitTuple } from "./js-tuple";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
@@ -200,24 +200,20 @@ export let format_cirru_edn = (data: CalcitValue, useInline: boolean = true): st
 };
 
 export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue => {
-  if (x == null) {
-    return null;
-  }
-  if (typeof x === "number") {
-    return x;
-  }
+  if (x == null) return null;
+
+  if (typeof x === "number") return x;
+
   if (typeof x === "string") {
     if (!noKeyword && x[0] === ":" && x.slice(1).match(/^[\w\d_\?\!\-]+$/)) {
       return kwd(x.slice(1));
     }
     return x;
   }
-  if (x === true || x === false) {
-    return x;
-  }
-  if (typeof x === "function") {
-    return x;
-  }
+  if (x === true || x === false) return x;
+
+  if (typeof x === "function") return x;
+
   if (Array.isArray(x)) {
     var result: any[] = [];
     x.forEach((v) => {
@@ -232,6 +228,17 @@ export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue =>
     });
     return new CalcitSet(result);
   }
+
+  if (x instanceof CalcitList) return x;
+  if (x instanceof CalcitMap) return x;
+  if (x instanceof CalcitSet) return x;
+  if (x instanceof CalcitRecord) return x;
+  if (x instanceof CalcitRecur) return x;
+  if (x instanceof CalcitRef) return x;
+  if (x instanceof CalcitKeyword) return x;
+  if (x instanceof CalcitSymbol) return x;
+  if (x instanceof CalcitTuple) return x;
+
   // detects object
   if (x === Object(x)) {
     let result: Array<[CalcitValue, CalcitValue]> = [];

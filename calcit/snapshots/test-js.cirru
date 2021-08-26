@@ -50,6 +50,14 @@
             assert-detect identity $ instance? js/Number (new js/Number 1)
             assert-detect not $ instance? js/String (new js/Number 1)
 
+            assert=
+              [] 1 ([] 2 3) (:: :quote ([] 'a 'b))
+              to-calcit-data $ js-array 1 ([] 2 3) (:: :quote ([] 'a 'b))
+
+            assert=
+              &{} |a 1 :b 2 |c $ [] 3 4
+              to-calcit-data $ &js-object |a 1 |:b 2 :c $ [] 3 4
+
         |test-let-example $ quote
           fn ()
             log-title "|Testing code emitting of using let"
