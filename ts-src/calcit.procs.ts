@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.20";
+export const calcit_version = "0.4.23";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -1295,7 +1295,7 @@ export function invoke_method(p: string) {
     }
     if (klass == null) throw new Error("Cannot find class for this object for invoking");
 
-    if (!klass.contains(p)) throw new Error(`Missing method '${p}' for object:` + obj.toString());
+    if (!klass.contains(p)) throw new Error(`Missing method '${p}' for object: ${obj}`);
 
     let method = klass.get(p);
     if (typeof method === "function") {

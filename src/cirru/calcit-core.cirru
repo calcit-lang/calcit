@@ -461,23 +461,25 @@
 
         |filter $ quote
           defn filter (xs f)
-            foldl xs (empty xs)
-              fn (acc x)
-                if (f x) (&coll-append acc x) acc
+            .filter xs f
 
         |filter-not $ quote
           defn filter-not (xs f)
-            reduce xs (empty xs)
-              fn (acc x)
-                if-not (f x) (&coll-append acc x) acc
+            .filter xs $ fn (x) $ not $ f x
 
-        |&coll-append $ quote
-          defn &coll-append (xs a)
-            if (list? xs) (append xs a)
-              if (set? xs) (&include xs a)
-                if (map? xs)
-                  &map:add-entry xs a
-                  raise "|&coll-append expected a collection"
+        |&map:filter $ quote
+          defn &map:filter (xs f)
+            reduce xs (&{})
+              fn (acc x)
+                let[] (k v) x
+                  if (f x) (&map:assoc acc k v) acc
+
+        |&map:filter-kv $ quote
+          defn &map:filter-kv (xs f)
+            reduce xs (&{})
+              fn (acc x)
+                let[] (k v) x
+                  if (f k v) (&map:assoc acc k v) acc
 
         |&map:add-entry $ quote
           defn &map:add-entry (xs pair)
@@ -485,6 +487,18 @@
               &= 2 (count pair)
             let[] (k v) pair
               &map:assoc xs k v
+
+        |&list:filter $ quote
+          defn &list:filter (xs f)
+            reduce xs ([])
+              fn (acc x)
+                if (f x) (append acc x) acc
+
+        |&set:filter $ quote
+          defn &set:filter (xs f)
+            reduce xs (#{})
+              fn (acc x)
+                if (f x) (&include acc x) acc
 
         |empty $ quote
           defn empty (x)
@@ -852,7 +866,7 @@
         |[,] $ quote
           defmacro [,] (& body)
             &let
-              xs $ filter body
+              xs $ &list:filter body
                 fn (x) (/= x ',)
               quasiquote $ [] ~@xs
 
@@ -1005,7 +1019,7 @@
         |{,} $ quote
           defmacro {,} (& body)
             &let
-              xs $ filter body
+              xs $ &list:filter body
                 fn (x) (not= x ',)
               quasiquote
                 pairs-map $ section-by ([] ~@xs) 2
@@ -1270,6 +1284,7 @@
             :exclude exclude
             :empty $ defn &set:empty (x) (#{})
             :empty? &set:empty?
+            :filter &set:filter
             :include include
             :includes? &set:includes?
             :contains? &set:includes?
@@ -1290,6 +1305,8 @@
             :dissoc &map:dissoc
             :empty $ defn &map:empty (x) (&{})
             :empty? &map:empty?
+            :filter &map:filter
+            :filter-kv &map:filter-kv
             :get &map:get
             :get-in get-in
             :includes? &map:includes?
@@ -1343,7 +1360,7 @@
             :each each
             :empty $ defn &list:empty (x) ([])
             :empty? &list:empty?
-            :filter filter
+            :filter &list:filter
             :filter-not filter-not
             :find-index find-index
             :foldl $ defn foldl (xs v0 f) (foldl xs v0 f)
@@ -1395,6 +1412,7 @@
             :to-string $ defn &nil:to-string (_) |
             :to-number $ defn &nil:to-number (_) 0
             :map $ defn &nil:map (_ _f) nil
+            :filter $ defn &nil:filter (_ _f) nil
             :bind $ defn &nil:bind (_ _f) nil
             :mappend $ defn &nil:mappend (_ x) x
             :apply $ defn &nil:apply (_ _f) nil
@@ -1498,7 +1516,7 @@
         |&list:filter-pair $ quote
           defn &list:filter-pair (xs f)
             if (list? xs)
-              filter xs $ defn %filter-pair (pair)
+              &list:filter xs $ defn %filter-pair (pair)
                 assert "|expected a pair" $ and (list? pair) $ = 2 $ count pair
                 f (nth pair 0) (nth pair 1)
               raise "|expected list or map from `filter-pair`"

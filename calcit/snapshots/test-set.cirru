@@ -114,6 +114,11 @@
               #{} 1 3 5
               .to-set $ #{} 1 3 5
 
+            assert=
+              #{} 7 9
+              .filter (#{} 1 3 5 7 9)
+                fn (x) (&> x 5)
+
         |main! $ quote
           defn main! ()
             log-title "|Testing set"

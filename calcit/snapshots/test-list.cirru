@@ -106,6 +106,11 @@
                 [] 4 5 6 7 8 9
 
               assert=
+                .filter (range 10)
+                  fn (x) (&> x 3)
+                [] 4 5 6 7 8 9
+
+              assert=
                 filter-not (range 10)
                   fn (x) (&> x 3)
                 [] 0 1 2 3
