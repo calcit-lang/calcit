@@ -137,6 +137,20 @@
                   &> v 2
               {} (:c 3) (:d 4)
 
+            assert=
+              .filter
+                {} (:a 1) (:b 2) (:c 3) (:d 4)
+                fn (pair) $ let[] (k v) pair
+                  &> v 2
+              {} (:c 3) (:d 4)
+
+            assert=
+              .filter-kv
+                {} (:a 1) (:b 2) (:c 3) (:d 4)
+                fn (k v)
+                  &> v 2
+              {} (:c 3) (:d 4)
+
         |test-native-map-syntax $ quote
           defn test-native-map-syntax ()
 

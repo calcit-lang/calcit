@@ -14,3 +14,9 @@
 
             assert= ([]) (.to-list nil)
             assert= ({}) (.to-map nil)
+
+            assert= nil
+              .map nil inc
+
+            assert= nil
+              .filter nil inc
