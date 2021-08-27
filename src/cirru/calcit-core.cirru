@@ -1284,6 +1284,7 @@
             :exclude exclude
             :empty $ defn &set:empty (x) (#{})
             :empty? &set:empty?
+            :filter &set:filter
             :include include
             :includes? &set:includes?
             :contains? &set:includes?
