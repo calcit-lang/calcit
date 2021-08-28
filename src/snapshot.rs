@@ -2,6 +2,7 @@ use cirru_edn::Edn;
 use cirru_parser::Cirru;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SnapshotConfigs {
@@ -93,13 +94,46 @@ fn load_files(data: Edn) -> Result<HashMap<String, FileInSnapShot>, String> {
 }
 
 /// parse snapshot
-pub fn load_snapshot_data(data: Edn) -> Result<Snapshot, String> {
+pub fn load_snapshot_data(data: Edn, path: &str) -> Result<Snapshot, String> {
+  let pkg = data.map_get("package")?.read_string()?;
+  let mut files = load_files(data.map_get("files")?)?;
+  let meta_ns = format!("{}.$meta", pkg);
+  files.insert(meta_ns.to_owned(), gen_meta_ns(&meta_ns, path));
   let s = Snapshot {
-    package: data.map_get("package")?.read_string()?,
+    package: pkg,
     configs: load_configs(data.map_get("configs")?)?,
-    files: load_files(data.map_get("files")?)?,
+    files: files,
   };
   Ok(s)
+}
+
+pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
+  let mut def_dict: HashMap<String, Cirru> = HashMap::new();
+  def_dict.insert(
+    String::from("calcit-filename"),
+    Cirru::List(vec![
+      Cirru::Leaf(String::from("def")),
+      Cirru::Leaf(String::from("calcit-filename")),
+      Cirru::Leaf(String::from(format!("|{}", path.escape_default()))),
+    ]),
+  );
+  let path_data = Path::new(path);
+  let parent = path_data.parent().unwrap();
+  let parent_str = parent.to_str().unwrap();
+
+  def_dict.insert(
+    String::from("calcit-dirname"),
+    Cirru::List(vec![
+      Cirru::Leaf(String::from("def")),
+      Cirru::Leaf(String::from("calcit-dirname")),
+      Cirru::Leaf(String::from(format!("|{}", parent_str.escape_default()))),
+    ]),
+  );
+
+  FileInSnapShot {
+    ns: Cirru::List(vec![Cirru::Leaf(String::from("ns")), Cirru::Leaf(ns.to_owned())]),
+    defs: def_dict,
+  }
 }
 
 pub fn gen_default() -> Snapshot {

@@ -7,7 +7,6 @@ use std::time::Instant;
 
 use crate::{
   primes::{Calcit, CalcitItems},
-  program,
   util::number::f64_to_i32,
 };
 
@@ -178,20 +177,5 @@ pub fn format_time(xs: &CalcitItems) -> Result<Calcit, String> {
     (Some(Calcit::Number(_)), Some(a)) => Err(format!("format-time Rust does not support dynamic format: {}", a)),
     (Some(a), Some(b)) => Err(format!("format-time expected time and string, got: {} {}", a, b)),
     (a, b) => Err(format!("format-time expected time and string, got: {:?} {:?}", a, b)),
-  }
-}
-
-pub fn ffi_message(xs: &CalcitItems) -> Result<Calcit, String> {
-  if xs.len() >= 1 {
-    match &xs[0] {
-      Calcit::Str(s) | Calcit::Symbol(s, ..) => {
-        let items = xs.to_owned().slice(1..);
-        program::send_ffi_message(s.to_owned(), items);
-        Ok(Calcit::Nil)
-      }
-      a => Err(format!("&ffi-message expected string, got {}", a)),
-    }
-  } else {
-    Err(String::from("&ffi-message expected arguments but got empty"))
   }
 }

@@ -1,4 +1,5 @@
 pub mod effects;
+mod ffi;
 mod lists;
 mod logics;
 mod maps;
@@ -44,7 +45,10 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&get-calcit-backend"
       | "read-file"
       | "write-file"
+      // ffi
       | "&ffi-message"
+      | "&call-dylib:str->str"
+      | "&call-dylib:str:str->str"
       // external format
       | "parse-cirru"
       | "format-cirru"
@@ -216,7 +220,10 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&get-calcit-backend" => effects::call_get_calcit_backend(args),
     "read-file" => effects::read_file(args),
     "write-file" => effects::write_file(args),
-    "&ffi-message" => effects::ffi_message(args),
+    // ffi
+    "&ffi-message" => ffi::ffi_message(args),
+    "&call-dylib:str->str" => ffi::call_dylib_str_to_str(args),
+    "&call-dylib:str:str->str" => ffi::call_dylib_str_str_to_str(args),
     // external data format
     "parse-cirru" => meta::parse_cirru(args),
     "format-cirru" => meta::write_cirru(args),
