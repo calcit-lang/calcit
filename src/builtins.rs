@@ -30,6 +30,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "turn-symbol"
       | "turn-keyword"
       | "&compare"
+      | "&get-os"
       // tuples
       | "::" // unstable
       | "&tuple:nth"
@@ -104,6 +105,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "starts-with?"
       | "ends-with?"
       | "get-char-code"
+      | "char-from-code"
       | "pr-str"
       | "parse-float"
       | "blank?"
@@ -207,6 +209,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "turn-symbol" => meta::turn_symbol(args),
     "turn-keyword" => meta::turn_keyword(args),
     "&compare" => meta::native_compare(args),
+    "&get-os" => meta::get_os(args),
     // tuple
     "::" => meta::new_tuple(args), // unstable solution for the name
     "&tuple:nth" => meta::tuple_nth(args),
@@ -281,6 +284,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "starts-with?" => strings::starts_with_ques(args),
     "ends-with?" => strings::ends_with_ques(args),
     "get-char-code" => strings::get_char_code(args),
+    "char-from-code" => strings::char_from_code(args),
     "parse-float" => strings::parse_float(args),
     "pr-str" => strings::pr_str(args),
     "blank?" => strings::blank_ques(args),

@@ -361,3 +361,8 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn no_op() -> Result<Calcit, String> {
   Ok(Calcit::Nil)
 }
+
+pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, String> {
+  // https://doc.rust-lang.org/std/env/consts/constant.OS.html
+  return Ok(Calcit::Keyword(std::env::consts::OS.to_owned()));
+}

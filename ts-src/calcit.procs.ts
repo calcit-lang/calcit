@@ -934,6 +934,11 @@ export let get_char_code = (c: string): number => {
   return c.charCodeAt(0);
 };
 
+export let char_from_code = (n: number): string => {
+  if (typeof n !== "number") throw new Error("Expected na integer");
+  return String.fromCharCode(n);
+};
+
 export let re_matches = (content: string, re: string): boolean => {
   return new RegExp(re).test(content);
 };
@@ -1452,6 +1457,10 @@ export let _$n_list_$o_distinct = (xs: CalcitList): CalcitList => {
     result.push(data[idx]);
   }
   return new CalcitList(result);
+};
+
+export let _$n_get_os = (): CalcitKeyword => {
+  return kwd("js-engine");
 };
 
 // special procs have to be defined manually

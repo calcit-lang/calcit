@@ -1,3 +1,4 @@
+use std::char;
 use std::cmp::Ordering;
 
 use crate::primes;
@@ -185,8 +186,18 @@ pub fn get_char_code(xs: &CalcitItems) -> Result<Calcit, String> {
         Err(format!("get-char-code expected a character, got: {}", s))
       }
     }
-    Some(a) => Err(format!("get-char-code expected 2 strings, got: {}", a)),
-    _ => Err(String::from("get-char-code expected 2 arguments, got nothing")),
+    Some(a) => Err(format!("get-char-code expected a charactor, got: {}", a)),
+    _ => Err(String::from("get-char-code expected 1 argument, got nothing")),
+  }
+}
+pub fn char_from_code(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(Calcit::Number(x)) => match f64_to_usize(*x) {
+      Ok(n) => Ok(Calcit::Str((char::from_u32(n as u32).unwrap()).to_string())),
+      Err(e) => return Err(format!("char_from_code expected number, got: {}", e)),
+    },
+    Some(a) => Err(format!("char_from_code expected 1 number, got: {}", a)),
+    _ => Err(String::from("char_from_code expected 1 arguments, got nothing")),
   }
 }
 pub fn parse_float(xs: &CalcitItems) -> Result<Calcit, String> {
