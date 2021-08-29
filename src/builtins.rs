@@ -49,6 +49,8 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&ffi-message"
       | "&call-dylib:str->str"
       | "&call-dylib:str:str->str"
+      | "&call-dylib:str->bool"
+      | "&call-dylib->str"
       // external format
       | "parse-cirru"
       | "format-cirru"
@@ -224,6 +226,8 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&ffi-message" => ffi::ffi_message(args),
     "&call-dylib:str->str" => ffi::call_dylib_str_to_str(args),
     "&call-dylib:str:str->str" => ffi::call_dylib_str_str_to_str(args),
+    "&call-dylib:str->bool" => ffi::call_dylib_str_to_bool(args),
+    "&call-dylib->str" => ffi::call_dylib_to_str(args),
     // external data format
     "parse-cirru" => meta::parse_cirru(args),
     "format-cirru" => meta::write_cirru(args),
