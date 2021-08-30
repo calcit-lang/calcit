@@ -225,6 +225,7 @@ fn process_list_call(
   let head = &chunk_xs.pop_front().unwrap();
   let (head_form, head_evaled) = preprocess_expr(&head, scope_defs, file_ns, program_code, check_warnings)?;
   let args = &chunk_xs;
+  let def_name = grab_def_name(head);
 
   // println!(
   //   "handling list call: {} {:?}, {}",
@@ -312,6 +313,16 @@ fn process_list_call(
       _ => Err(format!("unknown syntax: {}", head)),
     },
     (Calcit::Thunk(..), _) => Err(format!("does not know how to preprocess a thunk: {}", head)),
+
+    (_, Some(Calcit::Fn(f_name, _name_ns, _id, _scope, f_args, _f_body))) => {
+      check_fn_args(&f_args, args, file_ns, &f_name, &def_name, check_warnings);
+      let mut ys = im::vector![head_form];
+      for a in args {
+        let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, program_code, check_warnings)?;
+        ys.push_back(form);
+      }
+      Ok((Calcit::List(ys), None))
+    }
     (_, _) => {
       let mut ys = im::vector![head_form];
       for a in args {
@@ -320,6 +331,86 @@ fn process_list_call(
       }
       Ok((Calcit::List(ys), None))
     }
+  }
+}
+
+// detects arguments of top-level functions when possible
+fn check_fn_args(
+  defined_args: &CalcitItems,
+  params: &CalcitItems,
+  file_ns: &str,
+  f_name: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<String>>,
+) {
+  let mut i = 0;
+  let mut j = 0;
+  let mut optional = false;
+
+  loop {
+    let d = defined_args.get(i);
+    let r = params.get(j);
+
+    match (d, r) {
+      (None, None) => return,
+      (_, Some(Calcit::Symbol(sym, ..))) if sym == "&" => {
+        // dynamic values, can't tell yet
+        return;
+      }
+      (Some(Calcit::Symbol(sym, ..)), _) if sym == "&" => {
+        // dynamic args rule, all okay
+        return;
+      }
+      (Some(Calcit::Symbol(sym, ..)), _) if sym == "?" => {
+        // dynamic args rule, all okay
+        optional = true;
+        i = i + 1;
+        continue;
+      }
+      (Some(_), None) => {
+        if optional {
+          i = i + 1;
+          j = j + 1;
+          continue;
+        } else {
+          let mut warnings = check_warnings.borrow_mut();
+          warnings.push(format!(
+            "[Warn] lack of args in {} `{}` with `{}`, at {}/{}",
+            f_name,
+            primes::CrListWrap(defined_args.to_owned()),
+            primes::CrListWrap(params.to_owned()),
+            file_ns,
+            def_name
+          ));
+          return;
+        }
+      }
+      (None, Some(_)) => {
+        let mut warnings = check_warnings.borrow_mut();
+        warnings.push(format!(
+          "[Warn] too many args for {} `{}` with `{}`, at {}/{}",
+          f_name,
+          primes::CrListWrap(defined_args.to_owned()),
+          primes::CrListWrap(params.to_owned()),
+          file_ns,
+          def_name
+        ));
+        return;
+      }
+      (Some(_), Some(_)) => {
+        i = i + 1;
+        j = j + 1;
+        continue;
+      }
+    }
+  }
+}
+
+// TODO this native implementation only handles symbols
+fn grab_def_name(x: &Calcit) -> String {
+  match x {
+    Calcit::Symbol(_, _, def_name, _) => def_name.to_owned(),
+    _ => String::from("??"),
   }
 }
 
