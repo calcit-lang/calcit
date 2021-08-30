@@ -54,7 +54,7 @@ fn main() -> Result<(), String> {
 
     let data = cirru_edn::parse(&content)?;
     // println!("reading: {}", content);
-    snapshot = snapshot::load_snapshot_data(data)?;
+    snapshot = snapshot::load_snapshot_data(data, settings.entry_path.to_str().unwrap())?;
     // attach modules
     for module_path in &snapshot.configs.modules {
       let module_data = calcit_runner::load_module(&module_path, settings.entry_path.parent().unwrap())?;

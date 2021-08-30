@@ -289,6 +289,9 @@
 
         |main! $ quote
           defn main! ()
+
+            println $ &get-os
+
             inside-js:
               load-console-formatter!
 

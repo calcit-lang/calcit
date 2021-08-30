@@ -1,4 +1,5 @@
 pub mod effects;
+mod ffi;
 mod lists;
 mod logics;
 mod maps;
@@ -29,6 +30,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "turn-symbol"
       | "turn-keyword"
       | "&compare"
+      | "&get-os"
       // tuples
       | "::" // unstable
       | "&tuple:nth"
@@ -44,7 +46,12 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&get-calcit-backend"
       | "read-file"
       | "write-file"
+      // ffi
       | "&ffi-message"
+      | "&call-dylib:str->str"
+      | "&call-dylib:str:str->str"
+      | "&call-dylib:str->bool"
+      | "&call-dylib->str"
       // external format
       | "parse-cirru"
       | "format-cirru"
@@ -98,6 +105,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "starts-with?"
       | "ends-with?"
       | "get-char-code"
+      | "char-from-code"
       | "pr-str"
       | "parse-float"
       | "blank?"
@@ -201,6 +209,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "turn-symbol" => meta::turn_symbol(args),
     "turn-keyword" => meta::turn_keyword(args),
     "&compare" => meta::native_compare(args),
+    "&get-os" => meta::get_os(args),
     // tuple
     "::" => meta::new_tuple(args), // unstable solution for the name
     "&tuple:nth" => meta::tuple_nth(args),
@@ -216,7 +225,12 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&get-calcit-backend" => effects::call_get_calcit_backend(args),
     "read-file" => effects::read_file(args),
     "write-file" => effects::write_file(args),
-    "&ffi-message" => effects::ffi_message(args),
+    // ffi
+    "&ffi-message" => ffi::ffi_message(args),
+    "&call-dylib:str->str" => ffi::call_dylib_str_to_str(args),
+    "&call-dylib:str:str->str" => ffi::call_dylib_str_str_to_str(args),
+    "&call-dylib:str->bool" => ffi::call_dylib_str_to_bool(args),
+    "&call-dylib->str" => ffi::call_dylib_to_str(args),
     // external data format
     "parse-cirru" => meta::parse_cirru(args),
     "format-cirru" => meta::write_cirru(args),
@@ -270,6 +284,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "starts-with?" => strings::starts_with_ques(args),
     "ends-with?" => strings::ends_with_ques(args),
     "get-char-code" => strings::get_char_code(args),
+    "char-from-code" => strings::char_from_code(args),
     "parse-float" => strings::parse_float(args),
     "pr-str" => strings::pr_str(args),
     "blank?" => strings::blank_ques(args),
