@@ -1207,6 +1207,8 @@ export let format_to_lisp = (x: CalcitValue): string => {
     }
     chunk += ")";
     return chunk;
+  } else if (typeof x === "string") {
+    return JSON.stringify("|" + x);
   } else {
     return x.toString();
   }

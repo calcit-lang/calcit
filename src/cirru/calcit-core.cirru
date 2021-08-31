@@ -1049,13 +1049,18 @@
 
         |w-js-log $ quote
           defmacro w-js-log (x)
-            &let
-              v $ gensym |v
+            if (list? x)
               quasiquote
-                &let
-                  ~v ~x
-                  js/console.log (format-to-lisp (quote ~x)) |=> ~v
-                  ~ v
+                &let nil
+                  js/console.log (format-to-lisp (quote ~x)) |=> ~x
+                  ~ x
+              &let
+                v $ gensym |v
+                quasiquote
+                  &let
+                    ~v ~x
+                    js/console.log (format-to-lisp (quote ~x)) |=> ~v
+                    ~ v
 
         |wo-js-log $ quote
           defmacro w-js-log (x) x
@@ -1139,8 +1144,8 @@
           defmacro let{} (items base & body)
             assert (str "|expects symbol names in binding names: " items)
               if (list? items) (every? items symbol?) false
-            let
-                var-result $ gensym |result
+            &let
+              var-result $ gensym |result
               quasiquote
                 &let
                   ~var-result ~base

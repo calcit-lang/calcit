@@ -125,6 +125,8 @@
               {} (:a 1)
               wo-js-log ({} (:a 1))
 
+            w-js-log "|log demo"
+
             do true
 
       :proc $ quote ()
