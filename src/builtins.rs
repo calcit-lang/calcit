@@ -391,6 +391,7 @@ pub fn is_syntax_name(s: &str) -> bool {
       | "macroexpand-all"
       | "foldl" // for performance
       | "foldl-shortcut" // for performance
+      | "foldr-shortcut" // for performance
       | "try"
       | "sort" // TODO need better solution
       | "defatom"
@@ -416,6 +417,7 @@ pub fn handle_syntax(
     "&let" => syntax::syntax_let(nodes, scope, file_ns, program),
     "foldl" => lists::foldl(nodes, scope, file_ns, program),
     "foldl-shortcut" => lists::foldl_shortcut(nodes, scope, file_ns, program),
+    "foldr-shortcut" => lists::foldr_shortcut(nodes, scope, file_ns, program),
     "macroexpand" => syntax::macroexpand(nodes, scope, file_ns, program),
     "macroexpand-1" => syntax::macroexpand_1(nodes, scope, file_ns, program),
     "macroexpand-all" => syntax::macroexpand_all(nodes, scope, file_ns, program),

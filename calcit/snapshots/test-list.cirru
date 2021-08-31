@@ -428,6 +428,19 @@
             assert= nil
               .find-index ([] :a :b :c) $ fn (x) (= x :d)
 
+            assert= 9
+              .find-last ([] 1 3 5 7 9) $ fn (x) $ > x 5
+            assert= nil
+              .find-last ([] 1 3 5 7 9) $ fn (x) $ > x 10
+            assert= 4
+              .find-last-index ([] 1 3 5 7 9) $ fn (x) $ > x 5
+            assert= nil
+              .find-last-index ([] 1 3 5 7 9) $ fn (x) $ > x 10
+            assert= 3
+              .last-index-of ([] 1 1 2 1) 1
+            assert= nil
+              .last-index-of ([] 1 1 2 1) 3
+
             assert= 10
               .foldl ([] 1 2 3 4) 0 +
 

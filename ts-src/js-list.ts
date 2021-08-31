@@ -312,3 +312,35 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
   }
   throw new Error("Unknow data for foldl-shortcut");
 };
+export let foldr_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: CalcitValue, f: CalcitFn): CalcitValue {
+  if (arguments.length !== 4) {
+    throw new Error("foldr-shortcut takes 4 arguments");
+  }
+
+  if (f == null) {
+    debugger;
+    throw new Error("Expected function for folding");
+  }
+  if (xs instanceof CalcitList) {
+    var state = acc;
+    // iterate from right
+    for (let idx = xs.len() - 1; idx >= 0; idx--) {
+      let item = xs.get(idx);
+      let pair = f(state, item);
+      if (pair instanceof CalcitTuple) {
+        if (typeof pair.fst === "boolean") {
+          if (pair.fst) {
+            return pair.snd;
+          } else {
+            state = pair.snd;
+          }
+        }
+      } else {
+        throw new Error("Expected return value in `:: bool acc` structure");
+      }
+    }
+    return v0;
+  }
+
+  throw new Error("Unknow data for foldr-shortcut, expected only list");
+};

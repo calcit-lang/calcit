@@ -253,7 +253,7 @@ pub fn foldl(
 }
 
 /// foldl-shortcut using syntax for performance, it's supposed to be a function
-/// by returning `[bool, acc]`, bool indicates where performace a shortcut return
+/// by returning `:: bool acc`, bool indicates where performace a shortcut return
 pub fn foldl_shortcut(
   expr: &CalcitItems,
   scope: &CalcitScope,
@@ -353,6 +353,58 @@ pub fn foldl_shortcut(
   } else {
     Err(format!(
       "foldl-shortcut expected 4 arguments list,state,default,fn, got: {:?}",
+      expr
+    ))
+  }
+}
+
+pub fn foldr_shortcut(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  program_code: &ProgramCodeData,
+) -> Result<Calcit, String> {
+  if expr.len() == 4 {
+    let xs = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
+    let acc = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
+    let default_value = runner::evaluate_expr(&expr[2], scope, file_ns, program_code)?;
+    let f = runner::evaluate_expr(&expr[3], scope, file_ns, program_code)?;
+    match (&xs, &f) {
+      // dirty since only functions being call directly then we become fast
+      (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+        let mut state = acc;
+        let size = xs.len();
+        for i in 0..size {
+          let x = xs[size - 1 - i].to_owned();
+          let values = im::vector![state, x];
+          let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+          match pair {
+            Calcit::Tuple(x0, x1) => match *x0 {
+              Calcit::Bool(b) => {
+                if b {
+                  return Ok(*x1.to_owned());
+                } else {
+                  state = *x1.to_owned()
+                }
+              }
+              a => return Err(format!("return value in foldr-shortcut should be a bool, got: {}", a)),
+            },
+            _ => {
+              return Err(format!(
+                "return value for foldr-shortcut should be `:: bool acc`, got: {}",
+                pair
+              ))
+            }
+          }
+        }
+        Ok(default_value)
+      }
+
+      (_, _) => Err(format!("foldr-shortcut expected list... and fn, got: {} {}", xs, f)),
+    }
+  } else {
+    Err(format!(
+      "foldr-shortcut expected 4 arguments list,state,default,fn, got: {:?}",
       expr
     ))
   }

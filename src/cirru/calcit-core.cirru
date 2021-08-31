@@ -269,6 +269,27 @@
                 :: true x
                 :: false nil
 
+        |&list:last-index-of $ quote
+          defn &list:last-index-of (xs item)
+            foldr-shortcut xs (dec $ count xs) nil $ fn (idx x)
+              if (&= item x)
+                :: true idx
+                :: false (&- 1 idx)
+
+        |&list:find-last-index $ quote
+          defn &list:find-last-index (xs f)
+            foldr-shortcut xs (dec $ count xs) nil $ fn (idx x)
+              if (f x)
+                :: true idx
+                :: false (&- 1 idx)
+
+        |&list:find-last $ quote
+          defn &list:find-last (xs f)
+            foldr-shortcut xs nil nil $ fn (_acc x)
+              if (f x)
+                :: true x
+                :: false nil
+
         |-> $ quote
           defmacro -> (base & xs)
             if (&list:empty? xs)
@@ -1364,6 +1385,8 @@
             :filter-not filter-not
             :find find
             :find-index find-index
+            :find-last &list:find-last
+            :find-last-index &list:find-last-index
             :foldl $ defn foldl (xs v0 f) (foldl xs v0 f)
             :frequencies frequencies
             :get &list:nth
@@ -1373,6 +1396,7 @@
             :interleave interleave
             :join join
             :join-str join-str
+            :last-index-of &list:last-index-of
             :map map
             :map-indexed map-indexed
             :mappend $ defn &list:mappend (x y) $ &list:concat x y
