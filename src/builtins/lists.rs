@@ -273,19 +273,19 @@ pub fn foldl_shortcut(
           let values = im::vector![state, x.clone()];
           let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
           match pair {
-            Calcit::List(ys) if ys.len() == 2 => match &ys[0] {
+            Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
-                if *b {
-                  return Ok(ys[1].to_owned());
+                if b {
+                  return Ok(*x1.to_owned());
                 } else {
-                  state = ys[1].to_owned()
+                  state = *x1.to_owned()
                 }
               }
               a => return Err(format!("return value in foldl-shortcut should be a bool, got: {}", a)),
             },
             _ => {
               return Err(format!(
-                "return value for foldl-shortcut should be `[bool, acc]`, got: {}",
+                "return value for foldl-shortcut should be `:: bool acc`, got: {}",
                 pair
               ))
             }
@@ -300,19 +300,19 @@ pub fn foldl_shortcut(
           let values = im::vector![state, x.clone()];
           let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
           match pair {
-            Calcit::List(ys) if ys.len() == 2 => match &ys[0] {
+            Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
-                if *b {
-                  return Ok(ys[1].to_owned());
+                if b {
+                  return Ok(*x1.to_owned());
                 } else {
-                  state = ys[1].to_owned()
+                  state = *x1.to_owned()
                 }
               }
               a => return Err(format!("return value in foldl-shortcut should be a bool, got: {}", a)),
             },
             _ => {
               return Err(format!(
-                "return value for foldl-shortcut should be `[bool, acc]`, got: {}",
+                "return value for foldl-shortcut should be `:: bool acc`, got: {}",
                 pair
               ))
             }
@@ -327,19 +327,19 @@ pub fn foldl_shortcut(
           let values = im::vector![state, Calcit::List(im::vector![k.to_owned(), x.to_owned()])];
           let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
           match pair {
-            Calcit::List(ys) if ys.len() == 2 => match &ys[0] {
+            Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
-                if *b {
-                  return Ok(ys[1].to_owned());
+                if b {
+                  return Ok(*x1.to_owned());
                 } else {
-                  state = ys[1].to_owned()
+                  state = *x1.to_owned()
                 }
               }
               a => return Err(format!("return value in foldl-shortcut should be a bool, got: {}", a)),
             },
             _ => {
               return Err(format!(
-                "return value for foldl-shortcut should be `[bool, acc]`, got: {}",
+                "return value for foldl-shortcut should be `:: bool acc`, got: {}",
                 pair
               ))
             }

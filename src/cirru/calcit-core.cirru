@@ -252,22 +252,22 @@
           defn index-of (xs item)
             foldl-shortcut xs 0 nil $ fn (idx x)
               if (&= item x)
-                [] true idx
-                [] false (&+ 1 idx)
+                :: true idx
+                :: false (&+ 1 idx)
 
         |find-index $ quote
           defn find-index (xs f)
             foldl-shortcut xs 0 nil $ fn (idx x)
               if (f x)
-                [] true idx
-                [] false (&+ 1 idx)
+                :: true idx
+                :: false (&+ 1 idx)
 
         |find $ quote
           defn find (xs f)
             foldl-shortcut xs 0 nil $ fn (_acc x)
               if (f x)
-                [] true x
-                [] false nil
+                :: true x
+                :: false nil
 
         |-> $ quote
           defmacro -> (base & xs)
@@ -429,15 +429,15 @@
           defn every? (xs f)
             foldl-shortcut xs nil true $ fn (_acc x)
               if (f x)
-                [] false nil
-                [] true false
+                :: false nil
+                :: true false
 
         |any? $ quote
           defn any? (xs f)
             foldl-shortcut xs nil false $ fn (_acc x)
               if (f x)
-                [] true true
-                [] false nil
+                :: true true
+                :: false nil
 
         |mapcat $ quote
           defn mapcat (xs f)
@@ -1362,6 +1362,7 @@
             :empty? &list:empty?
             :filter &list:filter
             :filter-not filter-not
+            :find find
             :find-index find-index
             :foldl $ defn foldl (xs v0 f) (foldl xs v0 f)
             :frequencies frequencies
