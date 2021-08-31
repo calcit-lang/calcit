@@ -252,22 +252,43 @@
           defn index-of (xs item)
             foldl-shortcut xs 0 nil $ fn (idx x)
               if (&= item x)
-                [] true idx
-                [] false (&+ 1 idx)
+                :: true idx
+                :: false (&+ 1 idx)
 
         |find-index $ quote
           defn find-index (xs f)
             foldl-shortcut xs 0 nil $ fn (idx x)
               if (f x)
-                [] true idx
-                [] false (&+ 1 idx)
+                :: true idx
+                :: false (&+ 1 idx)
 
         |find $ quote
           defn find (xs f)
             foldl-shortcut xs 0 nil $ fn (_acc x)
               if (f x)
-                [] true x
-                [] false nil
+                :: true x
+                :: false nil
+
+        |&list:last-index-of $ quote
+          defn &list:last-index-of (xs item)
+            foldr-shortcut xs (dec $ count xs) nil $ fn (idx x)
+              if (&= item x)
+                :: true idx
+                :: false (&- 1 idx)
+
+        |&list:find-last-index $ quote
+          defn &list:find-last-index (xs f)
+            foldr-shortcut xs (dec $ count xs) nil $ fn (idx x)
+              if (f x)
+                :: true idx
+                :: false (&- 1 idx)
+
+        |&list:find-last $ quote
+          defn &list:find-last (xs f)
+            foldr-shortcut xs nil nil $ fn (_acc x)
+              if (f x)
+                :: true x
+                :: false nil
 
         |-> $ quote
           defmacro -> (base & xs)
@@ -429,15 +450,15 @@
           defn every? (xs f)
             foldl-shortcut xs nil true $ fn (_acc x)
               if (f x)
-                [] false nil
-                [] true false
+                :: false nil
+                :: true false
 
         |any? $ quote
           defn any? (xs f)
             foldl-shortcut xs nil false $ fn (_acc x)
               if (f x)
-                [] true true
-                [] false nil
+                :: true true
+                :: false nil
 
         |mapcat $ quote
           defn mapcat (xs f)
@@ -950,14 +971,21 @@
         |either $ quote
           defmacro either (item & xs)
             if (&list:empty? xs) item
-              &let (v1# (gensym |v1))
+              if (list? item)
+                &let (v1# (gensym |v1))
+                  quasiquote
+                    &let (~v1# ~item)
+                      if (nil? ~v1#)
+                        either
+                          ~ $ &list:first xs
+                          ~@ $ &list:rest xs
+                        ~ v1#
                 quasiquote
-                  &let (~v1# ~item)
-                    if (nil? ~v1#)
-                      either
-                        ~ $ &list:first xs
-                        ~@ $ &list:rest xs
-                      ~ v1#
+                  if (nil? ~item)
+                    either
+                      ~ $ &list:first xs
+                      ~@ $ &list:rest xs
+                    ~ item
 
         |def $ quote
           defmacro def (name x) x
@@ -965,8 +993,13 @@
         |and $ quote
           defmacro and (item & xs)
             if (&list:empty? xs)
-              quasiquote
-                if ~item ~item false
+              if (list? item)
+                &let (v1# $ gensym |v1)
+                  quasiquote
+                    &let (~v1# ~item)
+                      if ~v1# ~v1# false
+                quasiquote
+                  if ~item ~item false
               quasiquote
                 if ~item
                   and
@@ -977,18 +1010,29 @@
         |or $ quote
           defmacro or (item & xs)
             if (&list:empty? xs) item
-              &let (v1# (gensym |v1))
-                quasiquote
-                  &let (~v1# ~item)
-                    if (nil? ~v1#)
-                      or
-                        ~ $ &list:first xs
-                        ~@ $ &list:rest xs
-                      if (= false ~v1#)
+              if (list? item)
+                &let (v1# (gensym |v1))
+                  quasiquote
+                    &let (~v1# ~item)
+                      if (nil? ~v1#)
                         or
                           ~ $ &list:first xs
                           ~@ $ &list:rest xs
-                        ~ v1#
+                        if (= false ~v1#)
+                          or
+                            ~ $ &list:first xs
+                            ~@ $ &list:rest xs
+                          ~ v1#
+                quasiquote
+                  if (nil? ~item)
+                    or
+                      ~ $ &list:first xs
+                      ~@ $ &list:rest xs
+                    if (= false ~item)
+                      or
+                        ~ $ &list:first xs
+                        ~@ $ &list:rest xs
+                      ~ item
 
         |w-log $ quote
           defmacro w-log (x)
@@ -1005,13 +1049,18 @@
 
         |w-js-log $ quote
           defmacro w-js-log (x)
-            &let
-              v $ gensym |v
+            if (list? x)
               quasiquote
-                &let
-                  ~v ~x
-                  js/console.log (format-to-lisp (quote ~x)) |=> ~v
-                  ~ v
+                &let nil
+                  js/console.log (format-to-lisp (quote ~x)) |=> ~x
+                  ~ x
+              &let
+                v $ gensym |v
+                quasiquote
+                  &let
+                    ~v ~x
+                    js/console.log (format-to-lisp (quote ~x)) |=> ~v
+                    ~ v
 
         |wo-js-log $ quote
           defmacro w-js-log (x) x
@@ -1095,8 +1144,8 @@
           defmacro let{} (items base & body)
             assert (str "|expects symbol names in binding names: " items)
               if (list? items) (every? items symbol?) false
-            let
-                var-result $ gensym |result
+            &let
+              var-result $ gensym |result
               quasiquote
                 &let
                   ~var-result ~base
@@ -1362,7 +1411,10 @@
             :empty? &list:empty?
             :filter &list:filter
             :filter-not filter-not
+            :find find
             :find-index find-index
+            :find-last &list:find-last
+            :find-last-index &list:find-last-index
             :foldl $ defn foldl (xs v0 f) (foldl xs v0 f)
             :frequencies frequencies
             :get &list:nth
@@ -1372,6 +1424,7 @@
             :interleave interleave
             :join join
             :join-str join-str
+            :last-index-of &list:last-index-of
             :map map
             :map-indexed map-indexed
             :mappend $ defn &list:mappend (x y) $ &list:concat x y

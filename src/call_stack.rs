@@ -36,7 +36,7 @@ pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args:
     ns: ns.to_owned(),
     def: def.to_owned(),
     code,
-    args: args.clone(),
+    args: args.to_owned(),
     kind,
   })
 }

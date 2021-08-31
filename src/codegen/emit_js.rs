@@ -282,7 +282,7 @@ fn gen_call_code(
     return Ok(String::from("()"));
   }
 
-  let head = ys[0].clone();
+  let head = ys[0].to_owned();
   let body = ys.skip(1);
   match &head {
     Calcit::Symbol(s, ..) | Calcit::Proc(s) | Calcit::Syntax(s, ..) => {
@@ -328,7 +328,7 @@ fn gen_call_code(
             _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {:?}", body)),
             (Some(Calcit::Symbol(sym, ..)), Some(v)) => {
               // let _name = escape_var(sym); // TODO
-              let ref_path = wrap_js_str(&format!("{}/{}", ns, sym.clone()));
+              let ref_path = wrap_js_str(&format!("{}/{}", ns, sym.to_owned()));
               call_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &im::vector![]);
               let value_code = &to_js_code(v, ns, local_defs, file_imports, &None)?;
               call_stack::pop_call_stack();
@@ -581,7 +581,7 @@ fn gen_symbol_code(
             track_ns_import(ns_part.to_owned(), ImportedTarget::AsNs(r_ns.to_owned()), file_imports)?;
             Ok(escape_ns_var(s, ns_part))
           } else {
-            track_ns_import(r_ns.clone(), ImportedTarget::AsNs(r_ns.to_owned()), file_imports)?;
+            track_ns_import(r_ns.to_owned(), ImportedTarget::AsNs(r_ns.to_owned()), file_imports)?;
             Ok(escape_ns_var(s, r_ns))
           }
         }
@@ -600,7 +600,7 @@ fn gen_symbol_code(
     return Ok(format!("{}{}", proc_prefix, escape_var(s)));
   } else if matches!(resolved, Some(ResolvedLocal)) || local_defs.contains(s) {
     Ok(escape_var(s))
-  } else if let Some(ResolvedDef(r_ns, _r_def, import_rule)) = resolved.clone() {
+  } else if let Some(ResolvedDef(r_ns, _r_def, import_rule)) = resolved.to_owned() {
     if r_ns == primes::CORE_NS {
       // functions under core uses built $calcit module entry
       return Ok(format!("{}{}", var_prefix, escape_var(s)));
@@ -667,14 +667,14 @@ fn gen_let_code(
   file_imports: &RefCell<ImportsDict>,
   base_return_label: &Option<String>,
 ) -> Result<String, String> {
-  let mut let_def_body = body.clone();
+  let mut let_def_body = body.to_owned();
   let return_label = match base_return_label {
     Some(t) => Some(t.to_owned()),
     None => Some(String::from("return ")),
   };
 
   // defined new local variable
-  let mut scoped_defs = local_defs.clone();
+  let mut scoped_defs = local_defs.to_owned();
   let mut defs_code = String::from("");
   let mut body_part = String::from("");
 
@@ -683,7 +683,7 @@ fn gen_let_code(
     if let_def_body.len() <= 1 {
       return Err(format!("&let expected body, but got empty, {}", xs.lisp_str()));
     }
-    let pair = let_def_body[0].clone();
+    let pair = let_def_body[0].to_owned();
     let content = let_def_body.skip(1);
 
     match &pair {
@@ -702,8 +702,8 @@ fn gen_let_code(
         break;
       }
       Calcit::List(xs) if xs.len() == 2 => {
-        let def_name = xs[0].clone();
-        let def_code = xs[1].clone();
+        let def_name = xs[0].to_owned();
+        let def_code = xs[1].to_owned();
 
         match def_name {
           Calcit::Symbol(sym, ..) => {
@@ -735,7 +735,7 @@ fn gen_let_code(
               };
             } else {
               // track variable
-              scoped_defs.insert(sym.clone());
+              scoped_defs.insert(sym.to_owned());
 
               if content.len() == 1 {
                 match &content[0] {
@@ -934,7 +934,7 @@ fn gen_js_func(
   file_imports: &RefCell<ImportsDict>,
 ) -> Result<String, String> {
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
-  let mut local_defs = outer_defs.clone();
+  let mut local_defs = outer_defs.to_owned();
   let mut spreading_code = String::from(""); // js list and calcit-js list are different, need to convert
   let mut args_code = String::from("");
   let mut spreading = false;
@@ -948,7 +948,7 @@ fn gen_js_func(
           if !args_code.is_empty() {
             args_code.push_str(", ");
           }
-          local_defs.insert(sym.clone());
+          local_defs.insert(sym.to_owned());
           let arg_name = escape_var(&sym);
           args_code.push_str("...");
           args_code.push_str(&arg_name);
@@ -959,7 +959,7 @@ fn gen_js_func(
           if !args_code.is_empty() {
             args_code.push_str(", ");
           }
-          local_defs.insert(sym.clone());
+          local_defs.insert(sym.to_owned());
           args_code.push_str(&escape_var(&sym));
           optional_count += 1;
         } else {
@@ -974,7 +974,7 @@ fn gen_js_func(
           if !args_code.is_empty() {
             args_code.push_str(", ");
           }
-          local_defs.insert(sym.clone());
+          local_defs.insert(sym.to_owned());
           args_code.push_str(&escape_var(&sym));
           args_count += 1;
         }
@@ -1082,7 +1082,7 @@ fn sort_by_deps(deps: &HashMap<String, Calcit>) -> Vec<String> {
   let mut deps_graph: HashMap<String, HashSet<String>> = HashMap::new();
   let mut def_names: Vec<String> = vec![];
   for (k, v) in deps {
-    def_names.push(k.clone());
+    def_names.push(k.to_owned());
     let mut deps_info: HashSet<String> = HashSet::new();
     for k2 in deps.keys() {
       if k2 == k {
@@ -1090,7 +1090,7 @@ fn sort_by_deps(deps: &HashMap<String, Calcit>) -> Vec<String> {
       }
       // echo "checking ", k, " -> ", k2, " .. ", v.containsSymbol(k2)
       if contains_symbol(&v, &k2) {
-        deps_info.insert(k2.clone());
+        deps_info.insert(k2.to_owned());
       }
     }
     deps_graph.insert(k.to_owned(), deps_info);
@@ -1102,11 +1102,11 @@ fn sort_by_deps(deps: &HashMap<String, Calcit>) -> Vec<String> {
   'outer: for x in def_names {
     for (idx, y) in result.iter().enumerate() {
       if depends_on(y, &x, &deps_graph, 3) {
-        result.insert(idx, x.clone());
+        result.insert(idx, x.to_owned());
         continue 'outer;
       }
     }
-    result.push(x.clone());
+    result.push(x.to_owned());
   }
   // println!("\ndef names {:?}", def_names);
 
@@ -1154,7 +1154,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 
     let mut defs_in_current: HashSet<String> = HashSet::new();
     for k in file.keys() {
-      defs_in_current.insert(k.clone());
+      defs_in_current.insert(k.to_owned());
     }
 
     if !internal_states::is_first_compilation() {
@@ -1193,7 +1193,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 
     // tracking top level scope definitions
     for def in file.keys() {
-      def_names.insert(def.clone());
+      def_names.insert(def.to_owned());
     }
 
     let deps_in_order = sort_by_deps(&file);
@@ -1215,7 +1215,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         }
       }
 
-      let f = file[&def].clone();
+      let f = file[&def].to_owned();
 
       match &f {
         // probably not work here

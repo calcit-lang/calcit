@@ -17,10 +17,10 @@ pub fn evaluate_expr(
   // println!("eval code: {}", expr.lisp_str());
 
   match expr {
-    Calcit::Nil => Ok(expr.clone()),
-    Calcit::Bool(_) => Ok(expr.clone()),
-    Calcit::Number(_) => Ok(expr.clone()),
-    Calcit::Symbol(s, ..) if s == "&" => Ok(expr.clone()),
+    Calcit::Nil => Ok(expr.to_owned()),
+    Calcit::Bool(_) => Ok(expr.to_owned()),
+    Calcit::Number(_) => Ok(expr.to_owned()),
+    Calcit::Symbol(s, ..) if s == "&" => Ok(expr.to_owned()),
     Calcit::Symbol(s, ns, _at_def, resolved) => match resolved {
       Some(ResolvedDef(r_ns, r_def, _import_rule)) => {
         let v = evaluate_symbol(r_def, scope, r_ns, program_code)?;
@@ -39,14 +39,14 @@ pub fn evaluate_expr(
       }
       _ => evaluate_symbol(&s, scope, &ns, program_code),
     },
-    Calcit::Keyword(_) => Ok(expr.clone()),
-    Calcit::Str(_) => Ok(expr.clone()),
+    Calcit::Keyword(_) => Ok(expr.to_owned()),
+    Calcit::Str(_) => Ok(expr.to_owned()),
     Calcit::Thunk(code, v) => match v {
       None => evaluate_expr(code, scope, file_ns, program_code),
       Some(data) => Ok(*data.to_owned()),
     },
-    Calcit::Ref(_) => Ok(expr.clone()),
-    Calcit::Tuple(..) => Ok(expr.clone()),
+    Calcit::Ref(_) => Ok(expr.to_owned()),
+    Calcit::Tuple(..) => Ok(expr.to_owned()),
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
     Calcit::List(xs) => match xs.get(0) {
       None => Err(format!("cannot evaluate empty expr: {}", expr)),
@@ -88,9 +88,9 @@ pub fn evaluate_expr(
             );
 
             // TODO moving to preprocess
-            let mut current_values = rest_nodes.clone();
+            let mut current_values = rest_nodes.to_owned();
             // println!("eval macro: {} {}", x, expr.lisp_str()));
-            // println!("macro... {} {}", x, CrListWrap(current_values.clone()));
+            // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
             push_call_stack(file_ns, &name, StackKind::Macro, expr.to_owned(), &rest_nodes);
             added_stack = true;
@@ -150,10 +150,10 @@ pub fn evaluate_expr(
     Calcit::Set(_) => Err(String::from("unexpected set for expr")),
     Calcit::Map(_) => Err(String::from("unexpected map for expr")),
     Calcit::Record(..) => Err(String::from("unexpected record for expr")),
-    Calcit::Proc(_) => Ok(expr.clone()),
-    Calcit::Macro(..) => Ok(expr.clone()),
-    Calcit::Fn(..) => Ok(expr.clone()),
-    Calcit::Syntax(_, _) => Ok(expr.clone()),
+    Calcit::Proc(_) => Ok(expr.to_owned()),
+    Calcit::Macro(..) => Ok(expr.to_owned()),
+    Calcit::Fn(..) => Ok(expr.to_owned()),
+    Calcit::Syntax(_, _) => Ok(expr.to_owned()),
   }
 }
 
@@ -177,7 +177,7 @@ pub fn evaluate_symbol(
       }
       if scope.contains_key(sym) {
         // although scope is detected first, it would trigger warning during preprocess
-        return Ok(scope.get(sym).unwrap().clone());
+        return Ok(scope.get(sym).unwrap().to_owned());
       }
       if is_proc_name(sym) {
         return Ok(Calcit::Proc(sym.to_owned()));
@@ -218,7 +218,7 @@ fn eval_symbol_from_program(sym: &str, ns: &str, program_code: &program::Program
     None => match program::lookup_def_code(ns, sym, program_code) {
       Some(code) => {
         let v = evaluate_expr(&code, &im::HashMap::new(), ns, program_code)?;
-        program::write_evaled_def(ns, sym, v.clone())?;
+        program::write_evaled_def(ns, sym, v.to_owned())?;
         Ok(v)
       }
       None => Err(format!("cannot find code for def: {}/{}", ns, sym)),
@@ -234,7 +234,7 @@ pub fn run_fn(
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, String> {
-  let mut current_values = values.clone();
+  let mut current_values = values.to_owned();
   loop {
     let body_scope = bind_args(args, &current_values, scope)?;
     let v = evaluate_lines(body, &body_scope, file_ns, program_code)?;
@@ -254,15 +254,15 @@ pub fn bind_args(args: &CalcitItems, values: &CalcitItems, base_scope: &CalcitSc
   // if values.len() != args.len() {
   //   return Err(format!(
   //     "arguments length mismatch: {} ... {}",
-  //     Calcit::List(values.clone()),
-  //     Calcit::List(args.clone()),
+  //     Calcit::List(values.to_owned()),
+  //     Calcit::List(args.to_owned()),
   //   ));
   // }
-  let mut scope = base_scope.clone();
+  let mut scope = base_scope.to_owned();
   let mut spreading = false;
   let mut optional = false;
-  let mut collected_args = args.clone();
-  let mut collected_values = values.clone();
+  let mut collected_args = args.to_owned();
+  let mut collected_values = values.to_owned();
   while let Some(a) = collected_args.pop_front() {
     if spreading {
       match a {
@@ -278,7 +278,7 @@ pub fn bind_args(args: &CalcitItems, values: &CalcitItems, base_scope: &CalcitSc
             return Err(format!(
               "extra args `{}` after spreading in `{}`",
               CrListWrap(collected_args),
-              CrListWrap(args.clone()),
+              CrListWrap(args.to_owned()),
             ));
           }
         }
@@ -290,16 +290,16 @@ pub fn bind_args(args: &CalcitItems, values: &CalcitItems, base_scope: &CalcitSc
         Calcit::Symbol(s, ..) if s == "?" => optional = true,
         Calcit::Symbol(s, ..) => match collected_values.pop_front() {
           Some(v) => {
-            scope.insert(s.clone(), v.clone());
+            scope.insert(s.to_owned(), v.to_owned());
           }
           None => {
             if optional {
-              scope.insert(s.clone(), Calcit::Nil);
+              scope.insert(s.to_owned(), Calcit::Nil);
             } else {
               return Err(format!(
                 "too few values `{}` passed to args `{}`",
-                CrListWrap(values.clone()),
-                CrListWrap(args.clone())
+                CrListWrap(values.to_owned()),
+                CrListWrap(args.to_owned())
               ));
             }
           }
@@ -314,8 +314,8 @@ pub fn bind_args(args: &CalcitItems, values: &CalcitItems, base_scope: &CalcitSc
     Err(format!(
       "extra args `{}` not handled while passing values `{}` to args `{}`",
       CrListWrap(collected_values),
-      CrListWrap(values.clone()),
-      CrListWrap(args.clone()),
+      CrListWrap(values.to_owned()),
+      CrListWrap(args.to_owned()),
     ))
   }
 }
@@ -363,9 +363,9 @@ pub fn evaluate_args(
                       None => evaluate_expr(code, scope, file_ns, program_code)?,
                       Some(data) => *data.to_owned(),
                     },
-                    _ => x.clone(),
+                    _ => x.to_owned(),
                   };
-                  ret.push_back(y.clone());
+                  ret.push_back(y.to_owned());
                 }
                 spreading = false
               }
@@ -378,7 +378,7 @@ pub fn evaluate_args(
                 None => evaluate_expr(code, scope, file_ns, program_code)?,
                 Some(data) => *data.to_owned(),
               },
-              _ => v.clone(),
+              _ => v.to_owned(),
             };
             ret.push_back(y)
           }

@@ -181,7 +181,7 @@ impl fmt::Display for Calcit {
 
 impl fmt::Display for CrListWrap {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&format_to_lisp(&Calcit::List(self.0.clone()))) // TODO performance
+    f.write_str(&format_to_lisp(&Calcit::List(self.0.to_owned()))) // TODO performance
   }
 }
 
@@ -447,7 +447,7 @@ impl Calcit {
   pub fn turn_string(&self) -> String {
     match self {
       Calcit::Nil => String::from(""),
-      Calcit::Str(s) => s.clone(),
+      Calcit::Str(s) => s.to_owned(),
       _ => format!("{}", self),
     }
   }

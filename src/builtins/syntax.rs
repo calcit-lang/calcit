@@ -21,8 +21,8 @@ pub fn defn(
       s.to_owned(),
       file_ns.to_owned(),
       nanoid!(),
-      scope.clone(),
-      xs.clone(),
+      scope.to_owned(),
+      xs.to_owned(),
       expr.skip(2),
     )),
     (Some(a), Some(b)) => Err(format!("invalid args type for defn: {} , {}", a, b)),
@@ -41,13 +41,13 @@ pub fn defmacro(
       s.to_owned(),
       def_ns.to_owned(),
       nanoid!(),
-      xs.clone(),
+      xs.to_owned(),
       expr.skip(2),
     )),
     (Some(a), Some(b)) => Err(format!("invalid structure for defmacro: {} {}", a, b)),
     _ => Err(format!(
       "invalid structure for defmacro: {}",
-      Calcit::List(expr.clone())
+      Calcit::List(expr.to_owned())
     )),
   }
 }
@@ -59,7 +59,7 @@ pub fn quote(
   _program: &ProgramCodeData,
 ) -> Result<Calcit, String> {
   if expr.len() == 1 {
-    Ok(expr[0].clone())
+    Ok(expr[0].to_owned())
   } else {
     Err(format!("unexpected data for quote: {:?}", expr))
   }
@@ -111,7 +111,7 @@ pub fn syntax_let(
   match expr.get(0) {
     Some(Calcit::Nil) => runner::evaluate_lines(&expr.skip(1), scope, file_ns, program_code),
     Some(Calcit::List(xs)) if xs.len() == 2 => {
-      let mut body_scope = scope.clone();
+      let mut body_scope = scope.to_owned();
       match (&xs[0], &xs[1]) {
         (Calcit::Symbol(s, ..), ys) => {
           let value = runner::evaluate_expr(ys, scope, file_ns, program_code)?;
@@ -188,7 +188,7 @@ fn replace_code(
         Ok(SpanResult::Single(Calcit::List(ret)))
       }
     },
-    _ => Ok(SpanResult::Single(c.clone())),
+    _ => Ok(SpanResult::Single(c.to_owned())),
   }
 }
 
@@ -201,7 +201,7 @@ pub fn macroexpand(
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
 
-    match quoted_code.clone() {
+    match quoted_code.to_owned() {
       Calcit::List(xs) => {
         if xs.is_empty() {
           return Ok(quoted_code);
@@ -244,7 +244,7 @@ pub fn macroexpand_1(
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
     // println!("quoted: {}", quoted_code);
-    match quoted_code.clone() {
+    match quoted_code.to_owned() {
       Calcit::List(xs) => {
         if xs.is_empty() {
           return Ok(quoted_code);
@@ -275,7 +275,7 @@ pub fn macroexpand_all(
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
 
-    match quoted_code.clone() {
+    match quoted_code.to_owned() {
       Calcit::List(xs) => {
         if xs.is_empty() {
           return Ok(quoted_code);
@@ -348,7 +348,7 @@ pub fn call_try(
 
     match &xs {
       // dirty since only functions being call directly then we become fast
-      Ok(v) => Ok(v.clone()),
+      Ok(v) => Ok(v.to_owned()),
       Err(failure) => {
         let f = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
         let err_data = Calcit::Str(failure.to_owned());

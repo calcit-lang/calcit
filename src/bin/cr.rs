@@ -59,7 +59,7 @@ fn main() -> Result<(), String> {
     for module_path in &snapshot.configs.modules {
       let module_data = calcit_runner::load_module(&module_path, settings.entry_path.parent().unwrap())?;
       for (k, v) in &module_data.files {
-        snapshot.files.insert(k.clone(), v.clone());
+        snapshot.files.insert(k.to_owned(), v.to_owned());
       }
     }
   }
@@ -73,7 +73,7 @@ fn main() -> Result<(), String> {
     .unwrap();
   // attach core
   for (k, v) in core_snapshot.files {
-    snapshot.files.insert(k.clone(), v.clone());
+    snapshot.files.insert(k.to_owned(), v.to_owned());
   }
 
   let mut program_code = program::extract_program_data(&snapshot)?;

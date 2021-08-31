@@ -31,13 +31,13 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, Strin
   match nodes {
     Cirru::Leaf(_) => Err(String::from("Expected import rule in expr")),
     Cirru::List(rule_nodes) => {
-      let mut xs = rule_nodes.clone();
+      let mut xs = rule_nodes.to_owned();
       match xs.get(0) {
         // strip leading `[]` symbols
         Some(Cirru::Leaf(s)) if s == "[]" => xs = xs[1..4].to_vec(),
         _ => (),
       }
-      match (xs[0].clone(), xs[1].clone(), xs[2].clone()) {
+      match (xs[0].to_owned(), xs[1].to_owned(), xs[2].to_owned()) {
         (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::Leaf(String::from(":as")) => {
           Ok(vec![(alias, ImportRule::NsAs(ns))])
         }
@@ -49,7 +49,7 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, Strin
           for y in ys {
             match y {
               Cirru::Leaf(s) if &s == "[]" => (), // `[]` symbol are ignored
-              Cirru::Leaf(s) => rules.push((s.clone(), ImportRule::NsReferDef(ns.clone(), s.clone()))),
+              Cirru::Leaf(s) => rules.push((s.to_owned(), ImportRule::NsReferDef(ns.to_owned(), s.to_owned()))),
               Cirru::List(_defs) => return Err(String::from("invalid refer values")),
             }
           }
@@ -60,7 +60,7 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, Strin
         (_, x, _) if x == Cirru::Leaf(String::from(":refer")) => Err(String::from("invalid import rule")),
         _ if xs.len() != 3 => Err(format!(
           "expected import rule has length 3: {}",
-          Cirru::List(xs.clone())
+          Cirru::List(xs.to_owned())
         )),
         _ => Err(String::from("unknown rule")),
       }
@@ -107,8 +107,8 @@ fn extract_file_data(file: snapshot::FileInSnapShot, ns: String) -> Result<Progr
 
 pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
   let mut xs: ProgramCodeData = HashMap::new();
-  for (ns, file) in s.files.clone() {
-    let file_info = extract_file_data(file, ns.clone())?;
+  for (ns, file) in s.files.to_owned() {
+    let file_info = extract_file_data(file, ns.to_owned())?;
     xs.insert(ns, file_info);
   }
   Ok(xs)
@@ -125,7 +125,7 @@ pub fn has_def_code(ns: &str, def: &str, program_code: &ProgramCodeData) -> bool
 pub fn lookup_def_code(ns: &str, def: &str, program_code: &ProgramCodeData) -> Option<Calcit> {
   let file = program_code.get(ns)?;
   let data = file.defs.get(def)?;
-  Some(data.clone())
+  Some(data.to_owned())
 }
 
 pub fn lookup_def_target_in_import(ns: &str, def: &str, program: &ProgramCodeData) -> Option<String> {
@@ -170,7 +170,7 @@ pub fn has_evaled_def(ns: &str, def: &str) -> bool {
 pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
   let s2 = PROGRAM_EVALED_DATA_STATE.lock().unwrap();
   if s2.contains_key(ns) && s2[ns].contains_key(def) {
-    Some(s2[ns][def].clone())
+    Some(s2[ns][def].to_owned())
   } else {
     // println!("failed to lookup {} {}", ns, def);
     None
@@ -197,16 +197,16 @@ pub fn clone_evaled_program() -> ProgramEvaledData {
 
   let mut xs: ProgramEvaledData = HashMap::new();
   for k in program.keys() {
-    xs.insert(k.clone(), program[k].clone());
+    xs.insert(k.to_owned(), program[k].to_owned());
   }
   xs
 }
 
 pub fn apply_code_changes(base: &ProgramCodeData, changes: &snapshot::ChangesDict) -> Result<ProgramCodeData, String> {
-  let mut program_code = base.clone();
+  let mut program_code = base.to_owned();
 
   for (ns, file) in &changes.added {
-    program_code.insert(ns.to_owned(), extract_file_data(file.clone(), ns.to_owned())?);
+    program_code.insert(ns.to_owned(), extract_file_data(file.to_owned(), ns.to_owned())?);
   }
   for ns in &changes.removed {
     program_code.remove(ns);
@@ -215,7 +215,7 @@ pub fn apply_code_changes(base: &ProgramCodeData, changes: &snapshot::ChangesDic
     // println!("handling ns: {:?} {}", ns, program_code.contains_key(ns));
     let file = program_code.get_mut(ns).unwrap();
     if info.ns.is_some() {
-      file.import_map = extract_import_map(&info.ns.clone().unwrap())?;
+      file.import_map = extract_import_map(&info.ns.to_owned().unwrap())?;
     }
     for (def, code) in &info.added_defs {
       file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def)?);

@@ -17,6 +17,7 @@ import {
 
 import { CalcitMap } from "./js-map";
 import { CalcitSet } from "./js-set";
+import { CalcitTuple } from "./js-tuple";
 import { CalcitFn } from "./calcit.procs";
 
 import { isNestedCalcitData, tipNestedCalcitData, toString } from "./calcit-data";
@@ -258,16 +259,16 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     for (let idx = 0; idx < xs.len(); idx++) {
       let item = xs.get(idx);
       let pair = f(state, item);
-      if (pair instanceof CalcitList && pair.len() === 2) {
-        if (typeof pair.get(0) === "boolean") {
-          if (pair.get(0)) {
-            return pair.get(1);
+      if (pair instanceof CalcitTuple) {
+        if (typeof pair.fst === "boolean") {
+          if (pair.fst) {
+            return pair.snd;
           } else {
-            state = pair.get(1);
+            state = pair.snd;
           }
         }
       } else {
-        throw new Error("Expected return value in `[bool, acc]` structure");
+        throw new Error("Expected return value in `:: bool acc` structure");
       }
     }
     return v0;
@@ -276,16 +277,16 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     let state = acc;
     for (let item of xs.values()) {
       let pair = f(state, item);
-      if (pair instanceof CalcitList && pair.len() === 2) {
-        if (typeof pair.get(0) === "boolean") {
-          if (pair.get(0)) {
-            return pair.get(1);
+      if (pair instanceof CalcitTuple) {
+        if (typeof pair.fst === "boolean") {
+          if (pair.fst) {
+            return pair.snd;
           } else {
-            state = pair.get(1);
+            state = pair.snd;
           }
         }
       } else {
-        throw new Error("Expected return value in `[bool, acc]` structure");
+        throw new Error("Expected return value in `:: bool acc` structure");
       }
     }
     return v0;
@@ -295,19 +296,51 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     let state = acc;
     for (let item of xs.pairs()) {
       let pair = f(state, new CalcitList(item));
-      if (pair instanceof CalcitList && pair.len() === 2) {
-        if (typeof pair.get(0) === "boolean") {
-          if (pair.get(0)) {
-            return pair.get(1);
+      if (pair instanceof CalcitTuple) {
+        if (typeof pair.fst === "boolean") {
+          if (pair.fst) {
+            return pair.snd;
           } else {
-            state = pair.get(1);
+            state = pair.snd;
           }
         }
       } else {
-        throw new Error("Expected return value in `[bool, acc]` structure");
+        throw new Error("Expected return value in `:: bool acc` structure");
       }
     }
     return v0;
   }
   throw new Error("Unknow data for foldl-shortcut");
+};
+export let foldr_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: CalcitValue, f: CalcitFn): CalcitValue {
+  if (arguments.length !== 4) {
+    throw new Error("foldr-shortcut takes 4 arguments");
+  }
+
+  if (f == null) {
+    debugger;
+    throw new Error("Expected function for folding");
+  }
+  if (xs instanceof CalcitList) {
+    var state = acc;
+    // iterate from right
+    for (let idx = xs.len() - 1; idx >= 0; idx--) {
+      let item = xs.get(idx);
+      let pair = f(state, item);
+      if (pair instanceof CalcitTuple) {
+        if (typeof pair.fst === "boolean") {
+          if (pair.fst) {
+            return pair.snd;
+          } else {
+            state = pair.snd;
+          }
+        }
+      } else {
+        throw new Error("Expected return value in `:: bool acc` structure");
+      }
+    }
+    return v0;
+  }
+
+  throw new Error("Unknow data for foldr-shortcut, expected only list");
 };
