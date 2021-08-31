@@ -62,6 +62,15 @@
             assert= (or nil nil 1) 1
             assert= (or nil nil nil) nil
 
+            assert= (or (> 10 9) (> 10 8)) true
+            assert= (or (> 10 11) (> 10 8)) true
+            assert= (or (> 10 9) (> 10 11)) true
+            assert= (or (> 10 12) (> 10 11)) false
+
+        |test-and $ quote
+          fn ()
+            log-title "|Testing and"
+
             assert= (and 1) 1
             assert= (and nil) false
             assert= (and 1 nil) false
@@ -71,6 +80,26 @@
             assert= (and 1 1 1) 1
             assert= (and 1 1 nil) false
             assert= (and nil 1 1) false
+
+            assert= (and (> 10 9) (> 10 8)) true
+            assert= (and (> 10 11) (> 10 8)) false
+            assert= (and (> 10 9) (> 10 11)) false
+
+        |test-either $ quote
+          fn ()
+            log-title "|Testing either"
+
+            assert= 1
+              either nil 1
+            assert= 1
+              either 1 nil
+            assert= nil
+              either nil nil
+            assert= 1
+              either nil nil 1
+
+            assert= 1
+              either (do nil) (do 1) (do nil)
 
         |log-title $ quote
           defn log-title (title)
@@ -103,6 +132,8 @@
             test-cond
 
             test-or
+            test-and
+            test-either
 
             test-case
 

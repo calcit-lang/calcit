@@ -971,14 +971,21 @@
         |either $ quote
           defmacro either (item & xs)
             if (&list:empty? xs) item
-              &let (v1# (gensym |v1))
+              if (list? item)
+                &let (v1# (gensym |v1))
+                  quasiquote
+                    &let (~v1# ~item)
+                      if (nil? ~v1#)
+                        either
+                          ~ $ &list:first xs
+                          ~@ $ &list:rest xs
+                        ~ v1#
                 quasiquote
-                  &let (~v1# ~item)
-                    if (nil? ~v1#)
-                      either
-                        ~ $ &list:first xs
-                        ~@ $ &list:rest xs
-                      ~ v1#
+                  if (nil? ~item)
+                    either
+                      ~ $ &list:first xs
+                      ~@ $ &list:rest xs
+                    ~ item
 
         |def $ quote
           defmacro def (name x) x
@@ -986,8 +993,13 @@
         |and $ quote
           defmacro and (item & xs)
             if (&list:empty? xs)
-              quasiquote
-                if ~item ~item false
+              if (list? item)
+                &let (v1# $ gensym |v1)
+                  quasiquote
+                    &let (~v1# ~item)
+                      if ~v1# ~v1# false
+                quasiquote
+                  if ~item ~item false
               quasiquote
                 if ~item
                   and
@@ -998,18 +1010,29 @@
         |or $ quote
           defmacro or (item & xs)
             if (&list:empty? xs) item
-              &let (v1# (gensym |v1))
-                quasiquote
-                  &let (~v1# ~item)
-                    if (nil? ~v1#)
-                      or
-                        ~ $ &list:first xs
-                        ~@ $ &list:rest xs
-                      if (= false ~v1#)
+              if (list? item)
+                &let (v1# (gensym |v1))
+                  quasiquote
+                    &let (~v1# ~item)
+                      if (nil? ~v1#)
                         or
                           ~ $ &list:first xs
                           ~@ $ &list:rest xs
-                        ~ v1#
+                        if (= false ~v1#)
+                          or
+                            ~ $ &list:first xs
+                            ~@ $ &list:rest xs
+                          ~ v1#
+                quasiquote
+                  if (nil? ~item)
+                    or
+                      ~ $ &list:first xs
+                      ~@ $ &list:rest xs
+                    if (= false ~item)
+                      or
+                        ~ $ &list:first xs
+                        ~@ $ &list:rest xs
+                      ~ item
 
         |w-log $ quote
           defmacro w-log (x)
