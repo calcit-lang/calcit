@@ -10,10 +10,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
   match x {
     Calcit::Nil => Ok(Edn::Nil),
     Calcit::Bool(b) => Ok(Edn::Bool(*b)),
-    Calcit::Str(s) => Ok(Edn::Str(s.clone())),
+    Calcit::Str(s) => Ok(Edn::Str(s.to_owned())),
     Calcit::Number(n) => Ok(Edn::Number(*n)), // TODO
-    Calcit::Keyword(s) => Ok(Edn::Keyword(s.clone())),
-    Calcit::Symbol(s, ..) => Ok(Edn::Symbol(s.clone())),
+    Calcit::Keyword(s) => Ok(Edn::Keyword(s.to_owned())),
+    Calcit::Symbol(s, ..) => Ok(Edn::Symbol(s.to_owned())),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = vec![];
       for x in xs {
@@ -40,7 +40,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       for v in values {
         ys.push(calcit_to_edn(v)?)
       }
-      Ok(Edn::Record(name.clone(), fields.clone(), ys))
+      Ok(Edn::Record(name.to_owned(), fields.to_owned(), ys))
     }
     Calcit::Fn(name, ..) => Err(format!("unable to generate EDN from function: {}", name)),
     Calcit::Proc(name) => Ok(Edn::Symbol(name.to_owned())),
@@ -72,13 +72,13 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Bool(b) => Calcit::Bool(*b),
     Edn::Number(n) => Calcit::Number(*n as f64),
     Edn::Symbol(s) => Calcit::Symbol(
-      s.clone(),
+      s.to_owned(),
       String::from(primes::GENERATED_NS),
       String::from(primes::GENERATED_DEF),
       None,
     ),
-    Edn::Keyword(s) => Calcit::Keyword(s.clone()),
-    Edn::Str(s) => Calcit::Str(s.clone()),
+    Edn::Keyword(s) => Calcit::Keyword(s.to_owned()),
+    Edn::Str(s) => Calcit::Str(s.to_owned()),
     Edn::Quote(nodes) => Calcit::Tuple(
       Box::new(Calcit::Symbol(
         String::from("quote"),
@@ -114,7 +114,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       for v in values {
         ys.push(edn_to_calcit(v));
       }
-      Calcit::Record(name.clone(), fields.clone(), ys)
+      Calcit::Record(name.to_owned(), fields.to_owned(), ys)
     }
   }
 }

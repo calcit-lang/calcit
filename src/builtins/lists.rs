@@ -8,7 +8,7 @@ use crate::program::ProgramCodeData;
 use crate::runner;
 
 pub fn new_list(xs: &CalcitItems) -> Result<Calcit, String> {
-  Ok(Calcit::List(xs.clone()))
+  Ok(Calcit::List(xs.to_owned()))
 }
 
 pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
@@ -23,7 +23,7 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(ys)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => match ys.get(idx) {
-        Some(v) => Ok(v.clone()),
+        Some(v) => Ok(v.to_owned()),
         None => Ok(Calcit::Nil),
       },
       Err(e) => Err(format!("nth expect usize, {}", e)),
@@ -46,7 +46,7 @@ pub fn slice(xs: &CalcitItems) -> Result<Calcit, String> {
         None => ys.len(),
       };
       let from_idx: usize = unsafe { from.to_int_unchecked() };
-      Ok(Calcit::List(ys.clone().slice(from_idx..to_idx)))
+      Ok(Calcit::List(ys.to_owned().slice(from_idx..to_idx)))
     }
     (Some(Calcit::List(_)), Some(a)) => Err(format!("slice expected index number, got: {}", a)),
     (Some(Calcit::List(_)), None) => Err(String::from("slice expected index numbers")),
@@ -57,8 +57,8 @@ pub fn slice(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn append(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(ys)), Some(a)) => {
-      let mut zs = ys.clone();
-      zs.push_back(a.clone());
+      let mut zs = ys.to_owned();
+      zs.push_back(a.to_owned());
       Ok(Calcit::List(zs))
     }
     (Some(a), _) => Err(format!("append expected list, got: {}", a)),
@@ -69,8 +69,8 @@ pub fn append(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn prepend(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(ys)), Some(a)) => {
-      let mut zs = ys.clone();
-      zs.push_front(a.clone());
+      let mut zs = ys.to_owned();
+      zs.push_front(a.to_owned());
       Ok(Calcit::List(zs))
     }
     (Some(a), _) => Err(format!("prepend expected list, got: {}", a)),
@@ -84,7 +84,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
       if ys.is_empty() {
         Ok(Calcit::Nil)
       } else {
-        let mut zs = ys.clone();
+        let mut zs = ys.to_owned();
         zs.pop_front();
         Ok(Calcit::List(zs))
       }
@@ -101,7 +101,7 @@ pub fn butlast(xs: &CalcitItems) -> Result<Calcit, String> {
       if ys.is_empty() {
         Ok(Calcit::Nil)
       } else {
-        let mut zs = ys.clone();
+        let mut zs = ys.to_owned();
         zs.pop_back();
         Ok(Calcit::List(zs))
       }
@@ -116,7 +116,7 @@ pub fn concat(xs: &CalcitItems) -> Result<Calcit, String> {
   for x in xs {
     if let Calcit::List(zs) = x {
       for z in zs {
-        ys.push_back(z.clone());
+        ys.push_back(z.to_owned());
       }
     } else {
       return Err(format!("concat expects list arguments, got: {}", x));
@@ -169,7 +169,7 @@ pub fn reverse(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::List(ys)) => {
       let mut zs: CalcitItems = im::vector![];
       for y in ys {
-        zs.push_front(y.clone());
+        zs.push_front(y.to_owned());
       }
       Ok(Calcit::List(zs))
     }
@@ -194,7 +194,7 @@ pub fn foldl(
       (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         let mut ret = acc;
         for x in xs {
-          let values = im::vector![ret, x.clone()];
+          let values = im::vector![ret, x.to_owned()];
           ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
         }
         Ok(ret)
@@ -202,8 +202,8 @@ pub fn foldl(
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         let mut ret = acc;
         for x in xs {
-          // println!("foldl args, {} {}", ret, x.clone());
-          ret = builtins::handle_proc(&proc, &im::vector![ret, x.clone()])?;
+          // println!("foldl args, {} {}", ret, x.to_owned());
+          ret = builtins::handle_proc(&proc, &im::vector![ret, x.to_owned()])?;
         }
         Ok(ret)
       }
@@ -211,7 +211,7 @@ pub fn foldl(
       (Calcit::Set(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         let mut ret = acc;
         for x in xs {
-          let values = im::vector![ret, x.clone()];
+          let values = im::vector![ret, x.to_owned()];
           ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
         }
         Ok(ret)
@@ -219,8 +219,8 @@ pub fn foldl(
       (Calcit::Set(xs), Calcit::Proc(proc)) => {
         let mut ret = acc;
         for x in xs {
-          // println!("foldl args, {} {}", ret, x.clone());
-          ret = builtins::handle_proc(&proc, &im::vector![ret, x.clone()])?;
+          // println!("foldl args, {} {}", ret, x.to_owned());
+          ret = builtins::handle_proc(&proc, &im::vector![ret, x.to_owned()])?;
         }
         Ok(ret)
       }
@@ -236,7 +236,7 @@ pub fn foldl(
       (Calcit::Map(xs), Calcit::Proc(proc)) => {
         let mut ret = acc;
         for (k, x) in xs {
-          // println!("foldl args, {} {}", ret, x.clone());
+          // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(
             &proc,
             &im::vector![ret, Calcit::List(im::vector![k.to_owned(), x.to_owned()])],
@@ -270,7 +270,7 @@ pub fn foldl_shortcut(
       (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         let mut state = acc;
         for x in xs {
-          let values = im::vector![state, x.clone()];
+          let values = im::vector![state, x.to_owned()];
           let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
@@ -297,7 +297,7 @@ pub fn foldl_shortcut(
       (Calcit::Set(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         let mut state = acc;
         for x in xs {
-          let values = im::vector![state, x.clone()];
+          let values = im::vector![state, x.to_owned()];
           let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
@@ -423,9 +423,9 @@ pub fn sort(
     match (&xs, &f) {
       // dirty since only functions being call directly then we become fast
       (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
-        let mut ret = xs.clone();
+        let mut ret = xs.to_owned();
         ret.sort_by(|a, b| {
-          let values = im::vector![a.clone(), b.clone()];
+          let values = im::vector![a.to_owned(), b.to_owned()];
           let v = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
@@ -444,9 +444,9 @@ pub fn sort(
         Ok(Calcit::List(ret))
       }
       (Calcit::List(xs), Calcit::Proc(proc)) => {
-        let mut ret = xs.clone();
+        let mut ret = xs.to_owned();
         ret.sort_by(|a, b| {
-          let values = im::vector![a.clone(), b.clone()];
+          let values = im::vector![a.to_owned(), b.to_owned()];
           let v = builtins::handle_proc(&proc, &values);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
@@ -478,7 +478,7 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
       if ys.is_empty() {
         Ok(Calcit::Nil)
       } else {
-        Ok(ys[0].clone())
+        Ok(ys[0].to_owned())
       }
     }
     Some(a) => Err(format!("list:first expected a list, got: {}", a)),
@@ -549,8 +549,8 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
     (Some(Calcit::List(xs)), Some(Calcit::Number(n)), Some(a)) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx < xs.len() {
-          let mut ys = xs.clone();
-          ys[idx] = a.clone();
+          let mut ys = xs.to_owned();
+          ys[idx] = a.to_owned();
           Ok(Calcit::List(ys))
         } else {
           Ok(Calcit::Nil)
@@ -567,9 +567,9 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => {
-        let ys = &mut xs.clone();
+        let ys = &mut xs.to_owned();
         ys.remove(idx);
-        Ok(Calcit::List(ys.clone()))
+        Ok(Calcit::List(ys.to_owned()))
       }
       Err(e) => Err(format!("dissoc expected number, {}", e)),
     },
@@ -586,7 +586,7 @@ pub fn list_to_set(xs: &CalcitItems) -> Result<Calcit, String> {
     Calcit::List(ys) => {
       let mut zs = im::HashSet::new();
       for y in ys {
-        zs.insert(y.clone());
+        zs.insert(y.to_owned());
       }
       Ok(Calcit::Set(zs))
     }
@@ -606,7 +606,7 @@ pub fn distinct(xs: &CalcitItems) -> Result<Calcit, String> {
       let mut zs = im::Vector::new();
       for y in ys {
         if !zs.contains(y) {
-          zs.push_back(y.clone());
+          zs.push_back(y.to_owned());
         }
       }
       Ok(Calcit::List(zs))

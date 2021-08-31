@@ -13,7 +13,7 @@ pub fn json_to_calcit(data: &Value) -> Calcit {
         // special logic to parse keyword
         Calcit::Keyword(s.strip_prefix(":").unwrap().to_string())
       } else {
-        Calcit::Str(s.clone())
+        Calcit::Str(s.to_owned())
       }
     }
     Value::Array(xs) => {
@@ -29,7 +29,7 @@ pub fn json_to_calcit(data: &Value) -> Calcit {
         let key = if k.starts_with(':') {
           Calcit::Keyword(k.strip_prefix(":").unwrap().to_string())
         } else {
-          Calcit::Str(k.clone())
+          Calcit::Str(k.to_owned())
         };
         ys.insert(key, json_to_calcit(v));
       }
@@ -86,7 +86,7 @@ pub fn calcit_to_json(data: &Calcit, add_colon: bool) -> Result<Value, String> {
     Calcit::Record(_, fields, values) => {
       let mut data = serde_json::Map::new();
       for idx in 0..fields.len() {
-        data.insert(fields[idx].clone(), calcit_to_json(&values[idx], add_colon)?);
+        data.insert(fields[idx].to_owned(), calcit_to_json(&values[idx], add_colon)?);
       }
       Ok(Value::Object(data))
     }

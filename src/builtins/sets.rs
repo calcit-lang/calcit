@@ -3,7 +3,7 @@ use crate::primes::{Calcit, CalcitItems};
 pub fn new_set(xs: &CalcitItems) -> Result<Calcit, String> {
   let mut ys = im::HashSet::new();
   for x in xs {
-    ys.insert(x.clone());
+    ys.insert(x.to_owned());
   }
   Ok(Calcit::Set(ys))
 }
@@ -11,8 +11,8 @@ pub fn new_set(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn call_include(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Set(xs)), Some(a)) => {
-      let mut ys = xs.clone();
-      ys.insert(a.clone());
+      let mut ys = xs.to_owned();
+      ys.insert(a.to_owned());
       Ok(Calcit::Set(ys))
     }
     (Some(a), _) => Err(format!("&include expect a set, but got: {}", a)),
@@ -23,7 +23,7 @@ pub fn call_include(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn call_exclude(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Set(xs)), Some(a)) => {
-      let mut ys = xs.clone();
+      let mut ys = xs.to_owned();
       ys.remove(a);
       Ok(Calcit::Set(ys))
     }
@@ -48,14 +48,14 @@ pub fn call_difference(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 pub fn call_union(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => Ok(Calcit::Set(a.clone().union(b.clone()))),
+    (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => Ok(Calcit::Set(a.to_owned().union(b.to_owned()))),
     (Some(a), Some(b)) => Err(format!("&union expected 2 sets: {} {}", a, b)),
     (a, b) => Err(format!("&union expected 2 arguments: {:?} {:?}", a, b)),
   }
 }
 pub fn call_intersection(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => Ok(Calcit::Set(a.clone().intersection(b.clone()))),
+    (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => Ok(Calcit::Set(a.to_owned().intersection(b.to_owned()))),
     (Some(a), Some(b)) => Err(format!("&set:intersection expected 2 sets: {} {}", a, b)),
     (a, b) => Err(format!("&set:intersection expected 2 arguments: {:?} {:?}", a, b)),
   }
@@ -67,7 +67,7 @@ pub fn set_to_list(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Set(xs)) => {
       let mut ys: CalcitItems = im::vector![];
       for x in xs {
-        ys.push_back(x.clone());
+        ys.push_back(x.to_owned());
       }
       Ok(Calcit::List(ys))
     }
@@ -105,7 +105,7 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Set(ys)) => match ys.iter().next() {
       // TODO first element of a set.. need to be more sure...
-      Some(v) => Ok(v.clone()),
+      Some(v) => Ok(v.to_owned()),
       None => Ok(Calcit::Nil),
     },
     Some(a) => Err(format!("set:first expected a set, got: {}", a)),
@@ -117,7 +117,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Set(ys)) => match ys.iter().next() {
       Some(y0) => {
-        let mut zs = ys.clone();
+        let mut zs = ys.to_owned();
         zs.remove(y0);
         Ok(Calcit::Set(zs))
       }

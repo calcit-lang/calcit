@@ -43,7 +43,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, String> {
 }
 
 pub fn recur(xs: &CalcitItems) -> Result<Calcit, String> {
-  Ok(Calcit::Recur(xs.clone()))
+  Ok(Calcit::Recur(xs.to_owned()))
 }
 
 pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, String> {
@@ -59,7 +59,7 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
 
   let s = match xs.get(0) {
     Some(Calcit::Str(s)) | Some(Calcit::Keyword(s)) | Some(Calcit::Symbol(s, ..)) => {
-      let mut chunk = s.clone();
+      let mut chunk = s.to_owned();
       chunk.push('_');
       chunk.push('_');
       chunk.push_str(&n.to_string());
@@ -179,20 +179,23 @@ pub fn write_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => Ok(Calcit::Symbol(
-      s.clone(),
+      s.to_owned(),
       String::from(primes::GENERATED_NS),
       String::from(primes::GENERATED_DEF),
       None,
     )),
     Some(Calcit::Keyword(s)) => Ok(Calcit::Symbol(
-      s.clone(),
+      s.to_owned(),
       String::from(primes::GENERATED_NS),
       String::from(primes::GENERATED_DEF),
       None,
     )),
-    Some(Calcit::Symbol(s, ns, def, resolved)) => {
-      Ok(Calcit::Symbol(s.clone(), ns.clone(), def.clone(), resolved.clone()))
-    }
+    Some(Calcit::Symbol(s, ns, def, resolved)) => Ok(Calcit::Symbol(
+      s.to_owned(),
+      ns.to_owned(),
+      def.to_owned(),
+      resolved.to_owned(),
+    )),
     Some(a) => Err(format!("turn-symbol cannot turn this to symbol: {}", a)),
     None => Err(String::from("turn-symbol expected 1 argument, got nothing")),
   }
@@ -200,9 +203,9 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Str(s)) => Ok(Calcit::Keyword(s.clone())),
-    Some(Calcit::Keyword(s)) => Ok(Calcit::Keyword(s.clone())),
-    Some(Calcit::Symbol(s, ..)) => Ok(Calcit::Keyword(s.clone())),
+    Some(Calcit::Str(s)) => Ok(Calcit::Keyword(s.to_owned())),
+    Some(Calcit::Keyword(s)) => Ok(Calcit::Keyword(s.to_owned())),
+    Some(Calcit::Symbol(s, ..)) => Ok(Calcit::Keyword(s.to_owned())),
     Some(a) => Err(format!("turn-keyword cannot turn this to keyword: {}", a)),
     None => Err(String::from("turn-keyword expected 1 argument, got nothing")),
   }
@@ -328,7 +331,7 @@ pub fn native_compare(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Tuple(a, b)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(0) => Ok((**a).clone()),
+      Ok(0) => Ok((**a).to_owned()),
       Ok(1) => Ok((**b).to_owned()),
       Ok(m) => Err(format!("Tuple only got 2 elements, trying to index with {}", m)),
       Err(e) => Err(format!("nth expect usize, {}", e)),

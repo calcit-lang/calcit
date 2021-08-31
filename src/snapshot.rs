@@ -155,7 +155,7 @@ pub fn create_file_from_snippet(code: &str) -> Result<FileInSnapShot, String> {
       let code = match lines {
         Cirru::List(line) => {
           if line.len() == 1 {
-            line[0].clone()
+            line[0].to_owned()
           } else {
             return Err(format!("unexpected snippet: {}", code));
           }

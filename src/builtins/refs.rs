@@ -107,11 +107,11 @@ pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k)), Some(Calcit::Fn(..))) => {
       let dict = &mut REFS_DICT.lock().unwrap();
-      let (prev, listeners) = &dict.get(path).unwrap().clone();
+      let (prev, listeners) = &dict.get(path).unwrap().to_owned();
       if listeners.contains_key(k) {
         Err(format!("add-watch failed, listener with key `{}` existed", k))
       } else {
-        let mut new_listeners = listeners.clone();
+        let mut new_listeners = listeners.to_owned();
         new_listeners.insert(k.to_owned(), xs.get(2).unwrap().to_owned());
         let _ = dict.insert(path.to_owned(), (prev.to_owned(), new_listeners));
         Ok(Calcit::Nil)
@@ -133,9 +133,9 @@ pub fn remove_watch(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k))) => {
       let dict = &mut REFS_DICT.lock().unwrap();
-      let (prev, listeners) = &dict.get(path).unwrap().clone();
+      let (prev, listeners) = &dict.get(path).unwrap().to_owned();
       if listeners.contains_key(k) {
-        let mut new_listeners = listeners.clone();
+        let mut new_listeners = listeners.to_owned();
         new_listeners.remove(k);
         let _ = dict.insert(path.to_owned(), (prev.to_owned(), new_listeners));
         Ok(Calcit::Nil)

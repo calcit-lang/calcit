@@ -17,7 +17,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
       _ => match s.chars().next().unwrap() {
         ':' => {
           if s == "::" {
-            Ok(Calcit::Symbol(s.clone(), ns.to_owned(), def.to_owned(), None)) // special tuple syntax
+            Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), None))
+          // special tuple syntax
           } else {
             Ok(Calcit::Keyword(String::from(&s[1..])))
           }
@@ -25,7 +26,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
         '.' => {
           if s.starts_with(".-") || s.starts_with(".!") {
             // try not to break js interop
-            Ok(Calcit::Symbol(s.clone(), ns.to_owned(), def.to_owned(), None))
+            Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), None))
           } else {
             Ok(Calcit::Proc(s.to_owned())) // as native method syntax
           }
@@ -58,7 +59,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
             let f: f64 = s.parse().unwrap();
             Ok(Calcit::Number(f))
           } else {
-            Ok(Calcit::Symbol(s.clone(), ns.to_owned(), def.to_owned(), None))
+            Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), None))
           }
         }
       },
@@ -69,7 +70,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
         match code_to_calcit(y, ns, def) {
           Ok(v) => {
             if !is_comment(&v) {
-              zs.push_back(v.clone())
+              zs.push_back(v.to_owned())
             } else {
             }
           }
@@ -84,7 +85,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
 /// transform Cirru to Calcit data directly
 pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
   match xs {
-    Cirru::Leaf(s) => Calcit::Str(s.clone()),
+    Cirru::Leaf(s) => Calcit::Str(s.to_owned()),
     Cirru::List(ys) => {
       let mut zs: CalcitItems = im::vector![];
       for y in ys {
@@ -101,7 +102,7 @@ pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
     Calcit::Nil => Ok(Cirru::Leaf(String::from("nil"))),
     Calcit::Bool(b) => Ok(Cirru::Leaf(b.to_string())),
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string())),
-    Calcit::Str(s) => Ok(Cirru::Leaf(s.clone())),
+    Calcit::Str(s) => Ok(Cirru::Leaf(s.to_owned())),
     Calcit::List(ys) => {
       let mut zs: Vec<Cirru> = vec![];
       for y in ys {

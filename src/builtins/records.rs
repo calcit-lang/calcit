@@ -40,8 +40,8 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, String> {
         if size != def_fields.len() {
           return Err(format!("unexpected size in &%{{}}, {} .. {}", size, def_fields.len()));
         }
-        let mut fields: Vec<String> = def_fields.clone();
-        let mut values: Vec<Calcit> = v0.clone();
+        let mut fields: Vec<String> = def_fields.to_owned();
+        let mut values: Vec<Calcit> = v0.to_owned();
 
         for idx in 0..size {
           let k_idx = idx * 2 + 1;
@@ -49,8 +49,8 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, String> {
           match &xs[k_idx] {
             Calcit::Symbol(s, ..) | Calcit::Keyword(s) | Calcit::Str(s) => match find_in_fields(&def_fields, s) {
               Some(pos) => {
-                fields[pos] = s.clone();
-                values[pos] = xs[v_idx].clone();
+                fields[pos] = s.to_owned();
+                values[pos] = xs[v_idx].to_owned();
               }
               None => return Err(format!("unexpected field {} for {:?}", s, def_fields)),
             },
@@ -58,7 +58,7 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, String> {
           }
         }
 
-        Ok(Calcit::Record(name.clone(), fields, values))
+        Ok(Calcit::Record(name.to_owned(), fields, values))
       } else {
         Err(format!("&%{{}} expected pairs, got: {:?}", xs))
       }
@@ -75,7 +75,7 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, String> {
       for (k, v) in ys {
         match k {
           Calcit::Str(s) | Calcit::Keyword(s) => {
-            pairs.push((s.clone(), v.clone()));
+            pairs.push((s.to_owned(), v.to_owned()));
           }
           a => return Err(format!("unknown field {}", a)),
         }
@@ -87,7 +87,7 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, String> {
       for idx in 0..fields.len() {
         let (k, v) = &pairs[idx];
         if &fields[idx] == k {
-          values.push(v.clone());
+          values.push(v.to_owned());
         } else {
           return Err(format!(
             "field mismatch: {} {} in {:?} {:?}",
@@ -96,7 +96,7 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, String> {
         }
       }
       pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
-      Ok(Calcit::Record(name.clone(), fields.clone(), values))
+      Ok(Calcit::Record(name.to_owned(), fields.to_owned(), values))
     }
     (Some(a), Some(b)) => Err(format!("&record:from-map expected a record and a map, got {} {}", a, b)),
     (_, _) => Err(format!("&record:from-map expected 2 arguments, got {:?}", xs)),
@@ -115,7 +115,7 @@ pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Record(_name, fields, values)) => {
       let mut ys: im::HashMap<Calcit, Calcit> = im::HashMap::new();
       for idx in 0..fields.len() {
-        ys.insert(Calcit::Keyword(fields[idx].clone()), values[idx].clone());
+        ys.insert(Calcit::Keyword(fields[idx].to_owned()), values[idx].to_owned());
       }
       Ok(Calcit::Map(ys))
     }
@@ -142,7 +142,7 @@ pub fn find_in_fields(xs: &[String], y: &str) -> Option<usize> {
 
   while (upper - lower) > 1 {
     let pos = (lower + upper) >> 1;
-    let v = xs[pos].clone();
+    let v = xs[pos].to_owned();
     match y.cmp(&v) {
       Ordering::Less => upper = pos - 1,
       Ordering::Greater => lower = pos + 1,
@@ -184,8 +184,8 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
       Ok(idx) => {
         if idx < fields.len() {
           Ok(Calcit::List(im::vector![
-            Calcit::Keyword(fields[idx].clone()),
-            values[idx].clone()
+            Calcit::Keyword(fields[idx].to_owned()),
+            values[idx].to_owned()
           ]))
         } else {
           Ok(Calcit::Nil)
@@ -203,7 +203,7 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, values)), Some(a)) => match a {
       Calcit::Str(k) | Calcit::Keyword(k) | Calcit::Symbol(k, ..) => match find_in_fields(fields, k) {
-        Some(idx) => Ok(values[idx].clone()),
+        Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
       a => Err(format!("record field expected to be string/keyword, got {}", a)),
@@ -218,9 +218,9 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
     (Some(Calcit::Record(name, fields, values)), Some(a), Some(b)) => match a {
       Calcit::Str(s) | Calcit::Keyword(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
         Some(pos) => {
-          let mut new_values = values.clone();
-          new_values[pos] = b.clone();
-          Ok(Calcit::Record(name.clone(), fields.clone(), new_values))
+          let mut new_values = values.to_owned();
+          new_values[pos] = b.to_owned();
+          Ok(Calcit::Record(name.to_owned(), fields.to_owned(), new_values))
         }
         None => Err(format!("invalid field `{}` for {:?}", s, fields)),
       },

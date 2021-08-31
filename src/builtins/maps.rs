@@ -8,7 +8,7 @@ pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, String> {
     let n = xs.len() >> 1;
     let mut ys = im::HashMap::new();
     for i in 0..n {
-      ys.insert(xs[i << 1].clone(), xs[(i << 1) + 1].clone());
+      ys.insert(xs[i << 1].to_owned(), xs[(i << 1) + 1].to_owned());
     }
     Ok(Calcit::Map(ys))
   } else {
@@ -25,7 +25,7 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
   }
   match xs.get(0) {
     Some(Calcit::Map(base)) => {
-      let ys = &mut base.clone();
+      let ys = &mut base.to_owned();
       let mut skip_first = true;
       for x in xs {
         if skip_first {
@@ -34,7 +34,7 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
         }
         ys.remove(&x);
       }
-      Ok(Calcit::Map(ys.clone()))
+      Ok(Calcit::Map(ys.to_owned()))
     }
     Some(a) => Err(format!("map dissoc expected a map, got: {}", a)),
     _ => Err(format!("map dissoc expected 2 arguments, got: {:?}", xs)),
@@ -44,9 +44,9 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn get(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(a)) => {
-      let ys = &mut xs.clone();
+      let ys = &mut xs.to_owned();
       match ys.get(a) {
-        Some(v) => Ok(v.clone()),
+        Some(v) => Ok(v.to_owned()),
         None => Ok(Calcit::Nil),
       }
     }
@@ -58,24 +58,24 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
-      let mut zs: im::HashMap<Calcit, Calcit> = xs.clone();
+      let mut zs: im::HashMap<Calcit, Calcit> = xs.to_owned();
       for (k, v) in ys {
-        zs.insert(k.clone(), v.clone());
+        zs.insert(k.to_owned(), v.to_owned());
       }
       Ok(Calcit::Map(zs))
     }
     (Some(Calcit::Record(name, fields, values)), Some(Calcit::Map(ys))) => {
-      let mut new_values = values.clone();
+      let mut new_values = values.to_owned();
       for (k, v) in ys {
         match k {
           Calcit::Str(s) | Calcit::Keyword(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
-            Some(pos) => new_values[pos] = v.clone(),
+            Some(pos) => new_values[pos] = v.to_owned(),
             None => return Err(format!("invalid field `{}` for {:?}", s, fields)),
           },
           a => return Err(format!("invalid field key: {}", a)),
         }
       }
-      Ok(Calcit::Record(name.clone(), fields.clone(), new_values))
+      Ok(Calcit::Record(name.to_owned(), fields.to_owned(), new_values))
     }
     (Some(a), Some(b)) => Err(format!("expected 2 maps, got: {} {}", a, b)),
     (_, _) => Err(format!("expected 2 arguments, got: {:?}", xs)),
@@ -89,7 +89,7 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Map(ys)) => {
       let mut zs: im::HashSet<Calcit> = im::HashSet::new();
       for (k, v) in ys {
-        zs.insert(Calcit::List(im::vector![k.clone(), v.clone(),]));
+        zs.insert(Calcit::List(im::vector![k.to_owned(), v.to_owned(),]));
       }
       Ok(Calcit::Set(zs))
     }
@@ -97,8 +97,8 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, String> {
       let mut zs: CalcitItems = im::vector![];
       for idx in 0..fields.len() {
         zs.push_back(Calcit::List(im::vector![
-          Calcit::Keyword(fields[idx].clone()),
-          values[idx].clone(),
+          Calcit::Keyword(fields[idx].to_owned()),
+          values[idx].to_owned(),
         ]));
       }
       Ok(Calcit::List(zs))
@@ -111,10 +111,10 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn call_merge_non_nil(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
-      let mut zs: im::HashMap<Calcit, Calcit> = xs.clone();
+      let mut zs: im::HashMap<Calcit, Calcit> = xs.to_owned();
       for (k, v) in ys {
         if *v != Calcit::Nil {
-          zs.insert(k.clone(), v.clone());
+          zs.insert(k.to_owned(), v.to_owned());
         }
       }
       Ok(Calcit::Map(zs))
@@ -196,7 +196,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Map(ys)) => match ys.keys().next() {
       Some(k0) => {
-        let mut zs = ys.clone();
+        let mut zs = ys.to_owned();
         zs.remove(k0);
         Ok(Calcit::Map(zs))
       }
@@ -218,7 +218,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
         for idx in 0..size {
           ys.insert(xs[idx * 2 + 1].to_owned(), xs[idx * 2 + 2].to_owned());
         }
-        Ok(Calcit::Map(ys.clone()))
+        Ok(Calcit::Map(ys.to_owned()))
       }
     }
     Some(a) => Err(format!("map:assoc expected a map, got: {}", a)),
@@ -229,7 +229,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn diff_new(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
-      let zs = &mut xs.clone();
+      let zs = &mut xs.to_owned();
       for k in ys.keys() {
         if zs.contains_key(&k) {
           zs.remove(&k).unwrap();

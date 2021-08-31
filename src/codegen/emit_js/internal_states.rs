@@ -17,7 +17,7 @@ lazy_static! {
 pub fn lookup_prev_ns_cache(ns: &str) -> Option<HashSet<String>> {
   let previous_program_caches = &GLOBAL_PREVIOUS_PROGRAM_CACHES.lock().unwrap();
   if previous_program_caches.contains_key(ns) {
-    Some(previous_program_caches[ns].clone())
+    Some(previous_program_caches[ns].to_owned())
   } else {
     None
   }
