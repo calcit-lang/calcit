@@ -153,7 +153,7 @@ fn escape_cirru_str(s: &str) -> String {
   result
 }
 
-fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<HashSet<String>>) -> Result<String, String> {
+fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<Vec<String>>) -> Result<String, String> {
   match xs {
     Calcit::Symbol(s, ..) => Ok(format!("new {}CalcitSymbol({})", var_prefix, escape_cirru_str(&s))),
     Calcit::Str(s) => Ok(escape_cirru_str(&s)),
@@ -174,7 +174,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<HashSet<String>
     }
     Calcit::Keyword(s) => {
       let mut kwds = keywords.borrow_mut();
-      kwds.insert(s.to_owned());
+      kwds.push(s.to_owned());
       Ok(format!("_kwd[{}]", escape_cirru_str(&s)))
     }
     _ => unreachable!(format!("Unexpected data in quote for js: {}", xs)),
@@ -198,7 +198,7 @@ fn to_js_code(
   ns: &str,
   local_defs: &HashSet<String>,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<HashSet<String>>,
+  keywords: &RefCell<Vec<String>>,
   return_label: &Option<String>,
 ) -> Result<String, String> {
   if let Calcit::List(ys) = xs {
@@ -252,7 +252,7 @@ fn to_js_code(
       Calcit::Nil => Ok(String::from("null")),
       Calcit::Keyword(s) => {
         let mut kwds = keywords.borrow_mut();
-        kwds.insert(s.to_owned());
+        kwds.push(s.to_owned());
         Ok(format!("_kwd[{}]", wrap_js_str(s)))
       }
       Calcit::List(_) => unreachable!("[Error] list handled in another branch"),
@@ -272,7 +272,7 @@ fn gen_call_code(
   local_defs: &HashSet<String>,
   xs: &Calcit,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<HashSet<String>>,
+  keywords: &RefCell<Vec<String>>,
   return_label: &Option<String>,
 ) -> Result<String, String> {
   let return_code = match &return_label {
@@ -673,7 +673,7 @@ fn gen_let_code(
   xs: &Calcit,
   ns: &str,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<HashSet<String>>,
+  keywords: &RefCell<Vec<String>>,
   base_return_label: &Option<String>,
 ) -> Result<String, String> {
   let mut let_def_body = body.to_owned();
@@ -795,7 +795,7 @@ fn gen_if_code(
   _xs: &Calcit,
   ns: &str,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<HashSet<String>>,
+  keywords: &RefCell<Vec<String>>,
   base_return_label: &Option<String>,
 ) -> Result<String, String> {
   if body.len() < 2 || body.len() > 3 {
@@ -857,7 +857,7 @@ fn gen_args_code(
   ns: &str,
   local_defs: &HashSet<String>,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<HashSet<String>>,
+  keywords: &RefCell<Vec<String>>,
 ) -> Result<String, String> {
   let mut result = String::from("");
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
@@ -893,7 +893,7 @@ fn list_to_js_code(
   local_defs: HashSet<String>,
   return_label: &str,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<HashSet<String>>,
+  keywords: &RefCell<Vec<String>>,
 ) -> Result<String, String> {
   // TODO default returnLabel="return "
   let mut result = String::from("");
@@ -951,7 +951,7 @@ fn gen_js_func(
   exported: bool,
   outer_defs: &HashSet<String>,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<HashSet<String>>,
+  keywords: &RefCell<Vec<String>>,
 ) -> Result<String, String> {
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
   let mut local_defs = outer_defs.to_owned();
@@ -1179,7 +1179,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     // side-effects, reset tracking state
 
     let file_imports: RefCell<ImportsDict> = RefCell::new(BTreeMap::new());
-    let keywords: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    let keywords: RefCell<Vec<String>> = RefCell::new(Vec::new());
 
     let mut defs_in_current: HashSet<String> = HashSet::new();
     for k in file.keys() {
@@ -1344,6 +1344,11 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 
     let kwd_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
     let mut kwd_arr = String::from("[");
+    {
+      // need to maintain a stable order to reduce redundant reloads
+      let mut kwds = keywords.borrow_mut();
+      kwds.dedup();
+    }
     for s in keywords.into_inner() {
       let name = escape_cirru_str(&s);
       kwd_arr.push_str(&format!("{},", name));
