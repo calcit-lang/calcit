@@ -153,7 +153,7 @@ fn escape_cirru_str(s: &str) -> String {
   result
 }
 
-fn quote_to_js(xs: &Calcit, var_prefix: &str) -> Result<String, String> {
+fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<HashSet<String>>) -> Result<String, String> {
   match xs {
     Calcit::Symbol(s, ..) => Ok(format!("new {}CalcitSymbol({})", var_prefix, escape_cirru_str(&s))),
     Calcit::Str(s) => Ok(escape_cirru_str(&s)),
@@ -168,11 +168,15 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str) -> Result<String, String> {
         if !chunk.is_empty() {
           chunk.push_str(", ");
         }
-        chunk.push_str(&quote_to_js(y, var_prefix)?);
+        chunk.push_str(&quote_to_js(y, var_prefix, keywords)?);
       }
       Ok(format!("new {}CalcitList([{}])", var_prefix, chunk))
     }
-    Calcit::Keyword(s) => Ok(format!("{}kwd({})", var_prefix, escape_cirru_str(&s))),
+    Calcit::Keyword(s) => {
+      let mut kwds = keywords.borrow_mut();
+      kwds.insert(s.to_owned());
+      Ok(format!("_kwd[{}]", escape_cirru_str(&s)))
+    }
     _ => unreachable!(format!("Unexpected data in quote for js: {}", xs)),
   }
 }
@@ -194,12 +198,11 @@ fn to_js_code(
   ns: &str,
   local_defs: &HashSet<String>,
   file_imports: &RefCell<ImportsDict>,
+  keywords: &RefCell<HashSet<String>>,
   return_label: &Option<String>,
 ) -> Result<String, String> {
-  let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
-
   if let Calcit::List(ys) = xs {
-    gen_call_code(&ys, ns, local_defs, xs, file_imports, return_label)
+    gen_call_code(&ys, ns, local_defs, xs, file_imports, keywords, return_label)
   } else {
     let ret = match xs {
       Calcit::Symbol(s, def_ns, at_def, resolved) => {
@@ -247,7 +250,11 @@ fn to_js_code(
       Calcit::Bool(b) => Ok(b.to_string()),
       Calcit::Number(n) => Ok(n.to_string()),
       Calcit::Nil => Ok(String::from("null")),
-      Calcit::Keyword(s) => Ok(format!("{}kwd({})", var_prefix, wrap_js_str(s))),
+      Calcit::Keyword(s) => {
+        let mut kwds = keywords.borrow_mut();
+        kwds.insert(s.to_owned());
+        Ok(format!("_kwd[{}]", wrap_js_str(s)))
+      }
       Calcit::List(_) => unreachable!("[Error] list handled in another branch"),
       a => unreachable!(format!("[Error] unknown kind to gen js code: {}", a)),
     };
@@ -265,6 +272,7 @@ fn gen_call_code(
   local_defs: &HashSet<String>,
   xs: &Calcit,
   file_imports: &RefCell<ImportsDict>,
+  keywords: &RefCell<HashSet<String>>,
   return_label: &Option<String>,
 ) -> Result<String, String> {
   let return_code = match &return_label {
@@ -291,22 +299,22 @@ fn gen_call_code(
           if let Some(Calcit::List(ys)) = body.get(2) {
             if let Some(Calcit::Syntax(syn, ..)) = ys.get(0) {
               if syn == "if" {
-                return gen_if_code(&body, local_defs, &xs, ns, file_imports, return_label);
+                return gen_if_code(&body, local_defs, &xs, ns, file_imports, keywords, return_label);
               }
             }
           }
           if return_label.is_some() {
-            return gen_if_code(&body, local_defs, &xs, ns, file_imports, return_label);
+            return gen_if_code(&body, local_defs, &xs, ns, file_imports, keywords, return_label);
           }
           return match (body.get(0), body.get(1)) {
             (Some(condition), Some(true_branch)) => {
               call_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), &im::vector![]);
               let false_code = match body.get(2) {
-                Some(fal) => to_js_code(fal, ns, local_defs, file_imports, &None)?,
+                Some(fal) => to_js_code(fal, ns, local_defs, file_imports, keywords, &None)?,
                 None => String::from("null"),
               };
-              let cond_code = to_js_code(condition, ns, local_defs, file_imports, &None)?;
-              let true_code = to_js_code(true_branch, ns, local_defs, file_imports, &None)?;
+              let cond_code = to_js_code(condition, ns, local_defs, file_imports, keywords, &None)?;
+              let true_code = to_js_code(true_branch, ns, local_defs, file_imports, keywords, &None)?;
               call_stack::pop_call_stack();
               Ok(format!(
                 "{}( {} ? {} : {} )",
@@ -316,11 +324,11 @@ fn gen_call_code(
             (_, _) => Err(format!("if expected 2~3 nodes, got: {:?}", body)),
           };
         }
-        "&let" => gen_let_code(&body, local_defs, &xs, ns, file_imports, return_label),
+        "&let" => gen_let_code(&body, local_defs, &xs, ns, file_imports, keywords, return_label),
         ";" => Ok(format!("(/* {} */ null)", Calcit::List(body))),
 
         "quote" => match body.get(0) {
-          Some(item) => quote_to_js(&item, var_prefix),
+          Some(item) => quote_to_js(&item, var_prefix, keywords),
           None => Err(format!("quote expected a node, got nothing from {:?}", body)),
         },
         "defatom" => {
@@ -330,7 +338,7 @@ fn gen_call_code(
               // let _name = escape_var(sym); // TODO
               let ref_path = wrap_js_str(&format!("{}/{}", ns, sym.to_owned()));
               call_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &im::vector![]);
-              let value_code = &to_js_code(v, ns, local_defs, file_imports, &None)?;
+              let value_code = &to_js_code(v, ns, local_defs, file_imports, keywords, &None)?;
               call_stack::pop_call_stack();
               Ok(format!(
                 "\n({}peekDefatom({}) ?? {}defatom({}, {}))\n",
@@ -345,7 +353,7 @@ fn gen_call_code(
           (Some(Calcit::Symbol(sym, ..)), Some(Calcit::List(ys))) => {
             let func_body = body.skip(2);
             call_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &im::vector![]);
-            let ret = gen_js_func(sym, &ys, &func_body, ns, false, local_defs, file_imports);
+            let ret = gen_js_func(sym, &ys, &func_body, ns, false, local_defs, file_imports, keywords);
             call_stack::pop_call_stack();
             match ret {
               Ok(code) => Ok(format!("{}{}", return_code, code)),
@@ -362,9 +370,9 @@ fn gen_call_code(
           // not core syntax, but treat as macro for better debugging experience
           match body.get(0) {
             Some(m) => {
-              let message: String = to_js_code(m, ns, local_defs, file_imports, &None)?;
+              let message: String = to_js_code(m, ns, local_defs, file_imports, keywords, &None)?;
               let data_code = match body.get(1) {
-                Some(d) => to_js_code(d, ns, local_defs, file_imports, &None)?,
+                Some(d) => to_js_code(d, ns, local_defs, file_imports, keywords, &None)?,
                 None => String::from("null"),
               };
               let err_var = js_gensym("err");
@@ -388,9 +396,9 @@ fn gen_call_code(
               Some(x) => Some(x.to_owned()),
               None => Some(String::from("return ")),
             };
-            let try_code = to_js_code(expr, ns, local_defs, file_imports, &next_return_label)?;
+            let try_code = to_js_code(expr, ns, local_defs, file_imports, keywords, &next_return_label)?;
             let err_var = js_gensym("errMsg");
-            let handler = to_js_code(handler, ns, local_defs, file_imports, &None)?;
+            let handler = to_js_code(handler, ns, local_defs, file_imports, keywords, &None)?;
 
             call_stack::pop_call_stack();
             let code = snippets::tmpl_try(err_var, try_code, handler, &next_return_label.unwrap());
@@ -404,14 +412,14 @@ fn gen_call_code(
         "echo" | "println" => {
           // not core syntax, but treat as macro for better debugging experience
           let args = ys.skip(1);
-          let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
+          let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
           Ok(format!("console.log({}printable({}))", proc_prefix, args_code))
         }
         "exists?" => {
           // not core syntax, but treat as macro for availability
           match body.get(0) {
             Some(Calcit::Symbol(_sym, ..)) => {
-              let target = to_js_code(&body[0], ns, local_defs, file_imports, &None)?; // TODO could be simpler
+              let target = to_js_code(&body[0], ns, local_defs, file_imports, keywords, &None)?; // TODO could be simpler
               return Ok(format!("{}(typeof {} !== 'undefined')", return_code, target));
             }
             Some(a) => Err(format!("exists? expected a symbol, got {}", a)),
@@ -421,11 +429,11 @@ fn gen_call_code(
         "new" => match body.get(0) {
           Some(ctor) => {
             let args = body.skip(1);
-            let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
+            let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
             Ok(format!(
               "{}new {}({})",
               return_code,
-              to_js_code(&ctor, ns, local_defs, file_imports, &None)?,
+              to_js_code(&ctor, ns, local_defs, file_imports, keywords, &None)?,
               args_code
             ))
           }
@@ -434,7 +442,7 @@ fn gen_call_code(
         "js-await" => match body.get(0) {
           Some(body) => Ok(format!(
             "(await {})",
-            to_js_code(&body, ns, local_defs, file_imports, &None)?,
+            to_js_code(&body, ns, local_defs, file_imports, keywords, &None)?,
           )),
           None => Err(format!("`new` expected constructor, got nothing, {}", xs)),
         },
@@ -442,16 +450,16 @@ fn gen_call_code(
           (Some(ctor), Some(v)) => Ok(format!(
             "{}({} instanceof {})",
             return_code,
-            to_js_code(v, ns, local_defs, file_imports, &None)?,
-            to_js_code(ctor, ns, local_defs, file_imports, &None)?
+            to_js_code(v, ns, local_defs, file_imports, keywords, &None)?,
+            to_js_code(ctor, ns, local_defs, file_imports, keywords, &None)?
           )),
           (_, _) => Err(format!("instance? expected 2 arguments, got {:?}", body)),
         },
         "set!" => match (body.get(0), body.get(1)) {
           (Some(target), Some(v)) => Ok(format!(
             "{} = {}",
-            to_js_code(target, ns, local_defs, file_imports, &None)?,
-            to_js_code(v, ns, local_defs, file_imports, &None)?
+            to_js_code(target, ns, local_defs, file_imports, keywords, &None)?,
+            to_js_code(v, ns, local_defs, file_imports, keywords, &None)?
           )),
           (_, _) => Err(format!("set! expected 2 nodes, got {:?}", body)),
         },
@@ -464,7 +472,7 @@ fn gen_call_code(
               Some(obj) => Ok(format!(
                 "{}{}[{}]",
                 return_code,
-                to_js_code(&obj, ns, local_defs, file_imports, &None)?,
+                to_js_code(&obj, ns, local_defs, file_imports, keywords, &None)?,
                 name,
               )),
               None => Err(format!("property accessor takes only 1 argument, {:?}", xs)),
@@ -474,7 +482,7 @@ fn gen_call_code(
               Some(obj) => Ok(format!(
                 "{}{}.{}",
                 return_code,
-                to_js_code(&obj, ns, local_defs, file_imports, &None)?,
+                to_js_code(&obj, ns, local_defs, file_imports, keywords, &None)?,
                 name,
               )),
               None => Err(format!("property accessor takes only 1 argument, {:?}", xs)),
@@ -485,7 +493,7 @@ fn gen_call_code(
               Some(obj) => Ok(format!(
                 "{}{}[\"{}\"]",
                 return_code,
-                to_js_code(&obj, ns, local_defs, file_imports, &None)?,
+                to_js_code(&obj, ns, local_defs, file_imports, keywords, &None)?,
                 name,
               )),
               None => Err(format!("property accessor takes only 1 argument, {:?}", xs)),
@@ -499,11 +507,11 @@ fn gen_call_code(
             match body.get(0) {
               Some(obj) => {
                 let args = body.skip(1);
-                let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
+                let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
                 Ok(format!(
                   "{}{}.{}({})",
                   return_code,
-                  to_js_code(&obj, ns, local_defs, file_imports, &None)?,
+                  to_js_code(&obj, ns, local_defs, file_imports, keywords, &None)?,
                   name,
                   args_code
                 ))
@@ -519,13 +527,13 @@ fn gen_call_code(
           match body.get(0) {
             Some(obj) => {
               let args = body.skip(1);
-              let args_code = gen_args_code(&args, ns, local_defs, file_imports)?;
+              let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
               Ok(format!(
                 "{}{}invoke_method({})({},{})",
                 return_code,
                 proc_prefix,
                 escape_cirru_str(&name), // TODO need confirm
-                to_js_code(&obj, ns, local_defs, file_imports, &None)?,
+                to_js_code(&obj, ns, local_defs, file_imports, keywords, &None)?,
                 args_code
               ))
             }
@@ -534,22 +542,22 @@ fn gen_call_code(
         }
         _ => {
           // TODO
-          let args_code = gen_args_code(&body, ns, &local_defs, file_imports)?;
+          let args_code = gen_args_code(&body, ns, &local_defs, file_imports, keywords)?;
           Ok(format!(
             "{}{}({})",
             return_code,
-            to_js_code(&head, ns, local_defs, file_imports, &None)?,
+            to_js_code(&head, ns, local_defs, file_imports, keywords, &None)?,
             args_code
           ))
         }
       }
     }
     _ => {
-      let args_code = gen_args_code(&body, ns, &local_defs, file_imports)?;
+      let args_code = gen_args_code(&body, ns, &local_defs, file_imports, keywords)?;
       Ok(format!(
         "{}{}({})",
         return_code,
-        to_js_code(&head, ns, local_defs, file_imports, &None)?,
+        to_js_code(&head, ns, local_defs, file_imports, keywords, &None)?,
         args_code
       ))
     }
@@ -665,6 +673,7 @@ fn gen_let_code(
   xs: &Calcit,
   ns: &str,
   file_imports: &RefCell<ImportsDict>,
+  keywords: &RefCell<HashSet<String>>,
   base_return_label: &Option<String>,
 ) -> Result<String, String> {
   let mut let_def_body = body.to_owned();
@@ -692,10 +701,10 @@ fn gen_let_code(
 
         for (idx, x) in content.iter().enumerate() {
           if idx == content.len() - 1 {
-            body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &return_label)?);
+            body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, keywords, &return_label)?);
             body_part.push('\n');
           } else {
-            body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &None)?);
+            body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, keywords, &None)?);
             body_part.push_str(";\n");
           }
         }
@@ -709,16 +718,16 @@ fn gen_let_code(
           Calcit::Symbol(sym, ..) => {
             // TODO `let` inside expressions makes syntax error
             let left = escape_var(&sym);
-            let right = to_js_code(&def_code, &ns, &scoped_defs, file_imports, &None)?;
+            let right = to_js_code(&def_code, &ns, &scoped_defs, file_imports, keywords, &None)?;
             defs_code.push_str(&format!("let {} = {};\n", left, right));
 
             if scoped_defs.contains(&sym) {
               for (idx, x) in content.iter().enumerate() {
                 if idx == content.len() - 1 {
-                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &return_label)?);
+                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, keywords, &return_label)?);
                   body_part.push('\n');
                 } else {
-                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &None)?);
+                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, keywords, &None)?);
                   body_part.push_str(";\n");
                 }
               }
@@ -755,10 +764,10 @@ fn gen_let_code(
 
               for (idx, x) in content.iter().enumerate() {
                 if idx == content.len() - 1 {
-                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &return_label)?);
+                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, keywords, &return_label)?);
                   body_part.push('\n');
                 } else {
-                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &None)?);
+                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, keywords, &None)?);
                   body_part.push_str(";\n");
                 }
               }
@@ -786,6 +795,7 @@ fn gen_if_code(
   _xs: &Calcit,
   ns: &str,
   file_imports: &RefCell<ImportsDict>,
+  keywords: &RefCell<HashSet<String>>,
   base_return_label: &Option<String>,
 ) -> Result<String, String> {
   if body.len() < 2 || body.len() > 3 {
@@ -803,8 +813,8 @@ fn gen_if_code(
     };
 
     loop {
-      let cond_code = to_js_code(&cond_node, ns, local_defs, file_imports, &None)?;
-      let true_code = to_js_code(&true_node, ns, local_defs, file_imports, &return_label)?;
+      let cond_code = to_js_code(&cond_node, ns, local_defs, file_imports, keywords, &None)?;
+      let true_code = to_js_code(&true_node, ns, local_defs, file_imports, keywords, &return_label)?;
       let else_mark = if need_else { " else " } else { "" };
 
       chunk.push_str(&format!("\n{}if ({}) {{ {} }}", else_mark, cond_code, true_code));
@@ -825,7 +835,7 @@ fn gen_if_code(
           }
         }
 
-        let false_code = to_js_code(&false_node, ns, local_defs, file_imports, &return_label)?;
+        let false_code = to_js_code(&false_node, ns, local_defs, file_imports, keywords, &return_label)?;
         chunk.push_str(&format!("else {{ {} }}", false_code));
         break;
       } else {
@@ -847,6 +857,7 @@ fn gen_args_code(
   ns: &str,
   local_defs: &HashSet<String>,
   file_imports: &RefCell<ImportsDict>,
+  keywords: &RefCell<HashSet<String>>,
 ) -> Result<String, String> {
   let mut result = String::from("");
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
@@ -864,11 +875,11 @@ fn gen_args_code(
           result.push_str(&format!(
             "...{}listToArray({})",
             var_prefix,
-            to_js_code(x, ns, local_defs, file_imports, &None)?
+            to_js_code(x, ns, local_defs, file_imports, keywords, &None)?
           ));
           spreading = false
         } else {
-          result.push_str(&to_js_code(&x, ns, &local_defs, file_imports, &None)?);
+          result.push_str(&to_js_code(&x, ns, &local_defs, file_imports, keywords, &None)?);
         }
       }
     }
@@ -882,17 +893,25 @@ fn list_to_js_code(
   local_defs: HashSet<String>,
   return_label: &str,
   file_imports: &RefCell<ImportsDict>,
+  keywords: &RefCell<HashSet<String>>,
 ) -> Result<String, String> {
   // TODO default returnLabel="return "
   let mut result = String::from("");
   for (idx, x) in xs.iter().enumerate() {
     // result = result & "// " & $x & "\n"
     if idx == xs.len() - 1 {
-      let line = to_js_code(&x, ns, &local_defs, file_imports, &Some(return_label.to_owned()))?;
+      let line = to_js_code(
+        &x,
+        ns,
+        &local_defs,
+        file_imports,
+        keywords,
+        &Some(return_label.to_owned()),
+      )?;
       result.push_str(&line);
       result.push('\n');
     } else {
-      let line = to_js_code(&x, ns, &local_defs, file_imports, &None)?;
+      let line = to_js_code(&x, ns, &local_defs, file_imports, keywords, &None)?;
       // if is_let_call(&x) {
       //   result.push_str(&make_curly_wrapper(&line));
       // } else {
@@ -932,6 +951,7 @@ fn gen_js_func(
   exported: bool,
   outer_defs: &HashSet<String>,
   file_imports: &RefCell<ImportsDict>,
+  keywords: &RefCell<HashSet<String>>,
 ) -> Result<String, String> {
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
   let mut local_defs = outer_defs.to_owned();
@@ -1010,13 +1030,21 @@ fn gen_js_func(
 
   if !body.is_empty() && uses_recur(&body[body.len() - 1]) {
     let return_var = js_gensym("return_mark");
+    let body = list_to_js_code(
+      &body,
+      ns,
+      local_defs,
+      &format!("%%{}%% =", return_var),
+      file_imports,
+      keywords,
+    )?;
     let fn_def = snippets::tmpl_tail_recursion(
       /* name = */ escape_var(name),
       /* args_code = */ args_code,
       /* check_args = */ check_args,
       /* spreading_code = */ spreading_code,
       /* body = */
-      list_to_js_code(&body, ns, local_defs, &format!("%%{}%% =", return_var), file_imports)?, // dirty trick
+      body, // dirty trick
       /* var_prefix = */ var_prefix.to_owned(),
       /* return_mark */ &format!("%%{}%%", return_var),
       /* async_prefix */ &async_prefix,
@@ -1036,7 +1064,7 @@ fn gen_js_func(
       args_code,
       check_args,
       spreading_code,
-      list_to_js_code(&body, ns, local_defs, "return ", file_imports)?
+      list_to_js_code(&body, ns, local_defs, "return ", file_imports, keywords)?
     );
     let export_mark = if exported { "export " } else { "" };
     Ok(format!("{}{}\n", export_mark, fn_definition))
@@ -1151,6 +1179,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     // side-effects, reset tracking state
 
     let file_imports: RefCell<ImportsDict> = RefCell::new(BTreeMap::new());
+    let keywords: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 
     let mut defs_in_current: HashSet<String> = HashSet::new();
     for k in file.keys() {
@@ -1182,6 +1211,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     let mut defs_code = String::from(""); // code generated by functions
     let mut vals_code = String::from(""); // code generated by thunks
     let mut direct_code = String::from(""); // dirty code to run directly
+    let mut keywords_code = String::from("\nvar _kwd={};\n"); // initialization for keywords
 
     let mut import_code = if ns == "calcit.core" {
       snippets::tmpl_import_procs(wrap_js_str("@calcit/procs"))
@@ -1228,7 +1258,16 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         }
         Calcit::Fn(name, def_ns, _, _, args, code) => {
           call_stack::push_call_stack(def_ns, name, StackKind::Codegen, f.to_owned(), &im::vector![]);
-          defs_code.push_str(&gen_js_func(&def, args, code, &ns, true, &def_names, &file_imports)?);
+          defs_code.push_str(&gen_js_func(
+            &def,
+            args,
+            code,
+            &ns,
+            true,
+            &def_names,
+            &file_imports,
+            &keywords,
+          )?);
           call_stack::pop_call_stack();
         }
         Calcit::Thunk(code, _) => {
@@ -1238,7 +1277,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           vals_code.push_str(&format!(
             "\nexport var {} = {};\n",
             escape_var(&def),
-            to_js_code(code, &ns, &def_names, &file_imports, &None)?
+            to_js_code(code, &ns, &def_names, &file_imports, &keywords, &None)?
           ));
           call_stack::pop_call_stack()
         }
@@ -1306,10 +1345,20 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       }
     }
 
+    let kwd_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
+    for s in keywords.into_inner() {
+      let name = escape_cirru_str(&s);
+      keywords_code.push_str(&format!("\n_kwd[{}] = {}kwd({});", name, kwd_prefix, name));
+    }
+    keywords_code.push('\n');
+
     let js_file_path = code_emit_path.join(to_js_file_name(&ns, false)); // TODO mjs_mode
     let wrote_new = write_file_if_changed(
       &js_file_path,
-      &format!("{}\n{}\n{}\n{}", import_code, defs_code, vals_code, direct_code),
+      &format!(
+        "{}\n{}{}\n\n{}\n{}",
+        import_code, keywords_code, defs_code, vals_code, direct_code
+      ),
     );
     if wrote_new {
       println!("Emitted js file: {}", js_file_path.to_str().unwrap());
