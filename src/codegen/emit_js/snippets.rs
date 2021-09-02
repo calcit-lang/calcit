@@ -142,3 +142,14 @@ if (runtimeVersion !== cli_version) {{
     CALCIT_VERSION
   )
 }
+
+pub fn tmpl_keywords_init(arr: &str, prefix: &str) -> String {
+  format!(
+    "
+{}.forEach(x => {{
+  _kwd[x] = {}kwd(x);
+}});
+  ",
+    arr, prefix
+  )
+}
