@@ -364,13 +364,13 @@ fn check_fn_args(
       (Some(Calcit::Symbol(sym, ..)), _) if sym == "?" => {
         // dynamic args rule, all okay
         optional = true;
-        i = i + 1;
+        i += 1;
         continue;
       }
       (Some(_), None) => {
         if optional {
-          i = i + 1;
-          j = j + 1;
+          i += 1;
+          j += 1;
           continue;
         } else {
           let mut warnings = check_warnings.borrow_mut();
@@ -398,8 +398,8 @@ fn check_fn_args(
         return;
       }
       (Some(_), Some(_)) => {
-        i = i + 1;
-        j = j + 1;
+        i += 1;
+        j += 1;
         continue;
       }
     }

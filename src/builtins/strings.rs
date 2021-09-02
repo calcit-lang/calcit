@@ -317,7 +317,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, String> {
         }
         buffer.push(c)
       }
-      Ok(Calcit::Str(buffer.to_owned()))
+      Ok(Calcit::Str(buffer))
     }
     Some(a) => Err(format!("str:rest expected a string, got: {}", a)),
     None => Err(String::from("str:rest expected 1 argument")),

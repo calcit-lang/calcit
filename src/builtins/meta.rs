@@ -274,7 +274,7 @@ pub fn invoke_method(
       match find_in_fields(&fields, name) {
         Some(idx) => {
           let mut method_args: im::Vector<Calcit> = im::vector![];
-          method_args.push_back(value.to_owned());
+          method_args.push_back(value);
           let mut at_first = true;
           for x in invoke_args {
             if at_first {
@@ -367,5 +367,5 @@ pub fn no_op() -> Result<Calcit, String> {
 
 pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, String> {
   // https://doc.rust-lang.org/std/env/consts/constant.OS.html
-  return Ok(Calcit::Keyword(std::env::consts::OS.to_owned()));
+  Ok(Calcit::Keyword(std::env::consts::OS.to_owned()))
 }
