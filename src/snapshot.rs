@@ -102,7 +102,7 @@ pub fn load_snapshot_data(data: Edn, path: &str) -> Result<Snapshot, String> {
   let s = Snapshot {
     package: pkg,
     configs: load_configs(data.map_get("configs")?)?,
-    files: files,
+    files,
   };
   Ok(s)
 }
@@ -114,7 +114,7 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
     Cirru::List(vec![
       Cirru::Leaf(String::from("def")),
       Cirru::Leaf(String::from("calcit-filename")),
-      Cirru::Leaf(String::from(format!("|{}", path.escape_default()))),
+      Cirru::Leaf(format!("|{}", path.escape_default())),
     ]),
   );
   let path_data = Path::new(path);
@@ -126,7 +126,7 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
     Cirru::List(vec![
       Cirru::Leaf(String::from("def")),
       Cirru::Leaf(String::from("calcit-dirname")),
-      Cirru::Leaf(String::from(format!("|{}", parent_str.escape_default()))),
+      Cirru::Leaf(format!("|{}", parent_str.escape_default())),
     ]),
   );
 

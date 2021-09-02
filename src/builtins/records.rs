@@ -278,11 +278,7 @@ pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, String> {
             _ => Err(format!("")),
           };
 
-          Ok(Calcit::Record(
-            new_name?.to_owned(),
-            next_fields.to_owned(),
-            next_values.to_owned(),
-          ))
+          Ok(Calcit::Record(new_name?, next_fields, next_values))
         }
       },
       a => Err(format!("invalid field `{}` for {:?}", a, fields)),

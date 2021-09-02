@@ -693,7 +693,7 @@ fn gen_let_code(
         for (idx, x) in content.iter().enumerate() {
           if idx == content.len() - 1 {
             body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &return_label)?);
-            body_part.push_str("\n");
+            body_part.push('\n');
           } else {
             body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &None)?);
             body_part.push_str(";\n");
@@ -716,7 +716,7 @@ fn gen_let_code(
               for (idx, x) in content.iter().enumerate() {
                 if idx == content.len() - 1 {
                   body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &return_label)?);
-                  body_part.push_str("\n");
+                  body_part.push('\n');
                 } else {
                   body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &None)?);
                   body_part.push_str(";\n");
@@ -756,7 +756,7 @@ fn gen_let_code(
               for (idx, x) in content.iter().enumerate() {
                 if idx == content.len() - 1 {
                   body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &return_label)?);
-                  body_part.push_str("\n");
+                  body_part.push('\n');
                 } else {
                   body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, &None)?);
                   body_part.push_str(";\n");
@@ -890,7 +890,7 @@ fn list_to_js_code(
     if idx == xs.len() - 1 {
       let line = to_js_code(&x, ns, &local_defs, file_imports, &Some(return_label.to_owned()))?;
       result.push_str(&line);
-      result.push_str("\n");
+      result.push('\n');
     } else {
       let line = to_js_code(&x, ns, &local_defs, file_imports, &None)?;
       // if is_let_call(&x) {
@@ -1051,7 +1051,7 @@ fn hinted_async(xs: &im::Vector<Calcit>) -> bool {
       _ => {}
     }
   }
-  return false;
+  false
 }
 
 fn contains_symbol(xs: &Calcit, y: &str) -> bool {

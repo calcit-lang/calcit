@@ -343,8 +343,8 @@ impl Ord for Calcit {
       (Calcit::Ref(_), _) => Less,
       (_, Calcit::Ref(_)) => Greater,
 
-      (Calcit::Tuple(a, b), Calcit::Tuple(c, d)) => match a.cmp(c) {
-        Equal => b.cmp(d),
+      (Calcit::Tuple(a0, b0), Calcit::Tuple(a1, b1)) => match a0.cmp(a1) {
+        Equal => b0.cmp(b1),
         v => v,
       },
       (Calcit::Tuple(_, _), _) => Less,

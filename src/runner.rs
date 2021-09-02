@@ -25,7 +25,7 @@ pub fn evaluate_expr(
       Some(ResolvedDef(r_ns, r_def, _import_rule)) => {
         let v = evaluate_symbol(r_def, scope, r_ns, program_code)?;
         match v {
-          Calcit::Thunk(_code, Some(data)) => Ok(*data.to_owned()),
+          Calcit::Thunk(_code, Some(data)) => Ok(*data),
           // extra check to make sure code in thunks evaluated
           Calcit::Thunk(code, None) => {
             let evaled_v = evaluate_expr(&code, scope, file_ns, program_code)?;

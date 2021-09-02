@@ -218,7 +218,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
         for idx in 0..size {
           ys.insert(xs[idx * 2 + 1].to_owned(), xs[idx * 2 + 2].to_owned());
         }
-        Ok(Calcit::Map(ys.to_owned()))
+        Ok(Calcit::Map(ys))
       }
     }
     Some(a) => Err(format!("map:assoc expected a map, got: {}", a)),

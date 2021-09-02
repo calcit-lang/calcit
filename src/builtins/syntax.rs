@@ -300,7 +300,7 @@ pub fn macroexpand_all(
                   let (resolved, _v) =
                     runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, program_code, check_warnings)?;
                   let warnings = check_warnings.to_owned().into_inner();
-                  if warnings.len() > 0 {
+                  if !warnings.is_empty() {
                     for message in &warnings {
                       println!("{}", message);
                     }
@@ -321,7 +321,7 @@ pub fn macroexpand_all(
               check_warnings,
             )?;
             let warnings = check_warnings.to_owned().into_inner();
-            if warnings.len() > 0 {
+            if !warnings.is_empty() {
               for message in &warnings {
                 println!("{}", message);
               }

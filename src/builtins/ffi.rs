@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub fn ffi_message(xs: &CalcitItems) -> Result<Calcit, String> {
-  if xs.len() >= 1 {
+  if !xs.is_empty() {
     match &xs[0] {
       Calcit::Str(s) | Calcit::Symbol(s, ..) => {
         let items = xs.to_owned().slice(1..);

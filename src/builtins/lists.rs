@@ -276,7 +276,7 @@ pub fn foldl_shortcut(
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
                 if b {
-                  return Ok(*x1.to_owned());
+                  return Ok(*x1);
                 } else {
                   state = *x1.to_owned()
                 }
@@ -303,7 +303,7 @@ pub fn foldl_shortcut(
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
                 if b {
-                  return Ok(*x1.to_owned());
+                  return Ok(*x1);
                 } else {
                   state = *x1.to_owned()
                 }
@@ -330,7 +330,7 @@ pub fn foldl_shortcut(
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
                 if b {
-                  return Ok(*x1.to_owned());
+                  return Ok(*x1);
                 } else {
                   state = *x1.to_owned()
                 }
@@ -382,7 +382,7 @@ pub fn foldr_shortcut(
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
                 if b {
-                  return Ok(*x1.to_owned());
+                  return Ok(*x1);
                 } else {
                   state = *x1.to_owned()
                 }

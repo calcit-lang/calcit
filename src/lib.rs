@@ -51,7 +51,7 @@ pub fn run_program(
   }
 
   let warnings = check_warnings.to_owned().into_inner();
-  if warnings.len() > 0 {
+  if !warnings.is_empty() {
     for message in &warnings {
       println!("{}", message);
     }
@@ -100,7 +100,7 @@ pub fn load_module(path: &str, base_dir: &Path) -> Result<snapshot::Snapshot, St
 
   println!("loading module: {}", fullpath);
 
-  let content = fs::read_to_string(&fullpath).expect(&format!("expected Cirru snapshot {:?}", fullpath));
+  let content = fs::read_to_string(&fullpath).unwrap_or_else(|_| panic!("expected Cirru snapshot {:?}", fullpath));
   let data = cirru_edn::parse(&content)?;
   // println!("reading: {}", content);
   let snapshot = snapshot::load_snapshot_data(data, &fullpath)?;
