@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
+use crate::builtins::meta::{force_reset_gensym_index, js_gensym, reset_js_gensym_index};
 use crate::builtins::{is_js_syntax_procs, is_proc_name, is_syntax_name};
 use crate::call_stack;
 use crate::call_stack::StackKind;
@@ -1204,6 +1204,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 
     // reset index each file
     reset_js_gensym_index();
+    force_reset_gensym_index()?;
 
     // let coreLib = "http://js.calcit-lang.org/calcit.core.js".escape()
     let core_lib = to_js_import_name("calcit.core", false); // TODO js_mode
