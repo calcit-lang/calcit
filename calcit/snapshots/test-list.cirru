@@ -83,6 +83,15 @@
                   []
                   fn (x) (range x)
                 []
+              assert=
+                [] 1 2 3 4 5 6 7 8
+                &list:flatten $ [] 1 2 ([] 3 4 ([] 5 6) 7) 8
+              assert=
+                [] 1 (#{} 2 3)
+                &list:flatten $ [] 1 (#{} 2 3)
+              assert=
+                [] 1 2 4
+                .flatten $ [] ([] ([] 1 2 $ [] 4))
 
               assert=
                 map (range 10) identity
