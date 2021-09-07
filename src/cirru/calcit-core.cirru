@@ -166,6 +166,17 @@
             foldl xs nil $ fn (_acc x)
               f x
 
+        |&list:map $ quote
+          defn &list:map (xs f)
+            foldl xs ({})
+              fn (acc pair) $ let[] (k v) pair
+                &let
+                  result $ f $ [] k v
+                  assert "|expected pair returned when mapping hashmap"
+                    and (list? result) (&= 2 (&list:count result))
+                  let[] (k2 v2) result
+                    &map:assoc acc k2 v2
+
         |map $ quote
           defn map (xs f)
             cond
@@ -176,14 +187,7 @@
                 foldl xs (#{})
                   fn (acc x) $ include acc (f x)
               (map? xs)
-                foldl xs ({})
-                  fn (acc pair) $ let[] (k v) pair
-                    &let
-                      result $ f $ [] k v
-                      assert "|expected pair returned when mapping hashmap"
-                        and (list? result) (&= 2 (&list:count result))
-                      let[] (k2 v2) result
-                        &map:assoc acc k2 v2
+                &list:map xs f
               true
                 &let nil
                   echo "|value:" xs
@@ -1455,6 +1459,7 @@
                 map fs $ defn &fn:ap-gen (f)
                   map xs $ defn &fn:ap-gen (x)
                     f x
+            :flatten &list:flatten
 
         |&core-nil-class $ quote
           defrecord! &core-nil-class
@@ -1573,3 +1578,9 @@
                 assert "|expected a pair" $ and (list? pair) $ = 2 $ count pair
                 f (nth pair 0) (nth pair 1)
               raise "|expected list or map from `filter-pair`"
+
+        |&list:flatten $ quote
+          defn &list:flatten (xs)
+            if (list? xs)
+              &list:concat & $ map xs &list:flatten
+              [] xs
