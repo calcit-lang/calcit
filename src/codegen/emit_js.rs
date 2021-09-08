@@ -156,7 +156,7 @@ fn escape_cirru_str(s: &str) -> String {
 fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<Vec<String>>) -> Result<String, String> {
   match xs {
     Calcit::Symbol(s, ..) => Ok(format!("new {}CalcitSymbol({})", var_prefix, escape_cirru_str(&s))),
-    Calcit::Str(s) => Ok(escape_cirru_str(&s)),
+    Calcit::Str(s) => Ok(escape_cirru_str(s)),
     Calcit::Bool(b) => Ok(b.to_string()),
     Calcit::Number(n) => Ok(n.to_string()),
     Calcit::Nil => Ok(String::from("null")),

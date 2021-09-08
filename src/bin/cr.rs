@@ -57,7 +57,7 @@ fn main() -> Result<(), String> {
     snapshot = snapshot::load_snapshot_data(data, settings.entry_path.to_str().unwrap())?;
     // attach modules
     for module_path in &snapshot.configs.modules {
-      let module_data = calcit_runner::load_module(&module_path, settings.entry_path.parent().unwrap())?;
+      let module_data = calcit_runner::load_module(module_path, settings.entry_path.parent().unwrap())?;
       for (k, v) in &module_data.files {
         snapshot.files.insert(k.to_owned(), v.to_owned());
       }
@@ -81,22 +81,22 @@ fn main() -> Result<(), String> {
 
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
-    &calcit_runner::primes::CORE_NS,
-    &calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
+    calcit_runner::primes::CORE_NS,
+    calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
     &program_code,
-    &calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
+    calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
     None,
     check_warnings,
   )?;
 
   let task = if settings.emit_js {
-    run_codegen(&init_fn, &reload_fn, &program_code, &settings.emit_path, false)
+    run_codegen(init_fn, reload_fn, &program_code, &settings.emit_path, false)
   } else if settings.emit_ir {
-    run_codegen(&init_fn, &reload_fn, &program_code, &settings.emit_path, true)
+    run_codegen(init_fn, reload_fn, &program_code, &settings.emit_path, true)
   } else {
     let started_time = Instant::now();
 
-    let v = calcit_runner::run_program(&init_fn, im::vector![], &program_code)?;
+    let v = calcit_runner::run_program(init_fn, im::vector![], &program_code)?;
 
     let duration = Instant::now().duration_since(started_time);
     println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
@@ -179,26 +179,26 @@ fn recall_program(
   // 2. clears evaled states, gensym counter
   // 3. rerun program, and catch error
 
-  let data = cirru_edn::parse(&content)?;
+  let data = cirru_edn::parse(content)?;
   let changes = snapshot::load_changes_info(data)?;
 
   // println!("\ndata: {}", &data);
   // println!("\nchanges: {:?}", changes);
-  let new_code = program::apply_code_changes(&program_code, &changes)?;
+  let new_code = program::apply_code_changes(program_code, &changes)?;
   // println!("\nprogram code: {:?}", new_code);
 
   // clear data in evaled states
-  program::clear_all_program_evaled_defs(&init_fn, &reload_fn, settings.reload_libs)?;
+  program::clear_all_program_evaled_defs(init_fn, reload_fn, settings.reload_libs)?;
   builtins::meta::force_reset_gensym_index()?;
 
   let task = if settings.emit_js {
-    run_codegen(&init_fn, &reload_fn, &new_code, &settings.emit_path, false)
+    run_codegen(init_fn, reload_fn, &new_code, &settings.emit_path, false)
   } else if settings.emit_ir {
-    run_codegen(&init_fn, &reload_fn, &new_code, &settings.emit_path, true)
+    run_codegen(init_fn, reload_fn, &new_code, &settings.emit_path, true)
   } else {
     // run from `reload_fn` after reload
     let started_time = Instant::now();
-    let v = calcit_runner::run_program(&reload_fn, im::vector![], &new_code)?;
+    let v = calcit_runner::run_program(reload_fn, im::vector![], &new_code)?;
     let duration = Instant::now().duration_since(started_time);
     println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
     Ok(())
@@ -245,7 +245,7 @@ fn run_codegen(
   let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def, None, check_warnings) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, program_code, &init_def, None, check_warnings) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
@@ -264,7 +264,7 @@ fn run_codegen(
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &program_code, &init_def, None, check_warnings) {
+  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, program_code, &init_def, None, check_warnings) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
@@ -298,7 +298,7 @@ fn run_codegen(
   }
 
   if ir_mode {
-    match codegen::gen_ir::emit_ir(&init_fn, &reload_fn, &emit_path) {
+    match codegen::gen_ir::emit_ir(init_fn, reload_fn, emit_path) {
       Ok(_) => (),
       Err(failure) => {
         println!("\nfailed codegen, {}", failure);
@@ -308,7 +308,7 @@ fn run_codegen(
     }
   } else {
     // TODO entry ns
-    match codegen::emit_js::emit_js(&init_ns, &emit_path) {
+    match codegen::emit_js::emit_js(&init_ns, emit_path) {
       Ok(_) => (),
       Err(failure) => {
         println!("\nfailed codegen, {}", failure);
