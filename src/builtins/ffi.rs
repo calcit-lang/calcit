@@ -102,7 +102,7 @@ pub fn call_dylib_to_str(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-// &call-dylib-vec:str->tuple-str2
+// &call-dylib:vec-str->tuple-str2
 pub fn call_dylib_vec_str_to_tuple_str2(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Str(lib_name)), Some(Calcit::Str(method)), Some(Calcit::List(xs))) => unsafe {
@@ -128,6 +128,40 @@ pub fn call_dylib_vec_str_to_tuple_str2(xs: &CalcitItems) -> Result<Calcit, Stri
     )),
     (_, _, _) => Err(String::from(
       "&call-dylib:vec-str->tuple-str2 expected 3 argument, not satisfied",
+    )),
+  }
+}
+
+// &call-dylib:str-vec-str->tuple-str2
+pub fn call_dylib_str_vec_str_to_tuple_str2(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1), xs.get(2), xs.get(3)) {
+    (Some(Calcit::Str(lib_name)), Some(Calcit::Str(method)), Some(Calcit::Str(a)), Some(Calcit::List(xs))) => unsafe {
+      let mut args: Vec<String> = vec![];
+      for x in xs {
+        match x {
+          Calcit::Str(s) => {
+            args.push(s.to_owned());
+          }
+          _ => {
+            return Err(String::from(
+              "&call-dylib:str-vec-str->tuple-str2 expected string numbers",
+            ))
+          }
+        }
+      }
+
+      let lib = libloading::Library::new(lib_name).expect("dylib not found");
+      let func: libloading::Symbol<fn(a: String, b: Vec<String>) -> Result<(String, String), String>> =
+        lib.get(method.as_bytes()).expect("dy function not found");
+
+      let (stdout, stderr) = func(a.to_owned(), args)?.to_owned();
+      Ok(Calcit::List(im::vector![Calcit::Str(stdout,), Calcit::Str(stderr)]))
+    },
+    (Some(_), Some(_), Some(_), Some(_)) => Err(String::from(
+      "&call-dylib:str-vec-str->tuple-str2 expected 3 strings and a list, not satisfied",
+    )),
+    (_, _, _, _) => Err(String::from(
+      "&call-dylib:str-vec-str->tuple-str2 expected 4 argument, not satisfied",
     )),
   }
 }
