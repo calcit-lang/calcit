@@ -195,7 +195,7 @@ pub fn foldl(
         let mut ret = acc;
         for x in xs {
           let values = im::vector![ret, x.to_owned()];
-          ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+          ret = runner::run_fn(&values, def_scope, args, body, def_ns, program_code)?;
         }
         Ok(ret)
       }
@@ -203,7 +203,7 @@ pub fn foldl(
         let mut ret = acc;
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(&proc, &im::vector![ret, x.to_owned()])?;
+          ret = builtins::handle_proc(proc, &im::vector![ret, x.to_owned()])?;
         }
         Ok(ret)
       }
@@ -212,7 +212,7 @@ pub fn foldl(
         let mut ret = acc;
         for x in xs {
           let values = im::vector![ret, x.to_owned()];
-          ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+          ret = runner::run_fn(&values, def_scope, args, body, def_ns, program_code)?;
         }
         Ok(ret)
       }
@@ -220,7 +220,7 @@ pub fn foldl(
         let mut ret = acc;
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(&proc, &im::vector![ret, x.to_owned()])?;
+          ret = builtins::handle_proc(proc, &im::vector![ret, x.to_owned()])?;
         }
         Ok(ret)
       }
@@ -229,7 +229,7 @@ pub fn foldl(
         let mut ret = acc;
         for (k, x) in xs {
           let values = im::vector![ret, Calcit::List(im::vector![k.to_owned(), x.to_owned()])];
-          ret = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+          ret = runner::run_fn(&values, def_scope, args, body, def_ns, program_code)?;
         }
         Ok(ret)
       }
@@ -238,7 +238,7 @@ pub fn foldl(
         for (k, x) in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(
-            &proc,
+            proc,
             &im::vector![ret, Calcit::List(im::vector![k.to_owned(), x.to_owned()])],
           )?;
         }
@@ -271,7 +271,7 @@ pub fn foldl_shortcut(
         let mut state = acc;
         for x in xs {
           let values = im::vector![state, x.to_owned()];
-          let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+          let pair = runner::run_fn(&values, def_scope, args, body, def_ns, program_code)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
@@ -298,7 +298,7 @@ pub fn foldl_shortcut(
         let mut state = acc;
         for x in xs {
           let values = im::vector![state, x.to_owned()];
-          let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+          let pair = runner::run_fn(&values, def_scope, args, body, def_ns, program_code)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
@@ -325,7 +325,7 @@ pub fn foldl_shortcut(
         let mut state = acc;
         for (k, x) in xs {
           let values = im::vector![state, Calcit::List(im::vector![k.to_owned(), x.to_owned()])];
-          let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+          let pair = runner::run_fn(&values, def_scope, args, body, def_ns, program_code)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
@@ -377,7 +377,7 @@ pub fn foldr_shortcut(
         for i in 0..size {
           let x = xs[size - 1 - i].to_owned();
           let values = im::vector![state, x];
-          let pair = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+          let pair = runner::run_fn(&values, def_scope, args, body, def_ns, program_code)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
@@ -426,7 +426,7 @@ pub fn sort(
         let mut ret = xs.to_owned();
         ret.sort_by(|a, b| {
           let values = im::vector![a.to_owned(), b.to_owned()];
-          let v = runner::run_fn(&values, &def_scope, args, body, def_ns, program_code);
+          let v = runner::run_fn(&values, def_scope, args, body, def_ns, program_code);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
             Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
@@ -447,7 +447,7 @@ pub fn sort(
         let mut ret = xs.to_owned();
         ret.sort_by(|a, b| {
           let values = im::vector![a.to_owned(), b.to_owned()];
-          let v = builtins::handle_proc(&proc, &values);
+          let v = builtins::handle_proc(proc, &values);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
             Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,

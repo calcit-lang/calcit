@@ -323,15 +323,15 @@ impl Ord for Calcit {
       (Calcit::Number(_), _) => Less,
       (_, Calcit::Number(_)) => Greater,
 
-      (Calcit::Symbol(a, ..), Calcit::Symbol(b, ..)) => a.cmp(&b),
+      (Calcit::Symbol(a, ..), Calcit::Symbol(b, ..)) => a.cmp(b),
       (Calcit::Symbol(..), _) => Less,
       (_, Calcit::Symbol(..)) => Greater,
 
-      (Calcit::Keyword(a), Calcit::Keyword(b)) => a.cmp(&b),
+      (Calcit::Keyword(a), Calcit::Keyword(b)) => a.cmp(b),
       (Calcit::Keyword(_), _) => Less,
       (_, Calcit::Keyword(_)) => Greater,
 
-      (Calcit::Str(a), Calcit::Str(b)) => a.cmp(&b),
+      (Calcit::Str(a), Calcit::Str(b)) => a.cmp(b),
       (Calcit::Str(_), _) => Less,
       (_, Calcit::Str(_)) => Greater,
 
@@ -392,11 +392,11 @@ impl Ord for Calcit {
       (Calcit::Macro(..), _) => Less,
       (_, Calcit::Macro(..)) => Greater,
 
-      (Calcit::Fn(_name1, _ns1, a, ..), Calcit::Fn(_name2, _ns2, b, ..)) => a.cmp(&b), // compared with nanoid
+      (Calcit::Fn(_name1, _ns1, a, ..), Calcit::Fn(_name2, _ns2, b, ..)) => a.cmp(b), // compared with nanoid
       (Calcit::Fn(..), _) => Less,
       (_, Calcit::Fn(..)) => Greater,
 
-      (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a.cmp(&b),
+      (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a.cmp(b),
     }
   }
 }

@@ -41,7 +41,7 @@ pub fn run_program(
   let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &program_code, &init_def, None, check_warnings) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, program_code, &init_def, None, check_warnings) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
@@ -61,7 +61,7 @@ pub fn run_program(
     None => Err(format!("entry not initialized: {}/{}", init_ns, init_def)),
     Some(entry) => match entry {
       Calcit::Fn(_, f_ns, _, def_scope, args, body) => {
-        let result = runner::run_fn(&params, &def_scope, &args, &body, &f_ns, &program_code);
+        let result = runner::run_fn(&params, &def_scope, &args, &body, &f_ns, program_code);
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {

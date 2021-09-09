@@ -37,7 +37,7 @@ pub fn evaluate_expr(
           _ => Ok(v),
         }
       }
-      _ => evaluate_symbol(&s, scope, &ns, program_code),
+      _ => evaluate_symbol(s, scope, ns, program_code),
     },
     Calcit::Keyword(_) => Ok(expr.to_owned()),
     Calcit::Str(_) => Ok(expr.to_owned()),
@@ -56,30 +56,30 @@ pub fn evaluate_expr(
 
         let mut added_stack = false;
 
-        let v = evaluate_expr(&x, scope, file_ns, program_code)?;
+        let v = evaluate_expr(x, scope, file_ns, program_code)?;
         let rest_nodes = xs.skip(1);
         let ret = match &v {
           Calcit::Proc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
-            push_call_stack(file_ns, &p, StackKind::Proc, Calcit::Nil, &values);
+            push_call_stack(file_ns, p, StackKind::Proc, Calcit::Nil, &values);
             added_stack = true;
             if p.starts_with('.') {
-              builtins::meta::invoke_method(&p.strip_prefix('.').unwrap(), &values, program_code)
+              builtins::meta::invoke_method(p.strip_prefix('.').unwrap(), &values, program_code)
             } else {
               // println!("proc: {}", expr);
-              builtins::handle_proc(&p, &values)
+              builtins::handle_proc(p, &values)
             }
           }
           Calcit::Syntax(s, def_ns) => {
-            push_call_stack(file_ns, &s, StackKind::Syntax, expr.to_owned(), &rest_nodes);
+            push_call_stack(file_ns, s, StackKind::Syntax, expr.to_owned(), &rest_nodes);
             added_stack = true;
-            builtins::handle_syntax(&s, &rest_nodes, scope, def_ns, program_code)
+            builtins::handle_syntax(s, &rest_nodes, scope, def_ns, program_code)
           }
           Calcit::Fn(name, def_ns, _, def_scope, args, body) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, program_code)?;
-            push_call_stack(file_ns, &name, StackKind::Fn, expr.to_owned(), &values);
+            push_call_stack(file_ns, name, StackKind::Fn, expr.to_owned(), &values);
             added_stack = true;
-            run_fn(&values, &def_scope, args, body, def_ns, program_code)
+            run_fn(&values, def_scope, args, body, def_ns, program_code)
           }
           Calcit::Macro(name, def_ns, _, args, body) => {
             println!(
@@ -92,13 +92,13 @@ pub fn evaluate_expr(
             // println!("eval macro: {} {}", x, expr.lisp_str()));
             // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
-            push_call_stack(file_ns, &name, StackKind::Macro, expr.to_owned(), &rest_nodes);
+            push_call_stack(file_ns, name, StackKind::Macro, expr.to_owned(), &rest_nodes);
             added_stack = true;
 
             Ok(loop {
               // need to handle recursion
-              let body_scope = bind_args(&args, &current_values, &im::HashMap::new())?;
-              let code = evaluate_lines(&body, &body_scope, def_ns, program_code)?;
+              let body_scope = bind_args(args, &current_values, &im::HashMap::new())?;
+              let code = evaluate_lines(body, &body_scope, def_ns, program_code)?;
               match code {
                 Calcit::Recur(ys) => {
                   current_values = ys;
@@ -163,7 +163,7 @@ pub fn evaluate_symbol(
   file_ns: &str,
   program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, String> {
-  match parse_ns_def(&sym) {
+  match parse_ns_def(sym) {
     Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns, &ns_part, program_code) {
       Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, program_code) {
         Ok(v) => Ok(v),

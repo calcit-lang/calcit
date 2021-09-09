@@ -144,7 +144,7 @@ pub fn str_slice(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn compare_string(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(a)), Some(Calcit::Str(b))) => {
-      let v = match a.cmp(&b) {
+      let v = match a.cmp(b) {
         Ordering::Less => -1,
         Ordering::Equal => 0,
         Ordering::Greater => 1,

@@ -16,10 +16,7 @@ lazy_static! {
 // need functions with shorter lifetime to escape dead lock
 fn read_ref(path: &str) -> Option<ValueAndListeners> {
   let dict = &REFS_DICT.lock().unwrap();
-  match dict.get(path) {
-    Some(pair) => Some(pair.to_owned()),
-    None => None,
-  }
+  dict.get(path).map(|pair| pair.to_owned())
 }
 
 fn write_to_ref(path: String, v: Calcit, listeners: HashMap<String, Calcit>) {
@@ -35,7 +32,7 @@ fn modify_ref(path: String, v: Calcit, program_code: &ProgramCodeData) -> Result
     match f {
       Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
         let values = im::vector![v.to_owned(), prev.to_owned()];
-        runner::run_fn(&values, &def_scope, args, body, def_ns, program_code)?;
+        runner::run_fn(&values, def_scope, args, body, def_ns, program_code)?;
       }
       a => return Err(format!("expected fn to trigger after `reset!`, got {}", a)),
     }

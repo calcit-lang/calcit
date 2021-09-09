@@ -109,7 +109,7 @@ pub fn wrap_js_str(s: &str) -> String {
 }
 
 pub fn extract_ns_def(s: &str) -> Result<(String, String), String> {
-  let pieces: Vec<&str> = (&s).split('/').collect();
+  let pieces: Vec<&str> = s.split('/').collect();
   if pieces.len() == 2 {
     Ok((pieces[0].to_owned(), pieces[1].to_owned()))
   } else {
@@ -118,7 +118,7 @@ pub fn extract_ns_def(s: &str) -> Result<(String, String), String> {
 }
 
 pub fn extract_pkg_from_def(s: &str) -> Option<String> {
-  let pieces: Vec<&str> = (&s).split('/').collect();
+  let pieces: Vec<&str> = s.split('/').collect();
   if !pieces.is_empty() {
     let p2: Vec<&str> = (pieces[0]).split('.').collect();
     if !p2.is_empty() {
