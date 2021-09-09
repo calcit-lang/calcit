@@ -106,7 +106,7 @@ pub fn preprocess_expr(
   match expr {
     Calcit::Symbol(def, def_ns, at_def, _) => match runner::parse_ns_def(def) {
       Some((ns_alias, def_part)) => {
-        match program::lookup_ns_target_in_import(&def_ns, &ns_alias, program_code) {
+        match program::lookup_ns_target_in_import(def_ns, &ns_alias, program_code) {
           Some(target_ns) => {
             // TODO js syntax to handle in future
             preprocess_ns_def(&target_ns, &def_part, program_code, def, None, check_warnings)
@@ -152,7 +152,7 @@ pub fn preprocess_expr(
             Some(target_ns) => {
               // effect
               // TODO js syntax to handle in future
-              preprocess_ns_def(&target_ns, &def, program_code, def, None, check_warnings)
+              preprocess_ns_def(&target_ns, def, program_code, def, None, check_warnings)
             }
             // TODO check js_mode
             None if is_js_syntax_procs(def) => Ok((expr.to_owned(), None)),
@@ -195,7 +195,7 @@ pub fn preprocess_expr(
       } else {
         // TODO whether function bothers this...
         // println!("start calling: {}", expr);
-        process_list_call(&xs, scope_defs, file_ns, program_code, check_warnings)
+        process_list_call(xs, scope_defs, file_ns, program_code, check_warnings)
       }
     }
     Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) => {
@@ -223,7 +223,7 @@ fn process_list_call(
 ) -> Result<(Calcit, Option<Calcit>), String> {
   let mut chunk_xs = xs.to_owned();
   let head = &chunk_xs.pop_front().unwrap();
-  let (head_form, head_evaled) = preprocess_expr(&head, scope_defs, file_ns, program_code, check_warnings)?;
+  let (head_form, head_evaled) = preprocess_expr(head, scope_defs, file_ns, program_code, check_warnings)?;
   let args = &chunk_xs;
   let def_name = grab_def_name(head);
 
@@ -264,7 +264,7 @@ fn process_list_call(
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let code = Calcit::List(xs.to_owned());
-      push_call_stack(&def_ns, &name, StackKind::Macro, code, &args);
+      push_call_stack(&def_ns, &name, StackKind::Macro, code, args);
 
       loop {
         // need to handle recursion
@@ -318,7 +318,7 @@ fn process_list_call(
       check_fn_args(&f_args, args, file_ns, &f_name, &def_name, check_warnings);
       let mut ys = im::vector![head_form];
       for a in args {
-        let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, program_code, check_warnings)?;
+        let (form, _v) = preprocess_expr(a, scope_defs, file_ns, program_code, check_warnings)?;
         ys.push_back(form);
       }
       Ok((Calcit::List(ys), None))
@@ -326,7 +326,7 @@ fn process_list_call(
     (_, _) => {
       let mut ys = im::vector![head_form];
       for a in args {
-        let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, program_code, check_warnings)?;
+        let (form, _v) = preprocess_expr(a, scope_defs, file_ns, program_code, check_warnings)?;
         ys.push_back(form);
       }
       Ok((Calcit::List(ys), None))
@@ -568,7 +568,7 @@ pub fn preprocess_defatom(
   let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
   for a in args {
     // TODO
-    let (form, _v) = preprocess_expr(a, &scope_defs, file_ns, program_code, check_warnings)?;
+    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, program_code, check_warnings)?;
     xs.push_back(form.to_owned());
   }
   Ok(Calcit::List(xs))

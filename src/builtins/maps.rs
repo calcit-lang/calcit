@@ -32,7 +32,7 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, String> {
           skip_first = false;
           continue;
         }
-        ys.remove(&x);
+        ys.remove(x);
       }
       Ok(Calcit::Map(ys.to_owned()))
     }
@@ -231,8 +231,8 @@ pub fn diff_new(xs: &CalcitItems) -> Result<Calcit, String> {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
       let zs = &mut xs.to_owned();
       for k in ys.keys() {
-        if zs.contains_key(&k) {
-          zs.remove(&k).unwrap();
+        if zs.contains_key(k) {
+          zs.remove(k).unwrap();
         }
       }
       Ok(Calcit::Map(zs.to_owned()))
@@ -247,7 +247,7 @@ pub fn diff_keys(xs: &CalcitItems) -> Result<Calcit, String> {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
       let mut ks: im::HashSet<Calcit> = im::HashSet::new();
       for k in xs.keys() {
-        if !ys.contains_key(&k) {
+        if !ys.contains_key(k) {
           ks.insert(k.to_owned());
         }
       }
@@ -263,7 +263,7 @@ pub fn common_keys(xs: &CalcitItems) -> Result<Calcit, String> {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
       let mut ks: im::HashSet<Calcit> = im::HashSet::new();
       for k in xs.keys() {
-        if ys.contains_key(&k) {
+        if ys.contains_key(k) {
           ks.insert(k.to_owned());
         }
       }

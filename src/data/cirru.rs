@@ -55,7 +55,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
         ])),
         // TODO future work of reader literal expanding
         _ => {
-          if matches_float(&s) {
+          if matches_float(s) {
             let f: f64 = s.parse().unwrap();
             Ok(Calcit::Number(f))
           } else {

@@ -11,7 +11,7 @@ pub fn json_to_calcit(data: &Value) -> Calcit {
     Value::String(s) => {
       if s.starts_with(':') {
         // special logic to parse keyword
-        Calcit::Keyword(s.strip_prefix(":").unwrap().to_string())
+        Calcit::Keyword(s.strip_prefix(':').unwrap().to_string())
       } else {
         Calcit::Str(s.to_owned())
       }
@@ -27,7 +27,7 @@ pub fn json_to_calcit(data: &Value) -> Calcit {
       let mut ys: im::HashMap<Calcit, Calcit> = im::HashMap::new();
       for (k, v) in xs {
         let key = if k.starts_with(':') {
-          Calcit::Keyword(k.strip_prefix(":").unwrap().to_string())
+          Calcit::Keyword(k.strip_prefix(':').unwrap().to_string())
         } else {
           Calcit::Str(k.to_owned())
         };

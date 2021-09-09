@@ -47,7 +47,7 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, String> {
           let k_idx = idx * 2 + 1;
           let v_idx = k_idx + 1;
           match &xs[k_idx] {
-            Calcit::Symbol(s, ..) | Calcit::Keyword(s) | Calcit::Str(s) => match find_in_fields(&def_fields, s) {
+            Calcit::Symbol(s, ..) | Calcit::Keyword(s) | Calcit::Str(s) => match find_in_fields(def_fields, s) {
               Some(pos) => {
                 fields[pos] = s.to_owned();
                 values[pos] = xs[v_idx].to_owned();

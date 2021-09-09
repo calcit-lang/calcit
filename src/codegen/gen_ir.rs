@@ -119,8 +119,8 @@ fn dump_code(code: &Calcit) -> serde_json::Value {
         "kind": "fn",
         "name": name,
         "ns": ns,
-        "args": dump_items_code(&args), // TODO
-        "code": dump_items_code(&body),
+        "args": dump_items_code(args), // TODO
+        "code": dump_items_code(body),
       })
     }
     Calcit::Macro(name, ns, _id, args, body) => {
@@ -128,8 +128,8 @@ fn dump_code(code: &Calcit) -> serde_json::Value {
         "kind": "fn",
         "name": name,
         "ns": ns,
-        "args": dump_items_code(&args), // TODO
-        "code": dump_items_code(&body),
+        "args": dump_items_code(args), // TODO
+        "code": dump_items_code(body),
       })
     }
     Calcit::Proc(name) => {

@@ -271,7 +271,7 @@ pub fn invoke_method(
   };
   match &class {
     Calcit::Record(_, fields, values) => {
-      match find_in_fields(&fields, name) {
+      match find_in_fields(fields, name) {
         Some(idx) => {
           let mut method_args: im::Vector<Calcit> = im::vector![];
           method_args.push_back(value);
@@ -289,7 +289,7 @@ pub fn invoke_method(
             Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
               runner::run_fn(&method_args, def_scope, args, body, def_ns, program_code)
             }
-            Calcit::Proc(proc) => builtins::handle_proc(&proc, &method_args),
+            Calcit::Proc(proc) => builtins::handle_proc(proc, &method_args),
             Calcit::Syntax(syn, _ns) => Err(format!(
               "cannot get syntax here since instance is always evaluated, got: {}",
               syn
