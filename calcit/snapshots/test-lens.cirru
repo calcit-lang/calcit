@@ -64,6 +64,20 @@
               assoc-in nil ([] :a :b :c) 10
               {} $ :a $ {} $ :b $ {} $ :c 10
 
+            assert= true
+              contains-in? (&{} :a ([] 1 2 3)) $ [] :a 1
+            assert= false
+              contains-in? (&{} :a ([] 1 2 3)) $ [] :a 3
+            assert= false
+              contains-in? (&{} :a ([] 1 2 3)) $ [] :b 1
+
+            assert= true
+              contains-in? ([] 1 2 $ [] 3 4) ([] 2 1)
+            assert= false
+              contains-in? ([] 1 2 $ [] 3 4) ([] 2 2)
+            assert= false
+              contains-in? ([] 1 2 $ [] 3 4) ([] 3 2)
+
         |main! $ quote
           defn main! ()
 

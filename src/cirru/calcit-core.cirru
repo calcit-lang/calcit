@@ -1520,6 +1520,27 @@
               if (list? x) (&list:contains? x k)
                 .contains? x k
 
+        |contains-in? $ quote
+          defn contains-in? (xs path)
+            if (empty? path) true
+              &let
+                p0 $ first path
+                cond
+                  (list? xs)
+                    if
+                      and (number? p0) (&list:contains? xs p0)
+                      recur (nth xs p0) (rest path)
+                      , false
+                  (map? xs)
+                    if (&map:contains? xs p0)
+                      recur (&map:get xs p0) (rest path)
+                      , false
+                  (record? xs)
+                    if (&record:contains? xs p0)
+                      recur (&record:get xs p0) (rest path)
+                      , false
+                  true false
+
         |includes? $ quote
           defn includes? (x k)
             if (nil? x) false
