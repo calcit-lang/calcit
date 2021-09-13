@@ -238,6 +238,9 @@
             assert=
               wo-log $ + 1 2
               , 3
+            assert=
+              w-log $ + 1 $ w-log $ * 7 8
+              , 57
 
             ; echo $ macroexpand $ quote $ call-w-log + 1 2 3 4
             assert= 10 $ call-w-log + 1 2 3 4

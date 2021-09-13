@@ -1033,7 +1033,7 @@
         |w-log $ quote
           defmacro w-log (x)
             &let
-              v $ gensym |v
+              v $ if (= :eval $ &get-calcit-running-mode) (gensym |v) '_log_tmp
               quasiquote
                 &let
                   ~v ~x
@@ -1051,7 +1051,7 @@
                   js/console.log (format-to-lisp (quote ~x)) |=> ~x
                   ~ x
               &let
-                v $ gensym |v
+                v $ if (= :eval $ &get-calcit-running-mode) (gensym |v) '_log_tmp
                 quasiquote
                   &let
                     ~v ~x
@@ -1098,7 +1098,7 @@
         |call-w-log $ quote
           defmacro call-w-log (f & xs)
             let
-                v $ gensym |v
+                v $ if (= :eval $ &get-calcit-running-mode) (gensym |v) '_log_tmp
                 args-value $ gensym |args-value
               quasiquote
                 let
