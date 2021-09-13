@@ -166,8 +166,8 @@
             foldl xs nil $ fn (_acc x)
               f x
 
-        |&list:map $ quote
-          defn &list:map (xs f)
+        |&map:map $ quote
+          defn &map:map (xs f)
             foldl xs ({})
               fn (acc pair) $ let[] (k v) pair
                 &let
@@ -177,25 +177,24 @@
                   let[] (k2 v2) result
                     &map:assoc acc k2 v2
 
+        |&list:map $ quote
+          defn &list:map (xs f)
+            foldl xs ([])
+              fn (acc x) $ append acc (f x)
+
         |map $ quote
           defn map (xs f)
-            cond
-              (list? xs)
-                foldl xs ([])
-                  fn (acc x) $ append acc (f x)
-              (set? xs)
+            if (list? xs) (&list:map xs f)
+              if (set? xs)
                 foldl xs (#{})
                   fn (acc x) $ include acc (f x)
-              (map? xs)
-                &list:map xs f
-              true
-                &let nil
-                  echo "|value:" xs
-                  raise "|expects list or set for map function"
+                if (map? xs) (&map:map xs f)
+                  &let nil
+                    echo "|value:" xs
+                    raise "|expects list or set for map function"
 
         |&map:map-list $ quote
           defn &map:map-list (xs f)
-            echo |map-list xs f
             if (map? xs)
               foldl xs ([])
                 fn (acc pair)
@@ -406,24 +405,21 @@
 
         |get $ quote
           defn get (base k)
-            cond
-              (nil? base) nil
-              (string? base) (&str:nth base k)
-              (map? base) (&map:get base k)
-              (list? base) (&list:nth base k)
-              (tuple? base) (&tuple:nth base k)
-              (record? base) (&record:get base k)
-              true $ &let nil
-                echo "|Value:" base k
-                raise "|Expected map or list for get"
+            if (nil? base) nil
+              if (string? base) (&str:nth base k)
+                if (map? base) (&map:get base k)
+                  if (list? base) (&list:nth base k)
+                    if (tuple? base) (&tuple:nth base k)
+                      if (record? base) (&record:get base k)
+                        &let nil
+                          echo "|Value:" base k
+                          raise "|Expected map or list for get"
 
         |get-in $ quote
           defn get-in (base path)
             assert "|expects path in a list" (list? path)
-            cond
-              (nil? base) nil
-              (&list:empty? path) base
-              true
+            if (nil? base) nil
+              if (&list:empty? path) base
                 recur
                   get base (&list:first path)
                   rest path
@@ -615,25 +611,23 @@
 
         |update $ quote
           defn update (x k f)
-            cond
-              (list? x)
+            if (map? x)
+              if (contains? x k)
+                assoc x k $ f (&map:get x k)
+                , x
+              if (list? x)
                 if (&list:contains? x k)
                   assoc x k $ f (&list:nth x k)
                   , x
-              (tuple? x)
-                if (or (&= k 1) (&= k 2))
-                  assoc x k $ f (&tuple:nth x k)
-                  raise $ &str:concat "|tuple only has 0,1 fields, unknown field: " k
-              (map? x)
-                if (contains? x k)
-                  assoc x k $ f (&map:get x k)
-                  , x
-              (record? x)
-                if (contains? x k)
-                  assoc x k $ f (&record:get x k)
-                  , x
-              true
-                raise $ &str:concat "|Cannot update key on item: " x
+                if (tuple? x)
+                  if (or (&= k 1) (&= k 2))
+                    assoc x k $ f (&tuple:nth x k)
+                    raise $ &str:concat "|tuple only has 0,1 fields, unknown field: " k
+                  if (record? x)
+                    if (contains? x k)
+                      assoc x k $ f (&record:get x k)
+                      , x
+                    raise $ &str:concat "|Cannot update key on item: " x
 
         |group-by $ quote
           defn group-by (xs0 f)
@@ -792,11 +786,9 @@
 
         |dissoc-in $ quote
           defn dissoc-in (data path)
-            cond
-              (&list:empty? path) nil
-              (&= 1 (&list:count path))
+            if (&list:empty? path) nil
+              if (&= 1 (&list:count path))
                 dissoc data (&list:first path)
-              true
                 &let
                   p0 $ &list:first path
                   assoc data p0
@@ -1365,7 +1357,7 @@
             :includes? &map:includes?
             :keys keys
             :keys-non-nil keys-non-nil
-            :map map
+            :map &map:map
             :map-kv map-kv
             :map-list &map:map-list
             :mappend merge
@@ -1429,7 +1421,7 @@
             :join join
             :join-str join-str
             :last-index-of &list:last-index-of
-            :map map
+            :map &list:map
             :map-indexed map-indexed
             :mappend $ defn &list:mappend (x y) $ &list:concat x y
             :max max
@@ -1605,3 +1597,14 @@
             if (list? xs)
               &list:concat & $ map xs &list:flatten
               [] xs
+
+        |keywordize-edn $ quote
+          defn keywordize-edn (data)
+            if (list? data)
+              map data keywordize-edn
+              if (map? data)
+                map-kv data $ fn (k v)
+                  []
+                    if (string? k) (turn-keyword k) k
+                    keywordize-edn v
+                , data

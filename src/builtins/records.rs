@@ -191,11 +191,11 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
           Ok(Calcit::Nil)
         }
       }
-      Err(e) => Err(format!("nth expect usize, {}", e)),
+      Err(e) => Err(format!("record nth expect usize, {}", e)),
     },
     (Some(_), None) => Err(format!("record nth expected a record and index, got: {:?}", xs)),
     (None, Some(_)) => Err(format!("record nth expected a record and index, got: {:?}", xs)),
-    (_, _) => Err(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
+    (_, _) => Err(format!("record nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
   }
 }
 
