@@ -22,24 +22,10 @@
   resolved "https://registry.npmjs.org/@types/node/-/node-16.7.10.tgz#7aa732cc47341c12a16b7d562f519c2383b6d4fc"
   integrity sha512-S63Dlv4zIPb8x6MMTgDq5WWRJQe56iBEY0O3SOFA9JrRienkOVDXSXBjjJw6HTNQYSE2JI6GMCR6LVbIMHJVvA==
 
-esbuild@^0.11.0:
-  version "0.11.23"
-  resolved "https://registry.npmjs.org/esbuild/-/esbuild-0.11.23.tgz#c42534f632e165120671d64db67883634333b4b8"
-  integrity sha512-iaiZZ9vUF5wJV8ob1tl+5aJTrwDczlvGP0JoMmnpC2B0ppiMCu8n8gmy5ZTGl5bcG081XBVn+U+jP+mPFm5T5Q==
-
-estrella@^1.4.1:
-  version "1.4.1"
-  resolved "https://registry.npmjs.org/estrella/-/estrella-1.4.1.tgz#6971a710a91d38abe3ced6f6ffa68c0c6e08d369"
-  integrity sha512-h8vlec27CFxw+8uYFtgbvLvohx0v+IssCwb/haTQnI+kO2WaL0ApSTWxg49LneAtqrZkrnYVwXQB2ZgyIIAImw==
-  dependencies:
-    esbuild "^0.11.0"
-  optionalDependencies:
-    fsevents "~2.3.1"
-
-fsevents@~2.3.1:
-  version "2.3.2"
-  resolved "https://registry.npmjs.org/fsevents/-/fsevents-2.3.2.tgz#8a526f78b8fdf4623b709e0b975c52c24c02fd1a"
-  integrity sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==
+esbuild@^0.12.26:
+  version "0.12.26"
+  resolved "https://registry.npmjs.org/esbuild/-/esbuild-0.12.26.tgz#35f2d58ac3fa4629df24aa4d6fd72feb5522e94b"
+  integrity sha512-YmTkhPKjvTJ+G5e96NyhGf69bP+hzO0DscqaVJTi5GM34uaD4Ecj7omu5lJO+NrxCUBRhy2chONLK1h/2LwoXA==
 
 typescript@^4.4.2:
   version "4.4.2"

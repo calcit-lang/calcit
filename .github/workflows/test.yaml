@@ -28,4 +28,5 @@ jobs:
           && cargo run --bin cr calcit/snapshots/test.cirru --emit-js --once
           && ln -s ../../ node_modules/@calcit/procs
           && cp -v scripts/main.js js-out/
-          && node ./build.js && node js-out/bundle.js
+          && yarn bundle-main
+          && node js-out/bundle.js
