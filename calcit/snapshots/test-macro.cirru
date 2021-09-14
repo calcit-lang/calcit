@@ -167,19 +167,19 @@
             inside-eval:
               assert=
                 macroexpand-all $ quote (\ + 2 %)
-                quasiquote $ ~defn f% (? % %2) (+ 2 %)
+                quasiquote $ ~defn %\ (? % %2) (+ 2 %)
 
               ; assert=
                 macroexpand-all $ quote $ \ x
-                quasiquote $ ~defn f% (? % %2) (x)
+                quasiquote $ ~defn %\ (? % %2) (x)
 
               assert=
                 macroexpand-all $ quote $ \ + x %
-                quasiquote $ ~defn f% (? % %2) (+ x %)
+                quasiquote $ ~defn %\ (? % %2) (+ x %)
 
               assert=
                 macroexpand-all $ quote $ \ + x % %2
-                quasiquote $ ~defn f% (? % %2) (+ x % %2)
+                quasiquote $ ~defn %\ (? % %2) (+ x % %2)
 
               assert=
                 macroexpand $ quote $ \. x x
@@ -238,6 +238,9 @@
             assert=
               wo-log $ + 1 2
               , 3
+            assert=
+              w-log $ + 1 $ w-log $ * 7 8
+              , 57
 
             ; echo $ macroexpand $ quote $ call-w-log + 1 2 3 4
             assert= 10 $ call-w-log + 1 2 3 4

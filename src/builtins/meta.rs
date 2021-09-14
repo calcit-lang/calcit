@@ -334,11 +334,11 @@ pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, String> {
       Ok(0) => Ok((**a).to_owned()),
       Ok(1) => Ok((**b).to_owned()),
       Ok(m) => Err(format!("Tuple only got 2 elements, trying to index with {}", m)),
-      Err(e) => Err(format!("nth expect usize, {}", e)),
+      Err(e) => Err(format!("&tuple:nth expect usize, {}", e)),
     },
-    (Some(_), None) => Err(format!("nth expected a tuple and an index, got: {:?}", xs)),
-    (None, Some(_)) => Err(format!("nth expected a tuple and an index, got: {:?}", xs)),
-    (_, _) => Err(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
+    (Some(_), None) => Err(format!("&tuple:nth expected a tuple and an index, got: {:?}", xs)),
+    (None, Some(_)) => Err(format!("&tuple:nth expected a tuple and an index, got: {:?}", xs)),
+    (_, _) => Err(format!("&tuple:nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
   }
 }
 

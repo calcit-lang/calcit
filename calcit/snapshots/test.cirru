@@ -172,6 +172,20 @@
             assert= "|a b $ c d"
               trim $ format-cirru $ [] $ [] |a |b $ [] |c |d
 
+            assert=
+              {}
+                :a 1
+                :b $ []
+                  {}
+                    :c 3
+                    4 5
+              keywordize-edn $ {}
+                |a 1
+                :b $ []
+                  {}
+                    |c 3
+                    4 5
+
         |test-fn $ quote
           fn ()
             log-title "|Testing fn"

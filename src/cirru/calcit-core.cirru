@@ -163,43 +163,41 @@
 
         |each $ quote
           defn each (xs f)
-            foldl xs nil $ fn (_acc x)
+            foldl xs nil $ defn %each (_acc x)
               f x
+
+        |&map:map $ quote
+          defn &map:map (xs f)
+            foldl xs ({})
+              defn &map:map (acc pair)
+                &let
+                  result $ f pair
+                  assert "|expected pair returned when mapping hashmap"
+                    and (list? result) (&= 2 (&list:count result))
+                  &map:assoc acc (nth result 0) (nth result 1)
 
         |&list:map $ quote
           defn &list:map (xs f)
-            foldl xs ({})
-              fn (acc pair) $ let[] (k v) pair
-                &let
-                  result $ f $ [] k v
-                  assert "|expected pair returned when mapping hashmap"
-                    and (list? result) (&= 2 (&list:count result))
-                  let[] (k2 v2) result
-                    &map:assoc acc k2 v2
+            foldl xs ([])
+              defn %&list:map (acc x) $ append acc (f x)
 
         |map $ quote
           defn map (xs f)
-            cond
-              (list? xs)
-                foldl xs ([])
-                  fn (acc x) $ append acc (f x)
-              (set? xs)
+            if (list? xs) (&list:map xs f)
+              if (set? xs)
                 foldl xs (#{})
-                  fn (acc x) $ include acc (f x)
-              (map? xs)
-                &list:map xs f
-              true
-                &let nil
-                  echo "|value:" xs
-                  raise "|expects list or set for map function"
+                  defn %map (acc x) $ include acc (f x)
+                if (map? xs) (&map:map xs f)
+                  &let nil
+                    echo "|value:" xs
+                    raise "|expected list or set for map function"
 
         |&map:map-list $ quote
           defn &map:map-list (xs f)
-            echo |map-list xs f
             if (map? xs)
               foldl xs ([])
-                fn (acc pair)
-                  conj acc $ f pair
+                defn %&map:map-list (acc pair)
+                  append acc $ f pair
               raise "|&map:map-list expected a map"
 
         |take $ quote
@@ -254,21 +252,21 @@
 
         |index-of $ quote
           defn index-of (xs item)
-            foldl-shortcut xs 0 nil $ fn (idx x)
+            foldl-shortcut xs 0 nil $ defn %index-of (idx x)
               if (&= item x)
                 :: true idx
                 :: false (&+ 1 idx)
 
         |find-index $ quote
           defn find-index (xs f)
-            foldl-shortcut xs 0 nil $ fn (idx x)
+            foldl-shortcut xs 0 nil $ defn %find-index (idx x)
               if (f x)
                 :: true idx
                 :: false (&+ 1 idx)
 
         |find $ quote
           defn find (xs f)
-            foldl-shortcut xs 0 nil $ fn (_acc x)
+            foldl-shortcut xs 0 nil $ defn %find (_acc x)
               if (f x)
                 :: true x
                 :: false nil
@@ -325,7 +323,7 @@
                     [] $ [] '% base
                     map
                       butlast xs
-                      fn (x) ([] '% x)
+                      defn %->% (x) ([] '% x)
                 quasiquote
                   let ~pairs ~tail
 
@@ -366,7 +364,7 @@
                             &let (~v# ~value)
                               if (&= (&list:first ~v#) ~k)
                                 let
-                                  ~ $ map-indexed (&list:rest pattern) $ fn (idx x)
+                                  ~ $ map-indexed (&list:rest pattern) $ defn %key-match (idx x)
                                     [] x $ quasiquote
                                       &list:nth ~v# (~ (inc idx))
                                   , ~branch
@@ -406,24 +404,21 @@
 
         |get $ quote
           defn get (base k)
-            cond
-              (nil? base) nil
-              (string? base) (&str:nth base k)
-              (map? base) (&map:get base k)
-              (list? base) (&list:nth base k)
-              (tuple? base) (&tuple:nth base k)
-              (record? base) (&record:get base k)
-              true $ &let nil
-                echo "|Value:" base k
-                raise "|Expected map or list for get"
+            if (nil? base) nil
+              if (string? base) (&str:nth base k)
+                if (map? base) (&map:get base k)
+                  if (list? base) (&list:nth base k)
+                    if (tuple? base) (&tuple:nth base k)
+                      if (record? base) (&record:get base k)
+                        &let nil
+                          echo "|Value:" base k
+                          raise "|Expected map or list for get"
 
         |get-in $ quote
           defn get-in (base path)
             assert "|expects path in a list" (list? path)
-            cond
-              (nil? base) nil
-              (&list:empty? path) base
-              true
+            if (nil? base) nil
+              if (&list:empty? path) base
                 recur
                   get base (&list:first path)
                   rest path
@@ -442,24 +437,24 @@
           defn max (xs)
             if (&list:empty? xs) nil
               reduce (&list:rest xs) (&list:first xs)
-                fn (acc x) (&max acc x)
+                defn %max (acc x) (&max acc x)
 
         |min $ quote
           defn min (xs)
             if (&list:empty? xs) nil
               reduce (&list:rest xs) (&list:first xs)
-                fn (acc x) (&min acc x)
+                defn %min (acc x) (&min acc x)
 
         |every? $ quote
           defn every? (xs f)
-            foldl-shortcut xs nil true $ fn (_acc x)
+            foldl-shortcut xs nil true $ defn %every? (_acc x)
               if (f x)
                 :: false nil
                 :: true false
 
         |any? $ quote
           defn any? (xs f)
-            foldl-shortcut xs nil false $ fn (_acc x)
+            foldl-shortcut xs nil false $ defn %any? (_acc x)
               if (f x)
                 :: true true
                 :: false nil
@@ -481,7 +476,7 @@
 
         |map-indexed $ quote
           defn map-indexed (xs f)
-            foldl xs ([]) $ fn (acc x)
+            foldl xs ([]) $ defn %map-indexed (acc x)
               append acc $ f (count acc) x
 
         |filter $ quote
@@ -490,39 +485,39 @@
 
         |filter-not $ quote
           defn filter-not (xs f)
-            .filter xs $ fn (x) $ not $ f x
+            .filter xs $ defn %filter-not (x) $ not $ f x
 
         |&map:filter $ quote
           defn &map:filter (xs f)
             reduce xs (&{})
-              fn (acc x)
-                let[] (k v) x
-                  if (f x) (&map:assoc acc k v) acc
+              defn %&map:filter (acc x)
+                if (f x) (&map:assoc acc (nth x 0) (nth x 1)) acc
 
         |&map:filter-kv $ quote
           defn &map:filter-kv (xs f)
             reduce xs (&{})
-              fn (acc x)
-                let[] (k v) x
-                  if (f k v) (&map:assoc acc k v) acc
+              defn %map:filter-kv (acc x)
+                if
+                  f (nth x 0) (nth x 1)
+                  &map:assoc acc  (nth x 0) (nth x 1)
+                  , acc
 
         |&map:add-entry $ quote
           defn &map:add-entry (xs pair)
             assert "|&map:add-entry expected value in a pair" $ and (list? pair)
               &= 2 (count pair)
-            let[] (k v) pair
-              &map:assoc xs k v
+            &map:assoc xs (nth pair 0) (nth pair 1)
 
         |&list:filter $ quote
           defn &list:filter (xs f)
             reduce xs ([])
-              fn (acc x)
+              defn %&list:filter (acc x)
                 if (f x) (append acc x) acc
 
         |&set:filter $ quote
           defn &set:filter (xs f)
             reduce xs (#{})
-              fn (acc x)
+              defn %&set:filter (acc x)
                 if (f x) (&include acc x) acc
 
         |empty $ quote
@@ -534,7 +529,7 @@
         |pairs-map $ quote
           defn pairs-map (xs)
             reduce xs ({})
-              fn (acc pair)
+              defn %pairs-map (acc pair)
                 assert "|expects pair for pairs-map"
                   if (list? pair)
                     &= 2 (&list:count pair)
@@ -582,7 +577,7 @@
           defn contains-symbol? (xs y)
             if (list? xs)
               apply-args (xs)
-                fn (body)
+                defn %contains-symbol? (body)
                   if (&list:empty? body) false
                     if
                       contains-symbol? (&list:first body) y
@@ -592,7 +587,7 @@
 
         |\ $ quote
           defmacro \ (& xs)
-            quasiquote $ fn (? % %2) ~xs
+            quasiquote $ defn %\ (? % %2) ~xs
 
         |\. $ quote
           defmacro \. (args-alias & xs)
@@ -615,31 +610,29 @@
 
         |update $ quote
           defn update (x k f)
-            cond
-              (list? x)
+            if (map? x)
+              if (contains? x k)
+                assoc x k $ f (&map:get x k)
+                , x
+              if (list? x)
                 if (&list:contains? x k)
                   assoc x k $ f (&list:nth x k)
                   , x
-              (tuple? x)
-                if (or (&= k 1) (&= k 2))
-                  assoc x k $ f (&tuple:nth x k)
-                  raise $ &str:concat "|tuple only has 0,1 fields, unknown field: " k
-              (map? x)
-                if (contains? x k)
-                  assoc x k $ f (&map:get x k)
-                  , x
-              (record? x)
-                if (contains? x k)
-                  assoc x k $ f (&record:get x k)
-                  , x
-              true
-                raise $ &str:concat "|Cannot update key on item: " x
+                if (tuple? x)
+                  if (or (&= k 1) (&= k 2))
+                    assoc x k $ f (&tuple:nth x k)
+                    raise $ &str:concat "|tuple only has 0,1 fields, unknown field: " k
+                  if (record? x)
+                    if (contains? x k)
+                      assoc x k $ f (&record:get x k)
+                      , x
+                    raise $ &str:concat "|Cannot update key on item: " x
 
         |group-by $ quote
           defn group-by (xs0 f)
             apply-args
               ({}) xs0
-              fn (acc xs)
+              defn %group-by (acc xs)
                 if (&list:empty? xs) acc
                   let
                       x0 $ &list:first xs
@@ -792,11 +785,9 @@
 
         |dissoc-in $ quote
           defn dissoc-in (data path)
-            cond
-              (&list:empty? path) nil
-              (&= 1 (&list:count path))
+            if (&list:empty? path) nil
+              if (&= 1 (&list:count path))
                 dissoc data (&list:first path)
-              true
                 &let
                   p0 $ &list:first path
                   assoc data p0
@@ -913,7 +904,7 @@
         |join-str $ quote
           defn join-str (xs0 sep)
             apply-args (| xs0 true)
-              fn (acc xs beginning?)
+              defn %join-str (acc xs beginning?)
                 if (&list:empty? xs) acc
                   recur
                     &str:concat
@@ -926,7 +917,7 @@
           defn join (xs0 sep)
             apply-args
               ([]) xs0 true
-              fn (acc xs beginning?)
+              defn %join (acc xs beginning?)
                 if (&list:empty? xs) acc
                   recur
                     append
@@ -939,7 +930,7 @@
           defn repeat (x n0)
             apply-args
               ([]) n0
-              fn (acc n)
+              defn %repeat (acc n)
                 if (&<= n 0) acc
                   recur (append acc x) (&- n 1)
 
@@ -947,7 +938,7 @@
           defn interleave (xs0 ys0)
             apply-args
               ([]) xs0 ys0
-              fn (acc xs ys)
+              defn %interleave (acc xs ys)
                 if
                   if (&list:empty? xs) true (&list:empty? ys)
                   , acc
@@ -960,15 +951,14 @@
           defn map-kv (xs f)
             assert "|expects a map" (map? xs)
             foldl xs ({})
-              fn (acc pair) $ let[] (k v) pair
+              defn %map-kv (acc pair)
                 &let
-                  result (f k v)
+                  result (f (nth pair 0) (nth pair 1))
                   if (list? result)
                     do
                       assert "|expected pair returned when mapping hashmap"
                         &= 2 (&list:count result)
-                      let[] (k2 v2) result
-                        &map:assoc acc k2 v2
+                      &map:assoc acc (nth result 0) (nth result 1)
                     if (nil? result) acc
                       raise $ str "|map-kv expected list or nil, got: " result
 
@@ -1041,7 +1031,7 @@
         |w-log $ quote
           defmacro w-log (x)
             &let
-              v $ gensym |v
+              v $ if (= :eval $ &get-calcit-running-mode) (gensym |v) '_log_tmp
               quasiquote
                 &let
                   ~v ~x
@@ -1059,7 +1049,7 @@
                   js/console.log (format-to-lisp (quote ~x)) |=> ~x
                   ~ x
               &let
-                v $ gensym |v
+                v $ if (= :eval $ &get-calcit-running-mode) (gensym |v) '_log_tmp
                 quasiquote
                   &let
                     ~v ~x
@@ -1073,7 +1063,7 @@
           defmacro {,} (& body)
             &let
               xs $ &list:filter body
-                fn (x) (not= x ',)
+                defn %{,} (x) (not= x ',)
               quasiquote
                 pairs-map $ section-by ([] ~@xs) 2
 
@@ -1106,7 +1096,7 @@
         |call-w-log $ quote
           defmacro call-w-log (f & xs)
             let
-                v $ gensym |v
+                v $ if (= :eval $ &get-calcit-running-mode) (gensym |v) '_log_tmp
                 args-value $ gensym |args-value
               quasiquote
                 let
@@ -1179,9 +1169,9 @@
                         if (&= (&list:first xs) '&)
                           &let nil
                             assert "|expected list spreading" (&= 2 (&list:count xs))
-                            conj acc $ [] (&list:nth xs 1) (quasiquote (&list:slice ~v ~idx))
+                            append acc $ [] (&list:nth xs 1) (quasiquote (&list:slice ~v ~idx))
                           recur
-                            conj acc $ [] (&list:first xs) (quasiquote (&list:nth ~v ~idx))
+                            append acc $ [] (&list:first xs) (quasiquote (&list:nth ~v ~idx))
                             rest xs
                             inc idx
               quasiquote
@@ -1219,13 +1209,13 @@
         |select-keys $ quote
           defn select-keys (m xs)
             assert "|expectd map for selecting" $ map? m
-            foldl xs (&{}) $ fn (acc k)
+            foldl xs (&{}) $ defn %select-keys (acc k)
               &map:assoc acc k (&map:get m k)
 
         |unselect-keys $ quote
           defn unselect-keys (m xs)
             assert "|expectd map for unselecting" $ map? m
-            foldl xs m $ fn (acc k)
+            foldl xs m $ defn %unselect-keys (acc k)
               &map:dissoc acc k
 
         |conj $ quote
@@ -1263,10 +1253,10 @@
         |&list:sort-by $ quote
           defn &list:sort-by (xs f)
             if (keyword? f)
-              sort xs $ fn (a b)
+              sort xs $ defn %&list:sort-by (a b)
                 &compare (get a f) (get b f)
 
-              sort xs $ fn (a b)
+              sort xs $ defn %&list:sort-by (a b)
                 &compare (f a) (f b)
 
         |negate $ quote
@@ -1365,7 +1355,7 @@
             :includes? &map:includes?
             :keys keys
             :keys-non-nil keys-non-nil
-            :map map
+            :map &map:map
             :map-kv map-kv
             :map-list &map:map-list
             :mappend merge
@@ -1429,7 +1419,7 @@
             :join join
             :join-str join-str
             :last-index-of &list:last-index-of
-            :map map
+            :map &list:map
             :map-indexed map-indexed
             :mappend $ defn &list:mappend (x y) $ &list:concat x y
             :max max
@@ -1605,3 +1595,14 @@
             if (list? xs)
               &list:concat & $ map xs &list:flatten
               [] xs
+
+        |keywordize-edn $ quote
+          defn keywordize-edn (data)
+            if (list? data)
+              map data keywordize-edn
+              if (map? data)
+                map-kv data $ defn %keywordize (k v)
+                  []
+                    if (string? k) (turn-keyword k) k
+                    keywordize-edn v
+                , data
