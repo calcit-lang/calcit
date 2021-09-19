@@ -1,3 +1,7 @@
+use cirru_parser::Cirru;
+
+use crate::data::cirru;
+
 use crate::{
   primes::{Calcit, CalcitItems},
   program,
@@ -186,6 +190,47 @@ pub fn call_dylib_str_to_vec_str(xs: &CalcitItems) -> Result<Calcit, String> {
     )),
     (_, _, _) => Err(String::from(
       "&call-dylib:str->vec-str expected 3 arguments, not satisfied",
+    )),
+  }
+}
+
+// &call-dylib:cirru->str
+pub fn call_dylib_cirru_to_str(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1), xs.get(2)) {
+    (Some(Calcit::Str(lib_name)), Some(Calcit::Str(method)), Some(data)) => unsafe {
+      let tree = cirru::calcit_to_cirru(data)?;
+      let lib = libloading::Library::new(lib_name).expect("dylib not found");
+      let func: libloading::Symbol<fn(tree: Vec<Cirru>) -> Result<String, String>> =
+        lib.get(method.as_bytes()).expect("dy function not found");
+
+      if let Cirru::List(ys) = tree {
+        Ok(Calcit::Str(func(ys)?.to_owned()))
+      } else {
+        return Err(format!("expected expression to transform to Cirru: {}", tree));
+      }
+    },
+    (Some(_), Some(_), Some(_)) => Err(String::from("&call-dylib:cirru->str expected 3 strings, not satisfied")),
+    (_, _, _) => Err(String::from(
+      "&call-dylib:cirru->str expected 3 arguments, not satisfied",
+    )),
+  }
+}
+
+// &call-dylib:str-i64->i64
+pub fn call_dylib_str_i64_to_i64(xs: &CalcitItems) -> Result<Calcit, String> {
+  match (xs.get(0), xs.get(1), xs.get(2), xs.get(3)) {
+    (Some(Calcit::Str(lib_name)), Some(Calcit::Str(method)), Some(Calcit::Str(s)), Some(Calcit::Number(n))) => unsafe {
+      let lib = libloading::Library::new(lib_name).expect("dylib not found");
+      let func: libloading::Symbol<fn(s: String, n: i64) -> Result<i64, String>> =
+        lib.get(method.as_bytes()).expect("dy function not found");
+
+      Ok(Calcit::Number(func(s.to_owned(), n.floor() as i64)? as f64))
+    },
+    (Some(_), Some(_), Some(_), Some(_)) => Err(String::from(
+      "&call-dylib:str-i64->i64 expected 4 strings, not satisfied",
+    )),
+    (_, _, _, _) => Err(String::from(
+      "&call-dylib:str-i64->i64 expected 4 arguments, not satisfied",
     )),
   }
 }

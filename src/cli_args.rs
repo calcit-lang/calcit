@@ -35,6 +35,14 @@ pub fn parse_cli<'a>() -> clap::ArgMatches<'a> {
         .takes_value(true),
     )
     .arg(
+      clap::Arg::with_name("dep")
+        .help("add dependency")
+        .short("d")
+        .long("dep")
+        .multiple(true)
+        .takes_value(true),
+    )
+    .arg(
       clap::Arg::with_name("emit-path")
         .help("emit directory for js, defaults to `js-out/`")
         .long("emit-path")

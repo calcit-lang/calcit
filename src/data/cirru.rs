@@ -138,24 +138,24 @@ fn is_comment(x: &Calcit) -> bool {
 }
 
 /// converting data for display in Cirru syntax
-pub fn calcit_to_cirru(x: &Calcit) -> Cirru {
+pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
   match x {
-    Calcit::Nil => Cirru::Leaf(String::from("nil")),
-    Calcit::Bool(true) => Cirru::Leaf(String::from("true")),
-    Calcit::Bool(false) => Cirru::Leaf(String::from("false")),
-    Calcit::Number(n) => Cirru::Leaf(n.to_string()),
-    Calcit::Str(s) => Cirru::Leaf(format!("|{}", s)), // TODO performance
-    Calcit::Symbol(s, ..) => Cirru::Leaf(s.to_owned()), // TODO performance
-    Calcit::Keyword(s) => Cirru::Leaf(format!(":{}", s)), // TODO performance
+    Calcit::Nil => Ok(Cirru::Leaf(String::from("nil"))),
+    Calcit::Bool(true) => Ok(Cirru::Leaf(String::from("true"))),
+    Calcit::Bool(false) => Ok(Cirru::Leaf(String::from("false"))),
+    Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string())),
+    Calcit::Str(s) => Ok(Cirru::Leaf(format!("|{}", s))), // TODO performance
+    Calcit::Symbol(s, ..) => Ok(Cirru::Leaf(s.to_owned())), // TODO performance
+    Calcit::Keyword(s) => Ok(Cirru::Leaf(format!(":{}", s))), // TODO performance
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = vec![];
       for x in xs {
-        ys.push(calcit_to_cirru(x));
+        ys.push(calcit_to_cirru(x)?);
       }
-      Cirru::List(ys)
+      Ok(Cirru::List(ys))
     }
-    Calcit::Proc(s) => Cirru::Leaf(s.to_owned()),
-    Calcit::Syntax(s, _ns) => Cirru::Leaf(s.to_owned()),
-    a => Cirru::List(vec![Cirru::Leaf(String::from("TODO")), Cirru::Leaf(a.to_string())]),
+    Calcit::Proc(s) => Ok(Cirru::Leaf(s.to_owned())),
+    Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.to_owned())),
+    _ => Err(format!("unknown data to convert to Cirru: {}", x)),
   }
 }
