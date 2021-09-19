@@ -241,9 +241,9 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&call-dylib:str-vec-str->tuple-str2" => ffi::call_dylib_str_vec_str_to_tuple_str2(args),
     // external data format
     "parse-cirru" => meta::parse_cirru(args),
-    "format-cirru" => meta::write_cirru(args),
+    "format-cirru" => meta::format_cirru(args),
     "parse-cirru-edn" => meta::parse_cirru_edn(args),
-    "format-cirru-edn" => meta::write_cirru_edn(args),
+    "format-cirru-edn" => meta::format_cirru_edn(args),
     "parse-json" => json::parse_json(args),
     "stringify-json" => json::stringify_json(args),
     // time

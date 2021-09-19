@@ -148,12 +148,18 @@ pub fn parse_cirru(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn write_cirru(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn format_cirru(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(a) => {
       let options = cirru_parser::CirruWriterOptions { use_inline: false };
       match cirru::calcit_data_to_cirru(a) {
-        Ok(v) => Ok(Calcit::Str(cirru_parser::format(&v, options)?)),
+        Ok(v) => {
+          if let Cirru::List(ys) = v {
+            Ok(Calcit::Str(cirru_parser::format(&ys, options)?))
+          } else {
+            Err(format!("expected vector for Cirru formatting: {}", v))
+          }
+        }
         Err(e) => Err(format!("format-cirru failed, {}", e)),
       }
     }
@@ -172,7 +178,7 @@ pub fn parse_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn write_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn format_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)?, true)?)),
     None => Err(String::from("format-cirru-edn expected 1 argument")),
