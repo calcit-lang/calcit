@@ -83,7 +83,7 @@ dependencies = [
 
 [[package]]
 name = "calcit_runner"
-version = "0.4.32"
+version = "0.4.33"
 dependencies = [
  "chrono",
  "cirru_edn",
@@ -129,9 +129,9 @@ dependencies = [
 
 [[package]]
 name = "cirru_edn"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d5fa4f3f50ae1a3940b0dfc8674f9e4767c895d1356a1177c40e83a8a3ca7dd"
+checksum = "d580a1fe420c7317f06091c131c6a0ffea012684323a932521e5aaf00b14b361"
 dependencies = [
  "cirru_parser",
  "lazy_static",
@@ -140,9 +140,9 @@ dependencies = [
 
 [[package]]
 name = "cirru_parser"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65d639d07673eafd26833e2f31c35e31e037b03569490f50433fe5672263ec34"
+checksum = "f1ea69154ddc0be6f8e6523cce3aa8d96725075e71f31c8d016673d088062fbc"
 dependencies = [
  "lazy_static",
  "regex",
