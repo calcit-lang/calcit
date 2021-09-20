@@ -13,6 +13,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
       "&PI" => Ok(Calcit::Number(std::f64::consts::PI)),
       "&newline" => Ok(Calcit::Str(String::from("\n"))),
       "&tab" => Ok(Calcit::Str(String::from("\t"))),
+      "&calcit-version" => Ok(Calcit::Str(String::from(env!("CARGO_PKG_VERSION")))),
       "" => Err(String::from("Empty string is invalid")),
       _ => match s.chars().next().unwrap() {
         ':' => {
