@@ -47,6 +47,14 @@ fn main() -> Result<(), String> {
       }
       Err(e) => return Err(e),
     }
+    if let Some(cli_deps) = cli_matches.values_of("dep") {
+      for module_path in cli_deps {
+        let module_data = calcit_runner::load_module(module_path, settings.entry_path.parent().unwrap())?;
+        for (k, v) in &module_data.files {
+          snapshot.files.insert(k.to_owned(), v.to_owned());
+        }
+      }
+    }
   } else {
     // load entry file
     let content = fs::read_to_string(settings.entry_path.to_owned())
@@ -71,6 +79,7 @@ fn main() -> Result<(), String> {
     .value_of("reload-fn")
     .or(Some(&snapshot.configs.reload_fn))
     .unwrap();
+
   // attach core
   for (k, v) in core_snapshot.files {
     snapshot.files.insert(k.to_owned(), v.to_owned());

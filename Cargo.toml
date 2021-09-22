@@ -1,6 +1,6 @@
 [package]
 name = "calcit_runner"
-version = "0.4.32"
+version = "0.4.35"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -21,8 +21,8 @@ exclude = [
 
 [dependencies]
 chrono = "0.4.19"
-cirru_edn = "0.1.5"
-cirru_parser = "0.1.1"
+cirru_edn = "0.1.7"
+cirru_parser = "0.1.3"
 clap = "2.33.3"
 dirs = "3.0.1"
 im = "15.0.0"

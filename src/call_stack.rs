@@ -82,7 +82,7 @@ pub fn display_stack(failure: &str) -> Result<(), String> {
     );
     info.insert(
       Edn::Keyword(String::from("code")),
-      Edn::Quote(cirru::calcit_to_cirru(&s.code)),
+      Edn::Quote(cirru::calcit_to_cirru(&s.code)?),
     );
     let mut args: Vec<Edn> = vec![];
     for a in &s.args {

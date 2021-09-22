@@ -56,6 +56,8 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&call-dylib:str->vec-str"
       | "&call-dylib:vec-str->tuple-str2"
       | "&call-dylib:str-vec-str->tuple-str2"
+      | "&call-dylib:cirru->str"
+      | "&call-dylib:str-i64->i64"
       // external format
       | "parse-cirru"
       | "format-cirru"
@@ -239,11 +241,13 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&call-dylib:str->vec-str" => ffi::call_dylib_str_to_vec_str(args),
     "&call-dylib:vec-str->tuple-str2" => ffi::call_dylib_vec_str_to_tuple_str2(args),
     "&call-dylib:str-vec-str->tuple-str2" => ffi::call_dylib_str_vec_str_to_tuple_str2(args),
+    "&call-dylib:cirru->str" => ffi::call_dylib_cirru_to_str(args),
+    "&call-dylib:str-i64->i64" => ffi::call_dylib_str_i64_to_i64(args),
     // external data format
     "parse-cirru" => meta::parse_cirru(args),
-    "format-cirru" => meta::write_cirru(args),
+    "format-cirru" => meta::format_cirru(args),
     "parse-cirru-edn" => meta::parse_cirru_edn(args),
-    "format-cirru-edn" => meta::write_cirru_edn(args),
+    "format-cirru-edn" => meta::format_cirru_edn(args),
     "parse-json" => json::parse_json(args),
     "stringify-json" => json::stringify_json(args),
     // time

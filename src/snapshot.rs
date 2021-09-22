@@ -149,18 +149,13 @@ pub fn gen_default() -> Snapshot {
   }
 }
 
-pub fn create_file_from_snippet(code: &str) -> Result<FileInSnapShot, String> {
-  match cirru_parser::parse(code) {
+pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
+  match cirru_parser::parse(raw) {
     Ok(lines) => {
-      let code = match lines {
-        Cirru::List(line) => {
-          if line.len() == 1 {
-            line[0].to_owned()
-          } else {
-            return Err(format!("unexpected snippet: {}", code));
-          }
-        }
-        Cirru::Leaf(s) => return Err(format!("unexpected snippet: {}", s)),
+      let code = if lines.len() == 1 {
+        lines[0].to_owned()
+      } else {
+        return Err(format!("unexpected snippet: {}", raw));
       };
       let mut def_dict: HashMap<String, Cirru> = HashMap::new();
       def_dict.insert(

@@ -54,59 +54,57 @@ pub fn main() -> io::Result<()> {
     if let Some(ext) = entry.path().extension() {
       if ext.to_str().unwrap() == "cirru" {
         let content = read_to_string(entry.path())?;
-        let file_data = cirru_parser::parse(&content).map_err(io_err)?;
-        if let Cirru::List(xs) = file_data {
-          let mut file: HashMap<Edn, Edn> = HashMap::new();
-          let (ns_name, ns_code) = if let Some(Cirru::List(ns_form)) = xs.get(0) {
-            match (ns_form.get(0), ns_form.get(1)) {
-              (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) if x0.as_str() == "ns" => (x1.to_string(), ns_form),
-              (a, b) => return Err(io_err(format!("in valid ns starts {:?} {:?}", a, b))),
-            }
-          } else {
-            return Err(io_err(format!(
-              "first expression of file should be a ns form, got: {:?}",
-              xs.get(0)
-            )));
-          };
-          file.insert(
-            Edn::Keyword(String::from("ns")),
-            Edn::Quote(Cirru::List(ns_code.to_owned())),
-          );
+        let xs = cirru_parser::parse(&content).map_err(io_err)?;
 
-          let mut defs: HashMap<Edn, Edn> = HashMap::new();
-          for (idx, line) in xs.iter().enumerate() {
-            if idx > 0 {
-              if let Cirru::List(ys) = line {
-                match (ys.get(0), ys.get(1)) {
-                  (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
-                    if x0 == "def"
-                      || x0 == "defn"
-                      || x0 == "defmacro"
-                      || x0 == "defatom"
-                      || x0 == "defrecord"
-                      || x0.starts_with("def")
-                    {
-                      defs.insert(Edn::Str(x1.to_owned()), Edn::Quote(line.to_owned()));
-                    } else {
-                      return Err(io_err(format!("invalid def op: {}", x0)));
-                    }
-                  }
-                  (a, b) => {
-                    return Err(io_err(format!("invalid def code {:?} {:?}", a, b)));
+        let mut file: HashMap<Edn, Edn> = HashMap::new();
+        let (ns_name, ns_code) = if let Some(Cirru::List(ns_form)) = xs.get(0) {
+          match (ns_form.get(0), ns_form.get(1)) {
+            (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) if x0.as_str() == "ns" => (x1.to_string(), ns_form),
+            (a, b) => return Err(io_err(format!("in valid ns starts {:?} {:?}", a, b))),
+          }
+        } else {
+          return Err(io_err(format!(
+            "first expression of file should be a ns form, got: {:?}",
+            xs.get(0)
+          )));
+        };
+        file.insert(
+          Edn::Keyword(String::from("ns")),
+          Edn::Quote(Cirru::List(ns_code.to_owned())),
+        );
+
+        let mut defs: HashMap<Edn, Edn> = HashMap::new();
+        for (idx, line) in xs.iter().enumerate() {
+          if idx > 0 {
+            if let Cirru::List(ys) = line {
+              match (ys.get(0), ys.get(1)) {
+                (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
+                  if x0 == "def"
+                    || x0 == "defn"
+                    || x0 == "defmacro"
+                    || x0 == "defatom"
+                    || x0 == "defrecord"
+                    || x0.starts_with("def")
+                  {
+                    defs.insert(Edn::Str(x1.to_owned()), Edn::Quote(line.to_owned()));
+                  } else {
+                    return Err(io_err(format!("invalid def op: {}", x0)));
                   }
                 }
-              } else {
-                return Err(io_err(format!("file line not an expr {}", line)));
+                (a, b) => {
+                  return Err(io_err(format!("invalid def code {:?} {:?}", a, b)));
+                }
               }
             } else {
+              return Err(io_err(format!("file line not an expr {}", line)));
             }
+          } else {
           }
-
-          file.insert(Edn::Keyword(String::from("defs")), Edn::Map(defs));
-          files.insert(Edn::Str(ns_name.to_owned()), Edn::Map(file));
-        } else {
-          return Err(io_err(format!("file should be expressions, molformed, {}", file_data)));
         }
+
+        file.insert(Edn::Keyword(String::from("defs")), Edn::Map(defs));
+        files.insert(Edn::Str(ns_name.to_owned()), Edn::Map(file));
+
         if verbose {
           println!("bunding {}", entry.path().display());
         }

@@ -8,6 +8,9 @@ use crate::primes::{Calcit, CalcitItems, CrListWrap};
 use crate::program;
 use crate::runner;
 use crate::util::number::f64_to_usize;
+
+use cirru_parser::Cirru;
+
 use std::cmp::Ordering;
 use std::sync::atomic;
 use std::sync::atomic::AtomicUsize;
@@ -137,7 +140,7 @@ pub fn display_stack(_xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn parse_cirru(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
-      Ok(nodes) => Ok(cirru::cirru_to_calcit(&nodes)),
+      Ok(nodes) => Ok(cirru::cirru_to_calcit(&Cirru::List(nodes))),
       Err(e) => Err(format!("parse-cirru failed, {}", e)),
     },
     Some(a) => Err(format!("parse-cirru expected a string, got: {}", a)),
@@ -145,12 +148,18 @@ pub fn parse_cirru(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn write_cirru(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn format_cirru(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(a) => {
       let options = cirru_parser::CirruWriterOptions { use_inline: false };
       match cirru::calcit_data_to_cirru(a) {
-        Ok(v) => Ok(Calcit::Str(cirru_parser::format(&v, options)?)),
+        Ok(v) => {
+          if let Cirru::List(ys) = v {
+            Ok(Calcit::Str(cirru_parser::format(&ys, options)?))
+          } else {
+            Err(format!("expected vector for Cirru formatting: {}", v))
+          }
+        }
         Err(e) => Err(format!("format-cirru failed, {}", e)),
       }
     }
@@ -169,7 +178,7 @@ pub fn parse_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn write_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn format_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)?, true)?)),
     None => Err(String::from("format-cirru-edn expected 1 argument")),
@@ -338,7 +347,10 @@ pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, String> {
     },
     (Some(_), None) => Err(format!("&tuple:nth expected a tuple and an index, got: {:?}", xs)),
     (None, Some(_)) => Err(format!("&tuple:nth expected a tuple and an index, got: {:?}", xs)),
-    (_, _) => Err(format!("&tuple:nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
+    (_, _) => Err(format!(
+      "&tuple:nth expected 2 argument, got: {}",
+      CrListWrap(xs.to_owned())
+    )),
   }
 }
 
