@@ -21,8 +21,8 @@ exclude = [
 
 [dependencies]
 chrono = "0.4.19"
-cirru_edn = "0.1.9"
-cirru_parser = "0.1.6"
+cirru_edn = "0.1.10"
+cirru_parser = "0.1.7"
 clap = "2.33.3"
 dirs = "4.0.0"
 im = "15.0.0"
