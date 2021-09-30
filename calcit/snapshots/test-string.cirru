@@ -130,6 +130,10 @@
                     [] |+ |1 |2 |3
                 parse-cirru-edn "|{} $ :code $ quote $ + 1 2 3"
 
+              assert=
+                :: :a 1
+                parse-cirru-edn "|:: :a 1"
+
               assert= "|{} $ :code\n  quote $ + 1 2 3"
                 trim $ format-cirru-edn $ {}
                   :code $ :: 'quote $ [] |+ |1 |2 |3
@@ -142,6 +146,9 @@
 
               assert= "|do 's"
                 trim $ format-cirru-edn 's
+
+              assert= "|:: |&core-list-class $ [] 1 2 3"
+                trim $ format-cirru-edn $ :: &core-list-class $ [] 1 2 3
 
               assert= (.escape "|\n") "|\"\\n\""
               assert= (.escape "|\t") "|\"\\t\""
