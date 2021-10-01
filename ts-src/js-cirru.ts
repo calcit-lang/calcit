@@ -76,6 +76,8 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     if (x.fst instanceof CalcitSymbol && x.fst.value === "quote") {
       // turn `x.snd` with CalcitList into raw Cirru nodes, which is in plain Array
       return ["quote", toWriterNode(x.snd as any)] as CirruEdnFormat;
+    } else if (x.fst instanceof CalcitRecord) {
+      return ["::", "|" + x.fst.name, to_cirru_edn(x.snd)];
     } else {
       throw new Error(`Unsupported tag for EDN: ${x.fst}`);
     }
@@ -171,6 +173,12 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
         throw new Error("quote expects 1 argument");
       }
       return new CalcitTuple(new CalcitSymbol("quote"), to_calcit_data(x[1], true));
+    }
+    if (x[0] === "::") {
+      if (x.length !== 3) {
+        throw new Error("tuple expects 2 values");
+      }
+      return new CalcitTuple(extract_cirru_edn(x[1]), extract_cirru_edn(x[2]));
     }
   }
   console.error(x);

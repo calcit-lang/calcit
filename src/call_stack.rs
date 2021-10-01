@@ -4,7 +4,7 @@ use crate::primes::{Calcit, CalcitItems};
 use cirru_edn::Edn;
 use std::collections::HashMap;
 use std::fs;
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 #[derive(Debug, PartialEq)]
 pub struct CalcitStack {
@@ -27,12 +27,12 @@ pub enum StackKind {
 // TODO impl fmt
 
 lazy_static! {
-  static ref CALL_STACK: Mutex<Vec<CalcitStack>> = Mutex::new(vec![]);
+  static ref CALL_STACK: RwLock<Vec<CalcitStack>> = RwLock::new(vec![]);
 }
 
 pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: &CalcitItems) {
-  let stack = &mut CALL_STACK.lock().unwrap();
-  stack.push(CalcitStack {
+  let mut stack = CALL_STACK.write().unwrap();
+  (*stack).push(CalcitStack {
     ns: ns.to_owned(),
     def: def.to_owned(),
     code,
@@ -42,13 +42,13 @@ pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args:
 }
 
 pub fn pop_call_stack() {
-  let stack = &mut CALL_STACK.lock().unwrap();
-  stack.pop();
+  let stack = &mut CALL_STACK.write().unwrap();
+  (*stack).pop();
 }
 
 // show simplified version of stack
 pub fn show_stack() {
-  let stack: &Vec<CalcitStack> = &mut CALL_STACK.lock().unwrap();
+  let stack: &Vec<CalcitStack> = &mut CALL_STACK.read().unwrap();
   println!("\ncall stack:");
   for idx in 0..stack.len() {
     let s = &stack[stack.len() - idx - 1];
@@ -58,12 +58,12 @@ pub fn show_stack() {
 }
 
 pub fn clear_stack() {
-  let stack = &mut CALL_STACK.lock().unwrap();
-  stack.clear();
+  let stack = &mut CALL_STACK.write().unwrap();
+  (*stack).clear();
 }
 
 pub fn display_stack(failure: &str) -> Result<(), String> {
-  let stack: &Vec<CalcitStack> = &mut CALL_STACK.lock().unwrap();
+  let stack: &Vec<CalcitStack> = &mut CALL_STACK.read().unwrap();
   println!("\ncall stack:");
 
   for idx in 0..stack.len() {

@@ -1,7 +1,7 @@
 //! TODO watchers not implemented yet, after hot code swapping
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 use crate::primes::{Calcit, CalcitItems, CalcitScope};
 use crate::program::ProgramCodeData;
@@ -10,18 +10,18 @@ use crate::runner;
 type ValueAndListeners = (Calcit, HashMap<String, Calcit>);
 
 lazy_static! {
-  static ref REFS_DICT: Mutex<HashMap<String, ValueAndListeners>> = Mutex::new(HashMap::new());
+  static ref REFS_DICT: RwLock<HashMap<String, ValueAndListeners>> = RwLock::new(HashMap::new());
 }
 
 // need functions with shorter lifetime to escape dead lock
 fn read_ref(path: &str) -> Option<ValueAndListeners> {
-  let dict = &REFS_DICT.lock().unwrap();
+  let dict = &REFS_DICT.read().unwrap();
   dict.get(path).map(|pair| pair.to_owned())
 }
 
 fn write_to_ref(path: String, v: Calcit, listeners: HashMap<String, Calcit>) {
-  let dict = &mut REFS_DICT.lock().unwrap();
-  let _ = dict.insert(path, (v, listeners));
+  let mut dict = REFS_DICT.write().unwrap();
+  let _ = (*dict).insert(path, (v, listeners));
 }
 
 fn modify_ref(path: String, v: Calcit, program_code: &ProgramCodeData) -> Result<(), String> {
@@ -103,14 +103,14 @@ pub fn reset_bang(
 pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k)), Some(Calcit::Fn(..))) => {
-      let dict = &mut REFS_DICT.lock().unwrap();
-      let (prev, listeners) = &dict.get(path).unwrap().to_owned();
+      let mut dict = REFS_DICT.write().unwrap();
+      let (prev, listeners) = &(*dict).get(path).unwrap().to_owned();
       if listeners.contains_key(k) {
         Err(format!("add-watch failed, listener with key `{}` existed", k))
       } else {
         let mut new_listeners = listeners.to_owned();
         new_listeners.insert(k.to_owned(), xs.get(2).unwrap().to_owned());
-        let _ = dict.insert(path.to_owned(), (prev.to_owned(), new_listeners));
+        let _ = (*dict).insert(path.to_owned(), (prev.to_owned(), new_listeners));
         Ok(Calcit::Nil)
       }
     }
@@ -129,12 +129,12 @@ pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn remove_watch(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k))) => {
-      let dict = &mut REFS_DICT.lock().unwrap();
-      let (prev, listeners) = &dict.get(path).unwrap().to_owned();
+      let mut dict = REFS_DICT.write().unwrap();
+      let (prev, listeners) = &(*dict).get(path).unwrap().to_owned();
       if listeners.contains_key(k) {
         let mut new_listeners = listeners.to_owned();
         new_listeners.remove(k);
-        let _ = dict.insert(path.to_owned(), (prev.to_owned(), new_listeners));
+        let _ = (*dict).insert(path.to_owned(), (prev.to_owned(), new_listeners));
         Ok(Calcit::Nil)
       } else {
         Err(format!("remove-watch failed, listener with key `{}` missing", k))

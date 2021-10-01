@@ -21,8 +21,8 @@ exclude = [
 
 [dependencies]
 chrono = "0.4.19"
-cirru_edn = "0.1.8"
-cirru_parser = "0.1.5"
+cirru_edn = "0.1.10"
+cirru_parser = "0.1.7"
 clap = "2.33.3"
 dirs = "4.0.0"
 im = "15.0.0"
@@ -48,3 +48,7 @@ path = "src/bin/cr.rs"
 [[bin]]
 name = "bundle_calcit"
 path = "src/bin/bundle_calcit.rs"
+
+
+# [profile.release]
+# debug = true

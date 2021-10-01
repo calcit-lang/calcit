@@ -44,7 +44,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     }
     Calcit::Fn(name, ..) => Err(format!("unable to generate EDN from function: {}", name)),
     Calcit::Proc(name) => Ok(Edn::Symbol(name.to_owned())),
-    Calcit::Syntax(name, _ns) => Ok(Edn::Symbol(name.to_owned())),
+    Calcit::Syntax(name, _ns) => Ok(Edn::Symbol(name.to_string())),
     Calcit::Tuple(tag, data) => {
       match &**tag {
         Calcit::Symbol(sym, ..) => {
@@ -57,8 +57,13 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             Err(format!("unknown tag for EDN: {}", sym)) // TODO more types to handle
           }
         }
+        Calcit::Record(name, _, _) => Ok(Edn::Tuple(
+          Box::new(Edn::Str(name.to_owned())),
+          Box::new(calcit_to_edn(data)?),
+        )),
         v => {
-          Err(format!("unknonwn tag type for EDN: {}", v)) // TODO more types to handle
+          Err(format!("EDN tuple expected 'quote or record, unknown tag: {}", v))
+          // TODO more types to handle
         }
       }
     }
@@ -88,6 +93,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       )),
       Box::new(cirru::cirru_to_calcit(nodes)),
     ),
+    Edn::Tuple(tag, v) => Calcit::Tuple(Box::new(edn_to_calcit(&*tag)), Box::new(edn_to_calcit(&*v))),
     Edn::List(xs) => {
       let mut ys: primes::CalcitItems = im::vector![];
       for x in xs {

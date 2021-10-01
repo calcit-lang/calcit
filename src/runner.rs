@@ -1,11 +1,11 @@
 pub mod preprocess;
 
 use crate::builtins;
-use crate::builtins::{is_proc_name, is_syntax_name};
+use crate::builtins::is_proc_name;
 use crate::call_stack;
 use crate::call_stack::{push_call_stack, StackKind};
 use crate::primes::Calcit;
-use crate::primes::{CalcitItems, CalcitScope, CrListWrap, SymbolResolved::*, CORE_NS};
+use crate::primes::{CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
 
 pub fn evaluate_expr(
@@ -47,6 +47,7 @@ pub fn evaluate_expr(
     },
     Calcit::Ref(_) => Ok(expr.to_owned()),
     Calcit::Tuple(..) => Ok(expr.to_owned()),
+    Calcit::Buffer(..) => Ok(expr.to_owned()),
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
     Calcit::List(xs) => match xs.get(0) {
       None => Err(format!("cannot evaluate empty expr: {}", expr)),
@@ -71,7 +72,7 @@ pub fn evaluate_expr(
             }
           }
           Calcit::Syntax(s, def_ns) => {
-            push_call_stack(file_ns, s, StackKind::Syntax, expr.to_owned(), &rest_nodes);
+            push_call_stack(file_ns, &s.to_string(), StackKind::Syntax, expr.to_owned(), &rest_nodes);
             added_stack = true;
             builtins::handle_syntax(s, &rest_nodes, scope, def_ns, program_code)
           }
@@ -172,8 +173,8 @@ pub fn evaluate_symbol(
       None => Err(format!("unknown ns target: {}/{}", ns_part, def_part)),
     },
     None => {
-      if is_syntax_name(sym) {
-        return Ok(Calcit::Syntax(sym.to_owned(), file_ns.to_owned()));
+      if CalcitSyntax::is_core_syntax(sym) {
+        return Ok(Calcit::Syntax(CalcitSyntax::from(sym)?, file_ns.to_owned()));
       }
       if scope.contains_key(sym) {
         // although scope is detected first, it would trigger warning during preprocess

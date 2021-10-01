@@ -2,7 +2,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use std::env;
 use std::fs;
 use std::process::exit;
-use std::sync::Mutex;
+use std::sync::RwLock;
 use std::time::Instant;
 
 use crate::{
@@ -18,8 +18,8 @@ pub enum CliRunningMode {
 }
 
 lazy_static! {
-  static ref STARTED_INSTANT: Mutex<Instant> = Mutex::new(Instant::now());
-  static ref CLI_RUNNING_MODE: Mutex<CliRunningMode> = Mutex::new(CliRunningMode::Eval);
+  static ref STARTED_INSTANT: RwLock<Instant> = RwLock::new(Instant::now());
+  static ref CLI_RUNNING_MODE: RwLock<CliRunningMode> = RwLock::new(CliRunningMode::Eval);
 }
 
 pub fn echo(xs: &CalcitItems) -> Result<Calcit, String> {
@@ -59,12 +59,12 @@ pub fn raise(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn init_effects_states() {
   // trigger lazy instant
-  let _eff = STARTED_INSTANT.lock().unwrap();
+  let _eff = STARTED_INSTANT.read().unwrap();
 }
 
 pub fn cpu_time(_xs: &CalcitItems) -> Result<Calcit, String> {
   let now = Instant::now();
-  let started = STARTED_INSTANT.lock().unwrap().to_owned();
+  let started = STARTED_INSTANT.read().unwrap().to_owned();
 
   let time = match now.checked_duration_since(started) {
     Some(n) => (n.as_micros() as f64) / 1000.0,
@@ -78,13 +78,13 @@ pub fn cpu_time(_xs: &CalcitItems) -> Result<Calcit, String> {
 }
 
 pub fn modify_cli_running_mode(mode: CliRunningMode) -> Result<(), String> {
-  // obscure https://doc.rust-lang.org/std/sync/struct.Mutex.html#method.get_mut
-  *CLI_RUNNING_MODE.lock().unwrap() = mode;
+  // https://doc.rust-lang.org/std/sync/struct.RwLock.html
+  *CLI_RUNNING_MODE.write().unwrap() = mode;
   Ok(())
 }
 
 pub fn calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, String> {
-  let mode = CLI_RUNNING_MODE.lock().unwrap().to_owned();
+  let mode = CLI_RUNNING_MODE.read().unwrap().to_owned();
   match mode {
     CliRunningMode::Eval => Ok(Calcit::Keyword(String::from("eval"))),
     CliRunningMode::Js => Ok(Calcit::Keyword(String::from("js"))),

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 use cirru_parser::Cirru;
 
@@ -21,10 +21,10 @@ pub struct ProgramFileData {
 pub type ProgramCodeData = HashMap<String, ProgramFileData>;
 
 lazy_static! {
-  static ref PROGRAM_EVALED_DATA_STATE: Mutex<ProgramEvaledData> = Mutex::new(HashMap::new());
+  static ref PROGRAM_EVALED_DATA_STATE: RwLock<ProgramEvaledData> = RwLock::new(HashMap::new());
   // TODO need better soution for immediate calls
   /// to be read by external logics and used as FFI
-  static ref PROGRAM_FFI_MESSAGES: Mutex<Vec<(String, CalcitItems)>> = Mutex::new(vec![]);
+  static ref PROGRAM_FFI_MESSAGES: RwLock<Vec<(String, CalcitItems)>> = RwLock::new(vec![]);
 }
 
 fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, String> {
@@ -162,13 +162,13 @@ pub fn lookup_default_target_in_import(ns: &str, alias: &str, program: &ProgramC
 /// similar to lookup, but skipped cloning
 #[allow(dead_code)]
 pub fn has_evaled_def(ns: &str, def: &str) -> bool {
-  let s2 = PROGRAM_EVALED_DATA_STATE.lock().unwrap();
+  let s2 = PROGRAM_EVALED_DATA_STATE.read().unwrap();
   s2.contains_key(ns) && s2[ns].contains_key(def)
 }
 
 /// lookup and return value
 pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
-  let s2 = PROGRAM_EVALED_DATA_STATE.lock().unwrap();
+  let s2 = PROGRAM_EVALED_DATA_STATE.read().unwrap();
   if s2.contains_key(ns) && s2[ns].contains_key(def) {
     Some(s2[ns][def].to_owned())
   } else {
@@ -180,9 +180,9 @@ pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
 // Dirty mutating global states
 pub fn write_evaled_def(ns: &str, def: &str, value: Calcit) -> Result<(), String> {
   // println!("writing {} {}", ns, def);
-  let program = &mut PROGRAM_EVALED_DATA_STATE.lock().unwrap();
+  let mut program = PROGRAM_EVALED_DATA_STATE.write().unwrap();
   if !program.contains_key(ns) {
-    program.insert(String::from(ns), HashMap::new());
+    (*program).insert(String::from(ns), HashMap::new());
   }
 
   let file = program.get_mut(ns).unwrap();
@@ -193,7 +193,7 @@ pub fn write_evaled_def(ns: &str, def: &str, value: Calcit) -> Result<(), String
 
 // take a snapshot for codegen
 pub fn clone_evaled_program() -> ProgramEvaledData {
-  let program = &PROGRAM_EVALED_DATA_STATE.lock().unwrap();
+  let program = &PROGRAM_EVALED_DATA_STATE.read().unwrap();
 
   let mut xs: ProgramEvaledData = HashMap::new();
   for k in program.keys() {
@@ -233,15 +233,15 @@ pub fn apply_code_changes(base: &ProgramCodeData, changes: &snapshot::ChangesDic
 
 /// clear evaled data after reloading
 pub fn clear_all_program_evaled_defs(init_fn: &str, reload_fn: &str, reload_libs: bool) -> Result<(), String> {
-  let program = &mut PROGRAM_EVALED_DATA_STATE.lock().unwrap();
+  let mut program = PROGRAM_EVALED_DATA_STATE.write().unwrap();
   if reload_libs {
-    program.clear();
+    (*program).clear();
   } else {
     // reduce changes of libs. could be dirty in some cases
     let init_pkg = extract_pkg_from_def(init_fn).unwrap();
     let reload_pkg = extract_pkg_from_def(reload_fn).unwrap();
     let mut to_remove: Vec<String> = vec![];
-    for k in program.keys() {
+    for k in (*program).keys() {
       if k == &init_pkg
         || k == &reload_pkg
         || k.starts_with(&format!("{}.", init_pkg))
@@ -253,23 +253,23 @@ pub fn clear_all_program_evaled_defs(init_fn: &str, reload_fn: &str, reload_libs
       }
     }
     for k in to_remove {
-      program.remove(&k);
+      (*program).remove(&k);
     }
   }
   Ok(())
 }
 
 pub fn send_ffi_message(op: String, items: CalcitItems) {
-  let ref_messages = &mut PROGRAM_FFI_MESSAGES.lock().unwrap();
-  ref_messages.push((op, items))
+  let mut ref_messages = PROGRAM_FFI_MESSAGES.write().unwrap();
+  (*ref_messages).push((op, items))
 }
 
 pub fn take_ffi_messages() -> Result<Vec<(String, CalcitItems)>, String> {
   let mut messages: Vec<(String, CalcitItems)> = vec![];
-  let ref_messages = &mut PROGRAM_FFI_MESSAGES.lock().unwrap();
-  for m in ref_messages.iter() {
+  let mut ref_messages = PROGRAM_FFI_MESSAGES.write().unwrap();
+  for m in (*ref_messages).iter() {
     messages.push(m.to_owned())
   }
-  ref_messages.clear();
+  (*ref_messages).clear();
   Ok(messages)
 }

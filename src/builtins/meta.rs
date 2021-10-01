@@ -31,6 +31,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, String> {
       Calcit::Thunk(..) => Ok(Calcit::Keyword(String::from("thunk"))), // internal
       Calcit::Ref(..) => Ok(Calcit::Keyword(String::from("ref"))),
       Calcit::Tuple(..) => Ok(Calcit::Keyword(String::from("tuple"))),
+      Calcit::Buffer(..) => Ok(Calcit::Keyword(String::from("buffer"))),
       Calcit::Recur(..) => Ok(Calcit::Keyword(String::from("recur"))),
       Calcit::List(..) => Ok(Calcit::Keyword(String::from("list"))),
       Calcit::Set(..) => Ok(Calcit::Keyword(String::from("set"))),
