@@ -142,7 +142,7 @@ fn dump_code(code: &Calcit) -> serde_json::Value {
     Calcit::Syntax(name, _ns) => {
       json!({
         "kind": "syntax",
-        "name": name,
+        "name": name.to_string(),
       })
     }
     Calcit::Thunk(code, _) => dump_code(code),

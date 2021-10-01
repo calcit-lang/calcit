@@ -44,7 +44,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     }
     Calcit::Fn(name, ..) => Err(format!("unable to generate EDN from function: {}", name)),
     Calcit::Proc(name) => Ok(Edn::Symbol(name.to_owned())),
-    Calcit::Syntax(name, _ns) => Ok(Edn::Symbol(name.to_owned())),
+    Calcit::Syntax(name, _ns) => Ok(Edn::Symbol(name.to_string())),
     Calcit::Tuple(tag, data) => {
       match &**tag {
         Calcit::Symbol(sym, ..) => {

@@ -48,3 +48,7 @@ path = "src/bin/cr.rs"
 [[bin]]
 name = "bundle_calcit"
 path = "src/bin/bundle_calcit.rs"
+
+
+# [profile.release]
+# debug = true

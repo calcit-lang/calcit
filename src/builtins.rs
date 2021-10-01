@@ -13,7 +13,7 @@ mod strings;
 mod syntax;
 
 use crate::data::json;
-use crate::primes::{Calcit, CalcitItems, CalcitScope};
+use crate::primes::{Calcit, CalcitItems, CalcitScope, CalcitSyntax};
 use crate::program::ProgramCodeData;
 
 pub fn is_proc_name(s: &str) -> bool {
@@ -388,59 +388,34 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn is_syntax_name(s: &str) -> bool {
-  matches!(
-    s,
-    "defn"
-      | "defmacro"
-      | "if"
-      | "&let"
-      | "quote"
-      | "quasiquote"
-      | "eval"
-      | "macroexpand"
-      | "macroexpand-1"
-      | "macroexpand-all"
-      | "foldl" // for performance
-      | "foldl-shortcut" // for performance
-      | "foldr-shortcut" // for performance
-      | "try"
-      | "sort" // TODO need better solution
-      | "defatom"
-      | "reset!"
-      | "hint-fn"
-  )
-}
-
 pub fn handle_syntax(
-  name: &str,
+  name: &CalcitSyntax,
   nodes: &CalcitItems,
   scope: &CalcitScope,
   file_ns: &str,
   program: &ProgramCodeData,
 ) -> Result<Calcit, String> {
   match name {
-    "defn" => syntax::defn(nodes, scope, file_ns, program),
-    "eval" => syntax::eval(nodes, scope, file_ns, program),
-    "defmacro" => syntax::defmacro(nodes, scope, file_ns, program),
-    "quote" => syntax::quote(nodes, scope, file_ns, program),
-    "quasiquote" => syntax::quasiquote(nodes, scope, file_ns, program),
-    "if" => syntax::syntax_if(nodes, scope, file_ns, program),
-    "&let" => syntax::syntax_let(nodes, scope, file_ns, program),
-    "foldl" => lists::foldl(nodes, scope, file_ns, program),
-    "foldl-shortcut" => lists::foldl_shortcut(nodes, scope, file_ns, program),
-    "foldr-shortcut" => lists::foldr_shortcut(nodes, scope, file_ns, program),
-    "macroexpand" => syntax::macroexpand(nodes, scope, file_ns, program),
-    "macroexpand-1" => syntax::macroexpand_1(nodes, scope, file_ns, program),
-    "macroexpand-all" => syntax::macroexpand_all(nodes, scope, file_ns, program),
-    "try" => syntax::call_try(nodes, scope, file_ns, program),
-    "sort" => lists::sort(nodes, scope, file_ns, program),
+    CalcitSyntax::Defn => syntax::defn(nodes, scope, file_ns, program),
+    CalcitSyntax::Eval => syntax::eval(nodes, scope, file_ns, program),
+    CalcitSyntax::Defmacro => syntax::defmacro(nodes, scope, file_ns, program),
+    CalcitSyntax::Quote => syntax::quote(nodes, scope, file_ns, program),
+    CalcitSyntax::Quasiquote => syntax::quasiquote(nodes, scope, file_ns, program),
+    CalcitSyntax::If => syntax::syntax_if(nodes, scope, file_ns, program),
+    CalcitSyntax::CoreLet => syntax::syntax_let(nodes, scope, file_ns, program),
+    CalcitSyntax::Foldl => lists::foldl(nodes, scope, file_ns, program),
+    CalcitSyntax::FoldlShortcut => lists::foldl_shortcut(nodes, scope, file_ns, program),
+    CalcitSyntax::FoldrShortcut => lists::foldr_shortcut(nodes, scope, file_ns, program),
+    CalcitSyntax::Macroexpand => syntax::macroexpand(nodes, scope, file_ns, program),
+    CalcitSyntax::Macroexpand1 => syntax::macroexpand_1(nodes, scope, file_ns, program),
+    CalcitSyntax::MacroexpandAll => syntax::macroexpand_all(nodes, scope, file_ns, program),
+    CalcitSyntax::Try => syntax::call_try(nodes, scope, file_ns, program),
+    CalcitSyntax::Sort => lists::sort(nodes, scope, file_ns, program),
     // "define reference" although it uses a confusing name "atom"
-    "defatom" => refs::defatom(nodes, scope, file_ns, program),
-    "reset!" => refs::reset_bang(nodes, scope, file_ns, program),
+    CalcitSyntax::Defatom => refs::defatom(nodes, scope, file_ns, program),
+    CalcitSyntax::Reset => refs::reset_bang(nodes, scope, file_ns, program),
     // different behavoirs, in Rust interpreter it's nil, in js codegen it's nothing
-    "hint-fn" => meta::no_op(),
-    a => Err(format!("TODO syntax: {}", a)),
+    CalcitSyntax::HintFn => meta::no_op(),
   }
 }
 

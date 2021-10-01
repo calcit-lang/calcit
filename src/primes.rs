@@ -1,3 +1,5 @@
+mod syntax_name;
+
 use core::cmp::Ord;
 use regex::Regex;
 use std::cmp::Eq;
@@ -12,6 +14,8 @@ pub type NanoId = String;
 // scope
 pub type CalcitScope = im::HashMap<String, Calcit>;
 pub type CalcitItems = im::Vector<Calcit>;
+
+pub use syntax_name::CalcitSyntax;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolResolved {
@@ -69,7 +73,7 @@ pub enum Calcit {
     CalcitItems, // args
     CalcitItems, // body
   ),
-  Syntax(String, String), // name, ns... notice that `ns` is a meta info
+  Syntax(CalcitSyntax, String), // name, ns... notice that `ns` is a meta info
 }
 
 impl fmt::Display for Calcit {
@@ -203,7 +207,7 @@ pub fn format_to_lisp(x: &Calcit) -> String {
       s
     }
     Calcit::Symbol(s, ..) => s.to_owned(),
-    Calcit::Syntax(s, _ns) => s.to_owned(),
+    Calcit::Syntax(s, _ns) => s.to_string(),
     Calcit::Proc(s) => s.to_owned(),
     a => format!("{}", a),
   }
@@ -302,7 +306,7 @@ impl Hash for Calcit {
       Calcit::Syntax(name, _ns) => {
         "syntax:".hash(_state);
         // syntax name can be used as identity
-        name.hash(_state);
+        name.to_string().hash(_state); // TODO
       }
     }
   }

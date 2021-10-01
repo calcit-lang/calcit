@@ -15,15 +15,10 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
       "&tab" => Ok(Calcit::Str(String::from("\t"))),
       "&calcit-version" => Ok(Calcit::Str(String::from(env!("CARGO_PKG_VERSION")))),
       "" => Err(String::from("Empty string is invalid")),
+      // special tuple syntax
+      "::" => Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), None)),
       _ => match s.chars().next().unwrap() {
-        ':' => {
-          if s == "::" {
-            Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), None))
-          // special tuple syntax
-          } else {
-            Ok(Calcit::Keyword(String::from(&s[1..])))
-          }
-        }
+        ':' => Ok(Calcit::Keyword(String::from(&s[1..]))),
         '.' => {
           if s.starts_with(".-") || s.starts_with(".!") {
             // try not to break js interop
@@ -156,7 +151,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
       Ok(Cirru::List(ys))
     }
     Calcit::Proc(s) => Ok(Cirru::Leaf(s.to_owned())),
-    Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.to_owned())),
+    Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.to_string())),
     _ => Err(format!("unknown data to convert to Cirru: {}", x)),
   }
 }

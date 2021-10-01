@@ -7,11 +7,11 @@ use std::fs;
 use std::path::Path;
 
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
-use crate::builtins::{is_js_syntax_procs, is_proc_name, is_syntax_name};
+use crate::builtins::{is_js_syntax_procs, is_proc_name};
 use crate::call_stack;
 use crate::call_stack::StackKind;
 use crate::primes;
-use crate::primes::{Calcit, CalcitItems, ImportRule, SymbolResolved::*};
+use crate::primes::{Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
 use crate::program;
 use crate::util::string::{has_ns_part, matches_digits, matches_js_var, wrap_js_str};
 
@@ -209,11 +209,7 @@ fn to_js_code(
         gen_symbol_code(s, def_ns, at_def, resolved, ns, xs, local_defs, file_imports)
       }
       Calcit::Proc(s) => {
-        let proc_prefix = if ns == primes::CORE_NS {
-          "$calcit_procs."
-        } else {
-          "$calcit."
-        };
+        let proc_prefix = get_proc_prefix(ns);
         // println!("gen proc {} under {}", s, ns,);
         // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
         // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
@@ -234,17 +230,8 @@ fn to_js_code(
         }
       }
       Calcit::Syntax(s, ..) => {
-        let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned(), None));
-        gen_symbol_code(
-          s,
-          primes::CORE_NS,
-          primes::GENERATED_DEF,
-          &resolved,
-          ns,
-          xs,
-          local_defs,
-          file_imports,
-        )
+        let proc_prefix = get_proc_prefix(ns);
+        Ok(format!("{}{}", proc_prefix, escape_var(&s.to_string())))
       }
       Calcit::Str(s) => Ok(escape_cirru_str(s)),
       Calcit::Bool(b) => Ok(b.to_string()),
@@ -280,11 +267,7 @@ fn gen_call_code(
     None => String::from(""),
   };
   let var_prefix = if ns == primes::CORE_NS { "" } else { "$calcit." };
-  let proc_prefix = if ns == primes::CORE_NS {
-    "$calcit_procs."
-  } else {
-    "$calcit."
-  };
+  let proc_prefix = get_proc_prefix(ns);
   if ys.is_empty() {
     println!("[Warn] Unexpected empty list inside {}", xs);
     return Ok(String::from("()"));
@@ -293,12 +276,12 @@ fn gen_call_code(
   let head = ys[0].to_owned();
   let body = ys.skip(1);
   match &head {
-    Calcit::Symbol(s, ..) | Calcit::Proc(s) | Calcit::Syntax(s, ..) => {
-      match s.as_str() {
-        "if" => {
+    Calcit::Syntax(s, ..) => {
+      match s {
+        CalcitSyntax::If => {
           if let Some(Calcit::List(ys)) = body.get(2) {
             if let Some(Calcit::Syntax(syn, ..)) = ys.get(0) {
-              if syn == "if" {
+              if syn == &CalcitSyntax::If {
                 return gen_if_code(&body, local_defs, xs, ns, file_imports, keywords, return_label);
               }
             }
@@ -324,14 +307,13 @@ fn gen_call_code(
             (_, _) => Err(format!("if expected 2~3 nodes, got: {:?}", body)),
           };
         }
-        "&let" => gen_let_code(&body, local_defs, xs, ns, file_imports, keywords, return_label),
-        ";" => Ok(format!("(/* {} */ null)", Calcit::List(body))),
+        CalcitSyntax::CoreLet => gen_let_code(&body, local_defs, xs, ns, file_imports, keywords, return_label),
 
-        "quote" => match body.get(0) {
+        CalcitSyntax::Quote => match body.get(0) {
           Some(item) => quote_to_js(item, var_prefix, keywords),
           None => Err(format!("quote expected a node, got nothing from {:?}", body)),
         },
-        "defatom" => {
+        CalcitSyntax::Defatom => {
           match (body.get(0), body.get(1)) {
             _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {:?}", body)),
             (Some(Calcit::Symbol(sym, ..)), Some(v)) => {
@@ -349,7 +331,7 @@ fn gen_call_code(
           }
         }
 
-        "defn" => match (body.get(0), body.get(1)) {
+        CalcitSyntax::Defn => match (body.get(0), body.get(1)) {
           (Some(Calcit::Symbol(sym, ..)), Some(Calcit::List(ys))) => {
             let func_body = body.skip(2);
             call_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &im::vector![]);
@@ -363,8 +345,42 @@ fn gen_call_code(
           (_, _) => Err(format!("defn expected name arguments, got: {:?}", body)),
         },
 
-        "defmacro" => Ok(format!("/* Unexpected macro {} */", xs)),
-        "quasiquote" => Ok(format!("(/* Unexpected quasiquote {} */ null)", xs.lisp_str())),
+        CalcitSyntax::Defmacro => Ok(format!("/* Unexpected macro {} */", xs)),
+        CalcitSyntax::Quasiquote => Ok(format!("(/* Unexpected quasiquote {} */ null)", xs.lisp_str())),
+        CalcitSyntax::Try => match (body.get(0), body.get(1)) {
+          (Some(expr), Some(handler)) => {
+            call_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), &im::vector![]);
+            let next_return_label = match return_label {
+              Some(x) => Some(x.to_owned()),
+              None => Some(String::from("return ")),
+            };
+            let try_code = to_js_code(expr, ns, local_defs, file_imports, keywords, &next_return_label)?;
+            let err_var = js_gensym("errMsg");
+            let handler = to_js_code(handler, ns, local_defs, file_imports, keywords, &None)?;
+
+            call_stack::pop_call_stack();
+            let code = snippets::tmpl_try(err_var, try_code, handler, &next_return_label.unwrap());
+            match return_label {
+              Some(_) => Ok(code),
+              None => Ok(snippets::tmpl_fn_wrapper(code)),
+            }
+          }
+          (_, _) => Err(format!("try expected 2 nodes, got {:?}", body)),
+        },
+        _ => {
+          let args_code = gen_args_code(&body, ns, local_defs, file_imports, keywords)?;
+          Ok(format!(
+            "{}{}({})",
+            return_code,
+            to_js_code(&head, ns, local_defs, file_imports, keywords, &None)?,
+            args_code
+          ))
+        }
+      }
+    }
+    Calcit::Symbol(s, ..) | Calcit::Proc(s) => {
+      match s.as_str() {
+        ";" => Ok(format!("(/* {} */ null)", Calcit::List(body))),
 
         "raise" => {
           // not core syntax, but treat as macro for better debugging experience
@@ -389,26 +405,7 @@ fn gen_call_code(
             None => Err(format!("raise expected 1~2 arguments, got {:?}", body)),
           }
         }
-        "try" => match (body.get(0), body.get(1)) {
-          (Some(expr), Some(handler)) => {
-            call_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), &im::vector![]);
-            let next_return_label = match return_label {
-              Some(x) => Some(x.to_owned()),
-              None => Some(String::from("return ")),
-            };
-            let try_code = to_js_code(expr, ns, local_defs, file_imports, keywords, &next_return_label)?;
-            let err_var = js_gensym("errMsg");
-            let handler = to_js_code(handler, ns, local_defs, file_imports, keywords, &None)?;
 
-            call_stack::pop_call_stack();
-            let code = snippets::tmpl_try(err_var, try_code, handler, &next_return_label.unwrap());
-            match return_label {
-              Some(_) => Ok(code),
-              None => Ok(snippets::tmpl_fn_wrapper(code)),
-            }
-          }
-          (_, _) => Err(format!("try expected 2 nodes, got {:?}", body)),
-        },
         "echo" | "println" => {
           // not core syntax, but treat as macro for better debugging experience
           let args = ys.skip(1);
@@ -598,13 +595,9 @@ fn gen_symbol_code(
         None => Err(format!("expected symbol with ns being resolved: {:?}", xs)),
       }
     }
-  } else if is_js_syntax_procs(s) || is_proc_name(s) || is_syntax_name(s) {
+  } else if is_js_syntax_procs(s) || is_proc_name(s) || CalcitSyntax::is_core_syntax(s) {
     // return Ok(format!("{}{}", var_prefix, escape_var(s)));
-    let proc_prefix = if ns == primes::CORE_NS {
-      "$calcit_procs."
-    } else {
-      "$calcit."
-    };
+    let proc_prefix = get_proc_prefix(ns);
     return Ok(format!("{}{}", proc_prefix, escape_var(s)));
   } else if matches!(resolved, Some(ResolvedLocal)) || local_defs.contains(s) {
     Ok(escape_var(s))
@@ -749,13 +742,15 @@ fn gen_let_code(
               if content.len() == 1 {
                 match &content[0] {
                   Calcit::List(ys) if ys.len() > 2 => match (&ys[0], &ys[1]) {
-                    (Calcit::Syntax(sym, _ns), Calcit::List(zs)) if sym == "&let" && zs.len() == 2 => match &zs[0] {
-                      Calcit::Symbol(s2, ..) if !scoped_defs.contains(s2) => {
-                        let_def_body = ys.skip(1);
-                        continue;
+                    (Calcit::Syntax(sym, _ns), Calcit::List(zs)) if sym == &CalcitSyntax::CoreLet && zs.len() == 2 => {
+                      match &zs[0] {
+                        Calcit::Symbol(s2, ..) if !scoped_defs.contains(s2) => {
+                          let_def_body = ys.skip(1);
+                          continue;
+                        }
+                        _ => (),
                       }
-                      _ => (),
-                    },
+                    }
                     _ => (),
                   },
                   _ => (),
@@ -822,7 +817,7 @@ fn gen_if_code(
       if let Some(false_node) = some_false_node {
         if let Calcit::List(ys) = false_node {
           if let Some(Calcit::Syntax(syn, _ns)) = ys.get(0) {
-            if syn == "if" {
+            if syn == &CalcitSyntax::If {
               if ys.len() < 3 || ys.len() > 4 {
                 return Err(format!("if expected 2~3 nodes, got: {:?}", ys));
               }
@@ -928,7 +923,7 @@ fn uses_recur(xs: &Calcit) -> bool {
     Calcit::Symbol(s, ..) => s == "recur",
     Calcit::Proc(s) => s == "recur",
     Calcit::List(ys) => match &ys.get(0) {
-      Some(Calcit::Syntax(syn, _)) if syn == "defn" => false,
+      Some(Calcit::Syntax(syn, _)) if syn == &CalcitSyntax::Defn => false,
       Some(Calcit::Symbol(sym, ..)) if sym == "defn" => false,
       _ => {
         for y in ys {
@@ -1017,7 +1012,7 @@ fn gen_js_func(
   for line in raw_body {
     if let Calcit::List(xs) = line {
       if let Some(Calcit::Syntax(sym, _ns)) = xs.get(0) {
-        if sym == "hint-fn" {
+        if sym == &CalcitSyntax::HintFn {
           if hinted_async(xs) {
             async_prefix = String::from("async ")
           }
@@ -1395,6 +1390,16 @@ fn is_js_unavailable_procs(name: &str) -> bool {
   )
 }
 
+#[inline(always)]
 fn is_cirru_string(s: &str) -> bool {
   s.starts_with('|') || s.starts_with('"')
+}
+
+#[inline(always)]
+fn get_proc_prefix(ns: &str) -> &str {
+  if ns == primes::CORE_NS {
+    "$calcit_procs."
+  } else {
+    "$calcit."
+  }
 }

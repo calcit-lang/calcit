@@ -160,6 +160,9 @@ fn replace_code(
   file_ns: &str,
   program_code: &ProgramCodeData,
 ) -> Result<SpanResult, String> {
+  if !has_unquote(c) {
+    return Ok(SpanResult::Single(c.to_owned()));
+  }
   match c {
     Calcit::List(ys) => match (ys.get(0), ys.get(1)) {
       (Some(Calcit::Symbol(sym, ..)), Some(expr)) if sym == "~" => {
@@ -189,6 +192,21 @@ fn replace_code(
       }
     },
     _ => Ok(SpanResult::Single(c.to_owned())),
+  }
+}
+
+pub fn has_unquote(xs: &Calcit) -> bool {
+  match xs {
+    Calcit::List(ys) => {
+      for y in ys {
+        if has_unquote(y) {
+          return true;
+        }
+      }
+      false
+    }
+    Calcit::Symbol(s, ..) if s == "~" || s == "~@" => true,
+    _ => false,
   }
 }
 
