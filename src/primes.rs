@@ -45,6 +45,8 @@ pub enum Calcit {
   Ref(String),
   /// more tagged union type, more like an internal structure
   Tuple(Box<Calcit>, Box<Calcit>),
+  ///  to be used by FFIs
+  Buffer(String, Vec<u8>),
   /// not for data, but for recursion
   Recur(CalcitItems),
   List(CalcitItems),
@@ -94,6 +96,7 @@ impl fmt::Display for Calcit {
       },
       Calcit::Ref(name) => f.write_str(&format!("(&ref {})", name)),
       Calcit::Tuple(a, b) => f.write_str(&format!("(:: {} {})", a, b)),
+      Calcit::Buffer(name, _) => f.write_str(&format!("&buffer {} [u8]...", name)),
       Calcit::Recur(xs) => {
         f.write_str("(&recur")?;
         for x in xs {
@@ -249,6 +252,11 @@ impl Hash for Calcit {
         a.hash(_state);
         b.hash(_state);
       }
+      Calcit::Buffer(name, buf) => {
+        "buffer:".hash(_state);
+        name.hash(_state);
+        buf.hash(_state);
+      }
       Calcit::Recur(v) => {
         "list:".hash(_state);
         v.hash(_state);
@@ -350,6 +358,13 @@ impl Ord for Calcit {
       (Calcit::Tuple(_, _), _) => Less,
       (_, Calcit::Tuple(_, _)) => Greater,
 
+      (Calcit::Buffer(name1, buf1), Calcit::Buffer(name2, buf2)) => match name1.cmp(name2) {
+        Equal => buf1.cmp(buf2),
+        v => v,
+      },
+      (Calcit::Buffer(..), _) => Less,
+      (_, Calcit::Buffer(..)) => Greater,
+
       (Calcit::Recur(a), Calcit::Recur(b)) => a.cmp(b),
       (Calcit::Recur(_), _) => Less,
       (_, Calcit::Recur(_)) => Greater,
@@ -421,6 +436,7 @@ impl PartialEq for Calcit {
       (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
       (Calcit::Ref(a), Calcit::Ref(b)) => a == b,
       (Calcit::Tuple(a, b), Calcit::Tuple(c, d)) => a == c && b == d,
+      (Calcit::Buffer(a, b), Calcit::Buffer(c, d)) => a == c && b == d,
       (Calcit::List(a), Calcit::List(b)) => a == b,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,

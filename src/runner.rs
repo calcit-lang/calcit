@@ -47,6 +47,7 @@ pub fn evaluate_expr(
     },
     Calcit::Ref(_) => Ok(expr.to_owned()),
     Calcit::Tuple(..) => Ok(expr.to_owned()),
+    Calcit::Buffer(..) => Ok(expr.to_owned()),
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
     Calcit::List(xs) => match xs.get(0) {
       None => Err(format!("cannot evaluate empty expr: {}", expr)),
