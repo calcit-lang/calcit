@@ -1,7 +1,7 @@
 
 {} (:package |app)
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
-    :modules $ [] |./test-cond.cirru |./test-gynienic.cirru |./test-json.cirru
+    :modules $ [] |./test-cond.cirru |./test-gynienic.cirru
       , |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru
       , |./test-math.cirru |./test-recursion.cirru |./test-set.cirru
       , |./test-string.cirru |./test-ternary.cirru |./test-js.cirru |./test-record.cirru
@@ -13,7 +13,6 @@
         ns app.main $ :require
           [] test-cond.main :as test-cond
           [] test-gynienic.main :as test-gynienic
-          [] test-json.main :as test-json
           [] test-lens.main :as test-lens
           [] test-list.main :as test-list
           [] test-macro.main :as test-macro
@@ -118,25 +117,6 @@
             assert= false $ some-in? ({,} :a ([] 1)) ([] :a 1)
 
             assert= false $ some-in? ([] 1 2 3) ([] :a)
-
-        |test-time $ quote
-          fn ()
-            log-title "|Testing time"
-            inside-js:
-              ; "|println only since CI uses a different timezone"
-              println 1605024000 $ parse-time |2020-11-11
-              assert= "|2020-11-10T16:01:40.000Z"
-                format-time 1605024100
-              assert= "|2020-11-10T16:01:40.123Z"
-                format-time 1605024100.1234
-              echo $ format-time (get-time!) "|yyyy-MM-dd HH:mm:ss ffffff"
-
-            inside-eval:
-              echo |time: $ format-time (get-time!) "|%Y-%m-%d %H:%M:%S %z"
-              assert= 1417176009000
-                parse-time "|2014-11-28 21:00:09 +09:00" "|%Y-%m-%d %H:%M:%S %z"
-              assert= "|2014-11-28 12:00:09 +0000"
-                format-time 1417176009000 "|%Y-%m-%d %H:%M:%S %z"
 
         |test-if $ quote
           fn ()
@@ -319,8 +299,6 @@
               log-title "|Testing id"
               test-id
 
-            test-time
-
             test-if
 
             test-display-stack
@@ -349,7 +327,6 @@
               test-gynienic/main!
 
             test-cond/main!
-            test-json/main!
             test-lens/main!
             test-list/main!
             test-map/main!

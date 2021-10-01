@@ -227,8 +227,6 @@
             assert= |b $ .get |abc 1
             assert= 1 $ .parse-float |1
             assert= 1.1 $ .parse-float |1.1
-            assert= 1.1 $ .parse-json |1.1
-            assert= ([]) $ .parse-json "|[]"
             assert= |Abcd $ .replace |abcd |a |A
             assert= |AbAd $ .replace |abad |a |A
 

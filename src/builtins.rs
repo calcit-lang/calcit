@@ -12,7 +12,6 @@ mod sets;
 mod strings;
 mod syntax;
 
-use crate::data::json;
 use crate::primes::{Calcit, CalcitItems, CalcitScope, CalcitSyntax};
 use crate::program::ProgramCodeData;
 
@@ -63,8 +62,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "format-cirru"
       | "parse-cirru-edn"
       | "format-cirru-edn"
-      | "parse-json"
-      | "stringify-json"
       // regex
       | "re-matches"
       | "re-find"
@@ -248,13 +245,8 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "format-cirru" => meta::format_cirru(args),
     "parse-cirru-edn" => meta::parse_cirru_edn(args),
     "format-cirru-edn" => meta::format_cirru_edn(args),
-    "parse-json" => json::parse_json(args),
-    "stringify-json" => json::stringify_json(args),
     // time
     "cpu-time" => effects::cpu_time(args),
-    "parse-time" => effects::parse_time(args),
-    "format-time" => effects::format_time(args),
-    "get-time!" => effects::now_bang(args),
     // regex
     "re-matches" => regexes::re_matches(args),
     "re-find" => regexes::re_find(args),

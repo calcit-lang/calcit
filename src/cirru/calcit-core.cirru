@@ -1299,7 +1299,6 @@
             :ends-with? ends-with?
             :get &str:nth
             :parse-float parse-float
-            :parse-json parse-json
             :replace &str:replace
             :split split
             :split-lines split-lines
