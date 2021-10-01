@@ -88,7 +88,7 @@ cr -e="range 100" # eval from CLI
 cr compact.cirru --emit-js # compile to js
 cr compact.cirru --emit-js --emit-path=out/ # compile to js and save in `out/`
 
-cr compact.cirru --emit-ir # compiles intermediate representation into program-ir.json
+cr compact.cirru --emit-ir # compiles intermediate representation into program-ir.cirru
 
 cr compact.cirru --emit-js --mjs # TODO compile to mjs
 ```
