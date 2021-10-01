@@ -2,20 +2,19 @@
 
 use std::collections::{HashMap, HashSet};
 
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::RwLock;
 
 // track if it's the first compilation
 static FIRST_COMPILATION: AtomicBool = AtomicBool::new(true);
 
 lazy_static! {
   // caches program data for detecting incremental changes of libs
-  static ref GLOBAL_PREVIOUS_PROGRAM_CACHES: Mutex<HashMap<String, HashSet<String>>> = Mutex::new(HashMap::new());
+  static ref GLOBAL_PREVIOUS_PROGRAM_CACHES: RwLock<HashMap<String, HashSet<String>>> = RwLock::new(HashMap::new());
 }
 
 pub fn lookup_prev_ns_cache(ns: &str) -> Option<HashSet<String>> {
-  let previous_program_caches = &GLOBAL_PREVIOUS_PROGRAM_CACHES.lock().unwrap();
+  let previous_program_caches = &GLOBAL_PREVIOUS_PROGRAM_CACHES.read().unwrap();
   if previous_program_caches.contains_key(ns) {
     Some(previous_program_caches[ns].to_owned())
   } else {
@@ -24,8 +23,8 @@ pub fn lookup_prev_ns_cache(ns: &str) -> Option<HashSet<String>> {
 }
 
 pub fn write_as_ns_cache(ns: &str, v: HashSet<String>) {
-  let previous_program_caches = &mut GLOBAL_PREVIOUS_PROGRAM_CACHES.lock().unwrap();
-  previous_program_caches.insert(ns.to_owned(), v);
+  let mut previous_program_caches = GLOBAL_PREVIOUS_PROGRAM_CACHES.write().unwrap();
+  (*previous_program_caches).insert(ns.to_owned(), v);
 }
 
 pub fn is_first_compilation() -> bool {
