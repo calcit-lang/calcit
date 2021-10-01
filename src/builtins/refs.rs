@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use crate::primes::{Calcit, CalcitItems, CalcitScope};
+use crate::primes::{lookup_order_kwd_str, Calcit, CalcitItems, CalcitScope};
 use crate::program::ProgramCodeData;
 use crate::runner;
 
@@ -105,11 +105,11 @@ pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, String> {
     (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k)), Some(Calcit::Fn(..))) => {
       let mut dict = REFS_DICT.write().unwrap();
       let (prev, listeners) = &(*dict).get(path).unwrap().to_owned();
-      if listeners.contains_key(k) {
+      if listeners.contains_key(&lookup_order_kwd_str(k)) {
         Err(format!("add-watch failed, listener with key `{}` existed", k))
       } else {
         let mut new_listeners = listeners.to_owned();
-        new_listeners.insert(k.to_owned(), xs.get(2).unwrap().to_owned());
+        new_listeners.insert(lookup_order_kwd_str(k), xs.get(2).unwrap().to_owned());
         let _ = (*dict).insert(path.to_owned(), (prev.to_owned(), new_listeners));
         Ok(Calcit::Nil)
       }
@@ -131,9 +131,9 @@ pub fn remove_watch(xs: &CalcitItems) -> Result<Calcit, String> {
     (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k))) => {
       let mut dict = REFS_DICT.write().unwrap();
       let (prev, listeners) = &(*dict).get(path).unwrap().to_owned();
-      if listeners.contains_key(k) {
+      if listeners.contains_key(&lookup_order_kwd_str(k)) {
         let mut new_listeners = listeners.to_owned();
-        new_listeners.remove(k);
+        new_listeners.remove(&lookup_order_kwd_str(k));
         let _ = (*dict).insert(path.to_owned(), (prev.to_owned(), new_listeners));
         Ok(Calcit::Nil)
       } else {

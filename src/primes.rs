@@ -1,3 +1,4 @@
+pub mod keyword;
 mod syntax_name;
 
 use core::cmp::Ord;
@@ -16,6 +17,8 @@ pub type CalcitScope = im::HashMap<String, Calcit>;
 pub type CalcitItems = im::Vector<Calcit>;
 
 pub use syntax_name::CalcitSyntax;
+
+pub use keyword::lookup_order_kwd_str;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolResolved {
@@ -42,7 +45,7 @@ pub enum Calcit {
   Bool(bool),
   Number(f64),
   Symbol(String, String, String, Option<SymbolResolved>), // content, ns... so it has meta information
-  Keyword(String),
+  Keyword(usize),
   Str(String),
   Thunk(Box<Calcit>, Option<Box<Calcit>>),
   /// holding a path to its state
@@ -83,7 +86,7 @@ impl fmt::Display for Calcit {
       Calcit::Bool(v) => f.write_str(&format!("{}", v)),
       Calcit::Number(n) => f.write_str(&format!("{}", n)),
       Calcit::Symbol(s, ..) => f.write_str(&format!("'{}", s)),
-      Calcit::Keyword(s) => f.write_str(&format!(":{}", s)),
+      Calcit::Keyword(s) => f.write_str(&format!(":{}", lookup_order_kwd_str(s))),
       Calcit::Str(s) => {
         lazy_static! {
           static ref RE_SIMPLE_TOKEN: Regex = Regex::new(r"^[\w\d\-\?!\|]+$").unwrap();
@@ -339,7 +342,7 @@ impl Ord for Calcit {
       (Calcit::Symbol(..), _) => Less,
       (_, Calcit::Symbol(..)) => Greater,
 
-      (Calcit::Keyword(a), Calcit::Keyword(b)) => a.cmp(b),
+      (Calcit::Keyword(a), Calcit::Keyword(b)) => lookup_order_kwd_str(a).cmp(&lookup_order_kwd_str(b)),
       (Calcit::Keyword(_), _) => Less,
       (_, Calcit::Keyword(_)) => Greater,
 
@@ -474,5 +477,18 @@ impl Calcit {
 
   pub fn lisp_str(&self) -> String {
     format_to_lisp(self)
+  }
+}
+
+/// makes sure that keyword is from global dict, not created by fresh
+pub fn load_kwd(s: &str) -> Calcit {
+  Calcit::Keyword(keyword::load_order_key(s))
+}
+
+/// lookup via keyword, better use `lookup_order_kwd_string`
+pub fn lookup_kwd_str(x: Calcit) -> Result<String, String> {
+  match x {
+    Calcit::Keyword(i) => Ok(lookup_order_kwd_str(&i)),
+    _ => Err(format!("expected keyword, but got: {}", x)),
   }
 }

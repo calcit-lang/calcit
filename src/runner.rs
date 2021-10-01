@@ -4,8 +4,7 @@ use crate::builtins;
 use crate::builtins::is_proc_name;
 use crate::call_stack;
 use crate::call_stack::{push_call_stack, StackKind};
-use crate::primes::Calcit;
-use crate::primes::{CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
+use crate::primes::{Calcit, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
 
 pub fn evaluate_expr(

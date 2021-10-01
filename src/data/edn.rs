@@ -1,6 +1,6 @@
 use crate::data::cirru;
 use crate::primes;
-use crate::primes::Calcit;
+use crate::primes::{load_kwd, lookup_order_kwd_str, Calcit};
 use cirru_edn::Edn;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
@@ -12,7 +12,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Bool(b) => Ok(Edn::Bool(*b)),
     Calcit::Str(s) => Ok(Edn::Str(s.to_owned())),
     Calcit::Number(n) => Ok(Edn::Number(*n)), // TODO
-    Calcit::Keyword(s) => Ok(Edn::Keyword(s.to_owned())),
+    Calcit::Keyword(s) => Ok(Edn::Keyword(lookup_order_kwd_str(s))),
     Calcit::Symbol(s, ..) => Ok(Edn::Symbol(s.to_owned())),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = vec![];
@@ -82,7 +82,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       String::from(primes::GENERATED_DEF),
       None,
     ),
-    Edn::Keyword(s) => Calcit::Keyword(s.to_owned()),
+    Edn::Keyword(s) => load_kwd(s),
     Edn::Str(s) => Calcit::Str(s.to_owned()),
     Edn::Quote(nodes) => Calcit::Tuple(
       Box::new(Calcit::Symbol(

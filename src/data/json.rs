@@ -1,7 +1,7 @@
 use serde_json::json;
 use serde_json::Value;
 
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::{load_kwd, lookup_order_kwd_str, Calcit, CalcitItems};
 
 pub fn json_to_calcit(data: &Value) -> Calcit {
   match data {
@@ -11,7 +11,7 @@ pub fn json_to_calcit(data: &Value) -> Calcit {
     Value::String(s) => {
       if s.starts_with(':') {
         // special logic to parse keyword
-        Calcit::Keyword(s.strip_prefix(':').unwrap().to_string())
+        load_kwd(s.strip_prefix(':').unwrap())
       } else {
         Calcit::Str(s.to_owned())
       }
@@ -27,7 +27,7 @@ pub fn json_to_calcit(data: &Value) -> Calcit {
       let mut ys: im::HashMap<Calcit, Calcit> = im::HashMap::new();
       for (k, v) in xs {
         let key = if k.starts_with(':') {
-          Calcit::Keyword(k.strip_prefix(':').unwrap().to_string())
+          load_kwd(k.strip_prefix(':').unwrap())
         } else {
           Calcit::Str(k.to_owned())
         };
@@ -50,9 +50,9 @@ pub fn calcit_to_json(data: &Calcit, add_colon: bool) -> Result<Value, String> {
     Calcit::Symbol(s, ..) => Ok(Value::String(s.to_owned())),
     Calcit::Keyword(s) => {
       if add_colon {
-        Ok(Value::String(format!(":{}", s)))
+        Ok(Value::String(format!(":{}", lookup_order_kwd_str(s))))
       } else {
-        Ok(Value::String(s.to_owned()))
+        Ok(Value::String(lookup_order_kwd_str(s)))
       }
     }
     Calcit::Str(s) => Ok(Value::String(s.to_owned())),
@@ -72,9 +72,9 @@ pub fn calcit_to_json(data: &Calcit, add_colon: bool) -> Result<Value, String> {
           }
           Calcit::Keyword(s) => {
             if add_colon {
-              data.insert(format!(":{}", s), calcit_to_json(v, add_colon)?);
+              data.insert(format!(":{}", lookup_order_kwd_str(s)), calcit_to_json(v, add_colon)?);
             } else {
-              data.insert(s.to_owned(), calcit_to_json(v, add_colon)?);
+              data.insert(lookup_order_kwd_str(s), calcit_to_json(v, add_colon)?);
             }
           }
           a => return Err(format!("expected string/keyword for json keys, got: {}", a)),

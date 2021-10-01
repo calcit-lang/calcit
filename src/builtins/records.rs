@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::ops::Rem;
 
-use crate::primes::{Calcit, CalcitItems, CrListWrap};
+use crate::primes::{load_kwd, lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap};
 use crate::util::number::f64_to_usize;
 
 pub fn new_record(xs: &CalcitItems) -> Result<Calcit, String> {
@@ -13,8 +13,12 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, String> {
       for (idx, x) in xs.iter().enumerate() {
         if idx > 0 {
           match x {
-            Calcit::Symbol(s, ..) | Calcit::Keyword(s) | Calcit::Str(s) => {
+            Calcit::Symbol(s, ..) | Calcit::Str(s) => {
               fields.push(s.to_owned());
+              values.push(Calcit::Nil);
+            }
+            Calcit::Keyword(s) => {
+              fields.push(lookup_order_kwd_str(s));
               values.push(Calcit::Nil);
             }
             a => return Err(format!("new-record fields accepets keyword/string, got a {}", a)),
@@ -47,7 +51,14 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, String> {
           let k_idx = idx * 2 + 1;
           let v_idx = k_idx + 1;
           match &xs[k_idx] {
-            Calcit::Symbol(s, ..) | Calcit::Keyword(s) | Calcit::Str(s) => match find_in_fields(def_fields, s) {
+            Calcit::Keyword(s) => match find_in_fields(def_fields, &lookup_order_kwd_str(s)) {
+              Some(pos) => {
+                fields[pos] = lookup_order_kwd_str(s);
+                values[pos] = xs[v_idx].to_owned();
+              }
+              None => return Err(format!("unexpected field {} for {:?}", s, def_fields)),
+            },
+            Calcit::Symbol(s, ..) | Calcit::Str(s) => match find_in_fields(def_fields, s) {
               Some(pos) => {
                 fields[pos] = s.to_owned();
                 values[pos] = xs[v_idx].to_owned();
@@ -74,8 +85,11 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, String> {
       let mut values: Vec<Calcit> = vec![];
       for (k, v) in ys {
         match k {
-          Calcit::Str(s) | Calcit::Keyword(s) => {
+          Calcit::Str(s) => {
             pairs.push((s.to_owned(), v.to_owned()));
+          }
+          Calcit::Keyword(s) => {
+            pairs.push((lookup_order_kwd_str(s), v.to_owned()));
           }
           a => return Err(format!("unknown field {}", a)),
         }
@@ -115,7 +129,7 @@ pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Record(_name, fields, values)) => {
       let mut ys: im::HashMap<Calcit, Calcit> = im::HashMap::new();
       for idx in 0..fields.len() {
-        ys.insert(Calcit::Keyword(fields[idx].to_owned()), values[idx].to_owned());
+        ys.insert(load_kwd(&fields[idx]), values[idx].to_owned());
       }
       Ok(Calcit::Map(ys))
     }
@@ -168,9 +182,8 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, _)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Keyword(k) | Calcit::Symbol(k, ..) => {
-        Ok(Calcit::Bool(find_in_fields(fields, k).is_some()))
-      }
+      Calcit::Str(k) | Calcit::Symbol(k, ..) => Ok(Calcit::Bool(find_in_fields(fields, k).is_some())),
+      Calcit::Keyword(k) => Ok(Calcit::Bool(find_in_fields(fields, &lookup_order_kwd_str(k)).is_some())),
       a => Err(format!("contains? got invalid field for record: {}", a)),
     },
     (Some(a), ..) => Err(format!("record contains? expected a record, got: {}", a)),
@@ -184,7 +197,7 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
       Ok(idx) => {
         if idx < fields.len() {
           Ok(Calcit::List(im::vector![
-            Calcit::Keyword(fields[idx].to_owned()),
+            load_kwd(&fields[idx]),
             values[idx].to_owned()
           ]))
         } else {
@@ -195,14 +208,21 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
     },
     (Some(_), None) => Err(format!("record nth expected a record and index, got: {:?}", xs)),
     (None, Some(_)) => Err(format!("record nth expected a record and index, got: {:?}", xs)),
-    (_, _) => Err(format!("record nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
+    (_, _) => Err(format!(
+      "record nth expected 2 argument, got: {}",
+      CrListWrap(xs.to_owned())
+    )),
   }
 }
 
 pub fn get(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, values)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Keyword(k) | Calcit::Symbol(k, ..) => match find_in_fields(fields, k) {
+      Calcit::Str(k) | Calcit::Symbol(k, ..) => match find_in_fields(fields, k) {
+        Some(idx) => Ok(values[idx].to_owned()),
+        None => Ok(Calcit::Nil),
+      },
+      Calcit::Keyword(k) => match find_in_fields(fields, &lookup_order_kwd_str(k)) {
         Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
@@ -216,7 +236,15 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Record(name, fields, values)), Some(a), Some(b)) => match a {
-      Calcit::Str(s) | Calcit::Keyword(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
+      Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
+        Some(pos) => {
+          let mut new_values = values.to_owned();
+          new_values[pos] = b.to_owned();
+          Ok(Calcit::Record(name.to_owned(), fields.to_owned(), new_values))
+        }
+        None => Err(format!("invalid field `{}` for {:?}", s, fields)),
+      },
+      Calcit::Keyword(s) => match find_in_fields(fields, &lookup_order_kwd_str(s)) {
         Some(pos) => {
           let mut new_values = values.to_owned();
           new_values[pos] = b.to_owned();
@@ -237,53 +265,66 @@ pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, String> {
   }
   match (xs.get(0), xs.get(1), xs.get(2), xs.get(3)) {
     (Some(Calcit::Record(_name, fields, values)), Some(n), Some(a), Some(new_value)) => match a {
-      Calcit::Str(s) | Calcit::Keyword(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
+      Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
         Some(_pos) => Err(format!("field `{}` already existed", s)),
-        None => {
-          let mut next_fields: Vec<String> = vec![];
-          let mut next_values: Vec<Calcit> = vec![];
-          let mut inserted: bool = false;
-
-          for (i, k) in fields.iter().enumerate() {
-            if inserted {
-              next_fields.push(k.to_owned());
-              next_values.push(values[i].to_owned());
-            } else {
-              match s.cmp(k) {
-                Ordering::Less => {
-                  next_fields.push(s.to_owned());
-                  next_values.push(new_value.to_owned());
-
-                  next_fields.push(k.to_owned());
-                  next_values.push(values[i].to_owned());
-                  inserted = true;
-                }
-                Ordering::Greater => {
-                  next_fields.push(k.to_owned());
-                  next_values.push(values[i].to_owned());
-                }
-                Ordering::Equal => {
-                  unreachable!("does not equal")
-                }
-              }
-            }
-          }
-          if !inserted {
-            next_fields.push(s.to_owned());
-            next_values.push(new_value.to_owned());
-          }
-
-          let new_name: Result<String, String> = match n {
-            Calcit::Str(s) | Calcit::Keyword(s) | Calcit::Symbol(s, ..) => Ok(s.to_owned()),
-            _ => Err(format!("")),
-          };
-
-          Ok(Calcit::Record(new_name?, next_fields, next_values))
-        }
+        None => extend_record_field(s, n, fields, values, new_value),
       },
-      a => Err(format!("invalid field `{}` for {:?}", a, fields)),
+      Calcit::Keyword(s) => match find_in_fields(fields, &lookup_order_kwd_str(s)) {
+        Some(_pos) => Err(format!("field `{}` already existed", s)),
+        None => extend_record_field(&lookup_order_kwd_str(s), n, fields, values, new_value),
+      },
+      a => return Err(format!("invalid field `{}` for {:?}", a, fields)),
     },
-    (Some(a), ..) => Err(format!("record:extend-as expected a record, got: {}", a)),
-    (None, ..) => Err(format!("record:extend-as expected 4 arguments, got: {:?}", xs)),
+    (Some(a), ..) => return Err(format!("record:extend-as expected a record, got: {}", a)),
+    (None, ..) => return Err(format!("record:extend-as expected 4 arguments, got: {:?}", xs)),
   }
+}
+
+fn extend_record_field(
+  s: &str,
+  n: &Calcit,
+  fields: &[String],
+  values: &[Calcit],
+  new_value: &Calcit,
+) -> Result<Calcit, String> {
+  let mut next_fields: Vec<String> = vec![];
+  let mut next_values: Vec<Calcit> = vec![];
+  let mut inserted: bool = false;
+
+  for (i, k) in fields.iter().enumerate() {
+    if inserted {
+      next_fields.push(k.to_owned());
+      next_values.push(values[i].to_owned());
+    } else {
+      match s.cmp(k) {
+        Ordering::Less => {
+          next_fields.push(s.to_owned());
+          next_values.push(new_value.to_owned());
+
+          next_fields.push(k.to_owned());
+          next_values.push(values[i].to_owned());
+          inserted = true;
+        }
+        Ordering::Greater => {
+          next_fields.push(k.to_owned());
+          next_values.push(values[i].to_owned());
+        }
+        Ordering::Equal => {
+          unreachable!("does not equal")
+        }
+      }
+    }
+  }
+  if !inserted {
+    next_fields.push(s.to_owned());
+    next_values.push(new_value.to_owned());
+  }
+
+  let new_name: Result<String, String> = match n {
+    Calcit::Str(s) | Calcit::Symbol(s, ..) => Ok(s.to_owned()),
+    Calcit::Keyword(s) => Ok(lookup_order_kwd_str(s)),
+    _ => Err(format!("")),
+  };
+
+  Ok(Calcit::Record(new_name?, next_fields, next_values))
 }

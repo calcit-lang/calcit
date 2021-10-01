@@ -6,7 +6,7 @@ use std::sync::RwLock;
 use std::time::Instant;
 
 use crate::{
-  primes::{Calcit, CalcitItems},
+  primes::{load_kwd, Calcit, CalcitItems},
   util::number::f64_to_i32,
 };
 
@@ -86,15 +86,15 @@ pub fn modify_cli_running_mode(mode: CliRunningMode) -> Result<(), String> {
 pub fn calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, String> {
   let mode = CLI_RUNNING_MODE.read().unwrap().to_owned();
   match mode {
-    CliRunningMode::Eval => Ok(Calcit::Keyword(String::from("eval"))),
-    CliRunningMode::Js => Ok(Calcit::Keyword(String::from("js"))),
-    CliRunningMode::Ir => Ok(Calcit::Keyword(String::from("ir"))),
+    CliRunningMode::Eval => Ok(load_kwd("eval")),
+    CliRunningMode::Js => Ok(load_kwd("js")),
+    CliRunningMode::Ir => Ok(load_kwd("ir")),
   }
 }
 
 // TODO
 pub fn call_get_calcit_backend(_xs: &CalcitItems) -> Result<Calcit, String> {
-  Ok(Calcit::Keyword(String::from("rust")))
+  Ok(load_kwd("rust"))
 }
 
 pub fn quit(xs: &CalcitItems) -> Result<Calcit, String> {

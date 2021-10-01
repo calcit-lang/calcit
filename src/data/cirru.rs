@@ -1,4 +1,4 @@
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::{load_kwd, Calcit, CalcitItems};
 use cirru_parser::Cirru;
 use regex::Regex;
 
@@ -18,7 +18,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
       // special tuple syntax
       "::" => Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), None)),
       _ => match s.chars().next().unwrap() {
-        ':' => Ok(Calcit::Keyword(String::from(&s[1..]))),
+        ':' => Ok(load_kwd(&s[1..])),
         '.' => {
           if s.starts_with(".-") || s.starts_with(".!") {
             // try not to break js interop
