@@ -1,5 +1,5 @@
 pub mod effects;
-mod ffi;
+pub mod ffi;
 mod lists;
 mod logics;
 mod maps;
@@ -11,11 +11,20 @@ mod sets;
 mod strings;
 mod syntax;
 
+use std::collections::HashMap;
+use std::sync::RwLock;
+
 use crate::primes::{Calcit, CalcitItems, CalcitScope, CalcitSyntax};
 use crate::program::ProgramCodeData;
 
+pub type FnType = fn(xs: &CalcitItems) -> Result<Calcit, String>;
+
+lazy_static! {
+  static ref IMPORTED_PROCS: RwLock<HashMap<String, FnType>> = RwLock::new(HashMap::new());
+}
+
 pub fn is_proc_name(s: &str) -> bool {
-  matches!(
+  let builtin = matches!(
     s,
     // meta
     "type-of"
@@ -56,7 +65,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&call-dylib:str-vec-str->tuple-str2"
       | "&call-dylib:cirru->str"
       | "&call-dylib:str-i64->i64"
-      | "&call-dylib:edn"
       // external format
       | "parse-cirru"
       | "format-cirru"
@@ -188,7 +196,13 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&record:get"
       | "&record:assoc"
       | "&record:extend-as"
-  )
+  );
+  if builtin {
+    true
+  } else {
+    let ps = IMPORTED_PROCS.read().unwrap();
+    ps.contains_key(s)
+  }
 }
 
 pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
@@ -232,7 +246,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&call-dylib:str-vec-str->tuple-str2" => ffi::call_dylib_str_vec_str_to_tuple_str2(args),
     "&call-dylib:cirru->str" => ffi::call_dylib_cirru_to_str(args),
     "&call-dylib:str-i64->i64" => ffi::call_dylib_str_i64_to_i64(args),
-    "&call-dylib:edn" => ffi::call_dylib_edn(args),
     // external data format
     "parse-cirru" => meta::parse_cirru(args),
     "format-cirru" => meta::format_cirru(args),
@@ -364,8 +377,22 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&record:get" => records::get(args),
     "&record:assoc" => records::assoc(args),
     "&record:extend-as" => records::extend_as(args),
-    a => Err(format!("No such proc: {}", a)),
+    a => {
+      let ps = IMPORTED_PROCS.read().unwrap();
+      if ps.contains_key(name) {
+        let f = ps[name];
+        f(args)
+      } else {
+        Err(format!("No such proc: {}", a))
+      }
+    }
   }
+}
+
+/// inject into procs
+pub fn register_import_proc(name: &str, f: FnType) {
+  let mut ps = IMPORTED_PROCS.write().unwrap();
+  (*ps).insert(name.to_owned(), f);
 }
 
 pub fn handle_syntax(
