@@ -1,6 +1,6 @@
 [package]
 name = "calcit_runner"
-version = "0.4.36"
+version = "0.4.37-a1"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -31,7 +31,6 @@ notify = "4.0.17"
 rand = "0.8.4"
 walkdir = "2"
 libloading = "0.7"
-
 
 [lib]
 name = "calcit_runner"

@@ -64,9 +64,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "format-cirru-edn"
       // time
       | "cpu-time"
-      | "format-time"
-      | "parse-time"
-      | "get-time!"
       // logics
       | "&="
       | "&<"
