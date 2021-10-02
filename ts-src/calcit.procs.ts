@@ -939,31 +939,6 @@ export let char_from_code = (n: number): string => {
   return String.fromCharCode(n);
 };
 
-export let re_matches = (content: string, re: string): boolean => {
-  return new RegExp(re).test(content);
-};
-
-export let re_find_index = (content: string, re: string): number => {
-  return content.search(new RegExp(re));
-};
-
-export let re_find_all = (content: string, re: string): CalcitList => {
-  let ys = content.match(new RegExp(re, "g"));
-  if (ys == null) {
-    return new CalcitList([]);
-  } else {
-    return new CalcitList(ys);
-  }
-};
-
-export let parse_json = (x: string): CalcitValue => {
-  return to_calcit_data(JSON.parse(x), false);
-};
-
-export let stringify_json = (x: CalcitValue, addColon: boolean = false): string => {
-  return JSON.stringify(to_js_data(x, addColon));
-};
-
 export let _$n_set_$o_to_list = (x: CalcitSet): CalcitList => {
   return new CalcitList(x.values());
 };
@@ -1180,18 +1155,6 @@ export let parse_cirru_edn = (code: string) => {
   return extract_cirru_edn(parse(code)[0]);
 };
 
-/** return in seconds, like from Nim */
-export let get_time_$x_ = () => {
-  return Date.now() / 1000;
-};
-
-/** return in seconds, like from Nim,
- * notice Nim version is slightly different
- */
-export let parse_time = (text: string) => {
-  return new Date(text).valueOf() / 1000;
-};
-
 export let format_to_lisp = (x: CalcitValue): string => {
   if (x == null) {
     return "nil";
@@ -1237,14 +1200,6 @@ export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> =
     }
   }
   return ret;
-};
-
-/** notice, Nim version of format-time takes format */
-export let format_time = (timeSecNumber: number, format?: string): string => {
-  if (format != null) {
-    console.error("format of calcit-js not implemented");
-  }
-  return new Date(timeSecNumber * 1000).toISOString();
 };
 
 export let _$o__$o_ = (a: CalcitValue, b: CalcitValue): CalcitTuple => {
