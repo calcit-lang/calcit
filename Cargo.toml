@@ -20,7 +20,7 @@ exclude = [
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cirru_edn = "0.1.11"
+cirru_edn = "0.1.12"
 cirru_parser = "0.1.8"
 clap = "2.33.3"
 dirs = "4.0.0"
