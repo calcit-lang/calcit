@@ -7,7 +7,6 @@ mod math;
 pub mod meta;
 mod records;
 mod refs;
-mod regexes;
 mod sets;
 mod strings;
 mod syntax;
@@ -62,11 +61,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "format-cirru"
       | "parse-cirru-edn"
       | "format-cirru-edn"
-      // regex
-      | "re-matches"
-      | "re-find"
-      | "re-find-index"
-      | "re-find-all"
       // time
       | "cpu-time"
       | "format-time"
@@ -247,11 +241,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "format-cirru-edn" => meta::format_cirru_edn(args),
     // time
     "cpu-time" => effects::cpu_time(args),
-    // regex
-    "re-matches" => regexes::re_matches(args),
-    "re-find" => regexes::re_find(args),
-    "re-find-index" => regexes::re_find_index(args),
-    "re-find-all" => regexes::re_find_all(args),
     // logics
     "&=" => logics::binary_equal(args),
     "&<" => logics::binary_less(args),

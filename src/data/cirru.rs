@@ -1,6 +1,5 @@
 use crate::primes::{load_kwd, Calcit, CalcitItems};
 use cirru_parser::Cirru;
-use regex::Regex;
 
 /// code is CirruNode, and this function parse code(rather than data)
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String> {
@@ -51,8 +50,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
         ])),
         // TODO future work of reader literal expanding
         _ => {
-          if matches_float(s) {
-            let f: f64 = s.parse().unwrap();
+          if let Ok(f) = s.parse::<f64>() {
             Ok(Calcit::Number(f))
           } else {
             Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), None))
@@ -113,14 +111,6 @@ pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
     }
     a => return Err(format!("unknown data for cirru: {}", a)),
   }
-}
-
-lazy_static! {
-  static ref RE_FLOAT: Regex = Regex::new("^-?[\\d]+(\\.[\\d]+)?$").unwrap(); // TODO special cases not handled
-}
-
-fn matches_float(x: &str) -> bool {
-  RE_FLOAT.is_match(x)
 }
 
 fn is_comment(x: &Calcit) -> bool {

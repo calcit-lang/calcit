@@ -113,7 +113,7 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
     files,
   };
 
-  let content = match format(&data.to_edn(), false) {
+  let content = match format(&data.to_edn(), true) {
     Ok(v) => v,
     Err(e) => return Err(format!("failed {}", e)),
   };
@@ -179,7 +179,7 @@ fn dump_code(code: &Calcit) -> Edn {
       };
 
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
-      xs.insert(edn_kwd("symbol"), edn_kwd("symbol"));
+      xs.insert(edn_kwd("kind"), edn_kwd("symbol"));
       xs.insert(edn_kwd("val"), Edn::Str(s.to_owned()));
       xs.insert(edn_kwd("ns"), Edn::Str(ns.to_owned()));
       xs.insert(edn_kwd("resolved"), resolved);

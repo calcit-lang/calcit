@@ -2,7 +2,6 @@ pub mod keyword;
 mod syntax_name;
 
 use core::cmp::Ord;
-use regex::Regex;
 use std::cmp::Eq;
 use std::cmp::Ordering;
 use std::cmp::Ordering::*;
@@ -88,10 +87,7 @@ impl fmt::Display for Calcit {
       Calcit::Symbol(s, ..) => f.write_str(&format!("'{}", s)),
       Calcit::Keyword(s) => f.write_str(&format!(":{}", lookup_order_kwd_str(s))),
       Calcit::Str(s) => {
-        lazy_static! {
-          static ref RE_SIMPLE_TOKEN: Regex = Regex::new(r"^[\w\d\-\?!\|]+$").unwrap();
-        }
-        if RE_SIMPLE_TOKEN.is_match(s) {
+        if is_simple_str(s) {
           write!(f, "|{}", s)
         } else {
           write!(f, "\"|{}\"", s.escape_default())
@@ -187,8 +183,17 @@ impl fmt::Display for Calcit {
     }
   }
 }
-/// special types wraps vector of calcit data for displaying
 
+fn is_simple_str(tok: &str) -> bool {
+  for c in tok.chars() {
+    if !matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '?' | '!' | '|') {
+      return false;
+    }
+  }
+  true
+}
+
+/// special types wraps vector of calcit data for displaying
 impl fmt::Display for CrListWrap {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.write_str(&format_to_lisp(&Calcit::List(self.0.to_owned()))) // TODO performance
