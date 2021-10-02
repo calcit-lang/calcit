@@ -143,34 +143,36 @@ fn dump_code(code: &Calcit) -> Edn {
     Calcit::Keyword(s) => edn_kwd(&lookup_order_kwd_str(s)),
     Calcit::Symbol(s, ns, at_def, resolved) => {
       let resolved = match resolved {
-        Some(ResolvedDef(r_def, r_ns, import_rule)) => {
-          let mut xs: HashMap<Edn, Edn> = HashMap::new();
-          xs.insert(edn_kwd("kind"), Edn::Str(String::from("def")));
-          xs.insert(edn_kwd("ns"), Edn::Str(r_ns.to_owned()));
-          xs.insert(edn_kwd("at_def"), Edn::Str(at_def.to_owned()));
-          xs.insert(edn_kwd("def"), Edn::Str(r_def.to_owned()));
-          xs.insert(
-            edn_kwd("rule"),
-            match import_rule {
-              Some(ImportRule::NsAs(_n)) => Edn::Str(String::from("ns")),
-              Some(ImportRule::NsDefault(_n)) => Edn::Str(String::from("default")),
-              Some(ImportRule::NsReferDef(_ns, _def)) => Edn::Str(String::from("def")),
-              None => Edn::Nil,
-            },
-          );
+        Some(resolved) => match &**resolved {
+          ResolvedDef(r_def, r_ns, import_rule) => {
+            let mut xs: HashMap<Edn, Edn> = HashMap::new();
+            xs.insert(edn_kwd("kind"), Edn::Str(String::from("def")));
+            xs.insert(edn_kwd("ns"), Edn::Str(r_ns.to_owned()));
+            xs.insert(edn_kwd("at_def"), Edn::Str(at_def.to_owned()));
+            xs.insert(edn_kwd("def"), Edn::Str(r_def.to_owned()));
+            xs.insert(
+              edn_kwd("rule"),
+              match import_rule {
+                Some(ImportRule::NsAs(_n)) => Edn::Str(String::from("ns")),
+                Some(ImportRule::NsDefault(_n)) => Edn::Str(String::from("default")),
+                Some(ImportRule::NsReferDef(_ns, _def)) => Edn::Str(String::from("def")),
+                None => Edn::Nil,
+              },
+            );
 
-          Edn::Map(xs)
-        }
-        Some(ResolvedLocal) => {
-          let mut xs: HashMap<Edn, Edn> = HashMap::new();
-          xs.insert(edn_kwd("kind"), edn_kwd("local"));
-          Edn::Map(xs)
-        }
-        Some(ResolvedRaw) => {
-          let mut xs: HashMap<Edn, Edn> = HashMap::new();
-          xs.insert(edn_kwd("kind"), edn_kwd("raw"));
-          Edn::Map(xs)
-        }
+            Edn::Map(xs)
+          }
+          ResolvedLocal => {
+            let mut xs: HashMap<Edn, Edn> = HashMap::new();
+            xs.insert(edn_kwd("kind"), edn_kwd("local"));
+            Edn::Map(xs)
+          }
+          ResolvedRaw => {
+            let mut xs: HashMap<Edn, Edn> = HashMap::new();
+            xs.insert(edn_kwd("kind"), edn_kwd("raw"));
+            Edn::Map(xs)
+          }
+        },
         None => {
           let mut xs: HashMap<Edn, Edn> = HashMap::new();
           xs.insert(edn_kwd("kind"), Edn::Nil);

@@ -43,7 +43,7 @@ pub enum Calcit {
   Nil,
   Bool(bool),
   Number(f64),
-  Symbol(String, String, String, Option<SymbolResolved>), // content, ns... so it has meta information
+  Symbol(String, String, String, Option<Box<SymbolResolved>>), // content, ns... so it has meta information
   Keyword(usize),
   Str(String),
   Thunk(Box<Calcit>, Option<Box<Calcit>>),
@@ -64,16 +64,16 @@ pub enum Calcit {
     String, // name
     String, // ns
     NanoId,
-    CalcitItems, // args
-    CalcitItems, // body
+    Box<CalcitItems>, // args
+    Box<CalcitItems>, // body
   ),
   Fn(
     String, // name
     String, // ns
     NanoId,
     CalcitScope,
-    CalcitItems, // args
-    CalcitItems, // body
+    Box<CalcitItems>, // args
+    Box<CalcitItems>, // body
   ),
   Syntax(CalcitSyntax, String), // name, ns... notice that `ns` is a meta info
 }
@@ -140,7 +140,7 @@ impl fmt::Display for Calcit {
       Calcit::Macro(name, _def_ns, _, args, body) => {
         f.write_str(&format!("(&macro {} (", name))?;
         let mut need_space = false;
-        for a in args {
+        for a in &**args {
           if need_space {
             f.write_str(" ")?;
           }
@@ -149,7 +149,7 @@ impl fmt::Display for Calcit {
         }
         f.write_str(") (")?;
         need_space = false;
-        for b in body {
+        for b in &**body {
           if need_space {
             f.write_str(" ")?;
           }
@@ -161,7 +161,7 @@ impl fmt::Display for Calcit {
       Calcit::Fn(name, _, _, _, args, body) => {
         f.write_str(&format!("(&fn {} (", name))?;
         let mut need_space = false;
-        for a in args {
+        for a in &**args {
           if need_space {
             f.write_str(" ")?;
           }
@@ -170,7 +170,7 @@ impl fmt::Display for Calcit {
         }
         f.write_str(") (")?;
         need_space = false;
-        for b in body {
+        for b in &**body {
           if need_space {
             f.write_str(" ")?;
           }

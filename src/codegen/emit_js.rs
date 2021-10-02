@@ -206,7 +206,8 @@ fn to_js_code(
   } else {
     let ret = match xs {
       Calcit::Symbol(s, def_ns, at_def, resolved) => {
-        gen_symbol_code(s, def_ns, at_def, resolved, ns, xs, local_defs, file_imports)
+        let resolved_info = resolved.to_owned().map(|v| *v.to_owned());
+        gen_symbol_code(s, def_ns, at_def, &resolved_info, ns, xs, local_defs, file_imports)
       }
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
@@ -1082,7 +1083,7 @@ fn contains_symbol(xs: &Calcit, y: &str) -> bool {
     Calcit::Symbol(s, ..) => s == y,
     Calcit::Thunk(code, _) => contains_symbol(code, y),
     Calcit::Fn(_, _, _, _, _, body) => {
-      for x in body {
+      for x in &**body {
         if contains_symbol(x, y) {
           return true;
         }

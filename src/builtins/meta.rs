@@ -326,11 +326,11 @@ fn gen_sym(sym: &str) -> Calcit {
     String::from("&core-map-class"),
     String::from(primes::CORE_NS),
     String::from(primes::GENERATED_DEF),
-    Some(primes::SymbolResolved::ResolvedDef(
+    Some(Box::new(primes::SymbolResolved::ResolvedDef(
       String::from(primes::CORE_NS),
       String::from(sym),
       None,
-    )),
+    ))),
   )
 }
 

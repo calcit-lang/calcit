@@ -21,19 +21,24 @@ pub fn evaluate_expr(
     Calcit::Number(_) => Ok(expr.to_owned()),
     Calcit::Symbol(s, ..) if s == "&" => Ok(expr.to_owned()),
     Calcit::Symbol(s, ns, _at_def, resolved) => match resolved {
-      Some(ResolvedDef(r_ns, r_def, _import_rule)) => {
-        let v = evaluate_symbol(r_def, scope, r_ns, program_code)?;
-        match v {
-          Calcit::Thunk(_code, Some(data)) => Ok(*data),
-          // extra check to make sure code in thunks evaluated
-          Calcit::Thunk(code, None) => {
-            let evaled_v = evaluate_expr(&code, scope, file_ns, program_code)?;
-            // and write back to program state to fix duplicated evalution
-            // still using thunk since js and IR requires bare code
-            program::write_evaled_def(r_ns, r_def, Calcit::Thunk(code, Some(Box::new(evaled_v.to_owned()))))?;
-            Ok(evaled_v)
+      Some(resolved_info) => {
+        match &**resolved_info {
+          ResolvedDef(r_ns, r_def, _import_rule) => {
+            let v = evaluate_symbol(r_def, scope, r_ns, program_code)?;
+            match v {
+              Calcit::Thunk(_code, Some(data)) => Ok(*data),
+              // extra check to make sure code in thunks evaluated
+              Calcit::Thunk(code, None) => {
+                let evaled_v = evaluate_expr(&code, scope, file_ns, program_code)?;
+                // and write back to program state to fix duplicated evalution
+                // still using thunk since js and IR requires bare code
+                program::write_evaled_def(r_ns, r_def, Calcit::Thunk(code, Some(Box::new(evaled_v.to_owned()))))?;
+                Ok(evaled_v)
+              }
+              _ => Ok(v),
+            }
           }
-          _ => Ok(v),
+          _ => evaluate_symbol(s, scope, ns, program_code),
         }
       }
       _ => evaluate_symbol(s, scope, ns, program_code),

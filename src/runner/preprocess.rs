@@ -28,7 +28,7 @@ pub fn preprocess_ns_def(
           original_sym.to_owned(),
           ns.to_owned(),
           def.to_owned(),
-          Some(ResolvedDef(ns.to_owned(), def.to_owned(), import_rule)),
+          Some(Box::new(ResolvedDef(ns.to_owned(), def.to_owned(), import_rule))),
         ),
         Some(v),
       ))
@@ -61,11 +61,11 @@ pub fn preprocess_ns_def(
               original_sym.to_owned(),
               ns.to_owned(),
               def.to_owned(),
-              Some(ResolvedDef(
+              Some(Box::new(ResolvedDef(
                 ns.to_owned(),
                 def.to_owned(),
                 Some(ImportRule::NsReferDef(ns.to_owned(), def.to_owned())),
-              )),
+              ))),
             ),
             Some(v),
           ))
@@ -75,7 +75,7 @@ pub fn preprocess_ns_def(
             original_sym.to_owned(),
             ns.to_owned(),
             def.to_owned(),
-            Some(ResolvedDef(ns.to_owned(), def.to_owned(), import_rule)),
+            Some(Box::new(ResolvedDef(ns.to_owned(), def.to_owned(), import_rule))),
           ),
           None,
         )),
@@ -117,7 +117,7 @@ pub fn preprocess_expr(
               def.to_owned(),
               def_ns.to_owned(),
               at_def.to_owned(),
-              Some(ResolvedDef(String::from("js"), def_part, None)),
+              Some(Box::new(ResolvedDef(String::from("js"), def_part, None))),
             ),
             None,
           )), // js code
@@ -127,7 +127,12 @@ pub fn preprocess_expr(
       None => {
         if def == "~" || def == "~@" || def == "&" || def == "?" {
           Ok((
-            Calcit::Symbol(def.to_owned(), def_ns.to_owned(), at_def.to_owned(), Some(ResolvedRaw)),
+            Calcit::Symbol(
+              def.to_owned(),
+              def_ns.to_owned(),
+              at_def.to_owned(),
+              Some(Box::new(ResolvedRaw)),
+            ),
             None,
           ))
         } else if scope_defs.contains(def) {
@@ -136,7 +141,7 @@ pub fn preprocess_expr(
               def.to_owned(),
               def_ns.to_owned(),
               at_def.to_owned(),
-              Some(ResolvedLocal),
+              Some(Box::new(ResolvedLocal)),
             ),
             None,
           ))
@@ -161,11 +166,11 @@ pub fn preprocess_expr(
             None => {
               let from_default = program::lookup_default_target_in_import(def_ns, def, program_code);
               if let Some(target_ns) = from_default {
-                let target = Some(ResolvedDef(
+                let target = Some(Box::new(ResolvedDef(
                   target_ns.to_owned(),
                   def.to_owned(),
                   Some(ImportRule::NsDefault(target_ns)),
-                ));
+                )));
                 Ok((
                   Calcit::Symbol(def.to_owned(), def_ns.to_owned(), at_def.to_owned(), target),
                   None,
@@ -246,7 +251,11 @@ fn process_list_call(
             String::from("get"),
             String::from(primes::CORE_NS),
             String::from(primes::GENERATED_DEF),
-            Some(ResolvedDef(String::from(primes::CORE_NS), String::from("get"), None))
+            Some(Box::new(ResolvedDef(
+              String::from(primes::CORE_NS),
+              String::from("get"),
+              None
+            )))
           ),
           args[0].to_owned(),
           head.to_owned()
@@ -498,7 +507,7 @@ pub fn preprocess_defn(
         def_name.to_owned(),
         def_name_ns.to_owned(),
         at_def.to_owned(),
-        Some(ResolvedRaw),
+        Some(Box::new(ResolvedRaw)),
       ));
       let mut zs: CalcitItems = im::vector![];
       for y in ys {
@@ -509,7 +518,7 @@ pub fn preprocess_defn(
               sym.to_owned(),
               def_ns.to_owned(),
               at_def.to_owned(),
-              Some(ResolvedRaw),
+              Some(Box::new(ResolvedRaw)),
             ));
             // skip argument syntax marks
             if sym != "&" && sym != "?" {
