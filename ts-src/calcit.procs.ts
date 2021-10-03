@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.37-a1";
+export const calcit_version = "0.4.37-a2";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -935,7 +935,7 @@ export let get_char_code = (c: string): number => {
 };
 
 export let char_from_code = (n: number): string => {
-  if (typeof n !== "number") throw new Error("Expected na integer");
+  if (typeof n !== "number") throw new Error("Expected an integer");
   return String.fromCharCode(n);
 };
 

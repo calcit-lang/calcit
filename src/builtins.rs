@@ -55,16 +55,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "write-file"
       // ffi
       | "&ffi-message"
-      | "&call-dylib:str->str"
-      | "&call-dylib:str->unit"
-      | "&call-dylib:str:str->str"
-      | "&call-dylib:str->bool"
-      | "&call-dylib:->str"
-      | "&call-dylib:str->vec-str"
-      | "&call-dylib:vec-str->tuple-str2"
-      | "&call-dylib:str-vec-str->tuple-str2"
-      | "&call-dylib:cirru->str"
-      | "&call-dylib:str-i64->i64"
       // external format
       | "parse-cirru"
       | "format-cirru"
@@ -236,16 +226,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "write-file" => effects::write_file(args),
     // ffi
     "&ffi-message" => ffi::ffi_message(args),
-    "&call-dylib:str->str" => ffi::call_dylib_str_to_str(args),
-    "&call-dylib:str->unit" => ffi::call_dylib_str_to_unit(args),
-    "&call-dylib:str:str->str" => ffi::call_dylib_str_str_to_str(args),
-    "&call-dylib:str->bool" => ffi::call_dylib_str_to_bool(args),
-    "&call-dylib:->str" => ffi::call_dylib_to_str(args),
-    "&call-dylib:str->vec-str" => ffi::call_dylib_str_to_vec_str(args),
-    "&call-dylib:vec-str->tuple-str2" => ffi::call_dylib_vec_str_to_tuple_str2(args),
-    "&call-dylib:str-vec-str->tuple-str2" => ffi::call_dylib_str_vec_str_to_tuple_str2(args),
-    "&call-dylib:cirru->str" => ffi::call_dylib_cirru_to_str(args),
-    "&call-dylib:str-i64->i64" => ffi::call_dylib_str_i64_to_i64(args),
     // external data format
     "parse-cirru" => meta::parse_cirru(args),
     "format-cirru" => meta::format_cirru(args),

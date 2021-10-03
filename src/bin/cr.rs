@@ -23,7 +23,7 @@ fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
 
   // get dirty functions injected
-  builtins::register_import_proc("&call-dylib:edn", builtins::ffi::call_dylib_edn);
+  builtins::register_import_proc("&call-dylib-edn", builtins::ffi::call_dylib_edn);
 
   let cli_matches = cli_args::parse_cli();
   let settings = ProgramSettings {
