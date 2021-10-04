@@ -74,8 +74,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&*"
       | "&/"
       | "round"
-      | "rand"
-      | "rand-int"
       | "floor"
       | "sin"
       | "cos"
@@ -245,8 +243,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&-" => math::binary_minus(args),
     "&*" => math::binary_multiply(args),
     "&/" => math::binary_divide(args),
-    "rand" => math::rand(args),
-    "rand-int" => math::rand_int(args),
     "floor" => math::floor(args),
     "sin" => math::sin(args),
     "cos" => math::cos(args),

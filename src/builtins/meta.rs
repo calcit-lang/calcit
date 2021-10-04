@@ -4,7 +4,7 @@ use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
 use crate::primes;
-use crate::primes::{load_kwd, lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap};
+use crate::primes::{gen_core_id, load_kwd, lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap};
 use crate::program;
 use crate::runner;
 use crate::util::number::f64_to_usize;
@@ -116,6 +116,7 @@ pub fn js_gensym(name: &str) -> String {
   chunk
 }
 
+/// TODO, move out to calcit
 pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, String> {
   let size = match xs.get(0) {
     Some(Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -127,14 +128,14 @@ pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, String> {
   };
 
   match (size, xs.get(1)) {
-    (None, None) => Ok(Calcit::Str(nanoid!())),
-    (Some(n), None) => Ok(Calcit::Str(nanoid!(n))),
-    (Some(n), Some(Calcit::Str(s))) => {
+    (None, None) => Ok(Calcit::Str(gen_core_id())),
+    (Some(_n), None) => Ok(Calcit::Str(gen_core_id())),
+    (Some(_n), Some(Calcit::Str(s))) => {
       let mut charset: Vec<char> = vec![];
       for c in s.chars() {
         charset.push(c);
       }
-      Ok(Calcit::Str(nanoid!(n, &charset)))
+      Ok(Calcit::Str(gen_core_id()))
     }
     (a, b) => Err(format!("generate-id! expected size or charset, got: {:?} {:?}", a, b)),
   }

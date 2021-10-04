@@ -568,11 +568,6 @@
                     rest xs
                     rest ys
 
-        |rand-nth $ quote
-          defn rand-nth (xs)
-            if (&list:empty? xs) nil
-              get xs $ rand-int $ &- (&list:count xs) 1
-
         |contains-symbol? $ quote
           defn contains-symbol? (xs y)
             if (list? xs)
@@ -1263,17 +1258,6 @@
           defn negate (x)
             &- 0 x
 
-        |&number:rand-shift $ quote
-          defn &number:rand-shift (x y)
-            &+
-              &- x y
-              rand $ &* 2 y
-
-        |&number:rand-between $ quote
-          defn &number:rand-between (x y)
-            &+ x
-              rand (&- y x)
-
         |&core-number-class $ quote
           defrecord! &core-number-class
             :ceil ceil
@@ -1286,8 +1270,6 @@
             :round? round?
             :fract &number:fract
             :sqrt sqrt
-            :rand-shift &number:rand-shift
-            :rand-between &number:rand-between
             :negate negate
             :rem &number:rem
 

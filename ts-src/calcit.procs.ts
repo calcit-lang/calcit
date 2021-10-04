@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.37-a2";
+export const calcit_version = "0.4.38-a1";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse } from "@cirru/parser.ts";
@@ -699,26 +699,6 @@ export let sort = (xs: CalcitList, f: CalcitFn): CalcitList => {
     return new CalcitList(ys.sort(f as any));
   }
   throw new Error("Expected list");
-};
-
-export let rand = (n: number, m: number): number => {
-  if (m != null) {
-    return n + (m - n) * Math.random();
-  }
-  if (n != null) {
-    return Math.random() * n;
-  }
-  return Math.random() * 100;
-};
-
-export let rand_int = (n: number, m: number): number => {
-  if (m != null) {
-    return Math.floor(n + Math.random() * (m - n));
-  }
-  if (n != null) {
-    return Math.floor(Math.random() * n);
-  }
-  return Math.floor(Math.random() * 100);
 };
 
 export let floor = (n: number): number => {

@@ -1,6 +1,6 @@
 use crate::primes::{Calcit, CalcitItems};
 
-use crate::util::number::{f64_to_i32, is_integer, rand_number};
+use crate::util::number::{f64_to_i32, is_integer};
 
 pub fn binary_add(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
@@ -43,32 +43,6 @@ pub fn round_ques(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Number(n)) => Ok(Calcit::Bool(is_integer(*n))),
     Some(a) => Err(format!("round? expected a number: {}", a)),
     a => Err(format!("round? expected 1 number: {:?}", a)),
-  }
-}
-
-pub fn rand(xs: &CalcitItems) -> Result<Calcit, String> {
-  match (xs.get(0), xs.get(1)) {
-    (None, None) => Ok(Calcit::Number(rand_number(100.0))),
-    (Some(Calcit::Number(n)), None) => Ok(Calcit::Number(rand_number(*n))),
-    (Some(Calcit::Number(from)), Some(Calcit::Number(to))) => {
-      let delta = to - from;
-
-      Ok(Calcit::Number(from + rand_number(delta)))
-    }
-    (a, b) => Err(format!("rand expected 0~2 numbers: {:?} {:?}", a, b)),
-  }
-}
-
-pub fn rand_int(xs: &CalcitItems) -> Result<Calcit, String> {
-  match (xs.get(0), xs.get(1)) {
-    (None, None) => Ok(Calcit::Number(rand_number(100.0).floor())),
-    (Some(Calcit::Number(n)), None) => Ok(Calcit::Number(rand_number(*n).floor())),
-    (Some(Calcit::Number(from)), Some(Calcit::Number(to))) => {
-      let delta = to - from;
-
-      Ok(Calcit::Number((from + rand_number(delta)).floor()))
-    }
-    (a, b) => Err(format!("rand expected 0~2 numbers: {:?} {:?}", a, b)),
   }
 }
 

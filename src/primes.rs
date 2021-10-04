@@ -7,9 +7,9 @@ use std::cmp::Ordering;
 use std::cmp::Ordering::*;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 
-// String from nanoid!
-pub type NanoId = String;
+static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 // scope
 pub type CalcitScope = im::HashMap<String, Calcit>;
@@ -61,16 +61,16 @@ pub enum Calcit {
   Record(String, Vec<String>, Vec<Calcit>),
   Proc(String),
   Macro(
-    String, // name
-    String, // ns
-    NanoId,
+    String,           // name
+    String,           // ns
+    String,           // an id
     Box<CalcitItems>, // args
     Box<CalcitItems>, // body
   ),
   Fn(
     String, // name
     String, // ns
-    NanoId,
+    String, // an id
     CalcitScope,
     Box<CalcitItems>, // args
     Box<CalcitItems>, // body
@@ -496,4 +496,10 @@ pub fn lookup_kwd_str(x: Calcit) -> Result<String, String> {
     Calcit::Keyword(i) => Ok(lookup_order_kwd_str(&i)),
     _ => Err(format!("expected keyword, but got: {}", x)),
   }
+}
+
+/// too naive id generator to be safe in WASM
+pub fn gen_core_id() -> String {
+  let c = ID_GEN.fetch_add(1, SeqCst);
+  format!("gen_id_{}", c)
 }

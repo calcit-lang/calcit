@@ -50,11 +50,6 @@
                   [] $ &{} :a 1
                   , :a
 
-        |test-id $ quote
-          fn ()
-            assert= 9 $ count $ generate-id! 9
-            assert= |aaaaa $ generate-id! 5 |a
-
         |test-detects $ quote
           defn test-detects ()
             assert-detect fn? $ fn () 1
@@ -294,10 +289,6 @@
 
             log-title "|Testing detects"
             test-detects
-
-            inside-eval:
-              log-title "|Testing id"
-              test-id
 
             test-if
 

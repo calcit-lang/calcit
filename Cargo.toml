@@ -1,6 +1,6 @@
 [package]
 name = "calcit_runner"
-version = "0.4.37-a2"
+version = "0.4.38-a1"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -26,9 +26,7 @@ clap = "2.33.3"
 dirs = "4.0.0"
 im = "15.0.0"
 lazy_static = "1.4.0"
-nanoid = "0.4.0"
 notify = "4.0.17"
-rand = "0.8.4"
 walkdir = "2"
 libloading = "0.7"
 

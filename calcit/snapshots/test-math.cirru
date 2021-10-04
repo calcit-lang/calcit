@@ -22,24 +22,6 @@
             assert-detect empty? nil
             assert-detect empty? ([])
 
-            assert-detect identity $ <= 0 (rand) 100
-            assert-detect identity $ <= 0 (rand 10) 10
-            assert-detect identity $ <= 20 (rand 20 30) 30
-            
-            assert "|try .rand-shift"
-              &let
-                x $ .rand-shift 10 5
-                and (>= x 5) (<= x 15)
-
-            assert "|try .rand-between"
-              &let
-                x $ .rand-between 10 5
-                and (>= x 5) (<= x 10)
-
-            assert-detect identity $ <= 0 (rand-int) 100
-            assert-detect identity $ <= 0 (rand-int 10) 10
-            assert-detect identity $ <= 20 (rand-int 20 30) 30
-
             do true
 
         |log-title $ quote
