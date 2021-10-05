@@ -1,4 +1,4 @@
-use crate::primes::{load_kwd, Calcit, CalcitItems};
+use crate::primes::{load_kwd, lookup_order_kwd_str, Calcit, CalcitItems};
 use cirru_parser::Cirru;
 
 /// code is CirruNode, and this function parse code(rather than data)
@@ -132,7 +132,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string())),
     Calcit::Str(s) => Ok(Cirru::Leaf(format!("|{}", s))), // TODO performance
     Calcit::Symbol(s, ..) => Ok(Cirru::Leaf(s.to_owned())), // TODO performance
-    Calcit::Keyword(s) => Ok(Cirru::Leaf(format!(":{}", s))), // TODO performance
+    Calcit::Keyword(s) => Ok(Cirru::Leaf(format!(":{}", lookup_order_kwd_str(s)))), // TODO performance
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = vec![];
       for x in xs {
