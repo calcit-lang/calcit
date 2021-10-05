@@ -1,4 +1,3 @@
-use chrono::{DateTime, TimeZone, Utc};
 use std::env;
 use std::fs;
 use std::process::exit;
@@ -6,7 +5,7 @@ use std::sync::RwLock;
 use std::time::Instant;
 
 use crate::{
-  primes::{Calcit, CalcitItems},
+  primes::{load_kwd, Calcit, CalcitItems},
   util::number::f64_to_i32,
 };
 
@@ -86,15 +85,15 @@ pub fn modify_cli_running_mode(mode: CliRunningMode) -> Result<(), String> {
 pub fn calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, String> {
   let mode = CLI_RUNNING_MODE.read().unwrap().to_owned();
   match mode {
-    CliRunningMode::Eval => Ok(Calcit::Keyword(String::from("eval"))),
-    CliRunningMode::Js => Ok(Calcit::Keyword(String::from("js"))),
-    CliRunningMode::Ir => Ok(Calcit::Keyword(String::from("ir"))),
+    CliRunningMode::Eval => Ok(load_kwd("eval")),
+    CliRunningMode::Js => Ok(load_kwd("js")),
+    CliRunningMode::Ir => Ok(load_kwd("ir")),
   }
 }
 
 // TODO
 pub fn call_get_calcit_backend(_xs: &CalcitItems) -> Result<Calcit, String> {
-  Ok(Calcit::Keyword(String::from("rust")))
+  Ok(load_kwd("rust"))
 }
 
 pub fn quit(xs: &CalcitItems) -> Result<Calcit, String> {
@@ -141,41 +140,5 @@ pub fn write_file(xs: &CalcitItems) -> Result<Calcit, String> {
     },
     (Some(a), Some(b)) => Err(format!("write-file expected 3 strings, got: {} {}", a, b)),
     (a, b) => Err(format!("write-file expected 2 strings, got: {:?} {:?}", a, b)),
-  }
-}
-
-/// calcit-js represents DateTime in f64
-pub fn parse_time(xs: &CalcitItems) -> Result<Calcit, String> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Str(s)), None) => match DateTime::parse_from_rfc3339(s) {
-      Ok(time) => Ok(Calcit::Number(time.timestamp_millis() as f64)),
-      Err(e) => Err(format!("parse-time failed, {}", e)),
-    },
-    (Some(Calcit::Str(s)), Some(Calcit::Str(f))) => match DateTime::parse_from_str(s, f) {
-      Ok(time) => Ok(Calcit::Number(time.timestamp_millis() as f64)),
-      Err(e) => Err(format!("parse-time failed, {} {} {}", s, f, e)),
-    },
-    (Some(a), Some(b)) => Err(format!("parse-time expected 1 or 2 strings, got: {} {}", a, b)),
-    (a, b) => Err(format!("parse-time expected 1 or 2 strings, got {:?} {:?}", a, b)),
-  }
-}
-
-pub fn now_bang(_xs: &CalcitItems) -> Result<Calcit, String> {
-  Ok(Calcit::Number(Utc::now().timestamp_millis() as f64))
-}
-
-pub fn format_time(xs: &CalcitItems) -> Result<Calcit, String> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Number(n)), None) => {
-      let time = Utc.timestamp((n.floor() / 1000.0) as i64, (n.fract() * 1_000_000.0) as u32);
-      Ok(Calcit::Str(time.to_rfc3339()))
-    }
-    (Some(Calcit::Number(n)), Some(Calcit::Str(f))) => {
-      let time = Utc.timestamp((n.floor() / 1000.0) as i64, (n.fract() * 1_000_000.0) as u32);
-      Ok(Calcit::Str(time.format(f).to_string()))
-    }
-    (Some(Calcit::Number(_)), Some(a)) => Err(format!("format-time Rust does not support dynamic format: {}", a)),
-    (Some(a), Some(b)) => Err(format!("format-time expected time and string, got: {} {}", a, b)),
-    (a, b) => Err(format!("format-time expected time and string, got: {:?} {:?}", a, b)),
   }
 }

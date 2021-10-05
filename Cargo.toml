@@ -1,6 +1,6 @@
 [package]
 name = "calcit_runner"
-version = "0.4.36"
+version = "0.4.38-a1"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -20,22 +20,15 @@ exclude = [
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = "0.4.19"
-cirru_edn = "0.1.10"
-cirru_parser = "0.1.7"
+cirru_edn = "0.1.12"
+cirru_parser = "0.1.8"
 clap = "2.33.3"
 dirs = "4.0.0"
 im = "15.0.0"
 lazy_static = "1.4.0"
-nanoid = "0.4.0"
 notify = "4.0.17"
-rand = "0.8.4"
-regex = "1.5.4"
-serde = { version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.68"
 walkdir = "2"
 libloading = "0.7"
-
 
 [lib]
 name = "calcit_runner"

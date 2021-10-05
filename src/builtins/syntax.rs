@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 
 use crate::builtins;
-use crate::primes::{Calcit, CalcitItems, CalcitScope};
+use crate::primes::{gen_core_id, Calcit, CalcitItems, CalcitScope};
 use crate::program::ProgramCodeData;
 use crate::runner;
 
@@ -20,10 +20,10 @@ pub fn defn(
     (Some(Calcit::Symbol(s, ..)), Some(Calcit::List(xs))) => Ok(Calcit::Fn(
       s.to_owned(),
       file_ns.to_owned(),
-      nanoid!(),
+      gen_core_id(),
       scope.to_owned(),
-      xs.to_owned(),
-      expr.skip(2),
+      Box::new(xs.to_owned()),
+      Box::new(expr.skip(2)),
     )),
     (Some(a), Some(b)) => Err(format!("invalid args type for defn: {} , {}", a, b)),
     _ => Err(String::from("inefficient arguments for defn")),
@@ -40,9 +40,9 @@ pub fn defmacro(
     (Some(Calcit::Symbol(s, ..)), Some(Calcit::List(xs))) => Ok(Calcit::Macro(
       s.to_owned(),
       def_ns.to_owned(),
-      nanoid!(),
-      xs.to_owned(),
-      expr.skip(2),
+      gen_core_id(),
+      Box::new(xs.to_owned()),
+      Box::new(expr.skip(2)),
     )),
     (Some(a), Some(b)) => Err(format!("invalid structure for defmacro: {} {}", a, b)),
     _ => Err(format!(

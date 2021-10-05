@@ -13,3 +13,5 @@ builds/
 
 /flamegraph.svg
 .compact-inc.cirru
+
+.vscode/

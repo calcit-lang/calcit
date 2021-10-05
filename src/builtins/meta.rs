@@ -4,7 +4,7 @@ use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
 use crate::primes;
-use crate::primes::{Calcit, CalcitItems, CrListWrap};
+use crate::primes::{gen_core_id, load_kwd, lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap};
 use crate::program;
 use crate::runner;
 use crate::util::number::f64_to_usize;
@@ -21,26 +21,26 @@ static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 pub fn type_of(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(a) => match a {
-      Calcit::Nil => Ok(Calcit::Keyword(String::from("nil"))),
+      Calcit::Nil => Ok(load_kwd("nil")),
       // CalcitRef(Calcit), // TODO
-      Calcit::Bool(..) => Ok(Calcit::Keyword(String::from("bool"))),
-      Calcit::Number(..) => Ok(Calcit::Keyword(String::from("number"))),
-      Calcit::Symbol(..) => Ok(Calcit::Keyword(String::from("symbol"))),
-      Calcit::Keyword(..) => Ok(Calcit::Keyword(String::from("keyword"))),
-      Calcit::Str(..) => Ok(Calcit::Keyword(String::from("string"))),
-      Calcit::Thunk(..) => Ok(Calcit::Keyword(String::from("thunk"))), // internal
-      Calcit::Ref(..) => Ok(Calcit::Keyword(String::from("ref"))),
-      Calcit::Tuple(..) => Ok(Calcit::Keyword(String::from("tuple"))),
-      Calcit::Buffer(..) => Ok(Calcit::Keyword(String::from("buffer"))),
-      Calcit::Recur(..) => Ok(Calcit::Keyword(String::from("recur"))),
-      Calcit::List(..) => Ok(Calcit::Keyword(String::from("list"))),
-      Calcit::Set(..) => Ok(Calcit::Keyword(String::from("set"))),
-      Calcit::Map(..) => Ok(Calcit::Keyword(String::from("map"))),
-      Calcit::Record(..) => Ok(Calcit::Keyword(String::from("record"))),
-      Calcit::Proc(..) => Ok(Calcit::Keyword(String::from("fn"))), // special kind proc, but also fn
-      Calcit::Macro(..) => Ok(Calcit::Keyword(String::from("macro"))),
-      Calcit::Fn(..) => Ok(Calcit::Keyword(String::from("fn"))),
-      Calcit::Syntax(..) => Ok(Calcit::Keyword(String::from("synta"))),
+      Calcit::Bool(..) => Ok(load_kwd("bool")),
+      Calcit::Number(..) => Ok(load_kwd("number")),
+      Calcit::Symbol(..) => Ok(load_kwd("symbol")),
+      Calcit::Keyword(..) => Ok(load_kwd("keyword")),
+      Calcit::Str(..) => Ok(load_kwd("string")),
+      Calcit::Thunk(..) => Ok(load_kwd("thunk")), // internal
+      Calcit::Ref(..) => Ok(load_kwd("ref")),
+      Calcit::Tuple(..) => Ok(load_kwd("tuple")),
+      Calcit::Buffer(..) => Ok(load_kwd("buffer")),
+      Calcit::Recur(..) => Ok(load_kwd("recur")),
+      Calcit::List(..) => Ok(load_kwd("list")),
+      Calcit::Set(..) => Ok(load_kwd("set")),
+      Calcit::Map(..) => Ok(load_kwd("map")),
+      Calcit::Record(..) => Ok(load_kwd("record")),
+      Calcit::Proc(..) => Ok(load_kwd("fn")), // special kind proc, but also fn
+      Calcit::Macro(..) => Ok(load_kwd("macro")),
+      Calcit::Fn(..) => Ok(load_kwd("fn")),
+      Calcit::Syntax(..) => Ok(load_kwd("synta")),
     },
     None => Err(String::from("type-of expected 1 argument")),
   }
@@ -62,8 +62,15 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
   let n = idx + 1; // use 1 as first value since previous implementation did this
 
   let s = match xs.get(0) {
-    Some(Calcit::Str(s)) | Some(Calcit::Keyword(s)) | Some(Calcit::Symbol(s, ..)) => {
+    Some(Calcit::Str(s)) | Some(Calcit::Symbol(s, ..)) => {
       let mut chunk = s.to_owned();
+      chunk.push('_');
+      chunk.push('_');
+      chunk.push_str(&n.to_string());
+      chunk
+    }
+    Some(Calcit::Keyword(s)) => {
+      let mut chunk = lookup_order_kwd_str(s);
       chunk.push('_');
       chunk.push('_');
       chunk.push_str(&n.to_string());
@@ -109,6 +116,7 @@ pub fn js_gensym(name: &str) -> String {
   chunk
 }
 
+/// TODO, move out to calcit
 pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, String> {
   let size = match xs.get(0) {
     Some(Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -120,14 +128,14 @@ pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, String> {
   };
 
   match (size, xs.get(1)) {
-    (None, None) => Ok(Calcit::Str(nanoid!())),
-    (Some(n), None) => Ok(Calcit::Str(nanoid!(n))),
-    (Some(n), Some(Calcit::Str(s))) => {
+    (None, None) => Ok(Calcit::Str(gen_core_id())),
+    (Some(_n), None) => Ok(Calcit::Str(gen_core_id())),
+    (Some(_n), Some(Calcit::Str(s))) => {
       let mut charset: Vec<char> = vec![];
       for c in s.chars() {
         charset.push(c);
       }
-      Ok(Calcit::Str(nanoid!(n, &charset)))
+      Ok(Calcit::Str(gen_core_id()))
     }
     (a, b) => Err(format!("generate-id! expected size or charset, got: {:?} {:?}", a, b)),
   }
@@ -195,7 +203,7 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, String> {
       None,
     )),
     Some(Calcit::Keyword(s)) => Ok(Calcit::Symbol(
-      s.to_owned(),
+      lookup_order_kwd_str(s),
       String::from(primes::GENERATED_NS),
       String::from(primes::GENERATED_DEF),
       None,
@@ -213,9 +221,9 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Str(s)) => Ok(Calcit::Keyword(s.to_owned())),
+    Some(Calcit::Str(s)) => Ok(load_kwd(s)),
     Some(Calcit::Keyword(s)) => Ok(Calcit::Keyword(s.to_owned())),
-    Some(Calcit::Symbol(s, ..)) => Ok(Calcit::Keyword(s.to_owned())),
+    Some(Calcit::Symbol(s, ..)) => Ok(load_kwd(s)),
     Some(a) => Err(format!("turn-keyword cannot turn this to keyword: {}", a)),
     None => Err(String::from("turn-keyword expected 1 argument, got nothing")),
   }
@@ -319,11 +327,11 @@ fn gen_sym(sym: &str) -> Calcit {
     String::from("&core-map-class"),
     String::from(primes::CORE_NS),
     String::from(primes::GENERATED_DEF),
-    Some(primes::SymbolResolved::ResolvedDef(
+    Some(Box::new(primes::SymbolResolved::ResolvedDef(
       String::from(primes::CORE_NS),
       String::from(sym),
       None,
-    )),
+    ))),
   )
 }
 
@@ -380,5 +388,5 @@ pub fn no_op() -> Result<Calcit, String> {
 
 pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, String> {
   // https://doc.rust-lang.org/std/env/consts/constant.OS.html
-  Ok(Calcit::Keyword(std::env::consts::OS.to_owned()))
+  Ok(load_kwd(&std::env::consts::OS.to_owned()))
 }

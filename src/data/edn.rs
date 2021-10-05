@@ -1,6 +1,6 @@
 use crate::data::cirru;
 use crate::primes;
-use crate::primes::Calcit;
+use crate::primes::{load_kwd, lookup_order_kwd_str, Calcit};
 use cirru_edn::Edn;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
@@ -12,7 +12,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Bool(b) => Ok(Edn::Bool(*b)),
     Calcit::Str(s) => Ok(Edn::Str(s.to_owned())),
     Calcit::Number(n) => Ok(Edn::Number(*n)), // TODO
-    Calcit::Keyword(s) => Ok(Edn::Keyword(s.to_owned())),
+    Calcit::Keyword(s) => Ok(Edn::Keyword(lookup_order_kwd_str(s))),
     Calcit::Symbol(s, ..) => Ok(Edn::Symbol(s.to_owned())),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = vec![];
@@ -36,11 +36,11 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       Ok(Edn::Map(ys))
     }
     Calcit::Record(name, fields, values) => {
-      let mut ys: Vec<Edn> = vec![];
-      for v in values {
-        ys.push(calcit_to_edn(v)?)
+      let mut entries: Vec<(String, Edn)> = vec![];
+      for idx in 0..fields.len() {
+        entries.push((fields[idx].to_owned(), calcit_to_edn(&values[idx])?));
       }
-      Ok(Edn::Record(name.to_owned(), fields.to_owned(), ys))
+      Ok(Edn::Record(name.to_owned(), entries))
     }
     Calcit::Fn(name, ..) => Err(format!("unable to generate EDN from function: {}", name)),
     Calcit::Proc(name) => Ok(Edn::Symbol(name.to_owned())),
@@ -82,7 +82,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       String::from(primes::GENERATED_DEF),
       None,
     ),
-    Edn::Keyword(s) => Calcit::Keyword(s.to_owned()),
+    Edn::Keyword(s) => load_kwd(s),
     Edn::Str(s) => Calcit::Str(s.to_owned()),
     Edn::Quote(nodes) => Calcit::Tuple(
       Box::new(Calcit::Symbol(
@@ -115,12 +115,14 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       }
       Calcit::Map(ys)
     }
-    Edn::Record(name, fields, values) => {
-      let mut ys: Vec<Calcit> = vec![];
-      for v in values {
-        ys.push(edn_to_calcit(v));
+    Edn::Record(name, entries) => {
+      let mut fields: Vec<String> = vec![];
+      let mut values: Vec<Calcit> = vec![];
+      for v in entries {
+        fields.push(v.0.to_owned());
+        values.push(edn_to_calcit(&v.1));
       }
-      Calcit::Record(name.to_owned(), fields.to_owned(), ys)
+      Calcit::Record(name.to_owned(), fields, values)
     }
   }
 }

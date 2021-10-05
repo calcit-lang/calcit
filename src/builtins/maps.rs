@@ -1,5 +1,5 @@
 use crate::builtins::records::find_in_fields;
-use crate::primes::{Calcit, CalcitItems, CrListWrap};
+use crate::primes::{load_kwd, lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap};
 
 use crate::util::number::is_even;
 
@@ -68,7 +68,11 @@ pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, String> {
       let mut new_values = values.to_owned();
       for (k, v) in ys {
         match k {
-          Calcit::Str(s) | Calcit::Keyword(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
+          Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
+            Some(pos) => new_values[pos] = v.to_owned(),
+            None => return Err(format!("invalid field `{}` for {:?}", s, fields)),
+          },
+          Calcit::Keyword(s) => match find_in_fields(fields, &lookup_order_kwd_str(s)) {
             Some(pos) => new_values[pos] = v.to_owned(),
             None => return Err(format!("invalid field `{}` for {:?}", s, fields)),
           },
@@ -97,7 +101,7 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, String> {
       let mut zs: CalcitItems = im::vector![];
       for idx in 0..fields.len() {
         zs.push_back(Calcit::List(im::vector![
-          Calcit::Keyword(fields[idx].to_owned()),
+          load_kwd(&fields[idx]),
           values[idx].to_owned(),
         ]));
       }

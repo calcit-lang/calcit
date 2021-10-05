@@ -1,5 +1,5 @@
 pub mod effects;
-mod ffi;
+pub mod ffi;
 mod lists;
 mod logics;
 mod maps;
@@ -7,17 +7,24 @@ mod math;
 pub mod meta;
 mod records;
 mod refs;
-mod regexes;
 mod sets;
 mod strings;
 mod syntax;
 
-use crate::data::json;
+use std::collections::HashMap;
+use std::sync::RwLock;
+
 use crate::primes::{Calcit, CalcitItems, CalcitScope, CalcitSyntax};
 use crate::program::ProgramCodeData;
 
+pub type FnType = fn(xs: &CalcitItems) -> Result<Calcit, String>;
+
+lazy_static! {
+  static ref IMPORTED_PROCS: RwLock<HashMap<String, FnType>> = RwLock::new(HashMap::new());
+}
+
 pub fn is_proc_name(s: &str) -> bool {
-  matches!(
+  let builtin = matches!(
     s,
     // meta
     "type-of"
@@ -48,33 +55,13 @@ pub fn is_proc_name(s: &str) -> bool {
       | "write-file"
       // ffi
       | "&ffi-message"
-      | "&call-dylib:str->str"
-      | "&call-dylib:str->unit"
-      | "&call-dylib:str:str->str"
-      | "&call-dylib:str->bool"
-      | "&call-dylib:->str"
-      | "&call-dylib:str->vec-str"
-      | "&call-dylib:vec-str->tuple-str2"
-      | "&call-dylib:str-vec-str->tuple-str2"
-      | "&call-dylib:cirru->str"
-      | "&call-dylib:str-i64->i64"
       // external format
       | "parse-cirru"
       | "format-cirru"
       | "parse-cirru-edn"
       | "format-cirru-edn"
-      | "parse-json"
-      | "stringify-json"
-      // regex
-      | "re-matches"
-      | "re-find"
-      | "re-find-index"
-      | "re-find-all"
       // time
       | "cpu-time"
-      | "format-time"
-      | "parse-time"
-      | "get-time!"
       // logics
       | "&="
       | "&<"
@@ -87,8 +74,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&*"
       | "&/"
       | "round"
-      | "rand"
-      | "rand-int"
       | "floor"
       | "sin"
       | "cos"
@@ -199,7 +184,13 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&record:get"
       | "&record:assoc"
       | "&record:extend-as"
-  )
+  );
+  if builtin {
+    true
+  } else {
+    let ps = IMPORTED_PROCS.read().unwrap();
+    ps.contains_key(s)
+  }
 }
 
 pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
@@ -233,33 +224,13 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "write-file" => effects::write_file(args),
     // ffi
     "&ffi-message" => ffi::ffi_message(args),
-    "&call-dylib:str->str" => ffi::call_dylib_str_to_str(args),
-    "&call-dylib:str->unit" => ffi::call_dylib_str_to_unit(args),
-    "&call-dylib:str:str->str" => ffi::call_dylib_str_str_to_str(args),
-    "&call-dylib:str->bool" => ffi::call_dylib_str_to_bool(args),
-    "&call-dylib:->str" => ffi::call_dylib_to_str(args),
-    "&call-dylib:str->vec-str" => ffi::call_dylib_str_to_vec_str(args),
-    "&call-dylib:vec-str->tuple-str2" => ffi::call_dylib_vec_str_to_tuple_str2(args),
-    "&call-dylib:str-vec-str->tuple-str2" => ffi::call_dylib_str_vec_str_to_tuple_str2(args),
-    "&call-dylib:cirru->str" => ffi::call_dylib_cirru_to_str(args),
-    "&call-dylib:str-i64->i64" => ffi::call_dylib_str_i64_to_i64(args),
     // external data format
     "parse-cirru" => meta::parse_cirru(args),
     "format-cirru" => meta::format_cirru(args),
     "parse-cirru-edn" => meta::parse_cirru_edn(args),
     "format-cirru-edn" => meta::format_cirru_edn(args),
-    "parse-json" => json::parse_json(args),
-    "stringify-json" => json::stringify_json(args),
     // time
     "cpu-time" => effects::cpu_time(args),
-    "parse-time" => effects::parse_time(args),
-    "format-time" => effects::format_time(args),
-    "get-time!" => effects::now_bang(args),
-    // regex
-    "re-matches" => regexes::re_matches(args),
-    "re-find" => regexes::re_find(args),
-    "re-find-index" => regexes::re_find_index(args),
-    "re-find-all" => regexes::re_find_all(args),
     // logics
     "&=" => logics::binary_equal(args),
     "&<" => logics::binary_less(args),
@@ -272,8 +243,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&-" => math::binary_minus(args),
     "&*" => math::binary_multiply(args),
     "&/" => math::binary_divide(args),
-    "rand" => math::rand(args),
-    "rand-int" => math::rand_int(args),
     "floor" => math::floor(args),
     "sin" => math::sin(args),
     "cos" => math::cos(args),
@@ -384,8 +353,22 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&record:get" => records::get(args),
     "&record:assoc" => records::assoc(args),
     "&record:extend-as" => records::extend_as(args),
-    a => Err(format!("No such proc: {}", a)),
+    a => {
+      let ps = IMPORTED_PROCS.read().unwrap();
+      if ps.contains_key(name) {
+        let f = ps[name];
+        f(args)
+      } else {
+        Err(format!("No such proc: {}", a))
+      }
+    }
   }
+}
+
+/// inject into procs
+pub fn register_import_proc(name: &str, f: FnType) {
+  let mut ps = IMPORTED_PROCS.write().unwrap();
+  (*ps).insert(name.to_owned(), f);
 }
 
 pub fn handle_syntax(

@@ -2,7 +2,7 @@ use std::char;
 use std::cmp::Ordering;
 
 use crate::primes;
-use crate::primes::{Calcit, CalcitItems, CrListWrap};
+use crate::primes::{lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap};
 use crate::util::number::f64_to_usize;
 
 pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, String> {
@@ -54,7 +54,7 @@ pub fn turn_string(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Nil) => Ok(Calcit::Str(String::from(""))),
     Some(Calcit::Bool(b)) => Ok(Calcit::Str(b.to_string())),
     Some(Calcit::Str(s)) => Ok(Calcit::Str(s.to_owned())),
-    Some(Calcit::Keyword(s)) => Ok(Calcit::Str(s.to_owned())),
+    Some(Calcit::Keyword(s)) => Ok(Calcit::Str(lookup_order_kwd_str(s))),
     Some(Calcit::Symbol(s, ..)) => Ok(Calcit::Str(s.to_owned())),
     Some(Calcit::Number(n)) => Ok(Calcit::Str(n.to_string())),
     Some(a) => Err(format!("turn-string cannot turn this to string: {}", a)),
@@ -290,7 +290,10 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
     },
     (Some(_), None) => Err(format!("string nth expected a string and index, got: {:?}", xs)),
     (None, Some(_)) => Err(format!("string nth expected a string and index, got: {:?}", xs)),
-    (_, _) => Err(format!("string nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
+    (_, _) => Err(format!(
+      "string nth expected 2 argument, got: {}",
+      CrListWrap(xs.to_owned())
+    )),
   }
 }
 

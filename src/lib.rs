@@ -1,10 +1,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-#[macro_use]
-extern crate nanoid;
-
-mod data;
+pub mod data;
 
 pub mod builtins;
 pub mod call_stack;

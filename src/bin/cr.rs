@@ -5,6 +5,8 @@ use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::time::Instant;
 
+mod injection;
+
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 use calcit_runner::{builtins, call_stack, cli_args, codegen, program, runner, snapshot, util};
@@ -21,6 +23,10 @@ pub const COMPILE_ERRORS_FILE: &str = "calcit.build-errors";
 
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
+
+  // get dirty functions injected
+  builtins::register_import_proc("&call-dylib-edn", injection::call_dylib_edn);
+
   let cli_matches = cli_args::parse_cli();
   let settings = ProgramSettings {
     // has default value

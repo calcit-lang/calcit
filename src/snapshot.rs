@@ -155,7 +155,7 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
       let code = if lines.len() == 1 {
         lines[0].to_owned()
       } else {
-        return Err(format!("unexpected snippet: {}", raw));
+        return Err(format!("unexpected snippet: {:?}", raw));
       };
       let mut def_dict: HashMap<String, Cirru> = HashMap::new();
       def_dict.insert(

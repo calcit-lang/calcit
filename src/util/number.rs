@@ -1,5 +1,3 @@
-use rand::prelude::*;
-
 #[allow(dead_code)]
 pub fn is_odd(x: usize) -> bool {
   x & 1 == 1
@@ -10,12 +8,6 @@ pub fn is_even(x: usize) -> bool {
 
 pub fn is_integer(x: f64) -> bool {
   x.fract() == 0.0
-}
-
-pub fn rand_number(n: f64) -> f64 {
-  let mut rng = rand::thread_rng();
-  let y: f64 = rng.gen(); // generates a float between 0 and 1
-  y * n
 }
 
 pub fn f64_to_usize(f: f64) -> Result<usize, String> {

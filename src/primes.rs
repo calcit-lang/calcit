@@ -1,21 +1,23 @@
+pub mod keyword;
 mod syntax_name;
 
 use core::cmp::Ord;
-use regex::Regex;
 use std::cmp::Eq;
 use std::cmp::Ordering;
 use std::cmp::Ordering::*;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 
-// String from nanoid!
-pub type NanoId = String;
+static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 // scope
 pub type CalcitScope = im::HashMap<String, Calcit>;
 pub type CalcitItems = im::Vector<Calcit>;
 
 pub use syntax_name::CalcitSyntax;
+
+pub use keyword::lookup_order_kwd_str;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolResolved {
@@ -41,8 +43,8 @@ pub enum Calcit {
   Nil,
   Bool(bool),
   Number(f64),
-  Symbol(String, String, String, Option<SymbolResolved>), // content, ns... so it has meta information
-  Keyword(String),
+  Symbol(String, String, String, Option<Box<SymbolResolved>>), // content, ns... so it has meta information
+  Keyword(usize),
   Str(String),
   Thunk(Box<Calcit>, Option<Box<Calcit>>),
   /// holding a path to its state
@@ -59,19 +61,19 @@ pub enum Calcit {
   Record(String, Vec<String>, Vec<Calcit>),
   Proc(String),
   Macro(
-    String, // name
-    String, // ns
-    NanoId,
-    CalcitItems, // args
-    CalcitItems, // body
+    String,           // name
+    String,           // ns
+    String,           // an id
+    Box<CalcitItems>, // args
+    Box<CalcitItems>, // body
   ),
   Fn(
     String, // name
     String, // ns
-    NanoId,
+    String, // an id
     CalcitScope,
-    CalcitItems, // args
-    CalcitItems, // body
+    Box<CalcitItems>, // args
+    Box<CalcitItems>, // body
   ),
   Syntax(CalcitSyntax, String), // name, ns... notice that `ns` is a meta info
 }
@@ -83,12 +85,9 @@ impl fmt::Display for Calcit {
       Calcit::Bool(v) => f.write_str(&format!("{}", v)),
       Calcit::Number(n) => f.write_str(&format!("{}", n)),
       Calcit::Symbol(s, ..) => f.write_str(&format!("'{}", s)),
-      Calcit::Keyword(s) => f.write_str(&format!(":{}", s)),
+      Calcit::Keyword(s) => f.write_str(&format!(":{}", lookup_order_kwd_str(s))),
       Calcit::Str(s) => {
-        lazy_static! {
-          static ref RE_SIMPLE_TOKEN: Regex = Regex::new(r"^[\w\d\-\?!\|]+$").unwrap();
-        }
-        if RE_SIMPLE_TOKEN.is_match(s) {
+        if is_simple_str(s) {
           write!(f, "|{}", s)
         } else {
           write!(f, "\"|{}\"", s.escape_default())
@@ -141,7 +140,7 @@ impl fmt::Display for Calcit {
       Calcit::Macro(name, _def_ns, _, args, body) => {
         f.write_str(&format!("(&macro {} (", name))?;
         let mut need_space = false;
-        for a in args {
+        for a in &**args {
           if need_space {
             f.write_str(" ")?;
           }
@@ -150,7 +149,7 @@ impl fmt::Display for Calcit {
         }
         f.write_str(") (")?;
         need_space = false;
-        for b in body {
+        for b in &**body {
           if need_space {
             f.write_str(" ")?;
           }
@@ -162,7 +161,7 @@ impl fmt::Display for Calcit {
       Calcit::Fn(name, _, _, _, args, body) => {
         f.write_str(&format!("(&fn {} (", name))?;
         let mut need_space = false;
-        for a in args {
+        for a in &**args {
           if need_space {
             f.write_str(" ")?;
           }
@@ -171,7 +170,7 @@ impl fmt::Display for Calcit {
         }
         f.write_str(") (")?;
         need_space = false;
-        for b in body {
+        for b in &**body {
           if need_space {
             f.write_str(" ")?;
           }
@@ -184,8 +183,17 @@ impl fmt::Display for Calcit {
     }
   }
 }
-/// special types wraps vector of calcit data for displaying
 
+fn is_simple_str(tok: &str) -> bool {
+  for c in tok.chars() {
+    if !matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '?' | '!' | '|') {
+      return false;
+    }
+  }
+  true
+}
+
+/// special types wraps vector of calcit data for displaying
 impl fmt::Display for CrListWrap {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.write_str(&format_to_lisp(&Calcit::List(self.0.to_owned()))) // TODO performance
@@ -339,7 +347,7 @@ impl Ord for Calcit {
       (Calcit::Symbol(..), _) => Less,
       (_, Calcit::Symbol(..)) => Greater,
 
-      (Calcit::Keyword(a), Calcit::Keyword(b)) => a.cmp(b),
+      (Calcit::Keyword(a), Calcit::Keyword(b)) => lookup_order_kwd_str(a).cmp(&lookup_order_kwd_str(b)),
       (Calcit::Keyword(_), _) => Less,
       (_, Calcit::Keyword(_)) => Greater,
 
@@ -475,4 +483,23 @@ impl Calcit {
   pub fn lisp_str(&self) -> String {
     format_to_lisp(self)
   }
+}
+
+/// makes sure that keyword is from global dict, not created by fresh
+pub fn load_kwd(s: &str) -> Calcit {
+  Calcit::Keyword(keyword::load_order_key(s))
+}
+
+/// lookup via keyword, better use `lookup_order_kwd_string`
+pub fn lookup_kwd_str(x: Calcit) -> Result<String, String> {
+  match x {
+    Calcit::Keyword(i) => Ok(lookup_order_kwd_str(&i)),
+    _ => Err(format!("expected keyword, but got: {}", x)),
+  }
+}
+
+/// too naive id generator to be safe in WASM
+pub fn gen_core_id() -> String {
+  let c = ID_GEN.fetch_add(1, SeqCst);
+  format!("gen_id_{}", c)
 }

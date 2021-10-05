@@ -22,7 +22,7 @@ pub fn parse_cli<'a>() -> clap::ArgMatches<'a> {
     )
     .arg(
       clap::Arg::with_name("emit-ir")
-        .help("emit JSON representation of program to program-ir.json")
+        .help("emit EDN representation of program to program-ir.cirru")
         .default_value("false")
         .long("emit-ir")
         .takes_value(false),

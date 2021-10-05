@@ -11,7 +11,7 @@ use crate::builtins::{is_js_syntax_procs, is_proc_name};
 use crate::call_stack;
 use crate::call_stack::StackKind;
 use crate::primes;
-use crate::primes::{Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
+use crate::primes::{lookup_order_kwd_str, Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
 use crate::program;
 use crate::util::string::{has_ns_part, matches_digits, matches_js_var, wrap_js_str};
 
@@ -174,8 +174,8 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<Vec<String>>) -
     }
     Calcit::Keyword(s) => {
       let mut kwds = keywords.borrow_mut();
-      kwds.push(s.to_owned());
-      Ok(format!("_kwd[{}]", escape_cirru_str(s)))
+      kwds.push(lookup_order_kwd_str(s));
+      Ok(format!("_kwd[{}]", escape_cirru_str(&lookup_order_kwd_str(s))))
     }
     _ => unreachable!(format!("Unexpected data in quote for js: {}", xs)),
   }
@@ -206,7 +206,8 @@ fn to_js_code(
   } else {
     let ret = match xs {
       Calcit::Symbol(s, def_ns, at_def, resolved) => {
-        gen_symbol_code(s, def_ns, at_def, resolved, ns, xs, local_defs, file_imports)
+        let resolved_info = resolved.to_owned().map(|v| *v.to_owned());
+        gen_symbol_code(s, def_ns, at_def, &resolved_info, ns, xs, local_defs, file_imports)
       }
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
@@ -239,8 +240,8 @@ fn to_js_code(
       Calcit::Nil => Ok(String::from("null")),
       Calcit::Keyword(s) => {
         let mut kwds = keywords.borrow_mut();
-        kwds.push(s.to_owned());
-        Ok(format!("_kwd[{}]", wrap_js_str(s)))
+        kwds.push(lookup_order_kwd_str(s));
+        Ok(format!("_kwd[{}]", wrap_js_str(&lookup_order_kwd_str(s))))
       }
       Calcit::List(_) => unreachable!("[Error] list handled in another branch"),
       a => unreachable!(format!("[Error] unknown kind to gen js code: {}", a)),
@@ -574,10 +575,10 @@ fn gen_symbol_code(
   // println!("gen symbol: {} {} {} {:?}", s, def_ns, ns, resolved);
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
   if has_ns_part(s) {
-    let ns_part = s.split('/').collect::<Vec<&str>>()[0]; // TODO
-    if ns_part == "js" {
+    if s.starts_with("js/") {
       Ok(escape_ns_var(s, "js"))
     } else {
+      let ns_part = s.split('/').collect::<Vec<&str>>()[0];
       // TODO ditry code
       // TODO namespace part supposed be parsed during preprocessing, this mimics old behaviors
       match resolved {
@@ -1082,7 +1083,7 @@ fn contains_symbol(xs: &Calcit, y: &str) -> bool {
     Calcit::Symbol(s, ..) => s == y,
     Calcit::Thunk(code, _) => contains_symbol(code, y),
     Calcit::Fn(_, _, _, _, _, body) => {
-      for x in body {
+      for x in &**body {
         if contains_symbol(x, y) {
           return true;
         }
