@@ -2,7 +2,8 @@
 export const calcit_version = "0.5.0-a1";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
-import { parse } from "@cirru/parser.ts";
+import { parse, ICirruNode } from "@cirru/parser.ts";
+import { writeCirruCode } from "@cirru/writer.ts";
 
 import { CalcitValue } from "./js-primes";
 import { CalcitSymbol, CalcitKeyword, CalcitRef, CalcitFn, CalcitRecur, kwd, refsRegistry, toString, getStringName, to_js_data, _$n__$e_ } from "./calcit-data";
@@ -1141,6 +1142,30 @@ export let format_to_lisp = (x: CalcitValue): string => {
     }
     chunk += ")";
     return chunk;
+  } else if (typeof x === "string") {
+    return JSON.stringify("|" + x);
+  } else {
+    return x.toString();
+  }
+};
+
+export let format_to_cirru = (x: CalcitValue): string => {
+  let xs = transform_code_to_cirru(x);
+  console.log("tree", xs);
+  return writeCirruCode([xs], { useInline: false });
+};
+
+export let transform_code_to_cirru = (x: CalcitValue): ICirruNode => {
+  if (x == null) {
+    return "nil";
+  } else if (x instanceof CalcitSymbol) {
+    return x.value;
+  } else if (x instanceof CalcitList) {
+    let xs: ICirruNode[] = [];
+    for (let item of x.items()) {
+      xs.push(transform_code_to_cirru(item));
+    }
+    return xs;
   } else if (typeof x === "string") {
     return JSON.stringify("|" + x);
   } else {

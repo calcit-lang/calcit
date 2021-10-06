@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@calcit/ternary-tree": "0.0.16",
-    "@cirru/parser.ts": "^0.0.3",
+    "@cirru/parser.ts": "^0.0.4",
     "@cirru/writer.ts": "^0.1.3"
   }
 }
