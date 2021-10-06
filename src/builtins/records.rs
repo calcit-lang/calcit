@@ -4,31 +4,32 @@ use std::ops::Rem;
 use crate::primes::{keyword::load_order_key, lookup_order_kwd_str, Calcit, CalcitItems};
 
 pub fn new_record(xs: &CalcitItems) -> Result<Calcit, String> {
-  match xs.get(0) {
-    Some(Calcit::Symbol(s, ..)) => {
-      let mut fields: Vec<usize> = vec![];
-      let mut values: Vec<Calcit> = vec![];
+  let name_id: usize = match xs.get(0) {
+    Some(Calcit::Symbol(s, ..)) => load_order_key(s),
+    Some(Calcit::Keyword(k)) => k.to_owned(),
+    Some(a) => return Err(format!("new-record expected a name, got {}", a)),
+    None => return Err(format!("new-record expected arguments, got {:?}", xs)),
+  };
 
-      for (idx, x) in xs.iter().enumerate() {
-        if idx > 0 {
-          match x {
-            Calcit::Symbol(s, ..) | Calcit::Str(s) => {
-              fields.push(load_order_key(s));
-            }
-            Calcit::Keyword(s) => {
-              fields.push(s.to_owned());
-            }
-            a => return Err(format!("new-record fields accepets keyword/string, got a {}", a)),
-          }
-          values.push(Calcit::Nil);
+  let mut fields: Vec<usize> = vec![];
+  let mut values: Vec<Calcit> = vec![];
+
+  for (idx, x) in xs.iter().enumerate() {
+    if idx > 0 {
+      match x {
+        Calcit::Symbol(s, ..) | Calcit::Str(s) => {
+          fields.push(load_order_key(s));
         }
+        Calcit::Keyword(s) => {
+          fields.push(s.to_owned());
+        }
+        a => return Err(format!("new-record fields accepets keyword/string, got a {}", a)),
       }
-      fields.sort_unstable(); // all values are nil
-      Ok(Calcit::Record(s.to_owned(), fields, values))
+      values.push(Calcit::Nil);
     }
-    Some(a) => Err(format!("new-record expected a name, got {}", a)),
-    None => Err(format!("new-record expected arguments, got {:?}", xs)),
   }
+  fields.sort_unstable(); // all values are nil
+  Ok(Calcit::Record(name_id.to_owned(), fields, values))
 }
 pub fn call_record(xs: &CalcitItems) -> Result<Calcit, String> {
   let args_size = xs.len();
@@ -119,7 +120,7 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, String> {
 
 pub fn get_record_name(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
-    Some(Calcit::Record(name, ..)) => Ok(Calcit::Str(name.to_owned())),
+    Some(Calcit::Record(name, ..)) => Ok(Calcit::Keyword(*name)),
     Some(a) => Err(format!("&record:get-name expected record, got: {}", a)),
     None => Err(String::from("&record:get-name expected record, got nothing")),
   }
@@ -297,11 +298,11 @@ fn extend_record_field(
     next_values.push(new_value.to_owned());
   }
 
-  let new_name: Result<String, String> = match n {
-    Calcit::Str(s) | Calcit::Symbol(s, ..) => Ok(s.to_owned()),
-    Calcit::Keyword(s) => Ok(lookup_order_kwd_str(s)),
-    _ => Err(format!("")),
+  let new_name_id: Result<usize, String> = match n {
+    Calcit::Str(s) | Calcit::Symbol(s, ..) => Ok(load_order_key(s)),
+    Calcit::Keyword(s) => Ok(s.to_owned()),
+    _ => Err(String::from("expected record name")),
   };
 
-  Ok(Calcit::Record(new_name?, next_fields, next_values))
+  Ok(Calcit::Record(new_name_id?, next_fields, next_values))
 }

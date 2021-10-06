@@ -110,12 +110,12 @@
 
             let
                 Person $ new-record 'Person :name :age
-                edn-demo "|%{} Person (age 23) (name |Chen)"
+                edn-demo "|%{} :Person (:age 23) (:name |Chen)"
 
               ; "no stable order"
               assert=
                 count $ pr-str $ %{} Person (:name |Chen) (:age 23)
-                count "|(%{} Person (name |Chen) (age 23))"
+                count "|(%{} :Person (:name |Chen) (:age 23))"
               ; "no stable order"
               assert=
                 count edn-demo
@@ -151,7 +151,7 @@
               assert= "|do 's"
                 trim $ format-cirru-edn 's
 
-              assert= "|:: |&core-list-class $ [] 1 2 3"
+              assert= "|:: :&core-list-class $ [] 1 2 3"
                 trim $ format-cirru-edn $ :: &core-list-class $ [] 1 2 3
 
               assert= (.escape "|\n") "|\"\\n\""

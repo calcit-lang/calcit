@@ -11,8 +11,8 @@
           fn ()
             log-title "|Testing record"
             let
-                Person $ new-record 'Person :name :age :position
-                City $ new-record 'City :name :province
+                Person $ new-record :Person :name :age :position
+                City $ new-record :City :name :province
                 p1 $ %{} Person
                   :name |Chen
                   :age 20
@@ -96,7 +96,7 @@
           fn ()
             log-title "|Testing record methods"
 
-            assert= |Cat
+            assert= :Cat
               .get-name Cat
 
             let
@@ -127,7 +127,7 @@
               &let
                 persian $ .extend-as kitty :Persian :age 10
                 assert= 10 $ .get persian :age
-                assert= |Persian $ .get-name persian
+                assert= :Persian $ .get-name persian
 
         |main! $ quote
           defn main! ()

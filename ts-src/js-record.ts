@@ -5,11 +5,11 @@ import { kwd, castKwd, toString, CalcitKeyword, getStringName, findInFields } fr
 import { CalcitMap } from "./js-map";
 
 export class CalcitRecord {
-  name: string;
+  name: CalcitKeyword;
   fields: Array<CalcitKeyword>;
   values: Array<CalcitValue>;
   cachedHash: Hash;
-  constructor(name: string, fields: Array<CalcitKeyword>, values?: Array<CalcitValue>) {
+  constructor(name: CalcitKeyword, fields: Array<CalcitKeyword>, values?: Array<CalcitValue>) {
     this.name = name;
     let fieldNames = fields.map(getStringName).map(kwd);
     this.fields = fieldNames;
@@ -84,7 +84,7 @@ export let new_record = (name: CalcitValue, ...fields: Array<CalcitValue>): Calc
         return 0;
       }
     });
-  return new CalcitRecord(getStringName(name), fieldNames);
+  return new CalcitRecord(castKwd(name), fieldNames);
 };
 
 let fieldPairOrder = (a: [string, CalcitValue], b: [string, CalcitValue]) => {
@@ -148,7 +148,7 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
   }
 };
 
-export let _$n_record_$o_get_name = (x: CalcitRecord): string => {
+export let _$n_record_$o_get_name = (x: CalcitRecord): CalcitKeyword => {
   if (x instanceof CalcitRecord) {
     return x.name;
   } else {
@@ -229,7 +229,7 @@ export function _$n_record_$o_extend_as(obj: CalcitValue, new_name: CalcitValue,
   if (arguments.length !== 4) throw new Error(`Expected 4 arguments, got ${arguments.length}`);
   if (!(obj instanceof CalcitRecord)) throw new Error("Expected record");
   let field = getStringName(new_key);
-  let new_name_string = getStringName(new_name);
+  let new_name_kwd = castKwd(new_name);
   let new_fields: CalcitKeyword[] = [];
   let new_values: CalcitValue[] = [];
   let inserted = false;
@@ -259,5 +259,5 @@ export function _$n_record_$o_extend_as(obj: CalcitValue, new_name: CalcitValue,
     new_values.push(new_value);
   }
 
-  return new CalcitRecord(new_name_string, new_fields, new_values);
+  return new CalcitRecord(new_name_kwd, new_fields, new_values);
 }

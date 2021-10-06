@@ -1179,12 +1179,12 @@
         |defrecord $ quote
           defmacro defrecord (name & xs)
             quasiquote
-              new-record (quote ~name) ~@xs
+              new-record (~ (turn-keyword name)) ~@xs
 
         |defrecord! $ quote
           defmacro defrecord! (name & pairs)
             quasiquote
-              %{} (new-record (quote ~name) (~@ (map pairs &list:first))) ~@pairs
+              %{} (new-record (~ (turn-keyword name)) (~@ (map pairs &list:first))) ~@pairs
 
         |;nil $ quote
           defmacro ;nil (& _body) nil

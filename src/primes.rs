@@ -58,7 +58,7 @@ pub enum Calcit {
   List(CalcitItems),
   Set(im::HashSet<Calcit>),
   Map(im::HashMap<Calcit, Calcit>),
-  Record(String, Vec<usize>, Vec<Calcit>),
+  Record(usize, Vec<usize>, Vec<Calcit>), // usize of keyword id
   Proc(String),
   Macro(
     String,           // name
@@ -130,9 +130,13 @@ impl fmt::Display for Calcit {
         Ok(())
       }
       Calcit::Record(name, fields, values) => {
-        f.write_str(&format!("(%{{}} {}", name))?;
+        f.write_str(&format!("(%{{}} {}", Calcit::Keyword(*name)))?;
         for idx in 0..fields.len() {
-          f.write_str(&format!(" ({} {})", lookup_order_kwd_str(&fields[idx]), values[idx]))?;
+          f.write_str(&format!(
+            " ({} {})",
+            Calcit::Keyword(fields[idx].to_owned()),
+            values[idx]
+          ))?;
         }
         f.write_str(")")
       }

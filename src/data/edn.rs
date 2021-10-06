@@ -43,7 +43,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
           calcit_to_edn(&values[idx])?,
         ));
       }
-      Ok(Edn::Record(name.to_owned(), entries))
+      Ok(Edn::Record(lookup_order_kwd_str(name), entries))
     }
     Calcit::Fn(name, ..) => Err(format!("unable to generate EDN from function: {}", name)),
     Calcit::Proc(name) => Ok(Edn::Symbol(name.to_owned())),
@@ -61,7 +61,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
           }
         }
         Calcit::Record(name, _, _) => Ok(Edn::Tuple(
-          Box::new(Edn::Str(name.to_owned())),
+          Box::new(Edn::Keyword(lookup_order_kwd_str(name))),
           Box::new(calcit_to_edn(data)?),
         )),
         v => {
@@ -127,7 +127,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
         fields.push(load_order_key(&v.0).to_owned());
         values.push(edn_to_calcit(&v.1));
       }
-      Calcit::Record(name.to_owned(), fields, values)
+      Calcit::Record(load_order_key(name), fields, values)
     }
   }
 }
