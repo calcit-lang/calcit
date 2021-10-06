@@ -712,8 +712,13 @@ export let _$n_merge = (a: CalcitValue, b: CalcitMap): CalcitValue => {
         values.push(item);
       }
       for (let [k, v] of b.pairs()) {
-        let field = getStringName(k);
-        let idx = a.fields.indexOf(field);
+        let field: CalcitKeyword;
+        if (k instanceof CalcitKeyword) {
+          field = k;
+        } else {
+          field = kwd(getStringName(k));
+        }
+        let idx = a.findIndex(field);
         if (idx >= 0) {
           values[idx] = v;
         } else {
@@ -753,7 +758,7 @@ export let to_pairs = (xs: CalcitValue): CalcitValue => {
   } else if (xs instanceof CalcitRecord) {
     let arr_result: Array<CalcitList> = [];
     for (let idx in xs.fields) {
-      arr_result.push(new CalcitList([kwd(xs.fields[idx]), xs.values[idx]]));
+      arr_result.push(new CalcitList([xs.fields[idx], xs.values[idx]]));
     }
     return new CalcitSet(arr_result);
   } else {

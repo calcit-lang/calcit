@@ -114,16 +114,16 @@ export let getStringName = (x: CalcitValue): string => {
 };
 
 /** returns -1 when not found */
-export function findInFields(xs: Array<string>, y: string): number {
+export function findInFields(xs: Array<CalcitKeyword>, y: CalcitKeyword): number {
   let lower = 0;
   let upper = xs.length - 1;
 
   while (upper - lower > 1) {
     let pos = (lower + upper) >> 1;
     let v = xs[pos];
-    if (y < v) {
+    if (y.value < v.value) {
       upper = pos - 1;
-    } else if (y > v) {
+    } else if (y.value > v.value) {
       lower = pos + 1;
     } else {
       return pos;
@@ -146,6 +146,19 @@ export let kwd = (content: string) => {
     keywordRegistery[content] = v;
     return v;
   }
+};
+
+export let castKwd = (x: CalcitValue): CalcitKeyword => {
+  if (typeof x === "string") {
+    return kwd(x);
+  }
+  if (x instanceof CalcitKeyword) {
+    return x;
+  }
+  if (x instanceof CalcitSymbol) {
+    return kwd(x.value);
+  }
+  throw new Error("Cannot cast thst to keyword");
 };
 
 export var refsRegistry = new Map<string, CalcitRef>();
@@ -379,7 +392,7 @@ export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
   if (x instanceof CalcitRecord) {
     let result: Record<string, CalcitValue> = {};
     for (let idx in x.fields) {
-      result[x.fields[idx]] = to_js_data(x.values[idx]);
+      result[x.fields[idx].value] = to_js_data(x.values[idx]);
     }
     return result;
   }
