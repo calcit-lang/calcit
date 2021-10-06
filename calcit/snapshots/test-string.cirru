@@ -200,6 +200,22 @@
               format-to-lisp $ quote $ nil? nil
               , "|(nil? nil)"
 
+            inside-eval:
+              assert=
+                format-to-cirru $ macroexpand-all $ quote
+                  let ((a 1) (b :d) (c |c)) (+ a b c)
+                format-cirru $ []
+                  [] |&let ([] |a |1)
+                    [] |&let ([] |b |:d)
+                      [] |&let ([] |c ||c)
+                        [] |+ |a |b |c
+
+            assert=
+              trim $ format-to-cirru $ quote
+                defn (a b)
+                  + a b
+              , "|defn (a b)\n  + a b"
+
         |test-methods $ quote
           defn test-methods ()
             log-title "|Testing string methods"

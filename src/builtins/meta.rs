@@ -11,7 +11,7 @@ use crate::program;
 use crate::runner;
 use crate::util::number::f64_to_usize;
 
-use cirru_parser::Cirru;
+use cirru_parser::{Cirru, CirruWriterOptions};
 
 use std::cmp::Ordering;
 use std::sync::atomic;
@@ -56,6 +56,31 @@ pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(v) => Ok(Calcit::Str(v.lisp_str())),
     None => Err(String::from("format-to-lisp expected 1 argument")),
+  }
+}
+
+pub fn format_to_cirru(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(v) => {
+      cirru_parser::format(&[transform_code_to_cirru(v)], CirruWriterOptions { use_inline: false }).map(Calcit::Str)
+    }
+    None => Err(String::from("format-to-cirru expected 1 argument")),
+  }
+}
+
+fn transform_code_to_cirru(x: &Calcit) -> Cirru {
+  match x {
+    Calcit::List(ys) => {
+      let mut xs: Vec<Cirru> = vec![];
+      for y in ys {
+        xs.push(transform_code_to_cirru(y));
+      }
+      Cirru::List(xs)
+    }
+    Calcit::Symbol(s, ..) => Cirru::Leaf(s.to_owned()),
+    Calcit::Syntax(s, _ns) => Cirru::Leaf(s.to_string()),
+    Calcit::Proc(s) => Cirru::Leaf(s.to_owned()),
+    a => Cirru::Leaf(format!("{}", a)),
   }
 }
 

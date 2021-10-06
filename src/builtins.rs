@@ -30,6 +30,7 @@ pub fn is_proc_name(s: &str) -> bool {
     "type-of"
       | "recur"
       | "format-to-lisp"
+      | "format-to-cirru"
       | "gensym"
       | "&reset-gensym-index!"
       | "&get-calcit-running-mode"
@@ -198,6 +199,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "type-of" => meta::type_of(args),
     "recur" => meta::recur(args),
     "format-to-lisp" => meta::format_to_lisp(args),
+    "format-to-cirru" => meta::format_to_cirru(args),
     "gensym" => meta::gensym(args),
     "&reset-gensym-index!" => meta::reset_gensym_index(args),
     "&get-calcit-running-mode" => effects::calcit_running_mode(args),
