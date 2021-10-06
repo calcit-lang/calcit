@@ -50,7 +50,7 @@
 
               assert=
                 keys p2
-                [] :age :name :position
+                #{} :age :name :position
 
               assert-detect identity $ &record:matches? p1 p1
               assert-detect identity $ &record:matches? p1 p2
@@ -82,9 +82,6 @@
               assert-detect identity $ contains? p1 :name
               assert-detect not $ contains? p1 :surname
               assert= 3 $ count p1
-              assert=
-                nth p1 1
-                [] :name |Chen
 
               assert= 21
                 get (update p1 :age inc) :age
@@ -126,9 +123,6 @@
               assert=
                 .from-map kitty $ &{} :name |kitty :color :red
                 %{} kitty (:name |kitty) (:color :red)
-              assert=
-                [] :color :red
-                .nth kitty 0
 
               &let
                 persian $ .extend-as kitty :Persian :age 10

@@ -139,8 +139,8 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       if (typeof name != "string") {
         throw new Error("Expected string for record name");
       }
-      let fields: Array<string> = [];
-      let values: Array<CalcitValue> = [];
+      // put to entries first, sort and then...
+      let entries: Array<[string, CalcitValue]> = [];
       x.forEach((pair, idx) => {
         if (idx <= 1) {
           return; // skip %{} name
@@ -148,15 +148,30 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
 
         if (pair instanceof Array && pair.length == 2) {
           if (typeof pair[0] === "string") {
-            fields.push(pair[0]);
+            entries.push([pair[0], extract_cirru_edn(pair[1])]);
           } else {
             throw new Error("Expected string as field");
           }
-          values.push(extract_cirru_edn(pair[1]));
         } else {
           throw new Error("Expected pairs for map");
         }
       });
+      entries.sort((a, b) => {
+        if (a[0] < b[0]) {
+          return -1;
+        } else if (a[0] > b[0]) {
+          return 1;
+        } else {
+          return 0;
+        }
+      });
+      let fields: Array<string> = [];
+      let values: Array<CalcitValue> = [];
+
+      for (let idx = 0; idx < entries.length; idx++) {
+        fields.push(entries[idx][0]);
+        values.push(entries[idx][1]);
+      }
       return new CalcitRecord(name, fields, values);
     }
     if (x[0] === "[]") {

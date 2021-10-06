@@ -180,7 +180,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&record:to-map"
       | "&record:count"
       | "&record:contains?"
-      | "&record:nth"
       | "&record:get"
       | "&record:assoc"
       | "&record:extend-as"
@@ -349,7 +348,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
     "&record:matches?" => records::matches(args),
     "&record:count" => records::count(args),
     "&record:contains?" => records::contains_ques(args),
-    "&record:nth" => records::nth(args),
     "&record:get" => records::get(args),
     "&record:assoc" => records::assoc(args),
     "&record:extend-as" => records::extend_as(args),

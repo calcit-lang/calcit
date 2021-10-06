@@ -4,7 +4,9 @@ use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
 use crate::primes;
-use crate::primes::{gen_core_id, load_kwd, lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap};
+use crate::primes::{
+  gen_core_id, keyword::load_order_key, load_kwd, lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap,
+};
 use crate::program;
 use crate::runner;
 use crate::util::number::f64_to_usize;
@@ -289,7 +291,7 @@ pub fn invoke_method(
   };
   match &class {
     Calcit::Record(_, fields, values) => {
-      match find_in_fields(fields, name) {
+      match find_in_fields(fields, load_order_key(name)) {
         Some(idx) => {
           let mut method_args: im::Vector<Calcit> = im::vector![];
           method_args.push_back(value);
@@ -315,7 +317,13 @@ pub fn invoke_method(
             y => Err(format!("expected a function to invoke, got: {}", y)),
           }
         }
-        None => Err(format!("missing field `{}` in {}", name, fields.join(","))),
+        None => {
+          let mut content = String::from("");
+          for k in fields {
+            content = format!("{},{}", content, lookup_order_kwd_str(k))
+          }
+          Err(format!("missing field `{}` in {}", name, content))
+        }
       }
     }
     x => Err(format!("method invoking expected a record as class, got: {}", x)),

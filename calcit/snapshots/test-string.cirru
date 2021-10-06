@@ -111,11 +111,15 @@
             let
                 Person $ new-record 'Person :name :age
                 edn-demo "|%{} Person (age 23) (name |Chen)"
+
+              ; "no stable order"
               assert=
-                pr-str $ %{} Person (:name |Chen) (:age 23)
-                , "|(%{} Person (age 23) (name |Chen))"
-              assert= edn-demo
-                trim $ format-cirru-edn $ %{} Person (:name |Chen) (:age 23)
+                count $ pr-str $ %{} Person (:name |Chen) (:age 23)
+                count "|(%{} Person (name |Chen) (age 23))"
+              ; "no stable order"
+              assert=
+                count edn-demo
+                count $ trim $ format-cirru-edn $ %{} Person (:name |Chen) (:age 23)
 
               assert=
                 parse-cirru-edn edn-demo

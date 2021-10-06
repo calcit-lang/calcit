@@ -1,6 +1,6 @@
 use crate::data::cirru;
 use crate::primes;
-use crate::primes::{load_kwd, lookup_order_kwd_str, Calcit};
+use crate::primes::{keyword::load_order_key, load_kwd, lookup_order_kwd_str, Calcit};
 use cirru_edn::Edn;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
@@ -38,7 +38,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Record(name, fields, values) => {
       let mut entries: Vec<(String, Edn)> = vec![];
       for idx in 0..fields.len() {
-        entries.push((fields[idx].to_owned(), calcit_to_edn(&values[idx])?));
+        entries.push((
+          lookup_order_kwd_str(&fields[idx]).to_owned(),
+          calcit_to_edn(&values[idx])?,
+        ));
       }
       Ok(Edn::Record(name.to_owned(), entries))
     }
@@ -116,10 +119,12 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       Calcit::Map(ys)
     }
     Edn::Record(name, entries) => {
-      let mut fields: Vec<String> = vec![];
+      let mut fields: Vec<usize> = vec![];
       let mut values: Vec<Calcit> = vec![];
-      for v in entries {
-        fields.push(v.0.to_owned());
+      let mut sorted = entries.to_owned();
+      sorted.sort_by(|(a, _), (b, _)| load_order_key(a).cmp(&load_order_key(b)));
+      for v in sorted {
+        fields.push(load_order_key(&v.0).to_owned());
         values.push(edn_to_calcit(&v.1));
       }
       Calcit::Record(name.to_owned(), fields, values)

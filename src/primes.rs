@@ -58,7 +58,7 @@ pub enum Calcit {
   List(CalcitItems),
   Set(im::HashSet<Calcit>),
   Map(im::HashMap<Calcit, Calcit>),
-  Record(String, Vec<String>, Vec<Calcit>),
+  Record(String, Vec<usize>, Vec<Calcit>),
   Proc(String),
   Macro(
     String,           // name
@@ -132,7 +132,7 @@ impl fmt::Display for Calcit {
       Calcit::Record(name, fields, values) => {
         f.write_str(&format!("(%{{}} {}", name))?;
         for idx in 0..fields.len() {
-          f.write_str(&format!(" ({} {})", fields[idx], values[idx]))?;
+          f.write_str(&format!(" ({} {})", lookup_order_kwd_str(&fields[idx]), values[idx]))?;
         }
         f.write_str(")")
       }

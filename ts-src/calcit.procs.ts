@@ -268,20 +268,6 @@ export let _$n_tuple_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   throw new Error("Does not support `nth` on this type");
 };
 
-export let _$n_record_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
-  if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
-  if (typeof k !== "number") throw new Error("Expected number index for a list");
-
-  if (xs instanceof CalcitRecord) {
-    if (k < 0 || k >= xs.fields.length) {
-      throw new Error("Out of bound");
-    }
-    return new CalcitList([kwd(xs.fields[k]), xs.values[k]]);
-  }
-
-  throw new Error("Does not support `nth` on this type");
-};
-
 export let _$n_record_$o_get = function (xs: CalcitValue, k: CalcitValue) {
   if (arguments.length !== 2) {
     throw new Error("record &get takes 2 arguments");
@@ -769,7 +755,7 @@ export let to_pairs = (xs: CalcitValue): CalcitValue => {
     for (let idx in xs.fields) {
       arr_result.push(new CalcitList([kwd(xs.fields[idx]), xs.values[idx]]));
     }
-    return new CalcitList(arr_result);
+    return new CalcitSet(arr_result);
   } else {
     throw new Error("Expected a map");
   }

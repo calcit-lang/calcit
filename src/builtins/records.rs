@@ -1,31 +1,29 @@
 use std::cmp::Ordering;
 use std::ops::Rem;
 
-use crate::primes::{load_kwd, lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap};
-use crate::util::number::f64_to_usize;
+use crate::primes::{keyword::load_order_key, lookup_order_kwd_str, Calcit, CalcitItems};
 
 pub fn new_record(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(Calcit::Symbol(s, ..)) => {
-      let mut fields: Vec<String> = vec![];
+      let mut fields: Vec<usize> = vec![];
       let mut values: Vec<Calcit> = vec![];
 
       for (idx, x) in xs.iter().enumerate() {
         if idx > 0 {
           match x {
             Calcit::Symbol(s, ..) | Calcit::Str(s) => {
-              fields.push(s.to_owned());
-              values.push(Calcit::Nil);
+              fields.push(load_order_key(s));
             }
             Calcit::Keyword(s) => {
-              fields.push(lookup_order_kwd_str(s));
-              values.push(Calcit::Nil);
+              fields.push(s.to_owned());
             }
             a => return Err(format!("new-record fields accepets keyword/string, got a {}", a)),
           }
+          values.push(Calcit::Nil);
         }
       }
-      fields.sort();
+      fields.sort_unstable(); // all values are nil
       Ok(Calcit::Record(s.to_owned(), fields, values))
     }
     Some(a) => Err(format!("new-record expected a name, got {}", a)),
@@ -44,23 +42,23 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, String> {
         if size != def_fields.len() {
           return Err(format!("unexpected size in &%{{}}, {} .. {}", size, def_fields.len()));
         }
-        let mut fields: Vec<String> = def_fields.to_owned();
+        let mut fields: Vec<usize> = def_fields.to_owned();
         let mut values: Vec<Calcit> = v0.to_owned();
 
         for idx in 0..size {
           let k_idx = idx * 2 + 1;
           let v_idx = k_idx + 1;
           match &xs[k_idx] {
-            Calcit::Keyword(s) => match find_in_fields(def_fields, &lookup_order_kwd_str(s)) {
+            Calcit::Keyword(s) => match find_in_fields(def_fields, s.to_owned()) {
               Some(pos) => {
-                fields[pos] = lookup_order_kwd_str(s);
+                fields[pos] = s.to_owned();
                 values[pos] = xs[v_idx].to_owned();
               }
               None => return Err(format!("unexpected field {} for {:?}", s, def_fields)),
             },
-            Calcit::Symbol(s, ..) | Calcit::Str(s) => match find_in_fields(def_fields, s) {
+            Calcit::Symbol(s, ..) | Calcit::Str(s) => match find_in_fields(def_fields, load_order_key(s)) {
               Some(pos) => {
-                fields[pos] = s.to_owned();
+                fields[pos] = load_order_key(s);
                 values[pos] = xs[v_idx].to_owned();
               }
               None => return Err(format!("unexpected field {} for {:?}", s, def_fields)),
@@ -82,7 +80,6 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(name, fields, _values)), Some(Calcit::Map(ys))) => {
       let mut pairs: Vec<(String, Calcit)> = vec![];
-      let mut values: Vec<Calcit> = vec![];
       for (k, v) in ys {
         match k {
           Calcit::Str(s) => {
@@ -97,19 +94,22 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, String> {
       if fields.len() != pairs.len() {
         return Err(format!("invalid fields {:?} for record {:?}", pairs, fields));
       }
-      pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+      pairs.sort_by(|(a, _), (b, _)| load_order_key(a).cmp(&load_order_key(b)));
+      let mut values: Vec<Calcit> = vec![];
       for idx in 0..fields.len() {
         let (k, v) = &pairs[idx];
-        if &fields[idx] == k {
+        if fields[idx] == load_order_key(k) {
           values.push(v.to_owned());
         } else {
           return Err(format!(
             "field mismatch: {} {} in {:?} {:?}",
-            k, fields[idx], fields, pairs
+            load_order_key(k),
+            fields[idx],
+            fields,
+            pairs
           ));
         }
       }
-      pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
       Ok(Calcit::Record(name.to_owned(), fields.to_owned(), values))
     }
     (Some(a), Some(b)) => Err(format!("&record:from-map expected a record and a map, got {} {}", a, b)),
@@ -129,7 +129,7 @@ pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, String> {
     Some(Calcit::Record(_name, fields, values)) => {
       let mut ys: im::HashMap<Calcit, Calcit> = im::HashMap::new();
       for idx in 0..fields.len() {
-        ys.insert(load_kwd(&fields[idx]), values[idx].to_owned());
+        ys.insert(Calcit::Keyword(fields[idx].to_owned()), values[idx].to_owned());
       }
       Ok(Calcit::Map(ys))
     }
@@ -147,7 +147,7 @@ pub fn matches(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn find_in_fields(xs: &[String], y: &str) -> Option<usize> {
+pub fn find_in_fields(xs: &[usize], y: usize) -> Option<usize> {
   if xs.is_empty() {
     return None;
   }
@@ -182,8 +182,8 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, _)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Symbol(k, ..) => Ok(Calcit::Bool(find_in_fields(fields, k).is_some())),
-      Calcit::Keyword(k) => Ok(Calcit::Bool(find_in_fields(fields, &lookup_order_kwd_str(k)).is_some())),
+      Calcit::Str(k) | Calcit::Symbol(k, ..) => Ok(Calcit::Bool(find_in_fields(fields, load_order_key(k)).is_some())),
+      Calcit::Keyword(k) => Ok(Calcit::Bool(find_in_fields(fields, k.to_owned()).is_some())),
       a => Err(format!("contains? got invalid field for record: {}", a)),
     },
     (Some(a), ..) => Err(format!("record contains? expected a record, got: {}", a)),
@@ -191,38 +191,14 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, String> {
   }
 }
 
-pub fn nth(xs: &CalcitItems) -> Result<Calcit, String> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Record(_name, fields, values)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(idx) => {
-        if idx < fields.len() {
-          Ok(Calcit::List(im::vector![
-            load_kwd(&fields[idx]),
-            values[idx].to_owned()
-          ]))
-        } else {
-          Ok(Calcit::Nil)
-        }
-      }
-      Err(e) => Err(format!("record nth expect usize, {}", e)),
-    },
-    (Some(_), None) => Err(format!("record nth expected a record and index, got: {:?}", xs)),
-    (None, Some(_)) => Err(format!("record nth expected a record and index, got: {:?}", xs)),
-    (_, _) => Err(format!(
-      "record nth expected 2 argument, got: {}",
-      CrListWrap(xs.to_owned())
-    )),
-  }
-}
-
 pub fn get(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, values)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Symbol(k, ..) => match find_in_fields(fields, k) {
+      Calcit::Str(k) | Calcit::Symbol(k, ..) => match find_in_fields(fields, load_order_key(k)) {
         Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
-      Calcit::Keyword(k) => match find_in_fields(fields, &lookup_order_kwd_str(k)) {
+      Calcit::Keyword(k) => match find_in_fields(fields, k.to_owned()) {
         Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
@@ -236,7 +212,7 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, String> {
 pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Record(name, fields, values)), Some(a), Some(b)) => match a {
-      Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
+      Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, load_order_key(s)) {
         Some(pos) => {
           let mut new_values = values.to_owned();
           new_values[pos] = b.to_owned();
@@ -244,7 +220,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
         }
         None => Err(format!("invalid field `{}` for {:?}", s, fields)),
       },
-      Calcit::Keyword(s) => match find_in_fields(fields, &lookup_order_kwd_str(s)) {
+      Calcit::Keyword(s) => match find_in_fields(fields, s.to_owned()) {
         Some(pos) => {
           let mut new_values = values.to_owned();
           new_values[pos] = b.to_owned();
@@ -265,11 +241,11 @@ pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, String> {
   }
   match (xs.get(0), xs.get(1), xs.get(2), xs.get(3)) {
     (Some(Calcit::Record(_name, fields, values)), Some(n), Some(a), Some(new_value)) => match a {
-      Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
+      Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, load_order_key(s)) {
         Some(_pos) => Err(format!("field `{}` already existed", s)),
         None => extend_record_field(s, n, fields, values, new_value),
       },
-      Calcit::Keyword(s) => match find_in_fields(fields, &lookup_order_kwd_str(s)) {
+      Calcit::Keyword(s) => match find_in_fields(fields, s.to_owned()) {
         Some(_pos) => Err(format!("field `{}` already existed", s)),
         None => extend_record_field(&lookup_order_kwd_str(s), n, fields, values, new_value),
       },
@@ -283,22 +259,23 @@ pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, String> {
 fn extend_record_field(
   s: &str,
   n: &Calcit,
-  fields: &[String],
+  fields: &[usize],
   values: &[Calcit],
   new_value: &Calcit,
 ) -> Result<Calcit, String> {
-  let mut next_fields: Vec<String> = vec![];
+  let mut next_fields: Vec<usize> = vec![];
   let mut next_values: Vec<Calcit> = vec![];
   let mut inserted: bool = false;
+  let idx_s = load_order_key(s);
 
   for (i, k) in fields.iter().enumerate() {
     if inserted {
       next_fields.push(k.to_owned());
       next_values.push(values[i].to_owned());
     } else {
-      match s.cmp(k) {
+      match idx_s.cmp(k) {
         Ordering::Less => {
-          next_fields.push(s.to_owned());
+          next_fields.push(idx_s);
           next_values.push(new_value.to_owned());
 
           next_fields.push(k.to_owned());
@@ -316,7 +293,7 @@ fn extend_record_field(
     }
   }
   if !inserted {
-    next_fields.push(s.to_owned());
+    next_fields.push(idx_s.to_owned());
     next_values.push(new_value.to_owned());
   }
 

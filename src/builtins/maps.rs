@@ -1,5 +1,5 @@
 use crate::builtins::records::find_in_fields;
-use crate::primes::{load_kwd, lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap};
+use crate::primes::{keyword::load_order_key, Calcit, CalcitItems, CrListWrap};
 
 use crate::util::number::is_even;
 
@@ -68,11 +68,11 @@ pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, String> {
       let mut new_values = values.to_owned();
       for (k, v) in ys {
         match k {
-          Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, s) {
+          Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, load_order_key(s)) {
             Some(pos) => new_values[pos] = v.to_owned(),
             None => return Err(format!("invalid field `{}` for {:?}", s, fields)),
           },
-          Calcit::Keyword(s) => match find_in_fields(fields, &lookup_order_kwd_str(s)) {
+          Calcit::Keyword(s) => match find_in_fields(fields, s.to_owned()) {
             Some(pos) => new_values[pos] = v.to_owned(),
             None => return Err(format!("invalid field `{}` for {:?}", s, fields)),
           },
@@ -98,14 +98,14 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, String> {
       Ok(Calcit::Set(zs))
     }
     Some(Calcit::Record(_name, fields, values)) => {
-      let mut zs: CalcitItems = im::vector![];
+      let mut zs: im::HashSet<Calcit> = im::HashSet::new();
       for idx in 0..fields.len() {
-        zs.push_back(Calcit::List(im::vector![
-          load_kwd(&fields[idx]),
+        zs.insert(Calcit::List(im::vector![
+          Calcit::Keyword(fields[idx].to_owned()),
           values[idx].to_owned(),
         ]));
       }
-      Ok(Calcit::List(zs))
+      Ok(Calcit::Set(zs))
     }
     Some(a) => Err(format!("to-pairs expected a map, got {}", a)),
     None => Err(String::from("to-pairs expected 1 argument, got nothing")),

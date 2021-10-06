@@ -1361,7 +1361,6 @@
             :to-map &record:to-map
             :count &record:count
             :contains? &record:contains?
-            :nth &record:nth
             :assoc &record:assoc
             :from-map &record:from-map
             :extend-as &record:extend-as
