@@ -57,7 +57,7 @@ export let load_console_formatter_$x_ = () => {
           }
           if (obj instanceof CalcitRecord) {
             let ret: any[] = ["div", { style: "color: hsl(280, 80%, 60%)" }, `%{} ${obj.name}`];
-            for (let idx in obj.fields) {
+            for (let idx = 0; idx < obj.fields.length; idx++) {
               ret.push([
                 "div",
                 { style: "margin-left: 8px;" },

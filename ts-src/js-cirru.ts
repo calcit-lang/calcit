@@ -57,7 +57,7 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
   }
   if (x instanceof CalcitRecord) {
     let buffer: CirruEdnFormat = ["%{}", x.name.toString()];
-    for (let idx in x.fields) {
+    for (let idx = 0; idx < x.fields.length; idx++) {
       buffer.push([x.fields[idx].toString(), to_cirru_edn(x.values[idx])]);
     }
     return buffer;

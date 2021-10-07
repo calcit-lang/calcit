@@ -149,11 +149,11 @@ export let kwd = (content: string) => {
 };
 
 export let castKwd = (x: CalcitValue): CalcitKeyword => {
-  if (typeof x === "string") {
-    return kwd(x);
-  }
   if (x instanceof CalcitKeyword) {
     return x;
+  }
+  if (typeof x === "string") {
+    return kwd(x);
   }
   if (x instanceof CalcitSymbol) {
     return kwd(x.value);
@@ -391,7 +391,7 @@ export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
   }
   if (x instanceof CalcitRecord) {
     let result: Record<string, CalcitValue> = {};
-    for (let idx in x.fields) {
+    for (let idx = 0; idx < x.fields.length; idx++) {
       result[x.fields[idx].value] = to_js_data(x.values[idx]);
     }
     return result;
@@ -552,7 +552,7 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
       if (x.values.length !== y.values.length) {
         return false;
       }
-      for (let idx in x.fields) {
+      for (let idx = 0; idx < x.fields.length; idx++) {
         if (!_$n__$e_(x.values[idx], y.values[idx])) {
           return false;
         }

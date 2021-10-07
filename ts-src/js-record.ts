@@ -12,10 +12,10 @@ export class CalcitRecord {
   constructor(name: CalcitKeyword, fields: Array<CalcitKeyword>, values?: Array<CalcitValue>) {
     this.name = name;
     let fieldNames = fields.map(getStringName).map(kwd);
-    this.fields = fieldNames;
+    this.fields = fields;
     if (values != null) {
-      if (values.length != fields.length) {
-        throw new Error("value length not match");
+      if (values.length !== fields.length) {
+        throw new Error("fields/values length not match");
       }
       this.values = values;
     } else {
@@ -34,9 +34,9 @@ export class CalcitRecord {
   }
   assoc(k: CalcitValue, v: CalcitValue): CalcitRecord {
     let values: Array<CalcitValue> = new Array(this.fields.length);
-    let name = getStringName(k);
-    for (let idx in this.fields) {
-      if (this.fields[idx].value === name) {
+    let k_id = castKwd(k);
+    for (let idx = 0; idx < this.fields.length; idx++) {
+      if (this.fields[idx] === k_id) {
         values[idx] = v;
       } else {
         values[idx] = this.values[idx];
@@ -44,10 +44,7 @@ export class CalcitRecord {
     }
     return new CalcitRecord(this.name, this.fields, values);
   }
-  merge() {
-    // TODO
-  }
-  // return -1 for missing
+  /** return -1 for missing */
   findIndex(k: CalcitValue) {
     let field = castKwd(k);
     let idx = findInFields(this.fields, field);
@@ -59,7 +56,7 @@ export class CalcitRecord {
   }
   toString(): string {
     let ret = "(%{} " + this.name;
-    for (let idx in this.fields) {
+    for (let idx = 0; idx < this.fields.length; idx++) {
       ret += " (" + this.fields[idx] + " " + toString(this.values[idx], true) + ")";
     }
     return ret + ")";
@@ -67,23 +64,15 @@ export class CalcitRecord {
 }
 
 export let new_record = (name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
-  let fieldNames = fields
-    .map((x) => {
-      if (x instanceof CalcitKeyword) {
-        return x;
-      } else {
-        return kwd(getStringName(x));
-      }
-    })
-    .sort((x, y) => {
-      if (x.value < y.value) {
-        return -1;
-      } else if (x.value > y.value) {
-        return 1;
-      } else {
-        return 0;
-      }
-    });
+  let fieldNames = fields.map(castKwd).sort((x, y) => {
+    if (x.value < y.value) {
+      return -1;
+    } else if (x.value > y.value) {
+      return 1;
+    } else {
+      return 0;
+    }
+  });
   return new CalcitRecord(castKwd(name), fieldNames);
 };
 
@@ -105,7 +94,7 @@ export let fieldsEqual = (xs: Array<CalcitKeyword>, ys: Array<CalcitKeyword>): b
     return false;
   }
   for (let idx = 0; idx < xs.length; idx++) {
-    if (xs[idx].value !== ys[idx].value) {
+    if (xs[idx] !== ys[idx]) {
       return false;
     }
   }
@@ -127,7 +116,7 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
       let idx = -1;
       let k = proto.fields[i];
       for (let j = 0; j < proto.fields.length; j++) {
-        if (k.value === getStringName(xs[j * 2])) {
+        if (k === castKwd(xs[j * 2])) {
           idx = j;
           break;
         }
@@ -164,7 +153,7 @@ export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
       } else {
         let values: Array<CalcitValue> = [];
         for (let field of proto.fields) {
-          let idx = data.fields.indexOf(field);
+          let idx = findInFields(data.fields, field);
           if (idx < 0) {
             throw new Error(`Cannot find field ${field} among ${data.fields}`);
           }
@@ -182,7 +171,8 @@ export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
 
       let values: Array<CalcitValue> = [];
       outerLoop: for (let field of proto.fields) {
-        for (let pair of pairs) {
+        for (let idx = 0; idx < pairs.length; idx++) {
+          let pair = pairs[idx];
           if (pair[0] === field.value) {
             values.push(pair[1]);
             continue outerLoop; // dirty code for performance
@@ -202,7 +192,7 @@ export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
 export let _$n_record_$o_to_map = (x: CalcitValue): CalcitValue => {
   if (x instanceof CalcitRecord) {
     var dict: Array<[CalcitValue, CalcitValue]> = [];
-    for (let idx in x.fields) {
+    for (let idx = 0; idx < x.fields.length; idx++) {
       dict.push([x.fields[idx], x.values[idx]]);
     }
     return new CalcitMap(initTernaryTreeMap(dict));
@@ -213,10 +203,10 @@ export let _$n_record_$o_to_map = (x: CalcitValue): CalcitValue => {
 
 export let _$n_record_$o_matches_$q_ = (x: CalcitValue, y: CalcitValue): boolean => {
   if (!(x instanceof CalcitRecord)) {
-    throw new Error("Expected record");
+    throw new Error("Expected first argument to be record");
   }
   if (!(y instanceof CalcitRecord)) {
-    throw new Error("Expected record");
+    throw new Error("Expected second argument to be record");
   }
 
   if (x.name !== y.name) {
@@ -228,25 +218,25 @@ export let _$n_record_$o_matches_$q_ = (x: CalcitValue, y: CalcitValue): boolean
 export function _$n_record_$o_extend_as(obj: CalcitValue, new_name: CalcitValue, new_key: CalcitValue, new_value: CalcitValue) {
   if (arguments.length !== 4) throw new Error(`Expected 4 arguments, got ${arguments.length}`);
   if (!(obj instanceof CalcitRecord)) throw new Error("Expected record");
-  let field = getStringName(new_key);
+  let field = castKwd(new_key);
   let new_name_kwd = castKwd(new_name);
   let new_fields: CalcitKeyword[] = [];
   let new_values: CalcitValue[] = [];
   let inserted = false;
 
-  for (let i in new_fields) {
+  for (let i = 0; i < new_fields.length; i++) {
     let k = new_fields[i];
     if (inserted) {
       new_fields.push(k);
       new_values.push(obj.values[i]);
     } else {
-      if (field < k.value) {
-        new_fields.push(kwd(field));
+      if (field.value < k.value) {
+        new_fields.push(field);
         new_values.push(new_value);
 
         new_fields.push(k);
         new_values.push(obj.values[i]);
-      } else if (field > k.value) {
+      } else if (field.value > k.value) {
         new_fields.push(k);
         new_values.push(obj.values[i]);
       } else {
@@ -255,7 +245,7 @@ export function _$n_record_$o_extend_as(obj: CalcitValue, new_name: CalcitValue,
     }
   }
   if (!inserted) {
-    new_fields.push(kwd(field));
+    new_fields.push(field);
     new_values.push(new_value);
   }
 
