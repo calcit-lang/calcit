@@ -70,7 +70,7 @@ export let new_record = (name: CalcitValue, ...fields: Array<CalcitValue>): Calc
     } else if (x.value > y.value) {
       return 1;
     } else {
-      return 0;
+      throw new Error(`Unexpected duplication in record fields: ${x.toString()}`);
     }
   });
   return new CalcitRecord(castKwd(name), fieldNames);

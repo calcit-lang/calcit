@@ -29,6 +29,21 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, String> {
     }
   }
   fields.sort_unstable(); // all values are nil
+
+  // warn about dup
+  let mut prev: usize = 0;
+  for (idx, x) in fields.iter().enumerate() {
+    if idx > 0 {
+      if x == &prev {
+        return Err(format!("duplicated field for record: {}", Calcit::Keyword(*x)));
+      } else {
+        prev = x.to_owned();
+        // checked ok
+      }
+    } else {
+      prev = x.to_owned()
+    }
+  }
   Ok(Calcit::Record(name_id.to_owned(), fields, values))
 }
 pub fn call_record(xs: &CalcitItems) -> Result<Calcit, String> {
