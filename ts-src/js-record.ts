@@ -1,17 +1,17 @@
 import { initTernaryTreeMap, Hash, insert } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes";
-import { kwd, toString, getStringName, findInFields } from "./calcit-data";
+import { kwd, castKwd, toString, CalcitKeyword, getStringName, findInFields } from "./calcit-data";
 
 import { CalcitMap } from "./js-map";
 
 export class CalcitRecord {
-  name: string;
-  fields: Array<string>;
+  name: CalcitKeyword;
+  fields: Array<CalcitKeyword>;
   values: Array<CalcitValue>;
   cachedHash: Hash;
-  constructor(name: string, fields: Array<CalcitValue>, values?: Array<CalcitValue>) {
+  constructor(name: CalcitKeyword, fields: Array<CalcitKeyword>, values?: Array<CalcitValue>) {
     this.name = name;
-    let fieldNames = fields.map(getStringName);
+    let fieldNames = fields.map(getStringName).map(kwd);
     this.fields = fieldNames;
     if (values != null) {
       if (values.length != fields.length) {
@@ -24,7 +24,7 @@ export class CalcitRecord {
     this.cachedHash = null;
   }
   get(k: CalcitValue) {
-    let field = getStringName(k);
+    let field = castKwd(k);
     let idx = findInFields(this.fields, field);
     if (idx >= 0) {
       return this.values[idx];
@@ -36,7 +36,7 @@ export class CalcitRecord {
     let values: Array<CalcitValue> = new Array(this.fields.length);
     let name = getStringName(k);
     for (let idx in this.fields) {
-      if (this.fields[idx] === name) {
+      if (this.fields[idx].value === name) {
         values[idx] = v;
       } else {
         values[idx] = this.values[idx];
@@ -47,9 +47,14 @@ export class CalcitRecord {
   merge() {
     // TODO
   }
-  contains(k: CalcitValue) {
-    let field = getStringName(k);
+  // return -1 for missing
+  findIndex(k: CalcitValue) {
+    let field = castKwd(k);
     let idx = findInFields(this.fields, field);
+    return idx;
+  }
+  contains(k: CalcitValue) {
+    let idx = this.findIndex(k);
     return idx >= 0;
   }
   toString(): string {
@@ -62,8 +67,24 @@ export class CalcitRecord {
 }
 
 export let new_record = (name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
-  let fieldNames = fields.map(getStringName).sort();
-  return new CalcitRecord(getStringName(name), fieldNames);
+  let fieldNames = fields
+    .map((x) => {
+      if (x instanceof CalcitKeyword) {
+        return x;
+      } else {
+        return kwd(getStringName(x));
+      }
+    })
+    .sort((x, y) => {
+      if (x.value < y.value) {
+        return -1;
+      } else if (x.value > y.value) {
+        return 1;
+      } else {
+        return 0;
+      }
+    });
+  return new CalcitRecord(castKwd(name), fieldNames);
 };
 
 let fieldPairOrder = (a: [string, CalcitValue], b: [string, CalcitValue]) => {
@@ -76,7 +97,7 @@ let fieldPairOrder = (a: [string, CalcitValue], b: [string, CalcitValue]) => {
   }
 };
 
-export let fieldsEqual = (xs: Array<string>, ys: Array<string>): boolean => {
+export let fieldsEqual = (xs: Array<CalcitKeyword>, ys: Array<CalcitKeyword>): boolean => {
   if (xs === ys) {
     return true; // special case, referential equal
   }
@@ -84,7 +105,7 @@ export let fieldsEqual = (xs: Array<string>, ys: Array<string>): boolean => {
     return false;
   }
   for (let idx = 0; idx < xs.length; idx++) {
-    if (xs[idx] !== ys[idx]) {
+    if (xs[idx].value !== ys[idx].value) {
       return false;
     }
   }
@@ -106,7 +127,7 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
       let idx = -1;
       let k = proto.fields[i];
       for (let j = 0; j < proto.fields.length; j++) {
-        if (k === getStringName(xs[j * 2])) {
+        if (k.value === getStringName(xs[j * 2])) {
           idx = j;
           break;
         }
@@ -127,7 +148,7 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
   }
 };
 
-export let _$n_record_$o_get_name = (x: CalcitRecord): string => {
+export let _$n_record_$o_get_name = (x: CalcitRecord): CalcitKeyword => {
   if (x instanceof CalcitRecord) {
     return x.name;
   } else {
@@ -162,7 +183,7 @@ export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
       let values: Array<CalcitValue> = [];
       outerLoop: for (let field of proto.fields) {
         for (let pair of pairs) {
-          if (pair[0] === field) {
+          if (pair[0] === field.value) {
             values.push(pair[1]);
             continue outerLoop; // dirty code for performance
           }
@@ -182,7 +203,7 @@ export let _$n_record_$o_to_map = (x: CalcitValue): CalcitValue => {
   if (x instanceof CalcitRecord) {
     var dict: Array<[CalcitValue, CalcitValue]> = [];
     for (let idx in x.fields) {
-      dict.push([kwd(x.fields[idx]), x.values[idx]]);
+      dict.push([x.fields[idx], x.values[idx]]);
     }
     return new CalcitMap(initTernaryTreeMap(dict));
   } else {
@@ -208,8 +229,8 @@ export function _$n_record_$o_extend_as(obj: CalcitValue, new_name: CalcitValue,
   if (arguments.length !== 4) throw new Error(`Expected 4 arguments, got ${arguments.length}`);
   if (!(obj instanceof CalcitRecord)) throw new Error("Expected record");
   let field = getStringName(new_key);
-  let new_name_string = getStringName(new_name);
-  let new_fields: string[] = [];
+  let new_name_kwd = castKwd(new_name);
+  let new_fields: CalcitKeyword[] = [];
   let new_values: CalcitValue[] = [];
   let inserted = false;
 
@@ -219,13 +240,13 @@ export function _$n_record_$o_extend_as(obj: CalcitValue, new_name: CalcitValue,
       new_fields.push(k);
       new_values.push(obj.values[i]);
     } else {
-      if (field < k) {
-        new_fields.push(field);
+      if (field < k.value) {
+        new_fields.push(kwd(field));
         new_values.push(new_value);
 
         new_fields.push(k);
         new_values.push(obj.values[i]);
-      } else if (field > k) {
+      } else if (field > k.value) {
         new_fields.push(k);
         new_values.push(obj.values[i]);
       } else {
@@ -234,9 +255,9 @@ export function _$n_record_$o_extend_as(obj: CalcitValue, new_name: CalcitValue,
     }
   }
   if (!inserted) {
-    new_fields.push(field);
+    new_fields.push(kwd(field));
     new_values.push(new_value);
   }
 
-  return new CalcitRecord(new_name_string, new_fields, new_values);
+  return new CalcitRecord(new_name_kwd, new_fields, new_values);
 }

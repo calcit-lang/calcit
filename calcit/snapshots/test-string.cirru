@@ -110,12 +110,16 @@
 
             let
                 Person $ new-record 'Person :name :age
-                edn-demo "|%{} Person (age 23) (name |Chen)"
+                edn-demo "|%{} :Person (:age 23) (:name |Chen)"
+
+              ; "no stable order"
               assert=
-                pr-str $ %{} Person (:name |Chen) (:age 23)
-                , "|(%{} Person (age 23) (name |Chen))"
-              assert= edn-demo
-                trim $ format-cirru-edn $ %{} Person (:name |Chen) (:age 23)
+                count $ pr-str $ %{} Person (:name |Chen) (:age 23)
+                count "|(%{} :Person (:name |Chen) (:age 23))"
+              ; "no stable order"
+              assert=
+                count edn-demo
+                count $ trim $ format-cirru-edn $ %{} Person (:name |Chen) (:age 23)
 
               assert=
                 parse-cirru-edn edn-demo
@@ -147,7 +151,7 @@
               assert= "|do 's"
                 trim $ format-cirru-edn 's
 
-              assert= "|:: |&core-list-class $ [] 1 2 3"
+              assert= "|:: :&core-list-class $ [] 1 2 3"
                 trim $ format-cirru-edn $ :: &core-list-class $ [] 1 2 3
 
               assert= (.escape "|\n") "|\"\\n\""
@@ -195,6 +199,22 @@
             assert=
               format-to-lisp $ quote $ nil? nil
               , "|(nil? nil)"
+
+            inside-eval:
+              assert=
+                format-to-cirru $ macroexpand-all $ quote
+                  let ((a 1) (b :d) (c |c)) (+ a b c)
+                format-cirru $ []
+                  [] |&let ([] |a |1)
+                    [] |&let ([] |b |:d)
+                      [] |&let ([] |c ||c)
+                        [] |+ |a |b |c
+
+            assert=
+              trim $ format-to-cirru $ quote
+                defn (a b)
+                  + a b
+              , "|defn (a b)\n  + a b"
 
         |test-methods $ quote
           defn test-methods ()

@@ -11,8 +11,8 @@
           fn ()
             log-title "|Testing record"
             let
-                Person $ new-record 'Person :name :age :position
-                City $ new-record 'City :name :province
+                Person $ new-record :Person :name :age :position
+                City $ new-record :City :name :province
                 p1 $ %{} Person
                   :name |Chen
                   :age 20
@@ -50,7 +50,7 @@
 
               assert=
                 keys p2
-                [] :age :name :position
+                #{} :age :name :position
 
               assert-detect identity $ &record:matches? p1 p1
               assert-detect identity $ &record:matches? p1 p2
@@ -82,9 +82,6 @@
               assert-detect identity $ contains? p1 :name
               assert-detect not $ contains? p1 :surname
               assert= 3 $ count p1
-              assert=
-                nth p1 1
-                [] :name |Chen
 
               assert= 21
                 get (update p1 :age inc) :age
@@ -99,7 +96,7 @@
           fn ()
             log-title "|Testing record methods"
 
-            assert= |Cat
+            assert= :Cat
               .get-name Cat
 
             let
@@ -126,14 +123,11 @@
               assert=
                 .from-map kitty $ &{} :name |kitty :color :red
                 %{} kitty (:name |kitty) (:color :red)
-              assert=
-                [] :color :red
-                .nth kitty 0
 
               &let
                 persian $ .extend-as kitty :Persian :age 10
                 assert= 10 $ .get persian :age
-                assert= |Persian $ .get-name persian
+                assert= :Persian $ .get-name persian
 
         |main! $ quote
           defn main! ()

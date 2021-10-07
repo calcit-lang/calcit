@@ -56,10 +56,9 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     return buffer;
   }
   if (x instanceof CalcitRecord) {
-    let result: Record<string, CalcitValue> = {};
-    let buffer: CirruEdnFormat = ["%{}", x.name];
+    let buffer: CirruEdnFormat = ["%{}", x.name.toString()];
     for (let idx in x.fields) {
-      buffer.push([x.fields[idx], to_cirru_edn(x.values[idx])]);
+      buffer.push([x.fields[idx].toString(), to_cirru_edn(x.values[idx])]);
     }
     return buffer;
   }
@@ -77,13 +76,22 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
       // turn `x.snd` with CalcitList into raw Cirru nodes, which is in plain Array
       return ["quote", toWriterNode(x.snd as any)] as CirruEdnFormat;
     } else if (x.fst instanceof CalcitRecord) {
-      return ["::", "|" + x.fst.name, to_cirru_edn(x.snd)];
+      return ["::", x.fst.name.toString(), to_cirru_edn(x.snd)];
     } else {
       throw new Error(`Unsupported tag for EDN: ${x.fst}`);
     }
   }
   console.error(x);
   throw new Error("Unexpected data to to-cirru-edn");
+};
+
+/** makes sure we got string */
+let extractFieldKwd = (x: string) => {
+  if (x[0] === ":") {
+    return kwd(x.slice(1));
+  } else {
+    return kwd(x);
+  }
 };
 
 export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
@@ -139,8 +147,8 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       if (typeof name != "string") {
         throw new Error("Expected string for record name");
       }
-      let fields: Array<string> = [];
-      let values: Array<CalcitValue> = [];
+      // put to entries first, sort and then...
+      let entries: Array<[CalcitKeyword, CalcitValue]> = [];
       x.forEach((pair, idx) => {
         if (idx <= 1) {
           return; // skip %{} name
@@ -148,16 +156,31 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
 
         if (pair instanceof Array && pair.length == 2) {
           if (typeof pair[0] === "string") {
-            fields.push(pair[0]);
+            entries.push([extractFieldKwd(pair[0]), extract_cirru_edn(pair[1])]);
           } else {
             throw new Error("Expected string as field");
           }
-          values.push(extract_cirru_edn(pair[1]));
         } else {
           throw new Error("Expected pairs for map");
         }
       });
-      return new CalcitRecord(name, fields, values);
+      entries.sort((a, b) => {
+        if (a[0] < b[0]) {
+          return -1;
+        } else if (a[0] > b[0]) {
+          return 1;
+        } else {
+          return 0;
+        }
+      });
+      let fields: Array<CalcitKeyword> = [];
+      let values: Array<CalcitValue> = [];
+
+      for (let idx = 0; idx < entries.length; idx++) {
+        fields.push(entries[idx][0]);
+        values.push(entries[idx][1]);
+      }
+      return new CalcitRecord(extractFieldKwd(name), fields, values);
     }
     if (x[0] === "[]") {
       return new CalcitList(x.slice(1).map(extract_cirru_edn));

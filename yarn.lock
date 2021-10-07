@@ -7,10 +7,10 @@
   resolved "https://registry.yarnpkg.com/@calcit/ternary-tree/-/ternary-tree-0.0.16.tgz#8932ab23fea3c3d13e61671b06ca3b38c2244736"
   integrity sha512-SsYe0qXRutmPKLvkDYydqQx+i5pDdlkkOAyGqyCHlcvknHj1oMEue4N0FBNN0VhgWxplCS5VXqMgSIL/rWktpA==
 
-"@cirru/parser.ts@^0.0.3":
-  version "0.0.3"
-  resolved "https://registry.yarnpkg.com/@cirru/parser.ts/-/parser.ts-0.0.3.tgz#b0ba91ac9812631d0ac0b943922ebb4d04314066"
-  integrity sha512-Tdj4yd2nL1vxUm9aKqmuclAIRbVm7K3WJEqAzDAnR7oL7Iygwt7JzquRakm8DbSuNFsW7gazDS7wNJF5iowEoQ==
+"@cirru/parser.ts@^0.0.4":
+  version "0.0.4"
+  resolved "https://registry.npmjs.org/@cirru/parser.ts/-/parser.ts-0.0.4.tgz#a847aff45947df9a21024a282cffe1302dd721ea"
+  integrity sha512-joGJQWK75gk+ydS1slwJbsnDip+oofeN5v2TpNF3IbAOxIYWrkA7WCDuUrMnuFFQen70gpfKyDNLVyIlgrCRAQ==
 
 "@cirru/writer.ts@^0.1.3":
   version "0.1.3"

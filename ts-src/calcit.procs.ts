@@ -1,8 +1,9 @@
 // CALCIT VERSION
-export const calcit_version = "0.4.38-a1";
+export const calcit_version = "0.5.0-a1";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
-import { parse } from "@cirru/parser.ts";
+import { parse, ICirruNode } from "@cirru/parser.ts";
+import { writeCirruCode } from "@cirru/writer.ts";
 
 import { CalcitValue } from "./js-primes";
 import { CalcitSymbol, CalcitKeyword, CalcitRef, CalcitFn, CalcitRecur, kwd, refsRegistry, toString, getStringName, to_js_data, _$n__$e_ } from "./calcit-data";
@@ -264,20 +265,6 @@ export let _$n_tuple_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   if (typeof k !== "number") throw new Error("Expected number index for a list");
 
   if (xs instanceof CalcitTuple) return xs.get(k);
-
-  throw new Error("Does not support `nth` on this type");
-};
-
-export let _$n_record_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
-  if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
-  if (typeof k !== "number") throw new Error("Expected number index for a list");
-
-  if (xs instanceof CalcitRecord) {
-    if (k < 0 || k >= xs.fields.length) {
-      throw new Error("Out of bound");
-    }
-    return new CalcitList([kwd(xs.fields[k]), xs.values[k]]);
-  }
 
   throw new Error("Does not support `nth` on this type");
 };
@@ -726,8 +713,13 @@ export let _$n_merge = (a: CalcitValue, b: CalcitMap): CalcitValue => {
         values.push(item);
       }
       for (let [k, v] of b.pairs()) {
-        let field = getStringName(k);
-        let idx = a.fields.indexOf(field);
+        let field: CalcitKeyword;
+        if (k instanceof CalcitKeyword) {
+          field = k;
+        } else {
+          field = kwd(getStringName(k));
+        }
+        let idx = a.findIndex(field);
         if (idx >= 0) {
           values[idx] = v;
         } else {
@@ -767,9 +759,9 @@ export let to_pairs = (xs: CalcitValue): CalcitValue => {
   } else if (xs instanceof CalcitRecord) {
     let arr_result: Array<CalcitList> = [];
     for (let idx in xs.fields) {
-      arr_result.push(new CalcitList([kwd(xs.fields[idx]), xs.values[idx]]));
+      arr_result.push(new CalcitList([xs.fields[idx], xs.values[idx]]));
     }
-    return new CalcitList(arr_result);
+    return new CalcitSet(arr_result);
   } else {
     throw new Error("Expected a map");
   }
@@ -1150,6 +1142,30 @@ export let format_to_lisp = (x: CalcitValue): string => {
     }
     chunk += ")";
     return chunk;
+  } else if (typeof x === "string") {
+    return JSON.stringify("|" + x);
+  } else {
+    return x.toString();
+  }
+};
+
+export let format_to_cirru = (x: CalcitValue): string => {
+  let xs = transform_code_to_cirru(x);
+  console.log("tree", xs);
+  return writeCirruCode([xs], { useInline: false });
+};
+
+export let transform_code_to_cirru = (x: CalcitValue): ICirruNode => {
+  if (x == null) {
+    return "nil";
+  } else if (x instanceof CalcitSymbol) {
+    return x.value;
+  } else if (x instanceof CalcitList) {
+    let xs: ICirruNode[] = [];
+    for (let item of x.items()) {
+      xs.push(transform_code_to_cirru(item));
+    }
+    return xs;
   } else if (typeof x === "string") {
     return JSON.stringify("|" + x);
   } else {

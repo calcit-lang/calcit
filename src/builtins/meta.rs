@@ -4,12 +4,14 @@ use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
 use crate::primes;
-use crate::primes::{gen_core_id, load_kwd, lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap};
+use crate::primes::{
+  gen_core_id, keyword::load_order_key, load_kwd, lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap,
+};
 use crate::program;
 use crate::runner;
 use crate::util::number::f64_to_usize;
 
-use cirru_parser::Cirru;
+use cirru_parser::{Cirru, CirruWriterOptions};
 
 use std::cmp::Ordering;
 use std::sync::atomic;
@@ -54,6 +56,31 @@ pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, String> {
   match xs.get(0) {
     Some(v) => Ok(Calcit::Str(v.lisp_str())),
     None => Err(String::from("format-to-lisp expected 1 argument")),
+  }
+}
+
+pub fn format_to_cirru(xs: &CalcitItems) -> Result<Calcit, String> {
+  match xs.get(0) {
+    Some(v) => {
+      cirru_parser::format(&[transform_code_to_cirru(v)], CirruWriterOptions { use_inline: false }).map(Calcit::Str)
+    }
+    None => Err(String::from("format-to-cirru expected 1 argument")),
+  }
+}
+
+fn transform_code_to_cirru(x: &Calcit) -> Cirru {
+  match x {
+    Calcit::List(ys) => {
+      let mut xs: Vec<Cirru> = vec![];
+      for y in ys {
+        xs.push(transform_code_to_cirru(y));
+      }
+      Cirru::List(xs)
+    }
+    Calcit::Symbol(s, ..) => Cirru::Leaf(s.to_owned()),
+    Calcit::Syntax(s, _ns) => Cirru::Leaf(s.to_string()),
+    Calcit::Proc(s) => Cirru::Leaf(s.to_owned()),
+    a => Cirru::Leaf(format!("{}", a)),
   }
 }
 
@@ -289,7 +316,7 @@ pub fn invoke_method(
   };
   match &class {
     Calcit::Record(_, fields, values) => {
-      match find_in_fields(fields, name) {
+      match find_in_fields(fields, load_order_key(name)) {
         Some(idx) => {
           let mut method_args: im::Vector<Calcit> = im::vector![];
           method_args.push_back(value);
@@ -315,7 +342,13 @@ pub fn invoke_method(
             y => Err(format!("expected a function to invoke, got: {}", y)),
           }
         }
-        None => Err(format!("missing field `{}` in {}", name, fields.join(","))),
+        None => {
+          let mut content = String::from("");
+          for k in fields {
+            content = format!("{},{}", content, lookup_order_kwd_str(k))
+          }
+          Err(format!("missing field `{}` in {}", name, content))
+        }
       }
     }
     x => Err(format!("method invoking expected a record as class, got: {}", x)),
