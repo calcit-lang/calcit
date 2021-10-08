@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.5.0-a1";
+export const calcit_version = "0.5.0-a3";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse, ICirruNode } from "@cirru/parser.ts";
@@ -584,7 +584,7 @@ export let initCrTernary = (x: string): CalcitValue => {
 
 export let _SHA__$M_ = (...xs: CalcitValue[]): CalcitValue => {
   var result: CalcitValue[] = [];
-  for (let idx in xs) {
+  for (let idx = 0; idx < xs.length; idx++) {
     result.push(xs[idx]);
   }
   return new CalcitSet(result);
@@ -758,7 +758,7 @@ export let to_pairs = (xs: CalcitValue): CalcitValue => {
     return new CalcitSet(result);
   } else if (xs instanceof CalcitRecord) {
     let arr_result: Array<CalcitList> = [];
-    for (let idx in xs.fields) {
+    for (let idx = 0; idx < xs.fields.length; idx++) {
       arr_result.push(new CalcitList([xs.fields[idx], xs.values[idx]]));
     }
     return new CalcitSet(arr_result);
@@ -1401,7 +1401,7 @@ export let _$n_list_$o_to_set = (xs: CalcitList): CalcitSet => {
 export let _$n_list_$o_distinct = (xs: CalcitList): CalcitList => {
   var result: CalcitValue[] = [];
   let data = xs.toArray();
-  outer: for (let idx in data) {
+  outer: for (let idx = 0; idx < data.length; idx++) {
     for (let j = 0; j < result.length; j++) {
       if (_$n__$e_(data[idx], result[j])) {
         continue outer;
