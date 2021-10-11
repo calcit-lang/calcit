@@ -1586,3 +1586,7 @@
                     if (string? k) (turn-keyword k) k
                     keywordize-edn v
                 , data
+
+        |print-values $ quote
+          defn print-values (& args)
+            println & $ &list:map args pr-str

@@ -47,7 +47,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&display-stack"
       | "echo"
       | "println" // alias for echo
-      | "echo-values"
       | "raise"
       | "quit!"
       | "get-env"
@@ -216,7 +215,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, CalcitErr> 
     "&display-stack" => meta::display_stack(args),
     "echo" => effects::echo(args),
     "println" => effects::echo(args), // alias
-    "echo-values" => effects::echo_values(args),
     "raise" => effects::raise(args),
     "quit!" => effects::quit(args),
     "get-env" => effects::get_env(args),
