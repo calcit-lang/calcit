@@ -1,9 +1,9 @@
 use crate::{
-  primes::{Calcit, CalcitItems},
+  primes::{Calcit, CalcitErr, CalcitItems},
   program,
 };
 
-pub fn ffi_message(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn ffi_message(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if !xs.is_empty() {
     match &xs[0] {
       Calcit::Str(s) | Calcit::Symbol(s, ..) => {
@@ -11,9 +11,9 @@ pub fn ffi_message(xs: &CalcitItems) -> Result<Calcit, String> {
         program::send_ffi_message(s.to_owned(), items);
         Ok(Calcit::Nil)
       }
-      a => Err(format!("&ffi-message expected string, got {}", a)),
+      a => Err(CalcitErr::use_string(format!("&ffi-message expected string, got {}", a))),
     }
   } else {
-    Err(String::from("&ffi-message expected arguments but got empty"))
+    Err(CalcitErr::use_str("&ffi-message expected arguments but got empty"))
   }
 }

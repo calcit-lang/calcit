@@ -14,10 +14,10 @@ mod syntax;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use crate::primes::{Calcit, CalcitItems, CalcitScope, CalcitSyntax};
+use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax};
 use crate::program::ProgramCodeData;
 
-pub type FnType = fn(xs: &CalcitItems) -> Result<Calcit, String>;
+pub type FnType = fn(xs: &CalcitItems) -> Result<Calcit, CalcitErr>;
 
 lazy_static! {
   static ref IMPORTED_PROCS: RwLock<HashMap<String, FnType>> = RwLock::new(HashMap::new());
@@ -193,7 +193,7 @@ pub fn is_proc_name(s: &str) -> bool {
   }
 }
 
-pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
+pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match name {
     // meta
     "type-of" => meta::type_of(args),
@@ -359,7 +359,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, String> {
         let f = ps[name];
         f(args)
       } else {
-        Err(format!("No such proc: {}", a))
+        Err(CalcitErr::use_string(format!("No such proc: {}", a)))
       }
     }
   }
@@ -377,7 +377,7 @@ pub fn handle_syntax(
   scope: &CalcitScope,
   file_ns: &str,
   program: &ProgramCodeData,
-) -> Result<Calcit, String> {
+) -> Result<Calcit, CalcitErr> {
   match name {
     CalcitSyntax::Defn => syntax::defn(nodes, scope, file_ns, program),
     CalcitSyntax::Eval => syntax::eval(nodes, scope, file_ns, program),
