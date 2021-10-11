@@ -512,13 +512,14 @@ pub struct CalcitErr {
 
 impl fmt::Display for CalcitErr {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str(&self.msg)?;
     if !self.warnings.is_empty() {
-      f.write_str("warnings:")?;
+      f.write_str("\n")?;
       for w in &self.warnings {
-        write!(f, " {}", w)?;
+        writeln!(f, "{}", w)?;
       }
     }
-    write!(f, "Failed: {}", self.msg)
+    Ok(())
   }
 }
 
