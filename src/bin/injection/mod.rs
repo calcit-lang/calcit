@@ -1,12 +1,19 @@
 use cirru_edn::Edn;
 
 use calcit_runner::{
+  builtins,
   data::edn::{calcit_to_edn, edn_to_calcit},
   primes::{Calcit, CalcitErr, CalcitItems, CrListWrap},
 };
 
 /// FFI protocol types
 type EdnFfi = fn(args: Vec<Edn>) -> Result<Edn, String>;
+
+pub fn inject_platform_apis() {
+  builtins::register_import_proc("&call-dylib-edn", call_dylib_edn);
+  builtins::register_import_proc("echo", echo);
+  builtins::register_import_proc("println", echo);
+}
 
 // &call-dylib-edn
 pub fn call_dylib_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -43,4 +50,16 @@ pub fn call_dylib_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     let ret = func(ys.to_owned()).map_err(CalcitErr::use_string)?;
     Ok(edn_to_calcit(&ret))
   }
+}
+
+pub fn echo(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  let mut s = String::from("");
+  for (idx, x) in xs.iter().enumerate() {
+    if idx > 0 {
+      s.push(' ');
+    }
+    s.push_str(&x.turn_string());
+  }
+  println!("{}", s);
+  Ok(Calcit::Nil)
 }

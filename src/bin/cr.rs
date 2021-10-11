@@ -27,7 +27,7 @@ fn main() -> Result<(), String> {
 
   // get dirty functions injected
   #[cfg(not(target_arch = "wasm32"))]
-  builtins::register_import_proc("&call-dylib-edn", injection::call_dylib_edn);
+  injection::inject_platform_apis();
 
   let cli_matches = cli_args::parse_cli();
   let settings = ProgramSettings {

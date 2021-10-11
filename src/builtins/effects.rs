@@ -21,18 +21,6 @@ lazy_static! {
   static ref CLI_RUNNING_MODE: RwLock<CliRunningMode> = RwLock::new(CliRunningMode::Eval);
 }
 
-pub fn echo(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  let mut s = String::from("");
-  for (idx, x) in xs.iter().enumerate() {
-    if idx > 0 {
-      s.push(' ');
-    }
-    s.push_str(&x.turn_string());
-  }
-  println!("{}", s);
-  Ok(Calcit::Nil)
-}
-
 pub fn raise(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let mut s = String::from("");
   for (idx, x) in xs.iter().enumerate() {

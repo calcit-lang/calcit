@@ -45,8 +45,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&tuple:assoc"
       // effects
       | "&display-stack"
-      | "echo"
-      | "println" // alias for echo
       | "raise"
       | "quit!"
       | "get-env"
@@ -213,8 +211,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, CalcitErr> 
     "&tuple:assoc" => meta::assoc(args),
     // effects
     "&display-stack" => meta::display_stack(args),
-    "echo" => effects::echo(args),
-    "println" => effects::echo(args), // alias
     "raise" => effects::raise(args),
     "quit!" => effects::quit(args),
     "get-env" => effects::get_env(args),
