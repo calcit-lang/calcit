@@ -1,6 +1,6 @@
 [package]
 name = "calcit_runner"
-version = "0.5.0-a3"
+version = "0.5.0-a4"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -28,6 +28,8 @@ im = "15.0.0"
 lazy_static = "1.4.0"
 notify = "4.0.17"
 walkdir = "2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libloading = "0.7"
 
 [lib]

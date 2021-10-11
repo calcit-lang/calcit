@@ -5,6 +5,7 @@ use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::time::Instant;
 
+#[cfg(not(target_arch = "wasm32"))]
 mod injection;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -25,6 +26,7 @@ fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
 
   // get dirty functions injected
+  #[cfg(not(target_arch = "wasm32"))]
   builtins::register_import_proc("&call-dylib-edn", injection::call_dylib_edn);
 
   let cli_matches = cli_args::parse_cli();

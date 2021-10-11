@@ -61,7 +61,7 @@ export let load_console_formatter_$x_ = () => {
               ret.push([
                 "div",
                 { style: "margin-left: 8px;" },
-                ["div", { style: "margin-left: 8px; display: inline-block;" }, obj.fields[idx]],
+                ["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(obj.fields[idx])],
                 ["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(obj.values[idx])],
               ]);
             }
