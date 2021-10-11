@@ -65,25 +65,15 @@ export class CalcitRecord {
 
 export let new_record = (name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
   let fieldNames = fields.map(castKwd).sort((x, y) => {
-    if (x.value < y.value) {
+    if (x.idx < y.idx) {
       return -1;
-    } else if (x.value > y.value) {
+    } else if (x.idx > y.idx) {
       return 1;
     } else {
       throw new Error(`Unexpected duplication in record fields: ${x.toString()}`);
     }
   });
   return new CalcitRecord(castKwd(name), fieldNames);
-};
-
-let fieldPairOrder = (a: [string, CalcitValue], b: [string, CalcitValue]) => {
-  if (a[0] < b[0]) {
-    return -1;
-  } else if (a[0] > b[0]) {
-    return 1;
-  } else {
-    return 0;
-  }
 };
 
 export let fieldsEqual = (xs: Array<CalcitKeyword>, ys: Array<CalcitKeyword>): boolean => {
@@ -146,46 +136,44 @@ export let _$n_record_$o_get_name = (x: CalcitRecord): CalcitKeyword => {
 };
 
 export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): CalcitValue => {
-  if (proto instanceof CalcitRecord) {
-    if (data instanceof CalcitRecord) {
-      if (fieldsEqual(proto.fields, data.fields)) {
-        return new CalcitRecord(proto.name, proto.fields, data.values);
-      } else {
-        let values: Array<CalcitValue> = [];
-        for (let field of proto.fields) {
-          let idx = findInFields(data.fields, field);
-          if (idx < 0) {
-            throw new Error(`Cannot find field ${field} among ${data.fields}`);
-          }
-          values.push(data.values[idx]);
-        }
-        return new CalcitRecord(proto.name, proto.fields, values);
-      }
-    } else if (data instanceof CalcitMap) {
-      let pairs: Array<[string, CalcitValue]> = [];
-      for (let [k, v] of data.pairs()) {
-        pairs.push([getStringName(k), v]);
-      }
-      // mutable sort
-      pairs.sort(fieldPairOrder);
+  if (!(proto instanceof CalcitRecord)) throw new Error("Expected prototype to be record");
 
+  if (data instanceof CalcitRecord) {
+    if (fieldsEqual(proto.fields, data.fields)) {
+      return new CalcitRecord(proto.name, proto.fields, data.values);
+    } else {
       let values: Array<CalcitValue> = [];
-      outerLoop: for (let field of proto.fields) {
-        for (let idx = 0; idx < pairs.length; idx++) {
-          let pair = pairs[idx];
-          if (pair[0] === field.value) {
-            values.push(pair[1]);
-            continue outerLoop; // dirty code for performance
-          }
+      for (let field of proto.fields) {
+        let idx = findInFields(data.fields, field);
+        if (idx < 0) {
+          throw new Error(`Cannot find field ${field} among ${data.fields}`);
         }
-        throw new Error(`Cannot find field ${field} among ${pairs}`);
+        values.push(data.values[idx]);
       }
       return new CalcitRecord(proto.name, proto.fields, values);
-    } else {
-      throw new Error("Expected record or data for making a record");
     }
+  } else if (data instanceof CalcitMap) {
+    let pairs: Array<[CalcitKeyword, CalcitValue]> = [];
+    for (let [k, v] of data.pairs()) {
+      pairs.push([castKwd(k), v]);
+    }
+    // mutable sort
+    pairs.sort((pair1, pair2) => pair1[0].cmp(pair2[0]));
+
+    let values: Array<CalcitValue> = [];
+    outerLoop: for (let field of proto.fields) {
+      for (let idx = 0; idx < pairs.length; idx++) {
+        let pair = pairs[idx];
+        if (pair[0] === field) {
+          values.push(pair[1]);
+          continue outerLoop; // dirty code for performance
+        }
+      }
+      throw new Error(`Cannot find field ${field} among ${pairs}`);
+    }
+    return new CalcitRecord(proto.name, proto.fields, values);
   } else {
-    throw new Error("Expected prototype to be record");
+    throw new Error("Expected record or data for making a record");
   }
 };
 
@@ -230,13 +218,14 @@ export function _$n_record_$o_extend_as(obj: CalcitValue, new_name: CalcitValue,
       new_fields.push(k);
       new_values.push(obj.values[i]);
     } else {
-      if (field.value < k.value) {
+      let ordering = field.cmp(k);
+      if (ordering === -1) {
         new_fields.push(field);
         new_values.push(new_value);
 
         new_fields.push(k);
         new_values.push(obj.values[i]);
-      } else if (field.value > k.value) {
+      } else if (ordering === 1) {
         new_fields.push(k);
         new_values.push(obj.values[i]);
       } else {

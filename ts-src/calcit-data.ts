@@ -13,15 +13,30 @@ import { CalcitTuple } from "./js-tuple";
 // we have to inject cache in a dirty way in some cases
 const calcit_dirty_hash_key = "_calcit_cached_hash";
 
+let keywordIdx = 0;
+
 export class CalcitKeyword {
   value: string;
   cachedHash: Hash;
+  // use keyword for fast comparing
+  idx: number;
   constructor(x: string) {
     this.value = x;
+    this.idx = keywordIdx;
+    keywordIdx++;
     this.cachedHash = null;
   }
   toString() {
     return `:${this.value}`;
+  }
+  cmp(other: CalcitKeyword): number {
+    if (this.idx < other.idx) {
+      return -1;
+    } else if (this.idx > other.idx) {
+      return 1;
+    } else {
+      return 0;
+    }
   }
 }
 
@@ -121,9 +136,9 @@ export function findInFields(xs: Array<CalcitKeyword>, y: CalcitKeyword): number
   while (upper - lower > 1) {
     let pos = (lower + upper) >> 1;
     let v = xs[pos];
-    if (y.value < v.value) {
+    if (y.idx < v.idx) {
       upper = pos - 1;
-    } else if (y.value > v.value) {
+    } else if (y.idx > v.idx) {
       lower = pos + 1;
     } else {
       return pos;
@@ -202,7 +217,7 @@ let hashFunction = (x: CalcitValue): Hash => {
   }
 
   if (x instanceof CalcitKeyword) {
-    let h = mergeValueHash(defaultHash_keyword, x.value);
+    let h = mergeValueHash(defaultHash_keyword, x.idx);
     x.cachedHash = h;
     return h;
   }
