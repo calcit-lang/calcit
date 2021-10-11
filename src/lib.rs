@@ -45,10 +45,10 @@ pub fn run_program(init_fn: &str, params: CalcitItems, program_code: &program::P
 
   let warnings = check_warnings.to_owned().into_inner();
   if !warnings.is_empty() {
-    for message in &warnings {
-      println!("{}", message);
-    }
-    return Err(CalcitErr::use_string(format!("Found {} warnings, runner blocked", warnings.len())));
+    return Err(CalcitErr {
+      msg: format!("Found {} warnings, runner blocked", warnings.len()),
+      warnings: warnings.to_owned(),
+    });
   }
   match program::lookup_evaled_def(&init_ns, &init_def) {
     None => Err(CalcitErr::use_string(format!("entry not initialized: {}/{}", init_ns, init_def))),

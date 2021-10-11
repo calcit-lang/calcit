@@ -507,20 +507,32 @@ pub fn gen_core_id() -> String {
 pub struct CalcitErr {
   pub msg: String,
   // stack: im::Vector<String>,
-  // warnings: Vec<String>,
+  pub warnings: Vec<String>,
 }
 
 impl fmt::Display for CalcitErr {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&format!("Failed: {} ...TODO", self.msg))
+    if !self.warnings.is_empty() {
+      f.write_str("warnings:")?;
+      for w in &self.warnings {
+        write!(f, " {}", w)?;
+      }
+    }
+    write!(f, "Failed: {}", self.msg)
   }
 }
 
 impl CalcitErr {
   pub fn use_str(msg: &str) -> Self {
-    CalcitErr { msg: msg.to_owned() }
+    CalcitErr {
+      msg: msg.to_owned(),
+      warnings: vec![],
+    }
   }
   pub fn use_string(msg: String) -> Self {
-    CalcitErr { msg: msg.to_owned() }
+    CalcitErr {
+      msg: msg.to_owned(),
+      warnings: vec![],
+    }
   }
 }

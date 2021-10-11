@@ -108,7 +108,12 @@ fn main() -> Result<(), String> {
   } else {
     let started_time = Instant::now();
 
-    let v = calcit_runner::run_program(init_fn, im::vector![], &program_code).map_err(|e| e.msg)?;
+    let v = calcit_runner::run_program(init_fn, im::vector![], &program_code).map_err(|e| {
+      for w in e.warnings {
+        println!("{}", w);
+      }
+      e.msg
+    })?;
 
     let duration = Instant::now().duration_since(started_time);
     println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
@@ -210,7 +215,12 @@ fn recall_program(
   } else {
     // run from `reload_fn` after reload
     let started_time = Instant::now();
-    let v = calcit_runner::run_program(reload_fn, im::vector![], &new_code).map_err(|e| e.msg)?;
+    let v = calcit_runner::run_program(reload_fn, im::vector![], &new_code).map_err(|e| {
+      for w in e.warnings {
+        println!("{}", w);
+      }
+      e.msg
+    })?;
     let duration = Instant::now().duration_since(started_time);
     println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
     Ok(())
@@ -270,7 +280,6 @@ fn run_codegen(
           failure.msg.trim().escape_default()
         ),
       );
-
       return Err(failure.msg);
     }
   }
