@@ -165,13 +165,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
         }
       });
       entries.sort((a, b) => {
-        if (a[0] < b[0]) {
-          return -1;
-        } else if (a[0] > b[0]) {
-          return 1;
-        } else {
-          return 0;
-        }
+        return a[0].cmp(b[0]);
       });
       let fields: Array<CalcitKeyword> = [];
       let values: Array<CalcitValue> = [];

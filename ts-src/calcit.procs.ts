@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.5.0-a4";
+export const calcit_version = "0.5.0-a5";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse, ICirruNode } from "@cirru/parser.ts";
@@ -950,7 +950,7 @@ export let turn_keyword = (x: CalcitValue): CalcitKeyword => {
   throw new Error("Unexpected data for keyword");
 };
 
-export let turn_symbol = (x: CalcitValue): CalcitKeyword => {
+export let turn_symbol = (x: CalcitValue): CalcitSymbol => {
   if (typeof x === "string") {
     return new CalcitSymbol(x);
   }
@@ -1325,6 +1325,7 @@ let rawCompare = (x: any, y: any): number => {
 };
 
 export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
+  if (a === b) return 0;
   let ta = typeAsInt(a);
   let tb = typeAsInt(b);
   if (ta === tb) {
@@ -1335,9 +1336,9 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         return rawCompare(a, b);
       case PseudoTypeIndex.number:
         return rawCompare(a, b);
-      case PseudoTypeIndex.symbol:
-        return rawCompare(a, b);
       case PseudoTypeIndex.keyword:
+        return (a as CalcitKeyword).cmp(b as CalcitKeyword);
+      case PseudoTypeIndex.symbol:
         return rawCompare(a, b);
       case PseudoTypeIndex.string:
         return rawCompare(a, b);
