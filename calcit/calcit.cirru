@@ -1010,7 +1010,7 @@
                 :by |u0
               |yT $ {}
                 :data $ {}
-                  |T $ {} (:text |echo-values) (:type :leaf) (:at 1618659589617) (:by |u0)
+                  |T $ {} (:text |print-values) (:type :leaf) (:at 1633952520593) (:by |u0)
                   |j $ {} (:text |1) (:type :leaf) (:at 1618659590535) (:by |u0)
                   |r $ {} (:text "|\"1") (:type :leaf) (:at 1618659591512) (:by |u0)
                   |v $ {} (:text |:a) (:type :leaf) (:at 1618659595541) (:by |u0)
@@ -1130,7 +1130,7 @@
                 :by |u0
               |yj $ {}
                 :data $ {}
-                  |D $ {} (:type :leaf) (:by |u0) (:at 1633873455342) (:text |;)
+                  |D $ {} (:text |;) (:type :leaf) (:at 1633873455342) (:by |u0)
                   |T $ {} (:text |show-data) (:type :leaf) (:at 1633872991931) (:by |u0)
                 :type :expr
                 :at 1633872988484

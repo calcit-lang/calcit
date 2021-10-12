@@ -300,10 +300,7 @@ fn gen_call_code(
               let cond_code = to_js_code(condition, ns, local_defs, file_imports, keywords, &None)?;
               let true_code = to_js_code(true_branch, ns, local_defs, file_imports, keywords, &None)?;
               call_stack::pop_call_stack();
-              Ok(format!(
-                "{}( {} ? {} : {} )",
-                return_code, cond_code, true_code, false_code
-              ))
+              Ok(format!("{}( {} ? {} : {} )", return_code, cond_code, true_code, false_code))
             }
             (_, _) => Err(format!("if expected 2~3 nodes, got: {:?}", body)),
           };
@@ -637,21 +634,14 @@ fn gen_symbol_code(
 }
 
 // track but compare first, return Err if a different one existed
-fn track_ns_import(
-  sym: String,
-  import_rule: ImportedTarget,
-  file_imports: &RefCell<ImportsDict>,
-) -> Result<(), String> {
+fn track_ns_import(sym: String, import_rule: ImportedTarget, file_imports: &RefCell<ImportsDict>) -> Result<(), String> {
   let mut dict = file_imports.borrow_mut();
   match dict.get(&sym) {
     Some(v) => {
       if *v == import_rule {
         Ok(())
       } else {
-        Err(format!(
-          "conflicted import rule, previous {:?}, now {:?}",
-          v, import_rule
-        ))
+        Err(format!("conflicted import rule, previous {:?}, now {:?}", v, import_rule))
       }
     }
     None => {
@@ -743,15 +733,13 @@ fn gen_let_code(
               if content.len() == 1 {
                 match &content[0] {
                   Calcit::List(ys) if ys.len() > 2 => match (&ys[0], &ys[1]) {
-                    (Calcit::Syntax(sym, _ns), Calcit::List(zs)) if sym == &CalcitSyntax::CoreLet && zs.len() == 2 => {
-                      match &zs[0] {
-                        Calcit::Symbol(s2, ..) if !scoped_defs.contains(s2) => {
-                          let_def_body = ys.skip(1);
-                          continue;
-                        }
-                        _ => (),
+                    (Calcit::Syntax(sym, _ns), Calcit::List(zs)) if sym == &CalcitSyntax::CoreLet && zs.len() == 2 => match &zs[0] {
+                      Calcit::Symbol(s2, ..) if !scoped_defs.contains(s2) => {
+                        let_def_body = ys.skip(1);
+                        continue;
                       }
-                    }
+                      _ => (),
+                    },
                     _ => (),
                   },
                   _ => (),
@@ -896,14 +884,7 @@ fn list_to_js_code(
   for (idx, x) in xs.iter().enumerate() {
     // result = result & "// " & $x & "\n"
     if idx == xs.len() - 1 {
-      let line = to_js_code(
-        x,
-        ns,
-        &local_defs,
-        file_imports,
-        keywords,
-        &Some(return_label.to_owned()),
-      )?;
+      let line = to_js_code(x, ns, &local_defs, file_imports, keywords, &Some(return_label.to_owned()))?;
       result.push_str(&line);
       result.push('\n');
     } else {
@@ -1026,14 +1007,7 @@ fn gen_js_func(
 
   if !body.is_empty() && uses_recur(&body[body.len() - 1]) {
     let return_var = js_gensym("return_mark");
-    let body = list_to_js_code(
-      &body,
-      ns,
-      local_defs,
-      &format!("%%{}%% =", return_var),
-      file_imports,
-      keywords,
-    )?;
+    let body = list_to_js_code(&body, ns, local_defs, &format!("%%{}%% =", return_var), file_imports, keywords)?;
     let fn_def = snippets::tmpl_tail_recursion(
       /* name = */ escape_var(name),
       /* args_code = */ args_code,
@@ -1232,11 +1206,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           continue;
         }
         if is_preferred_js_proc(&def) {
-          defs_code.push_str(&format!(
-            "\nvar {} = $calcit_procs.{};\n",
-            escape_var(&def),
-            escape_var(&def)
-          ));
+          defs_code.push_str(&format!("\nvar {} = $calcit_procs.{};\n", escape_var(&def), escape_var(&def)));
           continue;
         }
       }
@@ -1246,24 +1216,11 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       match &f {
         // probably not work here
         Calcit::Proc(..) => {
-          defs_code.push_str(&format!(
-            "\nvar {} = $calcit_procs.{};\n",
-            escape_var(&def),
-            escape_var(&def)
-          ));
+          defs_code.push_str(&format!("\nvar {} = $calcit_procs.{};\n", escape_var(&def), escape_var(&def)));
         }
         Calcit::Fn(name, def_ns, _, _, args, code) => {
           call_stack::push_call_stack(def_ns, name, StackKind::Codegen, f.to_owned(), &im::vector![]);
-          defs_code.push_str(&gen_js_func(
-            &def,
-            args,
-            code,
-            &ns,
-            true,
-            &def_names,
-            &file_imports,
-            &keywords,
-          )?);
+          defs_code.push_str(&gen_js_func(&def, args, code, &ns, true, &def_names, &file_imports, &keywords)?);
           call_stack::pop_call_stack();
         }
         Calcit::Thunk(code, _) => {
@@ -1310,11 +1267,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
               import_code.push_str(&format!("\nimport * as {} from {};", escape_ns(&def), import_target));
             } else {
               let import_target = to_js_import_name(&target_ns, false); // TODO js_mode
-              import_code.push_str(&format!(
-                "\nimport * as {} from {};",
-                escape_ns(&target_ns),
-                import_target
-              ));
+              import_code.push_str(&format!("\nimport * as {} from {};", escape_ns(&target_ns), import_target));
             }
           }
           ImportedTarget::DefaultNs(target_ns) => {
@@ -1355,10 +1308,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     let js_file_path = code_emit_path.join(to_js_file_name(&ns, false)); // TODO mjs_mode
     let wrote_new = write_file_if_changed(
       &js_file_path,
-      &format!(
-        "{}\n{}{}\n\n{}\n{}",
-        import_code, keywords_code, defs_code, vals_code, direct_code
-      ),
+      &format!("{}\n{}{}\n\n{}\n{}", import_code, keywords_code, defs_code, vals_code, direct_code),
     );
     if wrote_new {
       println!("Emitted js file: {}", js_file_path.to_str().unwrap());

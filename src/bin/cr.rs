@@ -27,7 +27,7 @@ fn main() -> Result<(), String> {
 
   // get dirty functions injected
   #[cfg(not(target_arch = "wasm32"))]
-  builtins::register_import_proc("&call-dylib-edn", injection::call_dylib_edn);
+  injection::inject_platform_apis();
 
   let cli_matches = cli_args::parse_cli();
   let settings = ProgramSettings {
@@ -79,14 +79,8 @@ fn main() -> Result<(), String> {
       }
     }
   }
-  let init_fn = cli_matches
-    .value_of("init-fn")
-    .or(Some(&snapshot.configs.init_fn))
-    .unwrap();
-  let reload_fn = cli_matches
-    .value_of("reload-fn")
-    .or(Some(&snapshot.configs.reload_fn))
-    .unwrap();
+  let init_fn = cli_matches.value_of("init-fn").or(Some(&snapshot.configs.init_fn)).unwrap();
+  let reload_fn = cli_matches.value_of("reload-fn").or(Some(&snapshot.configs.reload_fn)).unwrap();
 
   // attach core
   for (k, v) in core_snapshot.files {
@@ -104,7 +98,8 @@ fn main() -> Result<(), String> {
     calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
     None,
     check_warnings,
-  )?;
+  )
+  .map_err(|e| e.msg)?;
 
   let task = if settings.emit_js {
     run_codegen(init_fn, reload_fn, &program_code, &settings.emit_path, false)
@@ -113,7 +108,12 @@ fn main() -> Result<(), String> {
   } else {
     let started_time = Instant::now();
 
-    let v = calcit_runner::run_program(init_fn, im::vector![], &program_code)?;
+    let v = calcit_runner::run_program(init_fn, im::vector![], &program_code).map_err(|e| {
+      for w in e.warnings {
+        println!("{}", w);
+      }
+      e.msg
+    })?;
 
     let duration = Instant::now().duration_since(started_time);
     println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
@@ -215,7 +215,12 @@ fn recall_program(
   } else {
     // run from `reload_fn` after reload
     let started_time = Instant::now();
-    let v = calcit_runner::run_program(reload_fn, im::vector![], &new_code)?;
+    let v = calcit_runner::run_program(reload_fn, im::vector![], &new_code).map_err(|e| {
+      for w in e.warnings {
+        println!("{}", w);
+      }
+      e.msg
+    })?;
     let duration = Instant::now().duration_since(started_time);
     println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
     Ok(())
@@ -266,17 +271,16 @@ fn run_codegen(
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure)?;
+      call_stack::display_stack(&failure.msg)?;
 
       let _ = fs::write(
         &js_file_path,
         format!(
           "export default \"Preprocessing failed:\\n{}\";",
-          failure.trim().escape_default()
+          failure.msg.trim().escape_default()
         ),
       );
-
-      return Err(failure);
+      return Err(failure.msg);
     }
   }
 
@@ -285,8 +289,8 @@ fn run_codegen(
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure)?;
-      return Err(failure);
+      call_stack::display_stack(&failure.msg)?;
+      return Err(failure.msg);
     }
   }
   let warnings = check_warnings.to_owned().into_inner();
@@ -297,10 +301,7 @@ fn run_codegen(
       content = format!("{}\n{}", content, message);
     }
 
-    let _ = fs::write(
-      &js_file_path,
-      format!("export default \"{}\";", content.trim().escape_default()),
-    );
+    let _ = fs::write(&js_file_path, format!("export default \"{}\";", content.trim().escape_default()));
     return Err(format!(
       "Found {} warnings, codegen blocked. errors in {}.js",
       warnings.len(),

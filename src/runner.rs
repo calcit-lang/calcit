@@ -4,7 +4,7 @@ use crate::builtins;
 use crate::builtins::is_proc_name;
 use crate::call_stack;
 use crate::call_stack::{push_call_stack, StackKind};
-use crate::primes::{Calcit, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
+use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
 
 pub fn evaluate_expr(
@@ -12,7 +12,7 @@ pub fn evaluate_expr(
   scope: &CalcitScope,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
-) -> Result<Calcit, String> {
+) -> Result<Calcit, CalcitErr> {
   // println!("eval code: {}", expr.lisp_str());
 
   match expr {
@@ -32,7 +32,8 @@ pub fn evaluate_expr(
                 let evaled_v = evaluate_expr(&code, scope, file_ns, program_code)?;
                 // and write back to program state to fix duplicated evalution
                 // still using thunk since js and IR requires bare code
-                program::write_evaled_def(r_ns, r_def, Calcit::Thunk(code, Some(Box::new(evaled_v.to_owned()))))?;
+                program::write_evaled_def(r_ns, r_def, Calcit::Thunk(code, Some(Box::new(evaled_v.to_owned()))))
+                  .map_err(CalcitErr::use_string)?;
                 Ok(evaled_v)
               }
               _ => Ok(v),
@@ -54,7 +55,7 @@ pub fn evaluate_expr(
     Calcit::Buffer(..) => Ok(expr.to_owned()),
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
     Calcit::List(xs) => match xs.get(0) {
-      None => Err(format!("cannot evaluate empty expr: {}", expr)),
+      None => Err(CalcitErr::use_string(format!("cannot evaluate empty expr: {}", expr))),
       Some(x) => {
         // println!("eval expr: {}", expr.lisp_str());
         // println!("eval expr: {}", x);
@@ -125,24 +126,24 @@ pub fn evaluate_expr(
                   None => Ok(Calcit::Nil),
                 }
               } else {
-                Err(format!("expected a hashmap, got {}", v))
+                Err(CalcitErr::use_string(format!("expected a hashmap, got {}", v)))
               }
             } else {
-              Err(format!(
+              Err(CalcitErr::use_string(format!(
                 "keyword only takes 1 argument, got: {}",
                 CrListWrap(rest_nodes)
-              ))
+              )))
             }
           }
-          Calcit::Symbol(s, ns, at_def, resolved) => Err(format!(
+          Calcit::Symbol(s, ns, at_def, resolved) => Err(CalcitErr::use_string(format!(
             "cannot evaluate symbol directly: {}/{} in {}, {:?}",
             ns, s, at_def, resolved
-          )),
-          a => Err(format!(
+          ))),
+          a => Err(CalcitErr::use_string(format!(
             "cannot be used as operator: {} in {}",
             a,
             CrListWrap(xs.to_owned())
-          )),
+          ))),
         };
 
         if added_stack && ret.is_ok() {
@@ -152,9 +153,9 @@ pub fn evaluate_expr(
         ret
       }
     },
-    Calcit::Set(_) => Err(String::from("unexpected set for expr")),
-    Calcit::Map(_) => Err(String::from("unexpected map for expr")),
-    Calcit::Record(..) => Err(String::from("unexpected record for expr")),
+    Calcit::Set(_) => Err(CalcitErr::use_str("unexpected set for expr")),
+    Calcit::Map(_) => Err(CalcitErr::use_str("unexpected map for expr")),
+    Calcit::Record(..) => Err(CalcitErr::use_str("unexpected record for expr")),
     Calcit::Proc(_) => Ok(expr.to_owned()),
     Calcit::Macro(..) => Ok(expr.to_owned()),
     Calcit::Fn(..) => Ok(expr.to_owned()),
@@ -167,18 +168,21 @@ pub fn evaluate_symbol(
   scope: &CalcitScope,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
-) -> Result<Calcit, String> {
+) -> Result<Calcit, CalcitErr> {
   match parse_ns_def(sym) {
     Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns, &ns_part, program_code) {
       Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, program_code) {
         Ok(v) => Ok(v),
         Err(e) => Err(e),
       },
-      None => Err(format!("unknown ns target: {}/{}", ns_part, def_part)),
+      None => Err(CalcitErr::use_string(format!("unknown ns target: {}/{}", ns_part, def_part))),
     },
     None => {
       if CalcitSyntax::is_core_syntax(sym) {
-        return Ok(Calcit::Syntax(CalcitSyntax::from(sym)?, file_ns.to_owned()));
+        return Ok(Calcit::Syntax(
+          CalcitSyntax::from(sym).map_err(CalcitErr::use_string)?,
+          file_ns.to_owned(),
+        ));
       }
       if scope.contains_key(sym) {
         // although scope is detected first, it would trigger warning during preprocess
@@ -197,7 +201,7 @@ pub fn evaluate_symbol(
         Some(target_ns) => eval_symbol_from_program(sym, &target_ns, program_code),
         None => {
           let vars: Vec<&String> = scope.keys().collect();
-          Err(format!("unknown symbol `{}` in {:?}", sym, vars))
+          Err(CalcitErr::use_string(format!("unknown symbol `{}` in {:?}", sym, vars)))
         }
       }
     }
@@ -217,16 +221,16 @@ pub fn parse_ns_def(s: &str) -> Option<(String, String)> {
   }
 }
 
-fn eval_symbol_from_program(sym: &str, ns: &str, program_code: &program::ProgramCodeData) -> Result<Calcit, String> {
+fn eval_symbol_from_program(sym: &str, ns: &str, program_code: &program::ProgramCodeData) -> Result<Calcit, CalcitErr> {
   match program::lookup_evaled_def(ns, sym) {
     Some(v) => Ok(v),
     None => match program::lookup_def_code(ns, sym, program_code) {
       Some(code) => {
         let v = evaluate_expr(&code, &im::HashMap::new(), ns, program_code)?;
-        program::write_evaled_def(ns, sym, v.to_owned())?;
+        program::write_evaled_def(ns, sym, v.to_owned()).map_err(CalcitErr::use_string)?;
         Ok(v)
       }
-      None => Err(format!("cannot find code for def: {}/{}", ns, sym)),
+      None => Err(CalcitErr::use_string(format!("cannot find code for def: {}/{}", ns, sym))),
     },
   }
 }
@@ -238,7 +242,7 @@ pub fn run_fn(
   body: &CalcitItems,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
-) -> Result<Calcit, String> {
+) -> Result<Calcit, CalcitErr> {
   let mut current_values = values.to_owned();
   loop {
     let body_scope = bind_args(args, &current_values, scope)?;
@@ -254,14 +258,14 @@ pub fn run_fn(
 
 /// create new scope by wrting new args
 /// notice that `&` is a mark for spreading, `?` for optional arguments
-pub fn bind_args(args: &CalcitItems, values: &CalcitItems, base_scope: &CalcitScope) -> Result<CalcitScope, String> {
+pub fn bind_args(args: &CalcitItems, values: &CalcitItems, base_scope: &CalcitScope) -> Result<CalcitScope, CalcitErr> {
   // TODO arguments spreading syntax
   // if values.len() != args.len() {
-  //   return Err(format!(
+  //   return Err(CalcitErr::use_string(format!(
   //     "arguments length mismatch: {} ... {}",
   //     Calcit::List(values.to_owned()),
   //     Calcit::List(args.to_owned()),
-  //   ));
+  //   )));
   // }
   let mut scope = base_scope.to_owned();
   let mut spreading = false;
@@ -271,8 +275,8 @@ pub fn bind_args(args: &CalcitItems, values: &CalcitItems, base_scope: &CalcitSc
   while let Some(a) = collected_args.pop_front() {
     if spreading {
       match a {
-        Calcit::Symbol(s, ..) if s == "&" => return Err(format!("invalid & in args: {:?}", args)),
-        Calcit::Symbol(s, ..) if s == "?" => return Err(format!("invalid ? in args: {:?}", args)),
+        Calcit::Symbol(s, ..) if s == "&" => return Err(CalcitErr::use_string(format!("invalid & in args: {:?}", args))),
+        Calcit::Symbol(s, ..) if s == "?" => return Err(CalcitErr::use_string(format!("invalid ? in args: {:?}", args))),
         Calcit::Symbol(s, ..) => {
           let mut chunk: CalcitItems = im::vector![];
           while let Some(v) = collected_values.pop_front() {
@@ -280,14 +284,14 @@ pub fn bind_args(args: &CalcitItems, values: &CalcitItems, base_scope: &CalcitSc
           }
           scope.insert(s, Calcit::List(chunk));
           if !collected_args.is_empty() {
-            return Err(format!(
+            return Err(CalcitErr::use_string(format!(
               "extra args `{}` after spreading in `{}`",
               CrListWrap(collected_args),
               CrListWrap(args.to_owned()),
-            ));
+            )));
           }
         }
-        b => return Err(format!("invalid argument name: {}", b)),
+        b => return Err(CalcitErr::use_string(format!("invalid argument name: {}", b))),
       }
     } else {
       match a {
@@ -301,27 +305,27 @@ pub fn bind_args(args: &CalcitItems, values: &CalcitItems, base_scope: &CalcitSc
             if optional {
               scope.insert(s.to_owned(), Calcit::Nil);
             } else {
-              return Err(format!(
+              return Err(CalcitErr::use_string(format!(
                 "too few values `{}` passed to args `{}`",
                 CrListWrap(values.to_owned()),
                 CrListWrap(args.to_owned())
-              ));
+              )));
             }
           }
         },
-        b => return Err(format!("invalid argument name: {}", b)),
+        b => return Err(CalcitErr::use_string(format!("invalid argument name: {}", b))),
       }
     }
   }
   if collected_values.is_empty() {
     Ok(scope)
   } else {
-    Err(format!(
+    Err(CalcitErr::use_string(format!(
       "extra args `{}` not handled while passing values `{}` to args `{}`",
       CrListWrap(collected_values),
       CrListWrap(values.to_owned()),
       CrListWrap(args.to_owned()),
-    ))
+    )))
   }
 }
 
@@ -330,7 +334,7 @@ pub fn evaluate_lines(
   scope: &CalcitScope,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
-) -> Result<Calcit, String> {
+) -> Result<Calcit, CalcitErr> {
   let mut ret: Calcit = Calcit::Nil;
   for line in lines {
     match evaluate_expr(line, scope, file_ns, program_code) {
@@ -348,7 +352,7 @@ pub fn evaluate_args(
   scope: &CalcitScope,
   file_ns: &str,
   program_code: &program::ProgramCodeData,
-) -> Result<CalcitItems, String> {
+) -> Result<CalcitItems, CalcitErr> {
   let mut ret: CalcitItems = im::vector![];
   let mut spreading = false;
   for item in items {
@@ -356,40 +360,39 @@ pub fn evaluate_args(
       Calcit::Symbol(s, ..) if s == "&" => {
         spreading = true;
       }
-      _ => match &evaluate_expr(item, scope, file_ns, program_code) {
-        Ok(v) => {
-          if spreading {
-            match v {
-              Calcit::List(xs) => {
-                for x in xs {
-                  // extract thunk before calling functions
-                  let y = match x {
-                    Calcit::Thunk(code, v) => match v {
-                      None => evaluate_expr(code, scope, file_ns, program_code)?,
-                      Some(data) => *data.to_owned(),
-                    },
-                    _ => x.to_owned(),
-                  };
-                  ret.push_back(y.to_owned());
-                }
-                spreading = false
+      _ => {
+        let v = evaluate_expr(item, scope, file_ns, program_code)?;
+
+        if spreading {
+          match v {
+            Calcit::List(xs) => {
+              for x in xs {
+                // extract thunk before calling functions
+                let y = match x {
+                  Calcit::Thunk(code, v) => match v {
+                    None => evaluate_expr(&*code, scope, file_ns, program_code)?,
+                    Some(data) => *data.to_owned(),
+                  },
+                  _ => x.to_owned(),
+                };
+                ret.push_back(y.to_owned());
               }
-              a => return Err(format!("expected list for spreading, got: {}", a)),
+              spreading = false
             }
-          } else {
-            // extract thunk before calling functions
-            let y = match v {
-              Calcit::Thunk(code, value) => match value {
-                None => evaluate_expr(code, scope, file_ns, program_code)?,
-                Some(data) => *data.to_owned(),
-              },
-              _ => v.to_owned(),
-            };
-            ret.push_back(y)
+            a => return Err(CalcitErr::use_string(format!("expected list for spreading, got: {}", a))),
           }
+        } else {
+          // extract thunk before calling functions
+          let y = match v {
+            Calcit::Thunk(code, value) => match value {
+              None => evaluate_expr(&*code, scope, file_ns, program_code)?,
+              Some(data) => *data.to_owned(),
+            },
+            _ => v.to_owned(),
+          };
+          ret.push_back(y)
         }
-        Err(e) => return Err(e.to_owned()),
-      },
+      }
     }
   }
   Ok(ret)

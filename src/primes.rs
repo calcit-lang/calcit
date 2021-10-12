@@ -132,11 +132,7 @@ impl fmt::Display for Calcit {
       Calcit::Record(name, fields, values) => {
         f.write_str(&format!("(%{{}} {}", Calcit::Keyword(*name)))?;
         for idx in 0..fields.len() {
-          f.write_str(&format!(
-            " ({} {})",
-            Calcit::Keyword(fields[idx].to_owned()),
-            values[idx]
-          ))?;
+          f.write_str(&format!(" ({} {})", Calcit::Keyword(fields[idx].to_owned()), values[idx]))?;
         }
         f.write_str(")")
       }
@@ -506,4 +502,38 @@ pub fn lookup_kwd_str(x: Calcit) -> Result<String, String> {
 pub fn gen_core_id() -> String {
   let c = ID_GEN.fetch_add(1, SeqCst);
   format!("gen_id_{}", c)
+}
+
+pub struct CalcitErr {
+  pub msg: String,
+  // stack: im::Vector<String>,
+  pub warnings: Vec<String>,
+}
+
+impl fmt::Display for CalcitErr {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str(&self.msg)?;
+    if !self.warnings.is_empty() {
+      f.write_str("\n")?;
+      for w in &self.warnings {
+        writeln!(f, "{}", w)?;
+      }
+    }
+    Ok(())
+  }
+}
+
+impl CalcitErr {
+  pub fn use_str(msg: &str) -> Self {
+    CalcitErr {
+      msg: msg.to_owned(),
+      warnings: vec![],
+    }
+  }
+  pub fn use_string(msg: String) -> Self {
+    CalcitErr {
+      msg: msg.to_owned(),
+      warnings: vec![],
+    }
+  }
 }

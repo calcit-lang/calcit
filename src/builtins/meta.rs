@@ -4,9 +4,7 @@ use crate::call_stack;
 use crate::data::cirru;
 use crate::data::edn;
 use crate::primes;
-use crate::primes::{
-  gen_core_id, keyword::load_order_key, load_kwd, lookup_order_kwd_str, Calcit, CalcitItems, CrListWrap,
-};
+use crate::primes::{gen_core_id, keyword::load_order_key, load_kwd, lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems, CrListWrap};
 use crate::program;
 use crate::runner;
 use crate::util::number::f64_to_usize;
@@ -20,7 +18,7 @@ use std::sync::atomic::AtomicUsize;
 static SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 
-pub fn type_of(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(a) => match a {
       Calcit::Nil => Ok(load_kwd("nil")),
@@ -44,27 +42,27 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, String> {
       Calcit::Fn(..) => Ok(load_kwd("fn")),
       Calcit::Syntax(..) => Ok(load_kwd("synta")),
     },
-    None => Err(String::from("type-of expected 1 argument")),
+    None => Err(CalcitErr::use_str("type-of expected 1 argument")),
   }
 }
 
-pub fn recur(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn recur(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Recur(xs.to_owned()))
 }
 
-pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(v) => Ok(Calcit::Str(v.lisp_str())),
-    None => Err(String::from("format-to-lisp expected 1 argument")),
+    None => Err(CalcitErr::use_str("format-to-lisp expected 1 argument")),
   }
 }
 
-pub fn format_to_cirru(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn format_to_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(v) => {
-      cirru_parser::format(&[transform_code_to_cirru(v)], CirruWriterOptions { use_inline: false }).map(Calcit::Str)
-    }
-    None => Err(String::from("format-to-cirru expected 1 argument")),
+    Some(v) => cirru_parser::format(&[transform_code_to_cirru(v)], CirruWriterOptions { use_inline: false })
+      .map(Calcit::Str)
+      .map_err(CalcitErr::use_string),
+    None => Err(CalcitErr::use_str("format-to-cirru expected 1 argument")),
   }
 }
 
@@ -84,7 +82,7 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
   }
 }
 
-pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn gensym(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let idx = SYMBOL_INDEX.fetch_add(1, atomic::Ordering::SeqCst);
   let n = idx + 1; // use 1 as first value since previous implementation did this
 
@@ -103,7 +101,7 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
       chunk.push_str(&n.to_string());
       chunk
     }
-    Some(a) => return Err(format!("gensym expected a string, but got: {}", a)),
+    Some(a) => return Err(CalcitErr::use_string(format!("gensym expected a string, but got: {}", a))),
     None => {
       let mut chunk = String::from("G__");
       chunk.push_str(&n.to_string());
@@ -118,7 +116,7 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, String> {
   ))
 }
 
-pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let _ = SYMBOL_INDEX.swap(0, atomic::Ordering::SeqCst);
   Ok(Calcit::Nil)
 }
@@ -144,13 +142,13 @@ pub fn js_gensym(name: &str) -> String {
 }
 
 /// TODO, move out to calcit
-pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let size = match xs.get(0) {
     Some(Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(size) => Some(size),
-      Err(e) => return Err(e),
+      Err(e) => return Err(CalcitErr::use_string(e)),
     },
-    Some(a) => return Err(format!("expected usize, got: {}", a)),
+    Some(a) => return Err(CalcitErr::use_string(format!("expected usize, got: {}", a))),
     None => None, // nanoid defaults to 21
   };
 
@@ -164,64 +162,69 @@ pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, String> {
       }
       Ok(Calcit::Str(gen_core_id()))
     }
-    (a, b) => Err(format!("generate-id! expected size or charset, got: {:?} {:?}", a, b)),
+    (a, b) => Err(CalcitErr::use_string(format!(
+      "generate-id! expected size or charset, got: {:?} {:?}",
+      a, b
+    ))),
   }
 }
 
-pub fn display_stack(_xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn display_stack(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   call_stack::show_stack();
   Ok(Calcit::Nil)
 }
 
-pub fn parse_cirru(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn parse_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
       Ok(nodes) => Ok(cirru::cirru_to_calcit(&Cirru::List(nodes))),
-      Err(e) => Err(format!("parse-cirru failed, {}", e)),
+      Err(e) => Err(CalcitErr::use_string(format!("parse-cirru failed, {}", e))),
     },
-    Some(a) => Err(format!("parse-cirru expected a string, got: {}", a)),
-    None => Err(String::from("parse-cirru expected 1 argument")),
+    Some(a) => Err(CalcitErr::use_string(format!("parse-cirru expected a string, got: {}", a))),
+    None => Err(CalcitErr::use_str("parse-cirru expected 1 argument")),
   }
 }
 
-pub fn format_cirru(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn format_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(a) => {
       let options = cirru_parser::CirruWriterOptions { use_inline: false };
       match cirru::calcit_data_to_cirru(a) {
         Ok(v) => {
           if let Cirru::List(ys) = v {
-            Ok(Calcit::Str(cirru_parser::format(&ys, options)?))
+            Ok(Calcit::Str(cirru_parser::format(&ys, options).map_err(CalcitErr::use_string)?))
           } else {
-            Err(format!("expected vector for Cirru formatting: {}", v))
+            Err(CalcitErr::use_string(format!("expected vector for Cirru formatting: {}", v)))
           }
         }
-        Err(e) => Err(format!("format-cirru failed, {}", e)),
+        Err(e) => Err(CalcitErr::use_string(format!("format-cirru failed, {}", e))),
       }
     }
-    None => Err(String::from("parse-cirru expected 1 argument")),
+    None => Err(CalcitErr::use_str("parse-cirru expected 1 argument")),
   }
 }
 
-pub fn parse_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn parse_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match cirru_edn::parse(s) {
       Ok(nodes) => Ok(edn::edn_to_calcit(&nodes)),
-      Err(e) => Err(format!("parse-cirru-edn failed, {}", e)),
+      Err(e) => Err(CalcitErr::use_string(format!("parse-cirru-edn failed, {}", e))),
     },
-    Some(a) => Err(format!("parse-cirru-edn expected a string, got: {}", a)),
-    None => Err(String::from("parse-cirru-edn expected 1 argument")),
+    Some(a) => Err(CalcitErr::use_string(format!("parse-cirru-edn expected a string, got: {}", a))),
+    None => Err(CalcitErr::use_str("parse-cirru-edn expected 1 argument")),
   }
 }
 
-pub fn format_cirru_edn(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn format_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)?, true)?)),
-    None => Err(String::from("format-cirru-edn expected 1 argument")),
+    Some(a) => Ok(Calcit::Str(
+      cirru_edn::format(&edn::calcit_to_edn(a).map_err(CalcitErr::use_string)?, true).map_err(CalcitErr::use_string)?,
+    )),
+    None => Err(CalcitErr::use_str("format-cirru-edn expected 1 argument")),
   }
 }
 
-pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => Ok(Calcit::Symbol(
       s.to_owned(),
@@ -235,40 +238,34 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, String> {
       String::from(primes::GENERATED_DEF),
       None,
     )),
-    Some(Calcit::Symbol(s, ns, def, resolved)) => Ok(Calcit::Symbol(
-      s.to_owned(),
-      ns.to_owned(),
-      def.to_owned(),
-      resolved.to_owned(),
-    )),
-    Some(a) => Err(format!("turn-symbol cannot turn this to symbol: {}", a)),
-    None => Err(String::from("turn-symbol expected 1 argument, got nothing")),
+    Some(Calcit::Symbol(s, ns, def, resolved)) => Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), resolved.to_owned())),
+    Some(a) => Err(CalcitErr::use_string(format!("turn-symbol cannot turn this to symbol: {}", a))),
+    None => Err(CalcitErr::use_str("turn-symbol expected 1 argument, got nothing")),
   }
 }
 
-pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => Ok(load_kwd(s)),
     Some(Calcit::Keyword(s)) => Ok(Calcit::Keyword(s.to_owned())),
     Some(Calcit::Symbol(s, ..)) => Ok(load_kwd(s)),
-    Some(a) => Err(format!("turn-keyword cannot turn this to keyword: {}", a)),
-    None => Err(String::from("turn-keyword expected 1 argument, got nothing")),
+    Some(a) => Err(CalcitErr::use_string(format!("turn-keyword cannot turn this to keyword: {}", a))),
+    None => Err(CalcitErr::use_str("turn-keyword expected 1 argument, got nothing")),
   }
 }
 
-pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    Err(format!("tuple expected 2 arguments, got {}", CrListWrap(xs.to_owned())))
+    Err(CalcitErr::use_string(format!(
+      "tuple expected 2 arguments, got {}",
+      CrListWrap(xs.to_owned())
+    )))
   } else {
     Ok(Calcit::Tuple(Box::new(xs[0].to_owned()), Box::new(xs[1].to_owned())))
   }
 }
 
-pub fn invoke_method(
-  name: &str,
-  invoke_args: &CalcitItems,
-  program_code: &program::ProgramCodeData,
-) -> Result<Calcit, String> {
+pub fn invoke_method(name: &str, invoke_args: &CalcitItems, program_code: &program::ProgramCodeData) -> Result<Calcit, CalcitErr> {
   let (class, value) = match invoke_args.get(0) {
     Some(Calcit::Tuple(a, _b)) => ((**a).to_owned(), invoke_args.get(0).unwrap().to_owned()),
     Some(Calcit::Number(..)) => {
@@ -312,7 +309,7 @@ pub fn invoke_method(
       let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
       (class, invoke_args[0].to_owned())
     }
-    x => return Err(format!("cannot decide a class from: {:?}", x)),
+    x => return Err(CalcitErr::use_string(format!("cannot decide a class from: {:?}", x))),
   };
   match &class {
     Calcit::Record(_, fields, values) => {
@@ -335,11 +332,11 @@ pub fn invoke_method(
               runner::run_fn(&method_args, def_scope, args, body, def_ns, program_code)
             }
             Calcit::Proc(proc) => builtins::handle_proc(proc, &method_args),
-            Calcit::Syntax(syn, _ns) => Err(format!(
+            Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_string(format!(
               "cannot get syntax here since instance is always evaluated, got: {}",
               syn
-            )),
-            y => Err(format!("expected a function to invoke, got: {}", y)),
+            ))),
+            y => Err(CalcitErr::use_string(format!("expected a function to invoke, got: {}", y))),
           }
         }
         None => {
@@ -347,11 +344,14 @@ pub fn invoke_method(
           for k in fields {
             content = format!("{},{}", content, lookup_order_kwd_str(k))
           }
-          Err(format!("missing field `{}` in {}", name, content))
+          Err(CalcitErr::use_string(format!("missing field `{}` in {}", name, content)))
         }
       }
     }
-    x => Err(format!("method invoking expected a record as class, got: {}", x)),
+    x => Err(CalcitErr::use_string(format!(
+      "method invoking expected a record as class, got: {}",
+      x
+    ))),
   }
 }
 
@@ -368,35 +368,44 @@ fn gen_sym(sym: &str) -> Calcit {
   )
 }
 
-pub fn native_compare(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn native_compare(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(a), Some(b)) => match a.cmp(b) {
       Ordering::Less => Ok(Calcit::Number(-1.0)),
       Ordering::Greater => Ok(Calcit::Number(1.0)),
       Ordering::Equal => Ok(Calcit::Number(0.0)),
     },
-    (a, b) => Err(format!("&compare expected 2 values, got {:?} {:?}", a, b)),
+    (a, b) => Err(CalcitErr::use_string(format!("&compare expected 2 values, got {:?} {:?}", a, b))),
   }
 }
 
-pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Tuple(a, b)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(0) => Ok((**a).to_owned()),
       Ok(1) => Ok((**b).to_owned()),
-      Ok(m) => Err(format!("Tuple only got 2 elements, trying to index with {}", m)),
-      Err(e) => Err(format!("&tuple:nth expect usize, {}", e)),
+      Ok(m) => Err(CalcitErr::use_string(format!(
+        "Tuple only got 2 elements, trying to index with {}",
+        m
+      ))),
+      Err(e) => Err(CalcitErr::use_string(format!("&tuple:nth expect usize, {}", e))),
     },
-    (Some(_), None) => Err(format!("&tuple:nth expected a tuple and an index, got: {:?}", xs)),
-    (None, Some(_)) => Err(format!("&tuple:nth expected a tuple and an index, got: {:?}", xs)),
-    (_, _) => Err(format!(
+    (Some(_), None) => Err(CalcitErr::use_string(format!(
+      "&tuple:nth expected a tuple and an index, got: {:?}",
+      xs
+    ))),
+    (None, Some(_)) => Err(CalcitErr::use_string(format!(
+      "&tuple:nth expected a tuple and an index, got: {:?}",
+      xs
+    ))),
+    (_, _) => Err(CalcitErr::use_string(format!(
       "&tuple:nth expected 2 argument, got: {}",
       CrListWrap(xs.to_owned())
-    )),
+    ))),
   }
 }
 
-pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Tuple(a0, a1)), Some(Calcit::Number(n)), Some(a)) => match f64_to_usize(*n) {
       Ok(idx) => {
@@ -405,21 +414,24 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, String> {
         } else if idx == 1 {
           Ok(Calcit::Tuple(a0.to_owned(), Box::new(a.to_owned())))
         } else {
-          Err(format!("Tuple only has fields of 0,1 , unknown index: {}", idx))
+          Err(CalcitErr::use_string(format!(
+            "Tuple only has fields of 0,1 , unknown index: {}",
+            idx
+          )))
         }
       }
-      Err(e) => Err(e),
+      Err(e) => Err(CalcitErr::use_string(e)),
     },
-    (Some(a), ..) => Err(format!("tuplu:assoc expected a tuple, got: {}", a)),
-    (None, ..) => Err(format!("tuplu:assoc expected 3 arguments, got: {:?}", xs)),
+    (Some(a), ..) => Err(CalcitErr::use_string(format!("tuplu:assoc expected a tuple, got: {}", a))),
+    (None, ..) => Err(CalcitErr::use_string(format!("tuplu:assoc expected 3 arguments, got: {:?}", xs))),
   }
 }
 
-pub fn no_op() -> Result<Calcit, String> {
+pub fn no_op() -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Nil)
 }
 
-pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, String> {
+pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   // https://doc.rust-lang.org/std/env/consts/constant.OS.html
   Ok(load_kwd(&std::env::consts::OS.to_owned()))
 }
