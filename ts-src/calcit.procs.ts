@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.5.0-a6";
+export const calcit_version = "0.5.0-a7";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse, ICirruNode } from "@cirru/parser.ts";
@@ -1096,6 +1096,10 @@ export let record_$q_ = (x: CalcitValue): boolean => {
 };
 export let tuple_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitTuple;
+};
+export let buffer_$q_ = (x: CalcitValue): boolean => {
+  console.warn("TODO, detecting buffer");
+  return false;
 };
 
 export let _$n_str_$o_escape = (x: string) => JSON.stringify(x);

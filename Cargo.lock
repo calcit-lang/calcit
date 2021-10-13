@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "calcit_runner"
-version = "0.5.0-a6"
+version = "0.5.0-a7"
 dependencies = [
  "cirru_edn",
  "cirru_parser",
@@ -66,11 +66,12 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cirru_edn"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c7cac61b1f862d248bb55df7f5120e122d6394498f96fa40d60afeaa1cab45b"
+checksum = "474965703ba6448db48cc3c23bbd3ee289b2b2c37b3b813404c83d48b1eb8fb8"
 dependencies = [
  "cirru_parser",
+ "hex",
 ]
 
 [[package]]
@@ -182,6 +183,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hex"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
+
+[[package]]
 name = "im"
 version = "15.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -254,9 +261,9 @@ checksum = "9385f66bf6105b241aa65a61cb923ef20efc665cb9f9bb50ac2f0c4b7f378d41"
 
 [[package]]
 name = "libloading"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f84d96438c15fcd6c3f244c8fce01d1e2b9c6b5623e9c711dc9286d8fc92d6a"
+checksum = "c0cf036d15402bea3c5d4de17b3fce76b3e4a56ebc1f577be0e7a72f7c607cf0"
 dependencies = [
  "cfg-if 1.0.0",
  "winapi 0.3.9",

@@ -52,7 +52,7 @@ pub enum Calcit {
   /// more tagged union type, more like an internal structure
   Tuple(Box<Calcit>, Box<Calcit>),
   ///  to be used by FFIs
-  Buffer(String, Vec<u8>),
+  Buffer(Vec<u8>),
   /// not for data, but for recursion
   Recur(CalcitItems),
   List(CalcitItems),
@@ -99,7 +99,24 @@ impl fmt::Display for Calcit {
       },
       Calcit::Ref(name) => f.write_str(&format!("(&ref {})", name)),
       Calcit::Tuple(a, b) => f.write_str(&format!("(:: {} {})", a, b)),
-      Calcit::Buffer(name, _) => f.write_str(&format!("&buffer {} [u8]...", name)),
+      Calcit::Buffer(buf) => {
+        f.write_str("(&buffer")?;
+        if buf.len() > 8 {
+          f.write_str(&format!(
+            " {} {} {} {} ..+{}",
+            buffer_bit_hex(buf[0]),
+            buffer_bit_hex(buf[1]),
+            buffer_bit_hex(buf[2]),
+            buffer_bit_hex(buf[3]),
+            buf.len() - 4
+          ))?;
+        } else {
+          for b in buf {
+            f.write_str(&format!(" {:#04x}", b))?;
+          }
+        }
+        f.write_str(")")
+      }
       Calcit::Recur(xs) => {
         f.write_str("(&recur")?;
         for x in xs {
@@ -193,6 +210,10 @@ fn is_simple_str(tok: &str) -> bool {
   true
 }
 
+fn buffer_bit_hex(n: u8) -> String {
+  format!("{:#04x}", n).strip_prefix("0x").unwrap().to_owned()
+}
+
 /// special types wraps vector of calcit data for displaying
 impl fmt::Display for CrListWrap {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -264,9 +285,8 @@ impl Hash for Calcit {
         a.hash(_state);
         b.hash(_state);
       }
-      Calcit::Buffer(name, buf) => {
+      Calcit::Buffer(buf) => {
         "buffer:".hash(_state);
-        name.hash(_state);
         buf.hash(_state);
       }
       Calcit::Recur(v) => {
@@ -370,10 +390,7 @@ impl Ord for Calcit {
       (Calcit::Tuple(_, _), _) => Less,
       (_, Calcit::Tuple(_, _)) => Greater,
 
-      (Calcit::Buffer(name1, buf1), Calcit::Buffer(name2, buf2)) => match name1.cmp(name2) {
-        Equal => buf1.cmp(buf2),
-        v => v,
-      },
+      (Calcit::Buffer(buf1), Calcit::Buffer(buf2)) => buf1.cmp(buf2),
       (Calcit::Buffer(..), _) => Less,
       (_, Calcit::Buffer(..)) => Greater,
 
@@ -448,7 +465,7 @@ impl PartialEq for Calcit {
       (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
       (Calcit::Ref(a), Calcit::Ref(b)) => a == b,
       (Calcit::Tuple(a, b), Calcit::Tuple(c, d)) => a == c && b == d,
-      (Calcit::Buffer(a, b), Calcit::Buffer(c, d)) => a == c && b == d,
+      (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,
       (Calcit::List(a), Calcit::List(b)) => a == b,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,

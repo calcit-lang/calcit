@@ -154,6 +154,9 @@
         |set? $ quote
           defn set? (x) $ &= (type-of x) :set
 
+        |buffer? $ quote
+          defn buffer? (x) $ &= (type-of x) :buffer
+
         |fn? $ quote
           defn fn? (x)
             if
