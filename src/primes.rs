@@ -103,16 +103,21 @@ impl fmt::Display for Calcit {
         f.write_str("(&buffer")?;
         if buf.len() > 8 {
           f.write_str(&format!(
-            " {} {} {} {} ..+{}",
+            " {} {} {} {} {} {} {} {} ..+{}",
             buffer_bit_hex(buf[0]),
             buffer_bit_hex(buf[1]),
             buffer_bit_hex(buf[2]),
             buffer_bit_hex(buf[3]),
-            buf.len() - 4
+            buffer_bit_hex(buf[4]),
+            buffer_bit_hex(buf[5]),
+            buffer_bit_hex(buf[6]),
+            buffer_bit_hex(buf[7]),
+            buf.len() - 8
           ))?;
         } else {
           for b in buf {
-            f.write_str(&format!(" {:#04x}", b))?;
+            f.write_str(" ")?;
+            f.write_str(&buffer_bit_hex(b.to_owned()))?;
           }
         }
         f.write_str(")")
@@ -211,7 +216,7 @@ fn is_simple_str(tok: &str) -> bool {
 }
 
 fn buffer_bit_hex(n: u8) -> String {
-  format!("{:#04x}", n).strip_prefix("0x").unwrap().to_owned()
+  hex::encode(vec![n])
 }
 
 /// special types wraps vector of calcit data for displaying

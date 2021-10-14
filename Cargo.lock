@@ -45,6 +45,7 @@ dependencies = [
  "cirru_parser",
  "clap",
  "dirs",
+ "hex 0.4.3",
  "im",
  "lazy_static",
  "libloading",
@@ -66,12 +67,12 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cirru_edn"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "474965703ba6448db48cc3c23bbd3ee289b2b2c37b3b813404c83d48b1eb8fb8"
+checksum = "4370969734a40a62316bfb60745eb687055e4e94b872699a5f67f442754f325d"
 dependencies = [
  "cirru_parser",
- "hex",
+ "hex 0.3.2",
 ]
 
 [[package]]
@@ -187,6 +188,12 @@ name = "hex"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
+
+[[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "im"
