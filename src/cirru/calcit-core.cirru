@@ -1230,8 +1230,6 @@
           defn reduce (xs x0 f)
             foldl xs x0 f
 
-        |dbt $ quote
-          def dbt dual-balanced-ternary
 
         |/= $ quote
           defn /= (a b) (not= a b)

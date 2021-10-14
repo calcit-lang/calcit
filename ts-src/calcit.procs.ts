@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.5.0-a7";
+export const calcit_version = "0.5.0-a8";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse, ICirruNode } from "@cirru/parser.ts";
@@ -1430,9 +1430,6 @@ let unavailableProc = (...xs: []) => {
 
 // not available for calcit-js
 export let _$n_reset_gensym_index_$x_ = unavailableProc;
-export let dbt__GT_point = unavailableProc;
-export let dbt_digits = unavailableProc;
-export let dual_balanced_ternary = unavailableProc;
 export let gensym = unavailableProc;
 export let macroexpand = unavailableProc;
 export let macroexpand_all = unavailableProc;
