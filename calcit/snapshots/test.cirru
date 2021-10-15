@@ -4,7 +4,7 @@
     :modules $ [] |./test-cond.cirru |./test-gynienic.cirru
       , |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru
       , |./test-math.cirru |./test-recursion.cirru |./test-set.cirru
-      , |./test-string.cirru |./test-ternary.cirru |./test-js.cirru |./test-record.cirru
+      , |./test-string.cirru |./test-js.cirru |./test-record.cirru
       , |./test-nil.cirru |./test-fn.cirru |./test-algebra.cirru
       , |./util.cirru
   :files $ {}
@@ -21,7 +21,6 @@
           [] test-recursion.main :as test-recursion
           [] test-set.main :as test-set
           [] test-string.main :as test-string
-          [] test-ternary.main :as test-ternary
           [] test-js.main :as test-js
           [] test-record.main :as test-record
           [] test-nil.main :as test-nil

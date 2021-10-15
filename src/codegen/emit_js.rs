@@ -1330,9 +1330,6 @@ fn is_js_unavailable_procs(name: &str) -> bool {
   matches!(
     name,
     "&reset-gensym-index!"
-      | "dbt->point"
-      | "dbt-digits" // TODO none
-      | "dbt-balanced-ternary"
       | "gensym"
       | "macroexpand"
       | "macroexpand-all"

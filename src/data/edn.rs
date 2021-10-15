@@ -38,10 +38,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Record(name, fields, values) => {
       let mut entries: Vec<(String, Edn)> = vec![];
       for idx in 0..fields.len() {
-        entries.push((
-          lookup_order_kwd_str(&fields[idx]).to_owned(),
-          calcit_to_edn(&values[idx])?,
-        ));
+        entries.push((lookup_order_kwd_str(&fields[idx]).to_owned(), calcit_to_edn(&values[idx])?));
       }
       Ok(Edn::Record(lookup_order_kwd_str(name), entries))
     }
@@ -70,6 +67,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
         }
       }
     }
+    Calcit::Buffer(buf) => Ok(Edn::Buffer(buf.to_owned())),
     a => Err(format!("not able to generate EDN: {}", a)), // TODO more types to handle
   }
 }
@@ -129,5 +127,6 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       }
       Calcit::Record(load_order_key(name), fields, values)
     }
+    Edn::Buffer(buf) => Calcit::Buffer(buf.to_owned()),
   }
 }
