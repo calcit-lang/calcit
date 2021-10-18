@@ -341,6 +341,32 @@
                 quote $ let{} (a b) ({,} :a 3 :b 4)
                   + a b
 
+              &reset-gensym-index!
+
+              assert=
+                macroexpand-all $ quote
+                  let[] (a b) ([] 1 2)
+                    + a b
+                quasiquote $ ~&let (v__1 (~[] 1 2))
+                  ~&let (a (~&list:nth v__1 0))
+                    ~&let (b (~&list:nth v__1 1))
+                      + a b
+
+              assert=
+                macroexpand-all $ quote
+                  let[] (a b) xs
+                    + a b
+                quasiquote $ ~&let (a (~&list:nth xs 0))
+                  ~&let (b (~&list:nth xs 1))
+                    + a b
+
+              assert=
+                macroexpand-all $ quote
+                  cond
+                    (= a 1) |one
+                    true |other
+                quasiquote $ ~if (= a 1) |one |other
+
             assert=
               [] 3 4 5 6
               let-sugar

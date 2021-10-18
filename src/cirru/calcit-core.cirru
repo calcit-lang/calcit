@@ -338,13 +338,16 @@
               expr $ &list:nth pair 0
               &let
                 branch $ &list:nth pair 1
-                quasiquote
-                  if ~expr ~branch
-                    ~ $ if (&list:empty? else) nil
-                      quasiquote
-                        cond
-                          ~ $ &list:nth else 0
-                          ~@ $ &list:rest else
+                if
+                  if (empty? else) (= true expr) false
+                  , branch
+                  quasiquote
+                    if ~expr ~branch
+                      ~ $ if (&list:empty? else) nil
+                        quasiquote
+                          cond
+                            ~ $ &list:nth else 0
+                            ~@ $ &list:rest else
 
         |key-match $ quote
           defmacro key-match (value & body)
@@ -1155,7 +1158,8 @@
                 every? vars symbol?
                 , false
             let
-                v $ gensym |v
+                variable? $ symbol? data
+                v $ if variable? data $ gensym |v
                 defs $ apply-args
                   [] ([]) vars 0
                   defn let[]% (acc xs idx)
@@ -1172,12 +1176,18 @@
                             append acc $ [] (&list:first xs) (quasiquote (&list:nth ~v ~idx))
                             rest xs
                             inc idx
-              quasiquote
-                &let
-                  ~v ~data
+
+              if variable?
+                quasiquote
                   let
                     ~ defs
                     ~@ body
+                quasiquote
+                  &let
+                    ~v ~data
+                    let
+                      ~ defs
+                      ~@ body
 
         |defrecord $ quote
           defmacro defrecord (name & xs)
