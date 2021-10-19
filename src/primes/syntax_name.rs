@@ -14,11 +14,7 @@ pub enum CalcitSyntax {
   Macroexpand,
   Macroexpand1,
   MacroexpandAll,
-  Foldl,
-  FoldlShortcut,
-  FoldrShortcut,
   Try,
-  Sort,
   Defatom,
   Reset,
   HintFn,
@@ -39,11 +35,7 @@ impl fmt::Display for CalcitSyntax {
       Macroexpand => "macroexpand",
       Macroexpand1 => "macroexpand-1",
       MacroexpandAll => "macroexpand-all",
-      Foldl => "foldl",
-      FoldlShortcut => "foldl-shortcut",
-      FoldrShortcut => "foldr-shortcut",
       Try => "try",
-      Sort => "sort",
       Defatom => "defatom",
       Reset => "reset!",
       HintFn => "hint-fn",
@@ -65,11 +57,7 @@ impl CalcitSyntax {
       "macroexpand" => Ok(Macroexpand),
       "macroexpand-1" => Ok(Macroexpand1),
       "macroexpand-all" => Ok(MacroexpandAll),
-      "foldl" => Ok(Foldl),
-      "foldl-shortcut" => Ok(FoldlShortcut),
-      "foldr-shortcut" => Ok(FoldrShortcut),
       "try" => Ok(Try),
-      "sort" => Ok(Sort),
       "defatom" => Ok(Defatom),
       "reset!" => Ok(Reset),
       "hint-fn" => Ok(HintFn),
@@ -90,11 +78,7 @@ impl CalcitSyntax {
         | "macroexpand"
         | "macroexpand-1"
         | "macroexpand-all"
-        | "foldl" // for performance
-        | "foldl-shortcut" // for performance
-        | "foldr-shortcut" // for performance
         | "try"
-        | "sort" // TODO need better solution
         | "defatom"
         | "reset!"
         | "hint-fn"
@@ -145,25 +129,9 @@ impl Ord for CalcitSyntax {
       (MacroexpandAll, _) => Less,
       (_, MacroexpandAll) => Greater,
 
-      (Foldl, Foldl) => Equal,
-      (Foldl, _) => Less,
-      (_, Foldl) => Greater,
-
-      (FoldlShortcut, FoldlShortcut) => Equal,
-      (FoldlShortcut, _) => Less,
-      (_, FoldlShortcut) => Greater,
-
-      (FoldrShortcut, FoldrShortcut) => Equal,
-      (FoldrShortcut, _) => Less,
-      (_, FoldrShortcut) => Greater,
-
       (Try, Try) => Equal,
       (Try, _) => Less,
       (_, Try) => Greater,
-
-      (Sort, Sort) => Equal,
-      (Sort, _) => Less,
-      (_, Sort) => Greater,
 
       (Defatom, Defatom) => Equal,
       (Defatom, _) => Less,
