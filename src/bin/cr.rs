@@ -87,14 +87,18 @@ fn main() -> Result<(), String> {
     snapshot.files.insert(k.to_owned(), v.to_owned());
   }
 
-  let mut program_code = program::extract_program_data(&snapshot)?;
+  // now global states
+  {
+    let mut prgm = { program::PROGRAM_CODE_DATA.write().unwrap() };
+    *prgm = program::extract_program_data(&snapshot)?;
+  }
+
   let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
 
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
     calcit_runner::primes::CORE_NS,
     calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
-    &program_code,
     calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
     None,
     check_warnings,
@@ -102,13 +106,13 @@ fn main() -> Result<(), String> {
   .map_err(|e| e.msg)?;
 
   let task = if settings.emit_js {
-    run_codegen(init_fn, reload_fn, &program_code, &settings.emit_path, false)
+    run_codegen(init_fn, reload_fn, &settings.emit_path, false)
   } else if settings.emit_ir {
-    run_codegen(init_fn, reload_fn, &program_code, &settings.emit_path, true)
+    run_codegen(init_fn, reload_fn, &settings.emit_path, true)
   } else {
     let started_time = Instant::now();
 
-    let v = calcit_runner::run_program(init_fn, im::vector![], &program_code).map_err(|e| {
+    let v = calcit_runner::run_program(init_fn, im::vector![]).map_err(|e| {
       for w in e.warnings {
         println!("{}", w);
       }
@@ -173,7 +177,7 @@ fn main() -> Result<(), String> {
           println!("failed re-compiling, got empty inc file");
           continue;
         }
-        recall_program(&mut program_code, &content, init_fn, reload_fn, &settings)?;
+        recall_program(&content, init_fn, reload_fn, &settings)?;
       }
     }
   } else {
@@ -181,13 +185,9 @@ fn main() -> Result<(), String> {
   }
 }
 
-fn recall_program(
-  program_code: &mut program::ProgramCodeData,
-  content: &str,
-  init_fn: &str,
-  reload_fn: &str,
-  settings: &ProgramSettings,
-) -> Result<(), String> {
+// overwrite previous state
+
+fn recall_program(content: &str, init_fn: &str, reload_fn: &str, settings: &ProgramSettings) -> Result<(), String> {
   println!("\n-------- file change --------\n");
   call_stack::clear_stack();
 
@@ -201,7 +201,7 @@ fn recall_program(
 
   // println!("\ndata: {}", &data);
   // println!("\nchanges: {:?}", changes);
-  let new_code = program::apply_code_changes(program_code, &changes)?;
+  program::apply_code_changes(&changes)?;
   // println!("\nprogram code: {:?}", new_code);
 
   // clear data in evaled states
@@ -209,13 +209,13 @@ fn recall_program(
   builtins::meta::force_reset_gensym_index()?;
 
   let task = if settings.emit_js {
-    run_codegen(init_fn, reload_fn, &new_code, &settings.emit_path, false)
+    run_codegen(init_fn, reload_fn, &settings.emit_path, false)
   } else if settings.emit_ir {
-    run_codegen(init_fn, reload_fn, &new_code, &settings.emit_path, true)
+    run_codegen(init_fn, reload_fn, &settings.emit_path, true)
   } else {
     // run from `reload_fn` after reload
     let started_time = Instant::now();
-    let v = calcit_runner::run_program(reload_fn, im::vector![], &new_code).map_err(|e| {
+    let v = calcit_runner::run_program(reload_fn, im::vector![]).map_err(|e| {
       for w in e.warnings {
         println!("{}", w);
       }
@@ -233,19 +233,10 @@ fn recall_program(
     }
   }
 
-  // overwrite previous state
-  *program_code = new_code;
-
   Ok(())
 }
 
-fn run_codegen(
-  init_fn: &str,
-  reload_fn: &str,
-  program_code: &program::ProgramCodeData,
-  emit_path: &str,
-  ir_mode: bool,
-) -> Result<(), String> {
+fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -> Result<(), String> {
   let started_time = Instant::now();
 
   let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
@@ -267,7 +258,7 @@ fn run_codegen(
   let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, program_code, &init_def, None, check_warnings) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, check_warnings) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
@@ -285,7 +276,7 @@ fn run_codegen(
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, program_code, &init_def, None, check_warnings) {
+  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &init_def, None, check_warnings) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);

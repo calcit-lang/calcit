@@ -526,6 +526,7 @@ pub fn gen_core_id() -> String {
   format!("gen_id_{}", c)
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct CalcitErr {
   pub msg: String,
   // stack: im::Vector<String>,

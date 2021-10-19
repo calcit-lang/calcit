@@ -5,7 +5,6 @@ use crate::data::cirru;
 use crate::data::edn;
 use crate::primes;
 use crate::primes::{gen_core_id, keyword::load_order_key, load_kwd, lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems, CrListWrap};
-use crate::program;
 use crate::runner;
 use crate::util::number::f64_to_usize;
 
@@ -265,48 +264,48 @@ pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn invoke_method(name: &str, invoke_args: &CalcitItems, program_code: &program::ProgramCodeData) -> Result<Calcit, CalcitErr> {
+pub fn invoke_method(name: &str, invoke_args: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let (class, value) = match invoke_args.get(0) {
     Some(Calcit::Tuple(a, _b)) => ((**a).to_owned(), invoke_args.get(0).unwrap().to_owned()),
     Some(Calcit::Number(..)) => {
       // classed should already be preprocessed
       let code = gen_sym("&core-number-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::Str(..)) => {
       let code = gen_sym("&core-string-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::Set(..)) => {
       let code = gen_sym("&core-set-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::List(..)) => {
       let code = gen_sym("&core-list-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::Map(..)) => {
       let code = gen_sym("&core-map-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::Record(..)) => {
       let code = gen_sym("&core-record-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::Nil) => {
       let code = gen_sym("&core-nil-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::Fn(..)) | Some(Calcit::Proc(..)) => {
       let code = gen_sym("&core-fn-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, program_code)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
       (class, invoke_args[0].to_owned())
     }
     x => return Err(CalcitErr::use_string(format!("cannot decide a class from: {:?}", x))),
@@ -328,9 +327,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, program_code: &progr
 
           match &values[idx] {
             // dirty copy...
-            Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
-              runner::run_fn(&method_args, def_scope, args, body, def_ns, program_code)
-            }
+            Calcit::Fn(_, def_ns, _, def_scope, args, body) => runner::run_fn(&method_args, def_scope, args, body, def_ns),
             Calcit::Proc(proc) => builtins::handle_proc(proc, &method_args),
             Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_string(format!(
               "cannot get syntax here since instance is always evaluated, got: {}",

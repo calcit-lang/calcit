@@ -22,6 +22,7 @@ pub type ProgramCodeData = HashMap<String, ProgramFileData>;
 
 lazy_static! {
   static ref PROGRAM_EVALED_DATA_STATE: RwLock<ProgramEvaledData> = RwLock::new(HashMap::new());
+  pub static ref PROGRAM_CODE_DATA: RwLock<ProgramCodeData> = RwLock::new(HashMap::new());
   // TODO need better soution for immediate calls
   /// to be read by external logics and used as FFI
   static ref PROGRAM_FFI_MESSAGES: RwLock<Vec<(String, CalcitItems)>> = RwLock::new(vec![]);
@@ -38,9 +39,7 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, Strin
         _ => (),
       }
       match (xs[0].to_owned(), xs[1].to_owned(), xs[2].to_owned()) {
-        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::Leaf(String::from(":as")) => {
-          Ok(vec![(alias, ImportRule::NsAs(ns))])
-        }
+        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::Leaf(String::from(":as")) => Ok(vec![(alias, ImportRule::NsAs(ns))]),
         (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::Leaf(String::from(":default")) => {
           Ok(vec![(alias, ImportRule::NsDefault(ns))])
         }
@@ -58,10 +57,7 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, Strin
         (_, x, _) if x == Cirru::Leaf(String::from(":as")) => Err(String::from("invalid import rule")),
         (_, x, _) if x == Cirru::Leaf(String::from(":default")) => Err(String::from("invalid default rule")),
         (_, x, _) if x == Cirru::Leaf(String::from(":refer")) => Err(String::from("invalid import rule")),
-        _ if xs.len() != 3 => Err(format!(
-          "expected import rule has length 3: {}",
-          Cirru::List(xs.to_owned())
-        )),
+        _ if xs.len() != 3 => Err(format!("expected import rule has length 3: {}", Cirru::List(xs.to_owned()))),
         _ => Err(String::from("unknown rule")),
       }
     }
@@ -115,20 +111,23 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
 }
 
 // lookup without cloning
-pub fn has_def_code(ns: &str, def: &str, program_code: &ProgramCodeData) -> bool {
+pub fn has_def_code(ns: &str, def: &str) -> bool {
+  let program_code = { PROGRAM_CODE_DATA.read().unwrap() };
   match program_code.get(ns) {
     Some(v) => v.defs.contains_key(def),
     None => false,
   }
 }
 
-pub fn lookup_def_code(ns: &str, def: &str, program_code: &ProgramCodeData) -> Option<Calcit> {
+pub fn lookup_def_code(ns: &str, def: &str) -> Option<Calcit> {
+  let program_code = { PROGRAM_CODE_DATA.read().unwrap() };
   let file = program_code.get(ns)?;
   let data = file.defs.get(def)?;
   Some(data.to_owned())
 }
 
-pub fn lookup_def_target_in_import(ns: &str, def: &str, program: &ProgramCodeData) -> Option<String> {
+pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<String> {
+  let program = { PROGRAM_CODE_DATA.read().unwrap() };
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(def)?;
   match import_rule {
@@ -138,7 +137,8 @@ pub fn lookup_def_target_in_import(ns: &str, def: &str, program: &ProgramCodeDat
   }
 }
 
-pub fn lookup_ns_target_in_import(ns: &str, alias: &str, program: &ProgramCodeData) -> Option<String> {
+pub fn lookup_ns_target_in_import(ns: &str, alias: &str) -> Option<String> {
+  let program = { PROGRAM_CODE_DATA.read().unwrap() };
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(alias)?;
   match import_rule {
@@ -149,7 +149,8 @@ pub fn lookup_ns_target_in_import(ns: &str, alias: &str, program: &ProgramCodeDa
 }
 
 // imported via :default
-pub fn lookup_default_target_in_import(ns: &str, alias: &str, program: &ProgramCodeData) -> Option<String> {
+pub fn lookup_default_target_in_import(ns: &str, alias: &str) -> Option<String> {
+  let program = { PROGRAM_CODE_DATA.read().unwrap() };
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(alias)?;
   match import_rule {
@@ -202,8 +203,8 @@ pub fn clone_evaled_program() -> ProgramEvaledData {
   xs
 }
 
-pub fn apply_code_changes(base: &ProgramCodeData, changes: &snapshot::ChangesDict) -> Result<ProgramCodeData, String> {
-  let mut program_code = base.to_owned();
+pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String> {
+  let mut program_code = { PROGRAM_CODE_DATA.write().unwrap() };
 
   for (ns, file) in &changes.added {
     program_code.insert(ns.to_owned(), extract_file_data(file.to_owned(), ns.to_owned())?);
@@ -228,7 +229,7 @@ pub fn apply_code_changes(base: &ProgramCodeData, changes: &snapshot::ChangesDic
     }
   }
 
-  Ok(program_code)
+  Ok(())
 }
 
 /// clear evaled data after reloading
@@ -242,11 +243,7 @@ pub fn clear_all_program_evaled_defs(init_fn: &str, reload_fn: &str, reload_libs
     let reload_pkg = extract_pkg_from_def(reload_fn).unwrap();
     let mut to_remove: Vec<String> = vec![];
     for k in (*program).keys() {
-      if k == &init_pkg
-        || k == &reload_pkg
-        || k.starts_with(&format!("{}.", init_pkg))
-        || k.starts_with(&format!("{}.", reload_pkg))
-      {
+      if k == &init_pkg || k == &reload_pkg || k.starts_with(&format!("{}.", init_pkg)) || k.starts_with(&format!("{}.", reload_pkg)) {
         to_remove.push(k.to_owned());
       } else {
         continue;
