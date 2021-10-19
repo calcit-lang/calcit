@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use crate::primes::{lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems, CalcitScope};
-use crate::program::ProgramCodeData;
 use crate::runner;
 
 type ValueAndListeners = (Calcit, HashMap<String, Calcit>);
@@ -24,7 +23,7 @@ fn write_to_ref(path: String, v: Calcit, listeners: HashMap<String, Calcit>) {
   let _ = (*dict).insert(path, (v, listeners));
 }
 
-fn modify_ref(path: String, v: Calcit, program_code: &ProgramCodeData) -> Result<(), CalcitErr> {
+fn modify_ref(path: String, v: Calcit) -> Result<(), CalcitErr> {
   let (prev, listeners) = read_ref(&path).unwrap();
   write_to_ref(path, v.to_owned(), listeners.to_owned());
 
@@ -32,7 +31,7 @@ fn modify_ref(path: String, v: Calcit, program_code: &ProgramCodeData) -> Result
     match f {
       Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
         let values = im::vector![v.to_owned(), prev.to_owned()];
-        runner::run_fn(&values, def_scope, args, body, def_ns, program_code)?;
+        runner::run_fn(&values, def_scope, args, body, def_ns)?;
       }
       a => return Err(CalcitErr::use_string(format!("expected fn to trigger after `reset!`, got {}", a))),
     }
@@ -41,7 +40,7 @@ fn modify_ref(path: String, v: Calcit, program_code: &ProgramCodeData) -> Result
 }
 
 /// syntax to prevent expr re-evaluating
-pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, program_code: &ProgramCodeData) -> Result<Calcit, CalcitErr> {
+pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol(s, ns, _def, _)), Some(code)) => {
       let mut path = ns.to_owned();
@@ -49,7 +48,7 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, program_c
       path.push_str(s);
 
       if read_ref(&path).is_none() {
-        let v = runner::evaluate_expr(code, scope, file_ns, program_code)?;
+        let v = runner::evaluate_expr(code, scope, file_ns)?;
         write_to_ref(path.to_owned(), v, HashMap::new())
       }
       Ok(Calcit::Ref(path))
@@ -74,24 +73,19 @@ pub fn deref(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 /// need to be syntax since triggering internal functions requires program data
-pub fn reset_bang(
-  expr: &CalcitItems,
-  scope: &CalcitScope,
-  file_ns: &str,
-  program_code: &ProgramCodeData,
-) -> Result<Calcit, CalcitErr> {
+pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
     return Err(CalcitErr::use_string(format!("reset! excepted 2 arguments, got: {:?}", expr)));
   }
   // println!("reset! {:?}", expr[0]);
-  let target = runner::evaluate_expr(&expr[0], scope, file_ns, program_code)?;
-  let new_value = runner::evaluate_expr(&expr[1], scope, file_ns, program_code)?;
+  let target = runner::evaluate_expr(&expr[0], scope, file_ns)?;
+  let new_value = runner::evaluate_expr(&expr[1], scope, file_ns)?;
   match (target, new_value) {
     (Calcit::Ref(path), v) => {
       if read_ref(&path).is_none() {
         return Err(CalcitErr::use_string(format!("missing pre-exisiting data for path &{}", path)));
       }
-      modify_ref(path, v, program_code)?;
+      modify_ref(path, v)?;
       Ok(Calcit::Nil)
     }
     (a, b) => Err(CalcitErr::use_string(format!(

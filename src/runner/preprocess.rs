@@ -13,7 +13,6 @@ use std::collections::HashSet;
 pub fn preprocess_ns_def(
   ns: &str,
   def: &str,
-  program_code: &program::ProgramCodeData,
   // pass original string representation, TODO codegen currently relies on this
   original_sym: &str,
   import_rule: Option<ImportRule>, // returns form and possible value
@@ -35,17 +34,17 @@ pub fn preprocess_ns_def(
     }
     None => {
       // println!("init for... {}/{}", ns, def);
-      match program::lookup_def_code(ns, def, program_code) {
+      match program::lookup_def_code(ns, def) {
         Some(code) => {
           // write a nil value first to prevent dead loop
           program::write_evaled_def(ns, def, Calcit::Nil).map_err(CalcitErr::use_string)?;
 
           push_call_stack(ns, def, StackKind::Fn, code.to_owned(), &im::vector![]);
 
-          let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, program_code, check_warnings)?;
+          let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, check_warnings)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
           let v = if is_fn_or_macro(&resolved_code) {
-            match runner::evaluate_expr(&resolved_code, &im::HashMap::new(), ns, program_code) {
+            match runner::evaluate_expr(&resolved_code, &im::HashMap::new(), ns) {
               Ok(ret) => ret,
               Err(e) => return Err(e),
             }
@@ -99,17 +98,16 @@ pub fn preprocess_expr(
   expr: &Calcit,
   scope_defs: &HashSet<String>,
   file_ns: &str,
-  program_code: &program::ProgramCodeData,
   check_warnings: &RefCell<Vec<String>>,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   // println!("preprocessing @{} {}", file_ns, expr);
   match expr {
     Calcit::Symbol(def, def_ns, at_def, _) => match runner::parse_ns_def(def) {
       Some((ns_alias, def_part)) => {
-        match program::lookup_ns_target_in_import(def_ns, &ns_alias, program_code) {
+        match program::lookup_ns_target_in_import(def_ns, &ns_alias) {
           Some(target_ns) => {
             // TODO js syntax to handle in future
-            preprocess_ns_def(&target_ns, &def_part, program_code, def, None, check_warnings)
+            preprocess_ns_def(&target_ns, &def_part, def, None, check_warnings)
           }
           None if ns_alias == "js" => Ok((
             Calcit::Symbol(
@@ -141,22 +139,22 @@ pub fn preprocess_expr(
           ))
         } else if is_proc_name(def) {
           Ok((Calcit::Proc(def.to_owned()), None))
-        } else if program::has_def_code(primes::CORE_NS, def, program_code) {
-          preprocess_ns_def(primes::CORE_NS, def, program_code, def, None, check_warnings)
-        } else if program::has_def_code(def_ns, def, program_code) {
-          preprocess_ns_def(def_ns, def, program_code, def, None, check_warnings)
+        } else if program::has_def_code(primes::CORE_NS, def) {
+          preprocess_ns_def(primes::CORE_NS, def, def, None, check_warnings)
+        } else if program::has_def_code(def_ns, def) {
+          preprocess_ns_def(def_ns, def, def, None, check_warnings)
         } else {
-          match program::lookup_def_target_in_import(def_ns, def, program_code) {
+          match program::lookup_def_target_in_import(def_ns, def) {
             Some(target_ns) => {
               // effect
               // TODO js syntax to handle in future
-              preprocess_ns_def(&target_ns, def, program_code, def, None, check_warnings)
+              preprocess_ns_def(&target_ns, def, def, None, check_warnings)
             }
             // TODO check js_mode
             None if is_js_syntax_procs(def) => Ok((expr.to_owned(), None)),
             None if def.starts_with('.') => Ok((expr.to_owned(), None)),
             None => {
-              let from_default = program::lookup_default_target_in_import(def_ns, def, program_code);
+              let from_default = program::lookup_default_target_in_import(def_ns, def);
               if let Some(target_ns) = from_default {
                 let target = Some(Box::new(ResolvedDef(
                   target_ns.to_owned(),
@@ -190,7 +188,7 @@ pub fn preprocess_expr(
       } else {
         // TODO whether function bothers this...
         // println!("start calling: {}", expr);
-        process_list_call(xs, scope_defs, file_ns, program_code, check_warnings)
+        process_list_call(xs, scope_defs, file_ns, check_warnings)
       }
     }
     Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) => {
@@ -213,11 +211,10 @@ fn process_list_call(
   xs: &CalcitItems,
   scope_defs: &HashSet<String>,
   file_ns: &str,
-  program_code: &program::ProgramCodeData,
   check_warnings: &RefCell<Vec<String>>,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   let head = &xs[0];
-  let (head_form, head_evaled) = preprocess_expr(head, scope_defs, file_ns, program_code, check_warnings)?;
+  let (head_form, head_evaled) = preprocess_expr(head, scope_defs, file_ns, check_warnings)?;
   let args = xs.skip(1);
   let def_name = grab_def_name(head);
 
@@ -245,7 +242,7 @@ fn process_list_call(
           args[0].to_owned(),
           head.to_owned()
         ]);
-        preprocess_expr(&code, scope_defs, file_ns, program_code, check_warnings)
+        preprocess_expr(&code, scope_defs, file_ns, check_warnings)
       } else {
         Err(CalcitErr::use_string(format!("{} expected single argument", head)))
       }
@@ -264,14 +261,14 @@ fn process_list_call(
         // need to handle recursion
         // println!("evaling line: {:?}", body);
         let body_scope = runner::bind_args(&def_args, &current_values, &im::HashMap::new())?;
-        let code = runner::evaluate_lines(&body, &body_scope, &def_ns, program_code)?;
+        let code = runner::evaluate_lines(&body, &body_scope, &def_ns)?;
         match code {
           Calcit::Recur(ys) => {
             current_values = ys;
           }
           _ => {
             // println!("gen code: {} {}", code, &code.lisp_str());
-            let (final_code, v) = preprocess_expr(&code, scope_defs, file_ns, program_code, check_warnings)?;
+            let (final_code, v) = preprocess_expr(&code, scope_defs, file_ns, check_warnings)?;
             pop_call_stack();
             return Ok((final_code, v));
           }
@@ -280,15 +277,14 @@ fn process_list_call(
     }
     (Calcit::Syntax(name, name_ns), _) => match name {
       CalcitSyntax::Quasiquote => Ok((
-        preprocess_quasiquote(&name, &name_ns, &args, scope_defs, file_ns, program_code, check_warnings)?,
+        preprocess_quasiquote(&name, &name_ns, &args, scope_defs, file_ns, check_warnings)?,
         None,
       )),
-      CalcitSyntax::Defn | CalcitSyntax::Defmacro => Ok((
-        preprocess_defn(&name, &name_ns, &args, scope_defs, file_ns, program_code, check_warnings)?,
-        None,
-      )),
+      CalcitSyntax::Defn | CalcitSyntax::Defmacro => {
+        Ok((preprocess_defn(&name, &name_ns, &args, scope_defs, file_ns, check_warnings)?, None))
+      }
       CalcitSyntax::CoreLet => Ok((
-        preprocess_call_let(&name, &name_ns, &args, scope_defs, file_ns, program_code, check_warnings)?,
+        preprocess_call_let(&name, &name_ns, &args, scope_defs, file_ns, check_warnings)?,
         None,
       )),
       CalcitSyntax::If
@@ -301,14 +297,14 @@ fn process_list_call(
       | CalcitSyntax::FoldrShortcut
       | CalcitSyntax::Sort
       | CalcitSyntax::Reset => Ok((
-        preprocess_each_items(&name, &name_ns, &args, scope_defs, file_ns, program_code, check_warnings)?,
+        preprocess_each_items(&name, &name_ns, &args, scope_defs, file_ns, check_warnings)?,
         None,
       )),
       CalcitSyntax::Quote | CalcitSyntax::Eval | CalcitSyntax::HintFn => {
-        Ok((preprocess_quote(&name, &name_ns, &args, scope_defs, file_ns, program_code)?, None))
+        Ok((preprocess_quote(&name, &name_ns, &args, scope_defs, file_ns)?, None))
       }
       CalcitSyntax::Defatom => Ok((
-        preprocess_defatom(&name, &name_ns, &args, scope_defs, file_ns, program_code, check_warnings)?,
+        preprocess_defatom(&name, &name_ns, &args, scope_defs, file_ns, check_warnings)?,
         None,
       )),
     },
@@ -318,7 +314,7 @@ fn process_list_call(
       check_fn_args(&f_args, &args, file_ns, &f_name, &def_name, check_warnings);
       let mut ys = im::vector![head_form];
       for a in args {
-        let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, program_code, check_warnings)?;
+        let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, check_warnings)?;
         ys.push_back(form);
       }
       Ok((Calcit::List(ys), None))
@@ -326,7 +322,7 @@ fn process_list_call(
     (_, _) => {
       let mut ys = im::vector![head_form];
       for a in args {
-        let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, program_code, check_warnings)?;
+        let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, check_warnings)?;
         ys.push_back(form);
       }
       Ok((Calcit::List(ys), None))
@@ -421,12 +417,11 @@ pub fn preprocess_each_items(
   args: &CalcitItems,
   scope_defs: &HashSet<String>,
   file_ns: &str,
-  program_code: &program::ProgramCodeData,
   check_warnings: &RefCell<Vec<String>>,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
   for a in args {
-    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, program_code, check_warnings)?;
+    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings)?;
     xs.push_back(form);
   }
   Ok(Calcit::List(xs))
@@ -438,7 +433,6 @@ pub fn preprocess_defn(
   args: &CalcitItems,
   scope_defs: &HashSet<String>,
   file_ns: &str,
-  program_code: &program::ProgramCodeData,
   check_warnings: &RefCell<Vec<String>>,
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
@@ -457,7 +451,7 @@ pub fn preprocess_defn(
       for y in ys {
         match y {
           Calcit::Symbol(sym, def_ns, at_def, _) => {
-            check_symbol(sym, program_code, args, check_warnings);
+            check_symbol(sym, args, check_warnings);
             zs.push_back(Calcit::Symbol(
               sym.to_owned(),
               def_ns.to_owned(),
@@ -476,7 +470,7 @@ pub fn preprocess_defn(
 
       for (idx, a) in args.iter().enumerate() {
         if idx >= 2 {
-          let (form, _v) = preprocess_expr(a, &body_defs, file_ns, program_code, check_warnings)?;
+          let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings)?;
           xs.push_back(form);
         }
       }
@@ -491,8 +485,8 @@ pub fn preprocess_defn(
 }
 
 // warn if this symbol is used
-fn check_symbol(sym: &str, program_code: &program::ProgramCodeData, args: &CalcitItems, check_warnings: &RefCell<Vec<String>>) {
-  if is_proc_name(sym) || CalcitSyntax::is_core_syntax(sym) || program::has_def_code(primes::CORE_NS, sym, program_code) {
+fn check_symbol(sym: &str, args: &CalcitItems, check_warnings: &RefCell<Vec<String>>) {
+  if is_proc_name(sym) || CalcitSyntax::is_core_syntax(sym) || program::has_def_code(primes::CORE_NS, sym) {
     let mut warnings = check_warnings.borrow_mut();
     warnings.push(format!(
       "[Warn] local binding `{}` shadowed `calcit.core/{}`, with {}",
@@ -509,7 +503,6 @@ pub fn preprocess_call_let(
   args: &CalcitItems,
   scope_defs: &HashSet<String>,
   file_ns: &str,
-  program_code: &program::ProgramCodeData,
   check_warnings: &RefCell<Vec<String>>,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
@@ -518,9 +511,9 @@ pub fn preprocess_call_let(
     Some(Calcit::Nil) => Calcit::Nil,
     Some(Calcit::List(ys)) if ys.len() == 2 => match (&ys[0], &ys[1]) {
       (Calcit::Symbol(sym, ..), a) => {
-        check_symbol(sym, program_code, args, check_warnings);
+        check_symbol(sym, args, check_warnings);
         body_defs.insert(sym.to_owned());
-        let (form, _v) = preprocess_expr(a, &body_defs, file_ns, program_code, check_warnings)?;
+        let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings)?;
         Calcit::List(im::vector![ys[0].to_owned(), form])
       }
       (a, b) => return Err(CalcitErr::use_string(format!("invalid pair for &let binding: {} {}", a, b))),
@@ -532,7 +525,7 @@ pub fn preprocess_call_let(
   xs.push_back(binding);
   for (idx, a) in args.iter().enumerate() {
     if idx > 0 {
-      let (form, _v) = preprocess_expr(a, &body_defs, file_ns, program_code, check_warnings)?;
+      let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings)?;
       xs.push_back(form);
     }
   }
@@ -545,7 +538,6 @@ pub fn preprocess_quote(
   args: &CalcitItems,
   _scope_defs: &HashSet<String>,
   _file_ns: &str,
-  _program_code: &program::ProgramCodeData,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
   for a in args {
@@ -560,13 +552,12 @@ pub fn preprocess_defatom(
   args: &CalcitItems,
   scope_defs: &HashSet<String>,
   file_ns: &str,
-  program_code: &program::ProgramCodeData,
   check_warnings: &RefCell<Vec<String>>,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
   for a in args {
     // TODO
-    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, program_code, check_warnings)?;
+    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings)?;
     xs.push_back(form.to_owned());
   }
   Ok(Calcit::List(xs))
@@ -579,18 +570,11 @@ pub fn preprocess_quasiquote(
   args: &CalcitItems,
   scope_defs: &HashSet<String>,
   file_ns: &str,
-  program_code: &program::ProgramCodeData,
   check_warnings: &RefCell<Vec<String>>,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
   for a in args {
-    xs.push_back(preprocess_quasiquote_internal(
-      a,
-      scope_defs,
-      file_ns,
-      program_code,
-      check_warnings,
-    )?);
+    xs.push_back(preprocess_quasiquote_internal(a, scope_defs, file_ns, check_warnings)?);
   }
   Ok(Calcit::List(xs))
 }
@@ -599,7 +583,6 @@ pub fn preprocess_quasiquote_internal(
   x: &Calcit,
   scope_defs: &HashSet<String>,
   file_ns: &str,
-  program_code: &program::ProgramCodeData,
   check_warnings: &RefCell<Vec<String>>,
 ) -> Result<Calcit, CalcitErr> {
   match x {
@@ -608,7 +591,7 @@ pub fn preprocess_quasiquote_internal(
       Calcit::Symbol(s, _, _, _) if s == "~" || s == "~@" => {
         let mut xs: CalcitItems = im::vector![];
         for y in ys {
-          let (form, _) = preprocess_expr(y, scope_defs, file_ns, program_code, check_warnings)?;
+          let (form, _) = preprocess_expr(y, scope_defs, file_ns, check_warnings)?;
           xs.push_back(form.to_owned());
         }
         Ok(Calcit::List(xs))
@@ -616,7 +599,7 @@ pub fn preprocess_quasiquote_internal(
       _ => {
         let mut xs: CalcitItems = im::vector![];
         for y in ys {
-          xs.push_back(preprocess_quasiquote_internal(y, scope_defs, file_ns, program_code, check_warnings)?.to_owned());
+          xs.push_back(preprocess_quasiquote_internal(y, scope_defs, file_ns, check_warnings)?.to_owned());
         }
         Ok(Calcit::List(xs))
       }
