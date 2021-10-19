@@ -181,6 +181,7 @@ fn main() -> Result<(), String> {
       }
     }
   } else {
+    runner::track::exit_when_cleared();
     Ok(())
   }
 }

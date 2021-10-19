@@ -432,3 +432,28 @@ pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   // https://doc.rust-lang.org/std/env/consts/constant.OS.html
   Ok(load_kwd(&std::env::consts::OS.to_owned()))
 }
+
+pub fn async_sleep(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  use std::{thread, time};
+  let sec = if xs.is_empty() {
+    1.0
+  } else if let Calcit::Number(n) = xs[0] {
+    n
+  } else {
+    return Err(CalcitErr::use_str("expected number"));
+  };
+
+  runner::track::track_task_add();
+
+  let _handle = thread::spawn(move || {
+    let ten_secs = time::Duration::from_secs(sec.round() as u64);
+    // let _now = time::Instant::now();
+    thread::sleep(ten_secs);
+
+    runner::track::track_task_release();
+  });
+
+  // handle.join();
+
+  Ok(Calcit::Nil)
+}
