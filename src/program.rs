@@ -4,7 +4,7 @@ use std::sync::RwLock;
 use cirru_parser::Cirru;
 
 use crate::data::cirru::code_to_calcit;
-use crate::primes::{Calcit, CalcitItems, ImportRule};
+use crate::primes::{Calcit, ImportRule};
 use crate::snapshot;
 use crate::snapshot::Snapshot;
 use crate::util::string::extract_pkg_from_def;
@@ -23,9 +23,6 @@ pub type ProgramCodeData = HashMap<String, ProgramFileData>;
 lazy_static! {
   static ref PROGRAM_EVALED_DATA_STATE: RwLock<ProgramEvaledData> = RwLock::new(HashMap::new());
   pub static ref PROGRAM_CODE_DATA: RwLock<ProgramCodeData> = RwLock::new(HashMap::new());
-  // TODO need better soution for immediate calls
-  /// to be read by external logics and used as FFI
-  static ref PROGRAM_FFI_MESSAGES: RwLock<Vec<(String, CalcitItems)>> = RwLock::new(vec![]);
 }
 
 fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, String> {
@@ -254,19 +251,4 @@ pub fn clear_all_program_evaled_defs(init_fn: &str, reload_fn: &str, reload_libs
     }
   }
   Ok(())
-}
-
-pub fn send_ffi_message(op: String, items: CalcitItems) {
-  let mut ref_messages = PROGRAM_FFI_MESSAGES.write().unwrap();
-  (*ref_messages).push((op, items))
-}
-
-pub fn take_ffi_messages() -> Result<Vec<(String, CalcitItems)>, String> {
-  let mut messages: Vec<(String, CalcitItems)> = vec![];
-  let mut ref_messages = PROGRAM_FFI_MESSAGES.write().unwrap();
-  for m in (*ref_messages).iter() {
-    messages.push(m.to_owned())
-  }
-  (*ref_messages).clear();
-  Ok(messages)
 }
