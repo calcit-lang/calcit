@@ -6,6 +6,7 @@ use calcit_runner::{
   builtins,
   data::edn::{calcit_to_edn, edn_to_calcit},
   primes::{Calcit, CalcitErr, CalcitItems, CrListWrap},
+  runner::track,
 };
 
 /// FFI protocol types
@@ -16,6 +17,7 @@ pub fn inject_platform_apis() {
   builtins::register_import_proc("echo", echo);
   builtins::register_import_proc("println", echo);
   builtins::register_import_proc("&callback-dylib-edn", callback_dylib_edn);
+  builtins::register_import_proc("async-sleep", builtins::meta::async_sleep);
 }
 
 // &call-dylib-edn
@@ -106,25 +108,29 @@ pub fn callback_dylib_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     )));
   }
 
-  let result = unsafe {
-    let lib = libloading::Library::new(&lib_name).expect("dylib not found");
-    let func: libloading::Symbol<EdnFfi> = lib.get(method.as_bytes()).expect("dy function not found");
-    let ret = func(ys.to_owned()).map_err(CalcitErr::use_string)?;
-    edn_to_calcit(&ret)
-  };
+  track::track_task_add();
 
-  if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = callback {
-    let handle = thread::spawn(move || {
+  let _handle = thread::spawn(move || {
+    let result = unsafe {
+      let lib = libloading::Library::new(&lib_name).expect("dylib not found");
+      let func: libloading::Symbol<EdnFfi> = lib.get(method.as_bytes()).expect("dy function not found");
+      let ret = func(ys.to_owned()).map_err(CalcitErr::use_string)?;
+      edn_to_calcit(&ret)
+    };
+    if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = callback {
       let r = runner::run_fn(&im::vector![result], &def_scope, &args, &body, &def_ns);
-      println!("callback {:?}", r);
-    });
+      println!("callback result: {:?}", r);
 
-    handle.join().unwrap();
-    Ok(Calcit::Nil)
-  } else {
-    return Err(CalcitErr::use_string(format!(
-      "expected last argument to be callback fn, got: {}",
-      callback
-    )));
-  }
+      track::track_task_release();
+      Ok(Calcit::Nil)
+    } else {
+      track::track_task_release();
+      return Err(CalcitErr::use_string(format!(
+        "expected last argument to be callback fn, got: {}",
+        callback
+      )));
+    }
+  });
+
+  Ok(Calcit::Nil)
 }

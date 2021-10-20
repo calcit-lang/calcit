@@ -1,5 +1,4 @@
 pub mod effects;
-pub mod ffi;
 mod lists;
 mod logics;
 mod maps;
@@ -51,8 +50,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&get-calcit-backend"
       | "read-file"
       | "write-file"
-      // ffi
-      | "&ffi-message"
       // external format
       | "parse-cirru"
       | "format-cirru"
@@ -117,6 +114,10 @@ pub fn is_proc_name(s: &str) -> bool {
       | "prepend"
       | "butlast"
       | "range"
+      | "sort"
+      | "foldl"
+      | "foldl-shortcut"
+      | "foldr-shortcut"
       | "&list:reverse"
       | "&list:concat"
       | "&list:count"
@@ -217,8 +218,6 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, CalcitErr> 
     "&get-calcit-backend" => effects::call_get_calcit_backend(args),
     "read-file" => effects::read_file(args),
     "write-file" => effects::write_file(args),
-    // ffi
-    "&ffi-message" => ffi::ffi_message(args),
     // external data format
     "parse-cirru" => meta::parse_cirru(args),
     "format-cirru" => meta::format_cirru(args),
@@ -285,6 +284,10 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, CalcitErr> 
     "butlast" => lists::butlast(args),
     "&list:concat" => lists::concat(args),
     "range" => lists::range(args),
+    "sort" => lists::sort(args),
+    "foldl" => lists::foldl(args),
+    "foldl-shortcut" => lists::foldl_shortcut(args),
+    "foldr-shortcut" => lists::foldr_shortcut(args),
     "&list:reverse" => lists::reverse(args),
     "&list:slice" => lists::slice(args),
     "&list:assoc-before" => lists::assoc_before(args),
@@ -374,14 +377,10 @@ pub fn handle_syntax(name: &CalcitSyntax, nodes: &CalcitItems, scope: &CalcitSco
     CalcitSyntax::Quasiquote => syntax::quasiquote(nodes, scope, file_ns),
     CalcitSyntax::If => syntax::syntax_if(nodes, scope, file_ns),
     CalcitSyntax::CoreLet => syntax::syntax_let(nodes, scope, file_ns),
-    CalcitSyntax::Foldl => lists::foldl(nodes, scope, file_ns),
-    CalcitSyntax::FoldlShortcut => lists::foldl_shortcut(nodes, scope, file_ns),
-    CalcitSyntax::FoldrShortcut => lists::foldr_shortcut(nodes, scope, file_ns),
     CalcitSyntax::Macroexpand => syntax::macroexpand(nodes, scope, file_ns),
     CalcitSyntax::Macroexpand1 => syntax::macroexpand_1(nodes, scope, file_ns),
     CalcitSyntax::MacroexpandAll => syntax::macroexpand_all(nodes, scope, file_ns),
     CalcitSyntax::Try => syntax::call_try(nodes, scope, file_ns),
-    CalcitSyntax::Sort => lists::sort(nodes, scope, file_ns),
     // "define reference" although it uses a confusing name "atom"
     CalcitSyntax::Defatom => refs::defatom(nodes, scope, file_ns),
     CalcitSyntax::Reset => refs::reset_bang(nodes, scope, file_ns),

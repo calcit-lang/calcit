@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CrListWrap};
+use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
 use crate::util::number::f64_to_usize;
 
 use crate::builtins;
@@ -187,15 +187,13 @@ pub fn reverse(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 /// foldl using syntax for performance, it's supposed to be a function
-pub fn foldl(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
-  if expr.len() == 3 {
-    let xs = runner::evaluate_expr(&expr[0], scope, file_ns)?;
-    let acc = runner::evaluate_expr(&expr[1], scope, file_ns)?;
-    let f = runner::evaluate_expr(&expr[2], scope, file_ns)?;
-    match (&xs, &f) {
+pub fn foldl(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() == 3 {
+    let mut ret = xs[1].to_owned();
+
+    match (&xs[0], &xs[2]) {
       // dirty since only functions being call directly then we become fast
       (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
-        let mut ret = acc;
         for x in xs {
           let values = im::vector![ret, x.to_owned()];
           ret = runner::run_fn(&values, def_scope, args, body, def_ns)?;
@@ -203,7 +201,6 @@ pub fn foldl(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<C
         Ok(ret)
       }
       (Calcit::List(xs), Calcit::Proc(proc)) => {
-        let mut ret = acc;
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(proc, &im::vector![ret, x.to_owned()])?;
@@ -212,7 +209,6 @@ pub fn foldl(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<C
       }
       // also handles set
       (Calcit::Set(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
-        let mut ret = acc;
         for x in xs {
           let values = im::vector![ret, x.to_owned()];
           ret = runner::run_fn(&values, def_scope, args, body, def_ns)?;
@@ -220,7 +216,6 @@ pub fn foldl(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<C
         Ok(ret)
       }
       (Calcit::Set(xs), Calcit::Proc(proc)) => {
-        let mut ret = acc;
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(proc, &im::vector![ret, x.to_owned()])?;
@@ -229,7 +224,6 @@ pub fn foldl(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<C
       }
       // also handles map
       (Calcit::Map(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
-        let mut ret = acc;
         for (k, x) in xs {
           let values = im::vector![ret, Calcit::List(im::vector![k.to_owned(), x.to_owned()])];
           ret = runner::run_fn(&values, def_scope, args, body, def_ns)?;
@@ -237,7 +231,6 @@ pub fn foldl(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<C
         Ok(ret)
       }
       (Calcit::Map(xs), Calcit::Proc(proc)) => {
-        let mut ret = acc;
         for (k, x) in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(proc, &im::vector![ret, Calcit::List(im::vector![k.to_owned(), x.to_owned()])])?;
@@ -245,28 +238,23 @@ pub fn foldl(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<C
         Ok(ret)
       }
 
-      (_, _) => Err(CalcitErr::use_string(format!(
-        "foldl expected list and function, got: {} {}",
-        xs, f
-      ))),
+      (a, b) => Err(CalcitErr::use_string(format!("foldl expected list and function, got: {} {}", a, b))),
     }
   } else {
-    Err(CalcitErr::use_string(format!("foldl expected 3 arguments, got: {:?}", expr)))
+    Err(CalcitErr::use_string(format!("foldl expected 3 arguments, got: {:?}", xs)))
   }
 }
 
 /// foldl-shortcut using syntax for performance, it's supposed to be a function
 /// by returning `:: bool acc`, bool indicates where performace a shortcut return
-pub fn foldl_shortcut(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
-  if expr.len() == 4 {
-    let xs = runner::evaluate_expr(&expr[0], scope, file_ns)?;
-    let acc = runner::evaluate_expr(&expr[1], scope, file_ns)?;
-    let default_value = runner::evaluate_expr(&expr[2], scope, file_ns)?;
-    let f = runner::evaluate_expr(&expr[3], scope, file_ns)?;
-    match (&xs, &f) {
+pub fn foldl_shortcut(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() == 4 {
+    let acc = &xs[1];
+    let default_value = &xs[2];
+    match (&xs[0], &xs[3]) {
       // dirty since only functions being call directly then we become fast
       (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
-        let mut state = acc;
+        let mut state = acc.to_owned();
         for x in xs {
           let values = im::vector![state, x.to_owned()];
           let pair = runner::run_fn(&values, def_scope, args, body, def_ns)?;
@@ -294,11 +282,11 @@ pub fn foldl_shortcut(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) ->
             }
           }
         }
-        Ok(default_value)
+        Ok(default_value.to_owned())
       }
       // almost identical body, escept for the type
       (Calcit::Set(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
-        let mut state = acc;
+        let mut state = acc.to_owned();
         for x in xs {
           let values = im::vector![state, x.to_owned()];
           let pair = runner::run_fn(&values, def_scope, args, body, def_ns)?;
@@ -326,11 +314,11 @@ pub fn foldl_shortcut(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) ->
             }
           }
         }
-        Ok(default_value)
+        Ok(default_value.to_owned())
       }
       // almost identical body, escept for the type
       (Calcit::Map(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
-        let mut state = acc;
+        let mut state = acc.to_owned();
         for (k, x) in xs {
           let values = im::vector![state, Calcit::List(im::vector![k.to_owned(), x.to_owned()])];
           let pair = runner::run_fn(&values, def_scope, args, body, def_ns)?;
@@ -358,32 +346,32 @@ pub fn foldl_shortcut(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) ->
             }
           }
         }
-        Ok(default_value)
+        Ok(default_value.to_owned())
       }
 
-      (_, _) => Err(CalcitErr::use_string(format!(
+      (a, b) => Err(CalcitErr::use_string(format!(
         "foldl-shortcut expected list... and fn, got: {} {}",
-        xs, f
+        a, b
       ))),
     }
   } else {
     Err(CalcitErr::use_string(format!(
       "foldl-shortcut expected 4 arguments list,state,default,fn, got: {:?}",
-      expr
+      xs
     )))
   }
 }
 
-pub fn foldr_shortcut(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
-  if expr.len() == 4 {
-    let xs = runner::evaluate_expr(&expr[0], scope, file_ns)?;
-    let acc = runner::evaluate_expr(&expr[1], scope, file_ns)?;
-    let default_value = runner::evaluate_expr(&expr[2], scope, file_ns)?;
-    let f = runner::evaluate_expr(&expr[3], scope, file_ns)?;
-    match (&xs, &f) {
+pub fn foldr_shortcut(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() == 4 {
+    // let xs = runner::evaluate_expr(&expr[0], scope, file_ns)?;
+    let acc = &xs[1];
+    let default_value = &xs[2];
+    // let f = runner::evaluate_expr(&expr[3], scope, file_ns)?;
+    match (&xs[0], &xs[3]) {
       // dirty since only functions being call directly then we become fast
       (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
-        let mut state = acc;
+        let mut state = acc.to_owned();
         let size = xs.len();
         for i in 0..size {
           let x = xs[size - 1 - i].to_owned();
@@ -413,28 +401,25 @@ pub fn foldr_shortcut(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) ->
             }
           }
         }
-        Ok(default_value)
+        Ok(default_value.to_owned())
       }
 
-      (_, _) => Err(CalcitErr::use_string(format!(
+      (a, b) => Err(CalcitErr::use_string(format!(
         "foldr-shortcut expected list... and fn, got: {} {}",
-        xs, f
+        a, b
       ))),
     }
   } else {
     Err(CalcitErr::use_string(format!(
       "foldr-shortcut expected 4 arguments list,state,default,fn, got: {:?}",
-      expr
+      xs
     )))
   }
 }
 
-// TODO as SYNTAX at current, not supposed to be a syntax
-pub fn sort(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
-  if expr.len() == 2 {
-    let xs = runner::evaluate_expr(&expr[0], scope, file_ns)?;
-    let f = runner::evaluate_expr(&expr[1], scope, file_ns)?;
-    match (&xs, &f) {
+pub fn sort(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() == 2 {
+    match (&xs[0], &xs[1]) {
       // dirty since only functions being call directly then we become fast
       (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         let mut ret = xs.to_owned();
@@ -479,10 +464,10 @@ pub fn sort(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Ca
         Ok(Calcit::List(ret))
       }
 
-      (_, _) => Err(CalcitErr::use_string(format!("sort expected list and function, got: {} {}", xs, f))),
+      (a, b) => Err(CalcitErr::use_string(format!("sort expected list and function, got: {} {}", a, b))),
     }
   } else {
-    Err(CalcitErr::use_string(format!("sort expected 2 arguments, got: {:?}", expr)))
+    Err(CalcitErr::use_string(format!("sort expected 2 arguments, got: {:?}", xs)))
   }
 }
 

@@ -292,10 +292,6 @@ fn process_list_call(
       | CalcitSyntax::Macroexpand
       | CalcitSyntax::MacroexpandAll
       | CalcitSyntax::Macroexpand1
-      | CalcitSyntax::Foldl
-      | CalcitSyntax::FoldlShortcut
-      | CalcitSyntax::FoldrShortcut
-      | CalcitSyntax::Sort
       | CalcitSyntax::Reset => Ok((
         preprocess_each_items(&name, &name_ns, &args, scope_defs, file_ns, check_warnings)?,
         None,
