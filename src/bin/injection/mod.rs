@@ -114,8 +114,14 @@ pub fn callback_dylib_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     let result = unsafe {
       let lib = libloading::Library::new(&lib_name).expect("dylib not found");
       let func: libloading::Symbol<EdnFfi> = lib.get(method.as_bytes()).expect("dy function not found");
-      let ret = func(ys.to_owned()).map_err(CalcitErr::use_string)?;
-      edn_to_calcit(&ret)
+      match func(ys.to_owned()) {
+        Ok(ret) => edn_to_calcit(&ret),
+        Err(e) => {
+          track::track_task_release();
+          println!("failed to call request: {}", e);
+          return Err(CalcitErr::use_string(e));
+        }
+      }
     };
     if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = callback {
       let r = runner::run_fn(&im::vector![result], &def_scope, &args, &body, &def_ns);
