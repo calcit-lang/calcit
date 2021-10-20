@@ -125,16 +125,21 @@ pub fn callback_dylib_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     };
     if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = callback {
       let r = runner::run_fn(&im::vector![result], &def_scope, &args, &body, &def_ns);
-      println!("callback result: {:?}", r);
+      match r {
+        Ok(ret) => {
+          if ret != Calcit::Nil {
+            println!("[Thread] callback result: {}", ret);
+          }
+        }
+        Err(e) => {
+          println!("[Error] thread callback failed: {}", e)
+        }
+      }
 
       track::track_task_release();
       Ok(Calcit::Nil)
     } else {
-      track::track_task_release();
-      return Err(CalcitErr::use_string(format!(
-        "expected last argument to be callback fn, got: {}",
-        callback
-      )));
+      unreachable!(format!("expected last argument to be callback fn, got: {}", callback));
     }
   });
 
