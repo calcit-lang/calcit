@@ -349,32 +349,44 @@
                             ~ $ &list:nth else 0
                             ~@ $ &list:rest else
 
-        |key-match $ quote
+        |&key-match-internal $ quote
           defmacro key-match (value & body)
             if (&list:empty? body)
               quasiquote
-                &let nil
-                  echo "|[warn] key-match found no matched case, missing `_` case?" ~value
+                println "|[Warn] key-match found no matched case, missing `_` case?" ~value
               &let
                 pair (&list:first body)
                 assert "|key-match expected pairs"
                   and (list? pair) (&= 2 (&list:count pair))
-                let[] (pattern branch) pair
-                  if (&= pattern '_) branch
-                    &let nil
-                      assert "|pattern in a list" (list? pattern)
-                      &let
-                        k (&list:first pattern)
-                        &let (v# (gensym 'v))
-                          quasiquote
-                            &let (~v# ~value)
-                              if (&= (&list:first ~v#) ~k)
-                                let
-                                  ~ $ map-indexed (&list:rest pattern) $ defn %key-match (idx x)
-                                    [] x $ quasiquote
-                                      &list:nth ~v# (~ (inc idx))
-                                  , ~branch
-                                key-match ~value (~@ (&list:rest body))
+                let
+                    pattern $ &list:nth pair 0
+                    branch $ &list:nth pair 1
+                  if (list? pattern)
+                    &let
+                      k (&list:first pattern)
+                      quasiquote
+                        if (&= (&list:first ~value) ~k)
+                          let
+                            ~ $ map-indexed (&list:rest pattern) $ defn %key-match (idx x)
+                              [] x $ quasiquote
+                                &list:nth ~value (~ (inc idx))
+                            , ~branch
+                          &key-match-internal ~value $ ~@ (&list:rest body)
+                    if (&= pattern '_) branch
+                      raise $ str "|unknown supported pattern: " pair
+
+        |key-match $ quote
+          defmacro key-match (value & body)
+            if (&list:empty? body)
+              quasiquote
+                println "|[Error] key-match expected some patterns and matches" ~value
+              if (list? value)
+                &let (v# (gensym 'v))
+                  quasiquote
+                    &let (~v# ~value)
+                      &key-match-internal ~v# $ ~@ body
+                quasiquote
+                  &key-match-internal ~value $ ~@ body
 
         |&case $ quote
           defmacro &case (item default pattern & others)
