@@ -1,5 +1,6 @@
 use crate::runner;
 use cirru_edn::Edn;
+use std::sync::Arc;
 use std::thread;
 
 use calcit_runner::{
@@ -11,7 +12,7 @@ use calcit_runner::{
 
 /// FFI protocol types
 type EdnFfi = fn(args: Vec<Edn>) -> Result<Edn, String>;
-type EdnFfiFn = fn(args: Vec<Edn>, f: Box<dyn Fn(Edn) -> Edn>) -> Result<Edn, String>;
+type EdnFfiFn = fn(args: Vec<Edn>, f: Arc<dyn Fn(Edn) -> Edn>) -> Result<Edn, String>;
 
 pub fn inject_platform_apis() {
   builtins::register_import_proc("&call-dylib-edn", call_dylib_edn);
@@ -196,7 +197,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
       match func(
         ys.to_owned(),
-        Box::new(move |p: Edn| -> Edn {
+        Arc::new(move |p: Edn| -> Edn {
           if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = &callback {
             let r = runner::run_fn(&im::vector![edn_to_calcit(&p)], def_scope, args, body, def_ns);
             match r {
