@@ -12,7 +12,7 @@ use calcit_runner::{
 
 /// FFI protocol types
 type EdnFfi = fn(args: Vec<Edn>) -> Result<Edn, String>;
-type EdnFfiFn = fn(args: Vec<Edn>, f: Arc<dyn Fn(Edn) -> Edn>) -> Result<Edn, String>;
+type EdnFfiFn = fn(args: Vec<Edn>, f: Arc<dyn Fn(Vec<Edn>) -> Result<Edn, String>>) -> Result<Edn, String>;
 
 pub fn inject_platform_apis() {
   builtins::register_import_proc("&call-dylib-edn", call_dylib_edn);
@@ -21,6 +21,7 @@ pub fn inject_platform_apis() {
   builtins::register_import_proc("&callback-dylib-edn", callback_dylib_edn);
   builtins::register_import_proc("&call-dylib-edn-fn", call_dylib_edn_fn);
   builtins::register_import_proc("async-sleep", builtins::meta::async_sleep);
+  builtins::register_import_proc("on-control-c", on_ctrl_c);
 }
 
 // &call-dylib-edn
@@ -197,20 +198,22 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
       match func(
         ys.to_owned(),
-        Arc::new(move |p: Edn| -> Edn {
+        Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
           if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = &callback {
-            let r = runner::run_fn(&im::vector![edn_to_calcit(&p)], def_scope, args, body, def_ns);
+            let mut real_args = im::vector![];
+            for p in ps {
+              real_args.push_back(edn_to_calcit(&p));
+            }
+            let r = runner::run_fn(&real_args, def_scope, args, body, def_ns);
             match r {
-              Ok(ret) => match calcit_to_edn(&ret) {
-                Ok(v) => v,
-                Err(e) => Edn::Str(format!("Error: {}", e)),
-              },
+              Ok(ret) => calcit_to_edn(&ret),
               Err(e) => {
                 println!("[Error] thread callback failed: {}", e);
-                Edn::Str(format!("Error: {}", e))
+                Err(format!("Error: {}", e))
               }
             }
           } else {
+            // handled above
             unreachable!(format!("expected last argument to be callback fn, got: {}", callback));
           }
         }),
@@ -227,4 +230,23 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   });
 
   Ok(Calcit::Nil)
+}
+
+/// need to put it here since the crate does not compile for dylib
+#[no_mangle]
+pub fn on_ctrl_c(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() == 1 {
+    let cb = Arc::new(xs[0].to_owned());
+    ctrlc::set_handler(move || {
+      if let Calcit::Fn(_name, def_ns, _, def_scope, args, body) = cb.as_ref() {
+        if let Err(e) = runner::run_fn(&im::vector![], def_scope, args, body, def_ns) {
+          println!("error: {}", e);
+        }
+      }
+    })
+    .expect("Error setting Ctrl-C handler");
+    Ok(Calcit::Nil)
+  } else {
+    Err(CalcitErr::use_string(format!("on-control-c expected a callback function {:?}", xs)))
+  }
 }
