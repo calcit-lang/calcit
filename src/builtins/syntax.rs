@@ -191,7 +191,7 @@ pub fn macroexpand(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              let body_scope = runner::bind_args(&args, &rest_nodes, scope)?;
+              let body_scope = runner::bind_args(&args, &rest_nodes, scope, call_stack)?;
               let v = runner::evaluate_lines(&body, &body_scope, &def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
@@ -227,7 +227,7 @@ pub fn macroexpand_1(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, cal
         match v {
           Calcit::Macro(_, def_ns, _, args, body) => {
             let mut xs_cloned = xs;
-            let body_scope = runner::bind_args(&args, &xs_cloned.slice(1..), scope)?;
+            let body_scope = runner::bind_args(&args, &xs_cloned.slice(1..), scope, call_stack)?;
             runner::evaluate_lines(&body, &body_scope, &def_ns, call_stack)
           }
           _ => Ok(quoted_code),
@@ -262,7 +262,7 @@ pub fn macroexpand_all(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, c
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              let body_scope = runner::bind_args(&args, &rest_nodes, scope)?;
+              let body_scope = runner::bind_args(&args, &rest_nodes, scope, call_stack)?;
               let v = runner::evaluate_lines(&body, &body_scope, &def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {

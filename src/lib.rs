@@ -38,7 +38,7 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure.msg).map_err(CalcitErr::use_string)?;
+      call_stack::display_stack(&failure.msg, &failure.stack).map_err(CalcitErr::use_string)?;
       return Err(CalcitErr::use_string(failure.msg));
     }
   }
@@ -60,7 +60,7 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
           Ok(v) => Ok(v),
           Err(failure) => {
             println!("\nfailed, {}", failure);
-            call_stack::display_stack(&failure.msg).map_err(CalcitErr::use_string)?;
+            call_stack::display_stack(&failure.msg, &failure.stack).map_err(CalcitErr::use_string)?;
             Err(failure)
           }
         }

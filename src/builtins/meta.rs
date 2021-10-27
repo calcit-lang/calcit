@@ -170,8 +170,8 @@ pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn display_stack(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  call_stack::show_stack();
+pub fn display_stack(_xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+  call_stack::show_stack(call_stack);
   Ok(Calcit::Nil)
 }
 
@@ -310,7 +310,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
       let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
-    x => return Err(CalcitErr::use_string(format!("cannot decide a class from: {:?}", x))),
+    x => return Err(CalcitErr::use_msg_stack(format!("cannot decide a class from: {:?}", x), call_stack)),
   };
   match &class {
     Calcit::Record(_, fields, values) => {
@@ -331,11 +331,14 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
             // dirty copy...
             Calcit::Fn(_, def_ns, _, def_scope, args, body) => runner::run_fn(&method_args, def_scope, args, body, def_ns, call_stack),
             Calcit::Proc(proc) => builtins::handle_proc(proc, &method_args, call_stack),
-            Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_string(format!(
-              "cannot get syntax here since instance is always evaluated, got: {}",
-              syn
-            ))),
-            y => Err(CalcitErr::use_string(format!("expected a function to invoke, got: {}", y))),
+            Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
+              format!("cannot get syntax here since instance is always evaluated, got: {}", syn),
+              call_stack,
+            )),
+            y => Err(CalcitErr::use_msg_stack(
+              format!("expected a function to invoke, got: {}", y),
+              call_stack,
+            )),
           }
         }
         None => {
@@ -343,14 +346,17 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
           for k in fields {
             content = format!("{},{}", content, lookup_order_kwd_str(k))
           }
-          Err(CalcitErr::use_string(format!("missing field `{}` in {}", name, content)))
+          Err(CalcitErr::use_msg_stack(
+            format!("missing field `{}` in {}", name, content),
+            call_stack,
+          ))
         }
       }
     }
-    x => Err(CalcitErr::use_string(format!(
-      "method invoking expected a record as class, got: {}",
-      x
-    ))),
+    x => Err(CalcitErr::use_msg_stack(
+      format!("method invoking expected a record as class, got: {}", x),
+      call_stack,
+    )),
   }
 }
 
@@ -435,14 +441,14 @@ pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   Ok(load_kwd(&std::env::consts::OS.to_owned()))
 }
 
-pub fn async_sleep(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn async_sleep(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   use std::{thread, time};
   let sec = if xs.is_empty() {
     1.0
   } else if let Calcit::Number(n) = xs[0] {
     n
   } else {
-    return Err(CalcitErr::use_str("expected number"));
+    return Err(CalcitErr::use_msg_stack("expected number".to_owned(), call_stack));
   };
 
   runner::track::track_task_add();

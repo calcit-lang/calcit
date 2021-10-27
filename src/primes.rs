@@ -19,6 +19,8 @@ pub use syntax_name::CalcitSyntax;
 
 pub use keyword::lookup_order_kwd_str;
 
+use crate::call_stack::CallStackVec;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolResolved {
   ResolvedLocal,
@@ -559,6 +561,13 @@ impl CalcitErr {
       msg: msg.to_owned(),
       warnings: vec![],
       stack: im::Vector::new(),
+    }
+  }
+  pub fn use_msg_stack(msg: String, stack: &CallStackVec) -> Self {
+    CalcitErr {
+      msg: msg.to_owned(),
+      warnings: vec![],
+      stack: stack.to_owned(),
     }
   }
 }

@@ -33,7 +33,12 @@ fn modify_ref(path: String, v: Calcit, call_stack: &CallStackVec) -> Result<(), 
         let values = im::vector![v.to_owned(), prev.to_owned()];
         runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
       }
-      a => return Err(CalcitErr::use_string(format!("expected fn to trigger after `reset!`, got {}", a))),
+      a => {
+        return Err(CalcitErr::use_msg_stack(
+          format!("expected fn to trigger after `reset!`, got {}", a),
+          call_stack,
+        ))
+      }
     }
   }
   Ok(())
@@ -53,11 +58,11 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stac
       }
       Ok(Calcit::Ref(path))
     }
-    (Some(a), Some(b)) => Err(CalcitErr::use_string(format!(
-      "defref expected a symbol and an expression: {} , {}",
-      a, b
-    ))),
-    _ => Err(CalcitErr::use_str("defref expected 2 nodes")),
+    (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack(
+      format!("defref expected a symbol and an expression: {} , {}", a, b),
+      call_stack,
+    )),
+    _ => Err(CalcitErr::use_msg_stack("defref expected 2 nodes".to_owned(), call_stack)),
   }
 }
 
@@ -88,10 +93,10 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_s
       modify_ref(path, v, call_stack)?;
       Ok(Calcit::Nil)
     }
-    (a, b) => Err(CalcitErr::use_string(format!(
-      "reset! expected a ref and a value, got: {} {}",
-      a, b
-    ))),
+    (a, b) => Err(CalcitErr::use_msg_stack(
+      format!("reset! expected a ref and a value, got: {} {}", a, b),
+      call_stack,
+    )),
   }
 }
 

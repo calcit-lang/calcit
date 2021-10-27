@@ -192,7 +192,20 @@ pub fn is_proc_name(s: &str) -> bool {
   }
 }
 
+/// make sure that stack information attached in errors from procs
 pub fn handle_proc(name: &str, args: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+  handle_proc_internal(name, args, call_stack).map_err(|e| {
+    if e.stack.is_empty() {
+      let mut e2 = e.to_owned();
+      e2.stack = call_stack.to_owned();
+      e2
+    } else {
+      e
+    }
+  })
+}
+
+fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match name {
     // meta
     "type-of" => meta::type_of(args),
@@ -212,7 +225,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems, call_stack: &CallStackVec) ->
     "&tuple:nth" => meta::tuple_nth(args),
     "&tuple:assoc" => meta::assoc(args),
     // effects
-    "&display-stack" => meta::display_stack(args),
+    "&display-stack" => meta::display_stack(args, call_stack),
     "raise" => effects::raise(args),
     "quit!" => effects::quit(args),
     "get-env" => effects::get_env(args),
@@ -357,7 +370,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems, call_stack: &CallStackVec) ->
         let f = ps[name];
         f(args, call_stack)
       } else {
-        Err(CalcitErr::use_string(format!("No such proc: {}", a)))
+        Err(CalcitErr::use_msg_stack(format!("No such proc: {}", a), call_stack))
       }
     }
   }

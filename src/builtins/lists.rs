@@ -243,10 +243,16 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
         Ok(ret)
       }
 
-      (a, b) => Err(CalcitErr::use_string(format!("foldl expected list and function, got: {} {}", a, b))),
+      (a, b) => Err(CalcitErr::use_msg_stack(
+        format!("foldl expected list and function, got: {} {}", a, b),
+        call_stack,
+      )),
     }
   } else {
-    Err(CalcitErr::use_string(format!("foldl expected 3 arguments, got: {:?}", xs)))
+    Err(CalcitErr::use_msg_stack(
+      format!("foldl expected 3 arguments, got: {:?}", xs),
+      call_stack,
+    ))
   }
 }
 
@@ -273,17 +279,17 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
                 }
               }
               a => {
-                return Err(CalcitErr::use_string(format!(
-                  "return value in foldl-shortcut should be a bool, got: {}",
-                  a
-                )))
+                return Err(CalcitErr::use_msg_stack(
+                  format!("return value in foldl-shortcut should be a bool, got: {}", a),
+                  call_stack,
+                ))
               }
             },
             _ => {
-              return Err(CalcitErr::use_string(format!(
-                "return value for foldl-shortcut should be `:: bool acc`, got: {}",
-                pair
-              )))
+              return Err(CalcitErr::use_msg_stack(
+                format!("return value for foldl-shortcut should be `:: bool acc`, got: {}", pair),
+                call_stack,
+              ))
             }
           }
         }
@@ -305,17 +311,17 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
                 }
               }
               a => {
-                return Err(CalcitErr::use_string(format!(
-                  "return value in foldl-shortcut should be a bool, got: {}",
-                  a
-                )))
+                return Err(CalcitErr::use_msg_stack(
+                  format!("return value in foldl-shortcut should be a bool, got: {}", a),
+                  call_stack,
+                ))
               }
             },
             _ => {
-              return Err(CalcitErr::use_string(format!(
-                "return value for foldl-shortcut should be `:: bool acc`, got: {}",
-                pair
-              )))
+              return Err(CalcitErr::use_msg_stack(
+                format!("return value for foldl-shortcut should be `:: bool acc`, got: {}", pair),
+                call_stack,
+              ))
             }
           }
         }
@@ -337,33 +343,33 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
                 }
               }
               a => {
-                return Err(CalcitErr::use_string(format!(
-                  "return value in foldl-shortcut should be a bool, got: {}",
-                  a
-                )))
+                return Err(CalcitErr::use_msg_stack(
+                  format!("return value in foldl-shortcut should be a bool, got: {}", a),
+                  call_stack,
+                ))
               }
             },
             _ => {
-              return Err(CalcitErr::use_string(format!(
-                "return value for foldl-shortcut should be `:: bool acc`, got: {}",
-                pair
-              )))
+              return Err(CalcitErr::use_msg_stack(
+                format!("return value for foldl-shortcut should be `:: bool acc`, got: {}", pair),
+                call_stack,
+              ))
             }
           }
         }
         Ok(default_value.to_owned())
       }
 
-      (a, b) => Err(CalcitErr::use_string(format!(
-        "foldl-shortcut expected list... and fn, got: {} {}",
-        a, b
-      ))),
+      (a, b) => Err(CalcitErr::use_msg_stack(
+        format!("foldl-shortcut expected list... and fn, got: {} {}", a, b),
+        call_stack,
+      )),
     }
   } else {
-    Err(CalcitErr::use_string(format!(
-      "foldl-shortcut expected 4 arguments list,state,default,fn, got: {:?}",
-      xs
-    )))
+    Err(CalcitErr::use_msg_stack(
+      format!("foldl-shortcut expected 4 arguments list,state,default,fn, got: {:?}", xs),
+      call_stack,
+    ))
   }
 }
 
@@ -392,33 +398,33 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
                 }
               }
               a => {
-                return Err(CalcitErr::use_string(format!(
-                  "return value in foldr-shortcut should be a bool, got: {}",
-                  a
-                )))
+                return Err(CalcitErr::use_msg_stack(
+                  format!("return value in foldr-shortcut should be a bool, got: {}", a),
+                  call_stack,
+                ))
               }
             },
             _ => {
-              return Err(CalcitErr::use_string(format!(
-                "return value for foldr-shortcut should be `:: bool acc`, got: {}",
-                pair
-              )))
+              return Err(CalcitErr::use_msg_stack(
+                format!("return value for foldr-shortcut should be `:: bool acc`, got: {}", pair),
+                call_stack,
+              ))
             }
           }
         }
         Ok(default_value.to_owned())
       }
 
-      (a, b) => Err(CalcitErr::use_string(format!(
-        "foldr-shortcut expected list... and fn, got: {} {}",
-        a, b
-      ))),
+      (a, b) => Err(CalcitErr::use_msg_stack(
+        format!("foldr-shortcut expected list... and fn, got: {} {}", a, b),
+        call_stack,
+      )),
     }
   } else {
-    Err(CalcitErr::use_string(format!(
-      "foldr-shortcut expected 4 arguments list,state,default,fn, got: {:?}",
-      xs
-    )))
+    Err(CalcitErr::use_msg_stack(
+      format!("foldr-shortcut expected 4 arguments list,state,default,fn, got: {:?}", xs),
+      call_stack,
+    ))
   }
 }
 
@@ -469,10 +475,16 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calci
         Ok(Calcit::List(ret))
       }
 
-      (a, b) => Err(CalcitErr::use_string(format!("sort expected list and function, got: {} {}", a, b))),
+      (a, b) => Err(CalcitErr::use_msg_stack(
+        format!("sort expected list and function, got: {} {}", a, b),
+        call_stack,
+      )),
     }
   } else {
-    Err(CalcitErr::use_string(format!("sort expected 2 arguments, got: {:?}", xs)))
+    Err(CalcitErr::use_msg_stack(
+      format!("sort expected 2 arguments, got: {:?}", xs),
+      call_stack,
+    ))
   }
 }
 
