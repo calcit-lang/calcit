@@ -11,21 +11,21 @@
     |app.main $ {}
       :ns $ quote
         ns app.main $ :require
-          [] test-cond.main :as test-cond
-          [] test-gynienic.main :as test-gynienic
-          [] test-lens.main :as test-lens
-          [] test-list.main :as test-list
-          [] test-macro.main :as test-macro
-          [] test-map.main :as test-map
-          [] test-math.main :as test-math
-          [] test-recursion.main :as test-recursion
-          [] test-set.main :as test-set
-          [] test-string.main :as test-string
-          [] test-js.main :as test-js
-          [] test-record.main :as test-record
-          [] test-nil.main :as test-nil
-          [] test-fn.main :as test-fn
-          [] test-algebra.main :as test-algebra
+          test-cond.main :as test-cond
+          test-gynienic.main :as test-gynienic
+          test-lens.main :as test-lens
+          test-list.main :as test-list
+          test-macro.main :as test-macro
+          test-map.main :as test-map
+          test-math.main :as test-math
+          test-recursion.main :as test-recursion
+          test-set.main :as test-set
+          test-string.main :as test-string
+          test-js.main :as test-js
+          test-record.main :as test-record
+          test-nil.main :as test-nil
+          test-fn.main :as test-fn
+          test-algebra.main :as test-algebra
           util.core :refer $ log-title inside-eval: inside-js:
       :defs $ {}
         |test-keyword $ quote
@@ -286,7 +286,7 @@
             log-title "|Testing keyword function"
             test-keyword
 
-            log-title "|Testing detects"
+            util.core/log-title "|Testing detects"
             test-detects
 
             test-if

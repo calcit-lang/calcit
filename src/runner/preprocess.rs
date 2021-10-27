@@ -104,12 +104,8 @@ pub fn preprocess_expr(
   match expr {
     Calcit::Symbol(def, def_ns, at_def, _) => match runner::parse_ns_def(def) {
       Some((ns_alias, def_part)) => {
-        match program::lookup_ns_target_in_import(def_ns, &ns_alias) {
-          Some(target_ns) => {
-            // TODO js syntax to handle in future
-            preprocess_ns_def(&target_ns, &def_part, def, None, check_warnings)
-          }
-          None if ns_alias == "js" => Ok((
+        if ns_alias == "js" {
+          Ok((
             Calcit::Symbol(
               def.to_owned(),
               def_ns.to_owned(),
@@ -117,8 +113,15 @@ pub fn preprocess_expr(
               Some(Box::new(ResolvedDef(String::from("js"), def_part, None))),
             ),
             None,
-          )), // js code
-          None => Err(CalcitErr::use_string(format!("unknown ns target: {}", def))),
+          ))
+        } else if let Some(target_ns) = program::lookup_ns_target_in_import(def_ns, &ns_alias) {
+          // TODO js syntax to handle in future
+          preprocess_ns_def(&target_ns, &def_part, def, None, check_warnings)
+        } else if program::has_def_code(&ns_alias, &def_part) {
+          // refer to namespace/def directly for some usages
+          preprocess_ns_def(&ns_alias, &def_part, def, None, check_warnings)
+        } else {
+          Err(CalcitErr::use_string(format!("unknown ns target: {}", def)))
         }
       }
       None => {
