@@ -821,11 +821,10 @@ fn gen_if_code(
 
         let false_code = to_js_code(false_node, ns, local_defs, file_imports, keywords, &return_label)?;
         chunk.push_str(&format!("else {{ {} }}", false_code));
-        break;
       } else {
         chunk.push_str(&format!("else {{ {} null; }}", return_label.unwrap()));
-        break;
       }
+      break;
     }
 
     if base_return_label.is_some() {
