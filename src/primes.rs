@@ -529,8 +529,8 @@ pub fn gen_core_id() -> String {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CalcitErr {
   pub msg: String,
-  // stack: im::Vector<String>,
   pub warnings: Vec<String>,
+  pub stack: im::Vector<crate::call_stack::CalcitStack>,
 }
 
 impl fmt::Display for CalcitErr {
@@ -551,12 +551,14 @@ impl CalcitErr {
     CalcitErr {
       msg: msg.to_owned(),
       warnings: vec![],
+      stack: im::Vector::new(),
     }
   }
   pub fn use_string(msg: String) -> Self {
     CalcitErr {
       msg: msg.to_owned(),
       warnings: vec![],
+      stack: im::Vector::new(),
     }
   }
 }

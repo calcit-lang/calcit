@@ -576,7 +576,7 @@ fn gen_symbol_code(
       Ok(escape_ns_var(s, "js"))
     } else {
       let ns_part = s.split('/').collect::<Vec<&str>>()[0];
-      // TODO ditry code
+      // TODO dirty code
       // TODO namespace part supposed be parsed during preprocessing, this mimics old behaviors
       match resolved {
         Some(ResolvedDef(r_ns, _r_def, _import_rule /* None */)) => {
@@ -1328,12 +1328,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 fn is_js_unavailable_procs(name: &str) -> bool {
   matches!(
     name,
-    "&reset-gensym-index!"
-      | "gensym"
-      | "macroexpand"
-      | "macroexpand-all"
-      | "to-cirru-edn"
-      | "extract-cirru-edn"
+    "&reset-gensym-index!" | "gensym" | "macroexpand" | "macroexpand-all" | "to-cirru-edn" | "extract-cirru-edn"
   )
 }
 

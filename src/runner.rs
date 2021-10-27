@@ -4,11 +4,11 @@ pub mod track;
 use crate::builtins;
 use crate::builtins::is_proc_name;
 use crate::call_stack;
-use crate::call_stack::{push_call_stack, StackKind};
+use crate::call_stack::{push_call_stack, CallStackVec, StackKind};
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
 
-pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   // println!("eval code: {}", expr.lisp_str());
 
   match expr {
@@ -20,12 +20,12 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str) -> Resul
       Some(resolved_info) => {
         match &**resolved_info {
           ResolvedDef(r_ns, r_def, _import_rule) => {
-            let v = evaluate_symbol(r_def, scope, r_ns)?;
+            let v = evaluate_symbol(r_def, scope, r_ns, call_stack)?;
             match v {
               Calcit::Thunk(_code, Some(data)) => Ok(*data),
               // extra check to make sure code in thunks evaluated
               Calcit::Thunk(code, None) => {
-                let evaled_v = evaluate_expr(&code, scope, file_ns)?;
+                let evaled_v = evaluate_expr(&code, scope, file_ns, call_stack)?;
                 // and write back to program state to fix duplicated evalution
                 // still using thunk since js and IR requires bare code
                 program::write_evaled_def(r_ns, r_def, Calcit::Thunk(code, Some(Box::new(evaled_v.to_owned()))))
@@ -35,15 +35,15 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str) -> Resul
               _ => Ok(v),
             }
           }
-          _ => evaluate_symbol(s, scope, ns),
+          _ => evaluate_symbol(s, scope, ns, call_stack),
         }
       }
-      _ => evaluate_symbol(s, scope, ns),
+      _ => evaluate_symbol(s, scope, ns, call_stack),
     },
     Calcit::Keyword(_) => Ok(expr.to_owned()),
     Calcit::Str(_) => Ok(expr.to_owned()),
     Calcit::Thunk(code, v) => match v {
-      None => evaluate_expr(code, scope, file_ns),
+      None => evaluate_expr(code, scope, file_ns, call_stack),
       Some(data) => Ok(*data.to_owned()),
     },
     Calcit::Ref(_) => Ok(expr.to_owned()),
@@ -58,30 +58,30 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str) -> Resul
 
         let mut added_stack = false;
 
-        let v = evaluate_expr(x, scope, file_ns)?;
+        let v = evaluate_expr(x, scope, file_ns, call_stack)?;
         let rest_nodes = xs.skip(1);
         let ret = match &v {
           Calcit::Proc(p) => {
-            let values = evaluate_args(&rest_nodes, scope, file_ns)?;
+            let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
             push_call_stack(file_ns, p, StackKind::Proc, Calcit::Nil, &values);
             added_stack = true;
             if p.starts_with('.') {
-              builtins::meta::invoke_method(p.strip_prefix('.').unwrap(), &values)
+              builtins::meta::invoke_method(p.strip_prefix('.').unwrap(), &values, call_stack)
             } else {
               // println!("proc: {}", expr);
-              builtins::handle_proc(p, &values)
+              builtins::handle_proc(p, &values, call_stack)
             }
           }
           Calcit::Syntax(s, def_ns) => {
             push_call_stack(file_ns, &s.to_string(), StackKind::Syntax, expr.to_owned(), &rest_nodes);
             added_stack = true;
-            builtins::handle_syntax(s, &rest_nodes, scope, def_ns)
+            builtins::handle_syntax(s, &rest_nodes, scope, def_ns, call_stack)
           }
           Calcit::Fn(name, def_ns, _, def_scope, args, body) => {
-            let values = evaluate_args(&rest_nodes, scope, file_ns)?;
+            let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
             push_call_stack(file_ns, name, StackKind::Fn, expr.to_owned(), &values);
             added_stack = true;
-            run_fn(&values, def_scope, args, body, def_ns)
+            run_fn(&values, def_scope, args, body, def_ns, call_stack)
           }
           Calcit::Macro(name, def_ns, _, args, body) => {
             println!(
@@ -100,21 +100,21 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str) -> Resul
             Ok(loop {
               // need to handle recursion
               let body_scope = bind_args(args, &current_values, &im::HashMap::new())?;
-              let code = evaluate_lines(body, &body_scope, def_ns)?;
+              let code = evaluate_lines(body, &body_scope, def_ns, call_stack)?;
               match code {
                 Calcit::Recur(ys) => {
                   current_values = ys;
                 }
                 _ => {
                   // println!("gen code: {} {}", x, &code.lisp_str()));
-                  break evaluate_expr(&code, scope, file_ns)?;
+                  break evaluate_expr(&code, scope, file_ns, call_stack)?;
                 }
               }
             })
           }
           Calcit::Keyword(k) => {
             if rest_nodes.len() == 1 {
-              let v = evaluate_expr(&rest_nodes[0], scope, file_ns)?;
+              let v = evaluate_expr(&rest_nodes[0], scope, file_ns, call_stack)?;
 
               if let Calcit::Map(m) = v {
                 match m.get(&Calcit::Keyword(k.to_owned())) {
@@ -159,10 +159,10 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str) -> Resul
   }
 }
 
-pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match parse_ns_def(sym) {
     Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns, &ns_part) {
-      Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns) {
+      Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, call_stack) {
         Ok(v) => Ok(v),
         Err(e) => Err(e),
       },
@@ -183,13 +183,13 @@ pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str) -> Result<
         return Ok(Calcit::Proc(sym.to_owned()));
       }
       if program::lookup_def_code(CORE_NS, sym).is_some() {
-        return eval_symbol_from_program(sym, CORE_NS);
+        return eval_symbol_from_program(sym, CORE_NS, call_stack);
       }
       if program::has_def_code(file_ns, sym) {
-        return eval_symbol_from_program(sym, file_ns);
+        return eval_symbol_from_program(sym, file_ns, call_stack);
       }
       match program::lookup_def_target_in_import(file_ns, sym) {
-        Some(target_ns) => eval_symbol_from_program(sym, &target_ns),
+        Some(target_ns) => eval_symbol_from_program(sym, &target_ns, call_stack),
         None => {
           let vars: Vec<&String> = scope.keys().collect();
           Err(CalcitErr::use_string(format!("unknown symbol `{}` in {:?}", sym, vars)))
@@ -212,12 +212,12 @@ pub fn parse_ns_def(s: &str) -> Option<(String, String)> {
   }
 }
 
-fn eval_symbol_from_program(sym: &str, ns: &str) -> Result<Calcit, CalcitErr> {
+fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match program::lookup_evaled_def(ns, sym) {
     Some(v) => Ok(v),
     None => match program::lookup_def_code(ns, sym) {
       Some(code) => {
-        let v = evaluate_expr(&code, &im::HashMap::new(), ns)?;
+        let v = evaluate_expr(&code, &im::HashMap::new(), ns, call_stack)?;
         program::write_evaled_def(ns, sym, v.to_owned()).map_err(CalcitErr::use_string)?;
         Ok(v)
       }
@@ -232,11 +232,12 @@ pub fn run_fn(
   args: &CalcitItems,
   body: &CalcitItems,
   file_ns: &str,
+  call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   let mut current_values = values.to_owned();
   loop {
     let body_scope = bind_args(args, &current_values, scope)?;
-    let v = evaluate_lines(body, &body_scope, file_ns)?;
+    let v = evaluate_lines(body, &body_scope, file_ns, call_stack)?;
     match v {
       Calcit::Recur(xs) => {
         current_values = xs;
@@ -319,10 +320,10 @@ pub fn bind_args(args: &CalcitItems, values: &CalcitItems, base_scope: &CalcitSc
   }
 }
 
-pub fn evaluate_lines(lines: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_lines(lines: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   let mut ret: Calcit = Calcit::Nil;
   for line in lines {
-    match evaluate_expr(line, scope, file_ns) {
+    match evaluate_expr(line, scope, file_ns, call_stack) {
       Ok(v) => ret = v,
       Err(e) => return Err(e),
     }
@@ -332,7 +333,12 @@ pub fn evaluate_lines(lines: &CalcitItems, scope: &CalcitScope, file_ns: &str) -
 
 /// evaluate symbols before calling a function
 /// notice that `&` is used to spread a list
-pub fn evaluate_args(items: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<CalcitItems, CalcitErr> {
+pub fn evaluate_args(
+  items: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackVec,
+) -> Result<CalcitItems, CalcitErr> {
   let mut ret: CalcitItems = im::vector![];
   let mut spreading = false;
   for item in items {
@@ -341,7 +347,7 @@ pub fn evaluate_args(items: &CalcitItems, scope: &CalcitScope, file_ns: &str) ->
         spreading = true;
       }
       _ => {
-        let v = evaluate_expr(item, scope, file_ns)?;
+        let v = evaluate_expr(item, scope, file_ns, call_stack)?;
 
         if spreading {
           match v {
@@ -350,7 +356,7 @@ pub fn evaluate_args(items: &CalcitItems, scope: &CalcitScope, file_ns: &str) ->
                 // extract thunk before calling functions
                 let y = match x {
                   Calcit::Thunk(code, v) => match v {
-                    None => evaluate_expr(&*code, scope, file_ns)?,
+                    None => evaluate_expr(&*code, scope, file_ns, call_stack)?,
                     Some(data) => *data.to_owned(),
                   },
                   _ => x.to_owned(),
@@ -365,7 +371,7 @@ pub fn evaluate_args(items: &CalcitItems, scope: &CalcitScope, file_ns: &str) ->
           // extract thunk before calling functions
           let y = match v {
             Calcit::Thunk(code, value) => match value {
-              None => evaluate_expr(&*code, scope, file_ns)?,
+              None => evaluate_expr(&*code, scope, file_ns, call_stack)?,
               Some(data) => *data.to_owned(),
             },
             _ => v.to_owned(),

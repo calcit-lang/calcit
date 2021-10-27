@@ -34,7 +34,7 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
   let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, check_warnings) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, check_warnings, &im::Vector::new()) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
@@ -48,13 +48,14 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
     return Err(CalcitErr {
       msg: format!("Found {} warnings, runner blocked", warnings.len()),
       warnings: warnings.to_owned(),
+      stack: im::vector![],
     });
   }
   match program::lookup_evaled_def(&init_ns, &init_def) {
     None => Err(CalcitErr::use_string(format!("entry not initialized: {}/{}", init_ns, init_def))),
     Some(entry) => match entry {
       Calcit::Fn(_, f_ns, _, def_scope, args, body) => {
-        let result = runner::run_fn(&params, &def_scope, &args, &body, &f_ns);
+        let result = runner::run_fn(&params, &def_scope, &args, &body, &f_ns, &im::Vector::new());
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {

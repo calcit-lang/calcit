@@ -5,6 +5,7 @@ use std::thread;
 
 use calcit_runner::{
   builtins,
+  call_stack::CallStackVec,
   data::edn::{calcit_to_edn, edn_to_calcit},
   primes::{Calcit, CalcitErr, CalcitItems, CrListWrap},
   runner::track,
@@ -30,7 +31,7 @@ pub fn inject_platform_apis() {
 }
 
 // &call-dylib-edn
-pub fn call_dylib_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
     return Err(CalcitErr::use_string(format!(
       "&call-dylib-edn expected >2 arguments, got {}",
@@ -76,7 +77,7 @@ pub fn call_dylib_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn echo(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn echo(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   let mut s = String::from("");
   for (idx, x) in xs.iter().enumerate() {
     if idx > 0 {
@@ -90,7 +91,7 @@ pub fn echo(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 /// pass callback function to FFI function, so it can call multiple times
 /// currently for HTTP servers
-pub fn call_dylib_edn_fn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
     return Err(CalcitErr::use_string(format!(
       "&call-dylib-edn-fn expected >3 arguments, got {}",
@@ -146,9 +147,11 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
     lib_tmp
   };
+  let copied_stack_1 = Arc::new(call_stack.to_owned());
 
   let _handle = thread::spawn(move || {
     let func: libloading::Symbol<EdnFfiFn> = unsafe { lib.get(method.as_bytes()).expect("dy function not found") };
+    let copied_stack = copied_stack_1.clone();
     match func(
       ys.to_owned(),
       Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
@@ -157,7 +160,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           for p in ps {
             real_args.push_back(edn_to_calcit(&p));
           }
-          let r = runner::run_fn(&real_args, def_scope, args, body, def_ns);
+          let r = runner::run_fn(&real_args, def_scope, args, body, def_ns, &copied_stack);
           match r {
             Ok(ret) => calcit_to_edn(&ret),
             Err(e) => {
@@ -187,12 +190,13 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 /// need to put it here since the crate does not compile for dylib
 #[no_mangle]
-pub fn on_ctrl_c(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if xs.len() == 1 {
     let cb = Arc::new(xs[0].to_owned());
+    let copied_stack = Arc::new(call_stack.to_owned());
     ctrlc::set_handler(move || {
       if let Calcit::Fn(_name, def_ns, _, def_scope, args, body) = cb.as_ref() {
-        if let Err(e) = runner::run_fn(&im::vector![], def_scope, args, body, def_ns) {
+        if let Err(e) = runner::run_fn(&im::vector![], def_scope, args, body, def_ns, &copied_stack) {
           println!("error: {}", e);
         }
       }

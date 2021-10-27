@@ -102,6 +102,7 @@ fn main() -> Result<(), String> {
     calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
     None,
     check_warnings,
+    &im::Vector::new(),
   )
   .map_err(|e| e.msg)?;
 
@@ -259,7 +260,7 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
   let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, check_warnings) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, check_warnings, &im::Vector::new()) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
@@ -277,7 +278,7 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &init_def, None, check_warnings) {
+  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &init_def, None, check_warnings, &im::Vector::new()) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
