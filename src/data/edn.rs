@@ -42,7 +42,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       }
       Ok(Edn::Record(lookup_order_kwd_str(name), entries))
     }
-    Calcit::Fn(name, ..) => Err(format!("unable to generate EDN from function: {}", name)),
+    Calcit::Fn(..) => {
+      println!("[Warning] unable to generate EDN from function: {}", x);
+      Ok(Edn::Str(format!("TODO fn: {}", x)))
+    }
     Calcit::Proc(name) => Ok(Edn::Symbol(name.to_owned())),
     Calcit::Syntax(name, _ns) => Ok(Edn::Symbol(name.to_string())),
     Calcit::Tuple(tag, data) => {

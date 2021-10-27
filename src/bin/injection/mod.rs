@@ -5,7 +5,7 @@ use std::thread;
 
 use calcit_runner::{
   builtins,
-  call_stack::CallStackVec,
+  call_stack::{display_stack, CallStackVec},
   data::edn::{calcit_to_edn, edn_to_calcit},
   primes::{Calcit, CalcitErr, CalcitItems, CrListWrap},
   runner::track,
@@ -164,7 +164,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
           match r {
             Ok(ret) => calcit_to_edn(&ret),
             Err(e) => {
-              println!("[Error] thread callback failed: {}", e);
+              display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack)?;
               Err(format!("Error: {}", e))
             }
           }
@@ -178,7 +178,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
       Ok(ret) => edn_to_calcit(&ret),
       Err(e) => {
         track::track_task_release();
-        println!("failed to call request: {}", e);
+        let _ = display_stack(&format!("failed to call request: {}", e), &copied_stack_1);
         return Err(CalcitErr::use_string(e));
       }
     };
