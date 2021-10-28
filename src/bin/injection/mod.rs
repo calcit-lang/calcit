@@ -26,6 +26,7 @@ pub fn inject_platform_apis() {
   builtins::register_import_proc("echo", echo);
   builtins::register_import_proc("println", echo);
   builtins::register_import_proc("&call-dylib-edn-fn", call_dylib_edn_fn);
+  builtins::register_import_proc("&blocking-dylib-edn-fn", blocking_dylib_edn_fn);
   builtins::register_import_proc("async-sleep", builtins::meta::async_sleep);
   builtins::register_import_proc("on-control-c", on_ctrl_c);
 }
@@ -184,6 +185,101 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
     };
     Ok(Calcit::Nil)
   });
+
+  Ok(Calcit::Nil)
+}
+
+/// pass callback function to FFI function, so it can call multiple times
+/// currently for HTTP servers
+pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+  if xs.len() < 3 {
+    return Err(CalcitErr::use_string(format!(
+      "&blocking-dylib-edn-fn expected >3 arguments, got {}",
+      CrListWrap(xs.to_owned())
+    )));
+  }
+
+  let lib_name = if let Calcit::Str(s) = &xs[0] {
+    s.to_owned()
+  } else {
+    return Err(CalcitErr::use_string(format!(
+      "&blocking-dylib-edn-fn expected a lib_name, got {}",
+      xs[0]
+    )));
+  };
+
+  let method: String = if let Calcit::Str(s) = &xs[1] {
+    s.to_owned()
+  } else {
+    return Err(CalcitErr::use_string(format!(
+      "&blocking-dylib-edn-fn expected a method name, got {}",
+      xs[1]
+    )));
+  };
+  let mut ys: Vec<Edn> = vec![];
+  let callback = xs[xs.len() - 1].clone();
+  for (idx, v) in xs.iter().enumerate() {
+    if idx > 1 && idx < xs.len() - 1 {
+      ys.push(calcit_to_edn(v).map_err(CalcitErr::use_string)?);
+    }
+  }
+  if let Calcit::Fn(..) = callback {
+  } else {
+    return Err(CalcitErr::use_string(format!(
+      "expected last argument to be callback fn, got: {}",
+      callback
+    )));
+  }
+
+  track::track_task_add();
+
+  let lib = unsafe {
+    let lib_tmp = libloading::Library::new(&lib_name).expect("dylib not found");
+
+    let lookup_version: libloading::Symbol<fn() -> String> = lib_tmp.get("abi_version".as_bytes()).expect("request for ABI_VERSION");
+    if lookup_version() != ABI_VERSION {
+      return Err(CalcitErr::use_string(format!(
+        "ABI versions mismatch: {} {}",
+        lookup_version(),
+        ABI_VERSION
+      )));
+    }
+
+    lib_tmp
+  };
+  let copied_stack = Arc::new(call_stack.to_owned());
+
+  let func: libloading::Symbol<EdnFfiFn> = unsafe { lib.get(method.as_bytes()).expect("dy function not found") };
+  match func(
+    ys.to_owned(),
+    Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
+      if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = &callback {
+        let mut real_args = im::vector![];
+        for p in ps {
+          real_args.push_back(edn_to_calcit(&p));
+        }
+        let r = runner::run_fn(&real_args, def_scope, args, body, def_ns, &copied_stack.clone());
+        match r {
+          Ok(ret) => calcit_to_edn(&ret),
+          Err(e) => {
+            display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack)?;
+            Err(format!("Error: {}", e))
+          }
+        }
+      } else {
+        // handled above
+        unreachable!(format!("expected last argument to be callback fn, got: {}", callback));
+      }
+    }),
+    Box::new(track::track_task_release),
+  ) {
+    Ok(ret) => edn_to_calcit(&ret),
+    Err(e) => {
+      track::track_task_release();
+      let _ = display_stack(&format!("failed to call request: {}", e), call_stack);
+      return Err(CalcitErr::use_string(e));
+    }
+  };
 
   Ok(Calcit::Nil)
 }
