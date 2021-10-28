@@ -11,7 +11,9 @@ mod injection;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
-use calcit_runner::{builtins, call_stack, cli_args, codegen, codegen::emit_js::gen_stack, program, runner, snapshot, util};
+use calcit_runner::{
+  builtins, call_stack, cli_args, codegen, codegen::emit_js::gen_stack, codegen::COMPILE_ERRORS_FILE, program, runner, snapshot, util,
+};
 
 pub struct ProgramSettings {
   entry_path: PathBuf,
@@ -20,8 +22,6 @@ pub struct ProgramSettings {
   emit_js: bool,
   emit_ir: bool,
 }
-
-pub const COMPILE_ERRORS_FILE: &str = "calcit.build-errors";
 
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
@@ -170,32 +170,26 @@ pub fn watch_files(init_fn: Arc<String>, reload_fn: Arc<String>, settings: Arc<P
   };
 
   loop {
-    let mut change_happened = false;
     match rx.recv() {
       Ok(event) => {
         match event {
-          notify::DebouncedEvent::NoticeWrite(..) => {
-            // ignored
+          notify::DebouncedEvent::Write(_) | notify::DebouncedEvent::Create(_) => {
+            // load new program code
+            let content = fs::read_to_string(&inc_path).expect("reading inc file");
+            if content.trim().is_empty() {
+              println!("failed re-compiling, got empty inc file");
+              continue;
+            }
+            if let Err(e) = recall_program(&content, &init_fn, &reload_fn, &settings) {
+              println!("error: {}", e);
+            };
           }
-          notify::DebouncedEvent::Write(_) => {
-            // mark state dirty
-            change_happened = true;
-          }
+          // ignore other events
+          notify::DebouncedEvent::NoticeWrite(..) => {}
           _ => println!("other file event: {:?}, ignored", event),
         }
       }
       Err(e) => println!("watch error: {:?}", e),
-    }
-    if change_happened {
-      // load new program code
-      let content = fs::read_to_string(&inc_path).unwrap();
-      if content.trim() == "" {
-        println!("failed re-compiling, got empty inc file");
-        continue;
-      }
-      if let Err(e) = recall_program(&content, &init_fn, &reload_fn, &settings) {
-        println!("error: {}", e);
-      };
     }
   }
 }

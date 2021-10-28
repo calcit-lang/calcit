@@ -9,7 +9,7 @@ use crate::{
   util::number::f64_to_i32,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub enum CliRunningMode {
   Eval,
   Js,
@@ -53,7 +53,6 @@ pub fn cpu_time(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn modify_cli_running_mode(mode: CliRunningMode) -> Result<(), String> {
-  // https://doc.rust-lang.org/std/sync/struct.RwLock.html
   *CLI_RUNNING_MODE.write().unwrap() = mode;
   Ok(())
 }

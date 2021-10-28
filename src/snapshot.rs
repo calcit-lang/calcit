@@ -65,10 +65,7 @@ fn load_modules(data: Edn) -> Result<Vec<String>, String> {
 
 fn load_file_info(data: Edn) -> Result<FileInSnapShot, String> {
   let ns_code = data.map_get("ns")?.read_quoted_cirru()?;
-  let defs = data
-    .map_get("defs")?
-    .read_map()
-    .map_err(|e| format!("failed get `defs`:{}", e))?;
+  let defs = data.map_get("defs")?.read_map().map_err(|e| format!("failed get `defs`:{}", e))?;
   let mut defs_info: HashMap<String, Cirru> = HashMap::new();
   for (k, v) in defs {
     let var = k.read_string()?;
@@ -176,10 +173,7 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
         ]),
       );
       Ok(FileInSnapShot {
-        ns: Cirru::List(vec![
-          Cirru::Leaf(String::from("ns")),
-          Cirru::Leaf(String::from("app.main")),
-        ]),
+        ns: Cirru::List(vec![Cirru::Leaf(String::from("ns")), Cirru::Leaf(String::from("app.main"))]),
         defs: def_dict,
       })
     }
@@ -219,18 +213,14 @@ pub fn load_changes_info(data: Edn) -> Result<ChangesDict, String> {
     changed.insert(ns.read_string()?, extract_changed_info(file.to_owned())?);
   }
 
-  Ok(ChangesDict {
-    added,
-    removed,
-    changed,
-  })
+  Ok(ChangesDict { added, removed, changed })
 }
 
 pub fn extract_changed_info(data: Edn) -> Result<FileChangeInfo, String> {
   let ns_info = match data.map_get("ns")? {
-    Edn::Nil => Ok(None),
-    Edn::Quote(code) => Ok(Some(code)),
-    a => Err(format!("invalid information for ns code: {}", a)),
+    Edn::Nil => None,
+    Edn::Quote(code) => Some(code),
+    a => return Err(format!("invalid information for ns code: {}", a)),
   };
 
   let mut added_defs: HashMap<String, Cirru> = HashMap::new();
@@ -251,7 +241,7 @@ pub fn extract_changed_info(data: Edn) -> Result<FileChangeInfo, String> {
   }
 
   Ok(FileChangeInfo {
-    ns: ns_info?,
+    ns: ns_info,
     added_defs,
     removed_defs,
     changed_defs,

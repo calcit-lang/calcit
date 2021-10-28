@@ -258,7 +258,7 @@ pub fn run_fn(
   }
 }
 
-/// create new scope by wrting new args
+/// create new scope by writing new args
 /// notice that `&` is a mark for spreading, `?` for optional arguments
 pub fn bind_args(
   args: &CalcitItems,
