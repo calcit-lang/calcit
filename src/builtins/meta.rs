@@ -1,12 +1,14 @@
-use crate::builtins;
-use crate::builtins::records::find_in_fields;
-use crate::call_stack;
-use crate::data::cirru;
-use crate::data::edn;
-use crate::primes;
-use crate::primes::{gen_core_id, keyword::load_order_key, load_kwd, lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems, CrListWrap};
-use crate::runner;
-use crate::util::number::f64_to_usize;
+use crate::{
+  builtins,
+  builtins::records::find_in_fields,
+  call_stack,
+  call_stack::CallStackVec,
+  data::{cirru, edn},
+  primes,
+  primes::{gen_core_id, keyword::load_order_key, load_kwd, lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems, CrListWrap},
+  runner,
+  util::number::f64_to_usize,
+};
 
 use cirru_parser::{Cirru, CirruWriterOptions};
 
@@ -168,8 +170,8 @@ pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn display_stack(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  call_stack::show_stack();
+pub fn display_stack(_xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+  call_stack::show_stack(call_stack);
   Ok(Calcit::Nil)
 }
 
@@ -264,51 +266,51 @@ pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn invoke_method(name: &str, invoke_args: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   let (class, value) = match invoke_args.get(0) {
     Some(Calcit::Tuple(a, _b)) => ((**a).to_owned(), invoke_args.get(0).unwrap().to_owned()),
     Some(Calcit::Number(..)) => {
       // classed should already be preprocessed
       let code = gen_sym("&core-number-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::Str(..)) => {
       let code = gen_sym("&core-string-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::Set(..)) => {
       let code = gen_sym("&core-set-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::List(..)) => {
       let code = gen_sym("&core-list-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::Map(..)) => {
       let code = gen_sym("&core-map-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::Record(..)) => {
       let code = gen_sym("&core-record-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::Nil) => {
       let code = gen_sym("&core-nil-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Some(Calcit::Fn(..)) | Some(Calcit::Proc(..)) => {
       let code = gen_sym("&core-fn-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS)?;
+      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
-    x => return Err(CalcitErr::use_string(format!("cannot decide a class from: {:?}", x))),
+    x => return Err(CalcitErr::use_msg_stack(format!("cannot decide a class from: {:?}", x), call_stack)),
   };
   match &class {
     Calcit::Record(_, fields, values) => {
@@ -327,13 +329,16 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems) -> Result<Calcit, Ca
 
           match &values[idx] {
             // dirty copy...
-            Calcit::Fn(_, def_ns, _, def_scope, args, body) => runner::run_fn(&method_args, def_scope, args, body, def_ns),
-            Calcit::Proc(proc) => builtins::handle_proc(proc, &method_args),
-            Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_string(format!(
-              "cannot get syntax here since instance is always evaluated, got: {}",
-              syn
-            ))),
-            y => Err(CalcitErr::use_string(format!("expected a function to invoke, got: {}", y))),
+            Calcit::Fn(_, def_ns, _, def_scope, args, body) => runner::run_fn(&method_args, def_scope, args, body, def_ns, call_stack),
+            Calcit::Proc(proc) => builtins::handle_proc(proc, &method_args, call_stack),
+            Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
+              format!("cannot get syntax here since instance is always evaluated, got: {}", syn),
+              call_stack,
+            )),
+            y => Err(CalcitErr::use_msg_stack(
+              format!("expected a function to invoke, got: {}", y),
+              call_stack,
+            )),
           }
         }
         None => {
@@ -341,14 +346,17 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems) -> Result<Calcit, Ca
           for k in fields {
             content = format!("{},{}", content, lookup_order_kwd_str(k))
           }
-          Err(CalcitErr::use_string(format!("missing field `{}` in {}", name, content)))
+          Err(CalcitErr::use_msg_stack(
+            format!("missing field `{}` in {}", name, content),
+            call_stack,
+          ))
         }
       }
     }
-    x => Err(CalcitErr::use_string(format!(
-      "method invoking expected a record as class, got: {}",
-      x
-    ))),
+    x => Err(CalcitErr::use_msg_stack(
+      format!("method invoking expected a record as class, got: {}", x),
+      call_stack,
+    )),
   }
 }
 
@@ -433,14 +441,14 @@ pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   Ok(load_kwd(&std::env::consts::OS.to_owned()))
 }
 
-pub fn async_sleep(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn async_sleep(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   use std::{thread, time};
   let sec = if xs.is_empty() {
     1.0
   } else if let Calcit::Number(n) = xs[0] {
     n
   } else {
-    return Err(CalcitErr::use_str("expected number"));
+    return Err(CalcitErr::use_msg_stack("expected number".to_owned(), call_stack));
   };
 
   runner::track::track_task_add();

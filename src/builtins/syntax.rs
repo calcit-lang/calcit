@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 
 use crate::builtins;
+use crate::call_stack::CallStackVec;
 use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 
@@ -49,17 +50,17 @@ pub fn quote(expr: &CalcitItems, _scope: &CalcitScope, _file_ns: &str) -> Result
   }
 }
 
-pub fn syntax_if(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn syntax_if(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
     _ if expr.len() > 3 => Err(CalcitErr::use_string(format!("too many nodes for if: {:?}", expr))),
     (Some(cond), Some(true_branch)) => {
-      let cond_value = runner::evaluate_expr(cond, scope, file_ns)?;
+      let cond_value = runner::evaluate_expr(cond, scope, file_ns, call_stack)?;
       match cond_value {
         Calcit::Nil | Calcit::Bool(false) => match expr.get(2) {
-          Some(false_branch) => runner::evaluate_expr(false_branch, scope, file_ns),
+          Some(false_branch) => runner::evaluate_expr(false_branch, scope, file_ns, call_stack),
           None => Ok(Calcit::Nil),
         },
-        _ => runner::evaluate_expr(true_branch, scope, file_ns),
+        _ => runner::evaluate_expr(true_branch, scope, file_ns, call_stack),
       }
     }
     (None, _) => Err(CalcitErr::use_string(format!("insufficient nodes for if: {:?}", expr))),
@@ -67,28 +68,28 @@ pub fn syntax_if(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Resu
   }
 }
 
-pub fn eval(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn eval(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
-    let v = runner::evaluate_expr(&expr[0], scope, file_ns)?;
-    runner::evaluate_expr(&v, scope, file_ns)
+    let v = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
+    runner::evaluate_expr(&v, scope, file_ns, call_stack)
   } else {
     Err(CalcitErr::use_string(format!("unexpected data for evaling: {:?}", expr)))
   }
 }
 
-pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match expr.get(0) {
-    Some(Calcit::Nil) => runner::evaluate_lines(&expr.skip(1), scope, file_ns),
+    Some(Calcit::Nil) => runner::evaluate_lines(&expr.skip(1), scope, file_ns, call_stack),
     Some(Calcit::List(xs)) if xs.len() == 2 => {
       let mut body_scope = scope.to_owned();
       match (&xs[0], &xs[1]) {
         (Calcit::Symbol(s, ..), ys) => {
-          let value = runner::evaluate_expr(ys, scope, file_ns)?;
+          let value = runner::evaluate_expr(ys, scope, file_ns, call_stack)?;
           body_scope.insert(s.to_owned(), value);
         }
         (a, _) => return Err(CalcitErr::use_string(format!("invalid binding name: {}", a))),
       }
-      runner::evaluate_lines(&expr.skip(1), &body_scope, file_ns)
+      runner::evaluate_lines(&expr.skip(1), &body_scope, file_ns, call_stack)
     }
     Some(Calcit::List(xs)) => Err(CalcitErr::use_string(format!("invalid length: {:?}", xs))),
     Some(_) => Err(CalcitErr::use_string(format!("invalid node for &let: {:?}", expr))),
@@ -103,11 +104,11 @@ enum SpanResult {
   Range(CalcitItems),
 }
 
-pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match expr.get(0) {
     None => Err(CalcitErr::use_str("quasiquote expected a node")),
     Some(code) => {
-      match replace_code(code, scope, file_ns)? {
+      match replace_code(code, scope, file_ns, call_stack)? {
         SpanResult::Single(v) => {
           // println!("replace result: {:?}", v);
           Ok(v)
@@ -121,18 +122,18 @@ pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Res
   }
 }
 
-fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &str) -> Result<SpanResult, CalcitErr> {
+fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<SpanResult, CalcitErr> {
   if !has_unquote(c) {
     return Ok(SpanResult::Single(c.to_owned()));
   }
   match c {
     Calcit::List(ys) => match (ys.get(0), ys.get(1)) {
       (Some(Calcit::Symbol(sym, ..)), Some(expr)) if sym == "~" => {
-        let value = runner::evaluate_expr(expr, scope, file_ns)?;
+        let value = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         Ok(SpanResult::Single(value))
       }
       (Some(Calcit::Symbol(sym, ..)), Some(expr)) if sym == "~@" => {
-        let ret = runner::evaluate_expr(expr, scope, file_ns)?;
+        let ret = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         match ret {
           Calcit::List(zs) => Ok(SpanResult::Range(zs)),
           _ => Err(CalcitErr::use_string(format!("unknown result from unquote-slice: {}", ret))),
@@ -141,7 +142,7 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &str) -> Result<SpanRe
       (_, _) => {
         let mut ret = im::vector![];
         for y in ys {
-          match replace_code(y, scope, file_ns)? {
+          match replace_code(y, scope, file_ns, call_stack)? {
             SpanResult::Single(z) => ret.push_back(z),
             SpanResult::Range(pieces) => {
               for piece in pieces {
@@ -172,16 +173,16 @@ pub fn has_unquote(xs: &Calcit) -> bool {
   }
 }
 
-pub fn macroexpand(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn macroexpand(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
-    let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns)?;
+    let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
 
     match quoted_code.to_owned() {
       Calcit::List(xs) => {
         if xs.is_empty() {
           return Ok(quoted_code);
         }
-        let v = runner::evaluate_expr(&xs[0], scope, file_ns)?;
+        let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
           Calcit::Macro(_, def_ns, _, args, body) => {
             let mut xs_cloned = xs;
@@ -190,8 +191,8 @@ pub fn macroexpand(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Re
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              let body_scope = runner::bind_args(&args, &rest_nodes, scope)?;
-              let v = runner::evaluate_lines(&body, &body_scope, &def_ns)?;
+              let body_scope = runner::bind_args(&args, &rest_nodes, scope, call_stack)?;
+              let v = runner::evaluate_lines(&body, &body_scope, &def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
                   rest_nodes = rest_code;
@@ -213,21 +214,21 @@ pub fn macroexpand(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Re
   }
 }
 
-pub fn macroexpand_1(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn macroexpand_1(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
-    let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns)?;
+    let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
     // println!("quoted: {}", quoted_code);
     match quoted_code.to_owned() {
       Calcit::List(xs) => {
         if xs.is_empty() {
           return Ok(quoted_code);
         }
-        let v = runner::evaluate_expr(&xs[0], scope, file_ns)?;
+        let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
           Calcit::Macro(_, def_ns, _, args, body) => {
             let mut xs_cloned = xs;
-            let body_scope = runner::bind_args(&args, &xs_cloned.slice(1..), scope)?;
-            runner::evaluate_lines(&body, &body_scope, &def_ns)
+            let body_scope = runner::bind_args(&args, &xs_cloned.slice(1..), scope, call_stack)?;
+            runner::evaluate_lines(&body, &body_scope, &def_ns, call_stack)
           }
           _ => Ok(quoted_code),
         }
@@ -242,16 +243,16 @@ pub fn macroexpand_1(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> 
   }
 }
 
-pub fn macroexpand_all(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn macroexpand_all(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
-    let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns)?;
+    let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
 
     match quoted_code.to_owned() {
       Calcit::List(xs) => {
         if xs.is_empty() {
           return Ok(quoted_code);
         }
-        let v = runner::evaluate_expr(&xs[0], scope, file_ns)?;
+        let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
           Calcit::Macro(_, def_ns, _, args, body) => {
             let mut xs_cloned = xs;
@@ -261,14 +262,14 @@ pub fn macroexpand_all(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              let body_scope = runner::bind_args(&args, &rest_nodes, scope)?;
-              let v = runner::evaluate_lines(&body, &body_scope, &def_ns)?;
+              let body_scope = runner::bind_args(&args, &rest_nodes, scope, call_stack)?;
+              let v = runner::evaluate_lines(&body, &body_scope, &def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
                   rest_nodes = rest_code;
                 }
                 _ => {
-                  let (resolved, _v) = runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, check_warnings)?;
+                  let (resolved, _v) = runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, check_warnings, call_stack)?;
                   let warnings = check_warnings.to_owned().into_inner();
                   if !warnings.is_empty() {
                     for message in &warnings {
@@ -283,7 +284,8 @@ pub fn macroexpand_all(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -
           }
           _ => {
             let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
-            let (resolved, _v) = runner::preprocess::preprocess_expr(&quoted_code, &HashSet::new(), file_ns, check_warnings)?;
+            let (resolved, _v) =
+              runner::preprocess::preprocess_expr(&quoted_code, &HashSet::new(), file_ns, check_warnings, call_stack)?;
             let warnings = check_warnings.to_owned().into_inner();
             if !warnings.is_empty() {
               for message in &warnings {
@@ -304,22 +306,22 @@ pub fn macroexpand_all(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -
   }
 }
 
-pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if expr.len() == 2 {
-    let xs = runner::evaluate_expr(&expr[0], scope, file_ns);
+    let xs = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack);
 
     match &xs {
       // dirty since only functions being call directly then we become fast
       Ok(v) => Ok(v.to_owned()),
       Err(failure) => {
-        let f = runner::evaluate_expr(&expr[1], scope, file_ns)?;
+        let f = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
         let err_data = Calcit::Str(failure.msg.to_owned());
         match f {
           Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
             let values = im::vector![err_data];
-            runner::run_fn(&values, &def_scope, &args, &body, &def_ns)
+            runner::run_fn(&values, &def_scope, &args, &body, &def_ns, call_stack)
           }
-          Calcit::Proc(proc) => builtins::handle_proc(&proc, &im::vector![err_data]),
+          Calcit::Proc(proc) => builtins::handle_proc(&proc, &im::vector![err_data], call_stack),
           a => Err(CalcitErr::use_string(format!("try expected a function handler, got: {}", a))),
         }
       }

@@ -10,7 +10,7 @@ mod injection;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
-use calcit_runner::{builtins, call_stack, cli_args, codegen, program, runner, snapshot, util};
+use calcit_runner::{builtins, call_stack, cli_args, codegen, codegen::emit_js::gen_stack, program, runner, snapshot, util};
 
 struct ProgramSettings {
   entry_path: PathBuf,
@@ -102,6 +102,7 @@ fn main() -> Result<(), String> {
     calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
     None,
     check_warnings,
+    &im::Vector::new(),
   )
   .map_err(|e| e.msg)?;
 
@@ -190,7 +191,6 @@ fn main() -> Result<(), String> {
 
 fn recall_program(content: &str, init_fn: &str, reload_fn: &str, settings: &ProgramSettings) -> Result<(), String> {
   println!("\n-------- file change --------\n");
-  call_stack::clear_stack();
 
   // Steps:
   // 1. load changes file, and patch to program_code
@@ -257,13 +257,14 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
   let js_file_path = code_emit_path.join(format!("{}.js", COMPILE_ERRORS_FILE)); // TODO mjs_mode
 
   let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+  gen_stack::clear_stack();
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, check_warnings) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, check_warnings, &im::Vector::new()) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure.msg)?;
+      call_stack::display_stack(&failure.msg, &failure.stack)?;
 
       let _ = fs::write(
         &js_file_path,
@@ -277,11 +278,11 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &init_def, None, check_warnings) {
+  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &init_def, None, check_warnings, &im::Vector::new()) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure.msg)?;
+      call_stack::display_stack(&failure.msg, &failure.stack)?;
       return Err(failure.msg);
     }
   }
@@ -312,7 +313,7 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
       Ok(_) => (),
       Err(failure) => {
         println!("\nfailed codegen, {}", failure);
-        call_stack::display_stack(&failure)?;
+        call_stack::display_stack(&failure, &gen_stack::get_gen_stack())?;
         return Err(failure);
       }
     }
@@ -322,7 +323,7 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
       Ok(_) => (),
       Err(failure) => {
         println!("\nfailed codegen, {}", failure);
-        call_stack::display_stack(&failure)?;
+        call_stack::display_stack(&failure, &gen_stack::get_gen_stack())?;
         return Err(failure);
       }
     }

@@ -4,9 +4,8 @@ use crate::primes::{Calcit, CalcitItems};
 use cirru_edn::Edn;
 use std::collections::HashMap;
 use std::fs;
-use std::sync::RwLock;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct CalcitStack {
   pub ns: String,
   pub def: String,
@@ -15,7 +14,7 @@ pub struct CalcitStack {
   pub kind: StackKind,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum StackKind {
   Fn,
   Proc,
@@ -24,31 +23,25 @@ pub enum StackKind {
   Codegen, // track preprocessing
 }
 
+pub type CallStackVec = im::Vector<CalcitStack>;
+
 // TODO impl fmt
 
-lazy_static! {
-  static ref CALL_STACK: RwLock<Vec<CalcitStack>> = RwLock::new(vec![]);
-}
-
-pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: &CalcitItems) {
-  let mut stack = CALL_STACK.write().unwrap();
-  (*stack).push(CalcitStack {
+/// create new entry to the tree
+pub fn extend_call_stack(stack: &CallStackVec, ns: &str, def: &str, kind: StackKind, code: Calcit, args: &CalcitItems) -> CallStackVec {
+  let mut s2 = stack.to_owned();
+  s2.push_back(CalcitStack {
     ns: ns.to_owned(),
     def: def.to_owned(),
     code,
     args: args.to_owned(),
     kind,
-  })
-}
-
-pub fn pop_call_stack() {
-  let stack = &mut CALL_STACK.write().unwrap();
-  (*stack).pop();
+  });
+  s2
 }
 
 // show simplified version of stack
-pub fn show_stack() {
-  let stack: &Vec<CalcitStack> = &mut CALL_STACK.read().unwrap();
+pub fn show_stack(stack: &CallStackVec) {
   println!("\ncall stack:");
   for idx in 0..stack.len() {
     let s = &stack[stack.len() - idx - 1];
@@ -57,13 +50,7 @@ pub fn show_stack() {
   }
 }
 
-pub fn clear_stack() {
-  let stack = &mut CALL_STACK.write().unwrap();
-  (*stack).clear();
-}
-
-pub fn display_stack(failure: &str) -> Result<(), String> {
-  let stack: &Vec<CalcitStack> = &mut CALL_STACK.read().unwrap();
+pub fn display_stack(failure: &str, stack: &CallStackVec) -> Result<(), String> {
   println!("\ncall stack:");
 
   for idx in 0..stack.len() {
@@ -76,14 +63,8 @@ pub fn display_stack(failure: &str) -> Result<(), String> {
   for idx in 0..stack.len() {
     let s = &stack[stack.len() - idx - 1];
     let mut info: HashMap<Edn, Edn> = HashMap::new();
-    info.insert(
-      Edn::Keyword(String::from("def")),
-      Edn::Str(format!("{}/{}", s.ns, s.def)),
-    );
-    info.insert(
-      Edn::Keyword(String::from("code")),
-      Edn::Quote(cirru::calcit_to_cirru(&s.code)?),
-    );
+    info.insert(Edn::Keyword(String::from("def")), Edn::Str(format!("{}/{}", s.ns, s.def)));
+    info.insert(Edn::Keyword(String::from("code")), Edn::Quote(cirru::calcit_to_cirru(&s.code)?));
     let mut args: Vec<Edn> = vec![];
     for a in &s.args {
       args.push(edn::calcit_to_edn(a)?);

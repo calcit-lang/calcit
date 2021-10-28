@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use crate::primes::{lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems, CalcitScope};
-use crate::runner;
+use crate::{call_stack::CallStackVec, runner};
 
 type ValueAndListeners = (Calcit, HashMap<String, Calcit>);
 
@@ -23,7 +23,7 @@ fn write_to_ref(path: String, v: Calcit, listeners: HashMap<String, Calcit>) {
   let _ = (*dict).insert(path, (v, listeners));
 }
 
-fn modify_ref(path: String, v: Calcit) -> Result<(), CalcitErr> {
+fn modify_ref(path: String, v: Calcit, call_stack: &CallStackVec) -> Result<(), CalcitErr> {
   let (prev, listeners) = read_ref(&path).unwrap();
   write_to_ref(path, v.to_owned(), listeners.to_owned());
 
@@ -31,16 +31,21 @@ fn modify_ref(path: String, v: Calcit) -> Result<(), CalcitErr> {
     match f {
       Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
         let values = im::vector![v.to_owned(), prev.to_owned()];
-        runner::run_fn(&values, def_scope, args, body, def_ns)?;
+        runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
       }
-      a => return Err(CalcitErr::use_string(format!("expected fn to trigger after `reset!`, got {}", a))),
+      a => {
+        return Err(CalcitErr::use_msg_stack(
+          format!("expected fn to trigger after `reset!`, got {}", a),
+          call_stack,
+        ))
+      }
     }
   }
   Ok(())
 }
 
 /// syntax to prevent expr re-evaluating
-pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol(s, ns, _def, _)), Some(code)) => {
       let mut path = ns.to_owned();
@@ -48,16 +53,16 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result
       path.push_str(s);
 
       if read_ref(&path).is_none() {
-        let v = runner::evaluate_expr(code, scope, file_ns)?;
+        let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
         write_to_ref(path.to_owned(), v, HashMap::new())
       }
       Ok(Calcit::Ref(path))
     }
-    (Some(a), Some(b)) => Err(CalcitErr::use_string(format!(
-      "defref expected a symbol and an expression: {} , {}",
-      a, b
-    ))),
-    _ => Err(CalcitErr::use_str("defref expected 2 nodes")),
+    (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack(
+      format!("defref expected a symbol and an expression: {} , {}", a, b),
+      call_stack,
+    )),
+    _ => Err(CalcitErr::use_msg_stack("defref expected 2 nodes".to_owned(), call_stack)),
   }
 }
 
@@ -73,25 +78,25 @@ pub fn deref(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 /// need to be syntax since triggering internal functions requires program data
-pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
     return Err(CalcitErr::use_string(format!("reset! excepted 2 arguments, got: {:?}", expr)));
   }
   // println!("reset! {:?}", expr[0]);
-  let target = runner::evaluate_expr(&expr[0], scope, file_ns)?;
-  let new_value = runner::evaluate_expr(&expr[1], scope, file_ns)?;
+  let target = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
+  let new_value = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
   match (target, new_value) {
     (Calcit::Ref(path), v) => {
       if read_ref(&path).is_none() {
         return Err(CalcitErr::use_string(format!("missing pre-exisiting data for path &{}", path)));
       }
-      modify_ref(path, v)?;
+      modify_ref(path, v, call_stack)?;
       Ok(Calcit::Nil)
     }
-    (a, b) => Err(CalcitErr::use_string(format!(
-      "reset! expected a ref and a value, got: {} {}",
-      a, b
-    ))),
+    (a, b) => Err(CalcitErr::use_msg_stack(
+      format!("reset! expected a ref and a value, got: {} {}", a, b),
+      call_stack,
+    )),
   }
 }
 

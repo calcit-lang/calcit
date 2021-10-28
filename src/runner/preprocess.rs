@@ -1,5 +1,5 @@
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
-use crate::call_stack::{pop_call_stack, push_call_stack, StackKind};
+use crate::call_stack::{extend_call_stack, CalcitStack, CallStackVec, StackKind};
 use crate::primes;
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
 use crate::program;
@@ -17,6 +17,7 @@ pub fn preprocess_ns_def(
   original_sym: &str,
   import_rule: Option<ImportRule>, // returns form and possible value
   check_warnings: &RefCell<Vec<String>>,
+  call_stack: &im::Vector<CalcitStack>,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   // println!("preprocessing def: {}/{}", ns, def);
   match program::lookup_evaled_def(ns, def) {
@@ -37,14 +38,14 @@ pub fn preprocess_ns_def(
       match program::lookup_def_code(ns, def) {
         Some(code) => {
           // write a nil value first to prevent dead loop
-          program::write_evaled_def(ns, def, Calcit::Nil).map_err(CalcitErr::use_string)?;
+          program::write_evaled_def(ns, def, Calcit::Nil).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
 
-          push_call_stack(ns, def, StackKind::Fn, code.to_owned(), &im::vector![]);
+          let next_stack = extend_call_stack(call_stack, ns, def, StackKind::Fn, code.to_owned(), &im::vector![]);
 
-          let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, check_warnings)?;
+          let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
           let v = if is_fn_or_macro(&resolved_code) {
-            match runner::evaluate_expr(&resolved_code, &im::HashMap::new(), ns) {
+            match runner::evaluate_expr(&resolved_code, &im::HashMap::new(), ns, &next_stack) {
               Ok(ret) => ret,
               Err(e) => return Err(e),
             }
@@ -52,8 +53,8 @@ pub fn preprocess_ns_def(
             Calcit::Thunk(Box::new(resolved_code), None)
           };
           // println!("\nwriting value to: {}/{} {:?}", ns, def, v);
-          program::write_evaled_def(ns, def, v.to_owned()).map_err(CalcitErr::use_string)?;
-          pop_call_stack();
+          program::write_evaled_def(ns, def, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
+
           Ok((
             Calcit::Symbol(
               original_sym.to_owned(),
@@ -77,7 +78,10 @@ pub fn preprocess_ns_def(
           ),
           None,
         )),
-        None => Err(CalcitErr::use_string(format!("unknown ns/def in program: {}/{}", ns, def))),
+        None => Err(CalcitErr::use_msg_stack(
+          format!("unknown ns/def in program: {}/{}", ns, def),
+          call_stack,
+        )),
       }
     }
   }
@@ -99,17 +103,14 @@ pub fn preprocess_expr(
   scope_defs: &HashSet<String>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
+  call_stack: &CallStackVec,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   // println!("preprocessing @{} {}", file_ns, expr);
   match expr {
     Calcit::Symbol(def, def_ns, at_def, _) => match runner::parse_ns_def(def) {
       Some((ns_alias, def_part)) => {
-        match program::lookup_ns_target_in_import(def_ns, &ns_alias) {
-          Some(target_ns) => {
-            // TODO js syntax to handle in future
-            preprocess_ns_def(&target_ns, &def_part, def, None, check_warnings)
-          }
-          None if ns_alias == "js" => Ok((
+        if ns_alias == "js" {
+          Ok((
             Calcit::Symbol(
               def.to_owned(),
               def_ns.to_owned(),
@@ -117,8 +118,15 @@ pub fn preprocess_expr(
               Some(Box::new(ResolvedDef(String::from("js"), def_part, None))),
             ),
             None,
-          )), // js code
-          None => Err(CalcitErr::use_string(format!("unknown ns target: {}", def))),
+          ))
+        } else if let Some(target_ns) = program::lookup_ns_target_in_import(def_ns, &ns_alias) {
+          // TODO js syntax to handle in future
+          preprocess_ns_def(&target_ns, &def_part, def, None, check_warnings, call_stack)
+        } else if program::has_def_code(&ns_alias, &def_part) {
+          // refer to namespace/def directly for some usages
+          preprocess_ns_def(&ns_alias, &def_part, def, None, check_warnings, call_stack)
+        } else {
+          Err(CalcitErr::use_msg_stack(format!("unknown ns target: {}", def), call_stack))
         }
       }
       None => {
@@ -134,21 +142,24 @@ pub fn preprocess_expr(
           ))
         } else if CalcitSyntax::is_core_syntax(def) {
           Ok((
-            Calcit::Syntax(CalcitSyntax::from(def).map_err(CalcitErr::use_string)?, def_ns.to_owned()),
+            Calcit::Syntax(
+              CalcitSyntax::from(def).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?,
+              def_ns.to_owned(),
+            ),
             None,
           ))
         } else if is_proc_name(def) {
           Ok((Calcit::Proc(def.to_owned()), None))
         } else if program::has_def_code(primes::CORE_NS, def) {
-          preprocess_ns_def(primes::CORE_NS, def, def, None, check_warnings)
+          preprocess_ns_def(primes::CORE_NS, def, def, None, check_warnings, call_stack)
         } else if program::has_def_code(def_ns, def) {
-          preprocess_ns_def(def_ns, def, def, None, check_warnings)
+          preprocess_ns_def(def_ns, def, def, None, check_warnings, call_stack)
         } else {
           match program::lookup_def_target_in_import(def_ns, def) {
             Some(target_ns) => {
               // effect
               // TODO js syntax to handle in future
-              preprocess_ns_def(&target_ns, def, def, None, check_warnings)
+              preprocess_ns_def(&target_ns, def, def, None, check_warnings, call_stack)
             }
             // TODO check js_mode
             None if is_js_syntax_procs(def) => Ok((expr.to_owned(), None)),
@@ -188,7 +199,7 @@ pub fn preprocess_expr(
       } else {
         // TODO whether function bothers this...
         // println!("start calling: {}", expr);
-        process_list_call(xs, scope_defs, file_ns, check_warnings)
+        process_list_call(xs, scope_defs, file_ns, check_warnings, call_stack)
       }
     }
     Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) => {
@@ -212,9 +223,10 @@ fn process_list_call(
   scope_defs: &HashSet<String>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
+  call_stack: &CallStackVec,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   let head = &xs[0];
-  let (head_form, head_evaled) = preprocess_expr(head, scope_defs, file_ns, check_warnings)?;
+  let (head_form, head_evaled) = preprocess_expr(head, scope_defs, file_ns, check_warnings, call_stack)?;
   let args = xs.skip(1);
   let def_name = grab_def_name(head);
 
@@ -242,9 +254,9 @@ fn process_list_call(
           args[0].to_owned(),
           head.to_owned()
         ]);
-        preprocess_expr(&code, scope_defs, file_ns, check_warnings)
+        preprocess_expr(&code, scope_defs, file_ns, check_warnings, call_stack)
       } else {
-        Err(CalcitErr::use_string(format!("{} expected single argument", head)))
+        Err(CalcitErr::use_msg_stack(format!("{} expected single argument", head), call_stack))
       }
     }
     (Calcit::Macro(name, def_ns, _, def_args, body), _)
@@ -255,21 +267,20 @@ fn process_list_call(
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let code = Calcit::List(xs.to_owned());
-      push_call_stack(&def_ns, &name, StackKind::Macro, code, &args);
+      let next_stack = extend_call_stack(call_stack, &def_ns, &name, StackKind::Macro, code, &args);
 
       loop {
         // need to handle recursion
         // println!("evaling line: {:?}", body);
-        let body_scope = runner::bind_args(&def_args, &current_values, &im::HashMap::new())?;
-        let code = runner::evaluate_lines(&body, &body_scope, &def_ns)?;
+        let body_scope = runner::bind_args(&def_args, &current_values, &im::HashMap::new(), &next_stack)?;
+        let code = runner::evaluate_lines(&body, &body_scope, &def_ns, &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
             current_values = ys;
           }
           _ => {
             // println!("gen code: {} {}", code, &code.lisp_str());
-            let (final_code, v) = preprocess_expr(&code, scope_defs, file_ns, check_warnings)?;
-            pop_call_stack();
+            let (final_code, v) = preprocess_expr(&code, scope_defs, file_ns, check_warnings, &next_stack)?;
             return Ok((final_code, v));
           }
         }
@@ -277,14 +288,15 @@ fn process_list_call(
     }
     (Calcit::Syntax(name, name_ns), _) => match name {
       CalcitSyntax::Quasiquote => Ok((
-        preprocess_quasiquote(&name, &name_ns, &args, scope_defs, file_ns, check_warnings)?,
+        preprocess_quasiquote(&name, &name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
         None,
       )),
-      CalcitSyntax::Defn | CalcitSyntax::Defmacro => {
-        Ok((preprocess_defn(&name, &name_ns, &args, scope_defs, file_ns, check_warnings)?, None))
-      }
+      CalcitSyntax::Defn | CalcitSyntax::Defmacro => Ok((
+        preprocess_defn(&name, &name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
+        None,
+      )),
       CalcitSyntax::CoreLet => Ok((
-        preprocess_call_let(&name, &name_ns, &args, scope_defs, file_ns, check_warnings)?,
+        preprocess_call_let(&name, &name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
         None,
       )),
       CalcitSyntax::If
@@ -293,24 +305,27 @@ fn process_list_call(
       | CalcitSyntax::MacroexpandAll
       | CalcitSyntax::Macroexpand1
       | CalcitSyntax::Reset => Ok((
-        preprocess_each_items(&name, &name_ns, &args, scope_defs, file_ns, check_warnings)?,
+        preprocess_each_items(&name, &name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
         None,
       )),
       CalcitSyntax::Quote | CalcitSyntax::Eval | CalcitSyntax::HintFn => {
         Ok((preprocess_quote(&name, &name_ns, &args, scope_defs, file_ns)?, None))
       }
       CalcitSyntax::Defatom => Ok((
-        preprocess_defatom(&name, &name_ns, &args, scope_defs, file_ns, check_warnings)?,
+        preprocess_defatom(&name, &name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
         None,
       )),
     },
-    (Calcit::Thunk(..), _) => Err(CalcitErr::use_string(format!("does not know how to preprocess a thunk: {}", head))),
+    (Calcit::Thunk(..), _) => Err(CalcitErr::use_msg_stack(
+      format!("does not know how to preprocess a thunk: {}", head),
+      call_stack,
+    )),
 
     (_, Some(Calcit::Fn(f_name, _name_ns, _id, _scope, f_args, _f_body))) => {
       check_fn_args(&f_args, &args, file_ns, &f_name, &def_name, check_warnings);
       let mut ys = im::vector![head_form];
       for a in args {
-        let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, check_warnings)?;
+        let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, check_warnings, call_stack)?;
         ys.push_back(form);
       }
       Ok((Calcit::List(ys), None))
@@ -318,7 +333,7 @@ fn process_list_call(
     (_, _) => {
       let mut ys = im::vector![head_form];
       for a in args {
-        let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, check_warnings)?;
+        let (form, _v) = preprocess_expr(&a, scope_defs, file_ns, check_warnings, call_stack)?;
         ys.push_back(form);
       }
       Ok((Calcit::List(ys), None))
@@ -414,10 +429,11 @@ pub fn preprocess_each_items(
   scope_defs: &HashSet<String>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
+  call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
   for a in args {
-    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings)?;
+    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
     xs.push_back(form);
   }
   Ok(Calcit::List(xs))
@@ -430,6 +446,7 @@ pub fn preprocess_defn(
   scope_defs: &HashSet<String>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
+  call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
   let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
@@ -459,24 +476,32 @@ pub fn preprocess_defn(
               body_defs.insert(sym.to_owned());
             }
           }
-          _ => return Err(CalcitErr::use_string(format!("expected defn args to be symbols, got: {}", y))),
+          _ => {
+            return Err(CalcitErr::use_msg_stack(
+              format!("expected defn args to be symbols, got: {}", y),
+              call_stack,
+            ))
+          }
         }
       }
       xs.push_back(Calcit::List(zs));
 
       for (idx, a) in args.iter().enumerate() {
         if idx >= 2 {
-          let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings)?;
+          let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
           xs.push_back(form);
         }
       }
       Ok(Calcit::List(xs))
     }
-    (Some(a), Some(b)) => Err(CalcitErr::use_string(format!("defn/defmacro expected name and args: {} {}", a, b))),
-    (a, b) => Err(CalcitErr::use_string(format!(
-      "defn or defmacro expected name and args, got {:?} {:?}",
-      a, b,
-    ))),
+    (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack(
+      format!("defn/defmacro expected name and args: {} {}", a, b),
+      call_stack,
+    )),
+    (a, b) => Err(CalcitErr::use_msg_stack(
+      format!("defn or defmacro expected name and args, got {:?} {:?}", a, b,),
+      call_stack,
+    )),
   }
 }
 
@@ -500,6 +525,7 @@ pub fn preprocess_call_let(
   scope_defs: &HashSet<String>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
+  call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
   let mut body_defs: HashSet<String> = scope_defs.to_owned();
@@ -509,19 +535,39 @@ pub fn preprocess_call_let(
       (Calcit::Symbol(sym, ..), a) => {
         check_symbol(sym, args, check_warnings);
         body_defs.insert(sym.to_owned());
-        let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings)?;
+        let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
         Calcit::List(im::vector![ys[0].to_owned(), form])
       }
-      (a, b) => return Err(CalcitErr::use_string(format!("invalid pair for &let binding: {} {}", a, b))),
+      (a, b) => {
+        return Err(CalcitErr::use_msg_stack(
+          format!("invalid pair for &let binding: {} {}", a, b),
+          call_stack,
+        ))
+      }
     },
-    Some(Calcit::List(ys)) => return Err(CalcitErr::use_string(format!("expected binding of a pair, got {:?}", ys))),
-    Some(a) => return Err(CalcitErr::use_string(format!("expected binding of a pair, got {}", a))),
-    None => return Err(CalcitErr::use_str("expected binding of a pair, got nothing")),
+    Some(Calcit::List(ys)) => {
+      return Err(CalcitErr::use_msg_stack(
+        format!("expected binding of a pair, got {:?}", ys),
+        call_stack,
+      ))
+    }
+    Some(a) => {
+      return Err(CalcitErr::use_msg_stack(
+        format!("expected binding of a pair, got {}", a),
+        call_stack,
+      ))
+    }
+    None => {
+      return Err(CalcitErr::use_msg_stack(
+        "expected binding of a pair, got nothing".to_owned(),
+        call_stack,
+      ))
+    }
   };
   xs.push_back(binding);
   for (idx, a) in args.iter().enumerate() {
     if idx > 0 {
-      let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings)?;
+      let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
       xs.push_back(form);
     }
   }
@@ -549,11 +595,12 @@ pub fn preprocess_defatom(
   scope_defs: &HashSet<String>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
+  call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
   for a in args {
     // TODO
-    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings)?;
+    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
     xs.push_back(form.to_owned());
   }
   Ok(Calcit::List(xs))
@@ -567,10 +614,11 @@ pub fn preprocess_quasiquote(
   scope_defs: &HashSet<String>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
+  call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = im::vector![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
   for a in args {
-    xs.push_back(preprocess_quasiquote_internal(a, scope_defs, file_ns, check_warnings)?);
+    xs.push_back(preprocess_quasiquote_internal(a, scope_defs, file_ns, check_warnings, call_stack)?);
   }
   Ok(Calcit::List(xs))
 }
@@ -580,6 +628,7 @@ pub fn preprocess_quasiquote_internal(
   scope_defs: &HashSet<String>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
+  call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   match x {
     Calcit::List(ys) if ys.is_empty() => Ok(x.to_owned()),
@@ -587,7 +636,7 @@ pub fn preprocess_quasiquote_internal(
       Calcit::Symbol(s, _, _, _) if s == "~" || s == "~@" => {
         let mut xs: CalcitItems = im::vector![];
         for y in ys {
-          let (form, _) = preprocess_expr(y, scope_defs, file_ns, check_warnings)?;
+          let (form, _) = preprocess_expr(y, scope_defs, file_ns, check_warnings, call_stack)?;
           xs.push_back(form.to_owned());
         }
         Ok(Calcit::List(xs))
@@ -595,7 +644,7 @@ pub fn preprocess_quasiquote_internal(
       _ => {
         let mut xs: CalcitItems = im::vector![];
         for y in ys {
-          xs.push_back(preprocess_quasiquote_internal(y, scope_defs, file_ns, check_warnings)?.to_owned());
+          xs.push_back(preprocess_quasiquote_internal(y, scope_defs, file_ns, check_warnings, call_stack)?.to_owned());
         }
         Ok(Calcit::List(xs))
       }

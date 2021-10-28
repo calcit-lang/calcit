@@ -4,6 +4,7 @@ use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
 use crate::util::number::f64_to_usize;
 
 use crate::builtins;
+use crate::call_stack::CallStackVec;
 use crate::runner;
 
 pub fn new_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -187,7 +188,7 @@ pub fn reverse(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 /// foldl using syntax for performance, it's supposed to be a function
-pub fn foldl(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if xs.len() == 3 {
     let mut ret = xs[1].to_owned();
 
@@ -196,14 +197,14 @@ pub fn foldl(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         for x in xs {
           let values = im::vector![ret, x.to_owned()];
-          ret = runner::run_fn(&values, def_scope, args, body, def_ns)?;
+          ret = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
         }
         Ok(ret)
       }
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &im::vector![ret, x.to_owned()])?;
+          ret = builtins::handle_proc(proc, &im::vector![ret, x.to_owned()], call_stack)?;
         }
         Ok(ret)
       }
@@ -211,14 +212,14 @@ pub fn foldl(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       (Calcit::Set(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         for x in xs {
           let values = im::vector![ret, x.to_owned()];
-          ret = runner::run_fn(&values, def_scope, args, body, def_ns)?;
+          ret = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
         }
         Ok(ret)
       }
       (Calcit::Set(xs), Calcit::Proc(proc)) => {
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &im::vector![ret, x.to_owned()])?;
+          ret = builtins::handle_proc(proc, &im::vector![ret, x.to_owned()], call_stack)?;
         }
         Ok(ret)
       }
@@ -226,28 +227,38 @@ pub fn foldl(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       (Calcit::Map(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         for (k, x) in xs {
           let values = im::vector![ret, Calcit::List(im::vector![k.to_owned(), x.to_owned()])];
-          ret = runner::run_fn(&values, def_scope, args, body, def_ns)?;
+          ret = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
         }
         Ok(ret)
       }
       (Calcit::Map(xs), Calcit::Proc(proc)) => {
         for (k, x) in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &im::vector![ret, Calcit::List(im::vector![k.to_owned(), x.to_owned()])])?;
+          ret = builtins::handle_proc(
+            proc,
+            &im::vector![ret, Calcit::List(im::vector![k.to_owned(), x.to_owned()])],
+            call_stack,
+          )?;
         }
         Ok(ret)
       }
 
-      (a, b) => Err(CalcitErr::use_string(format!("foldl expected list and function, got: {} {}", a, b))),
+      (a, b) => Err(CalcitErr::use_msg_stack(
+        format!("foldl expected list and function, got: {} {}", a, b),
+        call_stack,
+      )),
     }
   } else {
-    Err(CalcitErr::use_string(format!("foldl expected 3 arguments, got: {:?}", xs)))
+    Err(CalcitErr::use_msg_stack(
+      format!("foldl expected 3 arguments, got: {:?}", xs),
+      call_stack,
+    ))
   }
 }
 
 /// foldl-shortcut using syntax for performance, it's supposed to be a function
 /// by returning `:: bool acc`, bool indicates where performace a shortcut return
-pub fn foldl_shortcut(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if xs.len() == 4 {
     let acc = &xs[1];
     let default_value = &xs[2];
@@ -257,7 +268,7 @@ pub fn foldl_shortcut(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         let mut state = acc.to_owned();
         for x in xs {
           let values = im::vector![state, x.to_owned()];
-          let pair = runner::run_fn(&values, def_scope, args, body, def_ns)?;
+          let pair = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
@@ -268,17 +279,17 @@ pub fn foldl_shortcut(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
                 }
               }
               a => {
-                return Err(CalcitErr::use_string(format!(
-                  "return value in foldl-shortcut should be a bool, got: {}",
-                  a
-                )))
+                return Err(CalcitErr::use_msg_stack(
+                  format!("return value in foldl-shortcut should be a bool, got: {}", a),
+                  call_stack,
+                ))
               }
             },
             _ => {
-              return Err(CalcitErr::use_string(format!(
-                "return value for foldl-shortcut should be `:: bool acc`, got: {}",
-                pair
-              )))
+              return Err(CalcitErr::use_msg_stack(
+                format!("return value for foldl-shortcut should be `:: bool acc`, got: {}", pair),
+                call_stack,
+              ))
             }
           }
         }
@@ -289,7 +300,7 @@ pub fn foldl_shortcut(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         let mut state = acc.to_owned();
         for x in xs {
           let values = im::vector![state, x.to_owned()];
-          let pair = runner::run_fn(&values, def_scope, args, body, def_ns)?;
+          let pair = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
@@ -300,17 +311,17 @@ pub fn foldl_shortcut(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
                 }
               }
               a => {
-                return Err(CalcitErr::use_string(format!(
-                  "return value in foldl-shortcut should be a bool, got: {}",
-                  a
-                )))
+                return Err(CalcitErr::use_msg_stack(
+                  format!("return value in foldl-shortcut should be a bool, got: {}", a),
+                  call_stack,
+                ))
               }
             },
             _ => {
-              return Err(CalcitErr::use_string(format!(
-                "return value for foldl-shortcut should be `:: bool acc`, got: {}",
-                pair
-              )))
+              return Err(CalcitErr::use_msg_stack(
+                format!("return value for foldl-shortcut should be `:: bool acc`, got: {}", pair),
+                call_stack,
+              ))
             }
           }
         }
@@ -321,7 +332,7 @@ pub fn foldl_shortcut(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         let mut state = acc.to_owned();
         for (k, x) in xs {
           let values = im::vector![state, Calcit::List(im::vector![k.to_owned(), x.to_owned()])];
-          let pair = runner::run_fn(&values, def_scope, args, body, def_ns)?;
+          let pair = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
@@ -332,37 +343,37 @@ pub fn foldl_shortcut(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
                 }
               }
               a => {
-                return Err(CalcitErr::use_string(format!(
-                  "return value in foldl-shortcut should be a bool, got: {}",
-                  a
-                )))
+                return Err(CalcitErr::use_msg_stack(
+                  format!("return value in foldl-shortcut should be a bool, got: {}", a),
+                  call_stack,
+                ))
               }
             },
             _ => {
-              return Err(CalcitErr::use_string(format!(
-                "return value for foldl-shortcut should be `:: bool acc`, got: {}",
-                pair
-              )))
+              return Err(CalcitErr::use_msg_stack(
+                format!("return value for foldl-shortcut should be `:: bool acc`, got: {}", pair),
+                call_stack,
+              ))
             }
           }
         }
         Ok(default_value.to_owned())
       }
 
-      (a, b) => Err(CalcitErr::use_string(format!(
-        "foldl-shortcut expected list... and fn, got: {} {}",
-        a, b
-      ))),
+      (a, b) => Err(CalcitErr::use_msg_stack(
+        format!("foldl-shortcut expected list... and fn, got: {} {}", a, b),
+        call_stack,
+      )),
     }
   } else {
-    Err(CalcitErr::use_string(format!(
-      "foldl-shortcut expected 4 arguments list,state,default,fn, got: {:?}",
-      xs
-    )))
+    Err(CalcitErr::use_msg_stack(
+      format!("foldl-shortcut expected 4 arguments list,state,default,fn, got: {:?}", xs),
+      call_stack,
+    ))
   }
 }
 
-pub fn foldr_shortcut(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if xs.len() == 4 {
     // let xs = runner::evaluate_expr(&expr[0], scope, file_ns)?;
     let acc = &xs[1];
@@ -376,7 +387,7 @@ pub fn foldr_shortcut(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         for i in 0..size {
           let x = xs[size - 1 - i].to_owned();
           let values = im::vector![state, x];
-          let pair = runner::run_fn(&values, def_scope, args, body, def_ns)?;
+          let pair = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
@@ -387,37 +398,37 @@ pub fn foldr_shortcut(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
                 }
               }
               a => {
-                return Err(CalcitErr::use_string(format!(
-                  "return value in foldr-shortcut should be a bool, got: {}",
-                  a
-                )))
+                return Err(CalcitErr::use_msg_stack(
+                  format!("return value in foldr-shortcut should be a bool, got: {}", a),
+                  call_stack,
+                ))
               }
             },
             _ => {
-              return Err(CalcitErr::use_string(format!(
-                "return value for foldr-shortcut should be `:: bool acc`, got: {}",
-                pair
-              )))
+              return Err(CalcitErr::use_msg_stack(
+                format!("return value for foldr-shortcut should be `:: bool acc`, got: {}", pair),
+                call_stack,
+              ))
             }
           }
         }
         Ok(default_value.to_owned())
       }
 
-      (a, b) => Err(CalcitErr::use_string(format!(
-        "foldr-shortcut expected list... and fn, got: {} {}",
-        a, b
-      ))),
+      (a, b) => Err(CalcitErr::use_msg_stack(
+        format!("foldr-shortcut expected list... and fn, got: {} {}", a, b),
+        call_stack,
+      )),
     }
   } else {
-    Err(CalcitErr::use_string(format!(
-      "foldr-shortcut expected 4 arguments list,state,default,fn, got: {:?}",
-      xs
-    )))
+    Err(CalcitErr::use_msg_stack(
+      format!("foldr-shortcut expected 4 arguments list,state,default,fn, got: {:?}", xs),
+      call_stack,
+    ))
   }
 }
 
-pub fn sort(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn sort(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if xs.len() == 2 {
     match (&xs[0], &xs[1]) {
       // dirty since only functions being call directly then we become fast
@@ -425,7 +436,7 @@ pub fn sort(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         let mut ret = xs.to_owned();
         ret.sort_by(|a, b| {
           let values = im::vector![a.to_owned(), b.to_owned()];
-          let v = runner::run_fn(&values, def_scope, args, body, def_ns);
+          let v = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
             Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
@@ -446,7 +457,7 @@ pub fn sort(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         let mut ret = xs.to_owned();
         ret.sort_by(|a, b| {
           let values = im::vector![a.to_owned(), b.to_owned()];
-          let v = builtins::handle_proc(proc, &values);
+          let v = builtins::handle_proc(proc, &values, call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
             Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
@@ -464,10 +475,16 @@ pub fn sort(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::List(ret))
       }
 
-      (a, b) => Err(CalcitErr::use_string(format!("sort expected list and function, got: {} {}", a, b))),
+      (a, b) => Err(CalcitErr::use_msg_stack(
+        format!("sort expected list and function, got: {} {}", a, b),
+        call_stack,
+      )),
     }
   } else {
-    Err(CalcitErr::use_string(format!("sort expected 2 arguments, got: {:?}", xs)))
+    Err(CalcitErr::use_msg_stack(
+      format!("sort expected 2 arguments, got: {:?}", xs),
+      call_stack,
+    ))
   }
 }
 

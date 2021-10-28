@@ -13,9 +13,10 @@ mod syntax;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+use crate::call_stack::CallStackVec;
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax};
 
-pub type FnType = fn(xs: &CalcitItems) -> Result<Calcit, CalcitErr>;
+pub type FnType = fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr>;
 pub type SyntaxType = fn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
 lazy_static! {
@@ -191,7 +192,20 @@ pub fn is_proc_name(s: &str) -> bool {
   }
 }
 
-pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, CalcitErr> {
+/// make sure that stack information attached in errors from procs
+pub fn handle_proc(name: &str, args: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+  handle_proc_internal(name, args, call_stack).map_err(|e| {
+    if e.stack.is_empty() {
+      let mut e2 = e.to_owned();
+      e2.stack = call_stack.to_owned();
+      e2
+    } else {
+      e
+    }
+  })
+}
+
+fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match name {
     // meta
     "type-of" => meta::type_of(args),
@@ -211,7 +225,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, CalcitErr> 
     "&tuple:nth" => meta::tuple_nth(args),
     "&tuple:assoc" => meta::assoc(args),
     // effects
-    "&display-stack" => meta::display_stack(args),
+    "&display-stack" => meta::display_stack(args, call_stack),
     "raise" => effects::raise(args),
     "quit!" => effects::quit(args),
     "get-env" => effects::get_env(args),
@@ -284,10 +298,10 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, CalcitErr> 
     "butlast" => lists::butlast(args),
     "&list:concat" => lists::concat(args),
     "range" => lists::range(args),
-    "sort" => lists::sort(args),
-    "foldl" => lists::foldl(args),
-    "foldl-shortcut" => lists::foldl_shortcut(args),
-    "foldr-shortcut" => lists::foldr_shortcut(args),
+    "sort" => lists::sort(args, call_stack),
+    "foldl" => lists::foldl(args, call_stack),
+    "foldl-shortcut" => lists::foldl_shortcut(args, call_stack),
+    "foldr-shortcut" => lists::foldr_shortcut(args, call_stack),
     "&list:reverse" => lists::reverse(args),
     "&list:slice" => lists::slice(args),
     "&list:assoc-before" => lists::assoc_before(args),
@@ -354,9 +368,9 @@ pub fn handle_proc(name: &str, args: &CalcitItems) -> Result<Calcit, CalcitErr> 
       let ps = IMPORTED_PROCS.read().unwrap();
       if ps.contains_key(name) {
         let f = ps[name];
-        f(args)
+        f(args, call_stack)
       } else {
-        Err(CalcitErr::use_string(format!("No such proc: {}", a)))
+        Err(CalcitErr::use_msg_stack(format!("No such proc: {}", a), call_stack))
       }
     }
   }
@@ -368,22 +382,28 @@ pub fn register_import_proc(name: &str, f: FnType) {
   (*ps).insert(name.to_owned(), f);
 }
 
-pub fn handle_syntax(name: &CalcitSyntax, nodes: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn handle_syntax(
+  name: &CalcitSyntax,
+  nodes: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackVec,
+) -> Result<Calcit, CalcitErr> {
   match name {
     CalcitSyntax::Defn => syntax::defn(nodes, scope, file_ns),
-    CalcitSyntax::Eval => syntax::eval(nodes, scope, file_ns),
+    CalcitSyntax::Eval => syntax::eval(nodes, scope, file_ns, call_stack),
     CalcitSyntax::Defmacro => syntax::defmacro(nodes, scope, file_ns),
     CalcitSyntax::Quote => syntax::quote(nodes, scope, file_ns),
-    CalcitSyntax::Quasiquote => syntax::quasiquote(nodes, scope, file_ns),
-    CalcitSyntax::If => syntax::syntax_if(nodes, scope, file_ns),
-    CalcitSyntax::CoreLet => syntax::syntax_let(nodes, scope, file_ns),
-    CalcitSyntax::Macroexpand => syntax::macroexpand(nodes, scope, file_ns),
-    CalcitSyntax::Macroexpand1 => syntax::macroexpand_1(nodes, scope, file_ns),
-    CalcitSyntax::MacroexpandAll => syntax::macroexpand_all(nodes, scope, file_ns),
-    CalcitSyntax::Try => syntax::call_try(nodes, scope, file_ns),
+    CalcitSyntax::Quasiquote => syntax::quasiquote(nodes, scope, file_ns, call_stack),
+    CalcitSyntax::If => syntax::syntax_if(nodes, scope, file_ns, call_stack),
+    CalcitSyntax::CoreLet => syntax::syntax_let(nodes, scope, file_ns, call_stack),
+    CalcitSyntax::Macroexpand => syntax::macroexpand(nodes, scope, file_ns, call_stack),
+    CalcitSyntax::Macroexpand1 => syntax::macroexpand_1(nodes, scope, file_ns, call_stack),
+    CalcitSyntax::MacroexpandAll => syntax::macroexpand_all(nodes, scope, file_ns, call_stack),
+    CalcitSyntax::Try => syntax::call_try(nodes, scope, file_ns, call_stack),
     // "define reference" although it uses a confusing name "atom"
-    CalcitSyntax::Defatom => refs::defatom(nodes, scope, file_ns),
-    CalcitSyntax::Reset => refs::reset_bang(nodes, scope, file_ns),
+    CalcitSyntax::Defatom => refs::defatom(nodes, scope, file_ns, call_stack),
+    CalcitSyntax::Reset => refs::reset_bang(nodes, scope, file_ns, call_stack),
     // different behavoirs, in Rust interpreter it's nil, in js codegen it's nothing
     CalcitSyntax::HintFn => meta::no_op(),
   }
