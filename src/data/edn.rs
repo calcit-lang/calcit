@@ -29,7 +29,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       Ok(Edn::Set(ys))
     }
     Calcit::Map(xs) => {
-      let mut ys: HashMap<Edn, Edn> = HashMap::new();
+      let mut ys: HashMap<Edn, Edn> = HashMap::with_capacity(xs.len());
       for (k, x) in xs {
         ys.insert(calcit_to_edn(k)?, calcit_to_edn(x)?);
       }

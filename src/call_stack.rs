@@ -62,7 +62,7 @@ pub fn display_stack(failure: &str, stack: &CallStackVec) -> Result<(), String> 
   let mut stack_list: Vec<Edn> = Vec::with_capacity(stack.len());
   for idx in 0..stack.len() {
     let s = &stack[stack.len() - idx - 1];
-    let mut info: HashMap<Edn, Edn> = HashMap::new();
+    let mut info: HashMap<Edn, Edn> = HashMap::with_capacity(4);
     info.insert(Edn::kwd("def"), Edn::Str(format!("{}/{}", s.ns, s.def)));
     info.insert(Edn::kwd("code"), Edn::Quote(cirru::calcit_to_cirru(&s.code)?));
     let mut args: Vec<Edn> = Vec::with_capacity(s.args.len());
@@ -75,7 +75,7 @@ pub fn display_stack(failure: &str, stack: &CallStackVec) -> Result<(), String> 
     stack_list.push(Edn::Map(info))
   }
 
-  let mut data: HashMap<Edn, Edn> = HashMap::new();
+  let mut data: HashMap<Edn, Edn> = HashMap::with_capacity(2);
   data.insert(Edn::kwd("message"), Edn::str(failure));
   data.insert(Edn::kwd("stack"), Edn::List(stack_list));
   let content = cirru_edn::format(&Edn::Map(data), true)?;

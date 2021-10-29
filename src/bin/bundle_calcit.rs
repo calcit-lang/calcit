@@ -70,7 +70,7 @@ pub fn main() -> io::Result<()> {
         };
         file.insert(Edn::kwd("ns"), Edn::Quote(Cirru::List(ns_code.to_owned())));
 
-        let mut defs: HashMap<Edn, Edn> = HashMap::new();
+        let mut defs: HashMap<Edn, Edn> = HashMap::with_capacity(xs.len());
         for (idx, line) in xs.iter().enumerate() {
           if idx > 0 {
             if let Cirru::List(ys) = line {

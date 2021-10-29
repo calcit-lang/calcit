@@ -68,7 +68,7 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<String, ImportRule>, Stri
       // Too many clones
       (Some(x), Some(Cirru::Leaf(_)), Some(Cirru::List(xs))) if *x == Cirru::leaf("ns") => {
         if !xs.is_empty() && xs[0] == Cirru::leaf(":require") {
-          let mut ys: HashMap<String, ImportRule> = HashMap::new();
+          let mut ys: HashMap<String, ImportRule> = HashMap::with_capacity(xs.len());
           for (idx, x) in xs.iter().enumerate() {
             if idx > 0 {
               let rules = extract_import_rule(x)?;
@@ -90,7 +90,7 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<String, ImportRule>, Stri
 
 fn extract_file_data(file: snapshot::FileInSnapShot, ns: String) -> Result<ProgramFileData, String> {
   let import_map = extract_import_map(&file.ns)?;
-  let mut defs: HashMap<String, Calcit> = HashMap::new();
+  let mut defs: HashMap<String, Calcit> = HashMap::with_capacity(file.defs.len());
   for (def, code) in file.defs {
     let at_def = def.to_owned();
     defs.insert(def, code_to_calcit(&code, &ns, &at_def)?);
@@ -99,7 +99,7 @@ fn extract_file_data(file: snapshot::FileInSnapShot, ns: String) -> Result<Progr
 }
 
 pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
-  let mut xs: ProgramCodeData = HashMap::new();
+  let mut xs: ProgramCodeData = HashMap::with_capacity(s.files.len());
   for (ns, file) in s.files.to_owned() {
     let file_info = extract_file_data(file, ns.to_owned())?;
     xs.insert(ns, file_info);
