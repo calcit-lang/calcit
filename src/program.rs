@@ -43,7 +43,7 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, Strin
           Ok(vec![(alias, ImportRule::NsDefault(ns))])
         }
         (Cirru::Leaf(ns), x, Cirru::List(ys)) if x == Cirru::Leaf(String::from(":refer")) => {
-          let mut rules: Vec<(String, ImportRule)> = vec![];
+          let mut rules: Vec<(String, ImportRule)> = Vec::with_capacity(ys.len());
           for y in ys {
             match y {
               Cirru::Leaf(s) if &s == "[]" => (), // `[]` symbol are ignored

@@ -59,13 +59,13 @@ pub fn display_stack(failure: &str, stack: &CallStackVec) -> Result<(), String> 
     println!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" });
   }
 
-  let mut stack_list: Vec<Edn> = vec![];
+  let mut stack_list: Vec<Edn> = Vec::with_capacity(stack.len());
   for idx in 0..stack.len() {
     let s = &stack[stack.len() - idx - 1];
     let mut info: HashMap<Edn, Edn> = HashMap::new();
     info.insert(Edn::Keyword(String::from("def")), Edn::Str(format!("{}/{}", s.ns, s.def)));
     info.insert(Edn::Keyword(String::from("code")), Edn::Quote(cirru::calcit_to_cirru(&s.code)?));
-    let mut args: Vec<Edn> = vec![];
+    let mut args: Vec<Edn> = Vec::with_capacity(s.args.len());
     for a in &s.args {
       args.push(edn::calcit_to_edn(a)?);
     }

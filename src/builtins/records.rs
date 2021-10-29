@@ -13,8 +13,8 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     a => return CalcitErr::err_str(format!("new-record expected a name, got {}", a)),
   };
 
-  let mut fields: Vec<usize> = vec![];
-  let mut values: Vec<Calcit> = vec![];
+  let mut fields: Vec<usize> = Vec::with_capacity(xs.len());
+  let mut values: Vec<Calcit> = Vec::with_capacity(xs.len());
 
   for (idx, x) in xs.iter().enumerate() {
     if idx > 0 {
@@ -100,7 +100,7 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Record(name, fields, _values), Calcit::Map(ys)) => {
-      let mut pairs: Vec<(String, Calcit)> = vec![];
+      let mut pairs: Vec<(String, Calcit)> = Vec::with_capacity(fields.len());
       for (k, v) in ys {
         match k {
           Calcit::Str(s) => {
@@ -116,7 +116,7 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         return CalcitErr::err_str(format!("invalid fields {:?} for record {:?}", pairs, fields));
       }
       pairs.sort_by(|(a, _), (b, _)| load_order_key(a).cmp(&load_order_key(b)));
-      let mut values: Vec<Calcit> = vec![];
+      let mut values: Vec<Calcit> = Vec::with_capacity(fields.len());
       for idx in 0..fields.len() {
         let (k, v) = &pairs[idx];
         if fields[idx] == load_order_key(k) {
@@ -285,8 +285,8 @@ pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 fn extend_record_field(s: &str, n: &Calcit, fields: &[usize], values: &[Calcit], new_value: &Calcit) -> Result<Calcit, CalcitErr> {
-  let mut next_fields: Vec<usize> = vec![];
-  let mut next_values: Vec<Calcit> = vec![];
+  let mut next_fields: Vec<usize> = Vec::with_capacity(fields.len());
+  let mut next_values: Vec<Calcit> = Vec::with_capacity(fields.len());
   let mut inserted: bool = false;
   let idx_s = load_order_key(s);
 

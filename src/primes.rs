@@ -507,6 +507,10 @@ impl Calcit {
   pub fn lisp_str(&self) -> String {
     format_to_lisp(self)
   }
+
+  pub fn new_str<T: Into<String>>(s: T) -> Calcit {
+    Calcit::Str(s.into())
+  }
 }
 
 /// makes sure that keyword is from global dict, not created by fresh

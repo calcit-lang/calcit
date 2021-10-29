@@ -221,7 +221,7 @@ fn dump_code(code: &Calcit) -> Edn {
     }
     Calcit::Thunk(code, _) => dump_code(code),
     Calcit::List(xs) => {
-      let mut ys: Vec<Edn> = vec![];
+      let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
       for x in xs {
         ys.push(dump_code(x));
       }
@@ -232,7 +232,7 @@ fn dump_code(code: &Calcit) -> Edn {
 }
 
 fn dump_items_code(xs: &CalcitItems) -> Edn {
-  let mut ys: Vec<Edn> = vec![];
+  let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
   for x in xs {
     ys.push(dump_code(x));
   }

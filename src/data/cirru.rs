@@ -10,9 +10,9 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
       "false" => Ok(Calcit::Bool(false)),
       "&E" => Ok(Calcit::Number(std::f64::consts::E)),
       "&PI" => Ok(Calcit::Number(std::f64::consts::PI)),
-      "&newline" => Ok(Calcit::Str(String::from("\n"))),
-      "&tab" => Ok(Calcit::Str(String::from("\t"))),
-      "&calcit-version" => Ok(Calcit::Str(String::from(env!("CARGO_PKG_VERSION")))),
+      "&newline" => Ok(Calcit::new_str("\n")),
+      "&tab" => Ok(Calcit::new_str("\t")),
+      "&calcit-version" => Ok(Calcit::new_str(env!("CARGO_PKG_VERSION"))),
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
       "::" => Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), None)),
@@ -26,7 +26,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
             Ok(Calcit::Proc(s.to_owned())) // as native method syntax
           }
         }
-        '"' | '|' => Ok(Calcit::Str(String::from(&s[1..]))),
+        '"' | '|' => Ok(Calcit::new_str(&s[1..])),
         '0' if s.starts_with("0x") => match u32::from_str_radix(&s[2..], 16) {
           Ok(n) => Ok(Calcit::Number(n as f64)),
           Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
@@ -98,7 +98,7 @@ pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string())),
     Calcit::Str(s) => Ok(Cirru::Leaf(s.to_owned())),
     Calcit::List(ys) => {
-      let mut zs: Vec<Cirru> = vec![];
+      let mut zs: Vec<Cirru> = Vec::with_capacity(ys.len());
       for y in ys {
         match calcit_data_to_cirru(y) {
           Ok(v) => {
@@ -130,11 +130,11 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Bool(true) => Ok(Cirru::Leaf(String::from("true"))),
     Calcit::Bool(false) => Ok(Cirru::Leaf(String::from("false"))),
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string())),
-    Calcit::Str(s) => Ok(Cirru::Leaf(format!("|{}", s))), // TODO performance
+    Calcit::Str(s) => Ok(Cirru::Leaf(format!("|{}", s))),   // TODO performance
     Calcit::Symbol(s, ..) => Ok(Cirru::Leaf(s.to_owned())), // TODO performance
     Calcit::Keyword(s) => Ok(Cirru::Leaf(format!(":{}", lookup_order_kwd_str(s)))), // TODO performance
     Calcit::List(xs) => {
-      let mut ys: Vec<Cirru> = vec![];
+      let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
       for x in xs {
         ys.push(calcit_to_cirru(x)?);
       }

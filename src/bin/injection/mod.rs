@@ -19,7 +19,7 @@ type EdnFfiFn = fn(
   finish: Box<dyn FnOnce()>,
 ) -> Result<Edn, String>;
 
-const ABI_VERSION: &str = "0.0.1";
+const ABI_VERSION: &str = "0.0.2";
 
 pub fn inject_platform_apis() {
   builtins::register_import_proc("&call-dylib-edn", call_dylib_edn);
@@ -47,7 +47,7 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Ca
   } else {
     return CalcitErr::err_str(format!("&call-dylib-edn expected a method name, got {}", xs[1]));
   };
-  let mut ys: Vec<Edn> = vec![];
+  let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
   for (idx, v) in xs.iter().enumerate() {
     if idx > 1 {
       ys.push(calcit_to_edn(v).map_err(CalcitErr::use_str)?);
@@ -101,7 +101,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
   } else {
     return CalcitErr::err_str(format!("&call-dylib-edn-fn expected a method name, got {}", xs[1]));
   };
-  let mut ys: Vec<Edn> = vec![];
+  let mut ys: Vec<Edn> = Vec::with_capacity(xs.len() - 2);
   let callback = xs[xs.len() - 1].clone();
   for (idx, v) in xs.iter().enumerate() {
     if idx > 1 && idx < xs.len() - 1 {
@@ -187,7 +187,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
   } else {
     return CalcitErr::err_str(format!("&blocking-dylib-edn-fn expected a method name, got {}", xs[1]));
   };
-  let mut ys: Vec<Edn> = vec![];
+  let mut ys: Vec<Edn> = Vec::with_capacity(xs.len() - 2);
   let callback = xs[xs.len() - 1].clone();
   for (idx, v) in xs.iter().enumerate() {
     if idx > 1 && idx < xs.len() - 1 {

@@ -53,7 +53,7 @@ fn load_configs(data: Edn) -> Result<SnapshotConfigs, String> {
 fn load_modules(data: Edn) -> Result<Vec<String>, String> {
   match data.read_list() {
     Ok(xs) => {
-      let mut ys: Vec<String> = vec![];
+      let mut ys: Vec<String> = Vec::with_capacity(xs.len());
       for x in xs {
         ys.push(x.read_string()?)
       }

@@ -70,7 +70,7 @@ pub fn format_to_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 fn transform_code_to_cirru(x: &Calcit) -> Cirru {
   match x {
     Calcit::List(ys) => {
-      let mut xs: Vec<Cirru> = vec![];
+      let mut xs: Vec<Cirru> = Vec::with_capacity(ys.len());
       for y in ys {
         xs.push(transform_code_to_cirru(y));
       }
@@ -158,7 +158,7 @@ pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (None, None) => Ok(Calcit::Str(gen_core_id())),
     (Some(_n), None) => Ok(Calcit::Str(gen_core_id())),
     (Some(_n), Some(Calcit::Str(s))) => {
-      let mut charset: Vec<char> = vec![];
+      let mut charset: Vec<char> = Vec::with_capacity(s.len());
       for c in s.chars() {
         charset.push(c);
       }

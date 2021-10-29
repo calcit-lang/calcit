@@ -174,7 +174,7 @@ pub fn preprocess_expr(
                 )));
                 Ok((Calcit::Symbol(def.to_owned(), def_ns.to_owned(), at_def.to_owned(), target), None))
               } else {
-                let mut names: Vec<String> = vec![];
+                let mut names: Vec<String> = Vec::with_capacity(scope_defs.len());
                 for def in scope_defs {
                   names.push(def.to_owned());
                 }

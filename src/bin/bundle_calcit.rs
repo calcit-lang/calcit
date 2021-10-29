@@ -32,7 +32,7 @@ pub fn main() -> io::Result<()> {
   }
 
   let mut dict: HashMap<Edn, Edn> = HashMap::new();
-  let mut a: Vec<String> = vec![];
+  // let mut a: Vec<String> = vec![];
   let package_file = Path::new(cli_matches.value_of("src").unwrap())
     .parent()
     .unwrap()
@@ -97,9 +97,9 @@ pub fn main() -> io::Result<()> {
         files.insert(Edn::Str(ns_name.to_owned()), Edn::Map(file));
 
         if verbose {
-          println!("bunding {}", entry.path().display());
+          println!("bundling {}", entry.path().display());
         }
-        a.push(entry.path().to_str().unwrap().to_string());
+        // a.push(entry.path().to_str().unwrap().to_string());
       }
     }
   }

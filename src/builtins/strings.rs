@@ -7,7 +7,7 @@ use crate::util::number::f64_to_usize;
 
 pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Nil), Some(Calcit::Nil)) => Ok(Calcit::Str(String::from(""))),
+    (Some(Calcit::Nil), Some(Calcit::Nil)) => Ok(Calcit::new_str("")),
     (Some(Calcit::Nil), Some(b)) => Ok(Calcit::Str(b.turn_string())),
     (Some(a), Some(Calcit::Nil)) => Ok(Calcit::Str(a.turn_string())),
     (Some(a), Some(b)) => {
@@ -45,7 +45,7 @@ pub fn call_str(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn turn_string(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(Calcit::Nil) => Ok(Calcit::Str(String::from(""))),
+    Some(Calcit::Nil) => Ok(Calcit::new_str("")),
     Some(Calcit::Bool(b)) => Ok(Calcit::Str(b.to_string())),
     Some(Calcit::Str(s)) => Ok(Calcit::Str(s.to_owned())),
     Some(Calcit::Keyword(s)) => Ok(Calcit::Str(lookup_order_kwd_str(s))),
@@ -121,7 +121,7 @@ pub fn str_slice(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           None => s.chars().count(),
         };
         if from >= to {
-          Ok(Calcit::Str(String::from("")))
+          Ok(Calcit::new_str(""))
         } else {
           // turn into vec first to also handle UTF8
           let s_vec = s.chars().collect::<Vec<_>>();
@@ -302,7 +302,7 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => {
-      let mut buffer = String::from("");
+      let mut buffer = String::with_capacity(s.len() - 1);
       let mut is_first = true;
       for c in s.chars() {
         if is_first {

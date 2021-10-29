@@ -80,9 +80,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cirru_edn"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4370969734a40a62316bfb60745eb687055e4e94b872699a5f67f442754f325d"
+checksum = "e39bf3dee426542bb21e7e0b5649c2c6ec055a68392e5feb6e4fd060429277b9"
 dependencies = [
  "cirru_parser",
  "hex 0.3.2",
@@ -90,9 +90,9 @@ dependencies = [
 
 [[package]]
 name = "cirru_parser"
-version = "0.1.8"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b2077243ccce07d54a032dfeb09e68c91d17f87645c501b619ab45a2844cca3"
+checksum = "b52d0e4bb19077a7e2d23220ef1060a93039991227195ecf808b7f45b6c6ea27"
 
 [[package]]
 name = "clap"
