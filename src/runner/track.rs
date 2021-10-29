@@ -5,7 +5,7 @@ use std::{thread, time};
 static TASK_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub fn exit_when_cleared() {
-  let delay = time::Duration::from_millis(100);
+  let delay = time::Duration::from_millis(40);
 
   // keep looping until remaining task size 0
   loop {

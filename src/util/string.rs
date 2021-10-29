@@ -77,17 +77,16 @@ pub fn matches_digits(xs: &str) -> bool {
 
 pub fn matches_js_var(xs: &str) -> bool {
   if xs.is_empty() {
-    false
-  } else {
-    for (idx, x) in xs.chars().enumerate() {
-      if is_letter(x) || x == '_' || x == '$' || (idx > 0 && is_digit(x)) {
-        // ok
-      } else {
-        return false;
-      }
-    }
-    true
+    return false;
   }
+  for (idx, x) in xs.chars().enumerate() {
+    if is_letter(x) || x == '_' || x == '$' || (idx > 0 && is_digit(x)) {
+      // ok
+    } else {
+      return false;
+    }
+  }
+  true
 }
 
 pub fn has_ns_part(x: &str) -> bool {
@@ -120,7 +119,7 @@ pub fn extract_ns_def(s: &str) -> Result<(String, String), String> {
 pub fn extract_pkg_from_def(s: &str) -> Option<String> {
   let pieces: Vec<&str> = s.split('/').collect();
   if !pieces.is_empty() {
-    let p2: Vec<&str> = (pieces[0]).split('.').collect();
+    let p2: Vec<&str> = pieces[0].split('.').collect();
     if !p2.is_empty() {
       Some(p2[0].to_string())
     } else {

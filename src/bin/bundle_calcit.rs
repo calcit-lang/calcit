@@ -1,11 +1,15 @@
+use std::{
+  collections::HashMap,
+  env,
+  fs::{read_to_string, write},
+  io,
+  path::Path,
+};
+
+use walkdir::WalkDir;
+
 use cirru_edn::Edn;
 use cirru_parser::Cirru;
-use std::collections::HashMap;
-use std::env;
-use std::fs::{read_to_string, write};
-use std::io;
-use std::path::Path;
-use walkdir::WalkDir;
 
 pub fn main() -> io::Result<()> {
   let cli_matches = parse_cli();
@@ -37,11 +41,7 @@ pub fn main() -> io::Result<()> {
   let content = read_to_string(package_file)?;
   let package_data = cirru_edn::parse(&content).map_err(io_err)?;
 
-  let pkg = package_data
-    .map_get("package")
-    .map_err(io_err)?
-    .read_string()
-    .map_err(io_err)?;
+  let pkg = package_data.map_get("package").map_err(io_err)?.read_string().map_err(io_err)?;
 
   dict.insert(Edn::Keyword(String::from("package")), Edn::Str(pkg));
   dict.insert(Edn::Keyword(String::from("configs")), package_data);
@@ -68,10 +68,7 @@ pub fn main() -> io::Result<()> {
             xs.get(0)
           )));
         };
-        file.insert(
-          Edn::Keyword(String::from("ns")),
-          Edn::Quote(Cirru::List(ns_code.to_owned())),
-        );
+        file.insert(Edn::Keyword(String::from("ns")), Edn::Quote(Cirru::List(ns_code.to_owned())));
 
         let mut defs: HashMap<Edn, Edn> = HashMap::new();
         for (idx, line) in xs.iter().enumerate() {
@@ -79,13 +76,7 @@ pub fn main() -> io::Result<()> {
             if let Cirru::List(ys) = line {
               match (ys.get(0), ys.get(1)) {
                 (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
-                  if x0 == "def"
-                    || x0 == "defn"
-                    || x0 == "defmacro"
-                    || x0 == "defatom"
-                    || x0 == "defrecord"
-                    || x0.starts_with("def")
-                  {
+                  if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" || x0.starts_with("def") {
                     defs.insert(Edn::Str(x1.to_owned()), Edn::Quote(line.to_owned()));
                   } else {
                     return Err(io_err(format!("invalid def op: {}", x0)));

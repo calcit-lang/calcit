@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -10,17 +11,17 @@ mod injection;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
-use calcit_runner::{builtins, call_stack, cli_args, codegen, codegen::emit_js::gen_stack, program, runner, snapshot, util};
+use calcit_runner::{
+  builtins, call_stack, cli_args, codegen, codegen::emit_js::gen_stack, codegen::COMPILE_ERRORS_FILE, program, runner, snapshot, util,
+};
 
-struct ProgramSettings {
+pub struct ProgramSettings {
   entry_path: PathBuf,
   emit_path: String,
   reload_libs: bool,
   emit_js: bool,
   emit_ir: bool,
 }
-
-pub const COMPILE_ERRORS_FILE: &str = "calcit.build-errors";
 
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
@@ -138,52 +139,58 @@ fn main() -> Result<(), String> {
   }
 
   if !eval_once {
-    println!("\nRunner: in watch mode...\n");
-    let (tx, rx) = channel();
-    let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).unwrap();
+    runner::track::track_task_add();
+    let copied_init_fn = Arc::new(init_fn.to_owned());
+    let copied_reload_fn = Arc::new(reload_fn.to_owned());
+    let copied_assets = Arc::new(assets_watch.map(|s| s.to_owned()).to_owned());
+    let copied_settings = Arc::new(settings);
+    std::thread::spawn(move || watch_files(copied_init_fn, copied_reload_fn, copied_settings, copied_assets));
+  }
+  runner::track::exit_when_cleared();
+  Ok(())
+}
 
-    let inc_path = settings.entry_path.parent().unwrap().join(".compact-inc.cirru");
-    if !inc_path.exists() {
-      fs::write(&inc_path, "").map_err(|e| -> String { e.to_string() })?;
-    }
+pub fn watch_files(init_fn: Arc<String>, reload_fn: Arc<String>, settings: Arc<ProgramSettings>, assets_watch: Arc<Option<String>>) {
+  println!("\nRunner: in watch mode...\n");
+  let (tx, rx) = channel();
+  let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).unwrap();
 
-    watcher.watch(&inc_path, RecursiveMode::NonRecursive).unwrap();
+  let inc_path = settings.entry_path.parent().unwrap().join(".compact-inc.cirru");
+  if !inc_path.exists() {
+    if let Err(e) = fs::write(&inc_path, "").map_err(|e| -> String { e.to_string() }) {
+      println!("file writing error: {}", e);
+    };
+  }
 
-    if let Some(assets_folder) = assets_watch {
-      watcher.watch(assets_folder, RecursiveMode::Recursive).unwrap();
-      println!("assets to watch: {}", assets_folder);
-    }
+  watcher.watch(&inc_path, RecursiveMode::NonRecursive).unwrap();
 
-    loop {
-      let mut change_happened = false;
-      match rx.recv() {
-        Ok(event) => {
-          match event {
-            notify::DebouncedEvent::NoticeWrite(..) => {
-              // ignored
+  if let Some(assets_folder) = assets_watch.as_ref() {
+    watcher.watch(assets_folder, RecursiveMode::Recursive).unwrap();
+    println!("assets to watch: {}", assets_folder);
+  };
+
+  loop {
+    match rx.recv() {
+      Ok(event) => {
+        match event {
+          notify::DebouncedEvent::Write(_) | notify::DebouncedEvent::Create(_) => {
+            // load new program code
+            let content = fs::read_to_string(&inc_path).expect("reading inc file");
+            if content.trim().is_empty() {
+              println!("failed re-compiling, got empty inc file");
+              continue;
             }
-            notify::DebouncedEvent::Write(_) => {
-              // mark state dirty
-              change_happened = true;
-            }
-            _ => println!("other file event: {:?}, ignored", event),
+            if let Err(e) = recall_program(&content, &init_fn, &reload_fn, &settings) {
+              println!("error: {}", e);
+            };
           }
+          // ignore other events
+          notify::DebouncedEvent::NoticeWrite(..) => {}
+          _ => println!("other file event: {:?}, ignored", event),
         }
-        Err(e) => println!("watch error: {:?}", e),
       }
-      if change_happened {
-        // load new program code
-        let content = fs::read_to_string(&inc_path).unwrap();
-        if content.trim() == "" {
-          println!("failed re-compiling, got empty inc file");
-          continue;
-        }
-        recall_program(&content, init_fn, reload_fn, &settings)?;
-      }
+      Err(e) => println!("watch error: {:?}", e),
     }
-  } else {
-    runner::track::exit_when_cleared();
-    Ok(())
   }
 }
 

@@ -21,7 +21,9 @@ pub struct ProgramFileData {
 pub type ProgramCodeData = HashMap<String, ProgramFileData>;
 
 lazy_static! {
+  /// data of program running
   static ref PROGRAM_EVALED_DATA_STATE: RwLock<ProgramEvaledData> = RwLock::new(HashMap::new());
+  /// raw code information before program running
   pub static ref PROGRAM_CODE_DATA: RwLock<ProgramCodeData> = RwLock::new(HashMap::new());
 }
 
