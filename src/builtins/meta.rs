@@ -5,7 +5,7 @@ use crate::{
   call_stack::CallStackVec,
   data::{cirru, edn},
   primes,
-  primes::{gen_core_id, keyword::load_order_key, load_kwd, lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems, CrListWrap},
+  primes::{gen_core_id, keyword::load_order_key, lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems, CrListWrap},
   runner,
   util::number::f64_to_usize,
 };
@@ -24,26 +24,26 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("type-of expected 1 argument, got: {:?}", xs));
   }
   match &xs[0] {
-    Calcit::Nil => Ok(load_kwd("nil")),
+    Calcit::Nil => Ok(Calcit::kwd("nil")),
     // CalcitRef(Calcit), // TODO
-    Calcit::Bool(..) => Ok(load_kwd("bool")),
-    Calcit::Number(..) => Ok(load_kwd("number")),
-    Calcit::Symbol(..) => Ok(load_kwd("symbol")),
-    Calcit::Keyword(..) => Ok(load_kwd("keyword")),
-    Calcit::Str(..) => Ok(load_kwd("string")),
-    Calcit::Thunk(..) => Ok(load_kwd("thunk")), // internal
-    Calcit::Ref(..) => Ok(load_kwd("ref")),
-    Calcit::Tuple(..) => Ok(load_kwd("tuple")),
-    Calcit::Buffer(..) => Ok(load_kwd("buffer")),
-    Calcit::Recur(..) => Ok(load_kwd("recur")),
-    Calcit::List(..) => Ok(load_kwd("list")),
-    Calcit::Set(..) => Ok(load_kwd("set")),
-    Calcit::Map(..) => Ok(load_kwd("map")),
-    Calcit::Record(..) => Ok(load_kwd("record")),
-    Calcit::Proc(..) => Ok(load_kwd("fn")), // special kind proc, but also fn
-    Calcit::Macro(..) => Ok(load_kwd("macro")),
-    Calcit::Fn(..) => Ok(load_kwd("fn")),
-    Calcit::Syntax(..) => Ok(load_kwd("synta")),
+    Calcit::Bool(..) => Ok(Calcit::kwd("bool")),
+    Calcit::Number(..) => Ok(Calcit::kwd("number")),
+    Calcit::Symbol(..) => Ok(Calcit::kwd("symbol")),
+    Calcit::Keyword(..) => Ok(Calcit::kwd("keyword")),
+    Calcit::Str(..) => Ok(Calcit::kwd("string")),
+    Calcit::Thunk(..) => Ok(Calcit::kwd("thunk")), // internal
+    Calcit::Ref(..) => Ok(Calcit::kwd("ref")),
+    Calcit::Tuple(..) => Ok(Calcit::kwd("tuple")),
+    Calcit::Buffer(..) => Ok(Calcit::kwd("buffer")),
+    Calcit::Recur(..) => Ok(Calcit::kwd("recur")),
+    Calcit::List(..) => Ok(Calcit::kwd("list")),
+    Calcit::Set(..) => Ok(Calcit::kwd("set")),
+    Calcit::Map(..) => Ok(Calcit::kwd("map")),
+    Calcit::Record(..) => Ok(Calcit::kwd("record")),
+    Calcit::Proc(..) => Ok(Calcit::kwd("fn")), // special kind proc, but also fn
+    Calcit::Macro(..) => Ok(Calcit::kwd("macro")),
+    Calcit::Fn(..) => Ok(Calcit::kwd("fn")),
+    Calcit::Syntax(..) => Ok(Calcit::kwd("synta")),
   }
 }
 
@@ -250,9 +250,9 @@ pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("turn-keyword cannot turn this to keyword: {:?}", xs));
   }
   match &xs[0] {
-    Calcit::Str(s) => Ok(load_kwd(s)),
+    Calcit::Str(s) => Ok(Calcit::kwd(s)),
     Calcit::Keyword(s) => Ok(Calcit::Keyword(s.to_owned())),
-    Calcit::Symbol(s, ..) => Ok(load_kwd(s)),
+    Calcit::Symbol(s, ..) => Ok(Calcit::kwd(s)),
     a => CalcitErr::err_str(format!("turn-keyword cannot turn this to keyword: {}", a)),
   }
 }
@@ -431,7 +431,7 @@ pub fn no_op() -> Result<Calcit, CalcitErr> {
 
 pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   // https://doc.rust-lang.org/std/env/consts/constant.OS.html
-  Ok(load_kwd(&std::env::consts::OS.to_owned()))
+  Ok(Calcit::kwd(&std::env::consts::OS.to_owned()))
 }
 
 pub fn async_sleep(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {

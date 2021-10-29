@@ -511,11 +511,11 @@ impl Calcit {
   pub fn new_str<T: Into<String>>(s: T) -> Calcit {
     Calcit::Str(s.into())
   }
-}
 
-/// makes sure that keyword is from global dict, not created by fresh
-pub fn load_kwd(s: &str) -> Calcit {
-  Calcit::Keyword(keyword::load_order_key(s))
+  /// makes sure that keyword is from global dict, not created by fresh
+  pub fn kwd(s: &str) -> Self {
+    Calcit::Keyword(keyword::load_order_key(s))
+  }
 }
 
 /// lookup via keyword, better use `lookup_order_kwd_string`

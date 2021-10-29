@@ -1,4 +1,4 @@
-use crate::primes::{load_kwd, lookup_order_kwd_str, Calcit, CalcitItems};
+use crate::primes::{lookup_order_kwd_str, Calcit, CalcitItems};
 use cirru_parser::Cirru;
 
 /// code is CirruNode, and this function parse code(rather than data)
@@ -17,7 +17,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
       // special tuple syntax
       "::" => Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), None)),
       _ => match s.chars().next().unwrap() {
-        ':' => Ok(load_kwd(&s[1..])),
+        ':' => Ok(Calcit::kwd(&s[1..])),
         '.' => {
           if s.starts_with(".-") || s.starts_with(".!") {
             // try not to break js interop

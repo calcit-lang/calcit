@@ -1,6 +1,6 @@
 use crate::data::cirru;
 use crate::primes;
-use crate::primes::{keyword::load_order_key, load_kwd, lookup_order_kwd_str, Calcit};
+use crate::primes::{keyword::load_order_key, lookup_order_kwd_str, Calcit};
 use cirru_edn::Edn;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
@@ -83,7 +83,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       String::from(primes::GENERATED_DEF),
       None,
     ),
-    Edn::Keyword(s) => load_kwd(s),
+    Edn::Keyword(s) => Calcit::kwd(s),
     Edn::Str(s) => Calcit::Str(s.to_owned()),
     Edn::Quote(nodes) => Calcit::Tuple(
       Box::new(Calcit::Symbol(
