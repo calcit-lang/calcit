@@ -549,23 +549,23 @@ impl fmt::Display for CalcitErr {
 }
 
 impl CalcitErr {
-  pub fn use_str(msg: &str) -> Self {
+  pub fn use_str<T: Into<String>>(msg: T) -> Self {
     CalcitErr {
-      msg: msg.to_owned(),
+      msg: msg.into(),
       warnings: vec![],
       stack: im::Vector::new(),
     }
   }
-  pub fn use_string(msg: String) -> Self {
-    CalcitErr {
-      msg: msg.to_owned(),
+  pub fn err_str<T: Into<String>>(msg: T) -> Result<Calcit, Self> {
+    Err(CalcitErr {
+      msg: msg.into(),
       warnings: vec![],
       stack: im::Vector::new(),
-    }
+    })
   }
-  pub fn use_msg_stack(msg: String, stack: &CallStackVec) -> Self {
+  pub fn use_msg_stack<T: Into<String>>(msg: T, stack: &CallStackVec) -> Self {
     CalcitErr {
-      msg: msg.to_owned(),
+      msg: msg.into(),
       warnings: vec![],
       stack: stack.to_owned(),
     }

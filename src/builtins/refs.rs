@@ -62,7 +62,7 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stac
       format!("defref expected a symbol and an expression: {} , {}", a, b),
       call_stack,
     )),
-    _ => Err(CalcitErr::use_msg_stack("defref expected 2 nodes".to_owned(), call_stack)),
+    _ => Err(CalcitErr::use_msg_stack("defref expected 2 nodes", call_stack)),
   }
 }
 
@@ -70,17 +70,17 @@ pub fn deref(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Ref(path)) => match read_ref(path) {
       Some((v, _)) => Ok(v),
-      None => Err(CalcitErr::use_string(format!("found nothing after refer &{}", path))),
+      None => CalcitErr::err_str(format!("found nothing after refer &{}", path)),
     },
-    Some(a) => Err(CalcitErr::use_string(format!("deref expected a ref, got: {}", a))),
-    _ => Err(CalcitErr::use_str("deref expected 1 argument, got nothing")),
+    Some(a) => CalcitErr::err_str(format!("deref expected a ref, got: {}", a)),
+    _ => CalcitErr::err_str("deref expected 1 argument, got nothing"),
   }
 }
 
 /// need to be syntax since triggering internal functions requires program data
 pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
-    return Err(CalcitErr::use_string(format!("reset! excepted 2 arguments, got: {:?}", expr)));
+    return CalcitErr::err_str(format!("reset! excepted 2 arguments, got: {:?}", expr));
   }
   // println!("reset! {:?}", expr[0]);
   let target = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
@@ -88,7 +88,7 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_s
   match (target, new_value) {
     (Calcit::Ref(path), v) => {
       if read_ref(&path).is_none() {
-        return Err(CalcitErr::use_string(format!("missing pre-exisiting data for path &{}", path)));
+        return CalcitErr::err_str(format!("missing pre-exisiting data for path &{}", path));
       }
       modify_ref(path, v, call_stack)?;
       Ok(Calcit::Nil)
@@ -106,10 +106,7 @@ pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       let mut dict = REFS_DICT.write().unwrap();
       let (prev, listeners) = &(*dict).get(path).unwrap().to_owned();
       if listeners.contains_key(&lookup_order_kwd_str(k)) {
-        Err(CalcitErr::use_string(format!(
-          "add-watch failed, listener with key `{}` existed",
-          k
-        )))
+        CalcitErr::err_str(format!("add-watch failed, listener with key `{}` existed", k))
       } else {
         let mut new_listeners = listeners.to_owned();
         new_listeners.insert(lookup_order_kwd_str(k), xs.get(2).unwrap().to_owned());
@@ -118,14 +115,11 @@ pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
     }
     (Some(Calcit::Ref(_)), Some(Calcit::Keyword(_)), Some(a)) => {
-      Err(CalcitErr::use_string(format!("add-watch expected fn instead of proc, got {}", a)))
+      CalcitErr::err_str(format!("add-watch expected fn instead of proc, got {}", a))
     }
-    (Some(Calcit::Ref(_)), Some(a), Some(_)) => Err(CalcitErr::use_string(format!("add-watch expected a keyword, but got: {}", a))),
-    (Some(a), _, _) => Err(CalcitErr::use_string(format!("add-watch expected ref, got: {}", a))),
-    (a, b, c) => Err(CalcitErr::use_string(format!(
-      "add-watch expected ref, keyword, function, got {:?} {:?} {:?}",
-      a, b, c
-    ))),
+    (Some(Calcit::Ref(_)), Some(a), Some(_)) => CalcitErr::err_str(format!("add-watch expected a keyword, but got: {}", a)),
+    (Some(a), _, _) => CalcitErr::err_str(format!("add-watch expected ref, got: {}", a)),
+    (a, b, c) => CalcitErr::err_str(format!("add-watch expected ref, keyword, function, got {:?} {:?} {:?}", a, b, c)),
   }
 }
 
@@ -140,19 +134,10 @@ pub fn remove_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         let _ = (*dict).insert(path.to_owned(), (prev.to_owned(), new_listeners));
         Ok(Calcit::Nil)
       } else {
-        Err(CalcitErr::use_string(format!(
-          "remove-watch failed, listener with key `{}` missing",
-          k
-        )))
+        CalcitErr::err_str(format!("remove-watch failed, listener with key `{}` missing", k))
       }
     }
-    (Some(a), Some(b)) => Err(CalcitErr::use_string(format!(
-      "remove-watch expected ref and keyword, got: {} {}",
-      a, b
-    ))),
-    (a, b) => Err(CalcitErr::use_string(format!(
-      "remove-watch expected 2 arguments, got {:?} {:?}",
-      a, b
-    ))),
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("remove-watch expected ref and keyword, got: {} {}", a, b)),
+    (a, b) => CalcitErr::err_str(format!("remove-watch expected 2 arguments, got {:?} {:?}", a, b)),
   }
 }

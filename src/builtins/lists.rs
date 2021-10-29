@@ -14,64 +14,59 @@ pub fn new_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::List(ys)) => Ok(Calcit::Number(ys.len() as f64)),
-    Some(a) => Err(CalcitErr::use_string(format!("list count expected a list, got: {}", a))),
-    None => Err(CalcitErr::use_str("list count expected 1 argument")),
+    Some(a) => CalcitErr::err_str(format!("list count expected a list, got: {}", a)),
+    None => CalcitErr::err_str("list count expected 1 argument"),
   }
 }
 
 pub fn nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(ys)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+  if xs.len() != 2 {
+    return CalcitErr::err_str(format!("nth expected 2 argument, got: {}", CrListWrap(xs.to_owned())));
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::List(ys), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => match ys.get(idx) {
         Some(v) => Ok(v.to_owned()),
         None => Ok(Calcit::Nil),
       },
-      Err(e) => Err(CalcitErr::use_string(format!("nth expect usize, {}", e))),
+      Err(e) => CalcitErr::err_str(format!("nth expect usize, {}", e)),
     },
-    (Some(_), None) => Err(CalcitErr::use_string(format!(
-      "string nth expected a list and index, got: {:?}",
-      xs
-    ))),
-    (None, Some(_)) => Err(CalcitErr::use_string(format!(
-      "string nth expected a list and index, got: {:?}",
-      xs
-    ))),
-    (_, _) => Err(CalcitErr::use_string(format!(
-      "nth expected 2 argument, got: {}",
-      CrListWrap(xs.to_owned())
-    ))),
+    (_, _) => CalcitErr::err_str(format!("nth expected a list and an index, got: {}", CrListWrap(xs.to_owned()))),
   }
 }
 
 pub fn slice(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(ys)), Some(Calcit::Number(from))) => {
+  if xs.len() != 2 && xs.len() != 3 {
+    return CalcitErr::err_str(format!("slice expected 2~3 argument, got: {}", CrListWrap(xs.to_owned())));
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::List(ys), Calcit::Number(from)) => {
       let to_idx = match xs.get(2) {
         Some(Calcit::Number(to)) => {
           let idx: usize = unsafe { to.to_int_unchecked() };
           idx
         }
-        Some(a) => return Err(CalcitErr::use_string(format!("slice expected number index, got: {}", a))),
+        Some(a) => return CalcitErr::err_str(format!("slice expected number index, got: {}", a)),
         None => ys.len(),
       };
       let from_idx: usize = unsafe { from.to_int_unchecked() };
       Ok(Calcit::List(ys.to_owned().slice(from_idx..to_idx)))
     }
-    (Some(Calcit::List(_)), Some(a)) => Err(CalcitErr::use_string(format!("slice expected index number, got: {}", a))),
-    (Some(Calcit::List(_)), None) => Err(CalcitErr::use_str("slice expected index numbers")),
-    (_, _) => Err(CalcitErr::use_str("slice expected 2~3 arguments")),
+    (a, b) => CalcitErr::err_str(&format!("slice expected list and indexes: {} {}", a, b)),
   }
 }
 
 pub fn append(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(ys)), Some(a)) => {
+  if xs.len() != 2 {
+    return CalcitErr::err_str(format!("append expected 2 arguments, got: {}", CrListWrap(xs.to_owned())));
+  }
+  match &xs[0] {
+    Calcit::List(ys) => {
       let mut zs = ys.to_owned();
-      zs.push_back(a.to_owned());
+      zs.push_back(xs[1].to_owned());
       Ok(Calcit::List(zs))
     }
-    (Some(a), _) => Err(CalcitErr::use_string(format!("append expected list, got: {}", a))),
-    (None, _) => Err(CalcitErr::use_str("append expected 2 arguments, got nothing")),
+    a => CalcitErr::err_str(&format!("append expected a list: {}", a)),
   }
 }
 
@@ -82,8 +77,8 @@ pub fn prepend(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       zs.push_front(a.to_owned());
       Ok(Calcit::List(zs))
     }
-    (Some(a), _) => Err(CalcitErr::use_string(format!("prepend expected list, got: {}", a))),
-    (None, _) => Err(CalcitErr::use_str("prepend expected 2 arguments, got nothing")),
+    (Some(a), _) => CalcitErr::err_str(format!("prepend expected list, got: {}", a)),
+    (None, _) => CalcitErr::err_str("prepend expected 2 arguments, got nothing"),
   }
 }
 
@@ -98,8 +93,8 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::List(zs))
       }
     }
-    Some(a) => Err(CalcitErr::use_string(format!("list:rest expected a list, got: {}", a))),
-    None => Err(CalcitErr::use_str("list:rest expected 1 argument")),
+    Some(a) => CalcitErr::err_str(format!("list:rest expected a list, got: {}", a)),
+    None => CalcitErr::err_str("list:rest expected 1 argument"),
   }
 }
 
@@ -115,8 +110,8 @@ pub fn butlast(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::List(zs))
       }
     }
-    Some(a) => Err(CalcitErr::use_string(format!("butlast expected a list, got: {}", a))),
-    None => Err(CalcitErr::use_str("butlast expected 1 argument")),
+    Some(a) => CalcitErr::err_str(format!("butlast expected a list, got: {}", a)),
+    None => CalcitErr::err_str("butlast expected 1 argument"),
   }
 }
 
@@ -128,7 +123,7 @@ pub fn concat(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         ys.push_back(z.to_owned());
       }
     } else {
-      return Err(CalcitErr::use_string(format!("concat expects list arguments, got: {}", x)));
+      return CalcitErr::err_str(format!("concat expects list arguments, got: {}", x));
     }
   }
   Ok(Calcit::List(ys))
@@ -138,13 +133,13 @@ pub fn range(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let (base, bound) = match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(bound)), None) => (0.0, *bound),
     (Some(Calcit::Number(base)), Some(Calcit::Number(bound))) => (*base, *bound),
-    (Some(a), Some(b)) => return Err(CalcitErr::use_string(format!("range expected 2 numbers, but got: {} {}", a, b))),
-    (_, _) => return Err(CalcitErr::use_string(format!("invalid arguments for range: {:?}", xs))),
+    (Some(a), Some(b)) => return CalcitErr::err_str(format!("range expected 2 numbers, but got: {} {}", a, b)),
+    (_, _) => return CalcitErr::err_str(format!("invalid arguments for range: {:?}", xs)),
   };
 
   let step = match xs.get(2) {
     Some(Calcit::Number(n)) => *n,
-    Some(a) => return Err(CalcitErr::use_string(format!("range expected numbers, but got: {}", a))),
+    Some(a) => return CalcitErr::err_str(format!("range expected numbers, but got: {}", a)),
     None => 1.0,
   };
 
@@ -153,7 +148,7 @@ pub fn range(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 
   if step == 0.0 || (bound > base && step < 0.0) || (bound < base && step > 0.0) {
-    return Err(CalcitErr::use_str("range cannot construct list with step 0"));
+    return CalcitErr::err_str("range cannot construct list with step 0");
   }
 
   let mut ys: CalcitItems = im::vector![];
@@ -182,8 +177,8 @@ pub fn reverse(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::List(zs))
     }
-    Some(a) => Err(CalcitErr::use_string(format!("butlast expected a list, got: {}", a))),
-    None => Err(CalcitErr::use_str("butlast expected 1 argument")),
+    Some(a) => CalcitErr::err_str(format!("butlast expected a list, got: {}", a)),
+    None => CalcitErr::err_str("butlast expected 1 argument"),
   }
 }
 
@@ -497,8 +492,8 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         Ok(ys[0].to_owned())
       }
     }
-    Some(a) => Err(CalcitErr::use_string(format!("list:first expected a list, got: {}", a))),
-    None => Err(CalcitErr::use_str("list:first expected 1 argument")),
+    Some(a) => CalcitErr::err_str(format!("list:first expected a list, got: {}", a)),
+    None => CalcitErr::err_str("list:first expected 1 argument"),
   }
 }
 
@@ -511,16 +506,10 @@ pub fn assoc_before(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         ys.insert(idx, a.to_owned());
         Ok(Calcit::List(ys))
       }
-      Err(e) => Err(CalcitErr::use_string(format!("assoc-before expect usize, {}", e))),
+      Err(e) => CalcitErr::err_str(format!("assoc-before expect usize, {}", e)),
     },
-    (Some(a), Some(b), Some(c)) => Err(CalcitErr::use_string(format!(
-      "assoc-before expected list and index, got: {} {} {}",
-      a, b, c
-    ))),
-    (a, b, c) => Err(CalcitErr::use_string(format!(
-      "invalid arguments to assoc-before: {:?} {:?} {:?}",
-      a, b, c
-    ))),
+    (Some(a), Some(b), Some(c)) => CalcitErr::err_str(format!("assoc-before expected list and index, got: {} {} {}", a, b, c)),
+    (a, b, c) => CalcitErr::err_str(format!("invalid arguments to assoc-before: {:?} {:?} {:?}", a, b, c)),
   }
 }
 
@@ -532,24 +521,18 @@ pub fn assoc_after(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         ys.insert(idx + 1, a.to_owned());
         Ok(Calcit::List(ys))
       }
-      Err(e) => Err(CalcitErr::use_string(format!("assoc-after expect usize, {}", e))),
+      Err(e) => CalcitErr::err_str(format!("assoc-after expect usize, {}", e)),
     },
-    (Some(a), Some(b), Some(c)) => Err(CalcitErr::use_string(format!(
-      "assoc-after expected list and index, got: {} {} {}",
-      a, b, c
-    ))),
-    (a, b, c) => Err(CalcitErr::use_string(format!(
-      "invalid arguments to assoc-after: {:?} {:?} {:?}",
-      a, b, c
-    ))),
+    (Some(a), Some(b), Some(c)) => CalcitErr::err_str(format!("assoc-after expected list and index, got: {} {} {}", a, b, c)),
+    (a, b, c) => CalcitErr::err_str(format!("invalid arguments to assoc-after: {:?} {:?} {:?}", a, b, c)),
   }
 }
 
 pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::List(ys)) => Ok(Calcit::Bool(ys.is_empty())),
-    Some(a) => Err(CalcitErr::use_string(format!("list empty? expected a list, got: {}", a))),
-    None => Err(CalcitErr::use_str("list empty? expected 1 argument")),
+    Some(a) => CalcitErr::err_str(format!("list empty? expected a list, got: {}", a)),
+    None => CalcitErr::err_str("list empty? expected 1 argument"),
   }
 }
 
@@ -559,19 +542,16 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(idx) => Ok(Calcit::Bool(idx < xs.len())),
       Err(_) => Ok(Calcit::Bool(false)),
     },
-    (Some(a), ..) => Err(CalcitErr::use_string(format!("list contains? expected list, got: {}", a))),
-    (None, ..) => Err(CalcitErr::use_string(format!("list contains? expected 2 arguments, got: {:?}", xs))),
+    (Some(a), ..) => CalcitErr::err_str(format!("list contains? expected list, got: {}", a)),
+    (None, ..) => CalcitErr::err_str(format!("list contains? expected 2 arguments, got: {:?}", xs)),
   }
 }
 
 pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
-    (Some(a), ..) => Err(CalcitErr::use_string(format!("list `includes?` expected list, list, got: {}", a))),
-    (None, ..) => Err(CalcitErr::use_string(format!(
-      "list `includes?` expected 2 arguments, got: {:?}",
-      xs
-    ))),
+    (Some(a), ..) => CalcitErr::err_str(format!("list `includes?` expected list, list, got: {}", a)),
+    (None, ..) => CalcitErr::err_str(format!("list `includes?` expected 2 arguments, got: {:?}", xs)),
   }
 }
 
@@ -587,10 +567,10 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           Ok(Calcit::Nil)
         }
       }
-      Err(e) => Err(CalcitErr::use_string(e)),
+      Err(e) => CalcitErr::err_str(e),
     },
-    (Some(a), ..) => Err(CalcitErr::use_string(format!("list:assoc expected list, got: {}", a))),
-    (None, ..) => Err(CalcitErr::use_string(format!("list:assoc expected 3 arguments, got: {:?}", xs))),
+    (Some(a), ..) => CalcitErr::err_str(format!("list:assoc expected list, got: {}", a)),
+    (None, ..) => CalcitErr::err_str(format!("list:assoc expected 3 arguments, got: {:?}", xs)),
   }
 }
 
@@ -602,19 +582,16 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         ys.remove(idx);
         Ok(Calcit::List(ys.to_owned()))
       }
-      Err(e) => Err(CalcitErr::use_string(format!("dissoc expected number, {}", e))),
+      Err(e) => CalcitErr::err_str(format!("dissoc expected number, {}", e)),
     },
-    (Some(a), ..) => Err(CalcitErr::use_string(format!("list dissoc expected a list, got: {}", a))),
-    (_, _) => Err(CalcitErr::use_string(format!("list dissoc expected 2 arguments, got: {:?}", xs))),
+    (Some(a), ..) => CalcitErr::err_str(format!("list dissoc expected a list, got: {}", a)),
+    (_, _) => CalcitErr::err_str(format!("list dissoc expected 2 arguments, got: {:?}", xs)),
   }
 }
 
 pub fn list_to_set(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return Err(CalcitErr::use_string(format!(
-      "&list:to-set expected a single argument in list, got {:?}",
-      xs
-    )));
+    return CalcitErr::err_str(format!("&list:to-set expected a single argument in list, got {:?}", xs));
   }
   match &xs[0] {
     Calcit::List(ys) => {
@@ -624,16 +601,13 @@ pub fn list_to_set(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Set(zs))
     }
-    a => Err(CalcitErr::use_string(format!("&list:to-set expected a list, got {}", a))),
+    a => CalcitErr::err_str(format!("&list:to-set expected a list, got {}", a)),
   }
 }
 
 pub fn distinct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return Err(CalcitErr::use_string(format!(
-      "&list:distinct expected a single argument in list, got {:?}",
-      xs
-    )));
+    return CalcitErr::err_str(format!("&list:distinct expected a single argument in list, got {:?}", xs));
   }
   match &xs[0] {
     Calcit::List(ys) => {
@@ -645,6 +619,6 @@ pub fn distinct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::List(zs))
     }
-    a => Err(CalcitErr::use_string(format!("&list:distinct expected a list, got {}", a))),
+    a => CalcitErr::err_str(format!("&list:distinct expected a list, got {}", a)),
   }
 }

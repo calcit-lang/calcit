@@ -15,8 +15,8 @@ pub fn call_include(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       ys.insert(a.to_owned());
       Ok(Calcit::Set(ys))
     }
-    (Some(a), _) => Err(CalcitErr::use_string(format!("&include expect a set, but got: {}", a))),
-    (a, b) => Err(CalcitErr::use_string(format!("invalid arguments for &include: {:?} {:?}", a, b))),
+    (Some(a), _) => CalcitErr::err_str(format!("&include expect a set, but got: {}", a)),
+    (a, b) => CalcitErr::err_str(format!("invalid arguments for &include: {:?} {:?}", a, b)),
   }
 }
 
@@ -27,8 +27,8 @@ pub fn call_exclude(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       ys.remove(a);
       Ok(Calcit::Set(ys))
     }
-    (Some(a), _) => Err(CalcitErr::use_string(format!("&exclude expect a set, but got: {}", a))),
-    (a, b) => Err(CalcitErr::use_string(format!("invalid arguments for &exclude: {:?} {:?}", a, b))),
+    (Some(a), _) => CalcitErr::err_str(format!("&exclude expect a set, but got: {}", a)),
+    (a, b) => CalcitErr::err_str(format!("invalid arguments for &exclude: {:?} {:?}", a, b)),
   }
 }
 pub fn call_difference(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -42,25 +42,22 @@ pub fn call_difference(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Set(ys))
     }
-    (Some(a), Some(b)) => Err(CalcitErr::use_string(format!("&difference expected 2 sets: {} {}", a, b))),
-    (a, b) => Err(CalcitErr::use_string(format!("&difference expected 2 arguments: {:?} {:?}", a, b))),
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("&difference expected 2 sets: {} {}", a, b)),
+    (a, b) => CalcitErr::err_str(format!("&difference expected 2 arguments: {:?} {:?}", a, b)),
   }
 }
 pub fn call_union(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => Ok(Calcit::Set(a.to_owned().union(b.to_owned()))),
-    (Some(a), Some(b)) => Err(CalcitErr::use_string(format!("&union expected 2 sets: {} {}", a, b))),
-    (a, b) => Err(CalcitErr::use_string(format!("&union expected 2 arguments: {:?} {:?}", a, b))),
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("&union expected 2 sets: {} {}", a, b)),
+    (a, b) => CalcitErr::err_str(format!("&union expected 2 arguments: {:?} {:?}", a, b)),
   }
 }
 pub fn call_intersection(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => Ok(Calcit::Set(a.to_owned().intersection(b.to_owned()))),
-    (Some(a), Some(b)) => Err(CalcitErr::use_string(format!("&set:intersection expected 2 sets: {} {}", a, b))),
-    (a, b) => Err(CalcitErr::use_string(format!(
-      "&set:intersection expected 2 arguments: {:?} {:?}",
-      a, b
-    ))),
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("&set:intersection expected 2 sets: {} {}", a, b)),
+    (a, b) => CalcitErr::err_str(format!("&set:intersection expected 2 arguments: {:?} {:?}", a, b)),
   }
 }
 
@@ -74,35 +71,32 @@ pub fn set_to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::List(ys))
     }
-    Some(a) => Err(CalcitErr::use_string(format!("&set:to-list expected a set: {}", a))),
-    None => Err(CalcitErr::use_str("&set:to-list expected 1 argument, got none")),
+    Some(a) => CalcitErr::err_str(format!("&set:to-list expected a set: {}", a)),
+    None => CalcitErr::err_str("&set:to-list expected 1 argument, got none"),
   }
 }
 
 pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Set(ys)) => Ok(Calcit::Number(ys.len() as f64)),
-    Some(a) => Err(CalcitErr::use_string(format!("set count expected a set, got: {}", a))),
-    None => Err(CalcitErr::use_str("set count expected 1 argument")),
+    Some(a) => CalcitErr::err_str(format!("set count expected a set, got: {}", a)),
+    None => CalcitErr::err_str("set count expected 1 argument"),
   }
 }
 
 pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Set(ys)) => Ok(Calcit::Bool(ys.is_empty())),
-    Some(a) => Err(CalcitErr::use_string(format!("set empty? expected some set, got: {}", a))),
-    None => Err(CalcitErr::use_str("set empty? expected 1 argument")),
+    Some(a) => CalcitErr::err_str(format!("set empty? expected some set, got: {}", a)),
+    None => CalcitErr::err_str("set empty? expected 1 argument"),
   }
 }
 
 pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Set(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
-    (Some(a), ..) => Err(CalcitErr::use_string(format!("sets `includes?` expected set, got: {}", a))),
-    (None, ..) => Err(CalcitErr::use_string(format!(
-      "sets `includes?` expected 2 arguments, got: {:?}",
-      xs
-    ))),
+    (Some(a), ..) => CalcitErr::err_str(format!("sets `includes?` expected set, got: {}", a)),
+    (None, ..) => CalcitErr::err_str(format!("sets `includes?` expected 2 arguments, got: {:?}", xs)),
   }
 }
 
@@ -114,8 +108,8 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Some(v) => Ok(v.to_owned()),
       None => Ok(Calcit::Nil),
     },
-    Some(a) => Err(CalcitErr::use_string(format!("set:first expected a set, got: {}", a))),
-    None => Err(CalcitErr::use_str("set:first expected 1 argument")),
+    Some(a) => CalcitErr::err_str(format!("set:first expected a set, got: {}", a)),
+    None => CalcitErr::err_str("set:first expected 1 argument"),
   }
 }
 
@@ -129,7 +123,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       None => Ok(Calcit::Nil),
     },
-    Some(a) => Err(CalcitErr::use_string(format!("set:rest expected a set, got: {}", a))),
-    None => Err(CalcitErr::use_str("set:rest expected 1 argument")),
+    Some(a) => CalcitErr::err_str(format!("set:rest expected a set, got: {}", a)),
+    None => CalcitErr::err_str("set:rest expected 1 argument"),
   }
 }
