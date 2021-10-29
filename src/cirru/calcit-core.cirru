@@ -778,14 +778,15 @@
         |assoc-in $ quote
           defn assoc-in (data path v)
             if (&list:empty? path) v
-              let
-                  p0 $ &list:first path
+              &let
+                p0 $ &list:first path
+                &let
                   d $ either data $ &{}
-                assoc d p0
-                  assoc-in
-                    if (contains? d p0) (get d p0) (&{})
-                    rest path
-                    , v
+                  assoc d p0
+                    assoc-in
+                      if (contains? d p0) (get d p0) (&{})
+                      rest path
+                      , v
 
         |update-in $ quote
           defn update-in (data path f)

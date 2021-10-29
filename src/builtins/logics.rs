@@ -22,10 +22,12 @@ pub fn binary_greater(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn not(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
-    Some(Calcit::Nil) => Ok(Calcit::Bool(true)),
-    Some(Calcit::Bool(b)) => Ok(Calcit::Bool(!b)),
-    Some(a) => CalcitErr::err_str(format!("not expected bool or nil, got: {}", a)),
-    None => CalcitErr::err_str("not expected 1 argument, got nothing"),
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("not expected bool or nil, got: {:?}", xs));
+  }
+  match &xs[0] {
+    Calcit::Nil => Ok(Calcit::Bool(true)),
+    Calcit::Bool(b) => Ok(Calcit::Bool(!b)),
+    a => CalcitErr::err_str(format!("not expected bool or nil, got: {}", a)),
   }
 }

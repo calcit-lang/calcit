@@ -4,11 +4,13 @@ use std::ops::Rem;
 use crate::primes::{keyword::load_order_key, lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems};
 
 pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  let name_id: usize = match xs.get(0) {
-    Some(Calcit::Symbol(s, ..)) => load_order_key(s),
-    Some(Calcit::Keyword(k)) => k.to_owned(),
-    Some(a) => return CalcitErr::err_str(format!("new-record expected a name, got {}", a)),
-    None => return CalcitErr::err_str(format!("new-record expected arguments, got {:?}", xs)),
+  if xs.is_empty() {
+    return CalcitErr::err_str(format!("new-record expected arguments, got {:?}", xs));
+  }
+  let name_id: usize = match &xs[0] {
+    Calcit::Symbol(s, ..) => load_order_key(s),
+    Calcit::Keyword(k) => k.to_owned(),
+    a => return CalcitErr::err_str(format!("new-record expected a name, got {}", a)),
   };
 
   let mut fields: Vec<usize> = vec![];
@@ -93,8 +95,11 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Record(name, fields, _values)), Some(Calcit::Map(ys))) => {
+  if xs.len() != 2 {
+    return CalcitErr::err_str(format!("&record:from-map expected 2 arguments, got {:?}", xs));
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Record(name, fields, _values), Calcit::Map(ys)) => {
       let mut pairs: Vec<(String, Calcit)> = vec![];
       for (k, v) in ys {
         match k {
@@ -128,38 +133,43 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Record(name.to_owned(), fields.to_owned(), values))
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(format!("&record:from-map expected a record and a map, got {} {}", a, b)),
-    (_, _) => CalcitErr::err_str(format!("&record:from-map expected 2 arguments, got {:?}", xs)),
+    (a, b) => CalcitErr::err_str(format!("&record:from-map expected a record and a map, got {} {}", a, b)),
   }
 }
 
 pub fn get_record_name(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
-    Some(Calcit::Record(name, ..)) => Ok(Calcit::Keyword(*name)),
-    Some(a) => CalcitErr::err_str(format!("&record:get-name expected record, got: {}", a)),
-    None => CalcitErr::err_str("&record:get-name expected record, got nothing"),
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("&record:get-name expected record, got: {:?}", xs));
+  }
+  match &xs[0] {
+    Calcit::Record(name, ..) => Ok(Calcit::Keyword(*name)),
+    a => CalcitErr::err_str(format!("&record:get-name expected record, got: {}", a)),
   }
 }
 pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
-    Some(Calcit::Record(_name, fields, values)) => {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("&record:to-map expected 1 argument, got: {:?}", xs));
+  }
+  match &xs[0] {
+    Calcit::Record(_name, fields, values) => {
       let mut ys: im::HashMap<Calcit, Calcit> = im::HashMap::new();
       for idx in 0..fields.len() {
         ys.insert(Calcit::Keyword(fields[idx].to_owned()), values[idx].to_owned());
       }
       Ok(Calcit::Map(ys))
     }
-    Some(a) => CalcitErr::err_str(format!("&record:to-map expected a record, got {}", a)),
-    None => CalcitErr::err_str("&record:to-map expected 1 argument, got nothing"),
+    a => CalcitErr::err_str(format!("&record:to-map expected a record, got {}", a)),
   }
 }
 pub fn matches(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Record(left, left_fields, ..)), Some(Calcit::Record(right, right_fields, ..))) => {
+  if xs.len() != 2 {
+    return CalcitErr::err_str(format!("&record:matches? expected 2 arguments, got {:?}", xs));
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Record(left, left_fields, ..), Calcit::Record(right, right_fields, ..)) => {
       Ok(Calcit::Bool(left == right && left_fields == right_fields))
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(format!("&record:matches? expected 2 records, got {} {}", a, b)),
-    (_, _) => CalcitErr::err_str(format!("&record:matches? expected 2 arguments, got {:?}", xs)),
+    (a, b) => CalcitErr::err_str(format!("&record:matches? expected 2 records, got {} {}", a, b)),
   }
 }
 
@@ -188,10 +198,12 @@ pub fn find_in_fields(xs: &[usize], y: usize) -> Option<usize> {
 }
 
 pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
-    Some(Calcit::Record(_name, fields, _)) => Ok(Calcit::Number(fields.len() as f64)),
-    Some(a) => CalcitErr::err_str(format!("record count expected a record, got: {}", a)),
-    None => CalcitErr::err_str("record count expected 1 argument"),
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("record count expected 1 argument: {:?}", xs));
+  }
+  match &xs[0] {
+    Calcit::Record(_name, fields, _) => Ok(Calcit::Number(fields.len() as f64)),
+    a => CalcitErr::err_str(format!("record count expected a record, got: {}", a)),
   }
 }
 
