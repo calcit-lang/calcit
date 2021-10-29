@@ -125,9 +125,7 @@ pub fn concat(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let mut ys: CalcitItems = im::vector![];
   for x in xs {
     if let Calcit::List(zs) = x {
-      for z in zs {
-        ys.push_back(z.to_owned());
-      }
+      ys.append(zs.to_owned());
     } else {
       return CalcitErr::err_str(format!("concat expects list arguments, got: {}", x));
     }

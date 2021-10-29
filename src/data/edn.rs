@@ -10,10 +10,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
   match x {
     Calcit::Nil => Ok(Edn::Nil),
     Calcit::Bool(b) => Ok(Edn::Bool(*b)),
-    Calcit::Str(s) => Ok(Edn::Str(s.to_owned())),
+    Calcit::Str(s) => Ok(Edn::str(s)),
     Calcit::Number(n) => Ok(Edn::Number(*n)), // TODO
     Calcit::Keyword(s) => Ok(Edn::Keyword(lookup_order_kwd_str(s))),
-    Calcit::Symbol(s, ..) => Ok(Edn::Symbol(s.to_owned())),
+    Calcit::Symbol(s, ..) => Ok(Edn::sym(s)),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
       for x in xs {
@@ -46,8 +46,8 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       println!("[Warning] unable to generate EDN from function: {}", x);
       Ok(Edn::Str(format!("TODO fn: {}", x)))
     }
-    Calcit::Proc(name) => Ok(Edn::Symbol(name.to_owned())),
-    Calcit::Syntax(name, _ns) => Ok(Edn::Symbol(name.to_string())),
+    Calcit::Proc(name) => Ok(Edn::sym(name)),
+    Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.to_string())),
     Calcit::Tuple(tag, data) => {
       match &**tag {
         Calcit::Symbol(sym, ..) => {
@@ -60,7 +60,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             Err(format!("unknown tag for EDN: {}", sym)) // TODO more types to handle
           }
         }
-        Calcit::Record(name, _, _) => Ok(Edn::tuple(Edn::Keyword(lookup_order_kwd_str(name)), calcit_to_edn(data)?)),
+        Calcit::Record(name, _, _) => Ok(Edn::tuple(Edn::kwd(lookup_order_kwd_str(name)), calcit_to_edn(data)?)),
         v => {
           Err(format!("EDN tuple expected 'quote or record, unknown tag: {}", v))
           // TODO more types to handle

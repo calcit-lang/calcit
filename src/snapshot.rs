@@ -109,8 +109,8 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   def_dict.insert(
     String::from("calcit-filename"),
     Cirru::List(vec![
-      Cirru::Leaf(String::from("def")),
-      Cirru::Leaf(String::from("calcit-filename")),
+      Cirru::leaf("def"),
+      Cirru::leaf("calcit-filename"),
       Cirru::Leaf(format!("|{}", path.escape_default())),
     ]),
   );
@@ -121,14 +121,14 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   def_dict.insert(
     String::from("calcit-dirname"),
     Cirru::List(vec![
-      Cirru::Leaf(String::from("def")),
-      Cirru::Leaf(String::from("calcit-dirname")),
+      Cirru::leaf("def"),
+      Cirru::leaf("calcit-dirname"),
       Cirru::Leaf(format!("|{}", parent_str.escape_default())),
     ]),
   );
 
   FileInSnapShot {
-    ns: Cirru::List(vec![Cirru::Leaf(String::from("ns")), Cirru::Leaf(ns.to_owned())]),
+    ns: Cirru::List(vec![Cirru::leaf("ns"), Cirru::Leaf(ns.to_owned())]),
     defs: def_dict,
   }
 }
@@ -157,23 +157,14 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
       let mut def_dict: HashMap<String, Cirru> = HashMap::new();
       def_dict.insert(
         String::from("main!"),
-        Cirru::List(vec![
-          Cirru::Leaf(String::from("defn")),
-          Cirru::Leaf(String::from("main!")),
-          Cirru::List(vec![]),
-          code,
-        ]),
+        Cirru::List(vec![Cirru::leaf("defn"), Cirru::leaf("main!"), Cirru::List(vec![]), code]),
       );
       def_dict.insert(
         String::from("reload!"),
-        Cirru::List(vec![
-          Cirru::Leaf(String::from("defn")),
-          Cirru::Leaf(String::from("reload!")),
-          Cirru::List(vec![]),
-        ]),
+        Cirru::List(vec![Cirru::leaf("defn"), Cirru::leaf("reload!"), Cirru::List(vec![])]),
       );
       Ok(FileInSnapShot {
-        ns: Cirru::List(vec![Cirru::Leaf(String::from("ns")), Cirru::Leaf(String::from("app.main"))]),
+        ns: Cirru::List(vec![Cirru::leaf("ns"), Cirru::leaf("app.main")]),
         defs: def_dict,
       })
     }

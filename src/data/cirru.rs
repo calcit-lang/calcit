@@ -93,10 +93,10 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
 /// for generate Cirru via calcit data manually
 pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
   match xs {
-    Calcit::Nil => Ok(Cirru::Leaf(String::from("nil"))),
+    Calcit::Nil => Ok(Cirru::leaf("nil")),
     Calcit::Bool(b) => Ok(Cirru::Leaf(b.to_string())),
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string())),
-    Calcit::Str(s) => Ok(Cirru::Leaf(s.to_owned())),
+    Calcit::Str(s) => Ok(Cirru::leaf(s)),
     Calcit::List(ys) => {
       let mut zs: Vec<Cirru> = Vec::with_capacity(ys.len());
       for y in ys {
@@ -126,9 +126,9 @@ fn is_comment(x: &Calcit) -> bool {
 /// converting data for display in Cirru syntax
 pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
   match x {
-    Calcit::Nil => Ok(Cirru::Leaf(String::from("nil"))),
-    Calcit::Bool(true) => Ok(Cirru::Leaf(String::from("true"))),
-    Calcit::Bool(false) => Ok(Cirru::Leaf(String::from("false"))),
+    Calcit::Nil => Ok(Cirru::leaf("nil")),
+    Calcit::Bool(true) => Ok(Cirru::leaf("true")),
+    Calcit::Bool(false) => Ok(Cirru::leaf("false")),
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string())),
     Calcit::Str(s) => Ok(Cirru::Leaf(format!("|{}", s))),   // TODO performance
     Calcit::Symbol(s, ..) => Ok(Cirru::Leaf(s.to_owned())), // TODO performance

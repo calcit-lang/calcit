@@ -43,8 +43,8 @@ pub fn main() -> io::Result<()> {
 
   let pkg = package_data.map_get("package").map_err(io_err)?.read_string().map_err(io_err)?;
 
-  dict.insert(Edn::Keyword(String::from("package")), Edn::Str(pkg));
-  dict.insert(Edn::Keyword(String::from("configs")), package_data);
+  dict.insert(Edn::kwd("package"), Edn::Str(pkg));
+  dict.insert(Edn::kwd("configs"), package_data);
 
   let mut files: HashMap<Edn, Edn> = HashMap::new();
 
@@ -68,7 +68,7 @@ pub fn main() -> io::Result<()> {
             xs.get(0)
           )));
         };
-        file.insert(Edn::Keyword(String::from("ns")), Edn::Quote(Cirru::List(ns_code.to_owned())));
+        file.insert(Edn::kwd("ns"), Edn::Quote(Cirru::List(ns_code.to_owned())));
 
         let mut defs: HashMap<Edn, Edn> = HashMap::new();
         for (idx, line) in xs.iter().enumerate() {
@@ -77,7 +77,7 @@ pub fn main() -> io::Result<()> {
               match (ys.get(0), ys.get(1)) {
                 (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
                   if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" || x0.starts_with("def") {
-                    defs.insert(Edn::Str(x1.to_owned()), Edn::Quote(line.to_owned()));
+                    defs.insert(Edn::str(x1), Edn::Quote(line.to_owned()));
                   } else {
                     return Err(io_err(format!("invalid def op: {}", x0)));
                   }
@@ -93,8 +93,8 @@ pub fn main() -> io::Result<()> {
           }
         }
 
-        file.insert(Edn::Keyword(String::from("defs")), Edn::Map(defs));
-        files.insert(Edn::Str(ns_name.to_owned()), Edn::Map(file));
+        file.insert(Edn::kwd("defs"), Edn::Map(defs));
+        files.insert(Edn::str(ns_name), Edn::Map(file));
 
         if verbose {
           println!("bundling {}", entry.path().display());
@@ -104,7 +104,7 @@ pub fn main() -> io::Result<()> {
     }
   }
 
-  dict.insert(Edn::Keyword(String::from("files")), Edn::Map(files));
+  dict.insert(Edn::kwd("files"), Edn::Map(files));
 
   // println!("data {}", Edn::Map(dict));
 
