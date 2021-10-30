@@ -12,8 +12,8 @@ use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 // scope
-pub type CalcitScope = im::HashMap<String, Calcit>;
-pub type CalcitItems = im::Vector<Calcit>;
+pub type CalcitScope = rpds::HashTrieMapSync<String, Calcit>;
+pub type CalcitItems = rpds::VectorSync<Calcit>;
 
 pub use syntax_name::CalcitSyntax;
 
@@ -38,7 +38,7 @@ pub enum ImportRule {
 
 /// special types wraps vector of calcit data for displaying
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct CrListWrap(pub im::Vector<Calcit>);
+pub struct CrListWrap(pub rpds::VectorSync<Calcit>);
 
 #[derive(Debug, Clone)]
 pub enum Calcit {
@@ -58,8 +58,8 @@ pub enum Calcit {
   /// not for data, but for recursion
   Recur(CalcitItems),
   List(CalcitItems),
-  Set(im::HashSet<Calcit>),
-  Map(im::HashMap<Calcit, Calcit>),
+  Set(rpds::HashTrieSetSync<Calcit>),
+  Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   Record(usize, Vec<usize>, Vec<Calcit>), // usize of keyword id
   Proc(String),
   Macro(
@@ -409,7 +409,7 @@ impl Ord for Calcit {
       (Calcit::List(_), _) => Less,
       (_, Calcit::List(_)) => Greater,
 
-      (Calcit::Set(a), Calcit::Set(b)) => match a.len().cmp(&b.len()) {
+      (Calcit::Set(a), Calcit::Set(b)) => match a.size().cmp(&b.size()) {
         Equal => {
           if a == b {
             Equal
@@ -536,7 +536,7 @@ pub fn gen_core_id() -> String {
 pub struct CalcitErr {
   pub msg: String,
   pub warnings: Vec<String>,
-  pub stack: im::Vector<crate::call_stack::CalcitStack>,
+  pub stack: rpds::VectorSync<crate::call_stack::CalcitStack>,
 }
 
 impl fmt::Display for CalcitErr {
@@ -557,14 +557,14 @@ impl CalcitErr {
     CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: im::Vector::new(),
+      stack: rpds::Vector::new_sync(),
     }
   }
   pub fn err_str<T: Into<String>>(msg: T) -> Result<Calcit, Self> {
     Err(CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: im::Vector::new(),
+      stack: rpds::Vector::new_sync(),
     })
   }
   pub fn use_msg_stack<T: Into<String>>(msg: T, stack: &CallStackVec) -> Self {

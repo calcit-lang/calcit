@@ -134,9 +134,9 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
       ys.to_owned(),
       Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
         if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = &callback {
-          let mut real_args = im::vector![];
+          let mut real_args = rpds::vector_sync![];
           for p in ps {
-            real_args.push_back(edn_to_calcit(&p));
+            real_args.push_back_mut(edn_to_calcit(&p));
           }
           let r = runner::run_fn(&real_args, def_scope, args, body, def_ns, &copied_stack);
           match r {
@@ -218,9 +218,9 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
     ys.to_owned(),
     Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
       if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = &callback {
-        let mut real_args = im::vector![];
+        let mut real_args = rpds::vector_sync![];
         for p in ps {
-          real_args.push_back(edn_to_calcit(&p));
+          real_args.push_back_mut(edn_to_calcit(&p));
         }
         let r = runner::run_fn(&real_args, def_scope, args, body, def_ns, &copied_stack.clone());
         match r {
@@ -256,7 +256,7 @@ pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, 
     let copied_stack = Arc::new(call_stack.to_owned());
     ctrlc::set_handler(move || {
       if let Calcit::Fn(_name, def_ns, _, def_scope, args, body) = cb.as_ref() {
-        if let Err(e) = runner::run_fn(&im::vector![], def_scope, args, body, def_ns, &copied_stack) {
+        if let Err(e) = runner::run_fn(&rpds::vector_sync![], def_scope, args, body, def_ns, &copied_stack) {
           println!("error: {}", e);
         }
       }

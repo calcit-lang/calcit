@@ -60,10 +60,10 @@ pub fn split(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => {
       let pieces = s.split(pattern);
-      let mut ys: CalcitItems = im::vector![];
+      let mut ys: CalcitItems = rpds::vector_sync![];
       for p in pieces {
         if !p.is_empty() {
-          ys.push_back(Calcit::Str(p.to_owned()));
+          ys.push_back_mut(Calcit::Str(p.to_owned()));
         }
       }
       Ok(Calcit::List(ys))
@@ -98,9 +98,9 @@ pub fn split_lines(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => {
       let lines = s.split('\n');
-      let mut ys = im::vector![];
+      let mut ys = rpds::vector_sync![];
       for line in lines {
-        ys.push_back(Calcit::Str(line.to_owned()));
+        ys.push_back_mut(Calcit::Str(line.to_owned()));
       }
       Ok(Calcit::List(ys))
     }

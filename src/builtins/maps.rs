@@ -6,9 +6,9 @@ use crate::util::number::is_even;
 pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if is_even(xs.len()) {
     let n = xs.len() >> 1;
-    let mut ys = im::HashMap::new();
+    let mut ys = rpds::HashTrieMap::new_sync();
     for i in 0..n {
-      ys.insert(xs[i << 1].to_owned(), xs[(i << 1) + 1].to_owned());
+      ys.insert_mut(xs[i << 1].to_owned(), xs[(i << 1) + 1].to_owned());
     }
     Ok(Calcit::Map(ys))
   } else {
@@ -32,7 +32,7 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           skip_first = false;
           continue;
         }
-        ys.remove(x);
+        ys.remove_mut(x);
       }
       Ok(Calcit::Map(ys.to_owned()))
     }
@@ -58,9 +58,9 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
-      let mut zs: im::HashMap<Calcit, Calcit> = xs.to_owned();
+      let mut zs: rpds::HashTrieMapSync<Calcit, Calcit> = xs.to_owned();
       for (k, v) in ys {
-        zs.insert(k.to_owned(), v.to_owned());
+        zs.insert_mut(k.to_owned(), v.to_owned());
       }
       Ok(Calcit::Map(zs))
     }
@@ -91,19 +91,20 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     // get a random order from internals
     Some(Calcit::Map(ys)) => {
-      let mut zs: im::HashSet<Calcit> = im::HashSet::new();
+      let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for (k, v) in ys {
-        zs.insert(Calcit::List(im::vector![k.to_owned(), v.to_owned(),]));
+        zs.insert_mut(Calcit::List(rpds::vector_sync![].push_back(k.to_owned()).push_back(v.to_owned())));
       }
       Ok(Calcit::Set(zs))
     }
     Some(Calcit::Record(_name, fields, values)) => {
-      let mut zs: im::HashSet<Calcit> = im::HashSet::new();
+      let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for idx in 0..fields.len() {
-        zs.insert(Calcit::List(im::vector![
-          Calcit::Keyword(fields[idx].to_owned()),
-          values[idx].to_owned(),
-        ]));
+        zs.insert_mut(Calcit::List(
+          rpds::vector_sync![]
+            .push_back(Calcit::Keyword(fields[idx].to_owned()))
+            .push_back(values[idx].to_owned()),
+        ));
       }
       Ok(Calcit::Set(zs))
     }
@@ -115,10 +116,10 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn call_merge_non_nil(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
-      let mut zs: im::HashMap<Calcit, Calcit> = xs.to_owned();
+      let mut zs: rpds::HashTrieMapSync<Calcit, Calcit> = xs.to_owned();
       for (k, v) in ys {
         if *v != Calcit::Nil {
-          zs.insert(k.to_owned(), v.to_owned());
+          zs.insert_mut(k.to_owned(), v.to_owned());
         }
       }
       Ok(Calcit::Map(zs))
@@ -132,10 +133,10 @@ pub fn call_merge_non_nil(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(m)) => {
-      let mut ys: im::Vector<Calcit> = im::vector![];
+      let mut ys: rpds::VectorSync<Calcit> = rpds::vector_sync![];
       for (k, v) in m {
-        let zs: im::Vector<Calcit> = im::vector![k.to_owned(), v.to_owned()];
-        ys.push_back(Calcit::List(zs));
+        let zs: rpds::VectorSync<Calcit> = rpds::vector_sync![k.to_owned(), v.to_owned()];
+        ys.push_back_mut(Calcit::List(zs));
       }
       Ok(Calcit::List(ys))
     }
@@ -146,7 +147,7 @@ pub fn to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.len() as f64)),
+    Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.size() as f64)),
     Some(a) => CalcitErr::err_str(format!("map count expected a map, got: {}", a)),
     None => CalcitErr::err_str("map count expected 1 argument"),
   }
@@ -188,7 +189,7 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(ys)) => match ys.iter().next() {
       // TODO order may not be stable enough
-      Some((k, v)) => Ok(Calcit::List(im::vector![k.to_owned(), v.to_owned()])),
+      Some((k, v)) => Ok(Calcit::List(rpds::vector_sync![k.to_owned(), v.to_owned()])),
       None => Ok(Calcit::Nil),
     },
     Some(a) => CalcitErr::err_str(format!("map:first expected a map, got: {}", a)),
@@ -201,7 +202,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Map(ys)) => match ys.keys().next() {
       Some(k0) => {
         let mut zs = ys.to_owned();
-        zs.remove(k0);
+        zs.remove_mut(k0);
         Ok(Calcit::Map(zs))
       }
       None => Ok(Calcit::Nil),
@@ -220,7 +221,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         let size = (xs.len() - 1) / 2;
         let mut ys = base.to_owned();
         for idx in 0..size {
-          ys.insert(xs[idx * 2 + 1].to_owned(), xs[idx * 2 + 2].to_owned());
+          ys.insert_mut(xs[idx * 2 + 1].to_owned(), xs[idx * 2 + 2].to_owned());
         }
         Ok(Calcit::Map(ys))
       }
@@ -236,7 +237,7 @@ pub fn diff_new(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       let zs = &mut xs.to_owned();
       for k in ys.keys() {
         if zs.contains_key(k) {
-          zs.remove(k).unwrap();
+          zs.remove_mut(k);
         }
       }
       Ok(Calcit::Map(zs.to_owned()))
@@ -249,10 +250,10 @@ pub fn diff_new(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn diff_keys(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
-      let mut ks: im::HashSet<Calcit> = im::HashSet::new();
+      let mut ks: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for k in xs.keys() {
         if !ys.contains_key(k) {
-          ks.insert(k.to_owned());
+          ks.insert_mut(k.to_owned());
         }
       }
       Ok(Calcit::Set(ks))
@@ -265,10 +266,10 @@ pub fn diff_keys(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn common_keys(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
-      let mut ks: im::HashSet<Calcit> = im::HashSet::new();
+      let mut ks: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for k in xs.keys() {
         if ys.contains_key(k) {
-          ks.insert(k.to_owned());
+          ks.insert_mut(k.to_owned());
         }
       }
       Ok(Calcit::Set(ks))

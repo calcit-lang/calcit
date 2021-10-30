@@ -24,11 +24,11 @@ cirru_edn = "0.2.3"
 cirru_parser = "0.1.10"
 clap = "2.33.3"
 dirs = "4.0.0"
-im = "15.0.0"
 lazy_static = "1.4.0"
 notify = "4.0.17"
 walkdir = "2"
 hex = "0.4.3"
+rpds = "0.10.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libloading = "0.7.1"

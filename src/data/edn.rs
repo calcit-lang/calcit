@@ -29,7 +29,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       Ok(Edn::Set(ys))
     }
     Calcit::Map(xs) => {
-      let mut ys: HashMap<Edn, Edn> = HashMap::with_capacity(xs.len());
+      let mut ys: HashMap<Edn, Edn> = HashMap::with_capacity(xs.size());
       for (k, x) in xs {
         ys.insert(calcit_to_edn(k)?, calcit_to_edn(x)?);
       }
@@ -96,23 +96,23 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     ),
     Edn::Tuple(pair) => Calcit::Tuple(Box::new(edn_to_calcit(&pair.0)), Box::new(edn_to_calcit(&pair.1))),
     Edn::List(xs) => {
-      let mut ys: primes::CalcitItems = im::vector![];
+      let mut ys: primes::CalcitItems = rpds::vector_sync![];
       for x in xs {
-        ys.push_back(edn_to_calcit(x))
+        ys.push_back_mut(edn_to_calcit(x))
       }
       Calcit::List(ys)
     }
     Edn::Set(xs) => {
-      let mut ys: im::HashSet<Calcit> = im::HashSet::new();
+      let mut ys: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for x in xs {
-        ys.insert(edn_to_calcit(x));
+        ys.insert_mut(edn_to_calcit(x));
       }
       Calcit::Set(ys)
     }
     Edn::Map(xs) => {
-      let mut ys: im::HashMap<Calcit, Calcit> = im::HashMap::new();
+      let mut ys: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMap::new_sync();
       for (k, v) in xs {
-        ys.insert(edn_to_calcit(k), edn_to_calcit(v));
+        ys.insert_mut(edn_to_calcit(k), edn_to_calcit(v));
       }
       Calcit::Map(ys)
     }

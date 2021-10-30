@@ -152,9 +152,9 @@ pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Record(_name, fields, values) => {
-      let mut ys: im::HashMap<Calcit, Calcit> = im::HashMap::new();
+      let mut ys: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMap::new_sync();
       for idx in 0..fields.len() {
-        ys.insert(Calcit::Keyword(fields[idx].to_owned()), values[idx].to_owned());
+        ys.insert_mut(Calcit::Keyword(fields[idx].to_owned()), values[idx].to_owned());
       }
       Ok(Calcit::Map(ys))
     }

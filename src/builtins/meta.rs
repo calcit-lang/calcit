@@ -277,42 +277,42 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     Calcit::Number(..) => {
       // classed should already be preprocessed
       let code = gen_sym("&core-number-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::Str(..) => {
       let code = gen_sym("&core-string-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::Set(..) => {
       let code = gen_sym("&core-set-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::List(..) => {
       let code = gen_sym("&core-list-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::Map(..) => {
       let code = gen_sym("&core-map-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::Record(..) => {
       let code = gen_sym("&core-record-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::Nil => {
       let code = gen_sym("&core-nil-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::Fn(..) | Calcit::Proc(..) => {
       let code = gen_sym("&core-fn-class");
-      let class = runner::evaluate_expr(&code, &im::HashMap::new(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     x => return Err(CalcitErr::use_msg_stack(format!("cannot decide a class from: {:?}", x), call_stack)),
@@ -321,14 +321,14 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     Calcit::Record(_, fields, values) => {
       match find_in_fields(fields, load_order_key(name)) {
         Some(idx) => {
-          let mut method_args: im::Vector<Calcit> = im::vector![];
-          method_args.push_back(value);
+          let mut method_args: rpds::VectorSync<Calcit> = rpds::vector_sync![];
+          method_args.push_back_mut(value);
           let mut at_first = true;
           for x in invoke_args {
             if at_first {
               at_first = false
             } else {
-              method_args.push_back(x.to_owned())
+              method_args.push_back_mut(x.to_owned())
             }
           }
 
