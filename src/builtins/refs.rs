@@ -30,7 +30,7 @@ fn modify_ref(path: String, v: Calcit, call_stack: &CallStackVec) -> Result<(), 
   for f in listeners.values() {
     match f {
       Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
-        let values = im::vector![v.to_owned(), prev.to_owned()];
+        let values = rpds::vector_sync![v.to_owned(), prev.to_owned()];
         runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
       }
       a => {

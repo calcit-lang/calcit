@@ -31,23 +31,27 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
           Ok(n) => Ok(Calcit::Number(n as f64)),
           Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
         },
-        '\'' if s.len() > 1 => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("quote"), ns.to_owned(), def.to_owned(), None),
-          Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), def.to_owned(), None),
-        ])),
+        '\'' if s.len() > 1 => Ok(Calcit::List(
+          rpds::vector_sync![]
+            .push_back(Calcit::Symbol(String::from("quote"), ns.to_owned(), def.to_owned(), None))
+            .push_back(Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), def.to_owned(), None)),
+        )),
         // TODO also detect simple variables
-        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("~@"), ns.to_owned(), def.to_owned(), None),
-          Calcit::Symbol(String::from(&s[2..]), ns.to_owned(), def.to_owned(), None),
-        ])),
-        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("~"), ns.to_owned(), def.to_owned(), None),
-          Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), def.to_owned(), None),
-        ])),
-        '@' => Ok(Calcit::List(im::vector![
-          Calcit::Symbol(String::from("deref"), ns.to_owned(), def.to_owned(), None),
-          Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), def.to_owned(), None),
-        ])),
+        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(
+          rpds::vector_sync![]
+            .push_back(Calcit::Symbol(String::from("~@"), ns.to_owned(), def.to_owned(), None))
+            .push_back(Calcit::Symbol(String::from(&s[2..]), ns.to_owned(), def.to_owned(), None)),
+        )),
+        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(
+          rpds::vector_sync![]
+            .push_back(Calcit::Symbol(String::from("~"), ns.to_owned(), def.to_owned(), None))
+            .push_back(Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), def.to_owned(), None)),
+        )),
+        '@' => Ok(Calcit::List(
+          rpds::vector_sync![]
+            .push_back(Calcit::Symbol(String::from("deref"), ns.to_owned(), def.to_owned(), None))
+            .push_back(Calcit::Symbol(String::from(&s[1..]), ns.to_owned(), def.to_owned(), None)),
+        )),
         // TODO future work of reader literal expanding
         _ => {
           if let Ok(f) = s.parse::<f64>() {
@@ -59,12 +63,12 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
       },
     },
     Cirru::List(ys) => {
-      let mut zs: CalcitItems = im::Vector::new();
+      let mut zs: CalcitItems = rpds::VectorSync::new_sync();
       for y in ys {
         match code_to_calcit(y, ns, def) {
           Ok(v) => {
             if !is_comment(&v) {
-              zs.push_back(v.to_owned())
+              zs.push_back_mut(v.to_owned())
             } else {
             }
           }
@@ -81,9 +85,9 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
   match xs {
     Cirru::Leaf(s) => Calcit::Str(s.to_owned()),
     Cirru::List(ys) => {
-      let mut zs: CalcitItems = im::vector![];
+      let mut zs: CalcitItems = rpds::vector_sync![];
       for y in ys {
-        zs.push_back(cirru_to_calcit(y))
+        zs.push_back_mut(cirru_to_calcit(y))
       }
       Calcit::List(zs)
     }

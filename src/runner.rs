@@ -6,6 +6,8 @@ use crate::builtins::is_proc_name;
 use crate::call_stack::{extend_call_stack, CallStackVec, StackKind};
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
+use crate::util::skip;
+use std::sync::{Arc, RwLock};
 
 pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   // println!("eval code: {}", expr.lisp_str());
@@ -59,7 +61,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         // println!("eval expr: {}", x);
 
         let v = evaluate_expr(x, scope, file_ns, call_stack)?;
-        let rest_nodes = xs.skip(1);
+        let rest_nodes = skip(xs, 1);
         let ret = match &v {
           Calcit::Proc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
@@ -106,7 +108,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
 
             Ok(loop {
               // need to handle recursion
-              let body_scope = bind_args(args, &current_values, &im::HashMap::new(), call_stack)?;
+              let body_scope = bind_args(args, &current_values, &rpds::HashTrieMap::new_sync(), call_stack)?;
               let code = evaluate_lines(body, &body_scope, def_ns, &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
@@ -225,7 +227,7 @@ fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackVec) -> R
     Some(v) => Ok(v),
     None => match program::lookup_def_code(ns, sym) {
       Some(code) => {
-        let v = evaluate_expr(&code, &im::HashMap::new(), ns, call_stack)?;
+        let v = evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), ns, call_stack)?;
         program::write_evaled_def(ns, sym, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
         Ok(v)
       }
@@ -277,9 +279,35 @@ pub fn bind_args(
   let mut scope = base_scope.to_owned();
   let mut spreading = false;
   let mut optional = false;
-  let mut collected_args = args.to_owned();
-  let mut collected_values = values.to_owned();
-  while let Some(a) = collected_args.pop_front() {
+
+  let collected_args = Arc::new(args);
+  let collected_values = Arc::new(values);
+  let pop_args_idx = Arc::new(RwLock::new(0));
+  let pop_values_idx = Arc::new(RwLock::new(0));
+
+  let args_pop_front = || -> Option<&Calcit> {
+    let mut p = (*pop_args_idx).write().unwrap();
+    let ret = collected_args.get(*p);
+    *p += 1;
+    ret
+  };
+
+  let values_pop_front = || -> Option<&Calcit> {
+    let mut p = (*pop_values_idx).write().unwrap();
+    let ret = collected_values.get(*p);
+    *p += 1;
+    ret
+  };
+  let is_args_empty = || -> bool {
+    let p = (*pop_args_idx).read().unwrap();
+    *p >= (*collected_args).len()
+  };
+  let is_values_empty = || -> bool {
+    let p = (*pop_values_idx).read().unwrap();
+    *p >= (*collected_values).len()
+  };
+
+  while let Some(a) = args_pop_front() {
     if spreading {
       match a {
         Calcit::Symbol(s, ..) if s == "&" => {
@@ -289,16 +317,16 @@ pub fn bind_args(
           return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {:?}", args), call_stack))
         }
         Calcit::Symbol(s, ..) => {
-          let mut chunk: CalcitItems = im::vector![];
-          while let Some(v) = collected_values.pop_front() {
-            chunk.push_back(v);
+          let mut chunk: CalcitItems = rpds::vector_sync![];
+          while let Some(v) = values_pop_front() {
+            chunk.push_back_mut(v.to_owned());
           }
-          scope.insert(s, Calcit::List(chunk));
-          if !collected_args.is_empty() {
+          scope.insert_mut(s.to_owned(), Calcit::List(chunk));
+          if !is_args_empty() {
             return Err(CalcitErr::use_msg_stack(
               format!(
                 "extra args `{}` after spreading in `{}`",
-                CrListWrap(collected_args),
+                CrListWrap((*collected_args).to_owned()),
                 CrListWrap(args.to_owned()),
               ),
               call_stack,
@@ -311,13 +339,13 @@ pub fn bind_args(
       match a {
         Calcit::Symbol(s, ..) if s == "&" => spreading = true,
         Calcit::Symbol(s, ..) if s == "?" => optional = true,
-        Calcit::Symbol(s, ..) => match collected_values.pop_front() {
+        Calcit::Symbol(s, ..) => match values_pop_front() {
           Some(v) => {
-            scope.insert(s.to_owned(), v.to_owned());
+            scope.insert_mut(s.to_owned(), v.to_owned());
           }
           None => {
             if optional {
-              scope.insert(s.to_owned(), Calcit::Nil);
+              scope.insert_mut(s.to_owned(), Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
                 format!(
@@ -334,13 +362,13 @@ pub fn bind_args(
       }
     }
   }
-  if collected_values.is_empty() {
+  if is_values_empty() {
     Ok(scope)
   } else {
     Err(CalcitErr::use_msg_stack(
       format!(
         "extra args `{}` not handled while passing values `{}` to args `{}`",
-        CrListWrap(collected_values),
+        CrListWrap((*collected_values).to_owned()),
         CrListWrap(values.to_owned()),
         CrListWrap(args.to_owned()),
       ),
@@ -368,7 +396,7 @@ pub fn evaluate_args(
   file_ns: &str,
   call_stack: &CallStackVec,
 ) -> Result<CalcitItems, CalcitErr> {
-  let mut ret: CalcitItems = im::vector![];
+  let mut ret: CalcitItems = rpds::vector_sync![];
   let mut spreading = false;
   for item in items {
     match item {
@@ -381,7 +409,7 @@ pub fn evaluate_args(
         if spreading {
           match v {
             Calcit::List(xs) => {
-              for x in xs {
+              for x in xs.iter() {
                 // extract thunk before calling functions
                 let y = match x {
                   Calcit::Thunk(code, v) => match v {
@@ -390,7 +418,7 @@ pub fn evaluate_args(
                   },
                   _ => x.to_owned(),
                 };
-                ret.push_back(y.to_owned());
+                ret.push_back_mut(y.to_owned());
               }
               spreading = false
             }
@@ -410,7 +438,7 @@ pub fn evaluate_args(
             },
             _ => v.to_owned(),
           };
-          ret.push_back(y)
+          ret.push_back_mut(y);
         }
       }
     }

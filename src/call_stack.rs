@@ -23,14 +23,14 @@ pub enum StackKind {
   Codegen, // track preprocessing
 }
 
-pub type CallStackVec = im::Vector<CalcitStack>;
+pub type CallStackVec = rpds::VectorSync<CalcitStack>;
 
 // TODO impl fmt
 
 /// create new entry to the tree
 pub fn extend_call_stack(stack: &CallStackVec, ns: &str, def: &str, kind: StackKind, code: Calcit, args: &CalcitItems) -> CallStackVec {
   let mut s2 = stack.to_owned();
-  s2.push_back(CalcitStack {
+  s2.push_back_mut(CalcitStack {
     ns: ns.to_owned(),
     def: def.to_owned(),
     code,

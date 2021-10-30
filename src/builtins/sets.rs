@@ -1,9 +1,9 @@
 use crate::primes::{Calcit, CalcitErr, CalcitItems};
 
 pub fn new_set(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  let mut ys = im::HashSet::new();
+  let mut ys = rpds::HashTrieSet::new_sync();
   for x in xs {
-    ys.insert(x.to_owned());
+    ys.insert_mut(x.to_owned());
   }
   Ok(Calcit::Set(ys))
 }
@@ -12,7 +12,7 @@ pub fn call_include(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Set(xs)), Some(a)) => {
       let mut ys = xs.to_owned();
-      ys.insert(a.to_owned());
+      ys.insert_mut(a.to_owned());
       Ok(Calcit::Set(ys))
     }
     (Some(a), _) => CalcitErr::err_str(format!("&include expect a set, but got: {}", a)),
@@ -24,7 +24,7 @@ pub fn call_exclude(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Set(xs)), Some(a)) => {
       let mut ys = xs.to_owned();
-      ys.remove(a);
+      ys.remove_mut(a);
       Ok(Calcit::Set(ys))
     }
     (Some(a), _) => CalcitErr::err_str(format!("&exclude expect a set, but got: {}", a)),
@@ -34,11 +34,11 @@ pub fn call_exclude(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn call_difference(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => {
-      // im::HashSet::difference has different semantics
+      // rpds::HashTrieSetSync::difference has different semantics
       // https://docs.rs/im/12.2.0/im/struct.HashSet.html#method.difference
       let mut ys = a.to_owned();
       for item in b {
-        ys.remove(item);
+        ys.remove_mut(item);
       }
       Ok(Calcit::Set(ys))
     }
@@ -48,14 +48,28 @@ pub fn call_difference(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 pub fn call_union(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => Ok(Calcit::Set(a.to_owned().union(b.to_owned()))),
+    (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => {
+      let mut c = a.to_owned();
+      for x in b.iter() {
+        c.insert_mut(x.to_owned());
+      }
+      Ok(Calcit::Set(c))
+    }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("&union expected 2 sets: {} {}", a, b)),
     (a, b) => CalcitErr::err_str(format!("&union expected 2 arguments: {:?} {:?}", a, b)),
   }
 }
 pub fn call_intersection(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => Ok(Calcit::Set(a.to_owned().intersection(b.to_owned()))),
+    (Some(Calcit::Set(a)), Some(Calcit::Set(b))) => {
+      let mut c: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
+      for x in a.iter() {
+        if b.contains(x) {
+          c.insert_mut(x.to_owned())
+        }
+      }
+      Ok(Calcit::Set(c))
+    }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("&set:intersection expected 2 sets: {} {}", a, b)),
     (a, b) => CalcitErr::err_str(format!("&set:intersection expected 2 arguments: {:?} {:?}", a, b)),
   }
@@ -65,9 +79,9 @@ pub fn call_intersection(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn set_to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Set(xs)) => {
-      let mut ys: CalcitItems = im::vector![];
+      let mut ys: CalcitItems = rpds::vector_sync![];
       for x in xs {
-        ys.push_back(x.to_owned());
+        ys.push_back_mut(x.to_owned());
       }
       Ok(Calcit::List(ys))
     }
@@ -78,7 +92,7 @@ pub fn set_to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(Calcit::Set(ys)) => Ok(Calcit::Number(ys.len() as f64)),
+    Some(Calcit::Set(ys)) => Ok(Calcit::Number(ys.size() as f64)),
     Some(a) => CalcitErr::err_str(format!("set count expected a set, got: {}", a)),
     None => CalcitErr::err_str("set count expected 1 argument"),
   }
@@ -118,7 +132,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Set(ys)) => match ys.iter().next() {
       Some(y0) => {
         let mut zs = ys.to_owned();
-        zs.remove(y0);
+        zs.remove_mut(y0);
         Ok(Calcit::Set(zs))
       }
       None => Ok(Calcit::Nil),

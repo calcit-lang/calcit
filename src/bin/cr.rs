@@ -103,7 +103,7 @@ fn main() -> Result<(), String> {
     calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
     None,
     check_warnings,
-    &im::Vector::new(),
+    &rpds::Vector::new_sync(),
   )
   .map_err(|e| e.msg)?;
 
@@ -114,7 +114,7 @@ fn main() -> Result<(), String> {
   } else {
     let started_time = Instant::now();
 
-    let v = calcit_runner::run_program(init_fn, im::vector![]).map_err(|e| {
+    let v = calcit_runner::run_program(init_fn, rpds::vector_sync![]).map_err(|e| {
       for w in e.warnings {
         println!("{}", w);
       }
@@ -223,7 +223,7 @@ fn recall_program(content: &str, init_fn: &str, reload_fn: &str, settings: &Prog
   } else {
     // run from `reload_fn` after reload
     let started_time = Instant::now();
-    let v = calcit_runner::run_program(reload_fn, im::vector![]).map_err(|e| {
+    let v = calcit_runner::run_program(reload_fn, rpds::vector_sync![]).map_err(|e| {
       for w in e.warnings {
         println!("{}", w);
       }
@@ -267,7 +267,7 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
   gen_stack::clear_stack();
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, check_warnings, &im::Vector::new()) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, check_warnings, &rpds::Vector::new_sync()) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
@@ -285,7 +285,7 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &init_def, None, check_warnings, &im::Vector::new()) {
+  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &init_def, None, check_warnings, &rpds::Vector::new_sync()) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);

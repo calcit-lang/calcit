@@ -6,6 +6,7 @@ use crate::util::number::f64_to_usize;
 use crate::builtins;
 use crate::call_stack::CallStackVec;
 use crate::runner;
+use crate::util::{contains, insert};
 
 pub fn new_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::List(xs.to_owned()))
@@ -52,7 +53,15 @@ pub fn slice(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         None => ys.len(),
       };
       let from_idx: usize = unsafe { from.to_int_unchecked() };
-      Ok(Calcit::List(ys.to_owned().slice(from_idx..to_idx)))
+
+      // TODO slow copy
+      let mut zs = rpds::Vector::new_sync();
+      for (idx, y) in ys.iter().enumerate() {
+        if idx >= from_idx && idx < to_idx {
+          zs.push_back_mut(y.to_owned());
+        }
+      }
+      Ok(Calcit::List(zs))
     }
     (a, b) => CalcitErr::err_str(&format!("slice expected list and indexes: {} {}", a, b)),
   }
@@ -65,7 +74,7 @@ pub fn append(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::List(ys) => {
       let mut zs = ys.to_owned();
-      zs.push_back(xs[1].to_owned());
+      zs.push_back_mut(xs[1].to_owned());
       Ok(Calcit::List(zs))
     }
     a => CalcitErr::err_str(&format!("append expected a list: {}", a)),
@@ -75,8 +84,11 @@ pub fn append(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn prepend(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(ys)), Some(a)) => {
-      let mut zs = ys.to_owned();
-      zs.push_front(a.to_owned());
+      let mut zs = rpds::VectorSync::new_sync();
+      zs.push_back_mut(a.to_owned());
+      for y in ys.iter() {
+        zs.push_back_mut(y.to_owned());
+      }
       Ok(Calcit::List(zs))
     }
     (Some(a), _) => CalcitErr::err_str(format!("prepend expected list, got: {}", a)),
@@ -93,8 +105,12 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       if ys.is_empty() {
         Ok(Calcit::Nil)
       } else {
-        let mut zs = ys.to_owned();
-        zs.pop_front();
+        let mut zs = rpds::Vector::new_sync();
+        for (idx, y) in ys.iter().enumerate() {
+          if idx > 0 {
+            zs.push_back_mut(y.to_owned());
+          }
+        }
         Ok(Calcit::List(zs))
       }
     }
@@ -113,7 +129,7 @@ pub fn butlast(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Nil)
       } else {
         let mut zs = ys.to_owned();
-        zs.pop_back();
+        zs.drop_last_mut();
         Ok(Calcit::List(zs))
       }
     }
@@ -122,10 +138,12 @@ pub fn butlast(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn concat(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  let mut ys: CalcitItems = im::vector![];
+  let mut ys: CalcitItems = rpds::vector_sync![];
   for x in xs {
     if let Calcit::List(zs) = x {
-      ys.append(zs.to_owned());
+      for z in zs.iter() {
+        ys.push_back_mut(z.to_owned());
+      }
     } else {
       return CalcitErr::err_str(format!("concat expects list arguments, got: {}", x));
     }
@@ -150,23 +168,23 @@ pub fn range(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   };
 
   if (bound - base).abs() < f64::EPSILON {
-    return Ok(Calcit::List(im::vector![]));
+    return Ok(Calcit::List(rpds::vector_sync![]));
   }
 
   if step == 0.0 || (bound > base && step < 0.0) || (bound < base && step > 0.0) {
     return CalcitErr::err_str("range cannot construct list with step 0");
   }
 
-  let mut ys: CalcitItems = im::vector![];
+  let mut ys: CalcitItems = rpds::vector_sync![];
   let mut i = base;
   if step > 0.0 {
     while i < bound {
-      ys.push_back(Calcit::Number(i));
+      ys.push_back_mut(Calcit::Number(i));
       i += step;
     }
   } else {
     while i > bound {
-      ys.push_back(Calcit::Number(i));
+      ys.push_back_mut(Calcit::Number(i));
       i += step;
     }
   }
@@ -180,9 +198,9 @@ pub fn reverse(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::Nil),
     Calcit::List(ys) => {
-      let mut zs: CalcitItems = im::vector![];
-      for y in ys {
-        zs.push_front(y.to_owned());
+      let mut zs: CalcitItems = rpds::vector_sync![];
+      for idx in 0..ys.len() {
+        zs.push_back_mut(ys[ys.len() - 1 - idx].to_owned());
       }
       Ok(Calcit::List(zs))
     }
@@ -199,7 +217,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
       // dirty since only functions being call directly then we become fast
       (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         for x in xs {
-          let values = im::vector![ret, x.to_owned()];
+          let values = rpds::vector_sync![ret, x.to_owned()];
           ret = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
         }
         Ok(ret)
@@ -207,14 +225,14 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &im::vector![ret, x.to_owned()], call_stack)?;
+          ret = builtins::handle_proc(proc, &rpds::vector_sync![ret, x.to_owned()], call_stack)?;
         }
         Ok(ret)
       }
       // also handles set
       (Calcit::Set(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         for x in xs {
-          let values = im::vector![ret, x.to_owned()];
+          let values = rpds::vector_sync![ret, x.to_owned()];
           ret = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
         }
         Ok(ret)
@@ -222,14 +240,14 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
       (Calcit::Set(xs), Calcit::Proc(proc)) => {
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &im::vector![ret, x.to_owned()], call_stack)?;
+          ret = builtins::handle_proc(proc, &rpds::vector_sync![ret, x.to_owned()], call_stack)?;
         }
         Ok(ret)
       }
       // also handles map
       (Calcit::Map(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         for (k, x) in xs {
-          let values = im::vector![ret, Calcit::List(im::vector![k.to_owned(), x.to_owned()])];
+          let values = rpds::vector_sync![ret, Calcit::List(rpds::vector_sync![k.to_owned(), x.to_owned()])];
           ret = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
         }
         Ok(ret)
@@ -239,7 +257,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
           // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(
             proc,
-            &im::vector![ret, Calcit::List(im::vector![k.to_owned(), x.to_owned()])],
+            &rpds::vector_sync![ret, Calcit::List(rpds::vector_sync![k.to_owned(), x.to_owned()])],
             call_stack,
           )?;
         }
@@ -270,7 +288,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
       (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         let mut state = acc.to_owned();
         for x in xs {
-          let values = im::vector![state, x.to_owned()];
+          let values = rpds::vector_sync![state, x.to_owned()];
           let pair = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
@@ -302,7 +320,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
       (Calcit::Set(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         let mut state = acc.to_owned();
         for x in xs {
-          let values = im::vector![state, x.to_owned()];
+          let values = rpds::vector_sync![state, x.to_owned()];
           let pair = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
@@ -334,7 +352,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
       (Calcit::Map(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
         let mut state = acc.to_owned();
         for (k, x) in xs {
-          let values = im::vector![state, Calcit::List(im::vector![k.to_owned(), x.to_owned()])];
+          let values = rpds::vector_sync![state, Calcit::List(rpds::vector_sync![k.to_owned(), x.to_owned()])];
           let pair = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
@@ -389,7 +407,7 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
         let size = xs.len();
         for i in 0..size {
           let x = xs[size - 1 - i].to_owned();
-          let values = im::vector![state, x];
+          let values = rpds::vector_sync![state, x];
           let pair = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
@@ -436,9 +454,9 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calci
     match (&xs[0], &xs[1]) {
       // dirty since only functions being call directly then we become fast
       (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
-        let mut ret = xs.to_owned();
-        ret.sort_by(|a, b| {
-          let values = im::vector![a.to_owned(), b.to_owned()];
+        let mut xs2: Vec<&Calcit> = xs.iter().collect::<Vec<&Calcit>>();
+        xs2.sort_by(|a, b| -> Ordering {
+          let values = rpds::vector_sync![a.to_owned().to_owned(), b.to_owned().to_owned()];
           let v = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
@@ -454,12 +472,17 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calci
             }
           }
         });
-        Ok(Calcit::List(ret))
+        let mut ys: rpds::VectorSync<Calcit> = rpds::VectorSync::new_sync();
+        for x in xs2.iter() {
+          // TODO ??
+          ys.push_back_mut(x.to_owned().to_owned())
+        }
+        Ok(Calcit::List(ys))
       }
       (Calcit::List(xs), Calcit::Proc(proc)) => {
-        let mut ret = xs.to_owned();
-        ret.sort_by(|a, b| {
-          let values = im::vector![a.to_owned(), b.to_owned()];
+        let mut xs2: Vec<&Calcit> = xs.iter().collect::<Vec<&Calcit>>();
+        xs2.sort_by(|a, b| -> Ordering {
+          let values = rpds::vector_sync![a.to_owned().to_owned(), b.to_owned().to_owned()];
           let v = builtins::handle_proc(proc, &values, call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
@@ -475,9 +498,13 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calci
             }
           }
         });
-        Ok(Calcit::List(ret))
+        let mut ys: rpds::VectorSync<Calcit> = rpds::VectorSync::new_sync();
+        for x in xs2.iter() {
+          // TODO ??
+          ys.push_back_mut(x.to_owned().to_owned())
+        }
+        Ok(Calcit::List(ys))
       }
-
       (a, b) => Err(CalcitErr::use_msg_stack(
         format!("sort expected list and function, got: {} {}", a, b),
         call_stack,
@@ -515,8 +542,7 @@ pub fn assoc_before(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (&xs[0], &xs[1]) {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => {
-        let mut ys = zs.to_owned();
-        ys.insert(idx, xs[2].to_owned());
+        let ys = insert(zs, idx, xs[2].to_owned());
         Ok(Calcit::List(ys))
       }
       Err(e) => CalcitErr::err_str(format!("assoc-before expect usize, {}", e)),
@@ -532,8 +558,7 @@ pub fn assoc_after(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (&xs[0], &xs[1]) {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => {
-        let mut ys = zs.to_owned();
-        ys.insert(idx + 1, xs[2].to_owned());
+        let ys = insert(zs, idx + 1, xs[2].to_owned());
         Ok(Calcit::List(ys))
       }
       Err(e) => CalcitErr::err_str(format!("assoc-after expect usize, {}", e)),
@@ -567,7 +592,7 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(contains(xs, a))),
     (Some(a), ..) => CalcitErr::err_str(format!("list `includes?` expected list, list, got: {}", a)),
     (None, ..) => CalcitErr::err_str(format!("list `includes?` expected 2 arguments, got: {:?}", xs)),
   }
@@ -597,9 +622,13 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(idx) => {
-        let ys = &mut xs.to_owned();
-        ys.remove(idx);
+      Ok(at) => {
+        let mut ys: rpds::VectorSync<Calcit> = rpds::Vector::new_sync();
+        for (idx, x) in xs.iter().enumerate() {
+          if idx != at {
+            ys.push_back_mut(x.to_owned());
+          }
+        }
         Ok(Calcit::List(ys.to_owned()))
       }
       Err(e) => CalcitErr::err_str(format!("dissoc expected number, {}", e)),
@@ -615,9 +644,9 @@ pub fn list_to_set(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::List(ys) => {
-      let mut zs = im::HashSet::new();
+      let mut zs = rpds::HashTrieSet::new_sync();
       for y in ys {
-        zs.insert(y.to_owned());
+        zs.insert_mut(y.to_owned());
       }
       Ok(Calcit::Set(zs))
     }
@@ -631,10 +660,10 @@ pub fn distinct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::List(ys) => {
-      let mut zs = im::Vector::new();
+      let mut zs = rpds::VectorSync::new_sync();
       for y in ys {
-        if !zs.contains(y) {
-          zs.push_back(y.to_owned());
+        if !contains(&zs, y) {
+          zs.push_back_mut(y.to_owned());
         }
       }
       Ok(Calcit::List(zs))
