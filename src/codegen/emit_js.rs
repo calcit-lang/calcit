@@ -11,7 +11,7 @@ use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
 use crate::call_stack::StackKind;
 use crate::primes;
-use crate::primes::{lookup_order_kwd_str, Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
+use crate::primes::{Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
 use crate::program;
 use crate::util::skip;
 use crate::util::string::{has_ns_part, matches_digits, matches_js_var, wrap_js_str};
@@ -175,8 +175,8 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<Vec<String>>) -
     }
     Calcit::Keyword(s) => {
       let mut kwds = keywords.borrow_mut();
-      kwds.push(lookup_order_kwd_str(s));
-      Ok(format!("_kwd[{}]", escape_cirru_str(&lookup_order_kwd_str(s))))
+      kwds.push(s.to_string());
+      Ok(format!("_kwd[{}]", escape_cirru_str(&s.to_string())))
     }
     _ => unreachable!(format!("Unexpected data in quote for js: {}", xs)),
   }
@@ -241,8 +241,8 @@ fn to_js_code(
       Calcit::Nil => Ok(String::from("null")),
       Calcit::Keyword(s) => {
         let mut kwds = keywords.borrow_mut();
-        kwds.push(lookup_order_kwd_str(s));
-        Ok(format!("_kwd[{}]", wrap_js_str(&lookup_order_kwd_str(s))))
+        kwds.push(s.to_string());
+        Ok(format!("_kwd[{}]", wrap_js_str(&s.to_string())))
       }
       Calcit::List(_) => unreachable!("[Error] list handled in another branch"),
       a => unreachable!(format!("[Error] unknown kind to gen js code: {}", a)),

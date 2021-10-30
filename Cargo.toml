@@ -1,6 +1,6 @@
 [package]
 name = "calcit_runner"
-version = "0.5.0-a20"
+version = "0.5.0-a21"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -20,7 +20,7 @@ exclude = [
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cirru_edn = "0.2.3"
+cirru_edn = "0.2.6"
 cirru_parser = "0.1.10"
 clap = "2.33.3"
 dirs = "4.0.0"
