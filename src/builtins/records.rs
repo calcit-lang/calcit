@@ -4,15 +4,17 @@ use std::ops::Rem;
 use crate::primes::{keyword::load_order_key, lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems};
 
 pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  let name_id: usize = match xs.get(0) {
-    Some(Calcit::Symbol(s, ..)) => load_order_key(s),
-    Some(Calcit::Keyword(k)) => k.to_owned(),
-    Some(a) => return Err(CalcitErr::use_string(format!("new-record expected a name, got {}", a))),
-    None => return Err(CalcitErr::use_string(format!("new-record expected arguments, got {:?}", xs))),
+  if xs.is_empty() {
+    return CalcitErr::err_str(format!("new-record expected arguments, got {:?}", xs));
+  }
+  let name_id: usize = match &xs[0] {
+    Calcit::Symbol(s, ..) => load_order_key(s),
+    Calcit::Keyword(k) => k.to_owned(),
+    a => return CalcitErr::err_str(format!("new-record expected a name, got {}", a)),
   };
 
-  let mut fields: Vec<usize> = vec![];
-  let mut values: Vec<Calcit> = vec![];
+  let mut fields: Vec<usize> = Vec::with_capacity(xs.len());
+  let mut values: Vec<Calcit> = Vec::with_capacity(xs.len());
 
   for (idx, x) in xs.iter().enumerate() {
     if idx > 0 {
@@ -23,12 +25,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         Calcit::Keyword(s) => {
           fields.push(s.to_owned());
         }
-        a => {
-          return Err(CalcitErr::use_string(format!(
-            "new-record fields accepets keyword/string, got a {}",
-            a
-          )))
-        }
+        a => return CalcitErr::err_str(format!("new-record fields accepets keyword/string, got a {}", a)),
       }
       values.push(Calcit::Nil);
     }
@@ -40,10 +37,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   for (idx, x) in fields.iter().enumerate() {
     if idx > 0 {
       if x == &prev {
-        return Err(CalcitErr::use_string(format!(
-          "duplicated field for record: {}",
-          Calcit::Keyword(*x)
-        )));
+        return CalcitErr::err_str(format!("duplicated field for record: {}", Calcit::Keyword(*x)));
       } else {
         prev = x.to_owned();
         // checked ok
@@ -57,21 +51,14 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {
-    return Err(CalcitErr::use_string(format!(
-      "&%{{}} expected at least 2 arguments, got {:?}",
-      xs
-    )));
+    return CalcitErr::err_str(format!("&%{{}} expected at least 2 arguments, got {:?}", xs));
   }
   match &xs[0] {
     Calcit::Record(name, def_fields, v0) => {
       if (args_size - 1).rem(2) == 0 {
         let size = (args_size - 1) / 2;
         if size != def_fields.len() {
-          return Err(CalcitErr::use_string(format!(
-            "unexpected size in &%{{}}, {} .. {}",
-            size,
-            def_fields.len()
-          )));
+          return CalcitErr::err_str(format!("unexpected size in &%{{}}, {} .. {}", size, def_fields.len()));
         }
         let mut fields: Vec<usize> = def_fields.to_owned();
         let mut values: Vec<Calcit> = v0.to_owned();
@@ -85,32 +72,35 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
                 fields[pos] = s.to_owned();
                 values[pos] = xs[v_idx].to_owned();
               }
-              None => return Err(CalcitErr::use_string(format!("unexpected field {} for {:?}", s, def_fields))),
+              None => return CalcitErr::err_str(format!("unexpected field {} for {:?}", s, def_fields)),
             },
             Calcit::Symbol(s, ..) | Calcit::Str(s) => match find_in_fields(def_fields, load_order_key(s)) {
               Some(pos) => {
                 fields[pos] = load_order_key(s);
                 values[pos] = xs[v_idx].to_owned();
               }
-              None => return Err(CalcitErr::use_string(format!("unexpected field {} for {:?}", s, def_fields))),
+              None => return CalcitErr::err_str(format!("unexpected field {} for {:?}", s, def_fields)),
             },
-            a => return Err(CalcitErr::use_string(format!("expected field in string/keyword, got: {}", a))),
+            a => return CalcitErr::err_str(format!("expected field in string/keyword, got: {}", a)),
           }
         }
 
         Ok(Calcit::Record(name.to_owned(), fields, values))
       } else {
-        Err(CalcitErr::use_string(format!("&%{{}} expected pairs, got: {:?}", xs)))
+        CalcitErr::err_str(format!("&%{{}} expected pairs, got: {:?}", xs))
       }
     }
-    a => Err(CalcitErr::use_string(format!("&%{{}} expected a record as prototype, got {}", a))),
+    a => CalcitErr::err_str(format!("&%{{}} expected a record as prototype, got {}", a)),
   }
 }
 
 pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Record(name, fields, _values)), Some(Calcit::Map(ys))) => {
-      let mut pairs: Vec<(String, Calcit)> = vec![];
+  if xs.len() != 2 {
+    return CalcitErr::err_str(format!("&record:from-map expected 2 arguments, got {:?}", xs));
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Record(name, fields, _values), Calcit::Map(ys)) => {
+      let mut pairs: Vec<(String, Calcit)> = Vec::with_capacity(fields.len());
       for (k, v) in ys {
         match k {
           Calcit::Str(s) => {
@@ -119,77 +109,67 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           Calcit::Keyword(s) => {
             pairs.push((lookup_order_kwd_str(s), v.to_owned()));
           }
-          a => return Err(CalcitErr::use_string(format!("unknown field {}", a))),
+          a => return CalcitErr::err_str(format!("unknown field {}", a)),
         }
       }
       if fields.len() != pairs.len() {
-        return Err(CalcitErr::use_string(format!(
-          "invalid fields {:?} for record {:?}",
-          pairs, fields
-        )));
+        return CalcitErr::err_str(format!("invalid fields {:?} for record {:?}", pairs, fields));
       }
       pairs.sort_by(|(a, _), (b, _)| load_order_key(a).cmp(&load_order_key(b)));
-      let mut values: Vec<Calcit> = vec![];
+      let mut values: Vec<Calcit> = Vec::with_capacity(fields.len());
       for idx in 0..fields.len() {
         let (k, v) = &pairs[idx];
         if fields[idx] == load_order_key(k) {
           values.push(v.to_owned());
         } else {
-          return Err(CalcitErr::use_string(format!(
+          return CalcitErr::err_str(format!(
             "field mismatch: {} {} in {:?} {:?}",
             load_order_key(k),
             fields[idx],
             fields,
             pairs
-          )));
+          ));
         }
       }
       Ok(Calcit::Record(name.to_owned(), fields.to_owned(), values))
     }
-    (Some(a), Some(b)) => Err(CalcitErr::use_string(format!(
-      "&record:from-map expected a record and a map, got {} {}",
-      a, b
-    ))),
-    (_, _) => Err(CalcitErr::use_string(format!(
-      "&record:from-map expected 2 arguments, got {:?}",
-      xs
-    ))),
+    (a, b) => CalcitErr::err_str(format!("&record:from-map expected a record and a map, got {} {}", a, b)),
   }
 }
 
 pub fn get_record_name(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
-    Some(Calcit::Record(name, ..)) => Ok(Calcit::Keyword(*name)),
-    Some(a) => Err(CalcitErr::use_string(format!("&record:get-name expected record, got: {}", a))),
-    None => Err(CalcitErr::use_str("&record:get-name expected record, got nothing")),
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("&record:get-name expected record, got: {:?}", xs));
+  }
+  match &xs[0] {
+    Calcit::Record(name, ..) => Ok(Calcit::Keyword(*name)),
+    a => CalcitErr::err_str(format!("&record:get-name expected record, got: {}", a)),
   }
 }
 pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
-    Some(Calcit::Record(_name, fields, values)) => {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("&record:to-map expected 1 argument, got: {:?}", xs));
+  }
+  match &xs[0] {
+    Calcit::Record(_name, fields, values) => {
       let mut ys: im::HashMap<Calcit, Calcit> = im::HashMap::new();
       for idx in 0..fields.len() {
         ys.insert(Calcit::Keyword(fields[idx].to_owned()), values[idx].to_owned());
       }
       Ok(Calcit::Map(ys))
     }
-    Some(a) => Err(CalcitErr::use_string(format!("&record:to-map expected a record, got {}", a))),
-    None => Err(CalcitErr::use_str("&record:to-map expected 1 argument, got nothing")),
+    a => CalcitErr::err_str(format!("&record:to-map expected a record, got {}", a)),
   }
 }
 pub fn matches(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Record(left, left_fields, ..)), Some(Calcit::Record(right, right_fields, ..))) => {
+  if xs.len() != 2 {
+    return CalcitErr::err_str(format!("&record:matches? expected 2 arguments, got {:?}", xs));
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Record(left, left_fields, ..), Calcit::Record(right, right_fields, ..)) => {
       Ok(Calcit::Bool(left == right && left_fields == right_fields))
     }
-    (Some(a), Some(b)) => Err(CalcitErr::use_string(format!(
-      "&record:matches? expected 2 records, got {} {}",
-      a, b
-    ))),
-    (_, _) => Err(CalcitErr::use_string(format!(
-      "&record:matches? expected 2 arguments, got {:?}",
-      xs
-    ))),
+    (a, b) => CalcitErr::err_str(format!("&record:matches? expected 2 records, got {} {}", a, b)),
   }
 }
 
@@ -218,10 +198,12 @@ pub fn find_in_fields(xs: &[usize], y: usize) -> Option<usize> {
 }
 
 pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
-    Some(Calcit::Record(_name, fields, _)) => Ok(Calcit::Number(fields.len() as f64)),
-    Some(a) => Err(CalcitErr::use_string(format!("record count expected a record, got: {}", a))),
-    None => Err(CalcitErr::use_str("record count expected 1 argument")),
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("record count expected 1 argument: {:?}", xs));
+  }
+  match &xs[0] {
+    Calcit::Record(_name, fields, _) => Ok(Calcit::Number(fields.len() as f64)),
+    a => CalcitErr::err_str(format!("record count expected a record, got: {}", a)),
   }
 }
 
@@ -230,13 +212,10 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Record(_name, fields, _)), Some(a)) => match a {
       Calcit::Str(k) | Calcit::Symbol(k, ..) => Ok(Calcit::Bool(find_in_fields(fields, load_order_key(k)).is_some())),
       Calcit::Keyword(k) => Ok(Calcit::Bool(find_in_fields(fields, k.to_owned()).is_some())),
-      a => Err(CalcitErr::use_string(format!("contains? got invalid field for record: {}", a))),
+      a => CalcitErr::err_str(format!("contains? got invalid field for record: {}", a)),
     },
-    (Some(a), ..) => Err(CalcitErr::use_string(format!("record contains? expected a record, got: {}", a))),
-    (None, ..) => Err(CalcitErr::use_string(format!(
-      "record contains? expected 2 arguments, got: {:?}",
-      xs
-    ))),
+    (Some(a), ..) => CalcitErr::err_str(format!("record contains? expected a record, got: {}", a)),
+    (None, ..) => CalcitErr::err_str(format!("record contains? expected 2 arguments, got: {:?}", xs)),
   }
 }
 
@@ -251,13 +230,10 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
-      a => Err(CalcitErr::use_string(format!(
-        "record field expected to be string/keyword, got {}",
-        a
-      ))),
+      a => CalcitErr::err_str(format!("record field expected to be string/keyword, got {}", a)),
     },
-    (Some(a), ..) => Err(CalcitErr::use_string(format!("record &get expected record, got: {}", a))),
-    (None, ..) => Err(CalcitErr::use_string(format!("record &get expected 2 arguments, got: {:?}", xs))),
+    (Some(a), ..) => CalcitErr::err_str(format!("record &get expected record, got: {}", a)),
+    (None, ..) => CalcitErr::err_str(format!("record &get expected 2 arguments, got: {:?}", xs)),
   }
 }
 
@@ -270,7 +246,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           new_values[pos] = b.to_owned();
           Ok(Calcit::Record(name.to_owned(), fields.to_owned(), new_values))
         }
-        None => Err(CalcitErr::use_string(format!("invalid field `{}` for {:?}", s, fields))),
+        None => CalcitErr::err_str(format!("invalid field `{}` for {:?}", s, fields)),
       },
       Calcit::Keyword(s) => match find_in_fields(fields, s.to_owned()) {
         Some(pos) => {
@@ -278,47 +254,39 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           new_values[pos] = b.to_owned();
           Ok(Calcit::Record(name.to_owned(), fields.to_owned(), new_values))
         }
-        None => Err(CalcitErr::use_string(format!("invalid field `{}` for {:?}", s, fields))),
+        None => CalcitErr::err_str(format!("invalid field `{}` for {:?}", s, fields)),
       },
-      a => Err(CalcitErr::use_string(format!("invalid field `{}` for {:?}", a, fields))),
+      a => CalcitErr::err_str(format!("invalid field `{}` for {:?}", a, fields)),
     },
-    (Some(a), ..) => Err(CalcitErr::use_string(format!("record:assoc expected a record, got: {}", a))),
-    (None, ..) => Err(CalcitErr::use_string(format!("record:assoc expected 3 arguments, got: {:?}", xs))),
+    (Some(a), ..) => CalcitErr::err_str(format!("record:assoc expected a record, got: {}", a)),
+    (None, ..) => CalcitErr::err_str(format!("record:assoc expected 3 arguments, got: {:?}", xs)),
   }
 }
 
 pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 4 {
-    return Err(CalcitErr::use_string(format!(
-      "record:extend-as expected 4 arguments, got: {:?}",
-      xs
-    )));
+    return CalcitErr::err_str(format!("record:extend-as expected 4 arguments, got: {:?}", xs));
   }
   match (xs.get(0), xs.get(1), xs.get(2), xs.get(3)) {
     (Some(Calcit::Record(_name, fields, values)), Some(n), Some(a), Some(new_value)) => match a {
       Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, load_order_key(s)) {
-        Some(_pos) => Err(CalcitErr::use_string(format!("field `{}` already existed", s))),
+        Some(_pos) => CalcitErr::err_str(format!("field `{}` already existed", s)),
         None => extend_record_field(s, n, fields, values, new_value),
       },
       Calcit::Keyword(s) => match find_in_fields(fields, s.to_owned()) {
-        Some(_pos) => Err(CalcitErr::use_string(format!("field `{}` already existed", s))),
+        Some(_pos) => CalcitErr::err_str(format!("field `{}` already existed", s)),
         None => extend_record_field(&lookup_order_kwd_str(s), n, fields, values, new_value),
       },
-      a => return Err(CalcitErr::use_string(format!("invalid field `{}` for {:?}", a, fields))),
+      a => return CalcitErr::err_str(format!("invalid field `{}` for {:?}", a, fields)),
     },
-    (Some(a), ..) => return Err(CalcitErr::use_string(format!("record:extend-as expected a record, got: {}", a))),
-    (None, ..) => {
-      return Err(CalcitErr::use_string(format!(
-        "record:extend-as expected 4 arguments, got: {:?}",
-        xs
-      )))
-    }
+    (Some(a), ..) => return CalcitErr::err_str(format!("record:extend-as expected a record, got: {}", a)),
+    (None, ..) => return CalcitErr::err_str(format!("record:extend-as expected 4 arguments, got: {:?}", xs)),
   }
 }
 
 fn extend_record_field(s: &str, n: &Calcit, fields: &[usize], values: &[Calcit], new_value: &Calcit) -> Result<Calcit, CalcitErr> {
-  let mut next_fields: Vec<usize> = vec![];
-  let mut next_values: Vec<Calcit> = vec![];
+  let mut next_fields: Vec<usize> = Vec::with_capacity(fields.len());
+  let mut next_values: Vec<Calcit> = Vec::with_capacity(fields.len());
   let mut inserted: bool = false;
   let idx_s = load_order_key(s);
 
@@ -354,7 +322,7 @@ fn extend_record_field(s: &str, n: &Calcit, fields: &[usize], values: &[Calcit],
   let new_name_id: usize = match n {
     Calcit::Str(s) | Calcit::Symbol(s, ..) => load_order_key(s),
     Calcit::Keyword(s) => s.to_owned(),
-    _ => return Err(CalcitErr::use_str("expected record name")),
+    _ => return CalcitErr::err_str("expected record name"),
   };
 
   Ok(Calcit::Record(new_name_id, next_fields, next_values))

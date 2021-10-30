@@ -1077,7 +1077,7 @@ fn contains_symbol(xs: &Calcit, y: &str) -> bool {
 
 fn sort_by_deps(deps: &HashMap<String, Calcit>) -> Vec<String> {
   let mut deps_graph: HashMap<String, HashSet<String>> = HashMap::new();
-  let mut def_names: Vec<String> = vec![];
+  let mut def_names: Vec<String> = Vec::with_capacity(deps.len());
   for (k, v) in deps {
     def_names.push(k.to_owned());
     let mut deps_info: HashSet<String> = HashSet::new();
@@ -1095,7 +1095,7 @@ fn sort_by_deps(deps: &HashMap<String, Calcit>) -> Vec<String> {
   // println!("\ndefs graph {:?}", deps_graph);
   def_names.sort(); // alphabet order first
 
-  let mut result: Vec<String> = vec![];
+  let mut result: Vec<String> = Vec::with_capacity(def_names.len());
   'outer: for x in def_names {
     for (idx, y) in result.iter().enumerate() {
       if depends_on(y, &x, &deps_graph, 3) {

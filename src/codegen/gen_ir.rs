@@ -17,11 +17,11 @@ struct IrDataImport {
 impl IrDataImport {
   fn to_edn(&self) -> Edn {
     let mut xs: HashMap<Edn, Edn> = HashMap::new();
-    xs.insert(edn_kwd("ns"), Edn::Str(self.ns.to_owned()));
-    xs.insert(edn_kwd("kind"), Edn::Str(self.kind.to_owned()));
+    xs.insert(Edn::kwd("ns"), Edn::str(self.ns.to_owned()));
+    xs.insert(Edn::kwd("kind"), Edn::str(self.kind.to_owned()));
     match &self.def {
-      Some(def) => xs.insert(edn_kwd("def"), Edn::Str(def.to_owned())),
-      None => xs.insert(edn_kwd("def"), Edn::Nil),
+      Some(def) => xs.insert(Edn::kwd("def"), Edn::str(def)),
+      None => xs.insert(Edn::kwd("def"), Edn::Nil),
     };
     Edn::Map(xs)
   }
@@ -40,15 +40,15 @@ impl IrDataFile {
     let mut defs_data: HashMap<Edn, Edn> = HashMap::new();
 
     for (k, v) in &self.import {
-      import_data.insert(Edn::Str(k.to_owned()), v.to_edn());
+      import_data.insert(Edn::str(k), v.to_edn());
     }
 
     for (k, v) in &self.defs {
-      defs_data.insert(Edn::Str(k.to_owned()), v.to_owned());
+      defs_data.insert(Edn::str(k), v.to_owned());
     }
 
-    xs.insert(edn_kwd("import"), Edn::Map(import_data));
-    xs.insert(edn_kwd("defs"), Edn::Map(defs_data));
+    xs.insert(Edn::kwd("import"), Edn::Map(import_data));
+    xs.insert(Edn::kwd("defs"), Edn::Map(defs_data));
     Edn::Map(xs)
   }
 }
@@ -62,8 +62,8 @@ struct IrDataConfig {
 impl IrDataConfig {
   fn to_edn(&self) -> Edn {
     let mut xs: HashMap<Edn, Edn> = HashMap::new();
-    xs.insert(edn_kwd("init-fn"), Edn::Str(self.init_fn.to_owned()));
-    xs.insert(edn_kwd("reload-fn"), Edn::Str(self.reload_fn.to_owned()));
+    xs.insert(Edn::kwd("init-fn"), Edn::str(self.init_fn.to_owned()));
+    xs.insert(Edn::kwd("reload-fn"), Edn::str(self.reload_fn.to_owned()));
     Edn::Map(xs)
   }
 }
@@ -77,12 +77,12 @@ pub struct IrData {
 impl IrData {
   fn to_edn(&self) -> Edn {
     let mut xs: HashMap<Edn, Edn> = HashMap::new();
-    xs.insert(edn_kwd("configs"), self.configs.to_edn());
+    xs.insert(Edn::kwd("configs"), self.configs.to_edn());
     let mut files: HashMap<Edn, Edn> = HashMap::new();
     for (k, v) in &self.files {
-      files.insert(Edn::Str(k.to_owned()), v.to_edn());
+      files.insert(Edn::str(k), v.to_edn());
     }
-    xs.insert(edn_kwd("files"), Edn::Map(files));
+    xs.insert(Edn::kwd("files"), Edn::Map(files));
     Edn::Map(xs)
   }
 }
@@ -130,32 +130,28 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
   Ok(())
 }
 
-fn edn_kwd(s: &str) -> Edn {
-  Edn::Keyword(s.to_string())
-}
-
 fn dump_code(code: &Calcit) -> Edn {
   match code {
     Calcit::Number(n) => Edn::Number(*n),
     Calcit::Nil => Edn::Nil,
-    Calcit::Str(s) => Edn::Str(s.to_owned()),
+    Calcit::Str(s) => Edn::str(s),
     Calcit::Bool(b) => Edn::Bool(b.to_owned()),
-    Calcit::Keyword(s) => edn_kwd(&lookup_order_kwd_str(s)),
+    Calcit::Keyword(s) => Edn::kwd(lookup_order_kwd_str(s)),
     Calcit::Symbol(s, ns, at_def, resolved) => {
       let resolved = match resolved {
         Some(resolved) => match &**resolved {
           ResolvedDef(r_def, r_ns, import_rule) => {
             let mut xs: HashMap<Edn, Edn> = HashMap::new();
-            xs.insert(edn_kwd("kind"), Edn::Str(String::from("def")));
-            xs.insert(edn_kwd("ns"), Edn::Str(r_ns.to_owned()));
-            xs.insert(edn_kwd("at_def"), Edn::Str(at_def.to_owned()));
-            xs.insert(edn_kwd("def"), Edn::Str(r_def.to_owned()));
+            xs.insert(Edn::kwd("kind"), Edn::str("def"));
+            xs.insert(Edn::kwd("ns"), Edn::str(r_ns));
+            xs.insert(Edn::kwd("at_def"), Edn::str(at_def));
+            xs.insert(Edn::kwd("def"), Edn::str(r_def));
             xs.insert(
-              edn_kwd("rule"),
+              Edn::kwd("rule"),
               match import_rule {
-                Some(ImportRule::NsAs(_n)) => Edn::Str(String::from("ns")),
-                Some(ImportRule::NsDefault(_n)) => Edn::Str(String::from("default")),
-                Some(ImportRule::NsReferDef(_ns, _def)) => Edn::Str(String::from("def")),
+                Some(ImportRule::NsAs(_n)) => Edn::str("ns"),
+                Some(ImportRule::NsDefault(_n)) => Edn::str("default"),
+                Some(ImportRule::NsReferDef(_ns, _def)) => Edn::str("def"),
                 None => Edn::Nil,
               },
             );
@@ -164,64 +160,64 @@ fn dump_code(code: &Calcit) -> Edn {
           }
           ResolvedLocal => {
             let mut xs: HashMap<Edn, Edn> = HashMap::new();
-            xs.insert(edn_kwd("kind"), edn_kwd("local"));
+            xs.insert(Edn::kwd("kind"), Edn::kwd("local"));
             Edn::Map(xs)
           }
           ResolvedRaw => {
             let mut xs: HashMap<Edn, Edn> = HashMap::new();
-            xs.insert(edn_kwd("kind"), edn_kwd("raw"));
+            xs.insert(Edn::kwd("kind"), Edn::kwd("raw"));
             Edn::Map(xs)
           }
         },
         None => {
           let mut xs: HashMap<Edn, Edn> = HashMap::new();
-          xs.insert(edn_kwd("kind"), Edn::Nil);
+          xs.insert(Edn::kwd("kind"), Edn::Nil);
           Edn::Map(xs)
         }
       };
 
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
-      xs.insert(edn_kwd("kind"), edn_kwd("symbol"));
-      xs.insert(edn_kwd("val"), Edn::Str(s.to_owned()));
-      xs.insert(edn_kwd("ns"), Edn::Str(ns.to_owned()));
-      xs.insert(edn_kwd("resolved"), resolved);
+      xs.insert(Edn::kwd("kind"), Edn::kwd("symbol"));
+      xs.insert(Edn::kwd("val"), Edn::str(s));
+      xs.insert(Edn::kwd("ns"), Edn::str(ns));
+      xs.insert(Edn::kwd("resolved"), resolved);
       Edn::Map(xs)
     }
 
     Calcit::Fn(name, ns, _id, _scope, args, body) => {
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
-      xs.insert(edn_kwd("kind"), Edn::Str(String::from("fn")));
-      xs.insert(edn_kwd("name"), Edn::Str(name.to_string()));
-      xs.insert(edn_kwd("ns"), Edn::Str(ns.to_string()));
-      xs.insert(edn_kwd("args"), dump_items_code(args)); // TODO
-      xs.insert(edn_kwd("code"), dump_items_code(body));
+      xs.insert(Edn::kwd("kind"), Edn::str("fn"));
+      xs.insert(Edn::kwd("name"), Edn::str(name));
+      xs.insert(Edn::kwd("ns"), Edn::str(ns));
+      xs.insert(Edn::kwd("args"), dump_items_code(args)); // TODO
+      xs.insert(Edn::kwd("code"), dump_items_code(body));
       Edn::Map(xs)
     }
     Calcit::Macro(name, ns, _id, args, body) => {
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
-      xs.insert(edn_kwd("kind"), Edn::Str(String::from("macro")));
-      xs.insert(edn_kwd("name"), Edn::Str(name.to_string()));
-      xs.insert(edn_kwd("ns"), Edn::Str(ns.to_string()));
-      xs.insert(edn_kwd("args"), dump_items_code(args)); // TODO
-      xs.insert(edn_kwd("code"), dump_items_code(body));
+      xs.insert(Edn::kwd("kind"), Edn::str("macro"));
+      xs.insert(Edn::kwd("name"), Edn::str(name));
+      xs.insert(Edn::kwd("ns"), Edn::str(ns));
+      xs.insert(Edn::kwd("args"), dump_items_code(args)); // TODO
+      xs.insert(Edn::kwd("code"), dump_items_code(body));
       Edn::Map(xs)
     }
     Calcit::Proc(name) => {
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
-      xs.insert(edn_kwd("kind"), Edn::Str(String::from("proc")));
-      xs.insert(edn_kwd("name"), Edn::Str(name.to_string()));
-      xs.insert(edn_kwd("builtin"), Edn::Bool(true));
+      xs.insert(Edn::kwd("kind"), Edn::str("proc"));
+      xs.insert(Edn::kwd("name"), Edn::str(name));
+      xs.insert(Edn::kwd("builtin"), Edn::Bool(true));
       Edn::Map(xs)
     }
     Calcit::Syntax(name, _ns) => {
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
-      xs.insert(edn_kwd("kind"), Edn::Str(String::from("syntax")));
-      xs.insert(edn_kwd("name"), Edn::Str(name.to_string()));
+      xs.insert(Edn::kwd("kind"), Edn::str("syntax"));
+      xs.insert(Edn::kwd("name"), Edn::str(name.to_string()));
       Edn::Map(xs)
     }
     Calcit::Thunk(code, _) => dump_code(code),
     Calcit::List(xs) => {
-      let mut ys: Vec<Edn> = vec![];
+      let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
       for x in xs {
         ys.push(dump_code(x));
       }
@@ -232,7 +228,7 @@ fn dump_code(code: &Calcit) -> Edn {
 }
 
 fn dump_items_code(xs: &CalcitItems) -> Edn {
-  let mut ys: Vec<Edn> = vec![];
+  let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
   for x in xs {
     ys.push(dump_code(x));
   }

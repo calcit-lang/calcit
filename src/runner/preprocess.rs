@@ -1,9 +1,10 @@
-use crate::builtins::{is_js_syntax_procs, is_proc_name};
-use crate::call_stack::{extend_call_stack, CalcitStack, CallStackVec, StackKind};
-use crate::primes;
-use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
-use crate::program;
-use crate::runner;
+use crate::{
+  builtins::{is_js_syntax_procs, is_proc_name},
+  call_stack::{extend_call_stack, CalcitStack, CallStackVec, StackKind},
+  primes,
+  primes::{Calcit, CalcitErr, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*},
+  program, runner,
+};
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -174,7 +175,7 @@ pub fn preprocess_expr(
                 )));
                 Ok((Calcit::Symbol(def.to_owned(), def_ns.to_owned(), at_def.to_owned(), target), None))
               } else {
-                let mut names: Vec<String> = vec![];
+                let mut names: Vec<String> = Vec::with_capacity(scope_defs.len());
                 for def in scope_defs {
                   names.push(def.to_owned());
                 }

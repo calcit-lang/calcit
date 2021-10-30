@@ -59,25 +59,25 @@ pub fn display_stack(failure: &str, stack: &CallStackVec) -> Result<(), String> 
     println!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" });
   }
 
-  let mut stack_list: Vec<Edn> = vec![];
+  let mut stack_list: Vec<Edn> = Vec::with_capacity(stack.len());
   for idx in 0..stack.len() {
     let s = &stack[stack.len() - idx - 1];
-    let mut info: HashMap<Edn, Edn> = HashMap::new();
-    info.insert(Edn::Keyword(String::from("def")), Edn::Str(format!("{}/{}", s.ns, s.def)));
-    info.insert(Edn::Keyword(String::from("code")), Edn::Quote(cirru::calcit_to_cirru(&s.code)?));
-    let mut args: Vec<Edn> = vec![];
+    let mut info: HashMap<Edn, Edn> = HashMap::with_capacity(4);
+    info.insert(Edn::kwd("def"), Edn::Str(format!("{}/{}", s.ns, s.def)));
+    info.insert(Edn::kwd("code"), Edn::Quote(cirru::calcit_to_cirru(&s.code)?));
+    let mut args: Vec<Edn> = Vec::with_capacity(s.args.len());
     for a in &s.args {
       args.push(edn::calcit_to_edn(a)?);
     }
-    info.insert(Edn::Keyword(String::from("args")), Edn::List(args));
-    info.insert(Edn::Keyword(String::from("kind")), Edn::Keyword(name_kind(&s.kind)));
+    info.insert(Edn::kwd("args"), Edn::List(args));
+    info.insert(Edn::kwd("kind"), Edn::kwd(name_kind(&s.kind)));
 
     stack_list.push(Edn::Map(info))
   }
 
-  let mut data: HashMap<Edn, Edn> = HashMap::new();
-  data.insert(Edn::Keyword(String::from("message")), Edn::Str(failure.to_owned()));
-  data.insert(Edn::Keyword(String::from("stack")), Edn::List(stack_list));
+  let mut data: HashMap<Edn, Edn> = HashMap::with_capacity(2);
+  data.insert(Edn::kwd("message"), Edn::str(failure));
+  data.insert(Edn::kwd("stack"), Edn::List(stack_list));
   let content = cirru_edn::format(&Edn::Map(data), true)?;
   let _ = fs::write(ERROR_SNAPSHOT, content);
   println!("\nrun `cat {}` to read stack details.", ERROR_SNAPSHOT);

@@ -1,6 +1,6 @@
 use crate::data::cirru;
 use crate::primes;
-use crate::primes::{keyword::load_order_key, load_kwd, lookup_order_kwd_str, Calcit};
+use crate::primes::{keyword::load_order_key, lookup_order_kwd_str, Calcit};
 use cirru_edn::Edn;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
@@ -10,12 +10,12 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
   match x {
     Calcit::Nil => Ok(Edn::Nil),
     Calcit::Bool(b) => Ok(Edn::Bool(*b)),
-    Calcit::Str(s) => Ok(Edn::Str(s.to_owned())),
+    Calcit::Str(s) => Ok(Edn::str(s)),
     Calcit::Number(n) => Ok(Edn::Number(*n)), // TODO
     Calcit::Keyword(s) => Ok(Edn::Keyword(lookup_order_kwd_str(s))),
-    Calcit::Symbol(s, ..) => Ok(Edn::Symbol(s.to_owned())),
+    Calcit::Symbol(s, ..) => Ok(Edn::sym(s)),
     Calcit::List(xs) => {
-      let mut ys: Vec<Edn> = vec![];
+      let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
       for x in xs {
         ys.push(calcit_to_edn(x)?);
       }
@@ -29,14 +29,14 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       Ok(Edn::Set(ys))
     }
     Calcit::Map(xs) => {
-      let mut ys: HashMap<Edn, Edn> = HashMap::new();
+      let mut ys: HashMap<Edn, Edn> = HashMap::with_capacity(xs.len());
       for (k, x) in xs {
         ys.insert(calcit_to_edn(k)?, calcit_to_edn(x)?);
       }
       Ok(Edn::Map(ys))
     }
     Calcit::Record(name, fields, values) => {
-      let mut entries: Vec<(String, Edn)> = vec![];
+      let mut entries: Vec<(String, Edn)> = Vec::with_capacity(fields.len());
       for idx in 0..fields.len() {
         entries.push((lookup_order_kwd_str(&fields[idx]).to_owned(), calcit_to_edn(&values[idx])?));
       }
@@ -46,8 +46,8 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       println!("[Warning] unable to generate EDN from function: {}", x);
       Ok(Edn::Str(format!("TODO fn: {}", x)))
     }
-    Calcit::Proc(name) => Ok(Edn::Symbol(name.to_owned())),
-    Calcit::Syntax(name, _ns) => Ok(Edn::Symbol(name.to_string())),
+    Calcit::Proc(name) => Ok(Edn::sym(name)),
+    Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.to_string())),
     Calcit::Tuple(tag, data) => {
       match &**tag {
         Calcit::Symbol(sym, ..) => {
@@ -60,10 +60,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             Err(format!("unknown tag for EDN: {}", sym)) // TODO more types to handle
           }
         }
-        Calcit::Record(name, _, _) => Ok(Edn::Tuple(
-          Box::new(Edn::Keyword(lookup_order_kwd_str(name))),
-          Box::new(calcit_to_edn(data)?),
-        )),
+        Calcit::Record(name, _, _) => Ok(Edn::tuple(Edn::kwd(lookup_order_kwd_str(name)), calcit_to_edn(data)?)),
         v => {
           Err(format!("EDN tuple expected 'quote or record, unknown tag: {}", v))
           // TODO more types to handle
@@ -86,7 +83,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       String::from(primes::GENERATED_DEF),
       None,
     ),
-    Edn::Keyword(s) => load_kwd(s),
+    Edn::Keyword(s) => Calcit::kwd(s),
     Edn::Str(s) => Calcit::Str(s.to_owned()),
     Edn::Quote(nodes) => Calcit::Tuple(
       Box::new(Calcit::Symbol(
@@ -97,7 +94,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       )),
       Box::new(cirru::cirru_to_calcit(nodes)),
     ),
-    Edn::Tuple(tag, v) => Calcit::Tuple(Box::new(edn_to_calcit(&*tag)), Box::new(edn_to_calcit(&*v))),
+    Edn::Tuple(pair) => Calcit::Tuple(Box::new(edn_to_calcit(&pair.0)), Box::new(edn_to_calcit(&pair.1))),
     Edn::List(xs) => {
       let mut ys: primes::CalcitItems = im::vector![];
       for x in xs {
@@ -120,8 +117,8 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       Calcit::Map(ys)
     }
     Edn::Record(name, entries) => {
-      let mut fields: Vec<usize> = vec![];
-      let mut values: Vec<Calcit> = vec![];
+      let mut fields: Vec<usize> = Vec::with_capacity(entries.len());
+      let mut values: Vec<Calcit> = Vec::with_capacity(entries.len());
       let mut sorted = entries.to_owned();
       sorted.sort_by(|(a, _), (b, _)| load_order_key(a).cmp(&load_order_key(b)));
       for v in sorted {

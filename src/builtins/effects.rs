@@ -5,7 +5,7 @@ use std::sync::RwLock;
 use std::time::Instant;
 
 use crate::{
-  primes::{load_kwd, Calcit, CalcitErr, CalcitItems},
+  primes::{Calcit, CalcitErr, CalcitItems},
   util::number::f64_to_i32,
 };
 
@@ -29,7 +29,7 @@ pub fn raise(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     }
     s.push_str(&x.turn_string());
   }
-  Err(CalcitErr::use_string(s))
+  CalcitErr::err_str(s)
 }
 
 pub fn init_effects_states() {
@@ -60,15 +60,15 @@ pub fn modify_cli_running_mode(mode: CliRunningMode) -> Result<(), String> {
 pub fn calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let mode = CLI_RUNNING_MODE.read().unwrap().to_owned();
   match mode {
-    CliRunningMode::Eval => Ok(load_kwd("eval")),
-    CliRunningMode::Js => Ok(load_kwd("js")),
-    CliRunningMode::Ir => Ok(load_kwd("ir")),
+    CliRunningMode::Eval => Ok(Calcit::kwd("eval")),
+    CliRunningMode::Js => Ok(Calcit::kwd("js")),
+    CliRunningMode::Ir => Ok(Calcit::kwd("ir")),
   }
 }
 
 // TODO
 pub fn call_get_calcit_backend(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  Ok(load_kwd("rust"))
+  Ok(Calcit::kwd("rust"))
 }
 
 pub fn quit(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -77,8 +77,8 @@ pub fn quit(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(code) => exit(code),
       Err(e) => unreachable!("quit failed to get code from f64, {}", e),
     },
-    Some(a) => Err(CalcitErr::use_string(format!("quit expected i32 value, got: {}", a))),
-    None => Err(CalcitErr::use_str("quit expected a code, got nothing")),
+    Some(a) => CalcitErr::err_str(format!("quit expected i32 value, got: {}", a)),
+    None => CalcitErr::err_str("quit expected a code, got nothing"),
   }
 }
 
@@ -91,8 +91,8 @@ pub fn get_env(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Nil)
       }
     },
-    Some(a) => Err(CalcitErr::use_string(format!("get-env expected a string, got {}", a))),
-    None => Err(CalcitErr::use_str("get-env expected an argument, got nothing")),
+    Some(a) => CalcitErr::err_str(format!("get-env expected a string, got {}", a)),
+    None => CalcitErr::err_str("get-env expected an argument, got nothing"),
   }
 }
 
@@ -100,10 +100,10 @@ pub fn read_file(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match fs::read_to_string(s) {
       Ok(content) => Ok(Calcit::Str(content)),
-      Err(e) => Err(CalcitErr::use_string(format!("read-file failed: {}", e))),
+      Err(e) => CalcitErr::err_str(format!("read-file failed: {}", e)),
     },
-    Some(a) => Err(CalcitErr::use_string(format!("read-file expected a string, got: {}", a))),
-    None => Err(CalcitErr::use_str("read-file expected a filename, got nothing")),
+    Some(a) => CalcitErr::err_str(format!("read-file expected a string, got: {}", a)),
+    None => CalcitErr::err_str("read-file expected a filename, got nothing"),
   }
 }
 
@@ -111,12 +111,9 @@ pub fn write_file(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(path)), Some(Calcit::Str(content))) => match fs::write(path, content) {
       Ok(_) => Ok(Calcit::Nil),
-      Err(e) => Err(CalcitErr::use_string(format!("write-file failed, {}", e))),
+      Err(e) => CalcitErr::err_str(format!("write-file failed, {}", e)),
     },
-    (Some(a), Some(b)) => Err(CalcitErr::use_string(format!("write-file expected 3 strings, got: {} {}", a, b))),
-    (a, b) => Err(CalcitErr::use_string(format!(
-      "write-file expected 2 strings, got: {:?} {:?}",
-      a, b
-    ))),
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("write-file expected 3 strings, got: {} {}", a, b)),
+    (a, b) => CalcitErr::err_str(format!("write-file expected 2 strings, got: {:?} {:?}", a, b)),
   }
 }

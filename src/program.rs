@@ -38,12 +38,10 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, Strin
         _ => (),
       }
       match (xs[0].to_owned(), xs[1].to_owned(), xs[2].to_owned()) {
-        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::Leaf(String::from(":as")) => Ok(vec![(alias, ImportRule::NsAs(ns))]),
-        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::Leaf(String::from(":default")) => {
-          Ok(vec![(alias, ImportRule::NsDefault(ns))])
-        }
-        (Cirru::Leaf(ns), x, Cirru::List(ys)) if x == Cirru::Leaf(String::from(":refer")) => {
-          let mut rules: Vec<(String, ImportRule)> = vec![];
+        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::leaf(":as") => Ok(vec![(alias, ImportRule::NsAs(ns))]),
+        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::leaf(":default") => Ok(vec![(alias, ImportRule::NsDefault(ns))]),
+        (Cirru::Leaf(ns), x, Cirru::List(ys)) if x == Cirru::leaf(":refer") => {
+          let mut rules: Vec<(String, ImportRule)> = Vec::with_capacity(ys.len());
           for y in ys {
             match y {
               Cirru::Leaf(s) if &s == "[]" => (), // `[]` symbol are ignored
@@ -53,9 +51,9 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, Strin
           }
           Ok(rules)
         }
-        (_, x, _) if x == Cirru::Leaf(String::from(":as")) => Err(String::from("invalid import rule")),
-        (_, x, _) if x == Cirru::Leaf(String::from(":default")) => Err(String::from("invalid default rule")),
-        (_, x, _) if x == Cirru::Leaf(String::from(":refer")) => Err(String::from("invalid import rule")),
+        (_, x, _) if x == Cirru::leaf(":as") => Err(String::from("invalid import rule")),
+        (_, x, _) if x == Cirru::leaf(":default") => Err(String::from("invalid default rule")),
+        (_, x, _) if x == Cirru::leaf(":refer") => Err(String::from("invalid import rule")),
         _ if xs.len() != 3 => Err(format!("expected import rule has length 3: {}", Cirru::List(xs.to_owned()))),
         _ => Err(String::from("unknown rule")),
       }
@@ -68,9 +66,9 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<String, ImportRule>, Stri
     Cirru::Leaf(_) => unreachable!("Expected expr for ns"),
     Cirru::List(xs) => match (xs.get(0), xs.get(1), xs.get(2)) {
       // Too many clones
-      (Some(x), Some(Cirru::Leaf(_)), Some(Cirru::List(xs))) if *x == Cirru::Leaf(String::from("ns")) => {
-        if !xs.is_empty() && xs[0] == Cirru::Leaf(String::from(":require")) {
-          let mut ys: HashMap<String, ImportRule> = HashMap::new();
+      (Some(x), Some(Cirru::Leaf(_)), Some(Cirru::List(xs))) if *x == Cirru::leaf("ns") => {
+        if !xs.is_empty() && xs[0] == Cirru::leaf(":require") {
+          let mut ys: HashMap<String, ImportRule> = HashMap::with_capacity(xs.len());
           for (idx, x) in xs.iter().enumerate() {
             if idx > 0 {
               let rules = extract_import_rule(x)?;
@@ -92,7 +90,7 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<String, ImportRule>, Stri
 
 fn extract_file_data(file: snapshot::FileInSnapShot, ns: String) -> Result<ProgramFileData, String> {
   let import_map = extract_import_map(&file.ns)?;
-  let mut defs: HashMap<String, Calcit> = HashMap::new();
+  let mut defs: HashMap<String, Calcit> = HashMap::with_capacity(file.defs.len());
   for (def, code) in file.defs {
     let at_def = def.to_owned();
     defs.insert(def, code_to_calcit(&code, &ns, &at_def)?);
@@ -101,7 +99,7 @@ fn extract_file_data(file: snapshot::FileInSnapShot, ns: String) -> Result<Progr
 }
 
 pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
-  let mut xs: ProgramCodeData = HashMap::new();
+  let mut xs: ProgramCodeData = HashMap::with_capacity(s.files.len());
   for (ns, file) in s.files.to_owned() {
     let file_info = extract_file_data(file, ns.to_owned())?;
     xs.insert(ns, file_info);

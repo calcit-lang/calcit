@@ -53,7 +53,7 @@ fn load_configs(data: Edn) -> Result<SnapshotConfigs, String> {
 fn load_modules(data: Edn) -> Result<Vec<String>, String> {
   match data.read_list() {
     Ok(xs) => {
-      let mut ys: Vec<String> = vec![];
+      let mut ys: Vec<String> = Vec::with_capacity(xs.len());
       for x in xs {
         ys.push(x.read_string()?)
       }
@@ -66,7 +66,7 @@ fn load_modules(data: Edn) -> Result<Vec<String>, String> {
 fn load_file_info(data: Edn) -> Result<FileInSnapShot, String> {
   let ns_code = data.map_get("ns")?.read_quoted_cirru()?;
   let defs = data.map_get("defs")?.read_map().map_err(|e| format!("failed get `defs`:{}", e))?;
-  let mut defs_info: HashMap<String, Cirru> = HashMap::new();
+  let mut defs_info: HashMap<String, Cirru> = HashMap::with_capacity(defs.len());
   for (k, v) in defs {
     let var = k.read_string()?;
     let def_code = v.read_quoted_cirru()?;
@@ -81,7 +81,7 @@ fn load_file_info(data: Edn) -> Result<FileInSnapShot, String> {
 
 fn load_files(data: Edn) -> Result<HashMap<String, FileInSnapShot>, String> {
   let xs = data.read_map().map_err(|e| format!("failed loading files, {}", e))?;
-  let mut ys: HashMap<String, FileInSnapShot> = HashMap::new();
+  let mut ys: HashMap<String, FileInSnapShot> = HashMap::with_capacity(xs.len());
   for (k, v) in xs {
     let key = k.read_string()?;
     let file = load_file_info(v)?;
@@ -105,12 +105,12 @@ pub fn load_snapshot_data(data: Edn, path: &str) -> Result<Snapshot, String> {
 }
 
 pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
-  let mut def_dict: HashMap<String, Cirru> = HashMap::new();
+  let mut def_dict: HashMap<String, Cirru> = HashMap::with_capacity(2);
   def_dict.insert(
     String::from("calcit-filename"),
     Cirru::List(vec![
-      Cirru::Leaf(String::from("def")),
-      Cirru::Leaf(String::from("calcit-filename")),
+      Cirru::leaf("def"),
+      Cirru::leaf("calcit-filename"),
       Cirru::Leaf(format!("|{}", path.escape_default())),
     ]),
   );
@@ -121,14 +121,14 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   def_dict.insert(
     String::from("calcit-dirname"),
     Cirru::List(vec![
-      Cirru::Leaf(String::from("def")),
-      Cirru::Leaf(String::from("calcit-dirname")),
+      Cirru::leaf("def"),
+      Cirru::leaf("calcit-dirname"),
       Cirru::Leaf(format!("|{}", parent_str.escape_default())),
     ]),
   );
 
   FileInSnapShot {
-    ns: Cirru::List(vec![Cirru::Leaf(String::from("ns")), Cirru::Leaf(ns.to_owned())]),
+    ns: Cirru::List(vec![Cirru::leaf("ns"), Cirru::Leaf(ns.to_owned())]),
     defs: def_dict,
   }
 }
@@ -154,26 +154,17 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
       } else {
         return Err(format!("unexpected snippet: {:?}", raw));
       };
-      let mut def_dict: HashMap<String, Cirru> = HashMap::new();
+      let mut def_dict: HashMap<String, Cirru> = HashMap::with_capacity(2);
       def_dict.insert(
         String::from("main!"),
-        Cirru::List(vec![
-          Cirru::Leaf(String::from("defn")),
-          Cirru::Leaf(String::from("main!")),
-          Cirru::List(vec![]),
-          code,
-        ]),
+        Cirru::List(vec![Cirru::leaf("defn"), Cirru::leaf("main!"), Cirru::List(vec![]), code]),
       );
       def_dict.insert(
         String::from("reload!"),
-        Cirru::List(vec![
-          Cirru::Leaf(String::from("defn")),
-          Cirru::Leaf(String::from("reload!")),
-          Cirru::List(vec![]),
-        ]),
+        Cirru::List(vec![Cirru::leaf("defn"), Cirru::leaf("reload!"), Cirru::List(vec![])]),
       );
       Ok(FileInSnapShot {
-        ns: Cirru::List(vec![Cirru::Leaf(String::from("ns")), Cirru::Leaf(String::from("app.main"))]),
+        ns: Cirru::List(vec![Cirru::leaf("ns"), Cirru::leaf("app.main")]),
         defs: def_dict,
       })
     }

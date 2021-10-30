@@ -507,11 +507,15 @@ impl Calcit {
   pub fn lisp_str(&self) -> String {
     format_to_lisp(self)
   }
-}
 
-/// makes sure that keyword is from global dict, not created by fresh
-pub fn load_kwd(s: &str) -> Calcit {
-  Calcit::Keyword(keyword::load_order_key(s))
+  pub fn new_str<T: Into<String>>(s: T) -> Calcit {
+    Calcit::Str(s.into())
+  }
+
+  /// makes sure that keyword is from global dict, not created by fresh
+  pub fn kwd(s: &str) -> Self {
+    Calcit::Keyword(keyword::load_order_key(s))
+  }
 }
 
 /// lookup via keyword, better use `lookup_order_kwd_string`
@@ -549,23 +553,23 @@ impl fmt::Display for CalcitErr {
 }
 
 impl CalcitErr {
-  pub fn use_str(msg: &str) -> Self {
+  pub fn use_str<T: Into<String>>(msg: T) -> Self {
     CalcitErr {
-      msg: msg.to_owned(),
+      msg: msg.into(),
       warnings: vec![],
       stack: im::Vector::new(),
     }
   }
-  pub fn use_string(msg: String) -> Self {
-    CalcitErr {
-      msg: msg.to_owned(),
+  pub fn err_str<T: Into<String>>(msg: T) -> Result<Calcit, Self> {
+    Err(CalcitErr {
+      msg: msg.into(),
       warnings: vec![],
       stack: im::Vector::new(),
-    }
+    })
   }
-  pub fn use_msg_stack(msg: String, stack: &CallStackVec) -> Self {
+  pub fn use_msg_stack<T: Into<String>>(msg: T, stack: &CallStackVec) -> Self {
     CalcitErr {
-      msg: msg.to_owned(),
+      msg: msg.into(),
       warnings: vec![],
       stack: stack.to_owned(),
     }

@@ -29,7 +29,7 @@ pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
 }
 
 pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitErr> {
-  let (init_ns, init_def) = util::string::extract_ns_def(init_fn).map_err(CalcitErr::use_string)?;
+  let (init_ns, init_def) = util::string::extract_ns_def(init_fn).map_err(CalcitErr::use_str)?;
 
   let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
 
@@ -38,8 +38,8 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure.msg, &failure.stack).map_err(CalcitErr::use_string)?;
-      return Err(CalcitErr::use_string(failure.msg));
+      call_stack::display_stack(&failure.msg, &failure.stack).map_err(CalcitErr::use_str)?;
+      return CalcitErr::err_str(failure.msg);
     }
   }
 
@@ -52,7 +52,7 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
     });
   }
   match program::lookup_evaled_def(&init_ns, &init_def) {
-    None => Err(CalcitErr::use_string(format!("entry not initialized: {}/{}", init_ns, init_def))),
+    None => CalcitErr::err_str(format!("entry not initialized: {}/{}", init_ns, init_def)),
     Some(entry) => match entry {
       Calcit::Fn(_, f_ns, _, def_scope, args, body) => {
         let result = runner::run_fn(&params, &def_scope, &args, &body, &f_ns, &im::Vector::new());
@@ -60,12 +60,12 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
           Ok(v) => Ok(v),
           Err(failure) => {
             println!("\nfailed, {}", failure);
-            call_stack::display_stack(&failure.msg, &failure.stack).map_err(CalcitErr::use_string)?;
+            call_stack::display_stack(&failure.msg, &failure.stack).map_err(CalcitErr::use_str)?;
             Err(failure)
           }
         }
       }
-      _ => Err(CalcitErr::use_string(format!("expected function entry, got: {}", entry))),
+      _ => CalcitErr::err_str(format!("expected function entry, got: {}", entry)),
     },
   }
 }
