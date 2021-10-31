@@ -9,16 +9,16 @@ use crate::snapshot;
 use crate::snapshot::Snapshot;
 use crate::util::string::extract_pkg_from_def;
 
-pub type ProgramEvaledData = HashMap<String, HashMap<String, Calcit>>;
+pub type ProgramEvaledData = HashMap<Box<str>, HashMap<Box<str>, Calcit>>;
 
 /// information extracted from snapshot
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgramFileData {
-  pub import_map: HashMap<String, ImportRule>,
-  pub defs: HashMap<String, Calcit>,
+  pub import_map: HashMap<Box<str>, ImportRule>,
+  pub defs: HashMap<Box<str>, Calcit>,
 }
 
-pub type ProgramCodeData = HashMap<String, ProgramFileData>;
+pub type ProgramCodeData = HashMap<Box<str>, ProgramFileData>;
 
 lazy_static! {
   /// data of program running
@@ -27,24 +27,24 @@ lazy_static! {
   pub static ref PROGRAM_CODE_DATA: RwLock<ProgramCodeData> = RwLock::new(HashMap::new());
 }
 
-fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, String> {
+fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(Box<str>, ImportRule)>, String> {
   match nodes {
     Cirru::Leaf(_) => Err(String::from("Expected import rule in expr")),
     Cirru::List(rule_nodes) => {
       let mut xs = rule_nodes.to_owned();
       match xs.get(0) {
         // strip leading `[]` symbols
-        Some(Cirru::Leaf(s)) if s == "[]" => xs = xs[1..4].to_vec(),
+        Some(Cirru::Leaf(s)) if &**s == "[]" => xs = xs[1..4].to_vec(),
         _ => (),
       }
       match (xs[0].to_owned(), xs[1].to_owned(), xs[2].to_owned()) {
         (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::leaf(":as") => Ok(vec![(alias, ImportRule::NsAs(ns))]),
         (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::leaf(":default") => Ok(vec![(alias, ImportRule::NsDefault(ns))]),
         (Cirru::Leaf(ns), x, Cirru::List(ys)) if x == Cirru::leaf(":refer") => {
-          let mut rules: Vec<(String, ImportRule)> = Vec::with_capacity(ys.len());
+          let mut rules: Vec<(Box<str>, ImportRule)> = Vec::with_capacity(ys.len());
           for y in ys {
             match y {
-              Cirru::Leaf(s) if &s == "[]" => (), // `[]` symbol are ignored
+              Cirru::Leaf(s) if &*s == "[]" => (), // `[]` symbol are ignored
               Cirru::Leaf(s) => rules.push((s.to_owned(), ImportRule::NsReferDef(ns.to_owned(), s.to_owned()))),
               Cirru::List(_defs) => return Err(String::from("invalid refer values")),
             }
@@ -61,14 +61,14 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(String, ImportRule)>, Strin
   }
 }
 
-fn extract_import_map(nodes: &Cirru) -> Result<HashMap<String, ImportRule>, String> {
+fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Box<str>, ImportRule>, String> {
   match nodes {
     Cirru::Leaf(_) => unreachable!("Expected expr for ns"),
     Cirru::List(xs) => match (xs.get(0), xs.get(1), xs.get(2)) {
       // Too many clones
       (Some(x), Some(Cirru::Leaf(_)), Some(Cirru::List(xs))) if *x == Cirru::leaf("ns") => {
         if !xs.is_empty() && xs[0] == Cirru::leaf(":require") {
-          let mut ys: HashMap<String, ImportRule> = HashMap::with_capacity(xs.len());
+          let mut ys: HashMap<Box<str>, ImportRule> = HashMap::with_capacity(xs.len());
           for (idx, x) in xs.iter().enumerate() {
             if idx > 0 {
               let rules = extract_import_rule(x)?;
@@ -88,9 +88,9 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<String, ImportRule>, Stri
   }
 }
 
-fn extract_file_data(file: snapshot::FileInSnapShot, ns: String) -> Result<ProgramFileData, String> {
+fn extract_file_data(file: snapshot::FileInSnapShot, ns: Box<str>) -> Result<ProgramFileData, String> {
   let import_map = extract_import_map(&file.ns)?;
-  let mut defs: HashMap<String, Calcit> = HashMap::with_capacity(file.defs.len());
+  let mut defs: HashMap<Box<str>, Calcit> = HashMap::with_capacity(file.defs.len());
   for (def, code) in file.defs {
     let at_def = def.to_owned();
     defs.insert(def, code_to_calcit(&code, &ns, &at_def)?);
@@ -123,7 +123,7 @@ pub fn lookup_def_code(ns: &str, def: &str) -> Option<Calcit> {
   Some(data.to_owned())
 }
 
-pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<String> {
+pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<Box<str>> {
   let program = { PROGRAM_CODE_DATA.read().unwrap() };
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(def)?;
@@ -134,7 +134,7 @@ pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<String> {
   }
 }
 
-pub fn lookup_ns_target_in_import(ns: &str, alias: &str) -> Option<String> {
+pub fn lookup_ns_target_in_import(ns: &str, alias: &str) -> Option<Box<str>> {
   let program = { PROGRAM_CODE_DATA.read().unwrap() };
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(alias)?;
@@ -146,7 +146,7 @@ pub fn lookup_ns_target_in_import(ns: &str, alias: &str) -> Option<String> {
 }
 
 // imported via :default
-pub fn lookup_default_target_in_import(ns: &str, alias: &str) -> Option<String> {
+pub fn lookup_default_target_in_import(ns: &str, alias: &str) -> Option<Box<str>> {
   let program = { PROGRAM_CODE_DATA.read().unwrap() };
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(alias)?;
@@ -180,11 +180,11 @@ pub fn write_evaled_def(ns: &str, def: &str, value: Calcit) -> Result<(), String
   // println!("writing {} {}", ns, def);
   let mut program = PROGRAM_EVALED_DATA_STATE.write().unwrap();
   if !program.contains_key(ns) {
-    (*program).insert(String::from(ns), HashMap::new());
+    (*program).insert(String::from(ns).into_boxed_str(), HashMap::new());
   }
 
   let file = program.get_mut(ns).unwrap();
-  file.insert(String::from(def), value);
+  file.insert(String::from(def).into_boxed_str(), value);
 
   Ok(())
 }
@@ -238,7 +238,7 @@ pub fn clear_all_program_evaled_defs(init_fn: &str, reload_fn: &str, reload_libs
     // reduce changes of libs. could be dirty in some cases
     let init_pkg = extract_pkg_from_def(init_fn).unwrap();
     let reload_pkg = extract_pkg_from_def(reload_fn).unwrap();
-    let mut to_remove: Vec<String> = vec![];
+    let mut to_remove: Vec<Box<str>> = vec![];
     for k in (*program).keys() {
       if k == &init_pkg || k == &reload_pkg || k.starts_with(&format!("{}.", init_pkg)) || k.starts_with(&format!("{}.", reload_pkg)) {
         to_remove.push(k.to_owned());

@@ -11,7 +11,7 @@ use crate::{call_stack::CallStackVec, runner};
 type ValueAndListeners = (Calcit, HashMap<EdnKwd, Calcit>);
 
 lazy_static! {
-  static ref REFS_DICT: RwLock<HashMap<String, ValueAndListeners>> = RwLock::new(HashMap::new());
+  static ref REFS_DICT: RwLock<HashMap<Box<str>, ValueAndListeners>> = RwLock::new(HashMap::new());
 }
 
 // need functions with shorter lifetime to escape dead lock
@@ -20,13 +20,13 @@ fn read_ref(path: &str) -> Option<ValueAndListeners> {
   dict.get(path).map(|pair| pair.to_owned())
 }
 
-fn write_to_ref(path: String, v: Calcit, listeners: HashMap<EdnKwd, Calcit>) {
+fn write_to_ref(path: &str, v: Calcit, listeners: HashMap<EdnKwd, Calcit>) {
   let mut dict = REFS_DICT.write().unwrap();
-  let _ = (*dict).insert(path, (v, listeners));
+  let _ = (*dict).insert(path.to_owned().into(), (v, listeners));
 }
 
-fn modify_ref(path: String, v: Calcit, call_stack: &CallStackVec) -> Result<(), CalcitErr> {
-  let (prev, listeners) = read_ref(&path).unwrap();
+fn modify_ref(path: &str, v: Calcit, call_stack: &CallStackVec) -> Result<(), CalcitErr> {
+  let (prev, listeners) = read_ref(path).unwrap();
   write_to_ref(path, v.to_owned(), listeners.to_owned());
 
   for f in listeners.values() {
@@ -50,15 +50,15 @@ fn modify_ref(path: String, v: Calcit, call_stack: &CallStackVec) -> Result<(), 
 pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol(s, ns, _def, _)), Some(code)) => {
-      let mut path = ns.to_owned();
+      let mut path = (**ns).to_owned();
       path.push('/');
       path.push_str(s);
 
       if read_ref(&path).is_none() {
         let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
-        write_to_ref(path.to_owned(), v, HashMap::new())
+        write_to_ref(&path.to_owned().into_boxed_str(), v, HashMap::new())
       }
-      Ok(Calcit::Ref(path))
+      Ok(Calcit::Ref(path.into_boxed_str()))
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack(
       format!("defref expected a symbol and an expression: {} , {}", a, b),
@@ -92,7 +92,7 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_s
       if read_ref(&path).is_none() {
         return CalcitErr::err_str(format!("missing pre-exisiting data for path &{}", path));
       }
-      modify_ref(path, v, call_stack)?;
+      modify_ref(&path, v, call_stack)?;
       Ok(Calcit::Nil)
     }
     (a, b) => Err(CalcitErr::use_msg_stack(

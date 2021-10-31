@@ -84,8 +84,8 @@ pub fn quit(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn get_env(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(Calcit::Str(s)) => match env::var(s) {
-      Ok(v) => Ok(Calcit::Str(v)),
+    Some(Calcit::Str(s)) => match env::var(&**s) {
+      Ok(v) => Ok(Calcit::Str(v.into_boxed_str())),
       Err(e) => {
         println!("(get-env {}): {}", s, e);
         Ok(Calcit::Nil)
@@ -98,8 +98,8 @@ pub fn get_env(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn read_file(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(Calcit::Str(s)) => match fs::read_to_string(s) {
-      Ok(content) => Ok(Calcit::Str(content)),
+    Some(Calcit::Str(s)) => match fs::read_to_string(&**s) {
+      Ok(content) => Ok(Calcit::Str(content.into_boxed_str())),
       Err(e) => CalcitErr::err_str(format!("read-file failed: {}", e)),
     },
     Some(a) => CalcitErr::err_str(format!("read-file expected a string, got: {}", a)),
@@ -109,7 +109,7 @@ pub fn read_file(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn write_file(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Str(path)), Some(Calcit::Str(content))) => match fs::write(path, content) {
+    (Some(Calcit::Str(path)), Some(Calcit::Str(content))) => match fs::write(&**path, &**content) {
       Ok(_) => Ok(Calcit::Nil),
       Err(e) => CalcitErr::err_str(format!("write-file failed, {}", e)),
     },

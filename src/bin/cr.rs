@@ -52,7 +52,7 @@ fn main() -> Result<(), String> {
     eval_once = true;
     match snapshot::create_file_from_snippet(snippet) {
       Ok(main_file) => {
-        snapshot.files.insert(String::from("app.main"), main_file);
+        snapshot.files.insert(String::from("app.main").into_boxed_str(), main_file);
       }
       Err(e) => return Err(e),
     }
@@ -98,9 +98,9 @@ fn main() -> Result<(), String> {
 
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
-    calcit_runner::primes::CORE_NS,
-    calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
-    calcit_runner::primes::BUILTIN_CLASSES_ENTRY,
+    &calcit_runner::primes::CORE_NS.to_string().into_boxed_str(),
+    &calcit_runner::primes::BUILTIN_CLASSES_ENTRY.to_string().into_boxed_str(),
+    &calcit_runner::primes::BUILTIN_CLASSES_ENTRY.to_string().into_boxed_str(),
     None,
     check_warnings,
     &rpds::Vector::new_sync(),

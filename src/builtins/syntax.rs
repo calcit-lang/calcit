@@ -15,7 +15,7 @@ pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Ca
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol(s, ..)), Some(Calcit::List(xs))) => Ok(Calcit::Fn(
       s.to_owned(),
-      file_ns.to_owned(),
+      file_ns.to_owned().into(),
       gen_core_id(),
       scope.to_owned(),
       Box::new(xs.to_owned()),
@@ -30,7 +30,7 @@ pub fn defmacro(expr: &CalcitItems, _scope: &CalcitScope, def_ns: &str) -> Resul
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol(s, ..)), Some(Calcit::List(xs))) => Ok(Calcit::Macro(
       s.to_owned(),
-      def_ns.to_owned(),
+      def_ns.to_owned().into(),
       gen_core_id(),
       Box::new(xs.to_owned()),
       Box::new(skip(expr, 2)),
@@ -123,11 +123,11 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &Cal
   }
   match c {
     Calcit::List(ys) => match (ys.get(0), ys.get(1)) {
-      (Some(Calcit::Symbol(sym, ..)), Some(expr)) if sym == "~" => {
+      (Some(Calcit::Symbol(sym, ..)), Some(expr)) if &**sym == "~" => {
         let value = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         Ok(SpanResult::Single(value))
       }
-      (Some(Calcit::Symbol(sym, ..)), Some(expr)) if sym == "~@" => {
+      (Some(Calcit::Symbol(sym, ..)), Some(expr)) if &**sym == "~@" => {
         let ret = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         match ret {
           Calcit::List(zs) => Ok(SpanResult::Range(zs)),
@@ -163,7 +163,7 @@ pub fn has_unquote(xs: &Calcit) -> bool {
       }
       false
     }
-    Calcit::Symbol(s, ..) if s == "~" || s == "~@" => true,
+    Calcit::Symbol(s, ..) if &**s == "~" || &**s == "~@" => true,
     _ => false,
   }
 }
@@ -298,7 +298,7 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_sta
       Ok(v) => Ok(v.to_owned()),
       Err(failure) => {
         let f = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
-        let err_data = Calcit::Str(failure.msg.to_owned());
+        let err_data = Calcit::Str(failure.msg.to_owned().into_boxed_str());
         match f {
           Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
             let values = rpds::vector_sync![err_data];

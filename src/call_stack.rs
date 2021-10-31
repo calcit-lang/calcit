@@ -63,7 +63,7 @@ pub fn display_stack(failure: &str, stack: &CallStackVec) -> Result<(), String> 
   for idx in 0..stack.len() {
     let s = &stack[stack.len() - idx - 1];
     let mut info: HashMap<Edn, Edn> = HashMap::with_capacity(4);
-    info.insert(Edn::kwd("def"), Edn::Str(format!("{}/{}", s.ns, s.def)));
+    info.insert(Edn::kwd("def"), Edn::str(format!("{}/{}", s.ns, s.def)));
     info.insert(Edn::kwd("code"), Edn::Quote(cirru::calcit_to_cirru(&s.code)?));
     let mut args: Vec<Edn> = Vec::with_capacity(s.args.len());
     for a in &s.args {

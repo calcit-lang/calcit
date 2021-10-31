@@ -34,7 +34,14 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
   let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, check_warnings, &rpds::VectorSync::new_sync()) {
+  match runner::preprocess::preprocess_ns_def(
+    &init_ns.to_owned().into_boxed_str(),
+    &init_def.to_owned().into_boxed_str(),
+    &init_def.to_owned().into_boxed_str(),
+    None,
+    check_warnings,
+    &rpds::VectorSync::new_sync(),
+  ) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
