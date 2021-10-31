@@ -41,7 +41,7 @@ pub fn main() -> io::Result<()> {
   let content = read_to_string(package_file)?;
   let package_data = cirru_edn::parse(&content).map_err(io_err)?;
 
-  let pkg = package_data.map_get("package").map_err(io_err)?.read_string().map_err(io_err)?;
+  let pkg = package_data.map_get("package").map_err(io_err)?.read_str().map_err(io_err)?;
 
   dict.insert(Edn::kwd("package"), Edn::Str(pkg));
   dict.insert(Edn::kwd("configs"), package_data);
@@ -59,7 +59,7 @@ pub fn main() -> io::Result<()> {
         let mut file: HashMap<Edn, Edn> = HashMap::new();
         let (ns_name, ns_code) = if let Some(Cirru::List(ns_form)) = xs.get(0) {
           match (ns_form.get(0), ns_form.get(1)) {
-            (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) if x0.as_str() == "ns" => (x1.to_string(), ns_form),
+            (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) if &**x0 == "ns" => (x1.to_string(), ns_form),
             (a, b) => return Err(io_err(format!("in valid ns starts {:?} {:?}", a, b))),
           }
         } else {
@@ -76,8 +76,9 @@ pub fn main() -> io::Result<()> {
             if let Cirru::List(ys) = line {
               match (ys.get(0), ys.get(1)) {
                 (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
+                  let x0 = &**x0;
                   if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" || x0.starts_with("def") {
-                    defs.insert(Edn::str(x1), Edn::Quote(line.to_owned()));
+                    defs.insert(Edn::str((*x1).to_owned()), Edn::Quote(line.to_owned()));
                   } else {
                     return Err(io_err(format!("invalid def op: {}", x0)));
                   }

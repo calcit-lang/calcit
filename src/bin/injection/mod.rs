@@ -19,7 +19,7 @@ type EdnFfiFn = fn(
   finish: Box<dyn FnOnce()>,
 ) -> Result<Edn, String>;
 
-const ABI_VERSION: &str = "0.0.3";
+const ABI_VERSION: &str = "0.0.4";
 
 pub fn inject_platform_apis() {
   builtins::register_import_proc("&call-dylib-edn", call_dylib_edn);
@@ -36,14 +36,14 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Ca
   if xs.len() < 2 {
     return CalcitErr::err_str(format!("&call-dylib-edn expected >2 arguments, got {}", CrListWrap(xs.to_owned())));
   }
-  let lib_name = if let Calcit::Str(s) = &xs[0] {
-    s.to_owned()
+  let lib_name: String = if let Calcit::Str(s) = &xs[0] {
+    (**s).to_owned()
   } else {
     return CalcitErr::err_str(format!("&call-dylib-edn expected a lib_name, got {}", xs[0]));
   };
 
   let method: String = if let Calcit::Str(s) = &xs[1] {
-    s.to_owned()
+    (**s).to_owned()
   } else {
     return CalcitErr::err_str(format!("&call-dylib-edn expected a method name, got {}", xs[1]));
   };
@@ -90,14 +90,14 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
     ));
   }
 
-  let lib_name = if let Calcit::Str(s) = &xs[0] {
-    s.to_owned()
+  let lib_name: String = if let Calcit::Str(s) = &xs[0] {
+    (**s).to_owned()
   } else {
     return CalcitErr::err_str(format!("&call-dylib-edn-fn expected a lib_name, got {}", xs[0]));
   };
 
   let method: String = if let Calcit::Str(s) = &xs[1] {
-    s.to_owned()
+    (**s).to_owned()
   } else {
     return CalcitErr::err_str(format!("&call-dylib-edn-fn expected a method name, got {}", xs[1]));
   };
@@ -176,14 +176,14 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
     ));
   }
 
-  let lib_name = if let Calcit::Str(s) = &xs[0] {
-    s.to_owned()
+  let lib_name: String = if let Calcit::Str(s) = &xs[0] {
+    (**s).to_owned()
   } else {
     return CalcitErr::err_str(format!("&blocking-dylib-edn-fn expected a lib_name, got {}", xs[0]));
   };
 
   let method: String = if let Calcit::Str(s) = &xs[1] {
-    s.to_owned()
+    (**s).to_owned()
   } else {
     return CalcitErr::err_str(format!("&blocking-dylib-edn-fn expected a method name, got {}", xs[1]));
   };

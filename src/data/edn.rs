@@ -12,10 +12,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
   match x {
     Calcit::Nil => Ok(Edn::Nil),
     Calcit::Bool(b) => Ok(Edn::Bool(*b)),
-    Calcit::Str(s) => Ok(Edn::str(s)),
+    Calcit::Str(s) => Ok(Edn::Str(s.to_owned())),
     Calcit::Number(n) => Ok(Edn::Number(*n)), // TODO
     Calcit::Keyword(s) => Ok(Edn::Keyword(s.to_owned())),
-    Calcit::Symbol(s, ..) => Ok(Edn::sym(s)),
+    Calcit::Symbol(s, ..) => Ok(Edn::Symbol(s.to_owned())),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
       for x in xs {
@@ -46,14 +46,14 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     }
     Calcit::Fn(..) => {
       println!("[Warning] unable to generate EDN from function: {}", x);
-      Ok(Edn::Str(format!("TODO fn: {}", x)))
+      Ok(Edn::str(format!("TODO fn: {}", x)))
     }
-    Calcit::Proc(name) => Ok(Edn::sym(name)),
+    Calcit::Proc(name) => Ok(Edn::Symbol(name.to_owned())),
     Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.to_string())),
     Calcit::Tuple(tag, data) => {
       match &**tag {
         Calcit::Symbol(sym, ..) => {
-          if sym == "quote" {
+          if &**sym == "quote" {
             match cirru::calcit_data_to_cirru(&**data) {
               Ok(v) => Ok(Edn::Quote(v)),
               Err(e) => Err(format!("failed to create quote: {}", e)), // TODO more types to handle
@@ -81,17 +81,17 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Number(n) => Calcit::Number(*n as f64),
     Edn::Symbol(s) => Calcit::Symbol(
       s.to_owned(),
-      String::from(primes::GENERATED_NS),
-      String::from(primes::GENERATED_DEF),
+      String::from(primes::GENERATED_NS).into_boxed_str(),
+      String::from(primes::GENERATED_DEF).into_boxed_str(),
       None,
     ),
     Edn::Keyword(s) => Calcit::Keyword(s.to_owned()),
     Edn::Str(s) => Calcit::Str(s.to_owned()),
     Edn::Quote(nodes) => Calcit::Tuple(
       Box::new(Calcit::Symbol(
-        String::from("quote"),
-        String::from(primes::GENERATED_NS),
-        String::from(primes::GENERATED_DEF),
+        String::from("quote").into_boxed_str(),
+        String::from(primes::GENERATED_NS).into_boxed_str(),
+        String::from(primes::GENERATED_DEF).into_boxed_str(),
         None,
       )),
       Box::new(cirru::cirru_to_calcit(nodes)),

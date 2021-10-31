@@ -54,7 +54,7 @@ pub fn recur(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(v) => Ok(Calcit::Str(v.lisp_str())),
+    Some(v) => Ok(Calcit::Str(v.lisp_str().into_boxed_str())),
     None => CalcitErr::err_str("format-to-lisp expected 1 argument"),
   }
 }
@@ -62,7 +62,7 @@ pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn format_to_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(v) => cirru_parser::format(&[transform_code_to_cirru(v)], CirruWriterOptions { use_inline: false })
-      .map(Calcit::Str)
+      .map(|s| Calcit::Str(s.into_boxed_str()))
       .map_err(CalcitErr::use_str),
     None => CalcitErr::err_str("format-to-cirru expected 1 argument"),
   }
@@ -78,9 +78,9 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
       Cirru::List(xs)
     }
     Calcit::Symbol(s, ..) => Cirru::Leaf(s.to_owned()),
-    Calcit::Syntax(s, _ns) => Cirru::Leaf(s.to_string()),
+    Calcit::Syntax(s, _ns) => Cirru::Leaf(s.to_string().into_boxed_str()),
     Calcit::Proc(s) => Cirru::Leaf(s.to_owned()),
-    a => Cirru::Leaf(format!("{}", a)),
+    a => Cirru::leaf(format!("{}", a)),
   }
 }
 
@@ -95,7 +95,7 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   } else {
     match &xs[0] {
       Calcit::Str(s) | Calcit::Symbol(s, ..) => {
-        let mut chunk = s.to_owned();
+        let mut chunk = (**s).to_string();
         chunk.push('_');
         chunk.push('_');
         chunk.push_str(&n.to_string());
@@ -112,9 +112,9 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     }
   };
   Ok(Calcit::Symbol(
-    s,
-    String::from(primes::GENERATED_NS),
-    String::from(primes::GENERATED_DEF),
+    s.into_boxed_str(),
+    String::from(primes::GENERATED_NS).into_boxed_str(),
+    String::from(primes::GENERATED_DEF).into_boxed_str(),
     None,
   ))
 }
@@ -192,7 +192,9 @@ pub fn format_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       match cirru::calcit_data_to_cirru(a) {
         Ok(v) => {
           if let Cirru::List(ys) = v {
-            Ok(Calcit::Str(cirru_parser::format(&ys, options).map_err(CalcitErr::use_str)?))
+            Ok(Calcit::Str(
+              cirru_parser::format(&ys, options).map_err(CalcitErr::use_str)?.into_boxed_str(),
+            ))
           } else {
             CalcitErr::err_str(format!("expected vector for Cirru formatting: {}", v))
           }
@@ -218,7 +220,9 @@ pub fn parse_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn format_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(a) => Ok(Calcit::Str(
-      cirru_edn::format(&edn::calcit_to_edn(a).map_err(CalcitErr::use_str)?, true).map_err(CalcitErr::use_str)?,
+      cirru_edn::format(&edn::calcit_to_edn(a).map_err(CalcitErr::use_str)?, true)
+        .map_err(CalcitErr::use_str)?
+        .into_boxed_str(),
     )),
     None => CalcitErr::err_str("format-cirru-edn expected 1 argument"),
   }
@@ -231,14 +235,14 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::Symbol(
       s.to_owned(),
-      String::from(primes::GENERATED_NS),
-      String::from(primes::GENERATED_DEF),
+      String::from(primes::GENERATED_NS).into_boxed_str(),
+      String::from(primes::GENERATED_DEF).into_boxed_str(),
       None,
     )),
     Calcit::Keyword(s) => Ok(Calcit::Symbol(
-      s.to_string(),
-      String::from(primes::GENERATED_NS),
-      String::from(primes::GENERATED_DEF),
+      s.to_str(),
+      String::from(primes::GENERATED_NS).into_boxed_str(),
+      String::from(primes::GENERATED_DEF).into_boxed_str(),
       None,
     )),
     Calcit::Symbol(s, ns, def, resolved) => Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), resolved.to_owned())),
@@ -368,12 +372,12 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
 
 fn gen_sym(sym: &str) -> Calcit {
   Calcit::Symbol(
-    String::from("&core-map-class"),
-    String::from(primes::CORE_NS),
-    String::from(primes::GENERATED_DEF),
+    String::from("&core-map-class").into_boxed_str(),
+    String::from(primes::CORE_NS).into_boxed_str(),
+    String::from(primes::GENERATED_DEF).into_boxed_str(),
     Some(Box::new(primes::SymbolResolved::ResolvedDef(
-      String::from(primes::CORE_NS),
-      String::from(sym),
+      String::from(primes::CORE_NS).into_boxed_str(),
+      String::from(sym).into_boxed_str(),
       None,
     ))),
   )

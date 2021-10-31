@@ -16,7 +16,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Calcit::Nil => Ok(expr.to_owned()),
     Calcit::Bool(_) => Ok(expr.to_owned()),
     Calcit::Number(_) => Ok(expr.to_owned()),
-    Calcit::Symbol(s, ..) if s == "&" => Ok(expr.to_owned()),
+    Calcit::Symbol(s, ..) if &**s == "&" => Ok(expr.to_owned()),
     Calcit::Symbol(s, ns, _at_def, resolved) => match resolved {
       Some(resolved_info) => {
         match &**resolved_info {
@@ -163,7 +163,12 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
   }
 }
 
-pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_symbol(
+  sym: &Box<str>,
+  scope: &CalcitScope,
+  file_ns: &Box<str>,
+  call_stack: &CallStackVec,
+) -> Result<Calcit, CalcitErr> {
   match parse_ns_def(sym) {
     Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns, &ns_part) {
       Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, call_stack) {
@@ -198,7 +203,7 @@ pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack
       match program::lookup_def_target_in_import(file_ns, sym) {
         Some(target_ns) => eval_symbol_from_program(sym, &target_ns, call_stack),
         None => {
-          let vars: Vec<&String> = scope.keys().collect();
+          let vars: Vec<&Box<str>> = scope.keys().collect();
           Err(CalcitErr::use_msg_stack(
             format!("unknown symbol `{}` in {:?}", sym, vars),
             call_stack,
@@ -209,11 +214,11 @@ pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack
   }
 }
 
-pub fn parse_ns_def(s: &str) -> Option<(String, String)> {
+pub fn parse_ns_def(s: &str) -> Option<(Box<str>, Box<str>)> {
   let pieces: Vec<&str> = s.split('/').collect();
   if pieces.len() == 2 {
     if !pieces[0].is_empty() && !pieces[1].is_empty() {
-      Some((pieces[0].to_owned(), pieces[1].to_owned()))
+      Some((pieces[0].to_owned().into_boxed_str(), pieces[1].to_owned().into_boxed_str()))
     } else {
       None
     }
@@ -310,10 +315,10 @@ pub fn bind_args(
   while let Some(a) = args_pop_front() {
     if spreading {
       match a {
-        Calcit::Symbol(s, ..) if s == "&" => {
+        Calcit::Symbol(s, ..) if &**s == "&" => {
           return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {:?}", args), call_stack))
         }
-        Calcit::Symbol(s, ..) if s == "?" => {
+        Calcit::Symbol(s, ..) if &**s == "?" => {
           return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {:?}", args), call_stack))
         }
         Calcit::Symbol(s, ..) => {
@@ -337,8 +342,8 @@ pub fn bind_args(
       }
     } else {
       match a {
-        Calcit::Symbol(s, ..) if s == "&" => spreading = true,
-        Calcit::Symbol(s, ..) if s == "?" => optional = true,
+        Calcit::Symbol(s, ..) if &**s == "&" => spreading = true,
+        Calcit::Symbol(s, ..) if &**s == "?" => optional = true,
         Calcit::Symbol(s, ..) => match values_pop_front() {
           Some(v) => {
             scope.insert_mut(s.to_owned(), v.to_owned());
@@ -400,7 +405,7 @@ pub fn evaluate_args(
   let mut spreading = false;
   for item in items {
     match item {
-      Calcit::Symbol(s, ..) if s == "&" => {
+      Calcit::Symbol(s, ..) if &**s == "&" => {
         spreading = true;
       }
       _ => {

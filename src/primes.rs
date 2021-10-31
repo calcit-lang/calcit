@@ -13,7 +13,7 @@ use cirru_edn::EdnKwd;
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 // scope
-pub type CalcitScope = rpds::HashTrieMapSync<String, Calcit>;
+pub type CalcitScope = rpds::HashTrieMapSync<Box<str>, Calcit>;
 pub type CalcitItems = rpds::VectorSync<Calcit>;
 
 pub use syntax_name::CalcitSyntax;
@@ -23,16 +23,16 @@ use crate::call_stack::CallStackVec;
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolResolved {
   ResolvedLocal,
-  ResolvedRaw,                                     // raw syntax, no target
-  ResolvedDef(String, String, Option<ImportRule>), // ns, def
+  ResolvedRaw,                                         // raw syntax, no target
+  ResolvedDef(Box<str>, Box<str>, Option<ImportRule>), // ns, def
 }
 
 /// defRule: ns def
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportRule {
-  NsAs(String),               // ns
-  NsReferDef(String, String), // ns, def
-  NsDefault(String),          // ns, js only
+  NsAs(Box<str>),                 // ns
+  NsReferDef(Box<str>, Box<str>), // ns, def
+  NsDefault(Box<str>),            // ns, js only
 }
 
 /// special types wraps vector of calcit data for displaying
@@ -44,12 +44,12 @@ pub enum Calcit {
   Nil,
   Bool(bool),
   Number(f64),
-  Symbol(String, String, String, Option<Box<SymbolResolved>>), // content, ns... so it has meta information
+  Symbol(Box<str>, Box<str>, Box<str>, Option<Box<SymbolResolved>>), // content, ns... so it has meta information
   Keyword(EdnKwd),
-  Str(String),
+  Str(Box<str>),
   Thunk(Box<Calcit>, Option<Box<Calcit>>),
   /// holding a path to its state
-  Ref(String),
+  Ref(Box<str>),
   /// more tagged union type, more like an internal structure
   Tuple(Box<Calcit>, Box<Calcit>),
   ///  to be used by FFIs
@@ -60,23 +60,23 @@ pub enum Calcit {
   Set(rpds::HashTrieSetSync<Calcit>),
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   Record(EdnKwd, Vec<EdnKwd>, Vec<Calcit>), // usize of keyword id
-  Proc(String),
+  Proc(Box<str>),
   Macro(
-    String,           // name
-    String,           // ns
-    String,           // an id
+    Box<str>,         // name
+    Box<str>,         // ns
+    Box<str>,         // an id
     Box<CalcitItems>, // args
     Box<CalcitItems>, // body
   ),
   Fn(
-    String, // name
-    String, // ns
-    String, // an id
+    Box<str>, // name
+    Box<str>, // ns
+    Box<str>, // an id
     CalcitScope,
     Box<CalcitItems>, // args
     Box<CalcitItems>, // body
   ),
-  Syntax(CalcitSyntax, String), // name, ns... notice that `ns` is a meta info
+  Syntax(CalcitSyntax, Box<str>), // name, ns... notice that `ns` is a meta info
 }
 
 impl fmt::Display for Calcit {
@@ -241,9 +241,9 @@ pub fn format_to_lisp(x: &Calcit) -> String {
       s.push(')');
       s
     }
-    Calcit::Symbol(s, ..) => s.to_owned(),
+    Calcit::Symbol(s, ..) => s.to_string(),
     Calcit::Syntax(s, _ns) => s.to_string(),
-    Calcit::Proc(s) => s.to_owned(),
+    Calcit::Proc(s) => s.to_string(),
     a => format!("{}", a),
   }
 }
@@ -498,7 +498,7 @@ impl Calcit {
   pub fn turn_string(&self) -> String {
     match self {
       Calcit::Nil => String::from(""),
-      Calcit::Str(s) => s.to_owned(),
+      Calcit::Str(s) => (**s).to_owned(),
       _ => format!("{}", self),
     }
   }
@@ -508,7 +508,7 @@ impl Calcit {
   }
 
   pub fn new_str<T: Into<String>>(s: T) -> Calcit {
-    Calcit::Str(s.into())
+    Calcit::Str(s.into().into_boxed_str())
   }
 
   /// makes sure that keyword is from global dict, not created by fresh
@@ -518,9 +518,9 @@ impl Calcit {
 }
 
 /// too naive id generator to be safe in WASM
-pub fn gen_core_id() -> String {
+pub fn gen_core_id() -> Box<str> {
   let c = ID_GEN.fetch_add(1, SeqCst);
-  format!("gen_id_{}", c)
+  format!("gen_id_{}", c).into_boxed_str()
 }
 
 #[derive(Debug, Clone, PartialEq)]

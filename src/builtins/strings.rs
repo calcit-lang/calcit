@@ -8,12 +8,12 @@ use crate::util::number::f64_to_usize;
 pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Nil), Some(Calcit::Nil)) => Ok(Calcit::new_str("")),
-    (Some(Calcit::Nil), Some(b)) => Ok(Calcit::Str(b.turn_string())),
-    (Some(a), Some(Calcit::Nil)) => Ok(Calcit::Str(a.turn_string())),
+    (Some(Calcit::Nil), Some(b)) => Ok(Calcit::Str(b.turn_string().into_boxed_str())),
+    (Some(a), Some(Calcit::Nil)) => Ok(Calcit::Str(a.turn_string().into_boxed_str())),
     (Some(a), Some(b)) => {
       let mut s = a.turn_string();
       s.push_str(&b.turn_string());
-      Ok(Calcit::Str(s))
+      Ok(Calcit::Str(s.into_boxed_str()))
     }
     (_, _) => CalcitErr::err_str(format!("expected 2 arguments, got: {}", primes::CrListWrap(xs.to_owned()))),
   }
@@ -21,11 +21,11 @@ pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn trim(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Str(s)), None) => Ok(Calcit::Str(s.trim().to_owned())),
+    (Some(Calcit::Str(s)), None) => Ok(Calcit::Str(s.trim().to_owned().into_boxed_str())),
     (Some(Calcit::Str(s)), Some(Calcit::Str(p))) => {
       if p.len() == 1 {
         let c: char = p.chars().next().unwrap();
-        Ok(Calcit::Str(s.trim_matches(c).to_owned()))
+        Ok(Calcit::Str(s.trim_matches(c).to_owned().into_boxed_str()))
       } else {
         CalcitErr::err_str(format!("trim expected pattern in a char, got {}", p))
       }
@@ -38,7 +38,7 @@ pub fn trim(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 /// just format value to string
 pub fn call_str(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(a) => Ok(Calcit::Str(a.turn_string())),
+    Some(a) => Ok(Calcit::Str(a.turn_string().into_boxed_str())),
     None => CalcitErr::err_str("&str expected 1 argument, got nothing"),
   }
 }
@@ -46,11 +46,11 @@ pub fn call_str(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn turn_string(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Nil) => Ok(Calcit::new_str("")),
-    Some(Calcit::Bool(b)) => Ok(Calcit::Str(b.to_string())),
+    Some(Calcit::Bool(b)) => Ok(Calcit::Str(b.to_string().into_boxed_str())),
     Some(Calcit::Str(s)) => Ok(Calcit::Str(s.to_owned())),
-    Some(Calcit::Keyword(s)) => Ok(Calcit::Str(s.to_string())),
+    Some(Calcit::Keyword(s)) => Ok(Calcit::Str(s.to_string().into_boxed_str())),
     Some(Calcit::Symbol(s, ..)) => Ok(Calcit::Str(s.to_owned())),
-    Some(Calcit::Number(n)) => Ok(Calcit::Str(n.to_string())),
+    Some(Calcit::Number(n)) => Ok(Calcit::Str(n.to_string().into_boxed_str())),
     Some(a) => CalcitErr::err_str(format!("turn-string cannot turn this to string: {}", a)),
     None => CalcitErr::err_str("turn-string expected 1 argument, got nothing"),
   }
@@ -59,11 +59,11 @@ pub fn turn_string(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn split(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => {
-      let pieces = s.split(pattern);
+      let pieces = (**s).split(&**pattern);
       let mut ys: CalcitItems = rpds::vector_sync![];
       for p in pieces {
         if !p.is_empty() {
-          ys.push_back_mut(Calcit::Str(p.to_owned()));
+          ys.push_back_mut(Calcit::Str(p.to_owned().into_boxed_str()));
         }
       }
       Ok(Calcit::List(ys))
@@ -77,7 +77,7 @@ pub fn format_number(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(x))) => {
       let size = f64_to_usize(*x).map_err(CalcitErr::use_str)?;
-      Ok(Calcit::Str(format!("{n:.*}", size, n = n)))
+      Ok(Calcit::Str(format!("{n:.*}", size, n = n).into_boxed_str()))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("&number:format expected numbers, got: {} {}", a, b)),
     (_, _) => CalcitErr::err_str("&number:format expected 2 arguments"),
@@ -86,7 +86,7 @@ pub fn format_number(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn replace(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
-    (Some(Calcit::Str(s)), Some(Calcit::Str(p)), Some(Calcit::Str(r))) => Ok(Calcit::Str(s.replace(p, r))),
+    (Some(Calcit::Str(s)), Some(Calcit::Str(p)), Some(Calcit::Str(r))) => Ok(Calcit::Str(s.replace(&**p, &**r).into_boxed_str())),
     (Some(a), Some(b), Some(c)) => CalcitErr::err_str(format!("str:replace expected 3 strings, got: {} {} {}", a, b, c)),
     (_, _, _) => CalcitErr::err_str(format!(
       "str:replace expected 3 arguments, got: {}",
@@ -100,7 +100,7 @@ pub fn split_lines(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       let lines = s.split('\n');
       let mut ys = rpds::vector_sync![];
       for line in lines {
-        ys.push_back_mut(Calcit::Str(line.to_owned()));
+        ys.push_back_mut(Calcit::Str(line.to_owned().into_boxed_str()));
       }
       Ok(Calcit::List(ys))
     }
@@ -125,7 +125,7 @@ pub fn str_slice(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         } else {
           // turn into vec first to also handle UTF8
           let s_vec = s.chars().collect::<Vec<_>>();
-          Ok(Calcit::Str(s_vec[from..to].iter().cloned().collect::<String>()))
+          Ok(Calcit::Str(s_vec[from..to].iter().cloned().collect::<String>().into_boxed_str()))
         }
       }
       Err(e) => CalcitErr::err_str(e),
@@ -152,7 +152,7 @@ pub fn compare_string(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn find_index(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => match s.find(pattern) {
+    (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => match s.find(&**pattern) {
       Some(idx) => Ok(Calcit::Number(idx as f64)),
       None => Ok(Calcit::Number(-1.0)), // TODO maybe nil?
     },
@@ -162,14 +162,14 @@ pub fn find_index(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 pub fn starts_with_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool(s.starts_with(pattern))),
+    (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool(s.starts_with(&**pattern))),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("starts-with? expected 2 strings, got: {} {}", a, b)),
     (_, _) => CalcitErr::err_str("starts-with? expected 2 arguments, got nothing"),
   }
 }
 pub fn ends_with_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool(s.ends_with(pattern))),
+    (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool(s.ends_with(&**pattern))),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("ends-with? expected 2 strings, got: {} {}", a, b)),
     (_, _) => CalcitErr::err_str("ends-with? expected 2 arguments, got nothing"),
   }
@@ -193,7 +193,7 @@ pub fn get_char_code(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn char_from_code(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(x)) => match f64_to_usize(*x) {
-      Ok(n) => Ok(Calcit::Str((char::from_u32(n as u32).unwrap()).to_string())),
+      Ok(n) => Ok(Calcit::Str((char::from_u32(n as u32).unwrap()).to_string().into_boxed_str())),
       Err(e) => return CalcitErr::err_str(format!("char_from_code expected number, got: {}", e)),
     },
     Some(a) => CalcitErr::err_str(format!("char_from_code expected 1 number, got: {}", a)),
@@ -213,7 +213,7 @@ pub fn parse_float(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn pr_str(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(a) => Ok(Calcit::Str(a.to_string())),
+    Some(a) => Ok(Calcit::Str(a.to_string().into_boxed_str())),
     None => CalcitErr::err_str("pr-str expected 1 argument, got nothing"),
   }
 }
@@ -231,7 +231,7 @@ pub fn escape(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       let mut chunk = String::from("\"");
       chunk.push_str(&s.escape_default().to_string());
       chunk.push('"');
-      Ok(Calcit::Str(chunk))
+      Ok(Calcit::Str(chunk.into_boxed_str()))
     }
     Some(a) => CalcitErr::err_str(format!("escape expected 1 string, got {}", a)),
     None => CalcitErr::err_str("escape expected 1 argument, got nothing"),
@@ -267,7 +267,7 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Str(xs)), Some(Calcit::Str(a))) => Ok(Calcit::Bool(xs.contains(a))),
+    (Some(Calcit::Str(xs)), Some(Calcit::Str(a))) => Ok(Calcit::Bool(xs.contains(&**a))),
     (Some(Calcit::Str(_)), Some(a)) => CalcitErr::err_str(format!("string `includes?` expected a string, got: {}", a)),
     (Some(a), ..) => CalcitErr::err_str(format!("string `includes?` expected string, got: {}", a)),
     (None, ..) => CalcitErr::err_str(format!("string `includes?` expected 2 arguments, got: {:?}", xs)),
@@ -277,7 +277,7 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => match s.chars().nth(idx) {
-        Some(v) => Ok(Calcit::Str(v.to_string())),
+        Some(v) => Ok(Calcit::Str(v.to_string().into_boxed_str())),
         None => Ok(Calcit::Nil),
       },
       Err(e) => CalcitErr::err_str(format!("string nth expect usize, {}", e)),
@@ -291,7 +291,7 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn first(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match s.chars().next() {
-      Some(c) => Ok(Calcit::Str(c.to_string())),
+      Some(c) => Ok(Calcit::Str(c.to_string().into_boxed_str())),
       None => Ok(Calcit::Nil),
     },
     Some(a) => CalcitErr::err_str(format!("str:first expected a string, got: {}", a)),
@@ -311,7 +311,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         }
         buffer.push(c)
       }
-      Ok(Calcit::Str(buffer))
+      Ok(Calcit::Str(buffer.into_boxed_str()))
     }
     Some(a) => CalcitErr::err_str(format!("str:rest expected a string, got: {}", a)),
     None => CalcitErr::err_str("str:rest expected 1 argument"),

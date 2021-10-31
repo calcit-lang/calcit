@@ -11,7 +11,7 @@ use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 use crate::util::{skip, slice};
 
-pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &Box<str>) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol(s, ..)), Some(Calcit::List(xs))) => Ok(Calcit::Fn(
       s.to_owned(),
@@ -26,7 +26,7 @@ pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Ca
   }
 }
 
-pub fn defmacro(expr: &CalcitItems, _scope: &CalcitScope, def_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn defmacro(expr: &CalcitItems, _scope: &CalcitScope, def_ns: &Box<str>) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol(s, ..)), Some(Calcit::List(xs))) => Ok(Calcit::Macro(
       s.to_owned(),
@@ -40,7 +40,7 @@ pub fn defmacro(expr: &CalcitItems, _scope: &CalcitScope, def_ns: &str) -> Resul
   }
 }
 
-pub fn quote(expr: &CalcitItems, _scope: &CalcitScope, _file_ns: &str) -> Result<Calcit, CalcitErr> {
+pub fn quote(expr: &CalcitItems, _scope: &CalcitScope, _file_ns: &Box<str>) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     Ok(expr[0].to_owned())
   } else {
@@ -48,7 +48,7 @@ pub fn quote(expr: &CalcitItems, _scope: &CalcitScope, _file_ns: &str) -> Result
   }
 }
 
-pub fn syntax_if(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn syntax_if(expr: &CalcitItems, scope: &CalcitScope, file_ns: &Box<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
     _ if expr.len() > 3 => CalcitErr::err_str(format!("too many nodes for if: {:?}", expr)),
     (Some(cond), Some(true_branch)) => {
@@ -66,7 +66,7 @@ pub fn syntax_if(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_st
   }
 }
 
-pub fn eval(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn eval(expr: &CalcitItems, scope: &CalcitScope, file_ns: &Box<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let v = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
     runner::evaluate_expr(&v, scope, file_ns, call_stack)
@@ -75,7 +75,7 @@ pub fn eval(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: 
   }
 }
 
-pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: &Box<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match expr.get(0) {
     Some(Calcit::Nil) => runner::evaluate_lines(&skip(expr, 1), scope, file_ns, call_stack),
     Some(Calcit::List(xs)) if xs.len() == 2 => {
@@ -102,7 +102,7 @@ enum SpanResult {
   Range(CalcitItems),
 }
 
-pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: &Box<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match expr.get(0) {
     None => CalcitErr::err_str("quasiquote expected a node"),
     Some(code) => {
@@ -117,17 +117,17 @@ pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_s
   }
 }
 
-fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<SpanResult, CalcitErr> {
+fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &Box<str>, call_stack: &CallStackVec) -> Result<SpanResult, CalcitErr> {
   if !has_unquote(c) {
     return Ok(SpanResult::Single(c.to_owned()));
   }
   match c {
     Calcit::List(ys) => match (ys.get(0), ys.get(1)) {
-      (Some(Calcit::Symbol(sym, ..)), Some(expr)) if sym == "~" => {
+      (Some(Calcit::Symbol(sym, ..)), Some(expr)) if &**sym == "~" => {
         let value = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         Ok(SpanResult::Single(value))
       }
-      (Some(Calcit::Symbol(sym, ..)), Some(expr)) if sym == "~@" => {
+      (Some(Calcit::Symbol(sym, ..)), Some(expr)) if &**sym == "~@" => {
         let ret = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         match ret {
           Calcit::List(zs) => Ok(SpanResult::Range(zs)),
@@ -163,12 +163,17 @@ pub fn has_unquote(xs: &Calcit) -> bool {
       }
       false
     }
-    Calcit::Symbol(s, ..) if s == "~" || s == "~@" => true,
+    Calcit::Symbol(s, ..) if &**s == "~" || &**s == "~@" => true,
     _ => false,
   }
 }
 
-pub fn macroexpand(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn macroexpand(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &Box<str>,
+  call_stack: &CallStackVec,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
 
@@ -205,7 +210,12 @@ pub fn macroexpand(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_
   }
 }
 
-pub fn macroexpand_1(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn macroexpand_1(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &Box<str>,
+  call_stack: &CallStackVec,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
     // println!("quoted: {}", quoted_code);
@@ -230,7 +240,12 @@ pub fn macroexpand_1(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, cal
   }
 }
 
-pub fn macroexpand_all(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn macroexpand_all(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: &Box<str>,
+  call_stack: &CallStackVec,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
 
@@ -289,7 +304,7 @@ pub fn macroexpand_all(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, c
   }
 }
 
-pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: &Box<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   if expr.len() == 2 {
     let xs = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack);
 
@@ -298,7 +313,7 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_sta
       Ok(v) => Ok(v.to_owned()),
       Err(failure) => {
         let f = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
-        let err_data = Calcit::Str(failure.msg.to_owned());
+        let err_data = Calcit::Str(failure.msg.to_owned().into_boxed_str());
         match f {
           Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
             let values = rpds::vector_sync![err_data];
