@@ -5,11 +5,12 @@ use crate::{
   call_stack::CallStackVec,
   data::{cirru, edn},
   primes,
-  primes::{gen_core_id, keyword::load_order_key, lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems, CrListWrap},
+  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CrListWrap},
   runner,
   util::number::f64_to_usize,
 };
 
+use cirru_edn::EdnKwd;
 use cirru_parser::{Cirru, CirruWriterOptions};
 
 use std::cmp::Ordering;
@@ -101,7 +102,7 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         chunk
       }
       Calcit::Keyword(s) => {
-        let mut chunk = lookup_order_kwd_str(s);
+        let mut chunk = s.to_string();
         chunk.push('_');
         chunk.push('_');
         chunk.push_str(&n.to_string());
@@ -235,7 +236,7 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       None,
     )),
     Calcit::Keyword(s) => Ok(Calcit::Symbol(
-      lookup_order_kwd_str(s),
+      s.to_string(),
       String::from(primes::GENERATED_NS),
       String::from(primes::GENERATED_DEF),
       None,
@@ -319,7 +320,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
   };
   match &class {
     Calcit::Record(_, fields, values) => {
-      match find_in_fields(fields, load_order_key(name)) {
+      match find_in_fields(fields, &EdnKwd::from(name)) {
         Some(idx) => {
           let mut method_args: rpds::VectorSync<Calcit> = rpds::vector_sync![];
           method_args.push_back_mut(value);
@@ -349,7 +350,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
         None => {
           let mut content = String::from("");
           for k in fields {
-            content = format!("{},{}", content, lookup_order_kwd_str(k))
+            content = format!("{},{}", content, k)
           }
           Err(CalcitErr::use_msg_stack(
             format!("missing field `{}` in {}", name, content),

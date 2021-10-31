@@ -1,5 +1,7 @@
+use cirru_edn::EdnKwd;
+
 use crate::builtins::records::find_in_fields;
-use crate::primes::{keyword::load_order_key, Calcit, CalcitErr, CalcitItems, CrListWrap};
+use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
 
 use crate::util::number::is_even;
 
@@ -68,11 +70,11 @@ pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       let mut new_values = values.to_owned();
       for (k, v) in ys {
         match k {
-          Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, load_order_key(s)) {
+          Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, &EdnKwd::from(s)) {
             Some(pos) => new_values[pos] = v.to_owned(),
             None => return CalcitErr::err_str(format!("invalid field `{}` for {:?}", s, fields)),
           },
-          Calcit::Keyword(s) => match find_in_fields(fields, s.to_owned()) {
+          Calcit::Keyword(s) => match find_in_fields(fields, s) {
             Some(pos) => new_values[pos] = v.to_owned(),
             None => return CalcitErr::err_str(format!("invalid field `{}` for {:?}", s, fields)),
           },

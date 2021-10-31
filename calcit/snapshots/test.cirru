@@ -38,11 +38,6 @@
                 base $ {} (:a 1)
                 assert= 1 $ base :a
 
-            assert-detect identity $ < :a :b
-            assert-detect identity $ < :aa :ab
-            assert-detect not $ > :a :b
-            assert-detect not $ > :aa :ab
-
             inside-eval:
               assert= ([] 1)
                 .map

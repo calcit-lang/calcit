@@ -4,7 +4,7 @@ use std::path::Path;
 
 use cirru_edn::{format, Edn};
 
-use crate::primes::{lookup_order_kwd_str, Calcit, CalcitItems, ImportRule, SymbolResolved::*};
+use crate::primes::{Calcit, CalcitItems, ImportRule, SymbolResolved::*};
 use crate::program;
 
 #[derive(Debug)]
@@ -136,7 +136,7 @@ fn dump_code(code: &Calcit) -> Edn {
     Calcit::Nil => Edn::Nil,
     Calcit::Str(s) => Edn::str(s),
     Calcit::Bool(b) => Edn::Bool(b.to_owned()),
-    Calcit::Keyword(s) => Edn::kwd(lookup_order_kwd_str(s)),
+    Calcit::Keyword(s) => Edn::Keyword(s.to_owned()),
     Calcit::Symbol(s, ns, at_def, resolved) => {
       let resolved = match resolved {
         Some(resolved) => match &**resolved {

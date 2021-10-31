@@ -2,7 +2,7 @@ use std::char;
 use std::cmp::Ordering;
 
 use crate::primes;
-use crate::primes::{lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems, CrListWrap};
+use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
 use crate::util::number::f64_to_usize;
 
 pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -48,7 +48,7 @@ pub fn turn_string(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Nil) => Ok(Calcit::new_str("")),
     Some(Calcit::Bool(b)) => Ok(Calcit::Str(b.to_string())),
     Some(Calcit::Str(s)) => Ok(Calcit::Str(s.to_owned())),
-    Some(Calcit::Keyword(s)) => Ok(Calcit::Str(lookup_order_kwd_str(s))),
+    Some(Calcit::Keyword(s)) => Ok(Calcit::Str(s.to_string())),
     Some(Calcit::Symbol(s, ..)) => Ok(Calcit::Str(s.to_owned())),
     Some(Calcit::Number(n)) => Ok(Calcit::Str(n.to_string())),
     Some(a) => CalcitErr::err_str(format!("turn-string cannot turn this to string: {}", a)),

@@ -70,7 +70,7 @@ pub fn display_stack(failure: &str, stack: &CallStackVec) -> Result<(), String> 
       args.push(edn::calcit_to_edn(a)?);
     }
     info.insert(Edn::kwd("args"), Edn::List(args));
-    info.insert(Edn::kwd("kind"), Edn::kwd(name_kind(&s.kind)));
+    info.insert(Edn::kwd("kind"), Edn::kwd(&name_kind(&s.kind)));
 
     stack_list.push(Edn::Map(info))
   }

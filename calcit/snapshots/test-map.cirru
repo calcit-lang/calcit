@@ -296,12 +296,13 @@
                   first entry
                   + 10 $ last entry
 
+            ; "not so stable, :bbbb is rare so it could be larger"
             assert=
               []
                 [] :a 11
-                [] :b 12
+                [] :bbbb 12
               .sort-by
-                .map-list (&{} :a 1 :b 2) $ fn (entry)
+                .map-list (&{} :a 1 :bbbb 2) $ fn (entry)
                   []
                     first entry
                     + 10 $ last entry

@@ -3,10 +3,12 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use crate::primes::{lookup_order_kwd_str, Calcit, CalcitErr, CalcitItems, CalcitScope};
+use cirru_edn::EdnKwd;
+
+use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::{call_stack::CallStackVec, runner};
 
-type ValueAndListeners = (Calcit, HashMap<String, Calcit>);
+type ValueAndListeners = (Calcit, HashMap<EdnKwd, Calcit>);
 
 lazy_static! {
   static ref REFS_DICT: RwLock<HashMap<String, ValueAndListeners>> = RwLock::new(HashMap::new());
@@ -18,7 +20,7 @@ fn read_ref(path: &str) -> Option<ValueAndListeners> {
   dict.get(path).map(|pair| pair.to_owned())
 }
 
-fn write_to_ref(path: String, v: Calcit, listeners: HashMap<String, Calcit>) {
+fn write_to_ref(path: String, v: Calcit, listeners: HashMap<EdnKwd, Calcit>) {
   let mut dict = REFS_DICT.write().unwrap();
   let _ = (*dict).insert(path, (v, listeners));
 }
@@ -105,11 +107,11 @@ pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k)), Some(Calcit::Fn(..))) => {
       let mut dict = REFS_DICT.write().unwrap();
       let (prev, listeners) = &(*dict).get(path).unwrap().to_owned();
-      if listeners.contains_key(&lookup_order_kwd_str(k)) {
+      if listeners.contains_key(k) {
         CalcitErr::err_str(format!("add-watch failed, listener with key `{}` existed", k))
       } else {
         let mut new_listeners = listeners.to_owned();
-        new_listeners.insert(lookup_order_kwd_str(k), xs.get(2).unwrap().to_owned());
+        new_listeners.insert(k.to_owned(), xs.get(2).unwrap().to_owned());
         let _ = (*dict).insert(path.to_owned(), (prev.to_owned(), new_listeners));
         Ok(Calcit::Nil)
       }
@@ -128,9 +130,9 @@ pub fn remove_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k))) => {
       let mut dict = REFS_DICT.write().unwrap();
       let (prev, listeners) = &(*dict).get(path).unwrap().to_owned();
-      if listeners.contains_key(&lookup_order_kwd_str(k)) {
+      if listeners.contains_key(k) {
         let mut new_listeners = listeners.to_owned();
-        new_listeners.remove(&lookup_order_kwd_str(k));
+        new_listeners.remove(k);
         let _ = (*dict).insert(path.to_owned(), (prev.to_owned(), new_listeners));
         Ok(Calcit::Nil)
       } else {
