@@ -198,7 +198,7 @@ fn make_fn_wrapper(body: &str) -> String {
 
 fn to_js_code(
   xs: &Calcit,
-  ns: &Box<str>,
+  ns: &str,
   local_defs: &HashSet<Box<str>>,
   file_imports: &RefCell<ImportsDict>,
   keywords: &RefCell<Vec<EdnKwd>>,
@@ -259,7 +259,7 @@ fn to_js_code(
 
 fn gen_call_code(
   ys: &CalcitItems,
-  ns: &Box<str>,
+  ns: &str,
   local_defs: &HashSet<Box<str>>,
   xs: &Calcit,
   file_imports: &RefCell<ImportsDict>,
@@ -270,7 +270,7 @@ fn gen_call_code(
     Some(label) => label.to_owned(),
     None => String::from(""),
   };
-  let var_prefix = if &**ns == primes::CORE_NS { "" } else { "$calcit." };
+  let var_prefix = if ns == primes::CORE_NS { "" } else { "$calcit." };
   let proc_prefix = get_proc_prefix(ns);
   if ys.is_empty() {
     println!("[Warn] Unexpected empty list inside {}", xs);
@@ -563,17 +563,17 @@ fn gen_call_code(
 }
 
 fn gen_symbol_code(
-  s: &Box<str>,
-  def_ns: &Box<str>,
-  at_def: &Box<str>,
+  s: &str,
+  def_ns: &str,
+  at_def: &str,
   resolved: &Option<primes::SymbolResolved>,
-  ns: &Box<str>,
+  ns: &str,
   xs: &Calcit,
   local_defs: &HashSet<Box<str>>,
   file_imports: &RefCell<ImportsDict>,
 ) -> Result<String, String> {
   // println!("gen symbol: {} {} {} {:?}", s, def_ns, ns, resolved);
-  let var_prefix = if &**ns == "calcit.core" { "" } else { "$calcit." };
+  let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
   if has_ns_part(s) {
     if s.starts_with("js/") {
       Ok(escape_ns_var(s, "js"))
@@ -584,14 +584,10 @@ fn gen_symbol_code(
       match resolved {
         Some(ResolvedDef(r_ns, _r_def, _import_rule /* None */)) => {
           if is_cirru_string(r_ns) {
-            track_ns_import(
-              ns_part.to_owned().into_boxed_str(),
-              ImportedTarget::AsNs(r_ns.to_owned()),
-              file_imports,
-            )?;
+            track_ns_import(ns_part, ImportedTarget::AsNs(r_ns.to_owned()), file_imports)?;
             Ok(escape_ns_var(s, ns_part))
           } else {
-            track_ns_import(r_ns.to_owned(), ImportedTarget::AsNs(r_ns.to_owned()), file_imports)?;
+            track_ns_import(r_ns, ImportedTarget::AsNs(r_ns.to_owned()), file_imports)?;
             Ok(escape_ns_var(s, r_ns))
           }
         }
@@ -613,19 +609,19 @@ fn gen_symbol_code(
     }
     if let Some(ImportRule::NsDefault(_s)) = import_rule {
       // imports that using :default are special
-      track_ns_import(s.to_owned(), ImportedTarget::DefaultNs(r_ns), file_imports)?;
+      track_ns_import(s, ImportedTarget::DefaultNs(r_ns), file_imports)?;
     } else {
-      track_ns_import(s.to_owned(), ImportedTarget::ReferNs(r_ns), file_imports)?;
+      track_ns_import(s, ImportedTarget::ReferNs(r_ns), file_imports)?;
     }
     Ok(escape_var(s))
-  } else if &**def_ns == primes::CORE_NS {
+  } else if def_ns == primes::CORE_NS {
     // local variales inside calcit.core also uses this ns
     println!("[Warn] detected variable inside core not resolved");
     Ok(format!("{}{}", var_prefix, escape_var(s)))
   } else if def_ns.is_empty() {
     Err(format!("Unexpected ns at symbol, {:?}", xs))
   } else if def_ns != ns {
-    track_ns_import(s.to_owned(), ImportedTarget::ReferNs(def_ns.to_owned()), file_imports)?;
+    track_ns_import(s, ImportedTarget::ReferNs(def_ns.to_owned().into()), file_imports)?;
 
     // probably via macro
     // TODO dirty code collecting imports
@@ -641,9 +637,9 @@ fn gen_symbol_code(
 }
 
 // track but compare first, return Err if a different one existed
-fn track_ns_import(sym: Box<str>, import_rule: ImportedTarget, file_imports: &RefCell<ImportsDict>) -> Result<(), String> {
+fn track_ns_import(sym: &str, import_rule: ImportedTarget, file_imports: &RefCell<ImportsDict>) -> Result<(), String> {
   let mut dict = file_imports.borrow_mut();
-  match dict.get(&sym) {
+  match dict.get(&sym.to_owned().into_boxed_str()) {
     Some(v) => {
       if *v == import_rule {
         Ok(())
@@ -652,7 +648,7 @@ fn track_ns_import(sym: Box<str>, import_rule: ImportedTarget, file_imports: &Re
       }
     }
     None => {
-      dict.insert(sym, import_rule);
+      dict.insert(sym.to_owned().into(), import_rule);
       Ok(())
     }
   }
@@ -662,7 +658,7 @@ fn gen_let_code(
   body: &CalcitItems,
   local_defs: &HashSet<Box<str>>,
   xs: &Calcit,
-  ns: &Box<str>,
+  ns: &str,
   file_imports: &RefCell<ImportsDict>,
   keywords: &RefCell<Vec<EdnKwd>>,
   base_return_label: &Option<String>,
@@ -784,7 +780,7 @@ fn gen_if_code(
   body: &CalcitItems,
   local_defs: &HashSet<Box<str>>,
   _xs: &Calcit,
-  ns: &Box<str>,
+  ns: &str,
   file_imports: &RefCell<ImportsDict>,
   keywords: &RefCell<Vec<EdnKwd>>,
   base_return_label: &Option<String>,
@@ -844,13 +840,13 @@ fn gen_if_code(
 
 fn gen_args_code(
   body: &CalcitItems,
-  ns: &Box<str>,
+  ns: &str,
   local_defs: &HashSet<Box<str>>,
   file_imports: &RefCell<ImportsDict>,
   keywords: &RefCell<Vec<EdnKwd>>,
 ) -> Result<String, String> {
   let mut result = String::from("");
-  let var_prefix = if &**ns == "calcit.core" { "" } else { "$calcit." };
+  let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
   let mut spreading = false;
   for x in body {
     match x {
@@ -879,7 +875,7 @@ fn gen_args_code(
 
 fn list_to_js_code(
   xs: &CalcitItems,
-  ns: &Box<str>,
+  ns: &str,
   local_defs: HashSet<Box<str>>,
   return_label: &str,
   file_imports: &RefCell<ImportsDict>,
@@ -927,16 +923,16 @@ fn uses_recur(xs: &Calcit) -> bool {
 }
 
 fn gen_js_func(
-  name: &Box<str>,
+  name: &str,
   args: &CalcitItems,
   raw_body: &CalcitItems,
-  ns: &Box<str>,
+  ns: &str,
   exported: bool,
   outer_defs: &HashSet<Box<str>>,
   file_imports: &RefCell<ImportsDict>,
   keywords: &RefCell<Vec<EdnKwd>>,
 ) -> Result<String, String> {
-  let var_prefix = if &**ns == "calcit.core" { "" } else { "$calcit." };
+  let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
   let mut local_defs = outer_defs.to_owned();
   let mut spreading_code = String::from(""); // js list and calcit-js list are different, need to convert
   let mut args_code = String::from("");
@@ -1058,9 +1054,9 @@ fn hinted_async(xs: &rpds::VectorSync<Calcit>) -> bool {
   false
 }
 
-fn contains_symbol(xs: &Calcit, y: &Box<str>) -> bool {
+fn contains_symbol(xs: &Calcit, y: &str) -> bool {
   match xs {
-    Calcit::Symbol(s, ..) => s == y,
+    Calcit::Symbol(s, ..) => &**s == y,
     Calcit::Thunk(code, _) => contains_symbol(code, y),
     Calcit::Fn(_, _, _, _, _, body) => {
       for x in &**body {

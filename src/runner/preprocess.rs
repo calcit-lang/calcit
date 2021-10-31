@@ -106,7 +106,7 @@ fn is_fn_or_macro(code: &Calcit) -> bool {
 pub fn preprocess_expr(
   expr: &Calcit,
   scope_defs: &HashSet<Box<str>>,
-  file_ns: &Box<str>,
+  file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
@@ -238,7 +238,7 @@ pub fn preprocess_expr(
 fn process_list_call(
   xs: &CalcitItems,
   scope_defs: &HashSet<Box<str>>,
-  file_ns: &Box<str>,
+  file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
@@ -366,9 +366,9 @@ fn process_list_call(
 fn check_fn_args(
   defined_args: &CalcitItems,
   params: &CalcitItems,
-  file_ns: &Box<str>,
-  f_name: &Box<str>,
-  def_name: &Box<str>,
+  file_ns: &str,
+  f_name: &str,
+  def_name: &str,
   check_warnings: &RefCell<Vec<String>>,
 ) {
   let mut i = 0;
@@ -445,14 +445,14 @@ fn grab_def_name(x: &Calcit) -> Box<str> {
 // tradition rule for processing exprs
 pub fn preprocess_each_items(
   head: &CalcitSyntax,
-  head_ns: &Box<str>,
+  head_ns: &str,
   args: &CalcitItems,
   scope_defs: &HashSet<Box<str>>,
-  file_ns: &Box<str>,
+  file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
+  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())];
   for a in args {
     let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
     xs.push_back_mut(form);
@@ -462,15 +462,15 @@ pub fn preprocess_each_items(
 
 pub fn preprocess_defn(
   head: &CalcitSyntax,
-  head_ns: &Box<str>,
+  head_ns: &str,
   args: &CalcitItems,
   scope_defs: &HashSet<Box<str>>,
-  file_ns: &Box<str>,
+  file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
-  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
+  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())];
   match (args.get(0), args.get(1)) {
     (Some(Calcit::Symbol(def_name, def_name_ns, at_def, _)), Some(Calcit::List(ys))) => {
       let mut body_defs: HashSet<Box<str>> = scope_defs.to_owned();
@@ -541,14 +541,14 @@ fn check_symbol(sym: &str, args: &CalcitItems, check_warnings: &RefCell<Vec<Stri
 
 pub fn preprocess_call_let(
   head: &CalcitSyntax,
-  head_ns: &Box<str>,
+  head_ns: &str,
   args: &CalcitItems,
   scope_defs: &HashSet<Box<str>>,
-  file_ns: &Box<str>,
+  file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
+  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())];
   let mut body_defs: HashSet<Box<str>> = scope_defs.to_owned();
   let binding = match args.get(0) {
     Some(Calcit::Nil) => Calcit::Nil,
@@ -597,12 +597,12 @@ pub fn preprocess_call_let(
 
 pub fn preprocess_quote(
   head: &CalcitSyntax,
-  head_ns: &Box<str>,
+  head_ns: &str,
   args: &CalcitItems,
   _scope_defs: &HashSet<Box<str>>,
-  _file_ns: &Box<str>,
+  _file_ns: &str,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
+  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())];
   for a in args {
     xs.push_back_mut(a.to_owned());
   }
@@ -611,14 +611,14 @@ pub fn preprocess_quote(
 
 pub fn preprocess_defatom(
   head: &CalcitSyntax,
-  head_ns: &Box<str>,
+  head_ns: &str,
   args: &CalcitItems,
   scope_defs: &HashSet<Box<str>>,
-  file_ns: &Box<str>,
+  file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
+  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())];
   for a in args {
     // TODO
     let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
@@ -630,14 +630,14 @@ pub fn preprocess_defatom(
 /// need to handle experssions inside unquote snippets
 pub fn preprocess_quasiquote(
   head: &CalcitSyntax,
-  head_ns: &Box<str>,
+  head_ns: &str,
   args: &CalcitItems,
   scope_defs: &HashSet<Box<str>>,
-  file_ns: &Box<str>,
+  file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned())];
+  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())];
   for a in args {
     xs.push_back_mut(preprocess_quasiquote_internal(a, scope_defs, file_ns, check_warnings, call_stack)?);
   }
@@ -647,7 +647,7 @@ pub fn preprocess_quasiquote(
 pub fn preprocess_quasiquote_internal(
   x: &Calcit,
   scope_defs: &HashSet<Box<str>>,
-  file_ns: &Box<str>,
+  file_ns: &str,
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {

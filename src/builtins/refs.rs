@@ -20,13 +20,13 @@ fn read_ref(path: &str) -> Option<ValueAndListeners> {
   dict.get(path).map(|pair| pair.to_owned())
 }
 
-fn write_to_ref(path: &Box<str>, v: Calcit, listeners: HashMap<EdnKwd, Calcit>) {
+fn write_to_ref(path: &str, v: Calcit, listeners: HashMap<EdnKwd, Calcit>) {
   let mut dict = REFS_DICT.write().unwrap();
-  let _ = (*dict).insert(path.to_owned(), (v, listeners));
+  let _ = (*dict).insert(path.to_owned().into(), (v, listeners));
 }
 
-fn modify_ref(path: &Box<str>, v: Calcit, call_stack: &CallStackVec) -> Result<(), CalcitErr> {
-  let (prev, listeners) = read_ref(&path).unwrap();
+fn modify_ref(path: &str, v: Calcit, call_stack: &CallStackVec) -> Result<(), CalcitErr> {
+  let (prev, listeners) = read_ref(path).unwrap();
   write_to_ref(path, v.to_owned(), listeners.to_owned());
 
   for f in listeners.values() {

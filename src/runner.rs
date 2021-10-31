@@ -163,12 +163,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
   }
 }
 
-pub fn evaluate_symbol(
-  sym: &Box<str>,
-  scope: &CalcitScope,
-  file_ns: &Box<str>,
-  call_stack: &CallStackVec,
-) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match parse_ns_def(sym) {
     Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns, &ns_part) {
       Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, call_stack) {
@@ -184,7 +179,7 @@ pub fn evaluate_symbol(
       if CalcitSyntax::is_core_syntax(sym) {
         return Ok(Calcit::Syntax(
           CalcitSyntax::from(sym).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?,
-          file_ns.to_owned(),
+          file_ns.to_owned().into(),
         ));
       }
       if scope.contains_key(sym) {
@@ -192,7 +187,7 @@ pub fn evaluate_symbol(
         return Ok(scope.get(sym).unwrap().to_owned());
       }
       if is_proc_name(sym) {
-        return Ok(Calcit::Proc(sym.to_owned()));
+        return Ok(Calcit::Proc(sym.to_owned().into()));
       }
       if program::lookup_def_code(CORE_NS, sym).is_some() {
         return eval_symbol_from_program(sym, CORE_NS, call_stack);

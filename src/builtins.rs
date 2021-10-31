@@ -386,7 +386,7 @@ pub fn handle_syntax(
   name: &CalcitSyntax,
   nodes: &CalcitItems,
   scope: &CalcitScope,
-  file_ns: &Box<str>,
+  file_ns: &str,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   match name {
@@ -411,9 +411,9 @@ pub fn handle_syntax(
 
 // detects extra javascript things in js mode,
 // mostly internal procs, also some syntaxs
-pub fn is_js_syntax_procs(s: &Box<str>) -> bool {
+pub fn is_js_syntax_procs(s: &str) -> bool {
   matches!(
-    &**s,
+    s,
     "aget"
       | "aset"
       | "exists?"

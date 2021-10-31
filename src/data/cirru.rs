@@ -2,7 +2,7 @@ use crate::primes::{Calcit, CalcitItems};
 use cirru_parser::Cirru;
 
 /// code is CirruNode, and this function parse code(rather than data)
-pub fn code_to_calcit(xs: &Cirru, ns: &Box<str>, def: &Box<str>) -> Result<Calcit, String> {
+pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String> {
   match xs {
     Cirru::Leaf(s) => match &**s {
       "nil" => Ok(Calcit::Nil),
@@ -15,13 +15,13 @@ pub fn code_to_calcit(xs: &Cirru, ns: &Box<str>, def: &Box<str>) -> Result<Calci
       "&calcit-version" => Ok(Calcit::new_str(env!("CARGO_PKG_VERSION"))),
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
-      "::" => Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), None)),
+      "::" => Ok(Calcit::Symbol(s.to_owned(), ns.to_owned().into(), def.to_owned().into(), None)),
       _ => match s.chars().next().unwrap() {
         ':' => Ok(Calcit::kwd(&s[1..])),
         '.' => {
           if s.starts_with(".-") || s.starts_with(".!") {
             // try not to break js interop
-            Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), None))
+            Ok(Calcit::Symbol(s.to_owned(), ns.to_owned().into(), def.to_owned().into(), None))
           } else {
             Ok(Calcit::Proc(s.to_owned())) // as native method syntax
           }
@@ -35,14 +35,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: &Box<str>, def: &Box<str>) -> Result<Calci
           rpds::vector_sync![]
             .push_back(Calcit::Symbol(
               String::from("quote").into_boxed_str(),
-              ns.to_owned(),
-              def.to_owned(),
+              ns.to_owned().into(),
+              def.to_owned().into(),
               None,
             ))
             .push_back(Calcit::Symbol(
               String::from(&s[1..]).into_boxed_str(),
-              ns.to_owned(),
-              def.to_owned(),
+              ns.to_owned().into(),
+              def.to_owned().into(),
               None,
             )),
         )),
@@ -51,14 +51,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: &Box<str>, def: &Box<str>) -> Result<Calci
           rpds::vector_sync![]
             .push_back(Calcit::Symbol(
               String::from("~@").into_boxed_str(),
-              ns.to_owned(),
-              def.to_owned(),
+              ns.to_owned().into(),
+              def.to_owned().into(),
               None,
             ))
             .push_back(Calcit::Symbol(
               String::from(&s[2..]).into_boxed_str(),
-              ns.to_owned(),
-              def.to_owned(),
+              ns.to_owned().into(),
+              def.to_owned().into(),
               None,
             )),
         )),
@@ -66,14 +66,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: &Box<str>, def: &Box<str>) -> Result<Calci
           rpds::vector_sync![]
             .push_back(Calcit::Symbol(
               String::from("~").into_boxed_str(),
-              ns.to_owned(),
-              def.to_owned(),
+              ns.to_owned().into(),
+              def.to_owned().into(),
               None,
             ))
             .push_back(Calcit::Symbol(
               String::from(&s[1..]).into_boxed_str(),
-              ns.to_owned(),
-              def.to_owned(),
+              ns.to_owned().into(),
+              def.to_owned().into(),
               None,
             )),
         )),
@@ -81,14 +81,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: &Box<str>, def: &Box<str>) -> Result<Calci
           rpds::vector_sync![]
             .push_back(Calcit::Symbol(
               String::from("deref").into_boxed_str(),
-              ns.to_owned(),
-              def.to_owned(),
+              ns.to_owned().into(),
+              def.to_owned().into(),
               None,
             ))
             .push_back(Calcit::Symbol(
               String::from(&s[1..]).into_boxed_str(),
-              ns.to_owned(),
-              def.to_owned(),
+              ns.to_owned().into(),
+              def.to_owned().into(),
               None,
             )),
         )),
@@ -97,7 +97,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &Box<str>, def: &Box<str>) -> Result<Calci
           if let Ok(f) = s.parse::<f64>() {
             Ok(Calcit::Number(f))
           } else {
-            Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), None))
+            Ok(Calcit::Symbol(s.to_owned(), ns.to_owned().into(), def.to_owned().into(), None))
           }
         }
       },
