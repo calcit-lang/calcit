@@ -6,6 +6,7 @@ use crate::primes;
 use crate::primes::Calcit;
 
 use cirru_edn::{Edn, EdnKwd};
+use im_ternary_tree::TernaryTreeList;
 
 // values does not fit are just represented with specical indicates
 pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
@@ -98,9 +99,9 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     ),
     Edn::Tuple(pair) => Calcit::Tuple(Box::new(edn_to_calcit(&pair.0)), Box::new(edn_to_calcit(&pair.1))),
     Edn::List(xs) => {
-      let mut ys: primes::CalcitItems = rpds::vector_sync![];
+      let mut ys: primes::CalcitItems = TernaryTreeList::Empty;
       for x in xs {
-        ys.push_back_mut(edn_to_calcit(x))
+        ys = ys.push(edn_to_calcit(x))
       }
       Calcit::List(ys)
     }

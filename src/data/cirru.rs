@@ -1,5 +1,6 @@
 use crate::primes::{Calcit, CalcitItems};
 use cirru_parser::Cirru;
+use im_ternary_tree::TernaryTreeList;
 
 /// code is CirruNode, and this function parse code(rather than data)
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String> {
@@ -32,14 +33,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
           Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
         },
         '\'' if s.len() > 1 => Ok(Calcit::List(
-          rpds::vector_sync![]
-            .push_back(Calcit::Symbol(
+          TernaryTreeList::Empty
+            .push(Calcit::Symbol(
               String::from("quote").into_boxed_str(),
               ns.to_owned().into(),
               def.to_owned().into(),
               None,
             ))
-            .push_back(Calcit::Symbol(
+            .push(Calcit::Symbol(
               String::from(&s[1..]).into_boxed_str(),
               ns.to_owned().into(),
               def.to_owned().into(),
@@ -48,14 +49,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
         )),
         // TODO also detect simple variables
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(
-          rpds::vector_sync![]
-            .push_back(Calcit::Symbol(
+          TernaryTreeList::Empty
+            .push(Calcit::Symbol(
               String::from("~@").into_boxed_str(),
               ns.to_owned().into(),
               def.to_owned().into(),
               None,
             ))
-            .push_back(Calcit::Symbol(
+            .push(Calcit::Symbol(
               String::from(&s[2..]).into_boxed_str(),
               ns.to_owned().into(),
               def.to_owned().into(),
@@ -63,14 +64,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
             )),
         )),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(
-          rpds::vector_sync![]
-            .push_back(Calcit::Symbol(
+          TernaryTreeList::Empty
+            .push(Calcit::Symbol(
               String::from("~").into_boxed_str(),
               ns.to_owned().into(),
               def.to_owned().into(),
               None,
             ))
-            .push_back(Calcit::Symbol(
+            .push(Calcit::Symbol(
               String::from(&s[1..]).into_boxed_str(),
               ns.to_owned().into(),
               def.to_owned().into(),
@@ -78,14 +79,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
             )),
         )),
         '@' => Ok(Calcit::List(
-          rpds::vector_sync![]
-            .push_back(Calcit::Symbol(
+          TernaryTreeList::Empty
+            .push(Calcit::Symbol(
               String::from("deref").into_boxed_str(),
               ns.to_owned().into(),
               def.to_owned().into(),
               None,
             ))
-            .push_back(Calcit::Symbol(
+            .push(Calcit::Symbol(
               String::from(&s[1..]).into_boxed_str(),
               ns.to_owned().into(),
               def.to_owned().into(),
@@ -103,12 +104,12 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
       },
     },
     Cirru::List(ys) => {
-      let mut zs: CalcitItems = rpds::VectorSync::new_sync();
+      let mut zs: CalcitItems = TernaryTreeList::Empty;
       for y in ys {
         match code_to_calcit(y, ns, def) {
           Ok(v) => {
             if !is_comment(&v) {
-              zs.push_back_mut(v.to_owned())
+              zs = zs.push(v.to_owned())
             } else {
             }
           }
@@ -125,9 +126,9 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
   match xs {
     Cirru::Leaf(s) => Calcit::Str(s.to_owned()),
     Cirru::List(ys) => {
-      let mut zs: CalcitItems = rpds::vector_sync![];
+      let mut zs: CalcitItems = TernaryTreeList::Empty;
       for y in ys {
-        zs.push_back_mut(cirru_to_calcit(y))
+        zs = zs.push(cirru_to_calcit(y))
       }
       Calcit::List(zs)
     }

@@ -4,51 +4,28 @@ pub mod string;
 use std::cmp::Ordering;
 
 use crate::primes::Calcit;
+use im_ternary_tree::TernaryTreeList;
 
-pub fn skip(xs: &rpds::VectorSync<Calcit>, skipped: usize) -> rpds::VectorSync<Calcit> {
-  let mut ys: rpds::VectorSync<Calcit> = rpds::Vector::new_sync();
-  for (idx, x) in xs.iter().enumerate() {
-    if idx >= skipped {
-      ys.push_back_mut(x.to_owned());
-    }
-  }
-  ys
+pub fn skip(xs: &TernaryTreeList<Calcit>, skipped: usize) -> TernaryTreeList<Calcit> {
+  xs.slice(skipped, xs.len())
 }
 
-pub fn slice(xs: &rpds::VectorSync<Calcit>, from: usize, to: usize) -> rpds::VectorSync<Calcit> {
-  let mut ys: rpds::VectorSync<Calcit> = rpds::Vector::new_sync();
-  for (idx, x) in xs.iter().enumerate() {
-    if idx >= from && idx < to {
-      ys.push_back_mut(x.to_owned());
-    }
-  }
-  ys
+pub fn slice(xs: &TernaryTreeList<Calcit>, from: usize, to: usize) -> TernaryTreeList<Calcit> {
+  xs.slice(from, to)
 }
 
-pub fn contains(xs: &rpds::VectorSync<Calcit>, y: &Calcit) -> bool {
-  for x in xs.iter() {
-    if x == y {
-      return true;
-    }
-  }
-  false
+pub fn contains(xs: &TernaryTreeList<Calcit>, y: &Calcit) -> bool {
+  xs.index_of(y) >= 0
 }
 
-pub fn insert(xs: &rpds::VectorSync<Calcit>, pos: usize, y: Calcit) -> rpds::VectorSync<Calcit> {
-  let mut ys: rpds::VectorSync<Calcit> = rpds::Vector::new_sync();
+pub fn insert(xs: &TernaryTreeList<Calcit>, pos: usize, y: Calcit) -> TernaryTreeList<Calcit> {
+  let mut ys: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
 
   match pos.cmp(&xs.len()) {
-    Ordering::Less => {
-      for (idx, x) in xs.iter().enumerate() {
-        if idx == pos {
-          ys.push_back_mut(y.to_owned());
-        }
-        ys.push_back_mut(x.to_owned());
-      }
-    }
+    Ordering::Less => ys = ys.assoc_before(pos, y),
     Ordering::Equal => {
       ys = xs.to_owned();
-      ys.push_back_mut(y.to_owned());
+      ys = ys.push(y.to_owned());
     }
     Ordering::Greater => {
       println!("[Error] TODO error")

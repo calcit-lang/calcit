@@ -18,11 +18,11 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let mut fields: Vec<EdnKwd> = Vec::with_capacity(xs.len());
   let mut values: Vec<Calcit> = Vec::with_capacity(xs.len());
 
-  for (idx, x) in xs.iter().enumerate() {
+  for (idx, x) in xs.into_iter().enumerate() {
     if idx > 0 {
       match x {
         Calcit::Symbol(s, ..) | Calcit::Str(s) => {
-          fields.push(EdnKwd::from(s));
+          fields.push(EdnKwd::from(&*s));
         }
         Calcit::Keyword(s) => {
           fields.push(s.to_owned());

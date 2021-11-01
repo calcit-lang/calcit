@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use cirru_edn::EdnKwd;
+use im_ternary_tree::TernaryTreeList;
 
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::{call_stack::CallStackVec, runner};
@@ -32,7 +33,7 @@ fn modify_ref(path: &str, v: Calcit, call_stack: &CallStackVec) -> Result<(), Ca
   for f in listeners.values() {
     match f {
       Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
-        let values = rpds::vector_sync![v.to_owned(), prev.to_owned()];
+        let values = TernaryTreeList::from(&vec![v.to_owned(), prev.to_owned()]);
         runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
       }
       a => {

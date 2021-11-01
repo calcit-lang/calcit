@@ -23,7 +23,7 @@ lazy_static! {
 
 pub fn raise(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let mut s = String::from("");
-  for (idx, x) in xs.iter().enumerate() {
+  for (idx, x) in xs.into_iter().enumerate() {
     if idx > 0 {
       s.push(' ');
     }

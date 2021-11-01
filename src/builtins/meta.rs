@@ -12,6 +12,7 @@ use crate::{
 
 use cirru_edn::EdnKwd;
 use cirru_parser::{Cirru, CirruWriterOptions};
+use im_ternary_tree::TernaryTreeList;
 
 use std::cmp::Ordering;
 use std::sync::atomic;
@@ -326,14 +327,14 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     Calcit::Record(_, fields, values) => {
       match find_in_fields(fields, &EdnKwd::from(name)) {
         Some(idx) => {
-          let mut method_args: rpds::VectorSync<Calcit> = rpds::vector_sync![];
-          method_args.push_back_mut(value);
+          let mut method_args: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
+          method_args = method_args.push(value);
           let mut at_first = true;
           for x in invoke_args {
             if at_first {
               at_first = false
             } else {
-              method_args.push_back_mut(x.to_owned())
+              method_args = method_args.push(x.to_owned())
             }
           }
 
