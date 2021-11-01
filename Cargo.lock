@@ -222,9 +222,9 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "im_ternary_tree"
-version = "0.0.1-a2"
+version = "0.0.1-a3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "047ce6cd3066d45196d7b08e014547b36ab5ad64cd65fe9fa3aab07ddf31b8bf"
+checksum = "ba6dabade3a7b2059ab2557052f8a6c9970d4f5aa4b1aab66a5b38205e0e1870"
 
 [[package]]
 name = "inotify"

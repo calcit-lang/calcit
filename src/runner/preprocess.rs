@@ -346,7 +346,7 @@ fn process_list_call(
 
     (_, Some(Calcit::Fn(f_name, _name_ns, _id, _scope, f_args, _f_body))) => {
       check_fn_args(&f_args, &args, file_ns, &f_name, &def_name, check_warnings);
-      let mut ys = TernaryTreeList::from(&vec![head_form]);
+      let mut ys = TernaryTreeList::from(&[head_form]);
       for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
         ys = ys.push(form);
@@ -354,7 +354,7 @@ fn process_list_call(
       Ok((Calcit::List(ys), None))
     }
     (_, _) => {
-      let mut ys = TernaryTreeList::from(&vec![head_form]);
+      let mut ys = TernaryTreeList::from(&[head_form]);
       for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
         ys = ys.push(form);
@@ -454,7 +454,7 @@ pub fn preprocess_each_items(
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = TernaryTreeList::from(&vec![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   for a in args {
     let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
     xs = xs.push(form);
@@ -472,7 +472,7 @@ pub fn preprocess_defn(
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
-  let mut xs: CalcitItems = TernaryTreeList::from(&vec![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   match (args.get(0), args.get(1)) {
     (Some(Calcit::Symbol(def_name, def_name_ns, at_def, _)), Some(Calcit::List(ys))) => {
       let mut body_defs: HashSet<Box<str>> = scope_defs.to_owned();
@@ -550,7 +550,7 @@ pub fn preprocess_call_let(
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = TernaryTreeList::from(&vec![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   let mut body_defs: HashSet<Box<str>> = scope_defs.to_owned();
   let binding = match args.get(0) {
     Some(Calcit::Nil) => Calcit::Nil,
@@ -559,7 +559,7 @@ pub fn preprocess_call_let(
         check_symbol(sym, args, check_warnings);
         body_defs.insert(sym.to_owned());
         let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
-        Calcit::List(TernaryTreeList::from(&vec![ys[0].to_owned(), form]))
+        Calcit::List(TernaryTreeList::from(&[ys[0].to_owned(), form]))
       }
       (a, b) => {
         return Err(CalcitErr::use_msg_stack(
@@ -604,7 +604,7 @@ pub fn preprocess_quote(
   _scope_defs: &HashSet<Box<str>>,
   _file_ns: &str,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = TernaryTreeList::from(&vec![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   for a in args {
     xs = xs.push(a.to_owned());
   }
@@ -620,7 +620,7 @@ pub fn preprocess_defatom(
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = TernaryTreeList::from(&vec![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   for a in args {
     // TODO
     let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
@@ -639,7 +639,7 @@ pub fn preprocess_quasiquote(
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = TernaryTreeList::from(&vec![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   for a in args {
     xs = xs.push(preprocess_quasiquote_internal(a, scope_defs, file_ns, check_warnings, call_stack)?);
   }

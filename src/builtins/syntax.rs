@@ -303,10 +303,10 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_sta
         let err_data = Calcit::Str(failure.msg.to_owned().into_boxed_str());
         match f {
           Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
-            let values = TernaryTreeList::from(&vec![err_data]);
+            let values = TernaryTreeList::from(&[err_data]);
             runner::run_fn(&values, &def_scope, &args, &body, &def_ns, call_stack)
           }
-          Calcit::Proc(proc) => builtins::handle_proc(&proc, &TernaryTreeList::from(&vec![err_data]), call_stack),
+          Calcit::Proc(proc) => builtins::handle_proc(&proc, &TernaryTreeList::from(&[err_data]), call_stack),
           a => CalcitErr::err_str(format!("try expected a function handler, got: {}", a)),
         }
       }

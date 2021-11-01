@@ -30,7 +30,7 @@ notify = "4.0.17"
 walkdir = "2"
 hex = "0.4.3"
 rpds = "0.10.0"
-im_ternary_tree = "0.0.1-a2"
+im_ternary_tree = "0.0.1-a3"
 # im_ternary_tree = { path = "/Users/chen/repo/calcit-lang/ternary-tree" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
