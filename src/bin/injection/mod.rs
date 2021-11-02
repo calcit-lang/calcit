@@ -20,7 +20,7 @@ type EdnFfiFn = fn(
   finish: Box<dyn FnOnce()>,
 ) -> Result<Edn, String>;
 
-const ABI_VERSION: &str = "0.0.4";
+const ABI_VERSION: &str = "0.0.5";
 
 pub fn inject_platform_apis() {
   builtins::register_import_proc("&call-dylib-edn", call_dylib_edn);
