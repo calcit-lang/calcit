@@ -22,7 +22,9 @@ pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args:
 
 pub fn pop_call_stack() {
   let mut stack = CALL_STACK.write().unwrap();
-  *stack = stack.butlast();
+  if !stack.is_empty() {
+    *stack = stack.butlast();
+  }
 }
 
 pub fn clear_stack() {

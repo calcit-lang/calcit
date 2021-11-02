@@ -56,14 +56,7 @@ pub fn slice(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       };
       let from_idx: usize = unsafe { from.to_int_unchecked() };
 
-      // TODO slow copy
-      let mut zs = TernaryTreeList::Empty;
-      for (idx, y) in ys.into_iter().enumerate() {
-        if idx >= from_idx && idx < to_idx {
-          zs = zs.push(y.to_owned());
-        }
-      }
-      Ok(Calcit::List(zs))
+      Ok(Calcit::List(ys.slice(from_idx, to_idx)))
     }
     (a, b) => CalcitErr::err_str(&format!("slice expected list and indexes: {} {}", a, b)),
   }
@@ -74,25 +67,14 @@ pub fn append(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("append expected 2 arguments, got: {}", CrListWrap(xs.to_owned())));
   }
   match &xs[0] {
-    Calcit::List(ys) => {
-      let mut zs = ys.to_owned();
-      zs = zs.push(xs[1].to_owned());
-      Ok(Calcit::List(zs))
-    }
+    Calcit::List(ys) => Ok(Calcit::List(ys.push(xs[1].to_owned()))),
     a => CalcitErr::err_str(&format!("append expected a list: {}", a)),
   }
 }
 
 pub fn prepend(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(ys)), Some(a)) => {
-      let mut zs = TernaryTreeList::Empty;
-      zs = zs.push(a.to_owned());
-      for y in ys {
-        zs = zs.push(y.to_owned());
-      }
-      Ok(Calcit::List(zs))
-    }
+    (Some(Calcit::List(ys)), Some(a)) => Ok(Calcit::List(ys.unshift(a.to_owned()))),
     (Some(a), _) => CalcitErr::err_str(format!("prepend expected list, got: {}", a)),
     (None, _) => CalcitErr::err_str("prepend expected 2 arguments, got nothing"),
   }
@@ -107,13 +89,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       if ys.is_empty() {
         Ok(Calcit::Nil)
       } else {
-        let mut zs = TernaryTreeList::Empty;
-        for (idx, y) in ys.into_iter().enumerate() {
-          if idx > 0 {
-            zs = zs.push(y.to_owned());
-          }
-        }
-        Ok(Calcit::List(zs))
+        Ok(Calcit::List(ys.rest()))
       }
     }
     a => CalcitErr::err_str(format!("list:rest expected a list, got: {}", a)),
@@ -199,13 +175,7 @@ pub fn reverse(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::Nil),
-    Calcit::List(ys) => {
-      let mut zs: CalcitItems = TernaryTreeList::Empty;
-      for idx in 0..ys.len() {
-        zs = zs.push(ys[ys.len() - 1 - idx].to_owned());
-      }
-      Ok(Calcit::List(zs))
-    }
+    Calcit::List(ys) => Ok(Calcit::List(ys.reverse())),
     a => CalcitErr::err_str(format!("butlast expected a list, got: {}", a)),
   }
 }
@@ -625,15 +595,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(at) => {
-        let mut ys: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
-        for (idx, x) in xs.into_iter().enumerate() {
-          if idx != at {
-            ys = ys.push(x.to_owned());
-          }
-        }
-        Ok(Calcit::List(ys.to_owned()))
-      }
+      Ok(at) => Ok(Calcit::List(xs.dissoc(at))),
       Err(e) => CalcitErr::err_str(format!("dissoc expected number, {}", e)),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("list dissoc expected a list, got: {}", a)),
