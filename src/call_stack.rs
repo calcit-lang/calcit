@@ -3,9 +3,13 @@ use crate::data::edn;
 use crate::primes::{Calcit, CalcitItems};
 use cirru_edn::Edn;
 use std::collections::HashMap;
+use std::fmt;
 use std::fs;
+use std::hash::Hash;
 
-#[derive(Debug, PartialEq, Clone)]
+use im_ternary_tree::TernaryTreeList;
+
+#[derive(Debug, PartialEq, Clone, Eq, Ord, PartialOrd, Hash)]
 pub struct CalcitStack {
   pub ns: String,
   pub def: String,
@@ -14,7 +18,7 @@ pub struct CalcitStack {
   pub kind: StackKind,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Ord, PartialOrd, Hash)]
 pub enum StackKind {
   Fn,
   Proc,
@@ -23,14 +27,20 @@ pub enum StackKind {
   Codegen, // track preprocessing
 }
 
-pub type CallStackVec = rpds::VectorSync<CalcitStack>;
+impl fmt::Display for CalcitStack {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "TODO")
+  }
+}
+
+pub type CallStackVec = TernaryTreeList<CalcitStack>;
 
 // TODO impl fmt
 
 /// create new entry to the tree
 pub fn extend_call_stack(stack: &CallStackVec, ns: &str, def: &str, kind: StackKind, code: Calcit, args: &CalcitItems) -> CallStackVec {
   let mut s2 = stack.to_owned();
-  s2.push_back_mut(CalcitStack {
+  s2 = s2.push(CalcitStack {
     ns: ns.to_owned(),
     def: def.to_owned(),
     code,

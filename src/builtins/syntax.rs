@@ -11,6 +11,8 @@ use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 use crate::util::{skip, slice};
 
+use im_ternary_tree::TernaryTreeList;
+
 pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol(s, ..)), Some(Calcit::List(xs))) => Ok(Calcit::Fn(
@@ -135,13 +137,13 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &Cal
         }
       }
       (_, _) => {
-        let mut ret = rpds::vector_sync![];
+        let mut ret = TernaryTreeList::Empty;
         for y in ys {
           match replace_code(y, scope, file_ns, call_stack)? {
-            SpanResult::Single(z) => ret.push_back_mut(z),
+            SpanResult::Single(z) => ret = ret.push(z),
             SpanResult::Range(pieces) => {
-              for piece in pieces.iter() {
-                ret.push_back_mut(piece.to_owned());
+              for piece in &pieces {
+                ret = ret.push(piece.to_owned());
               }
             }
           }
@@ -301,10 +303,10 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_sta
         let err_data = Calcit::Str(failure.msg.to_owned().into_boxed_str());
         match f {
           Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
-            let values = rpds::vector_sync![err_data];
+            let values = TernaryTreeList::from(&[err_data]);
             runner::run_fn(&values, &def_scope, &args, &body, &def_ns, call_stack)
           }
-          Calcit::Proc(proc) => builtins::handle_proc(&proc, &rpds::vector_sync![err_data], call_stack),
+          Calcit::Proc(proc) => builtins::handle_proc(&proc, &TernaryTreeList::from(&[err_data]), call_stack),
           a => CalcitErr::err_str(format!("try expected a function handler, got: {}", a)),
         }
       }

@@ -10,6 +10,7 @@ use calcit_runner::{
   primes::{Calcit, CalcitErr, CalcitItems, CrListWrap},
   runner::track,
 };
+use im_ternary_tree::TernaryTreeList;
 
 /// FFI protocol types
 type EdnFfi = fn(args: Vec<Edn>) -> Result<Edn, String>;
@@ -48,7 +49,7 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Ca
     return CalcitErr::err_str(format!("&call-dylib-edn expected a method name, got {}", xs[1]));
   };
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
-  for (idx, v) in xs.iter().enumerate() {
+  for (idx, v) in xs.into_iter().enumerate() {
     if idx > 1 {
       ys.push(calcit_to_edn(v).map_err(CalcitErr::use_str)?);
     }
@@ -70,7 +71,7 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Ca
 
 pub fn echo(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   let mut s = String::from("");
-  for (idx, x) in xs.iter().enumerate() {
+  for (idx, x) in xs.into_iter().enumerate() {
     if idx > 0 {
       s.push(' ');
     }
@@ -103,7 +104,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
   };
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len() - 2);
   let callback = xs[xs.len() - 1].clone();
-  for (idx, v) in xs.iter().enumerate() {
+  for (idx, v) in xs.into_iter().enumerate() {
     if idx > 1 && idx < xs.len() - 1 {
       ys.push(calcit_to_edn(v).map_err(CalcitErr::use_str)?);
     }
@@ -134,9 +135,9 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
       ys.to_owned(),
       Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
         if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = &callback {
-          let mut real_args = rpds::vector_sync![];
+          let mut real_args = TernaryTreeList::Empty;
           for p in ps {
-            real_args.push_back_mut(edn_to_calcit(&p));
+            real_args = real_args.push(edn_to_calcit(&p));
           }
           let r = runner::run_fn(&real_args, def_scope, args, body, def_ns, &copied_stack);
           match r {
@@ -189,7 +190,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
   };
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len() - 2);
   let callback = xs[xs.len() - 1].clone();
-  for (idx, v) in xs.iter().enumerate() {
+  for (idx, v) in xs.into_iter().enumerate() {
     if idx > 1 && idx < xs.len() - 1 {
       ys.push(calcit_to_edn(v).map_err(CalcitErr::use_str)?);
     }
@@ -218,9 +219,9 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
     ys.to_owned(),
     Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
       if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = &callback {
-        let mut real_args = rpds::vector_sync![];
+        let mut real_args = TernaryTreeList::Empty;
         for p in ps {
-          real_args.push_back_mut(edn_to_calcit(&p));
+          real_args = real_args.push(edn_to_calcit(&p));
         }
         let r = runner::run_fn(&real_args, def_scope, args, body, def_ns, &copied_stack.clone());
         match r {
@@ -256,7 +257,7 @@ pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, 
     let copied_stack = Arc::new(call_stack.to_owned());
     ctrlc::set_handler(move || {
       if let Calcit::Fn(_name, def_ns, _, def_scope, args, body) = cb.as_ref() {
-        if let Err(e) = runner::run_fn(&rpds::vector_sync![], def_scope, args, body, def_ns, &copied_stack) {
+        if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, def_scope, args, body, def_ns, &copied_stack) {
           println!("error: {}", e);
         }
       }

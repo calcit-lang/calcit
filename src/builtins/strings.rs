@@ -5,6 +5,8 @@ use crate::primes;
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
 use crate::util::number::f64_to_usize;
 
+use im_ternary_tree::TernaryTreeList;
+
 pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Nil), Some(Calcit::Nil)) => Ok(Calcit::new_str("")),
@@ -60,10 +62,10 @@ pub fn split(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => {
       let pieces = (**s).split(&**pattern);
-      let mut ys: CalcitItems = rpds::vector_sync![];
+      let mut ys: CalcitItems = TernaryTreeList::Empty;
       for p in pieces {
         if !p.is_empty() {
-          ys.push_back_mut(Calcit::Str(p.to_owned().into_boxed_str()));
+          ys = ys.push(Calcit::Str(p.to_owned().into_boxed_str()));
         }
       }
       Ok(Calcit::List(ys))
@@ -98,9 +100,9 @@ pub fn split_lines(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => {
       let lines = s.split('\n');
-      let mut ys = rpds::vector_sync![];
+      let mut ys = TernaryTreeList::Empty;
       for line in lines {
-        ys.push_back_mut(Calcit::Str(line.to_owned().into_boxed_str()));
+        ys = ys.push(Calcit::Str(line.to_owned().into_boxed_str()));
       }
       Ok(Calcit::List(ys))
     }

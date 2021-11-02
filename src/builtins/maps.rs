@@ -5,6 +5,8 @@ use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
 
 use crate::util::number::is_even;
 
+use im_ternary_tree::TernaryTreeList;
+
 pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if is_even(xs.len()) {
     let n = xs.len() >> 1;
@@ -95,7 +97,9 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Map(ys)) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for (k, v) in ys {
-        zs.insert_mut(Calcit::List(rpds::vector_sync![].push_back(k.to_owned()).push_back(v.to_owned())));
+        zs.insert_mut(Calcit::List(
+          TernaryTreeList::Empty.append(k.to_owned(), false).append(v.to_owned(), false),
+        ));
       }
       Ok(Calcit::Set(zs))
     }
@@ -103,9 +107,9 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for idx in 0..fields.len() {
         zs.insert_mut(Calcit::List(
-          rpds::vector_sync![]
-            .push_back(Calcit::Keyword(fields[idx].to_owned()))
-            .push_back(values[idx].to_owned()),
+          TernaryTreeList::Empty
+            .append(Calcit::Keyword(fields[idx].to_owned()), false)
+            .append(values[idx].to_owned(), false),
         ));
       }
       Ok(Calcit::Set(zs))
@@ -135,10 +139,10 @@ pub fn call_merge_non_nil(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(m)) => {
-      let mut ys: rpds::VectorSync<Calcit> = rpds::vector_sync![];
+      let mut ys: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
       for (k, v) in m {
-        let zs: rpds::VectorSync<Calcit> = rpds::vector_sync![k.to_owned(), v.to_owned()];
-        ys.push_back_mut(Calcit::List(zs));
+        let zs: TernaryTreeList<Calcit> = TernaryTreeList::from(&vec![k.to_owned(), v.to_owned()]);
+        ys = ys.push(Calcit::List(zs));
       }
       Ok(Calcit::List(ys))
     }
@@ -191,7 +195,7 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(ys)) => match ys.iter().next() {
       // TODO order may not be stable enough
-      Some((k, v)) => Ok(Calcit::List(rpds::vector_sync![k.to_owned(), v.to_owned()])),
+      Some((k, v)) => Ok(Calcit::List(TernaryTreeList::from(&vec![k.to_owned(), v.to_owned()]))),
       None => Ok(Calcit::Nil),
     },
     Some(a) => CalcitErr::err_str(format!("map:first expected a map, got: {}", a)),

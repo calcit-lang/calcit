@@ -9,12 +9,13 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 
 use cirru_edn::EdnKwd;
+use im_ternary_tree::TernaryTreeList;
 
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 // scope
 pub type CalcitScope = rpds::HashTrieMapSync<Box<str>, Calcit>;
-pub type CalcitItems = rpds::VectorSync<Calcit>;
+pub type CalcitItems = TernaryTreeList<Calcit>;
 
 pub use syntax_name::CalcitSyntax;
 
@@ -37,7 +38,9 @@ pub enum ImportRule {
 
 /// special types wraps vector of calcit data for displaying
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct CrListWrap(pub rpds::VectorSync<Calcit>);
+pub struct CrListWrap(pub TernaryTreeList<Calcit>);
+
+pub struct CalcitList(pub Box<TernaryTreeList<Calcit>>);
 
 #[derive(Debug, Clone)]
 pub enum Calcit {
@@ -232,7 +235,7 @@ pub fn format_to_lisp(x: &Calcit) -> String {
   match x {
     Calcit::List(ys) => {
       let mut s = String::from("(");
-      for (idx, y) in ys.iter().enumerate() {
+      for (idx, y) in ys.into_iter().enumerate() {
         if idx > 0 {
           s.push(' ');
         }
@@ -527,7 +530,7 @@ pub fn gen_core_id() -> Box<str> {
 pub struct CalcitErr {
   pub msg: String,
   pub warnings: Vec<String>,
-  pub stack: rpds::VectorSync<crate::call_stack::CalcitStack>,
+  pub stack: TernaryTreeList<crate::call_stack::CalcitStack>,
 }
 
 impl fmt::Display for CalcitErr {
@@ -548,14 +551,14 @@ impl CalcitErr {
     CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: rpds::Vector::new_sync(),
+      stack: TernaryTreeList::Empty,
     }
   }
   pub fn err_str<T: Into<String>>(msg: T) -> Result<Calcit, Self> {
     Err(CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: rpds::Vector::new_sync(),
+      stack: TernaryTreeList::Empty,
     })
   }
   pub fn use_msg_stack<T: Into<String>>(msg: T, stack: &CallStackVec) -> Self {

@@ -10,6 +10,8 @@ use crate::util::skip;
 use std::cell::RefCell;
 use std::collections::HashSet;
 
+use im_ternary_tree::TernaryTreeList;
+
 /// returns the resolved symbol,
 /// if code related is not preprocessed, do it internally
 pub fn preprocess_ns_def(
@@ -19,7 +21,7 @@ pub fn preprocess_ns_def(
   raw_sym: &str,
   import_rule: Option<ImportRule>, // returns form and possible value
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &rpds::VectorSync<CalcitStack>,
+  call_stack: &TernaryTreeList<CalcitStack>,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   let ns = &raw_ns.to_owned().into_boxed_str();
   let def = &raw_def.to_owned().into_boxed_str();
@@ -45,7 +47,7 @@ pub fn preprocess_ns_def(
           // write a nil value first to prevent dead loop
           program::write_evaled_def(ns, def, Calcit::Nil).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
 
-          let next_stack = extend_call_stack(call_stack, ns, def, StackKind::Fn, code.to_owned(), &rpds::vector_sync![]);
+          let next_stack = extend_call_stack(call_stack, ns, def, StackKind::Fn, code.to_owned(), &TernaryTreeList::Empty);
 
           let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
@@ -261,7 +263,7 @@ fn process_list_call(
   match (head_form.to_owned(), head_evaled) {
     (Calcit::Keyword(..), _) => {
       if args.len() == 1 {
-        let code = Calcit::List(rpds::vector_sync![
+        let code = Calcit::List(TernaryTreeList::from(&vec![
           Calcit::Symbol(
             String::from("get").into_boxed_str(),
             String::from(primes::CORE_NS).into_boxed_str(),
@@ -269,12 +271,12 @@ fn process_list_call(
             Some(Box::new(ResolvedDef(
               String::from(primes::CORE_NS).into_boxed_str(),
               String::from("get").into_boxed_str(),
-              None
-            )))
+              None,
+            ))),
           ),
           args[0].to_owned(),
-          head.to_owned()
-        ]);
+          head.to_owned(),
+        ]));
         preprocess_expr(&code, scope_defs, file_ns, check_warnings, call_stack)
       } else {
         Err(CalcitErr::use_msg_stack(format!("{} expected single argument", head), call_stack))
@@ -344,18 +346,18 @@ fn process_list_call(
 
     (_, Some(Calcit::Fn(f_name, _name_ns, _id, _scope, f_args, _f_body))) => {
       check_fn_args(&f_args, &args, file_ns, &f_name, &def_name, check_warnings);
-      let mut ys = rpds::vector_sync![head_form];
-      for a in args.iter() {
+      let mut ys = TernaryTreeList::from(&[head_form]);
+      for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
-        ys.push_back_mut(form);
+        ys = ys.push(form);
       }
       Ok((Calcit::List(ys), None))
     }
     (_, _) => {
-      let mut ys = rpds::vector_sync![head_form];
-      for a in args.iter() {
+      let mut ys = TernaryTreeList::from(&[head_form]);
+      for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
-        ys.push_back_mut(form);
+        ys = ys.push(form);
       }
       Ok((Calcit::List(ys), None))
     }
@@ -452,10 +454,10 @@ pub fn preprocess_each_items(
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())];
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   for a in args {
     let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
-    xs.push_back_mut(form);
+    xs = xs.push(form);
   }
   Ok(Calcit::List(xs))
 }
@@ -470,23 +472,23 @@ pub fn preprocess_defn(
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
-  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())];
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   match (args.get(0), args.get(1)) {
     (Some(Calcit::Symbol(def_name, def_name_ns, at_def, _)), Some(Calcit::List(ys))) => {
       let mut body_defs: HashSet<Box<str>> = scope_defs.to_owned();
 
-      xs.push_back_mut(Calcit::Symbol(
+      xs = xs.push(Calcit::Symbol(
         def_name.to_owned(),
         def_name_ns.to_owned(),
         at_def.to_owned(),
         Some(Box::new(ResolvedRaw)),
       ));
-      let mut zs: CalcitItems = rpds::vector_sync![];
+      let mut zs: CalcitItems = TernaryTreeList::Empty;
       for y in ys {
         match y {
           Calcit::Symbol(sym, def_ns, at_def, _) => {
             check_symbol(sym, args, check_warnings);
-            zs.push_back_mut(Calcit::Symbol(
+            zs = zs.push(Calcit::Symbol(
               sym.to_owned(),
               def_ns.to_owned(),
               at_def.to_owned(),
@@ -505,12 +507,12 @@ pub fn preprocess_defn(
           }
         }
       }
-      xs.push_back_mut(Calcit::List(zs));
+      xs = xs.push(Calcit::List(zs));
 
-      for (idx, a) in args.iter().enumerate() {
+      for (idx, a) in args.into_iter().enumerate() {
         if idx >= 2 {
           let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
-          xs.push_back_mut(form);
+          xs = xs.push(form);
         }
       }
       Ok(Calcit::List(xs))
@@ -548,7 +550,7 @@ pub fn preprocess_call_let(
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())];
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   let mut body_defs: HashSet<Box<str>> = scope_defs.to_owned();
   let binding = match args.get(0) {
     Some(Calcit::Nil) => Calcit::Nil,
@@ -557,7 +559,7 @@ pub fn preprocess_call_let(
         check_symbol(sym, args, check_warnings);
         body_defs.insert(sym.to_owned());
         let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
-        Calcit::List(rpds::vector_sync![ys[0].to_owned(), form])
+        Calcit::List(TernaryTreeList::from(&[ys[0].to_owned(), form]))
       }
       (a, b) => {
         return Err(CalcitErr::use_msg_stack(
@@ -585,11 +587,11 @@ pub fn preprocess_call_let(
       ))
     }
   };
-  xs.push_back_mut(binding);
-  for (idx, a) in args.iter().enumerate() {
+  xs = xs.push(binding);
+  for (idx, a) in args.into_iter().enumerate() {
     if idx > 0 {
       let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
-      xs.push_back_mut(form);
+      xs = xs.push(form);
     }
   }
   Ok(Calcit::List(xs))
@@ -602,9 +604,9 @@ pub fn preprocess_quote(
   _scope_defs: &HashSet<Box<str>>,
   _file_ns: &str,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())];
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   for a in args {
-    xs.push_back_mut(a.to_owned());
+    xs = xs.push(a.to_owned());
   }
   Ok(Calcit::List(xs))
 }
@@ -618,11 +620,11 @@ pub fn preprocess_defatom(
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())];
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   for a in args {
     // TODO
     let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
-    xs.push_back_mut(form.to_owned());
+    xs = xs.push(form.to_owned());
   }
   Ok(Calcit::List(xs))
 }
@@ -637,9 +639,9 @@ pub fn preprocess_quasiquote(
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = rpds::vector_sync![Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())];
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   for a in args {
-    xs.push_back_mut(preprocess_quasiquote_internal(a, scope_defs, file_ns, check_warnings, call_stack)?);
+    xs = xs.push(preprocess_quasiquote_internal(a, scope_defs, file_ns, check_warnings, call_stack)?);
   }
   Ok(Calcit::List(xs))
 }
@@ -655,17 +657,17 @@ pub fn preprocess_quasiquote_internal(
     Calcit::List(ys) if ys.is_empty() => Ok(x.to_owned()),
     Calcit::List(ys) => match &ys[0] {
       Calcit::Symbol(s, _, _, _) if &**s == "~" || &**s == "~@" => {
-        let mut xs: CalcitItems = rpds::vector_sync![];
+        let mut xs: CalcitItems = TernaryTreeList::Empty;
         for y in ys {
           let (form, _) = preprocess_expr(y, scope_defs, file_ns, check_warnings, call_stack)?;
-          xs.push_back_mut(form.to_owned());
+          xs = xs.push(form.to_owned());
         }
         Ok(Calcit::List(xs))
       }
       _ => {
-        let mut xs: CalcitItems = rpds::vector_sync![];
+        let mut xs: CalcitItems = TernaryTreeList::Empty;
         for y in ys {
-          xs.push_back_mut(preprocess_quasiquote_internal(y, scope_defs, file_ns, check_warnings, call_stack)?.to_owned());
+          xs = xs.push(preprocess_quasiquote_internal(y, scope_defs, file_ns, check_warnings, call_stack)?.to_owned());
         }
         Ok(Calcit::List(xs))
       }
