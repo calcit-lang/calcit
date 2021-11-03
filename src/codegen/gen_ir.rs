@@ -142,16 +142,16 @@ fn dump_code(code: &Calcit) -> Edn {
         Some(resolved) => match &**resolved {
           ResolvedDef(r_def, r_ns, import_rule) => {
             let mut xs: HashMap<Edn, Edn> = HashMap::new();
-            xs.insert(Edn::kwd("kind"), Edn::str("def"));
+            xs.insert(Edn::kwd("kind"), Edn::kwd("def"));
             xs.insert(Edn::kwd("ns"), Edn::Str(r_ns.to_owned()));
             xs.insert(Edn::kwd("at_def"), Edn::Str(at_def.to_owned()));
             xs.insert(Edn::kwd("def"), Edn::Str(r_def.to_owned()));
             xs.insert(
               Edn::kwd("rule"),
               match import_rule {
-                Some(ImportRule::NsAs(_n)) => Edn::str("ns"),
-                Some(ImportRule::NsDefault(_n)) => Edn::str("default"),
-                Some(ImportRule::NsReferDef(_ns, _def)) => Edn::str("def"),
+                Some(ImportRule::NsAs(_n)) => Edn::kwd("ns"),
+                Some(ImportRule::NsDefault(_n)) => Edn::kwd("default"),
+                Some(ImportRule::NsReferDef(_ns, _def)) => Edn::kwd("def"),
                 None => Edn::Nil,
               },
             );
@@ -186,7 +186,7 @@ fn dump_code(code: &Calcit) -> Edn {
 
     Calcit::Fn(name, ns, _id, _scope, args, body) => {
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
-      xs.insert(Edn::kwd("kind"), Edn::str("fn"));
+      xs.insert(Edn::kwd("kind"), Edn::kwd("fn"));
       xs.insert(Edn::kwd("name"), Edn::Str(name.to_owned()));
       xs.insert(Edn::kwd("ns"), Edn::Str(ns.to_owned()));
       xs.insert(Edn::kwd("args"), dump_items_code(args)); // TODO
@@ -195,7 +195,7 @@ fn dump_code(code: &Calcit) -> Edn {
     }
     Calcit::Macro(name, ns, _id, args, body) => {
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
-      xs.insert(Edn::kwd("kind"), Edn::str("macro"));
+      xs.insert(Edn::kwd("kind"), Edn::kwd("macro"));
       xs.insert(Edn::kwd("name"), Edn::Str(name.to_owned()));
       xs.insert(Edn::kwd("ns"), Edn::Str(ns.to_owned()));
       xs.insert(Edn::kwd("args"), dump_items_code(args)); // TODO
@@ -204,14 +204,14 @@ fn dump_code(code: &Calcit) -> Edn {
     }
     Calcit::Proc(name) => {
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
-      xs.insert(Edn::kwd("kind"), Edn::str("proc"));
+      xs.insert(Edn::kwd("kind"), Edn::kwd("proc"));
       xs.insert(Edn::kwd("name"), Edn::Str(name.to_owned()));
       xs.insert(Edn::kwd("builtin"), Edn::Bool(true));
       Edn::Map(xs)
     }
     Calcit::Syntax(name, _ns) => {
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
-      xs.insert(Edn::kwd("kind"), Edn::str("syntax"));
+      xs.insert(Edn::kwd("kind"), Edn::kwd("syntax"));
       xs.insert(Edn::kwd("name"), Edn::str(name.to_string()));
       Edn::Map(xs)
     }
