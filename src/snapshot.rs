@@ -149,16 +149,12 @@ pub fn gen_default() -> Snapshot {
 pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
   match cirru_parser::parse(raw) {
     Ok(lines) => {
-      let code = if lines.len() == 1 {
-        lines[0].to_owned()
-      } else {
-        return Err(format!("unexpected snippet: {:?}", raw));
-      };
       let mut def_dict: HashMap<Box<str>, Cirru> = HashMap::with_capacity(2);
-      def_dict.insert(
-        String::from("main!").into_boxed_str(),
-        Cirru::List(vec![Cirru::leaf("defn"), Cirru::leaf("main!"), Cirru::List(vec![]), code]),
-      );
+      let mut func_code = vec![Cirru::leaf("defn"), Cirru::leaf("main!"), Cirru::List(vec![])];
+      for line in lines {
+        func_code.push(line.to_owned());
+      }
+      def_dict.insert(String::from("main!").into_boxed_str(), Cirru::List(func_code));
       def_dict.insert(
         String::from("reload!").into_boxed_str(),
         Cirru::List(vec![Cirru::leaf("defn"), Cirru::leaf("reload!"), Cirru::List(vec![])]),
