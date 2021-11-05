@@ -4,7 +4,7 @@ import { toPairs } from "@calcit/ternary-tree";
 
 import { CalcitRecord } from "./js-record";
 import { CalcitMap } from "./js-map";
-import { CalcitList } from "./js-list";
+import { CalcitList, CalcitSliceList } from "./js-list";
 import { CalcitSet } from "./js-set";
 import { CalcitTuple } from "./js-tuple";
 
@@ -41,7 +41,7 @@ export let load_console_formatter_$x_ = () => {
           if (obj instanceof CalcitSymbol) {
             return ["div", { style: "color: hsl(340, 80%, 60%)" }, obj.toString()];
           }
-          if (obj instanceof CalcitList) {
+          if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
             return [
               "div",
               { style: "color: hsl(280, 80%, 60%, 0.4)" },
@@ -78,7 +78,7 @@ export let load_console_formatter_$x_ = () => {
           return null;
         },
         hasBody: (obj) => {
-          if (obj instanceof CalcitList) {
+          if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
             return obj.len() > 0;
           }
           if (obj instanceof CalcitMap) {
@@ -90,7 +90,7 @@ export let load_console_formatter_$x_ = () => {
           return false;
         },
         body: (obj, config) => {
-          if (obj instanceof CalcitList) {
+          if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
             return ["div", { style: "color: hsl(280, 80%, 60%)" }].concat(
               obj.toArray().map((x, idx) => {
                 return [

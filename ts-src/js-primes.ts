@@ -1,5 +1,5 @@
-import { CalcitKeyword, CalcitSymbol as CalcitSymbol, CalcitRef, CalcitFn, CalcitRecur } from "./calcit-data";
-import { CalcitList } from "./js-list";
+import { CalcitKeyword, CalcitSymbol, CalcitRef, CalcitFn, CalcitRecur } from "./calcit-data";
+import { CalcitList, CalcitSliceList } from "./js-list";
 import { CalcitRecord } from "./js-record";
 import { CalcitMap } from "./js-map";
 import { CalcitSet as CalcitSet } from "./js-set";
@@ -11,6 +11,7 @@ export type CalcitValue =
   | boolean
   | CalcitMap
   | CalcitList
+  | CalcitSliceList
   | CalcitSet
   | CalcitKeyword
   | CalcitSymbol

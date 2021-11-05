@@ -174,7 +174,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<Vec<EdnKwd>>) -
         }
         chunk.push_str(&quote_to_js(y, var_prefix, keywords)?);
       }
-      Ok(format!("new {}CalcitList([{}])", var_prefix, chunk))
+      Ok(format!("new {}CalcitSliceList([{}])", var_prefix, chunk))
     }
     Calcit::Keyword(s) => {
       let mut kwds = keywords.borrow_mut();
