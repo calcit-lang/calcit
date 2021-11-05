@@ -2,7 +2,7 @@ import { initTernaryTreeMap, Hash, insert } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes";
 import { kwd, castKwd, toString, CalcitKeyword, getStringName, findInFields } from "./calcit-data";
 
-import { CalcitMap } from "./js-map";
+import { CalcitMap, CalcitSliceMap } from "./js-map";
 
 export class CalcitRecord {
   name: CalcitKeyword;
@@ -152,7 +152,7 @@ export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
       }
       return new CalcitRecord(proto.name, proto.fields, values);
     }
-  } else if (data instanceof CalcitMap) {
+  } else if (data instanceof CalcitMap || data instanceof CalcitSliceMap) {
     let pairs: Array<[CalcitKeyword, CalcitValue]> = [];
     for (let [k, v] of data.pairs()) {
       pairs.push([castKwd(k), v]);
@@ -179,11 +179,11 @@ export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
 
 export let _$n_record_$o_to_map = (x: CalcitValue): CalcitValue => {
   if (x instanceof CalcitRecord) {
-    var dict: Array<[CalcitValue, CalcitValue]> = [];
+    var dict: Array<CalcitValue> = [];
     for (let idx = 0; idx < x.fields.length; idx++) {
-      dict.push([x.fields[idx], x.values[idx]]);
+      dict.push(x.fields[idx], x.values[idx]);
     }
-    return new CalcitMap(initTernaryTreeMap(dict));
+    return new CalcitSliceMap(dict);
   } else {
     throw new Error("Expected record");
   }

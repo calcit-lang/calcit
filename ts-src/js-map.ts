@@ -3,7 +3,18 @@ import * as ternaryTree from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes";
 import { CalcitSet } from "./js-set";
 
-import { TernaryTreeMap, initTernaryTreeMap, mapLen, assocMap, dissocMap, isMapEmpty, Hash, toPairsArray, mapGetDefault } from "@calcit/ternary-tree";
+import {
+  TernaryTreeMap,
+  initTernaryTreeMap,
+  mapLen,
+  assocMap,
+  dissocMap,
+  isMapEmpty,
+  Hash,
+  toPairsArray,
+  mapGetDefault,
+  initEmptyTernaryTreeMap,
+} from "@calcit/ternary-tree";
 
 import { isNestedCalcitData, tipNestedCalcitData, toString } from "./calcit-data";
 
@@ -22,61 +33,194 @@ let fakeUniqueSymbol = [] as any;
 export class CalcitMap {
   cachedHash: Hash;
   /** in arrayMode, only flatten values, not tree structure */
-  arrayMode: boolean;
-  arrayValue: CalcitValue[];
   value: TernaryTreeMap<CalcitValue, CalcitValue>;
   skipValue: CalcitValue;
-  constructor(value: CalcitValue[] | TernaryTreeMap<CalcitValue, CalcitValue>) {
+  constructor(value: TernaryTreeMap<CalcitValue, CalcitValue>) {
     if (value == null) {
-      this.arrayMode = true;
-      this.arrayValue = [];
-    } else if (Array.isArray(value)) {
-      this.arrayMode = true;
-      this.arrayValue = value;
+      this.value = initEmptyTernaryTreeMap();
     } else {
-      this.arrayMode = false;
       this.value = value;
     }
   }
-  turnMap() {
-    if (this.arrayMode) {
-      var dict: Array<[CalcitValue, CalcitValue]> = [];
-      let halfLength = this.arrayValue.length >> 1;
-      for (let idx = 0; idx < halfLength; idx++) {
-        dict.push([this.arrayValue[idx << 1], this.arrayValue[(idx << 1) + 1]]);
-      }
-      this.value = initTernaryTreeMap(dict);
-      this.arrayMode = false;
-      this.arrayValue = null;
-    }
-  }
   len() {
-    if (this.arrayMode) {
-      return this.arrayValue.length >> 1;
-    } else {
-      return mapLen(this.value);
-    }
+    return mapLen(this.value);
   }
   get(k: CalcitValue) {
-    if (this.arrayMode && this.arrayValue.length <= 16) {
-      let size = this.arrayValue.length >> 1;
+    return mapGetDefault(this.value, k, null);
+  }
+  assoc(...args: CalcitValue[]) {
+    if (args.length % 2 !== 0) throw new Error("expected even arguments");
+    let size = Math.floor(args.length / 2);
+
+    let result = this.value;
+    for (let idx = 0; idx < size; idx++) {
+      let k = args[idx << 1];
+      let v = args[(idx << 1) + 1];
+      result = assocMap(result, k, v);
+    }
+    return new CalcitMap(result);
+  }
+  dissoc(...args: CalcitValue[]) {
+    let ret = this.value;
+    for (let idx = 0; idx < args.length; idx++) {
+      ret = dissocMap(ret, args[idx]);
+    }
+    return new CalcitMap(ret);
+  }
+  toString(shorter = false) {
+    let itemsCode = "";
+    for (let [k, v] of this.pairs()) {
+      if (shorter) {
+        let keyPart = isNestedCalcitData(k) ? tipNestedCalcitData(k) : toString(k, true);
+        let valuePart = isNestedCalcitData(v) ? tipNestedCalcitData(v) : toString(v, true);
+        itemsCode = `${itemsCode} (${keyPart} ${valuePart})`;
+      } else {
+        itemsCode = `${itemsCode} (${toString(k, true)} ${toString(v, true)})`;
+      }
+    }
+    return `({}${itemsCode})`;
+  }
+  isEmpty() {
+    return isMapEmpty(this.value);
+  }
+  pairs(): Array<[CalcitValue, CalcitValue]> {
+    return toPairsArray(this.value);
+  }
+  keysArray(): Array<CalcitValue> {
+    return [...ternaryTree.toKeys(this.value)];
+  }
+  contains(k: CalcitValue) {
+    return ternaryTree.contains(this.value, k);
+  }
+  merge(ys: CalcitMap | CalcitSliceMap) {
+    return this.mergeSkip(ys, fakeUniqueSymbol);
+  }
+  mergeSkip(ys: CalcitMap | CalcitSliceMap, v: CalcitValue) {
+    if (ys == null) {
+      return this;
+    }
+
+    if (!(ys instanceof CalcitMap || ys instanceof CalcitSliceMap)) {
+      console.error("value:", v);
+      throw new Error("Expected map to merge");
+    }
+
+    if (ys instanceof CalcitSliceMap) {
+      let ret = this.value;
+      let size = ys.chunk.length >> 1;
       for (let i = 0; i < size; i++) {
         let pos = i << 1;
-        if (DATA_EQUAL(this.arrayValue[pos], k)) {
-          return this.arrayValue[pos + 1];
+        if (ys.chunk[pos + 1] === v) {
+          continue;
+        }
+        ret = assocMap(ret, ys.chunk[pos], ys.chunk[pos + 1]);
+      }
+      return new CalcitMap(ret);
+    } else {
+      return new CalcitMap(ternaryTree.mergeSkip(this.value, ys.value, v));
+    }
+  }
+
+  /** TODO implement diff with low level code, opens opportunity for future optimizations */
+  diffNew(ys: CalcitMap | CalcitSliceMap): CalcitMap {
+    let zs = this.value;
+    if (ys instanceof CalcitSliceMap) {
+      let size = ys.chunk.length >> 1;
+      for (let i = 0; i < size; i++) {
+        let pos = i << 1;
+        let k = ys.chunk[pos];
+        if (ternaryTree.contains(zs, k)) {
+          zs = ternaryTree.dissocMap(zs, k);
+        }
+      }
+      return new CalcitMap(zs);
+    } else if (ys instanceof CalcitMap) {
+      let ysKeys = ys.keysArray();
+      for (let i = 0; i < ysKeys.length; i++) {
+        let k = ysKeys[i];
+        if (ternaryTree.contains(zs, k)) {
+          zs = ternaryTree.dissocMap(zs, k);
+        }
+      }
+      return new CalcitMap(zs);
+    } else {
+      throw new Error("unknown data to diff");
+    }
+  }
+
+  /** TODO implement diff with low level code, opens opportunity for future optimizations */
+  diffKeys(ys: CalcitMap | CalcitSliceMap): CalcitSet {
+    let ret: Array<CalcitValue> = [];
+    let ks = this.keysArray();
+    for (let i = 0; i < ks.length; i++) {
+      let k = ks[i];
+      if (!ys.contains(k)) {
+        ret.push(k);
+      }
+    }
+    return new CalcitSet(ret);
+  }
+
+  /** TODO implement diff with low level code, opens opportunity for future optimizations */
+  commonKeys(ys: CalcitMap | CalcitSliceMap): CalcitSet {
+    let ret: Array<CalcitValue> = [];
+    let ks = this.keysArray();
+    for (let i = 0; i < ks.length; i++) {
+      let k = ks[i];
+      if (ys.contains(k)) {
+        ret.push(k);
+      }
+    }
+    return new CalcitSet(ret);
+  }
+}
+
+// store small map in linear array to reduce cost of building tree
+export class CalcitSliceMap {
+  cachedHash: Hash;
+  /** in arrayMode, only flatten values, not tree structure */
+  chunk: CalcitValue[];
+  skipValue: CalcitValue;
+  constructor(value: CalcitValue[]) {
+    if (value == null) {
+      this.chunk = [];
+    } else if (Array.isArray(value)) {
+      this.chunk = value;
+    } else {
+      throw new Error("unknown data for map");
+    }
+  }
+  turnMap(): CalcitMap {
+    var dict: Array<[CalcitValue, CalcitValue]> = [];
+    let halfLength = this.chunk.length >> 1;
+    for (let idx = 0; idx < halfLength; idx++) {
+      dict.push([this.chunk[idx << 1], this.chunk[(idx << 1) + 1]]);
+    }
+    let value = initTernaryTreeMap(dict);
+    return new CalcitMap(value);
+  }
+  len() {
+    return this.chunk.length >> 1;
+  }
+  get(k: CalcitValue) {
+    if (this.chunk.length <= 16) {
+      let size = this.chunk.length >> 1;
+      for (let i = 0; i < size; i++) {
+        let pos = i << 1;
+        if (DATA_EQUAL(this.chunk[pos], k)) {
+          return this.chunk[pos + 1];
         }
       }
       return null;
     } else {
-      this.turnMap();
-      return mapGetDefault(this.value, k, null);
+      return this.turnMap().get(k);
     }
   }
   assoc(...args: CalcitValue[]) {
     if (args.length % 2 !== 0) throw new Error("expected even arguments");
     let size = Math.floor(args.length / 2);
-    if (this.arrayMode && this.arrayValue.length <= 16) {
-      let ret = this.arrayValue.slice(0);
+    if (this.chunk.length <= 16) {
+      let ret = this.chunk.slice(0);
       outer: for (let j = 0; j < size; j++) {
         let k = args[j << 1];
         let v = args[(j << 1) + 1];
@@ -88,38 +232,26 @@ export class CalcitMap {
         }
         ret.push(k, v);
       }
-      return new CalcitMap(ret);
+      return new CalcitSliceMap(ret);
     } else {
-      this.turnMap();
-      let result = this.value;
-      for (let idx = 0; idx < size; idx++) {
-        let k = args[idx << 1];
-        let v = args[(idx << 1) + 1];
-        result = assocMap(result, k, v);
-      }
-      return new CalcitMap(result);
+      return this.turnMap().assoc(...args);
     }
   }
   dissoc(...args: CalcitValue[]) {
-    if (this.arrayMode && this.arrayValue.length <= 16) {
+    if (this.chunk.length <= 16) {
       let ret: CalcitValue[] = [];
-      outer: for (let i = 0; i < this.arrayValue.length; i += 2) {
+      outer: for (let i = 0; i < this.chunk.length; i += 2) {
         for (let j = 0; j < args.length; j++) {
           let k = args[j];
-          if (DATA_EQUAL(k, this.arrayValue[i])) {
+          if (DATA_EQUAL(k, this.chunk[i])) {
             continue outer;
           }
         }
-        ret.push(this.arrayValue[i], this.arrayValue[i + 1]);
+        ret.push(this.chunk[i], this.chunk[i + 1]);
       }
-      return new CalcitMap(ret);
+      return new CalcitSliceMap(ret);
     } else {
-      this.turnMap();
-      let ret = this.value;
-      for (let idx = 0; idx < args.length; idx++) {
-        ret = dissocMap(ret, args[idx]);
-      }
-      return new CalcitMap(ret);
+      return this.turnMap().dissoc(...args);
     }
   }
   toString(shorter = false) {
@@ -136,131 +268,82 @@ export class CalcitMap {
     return `({}${itemsCode})`;
   }
   isEmpty() {
-    if (this.arrayMode) {
-      return this.arrayValue.length === 0;
-    } else {
-      return isMapEmpty(this.value);
-    }
+    return this.chunk.length === 0;
   }
   pairs(): Array<[CalcitValue, CalcitValue]> {
-    if (this.arrayMode) {
-      let ret: Array<[CalcitValue, CalcitValue]> = [];
-      let size = this.arrayValue.length >> 1;
-      for (let i = 0; i < size; i++) {
-        let pos = i << 1;
-        ret.push([this.arrayValue[pos], this.arrayValue[pos + 1]]);
-      }
-      return ret;
-    } else {
-      return toPairsArray(this.value);
+    let ret: Array<[CalcitValue, CalcitValue]> = [];
+    let size = this.chunk.length >> 1;
+    for (let i = 0; i < size; i++) {
+      let pos = i << 1;
+      ret.push([this.chunk[pos], this.chunk[pos + 1]]);
     }
+    return ret;
   }
   keysArray(): Array<CalcitValue> {
-    if (this.arrayMode) {
-      let ret: Array<CalcitValue> = [];
-      let size = this.arrayValue.length >> 1;
-      for (let i = 0; i < size; i++) {
-        let pos = i << 1;
-        ret.push(this.arrayValue[pos]);
-      }
-      return ret;
-    } else {
-      return [...ternaryTree.toKeys(this.value)];
+    let ret: Array<CalcitValue> = [];
+    let size = this.chunk.length >> 1;
+    for (let i = 0; i < size; i++) {
+      let pos = i << 1;
+      ret.push(this.chunk[pos]);
     }
+    return ret;
   }
   contains(k: CalcitValue) {
-    if (this.arrayMode && this.arrayValue.length <= 16) {
+    if (this.chunk.length <= 16) {
       // guessed number
-      let size = this.arrayValue.length >> 1;
+      let size = this.chunk.length >> 1;
       for (let i = 0; i < size; i++) {
         let pos = i << 1;
-        if (DATA_EQUAL(this.arrayValue[pos], k)) {
+        if (DATA_EQUAL(this.chunk[pos], k)) {
           return true;
         }
       }
       return false;
     } else {
-      this.turnMap();
-      return ternaryTree.contains(this.value, k);
+      return this.turnMap().contains(k);
     }
   }
-  merge(ys: CalcitMap) {
+  merge(ys: CalcitMap | CalcitSliceMap) {
     return this.mergeSkip(ys, fakeUniqueSymbol);
   }
-  mergeSkip(ys: CalcitMap, v: CalcitValue) {
+  mergeSkip(ys: CalcitMap | CalcitSliceMap, v: CalcitValue) {
     if (ys == null) {
       return this;
     }
 
-    if (!(ys instanceof CalcitMap)) {
+    if (!(ys instanceof CalcitMap || ys instanceof CalcitSliceMap)) {
       console.error("value:", v);
       throw new Error("Expected map to merge");
     }
 
-    if (this.arrayMode && ys.arrayMode && this.arrayValue.length + ys.arrayValue.length <= 24) {
+    if (ys instanceof CalcitSliceMap && this.chunk.length + ys.len() <= 24) {
       // probably this length < 16, ys length < 8
-      let ret = this.arrayValue.slice(0);
-      outer: for (let i = 0; i < ys.arrayValue.length; i = i + 2) {
-        if (ys.arrayValue[i + 1] === v) {
+      let ret = this.chunk.slice(0);
+      outer: for (let i = 0; i < ys.chunk.length; i = i + 2) {
+        if (ys.chunk[i + 1] === v) {
           continue;
         }
         for (let k = 0; k < ret.length; k = k + 2) {
-          if (DATA_EQUAL(ys.arrayValue[i], ret[k])) {
-            ret[k + 1] = ys.arrayValue[i + 1];
+          if (DATA_EQUAL(ys.chunk[i], ret[k])) {
+            ret[k + 1] = ys.chunk[i + 1];
             continue outer;
           }
         }
-        ret.push(ys.arrayValue[i], ys.arrayValue[i + 1]);
+        ret.push(ys.chunk[i], ys.chunk[i + 1]);
       }
-      return new CalcitMap(ret);
+      return new CalcitSliceMap(ret);
     }
 
-    this.turnMap();
-
-    if (ys.arrayMode) {
-      let ret = this.value;
-      let size = ys.arrayValue.length >> 1;
-      for (let i = 0; i < size; i++) {
-        let pos = i << 1;
-        if (ys.arrayValue[pos + 1] === v) {
-          continue;
-        }
-        ret = assocMap(ret, ys.arrayValue[pos], ys.arrayValue[pos + 1]);
-      }
-      return new CalcitMap(ret);
-    } else {
-      return new CalcitMap(ternaryTree.mergeSkip(this.value, ys.value, v));
-    }
+    return this.turnMap().mergeSkip(ys, v);
   }
 
   /** TODO implement diff with low level code, opens opportunity for future optimizations */
-  diffNew(ys: CalcitMap): CalcitMap {
-    this.turnMap();
-    let zs = this.value;
-    if (ys.arrayMode) {
-      let size = ys.arrayValue.length >> 1;
-      for (let i = 0; i < size; i++) {
-        let pos = i << 1;
-        let k = ys.arrayValue[pos];
-        if (ternaryTree.contains(zs, k)) {
-          zs = ternaryTree.dissocMap(zs, k);
-        }
-      }
-      return new CalcitMap(zs);
-    } else {
-      let ysKeys = ys.keysArray();
-      for (let i = 0; i < ysKeys.length; i++) {
-        let k = ysKeys[i];
-        if (ternaryTree.contains(zs, k)) {
-          zs = ternaryTree.dissocMap(zs, k);
-        }
-      }
-      return new CalcitMap(zs);
-    }
+  diffNew(ys: CalcitSliceMap | CalcitMap): CalcitMap {
+    return this.turnMap().diffNew(ys);
   }
 
   /** TODO implement diff with low level code, opens opportunity for future optimizations */
-  diffKeys(ys: CalcitMap): CalcitSet {
+  diffKeys(ys: CalcitMap | CalcitSliceMap): CalcitSet {
     let ret: Array<CalcitValue> = [];
     let ks = this.keysArray();
     for (let i = 0; i < ks.length; i++) {
@@ -273,7 +356,7 @@ export class CalcitMap {
   }
 
   /** TODO implement diff with low level code, opens opportunity for future optimizations */
-  commonKeys(ys: CalcitMap): CalcitSet {
+  commonKeys(ys: CalcitMap | CalcitSliceMap): CalcitSet {
     let ret: Array<CalcitValue> = [];
     let ks = this.keysArray();
     for (let i = 0; i < ks.length; i++) {

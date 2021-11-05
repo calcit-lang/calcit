@@ -21,7 +21,7 @@ export * from "./custom-formatter";
 export * from "./js-cirru";
 
 import { CalcitList, CalcitSliceList, foldl } from "./js-list";
-import { CalcitMap } from "./js-map";
+import { CalcitMap, CalcitSliceMap } from "./js-map";
 import { CalcitSet } from "./js-set";
 import { CalcitTuple } from "./js-tuple";
 import { to_calcit_data, extract_cirru_edn } from "./js-cirru";
@@ -41,7 +41,7 @@ export let type_of = (x: any): CalcitKeyword => {
   if (x instanceof CalcitList || x instanceof CalcitSliceList) {
     return kwd("list");
   }
-  if (x instanceof CalcitMap) {
+  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
     return kwd("map");
   }
   if (x == null) {
@@ -94,7 +94,7 @@ export function _$n_str_$o_count(x: CalcitValue): number {
   throw new Error(`expected a string ${x}`);
 }
 export function _$n_map_$o_count(x: CalcitValue): number {
-  if (x instanceof CalcitMap) return x.len();
+  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) return x.len();
 
   throw new Error(`expected a map ${x}`);
 }
@@ -117,11 +117,11 @@ export let _SQUO_ = (...xs: CalcitValue[]): CalcitSliceList => {
   return new CalcitSliceList(xs);
 };
 
-export let _$n__$M_ = (...xs: CalcitValue[]): CalcitMap => {
+export let _$n__$M_ = (...xs: CalcitValue[]): CalcitSliceMap => {
   if (xs.length % 2 !== 0) {
     throw new Error("&map expects even number of arguments");
   }
-  return new CalcitMap(xs);
+  return new CalcitSliceMap(xs);
 };
 
 export let defatom = (path: string, x: CalcitValue): CalcitValue => {
@@ -185,7 +185,7 @@ export let _$n_list_$o_contains_$q_ = (xs: CalcitValue, x: CalcitValue): boolean
 };
 
 export let _$n_map_$o_contains_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
-  if (xs instanceof CalcitMap) return xs.contains(x);
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) return xs.contains(x);
 
   throw new Error("map `contains?` expected a map");
 };
@@ -222,7 +222,7 @@ export let _$n_list_$o_includes_$q_ = (xs: CalcitValue, x: CalcitValue): boolean
 };
 
 export let _$n_map_$o_includes_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
-  if (xs instanceof CalcitMap) {
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
     for (let [k, v] of xs.pairs()) {
       if (_$n__$e_(v, x)) {
         return true;
@@ -306,7 +306,7 @@ export let _$n_map_$o_assoc = function (xs: CalcitValue, ...args: CalcitValue[])
   if (arguments.length < 3) throw new Error("assoc takes at least 3 arguments");
   if (args.length % 2 !== 0) throw new Error("assoc expected odd arguments");
 
-  if (xs instanceof CalcitMap) return xs.assoc(...args);
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) return xs.assoc(...args);
 
   throw new Error("map `assoc` expected a map");
 };
@@ -360,7 +360,7 @@ export let _$n_list_$o_dissoc = function (xs: CalcitValue | CalcitSliceList, k: 
 export let _$n_map_$o_dissoc = function (xs: CalcitValue, ...args: CalcitValue[]) {
   if (args.length < 1) throw new Error("dissoc takes at least 2 arguments");
 
-  if (xs instanceof CalcitMap) {
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
     return xs.dissoc(...args);
   }
 
@@ -428,7 +428,7 @@ export function _$n_str_$o_empty_$q_(xs: CalcitValue): boolean {
   throw new Error(`expected a string ${xs}`);
 }
 export function _$n_map_$o_empty_$q_(xs: CalcitValue): boolean {
-  if (xs instanceof CalcitMap) return xs.isEmpty();
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) return xs.isEmpty();
 
   throw new Error(`expected a list ${xs}`);
 }
@@ -455,7 +455,7 @@ export let _$n_str_$o_first = (xs: CalcitValue): CalcitValue => {
   throw new Error("Expected a string");
 };
 export let _$n_map_$o_first = (xs: CalcitValue): CalcitValue => {
-  if (xs instanceof CalcitMap) {
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
     // TODO order may not be stable enough
     let ys = xs.pairs();
     if (ys.length > 0) {
@@ -511,12 +511,12 @@ export let _$n_set_$o_rest = (xs: CalcitValue): CalcitValue => {
   throw new Error("Expect a set");
 };
 export let _$n_map_$o_rest = (xs: CalcitValue): CalcitValue => {
-  if (xs instanceof CalcitMap) {
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
     if (xs.len() > 0) {
       let k0 = xs.pairs()[0][0];
       return xs.dissoc(k0);
     } else {
-      return new CalcitMap(initTernaryTreeMap<CalcitValue, CalcitValue>([]));
+      return new CalcitSliceMap([]);
     }
   }
   console.error(xs);
@@ -692,22 +692,22 @@ export let floor = (n: number): number => {
   return Math.floor(n);
 };
 
-export let _$n_merge = (a: CalcitValue, b: CalcitMap): CalcitValue => {
+export let _$n_merge = (a: CalcitValue, b: CalcitMap | CalcitSliceMap): CalcitValue => {
   if (a == null) {
     return b;
   }
   if (b == null) {
     return a;
   }
-  if (a instanceof CalcitMap) {
-    if (b instanceof CalcitMap) {
+  if (a instanceof CalcitMap || a instanceof CalcitSliceMap) {
+    if (b instanceof CalcitMap || b instanceof CalcitSliceMap) {
       return a.merge(b);
     } else {
       throw new Error("Expected an argument of map");
     }
   }
   if (a instanceof CalcitRecord) {
-    if (b instanceof CalcitMap) {
+    if (b instanceof CalcitMap || b instanceof CalcitSliceMap) {
       let values = [];
       for (let item of a.values) {
         values.push(item);
@@ -732,17 +732,17 @@ export let _$n_merge = (a: CalcitValue, b: CalcitMap): CalcitValue => {
   throw new Error("Expected map or record");
 };
 
-export let _$n_merge_non_nil = (a: CalcitMap, b: CalcitMap): CalcitMap => {
+export let _$n_merge_non_nil = (a: CalcitMap | CalcitSliceMap, b: CalcitMap | CalcitSliceMap): CalcitMap | CalcitSliceMap => {
   if (a == null) {
     return b;
   }
   if (b == null) {
     return a;
   }
-  if (!(a instanceof CalcitMap)) {
+  if (!(a instanceof CalcitMap || a instanceof CalcitSliceMap)) {
     throw new Error("Expected map");
   }
-  if (!(b instanceof CalcitMap)) {
+  if (!(b instanceof CalcitMap || b instanceof CalcitSliceMap)) {
     throw new Error("Expected map");
   }
 
@@ -750,7 +750,7 @@ export let _$n_merge_non_nil = (a: CalcitMap, b: CalcitMap): CalcitMap => {
 };
 
 export let to_pairs = (xs: CalcitValue): CalcitValue | CalcitSliceList => {
-  if (xs instanceof CalcitMap) {
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
     let result: Array<CalcitSliceList> = [];
     for (let [k, v] of xs.pairs()) {
       result.push(new CalcitSliceList([k, v]));
@@ -1077,7 +1077,7 @@ export let keyword_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitKeyword;
 };
 export let map_$q_ = (x: CalcitValue): boolean => {
-  return x instanceof CalcitMap;
+  return x instanceof CalcitMap || x instanceof CalcitSliceMap;
 };
 export let list_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitList || x instanceof CalcitSliceList;
@@ -1247,7 +1247,7 @@ export function invoke_method(p: string) {
       klass = calcit_builtin_classes.list;
     } else if (obj instanceof CalcitRecord) {
       klass = calcit_builtin_classes.record;
-    } else if (obj instanceof CalcitMap) {
+    } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
       klass = calcit_builtin_classes.map;
     } else {
       if ((obj as any)[p] == null) {
@@ -1269,7 +1269,7 @@ export function invoke_method(p: string) {
 }
 
 export let _$n_map_$o_to_list = (m: CalcitValue): CalcitSliceList => {
-  if (m instanceof CalcitMap) {
+  if (m instanceof CalcitMap || m instanceof CalcitSliceMap) {
     let ys = [];
     for (let pair of m.pairs()) {
       ys.push(new CalcitSliceList(pair));
@@ -1311,7 +1311,7 @@ let typeAsInt = (x: CalcitValue): number => {
   if (x instanceof CalcitRecur) return PseudoTypeIndex.recur;
   if (x instanceof CalcitList || x instanceof CalcitSliceList) return PseudoTypeIndex.list;
   if (x instanceof CalcitSet) return PseudoTypeIndex.set;
-  if (x instanceof CalcitMap) return PseudoTypeIndex.map;
+  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) return PseudoTypeIndex.map;
   if (x instanceof CalcitRecord) return PseudoTypeIndex.record;
   // proc, fn, macro, syntax, not distinguished
   if (t === "function") return PseudoTypeIndex.fn;
@@ -1364,7 +1364,7 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
 };
 
 export let _$n_map_$o_diff_new = (a: CalcitValue, b: CalcitValue): CalcitMap => {
-  if (a instanceof CalcitMap && b instanceof CalcitMap) {
+  if ((a instanceof CalcitMap || a instanceof CalcitSliceMap) && (b instanceof CalcitMap || b instanceof CalcitSliceMap)) {
     return a.diffNew(b);
   } else {
     throw new Error("expected 2 maps");
@@ -1372,7 +1372,7 @@ export let _$n_map_$o_diff_new = (a: CalcitValue, b: CalcitValue): CalcitMap => 
 };
 
 export let _$n_map_$o_diff_keys = (a: CalcitValue, b: CalcitValue): CalcitSet => {
-  if (a instanceof CalcitMap && b instanceof CalcitMap) {
+  if ((a instanceof CalcitMap || a instanceof CalcitSliceMap) && (b instanceof CalcitMap || b instanceof CalcitSliceMap)) {
     return a.diffKeys(b);
   } else {
     throw new Error("expected 2 maps");
@@ -1380,7 +1380,7 @@ export let _$n_map_$o_diff_keys = (a: CalcitValue, b: CalcitValue): CalcitSet =>
 };
 
 export let _$n_map_$o_common_keys = (a: CalcitValue, b: CalcitValue): CalcitSet => {
-  if (a instanceof CalcitMap && b instanceof CalcitMap) {
+  if ((a instanceof CalcitMap || a instanceof CalcitSliceMap) && (b instanceof CalcitMap || b instanceof CalcitSliceMap)) {
     return a.commonKeys(b);
   } else {
     throw new Error("expected 2 maps");

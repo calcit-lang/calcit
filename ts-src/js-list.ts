@@ -15,7 +15,7 @@ import {
   assocAfter,
 } from "@calcit/ternary-tree";
 
-import { CalcitMap } from "./js-map";
+import { CalcitMap, CalcitSliceMap } from "./js-map";
 import { CalcitSet } from "./js-set";
 import { CalcitTuple } from "./js-tuple";
 import { CalcitFn } from "./calcit.procs";
@@ -274,7 +274,7 @@ export let foldl = function (xs: CalcitValue, acc: CalcitValue, f: CalcitFn): Ca
     });
     return result;
   }
-  if (xs instanceof CalcitMap) {
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
     let result = acc;
     xs.pairs().forEach(([k, item]) => {
       result = f(result, new CalcitSliceList([k, item]));
@@ -331,7 +331,7 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     return v0;
   }
 
-  if (xs instanceof CalcitMap) {
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
     let state = acc;
     for (let item of xs.pairs()) {
       let pair = f(state, new CalcitSliceList(item));

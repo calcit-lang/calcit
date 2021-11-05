@@ -3,7 +3,7 @@ import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { overwriteMapComparator } from "./js-map";
 
 import { CalcitRecord, fieldsEqual } from "./js-record";
-import { CalcitMap } from "./js-map";
+import { CalcitMap, CalcitSliceMap } from "./js-map";
 
 import { CalcitValue } from "./js-primes";
 import { CalcitList, CalcitSliceList } from "./js-list";
@@ -69,7 +69,7 @@ export let isNestedCalcitData = (x: CalcitValue): boolean => {
   if (x instanceof CalcitList || x instanceof CalcitSliceList) {
     return x.len() > 0;
   }
-  if (x instanceof CalcitMap) {
+  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
     return x.len() > 0;
   }
   if (x instanceof CalcitRecord) {
@@ -85,7 +85,7 @@ export let tipNestedCalcitData = (x: CalcitValue): string => {
   if (x instanceof CalcitList || x instanceof CalcitSliceList) {
     return "'[]...";
   }
-  if (x instanceof CalcitMap) {
+  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
     return "'{}...";
   }
   if (x instanceof CalcitRecord) {
@@ -268,7 +268,7 @@ let hashFunction = (x: CalcitValue): Hash => {
     x.cachedHash = base;
     return base;
   }
-  if (x instanceof CalcitMap) {
+  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
     let base = defaultHash_map;
     for (let [k, v] of x.pairs()) {
       base = mergeValueHash(base, hashFunction(k));
@@ -334,7 +334,7 @@ export let toString = (x: CalcitValue, escaped: boolean): string => {
   if (x instanceof CalcitList || x instanceof CalcitSliceList) {
     return x.toString();
   }
-  if (x instanceof CalcitMap) {
+  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
     return x.toString();
   }
   if (x instanceof CalcitSet) {
@@ -389,7 +389,7 @@ export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
     }
     return result;
   }
-  if (x instanceof CalcitMap) {
+  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
     let result: Record<string, CalcitValue> = {};
     for (let [k, v] of x.pairs()) {
       var key = to_js_data(k, addColon);
@@ -426,7 +426,7 @@ export let _$n_map_$o_get = function (xs: CalcitValue, k: CalcitValue) {
     throw new Error("map &get takes 2 arguments");
   }
 
-  if (xs instanceof CalcitMap) return xs.get(k);
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) return xs.get(k);
 
   throw new Error("Does not support `&get` on this type");
 };
@@ -491,8 +491,8 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
     }
     return false;
   }
-  if (x instanceof CalcitMap) {
-    if (y instanceof CalcitMap) {
+  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
+    if (y instanceof CalcitMap || y instanceof CalcitSliceMap) {
       if (x.len() !== y.len()) {
         return false;
       }
