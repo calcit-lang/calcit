@@ -58,7 +58,7 @@ pub fn slice(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
       Ok(Calcit::List(ys.slice(from_idx, to_idx)?))
     }
-    (a, b) => CalcitErr::err_str(&format!("slice expected list and indexes: {} {}", a, b)),
+    (a, b) => CalcitErr::err_str(format!("slice expected list and indexes: {} {}", a, b)),
   }
 }
 
@@ -68,7 +68,7 @@ pub fn append(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::List(ys) => Ok(Calcit::List(ys.push(xs[1].to_owned()))),
-    a => CalcitErr::err_str(&format!("append expected a list: {}", a)),
+    a => CalcitErr::err_str(format!("append expected a list: {}", a)),
   }
 }
 

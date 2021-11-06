@@ -193,9 +193,7 @@ pub fn format_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       match cirru::calcit_data_to_cirru(a) {
         Ok(v) => {
           if let Cirru::List(ys) = v {
-            Ok(Calcit::Str(
-              cirru_parser::format(&ys, options).map_err(CalcitErr::use_str)?.into_boxed_str(),
-            ))
+            Ok(Calcit::Str(cirru_parser::format(&ys, options)?.into_boxed_str()))
           } else {
             CalcitErr::err_str(format!("expected vector for Cirru formatting: {}", v))
           }
@@ -220,11 +218,7 @@ pub fn parse_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn format_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(a) => Ok(Calcit::Str(
-      cirru_edn::format(&edn::calcit_to_edn(a).map_err(CalcitErr::use_str)?, true)
-        .map_err(CalcitErr::use_str)?
-        .into_boxed_str(),
-    )),
+    Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)?, true)?.into_boxed_str())),
     None => CalcitErr::err_str("format-cirru-edn expected 1 argument"),
   }
 }

@@ -51,7 +51,7 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Ca
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
   for (idx, v) in xs.into_iter().enumerate() {
     if idx > 1 {
-      ys.push(calcit_to_edn(v).map_err(CalcitErr::use_str)?);
+      ys.push(calcit_to_edn(v)?);
     }
   }
 
@@ -64,7 +64,7 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Ca
     }
 
     let func: libloading::Symbol<EdnFfi> = lib.get(method.as_bytes()).expect("dy function not found");
-    let ret = func(ys.to_owned()).map_err(CalcitErr::use_str)?;
+    let ret = func(ys.to_owned())?;
     Ok(edn_to_calcit(&ret))
   }
 }
@@ -106,7 +106,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
   let callback = xs[xs.len() - 1].clone();
   for (idx, v) in xs.into_iter().enumerate() {
     if idx > 1 && idx < xs.len() - 1 {
-      ys.push(calcit_to_edn(v).map_err(CalcitErr::use_str)?);
+      ys.push(calcit_to_edn(v)?);
     }
   }
   if let Calcit::Fn(..) = callback {
@@ -192,7 +192,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
   let callback = xs[xs.len() - 1].clone();
   for (idx, v) in xs.into_iter().enumerate() {
     if idx > 1 && idx < xs.len() - 1 {
-      ys.push(calcit_to_edn(v).map_err(CalcitErr::use_str)?);
+      ys.push(calcit_to_edn(v)?);
     }
   }
   if let Calcit::Fn(..) = callback {

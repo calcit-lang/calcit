@@ -547,6 +547,7 @@ impl fmt::Display for CalcitErr {
 }
 
 impl From<String> for CalcitErr {
+  /// hope this does not add extra costs
   fn from(msg: String) -> Self {
     CalcitErr {
       msg,

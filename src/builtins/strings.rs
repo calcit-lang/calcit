@@ -78,7 +78,7 @@ pub fn split(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn format_number(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(x))) => {
-      let size = f64_to_usize(*x).map_err(CalcitErr::use_str)?;
+      let size = f64_to_usize(*x)?;
       Ok(Calcit::Str(format!("{n:.*}", size, n = n).into_boxed_str()))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("&number:format expected numbers, got: {} {}", a, b)),
