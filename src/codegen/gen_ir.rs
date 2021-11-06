@@ -8,46 +8,19 @@ use crate::primes::{Calcit, CalcitItems, ImportRule, SymbolResolved::*};
 use crate::program;
 
 #[derive(Debug)]
-struct IrDataImport {
-  ns: String,
-  kind: String,
-  def: Option<String>,
-}
-
-impl IrDataImport {
-  fn to_edn(&self) -> Edn {
-    let mut xs: HashMap<Edn, Edn> = HashMap::new();
-    xs.insert(Edn::kwd("ns"), Edn::str(self.ns.to_owned()));
-    xs.insert(Edn::kwd("kind"), Edn::str(self.kind.to_owned()));
-    match &self.def {
-      Some(def) => xs.insert(Edn::kwd("def"), Edn::str(def)),
-      None => xs.insert(Edn::kwd("def"), Edn::Nil),
-    };
-    Edn::Map(xs)
-  }
-}
-
-#[derive(Debug)]
 struct IrDataFile {
-  import: HashMap<Box<str>, IrDataImport>,
   defs: HashMap<Box<str>, Edn>,
 }
 
 impl IrDataFile {
   fn to_edn(&self) -> Edn {
     let mut xs: HashMap<Edn, Edn> = HashMap::new();
-    let mut import_data: HashMap<Edn, Edn> = HashMap::new();
     let mut defs_data: HashMap<Edn, Edn> = HashMap::new();
-
-    for (k, v) in &self.import {
-      import_data.insert(Edn::Str(k.to_owned()), v.to_edn());
-    }
 
     for (k, v) in &self.defs {
       defs_data.insert(Edn::Str(k.to_owned()), v.to_owned());
     }
 
-    xs.insert(Edn::kwd("import"), Edn::Map(import_data));
     xs.insert(Edn::kwd("defs"), Edn::Map(defs_data));
     Edn::Map(xs)
   }
@@ -93,15 +66,12 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
   let mut files: HashMap<Box<str>, IrDataFile> = HashMap::new();
 
   for (ns, file_info) in program_data {
-    // TODO current implementation does not contain imports in evaled data
-    let imports: HashMap<Box<str>, IrDataImport> = HashMap::new();
-
     let mut defs: HashMap<Box<str>, Edn> = HashMap::new();
     for (def, code) in file_info {
       defs.insert(def, dump_code(&code));
     }
 
-    let file = IrDataFile { import: imports, defs };
+    let file = IrDataFile { defs };
     files.insert(ns, file);
   }
 

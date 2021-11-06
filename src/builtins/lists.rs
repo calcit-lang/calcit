@@ -56,7 +56,7 @@ pub fn slice(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       };
       let from_idx: usize = unsafe { from.to_int_unchecked() };
 
-      Ok(Calcit::List(ys.slice(from_idx, to_idx)))
+      Ok(Calcit::List(ys.slice(from_idx, to_idx)?))
     }
     (a, b) => CalcitErr::err_str(&format!("slice expected list and indexes: {} {}", a, b)),
   }
@@ -89,7 +89,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       if ys.is_empty() {
         Ok(Calcit::Nil)
       } else {
-        Ok(Calcit::List(ys.rest()))
+        Ok(Calcit::List(ys.rest()?))
       }
     }
     a => CalcitErr::err_str(format!("list:rest expected a list, got: {}", a)),
@@ -107,7 +107,7 @@ pub fn butlast(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Nil)
       } else {
         let mut zs = ys.to_owned();
-        zs = zs.butlast();
+        zs = zs.butlast()?;
         Ok(Calcit::List(zs))
       }
     }
@@ -515,7 +515,7 @@ pub fn assoc_before(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => {
         // let ys = insert(zs, idx, xs[2].to_owned());
-        Ok(Calcit::List(zs.assoc_before(idx, xs[2].to_owned())))
+        Ok(Calcit::List(zs.assoc_before(idx, xs[2].to_owned())?))
       }
       Err(e) => CalcitErr::err_str(format!("assoc-before expect usize, {}", e)),
     },
@@ -531,7 +531,7 @@ pub fn assoc_after(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => {
         // let ys = insert(zs, idx + 1, xs[2].to_owned());
-        Ok(Calcit::List(zs.assoc_after(idx, xs[2].to_owned())))
+        Ok(Calcit::List(zs.assoc_after(idx, xs[2].to_owned())?))
       }
       Err(e) => CalcitErr::err_str(format!("assoc-after expect usize, {}", e)),
     },
@@ -580,7 +580,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         if idx < zs.len() {
           let mut ys = zs.to_owned();
           // ys[idx] = xs[2].to_owned();
-          ys = ys.assoc(idx, xs[2].to_owned());
+          ys = ys.assoc(idx, xs[2].to_owned())?;
           Ok(Calcit::List(ys))
         } else {
           Ok(Calcit::List(xs.to_owned()))
@@ -595,7 +595,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(at) => Ok(Calcit::List(xs.dissoc(at))),
+      Ok(at) => Ok(Calcit::List(xs.dissoc(at)?)),
       Err(e) => CalcitErr::err_str(format!("dissoc expected number, {}", e)),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("list dissoc expected a list, got: {}", a)),

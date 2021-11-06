@@ -246,7 +246,7 @@ fn process_list_call(
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   let head = &xs[0];
   let (head_form, head_evaled) = preprocess_expr(head, scope_defs, file_ns, check_warnings, call_stack)?;
-  let args = skip(xs, 1);
+  let args = skip(xs, 1)?;
   let def_name = grab_def_name(head);
 
   // println!(

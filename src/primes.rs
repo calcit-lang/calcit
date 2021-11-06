@@ -546,6 +546,16 @@ impl fmt::Display for CalcitErr {
   }
 }
 
+impl From<String> for CalcitErr {
+  fn from(msg: String) -> Self {
+    CalcitErr {
+      msg,
+      warnings: vec![],
+      stack: TernaryTreeList::Empty,
+    }
+  }
+}
+
 impl CalcitErr {
   pub fn use_str<T: Into<String>>(msg: T) -> Self {
     CalcitErr {

@@ -23,7 +23,12 @@ pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args:
 pub fn pop_call_stack() {
   let mut stack = CALL_STACK.write().unwrap();
   if !stack.is_empty() {
-    *stack = stack.butlast();
+    match stack.butlast() {
+      Ok(v) => *stack = v,
+      Err(e) => {
+        println!("stack problem, {}", e)
+      }
+    }
   }
 }
 

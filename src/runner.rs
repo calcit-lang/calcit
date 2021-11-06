@@ -31,8 +31,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
                 let evaled_v = evaluate_expr(&code, scope, file_ns, call_stack)?;
                 // and write back to program state to fix duplicated evalution
                 // still using thunk since js and IR requires bare code
-                program::write_evaled_def(r_ns, r_def, Calcit::Thunk(code, Some(Box::new(evaled_v.to_owned()))))
-                  .map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
+                program::write_evaled_def(r_ns, r_def, Calcit::Thunk(code, Some(Box::new(evaled_v.to_owned()))))?;
                 Ok(evaled_v)
               }
               _ => Ok(v),
@@ -63,7 +62,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         // println!("eval expr: {}", x);
 
         let v = evaluate_expr(x, scope, file_ns, call_stack)?;
-        let rest_nodes = skip(xs, 1);
+        let rest_nodes = skip(xs, 1)?;
         let ret = match &v {
           Calcit::Proc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
