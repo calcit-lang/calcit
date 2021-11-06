@@ -16,7 +16,6 @@ use crate::call_stack::StackKind;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
 use crate::program;
-use crate::util::skip;
 use crate::util::string::{has_ns_part, matches_digits, matches_js_var, wrap_js_str};
 
 type ImportsDict = BTreeMap<Box<str>, ImportedTarget>;
@@ -279,7 +278,7 @@ fn gen_call_code(
   }
 
   let head = ys[0].to_owned();
-  let body = ys.slice(1, ys.len())?;
+  let body = ys.skip(1)?;
   match &head {
     Calcit::Syntax(s, ..) => {
       match s {
@@ -335,7 +334,7 @@ fn gen_call_code(
 
         CalcitSyntax::Defn => match (body.get(0), body.get(1)) {
           (Some(Calcit::Symbol(sym, ..)), Some(Calcit::List(ys))) => {
-            let func_body = body.slice(2, body.len())?;
+            let func_body = body.skip(2)?;
             gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
             let ret = gen_js_func(sym, ys, &func_body, ns, false, local_defs, file_imports, keywords);
             gen_stack::pop_call_stack();
@@ -410,7 +409,7 @@ fn gen_call_code(
 
         "echo" | "println" => {
           // not core syntax, but treat as macro for better debugging experience
-          let args = skip(ys, 1)?;
+          let args = ys.skip(1)?;
           let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
           Ok(format!("console.log({}printable({}))", proc_prefix, args_code))
         }
@@ -427,7 +426,7 @@ fn gen_call_code(
         }
         "new" => match body.get(0) {
           Some(ctor) => {
-            let args = body.slice(1, body.len())?;
+            let args = body.skip(1)?;
             let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
             Ok(format!(
               "{}new {}({})",
@@ -505,7 +504,7 @@ fn gen_call_code(
           if matches_js_var(name) {
             match body.get(0) {
               Some(obj) => {
-                let args = skip(&body, 1)?;
+                let args = body.skip(1)?;
                 let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
                 Ok(format!(
                   "{}{}.{}({})",
@@ -525,7 +524,7 @@ fn gen_call_code(
           let name = s.strip_prefix('.').unwrap();
           match body.get(0) {
             Some(obj) => {
-              let args = skip(&body, 1)?;
+              let args = body.skip(1)?;
               let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
               Ok(format!(
                 "{}{}invoke_method({})({},{})",
@@ -690,7 +689,7 @@ fn gen_let_code(
       return Err(format!("&let expected body, but got empty, {}", xs.lisp_str()));
     }
     let pair = let_def_body[0].to_owned();
-    let content = skip(&let_def_body, 1)?;
+    let content = let_def_body.skip(1)?;
 
     match &pair {
       Calcit::Nil => {
@@ -748,7 +747,7 @@ fn gen_let_code(
                   Calcit::List(ys) if ys.len() > 2 => match (&ys[0], &ys[1]) {
                     (Calcit::Syntax(sym, _ns), Calcit::List(zs)) if sym == &CalcitSyntax::CoreLet && zs.len() == 2 => match &zs[0] {
                       Calcit::Symbol(s2, ..) if !scoped_defs.contains(s2) => {
-                        let_def_body = ys.slice(1, ys.len())?;
+                        let_def_body = ys.skip(1)?;
                         continue;
                       }
                       _ => (),

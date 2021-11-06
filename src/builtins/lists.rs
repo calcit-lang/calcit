@@ -6,7 +6,6 @@ use crate::util::number::f64_to_usize;
 use crate::builtins;
 use crate::call_stack::CallStackVec;
 use crate::runner;
-use crate::util::contains;
 
 use im_ternary_tree::TernaryTreeList;
 
@@ -564,7 +563,7 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(contains(xs, a))),
+    (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(xs.index_of(a).is_some())),
     (Some(a), ..) => CalcitErr::err_str(format!("list `includes?` expected list, list, got: {}", a)),
     (None, ..) => CalcitErr::err_str(format!("list `includes?` expected 2 arguments, got: {:?}", xs)),
   }
@@ -627,7 +626,7 @@ pub fn distinct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Calcit::List(ys) => {
       let mut zs = TernaryTreeList::Empty;
       for y in ys {
-        if !contains(&zs, y) {
+        if zs.index_of(y).is_none() {
           zs = zs.push(y.to_owned());
         }
       }

@@ -9,7 +9,6 @@ use crate::builtins;
 use crate::call_stack::CallStackVec;
 use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
-use crate::util::{skip, slice};
 
 use im_ternary_tree::TernaryTreeList;
 
@@ -21,7 +20,7 @@ pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Ca
       gen_core_id(),
       scope.to_owned(),
       Box::new(xs.to_owned()),
-      Box::new(expr.slice(2, expr.len())?),
+      Box::new(expr.skip(2)?),
     )),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid args type for defn: {} , {}", a, b)),
     _ => CalcitErr::err_str("inefficient arguments for defn"),
@@ -35,7 +34,7 @@ pub fn defmacro(expr: &CalcitItems, _scope: &CalcitScope, def_ns: &str) -> Resul
       def_ns.to_owned().into(),
       gen_core_id(),
       Box::new(xs.to_owned()),
-      Box::new(skip(expr, 2)?),
+      Box::new(expr.skip(2)?),
     )),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid structure for defmacro: {} {}", a, b)),
     _ => CalcitErr::err_str(format!("invalid structure for defmacro: {}", Calcit::List(expr.to_owned()))),
@@ -79,7 +78,7 @@ pub fn eval(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: 
 
 pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match expr.get(0) {
-    Some(Calcit::Nil) => runner::evaluate_lines(&expr.slice(1, expr.len())?, scope, file_ns, call_stack),
+    Some(Calcit::Nil) => runner::evaluate_lines(&expr.skip(1)?, scope, file_ns, call_stack),
     Some(Calcit::List(xs)) if xs.len() == 2 => {
       let mut body_scope = scope.to_owned();
       match (&xs[0], &xs[1]) {
@@ -89,7 +88,7 @@ pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_s
         }
         (a, _) => return CalcitErr::err_str(format!("invalid binding name: {}", a)),
       }
-      runner::evaluate_lines(&expr.slice(1, expr.len())?, &body_scope, file_ns, call_stack)
+      runner::evaluate_lines(&expr.skip(1)?, &body_scope, file_ns, call_stack)
     }
     Some(Calcit::List(xs)) => CalcitErr::err_str(format!("invalid length: {:?}", xs)),
     Some(_) => CalcitErr::err_str(format!("invalid node for &let: {:?}", expr)),
@@ -183,7 +182,7 @@ pub fn macroexpand(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_
         match v {
           Calcit::Macro(_, def_ns, _, args, body) => {
             // mutable operation
-            let mut rest_nodes = xs.slice(1, xs.len())?;
+            let mut rest_nodes = xs.skip(1)?;
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
@@ -219,7 +218,7 @@ pub fn macroexpand_1(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, cal
         let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
           Calcit::Macro(_, def_ns, _, args, body) => {
-            let body_scope = runner::bind_args(&args, &slice(&xs, 1, xs.len())?, scope, call_stack)?;
+            let body_scope = runner::bind_args(&args, &xs.skip(1)?, scope, call_stack)?;
             runner::evaluate_lines(&body, &body_scope, &def_ns, call_stack)
           }
           _ => Ok(quoted_code),
@@ -245,7 +244,7 @@ pub fn macroexpand_all(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, c
         match v {
           Calcit::Macro(_, def_ns, _, args, body) => {
             // mutable operation
-            let mut rest_nodes = slice(&xs, 1, xs.len())?;
+            let mut rest_nodes = xs.skip(1)?;
             let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur

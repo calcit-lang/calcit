@@ -6,7 +6,6 @@ use crate::builtins::is_proc_name;
 use crate::call_stack::{extend_call_stack, CallStackVec, StackKind};
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
-use crate::util::skip;
 
 use im_ternary_tree::TernaryTreeList;
 use std::sync::{Arc, RwLock};
@@ -66,7 +65,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         // println!("eval expr: {}", x);
 
         let v = evaluate_expr(x, scope, file_ns, call_stack)?;
-        let rest_nodes = skip(xs, 1)?;
+        let rest_nodes = xs.skip(1)?;
         let ret = match &v {
           Calcit::Proc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
