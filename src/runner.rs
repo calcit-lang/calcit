@@ -22,7 +22,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Calcit::Symbol(s, ns, _at_def, resolved) => match resolved {
       Some(resolved_info) => {
         match &**resolved_info {
-          ResolvedDef(r_ns, r_def, _import_rule) => {
+          ResolvedDef {
+            ns: r_ns,
+            def: r_def,
+            rule: _import_rule,
+          } => {
             let v = evaluate_symbol(r_def, scope, r_ns, call_stack)?;
             match v {
               Calcit::Thunk(_code, Some(data)) => Ok(*data),

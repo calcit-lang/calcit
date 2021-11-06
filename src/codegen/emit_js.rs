@@ -583,7 +583,11 @@ fn gen_symbol_code(
       // TODO dirty code
       // TODO namespace part supposed be parsed during preprocessing, this mimics old behaviors
       match resolved {
-        Some(ResolvedDef(r_ns, _r_def, _import_rule /* None */)) => {
+        Some(ResolvedDef {
+          ns: r_ns,
+          def: _r_def,
+          rule: _import_rule, /* None */
+        }) => {
           if is_cirru_string(r_ns) {
             track_ns_import(ns_part, ImportedTarget::AsNs(r_ns.to_owned()), file_imports)?;
             Ok(escape_ns_var(s, ns_part))
@@ -603,7 +607,12 @@ fn gen_symbol_code(
     return Ok(format!("{}{}", proc_prefix, escape_var(s)));
   } else if matches!(resolved, Some(ResolvedLocal)) || local_defs.contains(s) {
     Ok(escape_var(s))
-  } else if let Some(ResolvedDef(r_ns, _r_def, import_rule)) = resolved.to_owned() {
+  } else if let Some(ResolvedDef {
+    ns: r_ns,
+    def: _r_def,
+    rule: import_rule,
+  }) = resolved.to_owned()
+  {
     if &*r_ns == primes::CORE_NS {
       // functions under core uses built $calcit module entry
       return Ok(format!("{}{}", var_prefix, escape_var(s)));

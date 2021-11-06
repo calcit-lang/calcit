@@ -24,8 +24,12 @@ use crate::call_stack::CallStackVec;
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolResolved {
   ResolvedLocal,
-  ResolvedRaw,                                         // raw syntax, no target
-  ResolvedDef(Box<str>, Box<str>, Option<ImportRule>), // ns, def
+  ResolvedRaw, // raw syntax, no target
+  ResolvedDef {
+    ns: Box<str>,
+    def: Box<str>,
+    rule: Option<ImportRule>,
+  }, // ns, def
 }
 
 /// defRule: ns def

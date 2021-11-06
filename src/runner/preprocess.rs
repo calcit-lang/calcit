@@ -35,7 +35,11 @@ pub fn preprocess_ns_def(
           original_sym.to_owned(),
           ns.to_owned(),
           def.to_owned(),
-          Some(Box::new(ResolvedDef(ns.to_owned(), def.to_owned(), import_rule))),
+          Some(Box::new(ResolvedDef {
+            ns: ns.to_owned(),
+            def: def.to_owned(),
+            rule: import_rule,
+          })),
         ),
         Some(v),
       ))
@@ -67,11 +71,11 @@ pub fn preprocess_ns_def(
               original_sym.to_owned(),
               ns.to_owned(),
               def.to_owned(),
-              Some(Box::new(ResolvedDef(
-                ns.to_owned(),
-                def.to_owned(),
-                Some(ImportRule::NsReferDef(ns.to_owned(), def.to_owned())),
-              ))),
+              Some(Box::new(ResolvedDef {
+                ns: ns.to_owned(),
+                def: def.to_owned(),
+                rule: Some(ImportRule::NsReferDef(ns.to_owned(), def.to_owned())),
+              })),
             ),
             Some(v),
           ))
@@ -81,7 +85,11 @@ pub fn preprocess_ns_def(
             original_sym.to_owned(),
             ns.to_owned(),
             def.to_owned(),
-            Some(Box::new(ResolvedDef(ns.to_owned(), def.to_owned(), import_rule))),
+            Some(Box::new(ResolvedDef {
+              ns: ns.to_owned(),
+              def: def.to_owned(),
+              rule: import_rule,
+            })),
           ),
           None,
         )),
@@ -122,11 +130,11 @@ pub fn preprocess_expr(
               def.to_owned(),
               def_ns.to_owned(),
               at_def.to_owned(),
-              Some(Box::new(ResolvedDef(
-                String::from("js").into_boxed_str(),
-                def_part.to_owned(),
-                None,
-              ))),
+              Some(Box::new(ResolvedDef {
+                ns: String::from("js").into_boxed_str(),
+                def: def_part.to_owned(),
+                rule: None,
+              })),
             ),
             None,
           ))
@@ -186,11 +194,11 @@ pub fn preprocess_expr(
             None => {
               let from_default = program::lookup_default_target_in_import(def_ns, def);
               if let Some(target_ns) = from_default {
-                let target = Some(Box::new(ResolvedDef(
-                  target_ns.to_owned(),
-                  def.to_owned(),
-                  Some(ImportRule::NsDefault(target_ns)),
-                )));
+                let target = Some(Box::new(ResolvedDef {
+                  ns: target_ns.to_owned(),
+                  def: def.to_owned(),
+                  rule: Some(ImportRule::NsDefault(target_ns)),
+                }));
                 Ok((Calcit::Symbol(def.to_owned(), def_ns.to_owned(), at_def.to_owned(), target), None))
               } else {
                 let mut names: Vec<Box<str>> = Vec::with_capacity(scope_defs.len());
@@ -268,11 +276,11 @@ fn process_list_call(
             String::from("get").into_boxed_str(),
             String::from(primes::CORE_NS).into_boxed_str(),
             String::from(primes::GENERATED_DEF).into_boxed_str(),
-            Some(Box::new(ResolvedDef(
-              String::from(primes::CORE_NS).into_boxed_str(),
-              String::from("get").into_boxed_str(),
-              None,
-            ))),
+            Some(Box::new(ResolvedDef {
+              ns: String::from(primes::CORE_NS).into_boxed_str(),
+              def: String::from("get").into_boxed_str(),
+              rule: None,
+            })),
           ),
           args[0].to_owned(),
           head.to_owned(),

@@ -370,11 +370,11 @@ fn gen_sym(sym: &str) -> Calcit {
     String::from("&core-map-class").into_boxed_str(),
     String::from(primes::CORE_NS).into_boxed_str(),
     String::from(primes::GENERATED_DEF).into_boxed_str(),
-    Some(Box::new(primes::SymbolResolved::ResolvedDef(
-      String::from(primes::CORE_NS).into_boxed_str(),
-      String::from(sym).into_boxed_str(),
-      None,
-    ))),
+    Some(Box::new(primes::SymbolResolved::ResolvedDef {
+      ns: String::from(primes::CORE_NS).into_boxed_str(),
+      def: String::from(sym).into_boxed_str(),
+      rule: None,
+    })),
   )
 }
 

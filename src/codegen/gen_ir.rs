@@ -110,7 +110,11 @@ fn dump_code(code: &Calcit) -> Edn {
     Calcit::Symbol(s, ns, at_def, resolved) => {
       let resolved = match resolved {
         Some(resolved) => match &**resolved {
-          ResolvedDef(r_def, r_ns, import_rule) => {
+          ResolvedDef {
+            ns: r_ns,
+            def: r_def,
+            rule: import_rule,
+          } => {
             let mut xs: HashMap<Edn, Edn> = HashMap::new();
             xs.insert(Edn::kwd("kind"), Edn::kwd("def"));
             xs.insert(Edn::kwd("ns"), Edn::Str(r_ns.to_owned()));
