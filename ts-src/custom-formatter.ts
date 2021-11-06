@@ -3,8 +3,8 @@ import { CalcitRef, CalcitSymbol, CalcitKeyword } from "./calcit-data";
 import { toPairs } from "@calcit/ternary-tree";
 
 import { CalcitRecord } from "./js-record";
-import { CalcitMap } from "./js-map";
-import { CalcitList } from "./js-list";
+import { CalcitMap, CalcitSliceMap } from "./js-map";
+import { CalcitList, CalcitSliceList } from "./js-list";
 import { CalcitSet } from "./js-set";
 import { CalcitTuple } from "./js-tuple";
 
@@ -41,7 +41,7 @@ export let load_console_formatter_$x_ = () => {
           if (obj instanceof CalcitSymbol) {
             return ["div", { style: "color: hsl(340, 80%, 60%)" }, obj.toString()];
           }
-          if (obj instanceof CalcitList) {
+          if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
             return [
               "div",
               { style: "color: hsl(280, 80%, 60%, 0.4)" },
@@ -49,7 +49,7 @@ export let load_console_formatter_$x_ = () => {
               ["span", { style: "font-size: 80%; vertical-align: 0.7em; color: hsl(280, 80%, 60%, 0.8)" }, `${obj.len()}`],
             ];
           }
-          if (obj instanceof CalcitMap) {
+          if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
             return ["div", { style: "color: hsl(280, 80%, 60%, 0.4)" }, obj.toString(true)];
           }
           if (obj instanceof CalcitSet) {
@@ -78,10 +78,10 @@ export let load_console_formatter_$x_ = () => {
           return null;
         },
         hasBody: (obj) => {
-          if (obj instanceof CalcitList) {
+          if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
             return obj.len() > 0;
           }
-          if (obj instanceof CalcitMap) {
+          if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
             return obj.len() > 0;
           }
           if (obj instanceof CalcitSet) {
@@ -90,7 +90,7 @@ export let load_console_formatter_$x_ = () => {
           return false;
         },
         body: (obj, config) => {
-          if (obj instanceof CalcitList) {
+          if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
             return ["div", { style: "color: hsl(280, 80%, 60%)" }].concat(
               obj.toArray().map((x, idx) => {
                 return [
@@ -117,10 +117,10 @@ export let load_console_formatter_$x_ = () => {
             ret.push(["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(obj.snd)]);
             return ret;
           }
-          if (obj instanceof CalcitMap) {
+          if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
             let ret: any[] = ["div", { style: "color: hsl(280, 80%, 60%)" }];
-            obj.turnMap();
-            for (let [k, v] of toPairs(obj.value)) {
+            let pairs = obj.pairs();
+            for (let [k, v] of pairs) {
               ret.push([
                 "div",
                 { style: "margin-left: 8px; display: flex;" },

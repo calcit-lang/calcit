@@ -100,7 +100,7 @@ pub fn tmpl_tail_recursion(
 pub fn tmpl_import_procs(name: String) -> String {
   format!(
     "
-import {{kwd, arrayToList, listToArray, CalcitList, CalcitSymbol, CalcitRecur}} from {};
+import {{kwd, arrayToList, listToArray, CalcitSliceList, CalcitSymbol, CalcitRecur}} from {};
 import * as $calcit_procs from {};
 export * from {};
 ",

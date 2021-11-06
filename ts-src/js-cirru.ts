@@ -2,9 +2,9 @@ import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { CirruWriterNode, writeCirruCode } from "@cirru/writer.ts";
 
 import { CalcitValue } from "./js-primes";
-import { CalcitList } from "./js-list";
+import { CalcitList, CalcitSliceList } from "./js-list";
 import { CalcitRecord } from "./js-record";
-import { CalcitMap } from "./js-map";
+import { CalcitMap, CalcitSliceMap } from "./js-map";
 import { CalcitSet } from "./js-set";
 import { CalcitKeyword, CalcitSymbol, CalcitRecur, CalcitRef, kwd } from "./calcit-data";
 import { CalcitTuple } from "./js-tuple";
@@ -44,11 +44,11 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
   if (x instanceof CalcitSymbol) {
     return x.toString();
   }
-  if (x instanceof CalcitList) {
+  if (x instanceof CalcitList || x instanceof CalcitSliceList) {
     // TODO can be faster
     return (["[]"] as CirruEdnFormat[]).concat(x.toArray().map(to_cirru_edn));
   }
-  if (x instanceof CalcitMap) {
+  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
     let buffer: CirruEdnFormat = ["{}"];
     for (let [k, v] of x.pairs()) {
       buffer.push([to_cirru_edn(k), to_cirru_edn(v)]);
@@ -129,18 +129,18 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       throw new Error("Cannot be empty");
     }
     if (x[0] === "{}") {
-      let result: Array<[CalcitValue, CalcitValue]> = [];
+      let result: Array<CalcitValue> = [];
       x.forEach((pair, idx) => {
         if (idx == 0) {
           return; // skip first `{}` symbol
         }
         if (pair instanceof Array && pair.length == 2) {
-          result.push([extract_cirru_edn(pair[0]), extract_cirru_edn(pair[1])]);
+          result.push(extract_cirru_edn(pair[0]), extract_cirru_edn(pair[1]));
         } else {
           throw new Error("Expected pairs for map");
         }
       });
-      return new CalcitMap(initTernaryTreeMap(result));
+      return new CalcitSliceMap(result);
     }
     if (x[0] === "%{}") {
       let name = x[1];
@@ -177,7 +177,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       return new CalcitRecord(extractFieldKwd(name), fields, values);
     }
     if (x[0] === "[]") {
-      return new CalcitList(x.slice(1).map(extract_cirru_edn));
+      return new CalcitSliceList(x.slice(1).map(extract_cirru_edn));
     }
     if (x[0] === "#{}") {
       return new CalcitSet(x.slice(1).map(extract_cirru_edn));
@@ -244,7 +244,7 @@ export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue =>
     x.forEach((v) => {
       result.push(to_calcit_data(v, noKeyword));
     });
-    return new CalcitList(result);
+    return new CalcitSliceList(result);
   }
   if (x instanceof Set) {
     let result: Array<CalcitValue> = [];
@@ -254,8 +254,8 @@ export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue =>
     return new CalcitSet(result);
   }
 
-  if (x instanceof CalcitList) return x;
-  if (x instanceof CalcitMap) return x;
+  if (x instanceof CalcitList || x instanceof CalcitSliceList) return x;
+  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) return x;
   if (x instanceof CalcitSet) return x;
   if (x instanceof CalcitRecord) return x;
   if (x instanceof CalcitRecur) return x;
@@ -266,22 +266,22 @@ export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue =>
 
   // detects object
   if (x === Object(x)) {
-    let result: Array<[CalcitValue, CalcitValue]> = [];
+    let result: Array<CalcitValue> = [];
     Object.keys(x).forEach((k) => {
-      result.push([to_calcit_data(k, noKeyword), to_calcit_data(x[k], noKeyword)]);
+      result.push(to_calcit_data(k, noKeyword), to_calcit_data(x[k], noKeyword));
     });
-    return new CalcitMap(initTernaryTreeMap(result));
+    return new CalcitSliceMap(result);
   }
 
   console.error(x);
   throw new Error("Unexpected data for converting");
 };
 
-let toWriterNode = (xs: CalcitList): CirruWriterNode => {
+let toWriterNode = (xs: CalcitList | CalcitSliceList): CirruWriterNode => {
   if (typeof xs === "string") {
     return xs;
   }
-  if (xs instanceof CalcitList) {
+  if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
     return xs.toArray().map(toWriterNode);
   } else {
     throw new Error("Unexpected type for CirruWriteNode");

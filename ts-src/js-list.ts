@@ -15,97 +15,46 @@ import {
   assocAfter,
 } from "@calcit/ternary-tree";
 
-import { CalcitMap } from "./js-map";
+import { CalcitMap, CalcitSliceMap } from "./js-map";
 import { CalcitSet } from "./js-set";
 import { CalcitTuple } from "./js-tuple";
 import { CalcitFn } from "./calcit.procs";
 
 import { isNestedCalcitData, tipNestedCalcitData, toString } from "./calcit-data";
 
+// two list implementations, should offer same interface
 export class CalcitList {
   value: TernaryTreeList<CalcitValue>;
   // array mode store bare array for performance
-  arrayValue: Array<CalcitValue>;
-  arrayMode: boolean;
-  arrayStart: number;
-  arrayEnd: number;
   cachedHash: Hash;
-  constructor(value: Array<CalcitValue> | TernaryTreeList<CalcitValue>) {
-    if (value == null) {
-      value = []; // dirty, better handled from outside
-    }
+  constructor(value: TernaryTreeList<CalcitValue>) {
     this.cachedHash = null;
-    if (Array.isArray(value)) {
-      this.arrayMode = true;
-      this.arrayValue = value;
-      this.arrayStart = 0;
-      this.arrayEnd = value.length;
-      this.value = null;
+    if (value == null) {
+      this.value = initTernaryTreeList([]);
     } else {
-      this.arrayMode = false;
       this.value = value;
-      this.arrayValue = [];
-      this.arrayStart = null;
-      this.arrayEnd = null;
-    }
-  }
-  turnListMode() {
-    if (this.arrayMode) {
-      this.value = initTernaryTreeList(this.arrayValue.slice(this.arrayStart, this.arrayEnd));
-      this.arrayValue = null;
-      this.arrayStart = null;
-      this.arrayEnd = null;
-      this.arrayMode = false;
     }
   }
   len() {
-    if (this.arrayMode) {
-      return this.arrayEnd - this.arrayStart;
-    } else {
-      return listLen(this.value);
-    }
+    return listLen(this.value);
   }
   get(idx: number) {
-    if (this.arrayMode) {
-      return this.arrayValue[this.arrayStart + idx];
-    } else {
-      return listGet(this.value, idx);
-    }
+    return listGet(this.value, idx);
   }
   assoc(idx: number, v: CalcitValue) {
-    this.turnListMode();
     return new CalcitList(assocList(this.value, idx, v));
   }
   assocBefore(idx: number, v: CalcitValue) {
-    this.turnListMode();
     return new CalcitList(assocBefore(this.value, idx, v));
   }
   assocAfter(idx: number, v: CalcitValue) {
-    this.turnListMode();
     return new CalcitList(assocAfter(this.value, idx, v));
   }
   dissoc(idx: number) {
-    this.turnListMode();
     return new CalcitList(dissocList(this.value, idx));
   }
   slice(from: number, to: number) {
-    if (this.arrayMode) {
-      if (from < 0) {
-        throw new Error(`from index too small: ${from}`);
-      }
-      if (to > this.len()) {
-        throw new Error(`end index too large: ${to}`);
-      }
-      if (to < from) {
-        throw new Error("end index too small");
-      }
-      let result = new CalcitList(this.arrayValue);
-      result.arrayStart = this.arrayStart + from;
-      result.arrayEnd = this.arrayStart + to;
-      return result;
-    } else {
-      return new CalcitList(ternaryTree.slice(this.value, from, to));
-    }
+    return new CalcitList(ternaryTree.slice(this.value, from, to));
   }
   toString(shorter = false): string {
     let result = "";
@@ -123,54 +72,142 @@ export class CalcitList {
   }
   /** usage: `for of` */
   items(): Generator<CalcitValue> {
-    if (this.arrayMode) {
-      return sliceGenerator(this.arrayValue, this.arrayStart, this.arrayEnd);
-    } else {
-      return listToItems(this.value);
-    }
+    return listToItems(this.value);
   }
   append(v: CalcitValue) {
-    if (this.arrayMode && this.arrayEnd === this.arrayValue.length && this.arrayStart < 32) {
-      // dirty trick to reuse list memory, data storage actually appended at existing array
-      this.arrayValue.push(v);
-      let newList = new CalcitList(this.arrayValue);
-      newList.arrayStart = this.arrayStart;
-      newList.arrayEnd = this.arrayEnd + 1;
-      return newList;
-    } else {
-      this.turnListMode();
-      return new CalcitList(ternaryTree.append(this.value, v));
-    }
+    return new CalcitList(ternaryTree.append(this.value, v));
   }
   prepend(v: CalcitValue) {
-    this.turnListMode();
     return new CalcitList(ternaryTree.prepend(this.value, v));
   }
   first() {
-    if (this.arrayMode) {
-      if (this.arrayValue.length > this.arrayStart) {
-        return this.arrayValue[this.arrayStart];
-      } else {
-        return null;
-      }
+    return ternaryTree.first(this.value);
+  }
+  rest() {
+    return new CalcitList(ternaryTree.rest(this.value));
+  }
+  concat(ys: CalcitList | CalcitSliceList) {
+    if (ys instanceof CalcitSliceList) {
+      return new CalcitList(ternaryTree.concat(this.value, ys.turnListMode().value));
+    } else if (ys instanceof CalcitList) {
+      return new CalcitList(ternaryTree.concat(this.value, ys.value));
     } else {
-      return ternaryTree.first(this.value);
+      throw new Error("Unknown data to concat");
+    }
+  }
+  map(f: (v: CalcitValue) => CalcitValue): CalcitList {
+    return new CalcitList(ternaryTree.listMapValues(this.value, f));
+  }
+  toArray(): CalcitValue[] {
+    return [...ternaryTree.listToItems(this.value)];
+  }
+  reverse() {
+    return new CalcitList(ternaryTree.reverse(this.value));
+  }
+}
+
+// represent append-only immutable list in Array slices
+export class CalcitSliceList {
+  // array mode store bare array for performance
+  value: Array<CalcitValue>;
+  arrayMode: boolean;
+  start: number;
+  end: number;
+  cachedHash: Hash;
+  constructor(value: Array<CalcitValue>) {
+    if (value == null) {
+      value = []; // dirty, better handled from outside
+    }
+    this.cachedHash = null;
+
+    this.value = value;
+    this.start = 0;
+    this.end = value.length;
+  }
+  turnListMode(): CalcitList {
+    return new CalcitList(initTernaryTreeList(this.value.slice(this.start, this.end)));
+  }
+  len() {
+    return this.end - this.start;
+  }
+  get(idx: number) {
+    return this.value[this.start + idx];
+  }
+  assoc(idx: number, v: CalcitValue) {
+    return this.turnListMode().assoc(idx, v);
+  }
+  assocBefore(idx: number, v: CalcitValue) {
+    return this.turnListMode().assocBefore(idx, v);
+  }
+  assocAfter(idx: number, v: CalcitValue) {
+    return this.turnListMode().assocAfter(idx, v);
+  }
+  dissoc(idx: number) {
+    return this.turnListMode().dissoc(idx);
+  }
+  slice(from: number, to: number) {
+    if (from < 0) {
+      throw new Error(`from index too small: ${from}`);
+    }
+    if (to > this.len()) {
+      throw new Error(`end index too large: ${to}`);
+    }
+    if (to < from) {
+      throw new Error("end index too small");
+    }
+    let result = new CalcitSliceList(this.value);
+    result.start = this.start + from;
+    result.end = this.start + to;
+    return result;
+  }
+  toString(shorter = false): string {
+    let result = "";
+    for (let item of this.items()) {
+      if (shorter && isNestedCalcitData(item)) {
+        result = `${result} ${tipNestedCalcitData(item)}`;
+      } else {
+        result = `${result} ${toString(item, true)}`;
+      }
+    }
+    return `([]${result})`;
+  }
+  isEmpty() {
+    return this.len() === 0;
+  }
+  /** usage: `for of` */
+  items(): Generator<CalcitValue> {
+    return sliceGenerator(this.value, this.start, this.end);
+  }
+  append(v: CalcitValue): CalcitSliceList | CalcitList {
+    if (this.arrayMode && this.end === this.value.length && this.start < 32) {
+      // dirty trick to reuse list memory, data storage actually appended at existing array
+      this.value.push(v);
+      let newList = new CalcitSliceList(this.value);
+      newList.start = this.start;
+      newList.end = this.end + 1;
+      return newList;
+    } else {
+      return this.turnListMode().append(v);
+    }
+  }
+  prepend(v: CalcitValue) {
+    return this.turnListMode().prepend(v);
+  }
+  first() {
+    if (this.value.length > this.start) {
+      return this.value[this.start];
+    } else {
+      return null;
     }
   }
   rest() {
-    if (this.arrayMode) {
-      return this.slice(1, this.arrayEnd - this.arrayStart);
-    } else {
-      return new CalcitList(ternaryTree.rest(this.value));
-    }
+    return this.slice(1, this.end - this.start);
   }
-  concat(ys: CalcitList) {
-    if (!(ys instanceof CalcitList)) {
-      throw new Error("Expected list");
-    }
-    if (this.arrayMode && ys.arrayMode) {
-      let size = this.arrayEnd - this.arrayStart;
-      let otherSize = ys.arrayEnd - ys.arrayStart;
+  // TODO
+  concat(ys: CalcitSliceList | CalcitList) {
+    if (ys instanceof CalcitSliceList) {
+      let size = this.end - this.start;
+      let otherSize = ys.end - ys.start;
       let combined = new Array(size + otherSize);
       for (let i = 0; i < size; i++) {
         combined[i] = this.get(i);
@@ -178,36 +215,38 @@ export class CalcitList {
       for (let i = 0; i < otherSize; i++) {
         combined[i + size] = ys.get(i);
       }
-      return new CalcitList(combined);
+      return new CalcitSliceList(combined);
+    } else if (ys instanceof CalcitList) {
+      return this.turnListMode().concat(ys);
     } else {
-      this.turnListMode();
-      ys.turnListMode();
-      return new CalcitList(ternaryTree.concat(this.value, ys.value));
+      throw new Error("Expected list");
     }
   }
-  map(f: (v: CalcitValue) => CalcitValue): CalcitList {
-    if (this.arrayMode) {
-      return new CalcitList(this.arrayValue.slice(this.arrayStart, this.arrayEnd).map(f));
-    } else {
-      return new CalcitList(ternaryTree.listMapValues(this.value, f));
+  map(f: (v: CalcitValue) => CalcitValue): CalcitSliceList {
+    let ys: CalcitValue[] = [];
+    for (let x in sliceGenerator(this.value, this.start, this.end)) {
+      ys.push(f(x));
     }
+
+    return new CalcitSliceList(ys);
   }
   toArray(): CalcitValue[] {
-    if (this.arrayMode) {
-      return this.arrayValue.slice(this.arrayStart, this.arrayEnd);
-    } else {
-      return [...ternaryTree.listToItems(this.value)];
-    }
+    return this.value.slice(this.start, this.end);
   }
   reverse() {
-    this.turnListMode();
-    return new CalcitList(ternaryTree.reverse(this.value));
+    return this.turnListMode().reverse();
   }
 }
 
 function* sliceGenerator(xs: Array<CalcitValue>, start: number, end: number): Generator<CalcitValue> {
-  for (let idx = start; idx < end; idx++) {
-    yield xs[idx];
+  if (xs == null) {
+    if (end <= start) {
+      throw new Error("invalid list to slice");
+    }
+  } else {
+    for (let idx = start; idx < end; idx++) {
+      yield xs[idx];
+    }
   }
 }
 
@@ -220,7 +259,7 @@ export let foldl = function (xs: CalcitValue, acc: CalcitValue, f: CalcitFn): Ca
     debugger;
     throw new Error("Expected function for folding");
   }
-  if (xs instanceof CalcitList) {
+  if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
     var result = acc;
     for (let idx = 0; idx < xs.len(); idx++) {
       let item = xs.get(idx);
@@ -235,10 +274,10 @@ export let foldl = function (xs: CalcitValue, acc: CalcitValue, f: CalcitFn): Ca
     });
     return result;
   }
-  if (xs instanceof CalcitMap) {
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
     let result = acc;
     xs.pairs().forEach(([k, item]) => {
-      result = f(result, new CalcitList([k, item]));
+      result = f(result, new CalcitSliceList([k, item]));
     });
     return result;
   }
@@ -254,7 +293,7 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     debugger;
     throw new Error("Expected function for folding");
   }
-  if (xs instanceof CalcitList) {
+  if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
     var state = acc;
     for (let idx = 0; idx < xs.len(); idx++) {
       let item = xs.get(idx);
@@ -292,10 +331,10 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     return v0;
   }
 
-  if (xs instanceof CalcitMap) {
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
     let state = acc;
     for (let item of xs.pairs()) {
-      let pair = f(state, new CalcitList(item));
+      let pair = f(state, new CalcitSliceList(item));
       if (pair instanceof CalcitTuple) {
         if (typeof pair.fst === "boolean") {
           if (pair.fst) {
@@ -321,7 +360,7 @@ export let foldr_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     debugger;
     throw new Error("Expected function for folding");
   }
-  if (xs instanceof CalcitList) {
+  if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
     var state = acc;
     // iterate from right
     for (let idx = xs.len() - 1; idx >= 0; idx--) {
