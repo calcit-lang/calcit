@@ -266,7 +266,7 @@ export let foldl = function (xs: CalcitValue, acc: CalcitValue, f: CalcitFn): Ca
   if (f == null) {
     throw new Error("Expected function for folding");
   }
-  if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
+  if (xs instanceof CalcitSliceList || xs instanceof CalcitList) {
     var result = acc;
     for (let idx = 0; idx < xs.len(); idx++) {
       let item = xs.get(idx);
@@ -281,10 +281,20 @@ export let foldl = function (xs: CalcitValue, acc: CalcitValue, f: CalcitFn): Ca
     });
     return result;
   }
-  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
+  if (xs instanceof CalcitSliceMap) {
     let result = acc;
-    xs.pairs().forEach(([k, item]) => {
-      result = f(result, new CalcitSliceList([k, item]));
+    // low-level code for performance
+    let size = xs.chunk.length >> 1;
+    for (let i = 0; i < size; i++) {
+      let pos = i << 1;
+      result = f(result, new CalcitSliceList([xs.chunk[pos], xs.chunk[pos + 1]]));
+    }
+    return result;
+  }
+  if (xs instanceof CalcitMap) {
+    let result = acc;
+    xs.pairs().forEach((pair) => {
+      result = f(result, new CalcitSliceList(pair));
     });
     return result;
   }
@@ -336,8 +346,28 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     }
     return v0;
   }
-
-  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
+  if (xs instanceof CalcitSliceMap) {
+    let state = acc;
+    // low-level code for performance
+    let size = xs.chunk.length >> 1;
+    for (let i = 0; i < size; i++) {
+      let pos = i << 1;
+      let pair = f(state, new CalcitSliceList([xs.chunk[pos], xs.chunk[pos + 1]]));
+      if (pair instanceof CalcitTuple) {
+        if (typeof pair.fst === "boolean") {
+          if (pair.fst) {
+            return pair.snd;
+          } else {
+            state = pair.snd;
+          }
+        }
+      } else {
+        throw new Error("Expected return value in `:: bool acc` structure");
+      }
+    }
+    return v0;
+  }
+  if (xs instanceof CalcitMap) {
     let state = acc;
     for (let item of xs.pairs()) {
       let pair = f(state, new CalcitSliceList(item));

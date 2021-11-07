@@ -14,6 +14,7 @@ import {
   toPairsArray,
   mapGetDefault,
   initEmptyTernaryTreeMap,
+  initTernaryTreeMapFromArray,
 } from "@calcit/ternary-tree";
 
 import { isNestedCalcitData, tipNestedCalcitData, toString } from "./calcit-data";
@@ -193,7 +194,7 @@ export class CalcitSliceMap {
     for (let idx = 0; idx < halfLength; idx++) {
       dict.push([this.chunk[idx << 1], this.chunk[(idx << 1) + 1]]);
     }
-    let value = initTernaryTreeMap(dict);
+    let value = initTernaryTreeMapFromArray(dict);
     return new CalcitMap(value);
   }
   len() {

@@ -1,6 +1,19 @@
 import { CalcitValue } from "./js-primes";
 import { toString } from "./calcit-data";
-import { TernaryTreeMap, initTernaryTreeMap, mapLen, assocMap, dissocMap, isMapEmpty, Hash, toPairsArray, mapGetDefault, contains } from "@calcit/ternary-tree";
+import {
+  TernaryTreeMap,
+  initTernaryTreeMap,
+  mapLen,
+  assocMap,
+  dissocMap,
+  isMapEmpty,
+  Hash,
+  toPairsArray,
+  mapGetDefault,
+  contains,
+  initTernaryTreeMapFromArray,
+  initEmptyTernaryTreeMap,
+} from "@calcit/ternary-tree";
 import * as ternaryTree from "@calcit/ternary-tree";
 
 /** need to compare by Calcit */
@@ -28,7 +41,7 @@ export class CalcitSet {
         }
         pairs.push([value[idx], true]);
       }
-      this.value = initTernaryTreeMap(pairs);
+      this.value = initTernaryTreeMapFromArray(pairs);
     } else {
       this.value = value;
     }
@@ -65,7 +78,7 @@ export class CalcitSet {
     return new CalcitSet(result);
   }
   intersection(ys: CalcitSet): CalcitSet {
-    let result: TernaryTreeMap<CalcitValue, boolean> = initTernaryTreeMap([]);
+    let result: TernaryTreeMap<CalcitValue, boolean> = initEmptyTernaryTreeMap();
     for (let k of ternaryTree.toKeys(this.value)) {
       if (ys.contains(k)) {
         result = assocMap(result, k, true);
