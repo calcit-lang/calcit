@@ -1,99 +1,82 @@
-### Calcit Runner
+### Calcit Scripting Language
 
-> (Lisp but with indentations.)
-> An interpreter for Calcit snapshot file.
+> Lisp compiling to JavaScript ES Modules. (Similar to ClojureScript, but in very different syntax.)
 
 - Home http://calcit-lang.org/
-- APIs http://apis.calcit-lang.org/
+- API Doc(heavily influenced by ClojureScript) http://apis.calcit-lang.org/
+- Dev Logs https://github.com/calcit-lang/calcit_runner.rs/discussions
+- 视频记录 https://space.bilibili.com/14227306/channel/seriesdetail?sid=281171
 
-This project provides a runner for `compact.cirru`, written in Rust for low overhead.
+### Install
 
-APIs implemented in Calcit Runner is mostly learning from Clojure. Major difference arguments order of list functions.
-
-### Installation
-
-For Ubuntu 20.04 users, binaries are available from http://bin.calcit-lang.org/linux/ .
-It was mainly provided for [CI usages](https://github.com/calcit-lang/respo-calcit-workflow/blob/master/.github/workflows/upload.yaml#L16-L25).
-
-For other platforms, I'm afraid you have to build from source in Rust with `cargo install --path=./`.
-
-### Calcit snapshot & Bundler
-
-Running [Calcit Editor](https://github.com/Cirru/calcit-editor#compact-output) with `compact=true caclcit-editor` enables compact mode,
-which writes `compact.cirru` and `.compact-inc.cirru` instead of Clojure(Script).
-
-A `compact.cirru` file may look like:
-
-```cirru
-{} (:package |app)
-  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
-    :modules $ []
-  :files $ {}
-    |app.main $ {}
-      :ns $ quote
-        ns app.main $ :require
-      :defs $ {}
-        |main! $ quote
-          defn main! () (+ 1 2)
-        |reload! $ quote
-          defn reload! ()
-```
-
-But, you probably don't like it. You only to edit code with a simple text editor. So.... there's also command for bundling `compact.cirru` from separated files:
+Build and install with Rust:
 
 ```bash
-package.cirru
-src/
-  app.main.cirru
-  app.lib.cirru
+# get Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# get Calcit
+git clone git@github.com:calcit-lang/calcit_runner.rs.git calcit/
+cd calcit/
+cargo install --path=./
 ```
 
-`package.cirru` should contain fields:
+For Ubuntu 20.04, try binaries from http://bin.calcit-lang.org/linux/ , which are provided for [CI usages](https://github.com/calcit-lang/respo-calcit-workflow/blob/main/.github/workflows/upload.yaml#L28-L37).
 
-```cirru
-{}
-  :package |app
-  :modules $ []
-  :init-fn |app.main/main!
-  :reload-fn |app.main/reload!
-  :version |0.0.1
-```
-
-and files in `src/` are source files of namespace form and definitions. By running:
-
-```bash
-bundle_calcit --src ./src --out ./compact.cirru
-```
-
-a bundled `compact.cirru` file will be created.
+You can also [try it online with WASM](https://github.com/calcit-lang/calcit-wasm-play).
 
 ### Usage
 
 Run:
 
 ```bash
-cr run calcit/compact.cirru
+cr compact.cirru --1 # run only once
 
-# evaluate
-
-cr compact.cirru --once # run only once
 cr compact.cirru # watch mode enabled by default
 
 cr compact.cirru --init-fn='app.main/main!' # specifying init-fn
+```
 
-cr -e="range 100" # eval from CLI
+Inline evaling:
 
-# emit code
+```bash
+cr -e 'range 100'
 
+
+# multi-lines snippet
+cr -e '
+
+println "|a demo"
+
+->
+  range 100
+  map $ fn (x)
+    * x x
+
+'
+```
+
+Emitting code:
+
+```bash
 cr compact.cirru --emit-js # compile to js
 cr compact.cirru --emit-js --emit-path=out/ # compile to js and save in `out/`
 
 cr compact.cirru --emit-ir # compiles intermediate representation into program-ir.cirru
-
-cr compact.cirru --emit-js --mjs # TODO compile to mjs
 ```
 
+### Calcit Editor & Bundler
+
+Install [Calcit Editor](https://github.com/calcit-lang/editor) and run `ct` to launch editor server,
+which writes `compact.cirru` and `.compact-inc.cirru` on saving. Try launching example by clong [Calcit Workflow](https://github.com/calcit-lang/calcit-workflow).
+
+Read more in [Minimal Calcit](https://github.com/calcit-lang/minimal-calcit/blob/main/README.md) to learn how to code Calcit with a plain text editor.
+
+Read more in [Respo Calcit Workflow](https://github.com/calcit-lang/respo-calcit-workflow) to learn to create an MVC webpage with [Respo](http://respo-mvc.org/).
+
 ### Modules
+
+> No package manager yet, need to manage modules with git tags.
 
 Configurations inside `calcit.cirru` and `compact.cirru`:
 
@@ -109,26 +92,56 @@ Modules that ends with `/`s are automatically suffixed `compact.cirru` since it'
 
 To load modules in CI environments, make use of `git clone`.
 
+Web Frameworks:
+
+- [Respo](https://github.com/Respo/respo.calcit) - tiny Virtual DOM library
+- [Phlox](https://github.com/Phlox-GL/phlox) - wraps PIXI.js in Virtual DOM style
+- [Quamolit](https://github.com/Quamolit/quamolit.calcit/) - wraps Three.js in Virtual DOM style
+- [Quatrefoil](https://github.com/Quatrefoil-GL/quatrefoil) - Canvas API in virtual DOM style, with ticking rendering
+
+Mini libraries:
+
+- [Lilac](https://github.com/calcit-lang/lilac), data validation tool
+- [Memof](https://github.com/calcit-lang/memof), caching tool
+- [Recollect](https://github.com/calcit-lang/recollect), diffing tool
+- [Calcit Test](https://github.com/calcit-lang/calcit-test), testing tool
+- [Bisection Key](https://github.com/calcit-lang/bisection-key), ...
+- [Lilac Parser](https://github.com/calcit-lang/lilac-parser), string parsing tool
+
+### Extensions
+
+Rust supports extending with dynamic libraries, found an example in [dylib-workflow](https://github.com/calcit-lang/dylib-workflow). Currently there are some early extensions:
+
+- [Std](https://github.com/calcit-lang/calcit.std) - some collections of util functions
+- [WebSocket server binding](https://github.com/calcit-lang/calcit-wss)
+- [HTTP client binding](https://github.com/calcit-lang/calcit-fetch)
+- [HTTP server binding](https://github.com/calcit-lang/calcit-http)
+- [Wasmtime binding](https://github.com/calcit-lang/calcit_wasmtime)
+- [Canvas demo](https://github.com/calcit-lang/calcit-paint)
+
 ### Development
 
 I use these commands to run local examples:
 
 ```bash
-cargo run --bin cr calcit/snapshots/test.cirru # a bunch of local tests
+# run tests in Rust
+cargo run --bin cr -- calcit/snapshots/test.cirru -1
 
-cargo run --bin cr calcit/snapshots/test.cirru --emit-js
+# run tests in Node.js
+cargo run --bin cr -- calcit/snapshots/test.cirru --emit-js -1 && yarn try-js
 
+# run snippet
 cargo run --bin cr -- -e 'range 100'
-
-cargo run --bin cr calcit/compact.cirru # this example combined with calcit-editor
 ```
 
 - [Cirru Parser](https://github.com/Cirru/parser.rs) for indentation-based syntax parsing.
 - [Cirru EDN](https://github.com/Cirru/cirru-edn.rs) for `compact.cirru` file parsing.
+- [Ternary Tree](https://github.com/calcit-lang/ternary-tree.rs) for immutable list data structure.
 
-### Older version
+Other tools:
 
-This interpreter was first implemented in [Nim](https://github.com/calcit-lang/calcit-runner.nim) and then switch to Rust. Main change is the order of arguments where operands are now placed at first.
+- [Error Viewer](https://github.com/calcit-lang/calcit-error-viewer) for displaying `.calcit-error.cirru`
+- [IR Viewer](https://github.com/calcit-lang/calcit-ir-viewer) for rendering `program-ir.cirru`
 
 ### License
 
