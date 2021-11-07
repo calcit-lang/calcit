@@ -77,14 +77,14 @@ export class CalcitSet {
   first(): CalcitValue {
     // rather suspicious solution since set has no logical order
 
-    if (mapLen(this.value) == 0) {
+    if (mapLen(this.value) === 0) {
       return null;
     }
 
     return toPairsArray(this.value)[0][0];
   }
   rest(): CalcitSet {
-    if (mapLen(this.value) == 0) {
+    if (mapLen(this.value) === 0) {
       return null;
     }
     let x0 = this.first();

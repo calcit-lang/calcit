@@ -32,9 +32,7 @@ let fakeUniqueSymbol = [] as any;
 
 export class CalcitMap {
   cachedHash: Hash;
-  /** in arrayMode, only flatten values, not tree structure */
   value: TernaryTreeMap<CalcitValue, CalcitValue>;
-  skipValue: CalcitValue;
   constructor(value: TernaryTreeMap<CalcitValue, CalcitValue>) {
     if (value == null) {
       this.value = initEmptyTernaryTreeMap();
@@ -178,9 +176,8 @@ export class CalcitMap {
 // store small map in linear array to reduce cost of building tree
 export class CalcitSliceMap {
   cachedHash: Hash;
-  /** in arrayMode, only flatten values, not tree structure */
+  /** in arrayMode, only flatten values, instead of tree structure */
   chunk: CalcitValue[];
-  skipValue: CalcitValue;
   constructor(value: CalcitValue[]) {
     if (value == null) {
       this.chunk = [];

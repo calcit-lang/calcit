@@ -145,8 +145,8 @@ export function findInFields(xs: Array<CalcitKeyword>, y: CalcitKeyword): number
     }
   }
 
-  if (y == xs[lower]) return lower;
-  if (y == xs[upper]) return upper;
+  if (y === xs[lower]) return lower;
+  if (y === xs[upper]) return upper;
   return -1;
 }
 
@@ -173,7 +173,7 @@ export let castKwd = (x: CalcitValue): CalcitKeyword => {
   if (x instanceof CalcitSymbol) {
     return kwd(x.value);
   }
-  throw new Error("Cannot cast thst to keyword");
+  throw new Error(`Cannot cast this to keyword: ${x}`);
 };
 
 export var refsRegistry = new Map<string, CalcitRef>();

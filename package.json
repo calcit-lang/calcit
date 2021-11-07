@@ -1,6 +1,6 @@
 {
   "name": "@calcit/procs",
-  "version": "0.5.0-a26",
+  "version": "0.5.0-a27",
   "main": "./lib/calcit.procs.js",
   "devDependencies": {
     "@types/node": "^16.11.6",
@@ -20,7 +20,7 @@
     "url": "https://github.com/calcit-lang/calcit_runner.rs"
   },
   "dependencies": {
-    "@calcit/ternary-tree": "0.0.16",
+    "@calcit/ternary-tree": "0.0.17",
     "@cirru/parser.ts": "^0.0.5",
     "@cirru/writer.ts": "^0.1.3"
   }
