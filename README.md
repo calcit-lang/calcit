@@ -7,6 +7,8 @@
 - Dev Logs https://github.com/calcit-lang/calcit_runner.rs/discussions
 - 视频记录 https://space.bilibili.com/14227306/channel/seriesdetail?sid=281171
 
+[Browse examples](https://github.com/calcit-lang/calcit_runner.rs/tree/main/calcit) or also [try WASM version online](https://github.com/calcit-lang/calcit-wasm-play).
+
 ### Install
 
 Build and install with Rust:
@@ -22,8 +24,6 @@ cargo install --path=./
 ```
 
 For Ubuntu 20.04, try binaries from http://bin.calcit-lang.org/linux/ , which are provided for [CI usages](https://github.com/calcit-lang/respo-calcit-workflow/blob/main/.github/workflows/upload.yaml#L28-L37).
-
-You can also [try it online with WASM](https://github.com/calcit-lang/calcit-wasm-play).
 
 ### Usage
 
@@ -125,10 +125,10 @@ I use these commands to run local examples:
 
 ```bash
 # run tests in Rust
-cargo run --bin cr -- calcit/snapshots/test.cirru -1
+cargo run --bin cr -- calcit/test.cirru -1
 
 # run tests in Node.js
-cargo run --bin cr -- calcit/snapshots/test.cirru --emit-js -1 && yarn try-js
+cargo run --bin cr -- calcit/test.cirru --emit-js -1 && yarn try-js
 
 # run snippet
 cargo run --bin cr -- -e 'range 100'

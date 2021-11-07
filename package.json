@@ -12,8 +12,8 @@
     "procs-link": "ln -s ../../ node_modules/@calcit/procs",
     "bundle-main": "esbuild js-out/main.js --bundle --outfile=js-out/bundle.js --platform=node",
     "cp-mac": "cargo build --release && rm -rfv builds/* && node scripts/cp-version.js && scp builds/* rsync-user@calcit-lang.org:/web-assets/repo/calcit-lang/binaries/macos/",
-    "try-rs": "cargo run --bin cr -- calcit/snapshots/test.cirru -1",
-    "try-js": "cargo run --bin cr -- calcit/snapshots/test.cirru --emit-js -1 && yarn bundle-main && node js-out/bundle.js"
+    "try-rs": "cargo run --bin cr -- calcit/test.cirru -1",
+    "try-js": "cargo run --bin cr -- calcit/test.cirru --emit-js -1 && yarn bundle-main && node js-out/bundle.js"
   },
   "repository": {
     "type": "git",
