@@ -51,7 +51,12 @@ pub enum Calcit {
   Nil,
   Bool(bool),
   Number(f64),
-  Symbol(Box<str>, Box<str>, Box<str>, Option<Box<SymbolResolved>>), // content, ns... so it has meta information
+  Symbol {
+    sym: Box<str>,
+    ns: Box<str>,
+    at_def: Box<str>,
+    resolved: Option<Box<SymbolResolved>>,
+  }, // content, ns... so it has meta information
   Keyword(EdnKwd),
   Str(Box<str>),
   Thunk(Box<Calcit>, Option<Box<Calcit>>),
@@ -68,21 +73,21 @@ pub enum Calcit {
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   Record(EdnKwd, Vec<EdnKwd>, Vec<Calcit>), // usize of keyword id
   Proc(Box<str>),
-  Macro(
-    Box<str>,         // name
-    Box<str>,         // ns
-    Box<str>,         // an id
-    Box<CalcitItems>, // args
-    Box<CalcitItems>, // body
-  ),
-  Fn(
-    Box<str>, // name
-    Box<str>, // ns
-    Box<str>, // an id
-    CalcitScope,
-    Box<CalcitItems>, // args
-    Box<CalcitItems>, // body
-  ),
+  Macro {
+    name: Box<str>,         // name
+    def_ns: Box<str>,       // ns
+    id: Box<str>,           // an id
+    args: Box<CalcitItems>, // args
+    body: Box<CalcitItems>, // body
+  },
+  Fn {
+    name: Box<str>,   // name
+    def_ns: Box<str>, // ns
+    id: Box<str>,     // an id
+    scope: CalcitScope,
+    args: Box<CalcitItems>, // args
+    body: Box<CalcitItems>, // body
+  },
   Syntax(CalcitSyntax, Box<str>), // name, ns... notice that `ns` is a meta info
 }
 
@@ -92,7 +97,7 @@ impl fmt::Display for Calcit {
       Calcit::Nil => f.write_str("nil"),
       Calcit::Bool(v) => f.write_str(&format!("{}", v)),
       Calcit::Number(n) => f.write_str(&format!("{}", n)),
-      Calcit::Symbol(s, ..) => f.write_str(&format!("'{}", s)),
+      Calcit::Symbol { sym, .. } => f.write_str(&format!("'{}", sym)),
       Calcit::Keyword(s) => f.write_str(&format!(":{}", s.to_string())),
       Calcit::Str(s) => {
         if is_simple_str(s) {
@@ -167,7 +172,7 @@ impl fmt::Display for Calcit {
         f.write_str(")")
       }
       Calcit::Proc(name) => f.write_str(&format!("(&proc {})", name)),
-      Calcit::Macro(name, _def_ns, _, args, body) => {
+      Calcit::Macro { name, args, body, .. } => {
         f.write_str(&format!("(&macro {} (", name))?;
         let mut need_space = false;
         for a in &**args {
@@ -188,7 +193,7 @@ impl fmt::Display for Calcit {
         }
         f.write_str("))")
       }
-      Calcit::Fn(name, _, _, _, args, body) => {
+      Calcit::Fn { name, args, body, .. } => {
         f.write_str(&format!("(&fn {} (", name))?;
         let mut need_space = false;
         for a in &**args {
@@ -248,7 +253,7 @@ pub fn format_to_lisp(x: &Calcit) -> String {
       s.push(')');
       s
     }
-    Calcit::Symbol(s, ..) => s.to_string(),
+    Calcit::Symbol { sym, .. } => sym.to_string(),
     Calcit::Syntax(s, _ns) => s.to_string(),
     Calcit::Proc(s) => s.to_string(),
     a => format!("{}", a),
@@ -271,9 +276,9 @@ impl Hash for Calcit {
         // TODO https://stackoverflow.com/q/39638363/883571
         (*n as usize).hash(_state)
       }
-      Calcit::Symbol(s, _ns, _at_def, _resolved) => {
+      Calcit::Symbol { sym, .. } => {
         "symbol:".hash(_state);
-        s.hash(_state);
+        sym.hash(_state);
         // probaly no need, also won't be used in hashing
         // ns.hash(_state);
       }
@@ -334,12 +339,12 @@ impl Hash for Calcit {
         "proc:".hash(_state);
         name.hash(_state);
       }
-      Calcit::Macro(_name, _ns, gen_id, ..) => {
+      Calcit::Macro { id: gen_id, .. } => {
         "macro:".hash(_state);
         // name.hash(_state);
         gen_id.hash(_state);
       }
-      Calcit::Fn(_name, _ns, gen_id, ..) => {
+      Calcit::Fn { id: gen_id, .. } => {
         "fn:".hash(_state);
         // name.hash(_state);
         gen_id.hash(_state);
@@ -376,9 +381,9 @@ impl Ord for Calcit {
       (Calcit::Number(_), _) => Less,
       (_, Calcit::Number(_)) => Greater,
 
-      (Calcit::Symbol(a, ..), Calcit::Symbol(b, ..)) => a.cmp(b),
-      (Calcit::Symbol(..), _) => Less,
-      (_, Calcit::Symbol(..)) => Greater,
+      (Calcit::Symbol { sym: a, .. }, Calcit::Symbol { sym: b, .. }) => a.cmp(b),
+      (Calcit::Symbol { .. }, _) => Less,
+      (_, Calcit::Symbol { .. }) => Greater,
 
       (Calcit::Keyword(a), Calcit::Keyword(b)) => a.cmp(b),
       (Calcit::Keyword(_), _) => Less,
@@ -445,13 +450,13 @@ impl Ord for Calcit {
       (Calcit::Proc(_), _) => Less,
       (_, Calcit::Proc(_)) => Greater,
 
-      (Calcit::Macro(_name1, _ns1, a, ..), Calcit::Macro(_name2, _ns2, b, ..)) => a.cmp(b),
-      (Calcit::Macro(..), _) => Less,
-      (_, Calcit::Macro(..)) => Greater,
+      (Calcit::Macro { id: a, .. }, Calcit::Macro { id: b, .. }) => a.cmp(b),
+      (Calcit::Macro { .. }, _) => Less,
+      (_, Calcit::Macro { .. }) => Greater,
 
-      (Calcit::Fn(_name1, _ns1, a, ..), Calcit::Fn(_name2, _ns2, b, ..)) => a.cmp(b), // compared with nanoid
-      (Calcit::Fn(..), _) => Less,
-      (_, Calcit::Fn(..)) => Greater,
+      (Calcit::Fn { id: a, .. }, Calcit::Fn { id: b, .. }) => a.cmp(b), // compared with nanoid
+      (Calcit::Fn { .. }, _) => Less,
+      (_, Calcit::Fn { .. }) => Greater,
 
       (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a.cmp(b),
     }
@@ -472,7 +477,7 @@ impl PartialEq for Calcit {
       (Calcit::Nil, Calcit::Nil) => true,
       (Calcit::Bool(a), Calcit::Bool(b)) => a == b,
       (Calcit::Number(a), Calcit::Number(b)) => a == b,
-      (Calcit::Symbol(a, ..), Calcit::Symbol(b, ..)) => a == b,
+      (Calcit::Symbol { sym: a, .. }, Calcit::Symbol { sym: b, .. }) => a == b,
       (Calcit::Keyword(a), Calcit::Keyword(b)) => a == b,
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
       (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
@@ -488,8 +493,8 @@ impl PartialEq for Calcit {
 
       // functions compared with nanoid
       (Calcit::Proc(a), Calcit::Proc(b)) => a == b,
-      (Calcit::Macro(_name1, _ns1, a, ..), Calcit::Macro(_name2, _ns2, b, ..)) => a == b,
-      (Calcit::Fn(_name1, _ns1, a, ..), Calcit::Fn(_name2, _ns2, b, ..)) => a == b,
+      (Calcit::Macro { id: a, .. }, Calcit::Macro { id: b, .. }) => a == b,
+      (Calcit::Fn { id: a, .. }, Calcit::Fn { id: b, .. }) => a == b,
       (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a == b,
       (_, _) => false,
     }

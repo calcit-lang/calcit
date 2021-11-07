@@ -107,7 +107,7 @@ fn dump_code(code: &Calcit) -> Edn {
     Calcit::Str(s) => Edn::Str(s.to_owned()),
     Calcit::Bool(b) => Edn::Bool(b.to_owned()),
     Calcit::Keyword(s) => Edn::Keyword(s.to_owned()),
-    Calcit::Symbol(s, ns, at_def, resolved) => {
+    Calcit::Symbol { sym, ns, at_def, resolved } => {
       let resolved = match resolved {
         Some(resolved) => match &**resolved {
           ResolvedDef {
@@ -152,26 +152,30 @@ fn dump_code(code: &Calcit) -> Edn {
 
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
       xs.insert(Edn::kwd("kind"), Edn::kwd("symbol"));
-      xs.insert(Edn::kwd("val"), Edn::Str(s.to_owned()));
+      xs.insert(Edn::kwd("val"), Edn::Str(sym.to_owned()));
       xs.insert(Edn::kwd("ns"), Edn::Str(ns.to_owned()));
       xs.insert(Edn::kwd("resolved"), resolved);
       Edn::Map(xs)
     }
 
-    Calcit::Fn(name, ns, _id, _scope, args, body) => {
+    Calcit::Fn {
+      name, def_ns, args, body, ..
+    } => {
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
       xs.insert(Edn::kwd("kind"), Edn::kwd("fn"));
       xs.insert(Edn::kwd("name"), Edn::Str(name.to_owned()));
-      xs.insert(Edn::kwd("ns"), Edn::Str(ns.to_owned()));
+      xs.insert(Edn::kwd("ns"), Edn::Str(def_ns.to_owned()));
       xs.insert(Edn::kwd("args"), dump_items_code(args)); // TODO
       xs.insert(Edn::kwd("code"), dump_items_code(body));
       Edn::Map(xs)
     }
-    Calcit::Macro(name, ns, _id, args, body) => {
+    Calcit::Macro {
+      name, def_ns, args, body, ..
+    } => {
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
       xs.insert(Edn::kwd("kind"), Edn::kwd("macro"));
       xs.insert(Edn::kwd("name"), Edn::Str(name.to_owned()));
-      xs.insert(Edn::kwd("ns"), Edn::Str(ns.to_owned()));
+      xs.insert(Edn::kwd("ns"), Edn::Str(def_ns.to_owned()));
       xs.insert(Edn::kwd("args"), dump_items_code(args)); // TODO
       xs.insert(Edn::kwd("code"), dump_items_code(body));
       Edn::Map(xs)

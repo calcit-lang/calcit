@@ -63,8 +63,10 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
   match program::lookup_evaled_def(&init_ns, &init_def) {
     None => CalcitErr::err_str(format!("entry not initialized: {}/{}", init_ns, init_def)),
     Some(entry) => match entry {
-      Calcit::Fn(_, f_ns, _, def_scope, args, body) => {
-        let result = runner::run_fn(&params, &def_scope, &args, &body, &f_ns, &TernaryTreeList::Empty);
+      Calcit::Fn {
+        def_ns, scope, args, body, ..
+      } => {
+        let result = runner::run_fn(&params, &scope, &args, &body, &def_ns, &TernaryTreeList::Empty);
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {

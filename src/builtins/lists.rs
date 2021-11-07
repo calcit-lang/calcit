@@ -186,10 +186,15 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
 
     match (&xs[0], &xs[2]) {
       // dirty since only functions being call directly then we become fast
-      (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+      (
+        Calcit::List(xs),
+        Calcit::Fn {
+          def_ns, scope, args, body, ..
+        },
+      ) => {
         for x in xs {
           let values = TernaryTreeList::from(&vec![ret, x.to_owned()]);
-          ret = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
+          ret = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
         }
         Ok(ret)
       }
@@ -201,10 +206,15 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
         Ok(ret)
       }
       // also handles set
-      (Calcit::Set(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+      (
+        Calcit::Set(xs),
+        Calcit::Fn {
+          def_ns, scope, args, body, ..
+        },
+      ) => {
         for x in xs {
           let values = TernaryTreeList::from(&vec![ret, x.to_owned()]);
-          ret = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
+          ret = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
         }
         Ok(ret)
       }
@@ -216,10 +226,15 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
         Ok(ret)
       }
       // also handles map
-      (Calcit::Map(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+      (
+        Calcit::Map(xs),
+        Calcit::Fn {
+          def_ns, scope, args, body, ..
+        },
+      ) => {
         for (k, x) in xs {
           let values = TernaryTreeList::from(&vec![ret, Calcit::List(TernaryTreeList::from(&vec![k.to_owned(), x.to_owned()]))]);
-          ret = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
+          ret = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
         }
         Ok(ret)
       }
@@ -256,11 +271,16 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
     let default_value = &xs[2];
     match (&xs[0], &xs[3]) {
       // dirty since only functions being call directly then we become fast
-      (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+      (
+        Calcit::List(xs),
+        Calcit::Fn {
+          def_ns, scope, args, body, ..
+        },
+      ) => {
         let mut state = acc.to_owned();
         for x in xs {
           let values = TernaryTreeList::from(&vec![state, x.to_owned()]);
-          let pair = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
+          let pair = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
@@ -288,11 +308,16 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
         Ok(default_value.to_owned())
       }
       // almost identical body, escept for the type
-      (Calcit::Set(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+      (
+        Calcit::Set(xs),
+        Calcit::Fn {
+          def_ns, scope, args, body, ..
+        },
+      ) => {
         let mut state = acc.to_owned();
         for x in xs {
           let values = TernaryTreeList::from(&vec![state, x.to_owned()]);
-          let pair = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
+          let pair = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
@@ -320,11 +345,16 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
         Ok(default_value.to_owned())
       }
       // almost identical body, escept for the type
-      (Calcit::Map(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+      (
+        Calcit::Map(xs),
+        Calcit::Fn {
+          def_ns, scope, args, body, ..
+        },
+      ) => {
         let mut state = acc.to_owned();
         for (k, x) in xs {
           let values = TernaryTreeList::from(&vec![state, Calcit::List(TernaryTreeList::from(&vec![k.to_owned(), x.to_owned()]))]);
-          let pair = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
+          let pair = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
@@ -373,13 +403,18 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
     // let f = runner::evaluate_expr(&expr[3], scope, file_ns)?;
     match (&xs[0], &xs[3]) {
       // dirty since only functions being call directly then we become fast
-      (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+      (
+        Calcit::List(xs),
+        Calcit::Fn {
+          def_ns, scope, args, body, ..
+        },
+      ) => {
         let mut state = acc.to_owned();
         let size = xs.len();
         for i in 0..size {
           let x = xs[size - 1 - i].to_owned();
           let values = TernaryTreeList::from(&vec![state, x]);
-          let pair = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
+          let pair = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match *x0 {
               Calcit::Bool(b) => {
@@ -424,11 +459,16 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calci
   if xs.len() == 2 {
     match (&xs[0], &xs[1]) {
       // dirty since only functions being call directly then we become fast
-      (Calcit::List(xs), Calcit::Fn(_, def_ns, _, def_scope, args, body)) => {
+      (
+        Calcit::List(xs),
+        Calcit::Fn {
+          def_ns, scope, args, body, ..
+        },
+      ) => {
         let mut xs2: Vec<&Calcit> = xs.into_iter().collect::<Vec<&Calcit>>();
         xs2.sort_by(|a, b| -> Ordering {
           let values = TernaryTreeList::from(&vec![a.to_owned().to_owned(), b.to_owned().to_owned()]);
-          let v = runner::run_fn(&values, def_scope, args, body, def_ns, call_stack);
+          let v = runner::run_fn(&values, scope, args, body, def_ns, call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
             Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,

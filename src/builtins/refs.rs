@@ -32,9 +32,11 @@ fn modify_ref(path: &str, v: Calcit, call_stack: &CallStackVec) -> Result<(), Ca
 
   for f in listeners.values() {
     match f {
-      Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
+      Calcit::Fn {
+        def_ns, scope, args, body, ..
+      } => {
         let values = TernaryTreeList::from(&vec![v.to_owned(), prev.to_owned()]);
-        runner::run_fn(&values, def_scope, args, body, def_ns, call_stack)?;
+        runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
       }
       a => {
         return Err(CalcitErr::use_msg_stack(
@@ -50,10 +52,10 @@ fn modify_ref(path: &str, v: Calcit, call_stack: &CallStackVec) -> Result<(), Ca
 /// syntax to prevent expr re-evaluating
 pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
-    (Some(Calcit::Symbol(s, ns, _def, _)), Some(code)) => {
+    (Some(Calcit::Symbol { sym, ns, .. }), Some(code)) => {
       let mut path = (**ns).to_owned();
       path.push('/');
-      path.push_str(s);
+      path.push_str(sym);
 
       if read_ref(&path).is_none() {
         let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
@@ -105,7 +107,7 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_s
 
 pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
-    (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k)), Some(Calcit::Fn(..))) => {
+    (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k)), Some(Calcit::Fn { .. })) => {
       let mut dict = REFS_DICT.write().unwrap();
       let (prev, listeners) = &(*dict).get(path).unwrap().to_owned();
       if listeners.contains_key(k) {

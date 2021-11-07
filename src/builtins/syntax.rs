@@ -14,14 +14,14 @@ use im_ternary_tree::TernaryTreeList;
 
 pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
-    (Some(Calcit::Symbol(s, ..)), Some(Calcit::List(xs))) => Ok(Calcit::Fn(
-      s.to_owned(),
-      file_ns.to_owned().into(),
-      gen_core_id(),
-      scope.to_owned(),
-      Box::new(xs.to_owned()),
-      Box::new(expr.skip(2)?),
-    )),
+    (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => Ok(Calcit::Fn {
+      name: s.to_owned(),
+      def_ns: file_ns.to_owned().into(),
+      id: gen_core_id(),
+      scope: scope.to_owned(),
+      args: Box::new(xs.to_owned()),
+      body: Box::new(expr.skip(2)?),
+    }),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid args type for defn: {} , {}", a, b)),
     _ => CalcitErr::err_str("inefficient arguments for defn"),
   }
@@ -29,13 +29,13 @@ pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Ca
 
 pub fn defmacro(expr: &CalcitItems, _scope: &CalcitScope, def_ns: &str) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
-    (Some(Calcit::Symbol(s, ..)), Some(Calcit::List(xs))) => Ok(Calcit::Macro(
-      s.to_owned(),
-      def_ns.to_owned().into(),
-      gen_core_id(),
-      Box::new(xs.to_owned()),
-      Box::new(expr.skip(2)?),
-    )),
+    (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => Ok(Calcit::Macro {
+      name: s.to_owned(),
+      def_ns: def_ns.to_owned().into(),
+      id: gen_core_id(),
+      args: Box::new(xs.to_owned()),
+      body: Box::new(expr.skip(2)?),
+    }),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid structure for defmacro: {} {}", a, b)),
     _ => CalcitErr::err_str(format!("invalid structure for defmacro: {}", Calcit::List(expr.to_owned()))),
   }
@@ -82,7 +82,7 @@ pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_s
     Some(Calcit::List(xs)) if xs.len() == 2 => {
       let mut body_scope = scope.to_owned();
       match (&xs[0], &xs[1]) {
-        (Calcit::Symbol(s, ..), ys) => {
+        (Calcit::Symbol { sym: s, .. }, ys) => {
           let value = runner::evaluate_expr(ys, scope, file_ns, call_stack)?;
           body_scope.insert_mut(s.to_owned(), value);
         }
@@ -124,11 +124,11 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &Cal
   }
   match c {
     Calcit::List(ys) => match (ys.get(0), ys.get(1)) {
-      (Some(Calcit::Symbol(sym, ..)), Some(expr)) if &**sym == "~" => {
+      (Some(Calcit::Symbol { sym, .. }), Some(expr)) if &**sym == "~" => {
         let value = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         Ok(SpanResult::Single(value))
       }
-      (Some(Calcit::Symbol(sym, ..)), Some(expr)) if &**sym == "~@" => {
+      (Some(Calcit::Symbol { sym, .. }), Some(expr)) if &**sym == "~@" => {
         let ret = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         match ret {
           Calcit::List(zs) => Ok(SpanResult::Range(zs)),
@@ -164,7 +164,7 @@ pub fn has_unquote(xs: &Calcit) -> bool {
       }
       false
     }
-    Calcit::Symbol(s, ..) if &**s == "~" || &**s == "~@" => true,
+    Calcit::Symbol { sym: s, .. } if &**s == "~" || &**s == "~@" => true,
     _ => false,
   }
 }
@@ -180,7 +180,7 @@ pub fn macroexpand(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_
         }
         let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
-          Calcit::Macro(_, def_ns, _, args, body) => {
+          Calcit::Macro { def_ns, args, body, .. } => {
             // mutable operation
             let mut rest_nodes = xs.skip(1)?;
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
@@ -217,7 +217,7 @@ pub fn macroexpand_1(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, cal
         }
         let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
-          Calcit::Macro(_, def_ns, _, args, body) => {
+          Calcit::Macro { def_ns, args, body, .. } => {
             let body_scope = runner::bind_args(&args, &xs.skip(1)?, scope, call_stack)?;
             runner::evaluate_lines(&body, &body_scope, &def_ns, call_stack)
           }
@@ -242,7 +242,7 @@ pub fn macroexpand_all(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, c
         }
         let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
-          Calcit::Macro(_, def_ns, _, args, body) => {
+          Calcit::Macro { def_ns, args, body, .. } => {
             // mutable operation
             let mut rest_nodes = xs.skip(1)?;
             let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
@@ -301,9 +301,11 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_sta
         let f = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
         let err_data = Calcit::Str(failure.msg.to_owned().into_boxed_str());
         match f {
-          Calcit::Fn(_, def_ns, _, def_scope, args, body) => {
+          Calcit::Fn {
+            def_ns, scope, args, body, ..
+          } => {
             let values = TernaryTreeList::from(&[err_data]);
-            runner::run_fn(&values, &def_scope, &args, &body, &def_ns, call_stack)
+            runner::run_fn(&values, &scope, &args, &body, &def_ns, call_stack)
           }
           Calcit::Proc(proc) => builtins::handle_proc(&proc, &TernaryTreeList::from(&[err_data]), call_stack),
           a => CalcitErr::err_str(format!("try expected a function handler, got: {}", a)),

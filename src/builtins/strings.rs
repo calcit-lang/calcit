@@ -51,7 +51,7 @@ pub fn turn_string(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Bool(b)) => Ok(Calcit::Str(b.to_string().into_boxed_str())),
     Some(Calcit::Str(s)) => Ok(Calcit::Str(s.to_owned())),
     Some(Calcit::Keyword(s)) => Ok(Calcit::Str(s.to_string().into_boxed_str())),
-    Some(Calcit::Symbol(s, ..)) => Ok(Calcit::Str(s.to_owned())),
+    Some(Calcit::Symbol { sym, .. }) => Ok(Calcit::Str(sym.to_owned())),
     Some(Calcit::Number(n)) => Ok(Calcit::Str(n.to_string().into_boxed_str())),
     Some(a) => CalcitErr::err_str(format!("turn-string cannot turn this to string: {}", a)),
     None => CalcitErr::err_str("turn-string expected 1 argument, got nothing"),

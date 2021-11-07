@@ -16,7 +16,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Str(s) => Ok(Edn::Str(s.to_owned())),
     Calcit::Number(n) => Ok(Edn::Number(*n)), // TODO
     Calcit::Keyword(s) => Ok(Edn::Keyword(s.to_owned())),
-    Calcit::Symbol(s, ..) => Ok(Edn::Symbol(s.to_owned())),
+    Calcit::Symbol { sym, .. } => Ok(Edn::Symbol(sym.to_owned())),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
       for x in xs {
@@ -45,7 +45,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       }
       Ok(Edn::Record(name.to_owned(), entries))
     }
-    Calcit::Fn(..) => {
+    Calcit::Fn { .. } => {
       println!("[Warning] unable to generate EDN from function: {}", x);
       Ok(Edn::str(format!("TODO fn: {}", x)))
     }
@@ -53,7 +53,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.to_string())),
     Calcit::Tuple(tag, data) => {
       match &**tag {
-        Calcit::Symbol(sym, ..) => {
+        Calcit::Symbol { sym, .. } => {
           if &**sym == "quote" {
             match cirru::calcit_data_to_cirru(&**data) {
               Ok(v) => Ok(Edn::Quote(v)),
@@ -80,21 +80,21 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Nil => Calcit::Nil,
     Edn::Bool(b) => Calcit::Bool(*b),
     Edn::Number(n) => Calcit::Number(*n as f64),
-    Edn::Symbol(s) => Calcit::Symbol(
-      s.to_owned(),
-      String::from(primes::GENERATED_NS).into_boxed_str(),
-      String::from(primes::GENERATED_DEF).into_boxed_str(),
-      None,
-    ),
+    Edn::Symbol(s) => Calcit::Symbol {
+      sym: s.to_owned(),
+      ns: String::from(primes::GENERATED_NS).into_boxed_str(),
+      at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
+      resolved: None,
+    },
     Edn::Keyword(s) => Calcit::Keyword(s.to_owned()),
     Edn::Str(s) => Calcit::Str(s.to_owned()),
     Edn::Quote(nodes) => Calcit::Tuple(
-      Box::new(Calcit::Symbol(
-        String::from("quote").into_boxed_str(),
-        String::from(primes::GENERATED_NS).into_boxed_str(),
-        String::from(primes::GENERATED_DEF).into_boxed_str(),
-        None,
-      )),
+      Box::new(Calcit::Symbol {
+        sym: String::from("quote").into_boxed_str(),
+        ns: String::from(primes::GENERATED_NS).into_boxed_str(),
+        at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
+        resolved: None,
+      }),
       Box::new(cirru::cirru_to_calcit(nodes)),
     ),
     Edn::Tuple(pair) => Calcit::Tuple(Box::new(edn_to_calcit(&pair.0)), Box::new(edn_to_calcit(&pair.1))),

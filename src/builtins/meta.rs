@@ -30,7 +30,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     // CalcitRef(Calcit), // TODO
     Calcit::Bool(..) => Ok(Calcit::kwd("bool")),
     Calcit::Number(..) => Ok(Calcit::kwd("number")),
-    Calcit::Symbol(..) => Ok(Calcit::kwd("symbol")),
+    Calcit::Symbol { .. } => Ok(Calcit::kwd("symbol")),
     Calcit::Keyword(..) => Ok(Calcit::kwd("keyword")),
     Calcit::Str(..) => Ok(Calcit::kwd("string")),
     Calcit::Thunk(..) => Ok(Calcit::kwd("thunk")), // internal
@@ -43,8 +43,8 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Calcit::Map(..) => Ok(Calcit::kwd("map")),
     Calcit::Record(..) => Ok(Calcit::kwd("record")),
     Calcit::Proc(..) => Ok(Calcit::kwd("fn")), // special kind proc, but also fn
-    Calcit::Macro(..) => Ok(Calcit::kwd("macro")),
-    Calcit::Fn(..) => Ok(Calcit::kwd("fn")),
+    Calcit::Macro { .. } => Ok(Calcit::kwd("macro")),
+    Calcit::Fn { .. } => Ok(Calcit::kwd("fn")),
     Calcit::Syntax(..) => Ok(Calcit::kwd("synta")),
   }
 }
@@ -78,7 +78,7 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
       }
       Cirru::List(xs)
     }
-    Calcit::Symbol(s, ..) => Cirru::Leaf(s.to_owned()),
+    Calcit::Symbol { sym, .. } => Cirru::Leaf(sym.to_owned()),
     Calcit::Syntax(s, _ns) => Cirru::Leaf(s.to_string().into_boxed_str()),
     Calcit::Proc(s) => Cirru::Leaf(s.to_owned()),
     a => Cirru::leaf(format!("{}", a)),
@@ -95,7 +95,7 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     chunk
   } else {
     match &xs[0] {
-      Calcit::Str(s) | Calcit::Symbol(s, ..) => {
+      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => {
         let mut chunk = (**s).to_string();
         chunk.push('_');
         chunk.push('_');
@@ -112,12 +112,12 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       a => return CalcitErr::err_str(format!("gensym expected a string, but got: {}", a)),
     }
   };
-  Ok(Calcit::Symbol(
-    s.into_boxed_str(),
-    String::from(primes::GENERATED_NS).into_boxed_str(),
-    String::from(primes::GENERATED_DEF).into_boxed_str(),
-    None,
-  ))
+  Ok(Calcit::Symbol {
+    sym: s.into_boxed_str(),
+    ns: String::from(primes::GENERATED_NS).into_boxed_str(),
+    at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
+    resolved: None,
+  })
 }
 
 pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -228,19 +228,24 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("turn-symbol expected 1 argument, got: {:?}", xs));
   }
   match &xs[0] {
-    Calcit::Str(s) => Ok(Calcit::Symbol(
-      s.to_owned(),
-      String::from(primes::GENERATED_NS).into_boxed_str(),
-      String::from(primes::GENERATED_DEF).into_boxed_str(),
-      None,
-    )),
-    Calcit::Keyword(s) => Ok(Calcit::Symbol(
-      s.to_str(),
-      String::from(primes::GENERATED_NS).into_boxed_str(),
-      String::from(primes::GENERATED_DEF).into_boxed_str(),
-      None,
-    )),
-    Calcit::Symbol(s, ns, def, resolved) => Ok(Calcit::Symbol(s.to_owned(), ns.to_owned(), def.to_owned(), resolved.to_owned())),
+    Calcit::Str(s) => Ok(Calcit::Symbol {
+      sym: s.to_owned(),
+      ns: String::from(primes::GENERATED_NS).into_boxed_str(),
+      at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
+      resolved: None,
+    }),
+    Calcit::Keyword(s) => Ok(Calcit::Symbol {
+      sym: s.to_str(),
+      ns: String::from(primes::GENERATED_NS).into_boxed_str(),
+      at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
+      resolved: None,
+    }),
+    Calcit::Symbol { sym, ns, at_def, resolved } => Ok(Calcit::Symbol {
+      sym: sym.to_owned(),
+      ns: ns.to_owned(),
+      at_def: at_def.to_owned(),
+      resolved: resolved.to_owned(),
+    }),
     a => CalcitErr::err_str(format!("turn-symbol cannot turn this to symbol: {}", a)),
   }
 }
@@ -252,7 +257,7 @@ pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::kwd(s)),
     Calcit::Keyword(s) => Ok(Calcit::Keyword(s.to_owned())),
-    Calcit::Symbol(s, ..) => Ok(Calcit::kwd(s)),
+    Calcit::Symbol { sym, .. } => Ok(Calcit::kwd(sym)),
     a => CalcitErr::err_str(format!("turn-keyword cannot turn this to keyword: {}", a)),
   }
 }
@@ -310,7 +315,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
       let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
     }
-    Calcit::Fn(..) | Calcit::Proc(..) => {
+    Calcit::Fn { .. } | Calcit::Proc(..) => {
       let code = gen_sym("&core-fn-class");
       let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
       (class, invoke_args[0].to_owned())
@@ -334,7 +339,9 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
 
           match &values[idx] {
             // dirty copy...
-            Calcit::Fn(_, def_ns, _, def_scope, args, body) => runner::run_fn(&method_args, def_scope, args, body, def_ns, call_stack),
+            Calcit::Fn {
+              def_ns, scope, args, body, ..
+            } => runner::run_fn(&method_args, scope, args, body, def_ns, call_stack),
             Calcit::Proc(proc) => builtins::handle_proc(proc, &method_args, call_stack),
             Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
               format!("cannot get syntax here since instance is always evaluated, got: {}", syn),
@@ -366,16 +373,16 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
 }
 
 fn gen_sym(sym: &str) -> Calcit {
-  Calcit::Symbol(
-    String::from("&core-map-class").into_boxed_str(),
-    String::from(primes::CORE_NS).into_boxed_str(),
-    String::from(primes::GENERATED_DEF).into_boxed_str(),
-    Some(Box::new(primes::SymbolResolved::ResolvedDef {
+  Calcit::Symbol {
+    sym: String::from("&core-map-class").into_boxed_str(),
+    ns: String::from(primes::CORE_NS).into_boxed_str(),
+    at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
+    resolved: Some(Box::new(primes::SymbolResolved::ResolvedDef {
       ns: String::from(primes::CORE_NS).into_boxed_str(),
       def: String::from(sym).into_boxed_str(),
       rule: None,
     })),
-  )
+  }
 }
 
 pub fn native_compare(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
