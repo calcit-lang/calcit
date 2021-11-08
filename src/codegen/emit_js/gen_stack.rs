@@ -1,17 +1,15 @@
 use std::sync::RwLock;
 
-use im_ternary_tree::TernaryTreeList;
-
-use crate::call_stack::{CalcitStack, CallStackVec, StackKind};
+use crate::call_stack::{CalcitStack, CallStackList, StackKind};
 use crate::primes::{Calcit, CalcitItems};
 
 lazy_static! {
-  static ref CALL_STACK: RwLock<TernaryTreeList<CalcitStack>> = RwLock::new(TernaryTreeList::Empty);
+  static ref CALL_STACK: RwLock<rpds::ListSync<CalcitStack>> = RwLock::new(rpds::List::new_sync());
 }
 
 pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: &CalcitItems) {
   let mut stack = CALL_STACK.write().unwrap();
-  *stack = stack.push(CalcitStack {
+  *stack = stack.push_front(CalcitStack {
     ns: ns.into(),
     def: def.into(),
     code,
@@ -23,10 +21,10 @@ pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args:
 pub fn pop_call_stack() {
   let mut stack = CALL_STACK.write().unwrap();
   if !stack.is_empty() {
-    match stack.butlast() {
-      Ok(v) => *stack = v,
-      Err(e) => {
-        println!("stack problem, {}", e)
+    match stack.drop_first() {
+      Some(v) => *stack = v,
+      None => {
+        println!("empty stack")
       }
     }
   }
@@ -34,10 +32,10 @@ pub fn pop_call_stack() {
 
 pub fn clear_stack() {
   let mut stack = CALL_STACK.write().unwrap();
-  *stack = TernaryTreeList::Empty;
+  *stack = rpds::List::new_sync();
 }
 
-pub fn get_gen_stack() -> CallStackVec {
+pub fn get_gen_stack() -> CallStackList {
   let stack = CALL_STACK.read().unwrap();
   stack.to_owned()
 }

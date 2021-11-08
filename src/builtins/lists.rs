@@ -4,7 +4,7 @@ use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
 use crate::util::number::f64_to_usize;
 
 use crate::builtins;
-use crate::call_stack::CallStackVec;
+use crate::call_stack::CallStackList;
 use crate::runner;
 
 use im_ternary_tree::TernaryTreeList;
@@ -180,7 +180,7 @@ pub fn reverse(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 /// foldl using syntax for performance, it's supposed to be a function
-pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 3 {
     let mut ret = xs[1].to_owned();
 
@@ -265,7 +265,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
 
 /// foldl-shortcut using syntax for performance, it's supposed to be a function
 /// by returning `:: bool acc`, bool indicates where performace a shortcut return
-pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 4 {
     let acc = &xs[1];
     let default_value = &xs[2];
@@ -395,7 +395,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
   }
 }
 
-pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 4 {
     // let xs = runner::evaluate_expr(&expr[0], scope, file_ns)?;
     let acc = &xs[1];
@@ -455,7 +455,7 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
   }
 }
 
-pub fn sort(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 2 {
     match (&xs[0], &xs[1]) {
       // dirty since only functions being call directly then we become fast

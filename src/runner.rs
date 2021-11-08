@@ -3,14 +3,14 @@ pub mod track;
 
 use crate::builtins;
 use crate::builtins::is_proc_name;
-use crate::call_stack::{extend_call_stack, CallStackVec, StackKind};
+use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
 
 use im_ternary_tree::TernaryTreeList;
 use std::sync::{Arc, RwLock};
 
-pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   // println!("eval code: {}", expr.lisp_str());
 
   match expr {
@@ -33,7 +33,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
     Calcit::Str(_) => Ok(expr.to_owned()),
     Calcit::Thunk(code, v) => match v {
       None => evaluate_expr(code, scope, file_ns, call_stack),
-      Some(data) => Ok((*data.to_owned()).to_owned()),
+      Some(data) => Ok((**data).to_owned()),
     },
     Calcit::Ref(_) => Ok(expr.to_owned()),
     Calcit::Tuple(..) => Ok(expr.to_owned()),
@@ -181,7 +181,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
   }
 }
 
-pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let v = match parse_ns_def(sym) {
     Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns.into(), &ns_part) {
       Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, call_stack) {
@@ -255,7 +255,7 @@ pub fn parse_ns_def(s: &str) -> Option<(Arc<str>, Arc<str>)> {
   }
 }
 
-fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match program::lookup_evaled_def(ns, sym) {
     Some(v) => Ok(v),
     None => match program::lookup_def_code(ns, sym) {
@@ -278,7 +278,7 @@ pub fn run_fn(
   args: &CalcitItems,
   body: &CalcitItems,
   file_ns: Arc<str>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut current_values = values.to_owned();
   loop {
@@ -299,7 +299,7 @@ pub fn bind_args(
   args: &CalcitItems,
   values: &CalcitItems,
   base_scope: &CalcitScope,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<CalcitScope, CalcitErr> {
   // TODO arguments spreading syntax
   // if values.len() != args.len() {
@@ -414,7 +414,7 @@ pub fn evaluate_lines(
   lines: &CalcitItems,
   scope: &CalcitScope,
   file_ns: Arc<str>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut ret: Calcit = Calcit::Nil;
   for line in lines {
@@ -432,7 +432,7 @@ pub fn evaluate_args(
   items: &CalcitItems,
   scope: &CalcitScope,
   file_ns: Arc<str>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<CalcitItems, CalcitErr> {
   let mut ret: CalcitItems = TernaryTreeList::Empty;
   let mut spreading = false;
@@ -452,7 +452,7 @@ pub fn evaluate_args(
                 let y = match x {
                   Calcit::Thunk(code, v) => match v {
                     None => evaluate_expr(&*code, scope, file_ns.to_owned(), call_stack)?,
-                    Some(data) => (*data.to_owned()).to_owned(),
+                    Some(data) => (**data).to_owned(),
                   },
                   _ => x.to_owned(),
                 };
@@ -472,7 +472,7 @@ pub fn evaluate_args(
           let y = match v {
             Calcit::Thunk(code, value) => match value {
               None => evaluate_expr(&*code, scope, file_ns.to_owned(), call_stack)?,
-              Some(data) => (*data.to_owned()).to_owned(),
+              Some(data) => (*data).to_owned(),
             },
             _ => v.to_owned(),
           };

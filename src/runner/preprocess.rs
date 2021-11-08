@@ -1,6 +1,6 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name},
-  call_stack::{extend_call_stack, CalcitStack, CallStackVec, StackKind},
+  call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
   primes,
   primes::{Calcit, CalcitErr, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*},
   program, runner,
@@ -21,7 +21,7 @@ pub fn preprocess_ns_def(
   raw_sym: Arc<str>,
   import_rule: Option<Arc<ImportRule>>, // returns form and possible value
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &TernaryTreeList<CalcitStack>,
+  call_stack: &rpds::ListSync<CalcitStack>,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   let ns = &raw_ns.to_owned();
   let def = &raw_def.to_owned();
@@ -125,7 +125,7 @@ pub fn preprocess_expr(
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   // println!("preprocessing @{} {}", file_ns, expr);
   match expr {
@@ -294,7 +294,7 @@ fn process_list_call(
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   let head = &xs[0];
   let (head_form, head_evaled) = preprocess_expr(head, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
@@ -529,7 +529,7 @@ pub fn preprocess_each_items(
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
   for a in args {
@@ -546,7 +546,7 @@ pub fn preprocess_defn(
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
@@ -635,7 +635,7 @@ pub fn preprocess_call_let(
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
   let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
@@ -705,7 +705,7 @@ pub fn preprocess_defatom(
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
   for a in args {
@@ -724,7 +724,7 @@ pub fn preprocess_quasiquote(
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
   for a in args {
@@ -744,7 +744,7 @@ pub fn preprocess_quasiquote_internal(
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   match x {
     Calcit::List(ys) if ys.is_empty() => Ok(x.to_owned()),

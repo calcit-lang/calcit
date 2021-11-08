@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::builtins;
-use crate::call_stack::CallStackVec;
+use crate::call_stack::CallStackList;
 use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 
@@ -50,7 +50,7 @@ pub fn quote(expr: &CalcitItems, _scope: &CalcitScope, _file_ns: Arc<str>) -> Re
   }
 }
 
-pub fn syntax_if(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn syntax_if(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
     _ if expr.len() > 3 => CalcitErr::err_str(format!("too many nodes for if: {:?}", expr)),
     (Some(cond), Some(true_branch)) => {
@@ -68,7 +68,7 @@ pub fn syntax_if(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, cal
   }
 }
 
-pub fn eval(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn eval(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let v = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
     runner::evaluate_expr(&v, scope, file_ns.to_owned(), call_stack)
@@ -77,7 +77,7 @@ pub fn eval(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_sta
   }
 }
 
-pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match expr.get(0) {
     Some(Calcit::Nil) => runner::evaluate_lines(&expr.skip(1)?, scope, file_ns.to_owned(), call_stack),
     Some(Calcit::List(xs)) if xs.len() == 2 => {
@@ -104,7 +104,7 @@ enum SpanResult {
   Range(CalcitItems),
 }
 
-pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match expr.get(0) {
     None => CalcitErr::err_str("quasiquote expected a node"),
     Some(code) => {
@@ -119,7 +119,7 @@ pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
   }
 }
 
-fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackVec) -> Result<SpanResult, CalcitErr> {
+fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<SpanResult, CalcitErr> {
   if !has_unquote(c) {
     return Ok(SpanResult::Single(c.to_owned()));
   }
@@ -170,7 +170,12 @@ pub fn has_unquote(xs: &Calcit) -> bool {
   }
 }
 
-pub fn macroexpand(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn macroexpand(
+  expr: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: Arc<str>,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
 
@@ -211,7 +216,7 @@ pub fn macroexpand_1(
   expr: &CalcitItems,
   scope: &CalcitScope,
   file_ns: Arc<str>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
@@ -241,7 +246,7 @@ pub fn macroexpand_all(
   expr: &CalcitItems,
   scope: &CalcitScope,
   file_ns: Arc<str>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
@@ -302,7 +307,7 @@ pub fn macroexpand_all(
   }
 }
 
-pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() == 2 {
     let xs = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack);
 

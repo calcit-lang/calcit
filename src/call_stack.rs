@@ -8,8 +8,6 @@ use std::fs;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use im_ternary_tree::TernaryTreeList;
-
 #[derive(Debug, PartialEq, Clone, Eq, Ord, PartialOrd, Hash)]
 pub struct CalcitStack {
   pub ns: Arc<str>,
@@ -34,21 +32,21 @@ impl fmt::Display for CalcitStack {
   }
 }
 
-pub type CallStackVec = TernaryTreeList<CalcitStack>;
+pub type CallStackList = rpds::ListSync<CalcitStack>;
 
 // TODO impl fmt
 
 /// create new entry to the tree
 pub fn extend_call_stack(
-  stack: &CallStackVec,
+  stack: &CallStackList,
   ns: Arc<str>,
   def: Arc<str>,
   kind: StackKind,
   code: Calcit,
   args: &CalcitItems,
-) -> CallStackVec {
+) -> CallStackList {
   let mut s2 = stack.to_owned();
-  s2 = s2.push(CalcitStack {
+  s2 = s2.push_front(CalcitStack {
     ns: ns.to_owned(),
     def: def.to_owned(),
     code,
@@ -59,27 +57,24 @@ pub fn extend_call_stack(
 }
 
 // show simplified version of stack
-pub fn show_stack(stack: &CallStackVec) {
+pub fn show_stack(stack: &CallStackList) {
   println!("\ncall stack:");
-  for idx in 0..stack.len() {
-    let s = &stack[stack.len() - idx - 1];
+  for s in stack {
     let is_macro = s.kind == StackKind::Macro;
     println!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" });
   }
 }
 
-pub fn display_stack(failure: &str, stack: &CallStackVec) -> Result<(), String> {
+pub fn display_stack(failure: &str, stack: &CallStackList) -> Result<(), String> {
   println!("\ncall stack:");
 
-  for idx in 0..stack.len() {
-    let s = &stack[stack.len() - idx - 1];
+  for s in stack {
     let is_macro = s.kind == StackKind::Macro;
     println!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" });
   }
 
   let mut stack_list: Vec<Edn> = Vec::with_capacity(stack.len());
-  for idx in 0..stack.len() {
-    let s = &stack[stack.len() - idx - 1];
+  for s in stack {
     let mut info: HashMap<Edn, Edn> = HashMap::with_capacity(4);
     info.insert(Edn::kwd("def"), Edn::str(format!("{}/{}", s.ns, s.def)));
     info.insert(Edn::kwd("code"), Edn::Quote(cirru::calcit_to_cirru(&s.code)?));

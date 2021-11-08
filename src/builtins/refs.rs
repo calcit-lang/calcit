@@ -7,7 +7,7 @@ use cirru_edn::EdnKwd;
 use im_ternary_tree::TernaryTreeList;
 
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope};
-use crate::{call_stack::CallStackVec, runner};
+use crate::{call_stack::CallStackList, runner};
 
 type ValueAndListeners = (Calcit, HashMap<EdnKwd, Calcit>);
 
@@ -26,7 +26,7 @@ fn write_to_ref(path: Arc<str>, v: Calcit, listeners: HashMap<EdnKwd, Calcit>) {
   let _ = (*dict).insert(path.to_owned(), (v, listeners));
 }
 
-fn modify_ref(path: Arc<str>, v: Calcit, call_stack: &CallStackVec) -> Result<(), CalcitErr> {
+fn modify_ref(path: Arc<str>, v: Calcit, call_stack: &CallStackList) -> Result<(), CalcitErr> {
   let (prev, listeners) = read_ref(path.to_owned()).unwrap();
   write_to_ref(path.to_owned(), v.to_owned(), listeners.to_owned());
 
@@ -50,7 +50,7 @@ fn modify_ref(path: Arc<str>, v: Calcit, call_stack: &CallStackVec) -> Result<()
 }
 
 /// syntax to prevent expr re-evaluating
-pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol { sym, ns, .. }), Some(code)) => {
       let mut path: String = (**ns).to_owned();
@@ -85,7 +85,7 @@ pub fn deref(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 /// need to be syntax since triggering internal functions requires program data
-pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
     return CalcitErr::err_str(format!("reset! excepted 2 arguments, got: {:?}", expr));
   }

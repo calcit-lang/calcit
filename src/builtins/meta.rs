@@ -2,7 +2,7 @@ use crate::{
   builtins,
   builtins::records::find_in_fields,
   call_stack,
-  call_stack::CallStackVec,
+  call_stack::CallStackList,
   data::{cirru, edn},
   primes,
   primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CrListWrap},
@@ -169,7 +169,7 @@ pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn display_stack(_xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn display_stack(_xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   call_stack::show_stack(call_stack);
   Ok(Calcit::Nil)
 }
@@ -269,7 +269,7 @@ pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if invoke_args.is_empty() {
     return Err(CalcitErr::use_msg_stack(
       format!("expected operand for method invoking: {:?}", invoke_args),
@@ -388,7 +388,7 @@ pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::kwd(&std::env::consts::OS.to_owned()))
 }
 
-pub fn async_sleep(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn async_sleep(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   use std::{thread, time};
   let sec = if xs.is_empty() {
     1.0

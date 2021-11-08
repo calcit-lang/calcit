@@ -13,10 +13,10 @@ mod syntax;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use crate::call_stack::CallStackVec;
+use crate::call_stack::CallStackList;
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax};
 
-pub type FnType = fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr>;
+pub type FnType = fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
 pub type SyntaxType = fn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
 lazy_static! {
@@ -193,7 +193,7 @@ pub fn is_proc_name(s: &str) -> bool {
 }
 
 /// make sure that stack information attached in errors from procs
-pub fn handle_proc(name: &str, args: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn handle_proc(name: &str, args: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   handle_proc_internal(name, args, call_stack).map_err(|e| {
     if e.stack.is_empty() {
       let mut e2 = e.to_owned();
@@ -205,7 +205,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems, call_stack: &CallStackVec) ->
   })
 }
 
-fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match name {
     // meta
     "type-of" => meta::type_of(args),
@@ -387,7 +387,7 @@ pub fn handle_syntax(
   nodes: &CalcitItems,
   scope: &CalcitScope,
   file_ns: Arc<str>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   match name {
     CalcitSyntax::Defn => syntax::defn(nodes, scope, file_ns),

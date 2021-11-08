@@ -20,7 +20,7 @@ pub type CalcitItems = TernaryTreeList<Calcit>;
 
 pub use syntax_name::CalcitSyntax;
 
-use crate::call_stack::CallStackVec;
+use crate::call_stack::CallStackList;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolResolved {
@@ -547,7 +547,7 @@ pub fn gen_core_id() -> Arc<str> {
 pub struct CalcitErr {
   pub msg: String,
   pub warnings: Vec<String>,
-  pub stack: TernaryTreeList<crate::call_stack::CalcitStack>,
+  pub stack: rpds::ListSync<crate::call_stack::CalcitStack>,
 }
 
 impl fmt::Display for CalcitErr {
@@ -569,7 +569,7 @@ impl From<String> for CalcitErr {
     CalcitErr {
       msg,
       warnings: vec![],
-      stack: TernaryTreeList::Empty,
+      stack: rpds::List::new_sync(),
     }
   }
 }
@@ -579,17 +579,17 @@ impl CalcitErr {
     CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: TernaryTreeList::Empty,
+      stack: rpds::List::new_sync(),
     }
   }
   pub fn err_str<T: Into<String>>(msg: T) -> Result<Calcit, Self> {
     Err(CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: TernaryTreeList::Empty,
+      stack: rpds::List::new_sync(),
     })
   }
-  pub fn use_msg_stack<T: Into<String>>(msg: T, stack: &CallStackVec) -> Self {
+  pub fn use_msg_stack<T: Into<String>>(msg: T, stack: &CallStackList) -> Self {
     CalcitErr {
       msg: msg.into(),
       warnings: vec![],

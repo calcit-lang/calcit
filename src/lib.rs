@@ -18,8 +18,6 @@ use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 
-use im_ternary_tree::TernaryTreeList;
-
 pub use primes::{Calcit, CalcitErr, CalcitItems};
 
 pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
@@ -42,7 +40,7 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
     init_def.to_owned().into(),
     None,
     check_warnings,
-    &TernaryTreeList::Empty,
+    &rpds::List::new_sync(),
   ) {
     Ok(_) => (),
     Err(failure) => {
@@ -57,7 +55,7 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
     return Err(CalcitErr {
       msg: format!("Found {} warnings, runner blocked", warnings.len()),
       warnings: warnings.to_owned(),
-      stack: TernaryTreeList::Empty,
+      stack: rpds::List::new_sync(),
     });
   }
   match program::lookup_evaled_def(&init_ns, &init_def) {
@@ -66,7 +64,7 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
       Calcit::Fn {
         def_ns, scope, args, body, ..
       } => {
-        let result = runner::run_fn(&params, &scope, &args, &body, def_ns, &TernaryTreeList::Empty);
+        let result = runner::run_fn(&params, &scope, &args, &body, def_ns, &rpds::List::new_sync());
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {

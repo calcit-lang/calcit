@@ -104,7 +104,7 @@ fn main() -> Result<(), String> {
     calcit_runner::primes::BUILTIN_CLASSES_ENTRY.into(),
     None,
     check_warnings,
-    &TernaryTreeList::Empty,
+    &rpds::List::new_sync(),
   )
   .map_err(|e| e.msg)?;
 
@@ -274,7 +274,7 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
     init_def.to_owned().into(),
     None,
     check_warnings,
-    &TernaryTreeList::Empty,
+    &rpds::List::new_sync(),
   ) {
     Ok(_) => (),
     Err(failure) => {
@@ -299,7 +299,7 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
     init_def.to_owned().into(),
     None,
     check_warnings,
-    &TernaryTreeList::Empty,
+    &rpds::List::new_sync(),
   ) {
     Ok(_) => (),
     Err(failure) => {
