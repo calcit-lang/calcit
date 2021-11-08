@@ -1,5 +1,6 @@
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
+use std::sync::Arc;
 
 use crate::data::cirru;
 use crate::primes;
@@ -13,10 +14,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
   match x {
     Calcit::Nil => Ok(Edn::Nil),
     Calcit::Bool(b) => Ok(Edn::Bool(*b)),
-    Calcit::Str(s) => Ok(Edn::Str(s.to_owned())),
+    Calcit::Str(s) => Ok(Edn::Str((**s).into())),
     Calcit::Number(n) => Ok(Edn::Number(*n)), // TODO
     Calcit::Keyword(s) => Ok(Edn::Keyword(s.to_owned())),
-    Calcit::Symbol { sym, .. } => Ok(Edn::Symbol(sym.to_owned())),
+    Calcit::Symbol { sym, .. } => Ok(Edn::Symbol((**sym).into())),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
       for x in xs {
@@ -49,7 +50,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       println!("[Warning] unable to generate EDN from function: {}", x);
       Ok(Edn::str(format!("TODO fn: {}", x)))
     }
-    Calcit::Proc(name) => Ok(Edn::Symbol(name.to_owned())),
+    Calcit::Proc(name) => Ok(Edn::Symbol((**name).into())),
     Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.to_string())),
     Calcit::Tuple(tag, data) => {
       match &**tag {
@@ -81,23 +82,23 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Bool(b) => Calcit::Bool(*b),
     Edn::Number(n) => Calcit::Number(*n as f64),
     Edn::Symbol(s) => Calcit::Symbol {
-      sym: s.to_owned(),
-      ns: String::from(primes::GENERATED_NS).into_boxed_str(),
-      at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
+      sym: (**s).into(),
+      ns: primes::GEN_NS.to_owned(),
+      at_def: primes::GEN_DEF.to_owned(),
       resolved: None,
     },
     Edn::Keyword(s) => Calcit::Keyword(s.to_owned()),
-    Edn::Str(s) => Calcit::Str(s.to_owned()),
+    Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::Tuple(
-      Box::new(Calcit::Symbol {
-        sym: String::from("quote").into_boxed_str(),
-        ns: String::from(primes::GENERATED_NS).into_boxed_str(),
-        at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
+      Arc::new(Calcit::Symbol {
+        sym: String::from("quote").into(),
+        ns: primes::GEN_NS.to_owned(),
+        at_def: primes::GEN_DEF.to_owned(),
         resolved: None,
       }),
-      Box::new(cirru::cirru_to_calcit(nodes)),
+      Arc::new(cirru::cirru_to_calcit(nodes)),
     ),
-    Edn::Tuple(pair) => Calcit::Tuple(Box::new(edn_to_calcit(&pair.0)), Box::new(edn_to_calcit(&pair.1))),
+    Edn::Tuple(pair) => Calcit::Tuple(Arc::new(edn_to_calcit(&pair.0)), Arc::new(edn_to_calcit(&pair.1))),
     Edn::List(xs) => {
       let mut ys: primes::CalcitItems = TernaryTreeList::Empty;
       for x in xs {

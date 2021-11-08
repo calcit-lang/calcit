@@ -6,13 +6,14 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::hash::Hash;
+use std::sync::Arc;
 
 use im_ternary_tree::TernaryTreeList;
 
 #[derive(Debug, PartialEq, Clone, Eq, Ord, PartialOrd, Hash)]
 pub struct CalcitStack {
-  pub ns: String,
-  pub def: String,
+  pub ns: Arc<str>,
+  pub def: Arc<str>,
   pub code: Calcit, // built in functions may not contain code
   pub args: CalcitItems,
   pub kind: StackKind,
@@ -38,7 +39,14 @@ pub type CallStackVec = TernaryTreeList<CalcitStack>;
 // TODO impl fmt
 
 /// create new entry to the tree
-pub fn extend_call_stack(stack: &CallStackVec, ns: &str, def: &str, kind: StackKind, code: Calcit, args: &CalcitItems) -> CallStackVec {
+pub fn extend_call_stack(
+  stack: &CallStackVec,
+  ns: Arc<str>,
+  def: Arc<str>,
+  kind: StackKind,
+  code: Calcit,
+  args: &CalcitItems,
+) -> CallStackVec {
   let mut s2 = stack.to_owned();
   s2 = s2.push(CalcitStack {
     ns: ns.to_owned(),

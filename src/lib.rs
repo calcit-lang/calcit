@@ -37,9 +37,9 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
 
   // preprocess to init
   match runner::preprocess::preprocess_ns_def(
-    &init_ns.to_owned().into_boxed_str(),
-    &init_def.to_owned().into_boxed_str(),
-    &init_def.to_owned().into_boxed_str(),
+    init_ns.to_owned().into(),
+    init_def.to_owned().into(),
+    init_def.to_owned().into(),
     None,
     check_warnings,
     &TernaryTreeList::Empty,
@@ -66,7 +66,7 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
       Calcit::Fn {
         def_ns, scope, args, body, ..
       } => {
-        let result = runner::run_fn(&params, &scope, &args, &body, &def_ns, &TernaryTreeList::Empty);
+        let result = runner::run_fn(&params, &scope, &args, &body, def_ns, &TernaryTreeList::Empty);
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {

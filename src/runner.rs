@@ -10,7 +10,7 @@ use crate::program;
 use im_ternary_tree::TernaryTreeList;
 use std::sync::{Arc, RwLock};
 
-pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   // println!("eval code: {}", expr.lisp_str());
 
   match expr {
@@ -20,7 +20,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Calcit::Symbol { sym, .. } if &**sym == "&" => Ok(expr.to_owned()),
     Calcit::Symbol { sym, ns, resolved, .. } => match resolved {
       Some(resolved_info) => {
-        match &**resolved_info {
+        match &*resolved_info.to_owned() {
           ResolvedDef {
             ns: r_ns,
             def: r_def,
@@ -28,13 +28,19 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
           } => {
             let v = evaluate_symbol(r_def, scope, r_ns, call_stack)?;
             match v {
-              Calcit::Thunk(_code, Some(data)) => Ok(*data),
+              Calcit::Thunk(_code, Some(data)) => Ok((*data).to_owned()),
               // extra check to make sure code in thunks evaluated
               Calcit::Thunk(code, None) => {
                 let evaled_v = evaluate_expr(&code, scope, file_ns, call_stack)?;
                 // and write back to program state to fix duplicated evalution
                 // still using thunk since js and IR requires bare code
-                program::write_evaled_def(r_ns, r_def, Calcit::Thunk(code, Some(Box::new(evaled_v.to_owned()))))?;
+                let next = if builtins::effects::is_rust_eval() {
+                  // no longer useful for evaling
+                  Arc::new(Calcit::Nil)
+                } else {
+                  code
+                };
+                program::write_evaled_def(r_ns, r_def, Calcit::Thunk(next, Some(Arc::new(evaled_v.to_owned()))))?;
                 Ok(evaled_v)
               }
               _ => Ok(v),
@@ -49,7 +55,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Calcit::Str(_) => Ok(expr.to_owned()),
     Calcit::Thunk(code, v) => match v {
       None => evaluate_expr(code, scope, file_ns, call_stack),
-      Some(data) => Ok(*data.to_owned()),
+      Some(data) => Ok((*data.to_owned()).to_owned()),
     },
     Calcit::Ref(_) => Ok(expr.to_owned()),
     Calcit::Tuple(..) => Ok(expr.to_owned()),
@@ -64,12 +70,12 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         // println!("eval expr: {}", expr.lisp_str());
         // println!("eval expr: {}", x);
 
-        let v = evaluate_expr(x, scope, file_ns, call_stack)?;
+        let v = evaluate_expr(x, scope, file_ns.to_owned(), call_stack)?;
         let rest_nodes = xs.skip(1)?;
         let ret = match &v {
           Calcit::Proc(p) => {
-            let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-            let next_stack = extend_call_stack(call_stack, file_ns, p, StackKind::Proc, Calcit::Nil, &values);
+            let values = evaluate_args(&rest_nodes, scope, file_ns.to_owned(), call_stack)?;
+            let next_stack = extend_call_stack(call_stack, file_ns.to_owned(), p.to_owned(), StackKind::Proc, Calcit::Nil, &values);
 
             if p.starts_with('.') {
               builtins::meta::invoke_method(p.strip_prefix('.').unwrap(), &values, &next_stack)
@@ -79,9 +85,16 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
             }
           }
           Calcit::Syntax(s, def_ns) => {
-            let next_stack = extend_call_stack(call_stack, file_ns, &s.to_string(), StackKind::Syntax, expr.to_owned(), &rest_nodes);
+            let next_stack = extend_call_stack(
+              call_stack,
+              file_ns.to_owned(),
+              s.to_string().into(),
+              StackKind::Syntax,
+              expr.to_owned(),
+              &rest_nodes,
+            );
 
-            builtins::handle_syntax(s, &rest_nodes, scope, def_ns, &next_stack).map_err(|e| {
+            builtins::handle_syntax(s, &rest_nodes, scope, def_ns.to_owned(), &next_stack).map_err(|e| {
               if e.stack.is_empty() {
                 let mut e2 = e.to_owned();
                 e2.stack = call_stack.to_owned();
@@ -99,10 +112,17 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
             body,
             ..
           } => {
-            let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-            let next_stack = extend_call_stack(call_stack, file_ns, name, StackKind::Fn, expr.to_owned(), &values);
+            let values = evaluate_args(&rest_nodes, scope, file_ns.to_owned(), call_stack)?;
+            let next_stack = extend_call_stack(
+              call_stack,
+              file_ns.to_owned(),
+              name.to_owned(),
+              StackKind::Fn,
+              expr.to_owned(),
+              &values,
+            );
 
-            run_fn(&values, def_scope, args, body, def_ns, &next_stack)
+            run_fn(&values, def_scope, args, body, def_ns.to_owned(), &next_stack)
           }
           Calcit::Macro {
             name, def_ns, args, body, ..
@@ -117,26 +137,33 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
             // println!("eval macro: {} {}", x, expr.lisp_str()));
             // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
-            let next_stack = extend_call_stack(call_stack, file_ns, name, StackKind::Macro, expr.to_owned(), &rest_nodes);
+            let next_stack = extend_call_stack(
+              call_stack,
+              file_ns.to_owned(),
+              name.to_owned(),
+              StackKind::Macro,
+              expr.to_owned(),
+              &rest_nodes,
+            );
 
             Ok(loop {
               // need to handle recursion
               let body_scope = bind_args(args, &current_values, &rpds::HashTrieMap::new_sync(), call_stack)?;
-              let code = evaluate_lines(body, &body_scope, def_ns, &next_stack)?;
+              let code = evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
                   current_values = ys;
                 }
                 _ => {
                   // println!("gen code: {} {}", x, &code.lisp_str()));
-                  break evaluate_expr(&code, scope, file_ns, &next_stack)?;
+                  break evaluate_expr(&code, scope, file_ns.to_owned(), &next_stack)?;
                 }
               }
             })
           }
           Calcit::Keyword(k) => {
             if rest_nodes.len() == 1 {
-              let v = evaluate_expr(&rest_nodes[0], scope, file_ns, call_stack)?;
+              let v = evaluate_expr(&rest_nodes[0], scope, file_ns.to_owned(), call_stack)?;
 
               if let Calcit::Map(m) = v {
                 match m.get(&Calcit::Keyword(k.to_owned())) {
@@ -178,7 +205,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
 
 pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
   match parse_ns_def(sym) {
-    Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns, &ns_part) {
+    Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns.into(), &ns_part) {
       Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, call_stack) {
         Ok(v) => Ok(v),
         Err(e) => Err(e),
@@ -211,7 +238,7 @@ pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack
       match program::lookup_def_target_in_import(file_ns, sym) {
         Some(target_ns) => eval_symbol_from_program(sym, &target_ns, call_stack),
         None => {
-          let vars: Vec<&Box<str>> = scope.keys().collect();
+          let vars: Vec<&Arc<str>> = scope.keys().collect();
           Err(CalcitErr::use_msg_stack(
             format!("unknown symbol `{}` in {:?}", sym, vars),
             call_stack,
@@ -222,11 +249,11 @@ pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack
   }
 }
 
-pub fn parse_ns_def(s: &str) -> Option<(Box<str>, Box<str>)> {
+pub fn parse_ns_def(s: &str) -> Option<(Arc<str>, Arc<str>)> {
   let pieces: Vec<&str> = s.split('/').collect();
   if pieces.len() == 2 {
     if !pieces[0].is_empty() && !pieces[1].is_empty() {
-      Some((pieces[0].to_owned().into_boxed_str(), pieces[1].to_owned().into_boxed_str()))
+      Some((pieces[0].to_owned().into(), pieces[1].to_owned().into()))
     } else {
       None
     }
@@ -240,7 +267,7 @@ fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackVec) -> R
     Some(v) => Ok(v),
     None => match program::lookup_def_code(ns, sym) {
       Some(code) => {
-        let v = evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), ns, call_stack)?;
+        let v = evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), ns.into(), call_stack)?;
         program::write_evaled_def(ns, sym, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
         Ok(v)
       }
@@ -257,13 +284,13 @@ pub fn run_fn(
   scope: &CalcitScope,
   args: &CalcitItems,
   body: &CalcitItems,
-  file_ns: &str,
+  file_ns: Arc<str>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   let mut current_values = values.to_owned();
   loop {
     let body_scope = bind_args(args, &current_values, scope, call_stack)?;
-    let v = evaluate_lines(body, &body_scope, file_ns, call_stack)?;
+    let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
     match v {
       Calcit::Recur(xs) => {
         current_values = xs;
@@ -390,10 +417,15 @@ pub fn bind_args(
   }
 }
 
-pub fn evaluate_lines(lines: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_lines(
+  lines: &CalcitItems,
+  scope: &CalcitScope,
+  file_ns: Arc<str>,
+  call_stack: &CallStackVec,
+) -> Result<Calcit, CalcitErr> {
   let mut ret: Calcit = Calcit::Nil;
   for line in lines {
-    match evaluate_expr(line, scope, file_ns, call_stack) {
+    match evaluate_expr(line, scope, file_ns.to_owned(), call_stack) {
       Ok(v) => ret = v,
       Err(e) => return Err(e),
     }
@@ -406,7 +438,7 @@ pub fn evaluate_lines(lines: &CalcitItems, scope: &CalcitScope, file_ns: &str, c
 pub fn evaluate_args(
   items: &CalcitItems,
   scope: &CalcitScope,
-  file_ns: &str,
+  file_ns: Arc<str>,
   call_stack: &CallStackVec,
 ) -> Result<CalcitItems, CalcitErr> {
   let mut ret: CalcitItems = TernaryTreeList::Empty;
@@ -417,7 +449,7 @@ pub fn evaluate_args(
         spreading = true;
       }
       _ => {
-        let v = evaluate_expr(item, scope, file_ns, call_stack)?;
+        let v = evaluate_expr(item, scope, file_ns.to_owned(), call_stack)?;
 
         if spreading {
           match v {
@@ -426,8 +458,8 @@ pub fn evaluate_args(
                 // extract thunk before calling functions
                 let y = match x {
                   Calcit::Thunk(code, v) => match v {
-                    None => evaluate_expr(&*code, scope, file_ns, call_stack)?,
-                    Some(data) => *data.to_owned(),
+                    None => evaluate_expr(&*code, scope, file_ns.to_owned(), call_stack)?,
+                    Some(data) => (*data.to_owned()).to_owned(),
                   },
                   _ => x.to_owned(),
                 };
@@ -446,8 +478,8 @@ pub fn evaluate_args(
           // extract thunk before calling functions
           let y = match v {
             Calcit::Thunk(code, value) => match value {
-              None => evaluate_expr(&*code, scope, file_ns, call_stack)?,
-              Some(data) => *data.to_owned(),
+              None => evaluate_expr(&*code, scope, file_ns.to_owned(), call_stack)?,
+              Some(data) => (*data.to_owned()).to_owned(),
             },
             _ => v.to_owned(),
           };

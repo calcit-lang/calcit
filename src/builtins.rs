@@ -11,7 +11,7 @@ mod strings;
 mod syntax;
 
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use crate::call_stack::CallStackVec;
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax};
@@ -20,7 +20,7 @@ pub type FnType = fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calc
 pub type SyntaxType = fn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
 lazy_static! {
-  static ref IMPORTED_PROCS: RwLock<HashMap<Box<str>, FnType>> = RwLock::new(HashMap::new());
+  static ref IMPORTED_PROCS: RwLock<HashMap<Arc<str>, FnType>> = RwLock::new(HashMap::new());
 }
 
 pub fn is_proc_name(s: &str) -> bool {
@@ -379,14 +379,14 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackVe
 /// inject into procs
 pub fn register_import_proc(name: &str, f: FnType) {
   let mut ps = IMPORTED_PROCS.write().unwrap();
-  (*ps).insert(name.to_owned().into_boxed_str(), f);
+  (*ps).insert(name.to_owned().into(), f);
 }
 
 pub fn handle_syntax(
   name: &CalcitSyntax,
   nodes: &CalcitItems,
   scope: &CalcitScope,
-  file_ns: &str,
+  file_ns: Arc<str>,
   call_stack: &CallStackVec,
 ) -> Result<Calcit, CalcitErr> {
   match name {

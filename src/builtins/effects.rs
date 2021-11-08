@@ -66,6 +66,12 @@ pub fn calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// is evaling in Rust, not for js
+pub fn is_rust_eval() -> bool {
+  let mode = CLI_RUNNING_MODE.read().unwrap().to_owned();
+  matches!(mode, CliRunningMode::Eval)
+}
+
 // TODO
 pub fn call_get_calcit_backend(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::kwd("rust"))
@@ -85,7 +91,7 @@ pub fn quit(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn get_env(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match env::var(&**s) {
-      Ok(v) => Ok(Calcit::Str(v.into_boxed_str())),
+      Ok(v) => Ok(Calcit::Str(v.into())),
       Err(e) => {
         println!("(get-env {}): {}", s, e);
         Ok(Calcit::Nil)
@@ -99,7 +105,7 @@ pub fn get_env(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn read_file(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match fs::read_to_string(&**s) {
-      Ok(content) => Ok(Calcit::Str(content.into_boxed_str())),
+      Ok(content) => Ok(Calcit::Str(content.into())),
       Err(e) => CalcitErr::err_str(format!("read-file failed: {}", e)),
     },
     Some(a) => CalcitErr::err_str(format!("read-file expected a string, got: {}", a)),

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::RwLock;
 
 use cirru_parser::Cirru;
@@ -9,16 +10,16 @@ use crate::snapshot;
 use crate::snapshot::Snapshot;
 use crate::util::string::extract_pkg_from_def;
 
-pub type ProgramEvaledData = HashMap<Box<str>, HashMap<Box<str>, Calcit>>;
+pub type ProgramEvaledData = HashMap<Arc<str>, HashMap<Arc<str>, Calcit>>;
 
 /// information extracted from snapshot
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgramFileData {
-  pub import_map: HashMap<Box<str>, ImportRule>,
-  pub defs: HashMap<Box<str>, Calcit>,
+  pub import_map: HashMap<Arc<str>, ImportRule>,
+  pub defs: HashMap<Arc<str>, Calcit>,
 }
 
-pub type ProgramCodeData = HashMap<Box<str>, ProgramFileData>;
+pub type ProgramCodeData = HashMap<Arc<str>, ProgramFileData>;
 
 lazy_static! {
   /// data of program running
@@ -27,7 +28,7 @@ lazy_static! {
   pub static ref PROGRAM_CODE_DATA: RwLock<ProgramCodeData> = RwLock::new(HashMap::new());
 }
 
-fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(Box<str>, ImportRule)>, String> {
+fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(Arc<str>, ImportRule)>, String> {
   match nodes {
     Cirru::Leaf(_) => Err(String::from("Expected import rule in expr")),
     Cirru::List(rule_nodes) => {
@@ -38,14 +39,18 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(Box<str>, ImportRule)>, Str
         _ => (),
       }
       match (xs[0].to_owned(), xs[1].to_owned(), xs[2].to_owned()) {
-        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::leaf(":as") => Ok(vec![(alias, ImportRule::NsAs(ns))]),
-        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::leaf(":default") => Ok(vec![(alias, ImportRule::NsDefault(ns))]),
+        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::leaf(":as") => {
+          Ok(vec![((*alias).into(), ImportRule::NsAs((*ns).into()))])
+        }
+        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::leaf(":default") => {
+          Ok(vec![((*alias).into(), ImportRule::NsDefault((*ns).into()))])
+        }
         (Cirru::Leaf(ns), x, Cirru::List(ys)) if x == Cirru::leaf(":refer") => {
-          let mut rules: Vec<(Box<str>, ImportRule)> = Vec::with_capacity(ys.len());
+          let mut rules: Vec<(Arc<str>, ImportRule)> = Vec::with_capacity(ys.len());
           for y in ys {
             match y {
               Cirru::Leaf(s) if &*s == "[]" => (), // `[]` symbol are ignored
-              Cirru::Leaf(s) => rules.push((s.to_owned(), ImportRule::NsReferDef(ns.to_owned(), s.to_owned()))),
+              Cirru::Leaf(s) => rules.push(((*s).into(), ImportRule::NsReferDef((*ns.to_owned()).into(), s.into()))),
               Cirru::List(_defs) => return Err(String::from("invalid refer values")),
             }
           }
@@ -61,14 +66,14 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(Box<str>, ImportRule)>, Str
   }
 }
 
-fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Box<str>, ImportRule>, String> {
+fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Arc<str>, ImportRule>, String> {
   match nodes {
     Cirru::Leaf(_) => unreachable!("Expected expr for ns"),
     Cirru::List(xs) => match (xs.get(0), xs.get(1), xs.get(2)) {
       // Too many clones
       (Some(x), Some(Cirru::Leaf(_)), Some(Cirru::List(xs))) if *x == Cirru::leaf("ns") => {
         if !xs.is_empty() && xs[0] == Cirru::leaf(":require") {
-          let mut ys: HashMap<Box<str>, ImportRule> = HashMap::with_capacity(xs.len());
+          let mut ys: HashMap<Arc<str>, ImportRule> = HashMap::with_capacity(xs.len());
           for (idx, x) in xs.iter().enumerate() {
             if idx > 0 {
               let rules = extract_import_rule(x)?;
@@ -88,12 +93,12 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Box<str>, ImportRule>, St
   }
 }
 
-fn extract_file_data(file: snapshot::FileInSnapShot, ns: Box<str>) -> Result<ProgramFileData, String> {
+fn extract_file_data(file: snapshot::FileInSnapShot, ns: Arc<str>) -> Result<ProgramFileData, String> {
   let import_map = extract_import_map(&file.ns)?;
-  let mut defs: HashMap<Box<str>, Calcit> = HashMap::with_capacity(file.defs.len());
+  let mut defs: HashMap<Arc<str>, Calcit> = HashMap::with_capacity(file.defs.len());
   for (def, code) in file.defs {
     let at_def = def.to_owned();
-    defs.insert(def, code_to_calcit(&code, &ns, &at_def)?);
+    defs.insert(def, code_to_calcit(&code, ns.to_owned(), at_def)?);
   }
   Ok(ProgramFileData { import_map, defs })
 }
@@ -102,7 +107,7 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
   let mut xs: ProgramCodeData = HashMap::with_capacity(s.files.len());
   for (ns, file) in s.files.to_owned() {
     let file_info = extract_file_data(file, ns.to_owned())?;
-    xs.insert(ns, file_info);
+    xs.insert(ns.to_owned(), file_info);
   }
   Ok(xs)
 }
@@ -123,7 +128,7 @@ pub fn lookup_def_code(ns: &str, def: &str) -> Option<Calcit> {
   Some(data.to_owned())
 }
 
-pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<Box<str>> {
+pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<Arc<str>> {
   let program = { PROGRAM_CODE_DATA.read().unwrap() };
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(def)?;
@@ -134,9 +139,9 @@ pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<Box<str>> {
   }
 }
 
-pub fn lookup_ns_target_in_import(ns: &str, alias: &str) -> Option<Box<str>> {
+pub fn lookup_ns_target_in_import(ns: Arc<str>, alias: &str) -> Option<Arc<str>> {
   let program = { PROGRAM_CODE_DATA.read().unwrap() };
-  let file = program.get(ns)?;
+  let file = program.get(&*ns)?;
   let import_rule = file.import_map.get(alias)?;
   match import_rule {
     ImportRule::NsReferDef(_ns, _def) => None,
@@ -146,7 +151,7 @@ pub fn lookup_ns_target_in_import(ns: &str, alias: &str) -> Option<Box<str>> {
 }
 
 // imported via :default
-pub fn lookup_default_target_in_import(ns: &str, alias: &str) -> Option<Box<str>> {
+pub fn lookup_default_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>> {
   let program = { PROGRAM_CODE_DATA.read().unwrap() };
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(alias)?;
@@ -180,11 +185,11 @@ pub fn write_evaled_def(ns: &str, def: &str, value: Calcit) -> Result<(), String
   // println!("writing {} {}", ns, def);
   let mut program = PROGRAM_EVALED_DATA_STATE.write().unwrap();
   if !program.contains_key(ns) {
-    (*program).insert(String::from(ns).into_boxed_str(), HashMap::new());
+    (*program).insert(String::from(ns).into(), HashMap::new());
   }
 
   let file = program.get_mut(ns).unwrap();
-  file.insert(String::from(def).into_boxed_str(), value);
+  file.insert(String::from(def).into(), value);
 
   Ok(())
 }
@@ -216,13 +221,17 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       file.import_map = extract_import_map(&info.ns.to_owned().unwrap())?;
     }
     for (def, code) in &info.added_defs {
-      file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def)?);
+      file
+        .defs
+        .insert(def.to_owned(), code_to_calcit(code, ns.to_owned(), def.to_owned())?);
     }
     for def in &info.removed_defs {
       file.defs.remove(def);
     }
     for (def, code) in &info.changed_defs {
-      file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def)?);
+      file
+        .defs
+        .insert(def.to_owned(), code_to_calcit(code, ns.to_owned(), def.to_owned())?);
     }
   }
 
@@ -238,7 +247,7 @@ pub fn clear_all_program_evaled_defs(init_fn: &str, reload_fn: &str, reload_libs
     // reduce changes of libs. could be dirty in some cases
     let init_pkg = extract_pkg_from_def(init_fn).unwrap();
     let reload_pkg = extract_pkg_from_def(reload_fn).unwrap();
-    let mut to_remove: Vec<Box<str>> = vec![];
+    let mut to_remove: Vec<Arc<str>> = vec![];
     for k in (*program).keys() {
       if k == &init_pkg || k == &reload_pkg || k.starts_with(&format!("{}.", init_pkg)) || k.starts_with(&format!("{}.", reload_pkg)) {
         to_remove.push(k.to_owned());

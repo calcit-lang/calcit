@@ -15,8 +15,8 @@ use cirru_parser::{Cirru, CirruWriterOptions};
 use im_ternary_tree::TernaryTreeList;
 
 use std::cmp::Ordering;
-use std::sync::atomic;
 use std::sync::atomic::AtomicUsize;
+use std::sync::{atomic, Arc};
 
 static SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
@@ -55,7 +55,7 @@ pub fn recur(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(v) => Ok(Calcit::Str(v.lisp_str().into_boxed_str())),
+    Some(v) => Ok(Calcit::Str(v.lisp_str().into())),
     None => CalcitErr::err_str("format-to-lisp expected 1 argument"),
   }
 }
@@ -63,7 +63,7 @@ pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn format_to_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(v) => cirru_parser::format(&[transform_code_to_cirru(v)], CirruWriterOptions { use_inline: false })
-      .map(|s| Calcit::Str(s.into_boxed_str()))
+      .map(|s| Calcit::Str(s.into()))
       .map_err(CalcitErr::use_str),
     None => CalcitErr::err_str("format-to-cirru expected 1 argument"),
   }
@@ -78,9 +78,9 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
       }
       Cirru::List(xs)
     }
-    Calcit::Symbol { sym, .. } => Cirru::Leaf(sym.to_owned()),
-    Calcit::Syntax(s, _ns) => Cirru::Leaf(s.to_string().into_boxed_str()),
-    Calcit::Proc(s) => Cirru::Leaf(s.to_owned()),
+    Calcit::Symbol { sym, .. } => Cirru::Leaf((**sym).into()),
+    Calcit::Syntax(s, _ns) => Cirru::Leaf(s.to_string().into()),
+    Calcit::Proc(s) => Cirru::Leaf((**s).into()),
     a => Cirru::leaf(format!("{}", a)),
   }
 }
@@ -113,9 +113,9 @@ pub fn gensym(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     }
   };
   Ok(Calcit::Symbol {
-    sym: s.into_boxed_str(),
-    ns: String::from(primes::GENERATED_NS).into_boxed_str(),
-    at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
+    sym: s.into(),
+    ns: primes::GEN_NS.to_owned(),
+    at_def: primes::GEN_DEF.to_owned(),
     resolved: None,
   })
 }
@@ -193,7 +193,7 @@ pub fn format_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       match cirru::calcit_data_to_cirru(a) {
         Ok(v) => {
           if let Cirru::List(ys) = v {
-            Ok(Calcit::Str(cirru_parser::format(&ys, options)?.into_boxed_str()))
+            Ok(Calcit::Str(cirru_parser::format(&ys, options)?.into()))
           } else {
             CalcitErr::err_str(format!("expected vector for Cirru formatting: {}", v))
           }
@@ -218,7 +218,7 @@ pub fn parse_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn format_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)?, true)?.into_boxed_str())),
+    Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)?, true)?.into())),
     None => CalcitErr::err_str("format-cirru-edn expected 1 argument"),
   }
 }
@@ -230,14 +230,14 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::Symbol {
       sym: s.to_owned(),
-      ns: String::from(primes::GENERATED_NS).into_boxed_str(),
-      at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
+      ns: primes::GEN_NS.to_owned(),
+      at_def: primes::GEN_DEF.to_owned(),
       resolved: None,
     }),
     Calcit::Keyword(s) => Ok(Calcit::Symbol {
-      sym: s.to_str(),
-      ns: String::from(primes::GENERATED_NS).into_boxed_str(),
-      at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
+      sym: s.to_string().into(),
+      ns: primes::GEN_NS.to_owned(),
+      at_def: primes::GEN_DEF.to_owned(),
       resolved: None,
     }),
     Calcit::Symbol { sym, ns, at_def, resolved } => Ok(Calcit::Symbol {
@@ -266,7 +266,7 @@ pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     CalcitErr::err_str(format!("tuple expected 2 arguments, got {}", CrListWrap(xs.to_owned())))
   } else {
-    Ok(Calcit::Tuple(Box::new(xs[0].to_owned()), Box::new(xs[1].to_owned())))
+    Ok(Calcit::Tuple(Arc::new(xs[0].to_owned()), Arc::new(xs[1].to_owned())))
   }
 }
 
@@ -282,42 +282,42 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     Calcit::Number(..) => {
       // classed should already be preprocessed
       let code = gen_sym("&core-number-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::Str(..) => {
       let code = gen_sym("&core-string-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::Set(..) => {
       let code = gen_sym("&core-set-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::List(..) => {
       let code = gen_sym("&core-list-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::Map(..) => {
       let code = gen_sym("&core-map-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::Record(..) => {
       let code = gen_sym("&core-record-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::Nil => {
       let code = gen_sym("&core-nil-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     Calcit::Fn { .. } | Calcit::Proc(..) => {
       let code = gen_sym("&core-fn-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::CORE_NS, call_stack)?;
+      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
       (class, invoke_args[0].to_owned())
     }
     x => return Err(CalcitErr::use_msg_stack(format!("cannot decide a class from: {:?}", x), call_stack)),
@@ -341,7 +341,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
             // dirty copy...
             Calcit::Fn {
               def_ns, scope, args, body, ..
-            } => runner::run_fn(&method_args, scope, args, body, def_ns, call_stack),
+            } => runner::run_fn(&method_args, scope, args, body, def_ns.to_owned(), call_stack),
             Calcit::Proc(proc) => builtins::handle_proc(proc, &method_args, call_stack),
             Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
               format!("cannot get syntax here since instance is always evaluated, got: {}", syn),
@@ -374,12 +374,12 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
 
 fn gen_sym(sym: &str) -> Calcit {
   Calcit::Symbol {
-    sym: String::from("&core-map-class").into_boxed_str(),
-    ns: String::from(primes::CORE_NS).into_boxed_str(),
-    at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
-    resolved: Some(Box::new(primes::SymbolResolved::ResolvedDef {
-      ns: String::from(primes::CORE_NS).into_boxed_str(),
-      def: String::from(sym).into_boxed_str(),
+    sym: String::from("&core-map-class").into(),
+    ns: primes::GEN_CORE_NS.to_owned(),
+    at_def: primes::GEN_DEF.to_owned(),
+    resolved: Some(Arc::new(primes::SymbolResolved::ResolvedDef {
+      ns: primes::GEN_CORE_NS.to_owned(),
+      def: String::from(sym).into(),
       rule: None,
     })),
   }
@@ -419,9 +419,9 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (Calcit::Tuple(a0, a1), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx == 0 {
-          Ok(Calcit::Tuple(Box::new(xs[2].to_owned()), a1.to_owned()))
+          Ok(Calcit::Tuple(Arc::new(xs[2].to_owned()), a1.to_owned()))
         } else if idx == 1 {
-          Ok(Calcit::Tuple(a0.to_owned(), Box::new(xs[2].to_owned())))
+          Ok(Calcit::Tuple(a0.to_owned(), Arc::new(xs[2].to_owned())))
         } else {
           CalcitErr::err_str(format!("Tuple only has fields of 0,1 , unknown index: {}", idx))
         }

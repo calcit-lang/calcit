@@ -17,7 +17,7 @@ type EdnFfi = fn(args: Vec<Edn>) -> Result<Edn, String>;
 type EdnFfiFn = fn(
   args: Vec<Edn>,
   f: Arc<dyn Fn(Vec<Edn>) -> Result<Edn, String> + Send + Sync + 'static>,
-  finish: Box<dyn FnOnce()>,
+  finish: Arc<dyn FnOnce()>,
 ) -> Result<Edn, String>;
 
 const ABI_VERSION: &str = "0.0.6";
@@ -142,7 +142,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
           for p in ps {
             real_args = real_args.push(edn_to_calcit(&p));
           }
-          let r = runner::run_fn(&real_args, scope, args, body, def_ns, &copied_stack);
+          let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack);
           match r {
             Ok(ret) => calcit_to_edn(&ret),
             Err(e) => {
@@ -155,7 +155,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
           unreachable!(format!("expected last argument to be callback fn, got: {}", callback));
         }
       }),
-      Box::new(track::track_task_release),
+      Arc::new(track::track_task_release),
     ) {
       Ok(ret) => edn_to_calcit(&ret),
       Err(e) => {
@@ -229,7 +229,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
         for p in ps {
           real_args = real_args.push(edn_to_calcit(&p));
         }
-        let r = runner::run_fn(&real_args, scope, args, body, def_ns, &copied_stack.clone());
+        let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack.clone());
         match r {
           Ok(ret) => calcit_to_edn(&ret),
           Err(e) => {
@@ -242,7 +242,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
         unreachable!(format!("expected last argument to be callback fn, got: {}", callback));
       }
     }),
-    Box::new(track::track_task_release),
+    Arc::new(track::track_task_release),
   ) {
     Ok(ret) => edn_to_calcit(&ret),
     Err(e) => {
@@ -266,7 +266,7 @@ pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, 
         def_ns, scope, args, body, ..
       } = cb.as_ref()
       {
-        if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, scope, args, body, def_ns, &copied_stack) {
+        if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, scope, args, body, def_ns.to_owned(), &copied_stack) {
           println!("error: {}", e);
         }
       }

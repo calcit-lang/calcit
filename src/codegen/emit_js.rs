@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 use cirru_edn::EdnKwd;
 use im_ternary_tree::TernaryTreeList;
@@ -18,13 +19,13 @@ use crate::primes::{Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolve
 use crate::program;
 use crate::util::string::{has_ns_part, matches_digits, matches_js_var, wrap_js_str};
 
-type ImportsDict = BTreeMap<Box<str>, ImportedTarget>;
+type ImportsDict = BTreeMap<Arc<str>, ImportedTarget>;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ImportedTarget {
-  AsNs(Box<str>),
-  DefaultNs(Box<str>),
-  ReferNs(Box<str>),
+  AsNs(Arc<str>),
+  DefaultNs(Arc<str>),
+  ReferNs(Arc<str>),
 }
 
 fn to_js_import_name(ns: &str, mjs_mode: bool) -> String {
@@ -199,7 +200,7 @@ fn make_fn_wrapper(body: &str) -> String {
 fn to_js_code(
   xs: &Calcit,
   ns: &str,
-  local_defs: &HashSet<Box<str>>,
+  local_defs: &HashSet<Arc<str>>,
   file_imports: &RefCell<ImportsDict>,
   keywords: &RefCell<Vec<EdnKwd>>,
   return_label: &Option<String>,
@@ -214,8 +215,8 @@ fn to_js_code(
         at_def,
         resolved,
       } => {
-        let resolved_info = resolved.to_owned().map(|v| *v.to_owned());
-        gen_symbol_code(sym, def_ns, at_def, &resolved_info, ns, xs, local_defs, file_imports)
+        let resolved_info = resolved.to_owned().map(|v| (*v).to_owned());
+        gen_symbol_code(sym, &**def_ns, &**at_def, &resolved_info, ns, xs, local_defs, file_imports)
       }
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
@@ -265,7 +266,7 @@ fn to_js_code(
 fn gen_call_code(
   ys: &CalcitItems,
   ns: &str,
-  local_defs: &HashSet<Box<str>>,
+  local_defs: &HashSet<Arc<str>>,
   xs: &Calcit,
   file_imports: &RefCell<ImportsDict>,
   keywords: &RefCell<Vec<EdnKwd>>,
@@ -574,11 +575,11 @@ fn gen_symbol_code(
   resolved: &Option<primes::SymbolResolved>,
   ns: &str,
   xs: &Calcit,
-  local_defs: &HashSet<Box<str>>,
+  local_defs: &HashSet<Arc<str>>,
   file_imports: &RefCell<ImportsDict>,
 ) -> Result<String, String> {
   // println!("gen symbol: {} {} {} {:?}", s, def_ns, ns, resolved);
-  let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
+  let var_prefix = if ns == primes::CORE_NS { "" } else { "$calcit." };
   if has_ns_part(s) {
     if s.starts_with("js/") {
       Ok(escape_ns_var(s, "js"))
@@ -635,7 +636,7 @@ fn gen_symbol_code(
   } else if def_ns.is_empty() {
     Err(format!("Unexpected ns at symbol, {:?}", xs))
   } else if def_ns != ns {
-    track_ns_import(s, ImportedTarget::ReferNs(def_ns.to_owned().into()), file_imports)?;
+    track_ns_import(s, ImportedTarget::ReferNs(def_ns.into()), file_imports)?;
 
     // probably via macro
     // TODO dirty code collecting imports
@@ -653,7 +654,7 @@ fn gen_symbol_code(
 // track but compare first, return Err if a different one existed
 fn track_ns_import(sym: &str, import_rule: ImportedTarget, file_imports: &RefCell<ImportsDict>) -> Result<(), String> {
   let mut dict = file_imports.borrow_mut();
-  match dict.get(&sym.to_owned().into_boxed_str()) {
+  match dict.get(&Arc::from(sym.to_owned())) {
     Some(v) => {
       if *v == import_rule {
         Ok(())
@@ -670,7 +671,7 @@ fn track_ns_import(sym: &str, import_rule: ImportedTarget, file_imports: &RefCel
 
 fn gen_let_code(
   body: &CalcitItems,
-  local_defs: &HashSet<Box<str>>,
+  local_defs: &HashSet<Arc<str>>,
   xs: &Calcit,
   ns: &str,
   file_imports: &RefCell<ImportsDict>,
@@ -792,7 +793,7 @@ fn gen_let_code(
 
 fn gen_if_code(
   body: &CalcitItems,
-  local_defs: &HashSet<Box<str>>,
+  local_defs: &HashSet<Arc<str>>,
   _xs: &Calcit,
   ns: &str,
   file_imports: &RefCell<ImportsDict>,
@@ -855,7 +856,7 @@ fn gen_if_code(
 fn gen_args_code(
   body: &CalcitItems,
   ns: &str,
-  local_defs: &HashSet<Box<str>>,
+  local_defs: &HashSet<Arc<str>>,
   file_imports: &RefCell<ImportsDict>,
   keywords: &RefCell<Vec<EdnKwd>>,
 ) -> Result<String, String> {
@@ -890,7 +891,7 @@ fn gen_args_code(
 fn list_to_js_code(
   xs: &CalcitItems,
   ns: &str,
-  local_defs: HashSet<Box<str>>,
+  local_defs: HashSet<Arc<str>>,
   return_label: &str,
   file_imports: &RefCell<ImportsDict>,
   keywords: &RefCell<Vec<EdnKwd>>,
@@ -942,7 +943,7 @@ fn gen_js_func(
   raw_body: &CalcitItems,
   ns: &str,
   exported: bool,
-  outer_defs: &HashSet<Box<str>>,
+  outer_defs: &HashSet<Arc<str>>,
   file_imports: &RefCell<ImportsDict>,
   keywords: &RefCell<Vec<EdnKwd>>,
 ) -> Result<String, String> {
@@ -1092,12 +1093,12 @@ fn contains_symbol(xs: &Calcit, y: &str) -> bool {
   }
 }
 
-fn sort_by_deps(deps: &HashMap<Box<str>, Calcit>) -> Vec<Box<str>> {
-  let mut deps_graph: HashMap<Box<str>, HashSet<Box<str>>> = HashMap::new();
-  let mut def_names: Vec<Box<str>> = Vec::with_capacity(deps.len());
+fn sort_by_deps(deps: &HashMap<Arc<str>, Calcit>) -> Vec<Arc<str>> {
+  let mut deps_graph: HashMap<Arc<str>, HashSet<Arc<str>>> = HashMap::new();
+  let mut def_names: Vec<Arc<str>> = Vec::with_capacity(deps.len());
   for (k, v) in deps {
     def_names.push(k.to_owned());
-    let mut deps_info: HashSet<Box<str>> = HashSet::new();
+    let mut deps_info: HashSet<Arc<str>> = HashSet::new();
     for k2 in deps.keys() {
       if k2 == k {
         continue;
@@ -1112,7 +1113,7 @@ fn sort_by_deps(deps: &HashMap<Box<str>, Calcit>) -> Vec<Box<str>> {
   // println!("\ndefs graph {:?}", deps_graph);
   def_names.sort(); // alphabet order first
 
-  let mut result: Vec<Box<str>> = Vec::with_capacity(def_names.len());
+  let mut result: Vec<Arc<str>> = Vec::with_capacity(def_names.len());
   'outer: for x in def_names {
     for (idx, y) in result.iter().enumerate() {
       if depends_on(y, &x, &deps_graph, 3) {
@@ -1128,7 +1129,7 @@ fn sort_by_deps(deps: &HashMap<Box<str>, Calcit>) -> Vec<Box<str>> {
 }
 
 // could be slow, need real topology sorting
-fn depends_on(x: &str, y: &str, deps: &HashMap<Box<str>, HashSet<Box<str>>>, decay: usize) -> bool {
+fn depends_on(x: &str, y: &str, deps: &HashMap<Arc<str>, HashSet<Arc<str>>>, decay: usize) -> bool {
   if decay == 0 {
     false
   } else {
@@ -1157,7 +1158,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     let _ = fs::create_dir(code_emit_path);
   }
 
-  let mut unchanged_ns: HashSet<Box<str>> = HashSet::new();
+  let mut unchanged_ns: HashSet<Arc<str>> = HashSet::new();
 
   let program = program::clone_evaled_program();
   for (ns, file) in program {
@@ -1167,7 +1168,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     let file_imports: RefCell<ImportsDict> = RefCell::new(BTreeMap::new());
     let keywords: RefCell<Vec<EdnKwd>> = RefCell::new(Vec::new());
 
-    let mut defs_in_current: HashSet<Box<str>> = HashSet::new();
+    let mut defs_in_current: HashSet<Arc<str>> = HashSet::new();
     for k in file.keys() {
       defs_in_current.insert(k.to_owned());
     }
@@ -1205,7 +1206,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       format!("\nimport * as $calcit from {};", core_lib)
     };
 
-    let mut def_names: HashSet<Box<str>> = HashSet::new(); // multiple parts of scoped defs need to be tracked
+    let mut def_names: HashSet<Arc<str>> = HashSet::new(); // multiple parts of scoped defs need to be tracked
 
     // tracking top level scope definitions
     for def in file.keys() {

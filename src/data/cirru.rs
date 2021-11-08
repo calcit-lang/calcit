@@ -1,9 +1,10 @@
 use crate::primes::{Calcit, CalcitItems};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
+use std::sync::Arc;
 
 /// code is CirruNode, and this function parse code(rather than data)
-pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String> {
+pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit, String> {
   match xs {
     Cirru::Leaf(s) => match &**s {
       "nil" => Ok(Calcit::Nil),
@@ -17,9 +18,9 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
       "::" => Ok(Calcit::Symbol {
-        sym: s.to_owned(),
-        ns: ns.to_owned().into(),
-        at_def: def.to_owned().into(),
+        sym: (**s).into(),
+        ns: ns.to_owned(),
+        at_def: def.to_owned(),
         resolved: None,
       }),
       _ => match s.chars().next().unwrap() {
@@ -28,13 +29,13 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
           if s.starts_with(".-") || s.starts_with(".!") {
             // try not to break js interop
             Ok(Calcit::Symbol {
-              sym: s.to_owned(),
-              ns: ns.to_owned().into(),
-              at_def: def.to_owned().into(),
+              sym: (**s).into(),
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
               resolved: None,
             })
           } else {
-            Ok(Calcit::Proc(s.to_owned())) // as native method syntax
+            Ok(Calcit::Proc((**s).into())) // as native method syntax
           }
         }
         '"' | '|' => Ok(Calcit::new_str(&s[1..])),
@@ -45,15 +46,15 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
         '\'' if s.len() > 1 => Ok(Calcit::List(
           TernaryTreeList::Empty
             .push(Calcit::Symbol {
-              sym: String::from("quote").into_boxed_str(),
-              ns: ns.to_owned().into(),
-              at_def: def.to_owned().into(),
+              sym: String::from("quote").into(),
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
               resolved: None,
             })
             .push(Calcit::Symbol {
-              sym: String::from(&s[1..]).into_boxed_str(),
-              ns: ns.to_owned().into(),
-              at_def: def.to_owned().into(),
+              sym: String::from(&s[1..]).into(),
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
               resolved: None,
             }),
         )),
@@ -61,45 +62,45 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(
           TernaryTreeList::Empty
             .push(Calcit::Symbol {
-              sym: String::from("~@").into_boxed_str(),
-              ns: ns.to_owned().into(),
-              at_def: def.to_owned().into(),
+              sym: String::from("~@").into(),
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
               resolved: None,
             })
             .push(Calcit::Symbol {
-              sym: String::from(&s[2..]).into_boxed_str(),
-              ns: ns.to_owned().into(),
-              at_def: def.to_owned().into(),
+              sym: String::from(&s[2..]).into(),
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
               resolved: None,
             }),
         )),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(
           TernaryTreeList::Empty
             .push(Calcit::Symbol {
-              sym: String::from("~").into_boxed_str(),
-              ns: ns.to_owned().into(),
-              at_def: def.to_owned().into(),
+              sym: String::from("~").into(),
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
               resolved: None,
             })
             .push(Calcit::Symbol {
-              sym: String::from(&s[1..]).into_boxed_str(),
-              ns: ns.to_owned().into(),
-              at_def: def.to_owned().into(),
+              sym: String::from(&s[1..]).into(),
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
               resolved: None,
             }),
         )),
         '@' => Ok(Calcit::List(
           TernaryTreeList::Empty
             .push(Calcit::Symbol {
-              sym: String::from("deref").into_boxed_str(),
-              ns: ns.to_owned().into(),
-              at_def: def.to_owned().into(),
+              sym: String::from("deref").into(),
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
               resolved: None,
             })
             .push(Calcit::Symbol {
-              sym: String::from(&s[1..]).into_boxed_str(),
-              ns: ns.to_owned().into(),
-              at_def: def.to_owned().into(),
+              sym: String::from(&s[1..]).into(),
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
               resolved: None,
             }),
         )),
@@ -109,9 +110,9 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
             Ok(Calcit::Number(f))
           } else {
             Ok(Calcit::Symbol {
-              sym: s.to_owned(),
-              ns: ns.to_owned().into(),
-              at_def: def.to_owned().into(),
+              sym: (**s).into(),
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
               resolved: None,
             })
           }
@@ -121,7 +122,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
     Cirru::List(ys) => {
       let mut zs: CalcitItems = TernaryTreeList::Empty;
       for y in ys {
-        match code_to_calcit(y, ns, def) {
+        match code_to_calcit(y, ns.to_owned(), def.to_owned()) {
           Ok(v) => {
             if !is_comment(&v) {
               zs = zs.push(v.to_owned())
@@ -139,7 +140,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str) -> Result<Calcit, String>
 /// transform Cirru to Calcit data directly
 pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
   match xs {
-    Cirru::Leaf(s) => Calcit::Str(s.to_owned()),
+    Cirru::Leaf(s) => Calcit::Str((**s).into()),
     Cirru::List(ys) => {
       let mut zs: CalcitItems = TernaryTreeList::Empty;
       for y in ys {
@@ -154,9 +155,9 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
 pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
   match xs {
     Calcit::Nil => Ok(Cirru::leaf("nil")),
-    Calcit::Bool(b) => Ok(Cirru::Leaf(b.to_string().into_boxed_str())),
-    Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string().into_boxed_str())),
-    Calcit::Str(s) => Ok(Cirru::leaf(s.to_owned())),
+    Calcit::Bool(b) => Ok(Cirru::Leaf(b.to_string().into())),
+    Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string().into())),
+    Calcit::Str(s) => Ok(Cirru::Leaf((**s).into())),
     Calcit::List(ys) => {
       let mut zs: Vec<Cirru> = Vec::with_capacity(ys.len());
       for y in ys {
@@ -189,9 +190,9 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Nil => Ok(Cirru::leaf("nil")),
     Calcit::Bool(true) => Ok(Cirru::leaf("true")),
     Calcit::Bool(false) => Ok(Cirru::leaf("false")),
-    Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string().into_boxed_str())),
+    Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string().into())),
     Calcit::Str(s) => Ok(Cirru::leaf(format!("|{}", s))), // TODO performance
-    Calcit::Symbol { sym, .. } => Ok(Cirru::Leaf(sym.to_owned())), // TODO performance
+    Calcit::Symbol { sym, .. } => Ok(Cirru::Leaf((**sym).into())), // TODO performance
     Calcit::Keyword(s) => Ok(Cirru::leaf(format!(":{}", s))), // TODO performance
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
@@ -200,8 +201,8 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
       }
       Ok(Cirru::List(ys))
     }
-    Calcit::Proc(s) => Ok(Cirru::Leaf(s.to_owned())),
-    Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.to_string().into_boxed_str())),
+    Calcit::Proc(s) => Ok(Cirru::Leaf((**s).into())),
+    Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.to_string().into())),
     _ => Err(format!("unknown data to convert to Cirru: {}", x)),
   }
 }
