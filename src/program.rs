@@ -15,9 +15,11 @@ pub type ProgramEvaledData = HashMap<Arc<str>, HashMap<Arc<str>, Calcit>>;
 /// information extracted from snapshot
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgramFileData {
-  pub import_map: HashMap<Arc<str>, ImportRule>,
+  pub import_map: HashMap<Arc<str>, Arc<ImportRule>>,
   pub defs: HashMap<Arc<str>, Calcit>,
 }
+
+type ImportMapPair = (Arc<str>, Arc<ImportRule>);
 
 pub type ProgramCodeData = HashMap<Arc<str>, ProgramFileData>;
 
@@ -28,7 +30,7 @@ lazy_static! {
   pub static ref PROGRAM_CODE_DATA: RwLock<ProgramCodeData> = RwLock::new(HashMap::new());
 }
 
-fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(Arc<str>, ImportRule)>, String> {
+fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
   match nodes {
     Cirru::Leaf(_) => Err(String::from("Expected import rule in expr")),
     Cirru::List(rule_nodes) => {
@@ -40,17 +42,17 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(Arc<str>, ImportRule)>, Str
       }
       match (xs[0].to_owned(), xs[1].to_owned(), xs[2].to_owned()) {
         (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::leaf(":as") => {
-          Ok(vec![((*alias).into(), ImportRule::NsAs((*ns).into()))])
+          Ok(vec![((*alias).into(), Arc::new(ImportRule::NsAs((*ns).into())))])
         }
         (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::leaf(":default") => {
-          Ok(vec![((*alias).into(), ImportRule::NsDefault((*ns).into()))])
+          Ok(vec![((*alias).into(), Arc::new(ImportRule::NsDefault((*ns).into())))])
         }
         (Cirru::Leaf(ns), x, Cirru::List(ys)) if x == Cirru::leaf(":refer") => {
-          let mut rules: Vec<(Arc<str>, ImportRule)> = Vec::with_capacity(ys.len());
+          let mut rules: Vec<(Arc<str>, Arc<ImportRule>)> = Vec::with_capacity(ys.len());
           for y in ys {
             match y {
               Cirru::Leaf(s) if &*s == "[]" => (), // `[]` symbol are ignored
-              Cirru::Leaf(s) => rules.push(((*s).into(), ImportRule::NsReferDef((*ns.to_owned()).into(), s.into()))),
+              Cirru::Leaf(s) => rules.push(((*s).into(), Arc::new(ImportRule::NsReferDef((*ns.to_owned()).into(), s.into())))),
               Cirru::List(_defs) => return Err(String::from("invalid refer values")),
             }
           }
@@ -66,14 +68,14 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<(Arc<str>, ImportRule)>, Str
   }
 }
 
-fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Arc<str>, ImportRule>, String> {
+fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Arc<str>, Arc<ImportRule>>, String> {
   match nodes {
     Cirru::Leaf(_) => unreachable!("Expected expr for ns"),
     Cirru::List(xs) => match (xs.get(0), xs.get(1), xs.get(2)) {
       // Too many clones
       (Some(x), Some(Cirru::Leaf(_)), Some(Cirru::List(xs))) if *x == Cirru::leaf("ns") => {
         if !xs.is_empty() && xs[0] == Cirru::leaf(":require") {
-          let mut ys: HashMap<Arc<str>, ImportRule> = HashMap::with_capacity(xs.len());
+          let mut ys: HashMap<Arc<str>, Arc<ImportRule>> = HashMap::with_capacity(xs.len());
           for (idx, x) in xs.iter().enumerate() {
             if idx > 0 {
               let rules = extract_import_rule(x)?;
@@ -132,7 +134,7 @@ pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<Arc<str>> {
   let program = { PROGRAM_CODE_DATA.read().unwrap() };
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(def)?;
-  match import_rule {
+  match &**import_rule {
     ImportRule::NsReferDef(ns, _def) => Some(ns.to_owned()),
     ImportRule::NsAs(_ns) => None,
     ImportRule::NsDefault(_ns) => None,
@@ -143,7 +145,7 @@ pub fn lookup_ns_target_in_import(ns: Arc<str>, alias: &str) -> Option<Arc<str>>
   let program = { PROGRAM_CODE_DATA.read().unwrap() };
   let file = program.get(&*ns)?;
   let import_rule = file.import_map.get(alias)?;
-  match import_rule {
+  match &**import_rule {
     ImportRule::NsReferDef(_ns, _def) => None,
     ImportRule::NsAs(ns) => Some(ns.to_owned()),
     ImportRule::NsDefault(_ns) => None,
@@ -155,7 +157,7 @@ pub fn lookup_default_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>
   let program = { PROGRAM_CODE_DATA.read().unwrap() };
   let file = program.get(ns)?;
   let import_rule = file.import_map.get(alias)?;
-  match import_rule {
+  match &**import_rule {
     ImportRule::NsReferDef(_ns, _def) => None,
     ImportRule::NsAs(_ns) => None,
     ImportRule::NsDefault(ns) => Some(ns.to_owned()),

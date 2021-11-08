@@ -29,7 +29,7 @@ pub enum SymbolResolved {
   ResolvedDef {
     ns: Arc<str>,
     def: Arc<str>,
-    rule: Option<ImportRule>,
+    rule: Option<Arc<ImportRule>>,
   }, // ns, def
 }
 

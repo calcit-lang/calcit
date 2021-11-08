@@ -19,7 +19,7 @@ pub fn preprocess_ns_def(
   raw_def: Arc<str>,
   // pass original string representation, TODO codegen currently relies on this
   raw_sym: Arc<str>,
-  import_rule: Option<ImportRule>, // returns form and possible value
+  import_rule: Option<Arc<ImportRule>>, // returns form and possible value
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &TernaryTreeList<CalcitStack>,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
@@ -81,7 +81,7 @@ pub fn preprocess_ns_def(
               resolved: Some(Arc::new(ResolvedDef {
                 ns: ns.to_owned(),
                 def: def.to_owned(),
-                rule: Some(ImportRule::NsReferDef(ns.to_owned(), def.to_owned())),
+                rule: Some(Arc::new(ImportRule::NsReferDef(ns.to_owned(), def.to_owned()))),
               })),
             },
             Some(v),
@@ -233,7 +233,7 @@ pub fn preprocess_expr(
                 let target = Some(Arc::new(ResolvedDef {
                   ns: target_ns.to_owned(),
                   def: def.to_owned(),
-                  rule: Some(ImportRule::NsDefault(target_ns)),
+                  rule: Some(Arc::new(ImportRule::NsDefault(target_ns))),
                 }));
                 Ok((
                   Calcit::Symbol {

@@ -622,7 +622,7 @@ fn gen_symbol_code(
       // functions under core uses built $calcit module entry
       return Ok(format!("{}{}", var_prefix, escape_var(s)));
     }
-    if let Some(ImportRule::NsDefault(_s)) = import_rule {
+    if let Some(ImportRule::NsDefault(_s)) = import_rule.map(|x| (&*x).to_owned()) {
       // imports that using :default are special
       track_ns_import(s, ImportedTarget::DefaultNs(r_ns), file_imports)?;
     } else {

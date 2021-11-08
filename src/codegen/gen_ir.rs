@@ -123,7 +123,7 @@ fn dump_code(code: &Calcit) -> Edn {
             xs.insert(Edn::kwd("def"), Edn::Str((**r_def).into()));
             xs.insert(
               Edn::kwd("rule"),
-              match import_rule {
+              match import_rule.to_owned().map(|x| (&*x).to_owned()) {
                 Some(ImportRule::NsAs(_n)) => Edn::kwd("ns"),
                 Some(ImportRule::NsDefault(_n)) => Edn::kwd("default"),
                 Some(ImportRule::NsReferDef(_ns, _def)) => Edn::kwd("def"),
