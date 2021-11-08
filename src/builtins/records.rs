@@ -49,7 +49,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       prev = x.to_owned()
     }
   }
-  Ok(Calcit::Record(name_id.to_owned(), Arc::new(fields), values))
+  Ok(Calcit::Record(name_id.to_owned(), Arc::new(fields), Arc::new(values)))
 }
 pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
@@ -63,7 +63,7 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         if size != def_fields.len() {
           return CalcitErr::err_str(format!("unexpected size in &%{{}}, {} .. {}", size, def_fields.len()));
         }
-        let mut values: Vec<Calcit> = v0.to_owned();
+        let mut values: Vec<Calcit> = (**v0).to_owned();
 
         for idx in 0..size {
           let k_idx = idx * 2 + 1;
@@ -85,7 +85,7 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           }
         }
 
-        Ok(Calcit::Record(name.to_owned(), def_fields.to_owned(), values))
+        Ok(Calcit::Record(name.to_owned(), def_fields.to_owned(), Arc::new(values)))
       } else {
         CalcitErr::err_str(format!("&%{{}} expected pairs, got: {:?}", xs))
       }
@@ -125,7 +125,7 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           return CalcitErr::err_str(format!("field mismatch: {} {} in {:?} {:?}", k, fields[idx], fields, pairs));
         }
       }
-      Ok(Calcit::Record(name.to_owned(), fields.to_owned(), values))
+      Ok(Calcit::Record(name.to_owned(), fields.to_owned(), Arc::new(values)))
     }
     (a, b) => CalcitErr::err_str(format!("&record:from-map expected a record and a map, got {} {}", a, b)),
   }
@@ -237,17 +237,17 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Record(name, fields, values)), Some(a), Some(b)) => match a {
       Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::from(s)) {
         Some(pos) => {
-          let mut new_values = values.to_owned();
+          let mut new_values = (**values).to_owned();
           new_values[pos] = b.to_owned();
-          Ok(Calcit::Record(name.to_owned(), fields.to_owned(), new_values))
+          Ok(Calcit::Record(name.to_owned(), fields.to_owned(), Arc::new(new_values)))
         }
         None => CalcitErr::err_str(format!("invalid field `{}` for {:?}", s, fields)),
       },
       Calcit::Keyword(s) => match find_in_fields(fields, s) {
         Some(pos) => {
-          let mut new_values = values.to_owned();
+          let mut new_values = (**values).to_owned();
           new_values[pos] = b.to_owned();
-          Ok(Calcit::Record(name.to_owned(), fields.to_owned(), new_values))
+          Ok(Calcit::Record(name.to_owned(), fields.to_owned(), Arc::new(new_values)))
         }
         None => CalcitErr::err_str(format!("invalid field `{}` for {:?}", s, fields)),
       },
@@ -325,5 +325,5 @@ fn extend_record_field(
     _ => return CalcitErr::err_str("expected record name"),
   };
 
-  Ok(Calcit::Record(new_name_id, Arc::new(next_fields), next_values))
+  Ok(Calcit::Record(new_name_id, Arc::new(next_fields), Arc::new(next_values)))
 }

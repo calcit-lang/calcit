@@ -72,7 +72,7 @@ pub enum Calcit {
   List(CalcitItems),
   Set(rpds::HashTrieSetSync<Calcit>),
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
-  Record(EdnKwd, Arc<Vec<EdnKwd>>, Vec<Calcit>), // usize of keyword id
+  Record(EdnKwd, Arc<Vec<EdnKwd>>, Arc<Vec<Calcit>>), // usize of keyword id
   Proc(Arc<str>),
   Macro {
     name: Arc<str>,         // name

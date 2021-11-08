@@ -129,7 +129,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
         fields.push(v.0.to_owned());
         values.push(edn_to_calcit(&v.1));
       }
-      Calcit::Record(name.to_owned(), Arc::new(fields), values)
+      Calcit::Record(name.to_owned(), Arc::new(fields), Arc::new(values))
     }
     Edn::Buffer(buf) => Calcit::Buffer(buf.to_owned()),
   }

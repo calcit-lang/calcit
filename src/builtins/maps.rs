@@ -1,11 +1,12 @@
+use std::sync::Arc;
+
 use cirru_edn::EdnKwd;
+use im_ternary_tree::TernaryTreeList;
 
 use crate::builtins::records::find_in_fields;
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
 
 use crate::util::number::is_even;
-
-use im_ternary_tree::TernaryTreeList;
 
 pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if is_even(xs.len()) {
@@ -69,7 +70,7 @@ pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Map(zs))
     }
     (Some(Calcit::Record(name, fields, values)), Some(Calcit::Map(ys))) => {
-      let mut new_values = values.to_owned();
+      let mut new_values = (**values).to_owned();
       for (k, v) in ys {
         match k {
           Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::from(s)) {
@@ -83,7 +84,7 @@ pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           a => return CalcitErr::err_str(format!("invalid field key: {}", a)),
         }
       }
-      Ok(Calcit::Record(name.to_owned(), fields.to_owned(), new_values))
+      Ok(Calcit::Record(name.to_owned(), fields.to_owned(), Arc::new(new_values)))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("expected 2 maps, got: {} {}", a, b)),
     (_, _) => CalcitErr::err_str(format!("expected 2 arguments, got: {:?}", xs)),
