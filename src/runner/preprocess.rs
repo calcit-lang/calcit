@@ -315,7 +315,7 @@ fn process_list_call(
   match (head_form.to_owned(), head_evaled) {
     (Calcit::Keyword(..), _) => {
       if args.len() == 1 {
-        let code = Calcit::List(TernaryTreeList::from(&vec![
+        let code = Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: String::from("get").into(),
             ns: String::from(primes::CORE_NS).into(),

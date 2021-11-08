@@ -35,7 +35,7 @@ fn modify_ref(path: Arc<str>, v: Calcit, call_stack: &CallStackList) -> Result<(
       Calcit::Fn {
         def_ns, scope, args, body, ..
       } => {
-        let values = TernaryTreeList::from(&vec![v.to_owned(), prev.to_owned()]);
+        let values = TernaryTreeList::from(&[v.to_owned(), prev.to_owned()]);
         runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
       }
       a => {

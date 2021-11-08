@@ -193,7 +193,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
         },
       ) => {
         for x in xs {
-          let values = TernaryTreeList::from(&vec![ret, x.to_owned()]);
+          let values = TernaryTreeList::from(&[ret, x.to_owned()]);
           ret = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
         }
         Ok(ret)
@@ -201,7 +201,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &TernaryTreeList::from(&vec![ret, x.to_owned()]), call_stack)?;
+          ret = builtins::handle_proc(proc, &TernaryTreeList::from(&[ret, x.to_owned()]), call_stack)?;
         }
         Ok(ret)
       }
@@ -213,7 +213,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
         },
       ) => {
         for x in xs {
-          let values = TernaryTreeList::from(&vec![ret, x.to_owned()]);
+          let values = TernaryTreeList::from(&[ret, x.to_owned()]);
           ret = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
         }
         Ok(ret)
@@ -221,7 +221,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
       (Calcit::Set(xs), Calcit::Proc(proc)) => {
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &TernaryTreeList::from(&vec![ret, x.to_owned()]), call_stack)?;
+          ret = builtins::handle_proc(proc, &TernaryTreeList::from(&[ret, x.to_owned()]), call_stack)?;
         }
         Ok(ret)
       }
@@ -233,7 +233,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
         },
       ) => {
         for (k, x) in xs {
-          let values = TernaryTreeList::from(&vec![ret, Calcit::List(TernaryTreeList::from(&vec![k.to_owned(), x.to_owned()]))]);
+          let values = TernaryTreeList::from(&[ret, Calcit::List(TernaryTreeList::from(&[k.to_owned(), x.to_owned()]))]);
           ret = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
         }
         Ok(ret)
@@ -243,7 +243,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
           // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(
             proc,
-            &TernaryTreeList::from(&vec![ret, Calcit::List(TernaryTreeList::from(&vec![k.to_owned(), x.to_owned()]))]),
+            &TernaryTreeList::from(&[ret, Calcit::List(TernaryTreeList::from(&[k.to_owned(), x.to_owned()]))]),
             call_stack,
           )?;
         }
@@ -279,7 +279,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
       ) => {
         let mut state = acc.to_owned();
         for x in xs {
-          let values = TernaryTreeList::from(&vec![state, x.to_owned()]);
+          let values = TernaryTreeList::from(&[state, x.to_owned()]);
           let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match &*x0 {
@@ -316,7 +316,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
       ) => {
         let mut state = acc.to_owned();
         for x in xs {
-          let values = TernaryTreeList::from(&vec![state, x.to_owned()]);
+          let values = TernaryTreeList::from(&[state, x.to_owned()]);
           let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match &*x0 {
@@ -353,7 +353,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
       ) => {
         let mut state = acc.to_owned();
         for (k, x) in xs {
-          let values = TernaryTreeList::from(&vec![state, Calcit::List(TernaryTreeList::from(&vec![k.to_owned(), x.to_owned()]))]);
+          let values = TernaryTreeList::from(&[state, Calcit::List(TernaryTreeList::from(&[k.to_owned(), x.to_owned()]))]);
           let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match &*x0 {
@@ -413,7 +413,7 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
         let size = xs.len();
         for i in 0..size {
           let x = xs[size - 1 - i].to_owned();
-          let values = TernaryTreeList::from(&vec![state, x]);
+          let values = TernaryTreeList::from(&[state, x]);
           let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match &*x0 {
@@ -467,7 +467,7 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
       ) => {
         let mut xs2: Vec<&Calcit> = xs.into_iter().collect::<Vec<&Calcit>>();
         xs2.sort_by(|a, b| -> Ordering {
-          let values = TernaryTreeList::from(&vec![a.to_owned().to_owned(), b.to_owned().to_owned()]);
+          let values = TernaryTreeList::from(&[a.to_owned().to_owned(), b.to_owned().to_owned()]);
           let v = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
@@ -493,7 +493,7 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         let mut xs2: Vec<&Calcit> = xs.into_iter().collect::<Vec<&Calcit>>();
         xs2.sort_by(|a, b| -> Ordering {
-          let values = TernaryTreeList::from(&vec![a.to_owned().to_owned(), b.to_owned().to_owned()]);
+          let values = TernaryTreeList::from(&[a.to_owned().to_owned(), b.to_owned().to_owned()]);
           let v = builtins::handle_proc(proc, &values, call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,

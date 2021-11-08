@@ -142,7 +142,7 @@ pub fn to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Map(m)) => {
       let mut ys: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
       for (k, v) in m {
-        let zs: TernaryTreeList<Calcit> = TernaryTreeList::from(&vec![k.to_owned(), v.to_owned()]);
+        let zs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[k.to_owned(), v.to_owned()]);
         ys = ys.push(Calcit::List(zs));
       }
       Ok(Calcit::List(ys))
@@ -196,7 +196,7 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(ys)) => match ys.iter().next() {
       // TODO order may not be stable enough
-      Some((k, v)) => Ok(Calcit::List(TernaryTreeList::from(&vec![k.to_owned(), v.to_owned()]))),
+      Some((k, v)) => Ok(Calcit::List(TernaryTreeList::from(&[k.to_owned(), v.to_owned()]))),
       None => Ok(Calcit::Nil),
     },
     Some(a) => CalcitErr::err_str(format!("map:first expected a map, got: {}", a)),
