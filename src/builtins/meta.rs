@@ -315,7 +315,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
         }
         None => {
           let mut content = String::from("");
-          for k in fields {
+          for k in &**fields {
             content = format!("{},{}", content, k)
           }
           Err(CalcitErr::use_msg_stack(

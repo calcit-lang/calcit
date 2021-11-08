@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::ops::Rem;
+use std::sync::Arc;
 
 use cirru_edn::EdnKwd;
 
@@ -48,7 +49,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       prev = x.to_owned()
     }
   }
-  Ok(Calcit::Record(name_id.to_owned(), fields, values))
+  Ok(Calcit::Record(name_id.to_owned(), Arc::new(fields), values))
 }
 pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
@@ -62,7 +63,6 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         if size != def_fields.len() {
           return CalcitErr::err_str(format!("unexpected size in &%{{}}, {} .. {}", size, def_fields.len()));
         }
-        let mut fields: Vec<EdnKwd> = def_fields.to_owned();
         let mut values: Vec<Calcit> = v0.to_owned();
 
         for idx in 0..size {
@@ -71,14 +71,12 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           match &xs[k_idx] {
             Calcit::Keyword(s) => match find_in_fields(def_fields, s) {
               Some(pos) => {
-                fields[pos] = s.to_owned();
                 values[pos] = xs[v_idx].to_owned();
               }
               None => return CalcitErr::err_str(format!("unexpected field {} for {:?}", s, def_fields)),
             },
             Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match find_in_fields(def_fields, &EdnKwd::from(s)) {
               Some(pos) => {
-                fields[pos] = EdnKwd::from(s);
                 values[pos] = xs[v_idx].to_owned();
               }
               None => return CalcitErr::err_str(format!("unexpected field {} for {:?}", s, def_fields)),
@@ -87,7 +85,7 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           }
         }
 
-        Ok(Calcit::Record(name.to_owned(), fields, values))
+        Ok(Calcit::Record(name.to_owned(), def_fields.to_owned(), values))
       } else {
         CalcitErr::err_str(format!("&%{{}} expected pairs, got: {:?}", xs))
       }
@@ -327,5 +325,5 @@ fn extend_record_field(
     _ => return CalcitErr::err_str("expected record name"),
   };
 
-  Ok(Calcit::Record(new_name_id, next_fields, next_values))
+  Ok(Calcit::Record(new_name_id, Arc::new(next_fields), next_values))
 }
