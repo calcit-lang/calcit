@@ -20,7 +20,7 @@ type EdnFfiFn = fn(
   finish: Box<dyn FnOnce()>,
 ) -> Result<Edn, String>;
 
-const ABI_VERSION: &str = "0.0.5";
+const ABI_VERSION: &str = "0.0.6";
 
 pub fn inject_platform_apis() {
   builtins::register_import_proc("&call-dylib-edn", call_dylib_edn);
@@ -51,7 +51,7 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Ca
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
   for (idx, v) in xs.into_iter().enumerate() {
     if idx > 1 {
-      ys.push(calcit_to_edn(v).map_err(CalcitErr::use_str)?);
+      ys.push(calcit_to_edn(v)?);
     }
   }
 
@@ -64,7 +64,7 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Ca
     }
 
     let func: libloading::Symbol<EdnFfi> = lib.get(method.as_bytes()).expect("dy function not found");
-    let ret = func(ys.to_owned()).map_err(CalcitErr::use_str)?;
+    let ret = func(ys.to_owned())?;
     Ok(edn_to_calcit(&ret))
   }
 }
@@ -106,10 +106,10 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
   let callback = xs[xs.len() - 1].clone();
   for (idx, v) in xs.into_iter().enumerate() {
     if idx > 1 && idx < xs.len() - 1 {
-      ys.push(calcit_to_edn(v).map_err(CalcitErr::use_str)?);
+      ys.push(calcit_to_edn(v)?);
     }
   }
-  if let Calcit::Fn(..) = callback {
+  if let Calcit::Fn { .. } = callback {
   } else {
     return CalcitErr::err_str(format!("expected last argument to be callback fn, got: {}", callback));
   }
@@ -134,12 +134,15 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
     match func(
       ys.to_owned(),
       Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
-        if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = &callback {
+        if let Calcit::Fn {
+          def_ns, scope, args, body, ..
+        } = &callback
+        {
           let mut real_args = TernaryTreeList::Empty;
           for p in ps {
             real_args = real_args.push(edn_to_calcit(&p));
           }
-          let r = runner::run_fn(&real_args, def_scope, args, body, def_ns, &copied_stack);
+          let r = runner::run_fn(&real_args, scope, args, body, def_ns, &copied_stack);
           match r {
             Ok(ret) => calcit_to_edn(&ret),
             Err(e) => {
@@ -192,10 +195,10 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
   let callback = xs[xs.len() - 1].clone();
   for (idx, v) in xs.into_iter().enumerate() {
     if idx > 1 && idx < xs.len() - 1 {
-      ys.push(calcit_to_edn(v).map_err(CalcitErr::use_str)?);
+      ys.push(calcit_to_edn(v)?);
     }
   }
-  if let Calcit::Fn(..) = callback {
+  if let Calcit::Fn { .. } = callback {
   } else {
     return CalcitErr::err_str(format!("expected last argument to be callback fn, got: {}", callback));
   }
@@ -218,12 +221,15 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
   match func(
     ys.to_owned(),
     Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
-      if let Calcit::Fn(_, def_ns, _, def_scope, args, body) = &callback {
+      if let Calcit::Fn {
+        def_ns, scope, args, body, ..
+      } = &callback
+      {
         let mut real_args = TernaryTreeList::Empty;
         for p in ps {
           real_args = real_args.push(edn_to_calcit(&p));
         }
-        let r = runner::run_fn(&real_args, def_scope, args, body, def_ns, &copied_stack.clone());
+        let r = runner::run_fn(&real_args, scope, args, body, def_ns, &copied_stack.clone());
         match r {
           Ok(ret) => calcit_to_edn(&ret),
           Err(e) => {
@@ -256,8 +262,11 @@ pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, 
     let cb = Arc::new(xs[0].to_owned());
     let copied_stack = Arc::new(call_stack.to_owned());
     ctrlc::set_handler(move || {
-      if let Calcit::Fn(_name, def_ns, _, def_scope, args, body) = cb.as_ref() {
-        if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, def_scope, args, body, def_ns, &copied_stack) {
+      if let Calcit::Fn {
+        def_ns, scope, args, body, ..
+      } = cb.as_ref()
+      {
+        if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, scope, args, body, def_ns, &copied_stack) {
           println!("error: {}", e);
         }
       }

@@ -105,7 +105,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
     if (x === "false") {
       return false;
     }
-    if (x == "") {
+    if (x === "") {
       throw new Error("cannot be empty");
     }
     if (x[0] === "|" || x[0] === '"') {
@@ -131,10 +131,10 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
     if (x[0] === "{}") {
       let result: Array<CalcitValue> = [];
       x.forEach((pair, idx) => {
-        if (idx == 0) {
+        if (idx === 0) {
           return; // skip first `{}` symbol
         }
-        if (pair instanceof Array && pair.length == 2) {
+        if (pair instanceof Array && pair.length === 2) {
           result.push(extract_cirru_edn(pair[0]), extract_cirru_edn(pair[1]));
         } else {
           throw new Error("Expected pairs for map");
@@ -154,7 +154,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
           return; // skip %{} name
         }
 
-        if (pair instanceof Array && pair.length == 2) {
+        if (pair instanceof Array && pair.length === 2) {
           if (typeof pair[0] === "string") {
             entries.push([extractFieldKwd(pair[0]), extract_cirru_edn(pair[1])]);
           } else {
@@ -209,10 +209,10 @@ export let format_cirru_edn = (data: CalcitValue, useInline: boolean = true): st
   if (typeof data === "string") {
     return "\ndo " + to_cirru_edn(data) + "\n";
   }
-  if (typeof data == "boolean") {
+  if (typeof data === "boolean") {
     return "\ndo " + to_cirru_edn(data) + "\n";
   }
-  if (typeof data == "string") {
+  if (typeof data === "string") {
     return "\ndo " + to_cirru_edn(data) + "\n";
   }
   if (data instanceof CalcitSymbol) {

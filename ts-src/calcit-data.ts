@@ -145,8 +145,8 @@ export function findInFields(xs: Array<CalcitKeyword>, y: CalcitKeyword): number
     }
   }
 
-  if (y == xs[lower]) return lower;
-  if (y == xs[upper]) return upper;
+  if (y === xs[lower]) return lower;
+  if (y === xs[upper]) return upper;
   return -1;
 }
 
@@ -173,7 +173,7 @@ export let castKwd = (x: CalcitValue): CalcitKeyword => {
   if (x instanceof CalcitSymbol) {
     return kwd(x.value);
   }
-  throw new Error("Cannot cast thst to keyword");
+  throw new Error(`Cannot cast this to keyword: ${x}`);
 };
 
 export var refsRegistry = new Map<string, CalcitRef>();
@@ -260,7 +260,17 @@ let hashFunction = (x: CalcitValue): Hash => {
     }
     return base;
   }
-  if (x instanceof CalcitList || x instanceof CalcitSliceList) {
+  if (x instanceof CalcitSliceList) {
+    let base = defaultHash_list;
+    // low-level code for perf
+    for (let idx = x.start; idx < x.end; idx++) {
+      let item = x.value[idx];
+      base = mergeValueHash(base, hashFunction(item));
+    }
+    x.cachedHash = base;
+    return base;
+  }
+  if (x instanceof CalcitList) {
     let base = defaultHash_list;
     for (let item of x.items()) {
       base = mergeValueHash(base, hashFunction(item));
@@ -268,7 +278,16 @@ let hashFunction = (x: CalcitValue): Hash => {
     x.cachedHash = base;
     return base;
   }
-  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
+  if (x instanceof CalcitSliceMap) {
+    let base = defaultHash_map;
+    for (let [k, v] of x.pairs()) {
+      base = mergeValueHash(base, hashFunction(k));
+      base = mergeValueHash(base, hashFunction(v));
+    }
+    x.cachedHash = base;
+    return base;
+  }
+  if (x instanceof CalcitMap) {
     let base = defaultHash_map;
     for (let [k, v] of x.pairs()) {
       base = mergeValueHash(base, hashFunction(k));

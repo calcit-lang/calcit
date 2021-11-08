@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.5.0-a24";
+export const calcit_version = "0.5.0";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse, ICirruNode } from "@cirru/parser.ts";
@@ -269,7 +269,7 @@ export let _$n_tuple_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   throw new Error("Does not support `nth` on this type");
 };
 
-export let _$n_record_$o_get = function (xs: CalcitValue, k: CalcitValue) {
+export let _$n_record_$o_get = function (xs: CalcitValue, k: CalcitKeyword) {
   if (arguments.length !== 2) {
     throw new Error("record &get takes 2 arguments");
   }
@@ -332,7 +332,7 @@ export let _$n_list_$o_assoc_before = function (xs: CalcitList | CalcitSliceList
   throw new Error("Does not support `assoc-before` on this type");
 };
 
-export let _$n_list_$o_assoc_after = function (xs: CalcitSliceList, k: number, v: CalcitValue): CalcitList {
+export let _$n_list_$o_assoc_after = function (xs: CalcitSliceList, k: number, v: CalcitValue): CalcitList | CalcitSliceList {
   if (arguments.length !== 3) {
     throw new Error("assoc takes 3 arguments");
   }
@@ -424,7 +424,7 @@ export function _$n_list_$o_empty_$q_(xs: CalcitValue): boolean {
   throw new Error(`expected a list ${xs}`);
 }
 export function _$n_str_$o_empty_$q_(xs: CalcitValue): boolean {
-  if (typeof xs == "string") return xs.length == 0;
+  if (typeof xs === "string") return xs.length === 0;
   throw new Error(`expected a string ${xs}`);
 }
 export function _$n_map_$o_empty_$q_(xs: CalcitValue): boolean {
@@ -665,7 +665,7 @@ export let _$n_number_$o_rem = (a: number, b: number): number => {
   return a % b;
 };
 export let round_$q_ = (a: number) => {
-  return a == Math.round(a);
+  return a === Math.round(a);
 };
 export let _$n_str_$o_concat = (a: string, b: string) => {
   let buffer = "";
@@ -880,13 +880,13 @@ export let trim = (x: string, c: string): string => {
     var buffer = x;
     var size = buffer.length;
     var idx = 0;
-    while (idx < size && buffer[idx] == c) {
+    while (idx < size && buffer[idx] === c) {
       idx = idx + 1;
     }
     buffer = buffer.substring(idx);
     var size = buffer.length;
     var idx = size;
-    while (idx > 1 && buffer[idx - 1] == c) {
+    while (idx > 1 && buffer[idx - 1] === c) {
       idx = idx - 1;
     }
     buffer = buffer.substring(0, idx);
@@ -1077,10 +1077,10 @@ export let keyword_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitKeyword;
 };
 export let map_$q_ = (x: CalcitValue): boolean => {
-  return x instanceof CalcitMap || x instanceof CalcitSliceMap;
+  return x instanceof CalcitSliceMap || x instanceof CalcitMap;
 };
 export let list_$q_ = (x: CalcitValue): boolean => {
-  return x instanceof CalcitList || x instanceof CalcitSliceList;
+  return x instanceof CalcitSliceList || x instanceof CalcitList;
 };
 export let set_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitSet;

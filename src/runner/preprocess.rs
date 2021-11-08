@@ -6,7 +6,6 @@ use crate::{
   program, runner,
 };
 
-use crate::util::skip;
 use std::cell::RefCell;
 use std::collections::HashSet;
 
@@ -31,12 +30,16 @@ pub fn preprocess_ns_def(
     Some(v) => {
       // println!("{}/{} has inited", ns, def);
       Ok((
-        Calcit::Symbol(
-          original_sym.to_owned(),
-          ns.to_owned(),
-          def.to_owned(),
-          Some(Box::new(ResolvedDef(ns.to_owned(), def.to_owned(), import_rule))),
-        ),
+        Calcit::Symbol {
+          sym: original_sym.to_owned(),
+          ns: ns.to_owned(),
+          at_def: def.to_owned(),
+          resolved: Some(Box::new(ResolvedDef {
+            ns: ns.to_owned(),
+            def: def.to_owned(),
+            rule: import_rule,
+          })),
+        },
         Some(v),
       ))
     }
@@ -63,26 +66,30 @@ pub fn preprocess_ns_def(
           program::write_evaled_def(ns, def, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
 
           Ok((
-            Calcit::Symbol(
-              original_sym.to_owned(),
-              ns.to_owned(),
-              def.to_owned(),
-              Some(Box::new(ResolvedDef(
-                ns.to_owned(),
-                def.to_owned(),
-                Some(ImportRule::NsReferDef(ns.to_owned(), def.to_owned())),
-              ))),
-            ),
+            Calcit::Symbol {
+              sym: original_sym.to_owned(),
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
+              resolved: Some(Box::new(ResolvedDef {
+                ns: ns.to_owned(),
+                def: def.to_owned(),
+                rule: Some(ImportRule::NsReferDef(ns.to_owned(), def.to_owned())),
+              })),
+            },
             Some(v),
           ))
         }
         None if ns.starts_with('|') || ns.starts_with('"') => Ok((
-          Calcit::Symbol(
-            original_sym.to_owned(),
-            ns.to_owned(),
-            def.to_owned(),
-            Some(Box::new(ResolvedDef(ns.to_owned(), def.to_owned(), import_rule))),
-          ),
+          Calcit::Symbol {
+            sym: original_sym.to_owned(),
+            ns: ns.to_owned(),
+            at_def: def.to_owned(),
+            resolved: Some(Box::new(ResolvedDef {
+              ns: ns.to_owned(),
+              def: def.to_owned(),
+              rule: import_rule,
+            })),
+          },
           None,
         )),
         None => Err(CalcitErr::use_msg_stack(
@@ -97,7 +104,7 @@ pub fn preprocess_ns_def(
 fn is_fn_or_macro(code: &Calcit) -> bool {
   match code {
     Calcit::List(xs) => match xs.get(0) {
-      Some(Calcit::Symbol(s, ..)) => &**s == "defn" || &**s == "defmacro",
+      Some(Calcit::Symbol { sym, .. }) => &**sym == "defn" || &**sym == "defmacro",
       Some(Calcit::Syntax(s, ..)) => s == &CalcitSyntax::Defn || s == &CalcitSyntax::Defmacro,
       _ => false,
     },
@@ -114,20 +121,25 @@ pub fn preprocess_expr(
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   // println!("preprocessing @{} {}", file_ns, expr);
   match expr {
-    Calcit::Symbol(def, def_ns, at_def, _) => match runner::parse_ns_def(def) {
+    Calcit::Symbol {
+      sym: def,
+      ns: def_ns,
+      at_def,
+      ..
+    } => match runner::parse_ns_def(def) {
       Some((ns_alias, def_part)) => {
         if &*ns_alias == "js" {
           Ok((
-            Calcit::Symbol(
-              def.to_owned(),
-              def_ns.to_owned(),
-              at_def.to_owned(),
-              Some(Box::new(ResolvedDef(
-                String::from("js").into_boxed_str(),
-                def_part.to_owned(),
-                None,
-              ))),
-            ),
+            Calcit::Symbol {
+              sym: def.to_owned(),
+              ns: def_ns.to_owned(),
+              at_def: at_def.to_owned(),
+              resolved: Some(Box::new(ResolvedDef {
+                ns: String::from("js").into_boxed_str(),
+                def: def_part.to_owned(),
+                rule: None,
+              })),
+            },
             None,
           ))
         } else if let Some(target_ns) = program::lookup_ns_target_in_import(def_ns, &ns_alias) {
@@ -144,12 +156,22 @@ pub fn preprocess_expr(
         let def_ref = &**def;
         if def_ref == "~" || def_ref == "~@" || def_ref == "&" || def_ref == "?" {
           Ok((
-            Calcit::Symbol(def.to_owned(), def_ns.to_owned(), at_def.to_owned(), Some(Box::new(ResolvedRaw))),
+            Calcit::Symbol {
+              sym: def.to_owned(),
+              ns: def_ns.to_owned(),
+              at_def: at_def.to_owned(),
+              resolved: Some(Box::new(ResolvedRaw)),
+            },
             None,
           ))
         } else if scope_defs.contains(def) {
           Ok((
-            Calcit::Symbol(def.to_owned(), def_ns.to_owned(), at_def.to_owned(), Some(Box::new(ResolvedLocal))),
+            Calcit::Symbol {
+              sym: def.to_owned(),
+              ns: def_ns.to_owned(),
+              at_def: at_def.to_owned(),
+              resolved: Some(Box::new(ResolvedLocal)),
+            },
             None,
           ))
         } else if CalcitSyntax::is_core_syntax(def) {
@@ -186,12 +208,20 @@ pub fn preprocess_expr(
             None => {
               let from_default = program::lookup_default_target_in_import(def_ns, def);
               if let Some(target_ns) = from_default {
-                let target = Some(Box::new(ResolvedDef(
-                  target_ns.to_owned(),
-                  def.to_owned(),
-                  Some(ImportRule::NsDefault(target_ns)),
-                )));
-                Ok((Calcit::Symbol(def.to_owned(), def_ns.to_owned(), at_def.to_owned(), target), None))
+                let target = Some(Box::new(ResolvedDef {
+                  ns: target_ns.to_owned(),
+                  def: def.to_owned(),
+                  rule: Some(ImportRule::NsDefault(target_ns)),
+                }));
+                Ok((
+                  Calcit::Symbol {
+                    sym: def.to_owned(),
+                    ns: def_ns.to_owned(),
+                    at_def: at_def.to_owned(),
+                    resolved: target,
+                  },
+                  None,
+                ))
               } else {
                 let mut names: Vec<Box<str>> = Vec::with_capacity(scope_defs.len());
                 for def in scope_defs {
@@ -246,7 +276,7 @@ fn process_list_call(
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   let head = &xs[0];
   let (head_form, head_evaled) = preprocess_expr(head, scope_defs, file_ns, check_warnings, call_stack)?;
-  let args = skip(xs, 1);
+  let args = xs.skip(1)?;
   let def_name = grab_def_name(head);
 
   // println!(
@@ -264,16 +294,16 @@ fn process_list_call(
     (Calcit::Keyword(..), _) => {
       if args.len() == 1 {
         let code = Calcit::List(TernaryTreeList::from(&vec![
-          Calcit::Symbol(
-            String::from("get").into_boxed_str(),
-            String::from(primes::CORE_NS).into_boxed_str(),
-            String::from(primes::GENERATED_DEF).into_boxed_str(),
-            Some(Box::new(ResolvedDef(
-              String::from(primes::CORE_NS).into_boxed_str(),
-              String::from("get").into_boxed_str(),
-              None,
-            ))),
-          ),
+          Calcit::Symbol {
+            sym: String::from("get").into_boxed_str(),
+            ns: String::from(primes::CORE_NS).into_boxed_str(),
+            at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
+            resolved: Some(Box::new(ResolvedDef {
+              ns: String::from(primes::CORE_NS).into_boxed_str(),
+              def: String::from("get").into_boxed_str(),
+              rule: None,
+            })),
+          },
           args[0].to_owned(),
           head.to_owned(),
         ]));
@@ -282,8 +312,26 @@ fn process_list_call(
         Err(CalcitErr::use_msg_stack(format!("{} expected single argument", head), call_stack))
       }
     }
-    (Calcit::Macro(name, def_ns, _, def_args, body), _)
-    | (Calcit::Symbol(..), Some(Calcit::Macro(name, def_ns, _, def_args, body))) => {
+    (
+      Calcit::Macro {
+        name,
+        def_ns,
+        args: def_args,
+        body,
+        ..
+      },
+      _,
+    )
+    | (
+      Calcit::Symbol { .. },
+      Some(Calcit::Macro {
+        name,
+        def_ns,
+        args: def_args,
+        body,
+        ..
+      }),
+    ) => {
       let mut current_values = args.to_owned();
 
       // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
@@ -344,7 +392,14 @@ fn process_list_call(
       call_stack,
     )),
 
-    (_, Some(Calcit::Fn(f_name, _name_ns, _id, _scope, f_args, _f_body))) => {
+    (
+      _,
+      Some(Calcit::Fn {
+        name: f_name,
+        args: f_args,
+        ..
+      }),
+    ) => {
       check_fn_args(&f_args, &args, file_ns, &f_name, &def_name, check_warnings);
       let mut ys = TernaryTreeList::from(&[head_form]);
       for a in &args {
@@ -383,15 +438,15 @@ fn check_fn_args(
 
     match (d, r) {
       (None, None) => return,
-      (_, Some(Calcit::Symbol(sym, ..))) if &**sym == "&" => {
+      (_, Some(Calcit::Symbol { sym, .. })) if &**sym == "&" => {
         // dynamic values, can't tell yet
         return;
       }
-      (Some(Calcit::Symbol(sym, ..)), _) if &**sym == "&" => {
+      (Some(Calcit::Symbol { sym, .. }), _) if &**sym == "&" => {
         // dynamic args rule, all okay
         return;
       }
-      (Some(Calcit::Symbol(sym, ..)), _) if &**sym == "?" => {
+      (Some(Calcit::Symbol { sym, .. }), _) if &**sym == "?" => {
         // dynamic args rule, all okay
         optional = true;
         i += 1;
@@ -439,7 +494,7 @@ fn check_fn_args(
 // TODO this native implementation only handles symbols
 fn grab_def_name(x: &Calcit) -> Box<str> {
   match x {
-    Calcit::Symbol(_, _, def_name, _) => def_name.to_owned(),
+    Calcit::Symbol { at_def: def_name, .. } => def_name.to_owned(),
     _ => String::from("??").into_boxed_str(),
   }
 }
@@ -474,26 +529,36 @@ pub fn preprocess_defn(
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
   match (args.get(0), args.get(1)) {
-    (Some(Calcit::Symbol(def_name, def_name_ns, at_def, _)), Some(Calcit::List(ys))) => {
+    (
+      Some(Calcit::Symbol {
+        sym: def_name,
+        ns: def_name_ns,
+        at_def,
+        ..
+      }),
+      Some(Calcit::List(ys)),
+    ) => {
       let mut body_defs: HashSet<Box<str>> = scope_defs.to_owned();
 
-      xs = xs.push(Calcit::Symbol(
-        def_name.to_owned(),
-        def_name_ns.to_owned(),
-        at_def.to_owned(),
-        Some(Box::new(ResolvedRaw)),
-      ));
+      xs = xs.push(Calcit::Symbol {
+        sym: def_name.to_owned(),
+        ns: def_name_ns.to_owned(),
+        at_def: at_def.to_owned(),
+        resolved: Some(Box::new(ResolvedRaw)),
+      });
       let mut zs: CalcitItems = TernaryTreeList::Empty;
       for y in ys {
         match y {
-          Calcit::Symbol(sym, def_ns, at_def, _) => {
+          Calcit::Symbol {
+            sym, ns: def_ns, at_def, ..
+          } => {
             check_symbol(sym, args, check_warnings);
-            zs = zs.push(Calcit::Symbol(
-              sym.to_owned(),
-              def_ns.to_owned(),
-              at_def.to_owned(),
-              Some(Box::new(ResolvedRaw)),
-            ));
+            zs = zs.push(Calcit::Symbol {
+              sym: sym.to_owned(),
+              ns: def_ns.to_owned(),
+              at_def: at_def.to_owned(),
+              resolved: Some(Box::new(ResolvedRaw)),
+            });
             // skip argument syntax marks
             if &**sym != "&" && &**sym != "?" {
               body_defs.insert(sym.to_owned());
@@ -555,7 +620,7 @@ pub fn preprocess_call_let(
   let binding = match args.get(0) {
     Some(Calcit::Nil) => Calcit::Nil,
     Some(Calcit::List(ys)) if ys.len() == 2 => match (&ys[0], &ys[1]) {
-      (Calcit::Symbol(sym, ..), a) => {
+      (Calcit::Symbol { sym, .. }, a) => {
         check_symbol(sym, args, check_warnings);
         body_defs.insert(sym.to_owned());
         let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
@@ -656,7 +721,7 @@ pub fn preprocess_quasiquote_internal(
   match x {
     Calcit::List(ys) if ys.is_empty() => Ok(x.to_owned()),
     Calcit::List(ys) => match &ys[0] {
-      Calcit::Symbol(s, _, _, _) if &**s == "~" || &**s == "~@" => {
+      Calcit::Symbol { sym, .. } if &**sym == "~" || &**sym == "~@" => {
         let mut xs: CalcitItems = TernaryTreeList::Empty;
         for y in ys {
           let (form, _) = preprocess_expr(y, scope_defs, file_ns, check_warnings, call_stack)?;

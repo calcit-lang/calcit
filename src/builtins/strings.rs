@@ -51,7 +51,7 @@ pub fn turn_string(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Bool(b)) => Ok(Calcit::Str(b.to_string().into_boxed_str())),
     Some(Calcit::Str(s)) => Ok(Calcit::Str(s.to_owned())),
     Some(Calcit::Keyword(s)) => Ok(Calcit::Str(s.to_string().into_boxed_str())),
-    Some(Calcit::Symbol(s, ..)) => Ok(Calcit::Str(s.to_owned())),
+    Some(Calcit::Symbol { sym, .. }) => Ok(Calcit::Str(sym.to_owned())),
     Some(Calcit::Number(n)) => Ok(Calcit::Str(n.to_string().into_boxed_str())),
     Some(a) => CalcitErr::err_str(format!("turn-string cannot turn this to string: {}", a)),
     None => CalcitErr::err_str("turn-string expected 1 argument, got nothing"),
@@ -78,7 +78,7 @@ pub fn split(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn format_number(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(x))) => {
-      let size = f64_to_usize(*x).map_err(CalcitErr::use_str)?;
+      let size = f64_to_usize(*x)?;
       Ok(Calcit::Str(format!("{n:.*}", size, n = n).into_boxed_str()))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("&number:format expected numbers, got: {} {}", a, b)),

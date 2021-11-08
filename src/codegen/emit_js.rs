@@ -16,7 +16,6 @@ use crate::call_stack::StackKind;
 use crate::primes;
 use crate::primes::{Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
 use crate::program;
-use crate::util::skip;
 use crate::util::string::{has_ns_part, matches_digits, matches_js_var, wrap_js_str};
 
 type ImportsDict = BTreeMap<Box<str>, ImportedTarget>;
@@ -159,7 +158,7 @@ fn escape_cirru_str(s: &str) -> String {
 
 fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<Vec<EdnKwd>>) -> Result<String, String> {
   match xs {
-    Calcit::Symbol(s, ..) => Ok(format!("new {}CalcitSymbol({})", var_prefix, escape_cirru_str(s))),
+    Calcit::Symbol { sym, .. } => Ok(format!("new {}CalcitSymbol({})", var_prefix, escape_cirru_str(sym))),
     Calcit::Str(s) => Ok(escape_cirru_str(s)),
     Calcit::Bool(b) => Ok(b.to_string()),
     Calcit::Number(n) => Ok(n.to_string()),
@@ -209,9 +208,14 @@ fn to_js_code(
     gen_call_code(ys, ns, local_defs, xs, file_imports, keywords, return_label)
   } else {
     let ret = match xs {
-      Calcit::Symbol(s, def_ns, at_def, resolved) => {
+      Calcit::Symbol {
+        sym,
+        ns: def_ns,
+        at_def,
+        resolved,
+      } => {
         let resolved_info = resolved.to_owned().map(|v| *v.to_owned());
-        gen_symbol_code(s, def_ns, at_def, &resolved_info, ns, xs, local_defs, file_imports)
+        gen_symbol_code(sym, def_ns, at_def, &resolved_info, ns, xs, local_defs, file_imports)
       }
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
@@ -279,7 +283,7 @@ fn gen_call_code(
   }
 
   let head = ys[0].to_owned();
-  let body = skip(ys, 1);
+  let body = ys.skip(1)?;
   match &head {
     Calcit::Syntax(s, ..) => {
       match s {
@@ -318,7 +322,7 @@ fn gen_call_code(
         CalcitSyntax::Defatom => {
           match (body.get(0), body.get(1)) {
             _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {:?}", body)),
-            (Some(Calcit::Symbol(sym, ..)), Some(v)) => {
+            (Some(Calcit::Symbol { sym, .. }), Some(v)) => {
               // let _name = escape_var(sym); // TODO
               let ref_path = wrap_js_str(&format!("{}/{}", ns, sym.to_owned()));
               gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
@@ -334,8 +338,8 @@ fn gen_call_code(
         }
 
         CalcitSyntax::Defn => match (body.get(0), body.get(1)) {
-          (Some(Calcit::Symbol(sym, ..)), Some(Calcit::List(ys))) => {
-            let func_body = skip(&body, 2);
+          (Some(Calcit::Symbol { sym, .. }), Some(Calcit::List(ys))) => {
+            let func_body = body.skip(2)?;
             gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
             let ret = gen_js_func(sym, ys, &func_body, ns, false, local_defs, file_imports, keywords);
             gen_stack::pop_call_stack();
@@ -380,7 +384,7 @@ fn gen_call_code(
         }
       }
     }
-    Calcit::Symbol(s, ..) | Calcit::Proc(s) => {
+    Calcit::Symbol { sym: s, .. } | Calcit::Proc(s) => {
       match &**s {
         ";" => Ok(format!("(/* {} */ null)", Calcit::List(body))),
 
@@ -410,14 +414,14 @@ fn gen_call_code(
 
         "echo" | "println" => {
           // not core syntax, but treat as macro for better debugging experience
-          let args = skip(ys, 1);
+          let args = ys.skip(1)?;
           let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
           Ok(format!("console.log({}printable({}))", proc_prefix, args_code))
         }
         "exists?" => {
           // not core syntax, but treat as macro for availability
           match body.get(0) {
-            Some(Calcit::Symbol(_sym, ..)) => {
+            Some(Calcit::Symbol { .. }) => {
               let target = to_js_code(&body[0], ns, local_defs, file_imports, keywords, &None)?; // TODO could be simpler
               return Ok(format!("{}(typeof {} !== 'undefined')", return_code, target));
             }
@@ -427,7 +431,7 @@ fn gen_call_code(
         }
         "new" => match body.get(0) {
           Some(ctor) => {
-            let args = skip(&body, 1);
+            let args = body.skip(1)?;
             let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
             Ok(format!(
               "{}new {}({})",
@@ -505,7 +509,7 @@ fn gen_call_code(
           if matches_js_var(name) {
             match body.get(0) {
               Some(obj) => {
-                let args = skip(&body, 1);
+                let args = body.skip(1)?;
                 let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
                 Ok(format!(
                   "{}{}.{}({})",
@@ -525,7 +529,7 @@ fn gen_call_code(
           let name = s.strip_prefix('.').unwrap();
           match body.get(0) {
             Some(obj) => {
-              let args = skip(&body, 1);
+              let args = body.skip(1)?;
               let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
               Ok(format!(
                 "{}{}invoke_method({})({},{})",
@@ -583,7 +587,11 @@ fn gen_symbol_code(
       // TODO dirty code
       // TODO namespace part supposed be parsed during preprocessing, this mimics old behaviors
       match resolved {
-        Some(ResolvedDef(r_ns, _r_def, _import_rule /* None */)) => {
+        Some(ResolvedDef {
+          ns: r_ns,
+          def: _r_def,
+          rule: _import_rule, /* None */
+        }) => {
           if is_cirru_string(r_ns) {
             track_ns_import(ns_part, ImportedTarget::AsNs(r_ns.to_owned()), file_imports)?;
             Ok(escape_ns_var(s, ns_part))
@@ -603,7 +611,12 @@ fn gen_symbol_code(
     return Ok(format!("{}{}", proc_prefix, escape_var(s)));
   } else if matches!(resolved, Some(ResolvedLocal)) || local_defs.contains(s) {
     Ok(escape_var(s))
-  } else if let Some(ResolvedDef(r_ns, _r_def, import_rule)) = resolved.to_owned() {
+  } else if let Some(ResolvedDef {
+    ns: r_ns,
+    def: _r_def,
+    rule: import_rule,
+  }) = resolved.to_owned()
+  {
     if &*r_ns == primes::CORE_NS {
       // functions under core uses built $calcit module entry
       return Ok(format!("{}{}", var_prefix, escape_var(s)));
@@ -681,7 +694,7 @@ fn gen_let_code(
       return Err(format!("&let expected body, but got empty, {}", xs.lisp_str()));
     }
     let pair = let_def_body[0].to_owned();
-    let content = skip(&let_def_body, 1);
+    let content = let_def_body.skip(1)?;
 
     match &pair {
       Calcit::Nil => {
@@ -703,7 +716,7 @@ fn gen_let_code(
         let def_code = xs[1].to_owned();
 
         match def_name {
-          Calcit::Symbol(sym, ..) => {
+          Calcit::Symbol { sym, .. } => {
             // TODO `let` inside expressions makes syntax error
             let left = escape_var(&sym);
             let right = to_js_code(&def_code, ns, &scoped_defs, file_imports, keywords, &None)?;
@@ -738,8 +751,8 @@ fn gen_let_code(
                 match &content[0] {
                   Calcit::List(ys) if ys.len() > 2 => match (&ys[0], &ys[1]) {
                     (Calcit::Syntax(sym, _ns), Calcit::List(zs)) if sym == &CalcitSyntax::CoreLet && zs.len() == 2 => match &zs[0] {
-                      Calcit::Symbol(s2, ..) if !scoped_defs.contains(s2) => {
-                        let_def_body = skip(ys, 1);
+                      Calcit::Symbol { sym: s2, .. } if !scoped_defs.contains(s2) => {
+                        let_def_body = ys.skip(1)?;
                         continue;
                       }
                       _ => (),
@@ -851,7 +864,7 @@ fn gen_args_code(
   let mut spreading = false;
   for x in body {
     match x {
-      Calcit::Symbol(s, ..) if &**s == "&" => {
+      Calcit::Symbol { sym, .. } if &**sym == "&" => {
         spreading = true;
       }
       _ => {
@@ -905,11 +918,11 @@ fn list_to_js_code(
 
 fn uses_recur(xs: &Calcit) -> bool {
   match xs {
-    Calcit::Symbol(s, ..) => &**s == "recur",
+    Calcit::Symbol { sym: s, .. } => &**s == "recur",
     Calcit::Proc(s) => &**s == "recur",
     Calcit::List(ys) => match &ys.get(0) {
       Some(Calcit::Syntax(syn, _)) if syn == &CalcitSyntax::Defn => false,
-      Some(Calcit::Symbol(sym, ..)) if &**sym == "defn" => false,
+      Some(Calcit::Symbol { sym, .. }) if &**sym == "defn" => false,
       _ => {
         for y in ys {
           if uses_recur(y) {
@@ -943,7 +956,7 @@ fn gen_js_func(
   let mut optional_count = 0;
   for x in args {
     match x {
-      Calcit::Symbol(sym, ..) => {
+      Calcit::Symbol { sym, .. } => {
         if spreading {
           if !args_code.is_empty() {
             args_code.push_str(", ");
@@ -1048,7 +1061,7 @@ fn gen_js_func(
 fn hinted_async(xs: &TernaryTreeList<Calcit>) -> bool {
   for x in xs {
     match x {
-      Calcit::Symbol(sym, ..) if &**sym == "async" => return true,
+      Calcit::Symbol { sym, .. } if &**sym == "async" => return true,
       _ => {}
     }
   }
@@ -1057,9 +1070,9 @@ fn hinted_async(xs: &TernaryTreeList<Calcit>) -> bool {
 
 fn contains_symbol(xs: &Calcit, y: &str) -> bool {
   match xs {
-    Calcit::Symbol(s, ..) => &**s == y,
+    Calcit::Symbol { sym, .. } => &**sym == y,
     Calcit::Thunk(code, _) => contains_symbol(code, y),
-    Calcit::Fn(_, _, _, _, _, body) => {
+    Calcit::Fn { body, .. } => {
       for x in &**body {
         if contains_symbol(x, y) {
           return true;
@@ -1221,7 +1234,13 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         Calcit::Proc(..) => {
           defs_code.push_str(&format!("\nvar {} = $calcit_procs.{};\n", escape_var(&def), escape_var(&def)));
         }
-        Calcit::Fn(name, def_ns, _, _, args, code) => {
+        Calcit::Fn {
+          name,
+          def_ns,
+          args,
+          body: code,
+          ..
+        } => {
           gen_stack::push_call_stack(def_ns, name, StackKind::Codegen, f.to_owned(), &TernaryTreeList::Empty);
           defs_code.push_str(&gen_js_func(&def, args, code, &ns, true, &def_names, &file_imports, &keywords)?);
           gen_stack::pop_call_stack();
@@ -1237,7 +1256,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           ));
           gen_stack::pop_call_stack()
         }
-        Calcit::Macro(..) => {
+        Calcit::Macro { .. } => {
           // macro should be handled during compilation, psuedo code
           defs_code.push_str(&snippets::tmpl_export_macro(escape_var(&def)));
         }

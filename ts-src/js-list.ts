@@ -5,6 +5,7 @@ import { CalcitValue } from "./js-primes";
 import {
   TernaryTreeList,
   initTernaryTreeList,
+  initTernaryTreeListFromRange,
   listLen,
   listGet,
   assocList,
@@ -18,14 +19,12 @@ import {
 import { CalcitMap, CalcitSliceMap } from "./js-map";
 import { CalcitSet } from "./js-set";
 import { CalcitTuple } from "./js-tuple";
-import { CalcitFn } from "./calcit.procs";
 
-import { isNestedCalcitData, tipNestedCalcitData, toString } from "./calcit-data";
+import { isNestedCalcitData, tipNestedCalcitData, toString, CalcitFn } from "./calcit-data";
 
 // two list implementations, should offer same interface
 export class CalcitList {
   value: TernaryTreeList<CalcitValue>;
-  // array mode store bare array for performance
   cachedHash: Hash;
   constructor(value: TernaryTreeList<CalcitValue>) {
     this.cachedHash = null;
@@ -92,7 +91,7 @@ export class CalcitList {
     } else if (ys instanceof CalcitList) {
       return new CalcitList(ternaryTree.concat(this.value, ys.value));
     } else {
-      throw new Error("Unknown data to concat");
+      throw new Error(`Unknown data to concat: ${ys}`);
     }
   }
   map(f: (v: CalcitValue) => CalcitValue): CalcitList {
@@ -110,7 +109,6 @@ export class CalcitList {
 export class CalcitSliceList {
   // array mode store bare array for performance
   value: Array<CalcitValue>;
-  arrayMode: boolean;
   start: number;
   end: number;
   cachedHash: Hash;
@@ -125,7 +123,7 @@ export class CalcitSliceList {
     this.end = value.length;
   }
   turnListMode(): CalcitList {
-    return new CalcitList(initTernaryTreeList(this.value.slice(this.start, this.end)));
+    return new CalcitList(initTernaryTreeListFromRange(this.value, this.start, this.end));
   }
   len() {
     return this.end - this.start;
@@ -140,10 +138,20 @@ export class CalcitSliceList {
     return this.turnListMode().assocBefore(idx, v);
   }
   assocAfter(idx: number, v: CalcitValue) {
-    return this.turnListMode().assocAfter(idx, v);
+    if (idx === this.len() - 1) {
+      return this.append(v);
+    } else {
+      return this.turnListMode().assocAfter(idx, v);
+    }
   }
   dissoc(idx: number) {
-    return this.turnListMode().dissoc(idx);
+    if (idx === 0) {
+      return this.rest();
+    } else if (idx === this.len() - 1) {
+      return this.slice(0, idx);
+    } else {
+      return this.turnListMode().dissoc(idx);
+    }
   }
   slice(from: number, to: number) {
     if (from < 0) {
@@ -179,7 +187,7 @@ export class CalcitSliceList {
     return sliceGenerator(this.value, this.start, this.end);
   }
   append(v: CalcitValue): CalcitSliceList | CalcitList {
-    if (this.arrayMode && this.end === this.value.length && this.start < 32) {
+    if (this.end === this.value.length && this.start < 32) {
       // dirty trick to reuse list memory, data storage actually appended at existing array
       this.value.push(v);
       let newList = new CalcitSliceList(this.value);
@@ -256,10 +264,9 @@ export let foldl = function (xs: CalcitValue, acc: CalcitValue, f: CalcitFn): Ca
   }
 
   if (f == null) {
-    debugger;
     throw new Error("Expected function for folding");
   }
-  if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
+  if (xs instanceof CalcitSliceList || xs instanceof CalcitList) {
     var result = acc;
     for (let idx = 0; idx < xs.len(); idx++) {
       let item = xs.get(idx);
@@ -274,10 +281,20 @@ export let foldl = function (xs: CalcitValue, acc: CalcitValue, f: CalcitFn): Ca
     });
     return result;
   }
-  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
+  if (xs instanceof CalcitSliceMap) {
     let result = acc;
-    xs.pairs().forEach(([k, item]) => {
-      result = f(result, new CalcitSliceList([k, item]));
+    // low-level code for performance
+    let size = xs.chunk.length >> 1;
+    for (let i = 0; i < size; i++) {
+      let pos = i << 1;
+      result = f(result, new CalcitSliceList([xs.chunk[pos], xs.chunk[pos + 1]]));
+    }
+    return result;
+  }
+  if (xs instanceof CalcitMap) {
+    let result = acc;
+    xs.pairs().forEach((pair) => {
+      result = f(result, new CalcitSliceList(pair));
     });
     return result;
   }
@@ -290,7 +307,6 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
   }
 
   if (f == null) {
-    debugger;
     throw new Error("Expected function for folding");
   }
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
@@ -330,8 +346,28 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     }
     return v0;
   }
-
-  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
+  if (xs instanceof CalcitSliceMap) {
+    let state = acc;
+    // low-level code for performance
+    let size = xs.chunk.length >> 1;
+    for (let i = 0; i < size; i++) {
+      let pos = i << 1;
+      let pair = f(state, new CalcitSliceList([xs.chunk[pos], xs.chunk[pos + 1]]));
+      if (pair instanceof CalcitTuple) {
+        if (typeof pair.fst === "boolean") {
+          if (pair.fst) {
+            return pair.snd;
+          } else {
+            state = pair.snd;
+          }
+        }
+      } else {
+        throw new Error("Expected return value in `:: bool acc` structure");
+      }
+    }
+    return v0;
+  }
+  if (xs instanceof CalcitMap) {
     let state = acc;
     for (let item of xs.pairs()) {
       let pair = f(state, new CalcitSliceList(item));
@@ -357,7 +393,6 @@ export let foldr_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
   }
 
   if (f == null) {
-    debugger;
     throw new Error("Expected function for folding");
   }
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {

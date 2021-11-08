@@ -11,7 +11,7 @@ export class CalcitRecord {
   cachedHash: Hash;
   constructor(name: CalcitKeyword, fields: Array<CalcitKeyword>, values?: Array<CalcitValue>) {
     this.name = name;
-    let fieldNames = fields.map(getStringName).map(kwd);
+    let fieldNames = fields.map(castKwd);
     this.fields = fields;
     if (values != null) {
       if (values.length !== fields.length) {

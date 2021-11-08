@@ -10,7 +10,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("new-record expected arguments, got {:?}", xs));
   }
   let name_id: EdnKwd = match &xs[0] {
-    Calcit::Symbol(s, ..) => EdnKwd::from(s),
+    Calcit::Symbol { sym, .. } => EdnKwd::from(sym),
     Calcit::Keyword(k) => k.to_owned(),
     a => return CalcitErr::err_str(format!("new-record expected a name, got {}", a)),
   };
@@ -21,8 +21,8 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   for (idx, x) in xs.into_iter().enumerate() {
     if idx > 0 {
       match x {
-        Calcit::Symbol(s, ..) | Calcit::Str(s) => {
-          fields.push(EdnKwd::from(&*s));
+        Calcit::Symbol { sym, .. } | Calcit::Str(sym) => {
+          fields.push(EdnKwd::from(&*sym));
         }
         Calcit::Keyword(s) => {
           fields.push(s.to_owned());
@@ -76,7 +76,7 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
               }
               None => return CalcitErr::err_str(format!("unexpected field {} for {:?}", s, def_fields)),
             },
-            Calcit::Symbol(s, ..) | Calcit::Str(s) => match find_in_fields(def_fields, &EdnKwd::from(s)) {
+            Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match find_in_fields(def_fields, &EdnKwd::from(s)) {
               Some(pos) => {
                 fields[pos] = EdnKwd::from(s);
                 values[pos] = xs[v_idx].to_owned();
@@ -207,7 +207,7 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, _)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Symbol(k, ..) => Ok(Calcit::Bool(find_in_fields(fields, &EdnKwd::from(k)).is_some())),
+      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => Ok(Calcit::Bool(find_in_fields(fields, &EdnKwd::from(k)).is_some())),
       Calcit::Keyword(k) => Ok(Calcit::Bool(find_in_fields(fields, k).is_some())),
       a => CalcitErr::err_str(format!("contains? got invalid field for record: {}", a)),
     },
@@ -219,7 +219,7 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, values)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Symbol(k, ..) => match find_in_fields(fields, &EdnKwd::from(k)) {
+      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => match find_in_fields(fields, &EdnKwd::from(k)) {
         Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
@@ -237,7 +237,7 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Record(name, fields, values)), Some(a), Some(b)) => match a {
-      Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, &EdnKwd::from(s)) {
+      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::from(s)) {
         Some(pos) => {
           let mut new_values = values.to_owned();
           new_values[pos] = b.to_owned();
@@ -266,7 +266,7 @@ pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
   match (xs.get(0), xs.get(1), xs.get(2), xs.get(3)) {
     (Some(Calcit::Record(_name, fields, values)), Some(n), Some(a), Some(new_value)) => match a {
-      Calcit::Str(s) | Calcit::Symbol(s, ..) => match find_in_fields(fields, &EdnKwd::from(s)) {
+      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::from(s)) {
         Some(_pos) => CalcitErr::err_str(format!("field `{}` already existed", s)),
         None => extend_record_field(&EdnKwd::from(s), n, fields, values, new_value),
       },
@@ -322,7 +322,7 @@ fn extend_record_field(
   }
 
   let new_name_id: EdnKwd = match n {
-    Calcit::Str(s) | Calcit::Symbol(s, ..) => EdnKwd::from(s),
+    Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => EdnKwd::from(s),
     Calcit::Keyword(s) => s.to_owned(),
     _ => return CalcitErr::err_str("expected record name"),
   };

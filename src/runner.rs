@@ -6,7 +6,6 @@ use crate::builtins::is_proc_name;
 use crate::call_stack::{extend_call_stack, CallStackVec, StackKind};
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
-use crate::util::skip;
 
 use im_ternary_tree::TernaryTreeList;
 use std::sync::{Arc, RwLock};
@@ -18,11 +17,15 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Calcit::Nil => Ok(expr.to_owned()),
     Calcit::Bool(_) => Ok(expr.to_owned()),
     Calcit::Number(_) => Ok(expr.to_owned()),
-    Calcit::Symbol(s, ..) if &**s == "&" => Ok(expr.to_owned()),
-    Calcit::Symbol(s, ns, _at_def, resolved) => match resolved {
+    Calcit::Symbol { sym, .. } if &**sym == "&" => Ok(expr.to_owned()),
+    Calcit::Symbol { sym, ns, resolved, .. } => match resolved {
       Some(resolved_info) => {
         match &**resolved_info {
-          ResolvedDef(r_ns, r_def, _import_rule) => {
+          ResolvedDef {
+            ns: r_ns,
+            def: r_def,
+            rule: _import_rule,
+          } => {
             let v = evaluate_symbol(r_def, scope, r_ns, call_stack)?;
             match v {
               Calcit::Thunk(_code, Some(data)) => Ok(*data),
@@ -31,17 +34,16 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
                 let evaled_v = evaluate_expr(&code, scope, file_ns, call_stack)?;
                 // and write back to program state to fix duplicated evalution
                 // still using thunk since js and IR requires bare code
-                program::write_evaled_def(r_ns, r_def, Calcit::Thunk(code, Some(Box::new(evaled_v.to_owned()))))
-                  .map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
+                program::write_evaled_def(r_ns, r_def, Calcit::Thunk(code, Some(Box::new(evaled_v.to_owned()))))?;
                 Ok(evaled_v)
               }
               _ => Ok(v),
             }
           }
-          _ => evaluate_symbol(s, scope, ns, call_stack),
+          _ => evaluate_symbol(sym, scope, ns, call_stack),
         }
       }
-      _ => evaluate_symbol(s, scope, ns, call_stack),
+      _ => evaluate_symbol(sym, scope, ns, call_stack),
     },
     Calcit::Keyword(_) => Ok(expr.to_owned()),
     Calcit::Str(_) => Ok(expr.to_owned()),
@@ -63,7 +65,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         // println!("eval expr: {}", x);
 
         let v = evaluate_expr(x, scope, file_ns, call_stack)?;
-        let rest_nodes = skip(xs, 1);
+        let rest_nodes = xs.skip(1)?;
         let ret = match &v {
           Calcit::Proc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
@@ -89,13 +91,22 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               }
             })
           }
-          Calcit::Fn(name, def_ns, _, def_scope, args, body) => {
+          Calcit::Fn {
+            name,
+            def_ns,
+            scope: def_scope,
+            args,
+            body,
+            ..
+          } => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
             let next_stack = extend_call_stack(call_stack, file_ns, name, StackKind::Fn, expr.to_owned(), &values);
 
             run_fn(&values, def_scope, args, body, def_ns, &next_stack)
           }
-          Calcit::Macro(name, def_ns, _, args, body) => {
+          Calcit::Macro {
+            name, def_ns, args, body, ..
+          } => {
             println!(
               "[Warn] macro should already be handled during preprocessing: {}",
               Calcit::List(xs.to_owned()).lisp_str()
@@ -142,8 +153,8 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               ))
             }
           }
-          Calcit::Symbol(s, ns, at_def, resolved) => Err(CalcitErr::use_msg_stack(
-            format!("cannot evaluate symbol directly: {}/{} in {}, {:?}", ns, s, at_def, resolved),
+          Calcit::Symbol { sym, ns, at_def, resolved } => Err(CalcitErr::use_msg_stack(
+            format!("cannot evaluate symbol directly: {}/{} in {}, {:?}", ns, sym, at_def, resolved),
             call_stack,
           )),
           a => Err(CalcitErr::use_msg_stack(
@@ -159,8 +170,8 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Calcit::Map(_) => Err(CalcitErr::use_msg_stack("unexpected map for expr", call_stack)),
     Calcit::Record(..) => Err(CalcitErr::use_msg_stack("unexpected record for expr", call_stack)),
     Calcit::Proc(_) => Ok(expr.to_owned()),
-    Calcit::Macro(..) => Ok(expr.to_owned()),
-    Calcit::Fn(..) => Ok(expr.to_owned()),
+    Calcit::Macro { .. } => Ok(expr.to_owned()),
+    Calcit::Fn { .. } => Ok(expr.to_owned()),
     Calcit::Syntax(_, _) => Ok(expr.to_owned()),
   }
 }
@@ -312,18 +323,18 @@ pub fn bind_args(
   while let Some(a) = args_pop_front() {
     if spreading {
       match a {
-        Calcit::Symbol(s, ..) if &**s == "&" => {
+        Calcit::Symbol { sym, .. } if &**sym == "&" => {
           return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {:?}", args), call_stack))
         }
-        Calcit::Symbol(s, ..) if &**s == "?" => {
+        Calcit::Symbol { sym, .. } if &**sym == "?" => {
           return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {:?}", args), call_stack))
         }
-        Calcit::Symbol(s, ..) => {
+        Calcit::Symbol { sym, .. } => {
           let mut chunk: CalcitItems = TernaryTreeList::Empty;
           while let Some(v) = values_pop_front() {
             chunk = chunk.push(v.to_owned());
           }
-          scope.insert_mut(s.to_owned(), Calcit::List(chunk));
+          scope.insert_mut(sym.to_owned(), Calcit::List(chunk));
           if !is_args_empty() {
             return Err(CalcitErr::use_msg_stack(
               format!(
@@ -339,15 +350,15 @@ pub fn bind_args(
       }
     } else {
       match a {
-        Calcit::Symbol(s, ..) if &**s == "&" => spreading = true,
-        Calcit::Symbol(s, ..) if &**s == "?" => optional = true,
-        Calcit::Symbol(s, ..) => match values_pop_front() {
+        Calcit::Symbol { sym, .. } if &**sym == "&" => spreading = true,
+        Calcit::Symbol { sym, .. } if &**sym == "?" => optional = true,
+        Calcit::Symbol { sym, .. } => match values_pop_front() {
           Some(v) => {
-            scope.insert_mut(s.to_owned(), v.to_owned());
+            scope.insert_mut(sym.to_owned(), v.to_owned());
           }
           None => {
             if optional {
-              scope.insert_mut(s.to_owned(), Calcit::Nil);
+              scope.insert_mut(sym.to_owned(), Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
                 format!(
@@ -402,7 +413,7 @@ pub fn evaluate_args(
   let mut spreading = false;
   for item in items {
     match item {
-      Calcit::Symbol(s, ..) if &**s == "&" => {
+      Calcit::Symbol { sym: s, .. } if &**s == "&" => {
         spreading = true;
       }
       _ => {

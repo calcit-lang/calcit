@@ -1,10 +1,10 @@
 {
   "name": "@calcit/procs",
-  "version": "0.5.0-a24",
+  "version": "0.5.0",
   "main": "./lib/calcit.procs.js",
   "devDependencies": {
-    "@types/node": "^16.10.5",
-    "esbuild": "^0.13.5",
+    "@types/node": "^16.11.6",
+    "esbuild": "^0.13.12",
     "typescript": "^4.4.4"
   },
   "scripts": {
@@ -12,16 +12,16 @@
     "procs-link": "ln -s ../../ node_modules/@calcit/procs",
     "bundle-main": "esbuild js-out/main.js --bundle --outfile=js-out/bundle.js --platform=node",
     "cp-mac": "cargo build --release && rm -rfv builds/* && node scripts/cp-version.js && scp builds/* rsync-user@calcit-lang.org:/web-assets/repo/calcit-lang/binaries/macos/",
-    "try-rs": "cargo run --bin cr -- calcit/snapshots/test.cirru -1",
-    "try-js": "cargo run --bin cr -- calcit/snapshots/test.cirru --emit-js -1 && yarn bundle-main && node js-out/bundle.js"
+    "try-rs": "cargo run --bin cr -- calcit/test.cirru -1",
+    "try-js": "cargo run --bin cr -- calcit/test.cirru --emit-js -1 && yarn bundle-main && node js-out/bundle.js"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/calcit-lang/calcit_runner.rs"
   },
   "dependencies": {
-    "@calcit/ternary-tree": "0.0.16",
-    "@cirru/parser.ts": "^0.0.4",
+    "@calcit/ternary-tree": "0.0.18",
+    "@cirru/parser.ts": "^0.0.5",
     "@cirru/writer.ts": "^0.1.3"
   }
 }

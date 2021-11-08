@@ -8,46 +8,19 @@ use crate::primes::{Calcit, CalcitItems, ImportRule, SymbolResolved::*};
 use crate::program;
 
 #[derive(Debug)]
-struct IrDataImport {
-  ns: String,
-  kind: String,
-  def: Option<String>,
-}
-
-impl IrDataImport {
-  fn to_edn(&self) -> Edn {
-    let mut xs: HashMap<Edn, Edn> = HashMap::new();
-    xs.insert(Edn::kwd("ns"), Edn::str(self.ns.to_owned()));
-    xs.insert(Edn::kwd("kind"), Edn::str(self.kind.to_owned()));
-    match &self.def {
-      Some(def) => xs.insert(Edn::kwd("def"), Edn::str(def)),
-      None => xs.insert(Edn::kwd("def"), Edn::Nil),
-    };
-    Edn::Map(xs)
-  }
-}
-
-#[derive(Debug)]
 struct IrDataFile {
-  import: HashMap<Box<str>, IrDataImport>,
   defs: HashMap<Box<str>, Edn>,
 }
 
 impl IrDataFile {
   fn to_edn(&self) -> Edn {
     let mut xs: HashMap<Edn, Edn> = HashMap::new();
-    let mut import_data: HashMap<Edn, Edn> = HashMap::new();
     let mut defs_data: HashMap<Edn, Edn> = HashMap::new();
-
-    for (k, v) in &self.import {
-      import_data.insert(Edn::Str(k.to_owned()), v.to_edn());
-    }
 
     for (k, v) in &self.defs {
       defs_data.insert(Edn::Str(k.to_owned()), v.to_owned());
     }
 
-    xs.insert(Edn::kwd("import"), Edn::Map(import_data));
     xs.insert(Edn::kwd("defs"), Edn::Map(defs_data));
     Edn::Map(xs)
   }
@@ -93,15 +66,12 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
   let mut files: HashMap<Box<str>, IrDataFile> = HashMap::new();
 
   for (ns, file_info) in program_data {
-    // TODO current implementation does not contain imports in evaled data
-    let imports: HashMap<Box<str>, IrDataImport> = HashMap::new();
-
     let mut defs: HashMap<Box<str>, Edn> = HashMap::new();
     for (def, code) in file_info {
       defs.insert(def, dump_code(&code));
     }
 
-    let file = IrDataFile { import: imports, defs };
+    let file = IrDataFile { defs };
     files.insert(ns, file);
   }
 
@@ -137,10 +107,14 @@ fn dump_code(code: &Calcit) -> Edn {
     Calcit::Str(s) => Edn::Str(s.to_owned()),
     Calcit::Bool(b) => Edn::Bool(b.to_owned()),
     Calcit::Keyword(s) => Edn::Keyword(s.to_owned()),
-    Calcit::Symbol(s, ns, at_def, resolved) => {
+    Calcit::Symbol { sym, ns, at_def, resolved } => {
       let resolved = match resolved {
         Some(resolved) => match &**resolved {
-          ResolvedDef(r_def, r_ns, import_rule) => {
+          ResolvedDef {
+            ns: r_ns,
+            def: r_def,
+            rule: import_rule,
+          } => {
             let mut xs: HashMap<Edn, Edn> = HashMap::new();
             xs.insert(Edn::kwd("kind"), Edn::kwd("def"));
             xs.insert(Edn::kwd("ns"), Edn::Str(r_ns.to_owned()));
@@ -178,26 +152,30 @@ fn dump_code(code: &Calcit) -> Edn {
 
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
       xs.insert(Edn::kwd("kind"), Edn::kwd("symbol"));
-      xs.insert(Edn::kwd("val"), Edn::Str(s.to_owned()));
+      xs.insert(Edn::kwd("val"), Edn::Str(sym.to_owned()));
       xs.insert(Edn::kwd("ns"), Edn::Str(ns.to_owned()));
       xs.insert(Edn::kwd("resolved"), resolved);
       Edn::Map(xs)
     }
 
-    Calcit::Fn(name, ns, _id, _scope, args, body) => {
+    Calcit::Fn {
+      name, def_ns, args, body, ..
+    } => {
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
       xs.insert(Edn::kwd("kind"), Edn::kwd("fn"));
       xs.insert(Edn::kwd("name"), Edn::Str(name.to_owned()));
-      xs.insert(Edn::kwd("ns"), Edn::Str(ns.to_owned()));
+      xs.insert(Edn::kwd("ns"), Edn::Str(def_ns.to_owned()));
       xs.insert(Edn::kwd("args"), dump_items_code(args)); // TODO
       xs.insert(Edn::kwd("code"), dump_items_code(body));
       Edn::Map(xs)
     }
-    Calcit::Macro(name, ns, _id, args, body) => {
+    Calcit::Macro {
+      name, def_ns, args, body, ..
+    } => {
       let mut xs: HashMap<Edn, Edn> = HashMap::new();
       xs.insert(Edn::kwd("kind"), Edn::kwd("macro"));
       xs.insert(Edn::kwd("name"), Edn::Str(name.to_owned()));
-      xs.insert(Edn::kwd("ns"), Edn::Str(ns.to_owned()));
+      xs.insert(Edn::kwd("ns"), Edn::Str(def_ns.to_owned()));
       xs.insert(Edn::kwd("args"), dump_items_code(args)); // TODO
       xs.insert(Edn::kwd("code"), dump_items_code(body));
       Edn::Map(xs)

@@ -14,6 +14,7 @@ import {
   toPairsArray,
   mapGetDefault,
   initEmptyTernaryTreeMap,
+  initTernaryTreeMapFromArray,
 } from "@calcit/ternary-tree";
 
 import { isNestedCalcitData, tipNestedCalcitData, toString } from "./calcit-data";
@@ -32,9 +33,7 @@ let fakeUniqueSymbol = [] as any;
 
 export class CalcitMap {
   cachedHash: Hash;
-  /** in arrayMode, only flatten values, not tree structure */
   value: TernaryTreeMap<CalcitValue, CalcitValue>;
-  skipValue: CalcitValue;
   constructor(value: TernaryTreeMap<CalcitValue, CalcitValue>) {
     if (value == null) {
       this.value = initEmptyTernaryTreeMap();
@@ -178,9 +177,8 @@ export class CalcitMap {
 // store small map in linear array to reduce cost of building tree
 export class CalcitSliceMap {
   cachedHash: Hash;
-  /** in arrayMode, only flatten values, not tree structure */
+  /** in arrayMode, only flatten values, instead of tree structure */
   chunk: CalcitValue[];
-  skipValue: CalcitValue;
   constructor(value: CalcitValue[]) {
     if (value == null) {
       this.chunk = [];
@@ -196,7 +194,7 @@ export class CalcitSliceMap {
     for (let idx = 0; idx < halfLength; idx++) {
       dict.push([this.chunk[idx << 1], this.chunk[(idx << 1) + 1]]);
     }
-    let value = initTernaryTreeMap(dict);
+    let value = initTernaryTreeMapFromArray(dict);
     return new CalcitMap(value);
   }
   len() {
