@@ -12,7 +12,6 @@ use crate::{
 
 use cirru_edn::EdnKwd;
 use cirru_parser::{Cirru, CirruWriterOptions};
-use im_ternary_tree::TernaryTreeList;
 
 use std::cmp::Ordering;
 use std::sync::atomic::AtomicUsize;
@@ -277,65 +276,26 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
       call_stack,
     ));
   }
-  let (class, value) = match &invoke_args[0] {
-    Calcit::Tuple(a, _b) => ((**a).to_owned(), invoke_args.get(0).unwrap().to_owned()),
-    Calcit::Number(..) => {
-      // classed should already be preprocessed
-      let code = gen_sym("&core-number-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
-      (class, invoke_args[0].to_owned())
-    }
-    Calcit::Str(..) => {
-      let code = gen_sym("&core-string-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
-      (class, invoke_args[0].to_owned())
-    }
-    Calcit::Set(..) => {
-      let code = gen_sym("&core-set-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
-      (class, invoke_args[0].to_owned())
-    }
-    Calcit::List(..) => {
-      let code = gen_sym("&core-list-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
-      (class, invoke_args[0].to_owned())
-    }
-    Calcit::Map(..) => {
-      let code = gen_sym("&core-map-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
-      (class, invoke_args[0].to_owned())
-    }
-    Calcit::Record(..) => {
-      let code = gen_sym("&core-record-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
-      (class, invoke_args[0].to_owned())
-    }
-    Calcit::Nil => {
-      let code = gen_sym("&core-nil-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
-      (class, invoke_args[0].to_owned())
-    }
-    Calcit::Fn { .. } | Calcit::Proc(..) => {
-      let code = gen_sym("&core-fn-class");
-      let class = runner::evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), primes::GEN_CORE_NS.to_owned(), call_stack)?;
-      (class, invoke_args[0].to_owned())
-    }
+  let value = invoke_args[0].to_owned();
+  let s0 = rpds::HashTrieMap::new_sync();
+  let class = match &invoke_args[0] {
+    Calcit::Tuple(a, _b) => (**a).to_owned(),
+    // classed should already be preprocessed
+    Calcit::List(..) => runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, call_stack)?,
+    Calcit::Map(..) => runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, call_stack)?,
+    Calcit::Number(..) => runner::evaluate_symbol("&core-number-class", &s0, primes::CORE_NS, call_stack)?,
+    Calcit::Str(..) => runner::evaluate_symbol("&core-string-class", &s0, primes::CORE_NS, call_stack)?,
+    Calcit::Set(..) => runner::evaluate_symbol("&core-set-class", &s0, primes::CORE_NS, call_stack)?,
+    Calcit::Record(..) => runner::evaluate_symbol("&core-record-class", &s0, primes::CORE_NS, call_stack)?,
+    Calcit::Nil => runner::evaluate_symbol("&core-nil-class", &s0, primes::CORE_NS, call_stack)?,
+    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, call_stack)?,
     x => return Err(CalcitErr::use_msg_stack(format!("cannot decide a class from: {:?}", x), call_stack)),
   };
   match &class {
     Calcit::Record(_, fields, values) => {
       match find_in_fields(fields, &EdnKwd::from(name)) {
         Some(idx) => {
-          let mut method_args: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
-          method_args = method_args.push(value);
-          let mut at_first = true;
-          for x in invoke_args {
-            if at_first {
-              at_first = false
-            } else {
-              method_args = method_args.push(x.to_owned())
-            }
-          }
+          let method_args = invoke_args.skip(1)?.unshift(value);
 
           match &values[idx] {
             // dirty copy...
@@ -369,19 +329,6 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
       format!("method invoking expected a record as class, got: {}", x),
       call_stack,
     )),
-  }
-}
-
-fn gen_sym(sym: &str) -> Calcit {
-  Calcit::Symbol {
-    sym: String::from("&core-map-class").into(),
-    ns: primes::GEN_CORE_NS.to_owned(),
-    at_def: primes::GEN_DEF.to_owned(),
-    resolved: Some(Arc::new(primes::SymbolResolved::ResolvedDef {
-      ns: primes::GEN_CORE_NS.to_owned(),
-      def: String::from(sym).into(),
-      rule: None,
-    })),
   }
 }
 

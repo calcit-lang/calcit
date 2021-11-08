@@ -19,36 +19,14 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
     Calcit::Number(_) => Ok(expr.to_owned()),
     Calcit::Symbol { sym, .. } if &**sym == "&" => Ok(expr.to_owned()),
     Calcit::Symbol { sym, ns, resolved, .. } => match resolved {
-      Some(resolved_info) => {
-        match &*resolved_info.to_owned() {
-          ResolvedDef {
-            ns: r_ns,
-            def: r_def,
-            rule: _import_rule,
-          } => {
-            let v = evaluate_symbol(r_def, scope, r_ns, call_stack)?;
-            match v {
-              Calcit::Thunk(_code, Some(data)) => Ok((*data).to_owned()),
-              // extra check to make sure code in thunks evaluated
-              Calcit::Thunk(code, None) => {
-                let evaled_v = evaluate_expr(&code, scope, file_ns, call_stack)?;
-                // and write back to program state to fix duplicated evalution
-                // still using thunk since js and IR requires bare code
-                let next = if builtins::effects::is_rust_eval() {
-                  // no longer useful for evaling
-                  Arc::new(Calcit::Nil)
-                } else {
-                  code
-                };
-                program::write_evaled_def(r_ns, r_def, Calcit::Thunk(next, Some(Arc::new(evaled_v.to_owned()))))?;
-                Ok(evaled_v)
-              }
-              _ => Ok(v),
-            }
-          }
-          _ => evaluate_symbol(sym, scope, ns, call_stack),
-        }
-      }
+      Some(resolved_info) => match &*resolved_info.to_owned() {
+        ResolvedDef {
+          ns: r_ns,
+          def: r_def,
+          rule: _import_rule,
+        } => evaluate_symbol(r_def, scope, r_ns, call_stack),
+        _ => evaluate_symbol(sym, scope, ns, call_stack),
+      },
       _ => evaluate_symbol(sym, scope, ns, call_stack),
     },
     Calcit::Keyword(_) => Ok(expr.to_owned()),
@@ -204,7 +182,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
 }
 
 pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
-  match parse_ns_def(sym) {
+  let v = match parse_ns_def(sym) {
     Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns.into(), &ns_part) {
       Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, call_stack) {
         Ok(v) => Ok(v),
@@ -217,35 +195,50 @@ pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack
     },
     None => {
       if CalcitSyntax::is_core_syntax(sym) {
-        return Ok(Calcit::Syntax(
+        Ok(Calcit::Syntax(
           CalcitSyntax::from(sym).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?,
           file_ns.to_owned().into(),
-        ));
-      }
-      if scope.contains_key(sym) {
+        ))
+      } else if scope.contains_key(sym) {
         // although scope is detected first, it would trigger warning during preprocess
-        return Ok(scope.get(sym).unwrap().to_owned());
-      }
-      if is_proc_name(sym) {
-        return Ok(Calcit::Proc(sym.to_owned().into()));
-      }
-      if program::lookup_def_code(CORE_NS, sym).is_some() {
-        return eval_symbol_from_program(sym, CORE_NS, call_stack);
-      }
-      if program::has_def_code(file_ns, sym) {
-        return eval_symbol_from_program(sym, file_ns, call_stack);
-      }
-      match program::lookup_def_target_in_import(file_ns, sym) {
-        Some(target_ns) => eval_symbol_from_program(sym, &target_ns, call_stack),
-        None => {
-          let vars: Vec<&Arc<str>> = scope.keys().collect();
-          Err(CalcitErr::use_msg_stack(
-            format!("unknown symbol `{}` in {:?}", sym, vars),
-            call_stack,
-          ))
+        Ok(scope.get(sym).unwrap().to_owned())
+      } else if is_proc_name(sym) {
+        Ok(Calcit::Proc(sym.to_owned().into()))
+      } else if program::lookup_def_code(CORE_NS, sym).is_some() {
+        eval_symbol_from_program(sym, CORE_NS, call_stack)
+      } else if program::has_def_code(file_ns, sym) {
+        eval_symbol_from_program(sym, file_ns, call_stack)
+      } else {
+        match program::lookup_def_target_in_import(file_ns, sym) {
+          Some(target_ns) => eval_symbol_from_program(sym, &target_ns, call_stack),
+          None => {
+            let vars: Vec<&Arc<str>> = scope.keys().collect();
+            Err(CalcitErr::use_msg_stack(
+              format!("unknown symbol `{}` in {:?}", sym, vars),
+              call_stack,
+            ))
+          }
         }
       }
     }
+  }?;
+  match v {
+    Calcit::Thunk(_code, Some(data)) => Ok((*data).to_owned()),
+    // extra check to make sure code in thunks evaluated
+    Calcit::Thunk(code, None) => {
+      let evaled_v = evaluate_expr(&code, scope, file_ns.into(), call_stack)?;
+      // and write back to program state to fix duplicated evalution
+      // still using thunk since js and IR requires bare code
+      let next = if builtins::effects::is_rust_eval() {
+        // no longer useful for evaling
+        Arc::new(Calcit::Nil)
+      } else {
+        code
+      };
+      program::write_evaled_def(file_ns, sym, Calcit::Thunk(next, Some(Arc::new(evaled_v.to_owned()))))?;
+      Ok(evaled_v)
+    }
+    _ => Ok(v),
   }
 }
 
