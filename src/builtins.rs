@@ -11,16 +11,16 @@ mod strings;
 mod syntax;
 
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
-use crate::call_stack::CallStackVec;
+use crate::call_stack::CallStackList;
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax};
 
-pub type FnType = fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr>;
+pub type FnType = fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
 pub type SyntaxType = fn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
 lazy_static! {
-  static ref IMPORTED_PROCS: RwLock<HashMap<Box<str>, FnType>> = RwLock::new(HashMap::new());
+  static ref IMPORTED_PROCS: RwLock<HashMap<Arc<str>, FnType>> = RwLock::new(HashMap::new());
 }
 
 pub fn is_proc_name(s: &str) -> bool {
@@ -193,7 +193,7 @@ pub fn is_proc_name(s: &str) -> bool {
 }
 
 /// make sure that stack information attached in errors from procs
-pub fn handle_proc(name: &str, args: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn handle_proc(name: &str, args: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   handle_proc_internal(name, args, call_stack).map_err(|e| {
     if e.stack.is_empty() {
       let mut e2 = e.to_owned();
@@ -205,7 +205,7 @@ pub fn handle_proc(name: &str, args: &CalcitItems, call_stack: &CallStackVec) ->
   })
 }
 
-fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match name {
     // meta
     "type-of" => meta::type_of(args),
@@ -379,15 +379,15 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackVe
 /// inject into procs
 pub fn register_import_proc(name: &str, f: FnType) {
   let mut ps = IMPORTED_PROCS.write().unwrap();
-  (*ps).insert(name.to_owned().into_boxed_str(), f);
+  (*ps).insert(name.to_owned().into(), f);
 }
 
 pub fn handle_syntax(
   name: &CalcitSyntax,
   nodes: &CalcitItems,
   scope: &CalcitScope,
-  file_ns: &str,
-  call_stack: &CallStackVec,
+  file_ns: Arc<str>,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   match name {
     CalcitSyntax::Defn => syntax::defn(nodes, scope, file_ns),

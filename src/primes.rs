@@ -7,6 +7,7 @@ use std::cmp::Ordering::*;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+use std::sync::Arc;
 
 use cirru_edn::EdnKwd;
 use im_ternary_tree::TernaryTreeList;
@@ -14,37 +15,37 @@ use im_ternary_tree::TernaryTreeList;
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 // scope
-pub type CalcitScope = rpds::HashTrieMapSync<Box<str>, Calcit>;
+pub type CalcitScope = rpds::HashTrieMapSync<Arc<str>, Calcit>;
 pub type CalcitItems = TernaryTreeList<Calcit>;
 
 pub use syntax_name::CalcitSyntax;
 
-use crate::call_stack::CallStackVec;
+use crate::call_stack::CallStackList;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolResolved {
   ResolvedLocal,
   ResolvedRaw, // raw syntax, no target
   ResolvedDef {
-    ns: Box<str>,
-    def: Box<str>,
-    rule: Option<ImportRule>,
+    ns: Arc<str>,
+    def: Arc<str>,
+    rule: Option<Arc<ImportRule>>,
   }, // ns, def
 }
 
 /// defRule: ns def
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportRule {
-  NsAs(Box<str>),                 // ns
-  NsReferDef(Box<str>, Box<str>), // ns, def
-  NsDefault(Box<str>),            // ns, js only
+  NsAs(Arc<str>),                 // ns
+  NsReferDef(Arc<str>, Arc<str>), // ns, def
+  NsDefault(Arc<str>),            // ns, js only
 }
 
 /// special types wraps vector of calcit data for displaying
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct CrListWrap(pub TernaryTreeList<Calcit>);
 
-pub struct CalcitList(pub Box<TernaryTreeList<Calcit>>);
+pub struct CalcitList(pub Arc<TernaryTreeList<Calcit>>);
 
 #[derive(Debug, Clone)]
 pub enum Calcit {
@@ -52,18 +53,18 @@ pub enum Calcit {
   Bool(bool),
   Number(f64),
   Symbol {
-    sym: Box<str>,
-    ns: Box<str>,
-    at_def: Box<str>,
-    resolved: Option<Box<SymbolResolved>>,
+    sym: Arc<str>,
+    ns: Arc<str>,
+    at_def: Arc<str>,
+    resolved: Option<Arc<SymbolResolved>>,
   }, // content, ns... so it has meta information
   Keyword(EdnKwd),
-  Str(Box<str>),
-  Thunk(Box<Calcit>, Option<Box<Calcit>>),
+  Str(Arc<str>),
+  Thunk(Arc<Calcit>, Option<Arc<Calcit>>),
   /// holding a path to its state
-  Ref(Box<str>),
+  Ref(Arc<str>),
   /// more tagged union type, more like an internal structure
-  Tuple(Box<Calcit>, Box<Calcit>),
+  Tuple(Arc<Calcit>, Arc<Calcit>),
   ///  to be used by FFIs
   Buffer(Vec<u8>),
   /// not for data, but for recursion
@@ -71,24 +72,24 @@ pub enum Calcit {
   List(CalcitItems),
   Set(rpds::HashTrieSetSync<Calcit>),
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
-  Record(EdnKwd, Vec<EdnKwd>, Vec<Calcit>), // usize of keyword id
-  Proc(Box<str>),
+  Record(EdnKwd, Arc<Vec<EdnKwd>>, Arc<Vec<Calcit>>), // usize of keyword id
+  Proc(Arc<str>),
   Macro {
-    name: Box<str>,         // name
-    def_ns: Box<str>,       // ns
-    id: Box<str>,           // an id
-    args: Box<CalcitItems>, // args
-    body: Box<CalcitItems>, // body
+    name: Arc<str>,         // name
+    def_ns: Arc<str>,       // ns
+    id: Arc<str>,           // an id
+    args: Arc<CalcitItems>, // args
+    body: Arc<CalcitItems>, // body
   },
   Fn {
-    name: Box<str>,   // name
-    def_ns: Box<str>, // ns
-    id: Box<str>,     // an id
+    name: Arc<str>,   // name
+    def_ns: Arc<str>, // ns
+    id: Arc<str>,     // an id
     scope: CalcitScope,
-    args: Box<CalcitItems>, // args
-    body: Box<CalcitItems>, // body
+    args: Arc<CalcitItems>, // args
+    body: Arc<CalcitItems>, // body
   },
-  Syntax(CalcitSyntax, Box<str>), // name, ns... notice that `ns` is a meta info
+  Syntax(CalcitSyntax, Arc<str>), // name, ns... notice that `ns` is a meta info
 }
 
 impl fmt::Display for Calcit {
@@ -506,6 +507,13 @@ pub const BUILTIN_CLASSES_ENTRY: &str = "&init-builtin-classes!";
 pub const GENERATED_NS: &str = "calcit.gen";
 pub const GENERATED_DEF: &str = "gen%";
 
+lazy_static! {
+  pub static ref GEN_NS: Arc<str> = GENERATED_NS.to_string().into();
+  pub static ref GEN_DEF: Arc<str> = GENERATED_DEF.to_string().into();
+  pub static ref GEN_CORE_NS: Arc<str> = CORE_NS.to_string().into();
+  pub static ref GEN_CLASS_ENTRY: Arc<str> = BUILTIN_CLASSES_ENTRY.to_string().into();
+}
+
 impl Calcit {
   pub fn turn_string(&self) -> String {
     match self {
@@ -520,7 +528,7 @@ impl Calcit {
   }
 
   pub fn new_str<T: Into<String>>(s: T) -> Calcit {
-    Calcit::Str(s.into().into_boxed_str())
+    Calcit::Str(s.into().into())
   }
 
   /// makes sure that keyword is from global dict, not created by fresh
@@ -530,16 +538,16 @@ impl Calcit {
 }
 
 /// too naive id generator to be safe in WASM
-pub fn gen_core_id() -> Box<str> {
+pub fn gen_core_id() -> Arc<str> {
   let c = ID_GEN.fetch_add(1, SeqCst);
-  format!("gen_id_{}", c).into_boxed_str()
+  format!("gen_id_{}", c).into()
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CalcitErr {
   pub msg: String,
   pub warnings: Vec<String>,
-  pub stack: TernaryTreeList<crate::call_stack::CalcitStack>,
+  pub stack: rpds::ListSync<crate::call_stack::CalcitStack>,
 }
 
 impl fmt::Display for CalcitErr {
@@ -561,7 +569,7 @@ impl From<String> for CalcitErr {
     CalcitErr {
       msg,
       warnings: vec![],
-      stack: TernaryTreeList::Empty,
+      stack: rpds::List::new_sync(),
     }
   }
 }
@@ -571,17 +579,17 @@ impl CalcitErr {
     CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: TernaryTreeList::Empty,
+      stack: rpds::List::new_sync(),
     }
   }
   pub fn err_str<T: Into<String>>(msg: T) -> Result<Calcit, Self> {
     Err(CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: TernaryTreeList::Empty,
+      stack: rpds::List::new_sync(),
     })
   }
-  pub fn use_msg_stack<T: Into<String>>(msg: T, stack: &CallStackVec) -> Self {
+  pub fn use_msg_stack<T: Into<String>>(msg: T, stack: &CallStackList) -> Self {
     CalcitErr {
       msg: msg.into(),
       warnings: vec![],

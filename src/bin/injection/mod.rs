@@ -5,7 +5,7 @@ use std::thread;
 
 use calcit_runner::{
   builtins,
-  call_stack::{display_stack, CallStackVec},
+  call_stack::{display_stack, CallStackList},
   data::edn::{calcit_to_edn, edn_to_calcit},
   primes::{Calcit, CalcitErr, CalcitItems, CrListWrap},
   runner::track,
@@ -17,7 +17,7 @@ type EdnFfi = fn(args: Vec<Edn>) -> Result<Edn, String>;
 type EdnFfiFn = fn(
   args: Vec<Edn>,
   f: Arc<dyn Fn(Vec<Edn>) -> Result<Edn, String> + Send + Sync + 'static>,
-  finish: Box<dyn FnOnce()>,
+  finish: Arc<dyn FnOnce()>,
 ) -> Result<Edn, String>;
 
 const ABI_VERSION: &str = "0.0.6";
@@ -33,7 +33,7 @@ pub fn inject_platform_apis() {
 }
 
 // &call-dylib-edn
-pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
     return CalcitErr::err_str(format!("&call-dylib-edn expected >2 arguments, got {}", CrListWrap(xs.to_owned())));
   }
@@ -69,7 +69,7 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Ca
   }
 }
 
-pub fn echo(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn echo(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut s = String::from("");
   for (idx, x) in xs.into_iter().enumerate() {
     if idx > 0 {
@@ -83,7 +83,7 @@ pub fn echo(xs: &CalcitItems, _call_stack: &CallStackVec) -> Result<Calcit, Calc
 
 /// pass callback function to FFI function, so it can call multiple times
 /// currently for HTTP servers
-pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
     return CalcitErr::err_str(format!(
       "&call-dylib-edn-fn expected >3 arguments, got {}",
@@ -142,7 +142,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
           for p in ps {
             real_args = real_args.push(edn_to_calcit(&p));
           }
-          let r = runner::run_fn(&real_args, scope, args, body, def_ns, &copied_stack);
+          let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack);
           match r {
             Ok(ret) => calcit_to_edn(&ret),
             Err(e) => {
@@ -155,7 +155,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
           unreachable!(format!("expected last argument to be callback fn, got: {}", callback));
         }
       }),
-      Box::new(track::track_task_release),
+      Arc::new(track::track_task_release),
     ) {
       Ok(ret) => edn_to_calcit(&ret),
       Err(e) => {
@@ -172,7 +172,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<
 
 /// pass callback function to FFI function, so it can call multiple times
 /// currently for HTTP servers
-pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
     return CalcitErr::err_str(format!(
       "&blocking-dylib-edn-fn expected >3 arguments, got {}",
@@ -229,7 +229,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
         for p in ps {
           real_args = real_args.push(edn_to_calcit(&p));
         }
-        let r = runner::run_fn(&real_args, scope, args, body, def_ns, &copied_stack.clone());
+        let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack.clone());
         match r {
           Ok(ret) => calcit_to_edn(&ret),
           Err(e) => {
@@ -242,7 +242,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
         unreachable!(format!("expected last argument to be callback fn, got: {}", callback));
       }
     }),
-    Box::new(track::track_task_release),
+    Arc::new(track::track_task_release),
   ) {
     Ok(ret) => edn_to_calcit(&ret),
     Err(e) => {
@@ -257,7 +257,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackVec) -> Res
 
 /// need to put it here since the crate does not compile for dylib
 #[no_mangle]
-pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 1 {
     let cb = Arc::new(xs[0].to_owned());
     let copied_stack = Arc::new(call_stack.to_owned());
@@ -266,7 +266,7 @@ pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, 
         def_ns, scope, args, body, ..
       } = cb.as_ref()
       {
-        if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, scope, args, body, def_ns, &copied_stack) {
+        if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, scope, args, body, def_ns.to_owned(), &copied_stack) {
           println!("error: {}", e);
         }
       }

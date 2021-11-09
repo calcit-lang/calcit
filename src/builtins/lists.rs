@@ -4,7 +4,7 @@ use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
 use crate::util::number::f64_to_usize;
 
 use crate::builtins;
-use crate::call_stack::CallStackVec;
+use crate::call_stack::CallStackList;
 use crate::runner;
 
 use im_ternary_tree::TernaryTreeList;
@@ -180,7 +180,7 @@ pub fn reverse(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 /// foldl using syntax for performance, it's supposed to be a function
-pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 3 {
     let mut ret = xs[1].to_owned();
 
@@ -193,15 +193,15 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
         },
       ) => {
         for x in xs {
-          let values = TernaryTreeList::from(&vec![ret, x.to_owned()]);
-          ret = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
+          let values = TernaryTreeList::from(&[ret, x.to_owned()]);
+          ret = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
         }
         Ok(ret)
       }
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &TernaryTreeList::from(&vec![ret, x.to_owned()]), call_stack)?;
+          ret = builtins::handle_proc(proc, &TernaryTreeList::from(&[ret, x.to_owned()]), call_stack)?;
         }
         Ok(ret)
       }
@@ -213,15 +213,15 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
         },
       ) => {
         for x in xs {
-          let values = TernaryTreeList::from(&vec![ret, x.to_owned()]);
-          ret = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
+          let values = TernaryTreeList::from(&[ret, x.to_owned()]);
+          ret = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
         }
         Ok(ret)
       }
       (Calcit::Set(xs), Calcit::Proc(proc)) => {
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &TernaryTreeList::from(&vec![ret, x.to_owned()]), call_stack)?;
+          ret = builtins::handle_proc(proc, &TernaryTreeList::from(&[ret, x.to_owned()]), call_stack)?;
         }
         Ok(ret)
       }
@@ -233,8 +233,8 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
         },
       ) => {
         for (k, x) in xs {
-          let values = TernaryTreeList::from(&vec![ret, Calcit::List(TernaryTreeList::from(&vec![k.to_owned(), x.to_owned()]))]);
-          ret = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
+          let values = TernaryTreeList::from(&[ret, Calcit::List(TernaryTreeList::from(&[k.to_owned(), x.to_owned()]))]);
+          ret = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
         }
         Ok(ret)
       }
@@ -243,7 +243,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
           // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(
             proc,
-            &TernaryTreeList::from(&vec![ret, Calcit::List(TernaryTreeList::from(&vec![k.to_owned(), x.to_owned()]))]),
+            &TernaryTreeList::from(&[ret, Calcit::List(TernaryTreeList::from(&[k.to_owned(), x.to_owned()]))]),
             call_stack,
           )?;
         }
@@ -265,7 +265,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calc
 
 /// foldl-shortcut using syntax for performance, it's supposed to be a function
 /// by returning `:: bool acc`, bool indicates where performace a shortcut return
-pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 4 {
     let acc = &xs[1];
     let default_value = &xs[2];
@@ -279,15 +279,15 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
       ) => {
         let mut state = acc.to_owned();
         for x in xs {
-          let values = TernaryTreeList::from(&vec![state, x.to_owned()]);
-          let pair = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
+          let values = TernaryTreeList::from(&[state, x.to_owned()]);
+          let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
-            Calcit::Tuple(x0, x1) => match *x0 {
+            Calcit::Tuple(x0, x1) => match &*x0 {
               Calcit::Bool(b) => {
-                if b {
-                  return Ok(*x1);
+                if *b {
+                  return Ok((*x1.to_owned()).to_owned());
                 } else {
-                  state = *x1.to_owned()
+                  state = (*x1.to_owned()).to_owned()
                 }
               }
               a => {
@@ -307,7 +307,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
         }
         Ok(default_value.to_owned())
       }
-      // almost identical body, escept for the type
+      // almost identical body, except for the type
       (
         Calcit::Set(xs),
         Calcit::Fn {
@@ -316,15 +316,15 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
       ) => {
         let mut state = acc.to_owned();
         for x in xs {
-          let values = TernaryTreeList::from(&vec![state, x.to_owned()]);
-          let pair = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
+          let values = TernaryTreeList::from(&[state, x.to_owned()]);
+          let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
-            Calcit::Tuple(x0, x1) => match *x0 {
+            Calcit::Tuple(x0, x1) => match &*x0 {
               Calcit::Bool(b) => {
-                if b {
-                  return Ok(*x1);
+                if *b {
+                  return Ok((*x1).to_owned());
                 } else {
-                  state = *x1.to_owned()
+                  state = (*x1).to_owned()
                 }
               }
               a => {
@@ -353,15 +353,15 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
       ) => {
         let mut state = acc.to_owned();
         for (k, x) in xs {
-          let values = TernaryTreeList::from(&vec![state, Calcit::List(TernaryTreeList::from(&vec![k.to_owned(), x.to_owned()]))]);
-          let pair = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
+          let values = TernaryTreeList::from(&[state, Calcit::List(TernaryTreeList::from(&[k.to_owned(), x.to_owned()]))]);
+          let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
-            Calcit::Tuple(x0, x1) => match *x0 {
+            Calcit::Tuple(x0, x1) => match &*x0 {
               Calcit::Bool(b) => {
-                if b {
-                  return Ok(*x1);
+                if *b {
+                  return Ok((*x1).to_owned());
                 } else {
-                  state = *x1.to_owned()
+                  state = (*x1).to_owned()
                 }
               }
               a => {
@@ -395,7 +395,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
   }
 }
 
-pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 4 {
     // let xs = runner::evaluate_expr(&expr[0], scope, file_ns)?;
     let acc = &xs[1];
@@ -413,15 +413,15 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
         let size = xs.len();
         for i in 0..size {
           let x = xs[size - 1 - i].to_owned();
-          let values = TernaryTreeList::from(&vec![state, x]);
-          let pair = runner::run_fn(&values, scope, args, body, def_ns, call_stack)?;
+          let values = TernaryTreeList::from(&[state, x]);
+          let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
-            Calcit::Tuple(x0, x1) => match *x0 {
+            Calcit::Tuple(x0, x1) => match &*x0 {
               Calcit::Bool(b) => {
-                if b {
-                  return Ok(*x1);
+                if *b {
+                  return Ok((*x1).to_owned());
                 } else {
-                  state = *x1.to_owned()
+                  state = (*x1).to_owned()
                 }
               }
               a => {
@@ -455,7 +455,7 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Cal
   }
 }
 
-pub fn sort(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, CalcitErr> {
+pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 2 {
     match (&xs[0], &xs[1]) {
       // dirty since only functions being call directly then we become fast
@@ -467,8 +467,8 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calci
       ) => {
         let mut xs2: Vec<&Calcit> = xs.into_iter().collect::<Vec<&Calcit>>();
         xs2.sort_by(|a, b| -> Ordering {
-          let values = TernaryTreeList::from(&vec![a.to_owned().to_owned(), b.to_owned().to_owned()]);
-          let v = runner::run_fn(&values, scope, args, body, def_ns, call_stack);
+          let values = TernaryTreeList::from(&[a.to_owned().to_owned(), b.to_owned().to_owned()]);
+          let v = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
             Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
@@ -493,7 +493,7 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackVec) -> Result<Calcit, Calci
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         let mut xs2: Vec<&Calcit> = xs.into_iter().collect::<Vec<&Calcit>>();
         xs2.sort_by(|a, b| -> Ordering {
-          let values = TernaryTreeList::from(&vec![a.to_owned().to_owned(), b.to_owned().to_owned()]);
+          let values = TernaryTreeList::from(&[a.to_owned().to_owned(), b.to_owned().to_owned()]);
           let v = builtins::handle_proc(proc, &values, call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,

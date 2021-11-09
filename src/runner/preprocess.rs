@@ -1,6 +1,6 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name},
-  call_stack::{extend_call_stack, CalcitStack, CallStackVec, StackKind},
+  call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
   primes,
   primes::{Calcit, CalcitErr, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*},
   program, runner,
@@ -8,23 +8,24 @@ use crate::{
 
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use im_ternary_tree::TernaryTreeList;
 
 /// returns the resolved symbol,
 /// if code related is not preprocessed, do it internally
 pub fn preprocess_ns_def(
-  raw_ns: &str,
-  raw_def: &str,
+  raw_ns: Arc<str>,
+  raw_def: Arc<str>,
   // pass original string representation, TODO codegen currently relies on this
-  raw_sym: &str,
-  import_rule: Option<ImportRule>, // returns form and possible value
+  raw_sym: Arc<str>,
+  import_rule: Option<Arc<ImportRule>>, // returns form and possible value
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &TernaryTreeList<CalcitStack>,
+  call_stack: &rpds::ListSync<CalcitStack>,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
-  let ns = &raw_ns.to_owned().into_boxed_str();
-  let def = &raw_def.to_owned().into_boxed_str();
-  let original_sym = &raw_sym.to_owned().into_boxed_str();
+  let ns = &raw_ns.to_owned();
+  let def = &raw_def.to_owned();
+  let original_sym = &raw_sym.to_owned();
   // println!("preprocessing def: {}/{}", ns, def);
   match program::lookup_evaled_def(ns, def) {
     Some(v) => {
@@ -34,7 +35,7 @@ pub fn preprocess_ns_def(
           sym: original_sym.to_owned(),
           ns: ns.to_owned(),
           at_def: def.to_owned(),
-          resolved: Some(Box::new(ResolvedDef {
+          resolved: Some(Arc::new(ResolvedDef {
             ns: ns.to_owned(),
             def: def.to_owned(),
             rule: import_rule,
@@ -50,17 +51,24 @@ pub fn preprocess_ns_def(
           // write a nil value first to prevent dead loop
           program::write_evaled_def(ns, def, Calcit::Nil).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
 
-          let next_stack = extend_call_stack(call_stack, ns, def, StackKind::Fn, code.to_owned(), &TernaryTreeList::Empty);
+          let next_stack = extend_call_stack(
+            call_stack,
+            ns.to_owned(),
+            def.to_owned(),
+            StackKind::Fn,
+            code.to_owned(),
+            &TernaryTreeList::Empty,
+          );
 
-          let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
+          let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns.to_owned(), check_warnings, &next_stack)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
           let v = if is_fn_or_macro(&resolved_code) {
-            match runner::evaluate_expr(&resolved_code, &rpds::HashTrieMap::new_sync(), ns, &next_stack) {
+            match runner::evaluate_expr(&resolved_code, &rpds::HashTrieMap::new_sync(), ns.to_owned(), &next_stack) {
               Ok(ret) => ret,
               Err(e) => return Err(e),
             }
           } else {
-            Calcit::Thunk(Box::new(resolved_code), None)
+            Calcit::Thunk(Arc::new(resolved_code), None)
           };
           // println!("\nwriting value to: {}/{} {:?}", ns, def, v);
           program::write_evaled_def(ns, def, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
@@ -70,10 +78,10 @@ pub fn preprocess_ns_def(
               sym: original_sym.to_owned(),
               ns: ns.to_owned(),
               at_def: def.to_owned(),
-              resolved: Some(Box::new(ResolvedDef {
+              resolved: Some(Arc::new(ResolvedDef {
                 ns: ns.to_owned(),
                 def: def.to_owned(),
-                rule: Some(ImportRule::NsReferDef(ns.to_owned(), def.to_owned())),
+                rule: Some(Arc::new(ImportRule::NsReferDef(ns.to_owned(), def.to_owned()))),
               })),
             },
             Some(v),
@@ -84,7 +92,7 @@ pub fn preprocess_ns_def(
             sym: original_sym.to_owned(),
             ns: ns.to_owned(),
             at_def: def.to_owned(),
-            resolved: Some(Box::new(ResolvedDef {
+            resolved: Some(Arc::new(ResolvedDef {
               ns: ns.to_owned(),
               def: def.to_owned(),
               rule: import_rule,
@@ -114,10 +122,10 @@ fn is_fn_or_macro(code: &Calcit) -> bool {
 
 pub fn preprocess_expr(
   expr: &Calcit,
-  scope_defs: &HashSet<Box<str>>,
-  file_ns: &str,
+  scope_defs: &HashSet<Arc<str>>,
+  file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   // println!("preprocessing @{} {}", file_ns, expr);
   match expr {
@@ -134,20 +142,34 @@ pub fn preprocess_expr(
               sym: def.to_owned(),
               ns: def_ns.to_owned(),
               at_def: at_def.to_owned(),
-              resolved: Some(Box::new(ResolvedDef {
-                ns: String::from("js").into_boxed_str(),
-                def: def_part.to_owned(),
+              resolved: Some(Arc::new(ResolvedDef {
+                ns: String::from("js").into(),
+                def: (*def_part).into(),
                 rule: None,
               })),
             },
             None,
           ))
-        } else if let Some(target_ns) = program::lookup_ns_target_in_import(def_ns, &ns_alias) {
+        } else if let Some(target_ns) = program::lookup_ns_target_in_import(def_ns.to_owned(), &ns_alias) {
           // TODO js syntax to handle in future
-          preprocess_ns_def(&target_ns, &def_part, def, None, check_warnings, call_stack)
+          preprocess_ns_def(
+            target_ns.to_owned(),
+            def_part.to_owned(),
+            def.to_owned(),
+            None,
+            check_warnings,
+            call_stack,
+          )
         } else if program::has_def_code(&ns_alias, &def_part) {
           // refer to namespace/def directly for some usages
-          preprocess_ns_def(&ns_alias, &def_part, def, None, check_warnings, call_stack)
+          preprocess_ns_def(
+            ns_alias.to_owned(),
+            def_part.to_owned(),
+            def.to_owned(),
+            None,
+            check_warnings,
+            call_stack,
+          )
         } else {
           Err(CalcitErr::use_msg_stack(format!("unknown ns target: {}", def), call_stack))
         }
@@ -160,7 +182,7 @@ pub fn preprocess_expr(
               sym: def.to_owned(),
               ns: def_ns.to_owned(),
               at_def: at_def.to_owned(),
-              resolved: Some(Box::new(ResolvedRaw)),
+              resolved: Some(Arc::new(ResolvedRaw)),
             },
             None,
           ))
@@ -170,7 +192,7 @@ pub fn preprocess_expr(
               sym: def.to_owned(),
               ns: def_ns.to_owned(),
               at_def: at_def.to_owned(),
-              resolved: Some(Box::new(ResolvedLocal)),
+              resolved: Some(Arc::new(ResolvedLocal)),
             },
             None,
           ))
@@ -186,21 +208,21 @@ pub fn preprocess_expr(
           Ok((Calcit::Proc(def.to_owned()), None))
         } else if program::has_def_code(primes::CORE_NS, def) {
           preprocess_ns_def(
-            &primes::CORE_NS.to_owned().into_boxed_str(),
-            def,
-            def,
+            primes::CORE_NS.into(),
+            def.to_owned(),
+            def.to_owned(),
             None,
             check_warnings,
             call_stack,
           )
         } else if program::has_def_code(def_ns, def) {
-          preprocess_ns_def(def_ns, def, def, None, check_warnings, call_stack)
+          preprocess_ns_def(def_ns.to_owned(), def.to_owned(), def.to_owned(), None, check_warnings, call_stack)
         } else {
           match program::lookup_def_target_in_import(def_ns, def) {
             Some(target_ns) => {
               // effect
               // TODO js syntax to handle in future
-              preprocess_ns_def(&target_ns, def, def, None, check_warnings, call_stack)
+              preprocess_ns_def(target_ns, def.to_owned(), def.to_owned(), None, check_warnings, call_stack)
             }
             // TODO check js_mode
             None if is_js_syntax_procs(def) => Ok((expr.to_owned(), None)),
@@ -208,10 +230,10 @@ pub fn preprocess_expr(
             None => {
               let from_default = program::lookup_default_target_in_import(def_ns, def);
               if let Some(target_ns) = from_default {
-                let target = Some(Box::new(ResolvedDef {
+                let target = Some(Arc::new(ResolvedDef {
                   ns: target_ns.to_owned(),
                   def: def.to_owned(),
-                  rule: Some(ImportRule::NsDefault(target_ns)),
+                  rule: Some(Arc::new(ImportRule::NsDefault(target_ns))),
                 }));
                 Ok((
                   Calcit::Symbol {
@@ -223,7 +245,7 @@ pub fn preprocess_expr(
                   None,
                 ))
               } else {
-                let mut names: Vec<Box<str>> = Vec::with_capacity(scope_defs.len());
+                let mut names: Vec<Arc<str>> = Vec::with_capacity(scope_defs.len());
                 for def in scope_defs {
                   names.push(def.to_owned());
                 }
@@ -269,13 +291,13 @@ pub fn preprocess_expr(
 
 fn process_list_call(
   xs: &CalcitItems,
-  scope_defs: &HashSet<Box<str>>,
-  file_ns: &str,
+  scope_defs: &HashSet<Arc<str>>,
+  file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   let head = &xs[0];
-  let (head_form, head_evaled) = preprocess_expr(head, scope_defs, file_ns, check_warnings, call_stack)?;
+  let (head_form, head_evaled) = preprocess_expr(head, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
   let args = xs.skip(1)?;
   let def_name = grab_def_name(head);
 
@@ -293,21 +315,21 @@ fn process_list_call(
   match (head_form.to_owned(), head_evaled) {
     (Calcit::Keyword(..), _) => {
       if args.len() == 1 {
-        let code = Calcit::List(TernaryTreeList::from(&vec![
+        let code = Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
-            sym: String::from("get").into_boxed_str(),
-            ns: String::from(primes::CORE_NS).into_boxed_str(),
-            at_def: String::from(primes::GENERATED_DEF).into_boxed_str(),
-            resolved: Some(Box::new(ResolvedDef {
-              ns: String::from(primes::CORE_NS).into_boxed_str(),
-              def: String::from("get").into_boxed_str(),
+            sym: String::from("get").into(),
+            ns: String::from(primes::CORE_NS).into(),
+            at_def: String::from(primes::GENERATED_DEF).into(),
+            resolved: Some(Arc::new(ResolvedDef {
+              ns: String::from(primes::CORE_NS).into(),
+              def: String::from("get").into(),
               rule: None,
             })),
           },
           args[0].to_owned(),
           head.to_owned(),
         ]));
-        preprocess_expr(&code, scope_defs, file_ns, check_warnings, call_stack)
+        preprocess_expr(&code, scope_defs, file_ns.to_owned(), check_warnings, call_stack)
       } else {
         Err(CalcitErr::use_msg_stack(format!("{} expected single argument", head), call_stack))
       }
@@ -338,13 +360,13 @@ fn process_list_call(
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let code = Calcit::List(xs.to_owned());
-      let next_stack = extend_call_stack(call_stack, &def_ns, &name, StackKind::Macro, code, &args);
+      let next_stack = extend_call_stack(call_stack, def_ns.to_owned(), name, StackKind::Macro, code, &args);
 
       loop {
         // need to handle recursion
         // println!("evaling line: {:?}", body);
         let body_scope = runner::bind_args(&def_args, &current_values, &rpds::HashTrieMap::new_sync(), &next_stack)?;
-        let code = runner::evaluate_lines(&body, &body_scope, &def_ns, &next_stack)?;
+        let code = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
             current_values = ys;
@@ -359,15 +381,15 @@ fn process_list_call(
     }
     (Calcit::Syntax(name, name_ns), _) => match name {
       CalcitSyntax::Quasiquote => Ok((
-        preprocess_quasiquote(&name, &name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
+        preprocess_quasiquote(&name, name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
         None,
       )),
       CalcitSyntax::Defn | CalcitSyntax::Defmacro => Ok((
-        preprocess_defn(&name, &name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
+        preprocess_defn(&name, name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
         None,
       )),
       CalcitSyntax::CoreLet => Ok((
-        preprocess_call_let(&name, &name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
+        preprocess_call_let(&name, name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
         None,
       )),
       CalcitSyntax::If
@@ -376,14 +398,14 @@ fn process_list_call(
       | CalcitSyntax::MacroexpandAll
       | CalcitSyntax::Macroexpand1
       | CalcitSyntax::Reset => Ok((
-        preprocess_each_items(&name, &name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
+        preprocess_each_items(&name, name_ns, &args, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?,
         None,
       )),
       CalcitSyntax::Quote | CalcitSyntax::Eval | CalcitSyntax::HintFn => {
-        Ok((preprocess_quote(&name, &name_ns, &args, scope_defs, file_ns)?, None))
+        Ok((preprocess_quote(&name, name_ns, &args, scope_defs, file_ns.to_owned())?, None))
       }
       CalcitSyntax::Defatom => Ok((
-        preprocess_defatom(&name, &name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
+        preprocess_defatom(&name, name_ns, &args, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?,
         None,
       )),
     },
@@ -400,10 +422,10 @@ fn process_list_call(
         ..
       }),
     ) => {
-      check_fn_args(&f_args, &args, file_ns, &f_name, &def_name, check_warnings);
+      check_fn_args(&f_args, &args, file_ns.to_owned(), f_name, def_name, check_warnings);
       let mut ys = TernaryTreeList::from(&[head_form]);
       for a in &args {
-        let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+        let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
         ys = ys.push(form);
       }
       Ok((Calcit::List(ys), None))
@@ -411,7 +433,7 @@ fn process_list_call(
     (_, _) => {
       let mut ys = TernaryTreeList::from(&[head_form]);
       for a in &args {
-        let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+        let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
         ys = ys.push(form);
       }
       Ok((Calcit::List(ys), None))
@@ -423,9 +445,9 @@ fn process_list_call(
 fn check_fn_args(
   defined_args: &CalcitItems,
   params: &CalcitItems,
-  file_ns: &str,
-  f_name: &str,
-  def_name: &str,
+  file_ns: Arc<str>,
+  f_name: Arc<str>,
+  def_name: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
 ) {
   let mut i = 0;
@@ -492,26 +514,26 @@ fn check_fn_args(
 }
 
 // TODO this native implementation only handles symbols
-fn grab_def_name(x: &Calcit) -> Box<str> {
+fn grab_def_name(x: &Calcit) -> Arc<str> {
   match x {
     Calcit::Symbol { at_def: def_name, .. } => def_name.to_owned(),
-    _ => String::from("??").into_boxed_str(),
+    _ => String::from("??").into(),
   }
 }
 
 // tradition rule for processing exprs
 pub fn preprocess_each_items(
   head: &CalcitSyntax,
-  head_ns: &str,
+  head_ns: Arc<str>,
   args: &CalcitItems,
-  scope_defs: &HashSet<Box<str>>,
-  file_ns: &str,
+  scope_defs: &HashSet<Arc<str>>,
+  file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
   for a in args {
-    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+    let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
     xs = xs.push(form);
   }
   Ok(Calcit::List(xs))
@@ -519,15 +541,15 @@ pub fn preprocess_each_items(
 
 pub fn preprocess_defn(
   head: &CalcitSyntax,
-  head_ns: &str,
+  head_ns: Arc<str>,
   args: &CalcitItems,
-  scope_defs: &HashSet<Box<str>>,
-  file_ns: &str,
+  scope_defs: &HashSet<Arc<str>>,
+  file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
-  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
   match (args.get(0), args.get(1)) {
     (
       Some(Calcit::Symbol {
@@ -538,13 +560,13 @@ pub fn preprocess_defn(
       }),
       Some(Calcit::List(ys)),
     ) => {
-      let mut body_defs: HashSet<Box<str>> = scope_defs.to_owned();
+      let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
 
       xs = xs.push(Calcit::Symbol {
         sym: def_name.to_owned(),
         ns: def_name_ns.to_owned(),
         at_def: at_def.to_owned(),
-        resolved: Some(Box::new(ResolvedRaw)),
+        resolved: Some(Arc::new(ResolvedRaw)),
       });
       let mut zs: CalcitItems = TernaryTreeList::Empty;
       for y in ys {
@@ -557,7 +579,7 @@ pub fn preprocess_defn(
               sym: sym.to_owned(),
               ns: def_ns.to_owned(),
               at_def: at_def.to_owned(),
-              resolved: Some(Box::new(ResolvedRaw)),
+              resolved: Some(Arc::new(ResolvedRaw)),
             });
             // skip argument syntax marks
             if &**sym != "&" && &**sym != "?" {
@@ -576,7 +598,7 @@ pub fn preprocess_defn(
 
       for (idx, a) in args.into_iter().enumerate() {
         if idx >= 2 {
-          let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
+          let (form, _v) = preprocess_expr(a, &body_defs, file_ns.to_owned(), check_warnings, call_stack)?;
           xs = xs.push(form);
         }
       }
@@ -608,22 +630,22 @@ fn check_symbol(sym: &str, args: &CalcitItems, check_warnings: &RefCell<Vec<Stri
 
 pub fn preprocess_call_let(
   head: &CalcitSyntax,
-  head_ns: &str,
+  head_ns: Arc<str>,
   args: &CalcitItems,
-  scope_defs: &HashSet<Box<str>>,
-  file_ns: &str,
+  scope_defs: &HashSet<Arc<str>>,
+  file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
-  let mut body_defs: HashSet<Box<str>> = scope_defs.to_owned();
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
+  let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
   let binding = match args.get(0) {
     Some(Calcit::Nil) => Calcit::Nil,
     Some(Calcit::List(ys)) if ys.len() == 2 => match (&ys[0], &ys[1]) {
       (Calcit::Symbol { sym, .. }, a) => {
         check_symbol(sym, args, check_warnings);
         body_defs.insert(sym.to_owned());
-        let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
+        let (form, _v) = preprocess_expr(a, &body_defs, file_ns.to_owned(), check_warnings, call_stack)?;
         Calcit::List(TernaryTreeList::from(&[ys[0].to_owned(), form]))
       }
       (a, b) => {
@@ -655,7 +677,7 @@ pub fn preprocess_call_let(
   xs = xs.push(binding);
   for (idx, a) in args.into_iter().enumerate() {
     if idx > 0 {
-      let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
+      let (form, _v) = preprocess_expr(a, &body_defs, file_ns.to_owned(), check_warnings, call_stack)?;
       xs = xs.push(form);
     }
   }
@@ -664,12 +686,12 @@ pub fn preprocess_call_let(
 
 pub fn preprocess_quote(
   head: &CalcitSyntax,
-  head_ns: &str,
+  head_ns: Arc<str>,
   args: &CalcitItems,
-  _scope_defs: &HashSet<Box<str>>,
-  _file_ns: &str,
+  _scope_defs: &HashSet<Arc<str>>,
+  _file_ns: Arc<str>,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
   for a in args {
     xs = xs.push(a.to_owned());
   }
@@ -678,17 +700,17 @@ pub fn preprocess_quote(
 
 pub fn preprocess_defatom(
   head: &CalcitSyntax,
-  head_ns: &str,
+  head_ns: Arc<str>,
   args: &CalcitItems,
-  scope_defs: &HashSet<Box<str>>,
-  file_ns: &str,
+  scope_defs: &HashSet<Arc<str>>,
+  file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
   for a in args {
     // TODO
-    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+    let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
     xs = xs.push(form.to_owned());
   }
   Ok(Calcit::List(xs))
@@ -697,26 +719,32 @@ pub fn preprocess_defatom(
 /// need to handle experssions inside unquote snippets
 pub fn preprocess_quasiquote(
   head: &CalcitSyntax,
-  head_ns: &str,
+  head_ns: Arc<str>,
   args: &CalcitItems,
-  scope_defs: &HashSet<Box<str>>,
-  file_ns: &str,
+  scope_defs: &HashSet<Arc<str>>,
+  file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned().into())]);
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
   for a in args {
-    xs = xs.push(preprocess_quasiquote_internal(a, scope_defs, file_ns, check_warnings, call_stack)?);
+    xs = xs.push(preprocess_quasiquote_internal(
+      a,
+      scope_defs,
+      file_ns.to_owned(),
+      check_warnings,
+      call_stack,
+    )?);
   }
   Ok(Calcit::List(xs))
 }
 
 pub fn preprocess_quasiquote_internal(
   x: &Calcit,
-  scope_defs: &HashSet<Box<str>>,
-  file_ns: &str,
+  scope_defs: &HashSet<Arc<str>>,
+  file_ns: Arc<str>,
   check_warnings: &RefCell<Vec<String>>,
-  call_stack: &CallStackVec,
+  call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   match x {
     Calcit::List(ys) if ys.is_empty() => Ok(x.to_owned()),
@@ -724,7 +752,7 @@ pub fn preprocess_quasiquote_internal(
       Calcit::Symbol { sym, .. } if &**sym == "~" || &**sym == "~@" => {
         let mut xs: CalcitItems = TernaryTreeList::Empty;
         for y in ys {
-          let (form, _) = preprocess_expr(y, scope_defs, file_ns, check_warnings, call_stack)?;
+          let (form, _) = preprocess_expr(y, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
           xs = xs.push(form.to_owned());
         }
         Ok(Calcit::List(xs))
@@ -732,7 +760,7 @@ pub fn preprocess_quasiquote_internal(
       _ => {
         let mut xs: CalcitItems = TernaryTreeList::Empty;
         for y in ys {
-          xs = xs.push(preprocess_quasiquote_internal(y, scope_defs, file_ns, check_warnings, call_stack)?.to_owned());
+          xs = xs.push(preprocess_quasiquote_internal(y, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?.to_owned());
         }
         Ok(Calcit::List(xs))
       }

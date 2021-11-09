@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 pub fn is_digit(c: char) -> bool {
   let n = c as u32;
   // ascii table https://tool.oschina.net/commons?type=4
@@ -116,12 +118,12 @@ pub fn extract_ns_def(s: &str) -> Result<(String, String), String> {
   }
 }
 
-pub fn extract_pkg_from_def(s: &str) -> Option<Box<str>> {
+pub fn extract_pkg_from_def(s: &str) -> Option<Arc<str>> {
   let pieces: Vec<&str> = s.split('/').collect();
   if !pieces.is_empty() {
     let p2: Vec<&str> = pieces[0].split('.').collect();
     if !p2.is_empty() {
-      Some(p2[0].to_owned().into_boxed_str())
+      Some(p2[0].to_owned().into())
     } else {
       None
     }

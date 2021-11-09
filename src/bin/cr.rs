@@ -53,7 +53,7 @@ fn main() -> Result<(), String> {
     eval_once = true;
     match snapshot::create_file_from_snippet(snippet) {
       Ok(main_file) => {
-        snapshot.files.insert(String::from("app.main").into_boxed_str(), main_file);
+        snapshot.files.insert(String::from("app.main").into(), main_file);
       }
       Err(e) => return Err(e),
     }
@@ -99,12 +99,12 @@ fn main() -> Result<(), String> {
 
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
-    &calcit_runner::primes::CORE_NS.to_string().into_boxed_str(),
-    &calcit_runner::primes::BUILTIN_CLASSES_ENTRY.to_string().into_boxed_str(),
-    &calcit_runner::primes::BUILTIN_CLASSES_ENTRY.to_string().into_boxed_str(),
+    calcit_runner::primes::CORE_NS.into(),
+    calcit_runner::primes::BUILTIN_CLASSES_ENTRY.into(),
+    calcit_runner::primes::BUILTIN_CLASSES_ENTRY.into(),
     None,
     check_warnings,
-    &TernaryTreeList::Empty,
+    &rpds::List::new_sync(),
   )
   .map_err(|e| e.msg)?;
 
@@ -268,7 +268,14 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
   gen_stack::clear_stack();
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, check_warnings, &TernaryTreeList::Empty) {
+  match runner::preprocess::preprocess_ns_def(
+    init_ns.to_owned().into(),
+    init_def.to_owned().into(),
+    init_def.to_owned().into(),
+    None,
+    check_warnings,
+    &rpds::List::new_sync(),
+  ) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
@@ -286,7 +293,14 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(&reload_ns, &reload_def, &init_def, None, check_warnings, &TernaryTreeList::Empty) {
+  match runner::preprocess::preprocess_ns_def(
+    reload_ns.into(),
+    reload_def.into(),
+    init_def.to_owned().into(),
+    None,
+    check_warnings,
+    &rpds::List::new_sync(),
+  ) {
     Ok(_) => (),
     Err(failure) => {
       println!("\nfailed preprocessing, {}", failure);
@@ -327,7 +341,7 @@ fn run_codegen(init_fn: &str, reload_fn: &str, emit_path: &str, ir_mode: bool) -
     }
   } else {
     // TODO entry ns
-    match codegen::emit_js::emit_js(&init_ns, emit_path) {
+    match codegen::emit_js::emit_js(&init_ns.to_owned(), emit_path) {
       Ok(_) => (),
       Err(failure) => {
         println!("\nfailed codegen, {}", failure);
