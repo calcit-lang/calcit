@@ -45,15 +45,13 @@ pub fn extend_call_stack(
   code: Calcit,
   args: &CalcitItems,
 ) -> CallStackList {
-  let mut s2 = stack.to_owned();
-  s2 = s2.push_front(CalcitStack {
+  stack.push_front(CalcitStack {
     ns: ns.to_owned(),
     def: def.to_owned(),
     code,
     args: args.to_owned(),
     kind,
-  });
-  s2
+  })
 }
 
 // show simplified version of stack

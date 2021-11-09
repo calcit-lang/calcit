@@ -9,7 +9,7 @@ lazy_static! {
 
 pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: &CalcitItems) {
   let mut stack = CALL_STACK.write().unwrap();
-  *stack = stack.push_front(CalcitStack {
+  stack.push_front_mut(CalcitStack {
     ns: ns.into(),
     def: def.into(),
     code,

@@ -301,14 +301,6 @@ pub fn bind_args(
   base_scope: &CalcitScope,
   call_stack: &CallStackList,
 ) -> Result<CalcitScope, CalcitErr> {
-  // TODO arguments spreading syntax
-  // if values.len() != args.len() {
-  //   return Err(CalcitErr::use_msg_stack(format!(
-  //     "arguments length mismatch: {} ... {}",
-  //     Calcit::List(values.to_owned()),
-  //     Calcit::List(args.to_owned()),
-  //   ), call_stack));
-  // }
   let mut scope = base_scope.to_owned();
   let mut spreading = false;
   let mut optional = false;
