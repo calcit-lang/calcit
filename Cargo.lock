@@ -45,14 +45,14 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "calcit_runner"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "cirru_edn",
  "cirru_parser",
  "clap",
  "ctrlc",
  "dirs",
- "hex 0.4.3",
+ "hex",
  "im_ternary_tree",
  "lazy_static",
  "libloading",
@@ -81,20 +81,20 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cirru_edn"
-version = "0.2.9"
+version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f5ffaa819a99199ac525717f7f0fc81a45f55ae5b0dd58ddaae5e9c90395b6a"
+checksum = "a0ee334f8cc2ee791e8f0df7f934a50ce4cb48d2169b3d1bf7a3b2fbace3564a"
 dependencies = [
  "cirru_parser",
- "hex 0.3.2",
+ "hex",
  "lazy_static",
 ]
 
 [[package]]
 name = "cirru_parser"
-version = "0.1.14"
+version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bb2c30ea548736eb363293ee669c7f51d00f5170402b9eb82f7a55bef2c631d"
+checksum = "f5004e11be1bc491748d59b73e3e0ad4f73ff2bbb47e0a9b3e205a83dc416fde"
 
 [[package]]
 name = "clap"
@@ -207,12 +207,6 @@ checksum = "322f4de77956e22ed0e5032c359a0f1273f1f7f0d79bfa3b8ffbc730d7fbcc5c"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "hex"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
 
 [[package]]
 name = "hex"
