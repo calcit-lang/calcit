@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::data::cirru;
 use crate::primes;
-use crate::primes::Calcit;
+use crate::primes::{Calcit, CrListWrap};
 
 use cirru_edn::{Edn, EdnKwd};
 use im_ternary_tree::TernaryTreeList;
@@ -46,9 +46,9 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       }
       Ok(Edn::Record(name.to_owned(), entries))
     }
-    Calcit::Fn { .. } => {
-      println!("[Warning] unable to generate EDN from function: {}", x);
-      Ok(Edn::str(format!("TODO fn: {}", x)))
+    Calcit::Fn { name, def_ns, args, .. } => {
+      println!("[Warn] fn to EDN: {}/{} {}", def_ns, name, CrListWrap((**args).to_owned()));
+      Ok(Edn::str(x.to_string()))
     }
     Calcit::Proc(name) => Ok(Edn::Symbol((**name).into())),
     Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.to_string())),
