@@ -73,6 +73,17 @@ fn main() -> Result<(), String> {
     let data = cirru_edn::parse(&content)?;
     // println!("reading: {}", content);
     snapshot = snapshot::load_snapshot_data(data, settings.entry_path.to_str().unwrap())?;
+
+    // config in entry will overwrite default configs
+    if let Some(entry) = cli_matches.value_of("entry") {
+      if snapshot.entries.contains_key(&*entry) {
+        println!("running entry: {}", entry);
+        snapshot.configs = snapshot.entries[entry].to_owned();
+      } else {
+        return Err(format!("unknown entry `{}` among {:?}", entry, snapshot.entries.keys()));
+      }
+    }
+
     // attach modules
     for module_path in &snapshot.configs.modules {
       let module_data = calcit_runner::load_module(module_path, settings.entry_path.parent().unwrap())?;

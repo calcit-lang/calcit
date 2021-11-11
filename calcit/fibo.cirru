@@ -1,6 +1,11 @@
 
 {} (:package |app)
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
+
+  :entries $ {}
+    :prime $ {} (:init-fn |app.main/try-prime) (:reload-fn |app.main/try-prime)
+      :modules $ []
+
   :files $ {}
     |app.main $ {}
       :ns $ quote
@@ -10,7 +15,10 @@
           defn main! ()
             println "\"Loaded program!"
             try-fibo
-            ; echo $ sieve-primes ([] 2 3 5 7 11 13) 17 400
+
+        |try-prime $ quote
+          defn try-prime ()
+            echo $ sieve-primes ([] 2 3 5 7 11 13) 17 400
 
         |reload! $ quote
           defn reload! () nil
