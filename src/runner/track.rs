@@ -17,6 +17,11 @@ pub fn exit_when_cleared() {
   }
 }
 
+pub fn has_pending_than_watcher() -> bool {
+  // by default, watcher adds 1 task
+  TASK_COUNT.load(atomic::Ordering::Relaxed) > 1
+}
+
 pub fn track_task_add() {
   TASK_COUNT.fetch_add(1, atomic::Ordering::SeqCst);
 }

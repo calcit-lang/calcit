@@ -118,15 +118,10 @@ pub fn extract_ns_def(s: &str) -> Result<(String, String), String> {
   }
 }
 
-pub fn extract_pkg_from_def(s: &str) -> Option<Arc<str>> {
-  let pieces: Vec<&str> = s.split('/').collect();
-  if !pieces.is_empty() {
-    let p2: Vec<&str> = pieces[0].split('.').collect();
-    if !p2.is_empty() {
-      Some(p2[0].to_owned().into())
-    } else {
-      None
-    }
+pub fn extract_pkg_from_ns(ns: Arc<str>) -> Option<Arc<str>> {
+  let p2: Vec<&str> = ns.split('.').collect();
+  if !p2.is_empty() {
+    Some(p2[0].to_owned().into())
   } else {
     None
   }

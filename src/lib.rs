@@ -17,6 +17,7 @@ use dirs::home_dir;
 use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 pub use primes::{Calcit, CalcitErr, CalcitItems};
 
@@ -28,16 +29,24 @@ pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
   snapshot::load_snapshot_data(core_data, "calcit-internal://calcit-core.cirru")
 }
 
-pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitErr> {
-  let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
+#[derive(Clone, Debug)]
+pub struct ProgramEntries {
+  pub init_fn: Arc<str>,
+  pub init_ns: Arc<str>,
+  pub init_def: Arc<str>,
+  pub reload_fn: Arc<str>,
+  pub reload_ns: Arc<str>,
+  pub reload_def: Arc<str>,
+}
 
+pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -> Result<Calcit, CalcitErr> {
   let check_warnings: RefCell<Vec<String>> = RefCell::new(vec![]);
 
   // preprocess to init
   match runner::preprocess::preprocess_ns_def(
-    init_ns.to_owned().into(),
-    init_def.to_owned().into(),
-    init_def.to_owned().into(),
+    init_ns.to_owned(),
+    init_def.to_owned(),
+    init_def.to_owned(),
     None,
     &check_warnings,
     &rpds::List::new_sync(),
