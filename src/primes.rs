@@ -204,7 +204,7 @@ impl fmt::Display for Calcit {
           f.write_str(&format_to_lisp(a))?;
           need_space = true;
         }
-        f.write_str(") (")?;
+        f.write_str(") ")?;
         need_space = false;
         for b in &**body {
           if need_space {
@@ -213,7 +213,7 @@ impl fmt::Display for Calcit {
           f.write_str(&format_to_lisp(b))?;
           need_space = true;
         }
-        f.write_str("))")
+        f.write_str(")")
       }
       Calcit::Syntax(name, _ns) => f.write_str(&format!("(&syntax {})", name)),
     }

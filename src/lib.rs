@@ -31,7 +31,7 @@ pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
 pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitErr> {
   let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
 
-  let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+  let check_warnings: RefCell<Vec<String>> = RefCell::new(vec![]);
 
   // preprocess to init
   match runner::preprocess::preprocess_ns_def(
@@ -39,7 +39,7 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
     init_def.to_owned().into(),
     init_def.to_owned().into(),
     None,
-    check_warnings,
+    &check_warnings,
     &rpds::List::new_sync(),
   ) {
     Ok(_) => (),
@@ -50,7 +50,7 @@ pub fn run_program(init_fn: &str, params: CalcitItems) -> Result<Calcit, CalcitE
     }
   }
 
-  let warnings = check_warnings.to_owned().into_inner();
+  let warnings = check_warnings.into_inner();
   if !warnings.is_empty() {
     return Err(CalcitErr {
       msg: format!("Found {} warnings, runner blocked", warnings.len()),

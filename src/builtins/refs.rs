@@ -66,10 +66,10 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_
       Ok(Calcit::Ref(path_info.to_owned()))
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack(
-      format!("defref expected a symbol and an expression: {} , {}", a, b),
+      format!("defatom expected a symbol and an expression: {} , {}", a, b),
       call_stack,
     )),
-    _ => Err(CalcitErr::use_msg_stack("defref expected 2 nodes", call_stack)),
+    _ => Err(CalcitErr::use_msg_stack("defatom expected 2 nodes", call_stack)),
   }
 }
 

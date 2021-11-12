@@ -61,10 +61,9 @@ pub fn parse_cli<'a>() -> clap::ArgMatches<'a> {
         .takes_value(true),
     )
     .arg(
-      clap::Arg::with_name("event-entry")
-        .help("entry ns/def for handling events")
-        .long("event-entry")
-        .default_value("app.main/on-window-event")
+      clap::Arg::with_name("entry")
+        .help("overwrite with config entry")
+        .long("entry")
         .takes_value(true),
     )
     .arg(

@@ -639,7 +639,7 @@
                     if (contains? x k)
                       assoc x k $ f (&record:get x k)
                       , x
-                    raise $ &str:concat "|Cannot update key on item: " x
+                    raise $ &str:concat "|Cannot update key on item: " (pr-str x)
 
         |group-by $ quote
           defn group-by (xs0 f)

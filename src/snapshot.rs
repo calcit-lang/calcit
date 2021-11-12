@@ -23,6 +23,7 @@ pub struct FileInSnapShot {
 pub struct Snapshot {
   pub package: Arc<str>,
   pub configs: SnapshotConfigs,
+  pub entries: HashMap<Arc<str>, SnapshotConfigs>,
   pub files: HashMap<Arc<str>, FileInSnapShot>,
 }
 
@@ -37,7 +38,7 @@ fn load_configs(data: Edn) -> Result<SnapshotConfigs, String> {
       Err(e) => return Err(format!("failed to load reload-fn from: {}", e)),
     },
     version: match data.map_get("version")? {
-      Edn::Nil => String::from("").into(),
+      Edn::Nil => "".into(),
       x => match x.read_str() {
         Ok(v) => (*v).into(),
         Err(e) => return Err(format!("failed to load version, {}", e)),
@@ -91,6 +92,21 @@ fn load_files(data: Edn) -> Result<HashMap<Arc<str>, FileInSnapShot>, String> {
   Ok(ys)
 }
 
+fn load_entries(data: Edn) -> Result<HashMap<Arc<str>, SnapshotConfigs>, String> {
+  let xs = data.read_map_or_nil().map_err(|e| format!("failed loading entries, {}", e))?;
+  let mut ys: HashMap<Arc<str>, SnapshotConfigs> = HashMap::with_capacity(xs.len());
+  for (k, v) in xs {
+    let key: Box<str> = match k {
+      Edn::Keyword(s) => s.to_str(),
+      Edn::Str(s) => s,
+      _ => return Err(format!("unknown data for an entry: {}", k)),
+    };
+    let configs = load_configs(v)?;
+    ys.insert((*key).into(), configs);
+  }
+  Ok(ys)
+}
+
 /// parse snapshot
 pub fn load_snapshot_data(data: Edn, path: &str) -> Result<Snapshot, String> {
   let pkg = data.map_get("package")?.read_str()?;
@@ -100,6 +116,7 @@ pub fn load_snapshot_data(data: Edn, path: &str) -> Result<Snapshot, String> {
   let s = Snapshot {
     package: (*pkg).into(),
     configs: load_configs(data.map_get("configs")?)?,
+    entries: load_entries(data.map_get("entries")?)?,
     files,
   };
   Ok(s)
@@ -108,7 +125,7 @@ pub fn load_snapshot_data(data: Edn, path: &str) -> Result<Snapshot, String> {
 pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   let mut def_dict: HashMap<Arc<str>, Cirru> = HashMap::with_capacity(2);
   def_dict.insert(
-    String::from("calcit-filename").into(),
+    "calcit-filename".into(),
     Cirru::List(vec![
       Cirru::leaf("def"),
       Cirru::leaf("calcit-filename"),
@@ -120,7 +137,7 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   let parent_str = parent.to_str().unwrap();
 
   def_dict.insert(
-    String::from("calcit-dirname").into(),
+    "calcit-dirname".into(),
     Cirru::List(vec![
       Cirru::leaf("def"),
       Cirru::leaf("calcit-dirname"),
@@ -136,13 +153,14 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
 
 pub fn gen_default() -> Snapshot {
   Snapshot {
-    package: String::from("app").into(),
+    package: "app".into(),
     configs: SnapshotConfigs {
-      init_fn: String::from("app.main/main!").into(),
-      reload_fn: String::from("app.main/reload!").into(),
-      version: String::from("0.0.0").into(),
+      init_fn: "app.main/main!".into(),
+      reload_fn: "app.main/reload!".into(),
+      version: "0.0.0".into(),
       modules: vec![],
     },
+    entries: HashMap::new(),
     files: HashMap::new(),
   }
 }
@@ -155,9 +173,9 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
       for line in lines {
         func_code.push(line.to_owned());
       }
-      def_dict.insert(String::from("main!").into(), Cirru::List(func_code));
+      def_dict.insert("main!".into(), Cirru::List(func_code));
       def_dict.insert(
-        String::from("reload!").into(),
+        "reload!".into(),
         Cirru::List(vec![Cirru::leaf("defn"), Cirru::leaf("reload!"), Cirru::List(vec![])]),
       );
       Ok(FileInSnapShot {
