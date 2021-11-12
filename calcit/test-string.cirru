@@ -58,6 +58,7 @@
             assert= true $ starts-with? |01234 |0
             assert= true $ starts-with? |01234 |01
             assert= false $ starts-with? |01234 |12
+            assert= true $ starts-with? :a/b :a/
 
             assert= true $ ends-with? |01234 |34
             assert= true $ ends-with? |01234 |4

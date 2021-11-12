@@ -1018,8 +1018,14 @@ export let identical_$q_ = (x: CalcitValue, y: CalcitValue): boolean => {
   return x === y;
 };
 
-export let starts_with_$q_ = (xs: string, y: string): boolean => {
-  return xs.startsWith(y);
+export let starts_with_$q_ = (xs: CalcitValue, y: CalcitValue): boolean => {
+  if (typeof xs === "string" && typeof y === "string") {
+    return xs.startsWith(y);
+  }
+  if (xs instanceof CalcitKeyword && y instanceof CalcitKeyword) {
+    return xs.value.startsWith(y.value);
+  }
+  throw new Error("expected strings or keywords");
 };
 export let ends_with_$q_ = (xs: string, y: string): boolean => {
   return xs.endsWith(y);
