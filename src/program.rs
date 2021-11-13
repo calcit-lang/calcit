@@ -8,7 +8,7 @@ use crate::data::cirru::code_to_calcit;
 use crate::primes::{Calcit, ImportRule};
 use crate::snapshot;
 use crate::snapshot::Snapshot;
-use crate::util::string::extract_pkg_from_def;
+use crate::util::string::extract_pkg_from_ns;
 
 pub type ProgramEvaledData = HashMap<Arc<str>, HashMap<Arc<str>, Calcit>>;
 
@@ -241,14 +241,14 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
 }
 
 /// clear evaled data after reloading
-pub fn clear_all_program_evaled_defs(init_fn: &str, reload_fn: &str, reload_libs: bool) -> Result<(), String> {
+pub fn clear_all_program_evaled_defs(init_ns: Arc<str>, reload_ns: Arc<str>, reload_libs: bool) -> Result<(), String> {
   let mut program = PROGRAM_EVALED_DATA_STATE.write().unwrap();
   if reload_libs {
     (*program).clear();
   } else {
     // reduce changes of libs. could be dirty in some cases
-    let init_pkg = extract_pkg_from_def(init_fn).unwrap();
-    let reload_pkg = extract_pkg_from_def(reload_fn).unwrap();
+    let init_pkg = extract_pkg_from_ns(init_ns).unwrap();
+    let reload_pkg = extract_pkg_from_ns(reload_ns).unwrap();
     let mut to_remove: Vec<Arc<str>> = vec![];
     for k in (*program).keys() {
       if k == &init_pkg || k == &reload_pkg || k.starts_with(&format!("{}.", init_pkg)) || k.starts_with(&format!("{}.", reload_pkg)) {
