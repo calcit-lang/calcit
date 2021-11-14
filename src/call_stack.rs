@@ -64,6 +64,7 @@ pub fn show_stack(stack: &CallStackList) {
 }
 
 pub fn display_stack(failure: &str, stack: &CallStackList) -> Result<(), String> {
+  println!("\nFailure: {}", failure);
   println!("\ncall stack:");
 
   for s in stack {
