@@ -451,17 +451,37 @@
             assert "|expects numbers for &min" $ if (number? a) (number? b) false
             if (&< a b) a b
 
-        |max $ quote
-          defn max (xs)
+        |&list:max $ quote
+          defn &list:max (xs)
             if (&list:empty? xs) nil
               reduce (&list:rest xs) (&list:first xs)
                 defn %max (acc x) (&max acc x)
 
-        |min $ quote
-          defn min (xs)
+        |&list:min $ quote
+          defn &list:min (xs)
             if (&list:empty? xs) nil
               reduce (&list:rest xs) (&list:first xs)
                 defn %min (acc x) (&min acc x)
+
+        |&set:max $ quote
+          defn &set:max (xs)
+            if (&set:empty? xs) nil
+              reduce (&set:rest xs) (&set:first xs)
+                defn %max (acc x) (&max acc x)
+
+        |&set:min $ quote
+          defn &set:min (xs)
+            if (&set:empty? xs) nil
+              reduce (&set:rest xs) (&set:first xs)
+                defn %min (acc x) (&min acc x)
+
+        |max $ quote
+          defn max (xs)
+            .max xs
+
+        |min $ quote
+          defn min (xs)
+            .min xs
 
         |every? $ quote
           defn every? (xs f)
@@ -1345,6 +1365,8 @@
             :includes? &set:includes?
             :contains? &set:includes?
             :intersection intersection
+            :max &set:max
+            :min &set:min
             :to-list &set:to-list
             :union union
             :first &set:first
@@ -1429,8 +1451,8 @@
             :map &list:map
             :map-indexed map-indexed
             :mappend $ defn &list:mappend (x y) $ &list:concat x y
-            :max max
-            :min min
+            :max &list:max
+            :min &list:min
             :nth &list:nth
             :pairs-map pairs-map
             :prepend prepend

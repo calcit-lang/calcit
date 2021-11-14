@@ -119,6 +119,12 @@
               .filter (#{} 1 3 5 7 9)
                 fn (x) (&> x 5)
 
+            assert= 4
+              .max $ #{} 1 2 3 4
+
+            assert= 1
+              .min $ #{} 1 2 3 4
+
         |main! $ quote
           defn main! ()
             log-title "|Testing set"
