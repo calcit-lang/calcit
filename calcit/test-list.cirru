@@ -500,6 +500,8 @@
               .max ([] 1 2 3 4)
             assert= 1
               .min ([] 1 2 3 4)
+            assert= |1
+              .min ([] |1 |2 |3 |4)
 
             assert= :b
               .nth ([] :a :b :c :d) 1

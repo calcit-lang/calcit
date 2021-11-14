@@ -443,12 +443,16 @@
 
         |&max $ quote
           defn &max (a b)
-            assert "|expects numbers for &max" $ if (number? a) (number? b) false
+            assert "|expects numbers for &max"
+              if (number? a) (number? b)
+                if (string? a) (string? b) false
             if (&> a b) a b
 
         |&min $ quote
           defn &min (a b)
-            assert "|expects numbers for &min" $ if (number? a) (number? b) false
+            assert "|expects numbers for &min"
+              if (number? a) (number? b)
+                if (string? a) (string? b) false
             if (&< a b) a b
 
         |&list:max $ quote
