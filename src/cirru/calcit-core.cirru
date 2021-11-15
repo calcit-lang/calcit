@@ -443,25 +443,49 @@
 
         |&max $ quote
           defn &max (a b)
-            assert "|expects numbers for &max" $ if (number? a) (number? b) false
+            assert "|expects numbers for &max"
+              if (number? a) (number? b)
+                if (string? a) (string? b) false
             if (&> a b) a b
 
         |&min $ quote
           defn &min (a b)
-            assert "|expects numbers for &min" $ if (number? a) (number? b) false
+            assert "|expects numbers for &min"
+              if (number? a) (number? b)
+                if (string? a) (string? b) false
             if (&< a b) a b
 
-        |max $ quote
-          defn max (xs)
+        |&list:max $ quote
+          defn &list:max (xs)
             if (&list:empty? xs) nil
               reduce (&list:rest xs) (&list:first xs)
                 defn %max (acc x) (&max acc x)
 
-        |min $ quote
-          defn min (xs)
+        |&list:min $ quote
+          defn &list:min (xs)
             if (&list:empty? xs) nil
               reduce (&list:rest xs) (&list:first xs)
                 defn %min (acc x) (&min acc x)
+
+        |&set:max $ quote
+          defn &set:max (xs)
+            if (&set:empty? xs) nil
+              reduce (&set:rest xs) (&set:first xs)
+                defn %max (acc x) (&max acc x)
+
+        |&set:min $ quote
+          defn &set:min (xs)
+            if (&set:empty? xs) nil
+              reduce (&set:rest xs) (&set:first xs)
+                defn %min (acc x) (&min acc x)
+
+        |max $ quote
+          defn max (xs)
+            .max xs
+
+        |min $ quote
+          defn min (xs)
+            .min xs
 
         |every? $ quote
           defn every? (xs f)
@@ -517,7 +541,7 @@
               defn %map:filter-kv (acc x)
                 if
                   f (nth x 0) (nth x 1)
-                  &map:assoc acc  (nth x 0) (nth x 1)
+                  &map:assoc acc (nth x 0) (nth x 1)
                   , acc
 
         |&map:add-entry $ quote
@@ -1282,6 +1306,14 @@
           defn negate (x)
             &- 0 x
 
+        |reverse $ quote
+          defn reverse (x)
+            &list:reverse x
+
+        |distinct $ quote
+          defn distinct (x)
+            &list:distinct x
+
         |&core-number-class $ quote
           defrecord! &core-number-class
             :ceil ceil
@@ -1337,6 +1369,8 @@
             :includes? &set:includes?
             :contains? &set:includes?
             :intersection intersection
+            :max &set:max
+            :min &set:min
             :to-list &set:to-list
             :union union
             :first &set:first
@@ -1359,16 +1393,13 @@
             :get-in get-in
             :includes? &map:includes?
             :keys keys
-            :keys-non-nil keys-non-nil
             :map &map:map
             :map-kv map-kv
             :map-list &map:map-list
             :mappend merge
             :merge merge
-            :select-keys select-keys
             :to-list &map:to-list
             :to-pairs to-pairs
-            :unselect-keys unselect-keys
             :values vals
             :first &map:first
             :rest &map:rest
@@ -1414,37 +1445,32 @@
             :find-last &list:find-last
             :find-last-index &list:find-last-index
             :foldl $ defn foldl (xs v0 f) (foldl xs v0 f)
-            :frequencies frequencies
             :get &list:nth
             :get-in get-in
             :group-by group-by
             :index-of index-of
-            :interleave interleave
             :join join
             :join-str join-str
             :last-index-of &list:last-index-of
             :map &list:map
             :map-indexed map-indexed
             :mappend $ defn &list:mappend (x y) $ &list:concat x y
-            :max max
-            :min min
+            :max &list:max
+            :min &list:min
             :nth &list:nth
             :pairs-map pairs-map
             :prepend prepend
             :reduce reduce
             :reverse &list:reverse
-            :section-by section-by
             :slice &list:slice
             :sort $ defn sort (x y) (sort x y)
             :sort-by &list:sort-by
             :take take
             :take-last take-last
             :to-set &list:to-set
-            :zipmap zipmap
             :first &list:first
             :rest &list:rest
             :dissoc &list:dissoc
-            :distinct &list:distinct
             :to-list identity
             :map-pair &list:map-pair
             :filter-pair &list:filter-pair

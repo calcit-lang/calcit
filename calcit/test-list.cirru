@@ -24,6 +24,7 @@
               assert-detect nil? (last $ [])
               assert= (rest a) $ [] 2 3
               assert-detect nil? (rest $ [])
+              assert= ([]) (rest $ [] 1)
               assert= (butlast a) ([] 1 2)
               assert-detect nil? (butlast $ [])
               assert= (range 0) $ []
@@ -259,6 +260,10 @@
               interleave ([] :a :b :c :d) ([] 1 2 3 4 5)
               [] :a 1 :b 2 :c 3 :d 4
 
+            assert=
+              [] :a 1 :b 2 :c 3 :d 4
+              interleave ([] :a :b :c :d) ([] 1 2 3 4)
+
         |test-sort $ quote
           fn ()
             assert=
@@ -452,7 +457,7 @@
                 1 1
                 2 2
                 3 3
-              .frequencies ([] 1 2 2 3 3 3)
+              frequencies ([] 1 2 2 3 3 3)
 
             assert= :b
               .get ([] :a :b :c :d) 1
@@ -473,9 +478,6 @@
               .index-of ([] :a :b :c :d) :a
             assert= nil
               .index-of ([] :a :b :c :d) :e
-            assert=
-              [] :a 1 :b 2 :c 3 :d 4
-              .interleave ([] :a :b :c :d) ([] 1 2 3 4)
             assert=
               [] 1 :sep 2 :sep 3 :sep 4 :sep 5
               .join ([] 1 2 3 4 5) :sep
@@ -498,6 +500,8 @@
               .max ([] 1 2 3 4)
             assert= 1
               .min ([] 1 2 3 4)
+            assert= |1
+              .min ([] |1 |2 |3 |4)
 
             assert= :b
               .nth ([] :a :b :c :d) 1
@@ -521,7 +525,7 @@
               .prepend ([] 1 2 3 4) 5
 
             assert= 10
-              .reduce ([] 1 2 3 4) 0 +
+              reduce ([] 1 2 3 4) 0 +
             assert=
               [] 4 3 2 1
               .reverse $ [] 1 2 3 4
@@ -530,7 +534,7 @@
                 [] 1 2
                 [] 3 4
                 [] 5
-              .section-by ([] 1 2 3 4 5) 2
+              section-by ([] 1 2 3 4 5) 2
 
             assert=
               [] :b :c :d
@@ -563,7 +567,7 @@
 
             assert=
               &{} :a 1 :b 2 :c 3
-              .zipmap ([] :a :b :c) ([] 1 2 3)
+              zipmap ([] :a :b :c) ([] 1 2 3)
 
             assert= 1
               .first $ [] 1 2 3 4
@@ -576,7 +580,7 @@
 
             assert=
               [] 1 2 3
-              .distinct ([] 1 2 3 1 2)
+              distinct ([] 1 2 3 1 2)
 
         |main! $ quote
           defn main! ()

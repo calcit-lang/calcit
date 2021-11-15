@@ -287,7 +287,7 @@
               .keys $ &{} :a 1 :b 2
             assert=
               #{} :a :b
-              .keys-non-nil $ &{} :a 1 :b 2 :c nil
+              keys-non-nil $ &{} :a 1 :b 2 :c nil
 
             assert=
               {} (:a 11) (:b 12)
@@ -329,7 +329,7 @@
 
             assert=
               &{} :a 1 :b 2
-              .select-keys
+              select-keys
                 &{} :a 1 :b 2 :c 3
                 [] :a :b
 
@@ -349,7 +349,7 @@
 
             assert=
               &{} :a 1 :b 2
-              .unselect-keys
+              unselect-keys
                 &{} :a 1 :b 2 :c 3
                 [] :c
 
