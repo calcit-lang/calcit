@@ -68,7 +68,7 @@ cr compact.cirru --emit-ir # compiles intermediate representation into program-i
 ### Calcit Editor & Bundler
 
 Install [Calcit Editor](https://github.com/calcit-lang/editor) and run `ct` to launch editor server,
-which writes `compact.cirru` and `.compact-inc.cirru` on saving. Try launching example by clong [Calcit Workflow](https://github.com/calcit-lang/calcit-workflow).
+which writes `compact.cirru` and `.compact-inc.cirru` on saving. Try launching example by cloning [Calcit Workflow](https://github.com/calcit-lang/calcit-workflow).
 
 Read more in [Minimal Calcit](https://github.com/calcit-lang/minimal-calcit/blob/main/README.md) to learn how to code Calcit with a plain text editor.
 
