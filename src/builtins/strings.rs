@@ -320,3 +320,66 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     None => CalcitErr::err_str("str:rest expected 1 argument"),
   }
 }
+
+pub fn pad_left(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() == 3 {
+    match (&xs[0], &xs[1], &xs[2]) {
+      (Calcit::Str(s), Calcit::Number(n), Calcit::Str(pattern)) => {
+        let size = n.floor() as usize;
+        if pattern.is_empty() {
+          return CalcitErr::err_str("&str:pad-left expected non-empty pattern");
+        }
+        if s.len() >= size {
+          Ok(xs[0].to_owned())
+        } else {
+          let mut buffer = String::with_capacity(size);
+          let pad_size = size - s.len();
+          'write: loop {
+            for c in pattern.chars() {
+              buffer.push(c);
+              if buffer.len() >= pad_size {
+                break 'write;
+              }
+            }
+          }
+          buffer.push_str(s);
+          Ok(Calcit::Str(buffer.into()))
+        }
+      }
+      (a, b, c) => CalcitErr::err_str(format!("&str:pad-left expected string, number, string, got: {} {} {}", a, b, c)),
+    }
+  } else {
+    CalcitErr::err_str(format!("&str:pad-left expected 3 arguments, {:?}", xs))
+  }
+}
+
+pub fn pad_right(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() == 3 {
+    match (&xs[0], &xs[1], &xs[2]) {
+      (Calcit::Str(s), Calcit::Number(n), Calcit::Str(pattern)) => {
+        let size = n.floor() as usize;
+        if pattern.is_empty() {
+          return CalcitErr::err_str("&str:pad-right expected non-empty pattern");
+        }
+        if s.len() >= size {
+          Ok(xs[0].to_owned())
+        } else {
+          let mut buffer = String::with_capacity(size);
+          buffer.push_str(s);
+          'write: loop {
+            for c in pattern.chars() {
+              buffer.push(c);
+              if buffer.len() >= size {
+                break 'write;
+              }
+            }
+          }
+          Ok(Calcit::Str(buffer.into()))
+        }
+      }
+      (a, b, c) => CalcitErr::err_str(format!("&str:pad-right expected string, number, string, got: {} {} {}", a, b, c)),
+    }
+  } else {
+    CalcitErr::err_str(format!("&str:pad-right expected 3 arguments, {:?}", xs))
+  }
+}

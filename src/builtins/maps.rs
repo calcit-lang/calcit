@@ -61,33 +61,37 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
-      let mut zs: rpds::HashTrieMapSync<Calcit, Calcit> = xs.to_owned();
-      for (k, v) in ys {
-        zs.insert_mut(k.to_owned(), v.to_owned());
-      }
-      Ok(Calcit::Map(zs))
-    }
-    (Some(Calcit::Record(name, fields, values)), Some(Calcit::Map(ys))) => {
-      let mut new_values = (**values).to_owned();
-      for (k, v) in ys {
-        match k {
-          Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::from(s)) {
-            Some(pos) => new_values[pos] = v.to_owned(),
-            None => return CalcitErr::err_str(format!("invalid field `{}` for {:?}", s, fields)),
-          },
-          Calcit::Keyword(s) => match find_in_fields(fields, s) {
-            Some(pos) => new_values[pos] = v.to_owned(),
-            None => return CalcitErr::err_str(format!("invalid field `{}` for {:?}", s, fields)),
-          },
-          a => return CalcitErr::err_str(format!("invalid field key: {}", a)),
+  if xs.len() == 2 {
+    match (&xs[0], &xs[1]) {
+      (Calcit::Map(xs), Calcit::Nil) => Ok(Calcit::Map(xs.to_owned())),
+      (Calcit::Map(xs), Calcit::Map(ys)) => {
+        let mut zs: rpds::HashTrieMapSync<Calcit, Calcit> = xs.to_owned();
+        for (k, v) in ys {
+          zs.insert_mut(k.to_owned(), v.to_owned());
         }
+        Ok(Calcit::Map(zs))
       }
-      Ok(Calcit::Record(name.to_owned(), fields.to_owned(), Arc::new(new_values)))
+      (Calcit::Record(name, fields, values), Calcit::Map(ys)) => {
+        let mut new_values = (**values).to_owned();
+        for (k, v) in ys {
+          match k {
+            Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::from(s)) {
+              Some(pos) => new_values[pos] = v.to_owned(),
+              None => return CalcitErr::err_str(format!("invalid field `{}` for {:?}", s, fields)),
+            },
+            Calcit::Keyword(s) => match find_in_fields(fields, s) {
+              Some(pos) => new_values[pos] = v.to_owned(),
+              None => return CalcitErr::err_str(format!("invalid field `{}` for {:?}", s, fields)),
+            },
+            a => return CalcitErr::err_str(format!("invalid field key: {}", a)),
+          }
+        }
+        Ok(Calcit::Record(name.to_owned(), fields.to_owned(), Arc::new(new_values)))
+      }
+      (a, b) => CalcitErr::err_str(format!("expected 2 maps, got: {} {}", a, b)),
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(format!("expected 2 maps, got: {} {}", a, b)),
-    (_, _) => CalcitErr::err_str(format!("expected 2 arguments, got: {:?}", xs)),
+  } else {
+    CalcitErr::err_str(format!("expected 2 arguments, got: {:?}", xs))
   }
 }
 

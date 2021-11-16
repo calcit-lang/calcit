@@ -1351,6 +1351,8 @@
             :nth &str:nth
             :first &str:first
             :rest &str:rest
+            :pad-left &str:pad-left
+            :pad-right &str:pad-right
             :find-index &str:find-index
             :get-char-code get-char-code
             :escape &str:escape

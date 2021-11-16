@@ -98,6 +98,10 @@
                   {} (:a false) (:b false) (:c true) (:d true)
                 {} (:a false) (:b false) (:c true) (:d true)
 
+              assert=
+                merge ({} (:a 1)) nil
+                {} (:a 1)
+
         |test-pairs $ quote
           fn ()
 

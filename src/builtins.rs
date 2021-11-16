@@ -108,6 +108,8 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&str:nth"
       | "&str:first"
       | "&str:rest"
+      | "&str:pad-left"
+      | "&str:pad-right"
       // lists
       | "[]"
       | "'" // used as an alias for `[]`, experimental
@@ -290,6 +292,8 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackLi
     "&str:nth" => strings::nth(args),
     "&str:first" => strings::first(args),
     "&str:rest" => strings::rest(args),
+    "&str:pad-left" => strings::pad_left(args),
+    "&str:pad-right" => strings::pad_right(args),
     // lists
     "[]" => lists::new_list(args),
     "'" => lists::new_list(args), // alias
