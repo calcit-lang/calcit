@@ -19,7 +19,7 @@ pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>) -> Resul
       name: s.to_owned(),
       def_ns: file_ns.to_owned(),
       id: gen_core_id(),
-      scope: scope.to_owned(),
+      scope: Arc::new(scope.to_owned()),
       args: Arc::new(xs.to_owned()),
       body: Arc::new(expr.skip(2)?),
     }),

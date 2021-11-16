@@ -85,7 +85,7 @@ pub enum Calcit {
     name: Arc<str>,   // name
     def_ns: Arc<str>, // ns
     id: Arc<str>,     // an id
-    scope: CalcitScope,
+    scope: Arc<CalcitScope>,
     args: Arc<CalcitItems>, // args
     body: Arc<CalcitItems>, // body
   },
