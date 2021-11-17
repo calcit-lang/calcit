@@ -160,7 +160,8 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
       Ok(ret) => edn_to_calcit(&ret),
       Err(e) => {
         track::track_task_release();
-        let _ = display_stack(&format!("failed to call request: {}", e), &copied_stack_1);
+        // let _ = display_stack(&format!("failed to call request: {}", e), &copied_stack_1);
+        println!("failure inside ffi thread: {}", e);
         return CalcitErr::err_str(e);
       }
     };

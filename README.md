@@ -1,6 +1,6 @@
 ### Calcit Scripting Language
 
-> Lisp compiling to JavaScript ES Modules. (Similar to ClojureScript, but in very different syntax.)
+> Lisp compiling to JavaScript ES Modules. Runs in Rust(Similar to ClojureScript, but in very different syntax.).
 
 - Home http://calcit-lang.org/
 - API Doc(heavily influenced by ClojureScript) http://apis.calcit-lang.org/
@@ -27,17 +27,7 @@ For Ubuntu 20.04, try binaries from http://bin.calcit-lang.org/linux/ , which ar
 
 ### Usage
 
-Run:
-
-```bash
-cr compact.cirru --1 # run only once
-
-cr compact.cirru # watch mode enabled by default
-
-cr compact.cirru --init-fn='app.main/main!' # specifying init-fn
-```
-
-Inline evaling:
+Snippets evaling:
 
 ```bash
 cr -e 'range 100'
@@ -56,6 +46,16 @@ println "|a demo"
 '
 ```
 
+Run with a [compact.cirru](https://github.com/calcit-lang/lilac/blob/master/compact.cirru):
+
+```bash
+cr compact.cirru --1 # run only once
+
+cr compact.cirru # watch mode enabled by default
+
+cr compact.cirru --init-fn='app.main/main!' # specifying init-fn
+```
+
 Emitting code:
 
 ```bash
@@ -68,7 +68,7 @@ cr compact.cirru --emit-ir # compiles intermediate representation into program-i
 ### Calcit Editor & Bundler
 
 Install [Calcit Editor](https://github.com/calcit-lang/editor) and run `ct` to launch editor server,
-which writes `compact.cirru` and `.compact-inc.cirru` on saving. Try launching example by clong [Calcit Workflow](https://github.com/calcit-lang/calcit-workflow).
+which writes `compact.cirru` and `.compact-inc.cirru` on saving. Try launching example by cloning [Calcit Workflow](https://github.com/calcit-lang/calcit-workflow).
 
 Read more in [Minimal Calcit](https://github.com/calcit-lang/minimal-calcit/blob/main/README.md) to learn how to code Calcit with a plain text editor.
 

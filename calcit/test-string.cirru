@@ -267,6 +267,11 @@
             assert= 1 $ .find-index |abc |b
             assert= "|\"a \\\"\"" $ .escape "|a \""
 
+            assert= |00000a $ .pad-left |a 6 |0
+            assert= |a00000 $ .pad-right |a 6 |0
+            assert= |12312a $ .pad-left |a 6 |123
+            assert= |a12312 $ .pad-right |a 6 |123
+
         |main! $ quote
           defn main! ()
             log-title "|Testing str"

@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.5.7";
+export const calcit_version = "0.5.8";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse, ICirruNode } from "@cirru/parser.ts";
@@ -1421,6 +1421,14 @@ export let _$n_list_$o_distinct = (xs: CalcitList): CalcitSliceList => {
     result.push(data[idx]);
   }
   return new CalcitSliceList(result);
+};
+
+export let _$n_str_$o_pad_left = (s: string, size: number, pattern: string): string => {
+  return s.padStart(size, pattern);
+};
+
+export let _$n_str_$o_pad_right = (s: string, size: number, pattern: string): string => {
+  return s.padEnd(size, pattern);
 };
 
 export let _$n_get_os = (): CalcitKeyword => {
