@@ -1,6 +1,6 @@
 ### Calcit Scripting Language
 
-> Lisp compiling to JavaScript ES Modules. (Similar to ClojureScript, but in very different syntax.)
+> Lisp compiling to JavaScript ES Modules. Runs in Rust(Similar to ClojureScript, but in very different syntax.).
 
 - Home http://calcit-lang.org/
 - API Doc(heavily influenced by ClojureScript) http://apis.calcit-lang.org/
@@ -27,17 +27,7 @@ For Ubuntu 20.04, try binaries from http://bin.calcit-lang.org/linux/ , which ar
 
 ### Usage
 
-Run:
-
-```bash
-cr compact.cirru --1 # run only once
-
-cr compact.cirru # watch mode enabled by default
-
-cr compact.cirru --init-fn='app.main/main!' # specifying init-fn
-```
-
-Inline evaling:
+Snippets evaling:
 
 ```bash
 cr -e 'range 100'
@@ -54,6 +44,16 @@ println "|a demo"
     * x x
 
 '
+```
+
+Run with a [compact.cirru](https://github.com/calcit-lang/lilac/blob/master/compact.cirru):
+
+```bash
+cr compact.cirru --1 # run only once
+
+cr compact.cirru # watch mode enabled by default
+
+cr compact.cirru --init-fn='app.main/main!' # specifying init-fn
 ```
 
 Emitting code:
