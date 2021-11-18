@@ -106,7 +106,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               &values,
             );
 
-            run_fn(&values, def_scope, args, body, def_ns.to_owned(), &next_stack)
+            run_fn(&values, def_scope, args.to_owned(), body, def_ns.to_owned(), &next_stack)
           }
           Calcit::Macro {
             name, def_ns, args, body, ..
@@ -132,7 +132,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
 
             Ok(loop {
               // need to handle recursion
-              let body_scope = bind_args(args, &current_values, &rpds::HashTrieMap::new_sync(), call_stack)?;
+              let body_scope = bind_args(args.to_owned(), &current_values, &rpds::HashTrieMap::new_sync(), call_stack)?;
               let code = evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
@@ -281,14 +281,14 @@ fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList) -> 
 pub fn run_fn(
   values: &CalcitItems,
   scope: &CalcitScope,
-  args: &CalcitItems,
+  args: Arc<Vec<Arc<str>>>,
   body: &CalcitItems,
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut current_values = values.to_owned();
   loop {
-    let body_scope = bind_args(args, &current_values, scope, call_stack)?;
+    let body_scope = bind_args(args.to_owned(), &current_values, scope, call_stack)?;
     let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
     match v {
       Calcit::Recur(xs) => {
@@ -302,7 +302,7 @@ pub fn run_fn(
 /// create new scope by writing new args
 /// notice that `&` is a mark for spreading, `?` for optional arguments
 pub fn bind_args(
-  args: &CalcitItems,
+  args: Arc<Vec<Arc<str>>>,
   values: &CalcitItems,
   base_scope: &CalcitScope,
   call_stack: &CallStackList,
@@ -311,16 +311,16 @@ pub fn bind_args(
   let mut spreading = false;
   let mut optional = false;
 
-  let collected_args = Arc::new(args);
+  let collected_args = args.to_owned();
   let collected_values = Arc::new(values);
   let pop_args_idx = Arc::new(RwLock::new(0));
   let pop_values_idx = Arc::new(RwLock::new(0));
 
-  let args_pop_front = || -> Option<&Calcit> {
+  let args_pop_front = || -> Option<Arc<str>> {
     let mut p = (*pop_args_idx).write().unwrap();
     let ret = collected_args.get(*p);
     *p += 1;
-    ret
+    ret.map(|x| x.to_owned())
   };
 
   let values_pop_front = || -> Option<&Calcit> {
@@ -338,16 +338,12 @@ pub fn bind_args(
     *p >= (*collected_values).len()
   };
 
-  while let Some(a) = args_pop_front() {
+  while let Some(sym) = args_pop_front() {
     if spreading {
-      match a {
-        Calcit::Symbol { sym, .. } if &**sym == "&" => {
-          return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {:?}", args), call_stack))
-        }
-        Calcit::Symbol { sym, .. } if &**sym == "?" => {
-          return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {:?}", args), call_stack))
-        }
-        Calcit::Symbol { sym, .. } => {
+      match &*sym {
+        "&" => return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {:?}", args), call_stack)),
+        "?" => return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {:?}", args), call_stack)),
+        _ => {
           let mut chunk: CalcitItems = TernaryTreeList::Empty;
           while let Some(v) = values_pop_front() {
             chunk = chunk.push(v.to_owned());
@@ -355,22 +351,17 @@ pub fn bind_args(
           scope.insert_mut(sym.to_owned(), Calcit::List(chunk));
           if !is_args_empty() {
             return Err(CalcitErr::use_msg_stack(
-              format!(
-                "extra args `{}` after spreading in `{}`",
-                CrListWrap((*collected_args).to_owned()),
-                CrListWrap(args.to_owned()),
-              ),
+              format!("extra args `{:?}` after spreading in `{:?}`", collected_args, args,),
               call_stack,
             ));
           }
         }
-        b => return Err(CalcitErr::use_msg_stack(format!("invalid argument name: {}", b), call_stack)),
       }
     } else {
-      match a {
-        Calcit::Symbol { sym, .. } if &**sym == "&" => spreading = true,
-        Calcit::Symbol { sym, .. } if &**sym == "?" => optional = true,
-        Calcit::Symbol { sym, .. } => match values_pop_front() {
+      match &*sym {
+        "&" => spreading = true,
+        "?" => optional = true,
+        _ => match values_pop_front() {
           Some(v) => {
             scope.insert_mut(sym.to_owned(), v.to_owned());
           }
@@ -379,17 +370,12 @@ pub fn bind_args(
               scope.insert_mut(sym.to_owned(), Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
-                format!(
-                  "too few values `{}` passed to args `{}`",
-                  CrListWrap(values.to_owned()),
-                  CrListWrap(args.to_owned())
-                ),
+                format!("too few values `{}` passed to args `{:?}`", CrListWrap(values.to_owned()), args),
                 call_stack,
               ));
             }
           }
         },
-        b => return Err(CalcitErr::use_msg_stack(format!("invalid argument name: {}", b), call_stack)),
       }
     }
   }
@@ -398,10 +384,10 @@ pub fn bind_args(
   } else {
     Err(CalcitErr::use_msg_stack(
       format!(
-        "extra args `{}` not handled while passing values `{}` to args `{}`",
+        "extra args `{}` not handled while passing values `{}` to args `{:?}`",
         CrListWrap((*collected_values).to_owned()),
         CrListWrap(values.to_owned()),
-        CrListWrap(args.to_owned()),
+        args,
       ),
       call_stack,
     ))

@@ -142,7 +142,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
           for p in ps {
             real_args = real_args.push(edn_to_calcit(&p));
           }
-          let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack);
+          let r = runner::run_fn(&real_args, scope, args.to_owned(), body, def_ns.to_owned(), &copied_stack);
           match r {
             Ok(ret) => calcit_to_edn(&ret),
             Err(e) => {
@@ -230,7 +230,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
         for p in ps {
           real_args = real_args.push(edn_to_calcit(&p));
         }
-        let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack.clone());
+        let r = runner::run_fn(&real_args, scope, args.to_owned(), body, def_ns.to_owned(), &copied_stack.clone());
         match r {
           Ok(ret) => calcit_to_edn(&ret),
           Err(e) => {
@@ -268,7 +268,14 @@ pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit,
         def_ns, scope, args, body, ..
       } = cb.as_ref()
       {
-        if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, scope, args, body, def_ns.to_owned(), &copied_stack) {
+        if let Err(e) = runner::run_fn(
+          &TernaryTreeList::Empty,
+          scope,
+          args.to_owned(),
+          body,
+          def_ns.to_owned(),
+          &copied_stack,
+        ) {
           println!("error: {}", e);
         }
       }
