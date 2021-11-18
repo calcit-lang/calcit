@@ -409,7 +409,7 @@ fn throw_on_warnings(warnings: &[String]) -> Result<(), String> {
       content = format!("{}\n{}", content, message);
     }
 
-    return Err(format!("Found {} warnings, runner blocked.", warnings.len(),));
+    return Err(format!("Found {} warnings in preprocessing, re-run blocked.", warnings.len(),));
   } else {
     Ok(())
   }
