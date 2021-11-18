@@ -23,8 +23,14 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
         ResolvedDef {
           ns: r_ns,
           def: r_def,
-          rule: _import_rule,
-        } => evaluate_symbol(r_def, scope, r_ns, call_stack),
+          rule,
+        } => {
+          if rule.is_some() && sym != r_def {
+            // dirty check for namespaced imported variables
+            return eval_symbol_from_program(r_def, r_ns, call_stack);
+          }
+          evaluate_symbol(r_def, scope, r_ns, call_stack)
+        }
         _ => evaluate_symbol(sym, scope, ns, call_stack),
       },
       _ => evaluate_symbol(sym, scope, ns, call_stack),

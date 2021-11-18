@@ -247,7 +247,8 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
   ) {
     Ok(ret) => edn_to_calcit(&ret),
     Err(e) => {
-      track::track_task_release();
+      // TODO for more accurate tracking, need to place tracker inside foreign function
+      // track::track_task_release();
       let _ = display_stack(&format!("failed to call request: {}", e), call_stack);
       return CalcitErr::err_str(e);
     }
