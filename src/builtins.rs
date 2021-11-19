@@ -8,7 +8,7 @@ mod records;
 mod refs;
 mod sets;
 mod strings;
-mod syntax;
+pub mod syntax;
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

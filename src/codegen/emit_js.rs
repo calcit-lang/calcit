@@ -12,6 +12,7 @@ use cirru_edn::EdnKwd;
 use im_ternary_tree::TernaryTreeList;
 
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
+use crate::builtins::syntax::get_raw_args;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
 use crate::call_stack::StackKind;
 use crate::primes;
@@ -342,7 +343,7 @@ fn gen_call_code(
           (Some(Calcit::Symbol { sym, .. }), Some(Calcit::List(ys))) => {
             let func_body = body.skip(2)?;
             gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
-            let ret = gen_js_func(sym, ys, &func_body, ns, false, local_defs, file_imports, keywords);
+            let ret = gen_js_func(sym, get_raw_args(ys)?, &func_body, ns, false, local_defs, file_imports, keywords);
             gen_stack::pop_call_stack();
             match ret {
               Ok(code) => Ok(format!("{}{}", return_code, code)),
@@ -939,7 +940,7 @@ fn uses_recur(xs: &Calcit) -> bool {
 
 fn gen_js_func(
   name: &str,
-  args: &CalcitItems,
+  args: Arc<Vec<Arc<str>>>,
   raw_body: &CalcitItems,
   ns: &str,
   exported: bool,
@@ -955,45 +956,40 @@ fn gen_js_func(
   let mut has_optional = false;
   let mut args_count = 0;
   let mut optional_count = 0;
-  for x in args {
-    match x {
-      Calcit::Symbol { sym, .. } => {
-        if spreading {
-          if !args_code.is_empty() {
-            args_code.push_str(", ");
-          }
-          local_defs.insert(sym.to_owned());
-          let arg_name = escape_var(sym);
-          args_code.push_str("...");
-          args_code.push_str(&arg_name);
-          // js list and calcit-js are different in spreading
-          spreading_code.push_str(&format!("\n{} = {}arrayToList({});", arg_name, var_prefix, arg_name));
-          break; // no more args after spreading argument
-        } else if has_optional {
-          if !args_code.is_empty() {
-            args_code.push_str(", ");
-          }
-          local_defs.insert(sym.to_owned());
-          args_code.push_str(&escape_var(sym));
-          optional_count += 1;
-        } else {
-          if &**sym == "&" {
-            spreading = true;
-            continue;
-          }
-          if &**sym == "?" {
-            has_optional = true;
-            continue;
-          }
-          if !args_code.is_empty() {
-            args_code.push_str(", ");
-          }
-          local_defs.insert(sym.to_owned());
-          args_code.push_str(&escape_var(sym));
-          args_count += 1;
-        }
+  for sym in &*args {
+    if spreading {
+      if !args_code.is_empty() {
+        args_code.push_str(", ");
       }
-      _ => return Err(format!("Expected symbol for arg, {}", x)),
+      local_defs.insert(sym.to_owned());
+      let arg_name = escape_var(&*sym);
+      args_code.push_str("...");
+      args_code.push_str(&arg_name);
+      // js list and calcit-js are different in spreading
+      spreading_code.push_str(&format!("\n{} = {}arrayToList({});", arg_name, var_prefix, arg_name));
+      break; // no more args after spreading argument
+    } else if has_optional {
+      if !args_code.is_empty() {
+        args_code.push_str(", ");
+      }
+      local_defs.insert(sym.to_owned());
+      args_code.push_str(&escape_var(&*sym));
+      optional_count += 1;
+    } else {
+      if &**sym == "&" {
+        spreading = true;
+        continue;
+      }
+      if &**sym == "?" {
+        has_optional = true;
+        continue;
+      }
+      if !args_code.is_empty() {
+        args_code.push_str(", ");
+      }
+      local_defs.insert(sym.to_owned());
+      args_code.push_str(&escape_var(&*sym));
+      args_count += 1;
     }
   }
 
@@ -1243,7 +1239,16 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           ..
         } => {
           gen_stack::push_call_stack(def_ns, name, StackKind::Codegen, f.to_owned(), &TernaryTreeList::Empty);
-          defs_code.push_str(&gen_js_func(&def, args, code, &ns, true, &def_names, &file_imports, &keywords)?);
+          defs_code.push_str(&gen_js_func(
+            &def,
+            args.to_owned(),
+            code,
+            &ns,
+            true,
+            &def_names,
+            &file_imports,
+            &keywords,
+          )?);
           gen_stack::pop_call_stack();
         }
         Calcit::Thunk(code, _) => {

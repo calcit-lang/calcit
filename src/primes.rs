@@ -75,19 +75,19 @@ pub enum Calcit {
   Record(EdnKwd, Arc<Vec<EdnKwd>>, Arc<Vec<Calcit>>), // usize of keyword id
   Proc(Arc<str>),
   Macro {
-    name: Arc<str>,         // name
-    def_ns: Arc<str>,       // ns
-    id: Arc<str>,           // an id
-    args: Arc<CalcitItems>, // args
-    body: Arc<CalcitItems>, // body
+    name: Arc<str>,           // name
+    def_ns: Arc<str>,         // ns
+    id: Arc<str>,             // an id
+    args: Arc<Vec<Arc<str>>>, // args
+    body: Arc<CalcitItems>,   // body
   },
   Fn {
     name: Arc<str>,   // name
     def_ns: Arc<str>, // ns
     id: Arc<str>,     // an id
     scope: Arc<CalcitScope>,
-    args: Arc<CalcitItems>, // args
-    body: Arc<CalcitItems>, // body
+    args: Arc<Vec<Arc<str>>>, // args
+    body: Arc<CalcitItems>,   // body
   },
   Syntax(CalcitSyntax, Arc<str>), // name, ns... notice that `ns` is a meta info
 }
@@ -180,7 +180,7 @@ impl fmt::Display for Calcit {
           if need_space {
             f.write_str(" ")?;
           }
-          f.write_str(&format_to_lisp(a))?;
+          f.write_str(&**a)?;
           need_space = true;
         }
         f.write_str(") (")?;
@@ -201,7 +201,7 @@ impl fmt::Display for Calcit {
           if need_space {
             f.write_str(" ")?;
           }
-          f.write_str(&format_to_lisp(a))?;
+          f.write_str(&**a)?;
           need_space = true;
         }
         f.write_str(") ")?;

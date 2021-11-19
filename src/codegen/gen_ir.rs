@@ -166,7 +166,7 @@ fn dump_code(code: &Calcit) -> Edn {
       xs.insert(Edn::kwd("kind"), Edn::kwd("fn"));
       xs.insert(Edn::kwd("name"), Edn::Str((**name).into()));
       xs.insert(Edn::kwd("ns"), Edn::Str((**def_ns).into()));
-      xs.insert(Edn::kwd("args"), dump_items_code(args)); // TODO
+      xs.insert(Edn::kwd("args"), dump_args_code(args)); // TODO
       xs.insert(Edn::kwd("code"), dump_items_code(body));
       Edn::Map(xs)
     }
@@ -177,7 +177,7 @@ fn dump_code(code: &Calcit) -> Edn {
       xs.insert(Edn::kwd("kind"), Edn::kwd("macro"));
       xs.insert(Edn::kwd("name"), Edn::Str((**name).into()));
       xs.insert(Edn::kwd("ns"), Edn::Str((**def_ns).into()));
-      xs.insert(Edn::kwd("args"), dump_items_code(args)); // TODO
+      xs.insert(Edn::kwd("args"), dump_args_code(args)); // TODO
       xs.insert(Edn::kwd("code"), dump_items_code(body));
       Edn::Map(xs)
     }
@@ -210,6 +210,14 @@ fn dump_items_code(xs: &CalcitItems) -> Edn {
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
   for x in xs {
     ys.push(dump_code(x));
+  }
+  Edn::List(ys)
+}
+
+fn dump_args_code(xs: &Arc<Vec<Arc<str>>>) -> Edn {
+  let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
+  for x in &**xs {
+    ys.push(Edn::sym(&*x.to_owned()));
   }
   Edn::List(ys)
 }

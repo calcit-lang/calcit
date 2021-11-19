@@ -246,10 +246,11 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
   } else {
     // run from `reload_fn` after reload
     let started_time = Instant::now();
-    if runner::track::has_pending_than_watcher() {
+    let task_size = runner::track::count_pending_tasks();
+    println!("checking pending tasks: {}", task_size);
+    if task_size > 1 {
       // when there's services, make sure their code get preprocessed too
       let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
-      println!("preprocesssing: {:?}", entries);
       if let Err(e) = runner::preprocess::preprocess_ns_def(
         entries.init_ns.to_owned(),
         entries.init_def.to_owned(),
@@ -408,7 +409,7 @@ fn throw_on_warnings(warnings: &[String]) -> Result<(), String> {
       content = format!("{}\n{}", content, message);
     }
 
-    return Err(format!("Found {} warnings, runner blocked.", warnings.len(),));
+    return Err(format!("Found {} warnings in preprocessing, re-run blocked.", warnings.len(),));
   } else {
     Ok(())
   }

@@ -365,7 +365,7 @@ fn process_list_call(
       loop {
         // need to handle recursion
         // println!("evaling line: {:?}", body);
-        let body_scope = runner::bind_args(&def_args, &current_values, &rpds::HashTrieMap::new_sync(), &next_stack)?;
+        let body_scope = runner::bind_args(def_args.to_owned(), &current_values, &rpds::HashTrieMap::new_sync(), &next_stack)?;
         let code = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
@@ -443,7 +443,7 @@ fn process_list_call(
 
 // detects arguments of top-level functions when possible
 fn check_fn_args(
-  defined_args: &CalcitItems,
+  defined_args: &Arc<Vec<Arc<str>>>,
   params: &CalcitItems,
   file_ns: Arc<str>,
   f_name: Arc<str>,
@@ -464,11 +464,11 @@ fn check_fn_args(
         // dynamic values, can't tell yet
         return;
       }
-      (Some(Calcit::Symbol { sym, .. }), _) if &**sym == "&" => {
+      (Some(sym), _) if &**sym == "&" => {
         // dynamic args rule, all okay
         return;
       }
-      (Some(Calcit::Symbol { sym, .. }), _) if &**sym == "?" => {
+      (Some(sym), _) if &**sym == "?" => {
         // dynamic args rule, all okay
         optional = true;
         i += 1;
@@ -482,9 +482,9 @@ fn check_fn_args(
         } else {
           let mut warnings = check_warnings.borrow_mut();
           warnings.push(format!(
-            "[Warn] lack of args in {} `{}` with `{}`, at {}/{}",
+            "[Warn] lack of args in {} `{:?}` with `{}`, at {}/{}",
             f_name,
-            primes::CrListWrap(defined_args.to_owned()),
+            defined_args,
             primes::CrListWrap(params.to_owned()),
             file_ns,
             def_name
@@ -495,9 +495,9 @@ fn check_fn_args(
       (None, Some(_)) => {
         let mut warnings = check_warnings.borrow_mut();
         warnings.push(format!(
-          "[Warn] too many args for {} `{}` with `{}`, at {}/{}",
+          "[Warn] too many args for {} `{:?}` with `{}`, at {}/{}",
           f_name,
-          primes::CrListWrap(defined_args.to_owned()),
+          defined_args,
           primes::CrListWrap(params.to_owned()),
           file_ns,
           def_name
