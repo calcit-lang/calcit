@@ -15,3 +15,5 @@ builds/
 .compact-inc.cirru
 
 .vscode/
+
+.DS_Store
