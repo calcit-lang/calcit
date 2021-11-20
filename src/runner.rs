@@ -6,6 +6,7 @@ use crate::builtins::is_proc_name;
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
+use crate::util::string::has_ns_part;
 
 use im_ternary_tree::TernaryTreeList;
 use std::sync::{Arc, RwLock};
@@ -249,6 +250,9 @@ pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack
 }
 
 pub fn parse_ns_def(s: &str) -> Option<(Arc<str>, Arc<str>)> {
+  if !has_ns_part(s) {
+    return None;
+  }
   let pieces: Vec<&str> = s.split('/').collect();
   if pieces.len() == 2 {
     if !pieces[0].is_empty() && !pieces[1].is_empty() {
