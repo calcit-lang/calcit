@@ -423,20 +423,22 @@ fn process_list_call(
       }),
     ) => {
       check_fn_args(&f_args, &args, file_ns.to_owned(), f_name, def_name, check_warnings);
-      let mut ys = TernaryTreeList::from(&[head_form]);
+      let mut ys = Vec::with_capacity(args.len() + 1);
+      ys.push(head_form);
       for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
-        ys = ys.push(form);
+        ys.push(form);
       }
-      Ok((Calcit::List(ys), None))
+      Ok((Calcit::List(TernaryTreeList::from(ys)), None))
     }
     (_, _) => {
-      let mut ys = TernaryTreeList::from(&[head_form]);
+      let mut ys = Vec::with_capacity(args.len() + 1);
+      ys.push(head_form);
       for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
-        ys = ys.push(form);
+        ys.push(form);
       }
-      Ok((Calcit::List(ys), None))
+      Ok((Calcit::List(TernaryTreeList::from(ys)), None))
     }
   }
 }
