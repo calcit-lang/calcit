@@ -1,3 +1,4 @@
+pub mod finger_list;
 mod syntax_name;
 
 use core::cmp::Ord;
@@ -9,14 +10,14 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 use std::sync::Arc;
 
+use crate::primes::finger_list::FingerList;
 use cirru_edn::EdnKwd;
-use im_ternary_tree::TernaryTreeList;
 
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 // scope
 pub type CalcitScope = rpds::HashTrieMapSync<Arc<str>, Calcit>;
-pub type CalcitItems = TernaryTreeList<Calcit>;
+pub type CalcitItems = FingerList<Calcit>;
 
 pub use syntax_name::CalcitSyntax;
 
@@ -43,9 +44,9 @@ pub enum ImportRule {
 
 /// special types wraps vector of calcit data for displaying
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct CrListWrap(pub TernaryTreeList<Calcit>);
+pub struct CrListWrap(pub FingerList<Calcit>);
 
-pub struct CalcitList(pub Arc<TernaryTreeList<Calcit>>);
+pub struct CalcitList(pub Arc<FingerList<Calcit>>);
 
 #[derive(Debug, Clone)]
 pub enum Calcit {

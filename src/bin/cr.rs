@@ -1,3 +1,5 @@
+#![recursion_limit = "128"]
+
 use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,7 +17,6 @@ use calcit_runner::{
   builtins, call_stack, cli_args, codegen, codegen::emit_js::gen_stack, codegen::COMPILE_ERRORS_FILE, program, runner, snapshot, util,
   ProgramEntries,
 };
-use im_ternary_tree::TernaryTreeList;
 
 pub struct CLIOptions {
   entry_path: PathBuf,
@@ -138,7 +139,7 @@ fn main() -> Result<(), String> {
     let started_time = Instant::now();
 
     let v =
-      calcit_runner::run_program(entries.init_ns.to_owned(), entries.init_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
+      calcit_runner::run_program(entries.init_ns.to_owned(), entries.init_def.to_owned(), FingerList::new_empty()).map_err(|e| {
         for w in e.warnings {
           println!("{}", w);
         }
@@ -265,13 +266,14 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
       let warnings = check_warnings.to_owned().into_inner();
       throw_on_warnings(&warnings)?;
     }
-    let v =
-      calcit_runner::run_program(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
+    let v = calcit_runner::run_program(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), FingerList::new_empty()).map_err(
+      |e| {
         for w in e.warnings {
           println!("{}", w);
         }
         e.msg
-      })?;
+      },
+    )?;
     let duration = Instant::now().duration_since(started_time);
     println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
     Ok(())

@@ -4,11 +4,11 @@ pub mod track;
 use crate::builtins;
 use crate::builtins::is_proc_name;
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
+use crate::primes::finger_list::FingerList;
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
 use crate::util::string::has_ns_part;
 
-use im_ternary_tree::TernaryTreeList;
 use std::sync::{Arc, RwLock};
 
 pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -348,7 +348,7 @@ pub fn bind_args(
         "&" => return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {:?}", args), call_stack)),
         "?" => return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {:?}", args), call_stack)),
         _ => {
-          let mut chunk: CalcitItems = TernaryTreeList::Empty;
+          let mut chunk: CalcitItems = FingerList::new_empty();
           while let Some(v) = values_pop_front() {
             chunk = chunk.push(v.to_owned());
           }
@@ -422,7 +422,7 @@ pub fn evaluate_args(
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<CalcitItems, CalcitErr> {
-  let mut ret: CalcitItems = TernaryTreeList::Empty;
+  let mut ret: CalcitItems = FingerList::new_empty();
   let mut spreading = false;
   for item in items {
     match item {

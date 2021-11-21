@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use crate::data::cirru;
 use crate::primes;
+use crate::primes::finger_list::FingerList;
 use crate::primes::Calcit;
 
 use cirru_edn::{Edn, EdnKwd};
-use im_ternary_tree::TernaryTreeList;
 
 // values does not fit are just represented with specical indicates
 pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
@@ -100,7 +100,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     ),
     Edn::Tuple(pair) => Calcit::Tuple(Arc::new(edn_to_calcit(&pair.0)), Arc::new(edn_to_calcit(&pair.1))),
     Edn::List(xs) => {
-      let mut ys: primes::CalcitItems = TernaryTreeList::Empty;
+      let mut ys: primes::CalcitItems = FingerList::new_empty();
       for x in xs {
         ys = ys.push(edn_to_calcit(x))
       }

@@ -52,8 +52,8 @@ dependencies = [
  "clap",
  "ctrlc",
  "dirs",
+ "fingertrees",
  "hex",
- "im_ternary_tree",
  "lazy_static",
  "libloading",
  "notify",
@@ -154,6 +154,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fingertrees"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77d1bc3d4880c54d4a11a70af7bc3e5c59f4b384ddfe4c42735d5a317c0abf21"
+
+[[package]]
 name = "fsevent"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -213,12 +219,6 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
-
-[[package]]
-name = "im_ternary_tree"
-version = "0.0.1-a8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a88022c35e7fe221e0bac9d91a051e5ffd32df85370f640e4aa1ef6d1d2ebc4b"
 
 [[package]]
 name = "inotify"

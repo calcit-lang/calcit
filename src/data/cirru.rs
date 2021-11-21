@@ -1,6 +1,6 @@
+use crate::primes::finger_list::FingerList;
 use crate::primes::{Calcit, CalcitItems};
 use cirru_parser::Cirru;
-use im_ternary_tree::TernaryTreeList;
 use std::sync::Arc;
 
 /// code is CirruNode, and this function parse code(rather than data)
@@ -44,7 +44,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
         },
         '\'' if s.len() > 1 => Ok(Calcit::List(
-          TernaryTreeList::Empty
+          FingerList::new_empty()
             .push(Calcit::Symbol {
               sym: String::from("quote").into(),
               ns: ns.to_owned(),
@@ -60,7 +60,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
         )),
         // TODO also detect simple variables
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(
-          TernaryTreeList::Empty
+          FingerList::new_empty()
             .push(Calcit::Symbol {
               sym: String::from("~@").into(),
               ns: ns.to_owned(),
@@ -75,7 +75,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             }),
         )),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(
-          TernaryTreeList::Empty
+          FingerList::new_empty()
             .push(Calcit::Symbol {
               sym: String::from("~").into(),
               ns: ns.to_owned(),
@@ -90,7 +90,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             }),
         )),
         '@' => Ok(Calcit::List(
-          TernaryTreeList::Empty
+          FingerList::new_empty()
             .push(Calcit::Symbol {
               sym: String::from("deref").into(),
               ns: ns.to_owned(),
@@ -120,7 +120,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
       },
     },
     Cirru::List(ys) => {
-      let mut zs: CalcitItems = TernaryTreeList::Empty;
+      let mut zs: CalcitItems = FingerList::new_empty();
       for y in ys {
         match code_to_calcit(y, ns.to_owned(), def.to_owned()) {
           Ok(v) => {
@@ -142,7 +142,7 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
   match xs {
     Cirru::Leaf(s) => Calcit::Str((**s).into()),
     Cirru::List(ys) => {
-      let mut zs: CalcitItems = TernaryTreeList::Empty;
+      let mut zs: CalcitItems = FingerList::new_empty();
       for y in ys {
         zs = zs.push(cirru_to_calcit(y))
       }
