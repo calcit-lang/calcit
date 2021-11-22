@@ -311,7 +311,7 @@ fn process_list_call(
   //   }
   // );
 
-  match (head_form.to_owned(), head_evaled) {
+  match (&head_form, &head_evaled) {
     (Calcit::Keyword(..), _) => {
       if args.len() == 1 {
         let code = Calcit::List(Arc::new(FingerList::from(&[
@@ -359,13 +359,13 @@ fn process_list_call(
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let code = Calcit::List(Arc::new(xs.to_owned()));
-      let next_stack = extend_call_stack(call_stack, def_ns.to_owned(), name, StackKind::Macro, code, &args);
+      let next_stack = extend_call_stack(call_stack, def_ns.to_owned(), name.to_owned(), StackKind::Macro, code, &args);
 
       loop {
         // need to handle recursion
         // println!("evaling line: {:?}", body);
         let body_scope = runner::bind_args(def_args.to_owned(), &current_values, &rpds::HashTrieMap::new_sync(), &next_stack)?;
-        let code = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), &next_stack)?;
+        let code = runner::evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
             current_values = ys.to_owned();
@@ -380,15 +380,15 @@ fn process_list_call(
     }
     (Calcit::Syntax(name, name_ns), _) => match name {
       CalcitSyntax::Quasiquote => Ok((
-        preprocess_quasiquote(&name, name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
+        preprocess_quasiquote(name, name_ns.to_owned(), &args, scope_defs, file_ns, check_warnings, call_stack)?,
         None,
       )),
       CalcitSyntax::Defn | CalcitSyntax::Defmacro => Ok((
-        preprocess_defn(&name, name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
+        preprocess_defn(name, name_ns.to_owned(), &args, scope_defs, file_ns, check_warnings, call_stack)?,
         None,
       )),
       CalcitSyntax::CoreLet => Ok((
-        preprocess_call_let(&name, name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
+        preprocess_call_let(name, name_ns.to_owned(), &args, scope_defs, file_ns, check_warnings, call_stack)?,
         None,
       )),
       CalcitSyntax::If
@@ -397,14 +397,31 @@ fn process_list_call(
       | CalcitSyntax::MacroexpandAll
       | CalcitSyntax::Macroexpand1
       | CalcitSyntax::Reset => Ok((
-        preprocess_each_items(&name, name_ns, &args, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?,
+        preprocess_each_items(
+          name,
+          name_ns.to_owned(),
+          &args,
+          scope_defs,
+          file_ns.to_owned(),
+          check_warnings,
+          call_stack,
+        )?,
         None,
       )),
-      CalcitSyntax::Quote | CalcitSyntax::Eval | CalcitSyntax::HintFn => {
-        Ok((preprocess_quote(&name, name_ns, &args, scope_defs, file_ns.to_owned())?, None))
-      }
+      CalcitSyntax::Quote | CalcitSyntax::Eval | CalcitSyntax::HintFn => Ok((
+        preprocess_quote(name, name_ns.to_owned(), &args, scope_defs, file_ns.to_owned())?,
+        None,
+      )),
       CalcitSyntax::Defatom => Ok((
-        preprocess_defatom(&name, name_ns, &args, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?,
+        preprocess_defatom(
+          name,
+          name_ns.to_owned(),
+          &args,
+          scope_defs,
+          file_ns.to_owned(),
+          check_warnings,
+          call_stack,
+        )?,
         None,
       )),
     },
@@ -421,7 +438,7 @@ fn process_list_call(
         ..
       }),
     ) => {
-      check_fn_args(&f_args, &args, file_ns.to_owned(), f_name, def_name, check_warnings);
+      check_fn_args(f_args, &args, file_ns.to_owned(), f_name.to_owned(), def_name, check_warnings);
       let mut ys = Vec::with_capacity(args.len() + 1);
       ys.push(head_form);
       for a in &args {

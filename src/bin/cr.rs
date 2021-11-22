@@ -72,7 +72,7 @@ fn main() -> Result<(), String> {
 
     let data = cirru_edn::parse(&content)?;
     // println!("reading: {}", content);
-    snapshot = snapshot::load_snapshot_data(data, cli_options.entry_path.to_str().unwrap())?;
+    snapshot = snapshot::load_snapshot_data(&data, cli_options.entry_path.to_str().unwrap())?;
 
     // config in entry will overwrite default configs
     if let Some(entry) = cli_matches.value_of("entry") {
@@ -227,7 +227,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
   // 3. rerun program, and catch error
 
   let data = cirru_edn::parse(content)?;
-  let changes = snapshot::load_changes_info(data)?;
+  let changes = snapshot::load_changes_info(&data)?;
 
   // println!("\ndata: {}", &data);
   // println!("\nchanges: {:?}", changes);

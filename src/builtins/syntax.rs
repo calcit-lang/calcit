@@ -193,7 +193,7 @@ pub fn macroexpand(
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
 
-    match quoted_code.to_owned() {
+    match &quoted_code {
       Calcit::List(xs) => {
         if xs.is_empty() {
           return Ok(quoted_code);
@@ -219,7 +219,7 @@ pub fn macroexpand(
           _ => Ok(quoted_code),
         }
       }
-      a => Ok(a),
+      a => Ok(a.to_owned()),
     }
   } else {
     CalcitErr::err_str(format!("macroexpand expected excaclty 1 argument, got: {:?}", expr))
@@ -235,7 +235,7 @@ pub fn macroexpand_1(
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
     // println!("quoted: {}", quoted_code);
-    match quoted_code.to_owned() {
+    match &quoted_code {
       Calcit::List(xs) => {
         if xs.is_empty() {
           return Ok(quoted_code);
@@ -249,7 +249,7 @@ pub fn macroexpand_1(
           _ => Ok(quoted_code),
         }
       }
-      a => Ok(a),
+      a => Ok(a.to_owned()),
     }
   } else {
     CalcitErr::err_str(format!("macroexpand expected excaclty 1 argument, got: {:?}", expr))
@@ -265,7 +265,7 @@ pub fn macroexpand_all(
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
 
-    match quoted_code.to_owned() {
+    match &quoted_code {
       Calcit::List(xs) => {
         if xs.is_empty() {
           return Ok(quoted_code);
@@ -314,7 +314,7 @@ pub fn macroexpand_all(
           }
         }
       }
-      a => Ok(a),
+      a => Ok(a.to_owned()),
     }
   } else {
     CalcitErr::err_str(format!("macroexpand expected excaclty 1 argument, got: {:?}", expr))

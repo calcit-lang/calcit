@@ -40,27 +40,32 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
         Some(Cirru::Leaf(s)) if &**s == "[]" => xs = xs[1..4].to_vec(),
         _ => (),
       }
-      match (xs[0].to_owned(), xs[1].to_owned(), xs[2].to_owned()) {
-        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::leaf(":as") => {
-          Ok(vec![((*alias).into(), Arc::new(ImportRule::NsAs((*ns).into())))])
-        }
-        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if x == Cirru::leaf(":default") => {
-          Ok(vec![((*alias).into(), Arc::new(ImportRule::NsDefault((*ns).into())))])
-        }
-        (Cirru::Leaf(ns), x, Cirru::List(ys)) if x == Cirru::leaf(":refer") => {
+      match (&xs[0], &xs[1], &xs[2]) {
+        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if *x == Cirru::leaf(":as") => Ok(vec![(
+          (*alias.to_owned()).into(),
+          Arc::new(ImportRule::NsAs((*ns.to_owned()).into())),
+        )]),
+        (Cirru::Leaf(ns), x, Cirru::Leaf(alias)) if *x == Cirru::leaf(":default") => Ok(vec![(
+          (*alias.to_owned()).into(),
+          Arc::new(ImportRule::NsDefault((*ns.to_owned()).into())),
+        )]),
+        (Cirru::Leaf(ns), x, Cirru::List(ys)) if *x == Cirru::leaf(":refer") => {
           let mut rules: Vec<(Arc<str>, Arc<ImportRule>)> = Vec::with_capacity(ys.len());
           for y in ys {
             match y {
-              Cirru::Leaf(s) if &*s == "[]" => (), // `[]` symbol are ignored
-              Cirru::Leaf(s) => rules.push(((*s).into(), Arc::new(ImportRule::NsReferDef((*ns.to_owned()).into(), s.into())))),
+              Cirru::Leaf(s) if &**s == "[]" => (), // `[]` symbol are ignored
+              Cirru::Leaf(s) => rules.push((
+                (*s.to_owned()).into(),
+                Arc::new(ImportRule::NsReferDef((*ns.to_owned()).into(), (*s.to_owned()).into())),
+              )),
               Cirru::List(_defs) => return Err(String::from("invalid refer values")),
             }
           }
           Ok(rules)
         }
-        (_, x, _) if x == Cirru::leaf(":as") => Err(String::from("invalid import rule")),
-        (_, x, _) if x == Cirru::leaf(":default") => Err(String::from("invalid default rule")),
-        (_, x, _) if x == Cirru::leaf(":refer") => Err(String::from("invalid import rule")),
+        (_, x, _) if *x == Cirru::leaf(":as") => Err(String::from("invalid import rule")),
+        (_, x, _) if *x == Cirru::leaf(":default") => Err(String::from("invalid default rule")),
+        (_, x, _) if *x == Cirru::leaf(":refer") => Err(String::from("invalid import rule")),
         _ if xs.len() != 3 => Err(format!("expected import rule has length 3: {}", Cirru::List(xs.to_owned()))),
         _ => Err(String::from("unknown rule")),
       }
@@ -95,19 +100,19 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Arc<str>, Arc<ImportRule>
   }
 }
 
-fn extract_file_data(file: snapshot::FileInSnapShot, ns: Arc<str>) -> Result<ProgramFileData, String> {
+fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<ProgramFileData, String> {
   let import_map = extract_import_map(&file.ns)?;
   let mut defs: HashMap<Arc<str>, Calcit> = HashMap::with_capacity(file.defs.len());
-  for (def, code) in file.defs {
+  for (def, code) in &file.defs {
     let at_def = def.to_owned();
-    defs.insert(def, code_to_calcit(&code, ns.to_owned(), at_def)?);
+    defs.insert(def.to_owned(), code_to_calcit(code, ns.to_owned(), at_def)?);
   }
   Ok(ProgramFileData { import_map, defs })
 }
 
 pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
   let mut xs: ProgramCodeData = HashMap::with_capacity(s.files.len());
-  for (ns, file) in s.files.to_owned() {
+  for (ns, file) in &s.files {
     let file_info = extract_file_data(file, ns.to_owned())?;
     xs.insert(ns.to_owned(), file_info);
   }
@@ -211,7 +216,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
   let mut program_code = { PROGRAM_CODE_DATA.write().unwrap() };
 
   for (ns, file) in &changes.added {
-    program_code.insert(ns.to_owned(), extract_file_data(file.to_owned(), ns.to_owned())?);
+    program_code.insert(ns.to_owned(), extract_file_data(file, ns.to_owned())?);
   }
   for ns in &changes.removed {
     program_code.remove(ns);
