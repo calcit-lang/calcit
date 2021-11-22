@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 use crate::call_stack::{CalcitStack, CallStackList, StackKind};
 use crate::primes::{Calcit, CalcitItems};
@@ -12,7 +12,7 @@ pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args:
   stack.push_front_mut(CalcitStack {
     ns: ns.into(),
     def: def.into(),
-    code: Arc::new(code),
+    code,
     args: args.to_owned(),
     kind,
   })

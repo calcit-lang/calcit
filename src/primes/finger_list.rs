@@ -23,7 +23,7 @@ where
   T: Debug + Clone + Hash + Ord + Display,
 {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str("(&filter-list ")?;
+    f.write_str("(&finger-list ")?;
 
     for x in self.into_iter() {
       f.write_str(" ")?;
@@ -55,7 +55,7 @@ where
   fn cmp(&self, other: &Self) -> Ordering {
     if self.len() == other.len() {
       for idx in 0..self.len() {
-        let r = self.get(idx).cmp(&other.get(idx));
+        let r = self[idx].cmp(&other[idx]);
         if r == Equal {
           continue;
         } else {
@@ -87,7 +87,7 @@ where
   fn eq(&self, other: &Self) -> bool {
     if self.len() == other.len() {
       for idx in 0..self.len() {
-        if self.get(idx) != other.get(idx) {
+        if self[idx] != other[idx] {
           return false;
         }
       }
@@ -211,6 +211,14 @@ where
     Self(FingerTree::new())
   }
 
+  pub fn new2(a: T, b: T) -> Self {
+    Self(FingerTree::new().push_right(Size(a)).push_right(Size(b)))
+  }
+
+  pub fn new3(a: T, b: T, c: T) -> Self {
+    Self(FingerTree::new().push_right(Size(a)).push_right(Size(b)).push_right(Size(c)))
+  }
+
   pub fn iter(&self) -> FigerListRefIntoIterator<T> {
     FigerListRefIntoIterator { value: self, index: 0 }
   }
@@ -256,7 +264,7 @@ where
       // println!("get: {} {}", self.value.format_inline(), self.index);
       let idx = self.index;
       self.index += 1;
-      Some(self.value.get(idx).unwrap())
+      Some(&self.value[idx])
     } else {
       None
     }

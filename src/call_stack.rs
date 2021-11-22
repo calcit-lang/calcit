@@ -12,7 +12,7 @@ use std::sync::Arc;
 pub struct CalcitStack {
   pub ns: Arc<str>,
   pub def: Arc<str>,
-  pub code: Arc<Calcit>, // built in functions may not contain code
+  pub code: Calcit, // built in functions may not contain code
   pub args: CalcitItems,
   pub kind: StackKind,
 }
@@ -48,7 +48,7 @@ pub fn extend_call_stack(
   stack.push_front(CalcitStack {
     ns: ns.to_owned(),
     def: def.to_owned(),
-    code: Arc::new(code),
+    code: code.to_owned(),
     args: args.to_owned(),
     kind,
   })

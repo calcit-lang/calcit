@@ -1,5 +1,5 @@
 use crate::primes::finger_list::FingerList;
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::Calcit;
 use cirru_parser::Cirru;
 use std::sync::Arc;
 
@@ -43,67 +43,63 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           Ok(n) => Ok(Calcit::Number(n as f64)),
           Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
         },
-        '\'' if s.len() > 1 => Ok(Calcit::List(Arc::new(
-          FingerList::new_empty()
-            .push(Calcit::Symbol {
-              sym: String::from("quote").into(),
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
-              resolved: None,
-            })
-            .push(Calcit::Symbol {
-              sym: String::from(&s[1..]).into(),
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
-              resolved: None,
-            }),
-        ))),
+        '\'' if s.len() > 1 => Ok(Calcit::List(Arc::new(FingerList::new2(
+          Calcit::Symbol {
+            sym: String::from("quote").into(),
+            ns: ns.to_owned(),
+            at_def: def.to_owned(),
+            resolved: None,
+          },
+          Calcit::Symbol {
+            sym: String::from(&s[1..]).into(),
+            ns: ns.to_owned(),
+            at_def: def.to_owned(),
+            resolved: None,
+          },
+        )))),
         // TODO also detect simple variables
-        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(Arc::new(
-          FingerList::new_empty()
-            .push(Calcit::Symbol {
-              sym: String::from("~@").into(),
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
-              resolved: None,
-            })
-            .push(Calcit::Symbol {
-              sym: String::from(&s[2..]).into(),
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
-              resolved: None,
-            }),
-        ))),
-        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(Arc::new(
-          FingerList::new_empty()
-            .push(Calcit::Symbol {
-              sym: String::from("~").into(),
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
-              resolved: None,
-            })
-            .push(Calcit::Symbol {
-              sym: String::from(&s[1..]).into(),
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
-              resolved: None,
-            }),
-        ))),
-        '@' => Ok(Calcit::List(Arc::new(
-          FingerList::new_empty()
-            .push(Calcit::Symbol {
-              sym: String::from("deref").into(),
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
-              resolved: None,
-            })
-            .push(Calcit::Symbol {
-              sym: String::from(&s[1..]).into(),
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
-              resolved: None,
-            }),
-        ))),
+        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(Arc::new(FingerList::new2(
+          Calcit::Symbol {
+            sym: String::from("~@").into(),
+            ns: ns.to_owned(),
+            at_def: def.to_owned(),
+            resolved: None,
+          },
+          Calcit::Symbol {
+            sym: String::from(&s[2..]).into(),
+            ns: ns.to_owned(),
+            at_def: def.to_owned(),
+            resolved: None,
+          },
+        )))),
+        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(Arc::new(FingerList::new2(
+          Calcit::Symbol {
+            sym: String::from("~").into(),
+            ns: ns.to_owned(),
+            at_def: def.to_owned(),
+            resolved: None,
+          },
+          Calcit::Symbol {
+            sym: String::from(&s[1..]).into(),
+            ns: ns.to_owned(),
+            at_def: def.to_owned(),
+            resolved: None,
+          },
+        )))),
+        '@' => Ok(Calcit::List(Arc::new(FingerList::new2(
+          Calcit::Symbol {
+            sym: String::from("deref").into(),
+            ns: ns.to_owned(),
+            at_def: def.to_owned(),
+            resolved: None,
+          },
+          Calcit::Symbol {
+            sym: String::from(&s[1..]).into(),
+            ns: ns.to_owned(),
+            at_def: def.to_owned(),
+            resolved: None,
+          },
+        )))),
         // TODO future work of reader literal expanding
         _ => {
           if let Ok(f) = s.parse::<f64>() {
@@ -120,19 +116,18 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
       },
     },
     Cirru::List(ys) => {
-      let mut zs: CalcitItems = FingerList::new_empty();
+      let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
       for y in ys {
         match code_to_calcit(y, ns.to_owned(), def.to_owned()) {
           Ok(v) => {
             if !is_comment(&v) {
-              zs = zs.push(v.to_owned())
-            } else {
+              zs.push(v.to_owned());
             }
           }
           Err(e) => return Err(e),
         }
       }
-      Ok(Calcit::List(Arc::new(zs)))
+      Ok(Calcit::List(Arc::new(FingerList::from(&zs))))
     }
   }
 }
@@ -142,11 +137,11 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
   match xs {
     Cirru::Leaf(s) => Calcit::Str((**s).into()),
     Cirru::List(ys) => {
-      let mut zs: CalcitItems = FingerList::new_empty();
+      let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
       for y in ys {
-        zs = zs.push(cirru_to_calcit(y))
+        zs.push(cirru_to_calcit(y));
       }
-      Calcit::List(Arc::new(zs))
+      Calcit::List(Arc::new(FingerList::from(&zs)))
     }
   }
 }

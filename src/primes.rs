@@ -18,10 +18,6 @@ use fingertrees::monoid::Sum;
 
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
-// scope
-pub type CalcitScope = rpds::HashTrieMapSync<Arc<str>, Calcit>;
-pub type CalcitItems = FingerList<Calcit>;
-
 pub use syntax_name::CalcitSyntax;
 
 use crate::call_stack::CallStackList;
@@ -45,11 +41,13 @@ pub enum ImportRule {
   NsDefault(Arc<str>),            // ns, js only
 }
 
+// scope
+pub type CalcitScope = rpds::HashTrieMapSync<Arc<str>, Calcit>;
+pub type CalcitItems = FingerList<Calcit>;
+
 /// special types wraps vector of calcit data for displaying
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct CrListWrap(pub FingerList<Calcit>);
-
-pub struct CalcitList(pub Arc<FingerList<Calcit>>);
 
 #[derive(Debug, Clone)]
 pub enum Calcit {
