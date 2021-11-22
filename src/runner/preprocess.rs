@@ -11,6 +11,15 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+/// only macro and func are cared about during preprocessing
+/// only used in preprocess defs
+fn pick_macro_fn(x: Calcit) -> Option<Calcit> {
+  match &x {
+    Calcit::Fn { .. } | Calcit::Macro { .. } => Some(x),
+    _ => None,
+  }
+}
+
 /// returns the resolved symbol,
 /// if code related is not preprocessed, do it internally
 pub fn preprocess_ns_def(
@@ -40,7 +49,7 @@ pub fn preprocess_ns_def(
             rule: import_rule,
           })),
         },
-        Some(v),
+        pick_macro_fn(v),
       ))
     }
     None => {
@@ -83,7 +92,7 @@ pub fn preprocess_ns_def(
                 rule: Some(Arc::new(ImportRule::NsReferDef(ns.to_owned(), def.to_owned()))),
               })),
             },
-            Some(v),
+            pick_macro_fn(v),
           ))
         }
         None if ns.starts_with('|') || ns.starts_with('"') => Ok((
@@ -272,12 +281,10 @@ pub fn preprocess_expr(
         process_list_call(xs, scope_defs, file_ns, check_warnings, call_stack)
       }
     }
-    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) => {
-      Ok((expr.to_owned(), Some(expr.to_owned())))
-    }
+    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) => Ok((expr.to_owned(), None)),
     Calcit::Proc(..) => {
       // maybe detect method in future
-      Ok((expr.to_owned(), Some(expr.to_owned())))
+      Ok((expr.to_owned(), None))
     }
 
     _ => {
@@ -311,6 +318,12 @@ fn process_list_call(
   //   }
   // );
 
+  // == Tips ==
+  // Macro from value: will be called during processing
+  // Func from value: for checking arity
+  // Keyword: transforming into keyword expression
+  // Syntax: handled directly during preprocessing
+  // Thunk: invalid here
   match (&head_form, &head_evaled) {
     (Calcit::Keyword(..), _) => {
       if args.len() == 1 {
@@ -334,17 +347,7 @@ fn process_list_call(
       }
     }
     (
-      Calcit::Macro {
-        name,
-        def_ns,
-        args: def_args,
-        body,
-        ..
-      },
       _,
-    )
-    | (
-      Calcit::Symbol { .. },
       Some(Calcit::Macro {
         name,
         def_ns,
@@ -372,8 +375,7 @@ fn process_list_call(
           }
           _ => {
             // println!("gen code: {} {}", code, &code.lisp_str());
-            let (final_code, v) = preprocess_expr(&code, scope_defs, file_ns, check_warnings, &next_stack)?;
-            return Ok((final_code, v));
+            return preprocess_expr(&code, scope_defs, file_ns, check_warnings, &next_stack);
           }
         }
       }
