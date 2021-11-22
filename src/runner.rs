@@ -422,7 +422,7 @@ pub fn evaluate_args(
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<CalcitItems, CalcitErr> {
-  let mut ret: CalcitItems = FingerList::new_empty();
+  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len());
   let mut spreading = false;
   for item in items {
     match item {
@@ -444,7 +444,7 @@ pub fn evaluate_args(
                   },
                   _ => x.to_owned(),
                 };
-                ret = ret.push(y.to_owned());
+                ret.push(y.to_owned());
               }
               spreading = false
             }
@@ -464,10 +464,10 @@ pub fn evaluate_args(
             },
             _ => v.to_owned(),
           };
-          ret = ret.push(y);
+          ret.push(y);
         }
       }
     }
   }
-  Ok(ret)
+  Ok(FingerList::from(&ret))
 }

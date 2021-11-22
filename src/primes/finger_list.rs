@@ -172,7 +172,8 @@ where
   }
 
   pub fn skip(&self, from: usize) -> Result<Self, String> {
-    self.slice(from, self.len())
+    let (_, right) = self.0.split(|measure| *measure > Sum(from));
+    Ok(Self(right))
   }
 
   pub fn assoc(&self, from: usize, item: T) -> Result<Self, String> {

@@ -114,7 +114,7 @@ pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
 // code replaced from `~` and `~@` returns different results
 #[derive(Clone, PartialEq, Debug)]
 enum SpanResult {
-  Single(Arc<Calcit>),
+  Single(Calcit),
   Range(Arc<CalcitItems>),
 }
 
@@ -125,7 +125,7 @@ pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
       match replace_code(code, scope, file_ns, call_stack)? {
         SpanResult::Single(v) => {
           // println!("replace result: {:?}", v);
-          Ok((*v).to_owned())
+          Ok(v)
         }
         SpanResult::Range(xs) => CalcitErr::err_str(format!("expected single result from quasiquote, got {:?}", xs)),
       }
@@ -135,13 +135,13 @@ pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
 
 fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<SpanResult, CalcitErr> {
   if !has_unquote(c) {
-    return Ok(SpanResult::Single(Arc::new(c.to_owned())));
+    return Ok(SpanResult::Single(c.to_owned()));
   }
   match c {
     Calcit::List(ys) => match (ys.get(0), ys.get(1)) {
       (Some(Calcit::Symbol { sym, .. }), Some(expr)) if &**sym == "~" => {
         let value = runner::evaluate_expr(expr, scope, file_ns.to_owned(), call_stack)?;
-        Ok(SpanResult::Single(Arc::new(value)))
+        Ok(SpanResult::Single(value))
       }
       (Some(Calcit::Symbol { sym, .. }), Some(expr)) if &**sym == "~@" => {
         let ret = runner::evaluate_expr(expr, scope, file_ns.to_owned(), call_stack)?;
@@ -154,7 +154,7 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: 
         let mut ret: FingerList<Calcit> = FingerList::new_empty();
         for y in &**ys {
           match replace_code(y, scope, file_ns.to_owned(), call_stack)? {
-            SpanResult::Single(z) => ret = ret.push((*z).to_owned()),
+            SpanResult::Single(z) => ret = ret.push(z),
             SpanResult::Range(pieces) => {
               for piece in &*pieces {
                 ret = ret.push(piece.to_owned());
@@ -162,10 +162,10 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: 
             }
           }
         }
-        Ok(SpanResult::Single(Arc::new(Calcit::List(Arc::new(ret)))))
+        Ok(SpanResult::Single(Calcit::List(Arc::new(ret))))
       }
     },
-    _ => Ok(SpanResult::Single(Arc::new(c.to_owned()))),
+    _ => Ok(SpanResult::Single(c.to_owned())),
   }
 }
 
