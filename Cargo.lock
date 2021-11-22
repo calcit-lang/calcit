@@ -155,9 +155,9 @@ dependencies = [
 
 [[package]]
 name = "fingertrees"
-version = "0.2.5"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77d1bc3d4880c54d4a11a70af7bc3e5c59f4b384ddfe4c42735d5a317c0abf21"
+checksum = "53b67d8f49456811373ba887e9f86c1fa0ac4cd934ece3a095331e446b0f6ed0"
 
 [[package]]
 name = "fsevent"

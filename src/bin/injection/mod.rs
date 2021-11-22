@@ -1,4 +1,3 @@
-use crate::primes::finger_list::FingerList;
 use crate::runner;
 use cirru_edn::Edn;
 use std::sync::Arc;
@@ -8,7 +7,7 @@ use calcit_runner::{
   builtins,
   call_stack::{display_stack, CallStackList},
   data::edn::{calcit_to_edn, edn_to_calcit},
-  primes::{Calcit, CalcitErr, CalcitItems, CrListWrap},
+  primes::{finger_list::FingerList, Calcit, CalcitErr, CalcitItems, CrListWrap},
   runner::track,
 };
 

@@ -14,8 +14,8 @@ mod injection;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 use calcit_runner::{
-  builtins, call_stack, cli_args, codegen, codegen::emit_js::gen_stack, codegen::COMPILE_ERRORS_FILE, program, runner, snapshot, util,
-  ProgramEntries,
+  builtins, call_stack, cli_args, codegen, codegen::emit_js::gen_stack, codegen::COMPILE_ERRORS_FILE, primes::finger_list::FingerList,
+  program, runner, snapshot, util, ProgramEntries,
 };
 
 pub struct CLIOptions {

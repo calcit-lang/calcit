@@ -21,10 +21,17 @@ where
 
 impl<T> fmt::Display for FingerList<T>
 where
-  T: Debug + Clone,
+  T: Debug + Clone + Hash + Ord + Display,
 {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str("(&filter-list TODO)")
+    f.write_str("(&filter-list ")?;
+
+    for x in self.into_iter() {
+      f.write_str(" ")?;
+      f.write_str(&x.to_string())?;
+    }
+
+    f.write_str(")")
   }
 }
 
@@ -49,7 +56,7 @@ where
   fn cmp(&self, other: &Self) -> Ordering {
     if self.len() == other.len() {
       for idx in 0..self.len() {
-        let r = self[idx].cmp(&other[idx]);
+        let r = self.get(idx).cmp(&other.get(idx));
         if r == Equal {
           continue;
         } else {
@@ -81,7 +88,7 @@ where
   fn eq(&self, other: &Self) -> bool {
     if self.len() == other.len() {
       for idx in 0..self.len() {
-        if self[idx] != other[idx] {
+        if self.get(idx) != other.get(idx) {
           return false;
         }
       }
@@ -110,9 +117,10 @@ where
   type Output = T;
 
   fn index<'b>(&self, idx: usize) -> &Self::Output {
-    // println!("get: {} {}", self.format_inline(), idx);
-    let (_, right) = self.0.split(|measure| *measure >= Sum(idx));
-    &right.view_left().unwrap().0
+    match self.0.find(|m| **m > idx) {
+      Some(value) => &***value,
+      None => unreachable!("out of bound"),
+    }
   }
 }
 
@@ -121,8 +129,7 @@ where
   T: Debug + Clone + Ord + Display + Hash,
 {
   pub fn get(&self, idx: usize) -> Option<&T> {
-    let (_, right) = self.0.split(|measure| *measure >= Sum(idx));
-    Some(&right.view_left().unwrap().0)
+    self.0.find(|m| **m > idx).map(|value| &***value)
   }
 
   pub fn len(&self) -> usize {
@@ -153,43 +160,43 @@ where
     Self(next)
   }
   pub fn slice(&self, from: usize, to: usize) -> Result<Self, String> {
-    let (_, right) = self.0.split(|measure| *measure >= Sum(from));
-    let (_, next) = right.split(|measure| *measure >= Sum(to));
+    let (_, right) = self.0.split(|measure| *measure > Sum(from));
+    let (next, _) = right.split(|measure| *measure > Sum(to - from));
     Ok(Self(next))
   }
   pub fn reverse(&self) -> Self {
-    let xs: FingerTree<ArcRefs, Size<Arc<T>>> = FingerTree::new();
+    let mut xs: FingerTree<ArcRefs, Size<Arc<T>>> = FingerTree::new();
     for y in (&self.0).into_iter() {
-      xs.push_left(y);
+      xs = xs.push_left(y);
     }
     Self(xs)
   }
 
   pub fn skip(&self, from: usize) -> Result<Self, String> {
-    self.slice(from, self.len() - from)
+    self.slice(from, self.len())
   }
 
   pub fn assoc(&self, from: usize, item: T) -> Result<Self, String> {
-    let (left, right) = self.0.split(|measure| *measure >= Sum(from));
+    let (left, right) = self.0.split(|measure| *measure > Sum(from));
     let (_, r2) = right.view_left().unwrap();
     let next = r2.push_left(Size(Arc::new(item)));
     Ok(Self(left.concat(&next).to_owned()))
   }
 
   pub fn dissoc(&self, from: usize) -> Result<Self, String> {
-    let (left, right) = self.0.split(|measure| *measure >= Sum(from));
-    let (_, next) = right.view_right().unwrap();
+    let (left, right) = self.0.split(|measure| *measure > Sum(from));
+    let (_, next) = right.view_left().unwrap();
     Ok(Self(left.concat(&next).to_owned()))
   }
 
   pub fn assoc_before(&self, from: usize, item: T) -> Result<Self, String> {
-    let (left, right) = self.0.split(|measure| *measure >= Sum(from));
+    let (left, right) = self.0.split(|measure| *measure > Sum(from));
     let next = right.push_left(Size(Arc::new(item)));
     Ok(Self(left.concat(&next).to_owned()))
   }
 
   pub fn assoc_after(&self, from: usize, item: T) -> Result<Self, String> {
-    let (left, right) = self.0.split(|measure| *measure >= Sum(from + 1));
+    let (left, right) = self.0.split(|measure| *measure > Sum(from + 1));
     let next = right.push_left(Size(Arc::new(item)));
     Ok(Self(left.concat(&next).to_owned()))
   }
@@ -248,7 +255,7 @@ where
       // println!("get: {} {}", self.value.format_inline(), self.index);
       let idx = self.index;
       self.index += 1;
-      Some(&self.value[idx])
+      Some(self.value.get(idx).unwrap())
     } else {
       None
     }
