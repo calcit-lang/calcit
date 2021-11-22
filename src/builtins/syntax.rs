@@ -37,7 +37,10 @@ pub fn defmacro(expr: &CalcitItems, _scope: &CalcitScope, def_ns: Arc<str>) -> R
       body: Arc::new(expr.skip(2)?),
     }),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid structure for defmacro: {} {}", a, b)),
-    _ => CalcitErr::err_str(format!("invalid structure for defmacro: {}", Calcit::List(expr.to_owned()))),
+    _ => CalcitErr::err_str(format!(
+      "invalid structure for defmacro: {}",
+      Calcit::List(Arc::new(expr.to_owned()))
+    )),
   }
 }
 
@@ -112,7 +115,7 @@ pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
 #[derive(Clone, PartialEq, Debug)]
 enum SpanResult {
   Single(Arc<Calcit>),
-  Range(CalcitItems),
+  Range(Arc<CalcitItems>),
 }
 
 pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -149,17 +152,17 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: 
       }
       (_, _) => {
         let mut ret: FingerList<Calcit> = FingerList::new_empty();
-        for y in ys {
+        for y in &**ys {
           match replace_code(y, scope, file_ns.to_owned(), call_stack)? {
             SpanResult::Single(z) => ret = ret.push((*z).to_owned()),
             SpanResult::Range(pieces) => {
-              for piece in &pieces {
+              for piece in &*pieces {
                 ret = ret.push(piece.to_owned());
               }
             }
           }
         }
-        Ok(SpanResult::Single(Arc::new(Calcit::List(ret))))
+        Ok(SpanResult::Single(Arc::new(Calcit::List(Arc::new(ret)))))
       }
     },
     _ => Ok(SpanResult::Single(Arc::new(c.to_owned()))),
@@ -169,7 +172,7 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: 
 pub fn has_unquote(xs: &Calcit) -> bool {
   match xs {
     Calcit::List(ys) => {
-      for y in ys {
+      for y in &**ys {
         if has_unquote(y) {
           return true;
         }
@@ -207,7 +210,7 @@ pub fn macroexpand(
               let v = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
-                  rest_nodes = rest_code;
+                  rest_nodes = (*rest_code).to_owned();
                 }
                 _ => return Ok(v),
               }
@@ -280,7 +283,7 @@ pub fn macroexpand_all(
               let v = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
-                  rest_nodes = rest_code;
+                  rest_nodes = (*rest_code).to_owned();
                 }
                 _ => {
                   let (resolved, _v) =

@@ -49,7 +49,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn recur(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  Ok(Calcit::Recur(xs.to_owned()))
+  Ok(Calcit::Recur(Arc::new(xs.to_owned())))
 }
 
 pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -72,7 +72,7 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
   match x {
     Calcit::List(ys) => {
       let mut xs: Vec<Cirru> = Vec::with_capacity(ys.len());
-      for y in ys {
+      for y in &**ys {
         xs.push(transform_code_to_cirru(y));
       }
       Cirru::List(xs)

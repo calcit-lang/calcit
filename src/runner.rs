@@ -118,7 +118,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             );
 
             // TODO moving to preprocess
-            let mut current_values = rest_nodes.to_owned();
+            let mut current_values = Arc::new(rest_nodes.to_owned());
             // println!("eval macro: {} {}", x, expr.lisp_str()));
             // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
@@ -137,7 +137,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               let code = evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
-                  current_values = ys;
+                  current_values = ys.to_owned();
                 }
                 _ => {
                   // println!("gen code: {} {}", x, &code.lisp_str()));
@@ -170,7 +170,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             call_stack,
           )),
           a => Err(CalcitErr::use_msg_stack(
-            format!("cannot be used as operator: {} in {}", a, CrListWrap(xs.to_owned())),
+            format!("cannot be used as operator: {} in {}", a, CrListWrap((**xs).to_owned())),
             call_stack,
           )),
         };
@@ -290,13 +290,13 @@ pub fn run_fn(
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut current_values = values.to_owned();
+  let mut current_values = Arc::new(values.to_owned());
   loop {
     let body_scope = bind_args(args.to_owned(), &current_values, scope, call_stack)?;
     let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
     match v {
       Calcit::Recur(xs) => {
-        current_values = xs;
+        current_values = xs.to_owned();
       }
       result => return Ok(result),
     }
@@ -352,7 +352,7 @@ pub fn bind_args(
           while let Some(v) = values_pop_front() {
             chunk = chunk.push(v.to_owned());
           }
-          scope.insert_mut(sym.to_owned(), Calcit::List(chunk));
+          scope.insert_mut(sym.to_owned(), Calcit::List(Arc::new(chunk)));
           if !is_args_empty() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{:?}` after spreading in `{:?}`", collected_args, args,),
@@ -435,7 +435,7 @@ pub fn evaluate_args(
         if spreading {
           match v {
             Calcit::List(xs) => {
-              for x in &xs {
+              for x in &*xs {
                 // extract thunk before calling functions
                 let y = match x {
                   Calcit::Thunk(code, v) => match v {

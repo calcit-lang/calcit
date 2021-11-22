@@ -43,7 +43,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           Ok(n) => Ok(Calcit::Number(n as f64)),
           Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
         },
-        '\'' if s.len() > 1 => Ok(Calcit::List(
+        '\'' if s.len() > 1 => Ok(Calcit::List(Arc::new(
           FingerList::new_empty()
             .push(Calcit::Symbol {
               sym: String::from("quote").into(),
@@ -57,9 +57,9 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
               at_def: def.to_owned(),
               resolved: None,
             }),
-        )),
+        ))),
         // TODO also detect simple variables
-        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(
+        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(Arc::new(
           FingerList::new_empty()
             .push(Calcit::Symbol {
               sym: String::from("~@").into(),
@@ -73,8 +73,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
               at_def: def.to_owned(),
               resolved: None,
             }),
-        )),
-        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(
+        ))),
+        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(Arc::new(
           FingerList::new_empty()
             .push(Calcit::Symbol {
               sym: String::from("~").into(),
@@ -88,8 +88,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
               at_def: def.to_owned(),
               resolved: None,
             }),
-        )),
-        '@' => Ok(Calcit::List(
+        ))),
+        '@' => Ok(Calcit::List(Arc::new(
           FingerList::new_empty()
             .push(Calcit::Symbol {
               sym: String::from("deref").into(),
@@ -103,7 +103,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
               at_def: def.to_owned(),
               resolved: None,
             }),
-        )),
+        ))),
         // TODO future work of reader literal expanding
         _ => {
           if let Ok(f) = s.parse::<f64>() {
@@ -132,7 +132,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           Err(e) => return Err(e),
         }
       }
-      Ok(Calcit::List(zs))
+      Ok(Calcit::List(Arc::new(zs)))
     }
   }
 }
@@ -146,7 +146,7 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
       for y in ys {
         zs = zs.push(cirru_to_calcit(y))
       }
-      Calcit::List(zs)
+      Calcit::List(Arc::new(zs))
     }
   }
 }
@@ -160,7 +160,7 @@ pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
     Calcit::Str(s) => Ok(Cirru::Leaf((**s).into())),
     Calcit::List(ys) => {
       let mut zs: Vec<Cirru> = Vec::with_capacity(ys.len());
-      for y in ys {
+      for y in &**ys {
         match calcit_data_to_cirru(y) {
           Ok(v) => {
             zs.push(v);
@@ -196,7 +196,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Keyword(s) => Ok(Cirru::leaf(format!(":{}", s))), // TODO performance
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
-      for x in xs {
+      for x in &**xs {
         ys.push(calcit_to_cirru(x)?);
       }
       Ok(Cirru::List(ys))

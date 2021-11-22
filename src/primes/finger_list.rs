@@ -1,5 +1,4 @@
 use std::fmt;
-use std::sync::Arc;
 
 use core::cmp::Ord;
 use std::cmp::Eq;
@@ -15,7 +14,7 @@ use std::ops::Index;
 use fingertrees::{ArcRefs, FingerTree};
 
 #[derive(Debug, Clone)]
-pub struct FingerList<T>(FingerTree<ArcRefs, Size<Arc<T>>>)
+pub struct FingerList<T>(FingerTree<ArcRefs, Size<T>>)
 where
   T: Clone;
 
@@ -118,7 +117,7 @@ where
 
   fn index<'b>(&self, idx: usize) -> &Self::Output {
     match self.0.find(|m| **m > idx) {
-      Some(value) => &***value,
+      Some(value) => value,
       None => unreachable!("out of bound"),
     }
   }
@@ -129,7 +128,7 @@ where
   T: Debug + Clone + Ord + Display + Hash,
 {
   pub fn get(&self, idx: usize) -> Option<&T> {
-    self.0.find(|m| **m > idx).map(|value| &***value)
+    self.0.find(|m| **m > idx).map(|value| &**value)
   }
 
   pub fn len(&self) -> usize {
@@ -143,11 +142,11 @@ where
   }
 
   pub fn push(&self, item: T) -> Self {
-    let next = self.0.push_right(Size(Arc::new(item)));
+    let next = self.0.push_right(Size(item));
     Self(next)
   }
   pub fn rest(&self) -> Result<Self, String> {
-    let (_, right) = self.0.view_left().unwrap();
+    let (_, right) = self.0.split(|measure| *measure > Sum(1));
     Ok(Self(right))
   }
 
@@ -156,7 +155,7 @@ where
     Ok(Self(left))
   }
   pub fn unshift(&self, item: T) -> Self {
-    let next = self.0.push_left(Size(Arc::new(item)));
+    let next = self.0.push_left(Size(item));
     Self(next)
   }
   pub fn slice(&self, from: usize, to: usize) -> Result<Self, String> {
@@ -165,7 +164,7 @@ where
     Ok(Self(next))
   }
   pub fn reverse(&self) -> Self {
-    let mut xs: FingerTree<ArcRefs, Size<Arc<T>>> = FingerTree::new();
+    let mut xs: FingerTree<ArcRefs, Size<T>> = FingerTree::new();
     for y in (&self.0).into_iter() {
       xs = xs.push_left(y);
     }
@@ -178,8 +177,9 @@ where
 
   pub fn assoc(&self, from: usize, item: T) -> Result<Self, String> {
     let (left, right) = self.0.split(|measure| *measure > Sum(from));
-    let (_, r2) = right.view_left().unwrap();
-    let next = r2.push_left(Size(Arc::new(item)));
+    let (_, r2) = right.split(|measure| *measure > Sum(1));
+    // let (_, r2) = right.view_left().unwrap();
+    let next = r2.push_left(Size(item));
     Ok(Self(left.concat(&next).to_owned()))
   }
 
@@ -191,18 +191,18 @@ where
 
   pub fn assoc_before(&self, from: usize, item: T) -> Result<Self, String> {
     let (left, right) = self.0.split(|measure| *measure > Sum(from));
-    let next = right.push_left(Size(Arc::new(item)));
+    let next = right.push_left(Size(item));
     Ok(Self(left.concat(&next).to_owned()))
   }
 
   pub fn assoc_after(&self, from: usize, item: T) -> Result<Self, String> {
     let (left, right) = self.0.split(|measure| *measure > Sum(from + 1));
-    let next = right.push_left(Size(Arc::new(item)));
+    let next = right.push_left(Size(item));
     Ok(Self(left.concat(&next).to_owned()))
   }
 
   pub fn from(xs: &[T]) -> Self {
-    let ret: FingerTree<ArcRefs, _> = xs.iter().map(|x| Size(Arc::new(x.to_owned()))).collect();
+    let ret: FingerTree<ArcRefs, _> = xs.iter().map(|x| Size(x.to_owned())).collect();
     Self(ret)
   }
 
@@ -216,7 +216,7 @@ where
 
   pub fn index_of(&self, item: &T) -> Option<usize> {
     for (idx, y) in (&self.0).into_iter().enumerate() {
-      if item == &**y {
+      if item == &*y {
         return Some(idx);
       }
     }

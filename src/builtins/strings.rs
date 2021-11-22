@@ -1,5 +1,6 @@
 use std::char;
 use std::cmp::Ordering;
+use std::sync::Arc;
 
 use crate::primes;
 use crate::primes::finger_list::FingerList;
@@ -67,7 +68,7 @@ pub fn split(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           ys = ys.push(Calcit::Str(p.to_owned().into()));
         }
       }
-      Ok(Calcit::List(ys))
+      Ok(Calcit::List(Arc::new(ys)))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("split expected 2 strings, got: {} {}", a, b)),
     (_, _) => CalcitErr::err_str("split expected 2 arguments, got nothing"),
@@ -103,7 +104,7 @@ pub fn split_lines(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       for line in lines {
         ys = ys.push(Calcit::Str(line.to_owned().into()));
       }
-      Ok(Calcit::List(ys))
+      Ok(Calcit::List(Arc::new(ys)))
     }
     Some(a) => CalcitErr::err_str(format!("split-lines expected 1 string, got: {}", a)),
     _ => CalcitErr::err_str("split-lines expected 1 argument, got nothing"),

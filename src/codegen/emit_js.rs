@@ -169,7 +169,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<Vec<EdnKwd>>) -
     Calcit::Proc(p) => Ok(format!("new {}CalcitSymbol({})", var_prefix, escape_cirru_str(p))),
     Calcit::List(ys) => {
       let mut chunk = String::from("");
-      for y in ys {
+      for y in &**ys {
         if !chunk.is_empty() {
           chunk.push_str(", ");
         }
@@ -388,7 +388,7 @@ fn gen_call_code(
     }
     Calcit::Symbol { sym: s, .. } | Calcit::Proc(s) => {
       match &**s {
-        ";" => Ok(format!("(/* {} */ null)", Calcit::List(body))),
+        ";" => Ok(format!("(/* {} */ null)", Calcit::List(Arc::new(body)))),
 
         "raise" => {
           // not core syntax, but treat as macro for better debugging experience
@@ -926,7 +926,7 @@ fn uses_recur(xs: &Calcit) -> bool {
       Some(Calcit::Syntax(syn, _)) if syn == &CalcitSyntax::Defn => false,
       Some(Calcit::Symbol { sym, .. }) if &**sym == "defn" => false,
       _ => {
-        for y in ys {
+        for y in &**ys {
           if uses_recur(y) {
             return true;
           }
@@ -1078,7 +1078,7 @@ fn contains_symbol(xs: &Calcit, y: &str) -> bool {
       false
     }
     Calcit::List(zs) => {
-      for z in zs {
+      for z in &**zs {
         if contains_symbol(z, y) {
           return true;
         }

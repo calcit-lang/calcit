@@ -20,7 +20,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Symbol { sym, .. } => Ok(Edn::Symbol((**sym).into())),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
-      for x in xs {
+      for x in &**xs {
         ys.push(calcit_to_edn(x)?);
       }
       Ok(Edn::List(ys))
@@ -104,7 +104,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       for x in xs {
         ys = ys.push(edn_to_calcit(x))
       }
-      Calcit::List(ys)
+      Calcit::List(Arc::new(ys))
     }
     Edn::Set(xs) => {
       let mut ys: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();

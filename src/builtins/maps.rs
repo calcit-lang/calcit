@@ -102,18 +102,20 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Map(ys)) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for (k, v) in ys {
-        zs.insert_mut(Calcit::List(FingerList::new_empty().push(k.to_owned()).push(v.to_owned())));
+        zs.insert_mut(Calcit::List(Arc::new(
+          FingerList::new_empty().push(k.to_owned()).push(v.to_owned()),
+        )));
       }
       Ok(Calcit::Set(zs))
     }
     Some(Calcit::Record(_name, fields, values)) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for idx in 0..fields.len() {
-        zs.insert_mut(Calcit::List(
+        zs.insert_mut(Calcit::List(Arc::new(
           FingerList::new_empty()
             .push(Calcit::Keyword(fields[idx].to_owned()))
             .push(values[idx].to_owned()),
-        ));
+        )));
       }
       Ok(Calcit::Set(zs))
     }
@@ -145,9 +147,9 @@ pub fn to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       let mut ys: FingerList<Calcit> = FingerList::new_empty();
       for (k, v) in m {
         let zs: FingerList<Calcit> = FingerList::from(&[k.to_owned(), v.to_owned()]);
-        ys = ys.push(Calcit::List(zs));
+        ys = ys.push(Calcit::List(Arc::new(zs)));
       }
-      Ok(Calcit::List(ys))
+      Ok(Calcit::List(Arc::new(ys)))
     }
     Some(a) => CalcitErr::err_str(format!("&map:to-list expected a map, got: {}", a)),
     None => CalcitErr::err_str("&map:to-list expected a map, got nothing"),
@@ -198,7 +200,7 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(ys)) => match ys.iter().next() {
       // TODO order may not be stable enough
-      Some((k, v)) => Ok(Calcit::List(FingerList::from(&[k.to_owned(), v.to_owned()]))),
+      Some((k, v)) => Ok(Calcit::List(Arc::new(FingerList::from(&[k.to_owned(), v.to_owned()])))),
       None => Ok(Calcit::Nil),
     },
     Some(a) => CalcitErr::err_str(format!("map:first expected a map, got: {}", a)),
