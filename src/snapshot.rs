@@ -27,7 +27,7 @@ pub struct Snapshot {
   pub files: HashMap<Arc<str>, FileInSnapShot>,
 }
 
-fn load_configs(data: Edn) -> Result<SnapshotConfigs, String> {
+fn load_configs(data: &Edn) -> Result<SnapshotConfigs, String> {
   let c = SnapshotConfigs {
     init_fn: match data.map_get("init-fn")?.read_str() {
       Ok(v) => (*v).into(),
@@ -46,13 +46,13 @@ fn load_configs(data: Edn) -> Result<SnapshotConfigs, String> {
     },
     modules: match data.map_get("modules")? {
       Edn::Nil => vec![],
-      x => load_modules(x)?,
+      x => load_modules(&x)?,
     },
   };
   Ok(c)
 }
 
-fn load_modules(data: Edn) -> Result<Vec<Arc<str>>, String> {
+fn load_modules(data: &Edn) -> Result<Vec<Arc<str>>, String> {
   match data.read_list() {
     Ok(xs) => {
       let mut ys: Vec<Arc<str>> = Vec::with_capacity(xs.len());
@@ -65,7 +65,7 @@ fn load_modules(data: Edn) -> Result<Vec<Arc<str>>, String> {
   }
 }
 
-fn load_file_info(data: Edn) -> Result<FileInSnapShot, String> {
+fn load_file_info(data: &Edn) -> Result<FileInSnapShot, String> {
   let ns_code = data.map_get("ns")?.read_quoted_cirru()?;
   let defs = data.map_get("defs")?.read_map().map_err(|e| format!("failed get `defs`:{}", e))?;
   let mut defs_info: HashMap<Arc<str>, Cirru> = HashMap::with_capacity(defs.len());
@@ -81,18 +81,18 @@ fn load_file_info(data: Edn) -> Result<FileInSnapShot, String> {
   Ok(file)
 }
 
-fn load_files(data: Edn) -> Result<HashMap<Arc<str>, FileInSnapShot>, String> {
+fn load_files(data: &Edn) -> Result<HashMap<Arc<str>, FileInSnapShot>, String> {
   let xs = data.read_map().map_err(|e| format!("failed loading files, {}", e))?;
   let mut ys: HashMap<Arc<str>, FileInSnapShot> = HashMap::with_capacity(xs.len());
   for (k, v) in xs {
     let key = k.read_str()?;
-    let file = load_file_info(v)?;
+    let file = load_file_info(&v)?;
     ys.insert((*key).into(), file);
   }
   Ok(ys)
 }
 
-fn load_entries(data: Edn) -> Result<HashMap<Arc<str>, SnapshotConfigs>, String> {
+fn load_entries(data: &Edn) -> Result<HashMap<Arc<str>, SnapshotConfigs>, String> {
   let xs = data.read_map_or_nil().map_err(|e| format!("failed loading entries, {}", e))?;
   let mut ys: HashMap<Arc<str>, SnapshotConfigs> = HashMap::with_capacity(xs.len());
   for (k, v) in xs {
@@ -101,22 +101,22 @@ fn load_entries(data: Edn) -> Result<HashMap<Arc<str>, SnapshotConfigs>, String>
       Edn::Str(s) => s,
       _ => return Err(format!("unknown data for an entry: {}", k)),
     };
-    let configs = load_configs(v)?;
+    let configs = load_configs(&v)?;
     ys.insert((*key).into(), configs);
   }
   Ok(ys)
 }
 
 /// parse snapshot
-pub fn load_snapshot_data(data: Edn, path: &str) -> Result<Snapshot, String> {
+pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
   let pkg = data.map_get("package")?.read_str()?;
-  let mut files = load_files(data.map_get("files")?)?;
+  let mut files = load_files(&data.map_get("files")?)?;
   let meta_ns = format!("{}.$meta", pkg);
   files.insert(meta_ns.to_owned().into(), gen_meta_ns(&meta_ns, path));
   let s = Snapshot {
     package: (*pkg).into(),
-    configs: load_configs(data.map_get("configs")?)?,
-    entries: load_entries(data.map_get("entries")?)?,
+    configs: load_configs(&data.map_get("configs")?)?,
+    entries: load_entries(&data.map_get("entries")?)?,
     files,
   };
   Ok(s)
@@ -202,11 +202,11 @@ pub struct ChangesDict {
   pub changed: HashMap<Arc<str>, FileChangeInfo>,
 }
 
-pub fn load_changes_info(data: Edn) -> Result<ChangesDict, String> {
+pub fn load_changes_info(data: &Edn) -> Result<ChangesDict, String> {
   // println!("loading changes: {}", data);
   let mut added: HashMap<Arc<str>, FileInSnapShot> = HashMap::new();
   for (ns, file) in &data.map_get("added")?.read_map_or_nil()? {
-    added.insert(ns.read_str()?.into(), load_file_info(file.to_owned())?);
+    added.insert(ns.read_str()?.into(), load_file_info(file)?);
   }
 
   let mut removed: HashSet<Arc<str>> = HashSet::new();
@@ -216,13 +216,13 @@ pub fn load_changes_info(data: Edn) -> Result<ChangesDict, String> {
 
   let mut changed: HashMap<Arc<str>, FileChangeInfo> = HashMap::new();
   for (ns, file) in &data.map_get("changed")?.read_map_or_nil()? {
-    changed.insert(ns.read_str()?.into(), extract_changed_info(file.to_owned())?);
+    changed.insert(ns.read_str()?.into(), extract_changed_info(file)?);
   }
 
   Ok(ChangesDict { added, removed, changed })
 }
 
-pub fn extract_changed_info(data: Edn) -> Result<FileChangeInfo, String> {
+pub fn extract_changed_info(data: &Edn) -> Result<FileChangeInfo, String> {
   let ns_info = match data.map_get("ns")? {
     Edn::Nil => None,
     Edn::Quote(code) => Some(code),

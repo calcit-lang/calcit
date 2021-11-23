@@ -1,3 +1,4 @@
+pub mod finger_list;
 mod syntax_name;
 
 use core::cmp::Ord;
@@ -9,14 +10,13 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 use std::sync::Arc;
 
+use crate::primes::finger_list::FingerList;
 use cirru_edn::EdnKwd;
-use im_ternary_tree::TernaryTreeList;
+
+use fingertrees::measure::Measured;
+use fingertrees::monoid::Sum;
 
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
-
-// scope
-pub type CalcitScope = rpds::HashTrieMapSync<Arc<str>, Calcit>;
-pub type CalcitItems = TernaryTreeList<Calcit>;
 
 pub use syntax_name::CalcitSyntax;
 
@@ -41,11 +41,13 @@ pub enum ImportRule {
   NsDefault(Arc<str>),            // ns, js only
 }
 
+// scope
+pub type CalcitScope = rpds::HashTrieMapSync<Arc<str>, Calcit>;
+pub type CalcitItems = FingerList<Calcit>;
+
 /// special types wraps vector of calcit data for displaying
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct CrListWrap(pub TernaryTreeList<Calcit>);
-
-pub struct CalcitList(pub Arc<TernaryTreeList<Calcit>>);
+pub struct CrListWrap(pub FingerList<Calcit>);
 
 #[derive(Debug, Clone)]
 pub enum Calcit {
@@ -68,8 +70,8 @@ pub enum Calcit {
   ///  to be used by FFIs
   Buffer(Vec<u8>),
   /// not for data, but for recursion
-  Recur(CalcitItems),
-  List(CalcitItems),
+  Recur(Arc<CalcitItems>),
+  List(Arc<CalcitItems>),
   Set(rpds::HashTrieSetSync<Calcit>),
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   Record(EdnKwd, Arc<Vec<EdnKwd>>, Arc<Vec<Calcit>>), // usize of keyword id
@@ -138,14 +140,14 @@ impl fmt::Display for Calcit {
       }
       Calcit::Recur(xs) => {
         f.write_str("(&recur")?;
-        for x in xs {
+        for x in &**xs {
           f.write_str(&format!(" {}", x))?;
         }
         f.write_str(")")
       }
       Calcit::List(xs) => {
         f.write_str("([]")?;
-        for x in xs {
+        for x in &**xs {
           f.write_str(&format!(" {}", x))?;
         }
         f.write_str(")")
@@ -236,7 +238,7 @@ fn buffer_bit_hex(n: u8) -> String {
 /// special types wraps vector of calcit data for displaying
 impl fmt::Display for CrListWrap {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&format_to_lisp(&Calcit::List(self.0.to_owned()))) // TODO performance
+    f.write_str(&format_to_lisp(&Calcit::List(Arc::new(self.0.to_owned())))) // TODO performance
   }
 }
 
@@ -499,6 +501,14 @@ impl PartialEq for Calcit {
       (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a == b,
       (_, _) => false,
     }
+  }
+}
+
+impl Measured for Calcit {
+  type Measure = Sum<usize>;
+
+  fn measure(&self) -> Self::Measure {
+    Sum(1)
   }
 }
 

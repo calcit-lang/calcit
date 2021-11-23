@@ -4,11 +4,11 @@ pub mod track;
 use crate::builtins;
 use crate::builtins::is_proc_name;
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
+use crate::primes::finger_list::FingerList;
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
 use crate::util::string::has_ns_part;
 
-use im_ternary_tree::TernaryTreeList;
 use std::sync::{Arc, RwLock};
 
 pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -118,7 +118,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             );
 
             // TODO moving to preprocess
-            let mut current_values = rest_nodes.to_owned();
+            let mut current_values = Arc::new(rest_nodes.to_owned());
             // println!("eval macro: {} {}", x, expr.lisp_str()));
             // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
@@ -137,7 +137,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               let code = evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
-                  current_values = ys;
+                  current_values = ys.to_owned();
                 }
                 _ => {
                   // println!("gen code: {} {}", x, &code.lisp_str()));
@@ -170,7 +170,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             call_stack,
           )),
           a => Err(CalcitErr::use_msg_stack(
-            format!("cannot be used as operator: {} in {}", a, CrListWrap(xs.to_owned())),
+            format!("cannot be used as operator: {} in {}", a, CrListWrap((**xs).to_owned())),
             call_stack,
           )),
         };
@@ -290,13 +290,13 @@ pub fn run_fn(
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut current_values = values.to_owned();
+  let mut current_values = Arc::new(values.to_owned());
   loop {
     let body_scope = bind_args(args.to_owned(), &current_values, scope, call_stack)?;
     let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
     match v {
       Calcit::Recur(xs) => {
-        current_values = xs;
+        current_values = xs.to_owned();
       }
       result => return Ok(result),
     }
@@ -348,11 +348,11 @@ pub fn bind_args(
         "&" => return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {:?}", args), call_stack)),
         "?" => return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {:?}", args), call_stack)),
         _ => {
-          let mut chunk: CalcitItems = TernaryTreeList::Empty;
+          let mut chunk: CalcitItems = FingerList::new_empty();
           while let Some(v) = values_pop_front() {
             chunk = chunk.push(v.to_owned());
           }
-          scope.insert_mut(sym.to_owned(), Calcit::List(chunk));
+          scope.insert_mut(sym.to_owned(), Calcit::List(Arc::new(chunk)));
           if !is_args_empty() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{:?}` after spreading in `{:?}`", collected_args, args,),
@@ -422,7 +422,7 @@ pub fn evaluate_args(
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<CalcitItems, CalcitErr> {
-  let mut ret: CalcitItems = TernaryTreeList::Empty;
+  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len());
   let mut spreading = false;
   for item in items {
     match item {
@@ -435,7 +435,7 @@ pub fn evaluate_args(
         if spreading {
           match v {
             Calcit::List(xs) => {
-              for x in &xs {
+              for x in &*xs {
                 // extract thunk before calling functions
                 let y = match x {
                   Calcit::Thunk(code, v) => match v {
@@ -444,7 +444,7 @@ pub fn evaluate_args(
                   },
                   _ => x.to_owned(),
                 };
-                ret = ret.push(y.to_owned());
+                ret.push(y.to_owned());
               }
               spreading = false
             }
@@ -464,10 +464,10 @@ pub fn evaluate_args(
             },
             _ => v.to_owned(),
           };
-          ret = ret.push(y);
+          ret.push(y);
         }
       }
     }
   }
-  Ok(ret)
+  Ok(FingerList::from(&ret))
 }

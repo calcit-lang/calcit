@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use cirru_edn::EdnKwd;
-use im_ternary_tree::TernaryTreeList;
 
+use crate::primes::finger_list::FingerList;
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::{call_stack::CallStackList, runner};
 
@@ -35,7 +35,7 @@ fn modify_ref(path: Arc<str>, v: Calcit, call_stack: &CallStackList) -> Result<(
       Calcit::Fn {
         def_ns, scope, args, body, ..
       } => {
-        let values = TernaryTreeList::from(&[v.to_owned(), prev.to_owned()]);
+        let values = FingerList::from(&[v.to_owned(), prev.to_owned()]);
         runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
       }
       a => {

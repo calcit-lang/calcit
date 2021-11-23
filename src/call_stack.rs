@@ -48,7 +48,7 @@ pub fn extend_call_stack(
   stack.push_front(CalcitStack {
     ns: ns.to_owned(),
     def: def.to_owned(),
-    code,
+    code: code.to_owned(),
     args: args.to_owned(),
     kind,
   })

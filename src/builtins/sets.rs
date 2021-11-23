@@ -1,5 +1,6 @@
+use crate::primes::finger_list::FingerList;
 use crate::primes::{Calcit, CalcitErr, CalcitItems};
-use im_ternary_tree::TernaryTreeList;
+use std::sync::Arc;
 
 pub fn new_set(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let mut ys = rpds::HashTrieSet::new_sync();
@@ -80,11 +81,11 @@ pub fn call_intersection(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn set_to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Set(xs)) => {
-      let mut ys: CalcitItems = TernaryTreeList::Empty;
+      let mut ys: CalcitItems = FingerList::new_empty();
       for x in xs {
         ys = ys.push(x.to_owned());
       }
-      Ok(Calcit::List(ys))
+      Ok(Calcit::List(Arc::new(ys)))
     }
     Some(a) => CalcitErr::err_str(format!("&set:to-list expected a set: {}", a)),
     None => CalcitErr::err_str("&set:to-list expected 1 argument, got none"),

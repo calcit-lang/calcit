@@ -52,8 +52,8 @@ dependencies = [
  "clap",
  "ctrlc",
  "dirs",
+ "fingertrees",
  "hex",
- "im_ternary_tree",
  "lazy_static",
  "libloading",
  "notify",
@@ -81,9 +81,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cirru_edn"
-version = "0.2.11"
+version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0ee334f8cc2ee791e8f0df7f934a50ce4cb48d2169b3d1bf7a3b2fbace3564a"
+checksum = "012e2628ebf44d21550bdf516f37b4d0556fd96b2f040a94f337bdc3235eaa6f"
 dependencies = [
  "cirru_parser",
  "hex",
@@ -92,9 +92,9 @@ dependencies = [
 
 [[package]]
 name = "cirru_parser"
-version = "0.1.16"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5004e11be1bc491748d59b73e3e0ad4f73ff2bbb47e0a9b3e205a83dc416fde"
+checksum = "2d1cdf9af6d166ca8d8da5cd6fe2cc7ca9729d28ab5333e731322b7c4fbc2743"
 
 [[package]]
 name = "clap"
@@ -152,6 +152,12 @@ dependencies = [
  "redox_syscall",
  "winapi 0.3.9",
 ]
+
+[[package]]
+name = "fingertrees"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53b67d8f49456811373ba887e9f86c1fa0ac4cd934ece3a095331e446b0f6ed0"
 
 [[package]]
 name = "fsevent"
@@ -215,12 +221,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
-name = "im_ternary_tree"
-version = "0.0.1-a8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a88022c35e7fe221e0bac9d91a051e5ffd32df85370f640e4aa1ef6d1d2ebc4b"
-
-[[package]]
 name = "inotify"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -279,9 +279,9 @@ checksum = "869d572136620d55835903746bcb5cdc54cb2851fd0aeec53220b4bb65ef3013"
 
 [[package]]
 name = "libloading"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0cf036d15402bea3c5d4de17b3fce76b3e4a56ebc1f577be0e7a72f7c607cf0"
+checksum = "afe203d669ec979b7128619bae5a63b7b42e9203c1b29146079ee05e2f604b52"
 dependencies = [
  "cfg-if 1.0.0",
  "winapi 0.3.9",

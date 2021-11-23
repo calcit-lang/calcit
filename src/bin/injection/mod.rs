@@ -7,10 +7,9 @@ use calcit_runner::{
   builtins,
   call_stack::{display_stack, CallStackList},
   data::edn::{calcit_to_edn, edn_to_calcit},
-  primes::{Calcit, CalcitErr, CalcitItems, CrListWrap},
+  primes::{finger_list::FingerList, Calcit, CalcitErr, CalcitItems, CrListWrap},
   runner::track,
 };
-use im_ternary_tree::TernaryTreeList;
 
 /// FFI protocol types
 type EdnFfi = fn(args: Vec<Edn>) -> Result<Edn, String>;
@@ -138,7 +137,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
           def_ns, scope, args, body, ..
         } = &callback
         {
-          let mut real_args = TernaryTreeList::Empty;
+          let mut real_args = FingerList::new_empty();
           for p in ps {
             real_args = real_args.push(edn_to_calcit(&p));
           }
@@ -226,7 +225,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
         def_ns, scope, args, body, ..
       } = &callback
       {
-        let mut real_args = TernaryTreeList::Empty;
+        let mut real_args = FingerList::new_empty();
         for p in ps {
           real_args = real_args.push(edn_to_calcit(&p));
         }
@@ -269,7 +268,7 @@ pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit,
       } = cb.as_ref()
       {
         if let Err(e) = runner::run_fn(
-          &TernaryTreeList::Empty,
+          &FingerList::new_empty(),
           scope,
           args.to_owned(),
           body,
