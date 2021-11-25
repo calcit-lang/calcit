@@ -7,11 +7,11 @@ use std::cmp::Ordering::*;
 use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 
-use fingertrees::measure::{Measured, Size};
-use fingertrees::monoid::Sum;
+use calcit_fingertrees::measure::{Measured, Size};
+use calcit_fingertrees::monoid::Sum;
 use std::ops::Index;
 
-use fingertrees::{ArcRefs, FingerTree};
+use calcit_fingertrees::{ArcRefs, FingerTree};
 
 #[derive(Debug, Clone)]
 pub struct FingerList<T>(FingerTree<ArcRefs, Size<T>>)
@@ -138,7 +138,7 @@ where
   }
 
   pub fn is_empty(&self) -> bool {
-    self.len() == 0
+    self.0.is_empty()
   }
 
   pub fn push(&self, item: T) -> Self {
@@ -146,12 +146,12 @@ where
     Self(next)
   }
   pub fn rest(&self) -> Result<Self, String> {
-    let (_, right) = self.0.split(|measure| *measure > Sum(1));
+    let right = self.0.split_right(|measure| *measure > Sum(1));
     Ok(Self(right))
   }
 
   pub fn butlast(&self) -> Result<Self, String> {
-    let (_, left) = self.0.view_right().unwrap();
+    let left = self.0.split_left(|measure| *measure > Sum(self.len() - 1));
     Ok(Self(left))
   }
   pub fn unshift(&self, item: T) -> Self {
@@ -159,8 +159,8 @@ where
     Self(next)
   }
   pub fn slice(&self, from: usize, to: usize) -> Result<Self, String> {
-    let (_, right) = self.0.split(|measure| *measure > Sum(from));
-    let (next, _) = right.split(|measure| *measure > Sum(to - from));
+    let right = self.0.split_right(|measure| *measure > Sum(from));
+    let next = right.split_left(|measure| *measure > Sum(to - from));
     Ok(Self(next))
   }
   pub fn reverse(&self) -> Self {
@@ -172,22 +172,20 @@ where
   }
 
   pub fn skip(&self, from: usize) -> Result<Self, String> {
-    let (_, right) = self.0.split(|measure| *measure > Sum(from));
+    let right = self.0.split_right(|measure| *measure > Sum(from));
     Ok(Self(right))
   }
 
   pub fn assoc(&self, from: usize, item: T) -> Result<Self, String> {
-    let (left, right) = self.0.split(|measure| *measure > Sum(from));
-    let (_, r2) = right.split(|measure| *measure > Sum(1));
-    // let (_, r2) = right.view_left().unwrap();
-    let next = r2.push_left(Size(item));
-    Ok(Self(left.concat(&next).to_owned()))
+    let left = self.0.split_left(|measure| *measure > Sum(from));
+    let right = self.0.split_right(|measure| *measure > Sum(from + 1));
+    Ok(Self(left.push_right(Size(item)).concat(&right).to_owned()))
   }
 
   pub fn dissoc(&self, from: usize) -> Result<Self, String> {
-    let (left, right) = self.0.split(|measure| *measure > Sum(from));
-    let (_, next) = right.view_left().unwrap();
-    Ok(Self(left.concat(&next).to_owned()))
+    let left = self.0.split_left(|measure| *measure > Sum(from));
+    let right = self.0.split_right(|measure| *measure > Sum(from + 1));
+    Ok(Self(left.concat(&right).to_owned()))
   }
 
   pub fn assoc_before(&self, from: usize, item: T) -> Result<Self, String> {
