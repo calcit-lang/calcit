@@ -13,8 +13,8 @@ use std::sync::Arc;
 use crate::primes::finger_list::FingerList;
 use cirru_edn::EdnKwd;
 
-use fingertrees::measure::Measured;
-use fingertrees::monoid::Sum;
+use calcit_fingertrees::measure::Measured;
+use calcit_fingertrees::monoid::Sum;
 
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
