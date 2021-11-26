@@ -30,6 +30,7 @@ notify = "4.0.17"
 walkdir = "2"
 hex = "0.4.3"
 rpds = "0.10.0"
+mimalloc = { version = "0.1.27", default-features = false }
 # fingertrees = "0.2.6"
 calcit_fingertrees = "0.0.3"
 # calcit_fingertrees = { path = "/Users/chen/repo/calcit-lang/fingertree-rs" }

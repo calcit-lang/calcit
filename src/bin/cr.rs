@@ -1,3 +1,4 @@
+use mimalloc::MiMalloc;
 use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -5,6 +6,9 @@ use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod injection;
