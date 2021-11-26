@@ -45,7 +45,9 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "calcit_fingertrees"
-version = "0.0.1"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd3ebc3279c51dc34b06b13472d6109d9733cb77521b0ffb5b0fb20e9167e217"
 
 [[package]]
 name = "calcit_runner"
