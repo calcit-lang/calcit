@@ -1,7 +1,9 @@
-use crate::primes::finger_list::FingerList;
-use crate::primes::Calcit;
-use cirru_parser::Cirru;
 use std::sync::Arc;
+
+use cirru_parser::Cirru;
+
+use crate::primes::finger_list::{FingerList, Size};
+use crate::primes::Calcit;
 
 /// code is CirruNode, and this function parse code(rather than data)
 pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit, String> {
@@ -116,12 +118,12 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
       },
     },
     Cirru::List(ys) => {
-      let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
+      let mut zs: Vec<Size<Calcit>> = Vec::with_capacity(ys.len());
       for y in ys {
         match code_to_calcit(y, ns.to_owned(), def.to_owned()) {
           Ok(v) => {
             if !is_comment(&v) {
-              zs.push(v.to_owned());
+              zs.push(Size(v.to_owned()));
             }
           }
           Err(e) => return Err(e),
@@ -137,9 +139,9 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
   match xs {
     Cirru::Leaf(s) => Calcit::Str((**s).into()),
     Cirru::List(ys) => {
-      let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
+      let mut zs: Vec<Size<Calcit>> = Vec::with_capacity(ys.len());
       for y in ys {
-        zs.push(cirru_to_calcit(y));
+        zs.push(Size(cirru_to_calcit(y)));
       }
       Calcit::List(Arc::new(FingerList::from(&zs)))
     }

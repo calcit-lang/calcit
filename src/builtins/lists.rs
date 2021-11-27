@@ -1,4 +1,5 @@
 use core::cmp::Ordering;
+
 use std::sync::Arc;
 
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
@@ -6,7 +7,7 @@ use crate::util::number::f64_to_usize;
 
 use crate::builtins;
 use crate::call_stack::CallStackList;
-use crate::primes::finger_list::FingerList;
+use crate::primes::finger_list::{FingerList, Size};
 use crate::runner;
 
 pub fn new_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -191,7 +192,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
         },
       ) => {
         for x in &**xs {
-          let values = FingerList::from(&[ret, x.to_owned()]);
+          let values = FingerList::from(&[Size(ret), Size(x.to_owned())]);
           ret = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
         }
         Ok(ret)
@@ -199,7 +200,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         for x in &**xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &FingerList::from(&[ret, x.to_owned()]), call_stack)?;
+          ret = builtins::handle_proc(proc, &FingerList::from(&[Size(ret), Size(x.to_owned())]), call_stack)?;
         }
         Ok(ret)
       }
@@ -211,7 +212,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
         },
       ) => {
         for x in xs {
-          let values = FingerList::from(&[ret, x.to_owned()]);
+          let values = FingerList::from(&[Size(ret), Size(x.to_owned())]);
           ret = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
         }
         Ok(ret)
@@ -219,7 +220,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
       (Calcit::Set(xs), Calcit::Proc(proc)) => {
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &FingerList::from(&[ret, x.to_owned()]), call_stack)?;
+          ret = builtins::handle_proc(proc, &FingerList::from(&[Size(ret), Size(x.to_owned())]), call_stack)?;
         }
         Ok(ret)
       }
@@ -231,7 +232,10 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
         },
       ) => {
         for (k, x) in xs {
-          let values = FingerList::from(&[ret, Calcit::List(Arc::new(FingerList::from(&[k.to_owned(), x.to_owned()])))]);
+          let values = FingerList::from(&[
+            Size(ret),
+            Size(Calcit::List(Arc::new(FingerList::from(&[Size(k.to_owned()), Size(x.to_owned())])))),
+          ]);
           ret = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
         }
         Ok(ret)
@@ -241,7 +245,10 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
           // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(
             proc,
-            &FingerList::from(&[ret, Calcit::List(Arc::new(FingerList::from(&[k.to_owned(), x.to_owned()])))]),
+            &FingerList::from(&[
+              Size(ret),
+              Size(Calcit::List(Arc::new(FingerList::from(&[Size(k.to_owned()), Size(x.to_owned())])))),
+            ]),
             call_stack,
           )?;
         }
@@ -277,7 +284,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
       ) => {
         let mut state = acc.to_owned();
         for x in &**xs {
-          let values = FingerList::from(&[state, x.to_owned()]);
+          let values = FingerList::from(&[Size(state), Size(x.to_owned())]);
           let pair = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match &*x0 {
@@ -314,7 +321,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
       ) => {
         let mut state = acc.to_owned();
         for x in xs {
-          let values = FingerList::from(&[state, x.to_owned()]);
+          let values = FingerList::from(&[Size(state), Size(x.to_owned())]);
           let pair = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match &*x0 {
@@ -351,7 +358,10 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
       ) => {
         let mut state = acc.to_owned();
         for (k, x) in xs {
-          let values = FingerList::from(&[state, Calcit::List(Arc::new(FingerList::from(&[k.to_owned(), x.to_owned()])))]);
+          let values = FingerList::from(&[
+            Size(state),
+            Size(Calcit::List(Arc::new(FingerList::from(&[Size(k.to_owned()), Size(x.to_owned())])))),
+          ]);
           let pair = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match &*x0 {
@@ -411,7 +421,7 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
         let size = xs.len();
         for i in 0..size {
           let x = xs[size - 1 - i].to_owned();
-          let values = FingerList::from(&[state, x]);
+          let values = FingerList::from(&[Size(state), Size(x)]);
           let pair = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match &*x0 {
@@ -465,7 +475,7 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
       ) => {
         let mut xs2: Vec<&Calcit> = xs.into_iter().collect::<Vec<&Calcit>>();
         xs2.sort_by(|a, b| -> Ordering {
-          let values = FingerList::from(&[a.to_owned().to_owned(), b.to_owned().to_owned()]);
+          let values = FingerList::from(&[Size((*a).to_owned()), Size((*b).to_owned())]);
           let v = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
@@ -484,14 +494,14 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
         let mut ys: FingerList<Calcit> = FingerList::new_empty();
         for x in xs2.iter() {
           // TODO ??
-          ys = ys.push(x.to_owned().to_owned())
+          ys = ys.push((*x).to_owned())
         }
         Ok(Calcit::List(Arc::new(ys)))
       }
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         let mut xs2: Vec<&Calcit> = xs.into_iter().collect::<Vec<&Calcit>>();
         xs2.sort_by(|a, b| -> Ordering {
-          let values = FingerList::from(&[a.to_owned().to_owned(), b.to_owned().to_owned()]);
+          let values = FingerList::from(&[Size((*a).to_owned()), Size((*b).to_owned())]);
           let v = builtins::handle_proc(proc, &values, call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
@@ -510,7 +520,7 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
         let mut ys: FingerList<Calcit> = FingerList::new_empty();
         for x in xs2.iter() {
           // TODO ??
-          ys = ys.push(x.to_owned().to_owned())
+          ys = ys.push((*x).to_owned())
         }
         Ok(Calcit::List(Arc::new(ys)))
       }
