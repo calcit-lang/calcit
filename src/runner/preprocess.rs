@@ -2,7 +2,7 @@ use crate::{
   builtins::{is_js_syntax_procs, is_proc_name},
   call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
   primes,
-  primes::finger_list::FingerList,
+  primes::finger_list::{FingerList, Size},
   primes::{Calcit, CalcitErr, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*},
   program, runner,
 };
@@ -328,7 +328,7 @@ fn process_list_call(
     (Calcit::Keyword(..), _) => {
       if args.len() == 1 {
         let code = Calcit::List(Arc::new(FingerList::from(&[
-          Calcit::Symbol {
+          Size(Calcit::Symbol {
             sym: String::from("get").into(),
             ns: String::from(primes::CORE_NS).into(),
             at_def: String::from(primes::GENERATED_DEF).into(),
@@ -337,9 +337,9 @@ fn process_list_call(
               def: String::from("get").into(),
               rule: None,
             })),
-          },
-          args[0].to_owned(),
-          head.to_owned(),
+          }),
+          Size(args[0].to_owned()),
+          Size(head.to_owned()),
         ])));
         preprocess_expr(&code, scope_defs, file_ns.to_owned(), check_warnings, call_stack)
       } else {
@@ -442,19 +442,19 @@ fn process_list_call(
     ) => {
       check_fn_args(f_args, &args, file_ns.to_owned(), f_name.to_owned(), def_name, check_warnings);
       let mut ys = Vec::with_capacity(args.len() + 1);
-      ys.push(head_form);
+      ys.push(Size(head_form));
       for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
-        ys.push(form);
+        ys.push(Size(form));
       }
       Ok((Calcit::List(Arc::new(FingerList::from(&ys))), None))
     }
     (_, _) => {
       let mut ys = Vec::with_capacity(args.len() + 1);
-      ys.push(head_form);
+      ys.push(Size(head_form));
       for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
-        ys.push(form);
+        ys.push(Size(form));
       }
       Ok((Calcit::List(Arc::new(FingerList::from(&ys))), None))
     }
@@ -551,7 +551,7 @@ pub fn preprocess_each_items(
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = FingerList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
+  let mut xs: CalcitItems = FingerList::from(&[Size(Calcit::Syntax(head.to_owned(), head_ns.to_owned()))]);
   for a in args {
     let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
     xs = xs.push(form);
@@ -569,7 +569,7 @@ pub fn preprocess_defn(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
-  let mut xs: CalcitItems = FingerList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
+  let mut xs: CalcitItems = FingerList::from(&[Size(Calcit::Syntax(head.to_owned(), head_ns.to_owned()))]);
   match (args.get(0), args.get(1)) {
     (
       Some(Calcit::Symbol {
@@ -657,7 +657,7 @@ pub fn preprocess_call_let(
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = FingerList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
+  let mut xs: CalcitItems = FingerList::from(&[Size(Calcit::Syntax(head.to_owned(), head_ns.to_owned()))]);
   let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
   let binding = match args.get(0) {
     Some(Calcit::Nil) => Calcit::Nil,
@@ -666,7 +666,7 @@ pub fn preprocess_call_let(
         check_symbol(sym, args, check_warnings);
         body_defs.insert(sym.to_owned());
         let (form, _v) = preprocess_expr(a, &body_defs, file_ns.to_owned(), check_warnings, call_stack)?;
-        Calcit::List(Arc::new(FingerList::from(&[ys[0].to_owned(), form])))
+        Calcit::List(Arc::new(FingerList::from(&[Size(ys[0].to_owned()), Size(form)])))
       }
       (a, b) => {
         return Err(CalcitErr::use_msg_stack(
@@ -711,7 +711,7 @@ pub fn preprocess_quote(
   _scope_defs: &HashSet<Arc<str>>,
   _file_ns: Arc<str>,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = FingerList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
+  let mut xs: CalcitItems = FingerList::from(&[Size(Calcit::Syntax(head.to_owned(), head_ns.to_owned()))]);
   for a in args {
     xs = xs.push(a.to_owned());
   }
@@ -727,7 +727,7 @@ pub fn preprocess_defatom(
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = FingerList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
+  let mut xs: CalcitItems = FingerList::from(&[Size(Calcit::Syntax(head.to_owned(), head_ns.to_owned()))]);
   for a in args {
     // TODO
     let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
@@ -746,7 +746,7 @@ pub fn preprocess_quasiquote(
   check_warnings: &RefCell<Vec<String>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = FingerList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
+  let mut xs: CalcitItems = FingerList::from(&[Size(Calcit::Syntax(head.to_owned(), head_ns.to_owned()))]);
   for a in args {
     xs = xs.push(preprocess_quasiquote_internal(
       a,

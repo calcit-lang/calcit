@@ -31,8 +31,8 @@ walkdir = "2"
 hex = "0.4.3"
 rpds = "0.10.0"
 mimalloc = { version = "0.1.27", default-features = false }
-# fingertrees = "0.2.6"
-calcit_fingertrees = "0.0.3"
+fingertrees = "0.2.9"
+# calcit_fingertrees = "0.0.3"
 # calcit_fingertrees = { path = "/Users/chen/repo/calcit-lang/fingertree-rs" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

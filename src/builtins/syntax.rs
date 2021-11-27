@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::builtins;
 use crate::call_stack::CallStackList;
-use crate::primes::finger_list::FingerList;
+use crate::primes::finger_list::{FingerList, Size};
 use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 
@@ -335,10 +335,10 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call
           Calcit::Fn {
             def_ns, scope, args, body, ..
           } => {
-            let values = FingerList::from(&[err_data]);
+            let values = FingerList::from(&[Size(err_data)]);
             runner::run_fn(&values, &scope, args.to_owned(), &body, def_ns, call_stack)
           }
-          Calcit::Proc(proc) => builtins::handle_proc(&proc, &FingerList::from(&[err_data]), call_stack),
+          Calcit::Proc(proc) => builtins::handle_proc(&proc, &FingerList::from(&[Size(err_data)]), call_stack),
           a => CalcitErr::err_str(format!("try expected a function handler, got: {}", a)),
         }
       }

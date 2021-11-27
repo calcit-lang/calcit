@@ -7,11 +7,13 @@ use std::cmp::Ordering::*;
 use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 
-use calcit_fingertrees::measure::{Measured, Size};
-use calcit_fingertrees::monoid::Sum;
+use fingertrees::measure::Measured;
+use fingertrees::monoid::Sum;
 use std::ops::Index;
 
-use calcit_fingertrees::{ArcRefs, FingerTree};
+use fingertrees::{ArcRefs, FingerTree};
+
+pub use fingertrees::measure::Size;
 
 #[derive(Debug, Clone)]
 pub struct FingerList<T>(FingerTree<ArcRefs, Size<T>>)
@@ -200,9 +202,8 @@ where
     Ok(Self(left.concat(&next).to_owned()))
   }
 
-  pub fn from(xs: &[T]) -> Self {
-    let ret: FingerTree<ArcRefs, _> = xs.iter().map(|x| Size(x.to_owned())).collect();
-    Self(ret)
+  pub fn from(xs: &[Size<T>]) -> Self {
+    Self(FingerTree::from(xs))
   }
 
   pub fn new_empty() -> Self {

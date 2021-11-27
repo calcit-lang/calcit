@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 
 use cirru_edn::EdnKwd;
 
-use crate::primes::finger_list::FingerList;
+use crate::primes::finger_list::{FingerList, Size};
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::{call_stack::CallStackList, runner};
 
@@ -35,7 +35,7 @@ fn modify_ref(path: Arc<str>, v: Calcit, call_stack: &CallStackList) -> Result<(
       Calcit::Fn {
         def_ns, scope, args, body, ..
       } => {
-        let values = FingerList::from(&[v.to_owned(), prev.to_owned()]);
+        let values = FingerList::from(&[Size(v.to_owned()), Size(prev.to_owned())]);
         runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
       }
       a => {

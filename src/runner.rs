@@ -1,15 +1,15 @@
 pub mod preprocess;
 pub mod track;
 
+use std::sync::{Arc, RwLock};
+
 use crate::builtins;
 use crate::builtins::is_proc_name;
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
-use crate::primes::finger_list::FingerList;
+use crate::primes::finger_list::{FingerList, Size};
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
 use crate::util::string::has_ns_part;
-
-use std::sync::{Arc, RwLock};
 
 pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   // println!("eval code: {}", expr.lisp_str());
@@ -422,7 +422,7 @@ pub fn evaluate_args(
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<CalcitItems, CalcitErr> {
-  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len());
+  let mut ret: Vec<Size<Calcit>> = Vec::with_capacity(items.len());
   let mut spreading = false;
   for item in items {
     match item {
@@ -444,7 +444,7 @@ pub fn evaluate_args(
                   },
                   _ => x.to_owned(),
                 };
-                ret.push(y.to_owned());
+                ret.push(Size(y.to_owned()));
               }
               spreading = false
             }
@@ -464,7 +464,7 @@ pub fn evaluate_args(
             },
             _ => v.to_owned(),
           };
-          ret.push(y);
+          ret.push(Size(y));
         }
       }
     }
