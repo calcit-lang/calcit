@@ -327,7 +327,7 @@ fn process_list_call(
   match (&head_form, &head_evaled) {
     (Calcit::Keyword(..), _) => {
       if args.len() == 1 {
-        let code = Calcit::List(Arc::new(FingerList::from(&[
+        let code = Calcit::List(Box::new(FingerList::from(&[
           Size(Calcit::Symbol {
             sym: String::from("get").into(),
             ns: String::from(primes::CORE_NS).into(),
@@ -356,12 +356,12 @@ fn process_list_call(
         ..
       }),
     ) => {
-      let mut current_values = Arc::new(args.to_owned());
+      let mut current_values = Box::new(args.to_owned());
 
       // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
-      let code = Calcit::List(Arc::new(xs.to_owned()));
+      let code = Calcit::List(Box::new(xs.to_owned()));
       let next_stack = extend_call_stack(call_stack, def_ns.to_owned(), name.to_owned(), StackKind::Macro, code, &args);
 
       loop {
@@ -447,7 +447,7 @@ fn process_list_call(
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
         ys.push(Size(form));
       }
-      Ok((Calcit::List(Arc::new(FingerList::from(&ys))), None))
+      Ok((Calcit::List(Box::new(FingerList::from(&ys))), None))
     }
     (_, _) => {
       let mut ys = Vec::with_capacity(args.len() + 1);
@@ -456,14 +456,14 @@ fn process_list_call(
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
         ys.push(Size(form));
       }
-      Ok((Calcit::List(Arc::new(FingerList::from(&ys))), None))
+      Ok((Calcit::List(Box::new(FingerList::from(&ys))), None))
     }
   }
 }
 
 // detects arguments of top-level functions when possible
 fn check_fn_args(
-  defined_args: &Arc<Vec<Arc<str>>>,
+  defined_args: &Box<Vec<Arc<str>>>,
   params: &CalcitItems,
   file_ns: Arc<str>,
   f_name: Arc<str>,
@@ -556,7 +556,7 @@ pub fn preprocess_each_items(
     let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
     xs = xs.push(form);
   }
-  Ok(Calcit::List(Arc::new(xs)))
+  Ok(Calcit::List(Box::new(xs)))
 }
 
 pub fn preprocess_defn(
@@ -614,7 +614,7 @@ pub fn preprocess_defn(
           }
         }
       }
-      xs = xs.push(Calcit::List(Arc::new(zs)));
+      xs = xs.push(Calcit::List(Box::new(zs)));
 
       for (idx, a) in args.into_iter().enumerate() {
         if idx >= 2 {
@@ -622,7 +622,7 @@ pub fn preprocess_defn(
           xs = xs.push(form);
         }
       }
-      Ok(Calcit::List(Arc::new(xs)))
+      Ok(Calcit::List(Box::new(xs)))
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack(
       format!("defn/defmacro expected name and args: {} {}", a, b),
@@ -666,7 +666,7 @@ pub fn preprocess_call_let(
         check_symbol(sym, args, check_warnings);
         body_defs.insert(sym.to_owned());
         let (form, _v) = preprocess_expr(a, &body_defs, file_ns.to_owned(), check_warnings, call_stack)?;
-        Calcit::List(Arc::new(FingerList::from(&[Size(ys[0].to_owned()), Size(form)])))
+        Calcit::List(Box::new(FingerList::from(&[Size(ys[0].to_owned()), Size(form)])))
       }
       (a, b) => {
         return Err(CalcitErr::use_msg_stack(
@@ -701,7 +701,7 @@ pub fn preprocess_call_let(
       xs = xs.push(form);
     }
   }
-  Ok(Calcit::List(Arc::new(xs)))
+  Ok(Calcit::List(Box::new(xs)))
 }
 
 pub fn preprocess_quote(
@@ -715,7 +715,7 @@ pub fn preprocess_quote(
   for a in args {
     xs = xs.push(a.to_owned());
   }
-  Ok(Calcit::List(Arc::new(xs)))
+  Ok(Calcit::List(Box::new(xs)))
 }
 
 pub fn preprocess_defatom(
@@ -733,7 +733,7 @@ pub fn preprocess_defatom(
     let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
     xs = xs.push(form.to_owned());
   }
-  Ok(Calcit::List(Arc::new(xs)))
+  Ok(Calcit::List(Box::new(xs)))
 }
 
 /// need to handle experssions inside unquote snippets
@@ -756,7 +756,7 @@ pub fn preprocess_quasiquote(
       call_stack,
     )?);
   }
-  Ok(Calcit::List(Arc::new(xs)))
+  Ok(Calcit::List(Box::new(xs)))
 }
 
 pub fn preprocess_quasiquote_internal(
@@ -775,14 +775,14 @@ pub fn preprocess_quasiquote_internal(
           let (form, _) = preprocess_expr(y, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
           xs = xs.push(form.to_owned());
         }
-        Ok(Calcit::List(Arc::new(xs)))
+        Ok(Calcit::List(Box::new(xs)))
       }
       _ => {
         let mut xs: CalcitItems = FingerList::new_empty();
         for y in &**ys {
           xs = xs.push(preprocess_quasiquote_internal(y, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?.to_owned());
         }
-        Ok(Calcit::List(Arc::new(xs)))
+        Ok(Calcit::List(Box::new(xs)))
       }
     },
     _ => Ok(x.to_owned()),

@@ -104,7 +104,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       for x in xs {
         ys = ys.push(edn_to_calcit(x))
       }
-      Calcit::List(Arc::new(ys))
+      Calcit::List(Box::new(ys))
     }
     Edn::Set(xs) => {
       let mut ys: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();

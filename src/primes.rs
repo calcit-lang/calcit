@@ -67,8 +67,8 @@ pub enum Calcit {
   ///  to be used by FFIs
   Buffer(Vec<u8>),
   /// not for data, but for recursion
-  Recur(Arc<CalcitItems>),
-  List(Arc<CalcitItems>),
+  Recur(Box<CalcitItems>),
+  List(Box<CalcitItems>),
   Set(rpds::HashTrieSetSync<Calcit>),
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   Record(EdnKwd, Arc<Vec<EdnKwd>>, Arc<Vec<Calcit>>), // usize of keyword id
@@ -77,7 +77,7 @@ pub enum Calcit {
     name: Arc<str>,           // name
     def_ns: Arc<str>,         // ns
     id: Arc<str>,             // an id
-    args: Arc<Vec<Arc<str>>>, // args
+    args: Box<Vec<Arc<str>>>, // args
     body: Arc<CalcitItems>,   // body
   },
   Fn {
@@ -85,7 +85,7 @@ pub enum Calcit {
     def_ns: Arc<str>, // ns
     id: Arc<str>,     // an id
     scope: Arc<CalcitScope>,
-    args: Arc<Vec<Arc<str>>>, // args
+    args: Box<Vec<Arc<str>>>, // args
     body: Arc<CalcitItems>,   // body
   },
   Syntax(CalcitSyntax, Arc<str>), // name, ns... notice that `ns` is a meta info
@@ -235,7 +235,7 @@ fn buffer_bit_hex(n: u8) -> String {
 /// special types wraps vector of calcit data for displaying
 impl fmt::Display for CrListWrap {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&format_to_lisp(&Calcit::List(Arc::new(self.0.to_owned())))) // TODO performance
+    f.write_str(&format_to_lisp(&Calcit::List(Box::new(self.0.to_owned())))) // TODO performance
   }
 }
 

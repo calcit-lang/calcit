@@ -388,7 +388,7 @@ fn gen_call_code(
     }
     Calcit::Symbol { sym: s, .. } | Calcit::Proc(s) => {
       match &**s {
-        ";" => Ok(format!("(/* {} */ null)", Calcit::List(Arc::new(body)))),
+        ";" => Ok(format!("(/* {} */ null)", Calcit::List(Box::new(body)))),
 
         "raise" => {
           // not core syntax, but treat as macro for better debugging experience
@@ -940,7 +940,7 @@ fn uses_recur(xs: &Calcit) -> bool {
 
 fn gen_js_func(
   name: &str,
-  args: Arc<Vec<Arc<str>>>,
+  args: Box<Vec<Arc<str>>>,
   raw_body: &CalcitItems,
   ns: &str,
   exported: bool,

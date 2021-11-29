@@ -39,12 +39,12 @@ pub fn defmacro(expr: &CalcitItems, _scope: &CalcitScope, def_ns: Arc<str>) -> R
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid structure for defmacro: {} {}", a, b)),
     _ => CalcitErr::err_str(format!(
       "invalid structure for defmacro: {}",
-      Calcit::List(Arc::new(expr.to_owned()))
+      Calcit::List(Box::new(expr.to_owned()))
     )),
   }
 }
 
-pub fn get_raw_args(args: &CalcitItems) -> Result<Arc<Vec<Arc<str>>>, String> {
+pub fn get_raw_args(args: &CalcitItems) -> Result<Box<Vec<Arc<str>>>, String> {
   let mut xs: Vec<Arc<str>> = vec![];
   for item in args {
     if let Calcit::Symbol { sym, .. } = item {
@@ -53,7 +53,7 @@ pub fn get_raw_args(args: &CalcitItems) -> Result<Arc<Vec<Arc<str>>>, String> {
       return Err(format!("Unexpected argument: {}", item));
     }
   }
-  Ok(Arc::new(xs))
+  Ok(Box::new(xs))
 }
 
 pub fn quote(expr: &CalcitItems, _scope: &CalcitScope, _file_ns: Arc<str>) -> Result<Calcit, CalcitErr> {
@@ -115,7 +115,7 @@ pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
 #[derive(Clone, PartialEq, Debug)]
 enum SpanResult {
   Single(Calcit),
-  Range(Arc<CalcitItems>),
+  Range(Box<CalcitItems>),
 }
 
 pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -162,7 +162,7 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: 
             }
           }
         }
-        Ok(SpanResult::Single(Calcit::List(Arc::new(ret))))
+        Ok(SpanResult::Single(Calcit::List(Box::new(ret))))
       }
     },
     _ => Ok(SpanResult::Single(c.to_owned())),

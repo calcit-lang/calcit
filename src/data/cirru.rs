@@ -45,7 +45,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           Ok(n) => Ok(Calcit::Number(n as f64)),
           Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
         },
-        '\'' if s.len() > 1 => Ok(Calcit::List(Arc::new(FingerList::new2(
+        '\'' if s.len() > 1 => Ok(Calcit::List(Box::new(FingerList::new2(
           Calcit::Symbol {
             sym: String::from("quote").into(),
             ns: ns.to_owned(),
@@ -60,7 +60,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           },
         )))),
         // TODO also detect simple variables
-        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(Arc::new(FingerList::new2(
+        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(Box::new(FingerList::new2(
           Calcit::Symbol {
             sym: String::from("~@").into(),
             ns: ns.to_owned(),
@@ -74,7 +74,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             resolved: None,
           },
         )))),
-        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(Arc::new(FingerList::new2(
+        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(Box::new(FingerList::new2(
           Calcit::Symbol {
             sym: String::from("~").into(),
             ns: ns.to_owned(),
@@ -88,7 +88,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             resolved: None,
           },
         )))),
-        '@' => Ok(Calcit::List(Arc::new(FingerList::new2(
+        '@' => Ok(Calcit::List(Box::new(FingerList::new2(
           Calcit::Symbol {
             sym: String::from("deref").into(),
             ns: ns.to_owned(),
@@ -129,7 +129,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           Err(e) => return Err(e),
         }
       }
-      Ok(Calcit::List(Arc::new(FingerList::from(&zs))))
+      Ok(Calcit::List(Box::new(FingerList::from(&zs))))
     }
   }
 }
@@ -143,7 +143,7 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
       for y in ys {
         zs.push(Size(cirru_to_calcit(y)));
       }
-      Calcit::List(Arc::new(FingerList::from(&zs)))
+      Calcit::List(Box::new(FingerList::from(&zs)))
     }
   }
 }

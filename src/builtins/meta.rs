@@ -49,7 +49,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn recur(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  Ok(Calcit::Recur(Arc::new(xs.to_owned())))
+  Ok(Calcit::Recur(Box::new(xs.to_owned())))
 }
 
 pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
