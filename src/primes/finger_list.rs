@@ -100,17 +100,6 @@ where
   }
 }
 
-impl<T> Measured for FingerList<T>
-where
-  T: Debug + Clone,
-{
-  type Measure = Sum<usize>;
-
-  fn measure(&self) -> Self::Measure {
-    Sum(1)
-  }
-}
-
 impl<'a, T> Index<usize> for FingerList<T>
 where
   T: Clone + Eq + PartialEq + Debug + Ord + PartialOrd + Hash,

@@ -13,9 +13,6 @@ use std::sync::Arc;
 use crate::primes::finger_list::FingerList;
 use cirru_edn::EdnKwd;
 
-use fingertrees::measure::Measured;
-use fingertrees::monoid::Sum;
-
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 pub use syntax_name::CalcitSyntax;
@@ -501,14 +498,6 @@ impl PartialEq for Calcit {
       (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a == b,
       (_, _) => false,
     }
-  }
-}
-
-impl Measured for Calcit {
-  type Measure = Sum<usize>;
-
-  fn measure(&self) -> Self::Measure {
-    Sum(1)
   }
 }
 
