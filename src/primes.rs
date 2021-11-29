@@ -74,19 +74,19 @@ pub enum Calcit {
   Record(EdnKwd, Arc<Vec<EdnKwd>>, Arc<Vec<Calcit>>), // usize of keyword id
   Proc(Arc<str>),
   Macro {
-    name: Arc<str>,           // name
-    def_ns: Arc<str>,         // ns
-    id: Arc<str>,             // an id
-    args: Box<Vec<Arc<str>>>, // args
-    body: Arc<CalcitItems>,   // body
+    name: Arc<str>,         // name
+    def_ns: Arc<str>,       // ns
+    id: Arc<str>,           // an id
+    args: Vec<Arc<str>>,    // args
+    body: Arc<CalcitItems>, // body
   },
   Fn {
     name: Arc<str>,   // name
     def_ns: Arc<str>, // ns
     id: Arc<str>,     // an id
     scope: Arc<CalcitScope>,
-    args: Box<Vec<Arc<str>>>, // args
-    body: Arc<CalcitItems>,   // body
+    args: Vec<Arc<str>>,    // args
+    body: Arc<CalcitItems>, // body
   },
   Syntax(CalcitSyntax, Arc<str>), // name, ns... notice that `ns` is a meta info
 }

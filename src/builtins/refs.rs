@@ -36,7 +36,7 @@ fn modify_ref(path: Arc<str>, v: Calcit, call_stack: &CallStackList) -> Result<(
         def_ns, scope, args, body, ..
       } => {
         let values = FingerList::from(&[Size(v.to_owned()), Size(prev.to_owned())]);
-        runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
+        runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
       }
       a => {
         return Err(CalcitErr::use_msg_stack(

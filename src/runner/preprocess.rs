@@ -367,7 +367,7 @@ fn process_list_call(
       loop {
         // need to handle recursion
         // println!("evaling line: {:?}", body);
-        let body_scope = runner::bind_args(def_args.to_owned(), &current_values, &rpds::HashTrieMap::new_sync(), &next_stack)?;
+        let body_scope = runner::bind_args(def_args, &current_values, &rpds::HashTrieMap::new_sync(), &next_stack)?;
         let code = runner::evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
@@ -463,7 +463,7 @@ fn process_list_call(
 
 // detects arguments of top-level functions when possible
 fn check_fn_args(
-  defined_args: &Box<Vec<Arc<str>>>,
+  defined_args: &Vec<Arc<str>>,
   params: &CalcitItems,
   file_ns: Arc<str>,
   f_name: Arc<str>,

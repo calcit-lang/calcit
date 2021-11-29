@@ -107,7 +107,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               &values,
             );
 
-            run_fn(&values, def_scope, args.to_owned(), body, def_ns.to_owned(), &next_stack)
+            run_fn(&values, def_scope, args, body, def_ns.to_owned(), &next_stack)
           }
           Calcit::Macro {
             name, def_ns, args, body, ..
@@ -133,7 +133,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
 
             Ok(loop {
               // need to handle recursion
-              let body_scope = bind_args(args.to_owned(), &current_values, &rpds::HashTrieMap::new_sync(), call_stack)?;
+              let body_scope = bind_args(args, &current_values, &rpds::HashTrieMap::new_sync(), call_stack)?;
               let code = evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
@@ -285,14 +285,14 @@ fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList) -> 
 pub fn run_fn(
   values: &CalcitItems,
   scope: &CalcitScope,
-  args: Box<Vec<Arc<str>>>,
+  args: &Vec<Arc<str>>,
   body: &CalcitItems,
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut current_values = Box::new(values.to_owned());
   loop {
-    let body_scope = bind_args(args.to_owned(), &current_values, scope, call_stack)?;
+    let body_scope = bind_args(args, &current_values, scope, call_stack)?;
     let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
     match v {
       Calcit::Recur(xs) => {
@@ -306,7 +306,7 @@ pub fn run_fn(
 /// create new scope by writing new args
 /// notice that `&` is a mark for spreading, `?` for optional arguments
 pub fn bind_args(
-  args: Box<Vec<Arc<str>>>,
+  args: &Vec<Arc<str>>,
   values: &CalcitItems,
   base_scope: &CalcitScope,
   call_stack: &CallStackList,

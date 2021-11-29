@@ -343,7 +343,7 @@ fn gen_call_code(
           (Some(Calcit::Symbol { sym, .. }), Some(Calcit::List(ys))) => {
             let func_body = body.skip(2)?;
             gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &FingerList::new_empty());
-            let ret = gen_js_func(sym, get_raw_args(ys)?, &func_body, ns, false, local_defs, file_imports, keywords);
+            let ret = gen_js_func(sym, &get_raw_args(ys)?, &func_body, ns, false, local_defs, file_imports, keywords);
             gen_stack::pop_call_stack();
             match ret {
               Ok(code) => Ok(format!("{}{}", return_code, code)),
@@ -940,7 +940,7 @@ fn uses_recur(xs: &Calcit) -> bool {
 
 fn gen_js_func(
   name: &str,
-  args: Box<Vec<Arc<str>>>,
+  args: &Vec<Arc<str>>,
   raw_body: &CalcitItems,
   ns: &str,
   exported: bool,
@@ -1239,16 +1239,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           ..
         } => {
           gen_stack::push_call_stack(def_ns, name, StackKind::Codegen, f.to_owned(), &FingerList::new_empty());
-          defs_code.push_str(&gen_js_func(
-            &def,
-            args.to_owned(),
-            code,
-            &ns,
-            true,
-            &def_names,
-            &file_imports,
-            &keywords,
-          )?);
+          defs_code.push_str(&gen_js_func(&def, args, code, &ns, true, &def_names, &file_imports, &keywords)?);
           gen_stack::pop_call_stack();
         }
         Calcit::Thunk(code, _) => {

@@ -44,7 +44,7 @@ pub fn defmacro(expr: &CalcitItems, _scope: &CalcitScope, def_ns: Arc<str>) -> R
   }
 }
 
-pub fn get_raw_args(args: &CalcitItems) -> Result<Box<Vec<Arc<str>>>, String> {
+pub fn get_raw_args(args: &CalcitItems) -> Result<Vec<Arc<str>>, String> {
   let mut xs: Vec<Arc<str>> = vec![];
   for item in args {
     if let Calcit::Symbol { sym, .. } = item {
@@ -53,7 +53,7 @@ pub fn get_raw_args(args: &CalcitItems) -> Result<Box<Vec<Arc<str>>>, String> {
       return Err(format!("Unexpected argument: {}", item));
     }
   }
-  Ok(Box::new(xs))
+  Ok(xs)
 }
 
 pub fn quote(expr: &CalcitItems, _scope: &CalcitScope, _file_ns: Arc<str>) -> Result<Calcit, CalcitErr> {
@@ -206,7 +206,7 @@ pub fn macroexpand(
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              let body_scope = runner::bind_args(args.to_owned(), &rest_nodes, scope, call_stack)?;
+              let body_scope = runner::bind_args(&args, &rest_nodes, scope, call_stack)?;
               let v = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
@@ -243,7 +243,7 @@ pub fn macroexpand_1(
         let v = runner::evaluate_expr(&xs[0], scope, file_ns.to_owned(), call_stack)?;
         match v {
           Calcit::Macro { def_ns, args, body, .. } => {
-            let body_scope = runner::bind_args(args.to_owned(), &xs.skip(1)?, scope, call_stack)?;
+            let body_scope = runner::bind_args(&args, &xs.skip(1)?, scope, call_stack)?;
             runner::evaluate_lines(&body, &body_scope, def_ns, call_stack)
           }
           _ => Ok(quoted_code),
@@ -279,7 +279,7 @@ pub fn macroexpand_all(
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              let body_scope = runner::bind_args(args.to_owned(), &rest_nodes, scope, call_stack)?;
+              let body_scope = runner::bind_args(&args, &rest_nodes, scope, call_stack)?;
               let v = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
@@ -336,7 +336,7 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call
             def_ns, scope, args, body, ..
           } => {
             let values = FingerList::from(&[Size(err_data)]);
-            runner::run_fn(&values, &scope, args.to_owned(), &body, def_ns, call_stack)
+            runner::run_fn(&values, &scope, &args, &body, def_ns, call_stack)
           }
           Calcit::Proc(proc) => builtins::handle_proc(&proc, &FingerList::from(&[Size(err_data)]), call_stack),
           a => CalcitErr::err_str(format!("try expected a function handler, got: {}", a)),
