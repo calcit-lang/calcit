@@ -214,7 +214,7 @@ fn dump_items_code(xs: &CalcitItems) -> Edn {
   Edn::List(ys)
 }
 
-fn dump_args_code(xs: &Arc<Vec<Arc<str>>>) -> Edn {
+fn dump_args_code(xs: &Vec<Arc<str>>) -> Edn {
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
   for x in &**xs {
     ys.push(Edn::sym(&*x.to_owned()));

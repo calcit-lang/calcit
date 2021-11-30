@@ -13,9 +13,6 @@ use std::sync::Arc;
 use crate::primes::finger_list::FingerList;
 use cirru_edn::EdnKwd;
 
-use fingertrees::measure::Measured;
-use fingertrees::monoid::Sum;
-
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 pub use syntax_name::CalcitSyntax;
@@ -70,26 +67,26 @@ pub enum Calcit {
   ///  to be used by FFIs
   Buffer(Vec<u8>),
   /// not for data, but for recursion
-  Recur(Arc<CalcitItems>),
-  List(Arc<CalcitItems>),
+  Recur(Box<CalcitItems>),
+  List(Box<CalcitItems>),
   Set(rpds::HashTrieSetSync<Calcit>),
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   Record(EdnKwd, Arc<Vec<EdnKwd>>, Arc<Vec<Calcit>>), // usize of keyword id
   Proc(Arc<str>),
   Macro {
-    name: Arc<str>,           // name
-    def_ns: Arc<str>,         // ns
-    id: Arc<str>,             // an id
-    args: Arc<Vec<Arc<str>>>, // args
-    body: Arc<CalcitItems>,   // body
+    name: Arc<str>,         // name
+    def_ns: Arc<str>,       // ns
+    id: Arc<str>,           // an id
+    args: Vec<Arc<str>>,    // args
+    body: Arc<CalcitItems>, // body
   },
   Fn {
     name: Arc<str>,   // name
     def_ns: Arc<str>, // ns
     id: Arc<str>,     // an id
     scope: Arc<CalcitScope>,
-    args: Arc<Vec<Arc<str>>>, // args
-    body: Arc<CalcitItems>,   // body
+    args: Vec<Arc<str>>,    // args
+    body: Arc<CalcitItems>, // body
   },
   Syntax(CalcitSyntax, Arc<str>), // name, ns... notice that `ns` is a meta info
 }
@@ -238,7 +235,7 @@ fn buffer_bit_hex(n: u8) -> String {
 /// special types wraps vector of calcit data for displaying
 impl fmt::Display for CrListWrap {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&format_to_lisp(&Calcit::List(Arc::new(self.0.to_owned())))) // TODO performance
+    f.write_str(&format_to_lisp(&Calcit::List(Box::new(self.0.to_owned())))) // TODO performance
   }
 }
 
@@ -501,14 +498,6 @@ impl PartialEq for Calcit {
       (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a == b,
       (_, _) => false,
     }
-  }
-}
-
-impl Measured for Calcit {
-  type Measure = Sum<usize>;
-
-  fn measure(&self) -> Self::Measure {
-    Sum(1)
   }
 }
 

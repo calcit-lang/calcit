@@ -73,7 +73,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
       Calcit::Fn {
         def_ns, scope, args, body, ..
       } => {
-        let result = runner::run_fn(&params, &scope, args.to_owned(), &body, def_ns, &rpds::List::new_sync());
+        let result = runner::run_fn(&params, &scope, &args, &body, def_ns, &rpds::List::new_sync());
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {

@@ -49,7 +49,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn recur(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  Ok(Calcit::Recur(Arc::new(xs.to_owned())))
+  Ok(Calcit::Recur(Box::new(xs.to_owned())))
 }
 
 pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -301,7 +301,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
             // dirty copy...
             Calcit::Fn {
               def_ns, scope, args, body, ..
-            } => runner::run_fn(&method_args, scope, args.to_owned(), body, def_ns.to_owned(), call_stack),
+            } => runner::run_fn(&method_args, scope, args, body, def_ns.to_owned(), call_stack),
             Calcit::Proc(proc) => builtins::handle_proc(proc, &method_args, call_stack),
             Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
               format!("cannot get syntax here since instance is always evaluated, got: {}", syn),

@@ -1,6 +1,5 @@
 use crate::primes::finger_list::FingerList;
 use crate::primes::{Calcit, CalcitErr, CalcitItems};
-use std::sync::Arc;
 
 pub fn new_set(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let mut ys = rpds::HashTrieSet::new_sync();
@@ -85,7 +84,7 @@ pub fn set_to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       for x in xs {
         ys = ys.push(x.to_owned());
       }
-      Ok(Calcit::List(Arc::new(ys)))
+      Ok(Calcit::List(Box::new(ys)))
     }
     Some(a) => CalcitErr::err_str(format!("&set:to-list expected a set: {}", a)),
     None => CalcitErr::err_str("&set:to-list expected 1 argument, got none"),

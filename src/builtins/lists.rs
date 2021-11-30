@@ -1,7 +1,5 @@
 use core::cmp::Ordering;
 
-use std::sync::Arc;
-
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
 use crate::util::number::f64_to_usize;
 
@@ -11,7 +9,7 @@ use crate::primes::finger_list::{FingerList, Size};
 use crate::runner;
 
 pub fn new_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  Ok(Calcit::List(Arc::new(xs.to_owned())))
+  Ok(Calcit::List(Box::new(xs.to_owned())))
 }
 
 pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -56,7 +54,7 @@ pub fn slice(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       };
       let from_idx: usize = unsafe { from.to_int_unchecked() };
 
-      Ok(Calcit::List(Arc::new(ys.slice(from_idx, to_idx)?)))
+      Ok(Calcit::List(Box::new(ys.slice(from_idx, to_idx)?)))
     }
     (a, b) => CalcitErr::err_str(format!("slice expected list and indexes: {} {}", a, b)),
   }
@@ -67,14 +65,14 @@ pub fn append(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("append expected 2 arguments, got: {}", CrListWrap(xs.to_owned())));
   }
   match &xs[0] {
-    Calcit::List(ys) => Ok(Calcit::List(Arc::new(ys.push(xs[1].to_owned())))),
+    Calcit::List(ys) => Ok(Calcit::List(Box::new(ys.push(xs[1].to_owned())))),
     a => CalcitErr::err_str(format!("append expected a list: {}", a)),
   }
 }
 
 pub fn prepend(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(ys)), Some(a)) => Ok(Calcit::List(Arc::new(ys.unshift(a.to_owned())))),
+    (Some(Calcit::List(ys)), Some(a)) => Ok(Calcit::List(Box::new(ys.unshift(a.to_owned())))),
     (Some(a), _) => CalcitErr::err_str(format!("prepend expected list, got: {}", a)),
     (None, _) => CalcitErr::err_str("prepend expected 2 arguments, got nothing"),
   }
@@ -89,7 +87,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       if ys.is_empty() {
         Ok(Calcit::Nil)
       } else {
-        Ok(Calcit::List(Arc::new(ys.rest()?)))
+        Ok(Calcit::List(Box::new(ys.rest()?)))
       }
     }
     a => CalcitErr::err_str(format!("list:rest expected a list, got: {}", a)),
@@ -106,7 +104,7 @@ pub fn butlast(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       if ys.is_empty() {
         Ok(Calcit::Nil)
       } else {
-        Ok(Calcit::List(Arc::new(ys.butlast()?)))
+        Ok(Calcit::List(Box::new(ys.butlast()?)))
       }
     }
     a => CalcitErr::err_str(format!("butlast expected a list, got: {}", a)),
@@ -124,7 +122,7 @@ pub fn concat(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       return CalcitErr::err_str(format!("concat expects list arguments, got: {}", x));
     }
   }
-  Ok(Calcit::List(Arc::new(ys)))
+  Ok(Calcit::List(Box::new(ys)))
 }
 
 pub fn range(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -144,7 +142,7 @@ pub fn range(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   };
 
   if (bound - base).abs() < f64::EPSILON {
-    return Ok(Calcit::List(Arc::new(FingerList::new_empty())));
+    return Ok(Calcit::List(Box::new(FingerList::new_empty())));
   }
 
   if step == 0.0 || (bound > base && step < 0.0) || (bound < base && step > 0.0) {
@@ -164,7 +162,7 @@ pub fn range(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       i += step;
     }
   }
-  Ok(Calcit::List(Arc::new(ys)))
+  Ok(Calcit::List(Box::new(ys)))
 }
 
 pub fn reverse(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -173,7 +171,7 @@ pub fn reverse(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::Nil),
-    Calcit::List(ys) => Ok(Calcit::List(Arc::new(ys.reverse()))),
+    Calcit::List(ys) => Ok(Calcit::List(Box::new(ys.reverse()))),
     a => CalcitErr::err_str(format!("butlast expected a list, got: {}", a)),
   }
 }
@@ -193,7 +191,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
       ) => {
         for x in &**xs {
           let values = FingerList::from(&[Size(ret), Size(x.to_owned())]);
-          ret = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
+          ret = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
         }
         Ok(ret)
       }
@@ -213,7 +211,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
       ) => {
         for x in xs {
           let values = FingerList::from(&[Size(ret), Size(x.to_owned())]);
-          ret = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
+          ret = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
         }
         Ok(ret)
       }
@@ -234,9 +232,9 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
         for (k, x) in xs {
           let values = FingerList::from(&[
             Size(ret),
-            Size(Calcit::List(Arc::new(FingerList::from(&[Size(k.to_owned()), Size(x.to_owned())])))),
+            Size(Calcit::List(Box::new(FingerList::from(&[Size(k.to_owned()), Size(x.to_owned())])))),
           ]);
-          ret = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
+          ret = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
         }
         Ok(ret)
       }
@@ -247,7 +245,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
             proc,
             &FingerList::from(&[
               Size(ret),
-              Size(Calcit::List(Arc::new(FingerList::from(&[Size(k.to_owned()), Size(x.to_owned())])))),
+              Size(Calcit::List(Box::new(FingerList::from(&[Size(k.to_owned()), Size(x.to_owned())])))),
             ]),
             call_stack,
           )?;
@@ -285,7 +283,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
         let mut state = acc.to_owned();
         for x in &**xs {
           let values = FingerList::from(&[Size(state), Size(x.to_owned())]);
-          let pair = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
+          let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match &*x0 {
               Calcit::Bool(b) => {
@@ -322,7 +320,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
         let mut state = acc.to_owned();
         for x in xs {
           let values = FingerList::from(&[Size(state), Size(x.to_owned())]);
-          let pair = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
+          let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match &*x0 {
               Calcit::Bool(b) => {
@@ -360,9 +358,9 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
         for (k, x) in xs {
           let values = FingerList::from(&[
             Size(state),
-            Size(Calcit::List(Arc::new(FingerList::from(&[Size(k.to_owned()), Size(x.to_owned())])))),
+            Size(Calcit::List(Box::new(FingerList::from(&[Size(k.to_owned()), Size(x.to_owned())])))),
           ]);
-          let pair = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
+          let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match &*x0 {
               Calcit::Bool(b) => {
@@ -422,7 +420,7 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
         for i in 0..size {
           let x = xs[size - 1 - i].to_owned();
           let values = FingerList::from(&[Size(state), Size(x)]);
-          let pair = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack)?;
+          let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
             Calcit::Tuple(x0, x1) => match &*x0 {
               Calcit::Bool(b) => {
@@ -476,7 +474,7 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
         let mut xs2: Vec<&Calcit> = xs.into_iter().collect::<Vec<&Calcit>>();
         xs2.sort_by(|a, b| -> Ordering {
           let values = FingerList::from(&[Size((*a).to_owned()), Size((*b).to_owned())]);
-          let v = runner::run_fn(&values, scope, args.to_owned(), body, def_ns.to_owned(), call_stack);
+          let v = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
             Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
@@ -496,7 +494,7 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
           // TODO ??
           ys = ys.push((*x).to_owned())
         }
-        Ok(Calcit::List(Arc::new(ys)))
+        Ok(Calcit::List(Box::new(ys)))
       }
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         let mut xs2: Vec<&Calcit> = xs.into_iter().collect::<Vec<&Calcit>>();
@@ -522,7 +520,7 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
           // TODO ??
           ys = ys.push((*x).to_owned())
         }
-        Ok(Calcit::List(Arc::new(ys)))
+        Ok(Calcit::List(Box::new(ys)))
       }
       (a, b) => Err(CalcitErr::use_msg_stack(
         format!("sort expected list and function, got: {} {}", a, b),
@@ -562,7 +560,7 @@ pub fn assoc_before(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => {
         // let ys = insert(zs, idx, xs[2].to_owned());
-        Ok(Calcit::List(Arc::new(zs.assoc_before(idx, xs[2].to_owned())?)))
+        Ok(Calcit::List(Box::new(zs.assoc_before(idx, xs[2].to_owned())?)))
       }
       Err(e) => CalcitErr::err_str(format!("assoc-before expect usize, {}", e)),
     },
@@ -578,7 +576,7 @@ pub fn assoc_after(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => {
         // let ys = insert(zs, idx + 1, xs[2].to_owned());
-        Ok(Calcit::List(Arc::new(zs.assoc_after(idx, xs[2].to_owned())?)))
+        Ok(Calcit::List(Box::new(zs.assoc_after(idx, xs[2].to_owned())?)))
       }
       Err(e) => CalcitErr::err_str(format!("assoc-after expect usize, {}", e)),
     },
@@ -628,9 +626,9 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           let mut ys = (**zs).to_owned();
           // ys[idx] = xs[2].to_owned();
           ys = ys.assoc(idx, xs[2].to_owned())?;
-          Ok(Calcit::List(Arc::new(ys)))
+          Ok(Calcit::List(Box::new(ys)))
         } else {
-          Ok(Calcit::List(Arc::new(xs.to_owned())))
+          Ok(Calcit::List(Box::new(xs.to_owned())))
         }
       }
       Err(e) => CalcitErr::err_str(e),
@@ -642,7 +640,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(at) => Ok(Calcit::List(Arc::new(xs.dissoc(at)?))),
+      Ok(at) => Ok(Calcit::List(Box::new(xs.dissoc(at)?))),
       Err(e) => CalcitErr::err_str(format!("dissoc expected number, {}", e)),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("list dissoc expected a list, got: {}", a)),
@@ -678,7 +676,7 @@ pub fn distinct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           zs = zs.push(y.to_owned());
         }
       }
-      Ok(Calcit::List(Arc::new(zs)))
+      Ok(Calcit::List(Box::new(zs)))
     }
     a => CalcitErr::err_str(format!("&list:distinct expected a list, got {}", a)),
   }
