@@ -6,9 +6,10 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use im_ternary_tree::TernaryTreeList;
+
 use crate::builtins;
 use crate::call_stack::CallStackList;
-use crate::primes::finger_list::{FingerList, Size};
 use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 
@@ -19,7 +20,7 @@ pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>) -> Resul
       def_ns: file_ns.to_owned(),
       id: gen_core_id(),
       scope: Arc::new(scope.to_owned()),
-      args: get_raw_args(xs)?,
+      args: Arc::new(get_raw_args(xs)?),
       body: Arc::new(expr.skip(2)?),
     }),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid args type for defn: {} , {}", a, b)),
@@ -33,14 +34,11 @@ pub fn defmacro(expr: &CalcitItems, _scope: &CalcitScope, def_ns: Arc<str>) -> R
       name: s.to_owned(),
       def_ns: def_ns.to_owned(),
       id: gen_core_id(),
-      args: get_raw_args(xs)?,
+      args: Arc::new(get_raw_args(xs)?),
       body: Arc::new(expr.skip(2)?),
     }),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid structure for defmacro: {} {}", a, b)),
-    _ => CalcitErr::err_str(format!(
-      "invalid structure for defmacro: {}",
-      Calcit::List(Box::new(expr.to_owned()))
-    )),
+    _ => CalcitErr::err_str(format!("invalid structure for defmacro: {}", Calcit::List(expr.to_owned()))),
   }
 }
 
@@ -93,7 +91,7 @@ pub fn eval(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_sta
 
 pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match expr.get(0) {
-    Some(Calcit::Nil) => runner::evaluate_lines(&expr.skip(1)?, scope, file_ns.to_owned(), call_stack),
+    Some(Calcit::Nil) => runner::evaluate_lines(&expr.drop_left(), scope, file_ns.to_owned(), call_stack),
     Some(Calcit::List(xs)) if xs.len() == 2 => {
       let mut body_scope = scope.to_owned();
       match (&xs[0], &xs[1]) {
@@ -103,7 +101,7 @@ pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
         }
         (a, _) => return CalcitErr::err_str(format!("invalid binding name: {}", a)),
       }
-      runner::evaluate_lines(&expr.skip(1)?, &body_scope, file_ns.to_owned(), call_stack)
+      runner::evaluate_lines(&expr.drop_left(), &body_scope, file_ns.to_owned(), call_stack)
     }
     Some(Calcit::List(xs)) => CalcitErr::err_str(format!("invalid length: {:?}", xs)),
     Some(_) => CalcitErr::err_str(format!("invalid node for &let: {:?}", expr)),
@@ -146,23 +144,23 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: 
       (Some(Calcit::Symbol { sym, .. }), Some(expr)) if &**sym == "~@" => {
         let ret = runner::evaluate_expr(expr, scope, file_ns.to_owned(), call_stack)?;
         match ret {
-          Calcit::List(zs) => Ok(SpanResult::Range(zs)),
+          Calcit::List(zs) => Ok(SpanResult::Range(Box::new(zs))),
           _ => Err(CalcitErr::use_str(format!("unknown result from unquote-slice: {}", ret))),
         }
       }
       (_, _) => {
-        let mut ret: FingerList<Calcit> = FingerList::new_empty();
-        for y in &**ys {
+        let mut ret: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
+        for y in ys {
           match replace_code(y, scope, file_ns.to_owned(), call_stack)? {
-            SpanResult::Single(z) => ret = ret.push(z),
+            SpanResult::Single(z) => ret = ret.push_right(z),
             SpanResult::Range(pieces) => {
               for piece in &*pieces {
-                ret = ret.push(piece.to_owned());
+                ret = ret.push_right(piece.to_owned());
               }
             }
           }
         }
-        Ok(SpanResult::Single(Calcit::List(Box::new(ret))))
+        Ok(SpanResult::Single(Calcit::List(ret)))
       }
     },
     _ => Ok(SpanResult::Single(c.to_owned())),
@@ -172,7 +170,7 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: 
 pub fn has_unquote(xs: &Calcit) -> bool {
   match xs {
     Calcit::List(ys) => {
-      for y in &**ys {
+      for y in ys {
         if has_unquote(y) {
           return true;
         }
@@ -202,7 +200,7 @@ pub fn macroexpand(
         match v {
           Calcit::Macro { def_ns, args, body, .. } => {
             // mutable operation
-            let mut rest_nodes = xs.skip(1)?;
+            let mut rest_nodes = xs.drop_left();
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
@@ -210,7 +208,7 @@ pub fn macroexpand(
               let v = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
-                  rest_nodes = (*rest_code).to_owned();
+                  rest_nodes = rest_code.to_owned();
                 }
                 _ => return Ok(v),
               }
@@ -243,7 +241,7 @@ pub fn macroexpand_1(
         let v = runner::evaluate_expr(&xs[0], scope, file_ns.to_owned(), call_stack)?;
         match v {
           Calcit::Macro { def_ns, args, body, .. } => {
-            let body_scope = runner::bind_args(&args, &xs.skip(1)?, scope, call_stack)?;
+            let body_scope = runner::bind_args(&args, &xs.drop_left(), scope, call_stack)?;
             runner::evaluate_lines(&body, &body_scope, def_ns, call_stack)
           }
           _ => Ok(quoted_code),
@@ -274,7 +272,7 @@ pub fn macroexpand_all(
         match v {
           Calcit::Macro { def_ns, args, body, .. } => {
             // mutable operation
-            let mut rest_nodes = xs.skip(1)?;
+            let mut rest_nodes = xs.drop_left();
             let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
@@ -283,7 +281,7 @@ pub fn macroexpand_all(
               let v = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
-                  rest_nodes = (*rest_code).to_owned();
+                  rest_nodes = rest_code.to_owned();
                 }
                 _ => {
                   let (resolved, _v) =
@@ -335,10 +333,10 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call
           Calcit::Fn {
             def_ns, scope, args, body, ..
           } => {
-            let values = FingerList::from(&[Size(err_data)]);
+            let values = TernaryTreeList::from(&[err_data]);
             runner::run_fn(&values, &scope, &args, &body, def_ns, call_stack)
           }
-          Calcit::Proc(proc) => builtins::handle_proc(&proc, &FingerList::from(&[Size(err_data)]), call_stack),
+          Calcit::Proc(proc) => builtins::handle_proc(&proc, &TernaryTreeList::from(&[err_data]), call_stack),
           a => CalcitErr::err_str(format!("try expected a function handler, got: {}", a)),
         }
       }

@@ -49,7 +49,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn recur(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  Ok(Calcit::Recur(Box::new(xs.to_owned())))
+  Ok(Calcit::Recur(xs.to_owned()))
 }
 
 pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -72,7 +72,7 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
   match x {
     Calcit::List(ys) => {
       let mut xs: Vec<Cirru> = Vec::with_capacity(ys.len());
-      for y in &**ys {
+      for y in ys {
         xs.push(transform_code_to_cirru(y));
       }
       Cirru::List(xs)
@@ -295,7 +295,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     Calcit::Record(_, fields, values) => {
       match find_in_fields(fields, &EdnKwd::from(name)) {
         Some(idx) => {
-          let method_args = invoke_args.skip(1)?.unshift(value);
+          let method_args = invoke_args.drop_left().unshift(value);
 
           match &values[idx] {
             // dirty copy...

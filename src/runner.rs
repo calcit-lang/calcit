@@ -1,12 +1,12 @@
 pub mod preprocess;
 pub mod track;
 
+use im_ternary_tree::TernaryTreeList;
 use std::sync::{Arc, RwLock};
 
 use crate::builtins;
 use crate::builtins::is_proc_name;
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
-use crate::primes::finger_list::{FingerList, Size};
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
 use crate::program;
 use crate::util::string::has_ns_part;
@@ -56,7 +56,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
         // println!("eval expr: {}", x);
 
         let v = evaluate_expr(x, scope, file_ns.to_owned(), call_stack)?;
-        let rest_nodes = xs.skip(1)?;
+        let rest_nodes = xs.drop_left();
         let ret = match &v {
           Calcit::Proc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns.to_owned(), call_stack)?;
@@ -137,7 +137,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               let code = evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
-                  current_values = ys.to_owned();
+                  current_values = Box::new(ys.to_owned());
                 }
                 _ => {
                   // println!("gen code: {} {}", x, &code.lisp_str()));
@@ -170,7 +170,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             call_stack,
           )),
           a => Err(CalcitErr::use_msg_stack(
-            format!("cannot be used as operator: {} in {}", a, CrListWrap((**xs).to_owned())),
+            format!("cannot be used as operator: {} in {}", a, CrListWrap(xs.to_owned())),
             call_stack,
           )),
         };
@@ -285,7 +285,7 @@ fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList) -> 
 pub fn run_fn(
   values: &CalcitItems,
   scope: &CalcitScope,
-  args: &Vec<Arc<str>>,
+  args: &[Arc<str>],
   body: &CalcitItems,
   file_ns: Arc<str>,
   call_stack: &CallStackList,
@@ -296,7 +296,7 @@ pub fn run_fn(
     let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
     match v {
       Calcit::Recur(xs) => {
-        current_values = xs.to_owned();
+        current_values = Box::new(xs.to_owned());
       }
       result => return Ok(result),
     }
@@ -306,7 +306,7 @@ pub fn run_fn(
 /// create new scope by writing new args
 /// notice that `&` is a mark for spreading, `?` for optional arguments
 pub fn bind_args(
-  args: &Vec<Arc<str>>,
+  args: &[Arc<str>],
   values: &CalcitItems,
   base_scope: &CalcitScope,
   call_stack: &CallStackList,
@@ -348,11 +348,11 @@ pub fn bind_args(
         "&" => return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {:?}", args), call_stack)),
         "?" => return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {:?}", args), call_stack)),
         _ => {
-          let mut chunk: CalcitItems = FingerList::new_empty();
+          let mut chunk: CalcitItems = TernaryTreeList::Empty;
           while let Some(v) = values_pop_front() {
-            chunk = chunk.push(v.to_owned());
+            chunk = chunk.push_right(v.to_owned());
           }
-          scope.insert_mut(sym.to_owned(), Calcit::List(Box::new(chunk)));
+          scope.insert_mut(sym.to_owned(), Calcit::List(chunk));
           if !is_args_empty() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{:?}` after spreading in `{:?}`", collected_args, args,),
@@ -422,7 +422,7 @@ pub fn evaluate_args(
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<CalcitItems, CalcitErr> {
-  let mut ret: Vec<Size<Calcit>> = Vec::with_capacity(items.len());
+  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len());
   let mut spreading = false;
   for item in items {
     match item {
@@ -435,7 +435,7 @@ pub fn evaluate_args(
         if spreading {
           match v {
             Calcit::List(xs) => {
-              for x in &*xs {
+              for x in &xs {
                 // extract thunk before calling functions
                 let y = match x {
                   Calcit::Thunk(code, v) => match v {
@@ -444,7 +444,7 @@ pub fn evaluate_args(
                   },
                   _ => x.to_owned(),
                 };
-                ret.push(Size(y.to_owned()));
+                ret.push(y.to_owned());
               }
               spreading = false
             }
@@ -464,10 +464,10 @@ pub fn evaluate_args(
             },
             _ => v.to_owned(),
           };
-          ret.push(Size(y));
+          ret.push(y);
         }
       }
     }
   }
-  Ok(FingerList::from(&ret))
+  Ok(TernaryTreeList::from(&ret))
 }

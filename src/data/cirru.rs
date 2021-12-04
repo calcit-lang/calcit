@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use cirru_parser::Cirru;
+use im_ternary_tree::TernaryTreeList;
 
-use crate::primes::finger_list::{FingerList, Size};
 use crate::primes::Calcit;
 
 /// code is CirruNode, and this function parse code(rather than data)
@@ -45,7 +45,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           Ok(n) => Ok(Calcit::Number(n as f64)),
           Err(e) => Err(format!("failed to parse hex: {} => {:?}", s, e)),
         },
-        '\'' if s.len() > 1 => Ok(Calcit::List(Box::new(FingerList::new2(
+        '\'' if s.len() > 1 => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: String::from("quote").into(),
             ns: ns.to_owned(),
@@ -58,9 +58,9 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             at_def: def.to_owned(),
             resolved: None,
           },
-        )))),
+        ]))),
         // TODO also detect simple variables
-        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(Box::new(FingerList::new2(
+        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: String::from("~@").into(),
             ns: ns.to_owned(),
@@ -73,8 +73,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             at_def: def.to_owned(),
             resolved: None,
           },
-        )))),
-        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(Box::new(FingerList::new2(
+        ]))),
+        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: String::from("~").into(),
             ns: ns.to_owned(),
@@ -87,8 +87,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             at_def: def.to_owned(),
             resolved: None,
           },
-        )))),
-        '@' => Ok(Calcit::List(Box::new(FingerList::new2(
+        ]))),
+        '@' => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: String::from("deref").into(),
             ns: ns.to_owned(),
@@ -101,7 +101,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             at_def: def.to_owned(),
             resolved: None,
           },
-        )))),
+        ]))),
         // TODO future work of reader literal expanding
         _ => {
           if let Ok(f) = s.parse::<f64>() {
@@ -118,18 +118,18 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
       },
     },
     Cirru::List(ys) => {
-      let mut zs: Vec<Size<Calcit>> = Vec::with_capacity(ys.len());
+      let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
       for y in ys {
         match code_to_calcit(y, ns.to_owned(), def.to_owned()) {
           Ok(v) => {
             if !is_comment(&v) {
-              zs.push(Size(v.to_owned()));
+              zs.push(v.to_owned());
             }
           }
           Err(e) => return Err(e),
         }
       }
-      Ok(Calcit::List(Box::new(FingerList::from(&zs))))
+      Ok(Calcit::List(TernaryTreeList::from(&zs)))
     }
   }
 }
@@ -139,11 +139,11 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
   match xs {
     Cirru::Leaf(s) => Calcit::Str((**s).into()),
     Cirru::List(ys) => {
-      let mut zs: Vec<Size<Calcit>> = Vec::with_capacity(ys.len());
+      let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
       for y in ys {
-        zs.push(Size(cirru_to_calcit(y)));
+        zs.push(cirru_to_calcit(y));
       }
-      Calcit::List(Box::new(FingerList::from(&zs)))
+      Calcit::List(TernaryTreeList::from(&zs))
     }
   }
 }
@@ -157,7 +157,7 @@ pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
     Calcit::Str(s) => Ok(Cirru::Leaf((**s).into())),
     Calcit::List(ys) => {
       let mut zs: Vec<Cirru> = Vec::with_capacity(ys.len());
-      for y in &**ys {
+      for y in ys {
         match calcit_data_to_cirru(y) {
           Ok(v) => {
             zs.push(v);
@@ -193,7 +193,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Keyword(s) => Ok(Cirru::leaf(format!(":{}", s))), // TODO performance
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
-      for x in &**xs {
+      for x in xs {
         ys.push(calcit_to_cirru(x)?);
       }
       Ok(Cirru::List(ys))
