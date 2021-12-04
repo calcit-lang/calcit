@@ -2,6 +2,8 @@ pub mod gen_stack;
 mod internal_states;
 mod snippets;
 
+use im_ternary_tree::TernaryTreeList;
+
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -15,7 +17,6 @@ use crate::builtins::syntax::get_raw_args;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
 use crate::call_stack::StackKind;
 use crate::primes;
-use crate::primes::finger_list::FingerList;
 use crate::primes::{Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
 use crate::program;
 use crate::util::string::{has_ns_part, matches_digits, matches_js_var, wrap_js_str};
@@ -169,7 +170,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<Vec<EdnKwd>>) -
     Calcit::Proc(p) => Ok(format!("new {}CalcitSymbol({})", var_prefix, escape_cirru_str(p))),
     Calcit::List(ys) => {
       let mut chunk = String::from("");
-      for y in &**ys {
+      for y in ys {
         if !chunk.is_empty() {
           chunk.push_str(", ");
         }
@@ -285,7 +286,7 @@ fn gen_call_code(
   }
 
   let head = ys[0].to_owned();
-  let body = ys.skip(1)?;
+  let body = ys.drop_left();
   match &head {
     Calcit::Syntax(s, ..) => {
       match s {
@@ -302,7 +303,7 @@ fn gen_call_code(
           }
           return match (body.get(0), body.get(1)) {
             (Some(condition), Some(true_branch)) => {
-              gen_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), &FingerList::new_empty());
+              gen_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
               let false_code = match body.get(2) {
                 Some(fal) => to_js_code(fal, ns, local_defs, file_imports, keywords, &None)?,
                 None => String::from("null"),
@@ -327,7 +328,7 @@ fn gen_call_code(
             (Some(Calcit::Symbol { sym, .. }), Some(v)) => {
               // let _name = escape_var(sym); // TODO
               let ref_path = wrap_js_str(&format!("{}/{}", ns, sym.to_owned()));
-              gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &FingerList::new_empty());
+              gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
               let value_code = &to_js_code(v, ns, local_defs, file_imports, keywords, &None)?;
               gen_stack::pop_call_stack();
               Ok(format!(
@@ -342,7 +343,7 @@ fn gen_call_code(
         CalcitSyntax::Defn => match (body.get(0), body.get(1)) {
           (Some(Calcit::Symbol { sym, .. }), Some(Calcit::List(ys))) => {
             let func_body = body.skip(2)?;
-            gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &FingerList::new_empty());
+            gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
             let ret = gen_js_func(sym, &get_raw_args(ys)?, &func_body, ns, false, local_defs, file_imports, keywords);
             gen_stack::pop_call_stack();
             match ret {
@@ -357,7 +358,7 @@ fn gen_call_code(
         CalcitSyntax::Quasiquote => Ok(format!("(/* Unexpected quasiquote {} */ null)", xs.lisp_str())),
         CalcitSyntax::Try => match (body.get(0), body.get(1)) {
           (Some(expr), Some(handler)) => {
-            gen_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), &FingerList::new_empty());
+            gen_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
             let next_return_label = match return_label {
               Some(x) => Some(x.to_owned()),
               None => Some(String::from("return ")),
@@ -388,7 +389,7 @@ fn gen_call_code(
     }
     Calcit::Symbol { sym: s, .. } | Calcit::Proc(s) => {
       match &**s {
-        ";" => Ok(format!("(/* {} */ null)", Calcit::List(Box::new(body)))),
+        ";" => Ok(format!("(/* {} */ null)", Calcit::List(body))),
 
         "raise" => {
           // not core syntax, but treat as macro for better debugging experience
@@ -416,7 +417,7 @@ fn gen_call_code(
 
         "echo" | "println" => {
           // not core syntax, but treat as macro for better debugging experience
-          let args = ys.skip(1)?;
+          let args = ys.drop_left();
           let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
           Ok(format!("console.log({}printable({}))", proc_prefix, args_code))
         }
@@ -433,7 +434,7 @@ fn gen_call_code(
         }
         "new" => match body.get(0) {
           Some(ctor) => {
-            let args = body.skip(1)?;
+            let args = body.drop_left();
             let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
             Ok(format!(
               "{}new {}({})",
@@ -511,7 +512,7 @@ fn gen_call_code(
           if matches_js_var(name) {
             match body.get(0) {
               Some(obj) => {
-                let args = body.skip(1)?;
+                let args = body.drop_left();
                 let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
                 Ok(format!(
                   "{}{}.{}({})",
@@ -531,7 +532,7 @@ fn gen_call_code(
           let name = s.strip_prefix('.').unwrap();
           match body.get(0) {
             Some(obj) => {
-              let args = body.skip(1)?;
+              let args = body.drop_left();
               let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
               Ok(format!(
                 "{}{}invoke_method({})({},{})",
@@ -696,7 +697,7 @@ fn gen_let_code(
       return Err(format!("&let expected body, but got empty, {}", xs.lisp_str()));
     }
     let pair = let_def_body[0].to_owned();
-    let content = let_def_body.skip(1)?;
+    let content = let_def_body.drop_left();
 
     match &pair {
       Calcit::Nil => {
@@ -754,7 +755,7 @@ fn gen_let_code(
                   Calcit::List(ys) if ys.len() > 2 => match (&ys[0], &ys[1]) {
                     (Calcit::Syntax(sym, _ns), Calcit::List(zs)) if sym == &CalcitSyntax::CoreLet && zs.len() == 2 => match &zs[0] {
                       Calcit::Symbol { sym: s2, .. } if !scoped_defs.contains(s2) => {
-                        let_def_body = ys.skip(1)?;
+                        let_def_body = ys.drop_left();
                         continue;
                       }
                       _ => (),
@@ -926,7 +927,7 @@ fn uses_recur(xs: &Calcit) -> bool {
       Some(Calcit::Syntax(syn, _)) if syn == &CalcitSyntax::Defn => false,
       Some(Calcit::Symbol { sym, .. }) if &**sym == "defn" => false,
       _ => {
-        for y in &**ys {
+        for y in ys {
           if uses_recur(y) {
             return true;
           }
@@ -940,7 +941,7 @@ fn uses_recur(xs: &Calcit) -> bool {
 
 fn gen_js_func(
   name: &str,
-  args: &Vec<Arc<str>>,
+  args: &[Arc<str>],
   raw_body: &CalcitItems,
   ns: &str,
   exported: bool,
@@ -1001,7 +1002,7 @@ fn gen_js_func(
     snippets::tmpl_args_exact(args_count)
   };
 
-  let mut body: CalcitItems = FingerList::new_empty();
+  let mut body: CalcitItems = TernaryTreeList::Empty;
   let mut async_prefix: String = String::from("");
 
   for line in raw_body {
@@ -1015,7 +1016,7 @@ fn gen_js_func(
         }
       }
     }
-    body = body.push(line.to_owned());
+    body = body.push_right(line.to_owned());
   }
 
   if !body.is_empty() && uses_recur(&body[body.len() - 1]) {
@@ -1055,7 +1056,7 @@ fn gen_js_func(
 }
 
 /// this is a very rough implementation for now
-fn hinted_async(xs: &FingerList<Calcit>) -> bool {
+fn hinted_async(xs: &TernaryTreeList<Calcit>) -> bool {
   for x in xs {
     match x {
       Calcit::Symbol { sym, .. } if &**sym == "async" => return true,
@@ -1078,7 +1079,7 @@ fn contains_symbol(xs: &Calcit, y: &str) -> bool {
       false
     }
     Calcit::List(zs) => {
-      for z in &**zs {
+      for z in zs {
         if contains_symbol(z, y) {
           return true;
         }
@@ -1238,14 +1239,14 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           body: code,
           ..
         } => {
-          gen_stack::push_call_stack(def_ns, name, StackKind::Codegen, f.to_owned(), &FingerList::new_empty());
+          gen_stack::push_call_stack(def_ns, name, StackKind::Codegen, f.to_owned(), &TernaryTreeList::Empty);
           defs_code.push_str(&gen_js_func(&def, args, code, &ns, true, &def_names, &file_imports, &keywords)?);
           gen_stack::pop_call_stack();
         }
         Calcit::Thunk(code, _) => {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
-          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, (**code).to_owned(), &FingerList::new_empty());
+          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, (**code).to_owned(), &TernaryTreeList::Empty);
           vals_code.push_str(&format!(
             "\nexport var {} = {};\n",
             escape_var(&def),

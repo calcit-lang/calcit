@@ -13,7 +13,7 @@ pub struct CalcitStack {
   pub ns: Arc<str>,
   pub def: Arc<str>,
   pub code: Calcit, // built in functions may not contain code
-  pub args: CalcitItems,
+  pub args: Box<CalcitItems>,
   pub kind: StackKind,
 }
 
@@ -49,7 +49,7 @@ pub fn extend_call_stack(
     ns: ns.to_owned(),
     def: def.to_owned(),
     code: code.to_owned(),
-    args: args.to_owned(),
+    args: Box::new(args.to_owned()),
     kind,
   })
 }
@@ -78,7 +78,7 @@ pub fn display_stack(failure: &str, stack: &CallStackList) -> Result<(), String>
     info.insert(Edn::kwd("def"), Edn::str(format!("{}/{}", s.ns, s.def)));
     info.insert(Edn::kwd("code"), Edn::Quote(cirru::calcit_to_cirru(&s.code)?));
     let mut args: Vec<Edn> = Vec::with_capacity(s.args.len());
-    for a in &s.args {
+    for a in &*s.args {
       args.push(edn::calcit_to_edn(a)?);
     }
     info.insert(Edn::kwd("args"), Edn::List(args));

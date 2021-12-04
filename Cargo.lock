@@ -45,15 +45,15 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "calcit_runner"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "cirru_edn",
  "cirru_parser",
  "clap",
  "ctrlc",
  "dirs",
- "fingertrees",
  "hex",
+ "im_ternary_tree",
  "lazy_static",
  "libloading",
  "notify",
@@ -154,12 +154,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fingertrees"
-version = "0.2.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fc7e8750923c1ac2d34ef651af47b0c63398d403866d1ab0718938817764a8b"
-
-[[package]]
 name = "fsevent"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -219,6 +213,12 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "im_ternary_tree"
+version = "0.0.2-a2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6e12b9f78052839cfa8d06f59653199863a57068d9393ec6bed1acec4a94559"
 
 [[package]]
 name = "inotify"

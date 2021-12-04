@@ -3,11 +3,13 @@ use cirru_edn::Edn;
 use std::sync::Arc;
 use std::thread;
 
+use im_ternary_tree::TernaryTreeList;
+
 use calcit_runner::{
   builtins,
   call_stack::{display_stack, CallStackList},
   data::edn::{calcit_to_edn, edn_to_calcit},
-  primes::{finger_list::FingerList, Calcit, CalcitErr, CalcitItems, CrListWrap},
+  primes::{Calcit, CalcitErr, CalcitItems, CrListWrap},
   runner::track,
 };
 
@@ -137,9 +139,9 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
           def_ns, scope, args, body, ..
         } = &callback
         {
-          let mut real_args = FingerList::new_empty();
+          let mut real_args = TernaryTreeList::Empty;
           for p in ps {
-            real_args = real_args.push(edn_to_calcit(&p));
+            real_args = real_args.push_right(edn_to_calcit(&p));
           }
           let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack);
           match r {
@@ -225,9 +227,9 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
         def_ns, scope, args, body, ..
       } = &callback
       {
-        let mut real_args = FingerList::new_empty();
+        let mut real_args = TernaryTreeList::Empty;
         for p in ps {
-          real_args = real_args.push(edn_to_calcit(&p));
+          real_args = real_args.push_right(edn_to_calcit(&p));
         }
         let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack.clone());
         match r {
@@ -267,7 +269,7 @@ pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit,
         def_ns, scope, args, body, ..
       } = cb.as_ref()
       {
-        if let Err(e) = runner::run_fn(&FingerList::new_empty(), scope, args, body, def_ns.to_owned(), &copied_stack) {
+        if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, scope, args, body, def_ns.to_owned(), &copied_stack) {
           println!("error: {}", e);
         }
       }
