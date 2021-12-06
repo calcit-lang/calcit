@@ -38,6 +38,9 @@ export class CalcitList {
     return listLen(this.value);
   }
   get(idx: number) {
+    if (this.len() === 0) {
+      return null;
+    }
     return listGet(this.value, idx);
   }
   assoc(idx: number, v: CalcitValue) {

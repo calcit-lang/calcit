@@ -20,6 +20,8 @@
               assert= (conj a 4 5 6 7) $ [] 1 2 3 4 5 6 7
               assert= 1 (first a)
               assert= 3 (last a)
+              assert= nil (first nil)
+              assert= nil (last nil)
               assert-detect nil? (first $ [])
               assert-detect nil? (last $ [])
               assert= (rest a) $ [] 2 3
