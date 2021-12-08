@@ -17,6 +17,8 @@ jobs:
         with:
           toolchain: stable
 
+      - uses: Swatinem/rust-cache@v1
+
       - run: cargo test
       - run: cargo run --bin cr calcit/editor/compact.cirru --once
       - run: cargo run --bin cr calcit/test.cirru --once
