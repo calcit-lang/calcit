@@ -18,9 +18,7 @@ Build and install with Rust:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # get Calcit
-git clone git@github.com:calcit-lang/calcit_runner.rs.git calcit/
-cd calcit/
-cargo install --path=./
+cargo install calcit_runner
 ```
 
 For Ubuntu 20.04, try binaries from http://bin.calcit-lang.org/linux/ , which are provided for [CI usages](https://github.com/calcit-lang/respo-calcit-workflow/blob/main/.github/workflows/upload.yaml#L28-L37).
