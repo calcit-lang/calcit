@@ -412,3 +412,13 @@ pub fn async_sleep(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calci
 
   Ok(Calcit::Nil)
 }
+
+pub fn format_ternary_tree(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("&format-ternary-tree expected 1 argument, got: {:?}", xs));
+  }
+  match &xs[0] {
+    Calcit::List(ys) => Ok(Calcit::Str(ys.format_inline().into())),
+    a => CalcitErr::err_str(format!("&format-ternary-tree expected a list, got: {}", a)),
+  }
+}
