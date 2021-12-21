@@ -39,6 +39,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "turn-keyword"
       | "&compare"
       | "&get-os"
+      | "&list-format-inline"
       // tuples
       | "::" // unstable
       | "&tuple:nth"
@@ -222,6 +223,7 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackLi
     "turn-keyword" => meta::turn_keyword(args),
     "&compare" => meta::native_compare(args),
     "&get-os" => meta::get_os(args),
+    "&format-ternary-tree" => meta::format_ternary_tree(args),
     // tuple
     "::" => meta::new_tuple(args), // unstable solution for the name
     "&tuple:nth" => meta::tuple_nth(args),
