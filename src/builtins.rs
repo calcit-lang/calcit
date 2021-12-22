@@ -39,7 +39,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "turn-keyword"
       | "&compare"
       | "&get-os"
-      | "&list-format-inline"
+      | "&format-ternary-tree"
       // tuples
       | "::" // unstable
       | "&tuple:nth"
