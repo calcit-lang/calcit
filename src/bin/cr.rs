@@ -164,7 +164,7 @@ fn main() -> Result<(), String> {
 
   if !eval_once {
     runner::track::track_task_add();
-    let copied_assets = Arc::new(assets_watch.map(|s| s.to_owned()).to_owned());
+    let copied_assets = Arc::new(assets_watch.map(|s| s.to_owned()));
     let copied_settings = Arc::new(cli_options);
     let copied_entries = Arc::new(entries);
     std::thread::spawn(move || watch_files(copied_entries, copied_settings, copied_assets));

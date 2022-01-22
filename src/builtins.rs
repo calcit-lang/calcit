@@ -199,7 +199,7 @@ pub fn is_proc_name(s: &str) -> bool {
 pub fn handle_proc(name: &str, args: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   handle_proc_internal(name, args, call_stack).map_err(|e| {
     if e.stack.is_empty() {
-      let mut e2 = e.to_owned();
+      let mut e2 = e;
       e2.stack = call_stack.to_owned();
       e2
     } else {

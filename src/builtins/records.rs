@@ -49,7 +49,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       prev = x.to_owned()
     }
   }
-  Ok(Calcit::Record(name_id.to_owned(), Arc::new(fields), Arc::new(values)))
+  Ok(Calcit::Record(name_id, Arc::new(fields), Arc::new(values)))
 }
 pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();

@@ -21,8 +21,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
       // special tuple syntax
       "::" => Ok(Calcit::Symbol {
         sym: (**s).into(),
-        ns: ns.to_owned(),
-        at_def: def.to_owned(),
+        ns,
+        at_def: def,
         resolved: None,
       }),
       _ => match s.chars().next().unwrap() {
@@ -32,8 +32,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             // try not to break js interop
             Ok(Calcit::Symbol {
               sym: (**s).into(),
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
+              ns,
+              at_def: def,
               resolved: None,
             })
           } else {
@@ -54,8 +54,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           },
           Calcit::Symbol {
             sym: String::from(&s[1..]).into(),
-            ns: ns.to_owned(),
-            at_def: def.to_owned(),
+            ns,
+            at_def: def,
             resolved: None,
           },
         ]))),
@@ -69,8 +69,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           },
           Calcit::Symbol {
             sym: String::from(&s[2..]).into(),
-            ns: ns.to_owned(),
-            at_def: def.to_owned(),
+            ns,
+            at_def: def,
             resolved: None,
           },
         ]))),
@@ -83,8 +83,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           },
           Calcit::Symbol {
             sym: String::from(&s[1..]).into(),
-            ns: ns.to_owned(),
-            at_def: def.to_owned(),
+            ns,
+            at_def: def,
             resolved: None,
           },
         ]))),
@@ -97,8 +97,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           },
           Calcit::Symbol {
             sym: String::from(&s[1..]).into(),
-            ns: ns.to_owned(),
-            at_def: def.to_owned(),
+            ns,
+            at_def: def,
             resolved: None,
           },
         ]))),
@@ -109,8 +109,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
           } else {
             Ok(Calcit::Symbol {
               sym: (**s).into(),
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
+              ns,
+              at_def: def,
               resolved: None,
             })
           }

@@ -46,9 +46,9 @@ pub fn extend_call_stack(
   args: &CalcitItems,
 ) -> CallStackList {
   stack.push_front(CalcitStack {
-    ns: ns.to_owned(),
-    def: def.to_owned(),
-    code: code.to_owned(),
+    ns,
+    def,
+    code,
     args: Box::new(args.to_owned()),
     kind,
   })
