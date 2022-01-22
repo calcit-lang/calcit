@@ -385,7 +385,7 @@ pub fn no_op() -> Result<Calcit, CalcitErr> {
 
 pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   // https://doc.rust-lang.org/std/env/consts/constant.OS.html
-  Ok(Calcit::kwd(&std::env::consts::OS.to_owned()))
+  Ok(Calcit::kwd(std::env::consts::OS))
 }
 
 pub fn async_sleep(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {

@@ -97,7 +97,7 @@ impl fmt::Display for Calcit {
       Calcit::Bool(v) => f.write_str(&format!("{}", v)),
       Calcit::Number(n) => f.write_str(&format!("{}", n)),
       Calcit::Symbol { sym, .. } => f.write_str(&format!("'{}", sym)),
-      Calcit::Keyword(s) => f.write_str(&format!(":{}", s.to_string())),
+      Calcit::Keyword(s) => f.write_str(&format!(":{}", s)),
       Calcit::Str(s) => {
         if is_simple_str(s) {
           write!(f, "|{}", s)

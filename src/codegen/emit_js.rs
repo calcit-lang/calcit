@@ -62,31 +62,31 @@ fn escape_var(name: &str) -> String {
     "case" => String::from("_CASE_"),
     "-" => String::from("_SUB_"),
     _ => name
-      .replace("-", "_")
+      .replace('-', "_")
       // dot might be part of variable `\.`. not confused with syntax
-      .replace(".", "_DOT_")
-      .replace("?", "_$q_")
-      .replace("+", "_ADD_")
-      .replace("^", "_CRT_")
-      .replace("*", "_$s_")
-      .replace("&", "_$n_")
+      .replace('.', "_DOT_")
+      .replace('?', "_$q_")
+      .replace('+', "_ADD_")
+      .replace('^', "_CRT_")
+      .replace('*', "_$s_")
+      .replace('&', "_$n_")
       .replace("{}", "_$M_")
       .replace("[]", "_$L_")
-      .replace("{", "_CURL_")
-      .replace("}", "_CURR_")
-      .replace("'", "_SQUO_")
-      .replace("[", "_SQRL_")
-      .replace("]", "_SQRR_")
-      .replace("!", "_$x_")
-      .replace("%", "_PCT_")
-      .replace("/", "_SLSH_")
-      .replace("=", "_$e_")
-      .replace(">", "_GT_")
-      .replace("<", "_LT_")
-      .replace(":", "_$o_")
-      .replace(";", "_SCOL_")
-      .replace("#", "_SHA_")
-      .replace("\\", "_BSL_"),
+      .replace('{', "_CURL_")
+      .replace('}', "_CURR_")
+      .replace('\'', "_SQUO_")
+      .replace('[', "_SQRL_")
+      .replace(']', "_SQRR_")
+      .replace('!', "_$x_")
+      .replace('%', "_PCT_")
+      .replace('/', "_SLSH_")
+      .replace('=', "_$e_")
+      .replace('>', "_GT_")
+      .replace('<', "_LT_")
+      .replace(':', "_$o_")
+      .replace(';', "_SCOL_")
+      .replace('#', "_SHA_")
+      .replace('\\', "_BSL_"),
   }
 }
 
@@ -324,7 +324,7 @@ fn gen_call_code(
             _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {:?}", body)),
             (Some(Calcit::Symbol { sym, .. }), Some(v)) => {
               // let _name = escape_var(sym); // TODO
-              let ref_path = wrap_js_str(&format!("{}/{}", ns, sym.to_owned()));
+              let ref_path = wrap_js_str(&format!("{}/{}", ns, sym));
               gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
               let value_code = &to_js_code(v, ns, local_defs, file_imports, keywords, None)?;
               gen_stack::pop_call_stack();
