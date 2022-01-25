@@ -283,7 +283,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
             Calcit::Tuple(x0, x1) => match &*x0 {
               Calcit::Bool(b) => {
                 if *b {
-                  return Ok((*x1.to_owned()).to_owned());
+                  return Ok((*x1).to_owned());
                 } else {
                   state = (*x1.to_owned()).to_owned()
                 }

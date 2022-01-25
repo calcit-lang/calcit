@@ -23,12 +23,12 @@ fn read_ref(path: Arc<str>) -> Option<ValueAndListeners> {
 
 fn write_to_ref(path: Arc<str>, v: Calcit, listeners: HashMap<EdnKwd, Calcit>) {
   let mut dict = REFS_DICT.write().unwrap();
-  let _ = (*dict).insert(path.to_owned(), (v, listeners));
+  let _ = (*dict).insert(path, (v, listeners));
 }
 
 fn modify_ref(path: Arc<str>, v: Calcit, call_stack: &CallStackList) -> Result<(), CalcitErr> {
   let (prev, listeners) = read_ref(path.to_owned()).unwrap();
-  write_to_ref(path.to_owned(), v.to_owned(), listeners.to_owned());
+  write_to_ref(path, v.to_owned(), listeners.to_owned());
 
   for f in listeners.values() {
     match f {
@@ -63,7 +63,7 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_
         let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
         write_to_ref(path_info.to_owned(), v, HashMap::new())
       }
-      Ok(Calcit::Ref(path_info.to_owned()))
+      Ok(Calcit::Ref(path_info))
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack(
       format!("defatom expected a symbol and an expression: {} , {}", a, b),
@@ -91,13 +91,13 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
   }
   // println!("reset! {:?}", expr[0]);
   let target = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
-  let new_value = runner::evaluate_expr(&expr[1], scope, file_ns.to_owned(), call_stack)?;
+  let new_value = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
   match (target, new_value) {
     (Calcit::Ref(path), v) => {
       if read_ref(path.to_owned()).is_none() {
-        return CalcitErr::err_str(format!("missing pre-exisiting data for path &{}", path.to_owned()));
+        return CalcitErr::err_str(format!("missing pre-exisiting data for path &{}", path));
       }
-      modify_ref(path.to_owned(), v, call_stack)?;
+      modify_ref(path, v, call_stack)?;
       Ok(Calcit::Nil)
     }
     (a, b) => Err(CalcitErr::use_msg_stack(

@@ -47,16 +47,23 @@ if (arguments.length !== {}) throw new Error('argument sizes do not match');",
   )
 }
 
+pub struct RecurPrefixes {
+  pub var_prefix: String,
+  pub async_prefix: String,
+  pub return_mark: String,
+}
+
 pub fn tmpl_tail_recursion(
   name: String,
   args_code: String,
   check_args: String,
   spreading_code: String,
   body0: String,
-  var_prefix: String,
-  return_mark: &str,
-  async_prefix: &str,
+  prefixes: RecurPrefixes,
 ) -> String {
+  let var_prefix = prefixes.var_prefix;
+  let return_mark = &prefixes.return_mark;
+  let async_prefix = &prefixes.async_prefix;
   let ret_var = js_gensym("ret");
   let times_var = js_gensym("times");
   let body = body0.replace(return_mark, &ret_var); // dirty trick for injection

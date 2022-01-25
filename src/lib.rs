@@ -63,7 +63,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
   if !warnings.is_empty() {
     return Err(CalcitErr {
       msg: format!("Found {} warnings, runner blocked", warnings.len()),
-      warnings: warnings.to_owned(),
+      warnings,
       stack: rpds::List::new_sync(),
     });
   }

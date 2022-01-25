@@ -60,7 +60,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
         let ret = match &v {
           Calcit::Proc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns.to_owned(), call_stack)?;
-            let next_stack = extend_call_stack(call_stack, file_ns.to_owned(), p.to_owned(), StackKind::Proc, Calcit::Nil, &values);
+            let next_stack = extend_call_stack(call_stack, file_ns, p.to_owned(), StackKind::Proc, Calcit::Nil, &values);
 
             if p.starts_with('.') {
               builtins::meta::invoke_method(p.strip_prefix('.').unwrap(), &values, &next_stack)
@@ -72,7 +72,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
           Calcit::Syntax(s, def_ns) => {
             let next_stack = extend_call_stack(
               call_stack,
-              file_ns.to_owned(),
+              file_ns,
               s.to_string().into(),
               StackKind::Syntax,
               expr.to_owned(),
@@ -81,7 +81,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
 
             builtins::handle_syntax(s, &rest_nodes, scope, def_ns.to_owned(), &next_stack).map_err(|e| {
               if e.stack.is_empty() {
-                let mut e2 = e.to_owned();
+                let mut e2 = e;
                 e2.stack = call_stack.to_owned();
                 e2
               } else {
@@ -98,14 +98,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             ..
           } => {
             let values = evaluate_args(&rest_nodes, scope, file_ns.to_owned(), call_stack)?;
-            let next_stack = extend_call_stack(
-              call_stack,
-              file_ns.to_owned(),
-              name.to_owned(),
-              StackKind::Fn,
-              expr.to_owned(),
-              &values,
-            );
+            let next_stack = extend_call_stack(call_stack, file_ns, name.to_owned(), StackKind::Fn, expr.to_owned(), &values);
 
             run_fn(&values, def_scope, args, body, def_ns.to_owned(), &next_stack)
           }
@@ -141,14 +134,14 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
                 }
                 _ => {
                   // println!("gen code: {} {}", x, &code.lisp_str()));
-                  break evaluate_expr(&code, scope, file_ns.to_owned(), &next_stack)?;
+                  break evaluate_expr(&code, scope, file_ns, &next_stack)?;
                 }
               }
             })
           }
           Calcit::Keyword(k) => {
             if rest_nodes.len() == 1 {
-              let v = evaluate_expr(&rest_nodes[0], scope, file_ns.to_owned(), call_stack)?;
+              let v = evaluate_expr(&rest_nodes[0], scope, file_ns, call_stack)?;
 
               if let Calcit::Map(m) = v {
                 match m.get(&Calcit::Keyword(k.to_owned())) {

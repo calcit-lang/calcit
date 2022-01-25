@@ -11,17 +11,30 @@ jobs:
   build_and_test:
     name: Test
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+      pull-requests: write
+
     steps:
       - uses: actions/checkout@v2
+
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: nightly
+          components: clippy
+          override: true
 
       - uses: Swatinem/rust-cache@v1
 
       - run: cargo test
       - run: cargo run --bin cr calcit/editor/compact.cirru --once
       - run: cargo run --bin cr calcit/test.cirru --once
+
+      - uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features
 
       - name: "try js"
         run: >

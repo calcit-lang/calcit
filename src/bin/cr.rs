@@ -68,8 +68,8 @@ fn main() -> Result<(), String> {
     }
   } else {
     // load entry file
-    let content = fs::read_to_string(cli_options.entry_path.to_owned())
-      .unwrap_or_else(|_| panic!("expected Cirru snapshot: {:?}", cli_options.entry_path));
+    let content =
+      fs::read_to_string(&cli_options.entry_path).unwrap_or_else(|_| panic!("expected Cirru snapshot: {:?}", cli_options.entry_path));
 
     let data = cirru_edn::parse(&content)?;
     // println!("reading: {}", content);
@@ -164,7 +164,7 @@ fn main() -> Result<(), String> {
 
   if !eval_once {
     runner::track::track_task_add();
-    let copied_assets = Arc::new(assets_watch.map(|s| s.to_owned()).to_owned());
+    let copied_assets = Arc::new(assets_watch.map(|s| s.to_owned()));
     let copied_settings = Arc::new(cli_options);
     let copied_entries = Arc::new(entries);
     std::thread::spawn(move || watch_files(copied_entries, copied_settings, copied_assets));
@@ -353,7 +353,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
 
   // clear if there are no errors
   let no_error_code = String::from("export default null;");
-  if !(js_file_path.exists() && fs::read_to_string(js_file_path.to_owned()).unwrap() == no_error_code) {
+  if !(js_file_path.exists() && fs::read_to_string(&js_file_path).unwrap() == no_error_code) {
     let _ = fs::write(&js_file_path, no_error_code);
   }
 
