@@ -45,7 +45,7 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "calcit_runner"
-version = "0.5.16"
+version = "0.5.17-a1"
 dependencies = [
  "cirru_edn",
  "cirru_parser",
@@ -216,9 +216,9 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "im_ternary_tree"
-version = "0.0.3"
+version = "0.0.5-a1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70a31313df889563431e24742ee8f5ed5de6358d1dac6fc105d3738a6b13d95b"
+checksum = "c729c15aa78e4989ee79b3e260e6e5ebb807e66a801ae29d9b5ef53e7cde3140"
 
 [[package]]
 name = "inotify"

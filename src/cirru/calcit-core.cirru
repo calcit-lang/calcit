@@ -223,10 +223,26 @@
               .slice xs n m
 
         |str $ quote
-          defmacro str (x0 & xs)
+          defn str (x0 & xs)
             if (&list:empty? xs)
-              quasiquote $ &str:concat ~x0 |
-              quasiquote $ &str:concat ~x0 $ str ~@xs
+              &str x0
+              &str:concat x0 $ str & xs
+
+        |&str-spaced $ quote
+          defn &str-spaced (head? x0 & xs)
+            if (&list:empty? xs)
+              if head? (&str x0)
+                if (nil? x0) |
+                  &str:concat "| " x0
+              if (some? x0)
+                &str:concat
+                  if head? (&str x0) $ &str:concat "| " x0
+                  &str-spaced false & xs
+                &str-spaced head? & xs
+
+        |str-spaced $ quote
+          defn str-spaced (& xs)
+            &str-spaced true & xs
 
         |include $ quote
           defn include (base & xs)
