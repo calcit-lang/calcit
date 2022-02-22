@@ -392,6 +392,20 @@
                         echo "|  value is:" v__1
                         raise "|Not satisfied in assertion!"
 
+        |test-if-let $ quote
+          fn ()
+            log-title "|if let"
+
+            assert= 6
+              if-let
+                a $ + 1 2 3
+                , a
+
+            assert= nil
+              if-let
+                a $ get (&{}) :a
+                + 1 2
+
         |main! $ quote
           defn main! ()
             log-title "|Testing cond"
@@ -417,6 +431,8 @@
             test-extract
 
             test-detector
+
+            test-if-let
 
             do true
 
