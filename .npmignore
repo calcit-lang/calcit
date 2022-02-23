@@ -9,7 +9,6 @@ target/
 scripts/
 
 .calcit-error.cirru
-calcit_runner.nimble
 /webpack.config.js
 /build.js
 yarn.lock
