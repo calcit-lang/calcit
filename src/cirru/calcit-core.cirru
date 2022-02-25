@@ -1101,11 +1101,16 @@
           defmacro w-log (x)
             &let
               v $ if (= :eval $ &get-calcit-running-mode) (gensym |v) '_log_tmp
-              quasiquote
-                &let
-                  ~v ~x
-                  echo (format-to-lisp (quote ~x)) |=> ~v
-                  ~ v
+              if (list? x)
+                quasiquote
+                  &let
+                    ~v ~x
+                    echo (format-to-lisp (quote ~x)) |=> ~v
+                    ~ v
+                quasiquote
+                  &let nil
+                    echo (format-to-lisp (quote ~x)) |=> ~x
+                    ~ x
 
         |wo-log $ quote
           defmacro wo-log (x) x
@@ -1113,10 +1118,6 @@
         |w-js-log $ quote
           defmacro w-js-log (x)
             if (list? x)
-              quasiquote
-                &let nil
-                  js/console.log (format-to-lisp (quote ~x)) |=> ~x
-                  ~ x
               &let
                 v $ if (= :eval $ &get-calcit-running-mode) (gensym |v) '_log_tmp
                 quasiquote
@@ -1124,6 +1125,10 @@
                     ~v ~x
                     js/console.log (format-to-lisp (quote ~x)) |=> ~v
                     ~ v
+              quasiquote
+                &let nil
+                  js/console.log (format-to-lisp (quote ~x)) |=> ~x
+                  ~ x
 
         |wo-js-log $ quote
           defmacro w-js-log (x) x
