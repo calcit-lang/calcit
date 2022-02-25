@@ -433,7 +433,7 @@ impl Ord for Calcit {
       (_, Calcit::Set(_)) => Greater,
 
       (Calcit::Map(a), Calcit::Map(b)) => {
-        unreachable!(format!("TODO maps are not cmp ed {:?} {:?}", a, b))
+        unreachable!("TODO maps are not cmp ed {:?} {:?}", a, b)
         // TODO
       }
       (Calcit::Map(_), _) => Less,

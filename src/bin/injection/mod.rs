@@ -153,7 +153,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
           }
         } else {
           // handled above
-          unreachable!(format!("expected last argument to be callback fn, got: {}", callback));
+          unreachable!("expected last argument to be callback fn, got: {}", callback);
         }
       }),
       Arc::new(track::track_task_release),
@@ -241,7 +241,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
         }
       } else {
         // handled above
-        unreachable!(format!("expected last argument to be callback fn, got: {}", callback));
+        unreachable!("expected last argument to be callback fn, got: {}", callback);
       }
     }),
     Arc::new(track::track_task_release),

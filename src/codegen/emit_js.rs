@@ -52,7 +52,7 @@ fn to_js_file_name(ns: &str, mjs_mode: bool) -> String {
 
 fn escape_var(name: &str) -> String {
   if has_ns_part(name) {
-    unreachable!(format!("Invalid variable name `{}`, use `escape_ns_var` instead", name));
+    unreachable!("Invalid variable name `{}`, use `escape_ns_var` instead", name);
   }
   match name {
     "if" => String::from("_IF_"),
@@ -102,12 +102,12 @@ fn escape_ns(name: &str) -> String {
 
 fn escape_ns_var(name: &str, ns: &str) -> String {
   if !has_ns_part(name) {
-    unreachable!(format!("Invalid variable name `{}`, lack of namespace part", name))
+    unreachable!("Invalid variable name `{}`, lack of namespace part", name)
   }
 
   let pieces: Vec<&str> = name.split('/').collect();
   if pieces.len() != 2 {
-    unreachable!(format!("Expected format of ns/def {}", name))
+    unreachable!("Expected format of ns/def {}", name)
   }
   let ns_part = pieces[0];
   let def_part = pieces[1];
@@ -183,7 +183,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<Vec<EdnKwd>>) -
       kwds.push(s.to_owned());
       Ok(format!("_kwd[{}]", escape_cirru_str(&s.to_string())))
     }
-    _ => unreachable!(format!("Unexpected data in quote for js: {}", xs)),
+    _ => unreachable!("Unexpected data in quote for js: {}", xs),
   }
 }
 
@@ -255,7 +255,7 @@ fn to_js_code(
         Ok(format!("_kwd[{}]", wrap_js_str(&s.to_string())))
       }
       Calcit::List(_) => unreachable!("[Error] list handled in another branch"),
-      a => unreachable!(format!("[Error] unknown kind to gen js code: {}", a)),
+      a => unreachable!("[Error] unknown kind to gen js code: {}", a),
     };
 
     match (return_label, &ret) {
@@ -1285,7 +1285,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
               let import_target = wrap_js_str(&target_ns[1..]);
               import_code.push_str(&format!("\nimport {} from {};", escape_var(&def), import_target));
             } else {
-              unreachable!(format!("only js import leads to default ns, but got: {}", target_ns))
+              unreachable!("only js import leads to default ns, but got: {}", target_ns)
             }
           }
           ImportedTarget::ReferNs(target_ns) => {
