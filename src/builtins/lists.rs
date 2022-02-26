@@ -472,11 +472,11 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
             Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
             Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
             Ok(a) => {
-              println!("expected number from sort comparator, got: {}", a);
+              eprintln!("expected number from sort comparator, got: {}", a);
               panic!("failed to sort")
             }
             Err(e) => {
-              println!("sort failed, got: {}", e);
+              eprintln!("sort failed, got: {}", e);
               panic!("failed to sort")
             }
           }
@@ -498,11 +498,11 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
             Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
             Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
             Ok(a) => {
-              println!("expected number from sort comparator, got: {}", a);
+              eprintln!("expected number from sort comparator, got: {}", a);
               panic!("failed to sort")
             }
             Err(e) => {
-              println!("sort failed, got: {}", e);
+              eprintln!("sort failed, got: {}", e);
               panic!("failed to sort")
             }
           }

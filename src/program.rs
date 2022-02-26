@@ -182,7 +182,7 @@ pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
   if s2.contains_key(ns) && s2[ns].contains_key(def) {
     Some(s2[ns][def].to_owned())
   } else {
-    // println!("failed to lookup {} {}", ns, def);
+    // eprintln!("failed to lookup {} {}", ns, def);
     None
   }
 }

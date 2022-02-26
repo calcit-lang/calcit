@@ -53,7 +53,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
   ) {
     Ok(_) => (),
     Err(failure) => {
-      println!("\nfailed preprocessing, {}", failure);
+      eprintln!("\nfailed preprocessing, {}", failure);
       call_stack::display_stack(&failure.msg, &failure.stack)?;
       return CalcitErr::err_str(failure.msg);
     }
@@ -77,7 +77,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {
-            println!("\nfailed, {}", failure);
+            eprintln!("\nfailed, {}", failure);
             call_stack::display_stack(&failure.msg, &failure.stack)?;
             Err(failure)
           }

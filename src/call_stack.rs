@@ -64,12 +64,12 @@ pub fn show_stack(stack: &CallStackList) {
 }
 
 pub fn display_stack(failure: &str, stack: &CallStackList) -> Result<(), String> {
-  println!("\nFailure: {}", failure);
-  println!("\ncall stack:");
+  eprintln!("\nFailure: {}", failure);
+  eprintln!("\ncall stack:");
 
   for s in stack {
     let is_macro = s.kind == StackKind::Macro;
-    println!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" });
+    eprintln!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" });
   }
 
   let mut stack_list: Vec<Edn> = Vec::with_capacity(stack.len());
@@ -92,7 +92,7 @@ pub fn display_stack(failure: &str, stack: &CallStackList) -> Result<(), String>
   data.insert(Edn::kwd("stack"), Edn::List(stack_list));
   let content = cirru_edn::format(&Edn::Map(data), true)?;
   let _ = fs::write(ERROR_SNAPSHOT, content);
-  println!("\nrun `cat {}` to read stack details.", ERROR_SNAPSHOT);
+  eprintln!("\nrun `cat {}` to read stack details.", ERROR_SNAPSHOT);
   Ok(())
 }
 
