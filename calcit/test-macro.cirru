@@ -406,6 +406,21 @@
                 a $ get (&{}) :a
                 + 1 2
 
+            assert= 2
+              if-let
+                a nil
+                , 1 2
+
+            assert= nil
+              when-let
+                a nil
+                , 1 2
+
+            assert= 2
+              when-let
+                a 10
+                , 1 2
+
         |main! $ quote
           defn main! ()
             log-title "|Testing cond"

@@ -933,9 +933,8 @@
                       raise "|Unknown pattern to destruct"
                 raise "|Unknown structure to destruct"
 
-
-        |if-let $ quote
-          defmacro if-let (pair & body)
+        |when-let $ quote
+          defmacro when-let (pair & body)
             assert "|expected a pair"
               and
                 list? pair
@@ -947,6 +946,19 @@
                 ~x $ ~ $ nth pair 1
                 if (some? ~x)
                   do $ ~@ body
+
+        |if-let $ quote
+          defmacro if-let (pair then ? else)
+            assert "|expected a pair"
+              and
+                list? pair
+                &= 2 $ count pair
+            &let
+              x $ nth pair 0
+              assert "|expected a symbol for var name" (symbol? x)
+              quasiquote $ &let
+                ~x $ ~ $ nth pair 1
+                if (some? ~x) ~then ~else
 
         |[,] $ quote
           defmacro [,] (& body)
