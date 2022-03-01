@@ -140,7 +140,7 @@ fn main() -> Result<(), String> {
     let v =
       calcit_runner::run_program(entries.init_ns.to_owned(), entries.init_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
         for w in e.warnings {
-          println!("{}", w);
+          eprintln!("{}", w);
         }
         e.msg
       })?;
@@ -157,7 +157,7 @@ fn main() -> Result<(), String> {
     match task {
       Ok(_) => {}
       Err(e) => {
-        println!("\nfailed to run, {}", e);
+        eprintln!("\nfailed to run, {}", e);
       }
     }
   }
@@ -181,7 +181,7 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
   let inc_path = settings.entry_path.parent().unwrap().join(".compact-inc.cirru");
   if !inc_path.exists() {
     if let Err(e) = fs::write(&inc_path, "").map_err(|e| -> String { e.to_string() }) {
-      println!("file writing error: {}", e);
+      eprintln!("file writing error: {}", e);
     };
   }
 
@@ -200,11 +200,11 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
             // load new program code
             let content = fs::read_to_string(&inc_path).expect("reading inc file");
             if content.trim().is_empty() {
-              println!("failed re-compiling, got empty inc file");
+              eprintln!("failed re-compiling, got empty inc file");
               continue;
             }
             if let Err(e) = recall_program(&content, &entries, &settings) {
-              println!("error: {}", e);
+              eprintln!("error: {}", e);
             };
           }
           // ignore other events
@@ -212,7 +212,7 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
           _ => println!("other file event: {:?}, ignored", event),
         }
       }
-      Err(e) => println!("watch error: {:?}", e),
+      Err(e) => eprintln!("watch error: {:?}", e),
     }
   }
 }
@@ -268,7 +268,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
     let v =
       calcit_runner::run_program(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
         for w in e.warnings {
-          println!("{}", w);
+          eprintln!("{}", w);
         }
         e.msg
       })?;
@@ -280,7 +280,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
   match task {
     Ok(_) => {}
     Err(e) => {
-      println!("\nfailed to reload, {}", e)
+      eprintln!("\nfailed to reload, {}", e)
     }
   }
 
@@ -317,7 +317,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   ) {
     Ok(_) => (),
     Err(failure) => {
-      println!("\nfailed preprocessing, {}", failure);
+      eprintln!("\nfailed preprocessing, {}", failure);
       call_stack::display_stack(&failure.msg, &failure.stack)?;
 
       let _ = fs::write(
@@ -342,7 +342,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   ) {
     Ok(_) => (),
     Err(failure) => {
-      println!("\nfailed preprocessing, {}", failure);
+      eprintln!("\nfailed preprocessing, {}", failure);
       call_stack::display_stack(&failure.msg, &failure.stack)?;
       return Err(failure.msg);
     }
@@ -361,7 +361,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     match codegen::gen_ir::emit_ir(&*entries.init_fn, &*entries.reload_fn, emit_path) {
       Ok(_) => (),
       Err(failure) => {
-        println!("\nfailed codegen, {}", failure);
+        eprintln!("\nfailed codegen, {}", failure);
         call_stack::display_stack(&failure, &gen_stack::get_gen_stack())?;
         return Err(failure);
       }
@@ -371,7 +371,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     match codegen::emit_js::emit_js(&entries.init_ns, emit_path) {
       Ok(_) => (),
       Err(failure) => {
-        println!("\nfailed codegen, {}", failure);
+        eprintln!("\nfailed codegen, {}", failure);
         call_stack::display_stack(&failure, &gen_stack::get_gen_stack())?;
         return Err(failure);
       }

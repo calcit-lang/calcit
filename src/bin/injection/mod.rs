@@ -162,7 +162,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
       Err(e) => {
         track::track_task_release();
         // let _ = display_stack(&format!("failed to call request: {}", e), &copied_stack_1);
-        println!("failure inside ffi thread: {}", e);
+        eprintln!("failure inside ffi thread: {}", e);
         return CalcitErr::err_str(e);
       }
     };
@@ -270,7 +270,7 @@ pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit,
       } = cb.as_ref()
       {
         if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, scope, args, body, def_ns.to_owned(), &copied_stack) {
-          println!("error: {}", e);
+          eprintln!("error: {}", e);
         }
       }
     })
