@@ -1287,6 +1287,11 @@
         |;nil $ quote
           defmacro ;nil (& _body) nil
 
+        |flipped $ quote
+          defmacro flipped (f & args)
+            quasiquote
+              ~f $ ~@ $ reverse args
+
         |strip-prefix $ quote
           defn strip-prefix (s piece)
             if (starts-with? s piece)
