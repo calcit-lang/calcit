@@ -406,6 +406,29 @@
                 a $ get (&{}) :a
                 + 1 2
 
+            assert= 2
+              if-let
+                a nil
+                , 1 2
+
+            assert= nil
+              when-let
+                a nil
+                , 1 2
+
+            assert= 2
+              when-let
+                a 10
+                , 1 2
+
+        |test-flipped $ quote
+          fn ()
+            log-title "|flipped"
+
+            assert=
+              flipped [] 1 2 (+ 3 4)
+              [] 7 2 1
+
         |main! $ quote
           defn main! ()
             log-title "|Testing cond"
@@ -433,6 +456,8 @@
             test-detector
 
             test-if-let
+
+            test-flipped
 
             do true
 
