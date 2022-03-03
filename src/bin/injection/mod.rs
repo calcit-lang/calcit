@@ -5,7 +5,7 @@ use std::thread;
 
 use im_ternary_tree::TernaryTreeList;
 
-use calcit_runner::{
+use calcit::{
   builtins,
   call_stack::{display_stack, CallStackList},
   data::edn::{calcit_to_edn, edn_to_calcit},
