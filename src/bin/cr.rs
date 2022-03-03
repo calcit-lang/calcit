@@ -389,11 +389,11 @@ fn throw_on_js_warnings(warnings: &[String], js_file_path: &Path) -> Result<(), 
     }
 
     let _ = fs::write(&js_file_path, format!("export default \"{}\";", content.trim().escape_default()));
-    return Err(format!(
+    Err(format!(
       "Found {} warnings, codegen blocked. errors in {}.js",
       warnings.len(),
       COMPILE_ERRORS_FILE,
-    ));
+    ))
   } else {
     Ok(())
   }
@@ -407,7 +407,7 @@ fn throw_on_warnings(warnings: &[String]) -> Result<(), String> {
       content = format!("{}\n{}", content, message);
     }
 
-    return Err(format!("Found {} warnings in preprocessing, re-run blocked.", warnings.len(),));
+    Err(format!("Found {} warnings in preprocessing, re-run blocked.", warnings.len()))
   } else {
     Ok(())
   }

@@ -218,7 +218,13 @@ fn to_js_code(
         resolved,
       } => {
         let resolved_info = resolved.to_owned().map(|v| (*v).to_owned());
-        gen_symbol_code(sym, &**def_ns, &**at_def, resolved_info, ns, xs, local_defs, file_imports)
+        let passed_defs = PassedDefs {
+          ns,
+          local_defs,
+          file_imports,
+        };
+
+        gen_symbol_code(sym, &**def_ns, &**at_def, resolved_info, xs, &passed_defs)
       }
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
@@ -341,7 +347,12 @@ fn gen_call_code(
           (Some(Calcit::Symbol { sym, .. }), Some(Calcit::List(ys))) => {
             let func_body = body.skip(2)?;
             gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
-            let ret = gen_js_func(sym, &get_raw_args(ys)?, &func_body, ns, false, local_defs, file_imports, keywords);
+            let passed_defs = PassedDefs {
+              ns,
+              local_defs,
+              file_imports,
+            };
+            let ret = gen_js_func(sym, &get_raw_args(ys)?, &func_body, &passed_defs, false, keywords);
             gen_stack::pop_call_stack();
             match ret {
               Ok(code) => Ok(format!("{}{}", return_code, code)),
@@ -564,18 +575,23 @@ fn gen_call_code(
   }
 }
 
+/// a group of arguments related to scopes
+struct PassedDefs<'a> {
+  ns: &'a str,
+  local_defs: &'a HashSet<Arc<str>>,
+  file_imports: &'a RefCell<ImportsDict>,
+}
+
 fn gen_symbol_code(
   s: &str,
   def_ns: &str,
   at_def: &str,
   resolved: Option<primes::SymbolResolved>,
-  ns: &str,
   xs: &Calcit,
-  local_defs: &HashSet<Arc<str>>,
-  file_imports: &RefCell<ImportsDict>,
+  passed_defs: &PassedDefs,
 ) -> Result<String, String> {
   // println!("gen symbol: {} {} {} {:?}", s, def_ns, ns, resolved);
-  let var_prefix = if ns == primes::CORE_NS { "" } else { "$calcit." };
+  let var_prefix = if passed_defs.ns == primes::CORE_NS { "" } else { "$calcit." };
   if has_ns_part(s) {
     if s.starts_with("js/") {
       Ok(escape_ns_var(s, "js"))
@@ -590,10 +606,10 @@ fn gen_symbol_code(
           rule: _import_rule, /* None */
         }) => {
           if is_cirru_string(&*r_ns) {
-            track_ns_import(ns_part, ImportedTarget::AsNs(r_ns), file_imports)?;
+            track_ns_import(ns_part, ImportedTarget::AsNs(r_ns), passed_defs.file_imports)?;
             Ok(escape_ns_var(s, ns_part))
           } else {
-            track_ns_import(&*r_ns, ImportedTarget::AsNs(r_ns.to_owned()), file_imports)?;
+            track_ns_import(&*r_ns, ImportedTarget::AsNs(r_ns.to_owned()), passed_defs.file_imports)?;
             Ok(escape_ns_var(s, &*r_ns))
           }
         }
@@ -604,9 +620,9 @@ fn gen_symbol_code(
     }
   } else if is_js_syntax_procs(s) || is_proc_name(s) || CalcitSyntax::is_core_syntax(s) {
     // return Ok(format!("{}{}", var_prefix, escape_var(s)));
-    let proc_prefix = get_proc_prefix(ns);
+    let proc_prefix = get_proc_prefix(passed_defs.ns);
     return Ok(format!("{}{}", proc_prefix, escape_var(s)));
-  } else if matches!(resolved, Some(ResolvedLocal)) || local_defs.contains(s) {
+  } else if matches!(resolved, Some(ResolvedLocal)) || passed_defs.local_defs.contains(s) {
     Ok(escape_var(s))
   } else if let Some(ResolvedDef {
     ns: r_ns,
@@ -620,9 +636,9 @@ fn gen_symbol_code(
     }
     if let Some(ImportRule::NsDefault(_s)) = import_rule.map(|x| (&*x).to_owned()) {
       // imports that using :default are special
-      track_ns_import(s, ImportedTarget::DefaultNs(r_ns), file_imports)?;
+      track_ns_import(s, ImportedTarget::DefaultNs(r_ns), passed_defs.file_imports)?;
     } else {
-      track_ns_import(s, ImportedTarget::ReferNs(r_ns), file_imports)?;
+      track_ns_import(s, ImportedTarget::ReferNs(r_ns), passed_defs.file_imports)?;
     }
     Ok(escape_var(s))
   } else if def_ns == primes::CORE_NS {
@@ -631,18 +647,18 @@ fn gen_symbol_code(
     Ok(format!("{}{}", var_prefix, escape_var(s)))
   } else if def_ns.is_empty() {
     Err(format!("Unexpected ns at symbol, {:?}", xs))
-  } else if def_ns != ns {
-    track_ns_import(s, ImportedTarget::ReferNs(def_ns.into()), file_imports)?;
+  } else if def_ns != passed_defs.ns {
+    track_ns_import(s, ImportedTarget::ReferNs(def_ns.into()), passed_defs.file_imports)?;
 
     // probably via macro
     // TODO dirty code collecting imports
 
     Ok(escape_var(s))
-  } else if def_ns == ns {
-    println!("[Warn] detected unresolved variable `{}` in {}/{}", s, ns, at_def);
+  } else if def_ns == passed_defs.ns {
+    println!("[Warn] detected unresolved variable `{}` in {}/{}", s, passed_defs.ns, at_def);
     Ok(escape_var(s))
   } else {
-    println!("[Warn] Unexpected case, code gen for `{}` in {}/{}", s, ns, at_def);
+    println!("[Warn] Unexpected case, code gen for `{}` in {}/{}", s, passed_defs.ns, at_def);
     Ok(format!("{}{}", var_prefix, escape_var(s)))
   }
 }
@@ -931,14 +947,12 @@ fn gen_js_func(
   name: &str,
   args: &[Arc<str>],
   raw_body: &CalcitItems,
-  ns: &str,
+  passed_defs: &PassedDefs,
   exported: bool,
-  outer_defs: &HashSet<Arc<str>>,
-  file_imports: &RefCell<ImportsDict>,
   keywords: &RefCell<Vec<EdnKwd>>,
 ) -> Result<String, String> {
-  let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
-  let mut local_defs = outer_defs.to_owned();
+  let var_prefix = if passed_defs.ns == "calcit.core" { "" } else { "$calcit." };
+  let mut local_defs = passed_defs.local_defs.to_owned();
   let mut spreading_code = String::from(""); // js list and calcit-js list are different, need to convert
   let mut args_code = String::from("");
   let mut spreading = false;
@@ -1009,7 +1023,14 @@ fn gen_js_func(
 
   if !body.is_empty() && uses_recur(&body[body.len() - 1]) {
     let return_var = js_gensym("return_mark");
-    let body = list_to_js_code(&body, ns, local_defs, &format!("%%{}%% =", return_var), file_imports, keywords)?;
+    let body = list_to_js_code(
+      &body,
+      passed_defs.ns,
+      local_defs,
+      &format!("%%{}%% =", return_var),
+      passed_defs.file_imports,
+      keywords,
+    )?;
     let fn_def = snippets::tmpl_tail_recursion(
       /* name = */ escape_var(name),
       /* args_code = */ args_code,
@@ -1038,7 +1059,7 @@ fn gen_js_func(
       args_code,
       check_args,
       spreading_code,
-      list_to_js_code(&body, ns, local_defs, "return ", file_imports, keywords)?
+      list_to_js_code(&body, passed_defs.ns, local_defs, "return ", passed_defs.file_imports, keywords)?
     );
     let export_mark = if exported { "export " } else { "" };
     Ok(format!("{}{}\n", export_mark, fn_definition))
@@ -1230,7 +1251,12 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           ..
         } => {
           gen_stack::push_call_stack(def_ns, name, StackKind::Codegen, f.to_owned(), &TernaryTreeList::Empty);
-          defs_code.push_str(&gen_js_func(&def, args, code, &ns, true, &def_names, &file_imports, &keywords)?);
+          let passed_defs = PassedDefs {
+            ns: &ns,
+            local_defs: &def_names,
+            file_imports: &file_imports,
+          };
+          defs_code.push_str(&gen_js_func(&def, args, code, &passed_defs, true, &keywords)?);
           gen_stack::pop_call_stack();
         }
         Calcit::Thunk(code, _) => {
