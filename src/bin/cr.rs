@@ -12,7 +12,7 @@ mod injection;
 use im_ternary_tree::TernaryTreeList;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
-use calcit_runner::{
+use calcit::{
   builtins, call_stack, cli_args, codegen, codegen::emit_js::gen_stack, codegen::COMPILE_ERRORS_FILE, program, runner, snapshot, util,
   ProgramEntries,
 };
@@ -46,7 +46,7 @@ fn main() -> Result<(), String> {
 
   println!("calcit version: {}", cli_args::CALCIT_VERSION);
 
-  let core_snapshot = calcit_runner::load_core_snapshot()?;
+  let core_snapshot = calcit::load_core_snapshot()?;
 
   let mut snapshot = snapshot::gen_default(); // placeholder data
 
@@ -60,7 +60,7 @@ fn main() -> Result<(), String> {
     }
     if let Some(cli_deps) = cli_matches.values_of("dep") {
       for module_path in cli_deps {
-        let module_data = calcit_runner::load_module(module_path, cli_options.entry_path.parent().unwrap())?;
+        let module_data = calcit::load_module(module_path, cli_options.entry_path.parent().unwrap())?;
         for (k, v) in &module_data.files {
           snapshot.files.insert(k.to_owned(), v.to_owned());
         }
@@ -87,7 +87,7 @@ fn main() -> Result<(), String> {
 
     // attach modules
     for module_path in &snapshot.configs.modules {
-      let module_data = calcit_runner::load_module(module_path, cli_options.entry_path.parent().unwrap())?;
+      let module_data = calcit::load_module(module_path, cli_options.entry_path.parent().unwrap())?;
       for (k, v) in &module_data.files {
         snapshot.files.insert(k.to_owned(), v.to_owned());
       }
@@ -121,9 +121,9 @@ fn main() -> Result<(), String> {
 
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
-    calcit_runner::primes::CORE_NS.into(),
-    calcit_runner::primes::BUILTIN_CLASSES_ENTRY.into(),
-    calcit_runner::primes::BUILTIN_CLASSES_ENTRY.into(),
+    calcit::primes::CORE_NS.into(),
+    calcit::primes::BUILTIN_CLASSES_ENTRY.into(),
+    calcit::primes::BUILTIN_CLASSES_ENTRY.into(),
     None,
     check_warnings,
     &rpds::List::new_sync(),
@@ -137,13 +137,12 @@ fn main() -> Result<(), String> {
   } else {
     let started_time = Instant::now();
 
-    let v =
-      calcit_runner::run_program(entries.init_ns.to_owned(), entries.init_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
-        for w in e.warnings {
-          eprintln!("{}", w);
-        }
-        e.msg
-      })?;
+    let v = calcit::run_program(entries.init_ns.to_owned(), entries.init_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
+      for w in e.warnings {
+        eprintln!("{}", w);
+      }
+      e.msg
+    })?;
 
     let duration = Instant::now().duration_since(started_time);
     println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
@@ -265,13 +264,12 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
       let warnings = check_warnings.to_owned().into_inner();
       throw_on_warnings(&warnings)?;
     }
-    let v =
-      calcit_runner::run_program(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
-        for w in e.warnings {
-          eprintln!("{}", w);
-        }
-        e.msg
-      })?;
+    let v = calcit::run_program(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
+      for w in e.warnings {
+        eprintln!("{}", w);
+      }
+      e.msg
+    })?;
     let duration = Instant::now().duration_since(started_time);
     println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
     Ok(())
@@ -391,11 +389,11 @@ fn throw_on_js_warnings(warnings: &[String], js_file_path: &Path) -> Result<(), 
     }
 
     let _ = fs::write(&js_file_path, format!("export default \"{}\";", content.trim().escape_default()));
-    return Err(format!(
+    Err(format!(
       "Found {} warnings, codegen blocked. errors in {}.js",
       warnings.len(),
       COMPILE_ERRORS_FILE,
-    ));
+    ))
   } else {
     Ok(())
   }
@@ -409,7 +407,7 @@ fn throw_on_warnings(warnings: &[String]) -> Result<(), String> {
       content = format!("{}\n{}", content, message);
     }
 
-    return Err(format!("Found {} warnings in preprocessing, re-run blocked.", warnings.len(),));
+    Err(format!("Found {} warnings in preprocessing, re-run blocked.", warnings.len()))
   } else {
     Ok(())
   }

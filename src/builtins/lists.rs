@@ -556,7 +556,7 @@ pub fn assoc_before(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       Err(e) => CalcitErr::err_str(format!("assoc-before expect usize, {}", e)),
     },
-    (a, b) => CalcitErr::err_str(format!("assoc-before expected list and index, got: {} {}", a, b,)),
+    (a, b) => CalcitErr::err_str(format!("assoc-before expected list and index, got: {} {}", a, b)),
   }
 }
 
