@@ -29,9 +29,11 @@ Snippets evaling:
 
 ```bash
 cr -e 'range 100'
+```
 
+multi-lines snippet:
 
-# multi-lines snippet
+```bash
 cr -e '
 
 println "|a demo"
@@ -47,7 +49,7 @@ println "|a demo"
 Run with a [compact.cirru](https://github.com/calcit-lang/lilac/blob/master/compact.cirru):
 
 ```bash
-cr compact.cirru --1 # run only once
+cr compact.cirru -1 # run only once
 
 cr compact.cirru # watch mode enabled by default
 
