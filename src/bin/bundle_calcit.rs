@@ -117,31 +117,31 @@ pub fn main() -> io::Result<()> {
 
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn parse_cli<'a>() -> clap::ArgMatches<'a> {
-  clap::App::new("Calcit Runner")
+fn parse_cli() -> clap::ArgMatches {
+  clap::Command::new("Calcit Runner")
     .version(CALCIT_VERSION)
     .author("Jon. <jiyinyiyong@gmail.com>")
     .about("Calcit Runner Bundler")
     .arg(
-      clap::Arg::with_name("src")
+      clap::Arg::new("src")
         .help("source folder")
         .default_value("src/")
-        .short("s")
+        .short('s')
         .long("src")
         .takes_value(true),
     )
     .arg(
-      clap::Arg::with_name("out")
+      clap::Arg::new("out")
         .help("output folder")
         .default_value("./") // TODO a better default value
-        .short("o")
+        .short('o')
         .long("out")
         .takes_value(true),
     )
     .arg(
-      clap::Arg::with_name("verbose")
+      clap::Arg::new("verbose")
         .help("verbose mode")
-        .short("v")
+        .short('v')
         .long("verbose")
         .takes_value(false),
     )
