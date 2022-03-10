@@ -1695,3 +1695,8 @@
         |print-values $ quote
           defn print-values (& args)
             println & $ &list:map args pr-str
+
+        |noted $ quote
+          defmacro noted (x0 & xs)
+            if (empty? xs) x0
+              last xs

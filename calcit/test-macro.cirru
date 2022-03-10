@@ -429,6 +429,14 @@
               flipped [] 1 2 (+ 3 4)
               [] 7 2 1
 
+        |test-misc $ quote
+          fn ()
+            log-title "|misc"
+
+            assert=
+              noted nothing 1
+              , 1
+
         |main! $ quote
           defn main! ()
             log-title "|Testing cond"
@@ -458,6 +466,8 @@
             test-if-let
 
             test-flipped
+
+            test-misc
 
             do true
 
