@@ -112,10 +112,10 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       return x.slice(1);
     }
     if (x[0] === ":") {
-      return kwd(x.substr(1));
+      return kwd(x.slice(1));
     }
     if (x[0] === "'") {
-      return new CalcitSymbol(x.substr(1));
+      return new CalcitSymbol(x.slice(1));
     }
     if (x.match(/^(-?)\d+(\.\d*$)?/)) {
       return parseFloat(x);
