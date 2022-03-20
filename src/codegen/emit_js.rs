@@ -159,7 +159,7 @@ fn escape_cirru_str(s: &str) -> String {
   result
 }
 
-fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<Vec<EdnKwd>>) -> Result<String, String> {
+fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<HashSet<EdnKwd>>) -> Result<String, String> {
   match xs {
     Calcit::Symbol { sym, .. } => Ok(format!("new {}CalcitSymbol({})", var_prefix, escape_cirru_str(sym))),
     Calcit::Str(s) => Ok(escape_cirru_str(s)),
@@ -180,7 +180,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<Vec<EdnKwd>>) -
     }
     Calcit::Keyword(s) => {
       let mut kwds = keywords.borrow_mut();
-      kwds.push(s.to_owned());
+      kwds.insert(s.to_owned());
       Ok(format!("_kwd[{}]", escape_cirru_str(&s.to_string())))
     }
     _ => unreachable!("Unexpected data in quote for js: {}", xs),
@@ -204,7 +204,7 @@ fn to_js_code(
   ns: &str,
   local_defs: &HashSet<Arc<str>>,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<Vec<EdnKwd>>,
+  keywords: &RefCell<HashSet<EdnKwd>>,
   return_label: Option<&str>,
 ) -> Result<String, String> {
   if let Calcit::List(ys) = xs {
@@ -257,7 +257,7 @@ fn to_js_code(
       Calcit::Nil => Ok(String::from("null")),
       Calcit::Keyword(s) => {
         let mut kwds = keywords.borrow_mut();
-        kwds.push(s.to_owned());
+        kwds.insert(s.to_owned());
         Ok(format!("_kwd[{}]", wrap_js_str(&s.to_string())))
       }
       Calcit::List(_) => unreachable!("[Error] list handled in another branch"),
@@ -277,7 +277,7 @@ fn gen_call_code(
   local_defs: &HashSet<Arc<str>>,
   xs: &Calcit,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<Vec<EdnKwd>>,
+  keywords: &RefCell<HashSet<EdnKwd>>,
   return_label: Option<&str>,
 ) -> Result<String, String> {
   let return_code = return_label.unwrap_or("");
@@ -687,7 +687,7 @@ fn gen_let_code(
   xs: &Calcit,
   ns: &str,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<Vec<EdnKwd>>,
+  keywords: &RefCell<HashSet<EdnKwd>>,
   base_return_label: Option<&str>,
 ) -> Result<String, String> {
   let mut let_def_body = body.to_owned();
@@ -806,7 +806,7 @@ fn gen_if_code(
   _xs: &Calcit,
   ns: &str,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<Vec<EdnKwd>>,
+  keywords: &RefCell<HashSet<EdnKwd>>,
   base_return_label: Option<&str>,
 ) -> Result<String, String> {
   if body.len() < 2 || body.len() > 3 {
@@ -864,7 +864,7 @@ fn gen_args_code(
   ns: &str,
   local_defs: &HashSet<Arc<str>>,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<Vec<EdnKwd>>,
+  keywords: &RefCell<HashSet<EdnKwd>>,
 ) -> Result<String, String> {
   let mut result = String::from("");
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
@@ -900,7 +900,7 @@ fn list_to_js_code(
   local_defs: HashSet<Arc<str>>,
   return_label: &str,
   file_imports: &RefCell<ImportsDict>,
-  keywords: &RefCell<Vec<EdnKwd>>,
+  keywords: &RefCell<HashSet<EdnKwd>>,
 ) -> Result<String, String> {
   // TODO default returnLabel="return "
   let mut result = String::from("");
@@ -949,7 +949,7 @@ fn gen_js_func(
   raw_body: &CalcitItems,
   passed_defs: &PassedDefs,
   exported: bool,
-  keywords: &RefCell<Vec<EdnKwd>>,
+  keywords: &RefCell<HashSet<EdnKwd>>,
 ) -> Result<String, String> {
   let var_prefix = if passed_defs.ns == "calcit.core" { "" } else { "$calcit." };
   let mut local_defs = passed_defs.local_defs.to_owned();
@@ -1001,7 +1001,7 @@ fn gen_js_func(
   } else if has_optional {
     snippets::tmpl_args_between(args_count, args_count + optional_count)
   } else {
-    snippets::tmpl_args_exact(args_count)
+    snippets::tmpl_args_exact(name, args_count)
   };
 
   let mut body: CalcitItems = TernaryTreeList::Empty;
@@ -1053,7 +1053,7 @@ fn gen_js_func(
     Ok(format!("{}{}\n", export_mark, fn_def))
   } else {
     let fn_definition = format!(
-      "{}function {}({}) {{ {}{}\n{} }}",
+      "{}function {}({}) {{ {}{}\n{}}}",
       async_prefix,
       escape_var(name),
       args_code,
@@ -1174,7 +1174,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     // side-effects, reset tracking state
 
     let file_imports: RefCell<ImportsDict> = RefCell::new(BTreeMap::new());
-    let keywords: RefCell<Vec<EdnKwd>> = RefCell::new(Vec::new());
+    let keywords: RefCell<HashSet<EdnKwd>> = RefCell::new(HashSet::new());
 
     let mut defs_in_current: HashSet<Arc<str>> = HashSet::new();
     for k in file.keys() {
@@ -1328,11 +1328,13 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 
     let kwd_prefix = if &*ns == "calcit.core" { "" } else { "$calcit." };
     let mut kwd_arr = String::from("[");
-    {
-      // need to maintain a stable order to reduce redundant reloads
-      let mut kwds = keywords.borrow_mut();
-      kwds.dedup();
+    let mut kwds: Vec<EdnKwd> = vec![];
+    for k in keywords.borrow().iter() {
+      kwds.push(k.to_owned());
     }
+    // need to maintain a stable order to reduce redundant reloads
+    kwds.sort();
+
     for s in keywords.into_inner() {
       let name = escape_cirru_str(&s.to_string());
       kwd_arr.push_str(&format!("{},", name));
@@ -1344,7 +1346,15 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     let js_file_path = code_emit_path.join(to_js_file_name(&ns, false)); // TODO mjs_mode
     let wrote_new = write_file_if_changed(
       &js_file_path,
-      &format!("{}\n{}{}\n\n{}\n{}", import_code, keywords_code, defs_code, vals_code, direct_code),
+      &format!(
+        "{}{}{}\n{}\n\n{}\n{}",
+        import_code,
+        keywords_code,
+        snippets::tmpl_errors_init(),
+        defs_code,
+        vals_code,
+        direct_code
+      ),
     );
     if wrote_new {
       println!("Emitted js file: {}", js_file_path.to_str().unwrap());

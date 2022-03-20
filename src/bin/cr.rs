@@ -173,7 +173,7 @@ fn main() -> Result<(), String> {
 }
 
 pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, assets_watch: Arc<Option<String>>) {
-  println!("\nRunner: in watch mode...\n");
+  println!("\nRunning: in watch mode...\n");
   let (tx, rx) = channel();
   let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).unwrap();
 

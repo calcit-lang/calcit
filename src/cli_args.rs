@@ -1,10 +1,10 @@
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn parse_cli() -> clap::ArgMatches {
-  clap::Command::new("Calcit Runner")
+  clap::Command::new("Calcit")
     .version(CALCIT_VERSION)
     .author("Jon. <jiyinyiyong@gmail.com>")
-    .about("Calcit Runner")
+    .about("Calcit Scripting Language")
     .arg(
       clap::Arg::new("once")
         .help("disable watching mode")

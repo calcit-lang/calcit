@@ -118,10 +118,10 @@ pub fn main() -> io::Result<()> {
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn parse_cli() -> clap::ArgMatches {
-  clap::Command::new("Calcit Runner")
+  clap::Command::new("Calcit")
     .version(CALCIT_VERSION)
     .author("Jon. <jiyinyiyong@gmail.com>")
-    .about("Calcit Runner Bundler")
+    .about("Calcit Bundler")
     .arg(
       clap::Arg::new("src")
         .help("source folder")

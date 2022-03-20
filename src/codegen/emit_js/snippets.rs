@@ -39,11 +39,11 @@ if (arguments.length > {}) throw new Error('too many arguments');",
   )
 }
 
-pub fn tmpl_args_exact(args_count: usize) -> String {
+pub fn tmpl_args_exact(name: &str, args_count: usize) -> String {
   format!(
     "
-if (arguments.length !== {}) throw new Error('argument sizes do not match');",
-    args_count
+if (arguments.length !== {}) throw _calcit_args_mismatch('{}', {}, arguments.length);",
+    args_count, name, args_count
   )
 }
 
@@ -77,7 +77,7 @@ pub fn tmpl_tail_recursion(
   let {times_var} = 0;
   while(true) {{ /* Tail Recursion */
     let {ret_var} = null;
-    if ({times_var} > 100000) throw new Error('tail recursion not stopping');
+    if ({times_var} > 100000) throw new Error('tail recursion not finished after 100000 iterations');
     {body}
     if ({ret_var} instanceof {var_prefix}CalcitRecur) {{
       {check_recur_args}
@@ -156,7 +156,17 @@ pub fn tmpl_keywords_init(arr: &str, prefix: &str) -> String {
 {}.forEach(x => {{
   _kwd[x] = {}kwd(x);
 }});
-  ",
+",
     arr, prefix
+  )
+}
+
+pub fn tmpl_errors_init() -> String {
+  String::from(
+    "
+let _calcit_args_mismatch = (name, expected, got) => {
+  return new Error(`\\`${name}\\` expected ${expected} params, got ${got}`);
+};
+",
   )
 }
