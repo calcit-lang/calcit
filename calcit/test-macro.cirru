@@ -108,6 +108,10 @@
                 quote (d (b a c) e f)
 
               assert=
+                macroexpand-all $ quote $ <- (b c) (d e f) a
+                quote (b (d a e f) c)
+
+              assert=
                 macroexpand $ quote $ ->> a b c
                 quote (c (b a))
 
@@ -139,6 +143,9 @@
 
             assert= 36
               ->% 3 (+ % %) (* % %)
+
+            assert= 18
+              %<- (+ % %) (* % %) 3
 
         |test-lambda $ quote
           fn ()

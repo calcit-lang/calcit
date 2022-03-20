@@ -346,6 +346,14 @@
                 quasiquote
                   let ~pairs ~tail
 
+        |%<- $ quote
+          defmacro %<- (& xs)
+            quasiquote $ ->% $ ~@ $ reverse xs
+
+        |<- $ quote
+          defmacro <- (& xs)
+            quasiquote $ -> $ ~@ $ reverse xs
+
         |cond $ quote
           defmacro cond (pair & else)
             assert "|expects a pair"
