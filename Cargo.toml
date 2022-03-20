@@ -1,8 +1,8 @@
 [package]
 name = "calcit"
-version = "0.5.26"
+version = "0.5.27"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 description = "Interpreter and js codegen for Calcit"
 homepage = "http://calcit-lang.org"
