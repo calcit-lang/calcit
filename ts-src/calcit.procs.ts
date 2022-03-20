@@ -499,7 +499,7 @@ export let _$n_list_$o_rest = (xs: CalcitValue): CalcitValue => {
 };
 
 export let _$n_str_$o_rest = (xs: CalcitValue): CalcitValue => {
-  if (typeof xs === "string") return xs.substr(1);
+  if (typeof xs === "string") return xs.slice(1);
 
   console.error(xs);
   throw new Error("Expects a string");
@@ -571,7 +571,7 @@ export let butlast = (xs: CalcitValue): CalcitValue => {
     return xs.slice(0, xs.len() - 1);
   }
   if (typeof xs === "string") {
-    return xs.substr(0, xs.length - 1);
+    return xs.slice(0, -1);
   }
   console.error(xs);
   throw new Error("Data not ready for butlast");
