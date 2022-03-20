@@ -1,13 +1,21 @@
 ### Calcit Scripting Language
 
-> Lisp compiling to JavaScript ES Modules. Runs in Rust(Similar to ClojureScript, but in very different syntax.).
+> Spiritually dialect of ClojureScript. Built with Rust. Also compiles to JavaScript ES Modules.
 
 - Home http://calcit-lang.org/
-- API Doc(heavily influenced by ClojureScript) http://apis.calcit-lang.org/
-- Dev Logs https://github.com/calcit-lang/calcit/discussions
-- 视频记录 https://space.bilibili.com/14227306/channel/seriesdetail?sid=281171
+- API Doc http://apis.calcit-lang.org/
+- Guidebook http://guide.calcit-lang.org/
 
 [Browse examples](https://github.com/calcit-lang/calcit/tree/main/calcit) or also [try WASM version online](https://github.com/calcit-lang/calcit-wasm-play).
+
+Core design:
+
+- Interpreter runs on Rust, extensible with Rust FFI
+- Persistent Data Structure
+- Structural Editor(with indentation-based syntax as a fallback)
+- Lisp macros, functional style
+- Compiles to JavaScript in ES Modules, JavaScript Interop
+- Hot code swapping friendly
 
 ### Install
 
@@ -21,7 +29,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install calcit
 ```
 
-For Ubuntu 20.04, try binaries from http://bin.calcit-lang.org/linux/ , which are provided for [CI usages](https://github.com/calcit-lang/respo-calcit-workflow/blob/main/.github/workflows/upload.yaml#L28-L37).
+For Ubuntu latest, try binaries from http://bin.calcit-lang.org/linux/ , which are provided for [CI usages](https://github.com/calcit-lang/respo-calcit-workflow/blob/main/.github/workflows/upload.yaml#L28-L37).
 
 ### Usage
 
@@ -46,7 +54,7 @@ println "|a demo"
 '
 ```
 
-Run with a [compact.cirru](https://github.com/calcit-lang/lilac/blob/master/compact.cirru):
+Run with a [compact.cirru](https://github.com/calcit-lang/lilac/blob/main/compact.cirru):
 
 ```bash
 cr compact.cirru -1 # run only once
@@ -56,13 +64,20 @@ cr compact.cirru # watch mode enabled by default
 cr compact.cirru --init-fn='app.main/main!' # specifying init-fn
 ```
 
-Emitting code:
+### JavaScript codegen
+
+It compiles to JavaScript and runs in consistet semantics. However it might require a lot of JavaScript interop.
 
 ```bash
 cr compact.cirru --emit-js # compile to js
 cr compact.cirru --emit-js --emit-path=out/ # compile to js and save in `out/`
+```
 
-cr compact.cirru --emit-ir # compiles intermediate representation into program-ir.cirru
+By default, js code is generated to `js-out/`. You will need Vite or Esbuild to run it, from an entry file:
+
+```js
+import { main_$x_, reload_$x_ } from "./js-out/app.main.js";
+main_$x_();
 ```
 
 ### Calcit Editor & Bundler
@@ -92,33 +107,6 @@ Modules that ends with `/`s are automatically suffixed `compact.cirru` since it'
 
 To load modules in CI environments, make use of `git clone`.
 
-Web Frameworks:
-
-- [Respo](https://github.com/Respo/respo.calcit) - tiny Virtual DOM library
-- [Phlox](https://github.com/Phlox-GL/phlox) - wraps PIXI.js in Virtual DOM style
-- [Quamolit](https://github.com/Quamolit/quamolit.calcit/) - wraps Three.js in Virtual DOM style
-- [Quatrefoil](https://github.com/Quatrefoil-GL/quatrefoil) - Canvas API in virtual DOM style, with ticking rendering
-
-Mini libraries:
-
-- [Lilac](https://github.com/calcit-lang/lilac), data validation tool
-- [Memof](https://github.com/calcit-lang/memof), caching tool
-- [Recollect](https://github.com/calcit-lang/recollect), diffing tool
-- [Calcit Test](https://github.com/calcit-lang/calcit-test), testing tool
-- [Bisection Key](https://github.com/calcit-lang/bisection-key), ...
-- [Lilac Parser](https://github.com/calcit-lang/lilac-parser), string parsing tool
-
-### Extensions
-
-Rust supports extending with dynamic libraries, found an example in [dylib-workflow](https://github.com/calcit-lang/dylib-workflow). Currently there are some early extensions:
-
-- [Std](https://github.com/calcit-lang/calcit.std) - some collections of util functions
-- [WebSocket server binding](https://github.com/calcit-lang/calcit-wss)
-- [HTTP client binding](https://github.com/calcit-lang/calcit-fetch)
-- [HTTP server binding](https://github.com/calcit-lang/calcit-http)
-- [Wasmtime binding](https://github.com/calcit-lang/calcit_wasmtime)
-- [Canvas demo](https://github.com/calcit-lang/calcit-paint)
-
 ### Development
 
 I use these commands to run local examples:
@@ -132,6 +120,8 @@ cargo run --bin cr -- calcit/test.cirru --emit-js -1 && yarn try-js
 
 # run snippet
 cargo run --bin cr -- -e 'range 100'
+
+cr compact.cirru --emit-ir # compiles intermediate representation into program-ir.cirru
 ```
 
 - [Cirru Parser](https://github.com/Cirru/parser.rs) for indentation-based syntax parsing.
@@ -142,6 +132,11 @@ Other tools:
 
 - [Error Viewer](https://github.com/calcit-lang/calcit-error-viewer) for displaying `.calcit-error.cirru`
 - [IR Viewer](https://github.com/calcit-lang/calcit-ir-viewer) for rendering `program-ir.cirru`
+
+Some resources:
+
+- Dev Logs https://github.com/calcit-lang/calcit/discussions
+- 视频记录 https://space.bilibili.com/14227306/channel/seriesdetail?sid=281171
 
 ### License
 
