@@ -73,10 +73,10 @@ cr compact.cirru --emit-js # compile to js
 cr compact.cirru --emit-js --emit-path=out/ # compile to js and save in `out/`
 ```
 
-By default, js code is generated to `js-out/`. You will need Vite or Esbuild to run it, from an entry file:
+By default, js code is generated to `js-out/`. You will need Vite or Node to run it, from an entry file:
 
 ```js
-import { main_$x_, reload_$x_ } from "./js-out/app.main.js";
+import { main_$x_, reload_$x_ } from "./js-out/app.main.mjs";
 main_$x_();
 ```
 
