@@ -4,13 +4,11 @@
   "main": "./lib/calcit.procs.mjs",
   "devDependencies": {
     "@types/node": "^17.0.22",
-    "esbuild": "^0.14.27",
     "typescript": "^4.6.2"
   },
   "scripts": {
     "compile": "rm -rfv lib/* && tsc",
     "procs-link": "ln -s ../../ node_modules/@calcit/procs",
-    "bundle-main": "esbuild js-out/main.mjs --bundle --outfile=js-out/bundle.js --platform=node --resolve-extensions=.mjs,.js",
     "cp-mac": "cargo build --release && rm -rfv builds/* && node scripts/cp-version.js && scp builds/* rsync-user@calcit-lang.org:/web-assets/repo/calcit-lang/binaries/macos/",
     "try-rs": "cargo run --bin cr -- calcit/test.cirru -1",
     "try-js": "cargo run --bin cr -- calcit/test.cirru --emit-js -1 && yarn bundle-main && node js-out/bundle.js"
