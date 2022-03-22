@@ -1,12 +1,11 @@
-import { CalcitValue } from "./js-primes";
-import { CalcitRef, CalcitSymbol, CalcitKeyword } from "./calcit-data";
-import { toPairs } from "@calcit/ternary-tree";
+import { CalcitValue } from "./js-primes.mjs";
+import { CalcitRef, CalcitSymbol, CalcitKeyword } from "./calcit-data.mjs";
 
-import { CalcitRecord } from "./js-record";
-import { CalcitMap, CalcitSliceMap } from "./js-map";
-import { CalcitList, CalcitSliceList } from "./js-list";
-import { CalcitSet } from "./js-set";
-import { CalcitTuple } from "./js-tuple";
+import { CalcitRecord } from "./js-record.mjs";
+import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
+import { CalcitList, CalcitSliceList } from "./js-list.mjs";
+import { CalcitSet } from "./js-set.mjs";
+import { CalcitTuple } from "./js-tuple.mjs";
 
 declare global {
   interface Window {

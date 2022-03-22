@@ -1,5 +1,5 @@
-import { CalcitValue } from "./js-primes";
-import { toString } from "./calcit-data";
+import { CalcitValue } from "./js-primes.mjs";
+import { toString } from "./calcit-data.mjs";
 import {
   TernaryTreeMap,
   initTernaryTreeMap,

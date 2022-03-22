@@ -1,4 +1,4 @@
-import { CalcitValue } from "./js-primes";
+import { CalcitValue } from "./js-primes.mjs";
 
 import { Hash } from "@calcit/ternary-tree";
 

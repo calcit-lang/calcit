@@ -5,26 +5,38 @@ import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
 
-import { CalcitValue } from "./js-primes";
-import { CalcitSymbol, CalcitKeyword, CalcitRef, CalcitFn, CalcitRecur, kwd, refsRegistry, toString, getStringName, to_js_data, _$n__$e_ } from "./calcit-data";
+import { CalcitValue } from "./js-primes.mjs";
+import {
+  CalcitSymbol,
+  CalcitKeyword,
+  CalcitRef,
+  CalcitFn,
+  CalcitRecur,
+  kwd,
+  refsRegistry,
+  toString,
+  getStringName,
+  to_js_data,
+  _$n__$e_,
+} from "./calcit-data.mjs";
 
-import { fieldsEqual, CalcitRecord } from "./js-record";
+import { fieldsEqual, CalcitRecord } from "./js-record.mjs";
 
-export * from "./calcit-data";
-export * from "./js-record";
-export * from "./js-map";
-export * from "./js-list";
-export * from "./js-set";
-export * from "./js-primes";
-export * from "./js-tuple";
-export * from "./custom-formatter";
-export * from "./js-cirru";
+export * from "./calcit-data.mjs";
+export * from "./js-record.mjs";
+export * from "./js-map.mjs";
+export * from "./js-list.mjs";
+export * from "./js-set.mjs";
+export * from "./js-primes.mjs";
+export * from "./js-tuple.mjs";
+export * from "./custom-formatter.mjs";
+export * from "./js-cirru.mjs";
 
-import { CalcitList, CalcitSliceList, foldl } from "./js-list";
-import { CalcitMap, CalcitSliceMap } from "./js-map";
-import { CalcitSet } from "./js-set";
-import { CalcitTuple } from "./js-tuple";
-import { to_calcit_data, extract_cirru_edn } from "./js-cirru";
+import { CalcitList, CalcitSliceList, foldl } from "./js-list.mjs";
+import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
+import { CalcitSet } from "./js-set.mjs";
+import { CalcitTuple } from "./js-tuple.mjs";
+import { to_calcit_data, extract_cirru_edn } from "./js-cirru.mjs";
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
