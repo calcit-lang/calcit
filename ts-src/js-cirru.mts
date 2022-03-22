@@ -1,13 +1,13 @@
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { CirruWriterNode, writeCirruCode } from "@cirru/writer.ts";
 
-import { CalcitValue } from "./js-primes";
-import { CalcitList, CalcitSliceList } from "./js-list";
-import { CalcitRecord } from "./js-record";
-import { CalcitMap, CalcitSliceMap } from "./js-map";
-import { CalcitSet } from "./js-set";
-import { CalcitKeyword, CalcitSymbol, CalcitRecur, CalcitRef, kwd } from "./calcit-data";
-import { CalcitTuple } from "./js-tuple";
+import { CalcitValue } from "./js-primes.mjs";
+import { CalcitList, CalcitSliceList } from "./js-list.mjs";
+import { CalcitRecord } from "./js-record.mjs";
+import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
+import { CalcitSet } from "./js-set.mjs";
+import { CalcitKeyword, CalcitSymbol, CalcitRecur, CalcitRef, kwd } from "./calcit-data.mjs";
+import { CalcitTuple } from "./js-tuple.mjs";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
 

@@ -1,6 +1,6 @@
 import * as ternaryTree from "@calcit/ternary-tree";
 
-import { CalcitValue } from "./js-primes";
+import { CalcitValue } from "./js-primes.mjs";
 
 import {
   TernaryTreeList,
@@ -16,11 +16,11 @@ import {
   assocAfter,
 } from "@calcit/ternary-tree";
 
-import { CalcitMap, CalcitSliceMap } from "./js-map";
-import { CalcitSet } from "./js-set";
-import { CalcitTuple } from "./js-tuple";
+import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
+import { CalcitSet } from "./js-set.mjs";
+import { CalcitTuple } from "./js-tuple.mjs";
 
-import { isNestedCalcitData, tipNestedCalcitData, toString, CalcitFn } from "./calcit-data";
+import { isNestedCalcitData, tipNestedCalcitData, toString, CalcitFn } from "./calcit-data.mjs";
 
 // two list implementations, should offer same interface
 export class CalcitList {

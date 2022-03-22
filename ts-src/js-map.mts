@@ -1,7 +1,7 @@
 import * as ternaryTree from "@calcit/ternary-tree";
 
-import { CalcitValue } from "./js-primes";
-import { CalcitSet } from "./js-set";
+import { CalcitValue } from "./js-primes.mjs";
+import { CalcitSet } from "./js-set.mjs";
 
 import {
   TernaryTreeMap,
@@ -17,7 +17,7 @@ import {
   initTernaryTreeMapFromArray,
 } from "@calcit/ternary-tree";
 
-import { isNestedCalcitData, tipNestedCalcitData, toString } from "./calcit-data";
+import { isNestedCalcitData, tipNestedCalcitData, toString } from "./calcit-data.mjs";
 
 /** need to compare by Calcit */
 let DATA_EQUAL = (x: CalcitValue, y: CalcitValue): boolean => {

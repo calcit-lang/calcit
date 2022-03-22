@@ -1,14 +1,14 @@
 import { Hash, overwriteHashGenerator, valueHash, mergeValueHash } from "@calcit/ternary-tree";
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
-import { overwriteMapComparator } from "./js-map";
+import { overwriteMapComparator } from "./js-map.mjs";
 
-import { CalcitRecord, fieldsEqual } from "./js-record";
-import { CalcitMap, CalcitSliceMap } from "./js-map";
+import { CalcitRecord, fieldsEqual } from "./js-record.mjs";
+import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 
-import { CalcitValue } from "./js-primes";
-import { CalcitList, CalcitSliceList } from "./js-list";
-import { CalcitSet, overwriteSetComparator } from "./js-set";
-import { CalcitTuple } from "./js-tuple";
+import { CalcitValue } from "./js-primes.mjs";
+import { CalcitList, CalcitSliceList } from "./js-list.mjs";
+import { CalcitSet, overwriteSetComparator } from "./js-set.mjs";
+import { CalcitTuple } from "./js-tuple.mjs";
 
 // we have to inject cache in a dirty way in some cases
 const calcit_dirty_hash_key = "_calcit_cached_hash";

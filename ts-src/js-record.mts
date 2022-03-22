@@ -1,8 +1,8 @@
 import { initTernaryTreeMap, Hash, insert } from "@calcit/ternary-tree";
-import { CalcitValue } from "./js-primes";
-import { kwd, castKwd, toString, CalcitKeyword, getStringName, findInFields } from "./calcit-data";
+import { CalcitValue } from "./js-primes.mjs";
+import { kwd, castKwd, toString, CalcitKeyword, getStringName, findInFields } from "./calcit-data.mjs";
 
-import { CalcitMap, CalcitSliceMap } from "./js-map";
+import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 
 export class CalcitRecord {
   name: CalcitKeyword;

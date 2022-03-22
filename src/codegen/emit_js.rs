@@ -1343,7 +1343,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     keywords_code.push_str(&snippets::tmpl_keywords_init(&kwd_arr, kwd_prefix));
     keywords_code.push('\n');
 
-    let js_file_path = code_emit_path.join(to_js_file_name(&ns, false)); // TODO mjs_mode
+    let js_file_path = code_emit_path.join(to_js_file_name(&ns, true)); // TODO mjs_mode
     let wrote_new = write_file_if_changed(
       &js_file_path,
       &format!(
