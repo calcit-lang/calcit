@@ -77,7 +77,7 @@ pub fn tmpl_tail_recursion(
   let {times_var} = 0;
   while(true) {{ /* Tail Recursion */
     let {ret_var} = null;
-    if ({times_var} > 100000) throw new Error('tail recursion not finished after 100000 iterations');
+    if ({times_var} > 10000000) throw new Error('tail recursion not finished after 10M iterations');
     {body}
     if ({ret_var} instanceof {var_prefix}CalcitRecur) {{
       {check_recur_args}

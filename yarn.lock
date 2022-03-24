@@ -2,10 +2,10 @@
 # yarn lockfile v1
 
 
-"@calcit/ternary-tree@0.0.19-a1":
-  version "0.0.19-a1"
-  resolved "https://registry.yarnpkg.com/@calcit/ternary-tree/-/ternary-tree-0.0.19-a1.tgz#681ff36153a9cf2464cef1449c3f29024fa5dd01"
-  integrity sha512-FFf9UmkvKi46fkE3vyYDw4HfvOJ7x1pK5WMKgNUEgHhFcsIlFaMPczD47RhFmo81y8atVauE78u3OZSuWcdiAA==
+"@calcit/ternary-tree@0.0.19":
+  version "0.0.19"
+  resolved "https://registry.yarnpkg.com/@calcit/ternary-tree/-/ternary-tree-0.0.19.tgz#b5b33a3d07a9e603feeef7cd642958c83628122f"
+  integrity sha512-dn2kNlcOQOPtCAeE68MHcRgrZzRP+jNKBmDW2wO0S8HTUA2SeAbpzZoK0HfcTHFmlGl6yKpjZ95rICQ319AjcA==
 
 "@cirru/parser.ts@^0.0.5":
   version "0.0.5"
@@ -17,10 +17,10 @@
   resolved "https://registry.yarnpkg.com/@cirru/writer.ts/-/writer.ts-0.1.3.tgz#5f54bdecaa20ba3dab16cbe6da711854138a9c0a"
   integrity sha512-vJnhmhm7we5UfQIwmZfQpF3bAFbVybzT6LbmkbQHxgijaQg3gPfNVsnSIa3g3KpmWVtvkzEx+nUy5aMwsJiV1A==
 
-"@types/node@^17.0.22":
-  version "17.0.22"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-17.0.22.tgz#38b6c4b9b2f3ed9f2e376cce42a298fb2375251e"
-  integrity sha512-8FwbVoG4fy+ykY86XCAclKZDORttqE5/s7dyWZKLXTdv3vRy5HozBEinG5IqhvPXXzIZEcTVbuHlQEI6iuwcmw==
+"@types/node@^17.0.23":
+  version "17.0.23"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-17.0.23.tgz#3b41a6e643589ac6442bdbd7a4a3ded62f33f7da"
+  integrity sha512-UxDxWn7dl97rKVeVS61vErvw086aCYhDLyvRQZ5Rk65rZKepaFdm53GeqXaKBuOhED4e9uWq34IC3TdSdJJ2Gw==
 
 typescript@^4.6.2:
   version "4.6.2"
