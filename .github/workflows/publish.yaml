@@ -27,10 +27,6 @@ jobs:
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs
 
-      - uses: katyo/publish-crates@v1
-        with:
-          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
       - uses: actions/setup-node@v2
         with:
           node-version: 16
@@ -38,10 +34,6 @@ jobs:
 
       - name: "generate procs.js"
         run: yarn && yarn tsc
-
-      - run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{secrets.npm_token}}
 
       - run: cargo build --release
       - run: node scripts/cp-version.js
