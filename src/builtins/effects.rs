@@ -106,7 +106,7 @@ pub fn read_file(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match fs::read_to_string(&**s) {
       Ok(content) => Ok(Calcit::Str(content.into())),
-      Err(e) => CalcitErr::err_str(format!("read-file failed: {}", e)),
+      Err(e) => CalcitErr::err_str(format!("read-file failed at {}: {}", &**s, e)),
     },
     Some(a) => CalcitErr::err_str(format!("read-file expected a string, got: {}", a)),
     None => CalcitErr::err_str("read-file expected a filename, got nothing"),
