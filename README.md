@@ -1,6 +1,6 @@
 ### Calcit Scripting Language
 
-> Spiritually dialect of ClojureScript. Built with Rust. Also compiles to JavaScript ES Modules.
+> Semantically a dialect of ClojureScript. Built with Rust. Compiles to JavaScript ES Modules.
 
 - Home http://calcit-lang.org/
 - API Doc http://apis.calcit-lang.org/

@@ -1335,7 +1335,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     // need to maintain a stable order to reduce redundant reloads
     kwds.sort();
 
-    for s in keywords.into_inner() {
+    for s in kwds {
       let name = escape_cirru_str(&s.to_string());
       kwd_arr.push_str(&format!("{},", name));
     }
