@@ -105,10 +105,10 @@ export class CalcitSet {
     return new CalcitSet(result);
   }
 
-  toString() {
+  toString(disableJsDataWarning: boolean = false) {
     let itemsCode = "";
     for (let k of ternaryTree.toKeys(this.value)) {
-      itemsCode = `${itemsCode} ${toString(k, true)}`;
+      itemsCode = `${itemsCode} ${toString(k, true, disableJsDataWarning)}`;
     }
     return `(#{}${itemsCode})`;
   }

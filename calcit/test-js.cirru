@@ -32,7 +32,12 @@
               aset a |name |demo
               js/console.log a
             js/console.log $ os/arch
-            ; js/console.log os/@
+            println $ {}
+              :n 1
+              :js $ js-array 1 2 3
+            js/console.log $ {}
+              :n 1
+              :js $ js-array 1 2 3
 
             assert= 0 $ .-length $ new js/Array
             assert= 7 $ .-length $ new js/Array (+ 3 4)

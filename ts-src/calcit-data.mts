@@ -319,7 +319,7 @@ let hashFunction = (x: CalcitValue): Hash => {
 // Dirty code to change ternary-tree behavior
 overwriteHashGenerator(hashFunction);
 
-export let toString = (x: CalcitValue, escaped: boolean): string => {
+export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: boolean = false): string => {
   if (x == null) {
     return "nil";
   }
@@ -351,26 +351,28 @@ export let toString = (x: CalcitValue, escaped: boolean): string => {
     return x.toString();
   }
   if (x instanceof CalcitList || x instanceof CalcitSliceList) {
-    return x.toString();
+    return x.toString(false, disableJsDataWarning);
   }
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
-    return x.toString();
+    return x.toString(false, disableJsDataWarning);
   }
   if (x instanceof CalcitSet) {
-    return x.toString();
+    return x.toString(disableJsDataWarning);
   }
   if (x instanceof CalcitRecord) {
-    return x.toString();
+    return x.toString(disableJsDataWarning);
   }
   if (x instanceof CalcitRef) {
     return x.toString();
   }
   if (x instanceof CalcitTuple) {
-    return x.toString();
+    return x.toString(disableJsDataWarning);
   }
 
-  console.warn("Unknown structure to string, better use `console.log`", x);
-  return `${x}`;
+  if (!disableJsDataWarning) {
+    console.warn("Unknown structure to string, better use `console.log`", x);
+  }
+  return `(#js ${JSON.stringify(x)})`;
 };
 
 export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
