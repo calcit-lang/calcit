@@ -44,15 +44,15 @@ export let load_console_formatter_$x_ = () => {
             return [
               "div",
               { style: "color: hsl(280, 80%, 60%, 0.4)" },
-              obj.toString(true),
+              obj.toString(true, true),
               ["span", { style: "font-size: 80%; vertical-align: 0.7em; color: hsl(280, 80%, 60%, 0.8)" }, `${obj.len()}`],
             ];
           }
           if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
-            return ["div", { style: "color: hsl(280, 80%, 60%, 0.4)" }, obj.toString(true)];
+            return ["div", { style: "color: hsl(280, 80%, 60%, 0.4)" }, obj.toString(true, true)];
           }
           if (obj instanceof CalcitSet) {
-            return ["div", { style: "color: hsl(280, 80%, 60%, 0.4)" }, obj.toString()];
+            return ["div", { style: "color: hsl(280, 80%, 60%, 0.4)" }, obj.toString(true)];
           }
           if (obj instanceof CalcitRecord) {
             let ret: any[] = ["div", { style: "color: hsl(280, 80%, 60%)" }, `%{} ${obj.name}`];

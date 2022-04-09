@@ -66,15 +66,15 @@ export class CalcitMap {
     }
     return new CalcitMap(ret);
   }
-  toString(shorter = false) {
+  toString(shorter = false, disableJsDataWarning = false) {
     let itemsCode = "";
     for (let [k, v] of this.pairs()) {
       if (shorter) {
-        let keyPart = isNestedCalcitData(k) ? tipNestedCalcitData(k) : toString(k, true);
-        let valuePart = isNestedCalcitData(v) ? tipNestedCalcitData(v) : toString(v, true);
+        let keyPart = isNestedCalcitData(k) ? tipNestedCalcitData(k) : toString(k, true, disableJsDataWarning);
+        let valuePart = isNestedCalcitData(v) ? tipNestedCalcitData(v) : toString(v, true, disableJsDataWarning);
         itemsCode = `${itemsCode} (${keyPart} ${valuePart})`;
       } else {
-        itemsCode = `${itemsCode} (${toString(k, true)} ${toString(v, true)})`;
+        itemsCode = `${itemsCode} (${toString(k, true, disableJsDataWarning)} ${toString(v, true, disableJsDataWarning)})`;
       }
     }
     return `({}${itemsCode})`;
@@ -252,15 +252,15 @@ export class CalcitSliceMap {
       return this.turnMap().dissoc(...args);
     }
   }
-  toString(shorter = false) {
+  toString(shorter = false, disableJsDataWarning = false) {
     let itemsCode = "";
     for (let [k, v] of this.pairs()) {
       if (shorter) {
-        let keyPart = isNestedCalcitData(k) ? tipNestedCalcitData(k) : toString(k, true);
-        let valuePart = isNestedCalcitData(v) ? tipNestedCalcitData(v) : toString(v, true);
+        let keyPart = isNestedCalcitData(k) ? tipNestedCalcitData(k) : toString(k, true, disableJsDataWarning);
+        let valuePart = isNestedCalcitData(v) ? tipNestedCalcitData(v) : toString(v, true, disableJsDataWarning);
         itemsCode = `${itemsCode} (${keyPart} ${valuePart})`;
       } else {
-        itemsCode = `${itemsCode} (${toString(k, true)} ${toString(v, true)})`;
+        itemsCode = `${itemsCode} (${toString(k, true, disableJsDataWarning)} ${toString(v, true, disableJsDataWarning)})`;
       }
     }
     return `({}${itemsCode})`;

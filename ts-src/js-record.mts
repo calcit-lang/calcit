@@ -54,10 +54,10 @@ export class CalcitRecord {
     let idx = this.findIndex(k);
     return idx >= 0;
   }
-  toString(): string {
+  toString(disableJsDataWarning: boolean = false): string {
     let ret = "(%{} " + this.name;
     for (let idx = 0; idx < this.fields.length; idx++) {
-      ret += " (" + this.fields[idx] + " " + toString(this.values[idx], true) + ")";
+      ret += " (" + this.fields[idx] + " " + toString(this.values[idx], true, disableJsDataWarning) + ")";
     }
     return ret + ")";
   }

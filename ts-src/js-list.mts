@@ -58,13 +58,13 @@ export class CalcitList {
   slice(from: number, to: number) {
     return new CalcitList(ternaryTree.slice(this.value, from, to));
   }
-  toString(shorter = false): string {
+  toString(shorter = false, disableJsDataWarning: boolean = false): string {
     let result = "";
     for (let item of this.items()) {
       if (shorter && isNestedCalcitData(item)) {
         result = `${result} ${tipNestedCalcitData(item)}`;
       } else {
-        result = `${result} ${toString(item, true)}`;
+        result = `${result} ${toString(item, true, disableJsDataWarning)}`;
       }
     }
     return `([]${result})`;
@@ -171,13 +171,13 @@ export class CalcitSliceList {
     result.end = this.start + to;
     return result;
   }
-  toString(shorter = false): string {
+  toString(shorter = false, disableJsDataWarning = false): string {
     let result = "";
     for (let item of this.items()) {
       if (shorter && isNestedCalcitData(item)) {
         result = `${result} ${tipNestedCalcitData(item)}`;
       } else {
-        result = `${result} ${toString(item, true)}`;
+        result = `${result} ${toString(item, true, disableJsDataWarning)}`;
       }
     }
     return `([]${result})`;
