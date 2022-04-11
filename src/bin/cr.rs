@@ -9,6 +9,7 @@ use std::time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 mod injection;
 
+use calcit::util::string::strip_shebang;
 use im_ternary_tree::TernaryTreeList;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
@@ -36,7 +37,7 @@ fn main() -> Result<(), String> {
   let cli_options = CLIOptions {
     // has default value
     entry_path: Path::new(cli_matches.value_of("input").unwrap()).to_owned(),
-    emit_path: cli_matches.value_of("emit-path").or(Some("js-out")).unwrap().to_owned(),
+    emit_path: cli_matches.value_of("emit-path").unwrap_or("js-out").to_owned(),
     reload_libs: cli_matches.is_present("reload-libs"),
     emit_js: cli_matches.is_present("emit-js"),
     emit_ir: cli_matches.is_present("emit-ir"),
@@ -68,9 +69,9 @@ fn main() -> Result<(), String> {
     }
   } else {
     // load entry file
-    let content =
+    let mut content =
       fs::read_to_string(&cli_options.entry_path).unwrap_or_else(|_| panic!("expected Cirru snapshot: {:?}", cli_options.entry_path));
-
+    strip_shebang(&mut content);
     let data = cirru_edn::parse(&content)?;
     // println!("reading: {}", content);
     snapshot = snapshot::load_snapshot_data(&data, cli_options.entry_path.to_str().unwrap())?;
@@ -93,8 +94,8 @@ fn main() -> Result<(), String> {
       }
     }
   }
-  let init_fn = cli_matches.value_of("init-fn").or(Some(&snapshot.configs.init_fn)).unwrap();
-  let reload_fn = cli_matches.value_of("reload-fn").or(Some(&snapshot.configs.reload_fn)).unwrap();
+  let init_fn = cli_matches.value_of("init-fn").unwrap_or(&snapshot.configs.init_fn);
+  let reload_fn = cli_matches.value_of("reload-fn").unwrap_or(&snapshot.configs.reload_fn);
   let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
   let (reload_ns, reload_def) = util::string::extract_ns_def(reload_fn)?;
   let entries: ProgramEntries = ProgramEntries {
@@ -197,7 +198,8 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
         match event {
           notify::DebouncedEvent::Write(_) | notify::DebouncedEvent::Create(_) => {
             // load new program code
-            let content = fs::read_to_string(&inc_path).expect("reading inc file");
+            let mut content = fs::read_to_string(&inc_path).expect("reading inc file");
+            strip_shebang(&mut content);
             if content.trim().is_empty() {
               eprintln!("failed re-compiling, got empty inc file");
               continue;

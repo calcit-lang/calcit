@@ -126,3 +126,10 @@ pub fn extract_pkg_from_ns(ns: Arc<str>) -> Option<Arc<str>> {
     None
   }
 }
+
+/// strip first shebang line if detected
+pub fn strip_shebang(content: &mut String) {
+  if content.starts_with("#!") {
+    *content = content.lines().skip(1).collect::<Vec<&str>>().join("\n")
+  }
+}
