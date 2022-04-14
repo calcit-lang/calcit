@@ -184,17 +184,17 @@
             log-title "|Testing try"
             assert= :true
               try
-                do (echo "|inside try") :true
+                do (println "|inside try") :true
                 fn (error)
 
             assert= :false
               try
-                do (echo "|inside false try")
+                do (println "|inside false try")
                   raise "|error intented" ([] :demo)
                   , :true
                 fn (error)
                   do
-                    echo "|Caught error:" error
+                    println "|Caught error:" error
                     , :false
 
             assert= |:a
@@ -204,7 +204,7 @@
                   fn (error)
                     str :a
 
-            echo "|Finished testing try"
+            println "|Finished testing try"
 
         |test-fn-eq $ quote
           fn ()
@@ -265,7 +265,9 @@
         |test-effect $ quote
           fn ()
             log-title "|Testing effect"
-            echo "|Env mode:" $ get-env |mode
+            println "|Env mode:" $ get-env |mode
+
+            eprintln "|stdout message"
 
         |reload! $ quote
           defn reload! () nil

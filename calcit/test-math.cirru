@@ -26,14 +26,14 @@
 
         |log-title $ quote
           defn log-title (title)
-            echo
-            echo title
-            echo
+            println
+            println title
+            println
 
         |test-math $ quote
           defn test-math ()
-            echo "|sin 1" $ sin 1
-            echo "|cos 1" $ cos 1
+            println "|sin 1" $ sin 1
+            println "|cos 1" $ cos 1
             assert= 1 $ + (pow (sin 1) 2) (pow (cos 1) 2)
             assert= 1 $ floor 1.1
             assert= 2 $ ceil 1.1
@@ -44,8 +44,8 @@
             assert= 81 $ pow 3 4
             assert= 1 $ &number:rem 33 4
             assert= 9 $ sqrt 81
-            echo |PI &PI
-            echo |E &E
+            println |PI &PI
+            println |E &E
 
         |test-compare $ quote
           defn test-compare ()

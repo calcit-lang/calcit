@@ -285,14 +285,14 @@
               =
                 macroexpand $ quote
                   &doseq (n (range 5))
-                    echo |doing: n
+                    println |doing: n
                     swap! *counted &+ n
                 quote
                   apply
                     defn doseq-fn% (xs)
                       if (empty? xs) nil
                         &let (n (first xs))
-                          echo |doing: n
+                          println |doing: n
                           swap! *counted &+ n
                           recur (rest xs)
                     [] (range 5)
@@ -309,12 +309,12 @@
             log-title "|Testing let[]"
 
             inside-eval:
-              echo $ format-to-lisp $ macroexpand $ quote
+              println $ format-to-lisp $ macroexpand $ quote
                 let[] (a b c & d) ([] 1 2 3 4 5)
-                  echo a
-                  echo b
-                  echo c
-                  echo d
+                  println a
+                  println b
+                  println c
+                  println d
             let[] (a b c & d) ([] 1 2 3 4 5)
               assert= 1 a
               assert= 2 b

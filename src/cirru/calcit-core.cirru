@@ -192,7 +192,7 @@
                   defn %map (acc x) $ include acc (f x)
                 if (map? xs) (&map:map xs f)
                   &let nil
-                    echo "|value:" xs
+                    println "|value:" xs
                     raise "|expected list or set for map function"
 
         |&map:map-list $ quote
@@ -377,7 +377,7 @@
           defmacro key-match (value & body)
             if (&list:empty? body)
               quasiquote
-                println "|[Warn] key-match found no matched case, missing `_` case?" ~value
+                eprintln "|[Warn] key-match found no matched case, missing `_` case?" ~value
               &let
                 pair (&list:first body)
                 assert "|key-match expected pairs"
@@ -403,7 +403,7 @@
           defmacro key-match (value & body)
             if (&list:empty? body)
               quasiquote
-                println "|[Error] key-match expected some patterns and matches" ~value
+                eprintln "|[Error] key-match expected some patterns and matches" ~value
               if (list? value)
                 &let (v# (gensym 'v))
                   quasiquote
@@ -453,7 +453,7 @@
                     if (tuple? base) (&tuple:nth base k)
                       if (record? base) (&record:get base k)
                         &let nil
-                          echo "|Value:" base k
+                          eprintln "|Value:" base k
                           raise "|Expected map or list for get"
 
         |get-in $ quote
@@ -796,11 +796,11 @@
                       ~vb ~b
                       if (not= ~va ~vb)
                         &let nil
-                          echo
-                          echo "|Left: " ~va
-                          echo "|      " $ format-to-lisp $ quote ~a
-                          echo "|Right:" ~vb
-                          echo "|      " $ format-to-lisp $ quote ~b
+                          eprintln
+                          eprintln "|Left: " ~va
+                          eprintln "|      " $ format-to-lisp $ quote ~a
+                          eprintln "|Right:" ~vb
+                          eprintln "|      " $ format-to-lisp $ quote ~b
                           raise "|not equal in assertion!"
 
         |assert-detect $ quote
@@ -812,9 +812,9 @@
                   ~v ~code
                   if (~f ~v) nil
                     &let nil
-                      echo
-                      echo (format-to-lisp (quote ~code)) "|does not satisfy:" (format-to-lisp (quote ~f)) "| <--------"
-                      echo "|  value is:" ~v
+                      eprintln
+                      eprintln (format-to-lisp (quote ~code)) "|does not satisfy:" (format-to-lisp (quote ~f)) "| <--------"
+                      eprintln "|  value is:" ~v
                       raise "|Not satisfied in assertion!"
 
         |swap! $ quote
@@ -937,7 +937,7 @@
                     quasiquote
                       let{} (~ (&list:rest pattern)) ~v ~@body
                     &let nil
-                      echo pattern
+                      eprintln pattern
                       raise "|Unknown pattern to destruct"
                 raise "|Unknown structure to destruct"
 
@@ -986,7 +986,7 @@
                     raise "|expects 1st argument to be string"
                   if ~xs nil
                     &let nil
-                      echo "|Failed assertion:" (format-to-lisp (quote ~xs))
+                      eprintln "|Failed assertion:" (format-to-lisp (quote ~xs))
                       raise
                         ~ $ &str:concat (&str:concat message "| ") (format-to-lisp xs)
 
@@ -1125,11 +1125,11 @@
                 quasiquote
                   &let
                     ~v ~x
-                    echo (format-to-lisp (quote ~x)) |=> ~v
+                    println (format-to-lisp (quote ~x)) |=> ~v
                     ~ v
                 quasiquote
                   &let nil
-                    echo (format-to-lisp (quote ~x)) |=> ~x
+                    println (format-to-lisp (quote ~x)) |=> ~x
                     ~ x
 
         |wo-log $ quote
@@ -1180,7 +1180,7 @@
                 let
                     ~started (cpu-time)
                     ~v ~x
-                  echo "|[cpu-time]" (format-to-lisp (quote ~x)) |=>
+                  println "|[cpu-time]" (format-to-lisp (quote ~x)) |=>
                     .format
                       &- (cpu-time) ~started
                       , 3
@@ -1196,11 +1196,11 @@
                 let
                     ~args-value $ [] ~@xs
                     ~v $ ~f & ~args-value
-                  echo "|call:"
+                  println "|call:"
                     format-to-lisp $ quote (call-w-log ~f ~@xs)
                     , |=> ~v
-                  echo "|f:   " ~f
-                  echo "|args:" ~args-value
+                  println "|f:   " ~f
+                  println "|args:" ~args-value
                   ~ v
 
         |call-wo-log $ quote
@@ -1222,7 +1222,7 @@
 
         |do $ quote
           defmacro do (& body)
-            ; echo "|body:" (format-to-lisp body)
+            ; println "|body:" (format-to-lisp body)
             assert "|empty do is not okay" $ not $ empty? body
             quasiquote
               &let nil

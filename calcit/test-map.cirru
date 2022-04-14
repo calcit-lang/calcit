@@ -23,7 +23,7 @@
               assert-detect identity (includes? dict 2)
               assert-detect not (includes? dict :a)
 
-              ; echo $ keys dict
+              ; println $ keys dict
               assert=
                 keys dict
                 #{} :c :a :b :d

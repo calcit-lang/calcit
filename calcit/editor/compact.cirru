@@ -8,9 +8,9 @@
       :ns $ quote (ns app.lib)
       :defs $ {}
         |f2 $ quote
-          defn f2 () $ echo "\"f2 in lib"
+          defn f2 () $ println "\"f2 in lib"
         |f3 $ quote
-          defn f3 (x) (echo "\"f3 in lib") (echo "\"v:" x)
+          defn f3 (x) (println "\"f3 in lib") (println "\"v:" x)
     |app.macro $ {}
       :ns $ quote (ns app.macro)
       :defs $ {}
@@ -54,55 +54,55 @@
             call-many 1
             call-many 1 2
             call-many 1 2 3
-            echo $ macroexpand (call-macro 11 12 13)
+            println $ macroexpand (call-macro 11 12 13)
         |call-many $ quote
-          defn call-many (x0 & xs) (echo "\"many...") (echo "\"x0" x0) (echo "\"xs" xs)
+          defn call-many (x0 & xs) (println "\"many...") (println "\"x0" x0) (println "\"xs" xs)
         |demos $ quote
-          defn demos () (echo "\"demo")
-            echo $ &+ 2 2
-            echo "\"f1" $ f1
+          defn demos () (println "\"demo")
+            println $ &+ 2 2
+            println "\"f1" $ f1
             print-values 1 "\"1" :a $ [] 1 2
-            echo $ &{} :a 1 :b 2
-            echo $ #{} 1 2 3 |four
+            println $ &{} :a 1 :b 2
+            println $ #{} 1 2 3 |four
             lib/f2
             f3 "\"arg of 3"
-            echo "\"quote:" $ quote (&+ 1 2)
-            echo "\"quo:" 'demo $ quote 'demo
-            echo "\"eval:" $ eval
+            println "\"quote:" $ quote (&+ 1 2)
+            println "\"quo:" 'demo $ quote 'demo
+            println "\"eval:" $ eval
               quote $ &+ 1 2
-            if true $ echo "\"true"
-            if false (echo "\"true") (echo "\"false")
-            if (&+ 1 2) (echo "\"3") (echo "\"?")
-            &let (a 1) (echo "\"a is:" a)
-            &let nil $ echo "\"a is none"
+            if true $ println "\"true"
+            if false (println "\"true") (println "\"false")
+            if (&+ 1 2) (println "\"3") (println "\"?")
+            &let (a 1) (println "\"a is:" a)
+            &let nil $ println "\"a is none"
             &let
               a $ &+ 3 4
-              echo "\"a is:" a
-            echo $ rest ([] 1 2 3 4)
-            echo $ type-of ([] 1)
-            echo "\"result:" $ foldl ([] 1 2 3 4) 0
-              defn f1 (acc x) (echo "\"adding:" acc x) (&+ acc x)
-            echo "\"macro:" $ add-num 1 2
-            echo "\"sum:" $ rec-sum 0 ([] 1 2 3 4)
-            echo "\"expand-1:" $ macroexpand-1
+              println "\"a is:" a
+            println $ rest ([] 1 2 3 4)
+            println $ type-of ([] 1)
+            println "\"result:" $ foldl ([] 1 2 3 4) 0
+              defn f1 (acc x) (println "\"adding:" acc x) (&+ acc x)
+            println "\"macro:" $ add-num 1 2
+            println "\"sum:" $ rec-sum 0 ([] 1 2 3 4)
+            println "\"expand-1:" $ macroexpand-1
               quote $ add-num 1 2
-            echo "\"expand:" $ macroexpand
+            println "\"expand:" $ macroexpand
               quote $ add-num 1 2
-            echo "\"expand:" $ format-to-lisp
+            println "\"expand:" $ format-to-lisp
               macroexpand $ quote (add-more 0 3 8)
-            echo "\"expand v:" $ add-more 0 3 8
-            echo "\"call and call" $ add-by-2 10
-            ; echo $ macroexpand (assert= 1 2)
+            println "\"expand v:" $ add-more 0 3 8
+            println "\"call and call" $ add-by-2 10
+            ; println $ macroexpand (assert= 1 2)
             test-args
         |main! $ quote
           defn main! () (demos) (; fib 10) (try-method) (; show-data)
         |f1 $ quote
-          defn f1 () $ echo "\"calling f1"
+          defn f1 () $ println "\"calling f1"
         |try-method $ quote
           defn try-method () $ println
             .count $ range 11
         |call-3 $ quote
-          defn call-3 (a b c) (echo "\"a is:" a) (echo "\"b is:" b) (echo "\"c is:" c)
+          defn call-3 (a b c) (println "\"a is:" a) (println "\"b is:" b) (println "\"c is:" c)
         |rec-sum $ quote
           defn rec-sum (acc xs)
             if (empty? xs) acc $ recur

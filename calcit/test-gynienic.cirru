@@ -12,8 +12,8 @@
           defmacro add-11 (a b)
             let
                 c 11
-              echo "\"internal c:" a b c
-              quasiquote $ do (echo "\"c is:" c)
+              println "\"internal c:" a b c
+              quasiquote $ do (println "\"c is:" c)
                 [] (~ a) (~ b) (, c) (~ c) (add-2 8)
     |test-gynienic.main $ {}
       :ns $ quote
@@ -21,7 +21,7 @@
       :defs $ {}
         |try-hygienic $ quote
           defn try-hygienic ()
-            echo "|Testing gynienic"
+            println "|Testing gynienic"
             let
                 c 4
               assert=

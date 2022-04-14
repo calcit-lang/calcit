@@ -31,6 +31,7 @@ export * from "./js-primes.mjs";
 export * from "./js-tuple.mjs";
 export * from "./custom-formatter.mjs";
 export * from "./js-cirru.mjs";
+export { _$n_compare } from "./js-primes.mjs";
 
 import { CalcitList, CalcitSliceList, foldl } from "./js-list.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
@@ -1295,89 +1296,6 @@ export let _$n_map_$o_to_list = (m: CalcitValue): CalcitSliceList => {
     return new CalcitSliceList(ys);
   } else {
     throw new Error("&map:to-list expected a Map");
-  }
-};
-
-enum PseudoTypeIndex {
-  nil,
-  bool,
-  number,
-  symbol,
-  keyword,
-  string,
-  ref,
-  tuple,
-  recur,
-  list,
-  set,
-  map,
-  record,
-  fn,
-}
-
-let typeAsInt = (x: CalcitValue): number => {
-  // based on order used in Ord traint
-  if (x == null) return PseudoTypeIndex.nil;
-  let t = typeof x;
-  if (t === "boolean") return PseudoTypeIndex.bool;
-  if (t === "number") return PseudoTypeIndex.number;
-  if (x instanceof CalcitSymbol) return PseudoTypeIndex.symbol;
-  if (x instanceof CalcitKeyword) return PseudoTypeIndex.keyword;
-  if (t === "string") return PseudoTypeIndex.string;
-  if (x instanceof CalcitRef) return PseudoTypeIndex.ref;
-  if (x instanceof CalcitTuple) return PseudoTypeIndex.tuple;
-  if (x instanceof CalcitRecur) return PseudoTypeIndex.recur;
-  if (x instanceof CalcitList || x instanceof CalcitSliceList) return PseudoTypeIndex.list;
-  if (x instanceof CalcitSet) return PseudoTypeIndex.set;
-  if (x instanceof CalcitMap || x instanceof CalcitSliceMap) return PseudoTypeIndex.map;
-  if (x instanceof CalcitRecord) return PseudoTypeIndex.record;
-  // proc, fn, macro, syntax, not distinguished
-  if (t === "function") return PseudoTypeIndex.fn;
-  throw new Error("unknown type to compare");
-};
-
-let rawCompare = (x: any, y: any): number => {
-  if (x < y) {
-    return -1;
-  } else if (x > y) {
-    return 1;
-  } else {
-    return 0;
-  }
-};
-
-export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
-  if (a === b) return 0;
-  let ta = typeAsInt(a);
-  let tb = typeAsInt(b);
-  if (ta === tb) {
-    switch (ta) {
-      case PseudoTypeIndex.nil:
-        return 0;
-      case PseudoTypeIndex.bool:
-        return rawCompare(a, b);
-      case PseudoTypeIndex.number:
-        return rawCompare(a, b);
-      case PseudoTypeIndex.keyword:
-        return (a as CalcitKeyword).cmp(b as CalcitKeyword);
-      case PseudoTypeIndex.symbol:
-        return rawCompare(a, b);
-      case PseudoTypeIndex.string:
-        return rawCompare(a, b);
-      case PseudoTypeIndex.ref:
-        return rawCompare((a as CalcitRef).path, (b as CalcitRef).path);
-      default:
-        // TODO, need more accurate solution
-        if (a < b) {
-          return -1;
-        } else if (a > b) {
-          return 1;
-        } else {
-          return 0;
-        }
-    }
-  } else {
-    return rawCompare(ta, tb);
   }
 };
 

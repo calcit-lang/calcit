@@ -426,6 +426,12 @@ fn gen_call_code(
           let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
           Ok(format!("console.log({}printable({}))", proc_prefix, args_code))
         }
+        "eprintln" => {
+          // not core syntax, but treat as macro for better debugging experience
+          let args = ys.drop_left();
+          let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
+          Ok(format!("console.error({}printable({}))", proc_prefix, args_code))
+        }
         "exists?" => {
           // not core syntax, but treat as macro for availability
           match body.get(0) {
@@ -1111,7 +1117,7 @@ fn sort_by_deps(deps: &HashMap<Arc<str>, Calcit>) -> Vec<Arc<str>> {
       if k2 == k {
         continue;
       }
-      // echo "checking ", k, " -> ", k2, " .. ", v.containsSymbol(k2)
+      // println "checking ", k, " -> ", k2, " .. ", v.containsSymbol(k2)
       if contains_symbol(v, k2) {
         deps_info.insert(k2.to_owned());
       }

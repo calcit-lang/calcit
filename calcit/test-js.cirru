@@ -10,9 +10,9 @@
 
         |log-title $ quote
           defn log-title (title)
-            echo
-            echo title
-            echo
+            println
+            println title
+            println
 
         |test-js $ quote
           fn ()
@@ -38,6 +38,8 @@
             js/console.log $ {}
               :n 1
               :js $ js-array 1 2 3
+            eprintln "|a simulated error for eprintln"
+            js/console.log $ :: 'quote $ + 1 2 3
 
             assert= 0 $ .-length $ new js/Array
             assert= 7 $ .-length $ new js/Array (+ 3 4)
