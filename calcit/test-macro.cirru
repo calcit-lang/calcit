@@ -394,9 +394,9 @@
                   &let
                     v__1 (fn () 1)
                     if (fn? v__1) nil
-                      &let nil (echo)
-                        echo (format-to-lisp (quote (fn () 1))) "|does not satisfy:" (format-to-lisp (quote fn?)) "| <--------"
-                        echo "|  value is:" v__1
+                      &let nil (eprintln)
+                        eprintln (format-to-lisp (quote (fn () 1))) "|does not satisfy:" (format-to-lisp (quote fn?)) "| <--------"
+                        eprintln "|  value is:" v__1
                         raise "|Not satisfied in assertion!"
 
         |test-if-let $ quote

@@ -267,6 +267,8 @@
             log-title "|Testing effect"
             echo "|Env mode:" $ get-env |mode
 
+            eprintln "|stdout message"
+
         |reload! $ quote
           defn reload! () nil
 

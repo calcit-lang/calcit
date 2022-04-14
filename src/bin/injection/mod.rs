@@ -25,8 +25,9 @@ const ABI_VERSION: &str = "0.0.6";
 
 pub fn inject_platform_apis() {
   builtins::register_import_proc("&call-dylib-edn", call_dylib_edn);
-  builtins::register_import_proc("echo", echo);
-  builtins::register_import_proc("println", echo);
+  builtins::register_import_proc("echo", stdout_println);
+  builtins::register_import_proc("println", stdout_println);
+  builtins::register_import_proc("eprintln", stderr_println);
   builtins::register_import_proc("&call-dylib-edn-fn", call_dylib_edn_fn);
   builtins::register_import_proc("&blocking-dylib-edn-fn", blocking_dylib_edn_fn);
   builtins::register_import_proc("async-sleep", builtins::meta::async_sleep);
@@ -70,7 +71,7 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<C
   }
 }
 
-pub fn echo(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn stdout_println(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut s = String::from("");
   for (idx, x) in xs.into_iter().enumerate() {
     if idx > 0 {
@@ -79,6 +80,18 @@ pub fn echo(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<Calcit, Cal
     s.push_str(&x.turn_string());
   }
   println!("{}", s);
+  Ok(Calcit::Nil)
+}
+
+pub fn stderr_println(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  let mut s = String::from("");
+  for (idx, x) in xs.into_iter().enumerate() {
+    if idx > 0 {
+      s.push(' ');
+    }
+    s.push_str(&x.turn_string());
+  }
+  eprintln!("{}", s);
   Ok(Calcit::Nil)
 }
 

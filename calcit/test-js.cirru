@@ -38,6 +38,7 @@
             js/console.log $ {}
               :n 1
               :js $ js-array 1 2 3
+            eprintln "|a simulated error for eprintln"
 
             assert= 0 $ .-length $ new js/Array
             assert= 7 $ .-length $ new js/Array (+ 3 4)
