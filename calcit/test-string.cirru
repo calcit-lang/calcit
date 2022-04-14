@@ -155,6 +155,14 @@
               assert= "|do 's"
                 trim $ format-cirru-edn 's
 
+              assert=
+                trim $ format-cirru-edn $ {} (:a 1) (:b 2) (:Z 3) (:D 4)
+                , "|{} (:D 4) (:Z 3) (:a 1) (:b 2)"
+
+              assert=
+                trim $ format-cirru-edn $ {} (|a 1) (|b 2) (|Z 3) (|D 4)
+                , "|{} (|D 4) (|Z 3) (|a 1) (|b 2)"
+
               assert= "|:: :&core-list-class $ [] 1 2 3"
                 trim $ format-cirru-edn $ :: &core-list-class $ [] 1 2 3
 
