@@ -32,9 +32,9 @@
 
         |main! $ quote
           defn main! ()
-            echo |TODO
+            println |TODO
             ; rec 1 2 3 4 5 6 7 8 9
-            echo $ my-cond
+            println $ my-cond
               (&> 2 1) 1
               (&> 3 2) 2
               true 0

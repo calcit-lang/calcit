@@ -197,10 +197,10 @@
                 quote $ defn f_x (x) (defn f_y (y) x)
 
               assert=
-                macroexpand $ quote $ \. x.y (echo x y) x
-                quote $ defn f_x (x) (defn f_y (y) (&let nil (echo x y) x))
+                macroexpand $ quote $ \. x.y (println x y) x
+                quote $ defn f_x (x) (defn f_y (y) (&let nil (println x y) x))
 
-            echo "|evaluating lambda alias"
+            println "|evaluating lambda alias"
 
             assert= 2
               (\. x x) 2
@@ -209,7 +209,7 @@
               ((\. x.y x) 2) 3
 
             assert= 2
-              ((\. x.y (echo "|inside lambda alias" x y) x) 2) 3
+              ((\. x.y (println "|inside lambda alias" x y) x) 2) 3
 
         |test-gensym $ quote
           fn ()
@@ -236,7 +236,7 @@
                 macroexpand $ quote $ w-log $ + 1 2
                 quote $ &let
                   v__1 $ + 1 2
-                  echo (format-to-lisp (quote $ + 1 2)) |=> v__1
+                  println (format-to-lisp (quote $ + 1 2)) |=> v__1
                   , v__1
 
             assert=
@@ -249,7 +249,7 @@
               w-log $ + 1 $ w-log $ * 7 8
               , 57
 
-            ; echo $ macroexpand $ quote $ call-w-log + 1 2 3 4
+            ; println $ macroexpand $ quote $ call-w-log + 1 2 3 4
             assert= 10 $ call-w-log + 1 2 3 4
             assert= 10 $ call-wo-log + 1 2 3 4
 
@@ -266,7 +266,7 @@
                       f1 (defn f1 (a b) (+ a b))
                       call-w-log f1 a b
 
-              ; echo $ macroexpand $ quote
+              ; println $ macroexpand $ quote
                 defn-w-log f1 (a b) (+ a b)
 
             let
@@ -290,7 +290,7 @@
                   let
                       started__1 $ cpu-time
                       v__2 $ + 1 2
-                    echo |[cpu-time]
+                    println |[cpu-time]
                       format-to-lisp (quote $ + 1 2)
                       , |=>
                       .format (&- (cpu-time) started__1) 3

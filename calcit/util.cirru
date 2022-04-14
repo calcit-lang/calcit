@@ -10,27 +10,27 @@
 
         |log-title $ quote
           defn log-title (title)
-            echo
-            echo title
-            echo
+            println
+            println title
+            println
 
         |inside-eval: $ quote
           defmacro inside-eval: (& body)
             if
               = :eval $ &get-calcit-running-mode
               quasiquote
-                do (echo "|env: eval") ~@body
+                do (println "|env: eval") ~@body
               quasiquote
-                do (echo "|env: not eval. tests skipped")
+                do (println "|env: not eval. tests skipped")
 
         |inside-js: $ quote
           defmacro inside-js: (& body)
             if
               not= :eval $ &get-calcit-running-mode
               quasiquote
-                do (echo "|env: js") ~@body
+                do (println "|env: js") ~@body
               quasiquote
-                do (echo "|env: not js. tests skipped")
+                do (println "|env: not js. tests skipped")
 
         |main! $ quote
           defn main! () nil

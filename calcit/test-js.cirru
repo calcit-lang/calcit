@@ -10,9 +10,9 @@
 
         |log-title $ quote
           defn log-title (title)
-            echo
-            echo title
-            echo
+            println
+            println title
+            println
 
         |test-js $ quote
           fn ()

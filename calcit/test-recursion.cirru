@@ -9,9 +9,9 @@
 
         |log-title $ quote
           defn log-title (title)
-            echo
-            echo title
-            echo
+            println
+            println title
+            println
 
         |hole-series $ quote
           defn hole-series (x)
@@ -70,7 +70,7 @@
             test-hole-series
 
             ; set-trace-fn! |app.main |hole-series
-            ; echo (hole-series 100)
+            ; println (hole-series 100)
 
             log-title "|Testing loop"
             test-loop

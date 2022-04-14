@@ -18,7 +18,7 @@
 
         |try-prime $ quote
           defn try-prime ()
-            echo $ sieve-primes ([] 2 3 5 7 11 13) 17 400
+            println $ sieve-primes ([] 2 3 5 7 11 13) 17 400
 
         |reload! $ quote
           defn reload! () nil
@@ -27,7 +27,7 @@
           defn try-fibo ()
             let
                 n 22
-              echo "\"fibo result:" n $ fibo n
+              println "\"fibo result:" n $ fibo n
 
         |fibo $ quote
           defn fibo (x)

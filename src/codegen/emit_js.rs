@@ -1117,7 +1117,7 @@ fn sort_by_deps(deps: &HashMap<Arc<str>, Calcit>) -> Vec<Arc<str>> {
       if k2 == k {
         continue;
       }
-      // echo "checking ", k, " -> ", k2, " .. ", v.containsSymbol(k2)
+      // println "checking ", k, " -> ", k2, " .. ", v.containsSymbol(k2)
       if contains_symbol(v, k2) {
         deps_info.insert(k2.to_owned());
       }

@@ -192,7 +192,7 @@
                   defn %map (acc x) $ include acc (f x)
                 if (map? xs) (&map:map xs f)
                   &let nil
-                    echo "|value:" xs
+                    println "|value:" xs
                     raise "|expected list or set for map function"
 
         |&map:map-list $ quote
@@ -1125,11 +1125,11 @@
                 quasiquote
                   &let
                     ~v ~x
-                    echo (format-to-lisp (quote ~x)) |=> ~v
+                    println (format-to-lisp (quote ~x)) |=> ~v
                     ~ v
                 quasiquote
                   &let nil
-                    echo (format-to-lisp (quote ~x)) |=> ~x
+                    println (format-to-lisp (quote ~x)) |=> ~x
                     ~ x
 
         |wo-log $ quote
@@ -1180,7 +1180,7 @@
                 let
                     ~started (cpu-time)
                     ~v ~x
-                  echo "|[cpu-time]" (format-to-lisp (quote ~x)) |=>
+                  println "|[cpu-time]" (format-to-lisp (quote ~x)) |=>
                     .format
                       &- (cpu-time) ~started
                       , 3
@@ -1196,11 +1196,11 @@
                 let
                     ~args-value $ [] ~@xs
                     ~v $ ~f & ~args-value
-                  echo "|call:"
+                  println "|call:"
                     format-to-lisp $ quote (call-w-log ~f ~@xs)
                     , |=> ~v
-                  echo "|f:   " ~f
-                  echo "|args:" ~args-value
+                  println "|f:   " ~f
+                  println "|args:" ~args-value
                   ~ v
 
         |call-wo-log $ quote
@@ -1222,7 +1222,7 @@
 
         |do $ quote
           defmacro do (& body)
-            ; echo "|body:" (format-to-lisp body)
+            ; println "|body:" (format-to-lisp body)
             assert "|empty do is not okay" $ not $ empty? body
             quasiquote
               &let nil
