@@ -66,6 +66,13 @@ export let load_console_formatter_$x_ = () => {
             }
             return ret;
           }
+          if (obj instanceof CalcitTuple) {
+            let ret: any[] = ["div", {}];
+            ret.push(["div", { style: "display: inline-block; color: hsl(300, 100%, 40%); " }, "::"]);
+            ret.push(["div", { style: "margin-left: 6px; display: inline-block;" }, embedObject(obj.fst)]);
+            ret.push(["div", { style: "margin-left: 6px; display: inline-block;" }, embedObject(obj.snd)]);
+            return ret;
+          }
           if (obj instanceof CalcitRef) {
             return [
               "div",
@@ -108,12 +115,6 @@ export let load_console_formatter_$x_ = () => {
               let x = values[idx];
               ret.push(["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(x)]);
             }
-            return ret;
-          }
-          if (obj instanceof CalcitTuple) {
-            let ret: any[] = ["div", { style: "color: hsl(200, 90%, 60%)" }];
-            ret.push(["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(obj.fst)]);
-            ret.push(["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(obj.snd)]);
             return ret;
           }
           if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
