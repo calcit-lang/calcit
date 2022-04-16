@@ -23,6 +23,16 @@ export type CalcitValue =
   | CalcitRecord
   | null;
 
+export let is_literal = (x: CalcitValue): boolean => {
+  if (x == null) return true;
+  if (typeof x == "string") return true;
+  if (typeof x == "boolean") return true;
+  if (typeof x == "number") return true;
+  if (x instanceof CalcitKeyword) return true;
+  if (x instanceof CalcitSymbol) return true;
+  return false;
+};
+
 enum PseudoTypeIndex {
   nil,
   bool,

@@ -163,6 +163,13 @@
                 trim $ format-cirru-edn $ {} (|a 1) (|b 2) (|Z 3) (|D 4)
                 , "|{} (|D 4) (|Z 3) (|a 1) (|b 2)"
 
+              assert=
+                trim $ format-cirru-edn $ {} (:c 2)
+                  :a1 0
+                  :b $ [] 1 2
+                  :a 1
+                , "|{} (:a 1) (:a1 0) (:c 2)\n  :b $ [] 1 2"
+
               assert= "|:: :&core-list-class $ [] 1 2 3"
                 trim $ format-cirru-edn $ :: &core-list-class $ [] 1 2 3
 
