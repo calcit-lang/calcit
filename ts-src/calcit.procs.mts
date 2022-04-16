@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.5.31";
+export const calcit_version = "0.5.32";
 
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse, ICirruNode } from "@cirru/parser.ts";
@@ -1363,6 +1363,23 @@ export let _$n_str_$o_pad_right = (s: string, size: number, pattern: string): st
 
 export let _$n_get_os = (): CalcitKeyword => {
   return kwd("js-engine");
+};
+
+export let _$n_buffer = (...xs: CalcitValue[]): Uint8Array => {
+  let buf = new Uint8Array(xs.length);
+
+  for (let idx = 0; idx < xs.length; idx++) {
+    let x = xs[idx];
+    if (typeof x === "number") {
+      buf[idx] = x;
+    } else if (typeof x === "string") {
+      buf[idx] = parseInt(x, 16);
+    } else {
+      throw new Error("invalid value for buffer");
+    }
+  }
+
+  return buf;
 };
 
 // special procs have to be defined manually

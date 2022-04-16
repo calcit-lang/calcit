@@ -269,6 +269,11 @@
 
             eprintln "|stdout message"
 
+        |test-buffer $ quote
+          fn ()
+            log-title "|Buffer"
+            println "|buffer value:" $ &buffer 0x11 |11
+
         |reload! $ quote
           defn reload! () nil
 
@@ -325,6 +330,8 @@
             test-nil/main!
             test-fn/main!
             test-algebra/main!
+
+            test-buffer
 
             inside-js:
               test-js/main!
