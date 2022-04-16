@@ -586,11 +586,9 @@ pub fn preprocess_defn(
       }
       xs = xs.push_right(Calcit::List(zs));
 
-      for (idx, a) in args.into_iter().enumerate() {
-        if idx >= 2 {
-          let (form, _v) = preprocess_expr(a, &body_defs, file_ns.to_owned(), check_warnings, call_stack)?;
-          xs = xs.push_right(form);
-        }
+      for a in args.into_iter().skip(2) {
+        let (form, _v) = preprocess_expr(a, &body_defs, file_ns.to_owned(), check_warnings, call_stack)?;
+        xs = xs.push_right(form);
       }
       Ok(Calcit::List(xs))
     }
@@ -665,11 +663,9 @@ pub fn preprocess_call_let(
     }
   };
   xs = xs.push_right(binding);
-  for (idx, a) in args.into_iter().enumerate() {
-    if idx > 0 {
-      let (form, _v) = preprocess_expr(a, &body_defs, file_ns.to_owned(), check_warnings, call_stack)?;
-      xs = xs.push_right(form);
-    }
+  for a in args.into_iter().skip(1) {
+    let (form, _v) = preprocess_expr(a, &body_defs, file_ns.to_owned(), check_warnings, call_stack)?;
+    xs = xs.push_right(form);
   }
   Ok(Calcit::List(xs))
 }

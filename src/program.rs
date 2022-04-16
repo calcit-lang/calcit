@@ -81,12 +81,10 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Arc<str>, Arc<ImportRule>
       (Some(x), Some(Cirru::Leaf(_)), Some(Cirru::List(xs))) if *x == Cirru::leaf("ns") => {
         if !xs.is_empty() && xs[0] == Cirru::leaf(":require") {
           let mut ys: HashMap<Arc<str>, Arc<ImportRule>> = HashMap::with_capacity(xs.len());
-          for (idx, x) in xs.iter().enumerate() {
-            if idx > 0 {
-              let rules = extract_import_rule(x)?;
-              for (target, rule) in rules {
-                ys.insert(target, rule);
-              }
+          for x in xs.iter().skip(1) {
+            let rules = extract_import_rule(x)?;
+            for (target, rule) in rules {
+              ys.insert(target, rule);
             }
           }
           Ok(ys)

@@ -71,26 +71,23 @@ pub fn main() -> io::Result<()> {
         file.insert(Edn::kwd("ns"), Edn::Quote(Cirru::List(ns_code.to_owned())));
 
         let mut defs: HashMap<Edn, Edn> = HashMap::with_capacity(xs.len());
-        for (idx, line) in xs.iter().enumerate() {
-          if idx > 0 {
-            if let Cirru::List(ys) = line {
-              match (ys.get(0), ys.get(1)) {
-                (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
-                  let x0 = &**x0;
-                  if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" || x0.starts_with("def") {
-                    defs.insert(Edn::str((*x1).to_owned()), Edn::Quote(line.to_owned()));
-                  } else {
-                    return Err(io_err(format!("invalid def op: {}", x0)));
-                  }
-                }
-                (a, b) => {
-                  return Err(io_err(format!("invalid def code {:?} {:?}", a, b)));
+        for line in xs.iter().skip(1) {
+          if let Cirru::List(ys) = line {
+            match (ys.get(0), ys.get(1)) {
+              (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
+                let x0 = &**x0;
+                if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" || x0.starts_with("def") {
+                  defs.insert(Edn::str((*x1).to_owned()), Edn::Quote(line.to_owned()));
+                } else {
+                  return Err(io_err(format!("invalid def op: {}", x0)));
                 }
               }
-            } else {
-              return Err(io_err(format!("file line not an expr {}", line)));
+              (a, b) => {
+                return Err(io_err(format!("invalid def code {:?} {:?}", a, b)));
+              }
             }
           } else {
+            return Err(io_err(format!("file line not an expr {}", line)));
           }
         }
 

@@ -51,10 +51,8 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<C
     return CalcitErr::err_str(format!("&call-dylib-edn expected a method name, got {}", xs[1]));
   };
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
-  for (idx, v) in xs.into_iter().enumerate() {
-    if idx > 1 {
-      ys.push(calcit_to_edn(v)?);
-    }
+  for v in xs.into_iter().skip(2) {
+    ys.push(calcit_to_edn(v)?);
   }
 
   unsafe {

@@ -422,3 +422,36 @@ pub fn format_ternary_tree(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     a => CalcitErr::err_str(format!("&format-ternary-tree expected a list, got: {}", a)),
   }
 }
+
+pub fn buffer(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.is_empty() {
+    return CalcitErr::err_str(format!("&buffer expected hex values: {:?}", xs));
+  }
+  let mut buf: Vec<u8> = Vec::new();
+  for x in xs {
+    match x {
+      Calcit::Number(n) => {
+        let n = n.round() as u8;
+        buf.push(n);
+      }
+      Calcit::Str(y) => {
+        if y.len() == 2 {
+          match hex::decode(&(**y)) {
+            Ok(b) => {
+              if b.len() == 1 {
+                buf.push(b[0])
+              } else {
+                return CalcitErr::err_str(format!("hex for buffer might be too large, got: {:?}", b));
+              }
+            }
+            Err(e) => return CalcitErr::err_str(format!("expected length 2 hex string in buffer, got: {} {}", y, e)),
+          }
+        } else {
+          return CalcitErr::err_str(format!("expected length 2 hex string in buffer, got: {}", y));
+        }
+      }
+      _ => return CalcitErr::err_str(format!("expected hex string in buffer, got: {}", x)),
+    }
+  }
+  Ok(Calcit::Buffer(buf))
+}
