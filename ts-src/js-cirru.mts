@@ -1,7 +1,7 @@
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { CirruWriterNode, writeCirruCode } from "@cirru/writer.ts";
 
-import { CalcitValue, _$n_compare } from "./js-primes.mjs";
+import { CalcitValue, is_literal, _$n_compare } from "./js-primes.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitRecord } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
@@ -55,7 +55,25 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
       pairs.push(pair);
     }
     pairs.sort((a, b) => {
-      return _$n_compare(a[0], b[0]);
+      let a0_literal = is_literal(a[0]);
+      let a1_literal = is_literal(a[1]);
+      let b0_literal = is_literal(b[0]);
+      let b1_literal = is_literal(b[1]);
+      if (a0_literal && b0_literal) {
+        if (a1_literal && !b1_literal) {
+          return -1;
+        } else if (!a1_literal && b1_literal) {
+          return 1;
+        } else {
+          return _$n_compare(a[0], b[0]);
+        }
+      } else if (a0_literal && !b0_literal) {
+        return -1;
+      } else if (!a0_literal && b0_literal) {
+        return 1;
+      } else {
+        return _$n_compare(a[0], b[0]);
+      }
     });
     for (let [k, v] of pairs) {
       buffer.push([to_cirru_edn(k), to_cirru_edn(v)]);
