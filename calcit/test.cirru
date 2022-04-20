@@ -50,7 +50,9 @@
             assert-detect not $ bool? $ fn () 1
 
             assert-detect fn? &=
-            assert-detect macro? cond
+
+            inside-eval:
+              assert-detect macro? cond
 
             assert-detect set? $ #{} 1 2 3
 
