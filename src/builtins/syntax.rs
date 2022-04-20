@@ -9,7 +9,9 @@ use std::sync::Arc;
 use im_ternary_tree::TernaryTreeList;
 
 use crate::builtins;
+use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::call_stack::CallStackList;
+use crate::primes;
 use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 
@@ -343,4 +345,47 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call
   } else {
     CalcitErr::err_str(format!("try expected 2 arguments, got: {:?}", expr))
   }
+}
+
+pub fn gensym(xs: &CalcitItems, _scope: &CalcitScope, file_ns: Arc<str>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  let mut ns_sym_dict = NS_SYMBOL_DICT.write().unwrap();
+  // println!("calling in ns: {}", file_ns);
+  let n = if ns_sym_dict.contains_key(&file_ns) {
+    let n = ns_sym_dict.get(&file_ns).unwrap().to_owned();
+    ns_sym_dict.insert(file_ns.to_owned(), n + 1);
+    n.to_owned()
+  } else {
+    ns_sym_dict.insert(file_ns.to_owned(), 2);
+    1
+  };
+
+  let s = if xs.is_empty() {
+    let mut chunk = String::from("G__");
+    chunk.push_str(&n.to_string());
+    chunk
+  } else {
+    match &xs[0] {
+      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => {
+        let mut chunk = (**s).to_string();
+        chunk.push('_');
+        chunk.push('_');
+        chunk.push_str(&n.to_string());
+        chunk
+      }
+      Calcit::Keyword(k) => {
+        let mut chunk = k.to_string();
+        chunk.push('_');
+        chunk.push('_');
+        chunk.push_str(&n.to_string());
+        chunk
+      }
+      a => return CalcitErr::err_str(format!("gensym expected a string, but got: {}", a)),
+    }
+  };
+  Ok(Calcit::Symbol {
+    sym: s.into(),
+    ns: file_ns,
+    at_def: primes::GEN_DEF.to_owned(),
+    resolved: None,
+  })
 }

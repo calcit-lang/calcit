@@ -405,7 +405,7 @@
               quasiquote
                 eprintln "|[Error] key-match expected some patterns and matches" ~value
               if (list? value)
-                &let (v# (gensym 'v))
+                &let (v# (gensym |v))
                   quasiquote
                     &let (~v# ~value)
                       &key-match-internal ~v# $ ~@ body

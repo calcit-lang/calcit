@@ -31,7 +31,6 @@ pub fn is_proc_name(s: &str) -> bool {
       | "recur"
       | "format-to-lisp"
       | "format-to-cirru"
-      | "gensym"
       | "&reset-gensym-index!"
       | "&get-calcit-running-mode"
       | "generate-id!"
@@ -216,7 +215,6 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackLi
     "recur" => meta::recur(args),
     "format-to-lisp" => meta::format_to_lisp(args),
     "format-to-cirru" => meta::format_to_cirru(args),
-    "gensym" => meta::gensym(args),
     "&reset-gensym-index!" => meta::reset_gensym_index(args),
     "&get-calcit-running-mode" => effects::calcit_running_mode(args),
     "generate-id!" => meta::generate_id(args),
@@ -403,6 +401,7 @@ pub fn handle_syntax(
     CalcitSyntax::Defmacro => syntax::defmacro(nodes, scope, file_ns),
     CalcitSyntax::Quote => syntax::quote(nodes, scope, file_ns),
     CalcitSyntax::Quasiquote => syntax::quasiquote(nodes, scope, file_ns, call_stack),
+    CalcitSyntax::Gensym => syntax::gensym(nodes, scope, file_ns, call_stack),
     CalcitSyntax::If => syntax::syntax_if(nodes, scope, file_ns, call_stack),
     CalcitSyntax::CoreLet => syntax::syntax_let(nodes, scope, file_ns, call_stack),
     CalcitSyntax::Macroexpand => syntax::macroexpand(nodes, scope, file_ns, call_stack),
