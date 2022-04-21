@@ -10,6 +10,7 @@ pub enum CalcitSyntax {
   CoreLet,
   Quote,
   Quasiquote,
+  Gensym,
   Eval,
   Macroexpand,
   Macroexpand1,
@@ -31,6 +32,7 @@ impl fmt::Display for CalcitSyntax {
       CoreLet => "&let",
       Quote => "quote",
       Quasiquote => "quasiquote",
+      Gensym => "gensym",
       Eval => "eval",
       Macroexpand => "macroexpand",
       Macroexpand1 => "macroexpand-1",
@@ -53,6 +55,7 @@ impl CalcitSyntax {
       "&let" => Ok(CoreLet),
       "quote" => Ok(Quote),
       "quasiquote" => Ok(Quasiquote),
+      "gensym" => Ok(Gensym),
       "eval" => Ok(Eval),
       "macroexpand" => Ok(Macroexpand),
       "macroexpand-1" => Ok(Macroexpand1),
@@ -74,6 +77,7 @@ impl CalcitSyntax {
         | "&let"
         | "quote"
         | "quasiquote"
+        | "gensym"
         | "eval"
         | "macroexpand"
         | "macroexpand-1"
@@ -112,6 +116,10 @@ impl Ord for CalcitSyntax {
       (Quasiquote, Quasiquote) => Equal,
       (Quasiquote, _) => Less,
       (_, Quasiquote) => Greater,
+
+      (Gensym, Gensym) => Equal,
+      (Gensym, _) => Less,
+      (_, Gensym) => Greater,
 
       (Eval, Eval) => Equal,
       (Eval, _) => Less,

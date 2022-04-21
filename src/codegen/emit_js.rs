@@ -1276,10 +1276,8 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           ));
           gen_stack::pop_call_stack()
         }
-        Calcit::Macro { .. } => {
-          // macro should be handled during compilation, psuedo code
-          defs_code.push_str(&snippets::tmpl_export_macro(escape_var(&def)));
-        }
+        // macro are not traced in codegen since already expanded
+        Calcit::Macro { .. } => {}
         Calcit::Syntax(_, _) => {
           // should he handled inside compiler
         }

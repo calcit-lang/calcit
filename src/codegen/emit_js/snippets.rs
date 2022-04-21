@@ -115,16 +115,6 @@ export * from {};
   )
 }
 
-pub fn tmpl_export_macro(name: String) -> String {
-  format!(
-    "
-export var {} = () => {{/* Macro */}}
-{}.isMacro = true;
-",
-    name, name
-  )
-}
-
 pub fn tmpl_classes_registering() -> String {
   format!(
     "

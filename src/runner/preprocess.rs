@@ -273,7 +273,6 @@ pub fn preprocess_expr(
       // maybe detect method in future
       Ok((expr.to_owned(), None))
     }
-
     _ => {
       let mut warnings = check_warnings.borrow_mut();
       warnings.push(format!("[Warn] unexpected data during preprocess: {:?}", expr));
@@ -355,7 +354,7 @@ fn process_list_call(
         // need to handle recursion
         // println!("evaling line: {:?}", body);
         let body_scope = runner::bind_args(def_args, &current_values, &rpds::HashTrieMap::new_sync(), &next_stack)?;
-        let code = runner::evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
+        let code = runner::evaluate_lines(body, &body_scope, file_ns.to_owned(), &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
             current_values = Box::new(ys.to_owned());
@@ -385,6 +384,7 @@ fn process_list_call(
       | CalcitSyntax::Macroexpand
       | CalcitSyntax::MacroexpandAll
       | CalcitSyntax::Macroexpand1
+      | CalcitSyntax::Gensym
       | CalcitSyntax::Reset => Ok((
         preprocess_each_items(name, name_ns.to_owned(), &args, scope_defs, file_ns, check_warnings, call_stack)?,
         None,

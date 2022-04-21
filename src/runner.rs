@@ -72,14 +72,14 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
           Calcit::Syntax(s, def_ns) => {
             let next_stack = extend_call_stack(
               call_stack,
-              file_ns,
+              def_ns.to_owned(),
               s.to_string().into(),
               StackKind::Syntax,
               expr.to_owned(),
               &rest_nodes,
             );
 
-            builtins::handle_syntax(s, &rest_nodes, scope, def_ns.to_owned(), &next_stack).map_err(|e| {
+            builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
               if e.stack.is_empty() {
                 let mut e2 = e;
                 e2.stack = call_stack.to_owned();
@@ -97,8 +97,15 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             body,
             ..
           } => {
-            let values = evaluate_args(&rest_nodes, scope, file_ns.to_owned(), call_stack)?;
-            let next_stack = extend_call_stack(call_stack, file_ns, name.to_owned(), StackKind::Fn, expr.to_owned(), &values);
+            let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
+            let next_stack = extend_call_stack(
+              call_stack,
+              def_ns.to_owned(),
+              name.to_owned(),
+              StackKind::Fn,
+              expr.to_owned(),
+              &values,
+            );
 
             run_fn(&values, def_scope, args, body, def_ns.to_owned(), &next_stack)
           }
@@ -117,7 +124,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
 
             let next_stack = extend_call_stack(
               call_stack,
-              file_ns.to_owned(),
+              def_ns.to_owned(),
               name.to_owned(),
               StackKind::Macro,
               expr.to_owned(),

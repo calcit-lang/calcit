@@ -13,12 +13,15 @@ use crate::{
 use cirru_edn::EdnKwd;
 use cirru_parser::{Cirru, CirruWriterOptions};
 
-use std::cmp::Ordering;
-use std::sync::atomic::AtomicUsize;
 use std::sync::{atomic, Arc};
+use std::sync::{atomic::AtomicUsize, RwLock};
+use std::{cmp::Ordering, collections::HashMap};
 
-static SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
+
+lazy_static! {
+  pub(crate) static ref NS_SYMBOL_DICT: RwLock<HashMap<Arc<str>, usize>> = RwLock::new(HashMap::new());
+}
 
 pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
@@ -84,48 +87,14 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
   }
 }
 
-pub fn gensym(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  let idx = SYMBOL_INDEX.fetch_add(1, atomic::Ordering::SeqCst);
-  let n = idx + 1; // use 1 as first value since previous implementation did this
-
-  let s = if xs.is_empty() {
-    let mut chunk = String::from("G__");
-    chunk.push_str(&n.to_string());
-    chunk
-  } else {
-    match &xs[0] {
-      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => {
-        let mut chunk = (**s).to_string();
-        chunk.push('_');
-        chunk.push('_');
-        chunk.push_str(&n.to_string());
-        chunk
-      }
-      Calcit::Keyword(s) => {
-        let mut chunk = s.to_string();
-        chunk.push('_');
-        chunk.push('_');
-        chunk.push_str(&n.to_string());
-        chunk
-      }
-      a => return CalcitErr::err_str(format!("gensym expected a string, but got: {}", a)),
-    }
-  };
-  Ok(Calcit::Symbol {
-    sym: s.into(),
-    ns: primes::GEN_NS.to_owned(),
-    at_def: primes::GEN_DEF.to_owned(),
-    resolved: None,
-  })
-}
-
 pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  let _ = SYMBOL_INDEX.swap(0, atomic::Ordering::SeqCst);
+  force_reset_gensym_index()?;
   Ok(Calcit::Nil)
 }
 
 pub fn force_reset_gensym_index() -> Result<(), String> {
-  let _ = SYMBOL_INDEX.swap(0, atomic::Ordering::SeqCst);
+  let mut ns_symbol_dict = NS_SYMBOL_DICT.write().unwrap();
+  ns_symbol_dict.clear();
   Ok(())
 }
 

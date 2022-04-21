@@ -219,11 +219,8 @@
               &reset-gensym-index!
               assert= (gensym) 'G__1
               assert=
-                gensym 'a
-                , 'a__2
-              assert=
                 gensym |a
-                , 'a__3
+                , 'a__2
 
         |test-w-log $ quote
           fn ()
