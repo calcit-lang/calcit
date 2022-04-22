@@ -177,6 +177,8 @@
               assert= (.escape "|\t") "|\"\\t\""
               assert= (.escape "|a") "|\"a\""
 
+            println |hashing: $ &hash 1
+
         |test-char $ quote
           fn ()
             log-title "|Test char"

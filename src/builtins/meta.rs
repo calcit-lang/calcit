@@ -13,6 +13,8 @@ use crate::{
 use cirru_edn::EdnKwd;
 use cirru_parser::{Cirru, CirruWriterOptions};
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::{atomic, Arc};
 use std::sync::{atomic::AtomicUsize, RwLock};
 use std::{cmp::Ordering, collections::HashMap};
@@ -423,4 +425,14 @@ pub fn buffer(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     }
   }
   Ok(Calcit::Buffer(buf))
+}
+
+pub fn hash(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("&hash expected 1 argument, got: {:?}", xs));
+  }
+
+  let mut s = DefaultHasher::new();
+  xs[0].hash(&mut s);
+  Ok(Calcit::Number(s.finish() as f64))
 }

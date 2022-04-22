@@ -1,7 +1,6 @@
 // CALCIT VERSION
 export const calcit_version = "0.5.35";
 
-import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
 
@@ -18,6 +17,7 @@ import {
   getStringName,
   to_js_data,
   _$n__$e_,
+  hashFunction,
 } from "./calcit-data.mjs";
 
 import { fieldsEqual, CalcitRecord } from "./js-record.mjs";
@@ -1380,6 +1380,10 @@ export let _$n_buffer = (...xs: CalcitValue[]): Uint8Array => {
   }
 
   return buf;
+};
+
+export let _$n_hash = (x: CalcitValue): number => {
+  return hashFunction(x);
 };
 
 // special procs have to be defined manually
