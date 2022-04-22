@@ -58,7 +58,7 @@ pub enum Calcit {
   }, // content, ns... so it has meta information
   Keyword(EdnKwd),
   Str(Arc<str>),
-  Thunk(Arc<Calcit>, Option<Arc<Calcit>>),
+  Thunk(Arc<Calcit>, Option<Arc<Calcit>>), // code, value
   /// holding a path to its state
   Ref(Arc<str>),
   /// more tagged union type, more like an internal structure

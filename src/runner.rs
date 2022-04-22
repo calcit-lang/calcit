@@ -232,21 +232,24 @@ pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack
   match v {
     Calcit::Thunk(_code, Some(data)) => Ok((*data).to_owned()),
     // extra check to make sure code in thunks evaluated
-    Calcit::Thunk(code, None) => {
-      let evaled_v = evaluate_expr(&code, scope, file_ns.into(), call_stack)?;
-      // and write back to program state to fix duplicated evalution
-      // still using thunk since js and IR requires bare code
-      let next = if builtins::effects::is_rust_eval() {
-        // no longer useful for evaling
-        Arc::new(Calcit::Nil)
-      } else {
-        code
-      };
-      program::write_evaled_def(file_ns, sym, Calcit::Thunk(next, Some(Arc::new(evaled_v.to_owned()))))?;
-      Ok(evaled_v)
-    }
+    Calcit::Thunk(code, None) => evaluate_def_thunk(&code, file_ns, sym, call_stack),
     _ => Ok(v),
   }
+}
+
+/// make sure a thunk at global is called
+pub fn evaluate_def_thunk(code: &Arc<Calcit>, file_ns: &str, sym: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  let evaled_v = evaluate_expr(code, &rpds::HashTrieMap::new_sync(), file_ns.into(), call_stack)?;
+  // and write back to program state to fix duplicated evalution
+  // still using thunk since js and IR requires bare code
+  let next = if builtins::effects::is_rust_eval() {
+    // no longer useful for evaling
+    Arc::new(Calcit::Nil)
+  } else {
+    code.to_owned()
+  };
+  program::write_evaled_def(file_ns, sym, Calcit::Thunk(next, Some(Arc::new(evaled_v.to_owned()))))?;
+  Ok(evaled_v)
 }
 
 pub fn parse_ns_def(s: &str) -> Option<(Arc<str>, Arc<str>)> {
