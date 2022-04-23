@@ -198,7 +198,7 @@ let defaultHash_unknown = valueHash("unknown:");
 let fnHashCounter = 0;
 let jsObjectHashCounter = 0;
 
-let hashFunction = (x: CalcitValue): Hash => {
+export let hashFunction = (x: CalcitValue): Hash => {
   if (x == null) {
     return defaultHash_nil;
   }

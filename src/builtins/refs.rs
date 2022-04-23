@@ -91,7 +91,7 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
   }
   // println!("reset! {:?}", expr[0]);
   let target = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
-  let new_value = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
+  let new_value = runner::evaluate_expr(&expr[1], scope, file_ns.to_owned(), call_stack)?;
   match (target, new_value) {
     (Calcit::Ref(path), v) => {
       if read_ref(path.to_owned()).is_none() {
@@ -100,6 +100,11 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
       modify_ref(path, v, call_stack)?;
       Ok(Calcit::Nil)
     }
+    // if reset! called before deref, we need to trigger the thunk
+    (Calcit::Thunk(code, _thunk_data), _) => match &expr[0] {
+      Calcit::Symbol { sym, .. } => runner::evaluate_def_thunk(&code, &*file_ns, &*sym, call_stack),
+      _ => return CalcitErr::err_str(format!("reset! expected a symbol, got: {:?}", expr[0])),
+    },
     (a, b) => Err(CalcitErr::use_msg_stack(
       format!("reset! expected a ref and a value, got: {} {}", a, b),
       call_stack,
