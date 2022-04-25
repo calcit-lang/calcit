@@ -40,6 +40,12 @@
                 , inc
               {} $ :a $ [] 1 3 3
             assert=
+              update-in
+                {} $ :a $ :: 'quote 1
+                [] :a 1
+                , inc
+              {} $ :a $ :: 'quote 2
+            assert=
               dissoc-in
                 {} $ :a $ {} $ :b $ {} $ :c 2
                 [] :a :b :c
@@ -77,6 +83,10 @@
               contains-in? ([] 1 2 $ [] 3 4) ([] 2 2)
             assert= false
               contains-in? ([] 1 2 $ [] 3 4) ([] 3 2)
+            assert= true
+              contains-in?
+                {} $ :a $ :: 'quote 1
+                [] :a 1
 
         |main! $ quote
           defn main! ()
