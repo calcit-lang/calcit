@@ -264,10 +264,14 @@
             assert= :a (get (:: :a :b) 0)
             assert= :b (get (:: :a :b) 1)
 
+            assert= (:: 1 0) $ update (:: 0 0) 0 inc
+            assert= (:: 0 1) $ update (:: 0 0) 1 inc
+
         |test-effect $ quote
           fn ()
             log-title "|Testing effect"
             println "|Env mode:" $ get-env |mode
+            println "|Env mode:" $ get-env |m0 "|default m0"
 
             eprintln "|stdout message"
 

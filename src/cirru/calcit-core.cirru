@@ -680,7 +680,7 @@
                   assoc x k $ f (&list:nth x k)
                   , x
                 if (tuple? x)
-                  if (or (&= k 1) (&= k 2))
+                  if (or (&= k 0) (&= k 1))
                     assoc x k $ f (&tuple:nth x k)
                     raise $ &str:concat "|tuple only has 0,1 fields, unknown field: " k
                   if (record? x)
@@ -1601,7 +1601,9 @@
           defn contains? (x k)
             if (nil? x) false
               if (list? x) (&list:contains? x k)
-                .contains? x k
+                if (tuple? x)
+                  or (&= k 0) (&= k 1)
+                  .contains? x k
 
         |contains-in? $ quote
           defn contains-in? (xs path)
@@ -1622,6 +1624,8 @@
                     if (&record:contains? xs p0)
                       recur (&record:get xs p0) (rest path)
                       , false
+                  (tuple? xs)
+                    or (&= p0 0) (&= p0 1)
                   true false
 
         |includes? $ quote

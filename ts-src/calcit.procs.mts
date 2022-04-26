@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.5.35";
+export const calcit_version = "0.5.38";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -935,7 +935,7 @@ export let aset = (x: any, name: string, v: any): any => {
   return (x[name] = v);
 };
 
-export let get_env = (name: string): string => {
+export let get_env = (name: string, v0: string): string => {
   let v = undefined;
   if (inNodeJs) {
     // only available for Node.js
@@ -943,10 +943,13 @@ export let get_env = (name: string): string => {
   } else if (typeof URLSearchParams != null && typeof location != null) {
     v = new URLSearchParams(location.search).get(name);
   }
-  if (v == null) {
-    console.warn(`(get-env "${name}"): ${v}`);
+  if (v != null && v0 != null) {
+    console.log(`(get-env ${name}): ${v}`);
   }
-  return v;
+  if (v == null && v0 == null) {
+    console.warn(`(get-env "${name}"): config not found`);
+  }
+  return v ?? v0;
 };
 
 export let turn_keyword = (x: CalcitValue): CalcitKeyword => {
