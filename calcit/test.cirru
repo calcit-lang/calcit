@@ -271,6 +271,7 @@
           fn ()
             log-title "|Testing effect"
             println "|Env mode:" $ get-env |mode
+            println "|Env mode:" $ get-env |m0 "|default m0"
 
             eprintln "|stdout message"
 

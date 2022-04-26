@@ -89,13 +89,25 @@ pub fn quit(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn get_env(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() > 2 {
+    return CalcitErr::err_str("get-env get 1~2 arguments");
+  }
   match xs.get(0) {
     Some(Calcit::Str(s)) => match env::var(&**s) {
-      Ok(v) => Ok(Calcit::Str(v.into())),
-      Err(e) => {
-        println!("(get-env {}): {}", s, e);
-        Ok(Calcit::Nil)
+      Ok(v) => {
+        let has_default = xs.len() == 2;
+        if has_default {
+          println!("(get-env {}): {}", s, v);
+        }
+        Ok(Calcit::Str(v.into()))
       }
+      Err(e) => match xs.get(1) {
+        Some(v0) => Ok(v0.to_owned()),
+        None => {
+          println!("(get-env {}): {}", s, e);
+          Ok(Calcit::Nil)
+        }
+      },
     },
     Some(a) => CalcitErr::err_str(format!("get-env expected a string, got {}", a)),
     None => CalcitErr::err_str("get-env expected an argument, got nothing"),
