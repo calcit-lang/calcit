@@ -1,6 +1,6 @@
 [package]
 name = "calcit"
-version = "0.5.38"
+version = "0.5.39"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -23,7 +23,7 @@ exclude = [
 cirru_edn = "0.2.17"
 # cirru_edn = { path = "/Users/chen/repo/cirru/edn.rs" }
 cirru_parser = "0.1.18"
-clap = "3.1.9"
+clap = "3.1.12"
 dirs = "4.0.0"
 lazy_static = "1.4.0"
 notify = "4.0.17"
@@ -35,7 +35,7 @@ im_ternary_tree = "0.0.6"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libloading = "0.7.3"
-ctrlc = "3.2.1"
+ctrlc = "3.2.2"
 
 [lib]
 name = "calcit"

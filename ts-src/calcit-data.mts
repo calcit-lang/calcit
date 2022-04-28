@@ -5,7 +5,7 @@ import { overwriteMapComparator } from "./js-map.mjs";
 import { CalcitRecord, fieldsEqual } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 
-import { CalcitValue } from "./js-primes.mjs";
+import { CalcitValue, _$n_compare } from "./js-primes.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitSet, overwriteSetComparator } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
@@ -251,9 +251,10 @@ export let hashFunction = (x: CalcitValue): Hash => {
     return base;
   }
   if (x instanceof CalcitSet) {
-    // TODO not using dirty solution for code
     let base = defaultHash_set;
     let values = x.values();
+    // sort elements for stable hash result
+    values.sort((a, b) => _$n_compare(a, b));
     for (let idx = 0; idx < values.length; idx++) {
       let item = values[idx];
       base = mergeValueHash(base, hashFunction(item));
@@ -280,7 +281,9 @@ export let hashFunction = (x: CalcitValue): Hash => {
   }
   if (x instanceof CalcitSliceMap) {
     let base = defaultHash_map;
-    for (let [k, v] of x.pairs()) {
+    let pairs = x.pairs();
+    pairs.sort((a, b) => _$n_compare(a[0], b[0]));
+    for (let [k, v] of pairs) {
       base = mergeValueHash(base, hashFunction(k));
       base = mergeValueHash(base, hashFunction(v));
     }
@@ -289,7 +292,10 @@ export let hashFunction = (x: CalcitValue): Hash => {
   }
   if (x instanceof CalcitMap) {
     let base = defaultHash_map;
-    for (let [k, v] of x.pairs()) {
+
+    let pairs = x.pairs();
+    pairs.sort((a, b) => _$n_compare(a[0], b[0]));
+    for (let [k, v] of pairs) {
       base = mergeValueHash(base, hashFunction(k));
       base = mergeValueHash(base, hashFunction(v));
     }

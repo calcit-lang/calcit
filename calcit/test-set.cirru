@@ -64,6 +64,14 @@
               #{} 1
               .to-set $ [] 1 1 1 1
 
+            assert=
+              &hash $ #{} 1 2 3 4
+              &hash $ #{} 1 4 2 3
+
+            assert=
+              &hash $ #{} 3 4 2 1
+              &hash $ #{} 3 2 1 4
+
         |test-methods $ quote
           fn ()
             assert=

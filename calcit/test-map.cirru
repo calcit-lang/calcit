@@ -102,6 +102,10 @@
                 merge ({} (:a 1)) nil
                 {} (:a 1)
 
+              assert=
+                &hash $ &{} :a 1 :b 2 3 :c
+                &hash $ &{} 3 :c :a 1 :b 2
+
         |test-pairs $ quote
           fn ()
 
