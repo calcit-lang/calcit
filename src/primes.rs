@@ -316,15 +316,19 @@ impl Hash for Calcit {
       }
       Calcit::Set(v) => {
         "set:".hash(_state);
-        // TODO order for set is stable
-        for x in v {
+        let mut xs: Vec<_> = v.iter().collect();
+        // sort to ensure stable result
+        xs.sort();
+        for x in xs {
           x.hash(_state)
         }
       }
       Calcit::Map(v) => {
         "map:".hash(_state);
         // TODO order for map is not stable
-        for x in v {
+        let mut xs: Vec<_> = v.iter().collect();
+        xs.sort();
+        for x in xs {
           x.hash(_state)
         }
       }
