@@ -41,6 +41,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&format-ternary-tree"
       | "&buffer"
       | "&hash"
+      | "&extract-code-into-edn"
       // tuples
       | "::" // unstable
       | "&tuple:nth"
@@ -226,6 +227,7 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackLi
     "&format-ternary-tree" => meta::format_ternary_tree(args),
     "&buffer" => meta::buffer(args),
     "&hash" => meta::hash(args),
+    "&extract-code-into-edn" => meta::extract_code_into_edn(args),
     // tuple
     "::" => meta::new_tuple(args), // unstable solution for the name
     "&tuple:nth" => meta::tuple_nth(args),

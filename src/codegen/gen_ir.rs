@@ -101,7 +101,7 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
   Ok(())
 }
 
-fn dump_code(code: &Calcit) -> Edn {
+pub(crate) fn dump_code(code: &Calcit) -> Edn {
   match code {
     Calcit::Number(n) => Edn::Number(*n),
     Calcit::Nil => Edn::Nil,

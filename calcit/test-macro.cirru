@@ -441,6 +441,9 @@
               noted nothing 1
               , 1
 
+            inside-eval:
+              println $ &extract-code-into-edn 'code
+
         |main! $ quote
           defn main! ()
             log-title "|Testing cond"
