@@ -132,7 +132,10 @@ export class CalcitSliceList {
     return this.end - this.start;
   }
   get(idx: number) {
-    return this.value[this.start + idx];
+    if (idx >= 0 && this.start + idx < this.end) {
+      return this.value[this.start + idx];
+    }
+    return null;
   }
   assoc(idx: number, v: CalcitValue) {
     return this.turnListMode().assoc(idx, v);
@@ -165,6 +168,10 @@ export class CalcitSliceList {
     }
     if (to < from) {
       throw new Error("end index too small");
+    }
+    if (from === to) {
+      // when it's empty, just return empty list
+      return new CalcitSliceList([]);
     }
     let result = new CalcitSliceList(this.value);
     result.start = this.start + from;
