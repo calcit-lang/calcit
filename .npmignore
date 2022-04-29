@@ -9,8 +9,6 @@ target/
 scripts/
 
 .calcit-error.cirru
-/webpack.config.js
-/build.js
 yarn.lock
 profile_results.txt
 

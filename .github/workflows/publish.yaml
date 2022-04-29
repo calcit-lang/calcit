@@ -36,7 +36,7 @@ jobs:
           node-version: 16
           registry-url: https://registry.npmjs.org/
 
-      - name: "generate procs.js"
+      - name: "generate procs.mjs"
         run: yarn && yarn tsc
 
       - run: npm publish
