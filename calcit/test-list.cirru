@@ -159,6 +159,9 @@
                   range 10
                   fn (x) (> x 5)
 
+              assert= nil
+                nth (dissoc (take ([] 1 2 3 4 5 6) 1) 0) 0
+
         |test-groups $ quote
           defn test-groups ()
 

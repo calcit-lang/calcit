@@ -3,7 +3,11 @@ use crate::{
   builtins::records::find_in_fields,
   call_stack,
   call_stack::CallStackList,
-  data::{cirru, edn},
+  codegen::gen_ir::dump_code,
+  data::{
+    cirru,
+    edn::{self, edn_to_calcit},
+  },
   primes,
   primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CrListWrap},
   runner,
@@ -435,4 +439,12 @@ pub fn hash(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let mut s = DefaultHasher::new();
   xs[0].hash(&mut s);
   Ok(Calcit::Number(s.finish() as f64))
+}
+
+// extract out calcit internal meta code
+pub fn extract_code_into_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("&extract-code-into-edn expected 1 argument, got: {:?}", xs));
+  }
+  Ok(edn_to_calcit(&dump_code(&xs[0])))
 }

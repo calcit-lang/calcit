@@ -301,7 +301,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     let _ = fs::create_dir(code_emit_path);
   }
 
-  let js_file_path = code_emit_path.join(format!("{}.js", COMPILE_ERRORS_FILE)); // TODO mjs_mode
+  let js_file_path = code_emit_path.join(format!("{}.mjs", COMPILE_ERRORS_FILE)); // TODO mjs_mode
 
   let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
   gen_stack::clear_stack();
@@ -392,7 +392,7 @@ fn throw_on_js_warnings(warnings: &[String], js_file_path: &Path) -> Result<(), 
 
     let _ = fs::write(&js_file_path, format!("export default \"{}\";", content.trim().escape_default()));
     Err(format!(
-      "Found {} warnings, codegen blocked. errors in {}.js",
+      "Found {} warnings, codegen blocked. errors in {}.mjs",
       warnings.len(),
       COMPILE_ERRORS_FILE,
     ))
