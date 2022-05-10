@@ -9,6 +9,11 @@ use std::{
 
 use calcit::snapshot::{load_files, ChangesDict};
 use calcit::snapshot::{FileChangeInfo, FileInSnapShot};
+
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use std::sync::mpsc::channel;
+use std::time::Duration;
+
 use walkdir::WalkDir;
 
 use cirru_edn::Edn;
@@ -31,17 +36,48 @@ pub fn main() -> io::Result<()> {
     None => out_path.join("compact.cirru"),
   };
   let inc_file_path = out_path.join(".compact-inc.cirru");
-
-  if verbose {
-    println!("reading from {}", base_dir.display());
-  }
+  let no_watcher = cli_matches.is_present("once");
 
   let package_file = Path::new(cli_matches.value_of("src").unwrap())
     .parent()
     .unwrap()
     .join("package.cirru");
 
-  let new_compact_file = load_files_to_edn(&package_file, base_dir, verbose)?;
+  perform_compaction(base_dir, &package_file, &out_file, &inc_file_path, verbose)?;
+
+  if !no_watcher {
+    println!("\nwatch changes in {} ...\n", base_dir.display());
+
+    let (tx, rx) = channel();
+    let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).unwrap();
+    watcher.watch(&base_dir, RecursiveMode::NonRecursive).unwrap();
+
+    loop {
+      match rx.recv() {
+        Ok(event) => {
+          match event {
+            notify::DebouncedEvent::Write(_) | notify::DebouncedEvent::Create(_) => {
+              perform_compaction(base_dir, &package_file, &out_file, &inc_file_path, verbose)?;
+            }
+            // ignore other events
+            notify::DebouncedEvent::NoticeWrite(..) => {}
+            _ => println!("other file event: {:?}, ignored", event),
+          }
+        }
+        Err(e) => eprintln!("watch error: {:?}", e),
+      }
+    }
+  } else {
+    Ok(())
+  }
+}
+
+fn perform_compaction(base_dir: &Path, package_file: &Path, out_file: &Path, inc_file_path: &Path, verbose: bool) -> io::Result<()> {
+  if verbose {
+    println!("reading from {}", base_dir.display());
+  }
+
+  let new_compact_file = load_files_to_edn(package_file, base_dir, verbose)?;
   let old_compact_file = cirru_edn::parse(&read_to_string(&out_file)?).map_err(io_err)?;
   let changes = find_compact_changes(&new_compact_file, &old_compact_file).map_err(io_err)?;
 
@@ -229,6 +265,13 @@ fn parse_cli() -> clap::ArgMatches {
         .help("verbose mode")
         .short('v')
         .long("verbose")
+        .takes_value(false),
+    )
+    .arg(
+      clap::Arg::new("once")
+        .help("run without watcher")
+        .short('1')
+        .long("once")
         .takes_value(false),
     )
     .get_matches()
