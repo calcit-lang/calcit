@@ -19,6 +19,19 @@ pub struct FileInSnapShot {
   pub defs: HashMap<Arc<str>, Cirru>,
 }
 
+impl From<&FileInSnapShot> for Edn {
+  fn from(data: &FileInSnapShot) -> Edn {
+    let mut map: HashMap<Edn, Edn> = HashMap::new();
+    map.insert(Edn::kwd("ns"), Edn::Quote(data.ns.to_owned()));
+    let mut defs: HashMap<Edn, Edn> = HashMap::new();
+    for (k, v) in &data.defs {
+      defs.insert(Edn::str(&**k), Edn::Quote(v.to_owned()));
+    }
+    map.insert(Edn::kwd("defs"), Edn::Map(defs));
+    Edn::Map(map)
+  }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Snapshot {
   pub package: Arc<str>,
@@ -65,7 +78,7 @@ fn load_modules(data: &Edn) -> Result<Vec<Arc<str>>, String> {
   }
 }
 
-fn load_file_info(data: &Edn) -> Result<FileInSnapShot, String> {
+pub fn load_file_info(data: &Edn) -> Result<FileInSnapShot, String> {
   let ns_code = data.map_get("ns")?.read_quoted_cirru()?;
   let defs = data.map_get("defs")?.read_map().map_err(|e| format!("failed get `defs`:{}", e))?;
   let mut defs_info: HashMap<Arc<str>, Cirru> = HashMap::with_capacity(defs.len());
@@ -81,7 +94,7 @@ fn load_file_info(data: &Edn) -> Result<FileInSnapShot, String> {
   Ok(file)
 }
 
-fn load_files(data: &Edn) -> Result<HashMap<Arc<str>, FileInSnapShot>, String> {
+pub fn load_files(data: &Edn) -> Result<HashMap<Arc<str>, FileInSnapShot>, String> {
   let xs = data.read_map().map_err(|e| format!("failed loading files, {}", e))?;
   let mut ys: HashMap<Arc<str>, FileInSnapShot> = HashMap::with_capacity(xs.len());
   for (k, v) in xs {
@@ -195,11 +208,54 @@ pub struct FileChangeInfo {
   pub changed_defs: HashMap<Arc<str>, Cirru>,
 }
 
+impl From<&FileChangeInfo> for Edn {
+  fn from(data: &FileChangeInfo) -> Edn {
+    let mut map: HashMap<Edn, Edn> = HashMap::new();
+    if let Some(ns) = &data.ns {
+      map.insert(Edn::kwd("ns"), Edn::Quote(ns.to_owned()));
+    }
+
+    if !data.added_defs.is_empty() {
+      let defs: HashMap<Edn, Edn> = data
+        .added_defs
+        .iter()
+        .map(|(name, def)| (Edn::str(&**name), Edn::Quote(def.to_owned())))
+        .collect();
+      map.insert(Edn::str("added-defs"), Edn::Map(defs));
+    }
+    if !data.removed_defs.is_empty() {
+      map.insert(
+        Edn::str("removed-defs"),
+        Edn::Set(data.removed_defs.iter().map(|s| Edn::str(&**s)).collect()),
+      );
+    }
+    if !data.changed_defs.is_empty() {
+      map.insert(
+        Edn::str("changed-defs"),
+        Edn::Map(
+          data
+            .changed_defs
+            .iter()
+            .map(|(name, def)| (Edn::str(&**name), Edn::Quote(def.to_owned())))
+            .collect(),
+        ),
+      );
+    }
+    Edn::Map(map)
+  }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct ChangesDict {
   pub added: HashMap<Arc<str>, FileInSnapShot>,
   pub removed: HashSet<Arc<str>>,
   pub changed: HashMap<Arc<str>, FileChangeInfo>,
+}
+
+impl ChangesDict {
+  pub fn is_empty(&self) -> bool {
+    self.added.is_empty() && self.removed.is_empty() && self.changed.is_empty()
+  }
 }
 
 pub fn load_changes_info(data: &Edn) -> Result<ChangesDict, String> {
@@ -252,4 +308,28 @@ pub fn extract_changed_info(data: &Edn) -> Result<FileChangeInfo, String> {
     removed_defs,
     changed_defs,
   })
+}
+
+impl TryFrom<&Edn> for ChangesDict {
+  type Error = String;
+
+  fn try_from(data: &Edn) -> Result<Self, Self::Error> {
+    load_changes_info(data)
+  }
+}
+
+impl TryInto<Edn> for ChangesDict {
+  type Error = String;
+
+  fn try_into(self) -> Result<Edn, Self::Error> {
+    let mut dict: HashMap<Edn, Edn> = HashMap::new();
+    let removed: HashSet<Edn> = self.removed.iter().map(|name| Edn::str(&**name)).collect();
+    let added: HashMap<Edn, Edn> = self.added.iter().map(|(name, file)| (Edn::str(&**name), file.into())).collect();
+    let changed: HashMap<Edn, Edn> = self.changed.iter().map(|(name, file)| (Edn::str(&**name), file.into())).collect();
+
+    dict.insert(Edn::str("removed"), Edn::Set(removed));
+    dict.insert(Edn::str("added"), Edn::Map(added));
+    dict.insert(Edn::str("changed"), Edn::Map(changed));
+    Ok(Edn::Map(dict))
+  }
 }

@@ -1,11 +1,14 @@
 use std::{
-  collections::HashMap,
+  collections::{HashMap, HashSet},
   env,
   fs::{read_to_string, write},
   io,
   path::Path,
+  sync::Arc,
 };
 
+use calcit::snapshot::{load_files, ChangesDict};
+use calcit::snapshot::{FileChangeInfo, FileInSnapShot};
 use walkdir::WalkDir;
 
 use cirru_edn::Edn;
@@ -27,16 +30,107 @@ pub fn main() -> io::Result<()> {
     }
     None => out_path.join("compact.cirru"),
   };
+  let inc_file_path = out_path.join(".compact-inc.cirru");
+
   if verbose {
     println!("reading from {}", base_dir.display());
   }
 
-  let mut dict: HashMap<Edn, Edn> = HashMap::new();
-  // let mut a: Vec<String> = vec![];
   let package_file = Path::new(cli_matches.value_of("src").unwrap())
     .parent()
     .unwrap()
     .join("package.cirru");
+
+  let new_compact_file = load_files_to_edn(&package_file, base_dir, verbose)?;
+  let old_compact_file = cirru_edn::parse(&read_to_string(&out_file)?).map_err(io_err)?;
+  let changes = find_compact_changes(&new_compact_file, &old_compact_file).map_err(io_err)?;
+
+  // println!("data {:?}", changes);
+
+  if !changes.is_empty() {
+    write(
+      &inc_file_path,
+      cirru_edn::format(&changes.try_into().map_err(io_err)?, true).unwrap(),
+    )?;
+    println!("inc-updated {}", inc_file_path.display());
+    write(&out_file, cirru_edn::format(&new_compact_file, true).unwrap())?;
+    println!("file wrote {}", out_file.display());
+  } else {
+    println!("no changes.")
+  }
+
+  Ok(())
+}
+
+fn find_compact_changes(new_data: &Edn, old_data: &Edn) -> Result<ChangesDict, String> {
+  let old_files = load_files(&old_data.map_get("files")?)?;
+  let new_files = load_files(&new_data.map_get("files")?)?;
+  let old_namespaces = old_files.keys().collect::<HashSet<_>>();
+  let new_namespaces = new_files.keys().collect::<HashSet<_>>();
+  let added_namespaces = new_namespaces.difference(&old_namespaces).collect::<HashSet<_>>();
+  let common_namespaces = new_namespaces.intersection(&old_namespaces).collect::<HashSet<_>>();
+  let removed_namespaces = old_namespaces
+    .difference(&new_namespaces)
+    .map(|x| x.to_owned().to_owned())
+    .collect::<HashSet<Arc<_>>>();
+  let added_files = added_namespaces
+    .iter()
+    .map(|name| (name.to_owned().to_owned().to_owned(), new_files[**name].to_owned()))
+    .collect::<HashMap<Arc<str>, FileInSnapShot>>();
+
+  let mut changed_files: HashMap<Arc<str>, FileChangeInfo> = HashMap::new();
+  for namespace in common_namespaces {
+    let old_file = old_files[*namespace].to_owned();
+    let new_file = new_files[*namespace].to_owned();
+    if old_file == new_file {
+      continue;
+    }
+    let changes = find_file_changes(&old_file, &new_file)?;
+    changed_files.insert(namespace.to_owned().to_owned(), changes);
+  }
+
+  Ok(ChangesDict {
+    added: added_files,
+    removed: removed_namespaces,
+    changed: changed_files,
+  })
+}
+
+fn find_file_changes(old_file: &FileInSnapShot, new_file: &FileInSnapShot) -> Result<FileChangeInfo, String> {
+  let old_defs = old_file.defs.keys().map(ToOwned::to_owned).collect::<HashSet<Arc<str>>>();
+  let new_defs = new_file.defs.keys().map(ToOwned::to_owned).collect::<HashSet<Arc<str>>>();
+  let added_def_names = new_defs.difference(&old_defs).map(ToOwned::to_owned).collect::<HashSet<Arc<str>>>();
+  let removed_defs = old_defs.difference(&new_defs).map(ToOwned::to_owned).collect::<HashSet<Arc<str>>>();
+  let added_defs = added_def_names
+    .iter()
+    .map(|name| (name.to_owned(), new_file.defs[&**name].to_owned()))
+    .collect::<HashMap<Arc<str>, Cirru>>();
+
+  let mut changed_defs: HashMap<Arc<str>, Cirru> = HashMap::new();
+  let common_defs = new_defs.intersection(&old_defs).collect::<HashSet<_>>();
+  for def_name in common_defs {
+    let old_def = old_file.defs[&**def_name].to_owned();
+    let new_def = new_file.defs[&**def_name].to_owned();
+    if old_def == new_def {
+      continue;
+    }
+    changed_defs.insert(def_name.to_owned().to_owned(), new_def.to_owned());
+  }
+
+  Ok(FileChangeInfo {
+    ns: if old_file.ns == new_file.ns {
+      None
+    } else {
+      Some(new_file.ns.to_owned())
+    },
+    added_defs,
+    removed_defs,
+    changed_defs,
+  })
+}
+
+fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Result<Edn, io::Error> {
+  let mut dict: HashMap<Edn, Edn> = HashMap::new();
 
   let content = read_to_string(package_file)?;
   let package_data = cirru_edn::parse(&content).map_err(io_err)?;
@@ -104,12 +198,7 @@ pub fn main() -> io::Result<()> {
 
   dict.insert(Edn::kwd("files"), Edn::Map(files));
 
-  // println!("data {}", Edn::Map(dict));
-
-  write(&out_file, cirru_edn::format(&Edn::Map(dict), true).unwrap())?;
-  println!("file created at {}", out_file.display());
-
-  Ok(())
+  Ok(Edn::Map(dict))
 }
 
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
