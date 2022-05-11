@@ -55,12 +55,13 @@ pub fn main() -> io::Result<()> {
     loop {
       match rx.recv() {
         Ok(event) => {
+          use notify::DebouncedEvent;
           match event {
-            notify::DebouncedEvent::Write(_) | notify::DebouncedEvent::Create(_) => {
+            DebouncedEvent::Write(_) | DebouncedEvent::Create(_) | DebouncedEvent::Rename(..) => {
               perform_compaction(base_dir, &package_file, &out_file, &inc_file_path, verbose)?;
             }
             // ignore other events
-            notify::DebouncedEvent::NoticeWrite(..) => {}
+            DebouncedEvent::NoticeWrite(..) | DebouncedEvent::NoticeRemove(..) => {}
             _ => println!("other file event: {:?}, ignored", event),
           }
         }
