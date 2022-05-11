@@ -1,5 +1,6 @@
 pub mod gen_stack;
 mod internal_states;
+use std::fmt::Write;
 mod snippets;
 
 use im_ternary_tree::TernaryTreeList;
@@ -732,7 +733,7 @@ fn gen_let_code(
             // TODO `let` inside expressions makes syntax error
             let left = escape_var(&sym);
             let right = to_js_code(&def_code, ns, &scoped_defs, file_imports, keywords, None)?;
-            defs_code.push_str(&format!("let {} = {};\n", left, right));
+            writeln!(defs_code, "let {} = {};", left, right).unwrap();
 
             if scoped_defs.contains(&sym) {
               for (idx, x) in content.into_iter().enumerate() {
@@ -827,7 +828,7 @@ fn gen_if_code(
       let true_code = to_js_code(&true_node, ns, local_defs, file_imports, keywords, Some(return_label))?;
       let else_mark = if need_else { " else " } else { "" };
 
-      chunk.push_str(&format!("\n{}if ({}) {{ {} }}", else_mark, cond_code, true_code));
+      write!(chunk, "\n{}if ({}) {{ {} }}", else_mark, cond_code, true_code).unwrap();
 
       if let Some(false_node) = some_false_node {
         if let Calcit::List(ys) = false_node {
@@ -846,9 +847,9 @@ fn gen_if_code(
         }
 
         let false_code = to_js_code(false_node, ns, local_defs, file_imports, keywords, Some(return_label))?;
-        chunk.push_str(&format!("else {{ {} }}", false_code));
+        write!(chunk, "else {{ {} }}", false_code).unwrap();
       } else {
-        chunk.push_str(&format!("else {{ {} null; }}", return_label));
+        write!(chunk, "else {{ {} null; }}", return_label).unwrap();
       }
       break;
     }
@@ -881,11 +882,13 @@ fn gen_args_code(
           result.push_str(", ");
         }
         if spreading {
-          result.push_str(&format!(
+          write!(
+            result,
             "...{}listToArray({})",
             var_prefix,
             to_js_code(x, ns, local_defs, file_imports, keywords, None)?
-          ));
+          )
+          .unwrap();
           spreading = false
         } else {
           result.push_str(&to_js_code(x, ns, local_defs, file_imports, keywords, None)?);
@@ -971,7 +974,7 @@ fn gen_js_func(
       args_code.push_str("...");
       args_code.push_str(&arg_name);
       // js list and calcit-js are different in spreading
-      spreading_code.push_str(&format!("\n{} = {}arrayToList({});", arg_name, var_prefix, arg_name));
+      write!(spreading_code, "\n{} = {}arrayToList({});", arg_name, var_prefix, arg_name).unwrap();
       break; // no more args after spreading argument
     } else if has_optional {
       if !args_code.is_empty() {
@@ -1232,7 +1235,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           continue;
         }
         if is_preferred_js_proc(&def) {
-          defs_code.push_str(&format!("\nvar {} = $calcit_procs.{};\n", escape_var(&def), escape_var(&def)));
+          writeln!(defs_code, "\nvar {} = $calcit_procs.{};", escape_var(&def), escape_var(&def)).unwrap();
           continue;
         }
       }
@@ -1242,7 +1245,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       match &f {
         // probably not work here
         Calcit::Proc(..) => {
-          defs_code.push_str(&format!("\nvar {} = $calcit_procs.{};\n", escape_var(&def), escape_var(&def)));
+          writeln!(defs_code, "\nvar {} = $calcit_procs.{};", escape_var(&def), escape_var(&def)).unwrap();
         }
         Calcit::Fn {
           name,
@@ -1264,11 +1267,13 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
           gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, (**code).to_owned(), &TernaryTreeList::Empty);
-          vals_code.push_str(&format!(
-            "\nexport var {} = {};\n",
+          writeln!(
+            vals_code,
+            "\nexport var {} = {};",
             escape_var(&def),
             to_js_code(code, &ns, &def_names, &file_imports, &keywords, None)?
-          ));
+          )
+          .unwrap();
           gen_stack::pop_call_stack()
         }
         // macro are not traced in codegen since already expanded
@@ -1299,16 +1304,16 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           ImportedTarget::AsNs(target_ns) => {
             if is_cirru_string(&target_ns) {
               let import_target = wrap_js_str(&target_ns[1..]);
-              import_code.push_str(&format!("\nimport * as {} from {};", escape_ns(&def), import_target));
+              write!(import_code, "\nimport * as {} from {};", escape_ns(&def), import_target).unwrap();
             } else {
               let import_target = to_js_import_name(&target_ns, true); // TODO js_mode
-              import_code.push_str(&format!("\nimport * as {} from {};", escape_ns(&target_ns), import_target));
+              write!(import_code, "\nimport * as {} from {};", escape_ns(&target_ns), import_target).unwrap();
             }
           }
           ImportedTarget::DefaultNs(target_ns) => {
             if is_cirru_string(&target_ns) {
               let import_target = wrap_js_str(&target_ns[1..]);
-              import_code.push_str(&format!("\nimport {} from {};", escape_var(&def), import_target));
+              write!(import_code, "\nimport {} from {};", escape_var(&def), import_target).unwrap();
             } else {
               unreachable!("only js import leads to default ns, but got: {}", target_ns)
             }
@@ -1319,7 +1324,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
             } else {
               to_js_import_name(&target_ns, true) // TODO js_mode
             };
-            import_code.push_str(&format!("\nimport {{ {} }} from {};", escape_var(&def), import_target));
+            write!(import_code, "\nimport {{ {} }} from {};", escape_var(&def), import_target).unwrap();
           }
         }
       }
@@ -1336,7 +1341,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 
     for s in kwds {
       let name = escape_cirru_str(&s.to_string());
-      kwd_arr.push_str(&format!("{},", name));
+      write!(kwd_arr, "{},", name).unwrap();
     }
     kwd_arr.push(']');
     keywords_code.push_str(&snippets::tmpl_keywords_init(&kwd_arr, kwd_prefix));
