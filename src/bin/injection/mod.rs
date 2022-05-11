@@ -183,8 +183,8 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
   Ok(Calcit::Nil)
 }
 
-/// pass callback function to FFI function, so it can call multiple times
-/// currently for HTTP servers
+/// (experimental) pass callback function to FFI function, blocking the thread,
+/// used by calcit-paint, where main thread is required
 pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
     return CalcitErr::err_str(format!(
