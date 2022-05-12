@@ -21,14 +21,26 @@ pub struct FileInSnapShot {
 
 impl From<&FileInSnapShot> for Edn {
   fn from(data: &FileInSnapShot) -> Edn {
-    let mut map: HashMap<Edn, Edn> = HashMap::new();
-    map.insert(Edn::kwd("ns"), Edn::Quote(data.ns.to_owned()));
-    let mut defs: HashMap<Edn, Edn> = HashMap::new();
-    for (k, v) in &data.defs {
-      defs.insert(Edn::str(&**k), Edn::Quote(v.to_owned()));
-    }
-    map.insert(Edn::kwd("defs"), Edn::Map(defs));
-    Edn::Map(map)
+    Edn::map_from_iter([
+      ("ns".into(), data.ns.to_owned().into()),
+      ("defs".into(), data.defs.to_owned().into()),
+    ])
+  }
+}
+
+impl TryFrom<Edn> for FileInSnapShot {
+  type Error = String;
+  fn try_from(data: Edn) -> Result<Self, String> {
+    Ok(FileInSnapShot {
+      ns: data.map_get_some("ns")?.try_into()?,
+      defs: data.map_get_some("defs")?.try_into()?,
+    })
+  }
+}
+
+impl From<FileInSnapShot> for Edn {
+  fn from(data: FileInSnapShot) -> Edn {
+    Edn::map_from_iter([("ns".into(), data.ns.into()), ("defs".into(), data.defs.into())])
   }
 }
 
@@ -66,16 +78,7 @@ fn load_configs(data: &Edn) -> Result<SnapshotConfigs, String> {
 }
 
 fn load_modules(data: &Edn) -> Result<Vec<Arc<str>>, String> {
-  match data.read_list() {
-    Ok(xs) => {
-      let mut ys: Vec<Arc<str>> = Vec::with_capacity(xs.len());
-      for x in xs {
-        ys.push(x.read_str()?.into())
-      }
-      Ok(ys)
-    }
-    Err(e) => Err(format!("failed to load modules, {}", e)),
-  }
+  data.to_owned().try_into()
 }
 
 pub fn load_file_info(data: &Edn) -> Result<FileInSnapShot, String> {
@@ -95,14 +98,7 @@ pub fn load_file_info(data: &Edn) -> Result<FileInSnapShot, String> {
 }
 
 pub fn load_files(data: &Edn) -> Result<HashMap<Arc<str>, FileInSnapShot>, String> {
-  let xs = data.read_map().map_err(|e| format!("failed loading files, {}", e))?;
-  let mut ys: HashMap<Arc<str>, FileInSnapShot> = HashMap::with_capacity(xs.len());
-  for (k, v) in xs {
-    let key = k.read_str()?;
-    let file = load_file_info(&v)?;
-    ys.insert((*key).into(), file);
-  }
-  Ok(ys)
+  data.to_owned().try_into()
 }
 
 fn load_entries(data: &Edn) -> Result<HashMap<Arc<str>, SnapshotConfigs>, String> {
@@ -245,6 +241,12 @@ impl From<&FileChangeInfo> for Edn {
   }
 }
 
+impl From<FileChangeInfo> for Edn {
+  fn from(data: FileChangeInfo) -> Edn {
+    (&data).into()
+  }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct ChangesDict {
   pub added: HashMap<Arc<str>, FileInSnapShot>,
@@ -256,26 +258,6 @@ impl ChangesDict {
   pub fn is_empty(&self) -> bool {
     self.added.is_empty() && self.removed.is_empty() && self.changed.is_empty()
   }
-}
-
-pub fn load_changes_info(data: &Edn) -> Result<ChangesDict, String> {
-  // println!("loading changes: {}", data);
-  let mut added: HashMap<Arc<str>, FileInSnapShot> = HashMap::new();
-  for (ns, file) in &data.map_get("added")?.read_map_or_nil()? {
-    added.insert(ns.read_str()?.into(), load_file_info(file)?);
-  }
-
-  let mut removed: HashSet<Arc<str>> = HashSet::new();
-  for item in &data.map_get("removed")?.read_set_or_nil()? {
-    removed.insert(item.read_str()?.into());
-  }
-
-  let mut changed: HashMap<Arc<str>, FileChangeInfo> = HashMap::new();
-  for (ns, file) in &data.map_get("changed")?.read_map_or_nil()? {
-    changed.insert(ns.read_str()?.into(), extract_changed_info(file)?);
-  }
-
-  Ok(ChangesDict { added, removed, changed })
 }
 
 pub fn extract_changed_info(data: &Edn) -> Result<FileChangeInfo, String> {
@@ -314,22 +296,18 @@ impl TryFrom<&Edn> for ChangesDict {
   type Error = String;
 
   fn try_from(data: &Edn) -> Result<Self, Self::Error> {
-    load_changes_info(data)
+    data.try_into()
   }
 }
 
-impl TryInto<Edn> for ChangesDict {
+impl TryFrom<ChangesDict> for Edn {
   type Error = String;
 
-  fn try_into(self) -> Result<Edn, Self::Error> {
-    let mut dict: HashMap<Edn, Edn> = HashMap::new();
-    let removed: HashSet<Edn> = self.removed.iter().map(|name| Edn::str(&**name)).collect();
-    let added: HashMap<Edn, Edn> = self.added.iter().map(|(name, file)| (Edn::str(&**name), file.into())).collect();
-    let changed: HashMap<Edn, Edn> = self.changed.iter().map(|(name, file)| (Edn::str(&**name), file.into())).collect();
-
-    dict.insert(Edn::str("removed"), Edn::Set(removed));
-    dict.insert(Edn::str("added"), Edn::Map(added));
-    dict.insert(Edn::str("changed"), Edn::Map(changed));
-    Ok(Edn::Map(dict))
+  fn try_from(x: ChangesDict) -> Result<Edn, Self::Error> {
+    Ok(Edn::map_from_iter([
+      ("removed".into(), x.removed.into()),
+      ("added".into(), x.added.into()),
+      ("changed".into(), x.changed.into()),
+    ]))
   }
 }

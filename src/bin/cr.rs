@@ -9,6 +9,7 @@ use std::time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 mod injection;
 
+use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use im_ternary_tree::TernaryTreeList;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -229,7 +230,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
   // 3. rerun program, and catch error
 
   let data = cirru_edn::parse(content)?;
-  let changes = snapshot::load_changes_info(&data)?;
+  let changes: ChangesDict = (&data).try_into()?;
 
   // println!("\ndata: {}", &data);
   // println!("\nchanges: {:?}", changes);

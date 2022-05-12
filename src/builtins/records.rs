@@ -11,7 +11,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("new-record expected arguments, got {:?}", xs));
   }
   let name_id: EdnKwd = match &xs[0] {
-    Calcit::Symbol { sym, .. } => EdnKwd::from(sym),
+    Calcit::Symbol { sym, .. } => EdnKwd::new(sym),
     Calcit::Keyword(k) => k.to_owned(),
     a => return CalcitErr::err_str(format!("new-record expected a name, got {}", a)),
   };
@@ -22,7 +22,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   for x in xs.into_iter().skip(1) {
     match x {
       Calcit::Symbol { sym, .. } | Calcit::Str(sym) => {
-        fields.push(EdnKwd::from(&*sym));
+        fields.push(EdnKwd::new(&*sym));
       }
       Calcit::Keyword(s) => {
         fields.push(s.to_owned());
@@ -34,7 +34,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   fields.sort_unstable(); // all values are nil
 
   // warn about dup
-  let mut prev: EdnKwd = EdnKwd::from(""); // actually a invalid default...
+  let mut prev: EdnKwd = EdnKwd::new(""); // actually a invalid default...
   for (idx, x) in fields.iter().enumerate() {
     if idx > 0 {
       if x == &prev {
@@ -73,7 +73,7 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
               }
               None => return CalcitErr::err_str(format!("unexpected field {} for {:?}", s, def_fields)),
             },
-            Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match find_in_fields(def_fields, &EdnKwd::from(s)) {
+            Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match find_in_fields(def_fields, &EdnKwd::new(s)) {
               Some(pos) => {
                 values[pos] = xs[v_idx].to_owned();
               }
@@ -102,7 +102,7 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       for (k, v) in ys {
         match k {
           Calcit::Str(s) => {
-            pairs.push((EdnKwd::from(s), v.to_owned()));
+            pairs.push((EdnKwd::new(s), v.to_owned()));
           }
           Calcit::Keyword(s) => {
             pairs.push((s.to_owned(), v.to_owned()));
@@ -203,7 +203,7 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, _)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => Ok(Calcit::Bool(find_in_fields(fields, &EdnKwd::from(k)).is_some())),
+      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => Ok(Calcit::Bool(find_in_fields(fields, &EdnKwd::new(k)).is_some())),
       Calcit::Keyword(k) => Ok(Calcit::Bool(find_in_fields(fields, k).is_some())),
       a => CalcitErr::err_str(format!("contains? got invalid field for record: {}", a)),
     },
@@ -215,7 +215,7 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, values)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => match find_in_fields(fields, &EdnKwd::from(k)) {
+      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => match find_in_fields(fields, &EdnKwd::new(k)) {
         Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
@@ -233,7 +233,7 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Record(name, fields, values)), Some(a), Some(b)) => match a {
-      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::from(s)) {
+      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::new(s)) {
         Some(pos) => {
           let mut new_values = (**values).to_owned();
           new_values[pos] = b.to_owned();
@@ -262,9 +262,9 @@ pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
   match (xs.get(0), xs.get(1), xs.get(2), xs.get(3)) {
     (Some(Calcit::Record(_name, fields, values)), Some(n), Some(a), Some(new_value)) => match a {
-      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::from(s)) {
+      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::new(s)) {
         Some(_pos) => CalcitErr::err_str(format!("field `{}` already existed", s)),
-        None => extend_record_field(&EdnKwd::from(s), n, fields, values, new_value),
+        None => extend_record_field(&EdnKwd::new(s), n, fields, values, new_value),
       },
       Calcit::Keyword(s) => match find_in_fields(fields, s) {
         Some(_pos) => CalcitErr::err_str(format!("field `{}` already existed", s)),
@@ -318,7 +318,7 @@ fn extend_record_field(
   }
 
   let new_name_id: EdnKwd = match n {
-    Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => EdnKwd::from(s),
+    Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => EdnKwd::new(s),
     Calcit::Keyword(s) => s.to_owned(),
     _ => return CalcitErr::err_str("expected record name"),
   };
