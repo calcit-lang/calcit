@@ -15,7 +15,7 @@ struct IrDataFile {
 
 impl From<IrDataFile> for Edn {
   fn from(data: IrDataFile) -> Self {
-    Edn::map_from_iter([("defs".into(), data.defs.into())])
+    Edn::map_from_iter([(Edn::kwd("defs"), data.defs.into())])
   }
 }
 
@@ -27,7 +27,7 @@ struct IrDataConfig {
 
 impl From<IrDataConfig> for Edn {
   fn from(x: IrDataConfig) -> Edn {
-    Edn::map_from_iter([("init-fn".into(), x.init_fn.into()), ("reload-fn".into(), x.reload_fn.into())])
+    Edn::map_from_iter([(Edn::kwd("init-fn"), x.init_fn.into()), (Edn::kwd("reload-fn"), x.reload_fn.into())])
   }
 }
 
@@ -39,7 +39,7 @@ pub struct IrData {
 
 impl From<IrData> for Edn {
   fn from(x: IrData) -> Edn {
-    Edn::map_from_iter([("configs".into(), x.configs.into()), ("files".into(), x.files.into())])
+    Edn::map_from_iter([(Edn::kwd("configs"), x.configs.into()), (Edn::kwd("files"), x.files.into())])
   }
 }
 
@@ -98,12 +98,12 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
             def: r_def,
             rule: import_rule,
           } => Edn::map_from_iter([
-            ("kind".into(), Edn::kwd("def")),
-            ("ns".into(), Edn::Str((**r_ns).into())),
-            ("at_def".into(), Edn::Str((**at_def).into())),
-            ("def".into(), Edn::Str((**r_def).into())),
+            (Edn::kwd("kind"), Edn::kwd("def")),
+            (Edn::kwd("ns"), Edn::Str((**r_ns).into())),
+            (Edn::kwd("at_def"), Edn::Str((**at_def).into())),
+            (Edn::kwd("def"), Edn::Str((**r_def).into())),
             (
-              "rule".into(),
+              Edn::kwd("rule"),
               match import_rule.to_owned().map(|x| (&*x).to_owned()) {
                 Some(ImportRule::NsAs(_n)) => Edn::kwd("ns"),
                 Some(ImportRule::NsDefault(_n)) => Edn::kwd("default"),
@@ -119,10 +119,10 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       };
 
       Edn::map_from_iter([
-        ("kind".into(), Edn::kwd("symbol")),
-        ("val".into(), Edn::Str((**sym).into())),
-        ("ns".into(), Edn::Str((**ns).into())),
-        ("resolved".into(), resolved),
+        (Edn::kwd("kind"), Edn::kwd("symbol")),
+        (Edn::kwd("val"), Edn::Str((**sym).into())),
+        (Edn::kwd("ns"), Edn::Str((**ns).into())),
+        (Edn::kwd("resolved"), resolved),
       ])
     }
 
@@ -130,32 +130,32 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       name, def_ns, args, body, ..
     } => {
       Edn::map_from_iter([
-        ("kind".into(), Edn::kwd("fn")),
-        ("name".into(), Edn::Str((**name).into())),
-        ("ns".into(), Edn::Str((**def_ns).into())),
-        ("args".into(), dump_args_code(args)), // TODO
-        ("code".into(), dump_items_code(body)),
+        (Edn::kwd("kind"), Edn::kwd("fn")),
+        (Edn::kwd("name"), Edn::Str((**name).into())),
+        (Edn::kwd("ns"), Edn::Str((**def_ns).into())),
+        (Edn::kwd("args"), dump_args_code(args)), // TODO
+        (Edn::kwd("code"), dump_items_code(body)),
       ])
     }
     Calcit::Macro {
       name, def_ns, args, body, ..
     } => {
       Edn::map_from_iter([
-        ("kind".into(), Edn::kwd("macro")),
-        ("name".into(), Edn::Str((**name).into())),
-        ("ns".into(), Edn::Str((**def_ns).into())),
-        ("args".into(), dump_args_code(args)), // TODO
-        ("code".into(), dump_items_code(body)),
+        (Edn::kwd("kind"), Edn::kwd("macro")),
+        (Edn::kwd("name"), Edn::Str((**name).into())),
+        (Edn::kwd("ns"), Edn::Str((**def_ns).into())),
+        (Edn::kwd("args"), dump_args_code(args)), // TODO
+        (Edn::kwd("code"), dump_items_code(body)),
       ])
     }
     Calcit::Proc(name) => Edn::map_from_iter([
-      ("kind".into(), Edn::kwd("proc")),
-      ("name".into(), Edn::Str((**name).into())),
-      ("builtin".into(), Edn::Bool(true)),
+      (Edn::kwd("kind"), Edn::kwd("proc")),
+      (Edn::kwd("name"), Edn::Str((**name).into())),
+      (Edn::kwd("builtin"), Edn::Bool(true)),
     ]),
     Calcit::Syntax(name, _ns) => Edn::map_from_iter([
-      ("kind".into(), Edn::kwd("syntax")),
-      ("name".into(), Edn::Str((name.to_string()).into())),
+      (Edn::kwd("kind"), Edn::kwd("syntax")),
+      (Edn::kwd("name"), Edn::Str((name.to_string()).into())),
     ]),
     Calcit::Thunk(code, _) => dump_code(code),
     Calcit::List(xs) => {
