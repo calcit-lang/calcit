@@ -1,6 +1,7 @@
 use std::{
   collections::{HashMap, HashSet},
   env,
+  fmt::Debug,
   fs::{read_to_string, write},
   io,
   path::Path,
@@ -79,24 +80,47 @@ fn perform_compaction(base_dir: &Path, package_file: &Path, out_file: &Path, inc
   }
 
   let new_compact_file = load_files_to_edn(package_file, base_dir, verbose)?;
-  let old_compact_file = cirru_edn::parse(&read_to_string(&out_file)?).map_err(io_err)?;
-  let changes = find_compact_changes(&new_compact_file, &old_compact_file).map_err(io_err)?;
+  let has_old_file = out_file.exists();
+  let changes = if has_old_file {
+    let old_compact_data = cirru_edn::parse(&read_file(&out_file)?).map_err(io_err)?;
+    find_compact_changes(&new_compact_file, &old_compact_data).map_err(io_err)?
+  } else {
+    ChangesDict::default()
+  };
+  let has_changes = !changes.is_empty();
 
   // println!("data {:?}", changes);
 
-  if !changes.is_empty() {
+  if has_changes {
     write(
       &inc_file_path,
       cirru_edn::format(&changes.try_into().map_err(io_err)?, true).unwrap(),
     )?;
-    println!("inc-updated {}", inc_file_path.display());
-    write(&out_file, cirru_edn::format(&new_compact_file, true).unwrap())?;
-    println!("file wrote {}", out_file.display());
-  } else {
+    println!("inc file updated {}", inc_file_path.display());
+  } else if has_old_file {
     println!("no changes.")
   }
 
+  if !has_old_file || has_changes {
+    write(&out_file, cirru_edn::format(&new_compact_file, true).unwrap())?;
+    println!("file wrote {}", out_file.display());
+  }
+
   Ok(())
+}
+
+fn read_file<P>(file: P) -> io::Result<String>
+where
+  P: AsRef<Path> + Debug,
+{
+  match read_to_string(&file) {
+    Ok(s) => Ok(s),
+    Err(e) => Err(io_err(format!(
+      "failed reading {}, {}",
+      file.as_ref().as_os_str().to_string_lossy(),
+      e
+    ))),
+  }
 }
 
 fn find_compact_changes(new_data: &Edn, old_data: &Edn) -> Result<ChangesDict, String> {
@@ -169,7 +193,7 @@ fn find_file_changes(old_file: &FileInSnapShot, new_file: &FileInSnapShot) -> Re
 fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Result<Edn, io::Error> {
   let mut dict: HashMap<Edn, Edn> = HashMap::new();
 
-  let content = read_to_string(package_file)?;
+  let content = read_file(package_file)?;
   let package_data = cirru_edn::parse(&content).map_err(io_err)?;
 
   let pkg = package_data.map_get("package").map_err(io_err)?.read_str().map_err(io_err)?;
@@ -184,7 +208,7 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
 
     if let Some(ext) = entry.path().extension() {
       if ext.to_str().unwrap() == "cirru" {
-        let content = read_to_string(entry.path())?;
+        let content = read_file(entry.path())?;
         let xs = cirru_parser::parse(&content).map_err(io_err)?;
 
         let mut file: HashMap<Edn, Edn> = HashMap::new();

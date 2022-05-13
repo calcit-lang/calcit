@@ -247,7 +247,7 @@ impl From<FileChangeInfo> for Edn {
   }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct ChangesDict {
   pub added: HashMap<Arc<str>, FileInSnapShot>,
   pub removed: HashSet<Arc<str>>,
