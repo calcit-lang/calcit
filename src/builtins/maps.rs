@@ -75,7 +75,7 @@ pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         let mut new_values = (**values).to_owned();
         for (k, v) in ys {
           match k {
-            Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::from(s)) {
+            Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::new(s)) {
               Some(pos) => new_values[pos] = v.to_owned(),
               None => return CalcitErr::err_str(format!("invalid field `{}` for {:?}", s, fields)),
             },

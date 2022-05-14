@@ -2,7 +2,6 @@ use crate::data::cirru;
 use crate::data::edn;
 use crate::primes::{Calcit, CalcitItems};
 use cirru_edn::Edn;
-use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::hash::Hash;
@@ -74,23 +73,24 @@ pub fn display_stack(failure: &str, stack: &CallStackList) -> Result<(), String>
 
   let mut stack_list: Vec<Edn> = Vec::with_capacity(stack.len());
   for s in stack {
-    let mut info: HashMap<Edn, Edn> = HashMap::with_capacity(4);
-    info.insert(Edn::kwd("def"), Edn::str(format!("{}/{}", s.ns, s.def)));
-    info.insert(Edn::kwd("code"), Edn::Quote(cirru::calcit_to_cirru(&s.code)?));
     let mut args: Vec<Edn> = Vec::with_capacity(s.args.len());
     for a in &*s.args {
       args.push(edn::calcit_to_edn(a)?);
     }
-    info.insert(Edn::kwd("args"), Edn::List(args));
-    info.insert(Edn::kwd("kind"), Edn::kwd(&name_kind(&s.kind)));
+    let info = Edn::map_from_iter([
+      ("def".into(), format!("{}/{}", s.ns, s.def).into()),
+      ("code".into(), cirru::calcit_to_cirru(&s.code)?.into()),
+      ("args".into(), args.into()),
+      ("kind".into(), name_kind(&s.kind).into()),
+    ]);
 
-    stack_list.push(Edn::Map(info))
+    stack_list.push(info);
   }
 
-  let mut data: HashMap<Edn, Edn> = HashMap::with_capacity(2);
-  data.insert(Edn::kwd("message"), Edn::str(failure));
-  data.insert(Edn::kwd("stack"), Edn::List(stack_list));
-  let content = cirru_edn::format(&Edn::Map(data), true)?;
+  let content = cirru_edn::format(
+    &Edn::map_from_iter([("message".into(), failure.into()), ("stack".into(), stack_list.into())]),
+    true,
+  )?;
   let _ = fs::write(ERROR_SNAPSHOT, content);
   eprintln!("\nrun `cat {}` to read stack details.", ERROR_SNAPSHOT);
   Ok(())
