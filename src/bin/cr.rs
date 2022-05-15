@@ -230,9 +230,8 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
   // 3. rerun program, and catch error
 
   let data = cirru_edn::parse(content)?;
-  let changes: ChangesDict = (&data).try_into()?;
-
   // println!("\ndata: {}", &data);
+  let changes: ChangesDict = (&data).try_into()?;
   // println!("\nchanges: {:?}", changes);
   program::apply_code_changes(&changes)?;
   // println!("\nprogram code: {:?}", new_code);

@@ -247,6 +247,22 @@ impl From<FileChangeInfo> for Edn {
   }
 }
 
+impl TryFrom<Edn> for FileChangeInfo {
+  type Error = String;
+
+  fn try_from(data: Edn) -> Result<Self, Self::Error> {
+    Ok(Self {
+      ns: match data.map_get("ns")? {
+        Edn::Nil => None,
+        ns => Some(ns.try_into()?),
+      },
+      added_defs: data.map_get("added-defs")?.try_into()?,
+      removed_defs: data.map_get("removed-defs")?.try_into()?,
+      changed_defs: data.map_get("changed-defs")?.try_into()?,
+    })
+  }
+}
+
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct ChangesDict {
   pub added: HashMap<Arc<str>, FileInSnapShot>,
@@ -296,7 +312,11 @@ impl TryFrom<&Edn> for ChangesDict {
   type Error = String;
 
   fn try_from(data: &Edn) -> Result<Self, Self::Error> {
-    data.try_into()
+    Ok(Self {
+      added: data.map_get_some("added")?.try_into()?,
+      changed: data.map_get_some("changed")?.try_into()?,
+      removed: data.map_get_some("removed")?.try_into()?,
+    })
   }
 }
 
