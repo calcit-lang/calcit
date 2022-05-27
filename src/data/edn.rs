@@ -87,15 +87,17 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       ns: primes::GEN_NS.to_owned(),
       at_def: primes::GEN_DEF.to_owned(),
       resolved: None,
+      location: None,
     },
     Edn::Keyword(s) => Calcit::Keyword(s.to_owned()),
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::Tuple(
       Arc::new(Calcit::Symbol {
-        sym: String::from("quote").into(),
+        sym: "quote".into(),
         ns: primes::GEN_NS.to_owned(),
         at_def: primes::GEN_DEF.to_owned(),
         resolved: None,
+        location: None,
       }),
       Arc::new(cirru::cirru_to_calcit(nodes)),
     ),

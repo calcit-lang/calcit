@@ -213,6 +213,7 @@ fn to_js_code(
         ns: def_ns,
         at_def,
         resolved,
+        ..
       } => {
         let resolved_info = resolved.to_owned().map(|v| (*v).to_owned());
         let passed_defs = PassedDefs {

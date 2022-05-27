@@ -14,6 +14,7 @@ pub mod snapshot;
 pub mod util;
 
 use dirs::home_dir;
+use primes::NodeLocation;
 use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
@@ -42,7 +43,7 @@ pub struct ProgramEntries {
 }
 
 pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -> Result<Calcit, CalcitErr> {
-  let check_warnings: RefCell<Vec<String>> = RefCell::new(vec![]);
+  let check_warnings: RefCell<Vec<(String, NodeLocation)>> = RefCell::new(vec![]);
 
   // preprocess to init
   match runner::preprocess::preprocess_ns_def(
@@ -56,7 +57,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure.msg, &failure.stack)?;
+      call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
       return CalcitErr::err_str(failure.msg);
     }
   }
@@ -67,6 +68,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
       msg: format!("Found {} warnings, runner blocked", warnings.len()),
       warnings,
       stack: rpds::List::new_sync(),
+      location: None,
     });
   }
   match program::lookup_evaled_def(&init_ns, &init_def) {
@@ -80,7 +82,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
           Ok(v) => Ok(v),
           Err(failure) => {
             eprintln!("\nfailed, {}", failure);
-            call_stack::display_stack(&failure.msg, &failure.stack)?;
+            call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
             Err(failure)
           }
         }

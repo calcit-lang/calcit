@@ -2,7 +2,7 @@ use crate::{
   builtins::{is_js_syntax_procs, is_proc_name},
   call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
   primes,
-  primes::{Calcit, CalcitErr, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*},
+  primes::{Calcit, CalcitErr, CalcitItems, CalcitSyntax, ImportRule, NodeLocation, SymbolResolved::*, GENERATED_DEF},
   program, runner,
 };
 
@@ -29,7 +29,7 @@ pub fn preprocess_ns_def(
   // pass original string representation, TODO codegen currently relies on this
   raw_sym: Arc<str>,
   import_rule: Option<Arc<ImportRule>>, // returns form and possible value
-  check_warnings: &RefCell<Vec<String>>,
+  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
   call_stack: &rpds::ListSync<CalcitStack>,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   let ns = &raw_ns;
@@ -49,6 +49,7 @@ pub fn preprocess_ns_def(
             def: def.to_owned(),
             rule: import_rule,
           })),
+          location: None,
         },
         pick_macro_fn(v),
       ))
@@ -92,6 +93,7 @@ pub fn preprocess_ns_def(
                 def: def.to_owned(),
                 rule: Some(Arc::new(ImportRule::NsReferDef(ns.to_owned(), def.to_owned()))),
               })),
+              location: None,
             },
             pick_macro_fn(v),
           ))
@@ -106,6 +108,7 @@ pub fn preprocess_ns_def(
               def: def.to_owned(),
               rule: import_rule,
             })),
+            location: None,
           },
           None,
         )),
@@ -133,7 +136,7 @@ pub fn preprocess_expr(
   expr: &Calcit,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<String>>,
+  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
   call_stack: &CallStackList,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   // println!("preprocessing @{} {}", file_ns, expr);
@@ -142,6 +145,7 @@ pub fn preprocess_expr(
       sym: def,
       ns: def_ns,
       at_def,
+      location,
       ..
     } => match runner::parse_ns_def(def) {
       Some((ns_alias, def_part)) => {
@@ -156,6 +160,7 @@ pub fn preprocess_expr(
                 def: (*def_part).into(),
                 rule: None,
               })),
+              location: location.to_owned(),
             },
             None,
           ))
@@ -178,6 +183,7 @@ pub fn preprocess_expr(
               ns: def_ns.to_owned(),
               at_def: at_def.to_owned(),
               resolved: Some(Arc::new(ResolvedRaw)),
+              location: location.to_owned(),
             },
             None,
           ))
@@ -188,6 +194,7 @@ pub fn preprocess_expr(
               ns: def_ns.to_owned(),
               at_def: at_def.to_owned(),
               resolved: Some(Arc::new(ResolvedLocal)),
+              location: location.to_owned(),
             },
             None,
           ))
@@ -236,6 +243,7 @@ pub fn preprocess_expr(
                     ns: def_ns.to_owned(),
                     at_def: at_def.to_owned(),
                     resolved: target,
+                    location: location.to_owned(),
                   },
                   None,
                 ))
@@ -245,12 +253,9 @@ pub fn preprocess_expr(
                   names.push(def.to_owned());
                 }
                 let mut warnings = check_warnings.borrow_mut();
-                warnings.push(format!(
-                  "[Warn] unknown `{}` in {}/{}, locals {{{}}}",
-                  def,
-                  def_ns,
-                  at_def,
-                  names.join(" ")
+                warnings.push((
+                  format!("[Warn] unknown `{}` in {}/{}, locals {{{}}}", def, def_ns, at_def, names.join(" ")),
+                  NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
                 ));
                 Ok((expr.to_owned(), None))
               }
@@ -275,7 +280,12 @@ pub fn preprocess_expr(
     }
     _ => {
       let mut warnings = check_warnings.borrow_mut();
-      warnings.push(format!("[Warn] unexpected data during preprocess: {:?}", expr));
+      let loc = NodeLocation {
+        ns: file_ns,
+        def: GENERATED_DEF.into(),
+        coord: vec![],
+      };
+      warnings.push((format!("[Warn] unexpected data during preprocess: {:?}", expr), loc));
       Ok((expr.to_owned(), None))
     }
   }
@@ -285,7 +295,7 @@ fn process_list_call(
   xs: &CalcitItems,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<String>>,
+  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
   call_stack: &CallStackList,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   let head = &xs[0];
@@ -323,6 +333,7 @@ fn process_list_call(
               def: String::from("get").into(),
               rule: None,
             })),
+            location: None,
           },
           args[0].to_owned(),
           head.to_owned(),
@@ -438,7 +449,7 @@ fn check_fn_args(
   file_ns: Arc<str>,
   f_name: Arc<str>,
   def_name: Arc<str>,
-  check_warnings: &RefCell<Vec<String>>,
+  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
 ) {
   let mut i = 0;
   let mut j = 0;
@@ -471,26 +482,34 @@ fn check_fn_args(
           continue;
         } else {
           let mut warnings = check_warnings.borrow_mut();
-          warnings.push(format!(
-            "[Warn] lack of args in {} `{:?}` with `{}`, at {}/{}",
-            f_name,
-            defined_args,
-            primes::CrListWrap(params.to_owned()),
-            file_ns,
-            def_name
+          let loc = NodeLocation::new(file_ns.to_owned(), GENERATED_DEF.into(), vec![]);
+          warnings.push((
+            format!(
+              "[Warn] lack of args in {} `{:?}` with `{}`, at {}/{}",
+              f_name,
+              defined_args,
+              primes::CrListWrap(params.to_owned()),
+              file_ns,
+              def_name
+            ),
+            loc,
           ));
           return;
         }
       }
       (None, Some(_)) => {
         let mut warnings = check_warnings.borrow_mut();
-        warnings.push(format!(
-          "[Warn] too many args for {} `{:?}` with `{}`, at {}/{}",
-          f_name,
-          defined_args,
-          primes::CrListWrap(params.to_owned()),
-          file_ns,
-          def_name
+        let loc = NodeLocation::new(file_ns.to_owned(), GENERATED_DEF.into(), vec![]);
+        warnings.push((
+          format!(
+            "[Warn] too many args for {} `{:?}` with `{}`, at {}/{}",
+            f_name,
+            defined_args,
+            primes::CrListWrap(params.to_owned()),
+            file_ns,
+            def_name
+          ),
+          loc,
         ));
         return;
       }
@@ -518,7 +537,7 @@ pub fn preprocess_each_items(
   args: &CalcitItems,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<String>>,
+  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns)]);
@@ -535,7 +554,7 @@ pub fn preprocess_defn(
   args: &CalcitItems,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<String>>,
+  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
@@ -546,6 +565,7 @@ pub fn preprocess_defn(
         sym: def_name,
         ns: def_name_ns,
         at_def,
+        location,
         ..
       }),
       Some(Calcit::List(ys)),
@@ -557,19 +577,26 @@ pub fn preprocess_defn(
         ns: def_name_ns.to_owned(),
         at_def: at_def.to_owned(),
         resolved: Some(Arc::new(ResolvedRaw)),
+        location: location.to_owned(),
       });
       let mut zs: CalcitItems = TernaryTreeList::Empty;
       for y in ys {
         match y {
           Calcit::Symbol {
-            sym, ns: def_ns, at_def, ..
+            sym,
+            ns: def_ns,
+            at_def,
+            location: arg_location,
+            ..
           } => {
-            check_symbol(sym, args, check_warnings);
+            let loc = NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), arg_location.to_owned().unwrap_or_default());
+            check_symbol(sym, args, loc, check_warnings);
             zs = zs.push_right(Calcit::Symbol {
               sym: sym.to_owned(),
               ns: def_ns.to_owned(),
               at_def: at_def.to_owned(),
               resolved: Some(Arc::new(ResolvedRaw)),
+              location: arg_location.to_owned(),
             });
             // skip argument syntax marks
             if &**sym != "&" && &**sym != "?" {
@@ -592,9 +619,10 @@ pub fn preprocess_defn(
       }
       Ok(Calcit::List(xs))
     }
-    (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack(
+    (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
       format!("defn/defmacro expected name and args: {} {}", a, b),
       call_stack,
+      a.get_location().or_else(|| b.get_location()),
     )),
     (a, b) => Err(CalcitErr::use_msg_stack(
       format!("defn or defmacro expected name and args, got {:?} {:?}", a, b,),
@@ -604,42 +632,53 @@ pub fn preprocess_defn(
 }
 
 // warn if this symbol is used
-fn check_symbol(sym: &str, args: &CalcitItems, check_warnings: &RefCell<Vec<String>>) {
+fn check_symbol(sym: &str, args: &CalcitItems, location: NodeLocation, check_warnings: &RefCell<Vec<(String, NodeLocation)>>) {
   if is_proc_name(sym) || CalcitSyntax::is_core_syntax(sym) || program::has_def_code(primes::CORE_NS, sym) {
     let mut warnings = check_warnings.borrow_mut();
-    warnings.push(format!(
-      "[Warn] local binding `{}` shadowed `calcit.core/{}`, with {}",
-      sym,
-      sym,
-      primes::CrListWrap(args.to_owned())
+    warnings.push((
+      format!(
+        "[Warn] local binding `{}` shadowed `calcit.core/{}`, with {}",
+        sym,
+        sym,
+        primes::CrListWrap(args.to_owned())
+      ),
+      location,
     ));
   }
 }
 
 pub fn preprocess_call_let(
   head: &CalcitSyntax,
+  // where the symbol was defined
   head_ns: Arc<str>,
   args: &CalcitItems,
   scope_defs: &HashSet<Arc<str>>,
+  // where called
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<String>>,
+  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns)]);
+  let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
   let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
   let binding = match args.get(0) {
     Some(Calcit::Nil) => Calcit::Nil,
     Some(Calcit::List(ys)) if ys.len() == 2 => match (&ys[0], &ys[1]) {
       (Calcit::Symbol { sym, .. }, a) => {
-        check_symbol(sym, args, check_warnings);
+        let loc = NodeLocation {
+          ns: head_ns,
+          def: GENERATED_DEF.into(),
+          coord: vec![],
+        };
+        check_symbol(sym, args, loc, check_warnings);
         body_defs.insert(sym.to_owned());
         let (form, _v) = preprocess_expr(a, &body_defs, file_ns.to_owned(), check_warnings, call_stack)?;
         Calcit::List(TernaryTreeList::from(&[ys[0].to_owned(), form]))
       }
       (a, b) => {
-        return Err(CalcitErr::use_msg_stack(
+        return Err(CalcitErr::use_msg_stack_location(
           format!("invalid pair for &let binding: {} {}", a, b),
           call_stack,
+          a.get_location().or_else(|| b.get_location()),
         ))
       }
     },
@@ -650,9 +689,10 @@ pub fn preprocess_call_let(
       ))
     }
     Some(a) => {
-      return Err(CalcitErr::use_msg_stack(
+      return Err(CalcitErr::use_msg_stack_location(
         format!("expected binding of a pair, got {}", a),
         call_stack,
+        a.get_location(),
       ))
     }
     None => {
@@ -690,7 +730,7 @@ pub fn preprocess_defatom(
   args: &CalcitItems,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<String>>,
+  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns)]);
@@ -709,7 +749,7 @@ pub fn preprocess_quasiquote(
   args: &CalcitItems,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<String>>,
+  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns)]);
@@ -729,7 +769,7 @@ pub fn preprocess_quasiquote_internal(
   x: &Calcit,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<String>>,
+  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   match x {

@@ -1,5 +1,6 @@
 use crate::data::cirru;
 use crate::data::edn;
+use crate::primes::NodeLocation;
 use crate::primes::{Calcit, CalcitItems};
 use cirru_edn::Edn;
 use std::fmt;
@@ -16,18 +17,32 @@ pub struct CalcitStack {
   pub kind: StackKind,
 }
 
+impl fmt::Display for CalcitStack {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "Stack {}/{} {}", self.ns, self.def, self.kind)
+  }
+}
+
 #[derive(Debug, PartialEq, Clone, Eq, Ord, PartialOrd, Hash)]
 pub enum StackKind {
   Fn,
   Proc,
   Macro,
-  Syntax,  // rarely used
-  Codegen, // track preprocessing
+  /// tracks builtin syntax
+  Syntax,
+  /// track preprocessing, mainly used in js backend
+  Codegen,
 }
 
-impl fmt::Display for CalcitStack {
+impl fmt::Display for StackKind {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "TODO")
+    match &self {
+      Self::Fn => write!(f, "fn"),
+      Self::Proc => write!(f, "proc"),
+      Self::Macro => write!(f, "macro"),
+      Self::Syntax => write!(f, "syntax"),
+      Self::Codegen => write!(f, "codegen"),
+    }
   }
 }
 
@@ -62,7 +77,7 @@ pub fn show_stack(stack: &CallStackList) {
   }
 }
 
-pub fn display_stack(failure: &str, stack: &CallStackList) -> Result<(), String> {
+pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&NodeLocation>) -> Result<(), String> {
   eprintln!("\nFailure: {}", failure);
   eprintln!("\ncall stack:");
 
@@ -81,14 +96,24 @@ pub fn display_stack(failure: &str, stack: &CallStackList) -> Result<(), String>
       ("def".into(), format!("{}/{}", s.ns, s.def).into()),
       ("code".into(), cirru::calcit_to_cirru(&s.code)?.into()),
       ("args".into(), args.into()),
-      ("kind".into(), name_kind(&s.kind).into()),
+      ("kind".into(), (&s.kind).to_string().into()),
     ]);
 
     stack_list.push(info);
   }
 
   let content = cirru_edn::format(
-    &Edn::map_from_iter([("message".into(), failure.into()), ("stack".into(), stack_list.into())]),
+    &Edn::map_from_iter([
+      ("message".into(), failure.into()),
+      ("stack".into(), stack_list.into()),
+      (
+        "location".into(),
+        match location {
+          Some(l) => l.into(),
+          None => Edn::Nil,
+        },
+      ),
+    ]),
     true,
   )?;
   let _ = fs::write(ERROR_SNAPSHOT, content);
@@ -97,13 +122,3 @@ pub fn display_stack(failure: &str, stack: &CallStackList) -> Result<(), String>
 }
 
 const ERROR_SNAPSHOT: &str = ".calcit-error.cirru";
-
-fn name_kind(k: &StackKind) -> String {
-  match k {
-    StackKind::Fn => String::from("fn"),
-    StackKind::Proc => String::from("proc"),
-    StackKind::Macro => String::from("macro"),
-    StackKind::Syntax => String::from("syntax"),
-    StackKind::Codegen => String::from("codegen"),
-  }
-}

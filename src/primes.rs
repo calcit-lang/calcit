@@ -9,7 +9,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 use std::sync::Arc;
 
-use cirru_edn::EdnKwd;
+use cirru_edn::{Edn, EdnKwd};
 use im_ternary_tree::TernaryTreeList;
 
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
@@ -48,6 +48,7 @@ pub struct CrListWrap(pub TernaryTreeList<Calcit>);
 #[derive(Debug, Clone)]
 pub enum Calcit {
   Nil,
+
   Bool(bool),
   Number(f64),
   Symbol {
@@ -55,6 +56,7 @@ pub enum Calcit {
     ns: Arc<str>,
     at_def: Arc<str>,
     resolved: Option<Arc<SymbolResolved>>,
+    location: Option<Vec<u8>>,
   }, // content, ns... so it has meta information
   Keyword(EdnKwd),
   Str(Arc<str>),
@@ -537,6 +539,17 @@ impl Calcit {
   pub fn kwd(s: &str) -> Self {
     Calcit::Keyword(EdnKwd::from(s))
   }
+
+  pub fn get_location(&self) -> Option<NodeLocation> {
+    match self {
+      Calcit::Symbol { ns, at_def, location, .. } => Some(NodeLocation::new(
+        ns.to_owned(),
+        at_def.to_owned(),
+        location.to_owned().unwrap_or_default(),
+      )),
+      _ => None,
+    }
+  }
 }
 
 /// too naive id generator to be safe in WASM
@@ -548,7 +561,8 @@ pub fn gen_core_id() -> Arc<str> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CalcitErr {
   pub msg: String,
-  pub warnings: Vec<String>,
+  pub warnings: Vec<(String, NodeLocation)>,
+  pub location: Option<NodeLocation>,
   pub stack: rpds::ListSync<crate::call_stack::CalcitStack>,
 }
 
@@ -557,8 +571,8 @@ impl fmt::Display for CalcitErr {
     f.write_str(&self.msg)?;
     if !self.warnings.is_empty() {
       f.write_str("\n")?;
-      for w in &self.warnings {
-        writeln!(f, "{}", w)?;
+      for (w, loc) in &self.warnings {
+        writeln!(f, "{} @{}", w, loc)?;
       }
     }
     Ok(())
@@ -572,6 +586,7 @@ impl From<String> for CalcitErr {
       msg,
       warnings: vec![],
       stack: rpds::List::new_sync(),
+      location: None,
     }
   }
 }
@@ -582,6 +597,7 @@ impl CalcitErr {
       msg: msg.into(),
       warnings: vec![],
       stack: rpds::List::new_sync(),
+      location: None,
     }
   }
   pub fn err_str<T: Into<String>>(msg: T) -> Result<Calcit, Self> {
@@ -589,6 +605,15 @@ impl CalcitErr {
       msg: msg.into(),
       warnings: vec![],
       stack: rpds::List::new_sync(),
+      location: None,
+    })
+  }
+  pub fn err_str_location<T: Into<String>>(msg: T, location: Option<NodeLocation>) -> Result<Calcit, Self> {
+    Err(CalcitErr {
+      msg: msg.into(),
+      warnings: vec![],
+      stack: rpds::List::new_sync(),
+      location,
     })
   }
   pub fn use_msg_stack<T: Into<String>>(msg: T, stack: &CallStackList) -> Self {
@@ -596,6 +621,57 @@ impl CalcitErr {
       msg: msg.into(),
       warnings: vec![],
       stack: stack.to_owned(),
+      location: None,
     }
+  }
+  pub fn use_msg_stack_location<T: Into<String>>(msg: T, stack: &CallStackList, location: Option<NodeLocation>) -> Self {
+    CalcitErr {
+      msg: msg.into(),
+      warnings: vec![],
+      stack: stack.to_owned(),
+      location,
+    }
+  }
+}
+
+/// location of node in Snapshot
+#[derive(Debug, Clone, PartialEq)]
+pub struct NodeLocation {
+  pub ns: Arc<str>,
+  pub def: Arc<str>,
+  pub coord: Vec<u8>,
+}
+
+impl From<NodeLocation> for Edn {
+  fn from(v: NodeLocation) -> Self {
+    Edn::map_from_iter([
+      ("ns".into(), v.ns.into()),
+      ("def".into(), v.def.into()),
+      ("coord".into(), v.coord.into()),
+    ])
+  }
+}
+
+impl From<&NodeLocation> for Edn {
+  fn from(v: &NodeLocation) -> Self {
+    v.to_owned().into()
+  }
+}
+
+impl fmt::Display for NodeLocation {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(
+      f,
+      "{}/{} {}",
+      self.ns,
+      self.def,
+      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("-")
+    )
+  }
+}
+
+impl NodeLocation {
+  pub fn new(ns: Arc<str>, def: Arc<str>, coord: Vec<u8>) -> Self {
+    NodeLocation { ns, def, coord }
   }
 }

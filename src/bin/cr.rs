@@ -9,6 +9,7 @@ use std::time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 mod injection;
 
+use calcit::primes::NodeLocation;
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use im_ternary_tree::TernaryTreeList;
@@ -119,7 +120,7 @@ fn main() -> Result<(), String> {
     *prgm = program::extract_program_data(&snapshot)?;
   }
 
-  let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+  let check_warnings: &RefCell<Vec<(String, NodeLocation)>> = &RefCell::new(vec![]);
 
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
@@ -140,8 +141,8 @@ fn main() -> Result<(), String> {
     let started_time = Instant::now();
 
     let v = calcit::run_program(entries.init_ns.to_owned(), entries.init_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
-      for w in e.warnings {
-        eprintln!("{}", w);
+      for (w, l) in e.warnings {
+        eprintln!("{} @{}", w, l);
       }
       e.msg
     })?;
@@ -251,7 +252,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
     println!("checking pending tasks: {}", task_size);
     if task_size > 1 {
       // when there's services, make sure their code get preprocessed too
-      let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+      let check_warnings: &RefCell<Vec<(String, NodeLocation)>> = &RefCell::new(vec![]);
       if let Err(e) = runner::preprocess::preprocess_ns_def(
         entries.init_ns.to_owned(),
         entries.init_def.to_owned(),
@@ -267,8 +268,8 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
       throw_on_warnings(&warnings)?;
     }
     let v = calcit::run_program(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
-      for w in e.warnings {
-        eprintln!("{}", w);
+      for (w, loc) in e.warnings {
+        eprintln!("{} @{}", w, loc);
       }
       e.msg
     })?;
@@ -301,9 +302,9 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     let _ = fs::create_dir(code_emit_path);
   }
 
-  let js_file_path = code_emit_path.join(format!("{}.mjs", COMPILE_ERRORS_FILE)); // TODO mjs_mode
+  let js_file_path = code_emit_path.join(format!("{}.mjs", COMPILE_ERRORS_FILE));
 
-  let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+  let check_warnings: &RefCell<Vec<(String, NodeLocation)>> = &RefCell::new(vec![]);
   gen_stack::clear_stack();
 
   // preprocess to init
@@ -318,7 +319,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure.msg, &failure.stack)?;
+      call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
 
       let _ = fs::write(
         &js_file_path,
@@ -343,7 +344,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure.msg, &failure.stack)?;
+      call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
       return Err(failure.msg);
     }
   }
@@ -362,7 +363,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {}", failure);
-        call_stack::display_stack(&failure, &gen_stack::get_gen_stack())?;
+        call_stack::display_stack(&failure, &gen_stack::get_gen_stack(), None)?;
         return Err(failure);
       }
     }
@@ -372,7 +373,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {}", failure);
-        call_stack::display_stack(&failure, &gen_stack::get_gen_stack())?;
+        call_stack::display_stack(&failure, &gen_stack::get_gen_stack(), None)?;
         return Err(failure);
       }
     }
@@ -382,11 +383,11 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   Ok(())
 }
 
-fn throw_on_js_warnings(warnings: &[String], js_file_path: &Path) -> Result<(), String> {
+fn throw_on_js_warnings(warnings: &[(String, NodeLocation)], js_file_path: &Path) -> Result<(), String> {
   if !warnings.is_empty() {
     let mut content: String = String::from("");
-    for message in warnings {
-      println!("{}", message);
+    for (message, location) in warnings {
+      println!("{} @{}", message, location);
       content = format!("{}\n{}", content, message);
     }
 
@@ -401,11 +402,11 @@ fn throw_on_js_warnings(warnings: &[String], js_file_path: &Path) -> Result<(), 
   }
 }
 
-fn throw_on_warnings(warnings: &[String]) -> Result<(), String> {
+fn throw_on_warnings(warnings: &[(String, NodeLocation)]) -> Result<(), String> {
   if !warnings.is_empty() {
     let mut content: String = String::from("");
-    for message in warnings {
-      println!("{}", message);
+    for (message, loc) in warnings {
+      println!("{} @{}", message, loc);
       content = format!("{}\n{}", content, message);
     }
 

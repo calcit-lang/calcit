@@ -76,7 +76,7 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
     let _ = fs::create_dir(code_emit_path);
   }
 
-  let js_file_path = code_emit_path.join("program-ir.cirru"); // TODO mjs_mode
+  let js_file_path = code_emit_path.join("program-ir.cirru");
   let _ = fs::write(&js_file_path, content);
   println!("wrote to: {}", js_file_path.to_str().unwrap());
 
@@ -90,7 +90,13 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     Calcit::Str(s) => Edn::Str((**s).into()),
     Calcit::Bool(b) => Edn::Bool(b.to_owned()),
     Calcit::Keyword(s) => Edn::Keyword(s.to_owned()),
-    Calcit::Symbol { sym, ns, at_def, resolved } => {
+    Calcit::Symbol {
+      sym,
+      ns,
+      at_def,
+      resolved,
+      location,
+    } => {
       let resolved = match resolved {
         Some(resolved) => match &**resolved {
           ResolvedDef {
@@ -108,6 +114,13 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
                 Some(ImportRule::NsAs(_n)) => Edn::kwd("ns"),
                 Some(ImportRule::NsDefault(_n)) => Edn::kwd("default"),
                 Some(ImportRule::NsReferDef(_ns, _def)) => Edn::kwd("def"),
+                None => Edn::Nil,
+              },
+            ),
+            (
+              Edn::kwd("location"),
+              match location {
+                Some(xs) => xs.to_owned().into(),
                 None => Edn::Nil,
               },
             ),

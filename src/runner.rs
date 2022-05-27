@@ -7,7 +7,7 @@ use std::sync::{Arc, RwLock};
 use crate::builtins;
 use crate::builtins::is_proc_name;
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
-use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
+use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, NodeLocation, SymbolResolved::*, CORE_NS};
 use crate::program;
 use crate::util::string::has_ns_part;
 
@@ -19,23 +19,33 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
     Calcit::Bool(_) => Ok(expr.to_owned()),
     Calcit::Number(_) => Ok(expr.to_owned()),
     Calcit::Symbol { sym, .. } if &**sym == "&" => Ok(expr.to_owned()),
-    Calcit::Symbol { sym, ns, resolved, .. } => match resolved {
-      Some(resolved_info) => match &*resolved_info.to_owned() {
-        ResolvedDef {
-          ns: r_ns,
-          def: r_def,
-          rule,
-        } => {
-          if rule.is_some() && sym != r_def {
-            // dirty check for namespaced imported variables
-            return eval_symbol_from_program(r_def, r_ns, call_stack);
+    Calcit::Symbol {
+      sym,
+      ns,
+      at_def,
+      resolved,
+      location,
+      ..
+    } => {
+      let loc = NodeLocation::new(ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default());
+      match resolved {
+        Some(resolved_info) => match &*resolved_info.to_owned() {
+          ResolvedDef {
+            ns: r_ns,
+            def: r_def,
+            rule,
+          } => {
+            if rule.is_some() && sym != r_def {
+              // dirty check for namespaced imported variables
+              return eval_symbol_from_program(r_def, r_ns, call_stack);
+            }
+            evaluate_symbol(r_def, scope, r_ns, Some(loc), call_stack)
           }
-          evaluate_symbol(r_def, scope, r_ns, call_stack)
-        }
-        _ => evaluate_symbol(sym, scope, ns, call_stack),
-      },
-      _ => evaluate_symbol(sym, scope, ns, call_stack),
-    },
+          _ => evaluate_symbol(sym, scope, ns, Some(loc), call_stack),
+        },
+        _ => evaluate_symbol(sym, scope, ns, Some(loc), call_stack),
+      }
+    }
     Calcit::Keyword(_) => Ok(expr.to_owned()),
     Calcit::Str(_) => Ok(expr.to_owned()),
     Calcit::Thunk(code, v) => match v {
@@ -165,13 +175,26 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               ))
             }
           }
-          Calcit::Symbol { sym, ns, at_def, resolved } => Err(CalcitErr::use_msg_stack(
-            format!("cannot evaluate symbol directly: {}/{} in {}, {:?}", ns, sym, at_def, resolved),
-            call_stack,
-          )),
-          a => Err(CalcitErr::use_msg_stack(
+          Calcit::Symbol {
+            sym,
+            ns,
+            at_def,
+            resolved,
+            location,
+          } => {
+            let error_location = location
+              .as_ref()
+              .map(|l| NodeLocation::new(ns.to_owned(), at_def.to_owned(), l.to_owned()));
+            Err(CalcitErr::use_msg_stack_location(
+              format!("cannot evaluate symbol directly: {}/{} in {}, {:?}", ns, sym, at_def, resolved),
+              call_stack,
+              error_location,
+            ))
+          }
+          a => Err(CalcitErr::use_msg_stack_location(
             format!("cannot be used as operator: {} in {}", a, CrListWrap(xs.to_owned())),
             call_stack,
+            a.get_location(),
           )),
         };
 
@@ -188,16 +211,23 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
   }
 }
 
-pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_symbol(
+  sym: &str,
+  scope: &CalcitScope,
+  file_ns: &str,
+  location: Option<NodeLocation>,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   let v = match parse_ns_def(sym) {
     Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns.into(), &ns_part) {
       Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, call_stack) {
         Ok(v) => Ok(v),
         Err(e) => Err(e),
       },
-      None => Err(CalcitErr::use_msg_stack(
+      None => Err(CalcitErr::use_msg_stack_location(
         format!("unknown ns target: {}/{}", ns_part, def_part),
         call_stack,
+        location,
       )),
     },
     None => {
@@ -220,9 +250,10 @@ pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack
           Some(target_ns) => eval_symbol_from_program(sym, &target_ns, call_stack),
           None => {
             let vars: Vec<&Arc<str>> = scope.keys().collect();
-            Err(CalcitErr::use_msg_stack(
+            Err(CalcitErr::use_msg_stack_location(
               format!("unknown symbol `{}` in {:?}", sym, vars),
               call_stack,
+              location,
             ))
           }
         }

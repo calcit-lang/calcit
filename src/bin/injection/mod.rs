@@ -158,7 +158,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
           match r {
             Ok(ret) => calcit_to_edn(&ret),
             Err(e) => {
-              display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack)?;
+              display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack, e.location.as_ref())?;
               Err(format!("Error: {}", e))
             }
           }
@@ -246,7 +246,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
         match r {
           Ok(ret) => calcit_to_edn(&ret),
           Err(e) => {
-            display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack)?;
+            display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack, e.location.as_ref())?;
             Err(format!("Error: {}", e))
           }
         }
@@ -261,7 +261,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
     Err(e) => {
       // TODO for more accurate tracking, need to place tracker inside foreign function
       // track::track_task_release();
-      let _ = display_stack(&format!("failed to call request: {}", e), call_stack);
+      let _ = display_stack(&format!("failed to call request: {}", e), call_stack, None);
       return CalcitErr::err_str(e);
     }
   };

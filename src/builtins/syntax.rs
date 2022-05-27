@@ -11,7 +11,7 @@ use im_ternary_tree::TernaryTreeList;
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::call_stack::CallStackList;
-use crate::primes;
+use crate::primes::{self, NodeLocation};
 use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 
@@ -275,7 +275,7 @@ pub fn macroexpand_all(
           Calcit::Macro { def_ns, args, body, .. } => {
             // mutable operation
             let mut rest_nodes = xs.drop_left();
-            let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+            let check_warnings: &RefCell<Vec<(String, NodeLocation)>> = &RefCell::new(vec![]);
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
@@ -289,8 +289,8 @@ pub fn macroexpand_all(
                   let (resolved, _v) = runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, check_warnings, call_stack)?;
                   let warnings = check_warnings.to_owned().into_inner();
                   if !warnings.is_empty() {
-                    for message in &warnings {
-                      println!("{}", message);
+                    for (message, location) in &warnings {
+                      println!("{} @{}", message, location);
                     }
                   }
 
@@ -300,13 +300,13 @@ pub fn macroexpand_all(
             }
           }
           _ => {
-            let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+            let check_warnings: &RefCell<Vec<(String, NodeLocation)>> = &RefCell::new(vec![]);
             let (resolved, _v) =
               runner::preprocess::preprocess_expr(&quoted_code, &HashSet::new(), file_ns, check_warnings, call_stack)?;
             let warnings = check_warnings.to_owned().into_inner();
             if !warnings.is_empty() {
-              for message in &warnings {
-                println!("{}", message);
+              for (message, location) in &warnings {
+                println!("{} @{}", message, location);
               }
             }
             Ok(resolved)
@@ -387,5 +387,6 @@ pub fn gensym(xs: &CalcitItems, _scope: &CalcitScope, file_ns: Arc<str>, _call_s
     ns: file_ns,
     at_def: primes::GEN_DEF.to_owned(),
     resolved: None,
+    location: None,
   })
 }

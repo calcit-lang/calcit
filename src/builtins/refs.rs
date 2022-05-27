@@ -39,9 +39,10 @@ fn modify_ref(path: Arc<str>, v: Calcit, call_stack: &CallStackList) -> Result<(
         runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
       }
       a => {
-        return Err(CalcitErr::use_msg_stack(
+        return Err(CalcitErr::use_msg_stack_location(
           format!("expected fn to trigger after `reset!`, got {}", a),
           call_stack,
+          a.get_location(),
         ))
       }
     }
@@ -65,9 +66,10 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_
       }
       Ok(Calcit::Ref(path_info))
     }
-    (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack(
+    (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
       format!("defatom expected a symbol and an expression: {} , {}", a, b),
       call_stack,
+      a.get_location().or_else(|| b.get_location()),
     )),
     _ => Err(CalcitErr::use_msg_stack("defatom expected 2 nodes", call_stack)),
   }
@@ -105,9 +107,10 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
       Calcit::Symbol { sym, .. } => runner::evaluate_def_thunk(&code, &*file_ns, &*sym, call_stack),
       _ => return CalcitErr::err_str(format!("reset! expected a symbol, got: {:?}", expr[0])),
     },
-    (a, b) => Err(CalcitErr::use_msg_stack(
+    (a, b) => Err(CalcitErr::use_msg_stack_location(
       format!("reset! expected a ref and a value, got: {} {}", a, b),
       call_stack,
+      a.get_location().or_else(|| b.get_location()),
     )),
   }
 }
