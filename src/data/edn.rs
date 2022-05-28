@@ -84,8 +84,8 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Number(n) => Calcit::Number(*n as f64),
     Edn::Symbol(s) => Calcit::Symbol {
       sym: (**s).into(),
-      ns: primes::GEN_NS.to_owned(),
-      at_def: primes::GEN_DEF.to_owned(),
+      ns: primes::GEN_NS.into(),
+      at_def: primes::GENERATED_DEF.into(),
       resolved: None,
       location: None,
     },
@@ -94,8 +94,8 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Quote(nodes) => Calcit::Tuple(
       Arc::new(Calcit::Symbol {
         sym: "quote".into(),
-        ns: primes::GEN_NS.to_owned(),
-        at_def: primes::GEN_DEF.to_owned(),
+        ns: primes::GEN_NS.into(),
+        at_def: primes::GENERATED_DEF.into(),
         resolved: None,
         location: None,
       }),

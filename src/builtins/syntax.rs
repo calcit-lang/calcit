@@ -11,7 +11,7 @@ use im_ternary_tree::TernaryTreeList;
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::call_stack::CallStackList;
-use crate::primes::{self, NodeLocation};
+use crate::primes::{self, LocatedWarning};
 use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 
@@ -99,7 +99,7 @@ pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
       match (&xs[0], &xs[1]) {
         (Calcit::Symbol { sym: s, .. }, ys) => {
           let value = runner::evaluate_expr(ys, scope, file_ns.to_owned(), call_stack)?;
-          body_scope.insert_mut(s.to_owned(), value);
+          body_scope.insert(s.to_owned(), value);
         }
         (a, _) => return CalcitErr::err_str(format!("invalid binding name: {}", a)),
       }
@@ -275,7 +275,7 @@ pub fn macroexpand_all(
           Calcit::Macro { def_ns, args, body, .. } => {
             // mutable operation
             let mut rest_nodes = xs.drop_left();
-            let check_warnings: &RefCell<Vec<(String, NodeLocation)>> = &RefCell::new(vec![]);
+            let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
@@ -287,12 +287,8 @@ pub fn macroexpand_all(
                 }
                 _ => {
                   let (resolved, _v) = runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, check_warnings, call_stack)?;
-                  let warnings = check_warnings.to_owned().into_inner();
-                  if !warnings.is_empty() {
-                    for (message, location) in &warnings {
-                      println!("{} @{}", message, location);
-                    }
-                  }
+                  let warnings = check_warnings.borrow();
+                  LocatedWarning::print_list(&warnings);
 
                   return Ok(resolved);
                 }
@@ -300,15 +296,10 @@ pub fn macroexpand_all(
             }
           }
           _ => {
-            let check_warnings: &RefCell<Vec<(String, NodeLocation)>> = &RefCell::new(vec![]);
+            let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
             let (resolved, _v) =
               runner::preprocess::preprocess_expr(&quoted_code, &HashSet::new(), file_ns, check_warnings, call_stack)?;
-            let warnings = check_warnings.to_owned().into_inner();
-            if !warnings.is_empty() {
-              for (message, location) in &warnings {
-                println!("{} @{}", message, location);
-              }
-            }
+            LocatedWarning::print_list(&check_warnings.borrow());
             Ok(resolved)
           }
         }
@@ -385,7 +376,7 @@ pub fn gensym(xs: &CalcitItems, _scope: &CalcitScope, file_ns: Arc<str>, _call_s
   Ok(Calcit::Symbol {
     sym: s.into(),
     ns: file_ns,
-    at_def: primes::GEN_DEF.to_owned(),
+    at_def: primes::GENERATED_DEF.into(),
     resolved: None,
     location: None,
   })

@@ -5,6 +5,7 @@ use std::cmp::Eq;
 use std::cmp::Ordering;
 use std::cmp::Ordering::*;
 use std::fmt;
+use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 use std::sync::Arc;
@@ -12,43 +13,86 @@ use std::sync::Arc;
 use cirru_edn::{Edn, EdnKwd};
 use im_ternary_tree::TernaryTreeList;
 
-static ID_GEN: AtomicUsize = AtomicUsize::new(0);
-
+use rpds::HashTrieMapSync;
 pub use syntax_name::CalcitSyntax;
 
 use crate::call_stack::CallStackList;
 
+/// dead simple counter for ID generator, better use nanoid in business
+static ID_GEN: AtomicUsize = AtomicUsize::new(0);
+
+/// resolved value of real meaning of a symbol
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolResolved {
+  /// a local variable
   ResolvedLocal,
-  ResolvedRaw, // raw syntax, no target
+  /// raw syntax, no target, for example `&` is a raw syntax
+  ResolvedRaw,
+  /// definition attached on namespace
   ResolvedDef {
     ns: Arc<str>,
     def: Arc<str>,
     rule: Option<Arc<ImportRule>>,
-  }, // ns, def
+  },
 }
 
 /// defRule: ns def
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportRule {
-  NsAs(Arc<str>),                 // ns
-  NsReferDef(Arc<str>, Arc<str>), // ns, def
-  NsDefault(Arc<str>),            // ns, js only
+  /// ns imported via `:as`
+  NsAs(Arc<str>),
+  /// (ns, def) imported via `:refer`
+  NsReferDef(Arc<str>, Arc<str>),
+  /// ns imported via `:default`, js only
+  NsDefault(Arc<str>),
 }
 
-// scope
-pub type CalcitScope = rpds::HashTrieMapSync<Arc<str>, Calcit>;
+/// scope in the semantics of persistent data structure
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CalcitScope(rpds::HashTrieMapSync<Arc<str>, Calcit>);
+
+impl Default for CalcitScope {
+  fn default() -> Self {
+    CalcitScope(HashTrieMapSync::new_sync())
+  }
+}
+
+impl CalcitScope {
+  /// create a new scope from a piece of hashmap
+  pub fn new(data: rpds::HashTrieMapSync<Arc<str>, Calcit>) -> Self {
+    CalcitScope(data)
+  }
+  /// check if contains
+  pub fn has(&self, sym: &str) -> bool {
+    self.0.contains_key(sym)
+  }
+  /// load value of a symbol from the scope
+  pub fn get(&self, key: &str) -> Option<&Calcit> {
+    self.0.get(key)
+  }
+  /// associate new value  to scope
+  pub fn assoc(&self, key: Arc<str>, value: Calcit) -> Self {
+    Self::new(self.0.insert(key, value))
+  }
+  /// mutable insertiong of variable
+  pub fn insert(&mut self, key: Arc<str>, value: Calcit) {
+    self.0.insert_mut(key, value);
+  }
+  pub fn list_variables(&self) -> Vec<Arc<str>> {
+    self.0.keys().cloned().collect()
+  }
+}
+
 pub type CalcitItems = TernaryTreeList<Calcit>;
 
 /// special types wraps vector of calcit data for displaying
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct CrListWrap(pub TernaryTreeList<Calcit>);
 
+/// dynamic data defined in Calcit
 #[derive(Debug, Clone)]
 pub enum Calcit {
   Nil,
-
   Bool(bool),
   Number(f64),
   Symbol {
@@ -56,40 +100,50 @@ pub enum Calcit {
     ns: Arc<str>,
     at_def: Arc<str>,
     resolved: Option<Arc<SymbolResolved>>,
+    /// positions in the tree of Cirru
     location: Option<Vec<u8>>,
-  }, // content, ns... so it has meta information
+  },
+  /// sth between string and enum, used a key or weak identifier
   Keyword(EdnKwd),
   Str(Arc<str>),
+  /// to compile to js, global variables are stored in thunks at first, rather than evaluated
+  /// and it is still different from quoted data which was intentionally turned in to data.
   Thunk(Arc<Calcit>, Option<Arc<Calcit>>), // code, value
-  /// holding a path to its state
+  /// atom, holding a path to its state, data inside remains during hot code swapping
   Ref(Arc<str>),
   /// more tagged union type, more like an internal structure
   Tuple(Arc<Calcit>, Arc<Calcit>),
-  ///  to be used by FFIs
+  /// binary data, to be used by FFIs
   Buffer(Vec<u8>),
   /// not for data, but for recursion
   Recur(CalcitItems),
   List(CalcitItems),
   Set(rpds::HashTrieSetSync<Calcit>),
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
-  Record(EdnKwd, Arc<Vec<EdnKwd>>, Arc<Vec<Calcit>>), // usize of keyword id
+  /// with only static and limited keys, for performance and checking
+  /// size of keys are values should be kept consistent
+  Record(EdnKwd, Arc<Vec<EdnKwd>>, Arc<Vec<Calcit>>),
+  /// native functions that providing feature from Rust
   Proc(Arc<str>),
   Macro {
-    name: Arc<str>,           // name
-    def_ns: Arc<str>,         // ns
-    id: Arc<str>,             // an id
-    args: Arc<Vec<Arc<str>>>, // args
-    body: Arc<CalcitItems>,   // body
+    name: Arc<str>,
+    /// where it was defined
+    def_ns: Arc<str>,
+    id: Arc<str>,
+    args: Arc<Vec<Arc<str>>>,
+    body: Arc<CalcitItems>,
   },
   Fn {
-    name: Arc<str>,   // name
-    def_ns: Arc<str>, // ns
-    id: Arc<str>,     // an id
+    name: Arc<str>,
+    /// where it was defined
+    def_ns: Arc<str>,
+    id: Arc<str>,
     scope: Arc<CalcitScope>,
-    args: Arc<Vec<Arc<str>>>, // args
-    body: Arc<CalcitItems>,   // body
+    args: Arc<Vec<Arc<str>>>,
+    body: Arc<CalcitItems>,
   },
-  Syntax(CalcitSyntax, Arc<str>), // name, ns... notice that `ns` is a meta info
+  /// name, ns... notice that `ns` is a meta info
+  Syntax(CalcitSyntax, Arc<str>),
 }
 
 impl fmt::Display for Calcit {
@@ -229,6 +283,7 @@ fn is_simple_str(tok: &str) -> bool {
   true
 }
 
+/// encode as hex string like `ff`
 fn buffer_bit_hex(n: u8) -> String {
   hex::encode(vec![n])
 }
@@ -508,17 +563,11 @@ impl PartialEq for Calcit {
 
 pub const CORE_NS: &str = "calcit.core";
 pub const BUILTIN_CLASSES_ENTRY: &str = "&init-builtin-classes!";
-pub const GENERATED_NS: &str = "calcit.gen";
+pub const GEN_NS: &str = "calcit.gen";
 pub const GENERATED_DEF: &str = "gen%";
 
-lazy_static! {
-  pub static ref GEN_NS: Arc<str> = GENERATED_NS.to_string().into();
-  pub static ref GEN_DEF: Arc<str> = GENERATED_DEF.to_string().into();
-  pub static ref GEN_CORE_NS: Arc<str> = CORE_NS.to_string().into();
-  pub static ref GEN_CLASS_ENTRY: Arc<str> = BUILTIN_CLASSES_ENTRY.to_string().into();
-}
-
 impl Calcit {
+  /// data converting, not displaying
   pub fn turn_string(&self) -> String {
     match self {
       Calcit::Nil => String::from(""),
@@ -540,6 +589,7 @@ impl Calcit {
     Calcit::Keyword(EdnKwd::from(s))
   }
 
+  /// currently only symbol has node location
   pub fn get_location(&self) -> Option<NodeLocation> {
     match self {
       Calcit::Symbol { ns, at_def, location, .. } => Some(NodeLocation::new(
@@ -561,7 +611,7 @@ pub fn gen_core_id() -> Arc<str> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CalcitErr {
   pub msg: String,
-  pub warnings: Vec<(String, NodeLocation)>,
+  pub warnings: Vec<LocatedWarning>,
   pub location: Option<NodeLocation>,
   pub stack: rpds::ListSync<crate::call_stack::CalcitStack>,
 }
@@ -571,9 +621,7 @@ impl fmt::Display for CalcitErr {
     f.write_str(&self.msg)?;
     if !self.warnings.is_empty() {
       f.write_str("\n")?;
-      for (w, loc) in &self.warnings {
-        writeln!(f, "{} @{}", w, loc)?;
-      }
+      LocatedWarning::print_list(&self.warnings);
     }
     Ok(())
   }
@@ -673,5 +721,32 @@ impl fmt::Display for NodeLocation {
 impl NodeLocation {
   pub fn new(ns: Arc<str>, def: Arc<str>, coord: Vec<u8>) -> Self {
     NodeLocation { ns, def, coord }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocatedWarning(String, NodeLocation);
+
+impl Display for LocatedWarning {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{} @{}", self.0, self.1)
+  }
+}
+
+/// warning from static checking of macro expanding
+impl LocatedWarning {
+  pub fn new(msg: String, location: NodeLocation) -> Self {
+    LocatedWarning(msg, location)
+  }
+
+  /// create an empty list
+  pub fn default_list() -> Vec<Self> {
+    vec![]
+  }
+
+  pub fn print_list(list: &Vec<Self>) {
+    for warn in list {
+      println!("{}", warn);
+    }
   }
 }

@@ -143,7 +143,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
 
             Ok(loop {
               // need to handle recursion
-              let body_scope = bind_args(args, &current_values, &rpds::HashTrieMap::new_sync(), call_stack)?;
+              let body_scope = bind_args(args, &current_values, &CalcitScope::default(), call_stack)?;
               let code = evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
@@ -231,12 +231,12 @@ pub fn evaluate_symbol(
       )),
     },
     None => {
-      if CalcitSyntax::is_core_syntax(sym) {
+      if CalcitSyntax::is_valid(sym) {
         Ok(Calcit::Syntax(
-          CalcitSyntax::from(sym).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?,
+          sym.try_into().map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?,
           file_ns.to_owned().into(),
         ))
-      } else if scope.contains_key(sym) {
+      } else if scope.has(sym) {
         // although scope is detected first, it would trigger warning during preprocess
         Ok(scope.get(sym).unwrap().to_owned())
       } else if is_proc_name(sym) {
@@ -249,9 +249,9 @@ pub fn evaluate_symbol(
         match program::lookup_def_target_in_import(file_ns, sym) {
           Some(target_ns) => eval_symbol_from_program(sym, &target_ns, call_stack),
           None => {
-            let vars: Vec<&Arc<str>> = scope.keys().collect();
+            let vars = scope.list_variables();
             Err(CalcitErr::use_msg_stack_location(
-              format!("unknown symbol `{}` in {:?}", sym, vars),
+              format!("unknown symbol `{}` in {}", sym, vars.join(",")),
               call_stack,
               location,
             ))
@@ -270,7 +270,7 @@ pub fn evaluate_symbol(
 
 /// make sure a thunk at global is called
 pub fn evaluate_def_thunk(code: &Arc<Calcit>, file_ns: &str, sym: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  let evaled_v = evaluate_expr(code, &rpds::HashTrieMap::new_sync(), file_ns.into(), call_stack)?;
+  let evaled_v = evaluate_expr(code, &CalcitScope::default(), file_ns.into(), call_stack)?;
   // and write back to program state to fix duplicated evalution
   // still using thunk since js and IR requires bare code
   let next = if builtins::effects::is_rust_eval() {
@@ -304,7 +304,7 @@ fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList) -> 
     Some(v) => Ok(v),
     None => match program::lookup_def_code(ns, sym) {
       Some(code) => {
-        let v = evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), ns.into(), call_stack)?;
+        let v = evaluate_expr(&code, &CalcitScope::default(), ns.into(), call_stack)?;
         program::write_evaled_def(ns, sym, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
         Ok(v)
       }
@@ -386,7 +386,7 @@ pub fn bind_args(
           while let Some(v) = values_pop_front() {
             chunk = chunk.push_right(v.to_owned());
           }
-          scope.insert_mut(sym.to_owned(), Calcit::List(chunk));
+          scope.insert(sym.to_owned(), Calcit::List(chunk));
           if !is_args_empty() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{:?}` after spreading in `{:?}`", collected_args, args,),
@@ -401,11 +401,11 @@ pub fn bind_args(
         "?" => optional = true,
         _ => match values_pop_front() {
           Some(v) => {
-            scope.insert_mut(sym.to_owned(), v.to_owned());
+            scope.insert(sym.to_owned(), v.to_owned());
           }
           None => {
             if optional {
-              scope.insert_mut(sym.to_owned(), Calcit::Nil);
+              scope.insert(sym.to_owned(), Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
                 format!("too few values `{}` passed to args `{:?}`", CrListWrap(values.to_owned()), args),

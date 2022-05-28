@@ -9,7 +9,7 @@ use crate::{
     edn::{self, edn_to_calcit},
   },
   primes,
-  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CrListWrap},
+  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope, CrListWrap},
   runner,
   util::number::f64_to_usize,
 };
@@ -205,15 +205,15 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::Symbol {
       sym: s.to_owned(),
-      ns: primes::GEN_NS.to_owned(),
-      at_def: primes::GEN_DEF.to_owned(),
+      ns: primes::GEN_NS.into(),
+      at_def: primes::GENERATED_DEF.into(),
       resolved: None,
       location: None,
     }),
     Calcit::Keyword(s) => Ok(Calcit::Symbol {
       sym: s.to_string().into(),
-      ns: primes::GEN_NS.to_owned(),
-      at_def: primes::GEN_DEF.to_owned(),
+      ns: primes::GEN_NS.into(),
+      at_def: primes::GENERATED_DEF.into(),
       resolved: None,
       location: None,
     }),
@@ -250,7 +250,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     ));
   }
   let value = invoke_args[0].to_owned();
-  let s0 = rpds::HashTrieMap::new_sync();
+  let s0 = CalcitScope::default();
   let class = match &invoke_args[0] {
     Calcit::Tuple(a, _b) => (**a).to_owned(),
     // classed should already be preprocessed

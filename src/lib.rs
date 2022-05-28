@@ -14,7 +14,7 @@ pub mod snapshot;
 pub mod util;
 
 use dirs::home_dir;
-use primes::NodeLocation;
+use primes::LocatedWarning;
 use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
@@ -43,7 +43,7 @@ pub struct ProgramEntries {
 }
 
 pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -> Result<Calcit, CalcitErr> {
-  let check_warnings: RefCell<Vec<(String, NodeLocation)>> = RefCell::new(vec![]);
+  let check_warnings = RefCell::new(LocatedWarning::default_list());
 
   // preprocess to init
   match runner::preprocess::preprocess_ns_def(
@@ -62,11 +62,11 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
     }
   }
 
-  let warnings = check_warnings.into_inner();
+  let warnings = check_warnings.borrow();
   if !warnings.is_empty() {
     return Err(CalcitErr {
       msg: format!("Found {} warnings, runner blocked", warnings.len()),
-      warnings,
+      warnings: warnings.to_owned(),
       stack: rpds::List::new_sync(),
       location: None,
     });

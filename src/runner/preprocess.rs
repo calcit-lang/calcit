@@ -2,7 +2,10 @@ use crate::{
   builtins::{is_js_syntax_procs, is_proc_name},
   call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
   primes,
-  primes::{Calcit, CalcitErr, CalcitItems, CalcitSyntax, ImportRule, NodeLocation, SymbolResolved::*, GENERATED_DEF},
+  primes::{
+    Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, ImportRule, LocatedWarning, NodeLocation, SymbolResolved::*,
+    GENERATED_DEF,
+  },
   program, runner,
 };
 
@@ -29,7 +32,7 @@ pub fn preprocess_ns_def(
   // pass original string representation, TODO codegen currently relies on this
   raw_sym: Arc<str>,
   import_rule: Option<Arc<ImportRule>>, // returns form and possible value
-  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &rpds::ListSync<CalcitStack>,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   let ns = &raw_ns;
@@ -73,7 +76,7 @@ pub fn preprocess_ns_def(
           let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns.to_owned(), check_warnings, &next_stack)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
           let v = if is_fn_or_macro(&resolved_code) {
-            match runner::evaluate_expr(&resolved_code, &rpds::HashTrieMap::new_sync(), ns.to_owned(), &next_stack) {
+            match runner::evaluate_expr(&resolved_code, &CalcitScope::default(), ns.to_owned(), &next_stack) {
               Ok(ret) => ret,
               Err(e) => return Err(e),
             }
@@ -136,7 +139,7 @@ pub fn preprocess_expr(
   expr: &Calcit,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   // println!("preprocessing @{} {}", file_ns, expr);
@@ -198,10 +201,10 @@ pub fn preprocess_expr(
             },
             None,
           ))
-        } else if CalcitSyntax::is_core_syntax(def) {
+        } else if CalcitSyntax::is_valid(def) {
           Ok((
             Calcit::Syntax(
-              CalcitSyntax::from(def).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?,
+              def.try_into().map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?,
               def_ns.to_owned(),
             ),
             None,
@@ -253,7 +256,7 @@ pub fn preprocess_expr(
                   names.push(def.to_owned());
                 }
                 let mut warnings = check_warnings.borrow_mut();
-                warnings.push((
+                warnings.push(LocatedWarning::new(
                   format!("[Warn] unknown `{}` in {}/{}, locals {{{}}}", def, def_ns, at_def, names.join(" ")),
                   NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
                 ));
@@ -285,7 +288,10 @@ pub fn preprocess_expr(
         def: GENERATED_DEF.into(),
         coord: vec![],
       };
-      warnings.push((format!("[Warn] unexpected data during preprocess: {:?}", expr), loc));
+      warnings.push(LocatedWarning::new(
+        format!("[Warn] unexpected data during preprocess: {:?}", expr),
+        loc,
+      ));
       Ok((expr.to_owned(), None))
     }
   }
@@ -295,7 +301,7 @@ fn process_list_call(
   xs: &CalcitItems,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
   let head = &xs[0];
@@ -364,7 +370,7 @@ fn process_list_call(
       loop {
         // need to handle recursion
         // println!("evaling line: {:?}", body);
-        let body_scope = runner::bind_args(def_args, &current_values, &rpds::HashTrieMap::new_sync(), &next_stack)?;
+        let body_scope = runner::bind_args(def_args, &current_values, &CalcitScope::default(), &next_stack)?;
         let code = runner::evaluate_lines(body, &body_scope, file_ns.to_owned(), &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
@@ -449,7 +455,7 @@ fn check_fn_args(
   file_ns: Arc<str>,
   f_name: Arc<str>,
   def_name: Arc<str>,
-  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   let mut i = 0;
   let mut j = 0;
@@ -483,7 +489,7 @@ fn check_fn_args(
         } else {
           let mut warnings = check_warnings.borrow_mut();
           let loc = NodeLocation::new(file_ns.to_owned(), GENERATED_DEF.into(), vec![]);
-          warnings.push((
+          warnings.push(LocatedWarning::new(
             format!(
               "[Warn] lack of args in {} `{:?}` with `{}`, at {}/{}",
               f_name,
@@ -500,7 +506,7 @@ fn check_fn_args(
       (None, Some(_)) => {
         let mut warnings = check_warnings.borrow_mut();
         let loc = NodeLocation::new(file_ns.to_owned(), GENERATED_DEF.into(), vec![]);
-        warnings.push((
+        warnings.push(LocatedWarning::new(
           format!(
             "[Warn] too many args for {} `{:?}` with `{}`, at {}/{}",
             f_name,
@@ -537,7 +543,7 @@ pub fn preprocess_each_items(
   args: &CalcitItems,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns)]);
@@ -554,7 +560,7 @@ pub fn preprocess_defn(
   args: &CalcitItems,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
@@ -632,10 +638,10 @@ pub fn preprocess_defn(
 }
 
 // warn if this symbol is used
-fn check_symbol(sym: &str, args: &CalcitItems, location: NodeLocation, check_warnings: &RefCell<Vec<(String, NodeLocation)>>) {
-  if is_proc_name(sym) || CalcitSyntax::is_core_syntax(sym) || program::has_def_code(primes::CORE_NS, sym) {
+fn check_symbol(sym: &str, args: &CalcitItems, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
+  if is_proc_name(sym) || CalcitSyntax::is_valid(sym) || program::has_def_code(primes::CORE_NS, sym) {
     let mut warnings = check_warnings.borrow_mut();
-    warnings.push((
+    warnings.push(LocatedWarning::new(
       format!(
         "[Warn] local binding `{}` shadowed `calcit.core/{}`, with {}",
         sym,
@@ -655,7 +661,7 @@ pub fn preprocess_call_let(
   scope_defs: &HashSet<Arc<str>>,
   // where called
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
@@ -730,7 +736,7 @@ pub fn preprocess_defatom(
   args: &CalcitItems,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns)]);
@@ -749,7 +755,7 @@ pub fn preprocess_quasiquote(
   args: &CalcitItems,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns)]);
@@ -769,7 +775,7 @@ pub fn preprocess_quasiquote_internal(
   x: &Calcit,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: Arc<str>,
-  check_warnings: &RefCell<Vec<(String, NodeLocation)>>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   match x {

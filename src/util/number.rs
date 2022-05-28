@@ -7,11 +7,11 @@ pub fn is_even(x: usize) -> bool {
 }
 
 pub fn is_integer(x: f64) -> bool {
-  x.fract() == 0.0
+  x.fract().abs() <= f64::EPSILON
 }
 
 pub fn f64_to_usize(f: f64) -> Result<usize, String> {
-  if f.fract() == 0.0 {
+  if f.fract().abs() <= f64::EPSILON {
     if f >= 0.0 {
       Ok(f as usize)
     } else {
@@ -23,7 +23,7 @@ pub fn f64_to_usize(f: f64) -> Result<usize, String> {
 }
 
 pub fn f64_to_i32(f: f64) -> Result<i32, String> {
-  if f.fract() == 0.0 {
+  if f.fract().abs() <= f64::EPSILON {
     Ok(f as i32)
   } else {
     Err(format!("cannot extract int from float: {}", f))

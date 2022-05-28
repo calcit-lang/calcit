@@ -1,23 +1,35 @@
 use std::cmp::Ordering;
 use std::cmp::Ordering::*;
 use std::fmt;
+use std::sync::Arc;
 
+/// core syntax inside Calcit
 #[derive(Debug, Clone, PartialEq)]
 pub enum CalcitSyntax {
   Defn,
   Defmacro,
   If,
+  /// `&let` that binds only 1 local
   CoreLet,
+  /// to turn code into quoted data
   Quote,
+  /// used inside macro
   Quasiquote,
   Gensym,
   Eval,
+  /// expand macro until recursive calls are resolved
   Macroexpand,
+  /// expand macro just once for debugging, even `Recur` is returned
   Macroexpand1,
+  /// expand macro until macros inside are resolved
   MacroexpandAll,
+  /// it has special behaviors of try catch
   Try,
+  /// referenced state defined and attached undefined namespace
   Defatom,
+  /// `reset!` value to atom
   Reset,
+  /// a hint mark inside function, currently only used for `async`
   HintFn,
 }
 
@@ -42,12 +54,13 @@ impl fmt::Display for CalcitSyntax {
       Reset => "reset!",
       HintFn => "hint-fn",
     };
-    f.write_str(buf) // TODO performance
+    f.write_str(buf)
   }
 }
 
-impl CalcitSyntax {
-  pub fn from(s: &str) -> Result<Self, String> {
+impl TryFrom<&str> for CalcitSyntax {
+  type Error = String;
+  fn try_from(s: &str) -> Result<Self, Self::Error> {
     match s {
       "defn" => Ok(Defn),
       "defmacro" => Ok(Defmacro),
@@ -67,8 +80,25 @@ impl CalcitSyntax {
       _ => Err(format!("Unknown format! {}", s)),
     }
   }
+}
 
-  pub fn is_core_syntax(s: &str) -> bool {
+impl TryFrom<Arc<str>> for CalcitSyntax {
+  type Error = String;
+  fn try_from(s: Arc<str>) -> Result<Self, Self::Error> {
+    Self::try_from(&*s)
+  }
+}
+
+impl TryFrom<&Arc<str>> for CalcitSyntax {
+  type Error = String;
+  fn try_from(s: &Arc<str>) -> Result<Self, Self::Error> {
+    Self::try_from(&**s)
+  }
+}
+
+impl CalcitSyntax {
+  /// check is given name is a syntax name
+  pub fn is_valid(s: &str) -> bool {
     matches!(
       s,
       "defn"

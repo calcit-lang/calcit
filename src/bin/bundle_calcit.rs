@@ -8,7 +8,7 @@ use std::{
   sync::Arc,
 };
 
-use calcit::snapshot::{load_files, ChangesDict};
+use calcit::snapshot::ChangesDict;
 use calcit::snapshot::{FileChangeInfo, FileInSnapShot};
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -124,8 +124,8 @@ where
 }
 
 fn find_compact_changes(new_data: &Edn, old_data: &Edn) -> Result<ChangesDict, String> {
-  let old_files = load_files(&old_data.map_get("files")?)?;
-  let new_files = load_files(&new_data.map_get("files")?)?;
+  let old_files: HashMap<Arc<str>, FileInSnapShot> = old_data.map_get("files")?.try_into()?;
+  let new_files: HashMap<Arc<str>, FileInSnapShot> = new_data.map_get("files")?.try_into()?;
   let old_namespaces = old_files.keys().collect::<HashSet<_>>();
   let new_namespaces = new_files.keys().collect::<HashSet<_>>();
   let added_namespaces = new_namespaces.difference(&old_namespaces).collect::<HashSet<_>>();
