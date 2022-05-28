@@ -2,7 +2,9 @@ pub mod preprocess;
 pub mod track;
 
 use im_ternary_tree::TernaryTreeList;
-use std::sync::{Arc, RwLock};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::builtins;
 use crate::builtins::is_proc_name;
@@ -72,8 +74,8 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             let values = evaluate_args(&rest_nodes, scope, file_ns.to_owned(), call_stack)?;
             let next_stack = extend_call_stack(call_stack, file_ns, p.to_owned(), StackKind::Proc, Calcit::Nil, &values);
 
-            if p.starts_with('.') {
-              builtins::meta::invoke_method(p.strip_prefix('.').unwrap(), &values, &next_stack)
+            if let Some(v) = p.strip_prefix('.') {
+              builtins::meta::invoke_method(v, &values, &next_stack)
             } else {
               // println!("proc: {}", expr);
               builtins::handle_proc(p, &values, call_stack)
@@ -236,9 +238,9 @@ pub fn evaluate_symbol(
           sym.try_into().map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?,
           file_ns.to_owned().into(),
         ))
-      } else if scope.has(sym) {
+      } else if let Some(v) = scope.get(sym) {
         // although scope is detected first, it would trigger warning during preprocess
-        Ok(scope.get(sym).unwrap().to_owned())
+        Ok(v.to_owned())
       } else if is_proc_name(sym) {
         Ok(Calcit::Proc(sym.to_owned().into()))
       } else if program::lookup_def_code(CORE_NS, sym).is_some() {
@@ -351,28 +353,28 @@ pub fn bind_args(
 
   let collected_args = args.to_owned();
   let collected_values = Arc::new(values);
-  let pop_args_idx = Arc::new(RwLock::new(0));
-  let pop_values_idx = Arc::new(RwLock::new(0));
+  let pop_args_idx = Rc::new(RefCell::new(0));
+  let pop_values_idx = Rc::new(RefCell::new(0));
 
   let args_pop_front = || -> Option<Arc<str>> {
-    let mut p = (*pop_args_idx).write().unwrap();
+    let mut p = pop_args_idx.borrow_mut();
     let ret = collected_args.get(*p);
     *p += 1;
     ret.map(|x| x.to_owned())
   };
 
   let values_pop_front = || -> Option<&Calcit> {
-    let mut p = (*pop_values_idx).write().unwrap();
+    let mut p = pop_values_idx.borrow_mut();
     let ret = collected_values.get(*p);
     *p += 1;
     ret
   };
   let is_args_empty = || -> bool {
-    let p = (*pop_args_idx).read().unwrap();
+    let p = pop_args_idx.borrow();
     *p >= (*collected_args).len()
   };
   let is_values_empty = || -> bool {
-    let p = (*pop_values_idx).read().unwrap();
+    let p = pop_values_idx.borrow();
     *p >= (*collected_values).len()
   };
 

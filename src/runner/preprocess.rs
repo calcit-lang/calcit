@@ -314,7 +314,7 @@ fn process_list_call(
   //   primes::CrListWrap(xs.to_owned()),
   //   head_form,
   //   if head_evaled.is_some() {
-  //     head_evaled.to_owned().unwrap()
+  //     head_evaled.to_owned().expect("debug")
   //   } else {
   //     Calcit::Nil
   //   }

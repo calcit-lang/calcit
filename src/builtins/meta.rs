@@ -99,7 +99,7 @@ pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn force_reset_gensym_index() -> Result<(), String> {
-  let mut ns_symbol_dict = NS_SYMBOL_DICT.write().unwrap();
+  let mut ns_symbol_dict = NS_SYMBOL_DICT.write().expect("write symbols");
   ns_symbol_dict.clear();
   Ok(())
 }

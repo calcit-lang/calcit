@@ -78,7 +78,7 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
 
   let js_file_path = code_emit_path.join("program-ir.cirru");
   let _ = fs::write(&js_file_path, content);
-  println!("wrote to: {}", js_file_path.to_str().unwrap());
+  println!("wrote to: {}", js_file_path.to_str().expect("extract path"));
 
   Ok(())
 }

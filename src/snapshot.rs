@@ -89,8 +89,8 @@ pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
 
 pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   let path_data = Path::new(path);
-  let parent = path_data.parent().unwrap();
-  let parent_str = parent.to_str().unwrap();
+  let parent = path_data.parent().expect("parent path");
+  let parent_str = parent.to_str().expect("get path string");
 
   let def_dict: HashMap<Arc<str>, Cirru> = HashMap::from_iter([
     (

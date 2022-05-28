@@ -26,7 +26,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> 
         resolved: None,
         location: Some(coord.to_vec()),
       }),
-      _ => match s.chars().next().unwrap() {
+      _ => match s.chars().next().expect("load first char") {
         ':' => Ok(Calcit::kwd(&s[1..])),
         '.' => {
           if s.starts_with(".-") || s.starts_with(".!") {

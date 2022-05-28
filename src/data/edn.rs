@@ -16,7 +16,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Nil => Ok(Edn::Nil),
     Calcit::Bool(b) => Ok(Edn::Bool(*b)),
     Calcit::Str(s) => Ok(Edn::Str((**s).into())),
-    Calcit::Number(n) => Ok(Edn::Number(*n)), // TODO
+    Calcit::Number(n) => Ok(Edn::Number(*n)),
     Calcit::Keyword(s) => Ok(Edn::Keyword(s.to_owned())),
     Calcit::Symbol { sym, .. } => Ok(Edn::Symbol((**sym).into())),
     Calcit::List(xs) => {

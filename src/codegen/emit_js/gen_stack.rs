@@ -8,7 +8,7 @@ lazy_static! {
 }
 
 pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: &CalcitItems) {
-  let mut stack = CALL_STACK.write().unwrap();
+  let mut stack = CALL_STACK.write().expect("open call stack");
   stack.push_front_mut(CalcitStack {
     ns: ns.into(),
     def: def.into(),
@@ -19,7 +19,7 @@ pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args:
 }
 
 pub fn pop_call_stack() {
-  let mut stack = CALL_STACK.write().unwrap();
+  let mut stack = CALL_STACK.write().expect("open call stack");
   if !stack.is_empty() {
     match stack.drop_first() {
       Some(v) => *stack = v,
@@ -31,11 +31,11 @@ pub fn pop_call_stack() {
 }
 
 pub fn clear_stack() {
-  let mut stack = CALL_STACK.write().unwrap();
+  let mut stack = CALL_STACK.write().expect("open call stack");
   *stack = rpds::List::new_sync();
 }
 
 pub fn get_gen_stack() -> CallStackList {
-  let stack = CALL_STACK.read().unwrap();
+  let stack = CALL_STACK.read().expect("read call stack");
   stack.to_owned()
 }

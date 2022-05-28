@@ -38,7 +38,7 @@ fn main() -> Result<(), String> {
   let cli_matches = cli_args::parse_cli();
   let cli_options = CLIOptions {
     // has default value
-    entry_path: Path::new(cli_matches.value_of("input").unwrap()).to_owned(),
+    entry_path: Path::new(cli_matches.value_of("input").expect("input file")).to_owned(),
     emit_path: cli_matches.value_of("emit-path").unwrap_or("js-out").to_owned(),
     reload_libs: cli_matches.is_present("reload-libs"),
     emit_js: cli_matches.is_present("emit-js"),
@@ -63,7 +63,7 @@ fn main() -> Result<(), String> {
     }
     if let Some(cli_deps) = cli_matches.values_of("dep") {
       for module_path in cli_deps {
-        let module_data = calcit::load_module(module_path, cli_options.entry_path.parent().unwrap())?;
+        let module_data = calcit::load_module(module_path, cli_options.entry_path.parent().expect("extract parent"))?;
         for (k, v) in &module_data.files {
           snapshot.files.insert(k.to_owned(), v.to_owned());
         }
@@ -76,7 +76,7 @@ fn main() -> Result<(), String> {
     strip_shebang(&mut content);
     let data = cirru_edn::parse(&content)?;
     // println!("reading: {}", content);
-    snapshot = snapshot::load_snapshot_data(&data, cli_options.entry_path.to_str().unwrap())?;
+    snapshot = snapshot::load_snapshot_data(&data, cli_options.entry_path.to_str().expect("extract path"))?;
 
     // config in entry will overwrite default configs
     if let Some(entry) = cli_matches.value_of("entry") {
@@ -90,7 +90,7 @@ fn main() -> Result<(), String> {
 
     // attach modules
     for module_path in &snapshot.configs.modules {
-      let module_data = calcit::load_module(module_path, cli_options.entry_path.parent().unwrap())?;
+      let module_data = calcit::load_module(module_path, cli_options.entry_path.parent().expect("extract parent"))?;
       for (k, v) in &module_data.files {
         snapshot.files.insert(k.to_owned(), v.to_owned());
       }
@@ -116,7 +116,7 @@ fn main() -> Result<(), String> {
 
   // now global states
   {
-    let mut prgm = { program::PROGRAM_CODE_DATA.write().unwrap() };
+    let mut prgm = { program::PROGRAM_CODE_DATA.write().expect("open program data") };
     *prgm = program::extract_program_data(&snapshot)?;
   }
 
@@ -176,19 +176,19 @@ fn main() -> Result<(), String> {
 pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, assets_watch: Arc<Option<String>>) {
   println!("\nRunning: in watch mode...\n");
   let (tx, rx) = channel();
-  let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).unwrap();
+  let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).expect("watch");
 
-  let inc_path = settings.entry_path.parent().unwrap().join(".compact-inc.cirru");
+  let inc_path = settings.entry_path.parent().expect("extract parent").join(".compact-inc.cirru");
   if !inc_path.exists() {
     if let Err(e) = fs::write(&inc_path, "").map_err(|e| -> String { e.to_string() }) {
       eprintln!("file writing error: {}", e);
     };
   }
 
-  watcher.watch(&inc_path, RecursiveMode::NonRecursive).unwrap();
+  watcher.watch(&inc_path, RecursiveMode::NonRecursive).expect("watch");
 
   if let Some(assets_folder) = assets_watch.as_ref() {
-    watcher.watch(assets_folder, RecursiveMode::Recursive).unwrap();
+    watcher.watch(assets_folder, RecursiveMode::Recursive).expect("watch");
     println!("assets to watch: {}", assets_folder);
   };
 
@@ -350,7 +350,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
 
   // clear if there are no errors
   let no_error_code = String::from("export default null;");
-  if !(js_file_path.exists() && fs::read_to_string(&js_file_path).unwrap() == no_error_code) {
+  if !(js_file_path.exists() && fs::read_to_string(&js_file_path).map_err(|e| e.to_string())? == no_error_code) {
     let _ = fs::write(&js_file_path, no_error_code);
   }
 

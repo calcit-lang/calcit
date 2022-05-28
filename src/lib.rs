@@ -100,7 +100,7 @@ pub fn load_module(path: &str, base_dir: &Path) -> Result<snapshot::Snapshot, St
 
   let fullpath: String = if file_path.starts_with("./") {
     let new_path = base_dir.join(file_path);
-    new_path.to_str().unwrap().to_string()
+    new_path.to_str().expect("path").to_string()
   } else if file_path.starts_with('/') {
     file_path
   } else {
@@ -108,7 +108,7 @@ pub fn load_module(path: &str, base_dir: &Path) -> Result<snapshot::Snapshot, St
       Some(buf) => {
         let home = buf.as_path();
         let p = home.join(".config/calcit/modules/").join(file_path);
-        p.to_str().unwrap().to_string()
+        p.to_str().expect("path").to_string()
       }
       None => return Err(String::from("failed to load $HOME")),
     }

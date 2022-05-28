@@ -18,8 +18,8 @@ pub fn matches_float(xs: &str) -> bool {
     return false;
   }
   let mut buffer = xs.to_string();
-  if xs.starts_with('-') {
-    buffer = xs.strip_prefix('-').unwrap().to_string();
+  if let Some(s) = xs.strip_prefix('-') {
+    buffer = s.to_owned()
   }
 
   if buffer.is_empty() {
