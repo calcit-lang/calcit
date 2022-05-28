@@ -127,7 +127,7 @@ pub fn str_slice(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         } else {
           // turn into vec first to also handle UTF8
           let s_vec = s.chars().collect::<Vec<_>>();
-          Ok(Calcit::Str(s_vec[from..to].iter().cloned().collect::<String>().into()))
+          Ok(Calcit::Str(s_vec[from..to].iter().to_owned().collect::<String>().into()))
         }
       }
       Err(e) => CalcitErr::err_str(e),
