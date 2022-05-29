@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.5.44-a4";
+export const calcit_version = "0.5.44-a5";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";

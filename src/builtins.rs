@@ -192,7 +192,7 @@ pub fn is_proc_name(s: &str) -> bool {
   if builtin {
     true
   } else {
-    let ps = IMPORTED_PROCS.read().unwrap();
+    let ps = IMPORTED_PROCS.read().expect("read procs");
     ps.contains_key(s)
   }
 }
@@ -375,7 +375,7 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackLi
     "&record:assoc" => records::assoc(args),
     "&record:extend-as" => records::extend_as(args),
     a => {
-      let ps = IMPORTED_PROCS.read().unwrap();
+      let ps = IMPORTED_PROCS.read().expect("read procs");
       if ps.contains_key(name) {
         let f = ps[name];
         f(args, call_stack)
@@ -388,7 +388,7 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackLi
 
 /// inject into procs
 pub fn register_import_proc(name: &str, f: FnType) {
-  let mut ps = IMPORTED_PROCS.write().unwrap();
+  let mut ps = IMPORTED_PROCS.write().expect("open procs");
   (*ps).insert(name.to_owned().into(), f);
 }
 

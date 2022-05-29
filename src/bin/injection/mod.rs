@@ -115,7 +115,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
     return CalcitErr::err_str(format!("&call-dylib-edn-fn expected a method name, got {}", xs[1]));
   };
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len() - 2);
-  let callback = xs[xs.len() - 1].clone();
+  let callback = xs[xs.len() - 1].to_owned();
   for (idx, v) in xs.into_iter().enumerate() {
     if idx > 1 && idx < xs.len() - 1 {
       ys.push(calcit_to_edn(v)?);
@@ -142,7 +142,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
 
   let _handle = thread::spawn(move || {
     let func: libloading::Symbol<EdnFfiFn> = unsafe { lib.get(method.as_bytes()).expect("dy function not found") };
-    let copied_stack = copied_stack_1.clone();
+    let copied_stack = copied_stack_1.to_owned();
     match func(
       ys.to_owned(),
       Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
@@ -158,7 +158,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
           match r {
             Ok(ret) => calcit_to_edn(&ret),
             Err(e) => {
-              display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack)?;
+              display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack, e.location.as_ref())?;
               Err(format!("Error: {}", e))
             }
           }
@@ -205,7 +205,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
     return CalcitErr::err_str(format!("&blocking-dylib-edn-fn expected a method name, got {}", xs[1]));
   };
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len() - 2);
-  let callback = xs[xs.len() - 1].clone();
+  let callback = xs[xs.len() - 1].to_owned();
   for (idx, v) in xs.into_iter().enumerate() {
     if idx > 1 && idx < xs.len() - 1 {
       ys.push(calcit_to_edn(v)?);
@@ -242,11 +242,11 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
         for p in ps {
           real_args = real_args.push_right(edn_to_calcit(&p));
         }
-        let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack.clone());
+        let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack);
         match r {
           Ok(ret) => calcit_to_edn(&ret),
           Err(e) => {
-            display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack)?;
+            display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack, e.location.as_ref())?;
             Err(format!("Error: {}", e))
           }
         }
@@ -261,7 +261,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
     Err(e) => {
       // TODO for more accurate tracking, need to place tracker inside foreign function
       // track::track_task_release();
-      let _ = display_stack(&format!("failed to call request: {}", e), call_stack);
+      let _ = display_stack(&format!("failed to call request: {}", e), call_stack, None);
       return CalcitErr::err_str(e);
     }
   };

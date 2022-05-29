@@ -9,6 +9,7 @@ use std::time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 mod injection;
 
+use calcit::primes::LocatedWarning;
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use im_ternary_tree::TernaryTreeList;
@@ -37,7 +38,7 @@ fn main() -> Result<(), String> {
   let cli_matches = cli_args::parse_cli();
   let cli_options = CLIOptions {
     // has default value
-    entry_path: Path::new(cli_matches.value_of("input").unwrap()).to_owned(),
+    entry_path: Path::new(cli_matches.value_of("input").expect("input file")).to_owned(),
     emit_path: cli_matches.value_of("emit-path").unwrap_or("js-out").to_owned(),
     reload_libs: cli_matches.is_present("reload-libs"),
     emit_js: cli_matches.is_present("emit-js"),
@@ -62,7 +63,7 @@ fn main() -> Result<(), String> {
     }
     if let Some(cli_deps) = cli_matches.values_of("dep") {
       for module_path in cli_deps {
-        let module_data = calcit::load_module(module_path, cli_options.entry_path.parent().unwrap())?;
+        let module_data = calcit::load_module(module_path, cli_options.entry_path.parent().expect("extract parent"))?;
         for (k, v) in &module_data.files {
           snapshot.files.insert(k.to_owned(), v.to_owned());
         }
@@ -75,7 +76,7 @@ fn main() -> Result<(), String> {
     strip_shebang(&mut content);
     let data = cirru_edn::parse(&content)?;
     // println!("reading: {}", content);
-    snapshot = snapshot::load_snapshot_data(&data, cli_options.entry_path.to_str().unwrap())?;
+    snapshot = snapshot::load_snapshot_data(&data, cli_options.entry_path.to_str().expect("extract path"))?;
 
     // config in entry will overwrite default configs
     if let Some(entry) = cli_matches.value_of("entry") {
@@ -89,7 +90,7 @@ fn main() -> Result<(), String> {
 
     // attach modules
     for module_path in &snapshot.configs.modules {
-      let module_data = calcit::load_module(module_path, cli_options.entry_path.parent().unwrap())?;
+      let module_data = calcit::load_module(module_path, cli_options.entry_path.parent().expect("extract parent"))?;
       for (k, v) in &module_data.files {
         snapshot.files.insert(k.to_owned(), v.to_owned());
       }
@@ -115,11 +116,11 @@ fn main() -> Result<(), String> {
 
   // now global states
   {
-    let mut prgm = { program::PROGRAM_CODE_DATA.write().unwrap() };
+    let mut prgm = { program::PROGRAM_CODE_DATA.write().expect("open program data") };
     *prgm = program::extract_program_data(&snapshot)?;
   }
 
-  let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+  let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
@@ -140,9 +141,7 @@ fn main() -> Result<(), String> {
     let started_time = Instant::now();
 
     let v = calcit::run_program(entries.init_ns.to_owned(), entries.init_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
-      for w in e.warnings {
-        eprintln!("{}", w);
-      }
+      LocatedWarning::print_list(&e.warnings);
       e.msg
     })?;
 
@@ -177,19 +176,19 @@ fn main() -> Result<(), String> {
 pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, assets_watch: Arc<Option<String>>) {
   println!("\nRunning: in watch mode...\n");
   let (tx, rx) = channel();
-  let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).unwrap();
+  let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).expect("watch");
 
-  let inc_path = settings.entry_path.parent().unwrap().join(".compact-inc.cirru");
+  let inc_path = settings.entry_path.parent().expect("extract parent").join(".compact-inc.cirru");
   if !inc_path.exists() {
     if let Err(e) = fs::write(&inc_path, "").map_err(|e| -> String { e.to_string() }) {
       eprintln!("file writing error: {}", e);
     };
   }
 
-  watcher.watch(&inc_path, RecursiveMode::NonRecursive).unwrap();
+  watcher.watch(&inc_path, RecursiveMode::NonRecursive).expect("watch");
 
   if let Some(assets_folder) = assets_watch.as_ref() {
-    watcher.watch(assets_folder, RecursiveMode::Recursive).unwrap();
+    watcher.watch(assets_folder, RecursiveMode::Recursive).expect("watch");
     println!("assets to watch: {}", assets_folder);
   };
 
@@ -251,7 +250,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
     println!("checking pending tasks: {}", task_size);
     if task_size > 1 {
       // when there's services, make sure their code get preprocessed too
-      let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+      let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
       if let Err(e) = runner::preprocess::preprocess_ns_def(
         entries.init_ns.to_owned(),
         entries.init_def.to_owned(),
@@ -263,13 +262,11 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
         return Err(e.to_string());
       }
 
-      let warnings = check_warnings.to_owned().into_inner();
+      let warnings = check_warnings.borrow();
       throw_on_warnings(&warnings)?;
     }
     let v = calcit::run_program(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
-      for w in e.warnings {
-        eprintln!("{}", w);
-      }
+      LocatedWarning::print_list(&e.warnings);
       e.msg
     })?;
     let duration = Instant::now().duration_since(started_time);
@@ -301,9 +298,9 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     let _ = fs::create_dir(code_emit_path);
   }
 
-  let js_file_path = code_emit_path.join(format!("{}.mjs", COMPILE_ERRORS_FILE)); // TODO mjs_mode
+  let js_file_path = code_emit_path.join(format!("{}.mjs", COMPILE_ERRORS_FILE));
 
-  let check_warnings: &RefCell<Vec<String>> = &RefCell::new(vec![]);
+  let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
   gen_stack::clear_stack();
 
   // preprocess to init
@@ -318,7 +315,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure.msg, &failure.stack)?;
+      call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
 
       let _ = fs::write(
         &js_file_path,
@@ -343,17 +340,17 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure.msg, &failure.stack)?;
+      call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
       return Err(failure.msg);
     }
   }
 
-  let warnings = check_warnings.to_owned().into_inner();
+  let warnings = check_warnings.borrow();
   throw_on_js_warnings(&warnings, &js_file_path)?;
 
   // clear if there are no errors
   let no_error_code = String::from("export default null;");
-  if !(js_file_path.exists() && fs::read_to_string(&js_file_path).unwrap() == no_error_code) {
+  if !(js_file_path.exists() && fs::read_to_string(&js_file_path).map_err(|e| e.to_string())? == no_error_code) {
     let _ = fs::write(&js_file_path, no_error_code);
   }
 
@@ -362,7 +359,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {}", failure);
-        call_stack::display_stack(&failure, &gen_stack::get_gen_stack())?;
+        call_stack::display_stack(&failure, &gen_stack::get_gen_stack(), None)?;
         return Err(failure);
       }
     }
@@ -372,7 +369,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {}", failure);
-        call_stack::display_stack(&failure, &gen_stack::get_gen_stack())?;
+        call_stack::display_stack(&failure, &gen_stack::get_gen_stack(), None)?;
         return Err(failure);
       }
     }
@@ -382,12 +379,12 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   Ok(())
 }
 
-fn throw_on_js_warnings(warnings: &[String], js_file_path: &Path) -> Result<(), String> {
+fn throw_on_js_warnings(warnings: &[LocatedWarning], js_file_path: &Path) -> Result<(), String> {
   if !warnings.is_empty() {
     let mut content: String = String::from("");
-    for message in warnings {
-      println!("{}", message);
-      content = format!("{}\n{}", content, message);
+    for warn in warnings {
+      println!("{}", warn);
+      content = format!("{}\n{}", content, warn);
     }
 
     let _ = fs::write(&js_file_path, format!("export default \"{}\";", content.trim().escape_default()));
@@ -401,12 +398,12 @@ fn throw_on_js_warnings(warnings: &[String], js_file_path: &Path) -> Result<(), 
   }
 }
 
-fn throw_on_warnings(warnings: &[String]) -> Result<(), String> {
+fn throw_on_warnings(warnings: &[LocatedWarning]) -> Result<(), String> {
   if !warnings.is_empty() {
     let mut content: String = String::from("");
-    for message in warnings {
-      println!("{}", message);
-      content = format!("{}\n{}", content, message);
+    for warn in warnings {
+      println!("{}", warn);
+      content = format!("{}\n{}", content, warn);
     }
 
     Err(format!("Found {} warnings in preprocessing, re-run blocked.", warnings.len()))

@@ -34,12 +34,12 @@ pub fn raise(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn init_effects_states() {
   // trigger lazy instant
-  let _eff = STARTED_INSTANT.read().unwrap();
+  let _eff = STARTED_INSTANT.read().expect("read instant");
 }
 
 pub fn cpu_time(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let now = Instant::now();
-  let started = STARTED_INSTANT.read().unwrap().to_owned();
+  let started = STARTED_INSTANT.read().expect("read instant").to_owned();
 
   let time = match now.checked_duration_since(started) {
     Some(n) => (n.as_micros() as f64) / 1000.0,
@@ -53,12 +53,12 @@ pub fn cpu_time(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn modify_cli_running_mode(mode: CliRunningMode) -> Result<(), String> {
-  *CLI_RUNNING_MODE.write().unwrap() = mode;
+  *CLI_RUNNING_MODE.write().expect("set mode") = mode;
   Ok(())
 }
 
 pub fn calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  let mode = CLI_RUNNING_MODE.read().unwrap().to_owned();
+  let mode = CLI_RUNNING_MODE.read().expect("read mode").to_owned();
   match mode {
     CliRunningMode::Eval => Ok(Calcit::kwd("eval")),
     CliRunningMode::Js => Ok(Calcit::kwd("js")),
@@ -68,7 +68,7 @@ pub fn calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 /// is evaling in Rust, not for js
 pub fn is_rust_eval() -> bool {
-  let mode = CLI_RUNNING_MODE.read().unwrap().to_owned();
+  let mode = CLI_RUNNING_MODE.read().expect("read mode").to_owned();
   matches!(mode, CliRunningMode::Eval)
 }
 

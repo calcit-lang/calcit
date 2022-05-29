@@ -16,7 +16,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Nil => Ok(Edn::Nil),
     Calcit::Bool(b) => Ok(Edn::Bool(*b)),
     Calcit::Str(s) => Ok(Edn::Str((**s).into())),
-    Calcit::Number(n) => Ok(Edn::Number(*n)), // TODO
+    Calcit::Number(n) => Ok(Edn::Number(*n)),
     Calcit::Keyword(s) => Ok(Edn::Keyword(s.to_owned())),
     Calcit::Symbol { sym, .. } => Ok(Edn::Symbol((**sym).into())),
     Calcit::List(xs) => {
@@ -84,18 +84,20 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Number(n) => Calcit::Number(*n as f64),
     Edn::Symbol(s) => Calcit::Symbol {
       sym: (**s).into(),
-      ns: primes::GEN_NS.to_owned(),
-      at_def: primes::GEN_DEF.to_owned(),
+      ns: primes::GEN_NS.into(),
+      at_def: primes::GENERATED_DEF.into(),
       resolved: None,
+      location: None,
     },
     Edn::Keyword(s) => Calcit::Keyword(s.to_owned()),
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::Tuple(
       Arc::new(Calcit::Symbol {
-        sym: String::from("quote").into(),
-        ns: primes::GEN_NS.to_owned(),
-        at_def: primes::GEN_DEF.to_owned(),
+        sym: "quote".into(),
+        ns: primes::GEN_NS.into(),
+        at_def: primes::GENERATED_DEF.into(),
         resolved: None,
+        location: None,
       }),
       Arc::new(cirru::cirru_to_calcit(nodes)),
     ),

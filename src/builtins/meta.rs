@@ -9,7 +9,7 @@ use crate::{
     edn::{self, edn_to_calcit},
   },
   primes,
-  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CrListWrap},
+  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope, CrListWrap},
   runner,
   util::number::f64_to_usize,
 };
@@ -99,7 +99,7 @@ pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn force_reset_gensym_index() -> Result<(), String> {
-  let mut ns_symbol_dict = NS_SYMBOL_DICT.write().unwrap();
+  let mut ns_symbol_dict = NS_SYMBOL_DICT.write().expect("write symbols");
   ns_symbol_dict.clear();
   Ok(())
 }
@@ -197,6 +197,7 @@ pub fn format_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// missing location for a dynamic symbol
 pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_str(format!("turn-symbol expected 1 argument, got: {:?}", xs));
@@ -204,22 +205,19 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::Symbol {
       sym: s.to_owned(),
-      ns: primes::GEN_NS.to_owned(),
-      at_def: primes::GEN_DEF.to_owned(),
+      ns: primes::GEN_NS.into(),
+      at_def: primes::GENERATED_DEF.into(),
       resolved: None,
+      location: None,
     }),
     Calcit::Keyword(s) => Ok(Calcit::Symbol {
       sym: s.to_string().into(),
-      ns: primes::GEN_NS.to_owned(),
-      at_def: primes::GEN_DEF.to_owned(),
+      ns: primes::GEN_NS.into(),
+      at_def: primes::GENERATED_DEF.into(),
       resolved: None,
+      location: None,
     }),
-    Calcit::Symbol { sym, ns, at_def, resolved } => Ok(Calcit::Symbol {
-      sym: sym.to_owned(),
-      ns: ns.to_owned(),
-      at_def: at_def.to_owned(),
-      resolved: resolved.to_owned(),
-    }),
+    a @ Calcit::Symbol { .. } => Ok(a.to_owned()),
     a => CalcitErr::err_str(format!("turn-symbol cannot turn this to symbol: {}", a)),
   }
 }
@@ -252,19 +250,25 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     ));
   }
   let value = invoke_args[0].to_owned();
-  let s0 = rpds::HashTrieMap::new_sync();
+  let s0 = CalcitScope::default();
   let class = match &invoke_args[0] {
     Calcit::Tuple(a, _b) => (**a).to_owned(),
     // classed should already be preprocessed
-    Calcit::List(..) => runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, call_stack)?,
-    Calcit::Map(..) => runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, call_stack)?,
-    Calcit::Number(..) => runner::evaluate_symbol("&core-number-class", &s0, primes::CORE_NS, call_stack)?,
-    Calcit::Str(..) => runner::evaluate_symbol("&core-string-class", &s0, primes::CORE_NS, call_stack)?,
-    Calcit::Set(..) => runner::evaluate_symbol("&core-set-class", &s0, primes::CORE_NS, call_stack)?,
-    Calcit::Record(..) => runner::evaluate_symbol("&core-record-class", &s0, primes::CORE_NS, call_stack)?,
-    Calcit::Nil => runner::evaluate_symbol("&core-nil-class", &s0, primes::CORE_NS, call_stack)?,
-    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, call_stack)?,
-    x => return Err(CalcitErr::use_msg_stack(format!("cannot decide a class from: {:?}", x), call_stack)),
+    Calcit::List(..) => runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Map(..) => runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Number(..) => runner::evaluate_symbol("&core-number-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Str(..) => runner::evaluate_symbol("&core-string-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Set(..) => runner::evaluate_symbol("&core-set-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Record(..) => runner::evaluate_symbol("&core-record-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Nil => runner::evaluate_symbol("&core-nil-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, None, call_stack)?,
+    x => {
+      return Err(CalcitErr::use_msg_stack_location(
+        format!("cannot decide a class from: {:?}", x),
+        call_stack,
+        x.get_location(),
+      ))
+    }
   };
   match &class {
     Calcit::Record(_, fields, values) => {
@@ -282,9 +286,10 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
               format!("cannot get syntax here since instance is always evaluated, got: {}", syn),
               call_stack,
             )),
-            y => Err(CalcitErr::use_msg_stack(
+            y => Err(CalcitErr::use_msg_stack_location(
               format!("expected a function to invoke, got: {}", y),
               call_stack,
+              y.get_location(),
             )),
           }
         }
@@ -300,9 +305,10 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
         }
       }
     }
-    x => Err(CalcitErr::use_msg_stack(
+    x => Err(CalcitErr::use_msg_stack_location(
       format!("method invoking expected a record as class, got: {}", x),
       call_stack,
+      x.get_location(),
     )),
   }
 }

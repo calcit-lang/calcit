@@ -8,7 +8,7 @@ use std::{
   sync::Arc,
 };
 
-use calcit::snapshot::{load_files, ChangesDict};
+use calcit::snapshot::ChangesDict;
 use calcit::snapshot::{FileChangeInfo, FileInSnapShot};
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -23,11 +23,11 @@ use cirru_parser::Cirru;
 pub fn main() -> io::Result<()> {
   let cli_matches = parse_cli();
   let verbose = cli_matches.is_present("verbose");
-  let base_dir = Path::new(cli_matches.value_of("src").unwrap());
-  let out_path = Path::new(cli_matches.value_of("out").unwrap());
+  let base_dir = Path::new(cli_matches.value_of("src").expect("src"));
+  let out_path = Path::new(cli_matches.value_of("out").expect("out"));
   let out_file = match out_path.extension() {
     Some(ext) => {
-      let ext_str = ext.to_str().unwrap();
+      let ext_str = ext.to_str().expect("ext");
       if ext_str == "cirru" {
         out_path.to_path_buf()
       } else {
@@ -39,9 +39,9 @@ pub fn main() -> io::Result<()> {
   let inc_file_path = out_path.join(".compact-inc.cirru");
   let no_watcher = cli_matches.is_present("once");
 
-  let package_file = Path::new(cli_matches.value_of("src").unwrap())
+  let package_file = Path::new(cli_matches.value_of("src").expect("src"))
     .parent()
-    .unwrap()
+    .expect("parent path")
     .join("package.cirru");
 
   perform_compaction(base_dir, &package_file, &out_file, &inc_file_path, verbose)?;
@@ -50,8 +50,8 @@ pub fn main() -> io::Result<()> {
     println!("\nwatch changes in {} ...\n", base_dir.display());
 
     let (tx, rx) = channel();
-    let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).unwrap();
-    watcher.watch(&base_dir, RecursiveMode::NonRecursive).unwrap();
+    let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).expect("start watcher");
+    watcher.watch(&base_dir, RecursiveMode::NonRecursive).expect("start watcher");
 
     loop {
       match rx.recv() {
@@ -94,7 +94,7 @@ fn perform_compaction(base_dir: &Path, package_file: &Path, out_file: &Path, inc
   if has_changes {
     write(
       &inc_file_path,
-      cirru_edn::format(&changes.try_into().map_err(io_err)?, true).unwrap(),
+      cirru_edn::format(&changes.try_into().map_err(io_err)?, true).expect("write"),
     )?;
     println!("inc file updated {}", inc_file_path.display());
   } else if has_old_file {
@@ -102,7 +102,7 @@ fn perform_compaction(base_dir: &Path, package_file: &Path, out_file: &Path, inc
   }
 
   if !has_old_file || has_changes {
-    write(&out_file, cirru_edn::format(&new_compact_file, true).unwrap())?;
+    write(&out_file, cirru_edn::format(&new_compact_file, true).expect("write"))?;
     println!("file wrote {}", out_file.display());
   }
 
@@ -124,8 +124,8 @@ where
 }
 
 fn find_compact_changes(new_data: &Edn, old_data: &Edn) -> Result<ChangesDict, String> {
-  let old_files = load_files(&old_data.map_get("files")?)?;
-  let new_files = load_files(&new_data.map_get("files")?)?;
+  let old_files: HashMap<Arc<str>, FileInSnapShot> = old_data.map_get("files")?.try_into()?;
+  let new_files: HashMap<Arc<str>, FileInSnapShot> = new_data.map_get("files")?.try_into()?;
   let old_namespaces = old_files.keys().collect::<HashSet<_>>();
   let new_namespaces = new_files.keys().collect::<HashSet<_>>();
   let added_namespaces = new_namespaces.difference(&old_namespaces).collect::<HashSet<_>>();
@@ -204,11 +204,12 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
   let mut files: HashMap<Edn, Edn> = HashMap::new();
 
   for dir_entry in WalkDir::new(base_dir) {
-    let entry = dir_entry.unwrap();
+    let entry = dir_entry?;
+    let entry_path = entry.path();
 
-    if let Some(ext) = entry.path().extension() {
-      if ext.to_str().unwrap() == "cirru" {
-        let content = read_file(entry.path())?;
+    if let Some(ext) = entry_path.extension() {
+      if ext.to_str().expect("ext") == "cirru" {
+        let content = read_file(entry_path)?;
         let xs = cirru_parser::parse(&content).map_err(io_err)?;
 
         let mut file: HashMap<Edn, Edn> = HashMap::new();
@@ -250,9 +251,9 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
         files.insert(Edn::str(ns_name), Edn::Map(file));
 
         if verbose {
-          println!("bundling {}", entry.path().display());
+          println!("bundling {}", entry_path.display());
         }
-        // a.push(entry.path().to_str().unwrap().to_string());
+        // a.push(entry.path().to_str().expect("extract path").to_string());
       }
     }
   }

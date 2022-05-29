@@ -14,7 +14,7 @@ lazy_static! {
 }
 
 pub fn lookup_prev_ns_cache(ns: &str) -> Option<HashSet<Arc<str>>> {
-  let previous_program_caches = &GLOBAL_PREVIOUS_PROGRAM_CACHES.read().unwrap();
+  let previous_program_caches = &GLOBAL_PREVIOUS_PROGRAM_CACHES.read().expect("load cache");
   if previous_program_caches.contains_key(ns) {
     Some(previous_program_caches[ns].to_owned())
   } else {
@@ -23,7 +23,7 @@ pub fn lookup_prev_ns_cache(ns: &str) -> Option<HashSet<Arc<str>>> {
 }
 
 pub fn write_as_ns_cache(ns: &str, v: HashSet<Arc<str>>) {
-  let mut previous_program_caches = GLOBAL_PREVIOUS_PROGRAM_CACHES.write().unwrap();
+  let mut previous_program_caches = GLOBAL_PREVIOUS_PROGRAM_CACHES.write().expect("write cache");
   (*previous_program_caches).insert(ns.to_owned().into(), v);
 }
 

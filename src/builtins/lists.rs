@@ -248,9 +248,10 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
         Ok(ret)
       }
 
-      (a, b) => Err(CalcitErr::use_msg_stack(
+      (a, b) => Err(CalcitErr::use_msg_stack_location(
         format!("foldl expected list and function, got: {} {}", a, b),
         call_stack,
+        a.get_location().or_else(|| b.get_location()),
       )),
     }
   } else {
@@ -289,9 +290,10 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
                 }
               }
               a => {
-                return Err(CalcitErr::use_msg_stack(
+                return Err(CalcitErr::use_msg_stack_location(
                   format!("return value in foldl-shortcut should be a bool, got: {}", a),
                   call_stack,
+                  a.get_location(),
                 ))
               }
             },
@@ -326,9 +328,10 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
                 }
               }
               a => {
-                return Err(CalcitErr::use_msg_stack(
+                return Err(CalcitErr::use_msg_stack_location(
                   format!("return value in foldl-shortcut should be a bool, got: {}", a),
                   call_stack,
+                  a.get_location(),
                 ))
               }
             },
@@ -363,9 +366,10 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
                 }
               }
               a => {
-                return Err(CalcitErr::use_msg_stack(
+                return Err(CalcitErr::use_msg_stack_location(
                   format!("return value in foldl-shortcut should be a bool, got: {}", a),
                   call_stack,
+                  a.get_location(),
                 ))
               }
             },
@@ -380,9 +384,10 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
         Ok(default_value.to_owned())
       }
 
-      (a, b) => Err(CalcitErr::use_msg_stack(
+      (a, b) => Err(CalcitErr::use_msg_stack_location(
         format!("foldl-shortcut expected list... and fn, got: {} {}", a, b),
         call_stack,
+        a.get_location().or_else(|| b.get_location()),
       )),
     }
   } else {
@@ -423,9 +428,10 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
                 }
               }
               a => {
-                return Err(CalcitErr::use_msg_stack(
+                return Err(CalcitErr::use_msg_stack_location(
                   format!("return value in foldr-shortcut should be a bool, got: {}", a),
                   call_stack,
+                  a.get_location(),
                 ))
               }
             },
@@ -440,9 +446,10 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
         Ok(default_value.to_owned())
       }
 
-      (a, b) => Err(CalcitErr::use_msg_stack(
+      (a, b) => Err(CalcitErr::use_msg_stack_location(
         format!("foldr-shortcut expected list... and fn, got: {} {}", a, b),
         call_stack,
+        a.get_location().or_else(|| b.get_location()),
       )),
     }
   } else {
@@ -514,9 +521,10 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
         }
         Ok(Calcit::List(ys))
       }
-      (a, b) => Err(CalcitErr::use_msg_stack(
+      (a, b) => Err(CalcitErr::use_msg_stack_location(
         format!("sort expected list and function, got: {} {}", a, b),
         call_stack,
+        a.get_location().or_else(|| b.get_location()),
       )),
     }
   } else {

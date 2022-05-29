@@ -138,7 +138,7 @@ fn is_preferred_js_proc(name: &str) -> bool {
 }
 
 fn escape_cirru_str(s: &str) -> String {
-  let mut result = String::from("\"");
+  let mut result = String::from('"');
   for c in s.chars() {
     match c {
       // disabled since not sure if useful for Cirru
@@ -213,6 +213,7 @@ fn to_js_code(
         ns: def_ns,
         at_def,
         resolved,
+        ..
       } => {
         let resolved_info = resolved.to_owned().map(|v| (*v).to_owned());
         let passed_defs = PassedDefs {
@@ -228,12 +229,11 @@ fn to_js_code(
         // println!("gen proc {} under {}", s, ns,);
         // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
         // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
-        if s.starts_with('.') {
-          if s.starts_with(".-") || s.starts_with(".!") {
+        if let Some(name) = s.strip_prefix('.') {
+          if name.starts_with('-') || name.starts_with('!') {
             Err(format!("invalid js method {} at this position", s))
           } else {
             // `.method` being used as a parameter
-            let name = s.strip_prefix('.').unwrap();
             Ok(format!(
               "{}invoke_method({})",
               proc_prefix,
@@ -478,7 +478,7 @@ fn gen_call_code(
           (_, _) => Err(format!("set! expected 2 nodes, got {:?}", body)),
         },
         _ if s.starts_with(".-") => {
-          let name = s.strip_prefix(".-").unwrap();
+          let name = s.strip_prefix(".-").expect("strip .-");
           if name.is_empty() {
             Err(format!("invalid property accessor {}", s))
           } else if matches_digits(name) {
@@ -516,7 +516,7 @@ fn gen_call_code(
         }
         _ if s.starts_with(".!") => {
           // special syntax for calling a static method, previously using `.` but now occupied
-          let name = s.strip_prefix(".!").unwrap();
+          let name = s.strip_prefix(".!").expect("strip .!");
           if matches_js_var(name) {
             match body.get(0) {
               Some(obj) => {
@@ -537,7 +537,7 @@ fn gen_call_code(
           }
         }
         _ if s.starts_with('.') => {
-          let name = s.strip_prefix('.').unwrap();
+          let name = s.strip_prefix('.').expect("strip .");
           match body.get(0) {
             Some(obj) => {
               let args = body.drop_left();
@@ -621,7 +621,7 @@ fn gen_symbol_code(
         None => Err(format!("expected symbol with ns being resolved: {:?}", xs)),
       }
     }
-  } else if is_js_syntax_procs(s) || is_proc_name(s) || CalcitSyntax::is_core_syntax(s) {
+  } else if is_js_syntax_procs(s) || is_proc_name(s) || CalcitSyntax::is_valid(s) {
     // return Ok(format!("{}{}", var_prefix, escape_var(s)));
     let proc_prefix = get_proc_prefix(passed_defs.ns);
     return Ok(format!("{}{}", proc_prefix, escape_var(s)));
@@ -733,7 +733,7 @@ fn gen_let_code(
             // TODO `let` inside expressions makes syntax error
             let left = escape_var(&sym);
             let right = to_js_code(&def_code, ns, &scoped_defs, file_imports, keywords, None)?;
-            writeln!(defs_code, "let {} = {};", left, right).unwrap();
+            writeln!(defs_code, "let {} = {};", left, right).expect("write");
 
             if scoped_defs.contains(&sym) {
               for (idx, x) in content.into_iter().enumerate() {
@@ -828,7 +828,7 @@ fn gen_if_code(
       let true_code = to_js_code(&true_node, ns, local_defs, file_imports, keywords, Some(return_label))?;
       let else_mark = if need_else { " else " } else { "" };
 
-      write!(chunk, "\n{}if ({}) {{ {} }}", else_mark, cond_code, true_code).unwrap();
+      write!(chunk, "\n{}if ({}) {{ {} }}", else_mark, cond_code, true_code).expect("write");
 
       if let Some(false_node) = some_false_node {
         if let Calcit::List(ys) = false_node {
@@ -847,9 +847,9 @@ fn gen_if_code(
         }
 
         let false_code = to_js_code(false_node, ns, local_defs, file_imports, keywords, Some(return_label))?;
-        write!(chunk, "else {{ {} }}", false_code).unwrap();
+        write!(chunk, "else {{ {} }}", false_code).expect("write");
       } else {
-        write!(chunk, "else {{ {} null; }}", return_label).unwrap();
+        write!(chunk, "else {{ {} null; }}", return_label).expect("write");
       }
       break;
     }
@@ -888,7 +888,7 @@ fn gen_args_code(
             var_prefix,
             to_js_code(x, ns, local_defs, file_imports, keywords, None)?
           )
-          .unwrap();
+          .expect("write");
           spreading = false
         } else {
           result.push_str(&to_js_code(x, ns, local_defs, file_imports, keywords, None)?);
@@ -974,7 +974,7 @@ fn gen_js_func(
       args_code.push_str("...");
       args_code.push_str(&arg_name);
       // js list and calcit-js are different in spreading
-      write!(spreading_code, "\n{} = {}arrayToList({});", arg_name, var_prefix, arg_name).unwrap();
+      write!(spreading_code, "\n{} = {}arrayToList({});", arg_name, var_prefix, arg_name).expect("write");
       break; // no more args after spreading argument
     } else if has_optional {
       if !args_code.is_empty() {
@@ -1157,12 +1157,12 @@ fn depends_on(x: &str, y: &str, deps: &HashMap<Arc<str>, HashSet<Arc<str>>>, dec
   }
 }
 
-fn write_file_if_changed(filename: &Path, content: &str) -> bool {
-  if filename.exists() && fs::read_to_string(filename).unwrap() == content {
-    return false;
+fn write_file_if_changed(filename: &Path, content: &str) -> Result<bool, String> {
+  if filename.exists() && fs::read_to_string(filename).map_err(|e| e.to_string())? == content {
+    return Ok(false);
   }
   let _ = fs::write(filename, content);
-  true
+  Ok(true)
 }
 
 pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
@@ -1205,7 +1205,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     // reset index each file
     reset_js_gensym_index();
 
-    let core_lib = to_js_import_name("calcit.core", true); // TODO js_mode
+    let core_lib = to_js_import_name("calcit.core", true);
 
     let mut defs_code = String::from(""); // code generated by functions
     let mut vals_code = String::from(""); // code generated by thunks
@@ -1235,7 +1235,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           continue;
         }
         if is_preferred_js_proc(&def) {
-          writeln!(defs_code, "\nvar {} = $calcit_procs.{};", escape_var(&def), escape_var(&def)).unwrap();
+          writeln!(defs_code, "\nvar {} = $calcit_procs.{};", escape_var(&def), escape_var(&def)).expect("write");
           continue;
         }
       }
@@ -1245,7 +1245,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       match &f {
         // probably not work here
         Calcit::Proc(..) => {
-          writeln!(defs_code, "\nvar {} = $calcit_procs.{};", escape_var(&def), escape_var(&def)).unwrap();
+          writeln!(defs_code, "\nvar {} = $calcit_procs.{};", escape_var(&def), escape_var(&def)).expect("write");
         }
         Calcit::Fn {
           name,
@@ -1273,7 +1273,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
             escape_var(&def),
             to_js_code(code, &ns, &def_names, &file_imports, &keywords, None)?
           )
-          .unwrap();
+          .expect("write");
           gen_stack::pop_call_stack()
         }
         // macro are not traced in codegen since already expanded
@@ -1294,37 +1294,36 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       direct_code.push_str(&snippets::tmpl_classes_registering())
     }
 
-    let collected_imports = file_imports.into_inner();
-    //  internal_states::clone_imports().unwrap(); // ignore unlocking details
+    let collected_imports = file_imports.borrow();
     if !collected_imports.is_empty() {
       // println!("imports: {:?}", collected_imports);
-      for (def, item) in collected_imports {
+      for (def, item) in collected_imports.iter() {
         // println!("implicit import {} in {} ", def, ns);
         match item {
           ImportedTarget::AsNs(target_ns) => {
-            if is_cirru_string(&target_ns) {
+            if is_cirru_string(target_ns) {
               let import_target = wrap_js_str(&target_ns[1..]);
-              write!(import_code, "\nimport * as {} from {};", escape_ns(&def), import_target).unwrap();
+              write!(import_code, "\nimport * as {} from {};", escape_ns(def), import_target).expect("write");
             } else {
-              let import_target = to_js_import_name(&target_ns, true); // TODO js_mode
-              write!(import_code, "\nimport * as {} from {};", escape_ns(&target_ns), import_target).unwrap();
+              let import_target = to_js_import_name(target_ns, true);
+              write!(import_code, "\nimport * as {} from {};", escape_ns(target_ns), import_target).expect("write");
             }
           }
           ImportedTarget::DefaultNs(target_ns) => {
-            if is_cirru_string(&target_ns) {
+            if is_cirru_string(target_ns) {
               let import_target = wrap_js_str(&target_ns[1..]);
-              write!(import_code, "\nimport {} from {};", escape_var(&def), import_target).unwrap();
+              write!(import_code, "\nimport {} from {};", escape_var(def), import_target).expect("write");
             } else {
               unreachable!("only js import leads to default ns, but got: {}", target_ns)
             }
           }
           ImportedTarget::ReferNs(target_ns) => {
-            let import_target = if is_cirru_string(&target_ns) {
+            let import_target = if is_cirru_string(target_ns) {
               wrap_js_str(&target_ns[1..])
             } else {
-              to_js_import_name(&target_ns, true) // TODO js_mode
+              to_js_import_name(target_ns, true)
             };
-            write!(import_code, "\nimport {{ {} }} from {};", escape_var(&def), import_target).unwrap();
+            write!(import_code, "\nimport {{ {} }} from {};", escape_var(def), import_target).expect("write");
           }
         }
       }
@@ -1341,7 +1340,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 
     for s in kwds {
       let name = escape_cirru_str(&s.to_string());
-      write!(kwd_arr, "{},", name).unwrap();
+      write!(kwd_arr, "{},", name).expect("write");
     }
     kwd_arr.push(']');
     keywords_code.push_str(&snippets::tmpl_keywords_init(&kwd_arr, kwd_prefix));
@@ -1359,9 +1358,9 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         vals_code,
         direct_code
       ),
-    );
+    )?;
     if wrote_new {
-      println!("Emitted js file: {}", js_file_path.to_str().unwrap());
+      println!("Emitted js file: {}", js_file_path.to_str().expect("exptract path"));
     } else {
       unchanged_ns.insert(ns.to_owned());
     }

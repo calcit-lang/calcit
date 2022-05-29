@@ -14,6 +14,7 @@ pub mod snapshot;
 pub mod util;
 
 use dirs::home_dir;
+use primes::LocatedWarning;
 use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
@@ -42,7 +43,7 @@ pub struct ProgramEntries {
 }
 
 pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -> Result<Calcit, CalcitErr> {
-  let check_warnings: RefCell<Vec<String>> = RefCell::new(vec![]);
+  let check_warnings = RefCell::new(LocatedWarning::default_list());
 
   // preprocess to init
   match runner::preprocess::preprocess_ns_def(
@@ -56,17 +57,18 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {}", failure);
-      call_stack::display_stack(&failure.msg, &failure.stack)?;
+      call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
       return CalcitErr::err_str(failure.msg);
     }
   }
 
-  let warnings = check_warnings.into_inner();
+  let warnings = check_warnings.borrow();
   if !warnings.is_empty() {
     return Err(CalcitErr {
       msg: format!("Found {} warnings, runner blocked", warnings.len()),
-      warnings,
+      warnings: warnings.to_owned(),
       stack: rpds::List::new_sync(),
+      location: None,
     });
   }
   match program::lookup_evaled_def(&init_ns, &init_def) {
@@ -80,7 +82,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
           Ok(v) => Ok(v),
           Err(failure) => {
             eprintln!("\nfailed, {}", failure);
-            call_stack::display_stack(&failure.msg, &failure.stack)?;
+            call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
             Err(failure)
           }
         }
@@ -98,7 +100,7 @@ pub fn load_module(path: &str, base_dir: &Path) -> Result<snapshot::Snapshot, St
 
   let fullpath: String = if file_path.starts_with("./") {
     let new_path = base_dir.join(file_path);
-    new_path.to_str().unwrap().to_string()
+    new_path.to_str().expect("path").to_string()
   } else if file_path.starts_with('/') {
     file_path
   } else {
@@ -106,7 +108,7 @@ pub fn load_module(path: &str, base_dir: &Path) -> Result<snapshot::Snapshot, St
       Some(buf) => {
         let home = buf.as_path();
         let p = home.join(".config/calcit/modules/").join(file_path);
-        p.to_str().unwrap().to_string()
+        p.to_str().expect("path").to_string()
       }
       None => return Err(String::from("failed to load $HOME")),
     }

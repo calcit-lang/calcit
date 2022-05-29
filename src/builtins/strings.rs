@@ -26,7 +26,7 @@ pub fn trim(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Str(s)), None) => Ok(Calcit::Str(s.trim().to_owned().into())),
     (Some(Calcit::Str(s)), Some(Calcit::Str(p))) => {
       if p.len() == 1 {
-        let c: char = p.chars().next().unwrap();
+        let c: char = p.chars().next().expect("first char");
         Ok(Calcit::Str(s.trim_matches(c).to_owned().into()))
       } else {
         CalcitErr::err_str(format!("trim expected pattern in a char, got {}", p))
@@ -127,7 +127,7 @@ pub fn str_slice(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         } else {
           // turn into vec first to also handle UTF8
           let s_vec = s.chars().collect::<Vec<_>>();
-          Ok(Calcit::Str(s_vec[from..to].iter().cloned().collect::<String>().into()))
+          Ok(Calcit::Str(s_vec[from..to].iter().to_owned().collect::<String>().into()))
         }
       }
       Err(e) => CalcitErr::err_str(e),
@@ -196,7 +196,7 @@ pub fn get_char_code(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn char_from_code(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(x)) => match f64_to_usize(*x) {
-      Ok(n) => Ok(Calcit::Str((char::from_u32(n as u32).unwrap()).to_string().into())),
+      Ok(n) => Ok(Calcit::Str((char::from_u32(n as u32).expect("create char")).to_string().into())),
       Err(e) => return CalcitErr::err_str(format!("char_from_code expected number, got: {}", e)),
     },
     Some(a) => CalcitErr::err_str(format!("char_from_code expected 1 number, got: {}", a)),
@@ -231,7 +231,7 @@ pub fn blank_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn escape(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => {
-      let mut chunk = String::from("\"");
+      let mut chunk = String::from('"');
       chunk.push_str(&s.escape_default().to_string());
       chunk.push('"');
       Ok(Calcit::Str(chunk.into()))

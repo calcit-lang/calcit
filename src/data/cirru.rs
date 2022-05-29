@@ -6,7 +6,7 @@ use im_ternary_tree::TernaryTreeList;
 use crate::primes::Calcit;
 
 /// code is CirruNode, and this function parse code(rather than data)
-pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit, String> {
+pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> Result<Calcit, String> {
   match xs {
     Cirru::Leaf(s) => match &**s {
       "nil" => Ok(Calcit::Nil),
@@ -24,8 +24,9 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
         ns,
         at_def: def,
         resolved: None,
+        location: Some(coord.to_vec()),
       }),
-      _ => match s.chars().next().unwrap() {
+      _ => match s.chars().next().expect("load first char") {
         ':' => Ok(Calcit::kwd(&s[1..])),
         '.' => {
           if s.starts_with(".-") || s.starts_with(".!") {
@@ -35,6 +36,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
               ns,
               at_def: def,
               resolved: None,
+              location: Some(coord.to_vec()),
             })
           } else {
             Ok(Calcit::Proc((**s).into())) // as native method syntax
@@ -51,12 +53,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             ns: ns.to_owned(),
             at_def: def.to_owned(),
             resolved: None,
+            location: Some(coord.to_vec()),
           },
           Calcit::Symbol {
             sym: String::from(&s[1..]).into(),
             ns,
             at_def: def,
             resolved: None,
+            location: Some(coord.to_vec()),
           },
         ]))),
         // TODO also detect simple variables
@@ -66,12 +70,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             ns: ns.to_owned(),
             at_def: def.to_owned(),
             resolved: None,
+            location: Some(coord.to_vec()),
           },
           Calcit::Symbol {
             sym: String::from(&s[2..]).into(),
             ns,
             at_def: def,
             resolved: None,
+            location: Some(coord.to_vec()),
           },
         ]))),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(TernaryTreeList::from(&[
@@ -80,12 +86,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             ns: ns.to_owned(),
             at_def: def.to_owned(),
             resolved: None,
+            location: Some(coord.to_vec()),
           },
           Calcit::Symbol {
             sym: String::from(&s[1..]).into(),
             ns,
             at_def: def,
             resolved: None,
+            location: Some(coord.to_vec()),
           },
         ]))),
         '@' => Ok(Calcit::List(TernaryTreeList::from(&[
@@ -94,12 +102,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
             ns: ns.to_owned(),
             at_def: def.to_owned(),
             resolved: None,
+            location: Some(coord.to_vec()),
           },
           Calcit::Symbol {
             sym: String::from(&s[1..]).into(),
             ns,
             at_def: def,
             resolved: None,
+            location: Some(coord.to_vec()),
           },
         ]))),
         // TODO future work of reader literal expanding
@@ -112,6 +122,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
               ns,
               at_def: def,
               resolved: None,
+              location: Some(coord.to_vec()),
             })
           }
         }
@@ -119,8 +130,10 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>) -> Result<Calcit,
     },
     Cirru::List(ys) => {
       let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
-      for y in ys {
-        match code_to_calcit(y, ns.to_owned(), def.to_owned()) {
+      for (idx, y) in ys.iter().enumerate() {
+        let mut next_coord = coord.to_owned();
+        next_coord.push(idx as u8); // code not supposed to be fatter than 256 children
+        match code_to_calcit(y, ns.to_owned(), def.to_owned(), &next_coord) {
           Ok(v) => {
             if !is_comment(&v) {
               zs.push(v.to_owned());

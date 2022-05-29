@@ -2,12 +2,14 @@ pub mod preprocess;
 pub mod track;
 
 use im_ternary_tree::TernaryTreeList;
-use std::sync::{Arc, RwLock};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::builtins;
 use crate::builtins::is_proc_name;
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
-use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, SymbolResolved::*, CORE_NS};
+use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, NodeLocation, SymbolResolved::*, CORE_NS};
 use crate::program;
 use crate::util::string::has_ns_part;
 
@@ -19,23 +21,33 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
     Calcit::Bool(_) => Ok(expr.to_owned()),
     Calcit::Number(_) => Ok(expr.to_owned()),
     Calcit::Symbol { sym, .. } if &**sym == "&" => Ok(expr.to_owned()),
-    Calcit::Symbol { sym, ns, resolved, .. } => match resolved {
-      Some(resolved_info) => match &*resolved_info.to_owned() {
-        ResolvedDef {
-          ns: r_ns,
-          def: r_def,
-          rule,
-        } => {
-          if rule.is_some() && sym != r_def {
-            // dirty check for namespaced imported variables
-            return eval_symbol_from_program(r_def, r_ns, call_stack);
+    Calcit::Symbol {
+      sym,
+      ns,
+      at_def,
+      resolved,
+      location,
+      ..
+    } => {
+      let loc = NodeLocation::new(ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default());
+      match resolved {
+        Some(resolved_info) => match &*resolved_info.to_owned() {
+          ResolvedDef {
+            ns: r_ns,
+            def: r_def,
+            rule,
+          } => {
+            if rule.is_some() && sym != r_def {
+              // dirty check for namespaced imported variables
+              return eval_symbol_from_program(r_def, r_ns, call_stack);
+            }
+            evaluate_symbol(r_def, scope, r_ns, Some(loc), call_stack)
           }
-          evaluate_symbol(r_def, scope, r_ns, call_stack)
-        }
-        _ => evaluate_symbol(sym, scope, ns, call_stack),
-      },
-      _ => evaluate_symbol(sym, scope, ns, call_stack),
-    },
+          _ => evaluate_symbol(sym, scope, ns, Some(loc), call_stack),
+        },
+        _ => evaluate_symbol(sym, scope, ns, Some(loc), call_stack),
+      }
+    }
     Calcit::Keyword(_) => Ok(expr.to_owned()),
     Calcit::Str(_) => Ok(expr.to_owned()),
     Calcit::Thunk(code, v) => match v {
@@ -62,8 +74,8 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             let values = evaluate_args(&rest_nodes, scope, file_ns.to_owned(), call_stack)?;
             let next_stack = extend_call_stack(call_stack, file_ns, p.to_owned(), StackKind::Proc, Calcit::Nil, &values);
 
-            if p.starts_with('.') {
-              builtins::meta::invoke_method(p.strip_prefix('.').unwrap(), &values, &next_stack)
+            if let Some(v) = p.strip_prefix('.') {
+              builtins::meta::invoke_method(v, &values, &next_stack)
             } else {
               // println!("proc: {}", expr);
               builtins::handle_proc(p, &values, call_stack)
@@ -133,7 +145,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
 
             Ok(loop {
               // need to handle recursion
-              let body_scope = bind_args(args, &current_values, &rpds::HashTrieMap::new_sync(), call_stack)?;
+              let body_scope = bind_args(args, &current_values, &CalcitScope::default(), call_stack)?;
               let code = evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
@@ -165,13 +177,26 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               ))
             }
           }
-          Calcit::Symbol { sym, ns, at_def, resolved } => Err(CalcitErr::use_msg_stack(
-            format!("cannot evaluate symbol directly: {}/{} in {}, {:?}", ns, sym, at_def, resolved),
-            call_stack,
-          )),
-          a => Err(CalcitErr::use_msg_stack(
+          Calcit::Symbol {
+            sym,
+            ns,
+            at_def,
+            resolved,
+            location,
+          } => {
+            let error_location = location
+              .as_ref()
+              .map(|l| NodeLocation::new(ns.to_owned(), at_def.to_owned(), l.to_owned()));
+            Err(CalcitErr::use_msg_stack_location(
+              format!("cannot evaluate symbol directly: {}/{} in {}, {:?}", ns, sym, at_def, resolved),
+              call_stack,
+              error_location,
+            ))
+          }
+          a => Err(CalcitErr::use_msg_stack_location(
             format!("cannot be used as operator: {} in {}", a, CrListWrap(xs.to_owned())),
             call_stack,
+            a.get_location(),
           )),
         };
 
@@ -188,27 +213,34 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
   }
 }
 
-pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_symbol(
+  sym: &str,
+  scope: &CalcitScope,
+  file_ns: &str,
+  location: Option<NodeLocation>,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   let v = match parse_ns_def(sym) {
     Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns.into(), &ns_part) {
       Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, call_stack) {
         Ok(v) => Ok(v),
         Err(e) => Err(e),
       },
-      None => Err(CalcitErr::use_msg_stack(
+      None => Err(CalcitErr::use_msg_stack_location(
         format!("unknown ns target: {}/{}", ns_part, def_part),
         call_stack,
+        location,
       )),
     },
     None => {
-      if CalcitSyntax::is_core_syntax(sym) {
+      if CalcitSyntax::is_valid(sym) {
         Ok(Calcit::Syntax(
-          CalcitSyntax::from(sym).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?,
+          sym.try_into().map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?,
           file_ns.to_owned().into(),
         ))
-      } else if scope.contains_key(sym) {
+      } else if let Some(v) = scope.get(sym) {
         // although scope is detected first, it would trigger warning during preprocess
-        Ok(scope.get(sym).unwrap().to_owned())
+        Ok(v.to_owned())
       } else if is_proc_name(sym) {
         Ok(Calcit::Proc(sym.to_owned().into()))
       } else if program::lookup_def_code(CORE_NS, sym).is_some() {
@@ -219,10 +251,11 @@ pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack
         match program::lookup_def_target_in_import(file_ns, sym) {
           Some(target_ns) => eval_symbol_from_program(sym, &target_ns, call_stack),
           None => {
-            let vars: Vec<&Arc<str>> = scope.keys().collect();
-            Err(CalcitErr::use_msg_stack(
-              format!("unknown symbol `{}` in {:?}", sym, vars),
+            let vars = scope.list_variables();
+            Err(CalcitErr::use_msg_stack_location(
+              format!("unknown symbol `{}` in {}", sym, vars.join(",")),
               call_stack,
+              location,
             ))
           }
         }
@@ -239,7 +272,7 @@ pub fn evaluate_symbol(sym: &str, scope: &CalcitScope, file_ns: &str, call_stack
 
 /// make sure a thunk at global is called
 pub fn evaluate_def_thunk(code: &Arc<Calcit>, file_ns: &str, sym: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  let evaled_v = evaluate_expr(code, &rpds::HashTrieMap::new_sync(), file_ns.into(), call_stack)?;
+  let evaled_v = evaluate_expr(code, &CalcitScope::default(), file_ns.into(), call_stack)?;
   // and write back to program state to fix duplicated evalution
   // still using thunk since js and IR requires bare code
   let next = if builtins::effects::is_rust_eval() {
@@ -273,7 +306,7 @@ fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList) -> 
     Some(v) => Ok(v),
     None => match program::lookup_def_code(ns, sym) {
       Some(code) => {
-        let v = evaluate_expr(&code, &rpds::HashTrieMap::new_sync(), ns.into(), call_stack)?;
+        let v = evaluate_expr(&code, &CalcitScope::default(), ns.into(), call_stack)?;
         program::write_evaled_def(ns, sym, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
         Ok(v)
       }
@@ -320,28 +353,28 @@ pub fn bind_args(
 
   let collected_args = args.to_owned();
   let collected_values = Arc::new(values);
-  let pop_args_idx = Arc::new(RwLock::new(0));
-  let pop_values_idx = Arc::new(RwLock::new(0));
+  let pop_args_idx = Rc::new(RefCell::new(0));
+  let pop_values_idx = Rc::new(RefCell::new(0));
 
   let args_pop_front = || -> Option<Arc<str>> {
-    let mut p = (*pop_args_idx).write().unwrap();
+    let mut p = pop_args_idx.borrow_mut();
     let ret = collected_args.get(*p);
     *p += 1;
     ret.map(|x| x.to_owned())
   };
 
   let values_pop_front = || -> Option<&Calcit> {
-    let mut p = (*pop_values_idx).write().unwrap();
+    let mut p = pop_values_idx.borrow_mut();
     let ret = collected_values.get(*p);
     *p += 1;
     ret
   };
   let is_args_empty = || -> bool {
-    let p = (*pop_args_idx).read().unwrap();
+    let p = pop_args_idx.borrow();
     *p >= (*collected_args).len()
   };
   let is_values_empty = || -> bool {
-    let p = (*pop_values_idx).read().unwrap();
+    let p = pop_values_idx.borrow();
     *p >= (*collected_values).len()
   };
 
@@ -355,7 +388,7 @@ pub fn bind_args(
           while let Some(v) = values_pop_front() {
             chunk = chunk.push_right(v.to_owned());
           }
-          scope.insert_mut(sym.to_owned(), Calcit::List(chunk));
+          scope.insert(sym.to_owned(), Calcit::List(chunk));
           if !is_args_empty() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{:?}` after spreading in `{:?}`", collected_args, args,),
@@ -370,11 +403,11 @@ pub fn bind_args(
         "?" => optional = true,
         _ => match values_pop_front() {
           Some(v) => {
-            scope.insert_mut(sym.to_owned(), v.to_owned());
+            scope.insert(sym.to_owned(), v.to_owned());
           }
           None => {
             if optional {
-              scope.insert_mut(sym.to_owned(), Calcit::Nil);
+              scope.insert(sym.to_owned(), Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
                 format!("too few values `{}` passed to args `{:?}`", CrListWrap(values.to_owned()), args),

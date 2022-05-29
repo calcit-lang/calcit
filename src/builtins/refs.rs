@@ -1,5 +1,3 @@
-//! TODO watchers not implemented yet, after hot code swapping
-
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -17,17 +15,17 @@ lazy_static! {
 
 // need functions with shorter lifetime to escape dead lock
 fn read_ref(path: Arc<str>) -> Option<ValueAndListeners> {
-  let dict = &REFS_DICT.read().unwrap();
+  let dict = &REFS_DICT.read().expect("read dict");
   dict.get(&path).map(|pair| pair.to_owned())
 }
 
 fn write_to_ref(path: Arc<str>, v: Calcit, listeners: HashMap<EdnKwd, Calcit>) {
-  let mut dict = REFS_DICT.write().unwrap();
+  let mut dict = REFS_DICT.write().expect("open dict");
   let _ = (*dict).insert(path, (v, listeners));
 }
 
 fn modify_ref(path: Arc<str>, v: Calcit, call_stack: &CallStackList) -> Result<(), CalcitErr> {
-  let (prev, listeners) = read_ref(path.to_owned()).unwrap();
+  let (prev, listeners) = read_ref(path.to_owned()).ok_or_else(|| CalcitErr::use_str("missing ref"))?;
   write_to_ref(path, v.to_owned(), listeners.to_owned());
 
   for f in listeners.values() {
@@ -39,9 +37,10 @@ fn modify_ref(path: Arc<str>, v: Calcit, call_stack: &CallStackList) -> Result<(
         runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
       }
       a => {
-        return Err(CalcitErr::use_msg_stack(
+        return Err(CalcitErr::use_msg_stack_location(
           format!("expected fn to trigger after `reset!`, got {}", a),
           call_stack,
+          a.get_location(),
         ))
       }
     }
@@ -65,9 +64,10 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_
       }
       Ok(Calcit::Ref(path_info))
     }
-    (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack(
+    (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
       format!("defatom expected a symbol and an expression: {} , {}", a, b),
       call_stack,
+      a.get_location().or_else(|| b.get_location()),
     )),
     _ => Err(CalcitErr::use_msg_stack("defatom expected 2 nodes", call_stack)),
   }
@@ -105,24 +105,25 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
       Calcit::Symbol { sym, .. } => runner::evaluate_def_thunk(&code, &*file_ns, &*sym, call_stack),
       _ => return CalcitErr::err_str(format!("reset! expected a symbol, got: {:?}", expr[0])),
     },
-    (a, b) => Err(CalcitErr::use_msg_stack(
+    (a, b) => Err(CalcitErr::use_msg_stack_location(
       format!("reset! expected a ref and a value, got: {} {}", a, b),
       call_stack,
+      a.get_location().or_else(|| b.get_location()),
     )),
   }
 }
 
 pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
-    (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k)), Some(Calcit::Fn { .. })) => {
-      let mut dict = REFS_DICT.write().unwrap();
-      let (prev, listeners) = &(*dict).get(path).unwrap().to_owned();
+    (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k)), Some(f @ Calcit::Fn { .. })) => {
+      let mut dict = REFS_DICT.write().expect("open dict");
+      let (_prev, listeners) = dict
+        .get_mut(path)
+        .ok_or_else(|| CalcitErr::use_str(&format!("failed to find atom via: {}", path)))?;
       if listeners.contains_key(k) {
         CalcitErr::err_str(format!("add-watch failed, listener with key `{}` existed", k))
       } else {
-        let mut new_listeners = listeners.to_owned();
-        new_listeners.insert(k.to_owned(), xs.get(2).unwrap().to_owned());
-        let _ = (*dict).insert(path.to_owned(), (prev.to_owned(), new_listeners));
+        listeners.insert(k.to_owned(), f.to_owned());
         Ok(Calcit::Nil)
       }
     }
@@ -138,12 +139,12 @@ pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn remove_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k))) => {
-      let mut dict = REFS_DICT.write().unwrap();
-      let (prev, listeners) = &(*dict).get(path).unwrap().to_owned();
+      let mut dict = REFS_DICT.write().expect("open dict");
+      let (_prev, listeners) = dict
+        .get_mut(path)
+        .ok_or_else(|| CalcitErr::use_str(&format!("failed to find atom via: {}", path)))?;
       if listeners.contains_key(k) {
-        let mut new_listeners = listeners.to_owned();
-        new_listeners.remove(k);
-        let _ = (*dict).insert(path.to_owned(), (prev.to_owned(), new_listeners));
+        listeners.remove(k);
         Ok(Calcit::Nil)
       } else {
         CalcitErr::err_str(format!("remove-watch failed, listener with key `{}` missing", k))
