@@ -274,7 +274,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     Calcit::Record(_, fields, values) => {
       match find_in_fields(fields, &EdnKwd::from(name)) {
         Some(idx) => {
-          let method_args = invoke_args.drop_left().unshift(value);
+          let method_args = invoke_args.assoc(0, value)?;
 
           match &values[idx] {
             // dirty copy...

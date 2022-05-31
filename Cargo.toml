@@ -1,6 +1,6 @@
 [package]
 name = "calcit"
-version = "0.5.44-a5"
+version = "0.5.44"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -30,8 +30,8 @@ notify = "4.0.17"
 walkdir = "2"
 hex = "0.4.3"
 rpds = "0.11.0"
-im_ternary_tree = "0.0.6"
-# im_ternary_tree = { path = "/Users/chen/repo/calcit-lang/ternary-tree" }
+im_ternary_tree = "0.0.10"
+# im_ternary_tree = { path = "/Users/chenyong/repo/calcit-lang/ternary-tree.rs" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libloading = "0.7.3"
