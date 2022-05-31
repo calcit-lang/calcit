@@ -73,7 +73,7 @@ pub fn append(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn prepend(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(ys)), Some(a)) => Ok(Calcit::List(ys.unshift(a.to_owned()))),
+    (Some(Calcit::List(ys)), Some(a)) => Ok(Calcit::List(ys.push_left(a.to_owned()))),
     (Some(a), _) => CalcitErr::err_str(format!("prepend expected list, got: {}", a)),
     (None, _) => CalcitErr::err_str("prepend expected 2 arguments, got nothing"),
   }
