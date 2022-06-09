@@ -77,9 +77,9 @@ dependencies = [
 
 [[package]]
 name = "cirru_parser"
-version = "0.1.22"
+version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39236d6a490271b719e0c04687a913360a829b9bd83ba787e4e53eeaea8819e5"
+checksum = "db57e13c5181e48b287fbb5f6c8652b23c8bb30ffdc8cf63772c0fe17279f8b8"
 
 [[package]]
 name = "clap"
