@@ -20,6 +20,7 @@ use calcit::{
   ProgramEntries,
 };
 
+#[derive(Debug, Clone)]
 pub struct CLIOptions {
   entry_path: PathBuf,
   emit_path: String,

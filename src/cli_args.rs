@@ -8,7 +8,6 @@ pub fn parse_cli() -> clap::ArgMatches {
     .arg(
       clap::Arg::new("once")
         .help("disable watching mode")
-        .default_value("false")
         .short('1')
         .long("once")
         .takes_value(false),
@@ -16,14 +15,12 @@ pub fn parse_cli() -> clap::ArgMatches {
     .arg(
       clap::Arg::new("emit-js")
         .help("emit js rather than interpreting")
-        .default_value("false")
         .long("emit-js")
         .takes_value(false),
     )
     .arg(
       clap::Arg::new("emit-ir")
         .help("emit EDN representation of program to program-ir.cirru")
-        .default_value("false")
         .long("emit-ir")
         .takes_value(false),
     )
