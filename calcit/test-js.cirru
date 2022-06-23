@@ -76,6 +76,17 @@
                 d 5
               assert= 13 $ + a b c d
 
+            ; "a special case variable shadowing of `b`"
+            let
+                b -1
+                a $ loop
+                    xs $ []
+                    b 0
+                  if (>= b 5) xs
+                    recur (conj xs b) (inc b)
+              assert= a $ [] 0 1 2 3 4
+              assert= b -1
+
         |test-collection $ quote
           fn ()
             log-title "|Testing quick collection syntax"

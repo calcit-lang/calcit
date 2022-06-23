@@ -738,7 +738,13 @@ fn gen_let_code(
             if scoped_defs.contains(&sym) {
               for (idx, x) in content.into_iter().enumerate() {
                 if idx == content.len() - 1 {
-                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, keywords, Some(return_label))?);
+                  // normally, last item of function body returns as return value(even in recursion)
+                  if local_defs.contains(&sym) {
+                    // however, to shallow a conflicted variable, we need to return explicitly
+                    body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, keywords, Some("return "))?);
+                  } else {
+                    body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, keywords, Some(return_label))?);
+                  }
                   body_part.push('\n');
                 } else {
                   body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, keywords, None)?);
