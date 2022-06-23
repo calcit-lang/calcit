@@ -688,9 +688,9 @@ pub fn preprocess_call_let(
         ))
       }
     },
-    Some(Calcit::List(ys)) => {
+    Some(a @ Calcit::List(_)) => {
       return Err(CalcitErr::use_msg_stack(
-        format!("expected binding of a pair, got {:?}", ys),
+        format!("expected binding of a pair, got {}", a),
         call_stack,
       ))
     }
