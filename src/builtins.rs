@@ -83,8 +83,13 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&number:fract"
       | "&number:rem"
       | "&number:format"
+      | "&number:display-by"
       | "bit-shl"
       | "bit-shr"
+      | "bit-and"
+      | "bit-or"
+      | "bit-xor"
+      | "bit-not"
       // strings
       | "&str:concat"
       | "trim"
@@ -270,8 +275,13 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackLi
     "&number:rem" => math::rem(args),
     "&number:fract" => math::fractional(args),
     "&number:format" => strings::format_number(args),
+    "&number:display-by" => strings::display_number_by(args),
     "bit-shr" => math::bit_shr(args),
     "bit-shl" => math::bit_shl(args),
+    "bit-and" => math::bit_and(args),
+    "bit-or" => math::bit_or(args),
+    "bit-xor" => math::bit_xor(args),
+    "bit-not" => math::bit_not(args),
     // strings
     "trim" => strings::trim(args),
     "&str" => strings::call_str(args),

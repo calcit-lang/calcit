@@ -141,3 +141,50 @@ pub fn bit_shl(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (a, b) => CalcitErr::err_str(format!("bit-shl expected 2 number: {:?} {:?}", a, b)),
   }
 }
+
+pub fn bit_and(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
+      (Ok(value), Ok(step)) => Ok(Calcit::Number((value & step) as f64)),
+      (Err(e), _) => CalcitErr::err_str(format!("bit-and expect int as initial value: {}", e)),
+      (_, Err(e)) => CalcitErr::err_str(format!("bit-and expect int as step: {}", e)),
+    },
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("bit-and expected 2 numbers, got: {} {}", a, b)),
+    (a, b) => CalcitErr::err_str(format!("bit-and expected 2 number: {:?} {:?}", a, b)),
+  }
+}
+
+pub fn bit_or(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
+      (Ok(value), Ok(step)) => Ok(Calcit::Number((value | step) as f64)),
+      (Err(e), _) => CalcitErr::err_str(format!("bit-or expect int as initial value: {}", e)),
+      (_, Err(e)) => CalcitErr::err_str(format!("bit-or expect int as step: {}", e)),
+    },
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("bit-or expected 2 numbers, got: {} {}", a, b)),
+    (a, b) => CalcitErr::err_str(format!("bit-or expected 2 number: {:?} {:?}", a, b)),
+  }
+}
+
+pub fn bit_xor(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
+      (Ok(value), Ok(step)) => Ok(Calcit::Number((value ^ step) as f64)),
+      (Err(e), _) => CalcitErr::err_str(format!("bit-xor expect int as initial value: {}", e)),
+      (_, Err(e)) => CalcitErr::err_str(format!("bit-xor expect int as step: {}", e)),
+    },
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("bit-xor expected 2 numbers, got: {} {}", a, b)),
+    (a, b) => CalcitErr::err_str(format!("bit-xor expected 2 number: {:?} {:?}", a, b)),
+  }
+}
+
+pub fn bit_not(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  match xs.get(0) {
+    Some(Calcit::Number(n)) => match f64_to_i32(*n) {
+      Ok(value) => Ok(Calcit::Number(!value as f64)),
+      Err(e) => CalcitErr::err_str(format!("bit-not expect int as initial value: {}", e)),
+    },
+    Some(a) => CalcitErr::err_str(format!("bit-not expected a number: {}", a)),
+    a => CalcitErr::err_str(format!("bit-not expected 1 number: {:?}", a)),
+  }
+}

@@ -292,6 +292,29 @@
             assert= |12312a $ .pad-left |a 6 |123
             assert= |a12312 $ .pad-right |a 6 |123
 
+        |test-bitwise $ quote
+          fn ()
+            assert= (bit-and 15 7) 7
+            assert= (bit-and 16 7) 0
+
+            assert= (bit-or 15 7) 15
+            assert= (bit-or 16 7) 23
+
+            assert= (bit-xor 15 7) 8
+            assert= (bit-xor 16 7) 23
+
+            assert= (bit-not 16) -17
+            assert= (bit-not 0) -1
+
+            assert= |0b10001
+              &number:display-by 17 2
+
+            assert= |0o21
+              &number:display-by 17 8
+
+            assert= |0x11
+              &number:display-by 17 16
+
         |main! $ quote
           defn main! ()
             log-title "|Testing str"
@@ -314,6 +337,8 @@
             test-lisp-style
 
             test-methods
+
+            test-bitwise
 
             do true
 
