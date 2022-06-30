@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.5.46";
+export const calcit_version = "0.5.47";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -912,6 +912,19 @@ export let _$n_number_$o_format = (x: number, n: number): string => {
   return x.toFixed(n);
 };
 
+export let _$n_number_$o_display_by = (x: number, n: number): string => {
+  switch (n) {
+    case 2:
+      return `0b${x.toString(2)}`;
+    case 8:
+      return `0o${x.toString(8)}`;
+    case 16:
+      return `0x${x.toString(16)}`;
+    default:
+      throw new Error("Expected n of 2, 8, or 16");
+  }
+};
+
 export let get_char_code = (c: string): number => {
   if (typeof c !== "string" || c.length !== 1) {
     throw new Error("Expected a character");
@@ -1331,6 +1344,18 @@ export let bit_shr = (base: number, step: number): number => {
 };
 export let bit_shl = (base: number, step: number): number => {
   return base << step;
+};
+export let bit_and = (a: number, b: number): number => {
+  return a & b;
+};
+export let bit_or = (a: number, b: number): number => {
+  return a | b;
+};
+export let bit_xor = (a: number, b: number): number => {
+  return a ^ b;
+};
+export let bit_not = (a: number): number => {
+  return ~a;
 };
 
 export let _$n_list_$o_to_set = (xs: CalcitList): CalcitSet => {

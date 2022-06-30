@@ -86,6 +86,24 @@ pub fn format_number(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// displays in binary, octal, or hexadecimal
+pub fn display_number_by(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  match (xs.get(0), xs.get(1)) {
+    (Some(Calcit::Number(n)), Some(Calcit::Number(x))) => {
+      let value = f64_to_usize(*n)? as i32;
+      let size = f64_to_usize(*x)?;
+      match size {
+        2 => Ok(Calcit::Str(format!("{:#01b}", value).into())),
+        8 => Ok(Calcit::Str(format!("{:#01o}", value).into())),
+        16 => Ok(Calcit::Str(format!("{:#01x}", value).into())),
+        _ => CalcitErr::err_str(format!("&number:display-by only supports system of 2/8/16, got: {}", size)),
+      }
+    }
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("&number:display-by expected numbers, got: {} {}", a, b)),
+    (_, _) => CalcitErr::err_str("&number:display-by expected 2 arguments"),
+  }
+}
+
 pub fn replace(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(p)), Some(Calcit::Str(r))) => Ok(Calcit::Str(s.replace(&**p, &**r).into())),
