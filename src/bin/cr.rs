@@ -85,7 +85,11 @@ fn main() -> Result<(), String> {
         println!("running entry: {}", entry);
         snapshot.configs = snapshot.entries[entry].to_owned();
       } else {
-        return Err(format!("unknown entry `{}` among {:?}", entry, snapshot.entries.keys()));
+        return Err(format!(
+          "unknown entry `{}` in `{}`",
+          entry,
+          snapshot.entries.keys().map(|x| (*x).to_owned()).collect::<Vec<_>>().join("/")
+        ));
       }
     }
 
