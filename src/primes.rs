@@ -693,9 +693,9 @@ pub struct NodeLocation {
 impl From<NodeLocation> for Edn {
   fn from(v: NodeLocation) -> Self {
     Edn::map_from_iter([
-      ("ns".into(), v.ns.into()),
-      ("def".into(), v.def.into()),
-      ("coord".into(), v.coord.into()),
+      (Edn::kwd("ns"), v.ns.into()),
+      (Edn::kwd("def"), v.def.into()),
+      (Edn::kwd("coord"), v.coord.into()),
     ])
   }
 }

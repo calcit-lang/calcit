@@ -93,10 +93,10 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Nod
       args.push(edn::calcit_to_edn(a)?);
     }
     let info = Edn::map_from_iter([
-      ("def".into(), format!("{}/{}", s.ns, s.def).into()),
-      ("code".into(), cirru::calcit_to_cirru(&s.code)?.into()),
-      ("args".into(), args.into()),
-      ("kind".into(), (&s.kind).to_string().into()),
+      (Edn::kwd("def"), format!("{}/{}", s.ns, s.def).into()),
+      (Edn::kwd("code"), cirru::calcit_to_cirru(&s.code)?.into()),
+      (Edn::kwd("args"), args.into()),
+      (Edn::kwd("kind"), (&s.kind).to_string().into()),
     ]);
 
     stack_list.push(info);
@@ -104,10 +104,10 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Nod
 
   let content = cirru_edn::format(
     &Edn::map_from_iter([
-      ("message".into(), failure.into()),
-      ("stack".into(), stack_list.into()),
+      (Edn::kwd("message"), failure.into()),
+      (Edn::kwd("stack"), stack_list.into()),
       (
-        "location".into(),
+        Edn::kwd("location"),
         match location {
           Some(l) => l.into(),
           None => Edn::Nil,
