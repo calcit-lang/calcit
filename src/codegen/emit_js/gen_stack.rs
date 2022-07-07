@@ -21,7 +21,8 @@ pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args:
 pub fn pop_call_stack() {
   let mut stack = CALL_STACK.write().expect("open call stack");
   if !stack.is_empty() {
-    match stack.drop_first() {
+    let xs = stack.drop_first();
+    match xs {
       Some(v) => *stack = v,
       None => {
         println!("empty stack")

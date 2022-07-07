@@ -24,7 +24,7 @@ use crate::util::string::{has_ns_part, matches_digits, matches_js_var, wrap_js_s
 
 type ImportsDict = BTreeMap<Arc<str>, ImportedTarget>;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub enum ImportedTarget {
   AsNs(Arc<str>),
   DefaultNs(Arc<str>),
@@ -222,7 +222,7 @@ fn to_js_code(
           file_imports,
         };
 
-        gen_symbol_code(sym, &**def_ns, &**at_def, resolved_info, xs, &passed_defs)
+        gen_symbol_code(sym, def_ns, at_def, resolved_info, xs, &passed_defs)
       }
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
@@ -434,7 +434,7 @@ fn gen_call_code(
           match body.get(0) {
             Some(Calcit::Symbol { .. }) => {
               let target = to_js_code(&body[0], ns, local_defs, file_imports, keywords, None)?; // TODO could be simpler
-              return Ok(format!("{}(typeof {} !== 'undefined')", return_code, target));
+              Ok(format!("{}(typeof {} !== 'undefined')", return_code, target))
             }
             Some(a) => Err(format!("exists? expected a symbol, got {}", a)),
             None => Err(format!("exists? expected 1 node, got {:?}", body)),
@@ -608,12 +608,12 @@ fn gen_symbol_code(
           def: _r_def,
           rule: _import_rule, /* None */
         }) => {
-          if is_cirru_string(&*r_ns) {
+          if is_cirru_string(&r_ns) {
             track_ns_import(ns_part, ImportedTarget::AsNs(r_ns), passed_defs.file_imports)?;
             Ok(escape_ns_var(s, ns_part))
           } else {
-            track_ns_import(&*r_ns, ImportedTarget::AsNs(r_ns.to_owned()), passed_defs.file_imports)?;
-            Ok(escape_ns_var(s, &*r_ns))
+            track_ns_import(&r_ns, ImportedTarget::AsNs(r_ns.to_owned()), passed_defs.file_imports)?;
+            Ok(escape_ns_var(s, &r_ns))
           }
         }
         Some(ResolvedRaw) => Err(format!("not going to generate from raw symbol, {}", s)),
@@ -624,7 +624,7 @@ fn gen_symbol_code(
   } else if is_js_syntax_procs(s) || is_proc_name(s) || CalcitSyntax::is_valid(s) {
     // return Ok(format!("{}{}", var_prefix, escape_var(s)));
     let proc_prefix = get_proc_prefix(passed_defs.ns);
-    return Ok(format!("{}{}", proc_prefix, escape_var(s)));
+    Ok(format!("{}{}", proc_prefix, escape_var(s)))
   } else if matches!(resolved, Some(ResolvedLocal)) || passed_defs.local_defs.contains(s) {
     Ok(escape_var(s))
   } else if let Some(ResolvedDef {
@@ -637,7 +637,7 @@ fn gen_symbol_code(
       // functions under core uses built $calcit module entry
       return Ok(format!("{}{}", var_prefix, escape_var(s)));
     }
-    if let Some(ImportRule::NsDefault(_s)) = import_rule.map(|x| (&*x).to_owned()) {
+    if let Some(ImportRule::NsDefault(_s)) = import_rule.map(|x| (*x).to_owned()) {
       // imports that using :default are special
       track_ns_import(s, ImportedTarget::DefaultNs(r_ns), passed_defs.file_imports)?;
     } else {
@@ -970,13 +970,13 @@ fn gen_js_func(
   let mut has_optional = false;
   let mut args_count = 0;
   let mut optional_count = 0;
-  for sym in &*args {
+  for sym in args {
     if spreading {
       if !args_code.is_empty() {
         args_code.push_str(", ");
       }
       local_defs.insert(sym.to_owned());
-      let arg_name = escape_var(&*sym);
+      let arg_name = escape_var(sym);
       args_code.push_str("...");
       args_code.push_str(&arg_name);
       // js list and calcit-js are different in spreading
@@ -987,7 +987,7 @@ fn gen_js_func(
         args_code.push_str(", ");
       }
       local_defs.insert(sym.to_owned());
-      args_code.push_str(&escape_var(&*sym));
+      args_code.push_str(&escape_var(sym));
       optional_count += 1;
     } else {
       if &**sym == "&" {
@@ -1002,7 +1002,7 @@ fn gen_js_func(
         args_code.push_str(", ");
       }
       local_defs.insert(sym.to_owned());
-      args_code.push_str(&escape_var(&*sym));
+      args_code.push_str(&escape_var(sym));
       args_count += 1;
     }
   }

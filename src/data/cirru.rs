@@ -180,7 +180,7 @@ pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
       }
       Ok(Cirru::List(zs))
     }
-    a => return Err(format!("unknown data for cirru: {}", a)),
+    a => Err(format!("unknown data for cirru: {}", a)),
   }
 }
 

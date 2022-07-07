@@ -120,7 +120,7 @@ pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
 // lookup without cloning
 pub fn has_def_code(ns: &str, def: &str) -> bool {
   let program_code = { PROGRAM_CODE_DATA.read().expect("read program code") };
-  match program_code.get(ns) {
+  match &program_code.get(ns) {
     Some(v) => v.defs.contains_key(def),
     None => false,
   }
@@ -197,7 +197,8 @@ pub fn clone_evaled_program() -> ProgramEvaledData {
   let program = &PROGRAM_EVALED_DATA_STATE.read().expect("read program data");
 
   let mut xs: ProgramEvaledData = HashMap::new();
-  for k in program.keys() {
+  let ys = program.keys();
+  for k in ys {
     xs.insert(k.to_owned(), program[k].to_owned());
   }
   xs
@@ -246,7 +247,8 @@ pub fn clear_all_program_evaled_defs(init_ns: Arc<str>, reload_ns: Arc<str>, rel
     let init_pkg = extract_pkg_from_ns(init_ns.to_owned()).ok_or_else(|| format!("failed to extract pkg from: {}", init_ns))?;
     let reload_pkg = extract_pkg_from_ns(reload_ns.to_owned()).ok_or_else(|| format!("failed to extract pkg from: {}", reload_ns))?;
     let mut to_remove: Vec<Arc<str>> = vec![];
-    for k in (*program).keys() {
+    let xs = program.keys();
+    for k in xs {
       if k == &init_pkg || k == &reload_pkg || k.starts_with(&format!("{}.", init_pkg)) || k.starts_with(&format!("{}.", reload_pkg)) {
         to_remove.push(k.to_owned());
       } else {

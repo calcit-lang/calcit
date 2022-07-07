@@ -81,7 +81,7 @@ fn main() -> Result<(), String> {
 
     // config in entry will overwrite default configs
     if let Some(entry) = cli_matches.value_of("entry") {
-      if snapshot.entries.contains_key(&*entry) {
+      if snapshot.entries.contains_key(entry) {
         println!("running entry: {}", entry);
         snapshot.configs = snapshot.entries[entry].to_owned();
       } else {
@@ -235,7 +235,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
 
   let data = cirru_edn::parse(content)?;
   // println!("\ndata: {}", &data);
-  let changes: ChangesDict = (&data).try_into()?;
+  let changes: ChangesDict = data.try_into()?;
   // println!("\nchanges: {:?}", changes);
   program::apply_code_changes(&changes)?;
   // println!("\nprogram code: {:?}", new_code);
@@ -360,7 +360,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   }
 
   if ir_mode {
-    match codegen::gen_ir::emit_ir(&*entries.init_fn, &*entries.reload_fn, emit_path) {
+    match codegen::gen_ir::emit_ir(&entries.init_fn, &entries.reload_fn, emit_path) {
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {}", failure);

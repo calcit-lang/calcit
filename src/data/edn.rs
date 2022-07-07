@@ -57,7 +57,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       match &**tag {
         Calcit::Symbol { sym, .. } => {
           if &**sym == "quote" {
-            match cirru::calcit_data_to_cirru(&**data) {
+            match cirru::calcit_data_to_cirru(data) {
               Ok(v) => Ok(Edn::Quote(v)),
               Err(e) => Err(format!("failed to create quote: {}", e)), // TODO more types to handle
             }
