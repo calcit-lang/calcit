@@ -100,6 +100,7 @@
             assert= |1.235 $ .format 1.23456789 3
             assert= |1.23 $ .format 1.23456789 2
             assert= |1.2 $ .format 1.23456789 1
+            assert= |0x11 $ .display-by 17 16
 
             inside-eval:
 

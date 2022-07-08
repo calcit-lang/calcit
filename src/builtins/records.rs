@@ -22,7 +22,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   for x in xs.into_iter().skip(1) {
     match x {
       Calcit::Symbol { sym, .. } | Calcit::Str(sym) => {
-        fields.push(EdnKwd::new(&*sym));
+        fields.push(EdnKwd::new(sym));
       }
       Calcit::Keyword(s) => {
         fields.push(s.to_owned());
@@ -270,10 +270,10 @@ pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         Some(_pos) => CalcitErr::err_str(format!("field `{}` already existed", s)),
         None => extend_record_field(s, n, fields, values, new_value),
       },
-      a => return CalcitErr::err_str(format!("invalid field `{}` for {:?}", a, fields)),
+      a => CalcitErr::err_str(format!("invalid field `{}` for {:?}", a, fields)),
     },
-    (Some(a), ..) => return CalcitErr::err_str(format!("record:extend-as expected a record, got: {}", a)),
-    (None, ..) => return CalcitErr::err_str(format!("record:extend-as expected 4 arguments, got: {:?}", xs)),
+    (Some(a), ..) => CalcitErr::err_str(format!("record:extend-as expected a record, got: {}", a)),
+    (None, ..) => CalcitErr::err_str(format!("record:extend-as expected 4 arguments, got: {:?}", xs)),
   }
 }
 

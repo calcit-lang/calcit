@@ -96,7 +96,7 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Nod
       (Edn::kwd("def"), format!("{}/{}", s.ns, s.def).into()),
       (Edn::kwd("code"), cirru::calcit_to_cirru(&s.code)?.into()),
       (Edn::kwd("args"), args.into()),
-      (Edn::kwd("kind"), (&s.kind).to_string().into()),
+      (Edn::kwd("kind"), s.kind.to_string().into()),
     ]);
 
     stack_list.push(info);

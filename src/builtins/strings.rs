@@ -106,7 +106,7 @@ pub fn display_number_by(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn replace(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
-    (Some(Calcit::Str(s)), Some(Calcit::Str(p)), Some(Calcit::Str(r))) => Ok(Calcit::Str(s.replace(&**p, &**r).into())),
+    (Some(Calcit::Str(s)), Some(Calcit::Str(p)), Some(Calcit::Str(r))) => Ok(Calcit::Str(s.replace(&**p, r).into())),
     (Some(a), Some(b), Some(c)) => CalcitErr::err_str(format!("str:replace expected 3 strings, got: {} {} {}", a, b, c)),
     (_, _, _) => CalcitErr::err_str(format!(
       "str:replace expected 3 arguments, got: {}",
@@ -215,7 +215,7 @@ pub fn char_from_code(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(x)) => match f64_to_usize(*x) {
       Ok(n) => Ok(Calcit::Str((char::from_u32(n as u32).expect("create char")).to_string().into())),
-      Err(e) => return CalcitErr::err_str(format!("char_from_code expected number, got: {}", e)),
+      Err(e) => CalcitErr::err_str(format!("char_from_code expected number, got: {}", e)),
     },
     Some(a) => CalcitErr::err_str(format!("char_from_code expected 1 number, got: {}", a)),
     _ => CalcitErr::err_str("char_from_code expected 1 arguments, got nothing"),

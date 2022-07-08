@@ -475,7 +475,7 @@ pub fn evaluate_args(
                 // extract thunk before calling functions
                 let y = match x {
                   Calcit::Thunk(code, v) => match v {
-                    None => evaluate_expr(&*code, scope, file_ns.to_owned(), call_stack)?,
+                    None => evaluate_expr(code, scope, file_ns.to_owned(), call_stack)?,
                     Some(data) => (**data).to_owned(),
                   },
                   _ => x.to_owned(),
@@ -495,7 +495,7 @@ pub fn evaluate_args(
           // extract thunk before calling functions
           let y = match v {
             Calcit::Thunk(code, value) => match value {
-              None => evaluate_expr(&*code, scope, file_ns.to_owned(), call_stack)?,
+              None => evaluate_expr(&code, scope, file_ns.to_owned(), call_stack)?,
               Some(data) => (*data).to_owned(),
             },
             _ => v.to_owned(),

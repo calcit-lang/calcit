@@ -1381,6 +1381,7 @@
             :empty $ defn &number:empty (x) 0
             :floor floor
             :format &number:format
+            :display-by &number:display-by
             :inc inc
             :pow pow
             :round round

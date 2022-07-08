@@ -5,7 +5,7 @@ use std::collections::hash_set::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SnapshotConfigs {
   pub init_fn: Arc<str>,
   pub reload_fn: Arc<str>,
@@ -13,7 +13,7 @@ pub struct SnapshotConfigs {
   pub version: Arc<str>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileInSnapShot {
   pub ns: Cirru,
   pub defs: HashMap<Arc<str>, Cirru>,
@@ -45,7 +45,7 @@ impl From<FileInSnapShot> for Edn {
 }
 
 /// structure of `compact.cirru` file
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Snapshot {
   pub package: Arc<str>,
   pub configs: SnapshotConfigs,
@@ -145,7 +145,7 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
   }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub struct FileChangeInfo {
   pub ns: Option<Cirru>,
   pub added_defs: HashMap<Arc<str>, Cirru>,
@@ -192,7 +192,7 @@ impl From<&FileChangeInfo> for Edn {
 
 impl From<FileChangeInfo> for Edn {
   fn from(data: FileChangeInfo) -> Edn {
-    (&data).into()
+    data.into()
   }
 }
 
@@ -212,7 +212,7 @@ impl TryFrom<Edn> for FileChangeInfo {
   }
 }
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Eq, Default)]
 pub struct ChangesDict {
   pub added: HashMap<Arc<str>, FileInSnapShot>,
   pub removed: HashSet<Arc<str>>,
@@ -225,10 +225,10 @@ impl ChangesDict {
   }
 }
 
-impl TryFrom<&Edn> for ChangesDict {
+impl TryFrom<Edn> for ChangesDict {
   type Error = String;
 
-  fn try_from(data: &Edn) -> Result<Self, Self::Error> {
+  fn try_from(data: Edn) -> Result<Self, Self::Error> {
     Ok(Self {
       added: data.map_get_some("added")?.try_into()?,
       changed: data.map_get_some("changed")?.try_into()?,

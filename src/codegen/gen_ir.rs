@@ -110,7 +110,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
             (Edn::kwd("def"), Edn::Str((**r_def).into())),
             (
               Edn::kwd("rule"),
-              match import_rule.to_owned().map(|x| (&*x).to_owned()) {
+              match import_rule.to_owned().map(|x| (*x).to_owned()) {
                 Some(ImportRule::NsAs(_n)) => Edn::kwd("ns"),
                 Some(ImportRule::NsDefault(_n)) => Edn::kwd("default"),
                 Some(ImportRule::NsReferDef(_ns, _def)) => Edn::kwd("def"),

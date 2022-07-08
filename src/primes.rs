@@ -22,7 +22,7 @@ use crate::call_stack::CallStackList;
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 /// resolved value of real meaning of a symbol
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SymbolResolved {
   /// a local variable
   ResolvedLocal,
@@ -86,7 +86,7 @@ impl CalcitScope {
 pub type CalcitItems = TernaryTreeList<Calcit>;
 
 /// special types wraps vector of calcit data for displaying
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq)]
 pub struct CrListWrap(pub TernaryTreeList<Calcit>);
 
 /// dynamic data defined in Calcit
@@ -234,7 +234,7 @@ impl fmt::Display for Calcit {
           if need_space {
             f.write_str(" ")?;
           }
-          f.write_str(&**a)?;
+          f.write_str(a)?;
           need_space = true;
         }
         f.write_str(") (")?;
@@ -255,7 +255,7 @@ impl fmt::Display for Calcit {
           if need_space {
             f.write_str(" ")?;
           }
-          f.write_str(&**a)?;
+          f.write_str(a)?;
           need_space = true;
         }
         f.write_str(") ")?;
@@ -608,7 +608,7 @@ pub fn gen_core_id() -> Arc<str> {
   format!("gen_id_{}", c).into()
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalcitErr {
   pub msg: String,
   pub warnings: Vec<LocatedWarning>,
@@ -683,7 +683,7 @@ impl CalcitErr {
 }
 
 /// location of node in Snapshot
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeLocation {
   pub ns: Arc<str>,
   pub def: Arc<str>,
@@ -724,7 +724,7 @@ impl NodeLocation {
   }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocatedWarning(String, NodeLocation);
 
 impl Display for LocatedWarning {
