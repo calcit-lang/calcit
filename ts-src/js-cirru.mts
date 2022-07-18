@@ -11,7 +11,20 @@ import { CalcitTuple } from "./js-tuple.mjs";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
 
-export let format_cirru = (data: CalcitList, useInline: boolean): string => {
+export class CalcitCirruQuote {
+  value: CirruWriterNode;
+  constructor(value: CirruWriterNode) {
+    this.value = value;
+  }
+  toString(): string {
+    return `(cirru-quote ${JSON.stringify(this.value)})`;
+  }
+}
+
+export let format_cirru = (data: CalcitCirruQuote | CalcitList, useInline: boolean): string => {
+  if (data instanceof CalcitCirruQuote) {
+    return writeCirruCode(data.value, { useInline });
+  }
   let chunk = toWriterNode(data);
   if (!Array.isArray(chunk)) {
     throw new Error("Expected data of list");
@@ -47,6 +60,9 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
   if (x instanceof CalcitList || x instanceof CalcitSliceList) {
     // TODO can be faster
     return (["[]"] as CirruEdnFormat[]).concat(x.toArray().map(to_cirru_edn));
+  }
+  if (x instanceof CalcitCirruQuote) {
+    return ["quote", x.value];
   }
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
     let buffer: CirruEdnFormat = ["{}"];
@@ -217,7 +233,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       if (x.length !== 2) {
         throw new Error("quote expects 1 argument");
       }
-      return new CalcitTuple(new CalcitSymbol("quote"), to_calcit_data(x[1], true));
+      return new CalcitCirruQuote(x[1]);
     }
     if (x[0] === "::") {
       if (x.length !== 3) {
@@ -305,13 +321,34 @@ export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue =>
   throw new Error("Unexpected data for converting");
 };
 
-let toWriterNode = (xs: CalcitList | CalcitSliceList): CirruWriterNode => {
+let toWriterNode = (xs: CalcitList | CalcitSliceList | Array<any> | String): CirruWriterNode => {
   if (typeof xs === "string") {
     return xs;
+  } else if (Array.isArray(xs)) {
+    return xs.map(toWriterNode);
   }
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
-    return xs.toArray().map(toWriterNode);
+    return (xs.toArray() as Array<any>).map(toWriterNode);
   } else {
     throw new Error("Unexpected type for CirruWriteNode");
+  }
+};
+
+/** deep compare cirru array */
+export let cirru_deep_equal = (x: CirruWriterNode, y: CirruWriterNode): boolean => {
+  if (x === y) {
+    return true;
+  } else if (Array.isArray(x) && Array.isArray(y)) {
+    if (x.length !== y.length) {
+      return false;
+    }
+    for (let idx = 0; idx < x.length; idx++) {
+      if (!cirru_deep_equal(x[idx], y[idx])) {
+        return false;
+      }
+    }
+    return true;
+  } else {
+    return false;
   }
 };

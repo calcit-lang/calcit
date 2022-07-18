@@ -45,6 +45,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Calcit::Ref(..) => Ok(Calcit::kwd("ref")),
     Calcit::Tuple(..) => Ok(Calcit::kwd("tuple")),
     Calcit::Buffer(..) => Ok(Calcit::kwd("buffer")),
+    Calcit::CirruQuote(..) => Ok(Calcit::kwd("cirru-quote")),
     Calcit::Recur(..) => Ok(Calcit::kwd("recur")),
     Calcit::List(..) => Ok(Calcit::kwd("list")),
     Calcit::Set(..) => Ok(Calcit::kwd("set")),
@@ -149,10 +150,22 @@ pub fn display_stack(_xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
   Ok(Calcit::Nil)
 }
 
-pub fn parse_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn parse_cirru_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
       Ok(nodes) => Ok(cirru::cirru_to_calcit(&Cirru::List(nodes))),
+      Err(e) => CalcitErr::err_str(format!("parse-cirru-list failed, {}", e)),
+    },
+    Some(a) => CalcitErr::err_str(format!("parse-cirru-list expected a string, got: {}", a)),
+    None => CalcitErr::err_str("parse-cirru-list expected 1 argument"),
+  }
+}
+
+/// it returns a piece of quoted Cirru data, rather than a list
+pub fn parse_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
+      Ok(nodes) => Ok(Calcit::CirruQuote(Cirru::List(nodes))),
       Err(e) => CalcitErr::err_str(format!("parse-cirru failed, {}", e)),
     },
     Some(a) => CalcitErr::err_str(format!("parse-cirru expected a string, got: {}", a)),

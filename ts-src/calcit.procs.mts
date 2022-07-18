@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.5.48";
+export const calcit_version = "0.6.0-a1";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -1159,6 +1159,11 @@ export let write_file = (path: string, content: string): void => {
 };
 
 export let parse_cirru = (code: string): CalcitList => {
+  return to_calcit_data(parse(code), true) as CalcitList;
+};
+
+// for JavaScript, it's same as parse_cirru
+export let parse_cirru_list = (code: string): CalcitList => {
   return to_calcit_data(parse(code), true) as CalcitList;
 };
 

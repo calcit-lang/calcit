@@ -56,6 +56,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "write-file"
       // external format
       | "parse-cirru"
+      | "parse-cirru-list"
       | "format-cirru"
       | "parse-cirru-edn"
       | "format-cirru-edn"
@@ -247,6 +248,7 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackLi
     "write-file" => effects::write_file(args),
     // external data format
     "parse-cirru" => meta::parse_cirru(args),
+    "parse-cirru-list" => meta::parse_cirru_list(args),
     "format-cirru" => meta::format_cirru(args),
     "parse-cirru-edn" => meta::parse_cirru_edn(args),
     "format-cirru-edn" => meta::format_cirru_edn(args),

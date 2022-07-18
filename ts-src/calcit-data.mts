@@ -9,6 +9,7 @@ import { CalcitValue, _$n_compare } from "./js-primes.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitSet, overwriteSetComparator } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 
 // we have to inject cache in a dirty way in some cases
 const calcit_dirty_hash_key = "_calcit_cached_hash";
@@ -374,6 +375,9 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
   if (x instanceof CalcitTuple) {
     return x.toString(disableJsDataWarning);
   }
+  if (x instanceof CalcitCirruQuote) {
+    return x.toString();
+  }
 
   if (!disableJsDataWarning) {
     console.warn("Unknown structure to string, better use `console.log`", x);
@@ -498,6 +502,12 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   if (x instanceof CalcitSymbol) {
     if (y instanceof CalcitSymbol) {
       return x.value === y.value;
+    }
+    return false;
+  }
+  if (x instanceof CalcitCirruQuote) {
+    if (y instanceof CalcitCirruQuote) {
+      return cirru_deep_equal(x.value, y.value);
     }
     return false;
   }

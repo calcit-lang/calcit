@@ -133,14 +133,25 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> 
       for (idx, y) in ys.iter().enumerate() {
         let mut next_coord = coord.to_owned();
         next_coord.push(idx as u8); // code not supposed to be fatter than 256 children
-        match code_to_calcit(y, ns.to_owned(), def.to_owned(), &next_coord) {
-          Ok(v) => {
-            if !is_comment(&v) {
-              zs.push(v.to_owned());
+
+        if let Cirru::List(ys) = y {
+          if ys.len() > 1 {
+            if ys[0] == Cirru::leaf(";") {
+              continue;
+            }
+            if ys[0] == Cirru::leaf("cirru-quote") {
+              // special rule for Cirru code
+              if ys.len() == 2 {
+                zs.push(Calcit::CirruQuote(ys[1].clone()));
+              } else {
+                return Err(format!("expected 1 argument, got: {:?}", ys));
+              }
+              continue;
             }
           }
-          Err(e) => return Err(e),
         }
+
+        zs.push(code_to_calcit(y, ns.to_owned(), def.to_owned(), &next_coord)?)
       }
       Ok(Calcit::List(TernaryTreeList::from(&zs)))
     }
@@ -164,6 +175,7 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
 /// for generate Cirru via calcit data manually
 pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
   match xs {
+    Calcit::CirruQuote(code) => Ok(code.to_owned()),
     Calcit::Nil => Ok(Cirru::leaf("nil")),
     Calcit::Bool(b) => Ok(Cirru::Leaf(b.to_string().into())),
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string().into())),
@@ -181,16 +193,6 @@ pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
       Ok(Cirru::List(zs))
     }
     a => Err(format!("unknown data for cirru: {}", a)),
-  }
-}
-
-fn is_comment(x: &Calcit) -> bool {
-  match x {
-    Calcit::List(ys) => match ys.get(0) {
-      Some(Calcit::Symbol { sym, .. }) => &**sym == ";",
-      _ => false,
-    },
-    _ => false,
   }
 }
 
@@ -213,6 +215,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     }
     Calcit::Proc(s) => Ok(Cirru::Leaf((**s).into())),
     Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.to_string().into())),
+    Calcit::CirruQuote(code) => Ok(code.to_owned()),
     _ => Err(format!("unknown data to convert to Cirru: {}", x)),
   }
 }

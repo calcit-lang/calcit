@@ -4,6 +4,7 @@ import { CalcitRecord } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet as CalcitSet } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 
 export type CalcitValue =
   | string
@@ -21,6 +22,7 @@ export type CalcitValue =
   | CalcitFn
   | CalcitRecur // should not be exposed to function
   | CalcitRecord
+  | CalcitCirruQuote
   | null;
 
 export let is_literal = (x: CalcitValue): boolean => {
@@ -48,6 +50,7 @@ enum PseudoTypeIndex {
   map,
   record,
   fn,
+  cirru_quote,
 }
 
 let typeAsInt = (x: CalcitValue): number => {
@@ -66,6 +69,7 @@ let typeAsInt = (x: CalcitValue): number => {
   if (x instanceof CalcitSet) return PseudoTypeIndex.set;
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) return PseudoTypeIndex.map;
   if (x instanceof CalcitRecord) return PseudoTypeIndex.record;
+  if (x instanceof CalcitCirruQuote) return PseudoTypeIndex.cirru_quote;
   // proc, fn, macro, syntax, not distinguished
   if (t === "function") return PseudoTypeIndex.fn;
   throw new Error("unknown type to compare");
@@ -101,6 +105,8 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         return rawCompare(a, b);
       case PseudoTypeIndex.ref:
         return rawCompare((a as CalcitRef).path, (b as CalcitRef).path);
+      case PseudoTypeIndex.cirru_quote:
+        return rawCompare(a, b); // TODO not stable
       default:
         // TODO, need more accurate solution
         if (a < b) {

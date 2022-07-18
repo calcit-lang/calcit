@@ -124,12 +124,12 @@
           fn ()
             log-title "|Testing Cirru parser"
             assert=
-              parse-cirru "|def f (a b) $ + a b"
+              parse-cirru-list "|def f (a b) $ + a b"
               [] $ [] |def |f ([] |a |b)
                 [] |+ |a |b
 
             assert=
-              parse-cirru "|{,} :a 1 :b false"
+              parse-cirru-list "|{,} :a 1 :b false"
               [] $ [] |{,} |:a |1 |:b |false
 
             assert=
