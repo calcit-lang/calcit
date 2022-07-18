@@ -19,6 +19,9 @@ export class CalcitCirruQuote {
   toString(): string {
     return `(cirru-quote ${JSON.stringify(this.value)})`;
   }
+  toList(): CalcitValue {
+    return to_calcit_data(this.value, true);
+  }
 }
 
 export let format_cirru = (data: CalcitCirruQuote | CalcitList, useInline: boolean): string => {

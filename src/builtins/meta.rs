@@ -5,7 +5,7 @@ use crate::{
   call_stack::CallStackList,
   codegen::gen_ir::dump_code,
   data::{
-    cirru,
+    cirru::{self, cirru_to_calcit},
     edn::{self, edn_to_calcit},
   },
   primes,
@@ -207,6 +207,16 @@ pub fn format_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)?, true)?.into())),
     None => CalcitErr::err_str("format-cirru-edn expected 1 argument"),
+  }
+}
+
+pub fn cirru_quote_to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("&cirru-quote:to-list expected 1 argument, got: {:?}", xs));
+  }
+  match &xs[0] {
+    Calcit::CirruQuote(ys) => Ok(cirru_to_calcit(ys)),
+    a => CalcitErr::err_str(format!("&cirru-quote:to-list got invalid data: {}", a)),
   }
 }
 

@@ -60,6 +60,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "format-cirru"
       | "parse-cirru-edn"
       | "format-cirru-edn"
+      | "&cirru-quote:to-list"
       // time
       | "cpu-time"
       // logics
@@ -252,6 +253,7 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackLi
     "format-cirru" => meta::format_cirru(args),
     "parse-cirru-edn" => meta::parse_cirru_edn(args),
     "format-cirru-edn" => meta::format_cirru_edn(args),
+    "&cirru-quote:to-list" => meta::cirru_quote_to_list(args),
     // time
     "cpu-time" => effects::cpu_time(args),
     // logics

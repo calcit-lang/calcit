@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.6.0-a1";
+export const calcit_version = "0.6.0-a2";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -37,7 +37,7 @@ import { CalcitList, CalcitSliceList, foldl } from "./js-list.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
-import { to_calcit_data, extract_cirru_edn } from "./js-cirru.mjs";
+import { to_calcit_data, extract_cirru_edn, CalcitCirruQuote } from "./js-cirru.mjs";
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
@@ -1417,6 +1417,10 @@ export let _$n_buffer = (...xs: CalcitValue[]): Uint8Array => {
 
 export let _$n_hash = (x: CalcitValue): number => {
   return hashFunction(x);
+};
+
+export let _$n_cirru_quote_$o_to_list = (x: CalcitCirruQuote): CalcitValue => {
+  return x.toList();
 };
 
 // special procs have to be defined manually

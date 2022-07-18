@@ -177,6 +177,10 @@
               assert= "|:: :&core-list-class $ [] 1 2 3"
                 trim $ format-cirru-edn $ :: &core-list-class $ [] 1 2 3
 
+              assert=
+                &cirru-quote:to-list $ cirru-quote $ a b c $ d
+                [] |a |b |c $ [] |d
+
               assert= (.escape "|\n") "|\"\\n\""
               assert= (.escape "|\t") "|\"\\t\""
               assert= (.escape "|a") "|\"a\""
