@@ -335,7 +335,7 @@ let hashCirru = (base: number, x: CirruWriterNode) => {
   if (typeof x === "string") {
     return mergeValueHash(base, hashFunction(x));
   } else {
-    for (let idx = 0; idx <= x.length; idx++) {
+    for (let idx = 0; idx < x.length; idx++) {
       base = mergeValueHash(base, hashCirru(base, x[idx]));
     }
     return base;
