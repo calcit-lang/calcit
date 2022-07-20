@@ -9,6 +9,8 @@ import { CalcitValue, _$n_compare } from "./js-primes.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitSet, overwriteSetComparator } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
+import { CirruWriterNode } from "@cirru/writer.ts";
 
 // we have to inject cache in a dirty way in some cases
 const calcit_dirty_hash_key = "_calcit_cached_hash";
@@ -192,6 +194,7 @@ let defaultHash_set = valueHash("set:");
 let defaultHash_list = valueHash("list:");
 let defaultHash_map = valueHash("map:");
 let defaultHash_record = valueHash("record:");
+let defaultHash_cirru_quote = valueHash("cirru-quote:");
 
 let defaultHash_unknown = valueHash("unknown:");
 
@@ -311,6 +314,11 @@ export let hashFunction = (x: CalcitValue): Hash => {
     x.cachedHash = base;
     return base;
   }
+  if (x instanceof CalcitCirruQuote) {
+    let base = defaultHash_cirru_quote;
+    base = hashCirru(base, x.value);
+    return base;
+  }
   console.warn(`[warn] calcit-js has no method for hashing this: ${x}`);
   // currently we use dirty solution here to generate a custom hash
   // probably happening in .to-pairs of maps, putting a js object into a set
@@ -320,6 +328,18 @@ export let hashFunction = (x: CalcitValue): Hash => {
   hashJsObject = mergeValueHash(hashJsObject, jsObjectHashCounter);
   (x as any)[calcit_dirty_hash_key] = hashJsObject;
   return hashJsObject;
+};
+
+/// traverse Cirru tree to make unique hash
+let hashCirru = (base: number, x: CirruWriterNode) => {
+  if (typeof x === "string") {
+    return mergeValueHash(base, hashFunction(x));
+  } else {
+    for (let idx = 0; idx < x.length; idx++) {
+      base = mergeValueHash(base, hashCirru(base, x[idx]));
+    }
+    return base;
+  }
 };
 
 // Dirty code to change ternary-tree behavior
@@ -373,6 +393,9 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
   }
   if (x instanceof CalcitTuple) {
     return x.toString(disableJsDataWarning);
+  }
+  if (x instanceof CalcitCirruQuote) {
+    return x.toString();
   }
 
   if (!disableJsDataWarning) {
@@ -498,6 +521,12 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   if (x instanceof CalcitSymbol) {
     if (y instanceof CalcitSymbol) {
       return x.value === y.value;
+    }
+    return false;
+  }
+  if (x instanceof CalcitCirruQuote) {
+    if (y instanceof CalcitCirruQuote) {
+      return cirru_deep_equal(x.value, y.value);
     }
     return false;
   }

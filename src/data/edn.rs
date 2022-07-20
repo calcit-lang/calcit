@@ -73,6 +73,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       }
     }
     Calcit::Buffer(buf) => Ok(Edn::Buffer(buf.to_owned())),
+    Calcit::CirruQuote(code) => Ok(Edn::Quote(code.to_owned())),
     a => Err(format!("not able to generate EDN: {}", a)), // TODO more types to handle
   }
 }
@@ -91,16 +92,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     },
     Edn::Keyword(s) => Calcit::Keyword(s.to_owned()),
     Edn::Str(s) => Calcit::Str((**s).into()),
-    Edn::Quote(nodes) => Calcit::Tuple(
-      Arc::new(Calcit::Symbol {
-        sym: "quote".into(),
-        ns: primes::GEN_NS.into(),
-        at_def: primes::GENERATED_DEF.into(),
-        resolved: None,
-        location: None,
-      }),
-      Arc::new(cirru::cirru_to_calcit(nodes)),
-    ),
+    Edn::Quote(nodes) => Calcit::CirruQuote(nodes.to_owned()),
     Edn::Tuple(pair) => Calcit::Tuple(Arc::new(edn_to_calcit(&pair.0)), Arc::new(edn_to_calcit(&pair.1))),
     Edn::List(xs) => {
       let mut ys: primes::CalcitItems = TernaryTreeList::Empty;

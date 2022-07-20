@@ -57,6 +57,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
     Calcit::Ref(_) => Ok(expr.to_owned()),
     Calcit::Tuple(..) => Ok(expr.to_owned()),
     Calcit::Buffer(..) => Ok(expr.to_owned()),
+    Calcit::CirruQuote(..) => Ok(expr.to_owned()),
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
     Calcit::List(xs) => match xs.get(0) {
       None => Err(CalcitErr::use_msg_stack(

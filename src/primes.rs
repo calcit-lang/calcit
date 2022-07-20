@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 use std::sync::Arc;
 
 use cirru_edn::{Edn, EdnKwd};
+use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
 use rpds::HashTrieMapSync;
@@ -115,6 +116,8 @@ pub enum Calcit {
   Tuple(Arc<Calcit>, Arc<Calcit>),
   /// binary data, to be used by FFIs
   Buffer(Vec<u8>),
+  /// cirru quoted data, for faster meta programming
+  CirruQuote(Cirru),
   /// not for data, but for recursion
   Recur(CalcitItems),
   List(CalcitItems),
@@ -165,6 +168,7 @@ impl fmt::Display for Calcit {
         Some(data) => f.write_str(&format!("(&thunk {} {})", data, code)),
         None => f.write_str(&format!("(&thunk _ {})", code)),
       },
+      Calcit::CirruQuote(code) => f.write_str(&format!("(&cirru-quote {})", code)),
       Calcit::Ref(name) => f.write_str(&format!("(&ref {})", name)),
       Calcit::Tuple(a, b) => f.write_str(&format!("(:: {} {})", a, b)),
       Calcit::Buffer(buf) => {
@@ -363,6 +367,10 @@ impl Hash for Calcit {
         "buffer:".hash(_state);
         buf.hash(_state);
       }
+      Calcit::CirruQuote(code) => {
+        "cirru-quote:".hash(_state);
+        code.hash(_state);
+      }
       Calcit::Recur(v) => {
         "list:".hash(_state);
         v.hash(_state);
@@ -457,6 +465,10 @@ impl Ord for Calcit {
       (Calcit::Thunk(_, _), _) => Less,
       (_, Calcit::Thunk(_, _)) => Greater,
 
+      (Calcit::CirruQuote(a), Calcit::CirruQuote(b)) => a.cmp(b),
+      (Calcit::CirruQuote(_), _) => Less,
+      (_, Calcit::CirruQuote(_)) => Greater,
+
       (Calcit::Ref(a), Calcit::Ref(b)) => a.cmp(b),
       (Calcit::Ref(_), _) => Less,
       (_, Calcit::Ref(_)) => Greater,
@@ -544,6 +556,7 @@ impl PartialEq for Calcit {
       (Calcit::Ref(a), Calcit::Ref(b)) => a == b,
       (Calcit::Tuple(a, b), Calcit::Tuple(c, d)) => a == c && b == d,
       (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,
+      (Calcit::CirruQuote(b), Calcit::CirruQuote(d)) => b == d,
       (Calcit::List(a), Calcit::List(b)) => a == b,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,

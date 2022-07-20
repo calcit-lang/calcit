@@ -5,7 +5,7 @@ use crate::{
   call_stack::CallStackList,
   codegen::gen_ir::dump_code,
   data::{
-    cirru,
+    cirru::{self, cirru_to_calcit},
     edn::{self, edn_to_calcit},
   },
   primes,
@@ -45,6 +45,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Calcit::Ref(..) => Ok(Calcit::kwd("ref")),
     Calcit::Tuple(..) => Ok(Calcit::kwd("tuple")),
     Calcit::Buffer(..) => Ok(Calcit::kwd("buffer")),
+    Calcit::CirruQuote(..) => Ok(Calcit::kwd("cirru-quote")),
     Calcit::Recur(..) => Ok(Calcit::kwd("recur")),
     Calcit::List(..) => Ok(Calcit::kwd("list")),
     Calcit::Set(..) => Ok(Calcit::kwd("set")),
@@ -149,10 +150,22 @@ pub fn display_stack(_xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
   Ok(Calcit::Nil)
 }
 
-pub fn parse_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn parse_cirru_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
       Ok(nodes) => Ok(cirru::cirru_to_calcit(&Cirru::List(nodes))),
+      Err(e) => CalcitErr::err_str(format!("parse-cirru-list failed, {}", e)),
+    },
+    Some(a) => CalcitErr::err_str(format!("parse-cirru-list expected a string, got: {}", a)),
+    None => CalcitErr::err_str("parse-cirru-list expected 1 argument"),
+  }
+}
+
+/// it returns a piece of quoted Cirru data, rather than a list
+pub fn parse_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  match xs.get(0) {
+    Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
+      Ok(nodes) => Ok(Calcit::CirruQuote(Cirru::List(nodes))),
       Err(e) => CalcitErr::err_str(format!("parse-cirru failed, {}", e)),
     },
     Some(a) => CalcitErr::err_str(format!("parse-cirru expected a string, got: {}", a)),
@@ -194,6 +207,16 @@ pub fn format_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)?, true)?.into())),
     None => CalcitErr::err_str("format-cirru-edn expected 1 argument"),
+  }
+}
+
+pub fn cirru_quote_to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("&cirru-quote:to-list expected 1 argument, got: {:?}", xs));
+  }
+  match &xs[0] {
+    Calcit::CirruQuote(ys) => Ok(cirru_to_calcit(ys)),
+    a => CalcitErr::err_str(format!("&cirru-quote:to-list got invalid data: {}", a)),
   }
 }
 

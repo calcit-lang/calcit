@@ -3,6 +3,7 @@ mod internal_states;
 use std::fmt::Write;
 mod snippets;
 
+use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
 use std::cell::RefCell;
@@ -180,6 +181,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<HashSet<EdnKwd>
       kwds.insert(s.to_owned());
       Ok(format!("_kwd[{}]", escape_cirru_str(&s.to_string())))
     }
+    Calcit::CirruQuote(code) => Ok(format!("new {}CalcitCirruQuote({})", var_prefix, cirru_to_js(code)?)),
     _ => unreachable!("Unexpected data in quote for js: {}", xs),
   }
 }
@@ -258,6 +260,10 @@ fn to_js_code(
         Ok(format!("_kwd[{}]", wrap_js_str(&s.to_string())))
       }
       Calcit::List(_) => unreachable!("[Error] list handled in another branch"),
+      Calcit::CirruQuote(code) => {
+        let proc_prefix = get_proc_prefix(ns);
+        Ok(format!("new {}CalcitCirruQuote({})", proc_prefix, cirru_to_js(code)?))
+      }
       a => unreachable!("[Error] unknown kind to gen js code: {}", a),
     };
 
@@ -1399,5 +1405,23 @@ fn get_proc_prefix(ns: &str) -> &str {
     "$calcit_procs."
   } else {
     "$calcit."
+  }
+}
+
+fn cirru_to_js(code: &Cirru) -> Result<String, String> {
+  match code {
+    Cirru::List(xs) => {
+      let mut chunk = "[".to_owned();
+      for x in xs {
+        chunk.push_str(&cirru_to_js(x)?);
+        chunk.push(',');
+      }
+      if chunk.ends_with(',') {
+        chunk.pop();
+      }
+      chunk.push(']');
+      Ok(chunk)
+    }
+    Cirru::Leaf(s) => Ok(format!("\"{}\"", s.escape_default())),
   }
 }

@@ -276,7 +276,9 @@ pub fn preprocess_expr(
         process_list_call(xs, scope_defs, file_ns, check_warnings, call_stack)
       }
     }
-    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) => Ok((expr.to_owned(), None)),
+    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) | Calcit::CirruQuote(..) => {
+      Ok((expr.to_owned(), None))
+    }
     Calcit::Proc(..) => {
       // maybe detect method in future
       Ok((expr.to_owned(), None))
