@@ -1,6 +1,6 @@
 [package]
 name = "calcit"
-version = "0.6.0-a3"
+version = "0.6.0"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -23,7 +23,7 @@ exclude = [
 cirru_edn = "0.2.20"
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
 cirru_parser = "0.1.23"
-clap = "3.2.12"
+clap = "3.2.14"
 dirs = "4.0.0"
 lazy_static = "1.4.0"
 notify = "4.0.17"
