@@ -30,7 +30,6 @@ jobs:
           && node js-out/main.mjs
 
       - run: cargo build --release
-      - run: node scripts/cp-version.js
 
       - name: Release
         uses: softprops/action-gh-release@v1
@@ -54,18 +53,3 @@ jobs:
       - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{secrets.npm_token}}
-
-      - name: Deploy to server
-        id: deploy
-        uses: Pendect/action-rsyncer@v1.1.0
-        env:
-          DEPLOY_KEY: ${{secrets.rsync_private_key}}
-        with:
-          flags: "-avzr --progress"
-          options: ""
-          ssh_options: ""
-          src: "builds/*"
-          dest: "rsync-user@calcit-lang.org:/web-assets/repo/calcit-lang/binaries/linux/"
-
-      - name: Display status from deploy
-        run: echo "${{ steps.deploy.outputs.status }}"
