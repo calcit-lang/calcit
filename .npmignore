@@ -14,3 +14,7 @@ profile_results.txt
 
 Cargo.lock
 Cargo.toml
+
+builds
+tsconfig.json
+docs/
