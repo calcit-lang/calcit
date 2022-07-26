@@ -23,7 +23,7 @@ exclude = [
 cirru_edn = "0.2.20"
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
 cirru_parser = "0.1.23"
-clap = "3.2.14"
+clap = "3.2.15"
 dirs = "4.0.0"
 lazy_static = "1.4.0"
 notify = "4.0.17"

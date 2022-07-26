@@ -287,7 +287,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, None, call_stack)?,
     x => {
       return Err(CalcitErr::use_msg_stack_location(
-        format!("cannot decide a class from: {:?}", x),
+        format!("cannot decide a class from: {}", x),
         call_stack,
         x.get_location(),
       ))
@@ -317,12 +317,9 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
           }
         }
         None => {
-          let mut content = String::from("");
-          for k in &**fields {
-            content = format!("{},{}", content, k)
-          }
+          let content = fields.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
           Err(CalcitErr::use_msg_stack(
-            format!("missing field `{}` in {}", name, content),
+            format!("unknown field `{}` in: {}", name, content),
             call_stack,
           ))
         }
