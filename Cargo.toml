@@ -1,6 +1,6 @@
 [package]
 name = "calcit"
-version = "0.6.1"
+version = "0.6.2"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -23,14 +23,14 @@ exclude = [
 cirru_edn = "0.2.20"
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
 cirru_parser = "0.1.23"
-clap = "3.2.14"
+clap = "3.2.15"
 dirs = "4.0.0"
 lazy_static = "1.4.0"
 notify = "4.0.17"
 walkdir = "2"
 hex = "0.4.3"
 rpds = "0.12.0"
-im_ternary_tree = "0.0.10"
+im_ternary_tree = "0.0.11"
 # im_ternary_tree = { path = "/Users/chenyong/repo/calcit-lang/ternary-tree.rs" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
