@@ -54,7 +54,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
       None => evaluate_expr(code, scope, file_ns, call_stack),
       Some(data) => Ok((**data).to_owned()),
     },
-    Calcit::Ref(_) => Ok(expr.to_owned()),
+    Calcit::Ref(..) => Ok(expr.to_owned()),
     Calcit::Tuple(..) => Ok(expr.to_owned()),
     Calcit::Buffer(..) => Ok(expr.to_owned()),
     Calcit::CirruQuote(..) => Ok(expr.to_owned()),

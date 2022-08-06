@@ -8,7 +8,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use cirru_edn::{Edn, EdnKwd};
 use cirru_parser::Cirru;
@@ -17,6 +17,7 @@ use im_ternary_tree::TernaryTreeList;
 use rpds::HashTrieMapSync;
 pub use syntax_name::CalcitSyntax;
 
+use crate::builtins::ValueAndListeners;
 use crate::call_stack::CallStackList;
 
 /// dead simple counter for ID generator, better use nanoid in business
@@ -111,7 +112,7 @@ pub enum Calcit {
   /// and it is still different from quoted data which was intentionally turned in to data.
   Thunk(Arc<Calcit>, Option<Arc<Calcit>>), // code, value
   /// atom, holding a path to its state, data inside remains during hot code swapping
-  Ref(Arc<str>),
+  Ref(Arc<str>, Arc<RwLock<ValueAndListeners>>),
   /// more tagged union type, more like an internal structure
   Tuple(Arc<Calcit>, Arc<Calcit>),
   /// binary data, to be used by FFIs
@@ -169,7 +170,7 @@ impl fmt::Display for Calcit {
         None => f.write_str(&format!("(&thunk _ {})", code)),
       },
       Calcit::CirruQuote(code) => f.write_str(&format!("(&cirru-quote {})", code)),
-      Calcit::Ref(name) => f.write_str(&format!("(&ref {})", name)),
+      Calcit::Ref(name, _locked_pair) => f.write_str(&format!("(&ref {} ...)", name)),
       Calcit::Tuple(a, b) => f.write_str(&format!("(:: {} {})", a, b)),
       Calcit::Buffer(buf) => {
         f.write_str("(&buffer")?;
@@ -354,7 +355,7 @@ impl Hash for Calcit {
         "quote:".hash(_state);
         v.hash(_state);
       }
-      Calcit::Ref(name) => {
+      Calcit::Ref(name, _locked_pair) => {
         "ref:".hash(_state);
         name.hash(_state);
       }
@@ -469,9 +470,9 @@ impl Ord for Calcit {
       (Calcit::CirruQuote(_), _) => Less,
       (_, Calcit::CirruQuote(_)) => Greater,
 
-      (Calcit::Ref(a), Calcit::Ref(b)) => a.cmp(b),
-      (Calcit::Ref(_), _) => Less,
-      (_, Calcit::Ref(_)) => Greater,
+      (Calcit::Ref(a, _), Calcit::Ref(b, _)) => a.cmp(b),
+      (Calcit::Ref(_, _), _) => Less,
+      (_, Calcit::Ref(_, _)) => Greater,
 
       (Calcit::Tuple(a0, b0), Calcit::Tuple(a1, b1)) => match a0.cmp(a1) {
         Equal => b0.cmp(b1),
@@ -553,7 +554,7 @@ impl PartialEq for Calcit {
       (Calcit::Keyword(a), Calcit::Keyword(b)) => a == b,
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
       (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
-      (Calcit::Ref(a), Calcit::Ref(b)) => a == b,
+      (Calcit::Ref(a, _), Calcit::Ref(b, _)) => a == b,
       (Calcit::Tuple(a, b), Calcit::Tuple(c, d)) => a == c && b == d,
       (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,
       (Calcit::CirruQuote(b), Calcit::CirruQuote(d)) => b == d,
