@@ -339,7 +339,7 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call
 }
 
 pub fn gensym(xs: &CalcitItems, _scope: &CalcitScope, file_ns: Arc<str>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  let mut ns_sym_dict = NS_SYMBOL_DICT.write().expect("open symbol dict");
+  let mut ns_sym_dict = NS_SYMBOL_DICT.lock().expect("open symbol dict");
   // println!("calling in ns: {}", file_ns);
   let n = if let Some(n) = ns_sym_dict.get_mut(&file_ns) {
     let v = n.to_owned();

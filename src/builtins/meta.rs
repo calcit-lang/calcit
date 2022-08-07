@@ -17,16 +17,16 @@ use crate::{
 use cirru_edn::EdnKwd;
 use cirru_parser::{Cirru, CirruWriterOptions};
 
-use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{atomic, Arc};
-use std::sync::{atomic::AtomicUsize, RwLock};
 use std::{cmp::Ordering, collections::HashMap};
+use std::{collections::hash_map::DefaultHasher, sync::Mutex};
 
 static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 
 lazy_static! {
-  pub(crate) static ref NS_SYMBOL_DICT: RwLock<HashMap<Arc<str>, usize>> = RwLock::new(HashMap::new());
+  pub(crate) static ref NS_SYMBOL_DICT: Mutex<HashMap<Arc<str>, usize>> = Mutex::new(HashMap::new());
 }
 
 pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -100,7 +100,7 @@ pub fn reset_gensym_index(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn force_reset_gensym_index() -> Result<(), String> {
-  let mut ns_symbol_dict = NS_SYMBOL_DICT.write().expect("write symbols");
+  let mut ns_symbol_dict = NS_SYMBOL_DICT.lock().expect("write symbols");
   ns_symbol_dict.clear();
   Ok(())
 }
