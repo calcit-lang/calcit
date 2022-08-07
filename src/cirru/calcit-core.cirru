@@ -1713,3 +1713,9 @@
           defmacro noted (x0 & xs)
             if (empty? xs) x0
               last xs
+
+        |range-bothway $ quote
+          defn range-bothway (x ? y)
+            if (some? y)
+              range (inc (&- (&+ x x) y)) y
+              range (inc (negate x)) x

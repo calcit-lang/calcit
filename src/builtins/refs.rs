@@ -1,4 +1,9 @@
+//! two kinds of atoms
+//! - defined with `defatom`, which is global atom that retains after hot swapping
+//! - defined with `atom`, which is barely a piece of local mutable state
+
 use std::collections::HashMap;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, RwLock};
 
 use cirru_edn::EdnKwd;
@@ -7,26 +12,22 @@ use im_ternary_tree::TernaryTreeList;
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::{call_stack::CallStackList, runner};
 
-type ValueAndListeners = (Calcit, HashMap<EdnKwd, Calcit>);
+pub(crate) type ValueAndListeners = (Calcit, HashMap<EdnKwd, Calcit>);
 
 lazy_static! {
-  static ref REFS_DICT: RwLock<HashMap<Arc<str>, ValueAndListeners>> = RwLock::new(HashMap::new());
+  static ref REFS_DICT: RwLock<HashMap<Arc<str>, Arc<RwLock<ValueAndListeners>>>> = RwLock::new(HashMap::new());
 }
 
-// need functions with shorter lifetime to escape dead lock
-fn read_ref(path: Arc<str>) -> Option<ValueAndListeners> {
-  let dict = &REFS_DICT.read().expect("read dict");
-  dict.get(&path).map(|pair| pair.to_owned())
-}
+fn modify_ref(locked_pair: Arc<RwLock<ValueAndListeners>>, v: Calcit, call_stack: &CallStackList) -> Result<(), CalcitErr> {
+  let mut pair = locked_pair.write().expect("read ref");
+  let prev = pair.0.to_owned();
+  if prev == v {
+    // not need to modify
+    return Ok(());
+  }
+  let listeners = pair.1.to_owned();
 
-fn write_to_ref(path: Arc<str>, v: Calcit, listeners: HashMap<EdnKwd, Calcit>) {
-  let mut dict = REFS_DICT.write().expect("open dict");
-  let _ = (*dict).insert(path, (v, listeners));
-}
-
-fn modify_ref(path: Arc<str>, v: Calcit, call_stack: &CallStackList) -> Result<(), CalcitErr> {
-  let (prev, listeners) = read_ref(path.to_owned()).ok_or_else(|| CalcitErr::use_str("missing ref"))?;
-  write_to_ref(path, v.to_owned(), listeners.to_owned());
+  pair.0 = v.to_owned();
 
   for f in listeners.values() {
     match f {
@@ -58,11 +59,17 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_
 
       let path_info: Arc<str> = path.into();
 
-      if read_ref(path_info.to_owned()).is_none() {
-        let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
-        write_to_ref(path_info.to_owned(), v, HashMap::new())
+      let mut dict = REFS_DICT.write().expect("read dict");
+
+      match dict.get(&path_info) {
+        Some(locked_pair) => Ok(Calcit::Ref(path_info, locked_pair.to_owned())),
+        None => {
+          let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
+          let pair_value = Arc::new(RwLock::new((v, HashMap::new())));
+          dict.insert(path_info.to_owned(), pair_value.to_owned());
+          Ok(Calcit::Ref(path_info, pair_value))
+        }
       }
-      Ok(Calcit::Ref(path_info))
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
       format!("defatom expected a symbol and an expression: {} , {}", a, b),
@@ -73,12 +80,31 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_
   }
 }
 
+/// dead simple counter for ID generator, better use nanoid in business
+static ATOM_ID_GEN: AtomicUsize = AtomicUsize::new(0);
+
+/// proc
+pub fn atom(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  match xs.get(0) {
+    Some(value) => {
+      let atom_idx = ATOM_ID_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+      let path: String = format!("atom-{}", atom_idx);
+
+      let path_info: Arc<str> = path.into();
+
+      let pair_value = Arc::new(RwLock::new((value.to_owned(), HashMap::new())));
+      Ok(Calcit::Ref(path_info, pair_value))
+    }
+    _ => CalcitErr::err_str("atom expected 2 nodes"),
+  }
+}
+
 pub fn deref(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
-    Some(Calcit::Ref(path)) => match read_ref(path.to_owned()) {
-      Some((v, _)) => Ok(v),
-      None => CalcitErr::err_str(format!("found nothing after refer &{}", path)),
-    },
+    Some(Calcit::Ref(_path, locked_pair)) => {
+      let pair = (**locked_pair).read().expect("read pair from block");
+      Ok(pair.0.to_owned())
+    }
     Some(a) => CalcitErr::err_str(format!("deref expected a ref, got: {}", a)),
     _ => CalcitErr::err_str("deref expected 1 argument, got nothing"),
   }
@@ -92,12 +118,9 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
   // println!("reset! {:?}", expr[0]);
   let target = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
   let new_value = runner::evaluate_expr(&expr[1], scope, file_ns.to_owned(), call_stack)?;
-  match (target, new_value) {
-    (Calcit::Ref(path), v) => {
-      if read_ref(path.to_owned()).is_none() {
-        return CalcitErr::err_str(format!("missing pre-exisiting data for path &{}", path));
-      }
-      modify_ref(path, v, call_stack)?;
+  match (target, &new_value) {
+    (Calcit::Ref(_path, locked_pair), v) => {
+      modify_ref(locked_pair, v.to_owned(), call_stack)?;
       Ok(Calcit::Nil)
     }
     // if reset! called before deref, we need to trigger the thunk
@@ -115,22 +138,19 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
 
 pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
-    (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k)), Some(f @ Calcit::Fn { .. })) => {
-      let mut dict = REFS_DICT.write().expect("open dict");
-      let (_prev, listeners) = dict
-        .get_mut(path)
-        .ok_or_else(|| CalcitErr::use_str(&format!("failed to find atom via: {}", path)))?;
-      if listeners.contains_key(k) {
+    (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Keyword(k)), Some(f @ Calcit::Fn { .. })) => {
+      let mut pair = locked_pair.write().expect("trying to modify locked pair");
+      if pair.1.contains_key(k) {
         CalcitErr::err_str(format!("add-watch failed, listener with key `{}` existed", k))
       } else {
-        listeners.insert(k.to_owned(), f.to_owned());
+        pair.1.insert(k.to_owned(), f.to_owned());
         Ok(Calcit::Nil)
       }
     }
-    (Some(Calcit::Ref(_)), Some(Calcit::Keyword(_)), Some(a)) => {
+    (Some(Calcit::Ref(..)), Some(Calcit::Keyword(_)), Some(a)) => {
       CalcitErr::err_str(format!("add-watch expected fn instead of proc, got {}", a))
     }
-    (Some(Calcit::Ref(_)), Some(a), Some(_)) => CalcitErr::err_str(format!("add-watch expected a keyword, but got: {}", a)),
+    (Some(Calcit::Ref(..)), Some(a), Some(_)) => CalcitErr::err_str(format!("add-watch expected a keyword, but got: {}", a)),
     (Some(a), _, _) => CalcitErr::err_str(format!("add-watch expected ref, got: {}", a)),
     (a, b, c) => CalcitErr::err_str(format!("add-watch expected ref, keyword, function, got {:?} {:?} {:?}", a, b, c)),
   }
@@ -138,13 +158,10 @@ pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn remove_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Ref(path)), Some(Calcit::Keyword(k))) => {
-      let mut dict = REFS_DICT.write().expect("open dict");
-      let (_prev, listeners) = dict
-        .get_mut(path)
-        .ok_or_else(|| CalcitErr::use_str(&format!("failed to find atom via: {}", path)))?;
-      if listeners.contains_key(k) {
-        listeners.remove(k);
+    (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Keyword(k))) => {
+      let mut pair = locked_pair.write().expect("trying to modify locked pair");
+      if pair.1.contains_key(k) {
+        pair.1.remove(k);
         Ok(Calcit::Nil)
       } else {
         CalcitErr::err_str(format!("remove-watch failed, listener with key `{}` missing", k))

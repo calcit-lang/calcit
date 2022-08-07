@@ -231,6 +231,11 @@
             assert= 2 @*ref-demo
             assert= :ref (type-of *ref-demo)
 
+            let
+                *l $ atom 1
+              reset! *l 2
+              assert= 2 @*l
+
         |%Num $ quote
           defrecord %Num :inc :show
         |Num $ quote

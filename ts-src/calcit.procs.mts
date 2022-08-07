@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.6.2";
+export const calcit_version = "0.6.3";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -143,16 +143,20 @@ export let defatom = (path: string, x: CalcitValue): CalcitValue => {
   return v;
 };
 
+var atomCounter = 0;
+
+export let atom = (x: CalcitValue): CalcitValue => {
+  atomCounter = atomCounter + 1;
+  let v = new CalcitRef(x, `atom-${atomCounter}`);
+  return v;
+};
+
 export let peekDefatom = (path: string): CalcitRef => {
   return refsRegistry.get(path);
 };
 
 export let deref = (x: CalcitRef): CalcitValue => {
-  let a = refsRegistry.get(x.path);
-  if (!(a instanceof CalcitRef)) {
-    console.warn("Can not find ref:", x);
-  }
-  return a.value;
+  return x.value;
 };
 
 export let _$n__ADD_ = (x: number, y: number): number => {

@@ -34,6 +34,10 @@
               assert= (range 4) $ [] 0 1 2 3
               assert= (range 4 5) $ [] 4
               assert= (range 4 10) $ [] 4 5 6 7 8 9
+
+              assert= (range-bothway 3) ([] -2 -1 0 1 2)
+              assert= (range-bothway 2 5) ([] 0 1 2 3 4)
+
               assert= (slice (range 10) 0 10) (range 10)
               assert= (slice (range 10) 5 7) ([] 5 6)
               assert=

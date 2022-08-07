@@ -16,6 +16,8 @@ use std::sync::{Arc, RwLock};
 use crate::call_stack::CallStackList;
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax};
 
+pub(crate) use refs::ValueAndListeners;
+
 pub type FnType = fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
 pub type SyntaxType = fn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
@@ -180,6 +182,7 @@ pub fn is_proc_name(s: &str) -> bool {
       | "&set:rest"
       | "&set:assoc"
       // refs
+      | "atom"
       | "deref"
       | "add-watch"
       | "remove-watch"
@@ -373,6 +376,7 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackLi
     "&set:first" => sets::first(args),
     "&set:rest" => sets::rest(args),
     // refs
+    "atom" => refs::atom(args),
     "deref" => refs::deref(args),
     "add-watch" => refs::add_watch(args),
     "remove-watch" => refs::remove_watch(args),
