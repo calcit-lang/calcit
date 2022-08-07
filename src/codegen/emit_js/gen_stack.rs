@@ -1,14 +1,14 @@
-use std::sync::RwLock;
+use std::sync::Mutex;
 
 use crate::call_stack::{CalcitStack, CallStackList, StackKind};
 use crate::primes::{Calcit, CalcitItems};
 
 lazy_static! {
-  static ref CALL_STACK: RwLock<rpds::ListSync<CalcitStack>> = RwLock::new(rpds::List::new_sync());
+  static ref CALL_STACK: Mutex<rpds::ListSync<CalcitStack>> = Mutex::new(rpds::List::new_sync());
 }
 
 pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: &CalcitItems) {
-  let mut stack = CALL_STACK.write().expect("open call stack");
+  let mut stack = CALL_STACK.lock().expect("open call stack");
   stack.push_front_mut(CalcitStack {
     ns: ns.into(),
     def: def.into(),
@@ -19,7 +19,7 @@ pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args:
 }
 
 pub fn pop_call_stack() {
-  let mut stack = CALL_STACK.write().expect("open call stack");
+  let mut stack = CALL_STACK.lock().expect("open call stack");
   if !stack.is_empty() {
     let xs = stack.drop_first();
     match xs {
@@ -32,11 +32,11 @@ pub fn pop_call_stack() {
 }
 
 pub fn clear_stack() {
-  let mut stack = CALL_STACK.write().expect("open call stack");
+  let mut stack = CALL_STACK.lock().expect("open call stack");
   *stack = rpds::List::new_sync();
 }
 
 pub fn get_gen_stack() -> CallStackList {
-  let stack = CALL_STACK.read().expect("read call stack");
+  let stack = CALL_STACK.lock().expect("read call stack");
   stack.to_owned()
 }

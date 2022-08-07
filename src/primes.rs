@@ -8,7 +8,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 
 use cirru_edn::{Edn, EdnKwd};
 use cirru_parser::Cirru;
@@ -112,7 +112,7 @@ pub enum Calcit {
   /// and it is still different from quoted data which was intentionally turned in to data.
   Thunk(Arc<Calcit>, Option<Arc<Calcit>>), // code, value
   /// atom, holding a path to its state, data inside remains during hot code swapping
-  Ref(Arc<str>, Arc<RwLock<ValueAndListeners>>),
+  Ref(Arc<str>, Arc<Mutex<ValueAndListeners>>),
   /// more tagged union type, more like an internal structure
   Tuple(Arc<Calcit>, Arc<Calcit>),
   /// binary data, to be used by FFIs
