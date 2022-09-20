@@ -23,7 +23,7 @@ exclude = [
 cirru_edn = "0.2.20"
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
 cirru_parser = "0.1.24"
-clap = "3.2.15"
+clap = "3.2.22"
 dirs = "4.0.0"
 lazy_static = "1.4.0"
 notify = "4.0.17"
@@ -35,7 +35,7 @@ im_ternary_tree = "0.0.11"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libloading = "0.7.3"
-ctrlc = "3.2.2"
+ctrlc = "3.2.3"
 
 [lib]
 name = "calcit"

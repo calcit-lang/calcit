@@ -193,8 +193,12 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
   watcher.watch(&inc_path, RecursiveMode::NonRecursive).expect("watch");
 
   if let Some(assets_folder) = assets_watch.as_ref() {
-    watcher.watch(assets_folder, RecursiveMode::Recursive).expect("watch");
-    println!("assets to watch: {}", assets_folder);
+    match watcher.watch(assets_folder, RecursiveMode::Recursive) {
+      Ok(_) => {
+        println!("assets to watch: {}", assets_folder);
+      }
+      Err(e) => println!("failed to watch path `{assets_folder}`: {e}"),
+    };
   };
 
   loop {
