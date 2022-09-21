@@ -181,7 +181,13 @@ fn main() -> Result<(), String> {
 pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, assets_watch: Arc<Option<String>>) {
   println!("\nRunning: in watch mode...\n");
   let (tx, rx) = channel();
-  let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).expect("watch");
+  let mut watcher: RecommendedWatcher = Watcher::new(
+    tx,
+    notify::Config::default()
+      .with_poll_interval(Duration::from_millis(200))
+      .with_compare_contents(true),
+  )
+  .expect("watch");
 
   let inc_path = settings.entry_path.parent().expect("extract parent").join(".compact-inc.cirru");
   if !inc_path.exists() {
@@ -193,15 +199,20 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
   watcher.watch(&inc_path, RecursiveMode::NonRecursive).expect("watch");
 
   if let Some(assets_folder) = assets_watch.as_ref() {
-    watcher.watch(assets_folder, RecursiveMode::Recursive).expect("watch");
-    println!("assets to watch: {}", assets_folder);
+    match watcher.watch(Path::new(assets_folder), RecursiveMode::Recursive) {
+      Ok(_) => {
+        println!("assets to watch: {}", assets_folder);
+      }
+      Err(e) => println!("failed to watch path `{assets_folder}`: {e}"),
+    };
   };
 
   loop {
     match rx.recv() {
-      Ok(event) => {
-        match event {
-          notify::DebouncedEvent::Write(_) | notify::DebouncedEvent::Create(_) => {
+      Ok(Ok(event)) => {
+        use notify::EventKind;
+        match event.kind {
+          EventKind::Modify(_) | EventKind::Create(_) => {
             // load new program code
             let mut content = fs::read_to_string(&inc_path).expect("reading inc file");
             strip_shebang(&mut content);
@@ -214,10 +225,10 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
             };
           }
           // ignore other events
-          notify::DebouncedEvent::NoticeWrite(..) => {}
           _ => println!("other file event: {:?}, ignored", event),
         }
       }
+      Ok(Err(e)) => println!("watch error: {:?}", e),
       Err(e) => eprintln!("watch error: {:?}", e),
     }
   }

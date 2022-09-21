@@ -50,22 +50,30 @@ pub fn main() -> io::Result<()> {
     println!("\nwatch changes in {} ...\n", base_dir.display());
 
     let (tx, rx) = channel();
-    let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_millis(200)).expect("start watcher");
-    watcher.watch(&base_dir, RecursiveMode::NonRecursive).expect("start watcher");
+    let mut watcher: RecommendedWatcher = Watcher::new(
+      tx,
+      notify::Config::default()
+        .with_poll_interval(Duration::from_millis(200))
+        .with_compare_contents(true),
+    )
+    .expect("create watcher");
+    watcher
+      .watch(Path::new(base_dir), RecursiveMode::NonRecursive)
+      .expect("start watcher");
 
     loop {
       match rx.recv() {
-        Ok(event) => {
-          use notify::DebouncedEvent;
-          match event {
-            DebouncedEvent::Write(_) | DebouncedEvent::Create(_) | DebouncedEvent::Rename(..) => {
+        Ok(Ok(event)) => {
+          use notify::EventKind;
+          match event.kind {
+            EventKind::Modify(_) | EventKind::Create(_) => {
               perform_compaction(base_dir, &package_file, &out_file, &inc_file_path, verbose)?;
             }
             // ignore other events
-            DebouncedEvent::NoticeWrite(..) | DebouncedEvent::NoticeRemove(..) => {}
             _ => println!("other file event: {:?}, ignored", event),
           }
         }
+        Ok(Err(e)) => println!("watch error: {:?}", e),
         Err(e) => eprintln!("watch error: {:?}", e),
       }
     }
@@ -92,9 +100,11 @@ fn perform_compaction(base_dir: &Path, package_file: &Path, out_file: &Path, inc
   // println!("data {:?}", changes);
 
   if has_changes {
+    println!("writing changes");
+    println!("code formatted");
     write(
       &inc_file_path,
-      cirru_edn::format(&changes.try_into().map_err(io_err)?, true).expect("write"),
+      cirru_edn::format(&changes.try_into().map_err(io_err)?, true).expect("format edn"),
     )?;
     println!("inc file updated {}", inc_file_path.display());
   } else if has_old_file {

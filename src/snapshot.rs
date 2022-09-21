@@ -192,7 +192,8 @@ impl From<&FileChangeInfo> for Edn {
 
 impl From<FileChangeInfo> for Edn {
   fn from(data: FileChangeInfo) -> Edn {
-    data.into()
+    // call previous implementation to convert
+    (&data).into()
   }
 }
 
