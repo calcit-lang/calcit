@@ -11,8 +11,8 @@ use std::{
 use calcit::snapshot::ChangesDict;
 use calcit::snapshot::{FileChangeInfo, FileInSnapShot};
 
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-
+use notify::RecursiveMode;
+use notify_debouncer_mini::new_debouncer;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
@@ -51,31 +51,17 @@ pub fn main() -> io::Result<()> {
     println!("\nwatch changes in {} ...\n", base_dir.display());
 
     let (tx, rx) = channel();
-    let mut watcher: RecommendedWatcher = Watcher::new(
-      tx,
-      notify::Config::default()
-        .with_poll_interval(Duration::from_millis(200))
-        .with_compare_contents(true),
-    )
-    .expect("create watcher");
-    watcher
-      .watch(Path::new(base_dir), RecursiveMode::NonRecursive)
+
+    let mut debouncer = new_debouncer(Duration::from_micros(200), None, tx).expect("create watcher");
+    debouncer
+      .watcher()
+      .watch(Path::new(base_dir), RecursiveMode::Recursive)
       .expect("start watcher");
 
     loop {
       match rx.recv() {
-        Ok(Ok(event)) => {
-          use notify::{event::ModifyKind, EventKind};
-          match event.kind {
-            EventKind::Modify(ModifyKind::Data(_)) | EventKind::Modify(ModifyKind::Name(_)) | EventKind::Create(_) => {
-              if event.paths.iter().any(|p| p.display().to_string().ends_with(".cirru")) {
-                perform_compaction(base_dir, &package_file, &out_file, &inc_file_path, verbose)?;
-              }
-            }
-            EventKind::Modify(ModifyKind::Metadata(_)) => {}
-            // ignore other events
-            _ => println!("other file event: {:?}, ignored", event),
-          }
+        Ok(Ok(_event)) => {
+          perform_compaction(base_dir, &package_file, &out_file, &inc_file_path, verbose)?;
         }
         Ok(Err(e)) => println!("watch error: {:?}", e),
         Err(e) => eprintln!("watch error: {:?}", e),
