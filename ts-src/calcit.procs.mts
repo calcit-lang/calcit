@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.6.5";
+export const calcit_version = "0.6.6";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -74,6 +74,9 @@ export let type_of = (x: any): CalcitKeyword => {
   }
   if (x instanceof CalcitRecord) {
     return kwd("record");
+  }
+  if (x instanceof CalcitCirruQuote) {
+    return kwd("cirru-quote");
   }
   if (x === true || x === false) {
     return kwd("bool");
@@ -1162,8 +1165,8 @@ export let write_file = (path: string, content: string): void => {
   }
 };
 
-export let parse_cirru = (code: string): CalcitList => {
-  return to_calcit_data(parse(code), true) as CalcitList;
+export let parse_cirru = (code: string): CalcitCirruQuote => {
+  return new CalcitCirruQuote(parse(code));
 };
 
 // for JavaScript, it's same as parse_cirru

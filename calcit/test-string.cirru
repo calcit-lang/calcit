@@ -142,6 +142,9 @@
                 :: :a 1
                 parse-cirru-edn "|:: :a 1"
 
+              assert= :cirru-quote
+                type-of $ parse-cirru "|a b"
+
               assert= "|{} $ :code\n  quote $ + 1 2 3"
                 trim $ format-cirru-edn $ {}
                   :code $ :: 'quote $ [] |+ |1 |2 |3
