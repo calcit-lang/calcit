@@ -12,6 +12,7 @@ use calcit::snapshot::ChangesDict;
 use calcit::snapshot::{FileChangeInfo, FileInSnapShot};
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
@@ -64,11 +65,14 @@ pub fn main() -> io::Result<()> {
     loop {
       match rx.recv() {
         Ok(Ok(event)) => {
-          use notify::EventKind;
+          use notify::{event::ModifyKind, EventKind};
           match event.kind {
-            EventKind::Modify(_) | EventKind::Create(_) => {
-              perform_compaction(base_dir, &package_file, &out_file, &inc_file_path, verbose)?;
+            EventKind::Modify(ModifyKind::Data(_)) | EventKind::Modify(ModifyKind::Name(_)) | EventKind::Create(_) => {
+              if event.paths.iter().any(|p| p.display().to_string().ends_with(".cirru")) {
+                perform_compaction(base_dir, &package_file, &out_file, &inc_file_path, verbose)?;
+              }
             }
+            EventKind::Modify(ModifyKind::Metadata(_)) => {}
             // ignore other events
             _ => println!("other file event: {:?}, ignored", event),
           }

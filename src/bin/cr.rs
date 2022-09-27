@@ -210,9 +210,9 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
   loop {
     match rx.recv() {
       Ok(Ok(event)) => {
-        use notify::EventKind;
+        use notify::{event::ModifyKind, EventKind};
         match event.kind {
-          EventKind::Modify(_) | EventKind::Create(_) => {
+          EventKind::Modify(ModifyKind::Data(_)) | EventKind::Create(_) => {
             // load new program code
             let mut content = fs::read_to_string(&inc_path).expect("reading inc file");
             strip_shebang(&mut content);
@@ -224,6 +224,7 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
               eprintln!("error: {}", e);
             };
           }
+          EventKind::Modify(ModifyKind::Metadata(_)) => {}
           // ignore other events
           _ => println!("other file event: {:?}, ignored", event),
         }
