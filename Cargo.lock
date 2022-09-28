@@ -36,7 +36,7 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "calcit"
-version = "0.6.5"
+version = "0.6.6"
 dependencies = [
  "cirru_edn",
  "cirru_parser",
@@ -48,6 +48,7 @@ dependencies = [
  "lazy_static",
  "libloading",
  "notify",
+ "notify-debouncer-mini",
  "rpds",
  "walkdir",
 ]
@@ -329,6 +330,16 @@ dependencies = [
  "mio",
  "walkdir",
  "winapi",
+]
+
+[[package]]
+name = "notify-debouncer-mini"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e23e9fa24f094b143c1eb61f90ac6457de87be6987bc70746e0179f7dbc9007b"
+dependencies = [
+ "crossbeam-channel",
+ "notify",
 ]
 
 [[package]]

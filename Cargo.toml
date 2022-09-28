@@ -1,6 +1,6 @@
 [package]
 name = "calcit"
-version = "0.6.5"
+version = "0.6.6"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -27,6 +27,7 @@ clap = "3.2.22"
 dirs = "4.0.0"
 lazy_static = "1.4.0"
 notify = "5.0.0"
+notify-debouncer-mini = "0.2.0"
 walkdir = "2"
 hex = "0.4.3"
 rpds = "0.12.0"

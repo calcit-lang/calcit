@@ -13,7 +13,8 @@ use calcit::primes::LocatedWarning;
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use im_ternary_tree::TernaryTreeList;
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use notify::RecursiveMode;
+use notify_debouncer_mini::new_debouncer;
 
 use calcit::{
   builtins, call_stack, cli_args, codegen, codegen::emit_js::gen_stack, codegen::COMPILE_ERRORS_FILE, program, runner, snapshot, util,
@@ -181,13 +182,12 @@ fn main() -> Result<(), String> {
 pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, assets_watch: Arc<Option<String>>) {
   println!("\nRunning: in watch mode...\n");
   let (tx, rx) = channel();
-  let mut watcher: RecommendedWatcher = Watcher::new(
-    tx,
-    notify::Config::default()
-      .with_poll_interval(Duration::from_millis(200))
-      .with_compare_contents(true),
-  )
-  .expect("watch");
+  let mut debouncer = new_debouncer(Duration::from_millis(200), None, tx).expect("create watcher");
+  let config = notify::Config::default();
+  debouncer
+    .watcher()
+    .configure(config.with_compare_contents(true))
+    .expect("config watcher");
 
   let inc_path = settings.entry_path.parent().expect("extract parent").join(".compact-inc.cirru");
   if !inc_path.exists() {
@@ -196,37 +196,30 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
     };
   }
 
-  watcher.watch(&inc_path, RecursiveMode::NonRecursive).expect("watch");
+  debouncer.watcher().watch(&inc_path, RecursiveMode::NonRecursive).expect("watch");
 
   if let Some(assets_folder) = assets_watch.as_ref() {
-    match watcher.watch(Path::new(assets_folder), RecursiveMode::Recursive) {
+    match debouncer.watcher().watch(Path::new(assets_folder), RecursiveMode::Recursive) {
       Ok(_) => {
         println!("assets to watch: {}", assets_folder);
       }
       Err(e) => println!("failed to watch path `{assets_folder}`: {e}"),
-    };
+    }
   };
 
   loop {
     match rx.recv() {
-      Ok(Ok(event)) => {
-        use notify::EventKind;
-        match event.kind {
-          EventKind::Modify(_) | EventKind::Create(_) => {
-            // load new program code
-            let mut content = fs::read_to_string(&inc_path).expect("reading inc file");
-            strip_shebang(&mut content);
-            if content.trim().is_empty() {
-              eprintln!("failed re-compiling, got empty inc file");
-              continue;
-            }
-            if let Err(e) = recall_program(&content, &entries, &settings) {
-              eprintln!("error: {}", e);
-            };
-          }
-          // ignore other events
-          _ => println!("other file event: {:?}, ignored", event),
+      Ok(Ok(_event)) => {
+        // load new program code
+        let mut content = fs::read_to_string(&inc_path).expect("reading inc file");
+        strip_shebang(&mut content);
+        if content.trim().is_empty() {
+          eprintln!("failed re-compiling, got empty inc file");
+          continue;
         }
+        if let Err(e) = recall_program(&content, &entries, &settings) {
+          eprintln!("error: {}", e);
+        };
       }
       Ok(Err(e)) => println!("watch error: {:?}", e),
       Err(e) => eprintln!("watch error: {:?}", e),
