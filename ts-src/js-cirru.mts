@@ -17,10 +17,14 @@ export class CalcitCirruQuote {
     this.value = value;
   }
   toString(): string {
-    return `(cirru-quote ${JSON.stringify(this.value)})`;
+    return `(&cirru-quote ${JSON.stringify(this.value)})`;
   }
   toList(): CalcitValue {
     return to_calcit_data(this.value, true);
+  }
+  /** provide a simple text representation in Console or std out, with indentations */
+  textForm(): string {
+    return writeCirruCode(this.value);
   }
 }
 

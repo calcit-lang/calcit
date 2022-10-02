@@ -40,6 +40,9 @@
               :js $ js-array 1 2 3
             eprintln "|a simulated error for eprintln"
             js/console.log $ :: 'quote $ + 1 2 3
+            js/console.log $ parse-cirru "|+ 1 2 3"
+            js/console.log $ parse-cirru "|defn f (a b) (+ x y) (* x y)"
+            println $ parse-cirru "|+ 1 2 3"
 
             assert= 0 $ .-length $ new js/Array
             assert= 7 $ .-length $ new js/Array (+ 3 4)
