@@ -90,8 +90,6 @@ fn perform_compaction(base_dir: &Path, package_file: &Path, out_file: &Path, inc
   // println!("data {:?}", changes);
 
   if has_changes {
-    println!("writing changes");
-    println!("code formatted");
     write(
       &inc_file_path,
       cirru_edn::format(&changes.try_into().map_err(io_err)?, true).expect("format edn"),
