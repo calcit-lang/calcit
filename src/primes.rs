@@ -626,7 +626,7 @@ pub fn gen_core_id() -> Arc<str> {
 pub struct CalcitErr {
   pub msg: String,
   pub warnings: Vec<LocatedWarning>,
-  pub location: Option<NodeLocation>,
+  pub location: Option<Arc<NodeLocation>>,
   pub stack: rpds::ListSync<crate::call_stack::CalcitStack>,
 }
 
@@ -670,7 +670,7 @@ impl CalcitErr {
       location: None,
     })
   }
-  pub fn err_str_location<T: Into<String>>(msg: T, location: Option<NodeLocation>) -> Result<Calcit, Self> {
+  pub fn err_str_location<T: Into<String>>(msg: T, location: Option<Arc<NodeLocation>>) -> Result<Calcit, Self> {
     Err(CalcitErr {
       msg: msg.into(),
       warnings: vec![],
@@ -691,7 +691,7 @@ impl CalcitErr {
       msg: msg.into(),
       warnings: vec![],
       stack: stack.to_owned(),
-      location,
+      location: location.map(Arc::new),
     }
   }
 }
