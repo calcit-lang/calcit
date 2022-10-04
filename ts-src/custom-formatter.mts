@@ -6,6 +6,7 @@ import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitSet } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitCirruQuote } from "./js-cirru.mjs";
 
 declare global {
   interface Window {
@@ -79,6 +80,18 @@ export let load_console_formatter_$x_ = () => {
               { style: "color: hsl(280, 80%, 60%)" },
               `Ref ${obj.path}`,
               ["div", { style: "color: hsl(280, 80%, 60%)" }, ["div", { style: "margin-left: 8px;" }, embedObject(obj.value)]],
+            ];
+          }
+          if (obj instanceof CalcitCirruQuote) {
+            return [
+              "div",
+              { style: "color: hsl(240, 80%, 60%); display: flex;" },
+              `CirruQuote`,
+              [
+                "div",
+                { style: "color: hsl(280, 80%, 60%); padding: 4px 4px; margin: 0 4px 2px; border: 1px solid hsl(0,70%,90%); border-radius: 4px;" },
+                obj.textForm().trim(),
+              ],
             ];
           }
           return null;

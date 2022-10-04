@@ -80,7 +80,7 @@ fn perform_compaction(base_dir: &Path, package_file: &Path, out_file: &Path, inc
   let new_compact_file = load_files_to_edn(package_file, base_dir, verbose)?;
   let has_old_file = out_file.exists();
   let changes = if has_old_file {
-    let old_compact_data = cirru_edn::parse(&read_file(&out_file)?).map_err(io_err)?;
+    let old_compact_data = cirru_edn::parse(&read_file(out_file)?).map_err(io_err)?;
     find_compact_changes(&new_compact_file, &old_compact_data).map_err(io_err)?
   } else {
     ChangesDict::default()
@@ -90,10 +90,8 @@ fn perform_compaction(base_dir: &Path, package_file: &Path, out_file: &Path, inc
   // println!("data {:?}", changes);
 
   if has_changes {
-    println!("writing changes");
-    println!("code formatted");
     write(
-      &inc_file_path,
+      inc_file_path,
       cirru_edn::format(&changes.try_into().map_err(io_err)?, true).expect("format edn"),
     )?;
     println!("inc file updated {}", inc_file_path.display());
@@ -102,7 +100,7 @@ fn perform_compaction(base_dir: &Path, package_file: &Path, out_file: &Path, inc
   }
 
   if !has_old_file || has_changes {
-    write(&out_file, cirru_edn::format(&new_compact_file, true).expect("write"))?;
+    write(out_file, cirru_edn::format(&new_compact_file, true).expect("write"))?;
     println!("file wrote {}", out_file.display());
   }
 

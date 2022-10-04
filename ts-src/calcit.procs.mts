@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.6.6";
+export const calcit_version = "0.6.8";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -418,22 +418,19 @@ export let remove_watch = (a: CalcitRef, k: CalcitKeyword): null => {
   return null;
 };
 
-export let range = (n: number, m: number, m2: number): CalcitSliceList | CalcitList => {
+export let range = (n: number, m: number, step: number = 1): CalcitSliceList | CalcitList => {
   var result: CalcitList | CalcitSliceList = new CalcitSliceList([]);
-  if (m2 != null) {
-    console.warn("TODO range with 3 arguments"); // TODO
-  }
   if (m != null) {
     var idx = n;
     while (idx < m) {
       result = result.append(idx);
-      idx = idx + 1;
+      idx = idx + step;
     }
   } else {
     var idx = 0;
     while (idx < n) {
       result = result.append(idx);
-      idx = idx + 1;
+      idx = idx + step;
     }
   }
   return result;

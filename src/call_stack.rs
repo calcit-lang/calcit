@@ -77,7 +77,7 @@ pub fn show_stack(stack: &CallStackList) {
   }
 }
 
-pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&NodeLocation>) -> Result<(), String> {
+pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc<NodeLocation>>) -> Result<(), String> {
   eprintln!("\nFailure: {}", failure);
   eprintln!("\ncall stack:");
 
@@ -109,7 +109,7 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Nod
       (
         Edn::kwd("location"),
         match location {
-          Some(l) => l.into(),
+          Some(l) => (&**l).into(),
           None => Edn::Nil,
         },
       ),
