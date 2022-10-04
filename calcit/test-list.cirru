@@ -34,6 +34,7 @@
               assert= (range 4) $ [] 0 1 2 3
               assert= (range 4 5) $ [] 4
               assert= (range 4 10) $ [] 4 5 6 7 8 9
+              assert= (range 2 10 2) $ [] 2 4 6 8
 
               assert= (range-bothway 3) ([] -2 -1 0 1 2)
               assert= (range-bothway 2 5) ([] 0 1 2 3 4)
