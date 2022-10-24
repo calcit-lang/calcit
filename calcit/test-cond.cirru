@@ -126,6 +126,24 @@
                 match-ab (' :c 1 2)
                 [] "|no match"
 
+        |test-tag-match $ quote
+          fn ()
+            log-title "|Testing tag-match"
+            &let
+              match-ab $ fn (data)
+                tag-match data
+                  :a a $ [] :a $ :a a
+                  :b b $ [] :b $ :b b
+                  _ :other
+              assert=
+                match-ab (&{} :tag :a :a 1)
+                [] :a 1
+              assert=
+                match-ab (&{} :tag :b :b 2)
+                [] :b 2
+              assert= :other
+                match-ab (&{} :tag :c)
+
         |main! $ quote
           defn main! ()
             log-title "|Testing cond"
@@ -138,6 +156,7 @@
             test-case
 
             test-key-match
+            test-tag-match
 
             , true
 

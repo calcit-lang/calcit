@@ -374,7 +374,7 @@
                             ~@ $ &list:rest else
 
         |&key-match-internal $ quote
-          defmacro key-match (value & body)
+          defmacro &key-match-internal (value & body)
             if (&list:empty? body)
               quasiquote
                 eprintln "|[Warn] key-match found no matched case, missing `_` case?" ~value
@@ -411,6 +411,56 @@
                       &key-match-internal ~v# $ ~@ body
                 quasiquote
                   &key-match-internal ~value $ ~@ body
+
+        |&tag-match-internal $ quote
+          defmacro &tag-match-internal (value & body)
+            if (&list:empty? body)
+              quasiquote
+                eprintln "|[Warn] tag-match found no matched case, missing `_` case?" ~value
+              &let
+                pair $ first body
+                assert "|tag-match expected arm in list" (list? pair)
+                let
+                    pattern $ &list:nth pair 0
+                  assert "|expected literal or symbol as tag"
+                    or (keyword? pattern) (symbol? pattern)
+                  if
+                    &= pattern '_
+                    &let nil
+                      assert "|tag-match expected a branch after `_`"
+                        &= 2 $ &list:count pair
+                      if
+                        not $ &= 1 $ &list:count body
+                        eprintln "|[Warn] expected `_` beginning last branch of tag-match"
+                      &list:nth pair 1
+                    &let nil
+                      assert "|tag-match expected an with (tag new-name body)"
+                        &= 3 $ &list:count pair
+                      quasiquote
+                        if
+                          &= ~pattern $ &map:get ~value :tag
+                          &let
+                            (~ $ &list:nth pair 1) ~value
+                            ~ $ &list:nth pair 2
+                          &tag-match-internal ~value $ ~@ $ &list:rest body
+
+        |tag-match $ quote
+          defmacro tag-match (value & body)
+            if (&list:empty? body)
+              quasiquote
+                eprintln "|[Error] tag-match expected patterns for matching" ~value
+              if (list? value)
+                &let (v# (gensym |v))
+                  quasiquote
+                    &let (~v# ~value)
+                      assert "|expected map value to match"
+                        map? ~value
+                      &tag-match-internal ~value ~@body
+                quasiquote
+                  &let nil
+                    assert "|expected map value to match"
+                      map? ~value
+                    &tag-match-internal ~value ~@body
 
         |&case $ quote
           defmacro &case (item default pattern & others)
@@ -1314,13 +1364,13 @@
 
         |select-keys $ quote
           defn select-keys (m xs)
-            assert "|expectd map for selecting" $ map? m
+            assert "|expected map for selecting" $ map? m
             foldl xs (&{}) $ defn %select-keys (acc k)
               &map:assoc acc k (&map:get m k)
 
         |unselect-keys $ quote
           defn unselect-keys (m xs)
-            assert "|expectd map for unselecting" $ map? m
+            assert "|expected map for unselecting" $ map? m
             foldl xs m $ defn %unselect-keys (acc k)
               &map:dissoc acc k
 
