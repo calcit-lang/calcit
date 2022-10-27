@@ -19,15 +19,18 @@ lazy_static! {
 }
 
 fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack: &CallStackList) -> Result<(), CalcitErr> {
-  let mut pair = locked_pair.lock().expect("read ref");
-  let prev = pair.0.to_owned();
-  if prev == v {
-    // not need to modify
-    return Ok(());
-  }
-  let listeners = pair.1.to_owned();
+  let (listeners, prev) = {
+    let mut pair = locked_pair.lock().expect("read ref");
+    let prev = pair.0.to_owned();
+    if prev == v {
+      // not need to modify
+      return Ok(());
+    }
+    let listeners = pair.1.to_owned();
+    pair.0 = v.to_owned();
 
-  pair.0 = v.to_owned();
+    (listeners, prev)
+  };
 
   for f in listeners.values() {
     match f {
@@ -59,17 +62,22 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_
 
       let path_info: Arc<str> = path.into();
 
-      let mut dict = REFS_DICT.lock().expect("read dict");
-      let global_data = dict.get(&path_info);
+      let defined = {
+        let dict = REFS_DICT.lock().expect("read refs");
+        dict.contains_key(&path_info)
+      };
 
-      match global_data {
-        Some(locked_pair) => Ok(Calcit::Ref(path_info, locked_pair.to_owned())),
-        None => {
-          let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
-          let pair_value = Arc::new(Mutex::new((v, HashMap::new())));
-          dict.insert(path_info.to_owned(), pair_value.to_owned());
-          Ok(Calcit::Ref(path_info, pair_value))
-        }
+      if defined {
+        let dict = REFS_DICT.lock().expect("read dict");
+        let pair = dict.get(&path_info).expect("read pair");
+
+        Ok(Calcit::Ref(path_info, pair.to_owned()))
+      } else {
+        let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
+        let pair_value = Arc::new(Mutex::new((v, HashMap::new())));
+        let mut dict = REFS_DICT.lock().expect("read refs");
+        dict.insert(path_info.to_owned(), pair_value.to_owned());
+        Ok(Calcit::Ref(path_info, pair_value))
       }
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
