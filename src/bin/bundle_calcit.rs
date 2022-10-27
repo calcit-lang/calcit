@@ -32,7 +32,7 @@ pub fn main() -> io::Result<()> {
       if ext_str == "cirru" {
         out_path.to_path_buf()
       } else {
-        return Err(io_err(format!("expected *.cirru file, got {}", ext_str)));
+        return Err(io_err(format!("expected *.cirru file, got {ext_str}")));
       }
     }
     None => out_path.join("compact.cirru"),
@@ -63,8 +63,8 @@ pub fn main() -> io::Result<()> {
         Ok(Ok(_event)) => {
           perform_compaction(base_dir, &package_file, &out_file, &inc_file_path, verbose)?;
         }
-        Ok(Err(e)) => println!("watch error: {:?}", e),
-        Err(e) => eprintln!("watch error: {:?}", e),
+        Ok(Err(e)) => println!("watch error: {e:?}"),
+        Err(e) => eprintln!("watch error: {e:?}"),
       }
     }
   } else {
@@ -214,7 +214,7 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
         let (ns_name, ns_code) = if let Some(Cirru::List(ns_form)) = xs.get(0) {
           match (ns_form.get(0), ns_form.get(1)) {
             (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) if &**x0 == "ns" => (x1.to_string(), ns_form),
-            (a, b) => return Err(io_err(format!("in valid ns starts {:?} {:?}", a, b))),
+            (a, b) => return Err(io_err(format!("in valid ns starts {a:?} {b:?}"))),
           }
         } else {
           return Err(io_err(format!(
@@ -233,15 +233,15 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
                 if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" || x0.starts_with("def") {
                   defs.insert(Edn::str((*x1).to_owned()), Edn::Quote(line.to_owned()));
                 } else {
-                  return Err(io_err(format!("invalid def op: {}", x0)));
+                  return Err(io_err(format!("invalid def op: {x0}")));
                 }
               }
               (a, b) => {
-                return Err(io_err(format!("invalid def code {:?} {:?}", a, b)));
+                return Err(io_err(format!("invalid def code {a:?} {b:?}")));
               }
             }
           } else {
-            return Err(io_err(format!("file line not an expr {}", line)));
+            return Err(io_err(format!("file line not an expr {line}")));
           }
         }
 

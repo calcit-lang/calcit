@@ -116,7 +116,7 @@ pub fn preprocess_ns_def(
           None,
         )),
         None => Err(CalcitErr::use_msg_stack(
-          format!("unknown ns/def in program: {}/{}", ns, def),
+          format!("unknown ns/def in program: {ns}/{def}"),
           call_stack,
         )),
       }
@@ -174,7 +174,7 @@ pub fn preprocess_expr(
           // refer to namespace/def directly for some usages
           preprocess_ns_def(ns_alias.to_owned(), def_part, def.to_owned(), None, check_warnings, call_stack)
         } else {
-          Err(CalcitErr::use_msg_stack(format!("unknown ns target: {}", def), call_stack))
+          Err(CalcitErr::use_msg_stack(format!("unknown ns target: {def}"), call_stack))
         }
       }
       None => {
@@ -257,7 +257,7 @@ pub fn preprocess_expr(
                 }
                 let mut warnings = check_warnings.borrow_mut();
                 warnings.push(LocatedWarning::new(
-                  format!("[Warn] unknown `{}` in {}/{}, locals {{{}}}", def, def_ns, at_def, names.join(" ")),
+                  format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" ")),
                   NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
                 ));
                 Ok((expr.to_owned(), None))
@@ -291,7 +291,7 @@ pub fn preprocess_expr(
         coord: vec![],
       };
       warnings.push(LocatedWarning::new(
-        format!("[Warn] unexpected data during preprocess: {:?}", expr),
+        format!("[Warn] unexpected data during preprocess: {expr:?}"),
         loc,
       ));
       Ok((expr.to_owned(), None))
@@ -348,7 +348,7 @@ fn process_list_call(
         ]));
         preprocess_expr(&code, scope_defs, file_ns, check_warnings, call_stack)
       } else {
-        Err(CalcitErr::use_msg_stack(format!("{} expected single argument", head), call_stack))
+        Err(CalcitErr::use_msg_stack(format!("{head} expected single argument"), call_stack))
       }
     }
     (
@@ -417,7 +417,7 @@ fn process_list_call(
       )),
     },
     (Calcit::Thunk(..), _) => Err(CalcitErr::use_msg_stack(
-      format!("does not know how to preprocess a thunk: {}", head),
+      format!("does not know how to preprocess a thunk: {head}"),
       call_stack,
     )),
 
@@ -613,7 +613,7 @@ pub fn preprocess_defn(
           }
           _ => {
             return Err(CalcitErr::use_msg_stack(
-              format!("expected defn args to be symbols, got: {}", y),
+              format!("expected defn args to be symbols, got: {y}"),
               call_stack,
             ))
           }
@@ -628,12 +628,12 @@ pub fn preprocess_defn(
       Ok(Calcit::List(xs))
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
-      format!("defn/defmacro expected name and args: {} {}", a, b),
+      format!("defn/defmacro expected name and args: {a} {b}"),
       call_stack,
       a.get_location().or_else(|| b.get_location()),
     )),
     (a, b) => Err(CalcitErr::use_msg_stack(
-      format!("defn or defmacro expected name and args, got {:?} {:?}", a, b,),
+      format!("defn or defmacro expected name and args, got {a:?} {b:?}",),
       call_stack,
     )),
   }
@@ -684,7 +684,7 @@ pub fn preprocess_call_let(
       }
       (a, b) => {
         return Err(CalcitErr::use_msg_stack_location(
-          format!("invalid pair for &let binding: {} {}", a, b),
+          format!("invalid pair for &let binding: {a} {b}"),
           call_stack,
           a.get_location().or_else(|| b.get_location()),
         ))
@@ -692,13 +692,13 @@ pub fn preprocess_call_let(
     },
     Some(a @ Calcit::List(_)) => {
       return Err(CalcitErr::use_msg_stack(
-        format!("expected binding of a pair, got {}", a),
+        format!("expected binding of a pair, got {a}"),
         call_stack,
       ))
     }
     Some(a) => {
       return Err(CalcitErr::use_msg_stack_location(
-        format!("expected binding of a pair, got {}", a),
+        format!("expected binding of a pair, got {a}"),
         call_stack,
         a.get_location(),
       ))

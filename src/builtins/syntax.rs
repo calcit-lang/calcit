@@ -25,7 +25,7 @@ pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>) -> Resul
       args: Arc::new(get_raw_args(xs)?),
       body: Arc::new(expr.skip(2)?),
     }),
-    (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid args type for defn: {} , {}", a, b)),
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid args type for defn: {a} , {b}")),
     _ => CalcitErr::err_str("inefficient arguments for defn"),
   }
 }
@@ -39,7 +39,7 @@ pub fn defmacro(expr: &CalcitItems, _scope: &CalcitScope, def_ns: Arc<str>) -> R
       args: Arc::new(get_raw_args(xs)?),
       body: Arc::new(expr.skip(2)?),
     }),
-    (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid structure for defmacro: {} {}", a, b)),
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid structure for defmacro: {a} {b}")),
     _ => CalcitErr::err_str(format!("invalid structure for defmacro: {}", Calcit::List(expr.to_owned()))),
   }
 }
@@ -50,7 +50,7 @@ pub fn get_raw_args(args: &CalcitItems) -> Result<Vec<Arc<str>>, String> {
     if let Calcit::Symbol { sym, .. } = item {
       xs.push(sym.to_owned());
     } else {
-      return Err(format!("Unexpected argument: {}", item));
+      return Err(format!("Unexpected argument: {item}"));
     }
   }
   Ok(xs)
@@ -60,13 +60,13 @@ pub fn quote(expr: &CalcitItems, _scope: &CalcitScope, _file_ns: Arc<str>) -> Re
   if expr.len() == 1 {
     Ok(expr[0].to_owned())
   } else {
-    CalcitErr::err_str(format!("unexpected data for quote: {:?}", expr))
+    CalcitErr::err_str(format!("unexpected data for quote: {expr:?}"))
   }
 }
 
 pub fn syntax_if(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
-    _ if expr.len() > 3 => CalcitErr::err_str(format!("too many nodes for if: {:?}", expr)),
+    _ if expr.len() > 3 => CalcitErr::err_str(format!("too many nodes for if: {expr:?}")),
     (Some(cond), Some(true_branch)) => {
       let cond_value = runner::evaluate_expr(cond, scope, file_ns.to_owned(), call_stack)?;
       match cond_value {
@@ -77,8 +77,8 @@ pub fn syntax_if(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, cal
         _ => runner::evaluate_expr(true_branch, scope, file_ns, call_stack),
       }
     }
-    (None, _) => CalcitErr::err_str(format!("insufficient nodes for if: {:?}", expr)),
-    _ => CalcitErr::err_str(format!("invalid if form: {:?}", expr)),
+    (None, _) => CalcitErr::err_str(format!("insufficient nodes for if: {expr:?}")),
+    _ => CalcitErr::err_str(format!("invalid if form: {expr:?}")),
   }
 }
 
@@ -87,7 +87,7 @@ pub fn eval(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_sta
     let v = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
     runner::evaluate_expr(&v, scope, file_ns, call_stack)
   } else {
-    CalcitErr::err_str(format!("unexpected data for evaling: {:?}", expr))
+    CalcitErr::err_str(format!("unexpected data for evaling: {expr:?}"))
   }
 }
 
@@ -101,12 +101,12 @@ pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
           let value = runner::evaluate_expr(ys, scope, file_ns.to_owned(), call_stack)?;
           body_scope.insert(s.to_owned(), value);
         }
-        (a, _) => return CalcitErr::err_str(format!("invalid binding name: {}", a)),
+        (a, _) => return CalcitErr::err_str(format!("invalid binding name: {a}")),
       }
       runner::evaluate_lines(&expr.drop_left(), &body_scope, file_ns, call_stack)
     }
-    Some(Calcit::List(xs)) => CalcitErr::err_str(format!("invalid length: {:?}", xs)),
-    Some(_) => CalcitErr::err_str(format!("invalid node for &let: {:?}", expr)),
+    Some(Calcit::List(xs)) => CalcitErr::err_str(format!("invalid length: {xs:?}")),
+    Some(_) => CalcitErr::err_str(format!("invalid node for &let: {expr:?}")),
     None => CalcitErr::err_str("&let expected a pair or a nil"),
   }
 }
@@ -127,7 +127,7 @@ pub fn quasiquote(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
           // println!("replace result: {:?}", v);
           Ok(v)
         }
-        SpanResult::Range(xs) => CalcitErr::err_str(format!("expected single result from quasiquote, got {:?}", xs)),
+        SpanResult::Range(xs) => CalcitErr::err_str(format!("expected single result from quasiquote, got {xs:?}")),
       }
     }
   }
@@ -147,7 +147,7 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: 
         let ret = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         match ret {
           Calcit::List(zs) => Ok(SpanResult::Range(Box::new(zs))),
-          _ => Err(CalcitErr::use_str(format!("unknown result from unquote-slice: {}", ret))),
+          _ => Err(CalcitErr::use_str(format!("unknown result from unquote-slice: {ret}"))),
         }
       }
       (_, _) => {
@@ -222,7 +222,7 @@ pub fn macroexpand(
       a => Ok(a.to_owned()),
     }
   } else {
-    CalcitErr::err_str(format!("macroexpand expected excaclty 1 argument, got: {:?}", expr))
+    CalcitErr::err_str(format!("macroexpand expected excaclty 1 argument, got: {expr:?}"))
   }
 }
 
@@ -252,7 +252,7 @@ pub fn macroexpand_1(
       a => Ok(a.to_owned()),
     }
   } else {
-    CalcitErr::err_str(format!("macroexpand expected excaclty 1 argument, got: {:?}", expr))
+    CalcitErr::err_str(format!("macroexpand expected excaclty 1 argument, got: {expr:?}"))
   }
 }
 
@@ -307,7 +307,7 @@ pub fn macroexpand_all(
       a => Ok(a.to_owned()),
     }
   } else {
-    CalcitErr::err_str(format!("macroexpand expected excaclty 1 argument, got: {:?}", expr))
+    CalcitErr::err_str(format!("macroexpand expected excaclty 1 argument, got: {expr:?}"))
   }
 }
 
@@ -329,12 +329,12 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call
             runner::run_fn(&values, &scope, &args, &body, def_ns, call_stack)
           }
           Calcit::Proc(proc) => builtins::handle_proc(&proc, &TernaryTreeList::from(&[err_data]), call_stack),
-          a => CalcitErr::err_str(format!("try expected a function handler, got: {}", a)),
+          a => CalcitErr::err_str(format!("try expected a function handler, got: {a}")),
         }
       }
     }
   } else {
-    CalcitErr::err_str(format!("try expected 2 arguments, got: {:?}", expr))
+    CalcitErr::err_str(format!("try expected 2 arguments, got: {expr:?}"))
   }
 }
 
@@ -372,7 +372,7 @@ pub fn gensym(xs: &CalcitItems, _scope: &CalcitScope, file_ns: Arc<str>, _call_s
         chunk.push_str(&n.to_string());
         chunk
       }
-      a => return CalcitErr::err_str(format!("gensym expected a string, but got: {}", a)),
+      a => return CalcitErr::err_str(format!("gensym expected a string, but got: {a}")),
     }
   };
   Ok(Calcit::Symbol {

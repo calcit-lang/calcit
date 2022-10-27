@@ -77,7 +77,7 @@ impl TryFrom<&str> for CalcitSyntax {
       "defatom" => Ok(Defatom),
       "reset!" => Ok(Reset),
       "hint-fn" => Ok(HintFn),
-      _ => Err(format!("Unknown format! {}", s)),
+      _ => Err(format!("Unknown format! {s}")),
     }
   }
 }

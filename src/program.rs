@@ -186,7 +186,7 @@ pub fn write_evaled_def(ns: &str, def: &str, value: Calcit) -> Result<(), String
     (*program).insert(String::from(ns).into(), HashMap::new());
   }
 
-  let file = program.get_mut(ns).ok_or_else(|| format!("can not write to: {}", ns))?;
+  let file = program.get_mut(ns).ok_or_else(|| format!("can not write to: {ns}"))?;
   file.insert(String::from(def).into(), value);
 
   Ok(())
@@ -215,7 +215,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
   }
   for (ns, info) in &changes.changed {
     // println!("handling ns: {:?} {}", ns, program_code.contains_key(ns));
-    let file = program_code.get_mut(ns).ok_or_else(|| format!("can not load ns: {}", ns))?;
+    let file = program_code.get_mut(ns).ok_or_else(|| format!("can not load ns: {ns}"))?;
     if let Some(v) = &info.ns {
       file.import_map = extract_import_map(v)?;
     }
@@ -244,12 +244,12 @@ pub fn clear_all_program_evaled_defs(init_ns: Arc<str>, reload_ns: Arc<str>, rel
     (*program).clear();
   } else {
     // reduce changes of libs. could be dirty in some cases
-    let init_pkg = extract_pkg_from_ns(init_ns.to_owned()).ok_or_else(|| format!("failed to extract pkg from: {}", init_ns))?;
-    let reload_pkg = extract_pkg_from_ns(reload_ns.to_owned()).ok_or_else(|| format!("failed to extract pkg from: {}", reload_ns))?;
+    let init_pkg = extract_pkg_from_ns(init_ns.to_owned()).ok_or_else(|| format!("failed to extract pkg from: {init_ns}"))?;
+    let reload_pkg = extract_pkg_from_ns(reload_ns.to_owned()).ok_or_else(|| format!("failed to extract pkg from: {reload_ns}"))?;
     let mut to_remove: Vec<Arc<str>> = vec![];
     let xs = program.keys();
     for k in xs {
-      if k == &init_pkg || k == &reload_pkg || k.starts_with(&format!("{}.", init_pkg)) || k.starts_with(&format!("{}.", reload_pkg)) {
+      if k == &init_pkg || k == &reload_pkg || k.starts_with(&format!("{init_pkg}.")) || k.starts_with(&format!("{reload_pkg}.")) {
         to_remove.push(k.to_owned());
       } else {
         continue;

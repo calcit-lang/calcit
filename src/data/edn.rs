@@ -48,7 +48,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       Ok(Edn::Record(name.to_owned(), entries))
     }
     Calcit::Fn { name, def_ns, args, .. } => {
-      println!("[Warn] fn to EDN: {}/{} {:?}", def_ns, name, args);
+      println!("[Warn] fn to EDN: {def_ns}/{name} {args:?}");
       Ok(Edn::str(x.to_string()))
     }
     Calcit::Proc(name) => Ok(Edn::Symbol((**name).into())),
@@ -59,22 +59,22 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
           if &**sym == "quote" {
             match cirru::calcit_data_to_cirru(data) {
               Ok(v) => Ok(Edn::Quote(v)),
-              Err(e) => Err(format!("failed to create quote: {}", e)), // TODO more types to handle
+              Err(e) => Err(format!("failed to create quote: {e}")), // TODO more types to handle
             }
           } else {
-            Err(format!("unknown tag for EDN: {}", sym)) // TODO more types to handle
+            Err(format!("unknown tag for EDN: {sym}")) // TODO more types to handle
           }
         }
         Calcit::Record(name, _, _) => Ok(Edn::tuple(Edn::Keyword(name.to_owned()), calcit_to_edn(data)?)),
         v => {
-          Err(format!("EDN tuple expected 'quote or record, unknown tag: {}", v))
+          Err(format!("EDN tuple expected 'quote or record, unknown tag: {v}"))
           // TODO more types to handle
         }
       }
     }
     Calcit::Buffer(buf) => Ok(Edn::Buffer(buf.to_owned())),
     Calcit::CirruQuote(code) => Ok(Edn::Quote(code.to_owned())),
-    a => Err(format!("not able to generate EDN: {}", a)), // TODO more types to handle
+    a => Err(format!("not able to generate EDN: {a}")), // TODO more types to handle
   }
 }
 
@@ -82,7 +82,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
   match x {
     Edn::Nil => Calcit::Nil,
     Edn::Bool(b) => Calcit::Bool(*b),
-    Edn::Number(n) => Calcit::Number(*n as f64),
+    Edn::Number(n) => Calcit::Number(*n),
     Edn::Symbol(s) => Calcit::Symbol {
       sym: (**s).into(),
       ns: primes::GEN_NS.into(),

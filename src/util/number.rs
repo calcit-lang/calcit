@@ -15,10 +15,10 @@ pub fn f64_to_usize(f: f64) -> Result<usize, String> {
     if f >= 0.0 {
       Ok(f as usize)
     } else {
-      Err(format!("usize expected a positive number, but got: {}", f))
+      Err(format!("usize expected a positive number, but got: {f}"))
     }
   } else {
-    Err(format!("cannot extract usize from float: {}", f))
+    Err(format!("cannot extract usize from float: {f}"))
   }
 }
 
@@ -26,6 +26,6 @@ pub fn f64_to_i32(f: f64) -> Result<i32, String> {
   if f.fract().abs() <= f64::EPSILON {
     Ok(f as i32)
   } else {
-    Err(format!("cannot extract int from float: {}", f))
+    Err(format!("cannot extract int from float: {f}"))
   }
 }

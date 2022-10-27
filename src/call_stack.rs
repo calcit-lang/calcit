@@ -78,7 +78,7 @@ pub fn show_stack(stack: &CallStackList) {
 }
 
 pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc<NodeLocation>>) -> Result<(), String> {
-  eprintln!("\nFailure: {}", failure);
+  eprintln!("\nFailure: {failure}");
   eprintln!("\ncall stack:");
 
   for s in stack {
@@ -117,7 +117,7 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc
     true,
   )?;
   let _ = fs::write(ERROR_SNAPSHOT, content);
-  eprintln!("\nrun `cat {}` to read stack details.", ERROR_SNAPSHOT);
+  eprintln!("\nrun `cat {ERROR_SNAPSHOT}` to read stack details.");
   Ok(())
 }
 

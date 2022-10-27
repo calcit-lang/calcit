@@ -56,7 +56,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
   ) {
     Ok(_) => (),
     Err(failure) => {
-      eprintln!("\nfailed preprocessing, {}", failure);
+      eprintln!("\nfailed preprocessing, {failure}");
       call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
       return CalcitErr::err_str(failure.msg);
     }
@@ -72,7 +72,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
     });
   }
   match program::lookup_evaled_def(&init_ns, &init_def) {
-    None => CalcitErr::err_str(format!("entry not initialized: {}/{}", init_ns, init_def)),
+    None => CalcitErr::err_str(format!("entry not initialized: {init_ns}/{init_def}")),
     Some(entry) => match entry {
       Calcit::Fn {
         def_ns, scope, args, body, ..
@@ -81,13 +81,13 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {
-            eprintln!("\nfailed, {}", failure);
+            eprintln!("\nfailed, {failure}");
             call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
             Err(failure)
           }
         }
       }
-      _ => CalcitErr::err_str(format!("expected function entry, got: {}", entry)),
+      _ => CalcitErr::err_str(format!("expected function entry, got: {entry}")),
     },
   }
 }
@@ -114,9 +114,9 @@ pub fn load_module(path: &str, base_dir: &Path) -> Result<snapshot::Snapshot, St
     }
   };
 
-  println!("loading module: {}", fullpath);
+  println!("loading module: {fullpath}");
 
-  let mut content = fs::read_to_string(&fullpath).unwrap_or_else(|_| panic!("expected Cirru snapshot {:?}", fullpath));
+  let mut content = fs::read_to_string(&fullpath).unwrap_or_else(|_| panic!("expected Cirru snapshot {fullpath:?}"));
   strip_shebang(&mut content);
   let data = cirru_edn::parse(&content)?;
   // println!("reading: {}", content);

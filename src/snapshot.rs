@@ -76,7 +76,7 @@ impl TryFrom<Edn> for SnapshotConfigs {
 pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
   let pkg: Arc<str> = data.map_get("package")?.try_into()?;
   let mut files: HashMap<Arc<str>, FileInSnapShot> = data.map_get("files")?.try_into()?;
-  let meta_ns = format!("{}.$meta", pkg);
+  let meta_ns = format!("{pkg}.$meta");
   files.insert(meta_ns.to_owned().into(), gen_meta_ns(&meta_ns, path));
   let s = Snapshot {
     package: pkg,
@@ -141,7 +141,7 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
         defs: def_dict,
       })
     }
-    Err(e) => Err(format!("failed to make snapshot: {}", e)),
+    Err(e) => Err(format!("failed to make snapshot: {e}")),
   }
 }
 

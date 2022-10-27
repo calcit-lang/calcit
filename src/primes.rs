@@ -154,24 +154,24 @@ impl fmt::Display for Calcit {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       Calcit::Nil => f.write_str("nil"),
-      Calcit::Bool(v) => f.write_str(&format!("{}", v)),
-      Calcit::Number(n) => f.write_str(&format!("{}", n)),
-      Calcit::Symbol { sym, .. } => f.write_str(&format!("'{}", sym)),
-      Calcit::Keyword(s) => f.write_str(&format!(":{}", s)),
+      Calcit::Bool(v) => f.write_str(&format!("{v}")),
+      Calcit::Number(n) => f.write_str(&format!("{n}")),
+      Calcit::Symbol { sym, .. } => f.write_str(&format!("'{sym}")),
+      Calcit::Keyword(s) => f.write_str(&format!(":{s}")),
       Calcit::Str(s) => {
         if is_simple_str(s) {
-          write!(f, "|{}", s)
+          write!(f, "|{s}")
         } else {
           write!(f, "\"|{}\"", s.escape_default())
         }
       } // TODO, escaping choices
       Calcit::Thunk(code, v) => match v {
-        Some(data) => f.write_str(&format!("(&thunk {} {})", data, code)),
-        None => f.write_str(&format!("(&thunk _ {})", code)),
+        Some(data) => f.write_str(&format!("(&thunk {data} {code})")),
+        None => f.write_str(&format!("(&thunk _ {code})")),
       },
-      Calcit::CirruQuote(code) => f.write_str(&format!("(&cirru-quote {})", code)),
-      Calcit::Ref(name, _locked_pair) => f.write_str(&format!("(&ref {} ...)", name)),
-      Calcit::Tuple(a, b) => f.write_str(&format!("(:: {} {})", a, b)),
+      Calcit::CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
+      Calcit::Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
+      Calcit::Tuple(a, b) => f.write_str(&format!("(:: {a} {b})")),
       Calcit::Buffer(buf) => {
         f.write_str("(&buffer")?;
         if buf.len() > 8 {
@@ -198,28 +198,28 @@ impl fmt::Display for Calcit {
       Calcit::Recur(xs) => {
         f.write_str("(&recur")?;
         for x in xs {
-          f.write_str(&format!(" {}", x))?;
+          f.write_str(&format!(" {x}"))?;
         }
         f.write_str(")")
       }
       Calcit::List(xs) => {
         f.write_str("([]")?;
         for x in xs {
-          f.write_str(&format!(" {}", x))?;
+          f.write_str(&format!(" {x}"))?;
         }
         f.write_str(")")
       }
       Calcit::Set(xs) => {
         f.write_str("(#{}")?;
         for x in xs {
-          f.write_str(&format!(" {}", x))?;
+          f.write_str(&format!(" {x}"))?;
         }
         f.write_str(")")
       }
       Calcit::Map(xs) => {
         f.write_str("({}")?;
         for (k, v) in xs {
-          f.write_str(&format!(" ({} {})", k, v))?;
+          f.write_str(&format!(" ({k} {v})"))?;
         }
         f.write_str(")")?;
         Ok(())
@@ -231,9 +231,9 @@ impl fmt::Display for Calcit {
         }
         f.write_str(")")
       }
-      Calcit::Proc(name) => f.write_str(&format!("(&proc {})", name)),
+      Calcit::Proc(name) => f.write_str(&format!("(&proc {name})")),
       Calcit::Macro { name, args, body, .. } => {
-        f.write_str(&format!("(&macro {} (", name))?;
+        f.write_str(&format!("(&macro {name} ("))?;
         let mut need_space = false;
         for a in &**args {
           if need_space {
@@ -254,7 +254,7 @@ impl fmt::Display for Calcit {
         f.write_str("))")
       }
       Calcit::Fn { name, args, body, .. } => {
-        f.write_str(&format!("(&fn {} (", name))?;
+        f.write_str(&format!("(&fn {name} ("))?;
         let mut need_space = false;
         for a in &**args {
           if need_space {
@@ -274,7 +274,7 @@ impl fmt::Display for Calcit {
         }
         f.write_str(")")
       }
-      Calcit::Syntax(name, _ns) => f.write_str(&format!("(&syntax {})", name)),
+      Calcit::Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
     }
   }
 }
@@ -317,7 +317,7 @@ pub fn format_to_lisp(x: &Calcit) -> String {
     Calcit::Symbol { sym, .. } => sym.to_string(),
     Calcit::Syntax(s, _ns) => s.to_string(),
     Calcit::Proc(s) => s.to_string(),
-    a => format!("{}", a),
+    a => format!("{a}"),
   }
 }
 
@@ -586,7 +586,7 @@ impl Calcit {
     match self {
       Calcit::Nil => String::from(""),
       Calcit::Str(s) => (**s).to_owned(),
-      _ => format!("{}", self),
+      _ => format!("{self}"),
     }
   }
 
@@ -619,7 +619,7 @@ impl Calcit {
 /// too naive id generator to be safe in WASM
 pub fn gen_core_id() -> Arc<str> {
   let c = ID_GEN.fetch_add(1, SeqCst);
-  format!("gen_id_{}", c).into()
+  format!("gen_id_{c}").into()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -760,7 +760,7 @@ impl LocatedWarning {
 
   pub fn print_list(list: &Vec<Self>) {
     for warn in list {
-      println!("{}", warn);
+      println!("{warn}");
     }
   }
 }

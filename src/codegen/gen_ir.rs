@@ -68,7 +68,7 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
 
   let content = match format(&data.into(), true) {
     Ok(v) => v,
-    Err(e) => return Err(format!("failed {}", e)),
+    Err(e) => return Err(format!("failed {e}")),
   };
 
   let code_emit_path = Path::new(emit_path);
@@ -178,7 +178,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       }
       Edn::List(ys)
     }
-    a => Edn::str(format!("TODO {}", a)),
+    a => Edn::str(format!("TODO {a}")),
   }
 }
 
