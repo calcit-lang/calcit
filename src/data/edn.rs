@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use im_ternary_tree::TernaryTreeList;
 
-use crate::data::cirru;
 use crate::primes;
 use crate::primes::Calcit;
+use crate::{data::cirru, primes::MethodKind};
 
 use cirru_edn::{Edn, EdnKwd};
 
@@ -74,6 +74,11 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     }
     Calcit::Buffer(buf) => Ok(Edn::Buffer(buf.to_owned())),
     Calcit::CirruQuote(code) => Ok(Edn::Quote(code.to_owned())),
+    Calcit::Method(name, kind) => match kind {
+      MethodKind::Access => Ok(Edn::Symbol(format!(".-{name}").into())),
+      MethodKind::InvokeNative => Ok(Edn::Symbol(format!(".!{name}").into())),
+      MethodKind::Invoke => Ok(Edn::Symbol(format!(".{name}").into())),
+    },
     a => Err(format!("not able to generate EDN: {a}")), // TODO more types to handle
   }
 }

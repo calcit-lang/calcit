@@ -54,7 +54,8 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Calcit::Proc(..) => Ok(Calcit::kwd("fn")), // special kind proc, but also fn
     Calcit::Macro { .. } => Ok(Calcit::kwd("macro")),
     Calcit::Fn { .. } => Ok(Calcit::kwd("fn")),
-    Calcit::Syntax(..) => Ok(Calcit::kwd("synta")),
+    Calcit::Syntax(..) => Ok(Calcit::kwd("syntax")),
+    Calcit::Method(..) => Ok(Calcit::kwd("method")),
   }
 }
 

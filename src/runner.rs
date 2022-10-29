@@ -9,7 +9,9 @@ use std::sync::Arc;
 use crate::builtins;
 use crate::builtins::is_proc_name;
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
-use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, NodeLocation, SymbolResolved::*, CORE_NS};
+use crate::primes::{
+  Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, MethodKind, NodeLocation, SymbolResolved::*, CORE_NS,
+};
 use crate::program;
 use crate::util::string::has_ns_part;
 
@@ -60,10 +62,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
     Calcit::CirruQuote(..) => Ok(expr.to_owned()),
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
     Calcit::List(xs) => match xs.get(0) {
-      None => Err(CalcitErr::use_msg_stack(
-        format!("cannot evaluate empty expr: {expr}"),
-        call_stack,
-      )),
+      None => Err(CalcitErr::use_msg_stack(format!("cannot evaluate empty expr: {expr}"), call_stack)),
       Some(x) => {
         // println!("eval expr: {}", expr.lisp_str());
         // println!("eval expr: {}", x);
@@ -72,15 +71,8 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
         let rest_nodes = xs.drop_left();
         let ret = match &v {
           Calcit::Proc(p) => {
-            let values = evaluate_args(&rest_nodes, scope, file_ns.to_owned(), call_stack)?;
-            let next_stack = extend_call_stack(call_stack, file_ns, p.to_owned(), StackKind::Proc, Calcit::Nil, &values);
-
-            if let Some(v) = p.strip_prefix('.') {
-              builtins::meta::invoke_method(v, &values, &next_stack)
-            } else {
-              // println!("proc: {}", expr);
-              builtins::handle_proc(p, &values, call_stack)
-            }
+            let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
+            builtins::handle_proc(p, &values, call_stack)
           }
           Calcit::Syntax(s, def_ns) => {
             let next_stack = extend_call_stack(
@@ -101,6 +93,16 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
                 e
               }
             })
+          }
+          Calcit::Method(name, kind) => {
+            let values = evaluate_args(&rest_nodes, scope, file_ns.to_owned(), call_stack)?;
+            let next_stack = extend_call_stack(call_stack, file_ns, name.to_owned(), StackKind::Method, Calcit::Nil, &values);
+
+            if *kind == MethodKind::Invoke {
+              builtins::meta::invoke_method(name, &values, &next_stack)
+            } else {
+              CalcitErr::err_str(format!("unknown method for rust runtime: {kind}"))
+            }
           }
           Calcit::Fn {
             name,
@@ -211,6 +213,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
     Calcit::Macro { .. } => Ok(expr.to_owned()),
     Calcit::Fn { .. } => Ok(expr.to_owned()),
     Calcit::Syntax(_, _) => Ok(expr.to_owned()),
+    Calcit::Method(..) => Ok(expr.to_owned()),
   }
 }
 

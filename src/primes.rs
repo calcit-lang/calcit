@@ -148,6 +148,9 @@ pub enum Calcit {
   },
   /// name, ns... notice that `ns` is a meta info
   Syntax(CalcitSyntax, Arc<str>),
+  /// Method is kind like macro, it's handled during preprocessing, into `&invoke` or `&invoke-native`
+  /// method name, method kind
+  Method(Arc<str>, MethodKind),
 }
 
 impl fmt::Display for Calcit {
@@ -275,6 +278,7 @@ impl fmt::Display for Calcit {
         f.write_str(")")
       }
       Calcit::Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
+      Calcit::Method(name, method_kind) => f.write_str(&format!("(&{method_kind} {name})")),
     }
   }
 }
@@ -423,6 +427,11 @@ impl Hash for Calcit {
         // syntax name can be used as identity
         name.to_string().hash(_state); // TODO
       }
+      Calcit::Method(name, call_native) => {
+        "method:".hash(_state);
+        name.hash(_state);
+        call_native.hash(_state);
+      }
     }
   }
 }
@@ -532,6 +541,13 @@ impl Ord for Calcit {
       (_, Calcit::Fn { .. }) => Greater,
 
       (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a.cmp(b),
+      (Calcit::Syntax(..), _) => Less,
+      (_, Calcit::Syntax(..)) => Greater,
+
+      (Calcit::Method(a, na), Calcit::Method(b, nb)) => match a.cmp(b) {
+        Equal => na.cmp(nb),
+        v => v,
+      },
     }
   }
 }
@@ -570,6 +586,7 @@ impl PartialEq for Calcit {
       (Calcit::Macro { id: a, .. }, Calcit::Macro { id: b, .. }) => a == b,
       (Calcit::Fn { id: a, .. }, Calcit::Fn { id: b, .. }) => a == b,
       (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a == b,
+      (Calcit::Method(a, b), Calcit::Method(c, d)) => a == c && b == d,
       (_, _) => false,
     }
   }
@@ -761,6 +778,26 @@ impl LocatedWarning {
   pub fn print_list(list: &Vec<Self>) {
     for warn in list {
       println!("{warn}");
+    }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum MethodKind {
+  /// (.call a)
+  Invoke,
+  /// (.!f a)
+  InvokeNative,
+  /// (.-p a)
+  Access,
+}
+
+impl fmt::Display for MethodKind {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      MethodKind::Invoke => write!(f, "invoke"),
+      MethodKind::InvokeNative => write!(f, "invoke-native"),
+      MethodKind::Access => write!(f, "read-property"),
     }
   }
 }

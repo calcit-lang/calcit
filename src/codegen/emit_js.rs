@@ -18,10 +18,10 @@ use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::syntax::get_raw_args;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
 use crate::call_stack::StackKind;
-use crate::primes;
+use crate::primes::{self, MethodKind};
 use crate::primes::{Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
 use crate::program;
-use crate::util::string::{has_ns_part, matches_digits, matches_js_var, wrap_js_str};
+use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
 
 type ImportsDict = BTreeMap<Arc<str>, ImportedTarget>;
 
@@ -182,6 +182,14 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<HashSet<EdnKwd>
       Ok(format!("_kwd[{}]", escape_cirru_str(&s.to_string())))
     }
     Calcit::CirruQuote(code) => Ok(format!("new {var_prefix}CalcitCirruQuote({})", cirru_to_js(code)?)),
+    Calcit::Method(name, kind) => {
+      let code = match kind {
+        MethodKind::Access => ".-",
+        MethodKind::InvokeNative => ".!",
+        MethodKind::Invoke => ".",
+      };
+      Ok(format!("new {var_prefix}CalcitSymbol(\"{code}{}\")", name.escape_default()))
+    }
     _ => unreachable!("Unexpected data in quote for js: {}", xs),
   }
 }
@@ -231,19 +239,14 @@ fn to_js_code(
         // println!("gen proc {} under {}", s, ns,);
         // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
         // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
-        if let Some(name) = s.strip_prefix('.') {
-          if name.starts_with('-') || name.starts_with('!') {
-            Err(format!("invalid js method {s} at this position"))
-          } else {
-            // `.method` being used as a parameter
-            Ok(format!(
-              "{}invoke_method({})",
-              proc_prefix,
-              escape_cirru_str(name), // TODO need confirm
-            ))
-          }
+        Ok(format!("{proc_prefix}{}", escape_var(s)))
+      }
+      Calcit::Method(name, kind) => {
+        let proc_prefix = get_proc_prefix(ns);
+        if *kind == MethodKind::Invoke {
+          Ok(format!("{proc_prefix}invoke_method_closure({})", escape_cirru_str(name)))
         } else {
-          Ok(format!("{proc_prefix}{}", escape_var(s)))
+          Err(format!("Does not expect native method as closure: {kind}"))
         }
       }
       Calcit::Syntax(s, ..) => {
@@ -483,83 +486,6 @@ fn gen_call_code(
           )),
           (_, _) => Err(format!("set! expected 2 nodes, got {body:?}")),
         },
-        _ if s.starts_with(".-") => {
-          let name = s.strip_prefix(".-").expect("strip .-");
-          if name.is_empty() {
-            Err(format!("invalid property accessor {s}"))
-          } else if matches_digits(name) {
-            match body.get(0) {
-              Some(obj) => Ok(format!(
-                "{}{}[{}]",
-                return_code,
-                to_js_code(obj, ns, local_defs, file_imports, keywords, None)?,
-                name,
-              )),
-              None => Err(format!("property accessor takes only 1 argument, {xs:?}")),
-            }
-          } else if matches_js_var(name) {
-            match body.get(0) {
-              Some(obj) => Ok(format!(
-                "{}{}.{}",
-                return_code,
-                to_js_code(obj, ns, local_defs, file_imports, keywords, None)?,
-                name,
-              )),
-              None => Err(format!("property accessor takes only 1 argument, {xs:?}")),
-            }
-          } else {
-            // includes characters that need to be escaped
-            match body.get(0) {
-              Some(obj) => Ok(format!(
-                "{}{}[\"{}\"]",
-                return_code,
-                to_js_code(obj, ns, local_defs, file_imports, keywords, None)?,
-                name,
-              )),
-              None => Err(format!("property accessor takes only 1 argument, {xs:?}")),
-            }
-          }
-        }
-        _ if s.starts_with(".!") => {
-          // special syntax for calling a static method, previously using `.` but now occupied
-          let name = s.strip_prefix(".!").expect("strip .!");
-          if matches_js_var(name) {
-            match body.get(0) {
-              Some(obj) => {
-                let args = body.drop_left();
-                let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
-                Ok(format!(
-                  "{}{}.{}({})",
-                  return_code,
-                  to_js_code(obj, ns, local_defs, file_imports, keywords, None)?,
-                  name,
-                  args_code
-                ))
-              }
-              None => Err(format!("expected 1 object, got {xs}")),
-            }
-          } else {
-            Err(format!("invalid static member accessor {s}"))
-          }
-        }
-        _ if s.starts_with('.') => {
-          let name = s.strip_prefix('.').expect("strip .");
-          match body.get(0) {
-            Some(obj) => {
-              let args = body.drop_left();
-              let args_code = gen_args_code(&args, ns, local_defs, file_imports, keywords)?;
-              Ok(format!(
-                "{}{}invoke_method({})({},{})",
-                return_code,
-                proc_prefix,
-                escape_cirru_str(name), // TODO need confirm
-                to_js_code(obj, ns, local_defs, file_imports, keywords, None)?,
-                args_code
-              ))
-            }
-            None => Err(format!("expected 1 object, got {xs}")),
-          }
-        }
         _ => {
           // TODO
           let args_code = gen_args_code(&body, ns, local_defs, file_imports, keywords)?;
@@ -572,6 +498,53 @@ fn gen_call_code(
         }
       }
     }
+    Calcit::Method(name, kind) => match kind {
+      MethodKind::Access => {
+        if body.len() == 1 {
+          let obj = to_js_code(&body[0], ns, local_defs, file_imports, keywords, None)?;
+          if matches_js_var(name) {
+            Ok(format!("{return_code}{obj}.{name}"))
+          } else {
+            Ok(format!("{return_code}{obj}[{}]", escape_cirru_str(name)))
+          }
+        } else {
+          Err(format!("accessor takes only 1 argument, {xs:?}"))
+        }
+      }
+      MethodKind::InvokeNative => {
+        if !body.is_empty() {
+          let obj = to_js_code(&body[0], ns, local_defs, file_imports, keywords, None)?;
+          let args_code = gen_args_code(&body.skip(1).expect("get args"), ns, local_defs, file_imports, keywords)?;
+
+          let caller = if matches_js_var(name) {
+            format!("{obj}.{name}")
+          } else {
+            format!("{obj}[{}]", escape_cirru_str(name))
+          };
+          Ok(format!("{return_code}{caller}({args_code})"))
+        } else {
+          Err(format!("expected at least 1 object, got {xs}"))
+        }
+      }
+      MethodKind::Invoke => {
+        let proc_prefix = get_proc_prefix(ns);
+        if !body.is_empty() {
+          let obj = to_js_code(&body[0], ns, local_defs, file_imports, keywords, None)?;
+          let args_code = gen_args_code(&body.skip(1).expect("get args"), ns, local_defs, file_imports, keywords)?;
+
+          Ok(format!(
+            "{}{}invoke_method({},{},{})",
+            return_code,
+            proc_prefix,
+            escape_cirru_str(name),
+            obj,
+            args_code
+          ))
+        } else {
+          Err(format!("expected at least 1 object, got {xs}"))
+        }
+      }
+    },
     _ => {
       let args_code = gen_args_code(&body, ns, local_defs, file_imports, keywords)?;
       Ok(format!(

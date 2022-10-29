@@ -3,7 +3,7 @@ use std::sync::Arc;
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
-use crate::primes::Calcit;
+use crate::primes::{Calcit, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
 pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> Result<Calcit, String> {
@@ -29,17 +29,12 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> 
       _ => match s.chars().next().expect("load first char") {
         ':' => Ok(Calcit::kwd(&s[1..])),
         '.' => {
-          if s.starts_with(".-") || s.starts_with(".!") {
-            // try not to break js interop
-            Ok(Calcit::Symbol {
-              sym: (**s).into(),
-              ns,
-              at_def: def,
-              resolved: None,
-              location: Some(coord.to_vec()),
-            })
+          if let Some(stripped) = s.strip_prefix(".-") {
+            Ok(Calcit::Method(stripped.into(), MethodKind::Access))
+          } else if let Some(stripped) = s.strip_prefix(".!") {
+            Ok(Calcit::Method(stripped.into(), MethodKind::InvokeNative))
           } else {
-            Ok(Calcit::Proc((**s).into())) // as native method syntax
+            Ok(Calcit::Method(s[1..].to_owned().into(), MethodKind::Invoke))
           }
         }
         '"' | '|' => Ok(Calcit::new_str(&s[1..])),
@@ -203,9 +198,9 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Bool(true) => Ok(Cirru::leaf("true")),
     Calcit::Bool(false) => Ok(Cirru::leaf("false")),
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string().into())),
-    Calcit::Str(s) => Ok(Cirru::leaf(format!("|{s}"))), // TODO performance
+    Calcit::Str(s) => Ok(Cirru::leaf(format!("|{s}"))),            // TODO performance
     Calcit::Symbol { sym, .. } => Ok(Cirru::Leaf((**sym).into())), // TODO performance
-    Calcit::Keyword(s) => Ok(Cirru::leaf(format!(":{s}"))), // TODO performance
+    Calcit::Keyword(s) => Ok(Cirru::leaf(format!(":{s}"))),        // TODO performance
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
       for x in xs {
@@ -216,6 +211,11 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Proc(s) => Ok(Cirru::Leaf((**s).into())),
     Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.to_string().into())),
     Calcit::CirruQuote(code) => Ok(code.to_owned()),
+    Calcit::Method(name, kind) => match kind {
+      MethodKind::Access => Ok(Cirru::leaf(format!(".-{name}"))),
+      MethodKind::InvokeNative => Ok(Cirru::leaf(format!(".!{name}"))),
+      MethodKind::Invoke => Ok(Cirru::leaf(format!(".{name}"))),
+    },
     _ => Err(format!("unknown data to convert to Cirru: {x}")),
   }
 }

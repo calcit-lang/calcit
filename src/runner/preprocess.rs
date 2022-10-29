@@ -279,10 +279,8 @@ pub fn preprocess_expr(
     Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) | Calcit::CirruQuote(..) => {
       Ok((expr.to_owned(), None))
     }
-    Calcit::Proc(..) => {
-      // maybe detect method in future
-      Ok((expr.to_owned(), None))
-    }
+    Calcit::Method(..) => Ok((expr.to_owned(), None)),
+    Calcit::Proc(..) => Ok((expr.to_owned(), None)),
     _ => {
       let mut warnings = check_warnings.borrow_mut();
       let loc = NodeLocation {
@@ -432,6 +430,15 @@ fn process_list_call(
       check_fn_args(f_args, &args, file_ns.to_owned(), f_name.to_owned(), def_name, check_warnings);
       let mut ys = Vec::with_capacity(args.len() + 1);
       ys.push(head_form);
+      for a in &args {
+        let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
+        ys.push(form);
+      }
+      Ok((Calcit::List(TernaryTreeList::from(&ys)), None))
+    }
+    (Calcit::Method(_, _), _) => {
+      let mut ys = Vec::with_capacity(args.len());
+      ys.push(head.to_owned());
       for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns.to_owned(), check_warnings, call_stack)?;
         ys.push(form);
@@ -690,12 +697,7 @@ pub fn preprocess_call_let(
         ))
       }
     },
-    Some(a @ Calcit::List(_)) => {
-      return Err(CalcitErr::use_msg_stack(
-        format!("expected binding of a pair, got {a}"),
-        call_stack,
-      ))
-    }
+    Some(a @ Calcit::List(_)) => return Err(CalcitErr::use_msg_stack(format!("expected binding of a pair, got {a}"), call_stack)),
     Some(a) => {
       return Err(CalcitErr::use_msg_stack_location(
         format!("expected binding of a pair, got {a}"),

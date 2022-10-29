@@ -27,6 +27,7 @@ impl fmt::Display for CalcitStack {
 pub enum StackKind {
   Fn,
   Proc,
+  Method,
   Macro,
   /// tracks builtin syntax
   Syntax,
@@ -39,6 +40,7 @@ impl fmt::Display for StackKind {
     match &self {
       Self::Fn => write!(f, "fn"),
       Self::Proc => write!(f, "proc"),
+      Self::Method => write!(f, "method"),
       Self::Macro => write!(f, "macro"),
       Self::Syntax => write!(f, "syntax"),
       Self::Codegen => write!(f, "codegen"),
