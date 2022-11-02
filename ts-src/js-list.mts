@@ -340,7 +340,9 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
   }
   if (xs instanceof CalcitSet) {
     let state = acc;
-    for (let item of xs.values()) {
+    let values = xs.values();
+    for (let idx = 0; idx < values.length; idx++) {
+      let item = values[idx];
       let pair = f(state, item);
       if (pair instanceof CalcitTuple) {
         if (typeof pair.fst === "boolean") {
@@ -379,7 +381,9 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
   }
   if (xs instanceof CalcitMap) {
     let state = acc;
-    for (let item of xs.pairs()) {
+    let pairs = xs.pairs();
+    for (let idx = 0; idx < pairs.length; idx++) {
+      let item = pairs[idx];
       let pair = f(state, new CalcitSliceList(item));
       if (pair instanceof CalcitTuple) {
         if (typeof pair.fst === "boolean") {
