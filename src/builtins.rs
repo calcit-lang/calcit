@@ -398,7 +398,7 @@ fn handle_proc_internal(name: &str, args: &CalcitItems, call_stack: &CallStackLi
         let f = ps[name];
         f(args, call_stack)
       } else {
-        Err(CalcitErr::use_msg_stack(format!("No such proc: {}", a), call_stack))
+        Err(CalcitErr::use_msg_stack(format!("No such proc: {a}"), call_stack))
       }
     }
   }
@@ -460,6 +460,5 @@ pub fn is_js_syntax_procs(s: &str) -> bool {
       | "to-calcit-data"
       | "to-cirru-edn"
       | "to-js-data"
-      | "invoke-method" // dynamically
   )
 }

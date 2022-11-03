@@ -36,7 +36,8 @@ export let format_cirru = (data: CalcitCirruQuote | CalcitList, useInline: boole
   if (!Array.isArray(chunk)) {
     throw new Error("Expected data of list");
   }
-  for (let item of chunk) {
+  for (let idx = 0; idx < chunk.length; idx++) {
+    let item = chunk[idx];
     if (!Array.isArray(item)) {
       throw new Error("Expected data in a list of lists");
     }
@@ -73,11 +74,12 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
   }
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
     let buffer: CirruEdnFormat = ["{}"];
-    let pairs: [CalcitValue, CalcitValue][] = [];
-    for (let pair of x.pairs()) {
-      pairs.push(pair);
+    let pairs_buffer: [CalcitValue, CalcitValue][] = [];
+    let pairs = x.pairs();
+    for (let idx = 0; idx < pairs.length; idx++) {
+      pairs_buffer.push(pairs[idx]);
     }
-    pairs.sort((a, b) => {
+    pairs_buffer.sort((a, b) => {
       let a0_literal = is_literal(a[0]);
       let a1_literal = is_literal(a[1]);
       let b0_literal = is_literal(b[0]);
@@ -98,7 +100,8 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
         return _$n_compare(a[0], b[0]);
       }
     });
-    for (let [k, v] of pairs) {
+    for (let idx = 0; idx < pairs_buffer.length; idx++) {
+      let [k, v] = pairs_buffer[idx];
       buffer.push([to_cirru_edn(k), to_cirru_edn(v)]);
     }
     return buffer;

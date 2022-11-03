@@ -56,11 +56,11 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<C
   }
 
   unsafe {
-    let lib = libloading::Library::new(&lib_name).expect("dylib not found");
+    let lib = libloading::Library::new(lib_name).expect("dylib not found");
 
     let lookup_version: libloading::Symbol<fn() -> String> = lib.get("abi_version".as_bytes()).expect("request for ABI_VERSION");
     if lookup_version() != ABI_VERSION {
-      return CalcitErr::err_str(format!("ABI versions mismatch: {} {}", lookup_version(), ABI_VERSION));
+      return CalcitErr::err_str(format!("ABI versions mismatch: {} {ABI_VERSION}", lookup_version()));
     }
 
     let func: libloading::Symbol<EdnFfi> = lib.get(method.as_bytes()).expect("dy function not found");
@@ -77,7 +77,7 @@ pub fn stdout_println(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<C
     }
     s.push_str(&x.turn_string());
   }
-  println!("{}", s);
+  println!("{s}");
   Ok(Calcit::Nil)
 }
 
@@ -89,7 +89,7 @@ pub fn stderr_println(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<C
     }
     s.push_str(&x.turn_string());
   }
-  eprintln!("{}", s);
+  eprintln!("{s}");
   Ok(Calcit::Nil)
 }
 
@@ -123,17 +123,17 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
   }
   if let Calcit::Fn { .. } = callback {
   } else {
-    return CalcitErr::err_str(format!("expected last argument to be callback fn, got: {}", callback));
+    return CalcitErr::err_str(format!("expected last argument to be callback fn, got: {callback}"));
   }
 
   track::track_task_add();
 
   let lib = unsafe {
-    let lib_tmp = libloading::Library::new(&lib_name).expect("dylib not found");
+    let lib_tmp = libloading::Library::new(lib_name).expect("dylib not found");
 
     let lookup_version: libloading::Symbol<fn() -> String> = lib_tmp.get("abi_version".as_bytes()).expect("request for ABI_VERSION");
     if lookup_version() != ABI_VERSION {
-      return CalcitErr::err_str(format!("ABI versions mismatch: {} {}", lookup_version(), ABI_VERSION));
+      return CalcitErr::err_str(format!("ABI versions mismatch: {} {ABI_VERSION}", lookup_version()));
     }
 
     lib_tmp
@@ -159,7 +159,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
             Ok(ret) => calcit_to_edn(&ret),
             Err(e) => {
               display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack, e.location.as_ref())?;
-              Err(format!("Error: {}", e))
+              Err(format!("Error: {e}"))
             }
           }
         } else {
@@ -173,7 +173,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
       Err(e) => {
         track::track_task_release();
         // let _ = display_stack(&format!("failed to call request: {}", e), &copied_stack_1);
-        eprintln!("failure inside ffi thread: {}", e);
+        eprintln!("failure inside ffi thread: {e}");
         return CalcitErr::err_str(e);
       }
     };
@@ -213,17 +213,17 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
   }
   if let Calcit::Fn { .. } = callback {
   } else {
-    return CalcitErr::err_str(format!("expected last argument to be callback fn, got: {}", callback));
+    return CalcitErr::err_str(format!("expected last argument to be callback fn, got: {callback}"));
   }
 
   track::track_task_add();
 
   let lib = unsafe {
-    let lib_tmp = libloading::Library::new(&lib_name).expect("dylib not found");
+    let lib_tmp = libloading::Library::new(lib_name).expect("dylib not found");
 
     let lookup_version: libloading::Symbol<fn() -> String> = lib_tmp.get("abi_version".as_bytes()).expect("request for ABI_VERSION");
     if lookup_version() != ABI_VERSION {
-      return CalcitErr::err_str(format!("ABI versions mismatch: {} {}", lookup_version(), ABI_VERSION));
+      return CalcitErr::err_str(format!("ABI versions mismatch: {} {ABI_VERSION}", lookup_version()));
     }
 
     lib_tmp
@@ -247,7 +247,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
           Ok(ret) => calcit_to_edn(&ret),
           Err(e) => {
             display_stack(&format!("[Error] thread callback failed: {}", e.msg), &e.stack, e.location.as_ref())?;
-            Err(format!("Error: {}", e))
+            Err(format!("Error: {e}"))
           }
         }
       } else {
@@ -261,7 +261,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
     Err(e) => {
       // TODO for more accurate tracking, need to place tracker inside foreign function
       // track::track_task_release();
-      let _ = display_stack(&format!("failed to call request: {}", e), call_stack, None);
+      let _ = display_stack(&format!("failed to call request: {e}"), call_stack, None);
       return CalcitErr::err_str(e);
     }
   };
@@ -281,13 +281,13 @@ pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit,
       } = cb.as_ref()
       {
         if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, scope, args, body, def_ns.to_owned(), &copied_stack) {
-          eprintln!("error: {}", e);
+          eprintln!("error: {e}");
         }
       }
     })
     .expect("Error setting Ctrl-C handler");
     Ok(Calcit::Nil)
   } else {
-    CalcitErr::err_str(format!("on-control-c expected a callback function {:?}", xs))
+    CalcitErr::err_str(format!("on-control-c expected a callback function {xs:?}"))
   }
 }

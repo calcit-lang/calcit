@@ -83,7 +83,7 @@ fn main() -> Result<(), String> {
     // config in entry will overwrite default configs
     if let Some(entry) = cli_matches.value_of("entry") {
       if snapshot.entries.contains_key(entry) {
-        println!("running entry: {}", entry);
+        println!("running entry: {entry}");
         snapshot.configs = snapshot.entries[entry].to_owned();
       } else {
         return Err(format!(
@@ -152,7 +152,7 @@ fn main() -> Result<(), String> {
     })?;
 
     let duration = Instant::now().duration_since(started_time);
-    println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
+    println!("took {}ms: {v}", duration.as_micros() as f64 / 1000.0);
     Ok(())
   };
 
@@ -163,7 +163,7 @@ fn main() -> Result<(), String> {
     match task {
       Ok(_) => {}
       Err(e) => {
-        eprintln!("\nfailed to run, {}", e);
+        eprintln!("\nfailed to run, {e}");
       }
     }
   }
@@ -192,7 +192,7 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
   let inc_path = settings.entry_path.parent().expect("extract parent").join(".compact-inc.cirru");
   if !inc_path.exists() {
     if let Err(e) = fs::write(&inc_path, "").map_err(|e| -> String { e.to_string() }) {
-      eprintln!("file writing error: {}", e);
+      eprintln!("file writing error: {e}");
     };
   }
 
@@ -201,7 +201,7 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
   if let Some(assets_folder) = assets_watch.as_ref() {
     match debouncer.watcher().watch(Path::new(assets_folder), RecursiveMode::Recursive) {
       Ok(_) => {
-        println!("assets to watch: {}", assets_folder);
+        println!("assets to watch: {assets_folder}");
       }
       Err(e) => println!("failed to watch path `{assets_folder}`: {e}"),
     }
@@ -218,11 +218,11 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
           continue;
         }
         if let Err(e) = recall_program(&content, &entries, &settings) {
-          eprintln!("error: {}", e);
+          eprintln!("error: {e}");
         };
       }
-      Ok(Err(e)) => println!("watch error: {:?}", e),
-      Err(e) => eprintln!("watch error: {:?}", e),
+      Ok(Err(e)) => println!("watch error: {e:?}"),
+      Err(e) => eprintln!("watch error: {e:?}"),
     }
   }
 }
@@ -256,7 +256,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
     // run from `reload_fn` after reload
     let started_time = Instant::now();
     let task_size = runner::track::count_pending_tasks();
-    println!("checking pending tasks: {}", task_size);
+    println!("checking pending tasks: {task_size}");
     if task_size > 1 {
       // when there's services, make sure their code get preprocessed too
       let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
@@ -279,14 +279,14 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
       e.msg
     })?;
     let duration = Instant::now().duration_since(started_time);
-    println!("took {}ms: {}", duration.as_micros() as f64 / 1000.0, v);
+    println!("took {}ms: {v}", duration.as_micros() as f64 / 1000.0);
     Ok(())
   };
 
   match task {
     Ok(_) => {}
     Err(e) => {
-      eprintln!("\nfailed to reload, {}", e)
+      eprintln!("\nfailed to reload, {e}")
     }
   }
 
@@ -307,7 +307,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     let _ = fs::create_dir(code_emit_path);
   }
 
-  let js_file_path = code_emit_path.join(format!("{}.mjs", COMPILE_ERRORS_FILE));
+  let js_file_path = code_emit_path.join(format!("{COMPILE_ERRORS_FILE}.mjs"));
 
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
   gen_stack::clear_stack();
@@ -323,7 +323,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   ) {
     Ok(_) => (),
     Err(failure) => {
-      eprintln!("\nfailed preprocessing, {}", failure);
+      eprintln!("\nfailed preprocessing, {failure}");
       call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
 
       let _ = fs::write(
@@ -348,7 +348,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   ) {
     Ok(_) => (),
     Err(failure) => {
-      eprintln!("\nfailed preprocessing, {}", failure);
+      eprintln!("\nfailed preprocessing, {failure}");
       call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
       return Err(failure.msg);
     }
@@ -367,7 +367,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     match codegen::gen_ir::emit_ir(&entries.init_fn, &entries.reload_fn, emit_path) {
       Ok(_) => (),
       Err(failure) => {
-        eprintln!("\nfailed codegen, {}", failure);
+        eprintln!("\nfailed codegen, {failure}");
         call_stack::display_stack(&failure, &gen_stack::get_gen_stack(), None)?;
         return Err(failure);
       }
@@ -377,7 +377,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     match codegen::emit_js::emit_js(&entries.init_ns, emit_path) {
       Ok(_) => (),
       Err(failure) => {
-        eprintln!("\nfailed codegen, {}", failure);
+        eprintln!("\nfailed codegen, {failure}");
         call_stack::display_stack(&failure, &gen_stack::get_gen_stack(), None)?;
         return Err(failure);
       }
@@ -392,8 +392,8 @@ fn throw_on_js_warnings(warnings: &[LocatedWarning], js_file_path: &Path) -> Res
   if !warnings.is_empty() {
     let mut content: String = String::from("");
     for warn in warnings {
-      println!("{}", warn);
-      content = format!("{}\n{}", content, warn);
+      println!("{warn}");
+      content = format!("{content}\n{warn}");
     }
 
     let _ = fs::write(js_file_path, format!("export default \"{}\";", content.trim().escape_default()));
@@ -411,8 +411,8 @@ fn throw_on_warnings(warnings: &[LocatedWarning]) -> Result<(), String> {
   if !warnings.is_empty() {
     let mut content: String = String::from("");
     for warn in warnings {
-      println!("{}", warn);
-      content = format!("{}\n{}", content, warn);
+      println!("{warn}");
+      content = format!("{content}\n{warn}");
     }
 
     Err(format!("Found {} warnings in preprocessing, re-run blocked.", warnings.len()))

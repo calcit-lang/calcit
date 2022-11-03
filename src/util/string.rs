@@ -114,7 +114,7 @@ pub fn extract_ns_def(s: &str) -> Result<(String, String), String> {
   if pieces.len() == 2 {
     Ok((pieces[0].to_owned(), pieces[1].to_owned()))
   } else {
-    Err(format!("invalid ns format: {}", s))
+    Err(format!("invalid ns format: {s}"))
   }
 }
 

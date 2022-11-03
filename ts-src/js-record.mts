@@ -143,7 +143,8 @@ export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
       return new CalcitRecord(proto.name, proto.fields, data.values);
     } else {
       let values: Array<CalcitValue> = [];
-      for (let field of proto.fields) {
+      for (let i = 0; i < proto.fields.length; i++) {
+        let field = proto.fields[i];
         let idx = findInFields(data.fields, field);
         if (idx < 0) {
           throw new Error(`Cannot find field ${field} among ${data.fields}`);
@@ -153,23 +154,26 @@ export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
       return new CalcitRecord(proto.name, proto.fields, values);
     }
   } else if (data instanceof CalcitMap || data instanceof CalcitSliceMap) {
-    let pairs: Array<[CalcitKeyword, CalcitValue]> = [];
-    for (let [k, v] of data.pairs()) {
-      pairs.push([castKwd(k), v]);
+    let pairs_buffer: Array<[CalcitKeyword, CalcitValue]> = [];
+    let pairs = data.pairs();
+    for (let i = 0; i < pairs.length; i++) {
+      let [k, v] = pairs[i];
+      pairs_buffer.push([castKwd(k), v]);
     }
     // mutable sort
-    pairs.sort((pair1, pair2) => pair1[0].cmp(pair2[0]));
+    pairs_buffer.sort((pair1, pair2) => pair1[0].cmp(pair2[0]));
 
     let values: Array<CalcitValue> = [];
-    outerLoop: for (let field of proto.fields) {
-      for (let idx = 0; idx < pairs.length; idx++) {
-        let pair = pairs[idx];
+    outerLoop: for (let i = 0; i < proto.fields.length; i++) {
+      let field = proto.fields[i];
+      for (let idx = 0; idx < pairs_buffer.length; idx++) {
+        let pair = pairs_buffer[idx];
         if (pair[0] === field) {
           values.push(pair[1]);
           continue outerLoop; // dirty code for performance
         }
       }
-      throw new Error(`Cannot find field ${field} among ${pairs}`);
+      throw new Error(`Cannot find field ${field} among ${pairs_buffer}`);
     }
     return new CalcitRecord(proto.name, proto.fields, values);
   } else {

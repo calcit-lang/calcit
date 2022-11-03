@@ -68,7 +68,7 @@ pub fn tmpl_tail_recursion(
   let times_var = js_gensym("times");
   let body = body0.replace(return_mark, &ret_var); // dirty trick for injection
 
-  let check_recur_args = check_args.replace("arguments.length", &format!("{}.args.length", ret_var));
+  let check_recur_args = check_args.replace("arguments.length", &format!("{ret_var}.args.length"));
 
   format!(
     "{async_prefix}function {name}({args_code}) {{

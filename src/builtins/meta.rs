@@ -31,7 +31,7 @@ lazy_static! {
 
 pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("type-of expected 1 argument, got: {:?}", xs));
+    return CalcitErr::err_str(format!("type-of expected 1 argument, got: {xs:?}"));
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::kwd("nil")),
@@ -54,7 +54,8 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Calcit::Proc(..) => Ok(Calcit::kwd("fn")), // special kind proc, but also fn
     Calcit::Macro { .. } => Ok(Calcit::kwd("macro")),
     Calcit::Fn { .. } => Ok(Calcit::kwd("fn")),
-    Calcit::Syntax(..) => Ok(Calcit::kwd("synta")),
+    Calcit::Syntax(..) => Ok(Calcit::kwd("syntax")),
+    Calcit::Method(..) => Ok(Calcit::kwd("method")),
   }
 }
 
@@ -90,7 +91,7 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
     Calcit::Symbol { sym, .. } => Cirru::Leaf((**sym).into()),
     Calcit::Syntax(s, _ns) => Cirru::Leaf(s.to_string().into()),
     Calcit::Proc(s) => Cirru::Leaf((**s).into()),
-    a => Cirru::leaf(format!("{}", a)),
+    a => Cirru::leaf(format!("{a}")),
   }
 }
 
@@ -127,7 +128,7 @@ pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(size) => Some(size),
       Err(e) => return CalcitErr::err_str(e),
     },
-    Some(a) => return CalcitErr::err_str(format!("expected usize, got: {}", a)),
+    Some(a) => return CalcitErr::err_str(format!("expected usize, got: {a}")),
     None => None, // nanoid defaults to 21
   };
 
@@ -141,7 +142,7 @@ pub fn generate_id(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Str(gen_core_id()))
     }
-    (a, b) => CalcitErr::err_str(format!("generate-id! expected size or charset, got: {:?} {:?}", a, b)),
+    (a, b) => CalcitErr::err_str(format!("generate-id! expected size or charset, got: {a:?} {b:?}")),
   }
 }
 
@@ -154,9 +155,9 @@ pub fn parse_cirru_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
       Ok(nodes) => Ok(cirru::cirru_to_calcit(&Cirru::List(nodes))),
-      Err(e) => CalcitErr::err_str(format!("parse-cirru-list failed, {}", e)),
+      Err(e) => CalcitErr::err_str(format!("parse-cirru-list failed, {e}")),
     },
-    Some(a) => CalcitErr::err_str(format!("parse-cirru-list expected a string, got: {}", a)),
+    Some(a) => CalcitErr::err_str(format!("parse-cirru-list expected a string, got: {a}")),
     None => CalcitErr::err_str("parse-cirru-list expected 1 argument"),
   }
 }
@@ -166,9 +167,9 @@ pub fn parse_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
       Ok(nodes) => Ok(Calcit::CirruQuote(Cirru::List(nodes))),
-      Err(e) => CalcitErr::err_str(format!("parse-cirru failed, {}", e)),
+      Err(e) => CalcitErr::err_str(format!("parse-cirru failed, {e}")),
     },
-    Some(a) => CalcitErr::err_str(format!("parse-cirru expected a string, got: {}", a)),
+    Some(a) => CalcitErr::err_str(format!("parse-cirru expected a string, got: {a}")),
     None => CalcitErr::err_str("parse-cirru expected 1 argument"),
   }
 }
@@ -182,10 +183,10 @@ pub fn format_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           if let Cirru::List(ys) = v {
             Ok(Calcit::Str(cirru_parser::format(&ys, options)?.into()))
           } else {
-            CalcitErr::err_str(format!("expected vector for Cirru formatting: {}", v))
+            CalcitErr::err_str(format!("expected vector for Cirru formatting: {v}"))
           }
         }
-        Err(e) => CalcitErr::err_str(format!("format-cirru failed, {}", e)),
+        Err(e) => CalcitErr::err_str(format!("format-cirru failed, {e}")),
       }
     }
     None => CalcitErr::err_str("parse-cirru expected 1 argument"),
@@ -196,9 +197,9 @@ pub fn parse_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match cirru_edn::parse(s) {
       Ok(nodes) => Ok(edn::edn_to_calcit(&nodes)),
-      Err(e) => CalcitErr::err_str(format!("parse-cirru-edn failed, {}", e)),
+      Err(e) => CalcitErr::err_str(format!("parse-cirru-edn failed, {e}")),
     },
-    Some(a) => CalcitErr::err_str(format!("parse-cirru-edn expected a string, got: {}", a)),
+    Some(a) => CalcitErr::err_str(format!("parse-cirru-edn expected a string, got: {a}")),
     None => CalcitErr::err_str("parse-cirru-edn expected 1 argument"),
   }
 }
@@ -212,18 +213,18 @@ pub fn format_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn cirru_quote_to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("&cirru-quote:to-list expected 1 argument, got: {:?}", xs));
+    return CalcitErr::err_str(format!("&cirru-quote:to-list expected 1 argument, got: {xs:?}"));
   }
   match &xs[0] {
     Calcit::CirruQuote(ys) => Ok(cirru_to_calcit(ys)),
-    a => CalcitErr::err_str(format!("&cirru-quote:to-list got invalid data: {}", a)),
+    a => CalcitErr::err_str(format!("&cirru-quote:to-list got invalid data: {a}")),
   }
 }
 
 /// missing location for a dynamic symbol
 pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("turn-symbol expected 1 argument, got: {:?}", xs));
+    return CalcitErr::err_str(format!("turn-symbol expected 1 argument, got: {xs:?}"));
   }
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::Symbol {
@@ -241,19 +242,19 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       location: None,
     }),
     a @ Calcit::Symbol { .. } => Ok(a.to_owned()),
-    a => CalcitErr::err_str(format!("turn-symbol cannot turn this to symbol: {}", a)),
+    a => CalcitErr::err_str(format!("turn-symbol cannot turn this to symbol: {a}")),
   }
 }
 
 pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("turn-keyword cannot turn this to keyword: {:?}", xs));
+    return CalcitErr::err_str(format!("turn-keyword cannot turn this to keyword: {xs:?}"));
   }
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::kwd(s)),
     Calcit::Keyword(s) => Ok(Calcit::Keyword(s.to_owned())),
     Calcit::Symbol { sym, .. } => Ok(Calcit::kwd(sym)),
-    a => CalcitErr::err_str(format!("turn-keyword cannot turn this to keyword: {}", a)),
+    a => CalcitErr::err_str(format!("turn-keyword cannot turn this to keyword: {a}")),
   }
 }
 
@@ -268,7 +269,7 @@ pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if invoke_args.is_empty() {
     return Err(CalcitErr::use_msg_stack(
-      format!("expected operand for method invoking: {:?}", invoke_args),
+      format!("expected operand for method invoking: {invoke_args:?}"),
       call_stack,
     ));
   }
@@ -287,7 +288,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, None, call_stack)?,
     x => {
       return Err(CalcitErr::use_msg_stack_location(
-        format!("cannot decide a class from: {}", x),
+        format!("cannot decide a class from: {x}"),
         call_stack,
         x.get_location(),
       ))
@@ -306,11 +307,11 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
             } => runner::run_fn(&method_args, scope, args, body, def_ns.to_owned(), call_stack),
             Calcit::Proc(proc) => builtins::handle_proc(proc, &method_args, call_stack),
             Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
-              format!("cannot get syntax here since instance is always evaluated, got: {}", syn),
+              format!("cannot get syntax here since instance is always evaluated, got: {syn}"),
               call_stack,
             )),
             y => Err(CalcitErr::use_msg_stack_location(
-              format!("expected a function to invoke, got: {}", y),
+              format!("expected a function to invoke, got: {y}"),
               call_stack,
               y.get_location(),
             )),
@@ -319,14 +320,14 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
         None => {
           let content = fields.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
           Err(CalcitErr::use_msg_stack(
-            format!("unknown field `{}` in: {}", name, content),
+            format!("unknown field `{name}` in: {content}"),
             call_stack,
           ))
         }
       }
     }
     x => Err(CalcitErr::use_msg_stack_location(
-      format!("method invoking expected a record as class, got: {}", x),
+      format!("method invoking expected a record as class, got: {x}"),
       call_stack,
       x.get_location(),
     )),
@@ -335,7 +336,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
 
 pub fn native_compare(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_str(format!("&compare expected 2 values, got {:?}", xs));
+    return CalcitErr::err_str(format!("&compare expected 2 values, got {xs:?}"));
   }
   match xs[0].cmp(&xs[1]) {
     Ordering::Less => Ok(Calcit::Number(-1.0)),
@@ -352,16 +353,16 @@ pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (Calcit::Tuple(a, b), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(0) => Ok((**a).to_owned()),
       Ok(1) => Ok((**b).to_owned()),
-      Ok(m) => CalcitErr::err_str(format!("Tuple only got 2 elements, trying to index with {}", m)),
-      Err(e) => CalcitErr::err_str(format!("&tuple:nth expect usize, {}", e)),
+      Ok(m) => CalcitErr::err_str(format!("Tuple only got 2 elements, trying to index with {m}")),
+      Err(e) => CalcitErr::err_str(format!("&tuple:nth expect usize, {e}")),
     },
-    (a, b) => CalcitErr::err_str(format!("&tuple:nth expected a tuple and an index, got: {} {}", a, b)),
+    (a, b) => CalcitErr::err_str(format!("&tuple:nth expected a tuple and an index, got: {a} {b}")),
   }
 }
 
 pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
-    return CalcitErr::err_str(format!("tuple:assoc expected 3 arguments, got: {:?}", xs));
+    return CalcitErr::err_str(format!("tuple:assoc expected 3 arguments, got: {xs:?}"));
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Tuple(a0, a1), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -371,12 +372,12 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         } else if idx == 1 {
           Ok(Calcit::Tuple(a0.to_owned(), Arc::new(xs[2].to_owned())))
         } else {
-          CalcitErr::err_str(format!("Tuple only has fields of 0,1 , unknown index: {}", idx))
+          CalcitErr::err_str(format!("Tuple only has fields of 0,1 , unknown index: {idx}"))
         }
       }
       Err(e) => CalcitErr::err_str(e),
     },
-    (a, b, ..) => CalcitErr::err_str(format!("tuple:assoc expected a tuple, got: {} {}", a, b)),
+    (a, b, ..) => CalcitErr::err_str(format!("tuple:assoc expected a tuple, got: {a} {b}")),
   }
 }
 
@@ -416,17 +417,17 @@ pub fn async_sleep(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calci
 
 pub fn format_ternary_tree(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("&format-ternary-tree expected 1 argument, got: {:?}", xs));
+    return CalcitErr::err_str(format!("&format-ternary-tree expected 1 argument, got: {xs:?}"));
   }
   match &xs[0] {
     Calcit::List(ys) => Ok(Calcit::Str(ys.format_inline().into())),
-    a => CalcitErr::err_str(format!("&format-ternary-tree expected a list, got: {}", a)),
+    a => CalcitErr::err_str(format!("&format-ternary-tree expected a list, got: {a}")),
   }
 }
 
 pub fn buffer(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
-    return CalcitErr::err_str(format!("&buffer expected hex values: {:?}", xs));
+    return CalcitErr::err_str(format!("&buffer expected hex values: {xs:?}"));
   }
   let mut buf: Vec<u8> = Vec::new();
   for x in xs {
@@ -442,16 +443,16 @@ pub fn buffer(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
               if b.len() == 1 {
                 buf.push(b[0])
               } else {
-                return CalcitErr::err_str(format!("hex for buffer might be too large, got: {:?}", b));
+                return CalcitErr::err_str(format!("hex for buffer might be too large, got: {b:?}"));
               }
             }
-            Err(e) => return CalcitErr::err_str(format!("expected length 2 hex string in buffer, got: {} {}", y, e)),
+            Err(e) => return CalcitErr::err_str(format!("expected length 2 hex string in buffer, got: {y} {e}")),
           }
         } else {
-          return CalcitErr::err_str(format!("expected length 2 hex string in buffer, got: {}", y));
+          return CalcitErr::err_str(format!("expected length 2 hex string in buffer, got: {y}"));
         }
       }
-      _ => return CalcitErr::err_str(format!("expected hex string in buffer, got: {}", x)),
+      _ => return CalcitErr::err_str(format!("expected hex string in buffer, got: {x}")),
     }
   }
   Ok(Calcit::Buffer(buf))
@@ -459,7 +460,7 @@ pub fn buffer(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn hash(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("&hash expected 1 argument, got: {:?}", xs));
+    return CalcitErr::err_str(format!("&hash expected 1 argument, got: {xs:?}"));
   }
 
   let mut s = DefaultHasher::new();
@@ -470,7 +471,7 @@ pub fn hash(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 // extract out calcit internal meta code
 pub fn extract_code_into_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("&extract-code-into-edn expected 1 argument, got: {:?}", xs));
+    return CalcitErr::err_str(format!("&extract-code-into-edn expected 1 argument, got: {xs:?}"));
   }
   Ok(edn_to_calcit(&dump_code(&xs[0])))
 }

@@ -44,7 +44,7 @@ pub fn cpu_time(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let time = match now.checked_duration_since(started) {
     Some(n) => (n.as_micros() as f64) / 1000.0,
     None => {
-      println!("[Warn] got none CPU time from: {:?} -> {:?}", started, now);
+      println!("[Warn] got none CPU time from: {started:?} -> {now:?}");
       0.0
     }
   };
@@ -83,7 +83,7 @@ pub fn quit(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(code) => exit(code),
       Err(e) => unreachable!("quit failed to get code from f64, {}", e),
     },
-    Some(a) => CalcitErr::err_str(format!("quit expected i32 value, got: {}", a)),
+    Some(a) => CalcitErr::err_str(format!("quit expected i32 value, got: {a}")),
     None => CalcitErr::err_str("quit expected a code, got nothing"),
   }
 }
@@ -97,19 +97,19 @@ pub fn get_env(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(v) => {
         let has_default = xs.len() == 2;
         if has_default {
-          println!("(get-env {}): {}", s, v);
+          println!("(get-env {s}): {v}");
         }
         Ok(Calcit::Str(v.into()))
       }
       Err(e) => match xs.get(1) {
         Some(v0) => Ok(v0.to_owned()),
         None => {
-          println!("(get-env {}): {}", s, e);
+          println!("(get-env {s}): {e}");
           Ok(Calcit::Nil)
         }
       },
     },
-    Some(a) => CalcitErr::err_str(format!("get-env expected a string, got {}", a)),
+    Some(a) => CalcitErr::err_str(format!("get-env expected a string, got {a}")),
     None => CalcitErr::err_str("get-env expected an argument, got nothing"),
   }
 }
@@ -118,9 +118,9 @@ pub fn read_file(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match fs::read_to_string(&**s) {
       Ok(content) => Ok(Calcit::Str(content.into())),
-      Err(e) => CalcitErr::err_str(format!("read-file failed at {}: {}", &**s, e)),
+      Err(e) => CalcitErr::err_str(format!("read-file failed at {}: {e}", &**s)),
     },
-    Some(a) => CalcitErr::err_str(format!("read-file expected a string, got: {}", a)),
+    Some(a) => CalcitErr::err_str(format!("read-file expected a string, got: {a}")),
     None => CalcitErr::err_str("read-file expected a filename, got nothing"),
   }
 }
@@ -129,9 +129,9 @@ pub fn write_file(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(path)), Some(Calcit::Str(content))) => match fs::write(&**path, &**content) {
       Ok(_) => Ok(Calcit::Nil),
-      Err(e) => CalcitErr::err_str(format!("write-file failed, {}", e)),
+      Err(e) => CalcitErr::err_str(format!("write-file failed, {e}")),
     },
-    (Some(a), Some(b)) => CalcitErr::err_str(format!("write-file expected 3 strings, got: {} {}", a, b)),
-    (a, b) => CalcitErr::err_str(format!("write-file expected 2 strings, got: {:?} {:?}", a, b)),
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("write-file expected 3 strings, got: {a} {b}")),
+    (a, b) => CalcitErr::err_str(format!("write-file expected 2 strings, got: {a:?} {b:?}")),
   }
 }

@@ -286,7 +286,8 @@ export let hashFunction = (x: CalcitValue): Hash => {
     let base = defaultHash_map;
     let pairs = x.pairs();
     pairs.sort((a, b) => _$n_compare(a[0], b[0]));
-    for (let [k, v] of pairs) {
+    for (let idx = 0; idx < pairs.length; idx++) {
+      let [k, v] = pairs[idx];
       base = mergeValueHash(base, hashFunction(k));
       base = mergeValueHash(base, hashFunction(v));
     }
@@ -298,7 +299,8 @@ export let hashFunction = (x: CalcitValue): Hash => {
 
     let pairs = x.pairs();
     pairs.sort((a, b) => _$n_compare(a[0], b[0]));
-    for (let [k, v] of pairs) {
+    for (let idx = 0; idx < pairs.length; idx++) {
+      let [k, v] = pairs[idx];
       base = mergeValueHash(base, hashFunction(k));
       base = mergeValueHash(base, hashFunction(v));
     }
@@ -441,7 +443,9 @@ export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
   }
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
     let result: Record<string, CalcitValue> = {};
-    for (let [k, v] of x.pairs()) {
+    let pairs = x.pairs();
+    for (let idx = 0; idx < pairs.length; idx++) {
+      let [k, v] = pairs[idx];
       var key = to_js_data(k, addColon);
       result[key] = to_js_data(v, addColon);
     }
@@ -552,7 +556,9 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
       if (x.len() !== y.len()) {
         return false;
       }
-      for (let [k, v] of x.pairs()) {
+      let pairs = x.pairs();
+      for (let idx = 0; idx < pairs.length; idx++) {
+        let [k, v] = pairs[idx];
         if (!y.contains(k)) {
           return false;
         }

@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.6.9";
+export const calcit_version = "0.6.11";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -243,7 +243,9 @@ export let _$n_list_$o_includes_$q_ = (xs: CalcitValue, x: CalcitValue): boolean
 
 export let _$n_map_$o_includes_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
   if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
-    for (let [k, v] of xs.pairs()) {
+    let pairs = xs.pairs();
+    for (let idx = 0; idx < pairs.length; idx = idx + 1) {
+      let v = pairs[idx][1];
       if (_$n__$e_(v, x)) {
         return true;
       }
@@ -637,7 +639,8 @@ export let _$n_list_$o_slice = (xs: CalcitList, from: number, to: number): Calci
 
 export let _$n_list_$o_concat = (...lists: (CalcitList | CalcitSliceList)[]): CalcitList | CalcitSliceList => {
   let result: CalcitSliceList | CalcitList = new CalcitSliceList([]);
-  for (let item of lists) {
+  for (let idx = 0; idx < lists.length; idx++) {
+    let item = lists[idx];
     if (item == null) {
       continue;
     }
@@ -726,19 +729,21 @@ export let _$n_merge = (a: CalcitValue, b: CalcitMap | CalcitSliceMap): CalcitVa
   if (a instanceof CalcitRecord) {
     if (b instanceof CalcitMap || b instanceof CalcitSliceMap) {
       let values = [];
-      for (let item of a.values) {
-        values.push(item);
+      for (let idx = 0; idx < a.values.length; idx++) {
+        values.push(a.values[idx]);
       }
-      for (let [k, v] of b.pairs()) {
+      let pairs = b.pairs();
+      for (let idx = 0; idx < pairs.length; idx++) {
+        let [k, v] = pairs[idx];
         let field: CalcitKeyword;
         if (k instanceof CalcitKeyword) {
           field = k;
         } else {
           field = kwd(getStringName(k));
         }
-        let idx = a.findIndex(field);
-        if (idx >= 0) {
-          values[idx] = v;
+        let position = a.findIndex(field);
+        if (position >= 0) {
+          values[position] = v;
         } else {
           throw new Error(`Cannot find field ${field} among (${a.fields.join(", ")})`);
         }
@@ -769,8 +774,9 @@ export let _$n_merge_non_nil = (a: CalcitMap | CalcitSliceMap, b: CalcitMap | Ca
 export let to_pairs = (xs: CalcitValue): CalcitValue | CalcitSliceList => {
   if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
     let result: Array<CalcitSliceList> = [];
-    for (let [k, v] of xs.pairs()) {
-      result.push(new CalcitSliceList([k, v]));
+    let pairs = xs.pairs();
+    for (let idx = 0; idx < pairs.length; idx++) {
+      result.push(new CalcitSliceList(pairs[idx]));
     }
     return new CalcitSet(result);
   } else if (xs instanceof CalcitRecord) {
@@ -1267,55 +1273,62 @@ export let register_calcit_builtin_classes = (options: typeof calcit_builtin_cla
   Object.assign(calcit_builtin_classes, options);
 };
 
-export function invoke_method(p: string) {
+/** method used as closure */
+export function invoke_method_closure(p: string) {
   return (obj: CalcitValue, ...args: CalcitValue[]) => {
-    let klass: CalcitRecord;
-    let value = obj;
-    if (obj == null) {
-      klass = calcit_builtin_classes.nil;
-    } else if (obj instanceof CalcitTuple) {
-      if (obj.fst instanceof CalcitRecord) {
-        klass = obj.fst;
-      } else {
-        throw new Error("Method invoking expected a record as class");
-      }
-    } else if (typeof obj === "number") {
-      klass = calcit_builtin_classes.number;
-    } else if (typeof obj === "string") {
-      klass = calcit_builtin_classes.string;
-    } else if (typeof obj === "function") {
-      klass = calcit_builtin_classes.fn;
-    } else if (obj instanceof CalcitSet) {
-      klass = calcit_builtin_classes.set;
-    } else if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
-      klass = calcit_builtin_classes.list;
-    } else if (obj instanceof CalcitRecord) {
-      klass = calcit_builtin_classes.record;
-    } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
-      klass = calcit_builtin_classes.map;
-    } else {
-      if ((obj as any)[p] == null) {
-        throw new Error(`Missing method \`${p}\` on object`);
-      }
-      return (obj as any)[p](...args); // trying to call native JavaScript method
-    }
-    if (klass == null) throw new Error("Cannot find class for this object for invoking");
-
-    if (!klass.contains(p)) throw new Error(`Missing method '${p}' for object: ${obj}`);
-
-    let method = klass.get(p);
-    if (typeof method === "function") {
-      return method(value, ...args);
-    } else {
-      throw new Error("Method for invoking is not a function");
-    }
+    return invoke_method(p, obj, ...args);
   };
+}
+
+export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[]) {
+  let klass: CalcitRecord;
+  let value = obj;
+  if (obj == null) {
+    klass = calcit_builtin_classes.nil;
+  } else if (obj instanceof CalcitTuple) {
+    if (obj.fst instanceof CalcitRecord) {
+      klass = obj.fst;
+    } else {
+      throw new Error("Method invoking expected a record as class");
+    }
+  } else if (typeof obj === "number") {
+    klass = calcit_builtin_classes.number;
+  } else if (typeof obj === "string") {
+    klass = calcit_builtin_classes.string;
+  } else if (typeof obj === "function") {
+    klass = calcit_builtin_classes.fn;
+  } else if (obj instanceof CalcitSet) {
+    klass = calcit_builtin_classes.set;
+  } else if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
+    klass = calcit_builtin_classes.list;
+  } else if (obj instanceof CalcitRecord) {
+    klass = calcit_builtin_classes.record;
+  } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
+    klass = calcit_builtin_classes.map;
+  } else {
+    if ((obj as any)[p] == null) {
+      throw new Error(`Missing method \`${p}\` on object`);
+    }
+    return (obj as any)[p](...args); // trying to call native JavaScript method
+  }
+  if (klass == null) throw new Error("Cannot find class for this object for invoking");
+
+  if (!klass.contains(p)) throw new Error(`Missing method '${p}' for object: ${obj}`);
+
+  let method = klass.get(p);
+  if (typeof method === "function") {
+    return method(value, ...args);
+  } else {
+    throw new Error("Method for invoking is not a function");
+  }
 }
 
 export let _$n_map_$o_to_list = (m: CalcitValue): CalcitSliceList => {
   if (m instanceof CalcitMap || m instanceof CalcitSliceMap) {
     let ys = [];
-    for (let pair of m.pairs()) {
+    let pairs = m.pairs();
+    for (let idx = 0; idx < pairs.length; idx++) {
+      let pair = pairs[idx];
       ys.push(new CalcitSliceList(pair));
     }
     return new CalcitSliceList(ys);

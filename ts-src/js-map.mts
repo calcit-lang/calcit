@@ -68,7 +68,9 @@ export class CalcitMap {
   }
   toString(shorter = false, disableJsDataWarning = false) {
     let itemsCode = "";
-    for (let [k, v] of this.pairs()) {
+    let pairs = this.pairs();
+    for (let idx = 0; idx < pairs.length; idx++) {
+      let [k, v] = pairs[idx];
       if (shorter) {
         let keyPart = isNestedCalcitData(k) ? tipNestedCalcitData(k) : toString(k, true, disableJsDataWarning);
         let valuePart = isNestedCalcitData(v) ? tipNestedCalcitData(v) : toString(v, true, disableJsDataWarning);
@@ -254,7 +256,9 @@ export class CalcitSliceMap {
   }
   toString(shorter = false, disableJsDataWarning = false) {
     let itemsCode = "";
-    for (let [k, v] of this.pairs()) {
+    let pairs = this.pairs();
+    for (let idx = 0; idx < pairs.length; idx++) {
+      let [k, v] = pairs[idx];
       if (shorter) {
         let keyPart = isNestedCalcitData(k) ? tipNestedCalcitData(k) : toString(k, true, disableJsDataWarning);
         let valuePart = isNestedCalcitData(v) ? tipNestedCalcitData(v) : toString(v, true, disableJsDataWarning);

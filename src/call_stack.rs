@@ -27,6 +27,7 @@ impl fmt::Display for CalcitStack {
 pub enum StackKind {
   Fn,
   Proc,
+  Method,
   Macro,
   /// tracks builtin syntax
   Syntax,
@@ -39,6 +40,7 @@ impl fmt::Display for StackKind {
     match &self {
       Self::Fn => write!(f, "fn"),
       Self::Proc => write!(f, "proc"),
+      Self::Method => write!(f, "method"),
       Self::Macro => write!(f, "macro"),
       Self::Syntax => write!(f, "syntax"),
       Self::Codegen => write!(f, "codegen"),
@@ -78,7 +80,7 @@ pub fn show_stack(stack: &CallStackList) {
 }
 
 pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc<NodeLocation>>) -> Result<(), String> {
-  eprintln!("\nFailure: {}", failure);
+  eprintln!("\nFailure: {failure}");
   eprintln!("\ncall stack:");
 
   for s in stack {
@@ -117,7 +119,7 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc
     true,
   )?;
   let _ = fs::write(ERROR_SNAPSHOT, content);
-  eprintln!("\nrun `cat {}` to read stack details.", ERROR_SNAPSHOT);
+  eprintln!("\nrun `cat {ERROR_SNAPSHOT}` to read stack details.");
   Ok(())
 }
 
