@@ -63,10 +63,10 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
           }
           Ok(rules)
         }
-        (_, x, _) if x.eq_leaf(":as") => Err(String::from("invalid import rule")),
-        (_, x, _) if x.eq_leaf(":default") => Err(String::from("invalid default rule")),
-        (_, x, _) if x.eq_leaf(":refer") => Err(String::from("invalid import rule")),
-        _ if xs.len() != 3 => Err(format!("expected import rule has length 3: {}", Cirru::List(xs.to_owned()))),
+        (_, x, _) if x.eq_leaf(":as") => Err(format!("invalid import rule: {nodes}")),
+        (_, x, _) if x.eq_leaf(":default") => Err(format!("invalid default rule: {nodes}")),
+        (_, x, _) if x.eq_leaf(":refer") => Err(format!("invalid import rule: {nodes}")),
+        _ if xs.len() != 3 => Err(format!("expected import rule has length 3: {nodes}")),
         _ => Err(String::from("unknown rule")),
       }
     }
