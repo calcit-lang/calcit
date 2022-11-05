@@ -151,6 +151,13 @@ pub enum Calcit {
   /// Method is kind like macro, it's handled during preprocessing, into `&invoke` or `&invoke-native`
   /// method name, method kind
   Method(Arc<str>, MethodKind),
+  /// currently only JavaScript calls are handled
+  RawCode(RawCodeType, Arc<str>),
+}
+
+#[derive(Debug, Clone)]
+pub enum RawCodeType {
+  Js,
 }
 
 impl fmt::Display for Calcit {
@@ -279,6 +286,7 @@ impl fmt::Display for Calcit {
       }
       Calcit::Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
       Calcit::Method(name, method_kind) => f.write_str(&format!("(&{method_kind} {name})")),
+      Calcit::RawCode(_, code) => f.write_str(&format!("(&raw-code {code})")),
     }
   }
 }
@@ -432,6 +440,10 @@ impl Hash for Calcit {
         name.hash(_state);
         call_native.hash(_state);
       }
+      Calcit::RawCode(_name, code) => {
+        "raw-code:".hash(_state);
+        code.hash(_state);
+      }
     }
   }
 }
@@ -548,6 +560,10 @@ impl Ord for Calcit {
         Equal => na.cmp(nb),
         v => v,
       },
+      (Calcit::Method(..), _) => Less,
+      (_, Calcit::Method(..)) => Greater,
+
+      (Calcit::RawCode(_, a), Calcit::RawCode(_, b)) => a.cmp(b),
     }
   }
 }

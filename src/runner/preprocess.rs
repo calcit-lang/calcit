@@ -3,8 +3,8 @@ use crate::{
   call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
   primes,
   primes::{
-    Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, ImportRule, LocatedWarning, NodeLocation, SymbolResolved::*,
-    GENERATED_DEF,
+    Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, ImportRule, LocatedWarning, NodeLocation, RawCodeType,
+    SymbolResolved::*, GENERATED_DEF,
   },
   program, runner,
 };
@@ -153,20 +153,7 @@ pub fn preprocess_expr(
     } => match runner::parse_ns_def(def) {
       Some((ns_alias, def_part)) => {
         if &*ns_alias == "js" {
-          Ok((
-            Calcit::Symbol {
-              sym: def.to_owned(),
-              ns: def_ns.to_owned(),
-              at_def: at_def.to_owned(),
-              resolved: Some(Arc::new(ResolvedDef {
-                ns: String::from("js").into(),
-                def: (*def_part).into(),
-                rule: None,
-              })),
-              location: location.to_owned(),
-            },
-            None,
-          ))
+          Ok((Calcit::RawCode(RawCodeType::Js, def_part), None))
         } else if let Some(target_ns) = program::lookup_ns_target_in_import(def_ns.to_owned(), &ns_alias) {
           // TODO js syntax to handle in future
           preprocess_ns_def(target_ns, def_part, def.to_owned(), None, check_warnings, call_stack)

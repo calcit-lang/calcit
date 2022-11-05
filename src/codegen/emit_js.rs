@@ -98,24 +98,6 @@ fn escape_ns(name: &str) -> String {
   format!("${}", escape_var(&piece))
 }
 
-fn escape_ns_var(name: &str, ns: &str) -> String {
-  if !has_ns_part(name) {
-    unreachable!("Invalid variable name `{}`, lack of namespace part", name)
-  }
-
-  let pieces: Vec<&str> = name.split('/').collect();
-  if pieces.len() != 2 {
-    unreachable!("Expected format of ns/def {}", name)
-  }
-  let ns_part = pieces[0];
-  let def_part = pieces[1];
-  if ns_part == "js" {
-    def_part.to_owned()
-  } else {
-    format!("{}.{}", escape_ns(ns), escape_var(def_part))
-  }
-}
-
 // code generated from calcit.core.cirru may not be faster enough,
 // possible way to use code from calcit.procs.ts
 fn is_preferred_js_proc(name: &str) -> bool {
@@ -267,6 +249,7 @@ fn to_js_code(
         let proc_prefix = get_proc_prefix(ns);
         Ok(format!("new {proc_prefix}CalcitCirruQuote({})", cirru_to_js(code)?))
       }
+      Calcit::RawCode(_, code) => Ok((**code).to_owned()),
       a => unreachable!("[Error] unknown kind to gen js code: {}", a),
     };
 
@@ -575,30 +558,30 @@ fn gen_symbol_code(
   // println!("gen symbol: {} {} {} {:?}", s, def_ns, ns, resolved);
   let var_prefix = if passed_defs.ns == primes::CORE_NS { "" } else { "$calcit." };
   if has_ns_part(s) {
-    if s.starts_with("js/") {
-      Ok(escape_ns_var(s, "js"))
-    } else {
-      let ns_part = s.split('/').collect::<Vec<&str>>()[0];
-      // TODO dirty code
-      // TODO namespace part supposed be parsed during preprocessing, this mimics old behaviors
-      match resolved {
-        Some(ResolvedDef {
-          ns: r_ns,
-          def: _r_def,
-          rule: _import_rule, /* None */
-        }) => {
-          if is_cirru_string(&r_ns) {
-            track_ns_import(ns_part, ImportedTarget::AsNs(r_ns), passed_defs.file_imports)?;
-            Ok(escape_ns_var(s, ns_part))
-          } else {
-            track_ns_import(&r_ns, ImportedTarget::AsNs(r_ns.to_owned()), passed_defs.file_imports)?;
-            Ok(escape_ns_var(s, &r_ns))
-          }
+    let pieces = s.split('/').collect::<Vec<&str>>();
+    let ns_part = pieces[0];
+    let def_part = pieces[1];
+    // TODO dirty code
+    // TODO namespace part supposed be parsed during preprocessing, this mimics old behaviors
+    match resolved {
+      Some(ResolvedDef {
+        ns: r_ns,
+        def: _r_def,
+        rule: _import_rule, /* None */
+      }) => {
+        if is_cirru_string(&r_ns) {
+          track_ns_import(ns_part, ImportedTarget::AsNs(r_ns), passed_defs.file_imports)?;
+          // Ok(escape_ns_var(s, ns_part))
+          Ok(format!("{}.{}", escape_ns(ns_part), escape_var(def_part)))
+        } else {
+          track_ns_import(&r_ns, ImportedTarget::AsNs(r_ns.to_owned()), passed_defs.file_imports)?;
+          // Ok(escape_ns_var(s, &r_ns))
+          Ok(format!("{}.{}", escape_ns(&r_ns), escape_var(def_part)))
         }
-        Some(ResolvedRaw) => Err(format!("not going to generate from raw symbol, {s}")),
-        Some(ResolvedLocal) => Err(format!("symbol with ns should not be local, {s}")),
-        None => Err(format!("expected symbol with ns being resolved: {xs:?}")),
       }
+      Some(ResolvedRaw) => Err(format!("not going to generate from raw symbol, {s}")),
+      Some(ResolvedLocal) => Err(format!("symbol with ns should not be local, {s}")),
+      None => Err(format!("expected symbol with ns being resolved: {xs:?}")),
     }
   } else if is_js_syntax_procs(s) || is_proc_name(s) || CalcitSyntax::is_valid(s) {
     // return Ok(format!("{}{}", var_prefix, escape_var(s)));
