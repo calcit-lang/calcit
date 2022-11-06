@@ -424,7 +424,7 @@ fn gen_call_code(
         "exists?" => {
           // not core syntax, but treat as macro for availability
           match body.get(0) {
-            Some(Calcit::Symbol { .. }) => {
+            Some(Calcit::Symbol { .. }) | Some(Calcit::RawCode(..)) => {
               let target = to_js_code(&body[0], ns, local_defs, file_imports, keywords, None)?; // TODO could be simpler
               Ok(format!("{return_code}(typeof {target} !== 'undefined')"))
             }
