@@ -56,6 +56,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Calcit::Fn { .. } => Ok(Calcit::kwd("fn")),
     Calcit::Syntax(..) => Ok(Calcit::kwd("syntax")),
     Calcit::Method(..) => Ok(Calcit::kwd("method")),
+    Calcit::RawCode(..) => Ok(Calcit::kwd("raw-code")),
   }
 }
 
