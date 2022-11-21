@@ -7,10 +7,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::builtins;
-use crate::builtins::is_proc_name;
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
 use crate::primes::{
-  Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, MethodKind, NodeLocation, SymbolResolved::*, CORE_NS,
+  Calcit, CalcitErr, CalcitItems, CalcitProc, CalcitScope, CalcitSyntax, CrListWrap, MethodKind, NodeLocation, SymbolResolved::*,
+  CORE_NS,
 };
 use crate::program;
 use crate::util::string::has_ns_part;
@@ -73,7 +73,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
         let ret = match &v {
           Calcit::Proc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-            builtins::handle_proc(p, &values, call_stack)
+            builtins::handle_proc(*p, &values, call_stack)
           }
           Calcit::Syntax(s, def_ns) => {
             let next_stack = extend_call_stack(
@@ -246,8 +246,8 @@ pub fn evaluate_symbol(
       } else if let Some(v) = scope.get(sym) {
         // although scope is detected first, it would trigger warning during preprocess
         Ok(v.to_owned())
-      } else if is_proc_name(sym) {
-        Ok(Calcit::Proc(sym.to_owned().into()))
+      } else if let Ok(p) = sym.parse::<CalcitProc>() {
+        Ok(Calcit::Proc(p))
       } else if program::lookup_def_code(CORE_NS, sym).is_some() {
         eval_symbol_from_program(sym, CORE_NS, call_stack)
       } else if program::has_def_code(file_ns, sym) {

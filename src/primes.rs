@@ -1,3 +1,5 @@
+mod eval_node;
+mod proc_name;
 mod syntax_name;
 
 use core::cmp::Ord;
@@ -14,6 +16,7 @@ use cirru_edn::{Edn, EdnKwd};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
+pub use proc_name::CalcitProc;
 use rpds::HashTrieMapSync;
 pub use syntax_name::CalcitSyntax;
 
@@ -128,7 +131,7 @@ pub enum Calcit {
   /// size of keys are values should be kept consistent
   Record(EdnKwd, Arc<Vec<EdnKwd>>, Arc<Vec<Calcit>>),
   /// native functions that providing feature from Rust
-  Proc(Arc<str>),
+  Proc(CalcitProc),
   Macro {
     name: Arc<str>,
     /// where it was defined

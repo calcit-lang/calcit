@@ -199,7 +199,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &TernaryTreeList::from(&[ret, x.to_owned()]), call_stack)?;
+          ret = builtins::handle_proc(*proc, &TernaryTreeList::from(&[ret, x.to_owned()]), call_stack)?;
         }
         Ok(ret)
       }
@@ -219,7 +219,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
       (Calcit::Set(xs), Calcit::Proc(proc)) => {
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(proc, &TernaryTreeList::from(&[ret, x.to_owned()]), call_stack)?;
+          ret = builtins::handle_proc(*proc, &TernaryTreeList::from(&[ret, x.to_owned()]), call_stack)?;
         }
         Ok(ret)
       }
@@ -240,7 +240,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
         for (k, x) in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(
-            proc,
+            *proc,
             &TernaryTreeList::from(&[ret, Calcit::List(TernaryTreeList::from(&[k.to_owned(), x.to_owned()]))]),
             call_stack,
           )?;
@@ -499,7 +499,7 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
         let mut xs2: Vec<&Calcit> = xs.into_iter().collect::<Vec<&Calcit>>();
         xs2.sort_by(|a, b| -> Ordering {
           let values = TernaryTreeList::from(&[(*a).to_owned(), (*b).to_owned()]);
-          let v = builtins::handle_proc(proc, &values, call_stack);
+          let v = builtins::handle_proc(*proc, &values, call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
             Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,

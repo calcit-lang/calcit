@@ -3,7 +3,7 @@ use crate::{
   call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
   primes,
   primes::{
-    Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, ImportRule, LocatedWarning, NodeLocation, RawCodeType,
+    Calcit, CalcitErr, CalcitItems, CalcitProc, CalcitScope, CalcitSyntax, ImportRule, LocatedWarning, NodeLocation, RawCodeType,
     SymbolResolved::*, GENERATED_DEF,
   },
   program, runner,
@@ -196,8 +196,8 @@ pub fn preprocess_expr(
             ),
             None,
           ))
-        } else if is_proc_name(def) {
-          Ok((Calcit::Proc(def.to_owned()), None))
+        } else if let Ok(p) = def.parse::<CalcitProc>() {
+          Ok((Calcit::Proc(p), None))
         } else if program::has_def_code(primes::CORE_NS, def) {
           preprocess_ns_def(
             primes::CORE_NS.into(),

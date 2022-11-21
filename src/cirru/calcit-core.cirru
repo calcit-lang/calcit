@@ -1558,7 +1558,7 @@
             :find-index find-index
             :find-last &list:find-last
             :find-last-index &list:find-last-index
-            :foldl $ defn foldl (xs v0 f) (foldl xs v0 f)
+            :foldl $ defn foldl' (xs v0 f) (foldl xs v0 f)
             :get &list:nth
             :get-in get-in
             :group-by group-by
@@ -1577,7 +1577,7 @@
             :reduce reduce
             :reverse &list:reverse
             :slice &list:slice
-            :sort $ defn sort (x y) (sort x y)
+            :sort $ defn sort' (x y) (sort x y)
             :sort-by &list:sort-by
             :take take
             :take-last take-last
