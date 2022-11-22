@@ -1,5 +1,5 @@
 use crate::{
-  builtins::{is_js_syntax_procs, is_proc_name},
+  builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
   primes,
   primes::{
@@ -209,6 +209,17 @@ pub fn preprocess_expr(
           )
         } else if program::has_def_code(def_ns, def) {
           preprocess_ns_def(def_ns.to_owned(), def.to_owned(), def.to_owned(), None, check_warnings, call_stack)
+        } else if is_registered_proc(def) {
+          Ok((
+            Calcit::Symbol {
+              sym: def.to_owned(),
+              ns: def_ns.to_owned(),
+              at_def: at_def.to_owned(),
+              resolved: Some(Arc::new(ResolvedRaw)),
+              location: location.to_owned(),
+            },
+            None,
+          ))
         } else {
           match program::lookup_def_target_in_import(def_ns, def) {
             Some(target_ns) => {

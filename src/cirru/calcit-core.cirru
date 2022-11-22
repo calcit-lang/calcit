@@ -109,7 +109,7 @@
 
         |apply-args $ quote
           defmacro apply-args (args f)
-            if (&= '[] (&list:first args))
+            if (&= [] (&list:first args))
               quasiquote
                 ~f (~@ (&list:rest args))
               quasiquote
@@ -980,7 +980,7 @@
               quasiquote
                 &let (~pattern ~v) ~@body
               if (list? pattern)
-                if (&= '[] (&list:first pattern))
+                if (&= [] (&list:first pattern))
                   quasiquote
                     let[] (~ (&list:rest pattern)) ~v ~@body
                   if (&= '{} (&list:first pattern))
@@ -1558,7 +1558,7 @@
             :find-index find-index
             :find-last &list:find-last
             :find-last-index &list:find-last-index
-            :foldl $ defn foldl' (xs v0 f) (foldl xs v0 f)
+            :foldl $ defn method:foldl (xs v0 f) (foldl xs v0 f)
             :get &list:nth
             :get-in get-in
             :group-by group-by
@@ -1577,7 +1577,7 @@
             :reduce reduce
             :reverse &list:reverse
             :slice &list:slice
-            :sort $ defn sort' (x y) (sort x y)
+            :sort $ defn method:sort (x y) (sort x y)
             :sort-by &list:sort-by
             :take take
             :take-last take-last

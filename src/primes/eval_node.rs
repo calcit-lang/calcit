@@ -1,3 +1,4 @@
+//! TODO
 //! "Eval Node" as an intermediate representation of AST.
 //! previous implementation was using Calcit List and less optimizations can be applied.
 
@@ -6,6 +7,7 @@ use std::sync::Arc;
 use crate::primes::Calcit;
 use crate::primes::CalcitProc;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum EvalNode {
   Proc(CalcitProc, Vec<EvalNode>),

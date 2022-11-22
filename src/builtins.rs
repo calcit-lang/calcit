@@ -22,189 +22,22 @@ pub type FnType = fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Cal
 pub type SyntaxType = fn(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
 lazy_static! {
-  static ref IMPORTED_PROCS: RwLock<HashMap<Arc<str>, FnType>> = RwLock::new(HashMap::new());
+  /// TODO dont use pub
+  pub static ref IMPORTED_PROCS: RwLock<HashMap<Arc<str>, FnType>> = RwLock::new(HashMap::new());
 }
 
 pub fn is_proc_name(s: &str) -> bool {
-  let builtin = matches!(
-    s,
-    // meta
-    "type-of"
-      | "recur"
-      | "format-to-lisp"
-      | "format-to-cirru"
-      | "&reset-gensym-index!"
-      | "&get-calcit-running-mode"
-      | "generate-id!"
-      | "turn-symbol"
-      | "turn-keyword"
-      | "&compare"
-      | "&get-os"
-      | "&format-ternary-tree"
-      | "&buffer"
-      | "&hash"
-      | "&extract-code-into-edn"
-      // tuples
-      | "::" // unstable
-      | "&tuple:nth"
-      | "&tuple:assoc"
-      // effects
-      | "&display-stack"
-      | "raise"
-      | "quit!"
-      | "get-env"
-      | "&get-calcit-backend"
-      | "read-file"
-      | "write-file"
-      // external format
-      | "parse-cirru"
-      | "parse-cirru-list"
-      | "format-cirru"
-      | "parse-cirru-edn"
-      | "format-cirru-edn"
-      | "&cirru-quote:to-list"
-      // time
-      | "cpu-time"
-      // logics
-      | "&="
-      | "&<"
-      | "&>"
-      | "not"
-      | "identical?"
-      // math
-      | "&+"
-      | "&-"
-      | "&*"
-      | "&/"
-      | "round"
-      | "floor"
-      | "sin"
-      | "cos"
-      | "pow"
-      | "ceil"
-      | "sqrt"
-      | "round?"
-      | "&number:fract"
-      | "&number:rem"
-      | "&number:format"
-      | "&number:display-by"
-      | "bit-shl"
-      | "bit-shr"
-      | "bit-and"
-      | "bit-or"
-      | "bit-xor"
-      | "bit-not"
-      // strings
-      | "&str:concat"
-      | "trim"
-      | "&str"
-      | "turn-string"
-      | "split"
-      | "split-lines"
-      | "starts-with?"
-      | "ends-with?"
-      | "get-char-code"
-      | "char-from-code"
-      | "pr-str"
-      | "parse-float"
-      | "blank?"
-      | "&str:compare"
-      | "&str:replace"
-      | "&str:slice"
-      | "&str:find-index"
-      | "&str:escape"
-      | "&str:count"
-      | "&str:empty?"
-      | "&str:contains?"
-      | "&str:includes?"
-      | "&str:nth"
-      | "&str:first"
-      | "&str:rest"
-      | "&str:pad-left"
-      | "&str:pad-right"
-      // lists
-      | "[]"
-      | "'" // used as an alias for `[]`, experimental
-      | "append"
-      | "prepend"
-      | "butlast"
-      | "range"
-      | "sort"
-      | "foldl"
-      | "foldl-shortcut"
-      | "foldr-shortcut"
-      | "&list:reverse"
-      | "&list:concat"
-      | "&list:count"
-      | "&list:empty?"
-      | "&list:slice"
-      | "&list:assoc-before"
-      | "&list:assoc-after"
-      | "&list:contains?"
-      | "&list:includes?"
-      | "&list:nth"
-      | "&list:first"
-      | "&list:rest"
-      | "&list:assoc"
-      | "&list:dissoc"
-      | "&list:to-set"
-      | "&list:distinct"
-      // maps
-      | "&{}"
-      | "&merge"
-      | "to-pairs"
-      | "&merge-non-nil"
-      | "&map:get"
-      | "&map:dissoc"
-      | "&map:to-list"
-      | "&map:count"
-      | "&map:empty?"
-      | "&map:contains?"
-      | "&map:includes?"
-      | "&map:first"
-      | "&map:rest"
-      | "&map:assoc"
-      | "&map:diff-new"
-      | "&map:diff-keys"
-      | "&map:common-keys"
-      // sets
-      | "#{}"
-      | "&include"
-      | "&exclude"
-      | "&difference"
-      | "&union"
-      | "&set:intersection"
-      | "&set:to-list"
-      | "&set:count"
-      | "&set:empty?"
-      | "&set:includes?"
-      | "&set:first"
-      | "&set:rest"
-      | "&set:assoc"
-      // refs
-      | "atom"
-      | "deref"
-      | "add-watch"
-      | "remove-watch"
-      // records
-      | "new-record"
-      | "&%{}"
-      | "&record:matches?"
-      | "&record:from-map"
-      | "&record:get-name"
-      | "&record:to-map"
-      | "&record:count"
-      | "&record:contains?"
-      | "&record:get"
-      | "&record:assoc"
-      | "&record:extend-as"
-  );
-  if builtin {
+  let builtin = s.parse::<CalcitProc>();
+  if builtin.is_ok() {
     true
   } else {
-    let ps = IMPORTED_PROCS.read().expect("read procs");
-    ps.contains_key(s)
+    is_registered_proc(s)
   }
+}
+
+pub fn is_registered_proc(s: &str) -> bool {
+  let ps = IMPORTED_PROCS.read().expect("read procs");
+  ps.contains_key(s)
 }
 
 /// make sure that stack information attached in errors from procs
@@ -286,6 +119,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::BitShr => math::bit_shr(args),
     CalcitProc::BitShl => math::bit_shl(args),
     CalcitProc::BitAnd => math::bit_and(args),
+    CalcitProc::BitOr => math::bit_or(args),
     CalcitProc::BitXor => math::bit_xor(args),
     CalcitProc::BitNot => math::bit_not(args),
     // strings
@@ -390,15 +224,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeRecordGet => records::get(args),
     CalcitProc::NativeRecordAssoc => records::assoc(args),
     CalcitProc::NativeRecordExtendAs => records::extend_as(args),
-    a => {
-      // let ps = IMPORTED_PROCS.read().expect("read procs");
-      // if ps.contains_key(name) {
-      //   let f = ps[name];
-      //   f(args, call_stack)
-      // } else {
-      Err(CalcitErr::use_msg_stack(format!("No such proc: {a}"), call_stack))
-      // }
-    }
+    a => Err(CalcitErr::use_msg_stack(format!("No such proc: {a}"), call_stack)),
   }
 }
 

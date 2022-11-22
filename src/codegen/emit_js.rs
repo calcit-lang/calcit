@@ -381,33 +381,37 @@ fn gen_call_code(
         }
       }
     }
-    Calcit::Proc(p) => {
-      match p {
-        CalcitProc::Raise => {
-          // not core syntax, but treat as macro for better debugging experience
-          match body.get(0) {
-            Some(m) => {
-              let message: String = to_js_code(m, ns, local_defs, file_imports, keywords, None)?;
-              let data_code = match body.get(1) {
-                Some(d) => to_js_code(d, ns, local_defs, file_imports, keywords, None)?,
-                None => String::from("null"),
-              };
-              let err_var = js_gensym("err");
-              let ret = format!(
-                "let {} = new Error({});\n {}.data = {};\n throw {};",
-                err_var, message, err_var, data_code, err_var
-              );
-              // println!("inside raise: {:?} {}", return_label, xs);
-              match return_label {
-                Some(_) => Ok(ret),
-                _ => Ok(make_fn_wrapper(&ret)),
-              }
-            }
-            None => Err(format!("raise expected 1~2 arguments, got {body:?}")),
+    Calcit::Proc(CalcitProc::Raise) => {
+      // not core syntax, but treat as macro for better debugging experience
+      match body.get(0) {
+        Some(m) => {
+          let message: String = to_js_code(m, ns, local_defs, file_imports, keywords, None)?;
+          let data_code = match body.get(1) {
+            Some(d) => to_js_code(d, ns, local_defs, file_imports, keywords, None)?,
+            None => String::from("null"),
+          };
+          let err_var = js_gensym("err");
+          let ret = format!(
+            "let {} = new Error({});\n {}.data = {};\n throw {};",
+            err_var, message, err_var, data_code, err_var
+          );
+          // println!("inside raise: {:?} {}", return_label, xs);
+          match return_label {
+            Some(_) => Ok(ret),
+            _ => Ok(make_fn_wrapper(&ret)),
           }
         }
-        _ => Err(format!("unexpected proc: {p}")),
+        None => Err(format!("raise expected 1~2 arguments, got {body:?}")),
       }
+    }
+    Calcit::Proc(_) => {
+      let args_code = gen_args_code(&body, ns, local_defs, file_imports, keywords)?;
+      Ok(format!(
+        "{}{}({})",
+        return_code,
+        to_js_code(&head, ns, local_defs, file_imports, keywords, None)?,
+        args_code
+      ))
     }
     Calcit::Symbol { sym: s, .. } => {
       match &**s {
