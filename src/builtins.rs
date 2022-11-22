@@ -62,7 +62,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::FormatToCirru => meta::format_to_cirru(args),
     CalcitProc::NativeResetGenSymIndex => meta::reset_gensym_index(args),
     CalcitProc::NativeGetCalcitRunningMode => effects::calcit_running_mode(args),
-    CalcitProc::NativeGenerateId => meta::generate_id(args),
+    CalcitProc::GenerateId => meta::generate_id(args),
     CalcitProc::TurnSymbol => meta::turn_symbol(args),
     CalcitProc::TurnKeyword => meta::turn_keyword(args),
     CalcitProc::NativeCompare => meta::native_compare(args),
