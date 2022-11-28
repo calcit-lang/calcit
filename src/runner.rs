@@ -6,11 +6,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::builtins;
-use crate::builtins::is_proc_name;
+use crate::builtins::{self, is_registered_proc, IMPORTED_PROCS};
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
 use crate::primes::{
-  Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSyntax, CrListWrap, MethodKind, NodeLocation, SymbolResolved::*, CORE_NS,
+  Calcit, CalcitErr, CalcitItems, CalcitProc, CalcitScope, CalcitSyntax, CrListWrap, MethodKind, NodeLocation, SymbolResolved::*,
+  CORE_NS,
 };
 use crate::program;
 use crate::util::string::has_ns_part;
@@ -73,7 +73,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
         let ret = match &v {
           Calcit::Proc(p) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-            builtins::handle_proc(p, &values, call_stack)
+            builtins::handle_proc(*p, &values, call_stack)
           }
           Calcit::Syntax(s, def_ns) => {
             let next_stack = extend_call_stack(
@@ -188,14 +188,22 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             resolved,
             location,
           } => {
-            let error_location = location
-              .as_ref()
-              .map(|l| NodeLocation::new(ns.to_owned(), at_def.to_owned(), l.to_owned()));
-            Err(CalcitErr::use_msg_stack_location(
-              format!("cannot evaluate symbol directly: {ns}/{sym} in {at_def}, {resolved:?}"),
-              call_stack,
-              error_location,
-            ))
+            let ps = IMPORTED_PROCS.read().expect("read procs");
+            let name = &*sym.to_owned();
+            if ps.contains_key(name) {
+              let f = ps[name];
+              let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
+              f(&values, call_stack)
+            } else {
+              let error_location = location
+                .as_ref()
+                .map(|l| NodeLocation::new(ns.to_owned(), at_def.to_owned(), l.to_owned()));
+              Err(CalcitErr::use_msg_stack_location(
+                format!("cannot evaluate symbol directly: {ns}/{sym} in {at_def}, {resolved:?}"),
+                call_stack,
+                error_location,
+              ))
+            }
           }
           a => Err(CalcitErr::use_msg_stack_location(
             format!("cannot be used as operator: {a} in {}", CrListWrap(xs.to_owned())),
@@ -246,8 +254,16 @@ pub fn evaluate_symbol(
       } else if let Some(v) = scope.get(sym) {
         // although scope is detected first, it would trigger warning during preprocess
         Ok(v.to_owned())
-      } else if is_proc_name(sym) {
-        Ok(Calcit::Proc(sym.to_owned().into()))
+      } else if let Ok(p) = sym.parse::<CalcitProc>() {
+        Ok(Calcit::Proc(p))
+      } else if is_registered_proc(sym) {
+        Ok(Calcit::Symbol {
+          sym: sym.into(),
+          ns: file_ns.into(),
+          at_def: file_ns.into(),
+          resolved: None,
+          location: location.map(|x| x.coord),
+        })
       } else if program::lookup_def_code(CORE_NS, sym).is_some() {
         eval_symbol_from_program(sym, CORE_NS, call_stack)
       } else if program::has_def_code(file_ns, sym) {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
-use crate::primes::{Calcit, MethodKind};
+use crate::primes::{Calcit, CalcitProc, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
 pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> Result<Calcit, String> {
@@ -109,7 +109,9 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> 
         ]))),
         // TODO future work of reader literal expanding
         _ => {
-          if let Ok(f) = s.parse::<f64>() {
+          if let Ok(p) = s.parse::<CalcitProc>() {
+            Ok(Calcit::Proc(p))
+          } else if let Ok(f) = s.parse::<f64>() {
             Ok(Calcit::Number(f))
           } else {
             Ok(Calcit::Symbol {
@@ -208,7 +210,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
       }
       Ok(Cirru::List(ys))
     }
-    Calcit::Proc(s) => Ok(Cirru::Leaf((**s).into())),
+    Calcit::Proc(s) => Ok(Cirru::Leaf(s.to_string().into())),
     Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.to_string().into())),
     Calcit::CirruQuote(code) => Ok(code.to_owned()),
     Calcit::Method(name, kind) => match kind {

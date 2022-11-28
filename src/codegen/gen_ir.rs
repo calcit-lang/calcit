@@ -163,7 +163,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     }
     Calcit::Proc(name) => Edn::map_from_iter([
       (Edn::kwd("kind"), Edn::kwd("proc")),
-      (Edn::kwd("name"), Edn::Str((**name).into())),
+      (Edn::kwd("name"), Edn::Str(name.to_string().into())),
       (Edn::kwd("builtin"), Edn::Bool(true)),
     ]),
     Calcit::Syntax(name, _ns) => Edn::map_from_iter([

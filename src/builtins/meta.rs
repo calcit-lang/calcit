@@ -91,7 +91,7 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
     }
     Calcit::Symbol { sym, .. } => Cirru::Leaf((**sym).into()),
     Calcit::Syntax(s, _ns) => Cirru::Leaf(s.to_string().into()),
-    Calcit::Proc(s) => Cirru::Leaf((**s).into()),
+    Calcit::Proc(s) => Cirru::Leaf(s.to_string().into()),
     a => Cirru::leaf(format!("{a}")),
   }
 }
@@ -306,7 +306,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
             Calcit::Fn {
               def_ns, scope, args, body, ..
             } => runner::run_fn(&method_args, scope, args, body, def_ns.to_owned(), call_stack),
-            Calcit::Proc(proc) => builtins::handle_proc(proc, &method_args, call_stack),
+            Calcit::Proc(proc) => builtins::handle_proc(*proc, &method_args, call_stack),
             Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
               format!("cannot get syntax here since instance is always evaluated, got: {syn}"),
               call_stack,

@@ -18,7 +18,7 @@ use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::syntax::get_raw_args;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
 use crate::call_stack::StackKind;
-use crate::primes::{self, MethodKind};
+use crate::primes::{self, CalcitProc, MethodKind};
 use crate::primes::{Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
@@ -147,7 +147,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, keywords: &RefCell<HashSet<EdnKwd>
     Calcit::Number(n) => Ok(n.to_string()),
     Calcit::Nil => Ok(String::from("null")),
     // mainly for methods, which are recognized during reading
-    Calcit::Proc(p) => Ok(format!("new {var_prefix}CalcitSymbol({})", escape_cirru_str(p))),
+    Calcit::Proc(p) => Ok(format!("new {var_prefix}CalcitSymbol({})", escape_cirru_str(&p.to_string()))),
     Calcit::List(ys) => {
       let mut chunk = String::from("");
       for y in ys {
@@ -221,7 +221,7 @@ fn to_js_code(
         // println!("gen proc {} under {}", s, ns,);
         // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
         // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
-        Ok(format!("{proc_prefix}{}", escape_var(s)))
+        Ok(format!("{proc_prefix}{}", escape_var(&s.to_string())))
       }
       Calcit::Method(name, kind) => {
         let proc_prefix = get_proc_prefix(ns);
@@ -381,33 +381,41 @@ fn gen_call_code(
         }
       }
     }
-    Calcit::Symbol { sym: s, .. } | Calcit::Proc(s) => {
-      match &**s {
-        ";" => Ok(format!("(/* {} */ null)", Calcit::List(body))),
-
-        "raise" => {
-          // not core syntax, but treat as macro for better debugging experience
-          match body.get(0) {
-            Some(m) => {
-              let message: String = to_js_code(m, ns, local_defs, file_imports, keywords, None)?;
-              let data_code = match body.get(1) {
-                Some(d) => to_js_code(d, ns, local_defs, file_imports, keywords, None)?,
-                None => String::from("null"),
-              };
-              let err_var = js_gensym("err");
-              let ret = format!(
-                "let {} = new Error({});\n {}.data = {};\n throw {};",
-                err_var, message, err_var, data_code, err_var
-              );
-              // println!("inside raise: {:?} {}", return_label, xs);
-              match return_label {
-                Some(_) => Ok(ret),
-                _ => Ok(make_fn_wrapper(&ret)),
-              }
-            }
-            None => Err(format!("raise expected 1~2 arguments, got {body:?}")),
+    Calcit::Proc(CalcitProc::Raise) => {
+      // not core syntax, but treat as macro for better debugging experience
+      match body.get(0) {
+        Some(m) => {
+          let message: String = to_js_code(m, ns, local_defs, file_imports, keywords, None)?;
+          let data_code = match body.get(1) {
+            Some(d) => to_js_code(d, ns, local_defs, file_imports, keywords, None)?,
+            None => String::from("null"),
+          };
+          let err_var = js_gensym("err");
+          let ret = format!(
+            "let {} = new Error({});\n {}.data = {};\n throw {};",
+            err_var, message, err_var, data_code, err_var
+          );
+          // println!("inside raise: {:?} {}", return_label, xs);
+          match return_label {
+            Some(_) => Ok(ret),
+            _ => Ok(make_fn_wrapper(&ret)),
           }
         }
+        None => Err(format!("raise expected 1~2 arguments, got {body:?}")),
+      }
+    }
+    Calcit::Proc(_) => {
+      let args_code = gen_args_code(&body, ns, local_defs, file_imports, keywords)?;
+      Ok(format!(
+        "{}{}({})",
+        return_code,
+        to_js_code(&head, ns, local_defs, file_imports, keywords, None)?,
+        args_code
+      ))
+    }
+    Calcit::Symbol { sym: s, .. } => {
+      match &**s {
+        ";" => Ok(format!("(/* {} */ null)", Calcit::List(body))),
 
         "echo" | "println" => {
           // not core syntax, but treat as macro for better debugging experience
@@ -899,7 +907,7 @@ fn list_to_js_code(
 fn uses_recur(xs: &Calcit) -> bool {
   match xs {
     Calcit::Symbol { sym: s, .. } => &**s == "recur",
-    Calcit::Proc(s) => &**s == "recur",
+    Calcit::Proc(s) => *s == CalcitProc::Recur,
     Calcit::List(ys) => match &ys.get(0) {
       Some(Calcit::Syntax(syn, _)) if syn == &CalcitSyntax::Defn => false,
       Some(Calcit::Symbol { sym, .. }) if &**sym == "defn" => false,
