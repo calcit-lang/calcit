@@ -3,37 +3,37 @@ pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn parse_cli() -> clap::ArgMatches {
   clap::Command::new("Calcit")
     .version(CALCIT_VERSION)
-    .author("Jon. <jiyinyiyong@gmail.com>")
+    .author("Jon Chen. <jiyinyiyong@gmail.com>")
     .about("Calcit Scripting Language")
     .arg(
       clap::Arg::new("once")
-        .help("disable watching mode")
+        .help("skip watching mode, just run once")
         .short('1')
         .long("once")
         .takes_value(false),
     )
     .arg(
       clap::Arg::new("emit-js")
-        .help("emit js rather than interpreting")
+        .help("emit JavaScript rather than interpreting")
         .long("emit-js")
         .takes_value(false),
     )
     .arg(
       clap::Arg::new("emit-ir")
-        .help("emit EDN representation of program to program-ir.cirru")
+        .help("emit Cirru EDN representation of program to program-ir.cirru")
         .long("emit-ir")
         .takes_value(false),
     )
     .arg(
       clap::Arg::new("eval")
-        .help("eval a snippet")
+        .help("evaluate a snippet")
         .short('e')
         .long("eval")
         .takes_value(true),
     )
     .arg(
       clap::Arg::new("dep")
-        .help("add dependency")
+        .help("inject dependency")
         .short('d')
         .long("dep")
         .multiple_occurrences(true)
@@ -41,43 +41,43 @@ pub fn parse_cli() -> clap::ArgMatches {
     )
     .arg(
       clap::Arg::new("emit-path")
-        .help("emit directory for js, defaults to `js-out/`")
+        .help("specify another directory for js, rather than `js-out/`")
         .long("emit-path")
         .takes_value(true),
     )
     .arg(
       clap::Arg::new("init-fn")
-        .help("overwrite `init_fn`")
+        .help("specify `init_fn` which is main function")
         .long("init-fn")
         .takes_value(true),
     )
     .arg(
       clap::Arg::new("reload-fn")
-        .help("overwrite `reload_fn`")
+        .help("specify `reload_fn` which is called after hot reload")
         .long("reload-fn")
         .takes_value(true),
     )
     .arg(
       clap::Arg::new("entry")
-        .help("overwrite with config entry")
+        .help("specify with config entry")
         .long("entry")
         .takes_value(true),
     )
     .arg(
       clap::Arg::new("watch-dir")
-        .help("a folder of assets that also being watched")
+        .help("specify a path to watch assets changes")
         .long("watch-dir")
         .takes_value(true),
     )
     .arg(
       clap::Arg::new("reload-libs")
-        .help("reload libs data during code reload")
+        .help("force reloading libs data during code reload")
         .long("reload-libs")
         .takes_value(false),
     )
     .arg(
       clap::Arg::new("input")
-        .help("entry file path, defaults to compact.cirru")
+        .help("entry file path")
         .default_value("compact.cirru")
         .index(1),
     )
