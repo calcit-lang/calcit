@@ -327,8 +327,8 @@ export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue =>
     return new CalcitSliceMap(result);
   }
 
-  console.error(x);
-  throw new Error("Unexpected data for converting");
+  console.error("Unexpected data for converting", x);
+  return null;
 };
 
 let toWriterNode = (xs: CalcitList | CalcitSliceList | Array<any> | String): CirruWriterNode => {
