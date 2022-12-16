@@ -143,10 +143,26 @@
                 [] :b 2
               assert= :other
                 match-ab (&{} :tag :c)
+        
+        |test-when $ quote
+          fn ()
+            log-title "|Testing when"
+            assert= 1
+              when true 1
+            assert= 1
+              when true 2 1
+            
+            assert= 1
+              when-not false 1
+            assert= 1
+              when-not false 2 1
 
         |main! $ quote
           defn main! ()
             log-title "|Testing cond"
+
+            test-when
+            
             test-cond
 
             test-or

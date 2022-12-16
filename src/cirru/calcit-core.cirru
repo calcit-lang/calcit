@@ -33,11 +33,19 @@
 
         |when $ quote
           defmacro when (condition & body)
-            quasiquote $ if ~condition (&let nil ~@body)
+            if
+              &= 1 (&list:count body)
+              quasiquote $ if ~condition
+                ~ (nth body 0)
+              quasiquote $ if ~condition (&let nil ~@body)
 
         |when-not $ quote
           defmacro when-not (condition & body)
-            quasiquote $ if (not ~condition) (&let nil ~@body)
+            if
+              &= 1 (&list:count body)
+              quasiquote $ if (not ~condition)
+                ~ (nth body 0)
+              quasiquote $ if (not ~condition) (&let nil ~@body)
 
         |+ $ quote
           defn + (x & ys) $ reduce ys x &+
