@@ -7,7 +7,7 @@ pub fn tmpl_try(err_var: String, body: String, handler: String, return_code: &st
     "try {{
   {}
 }} catch ({}) {{
-  {} ({})({}.toString())
+  {} ({})({})
 }}",
     body, err_var, return_code, handler, err_var,
   )
