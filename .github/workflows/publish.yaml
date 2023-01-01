@@ -17,6 +17,7 @@ jobs:
         with:
           node-version: 16
           cache: yarn
+          registry-url: https://registry.npmjs.org/
 
       - uses: actions-rs/toolchain@v1
         with:
@@ -47,11 +48,6 @@ jobs:
       - uses: katyo/publish-crates@v1
         with:
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - uses: actions/setup-node@v2
-        with:
-          node-version: 16
-          registry-url: https://registry.npmjs.org/
 
       - name: "generate procs.mjs"
         run: yarn && yarn tsc
