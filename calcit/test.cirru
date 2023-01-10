@@ -292,7 +292,7 @@
           defn main! ()
 
             println $ &get-os
-            println $ generate-id!
+            println "|gen id:" $ generate-id!
 
             inside-js:
               load-console-formatter!
