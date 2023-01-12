@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.6.19";
+export const calcit_version = "0.6.20";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -614,7 +614,8 @@ let idCounter = 0;
 export let generate_id_$x_ = (): string => {
   // TODO use nanoid.. this code is wrong
   idCounter = idCounter + 1;
-  return `gen_id_${idCounter}`;
+  let time = Date.now();
+  return `gen_id_${idCounter}_${time}`;
 };
 
 export let _$n_display_stack = (): null => {
