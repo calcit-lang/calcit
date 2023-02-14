@@ -35,9 +35,8 @@ pub fn git_clone(dir: &PathBuf, url: &str, version: &str) -> Result<(), String> 
 pub fn git_current_head(dir: &PathBuf) -> Result<String, String> {
   let output = std::process::Command::new("git")
     .current_dir(dir)
-    .arg("rev-parse")
-    .arg("--abbrev-ref")
-    .arg("HEAD")
+    .arg("branch")
+    .arg("--show-current")
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
@@ -47,7 +46,7 @@ pub fn git_current_head(dir: &PathBuf) -> Result<String, String> {
     let mut branch = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
     branch = branch.trim().to_string();
 
-    if branch == "HEAD" {
+    if branch == "" {
       // probably a tag
       git_describe_tag(dir)
     } else {

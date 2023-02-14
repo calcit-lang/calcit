@@ -58,7 +58,7 @@ pub fn main() -> Result<(), String> {
 
 fn download_deps(deps: HashMap<String, String>) -> Result<(), String> {
   // ~/.config/calcit/modules/
-  let modules_dir = dirs::home_dir().ok_or("no config dir")?.join(".config/calcit/test-modules");
+  let modules_dir = dirs::home_dir().ok_or("no config dir")?.join(".config/calcit/modules");
 
   if !modules_dir.exists() {
     fs::create_dir_all(&modules_dir).map_err(|e| e.to_string())?;
