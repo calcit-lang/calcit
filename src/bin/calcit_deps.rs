@@ -2,6 +2,10 @@
 //! packages are defined in `package.cirru` file
 //!
 //! files are stored in `~/.config/calcit/modules/`.
+
+mod git;
+
+use git::*;
 use std::{collections::HashMap, fs, path::Path};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,80 +71,31 @@ fn download_deps(deps: HashMap<String, String>) -> Result<(), String> {
     // split with / into (org,folder)
     let folder_path = modules_dir.join(folder);
     if folder_path.exists() {
-      println!("module {} exists", folder);
+      // println!("module {} exists", folder);
       // check branch
-      let output = std::process::Command::new("git")
-        .current_dir(&folder_path)
-        .arg("rev-parse")
-        .arg("--abbrev-ref")
-        .arg("HEAD")
-        .output()
-        .map_err(|e| e.to_string())?;
-      if !output.status.success() {
-        println!("output: {:?}", output);
-        return Err(format!("failed to check branch of {}", org_and_folder));
+      let current_head = git_current_head(&folder_path)?;
+      if current_head == version {
+        println!("module {} is at version {}", folder, version);
+        continue;
       } else {
-        let mut branch = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
-        branch = branch.trim().to_string();
-        if branch.trim() == version {
-          println!("module {} is at version {}", folder, version);
-          continue;
-        } else {
-          println!("module {} is at version {:?}, but required {}", folder, branch, version);
-          // try if tag or branch exists in git history
-          let output = std::process::Command::new("git")
-            .current_dir(&folder_path)
-            .arg("show-ref")
-            .arg("--verify")
-            .arg(&format!("refs/tags/{}", version))
-            .output()
-            .map_err(|e| e.to_string())?;
-          // println!("show ref output: {:?}", output);
-          if !output.status.success() {
-            let output = std::process::Command::new("git")
-              .current_dir(&folder_path)
-              .arg("fetch")
-              .arg("origin")
-              .output()
-              .map_err(|e| e.to_string())?;
-            if !output.status.success() {
-              println!("output: {:?}", output);
-              return Err(format!("failed to fetch {}", org_and_folder));
-            }
-            println!("fetched {} at version {}", org_and_folder, version);
-          }
+        println!("module {} is at version {:?}, but required {}", folder, current_head, version);
+        // try if tag or branch exists in git history
+        let has_target = git_check_branch_or_tag(&folder_path, &version)?;
+        if has_target {
           // fetch git repo and checkout target version
-          // checkout
-          let output = std::process::Command::new("git")
-            .current_dir(&folder_path)
-            .arg("checkout")
-            .arg(&version)
-            .output()
-            .map_err(|e| e.to_string())?;
-          if !output.status.success() {
-            println!("output: {:?}", output);
-            return Err(format!("failed to checkout {}", org_and_folder));
-          }
+          git_checkout(&folder_path, &version)?;
+          println!("checked out {} at version {}", org_and_folder, version)
+        } else {
+          git_fetch(&folder_path)?;
+          println!("fetched {} at version {}", org_and_folder, version);
         }
       }
+
       continue;
     }
     let url = format!("https://github.com/{}.git", org_and_folder);
     println!("downloading {} at version {}", url, version);
-    let output = std::process::Command::new("git")
-      .current_dir(&modules_dir)
-      .arg("clone")
-      .arg("--branch")
-      .arg(&version)
-      .arg(url)
-      .output()
-      .map_err(|e| e.to_string())?;
-    if !output.status.success() {
-      println!("output: {:?}", output);
-      return Err(format!("failed to download {}", org_and_folder));
-    } else {
-      println!("downloaded {} at version {}", org_and_folder, version);
-    }
+    git_clone(&modules_dir, &url, &version)?;
   }
 
   Ok(())
