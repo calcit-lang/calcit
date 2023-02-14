@@ -44,6 +44,7 @@ jobs:
           files: |
             target/release/cr
             target/release/bundle_calcit
+            target/release/caps
 
       - uses: katyo/publish-crates@v1
         with:
