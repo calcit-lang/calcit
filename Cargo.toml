@@ -33,6 +33,7 @@ hex = "0.4.3"
 rpds = "0.12.0"
 im_ternary_tree = "0.0.11"
 # im_ternary_tree = { path = "/Users/chenyong/repo/calcit-lang/ternary-tree.rs" }
+colored = "2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libloading = "0.7.4"

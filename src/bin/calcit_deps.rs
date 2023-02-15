@@ -5,6 +5,7 @@
 
 mod git;
 
+use colored::*;
 use git::*;
 use std::{collections::HashMap, fs, path::Path};
 
@@ -74,7 +75,7 @@ pub fn main() -> Result<(), String> {
 fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(), String> {
   // ~/.config/calcit/modules/
   let clone_target = if options.local_debug {
-    println!("[DEBUG] local debug mode, cloning to test-modules/");
+    println!("{}", "  [DEBUG] local debug mode, cloning to test-modules/".yellow());
     ".config/calcit/test-modules"
   } else {
     ".config/calcit/modules"
@@ -96,20 +97,21 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
       // check branch
       let current_head = git_current_head(&folder_path)?;
       if current_head == version {
-        println!("module {} is at version {}", folder, version);
+        dim_println(format!("found {} at {}", gray(folder), gray(&version)));
         continue;
       } else {
-        println!("module {} is at version {:?}, but required {}", folder, current_head, version);
+        // let msg = format!("module {} is at version {:?}, but required {}", folder, current_head, version);
+        // println!("  {}", msg.yellow());
+
         // try if tag or branch exists in git history
         let has_target = git_check_branch_or_tag(&folder_path, &version)?;
-        if has_target {
-          // fetch git repo and checkout target version
-          git_checkout(&folder_path, &version)?;
-          println!("checked out {} at version {}", org_and_folder, version)
-        } else {
+        if !has_target {
           git_fetch(&folder_path)?;
-          println!("fetched {} at version {}", org_and_folder, version);
+          dim_println(format!("fetched {} at version {}", gray(&org_and_folder), gray(&version)));
+          // fetch git repo and checkout target version
         }
+        git_checkout(&folder_path, &version)?;
+        dim_println(format!("checked out {} at version {}", gray(&org_and_folder), gray(&version)))
       }
 
       continue;
@@ -119,8 +121,9 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
     } else {
       format!("git@github.com:{}.git", org_and_folder)
     };
-    println!("downloading {} at version {}", url, version);
     git_clone(&modules_dir, &url, &version, options.ci)?;
+    // println!("downloading {} at version {}", url, version);
+    dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
   }
 
   Ok(())
@@ -136,7 +139,7 @@ fn parse_cli() -> clap::ArgMatches {
     .arg(
       clap::Arg::new("input")
         .help("entry file path")
-        .default_value("compact.cirru")
+        .default_value("package.cirru")
         .index(1),
     )
     .arg(
@@ -154,4 +157,12 @@ fn parse_cli() -> clap::ArgMatches {
         .takes_value(false),
     )
     .get_matches()
+}
+
+fn dim_println(msg: String) {
+  println!("  {}", msg.truecolor(128, 128, 128));
+}
+
+fn gray(msg: &str) -> ColoredString {
+  msg.truecolor(160, 160, 160)
 }

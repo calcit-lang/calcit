@@ -29,7 +29,13 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install calcit
 ```
 
-For Ubuntu latest, try binaries from http://bin.calcit-lang.org/linux/ , which are provided for [CI usages](https://github.com/calcit-lang/respo-calcit-workflow/blob/main/.github/workflows/upload.yaml#L28-L37).
+3 binaries are installed:
+
+- `calcit`, the runtime and js compiler
+- `caps`, for downloading dependencies declared in `package.cirru`
+- `bundle_calcit`, bundle code if you don't want to use Calcit Editor
+
+For Ubuntu latest, try binaries from [Releases](https://github.com/calcit-lang/calcit/releases), which are provided for [CI usages](https://github.com/calcit-lang/respo-calcit-workflow/blob/main/.github/workflows/upload.yaml#L28-L37).
 
 ### Usage
 
