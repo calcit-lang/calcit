@@ -15,15 +15,28 @@ pub fn git_checkout(dir: &PathBuf, version: &str) -> Result<(), String> {
   }
 }
 
-pub fn git_clone(dir: &PathBuf, url: &str, version: &str) -> Result<(), String> {
-  let output = std::process::Command::new("git")
-    .current_dir(dir)
-    .arg("clone")
-    .arg("--branch")
-    .arg(version)
-    .arg(url)
-    .output()
-    .map_err(|e| e.to_string())?;
+pub fn git_clone(dir: &PathBuf, url: &str, version: &str, shallow: bool) -> Result<(), String> {
+  let output = if shallow {
+    std::process::Command::new("git")
+      .current_dir(dir)
+      .arg("clone")
+      .arg("--branch")
+      .arg(version)
+      .arg("--depth")
+      .arg("1")
+      .arg(url)
+      .output()
+      .map_err(|e| e.to_string())?
+  } else {
+    std::process::Command::new("git")
+      .current_dir(dir)
+      .arg("clone")
+      .arg("--branch")
+      .arg(version)
+      .arg(url)
+      .output()
+      .map_err(|e| e.to_string())?
+  };
   if !output.status.success() {
     println!("output: {:?}", output);
     Err(format!("failed to clone {} {}", url, version))

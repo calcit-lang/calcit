@@ -35,19 +35,34 @@ impl TryFrom<cirru_edn::Edn> for PackageDeps {
   }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CliArgs {
+  input: String,
+  ci: bool,
+  verbose: bool,
+  local_debug: bool,
+}
+
 pub fn main() -> Result<(), String> {
   // parse package.cirru
 
   let cli_matches = parse_cli();
 
+  let options: CliArgs = CliArgs {
+    input: cli_matches.value_of("input").unwrap_or("package.cirru").to_string(),
+    ci: cli_matches.is_present("ci"),
+    verbose: cli_matches.is_present("verbose"),
+    local_debug: cli_matches.is_present("local_debug"),
+  };
+
   // if file exists
-  let package_cirru = cli_matches.value_of("input").unwrap_or("package.cirru");
-  if Path::new(package_cirru).exists() {
-    let content = fs::read_to_string(package_cirru).map_err(|e| e.to_string())?;
+
+  if Path::new(&options.input).exists() {
+    let content = fs::read_to_string(&options.input).map_err(|e| e.to_string())?;
     let parsed = cirru_edn::parse(&content)?;
     let deps: PackageDeps = parsed.try_into()?;
 
-    download_deps(deps.dependencies)?;
+    download_deps(deps.dependencies, &options)?;
 
     Ok(())
   } else {
@@ -56,9 +71,15 @@ pub fn main() -> Result<(), String> {
   }
 }
 
-fn download_deps(deps: HashMap<String, String>) -> Result<(), String> {
+fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(), String> {
   // ~/.config/calcit/modules/
-  let modules_dir = dirs::home_dir().ok_or("no config dir")?.join(".config/calcit/modules");
+  let clone_target = if options.local_debug {
+    println!("[DEBUG] local debug mode, cloning to test-modules/");
+    ".config/calcit/test-modules"
+  } else {
+    ".config/calcit/modules"
+  };
+  let modules_dir = dirs::home_dir().ok_or("no config dir")?.join(clone_target);
 
   if !modules_dir.exists() {
     fs::create_dir_all(&modules_dir).map_err(|e| e.to_string())?;
@@ -93,9 +114,13 @@ fn download_deps(deps: HashMap<String, String>) -> Result<(), String> {
 
       continue;
     }
-    let url = format!("https://github.com/{}.git", org_and_folder);
+    let url = if options.ci {
+      format!("https://github.com/{}.git", org_and_folder)
+    } else {
+      format!("git@github.com:{}.git", org_and_folder)
+    };
     println!("downloading {} at version {}", url, version);
-    git_clone(&modules_dir, &url, &version)?;
+    git_clone(&modules_dir, &url, &version, options.ci)?;
   }
 
   Ok(())
@@ -104,7 +129,7 @@ fn download_deps(deps: HashMap<String, String>) -> Result<(), String> {
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn parse_cli() -> clap::ArgMatches {
-  clap::Command::new("Calcit")
+  clap::Command::new("Calcit Deps")
     .version(CALCIT_VERSION)
     .author("Jon. <jiyinyiyong@gmail.com>")
     .about("Calcit Deps")
@@ -119,7 +144,14 @@ fn parse_cli() -> clap::ArgMatches {
         .help("verbpse mode")
         .short('v')
         .long("verbose")
-        .takes_value(true),
+        .takes_value(false),
+    )
+    .arg(clap::Arg::new("ci").help("try CI mode").long("ci").takes_value(false))
+    .arg(
+      clap::Arg::new("local_debug")
+        .help("Debug in a local")
+        .long("local-debug")
+        .takes_value(false),
     )
     .get_matches()
 }
