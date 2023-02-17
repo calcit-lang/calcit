@@ -264,7 +264,7 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn parse_cli() -> clap::ArgMatches {
-  clap::Command::new("Calcit")
+  clap::Command::new("Calcit Bundle")
     .version(CALCIT_VERSION)
     .author("Jon. <jiyinyiyong@gmail.com>")
     .about("Calcit Bundler")
