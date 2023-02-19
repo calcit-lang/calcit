@@ -42,6 +42,7 @@ struct CliArgs {
   ci: bool,
   verbose: bool,
   local_debug: bool,
+  pull_branch: bool,
 }
 
 pub fn main() -> Result<(), String> {
@@ -54,6 +55,7 @@ pub fn main() -> Result<(), String> {
     ci: cli_matches.is_present("ci"),
     verbose: cli_matches.is_present("verbose"),
     local_debug: cli_matches.is_present("local_debug"),
+    pull_branch: cli_matches.is_present("pull_branch"),
   };
 
   // if file exists
@@ -96,8 +98,14 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
       // println!("module {} exists", folder);
       // check branch
       let current_head = git_current_head(&folder_path)?;
-      if current_head == version {
+      if current_head.get_name() == version {
         dim_println(format!("found {} at {}", gray(folder), gray(&version)));
+        if let GitHead::Branch(branch) = current_head {
+          if options.pull_branch {
+            git_pull(&folder_path, &branch)?;
+            dim_println(format!("..pulled {} at {}", gray(folder), gray(&version)));
+          }
+        }
         continue;
       } else {
         // let msg = format!("module {} is at version {:?}, but required {}", folder, current_head, version);
@@ -154,7 +162,18 @@ fn parse_cli() -> clap::ArgMatches {
         .long("verbose")
         .takes_value(false),
     )
-    .arg(clap::Arg::new("ci").help("try CI mode").long("ci").takes_value(false))
+    .arg(
+      clap::Arg::new("pull_branch")
+        .help("pull branch in the repo")
+        .long("pull-branch")
+        .takes_value(false),
+    )
+    .arg(
+      clap::Arg::new("ci")
+        .help("CI mode loads shallow repo via HTTPS")
+        .long("ci")
+        .takes_value(false),
+    )
     .arg(
       clap::Arg::new("local_debug")
         .help("Debug in a local")
