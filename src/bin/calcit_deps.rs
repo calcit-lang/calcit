@@ -84,7 +84,7 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
 
   if !modules_dir.exists() {
     fs::create_dir_all(&modules_dir).map_err(|e| e.to_string())?;
-    println!("created dir: {:?}", modules_dir);
+    dim_println(format!("created dir: {:?}", modules_dir));
   }
 
   for (org_and_folder, version) in deps {
@@ -113,17 +113,22 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
         git_checkout(&folder_path, &version)?;
         dim_println(format!("checked out {} at version {}", gray(&org_and_folder), gray(&version)))
       }
-
-      continue;
-    }
-    let url = if options.ci {
-      format!("https://github.com/{}.git", org_and_folder)
     } else {
-      format!("git@github.com:{}.git", org_and_folder)
-    };
-    git_clone(&modules_dir, &url, &version, options.ci)?;
-    // println!("downloading {} at version {}", url, version);
-    dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
+      let url = if options.ci {
+        format!("https://github.com/{}.git", org_and_folder)
+      } else {
+        format!("git@github.com:{}.git", org_and_folder)
+      };
+      git_clone(&modules_dir, &url, &version, options.ci)?;
+      // println!("downloading {} at version {}", url, version);
+      dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
+      // if there's a build.sh file in the folder, run it
+      let build_file = folder_path.join("build.sh");
+      if build_file.exists() {
+        call_build_script(&folder_path)?;
+        dim_println(format!("ran build script for {}", gray(&org_and_folder)));
+      }
+    }
   }
 
   Ok(())
@@ -160,9 +165,24 @@ fn parse_cli() -> clap::ArgMatches {
 }
 
 fn dim_println(msg: String) {
-  println!("  {}", msg.truecolor(128, 128, 128));
+  println!("  {}", msg.truecolor(120, 120, 120));
 }
 
 fn gray(msg: &str) -> ColoredString {
-  msg.truecolor(160, 160, 160)
+  msg.truecolor(172, 172, 172)
+}
+
+/// calcit dynamic libs uses a `build.sh` script to build Rust `.so` files
+fn call_build_script(folder_path: &Path) -> Result<(), String> {
+  let output = std::process::Command::new("sh")
+    .arg("build.sh")
+    .current_dir(folder_path)
+    .output()
+    .map_err(|e| e.to_string())?;
+  if !output.status.success() {
+    let msg = String::from_utf8(output.stderr).unwrap_or("".to_string());
+    return Err(format!("failed to build module {}: {}", folder_path.display(), msg));
+  } else {
+    Ok(())
+  }
 }
