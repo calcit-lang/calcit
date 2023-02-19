@@ -166,7 +166,7 @@ fn parse_cli() -> clap::ArgMatches {
     )
     .arg(
       clap::Arg::new("verbose")
-        .help("verbpse mode")
+        .help("verbose mode")
         .short('v')
         .long("verbose")
         .takes_value(false),
@@ -185,7 +185,7 @@ fn parse_cli() -> clap::ArgMatches {
     )
     .arg(
       clap::Arg::new("local_debug")
-        .help("Debug in a local")
+        .help("Debug mode, clone to test-modules/")
         .long("local-debug")
         .takes_value(false),
     )
