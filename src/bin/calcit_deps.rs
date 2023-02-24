@@ -42,6 +42,7 @@ struct CliArgs {
   ci: bool,
   verbose: bool,
   local_debug: bool,
+  pull_branch: bool,
 }
 
 pub fn main() -> Result<(), String> {
@@ -54,6 +55,7 @@ pub fn main() -> Result<(), String> {
     ci: cli_matches.is_present("ci"),
     verbose: cli_matches.is_present("verbose"),
     local_debug: cli_matches.is_present("local_debug"),
+    pull_branch: cli_matches.is_present("pull_branch"),
   };
 
   // if file exists
@@ -84,7 +86,7 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
 
   if !modules_dir.exists() {
     fs::create_dir_all(&modules_dir).map_err(|e| e.to_string())?;
-    println!("created dir: {:?}", modules_dir);
+    dim_println(format!("created dir: {:?}", modules_dir));
   }
 
   for (org_and_folder, version) in deps {
@@ -96,8 +98,17 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
       // println!("module {} exists", folder);
       // check branch
       let current_head = git_current_head(&folder_path)?;
-      if current_head == version {
-        dim_println(format!("found {} at {}", gray(folder), gray(&version)));
+      if current_head.get_name() == version {
+        dim_println(format!("√ found {} at {}", gray(folder), gray(&version)));
+        if let GitHead::Branch(branch) = current_head {
+          if options.pull_branch {
+            if options.verbose {
+              dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
+            }
+            git_pull(&folder_path, &branch)?;
+            dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
+          }
+        }
         continue;
       } else {
         // let msg = format!("module {} is at version {:?}, but required {}", folder, current_head, version);
@@ -106,24 +117,35 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
         // try if tag or branch exists in git history
         let has_target = git_check_branch_or_tag(&folder_path, &version)?;
         if !has_target {
+          if options.verbose {
+            dim_println(format!("↺ fetching {} at version {}", gray(&org_and_folder), gray(&version)));
+          }
           git_fetch(&folder_path)?;
           dim_println(format!("fetched {} at version {}", gray(&org_and_folder), gray(&version)));
           // fetch git repo and checkout target version
         }
         git_checkout(&folder_path, &version)?;
-        dim_println(format!("checked out {} at version {}", gray(&org_and_folder), gray(&version)))
+        dim_println(format!("√ checked out {} at version {}", gray(&org_and_folder), gray(&version)))
       }
-
-      continue;
-    }
-    let url = if options.ci {
-      format!("https://github.com/{}.git", org_and_folder)
     } else {
-      format!("git@github.com:{}.git", org_and_folder)
-    };
-    git_clone(&modules_dir, &url, &version, options.ci)?;
-    // println!("downloading {} at version {}", url, version);
-    dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
+      let url = if options.ci {
+        format!("https://github.com/{}.git", org_and_folder)
+      } else {
+        format!("git@github.com:{}.git", org_and_folder)
+      };
+      if options.verbose {
+        dim_println(format!("↺ cloning {} at version {}", gray(&org_and_folder), gray(&version)));
+      }
+      git_clone(&modules_dir, &url, &version, options.ci)?;
+      // println!("downloading {} at version {}", url, version);
+      dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
+      // if there's a build.sh file in the folder, run it
+      let build_file = folder_path.join("build.sh");
+      if build_file.exists() {
+        call_build_script(&folder_path)?;
+        dim_println(format!("ran build script for {}", gray(&org_and_folder)));
+      }
+    }
   }
 
   Ok(())
@@ -144,15 +166,26 @@ fn parse_cli() -> clap::ArgMatches {
     )
     .arg(
       clap::Arg::new("verbose")
-        .help("verbpse mode")
+        .help("verbose mode")
         .short('v')
         .long("verbose")
         .takes_value(false),
     )
-    .arg(clap::Arg::new("ci").help("try CI mode").long("ci").takes_value(false))
+    .arg(
+      clap::Arg::new("pull_branch")
+        .help("pull branch in the repo")
+        .long("pull-branch")
+        .takes_value(false),
+    )
+    .arg(
+      clap::Arg::new("ci")
+        .help("CI mode loads shallow repo via HTTPS")
+        .long("ci")
+        .takes_value(false),
+    )
     .arg(
       clap::Arg::new("local_debug")
-        .help("Debug in a local")
+        .help("Debug mode, clone to test-modules/")
         .long("local-debug")
         .takes_value(false),
     )
@@ -164,5 +197,20 @@ fn dim_println(msg: String) {
 }
 
 fn gray(msg: &str) -> ColoredString {
-  msg.truecolor(160, 160, 160)
+  msg.truecolor(172, 172, 172)
+}
+
+/// calcit dynamic libs uses a `build.sh` script to build Rust `.so` files
+fn call_build_script(folder_path: &Path) -> Result<(), String> {
+  let output = std::process::Command::new("sh")
+    .arg("build.sh")
+    .current_dir(folder_path)
+    .output()
+    .map_err(|e| e.to_string())?;
+  if !output.status.success() {
+    let msg = String::from_utf8(output.stderr).unwrap_or("".to_string());
+    return Err(format!("failed to build module {}: {}", folder_path.display(), msg));
+  } else {
+    Ok(())
+  }
 }

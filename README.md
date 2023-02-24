@@ -97,9 +97,18 @@ Read more in [Respo Calcit Workflow](https://github.com/calcit-lang/respo-calcit
 
 ### Modules
 
-> No package manager yet, need to manage modules with git tags.
+`package.cirru` declares dependencies that need to download, which correspond to repositories on GitHub. Specify a branch or a tag:
 
-Configurations inside `calcit.cirru` and `compact.cirru`:
+```cirru
+{}
+  :dependencies $ {}
+    |calcit-lang/memof |0.0.11
+    |calcit-lang/lilac |main
+```
+
+Run `caps` to download. Sources are downloaded into `~/.config/calcit/modules/`. If a module contains `build.sh`, it will be executed mostly for compiling Rust dylibs.
+
+To load modules, use `:modules` configuration in `calcit.cirru` and `compact.cirru`:
 
 ```cirru
 :configs $ {}
@@ -110,8 +119,6 @@ Paths defined in `:modules` field are just loaded as files from `~/.config/calci
 i.e. `~/.config/calcit/modules/memof/compact.cirru`.
 
 Modules that ends with `/`s are automatically suffixed `compact.cirru` since it's the default filename.
-
-To load modules in CI environments, make use of `git clone`.
 
 ### Development
 

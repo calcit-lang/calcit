@@ -45,7 +45,22 @@ pub fn git_clone(dir: &PathBuf, url: &str, version: &str, shallow: bool) -> Resu
   }
 }
 
-pub fn git_current_head(dir: &PathBuf) -> Result<String, String> {
+#[derive(Debug, PartialEq, Eq)]
+pub enum GitHead {
+  Branch(String),
+  Tag(String),
+}
+
+impl GitHead {
+  pub fn get_name(&self) -> String {
+    match self {
+      GitHead::Branch(s) => s.to_string(),
+      GitHead::Tag(s) => s.to_string(),
+    }
+  }
+}
+
+pub fn git_current_head(dir: &PathBuf) -> Result<GitHead, String> {
   let output = std::process::Command::new("git")
     .current_dir(dir)
     .arg("branch")
@@ -61,9 +76,9 @@ pub fn git_current_head(dir: &PathBuf) -> Result<String, String> {
 
     if branch.is_empty() {
       // probably a tag
-      git_describe_tag(dir)
+      Ok(GitHead::Tag(git_describe_tag(dir)?))
     } else {
-      Ok(branch)
+      Ok(GitHead::Branch(branch))
     }
   }
 }
@@ -123,5 +138,21 @@ pub fn git_describe_tag(dir: &PathBuf) -> Result<String, String> {
     let mut tag = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
     tag = tag.trim().to_string();
     Ok(tag)
+  }
+}
+
+pub fn git_pull(dir: &PathBuf, branch: &str) -> Result<(), String> {
+  let output = std::process::Command::new("git")
+    .current_dir(dir)
+    .arg("pull")
+    .arg("origin")
+    .arg(branch)
+    .output()
+    .map_err(|e| e.to_string())?;
+  if !output.status.success() {
+    // println!("output: {:?}", output);
+    Err(format!("failed to pull {} {}", dir.to_str().unwrap(), branch))
+  } else {
+    Ok(())
   }
 }
