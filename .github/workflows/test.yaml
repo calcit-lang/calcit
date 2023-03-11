@@ -23,13 +23,12 @@ jobs:
           node-version: 16
           cache: yarn
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: nightly
           components: clippy
-          override: true
 
-      - uses: Swatinem/rust-cache@v1
+      - uses: Swatinem/rust-cache@v2
 
       - run: cargo test
       - run: cargo run --bin cr calcit/editor/compact.cirru --once
