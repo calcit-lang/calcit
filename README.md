@@ -66,8 +66,18 @@ Run with a [compact.cirru](https://github.com/calcit-lang/lilac/blob/main/compac
 cr compact.cirru -1 # run only once
 
 cr compact.cirru # watch mode enabled by default
+```
 
-cr compact.cirru --init-fn='app.main/main!' # specifying init-fn
+By default Calcit reads `:init-fn` and `:reload-fn` inside `compact.cirru` configs. You may also specify functions,
+
+```bash
+cr compact.cirru --init-fn='app.main/main!' --reload-fn='app.main/reload!'
+```
+
+and even configure `:entries` in `compact.cirru`:
+
+```bash
+cr compact.cirru --entry server
 ```
 
 ### JavaScript codegen

@@ -139,11 +139,14 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
       git_clone(&modules_dir, &url, &version, options.ci)?;
       // println!("downloading {} at version {}", url, version);
       dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
-      // if there's a build.sh file in the folder, run it
-      let build_file = folder_path.join("build.sh");
-      if build_file.exists() {
-        call_build_script(&folder_path)?;
-        dim_println(format!("ran build script for {}", gray(&org_and_folder)));
+
+      if !options.ci {
+        let build_file = folder_path.join("build.sh");
+        // if there's a build.sh file in the folder, run it
+        if build_file.exists() {
+          call_build_script(&folder_path)?;
+          dim_println(format!("ran build script for {}", gray(&org_and_folder)));
+        }
       }
     }
   }
