@@ -19,10 +19,12 @@ jobs:
           cache: yarn
           registry-url: https://registry.npmjs.org/
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
+      - uses: Swatinem/rust-cache@v2
+          
       - run: cargo test
       - run: cargo run --bin cr calcit/editor/compact.cirru --once
       - run: cargo run --bin cr calcit/test.cirru --once
