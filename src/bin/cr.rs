@@ -72,6 +72,9 @@ fn main() -> Result<(), String> {
       }
     }
   } else {
+    if !Path::new(&cli_options.entry_path).exists() {
+      return Err("compact.cirru does not exist".to_owned());
+    }
     // load entry file
     let mut content =
       fs::read_to_string(&cli_options.entry_path).unwrap_or_else(|_| panic!("expected Cirru snapshot: {:?}", cli_options.entry_path));
