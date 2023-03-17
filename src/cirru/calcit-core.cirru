@@ -199,9 +199,7 @@
                 foldl xs (#{})
                   defn %map (acc x) $ include acc (f x)
                 if (map? xs) (&map:map xs f)
-                  &let nil
-                    println "|value:" xs
-                    raise "|expected list or set for map function"
+                  raise $ str-spaced "|expected list or set for map function, got:" xs
 
         |&map:map-list $ quote
           defn &map:map-list (xs f)
@@ -209,7 +207,7 @@
               foldl xs ([])
                 defn %&map:map-list (acc pair)
                   append acc $ f pair
-              raise "|&map:map-list expected a map"
+              raise $ str-spaced "|&map:map-list expected a map, got:" xs
 
         |take $ quote
           defn take (xs n)
@@ -366,9 +364,7 @@
           defmacro cond (pair & else)
             if
               not $ and (list? pair) (&= 2 (&list:count pair))
-              &let nil
-                eprintln |Pattern: pair
-                raise "|expects a pair"
+              raise $ str-spaced "|expects a pair, got:" pair
             &let
               expr $ &list:nth pair 0
               &let
@@ -393,9 +389,7 @@
                 pair (&list:first body)
                 if
                   not $ and (list? pair) (&= 2 (&list:count pair))
-                  &let nil
-                    eprintln |Pattern: pair
-                    raise "|key-match expected pairs"
+                  raise $ str-spaced "|key-match expected pairs, got:" pair
                 let
                     pattern $ &list:nth pair 0
                     branch $ &list:nth pair 1
@@ -411,7 +405,7 @@
                             , ~branch
                           &key-match-internal ~value $ ~@ (&list:rest body)
                     if (&= pattern '_) branch
-                      raise $ str "|unknown supported pattern: " pair
+                      raise $ str-spaced "|unknown supported pattern:" pair
 
         |key-match $ quote
           defmacro key-match (value & body)
@@ -435,9 +429,7 @@
                 pair $ first body
                 if
                   not $ list? pair
-                  &let nil
-                    eprintln |Pattern: pair
-                    raise "|tag-match expected arm in list"
+                  raise $ str-spaced "|tag-match expected arm in list, got:" pair
                 let
                     pattern $ &list:nth pair 0
                   assert "|expected literal or symbol as tag"
@@ -484,9 +476,7 @@
           defmacro &case (item default pattern & others)
             if
               not $ and (list? pattern) (&= 2 (&list:count pattern))
-              &let nil
-                eprintln "|Pattern:" pattern
-                raise "|`case` expects pattern in a pair"
+              raise $ str-spaced "|`case` expects pattern in a pair, got:" pattern
             let
                 x $ &list:first pattern
                 branch $ last pattern
@@ -508,7 +498,7 @@
         |case-default $ quote
           defmacro case (item default & patterns)
             if (&list:empty? patterns)
-              raise "|Expected patterns for case-default, got empty"
+              raise $ str-spaced "|Expected patterns for case-default, got empty after:" default
             &let
               v (gensym |v)
               quasiquote
@@ -523,17 +513,13 @@
                   if (list? base) (&list:nth base k)
                     if (tuple? base) (&tuple:nth base k)
                       if (record? base) (&record:get base k)
-                        &let nil
-                          eprintln "|Value:" base k
-                          raise "|Expected map or list for get"
+                        raise $ str-spaced "|Expected map or list for get, got:" base k
 
         |get-in $ quote
           defn get-in (base path)
             if
               not $ list? path
-              &let nil
-                eprintln "|Pattern:" path
-                raise "|expects path in a list"
+              raise $ str-spaced "|expects path in a list, got:" path
             if (nil? base) nil
               if (&list:empty? path) base
                 recur
@@ -827,7 +813,7 @@
                     recur
                       append acc (take xs n)
                       drop xs n
-              raise "|expected positive number"
+              raise $ str-spaced "|expected positive number, got:" n
 
         |[][] $ quote
           defmacro [][] (& xs)
@@ -950,18 +936,14 @@
           defmacro loop (pairs & body)
             if
               not $ list? pairs
-              &let nil
-                eprintln |Pattern: pairs
-                raise "|expects pairs in loop"
+              raise $ str-spaced "|expects pairs in loop, got:" pairs
             if
               not  $ every? pairs
                 defn detect-pairs? (x)
                   if (list? x)
                     &= 2 (&list:count x)
                     , false
-              &let nil
-                eprintln |Pattern: pairs
-                raise "|expects pairs in pairs in loop"
+              raise $ str-spaced "|expects pairs in pairs in loop, got:" pairs
             let
                 args $ map pairs &list:first
                 values $ map pairs last
@@ -977,9 +959,7 @@
               not $ and
                 list? pairs
                 every? pairs list?
-              &let nil
-                eprintln |Pattern: pairs
-                raise "|expects pairs in list for let"
+              raise $ str-spaced "|expects pairs in list for let, got:" pairs
             if (&= 1 (&list:count pairs))
               quasiquote
                 &let
@@ -1000,18 +980,14 @@
               not $ and
                 list? pairs
                 every? pairs list?
-              &let nil
-                eprintln |Pattern: pairs
-                raise "|expects pairs in list for let"
+              raise $ str-spaced "|expects pairs in list for let, got:" pairs
             if (&list:empty? pairs)
               quasiquote $ &let nil ~@body
               &let
                 pair $ &list:first pairs
                 if
                   not $ &= 2 (&list:count pair)
-                  &let nil
-                    eprintln |Pattern: pair
-                    raise "|expected pair length of 2"
+                  raise $ str-spaced "|expected pair length of 2, got:" pair
                 if (&= 1 (&list:count pairs))
                   quasiquote
                     let-destruct ~@pair
@@ -1034,10 +1010,8 @@
                   if (&= '{} (&list:first pattern))
                     quasiquote
                       let{} (~ (&list:rest pattern)) ~v ~@body
-                    &let nil
-                      eprintln pattern
-                      raise "|Unknown pattern to destruct"
-                raise "|Unknown structure to destruct"
+                    raise $ str-spaced "|Unknown pattern to destruct:" pattern
+                raise $ str-spaced "|Unknown structure to destruct:" pattern
 
         |when-let $ quote
           defmacro when-let (pair & body)
@@ -1045,12 +1019,12 @@
               not $ and
                 list? pair
                 &= 2 $ count pair
-              &let nil
-                eprintln |Pattern: pair
-                raise "|expected a pair"
+              raise $ str-spaced "|expected a pair, got:" pair
             &let
               x $ nth pair 0
-              assert "|expected a symbol for var name" (symbol? x)
+              if
+                not $ symbol? x
+                raise $ str-spaced "|expected a symbol for var name, got:" x
               quasiquote $ &let
                 ~x $ ~ $ nth pair 1
                 if (some? ~x)
@@ -1062,16 +1036,12 @@
               not $ and
                 list? pair
                 &= 2 $ count pair
-              &let nil
-                eprintln |Pattern: pair
-                raise "|expected a pair"
+              raise $ str-spaced "|expected a pair, got:" pair
             &let
               x $ nth pair 0
               if
                 not $ symbol? x
-                &let nil
-                  eprintln |Pattern: x
-                  raise "|expected a symbol for var name"
+                raise $ str-spaced "|expected a symbol for var name, got:" x
               quasiquote $ &let
                 ~x $ ~ $ nth pair 1
                 if (some? ~x) ~then ~else
@@ -1091,7 +1061,7 @@
               quasiquote
                 &let nil
                   if (not (string? ~message))
-                    raise "|expects 1st argument to be string"
+                    raise $ str-spaced "|expects 1st argument to be string, got:" ~message
                   if ~xs nil
                     &let nil
                       eprintln "|Failed assertion:" (format-to-lisp (quote ~xs))
@@ -1157,7 +1127,7 @@
                         &= 2 (&list:count result)
                       &map:assoc acc (nth result 0) (nth result 1)
                     if (nil? result) acc
-                      raise $ str "|map-kv expected list or nil, got: " result
+                      raise $ str-spaced "|map-kv expected list or nil, got:" result
 
         |either $ quote
           defmacro either (item & xs)
@@ -1274,9 +1244,7 @@
             if
               not $ and (list? pair)
                 &= 2 (&list:count pair)
-              &let nil
-                eprintln |Pattern: pair
-                raise "|doseq expects a pair"
+              raise $ str-spaced "|doseq expects a pair, got:" pair
             let
                 name $ &list:first pair
                 xs0 $ last pair
@@ -1346,9 +1314,7 @@
           defmacro let{} (items base & body)
             if
               not $ and (list? items) (every? items symbol?)
-              &let nil
-                eprintln |Pattern: items
-                raise (str "|expects symbol names in binding names: " items)
+              raise $ str-spaced "|expects symbol names in binding names, got:" items
             &let
               var-result $ gensym |result
               quasiquote
@@ -1366,9 +1332,7 @@
             if
               not $ and (list? vars)
                 every? vars symbol?
-              &let nil
-                eprintln |Pattern: vars
-                raise "|expects a list of definitions"
+              raise $ str-spaced "|expects a list of definitions, got:" vars
             let
                 variable? $ symbol? data
                 v $ if variable? data $ gensym |v
@@ -1465,22 +1429,16 @@
           defn invoke (pair name & params)
             if
               not $ and (list? pair) (= 2 (&list:count pair)) (record? (&list:first pair))
-              &let nil
-                eprintln |Pattern: pair
-                raise "|method! applies on a pair, leading by record"
+              raise $ str-spaced "|method! applies on a pair, leading by record, got:" pair
             if
               not $ or (string? name) (keyword? name) (symbol? name)
-              &let nil
-                eprintln |Pattern: name
-                raise "|method by string or keyword"
+              raise $ str-spaced "|method by string or keyword, got:" name
             let
                 proto $ &tuple:nth pair 0
                 f $ &record:get proto name
               if
                 not $ fn? f
-                &let nil
-                  eprintln |Pattern: f
-                  raise "|expected function"
+                raise $ str-spaced "|expected function, got:" f
               f pair & params
 
         |&list:sort-by $ quote
@@ -1785,7 +1743,8 @@
 
         |assoc $ quote
           defn assoc (x & args)
-            if (nil? x) (raise "|assoc does not work on nil")
+            if (nil? x)
+              raise $ str-spaced "|assoc does not work on nil for:" args
               if (tuple? x) (&tuple:assoc x & args)
                 if (list? x) (&list:assoc x & args)
                   .assoc x & args
@@ -1807,7 +1766,7 @@
               map xs $ defn %map-pair (pair)
                 assert "|expected a pair" $ and (list? pair) $ = 2 $ count pair
                 f (nth pair 0) (nth pair 1)
-              raise "|expected list or map from `map-pair`"
+              raise $ str-spaced "|expected list or map from `map-pair`, got:" xs
 
         |&list:filter-pair $ quote
           defn &list:filter-pair (xs f)
@@ -1815,7 +1774,7 @@
               &list:filter xs $ defn %filter-pair (pair)
                 assert "|expected a pair" $ and (list? pair) $ = 2 $ count pair
                 f (nth pair 0) (nth pair 1)
-              raise "|expected list or map from `filter-pair`"
+              raise $ str-spaced "|expected list or map from `filter-pair`, got:" xs
 
         |&list:flatten $ quote
           defn &list:flatten (xs)

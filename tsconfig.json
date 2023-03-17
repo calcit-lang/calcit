@@ -14,7 +14,7 @@
     "lib": ["es2016", "dom"],
     "types": ["node"],
     "baseUrl": "./ts-src/",
-    "importsNotUsedAsValues": "preserve"
+    "verbatimModuleSyntax": false
   },
   "include": ["./ts-src/*"]
 }
