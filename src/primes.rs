@@ -11,8 +11,6 @@ use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 use cirru_edn::{Edn, EdnKwd};
 use cirru_parser::Cirru;
@@ -654,14 +652,23 @@ impl Calcit {
   }
 }
 
-/// too naive id generator to be safe in WASM
+#[cfg(not(target_arch = "wasm32"))]
 pub fn gen_core_id() -> Arc<str> {
+  use std::time::{SystemTime, UNIX_EPOCH};
+
   let c = ID_GEN.fetch_add(1, SeqCst);
   let start = SystemTime::now();
   let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
   let in_ms = since_the_epoch.as_millis();
 
   format!("gen_id_{c}_{in_ms}").into()
+}
+
+/// time lib not available for WASM. TODO id may not be unique
+#[cfg(target_arch = "wasm32")]
+pub fn gen_core_id() -> Arc<str> {
+  let c = ID_GEN.fetch_add(1, SeqCst);
+  format!("gen_id_{c}").into()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
