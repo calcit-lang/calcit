@@ -823,9 +823,9 @@ fn gen_if_code(
         }
 
         let false_code = to_js_code(false_node, ns, local_defs, file_imports, keywords, Some(return_label))?;
-        write!(chunk, "else {{ {false_code} }}").expect("write");
+        write!(chunk, " else {{ {false_code} }}").expect("write");
       } else {
-        write!(chunk, "else {{ {return_label} null; }}").expect("write");
+        write!(chunk, " else {{ {return_label} null; }}").expect("write");
       }
       break;
     }
@@ -998,6 +998,9 @@ fn gen_js_func(
           continue;
         }
       }
+    }
+    if line == &Calcit::Nil {
+      continue;
     }
     body = body.push_right(line.to_owned());
   }

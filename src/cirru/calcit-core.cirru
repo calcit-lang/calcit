@@ -1798,9 +1798,10 @@
             println & $ &list:map args pr-str
 
         |noted $ quote
-          defmacro noted (x0 & xs)
-            if (empty? xs) x0
-              last xs
+          defmacro noted (_doc v) v
+
+        |doc-fn $ quote
+          defmacro doc-fn (& _doc) nil
 
         |range-bothway $ quote
           defn range-bothway (x ? y)
