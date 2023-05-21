@@ -1673,7 +1673,8 @@
         |count $ quote
           defn count (x)
             if (nil? x) 0
-              if (tuple? x) 2
+              if (tuple? x)
+                &tuple:count x
                 if (list? x)
                   &list:count x
                   .count x

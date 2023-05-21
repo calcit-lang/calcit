@@ -26,6 +26,7 @@ pub enum CalcitProc {
   NativeTuple,
   NativeTupleNth,
   NativeTupleAssoc,
+  NativeTupleCount,
   NativeDisplayStack,
   Raise,
   Quit,
@@ -200,6 +201,7 @@ impl FromStr for CalcitProc {
       "::" => Ok(Self::NativeTuple),
       "&tuple:nth" => Ok(Self::NativeTupleNth),
       "&tuple:assoc" => Ok(Self::NativeTupleAssoc),
+      "&tuple:count" => Ok(Self::NativeTupleCount),
       // effects
       "&display-stack" => Ok(Self::NativeDisplayStack),
       "raise" => Ok(Self::Raise),
@@ -378,6 +380,7 @@ impl Display for CalcitProc {
       Self::NativeTuple => write!(f, "::"),
       Self::NativeTupleNth => write!(f, "&tuple:nth"),
       Self::NativeTupleAssoc => write!(f, "&tuple:assoc"),
+      Self::NativeTupleCount => write!(f, "&tuple:count"),
       Self::NativeDisplayStack => write!(f, "&display-stack"),
       Self::Raise => write!(f, "raise"),
       Self::Quit => write!(f, "quit!"),

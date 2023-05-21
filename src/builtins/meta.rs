@@ -260,10 +260,19 @@ pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    CalcitErr::err_str(format!("tuple expected 2 arguments, got {}", CrListWrap(xs.to_owned())))
+  if xs.len() < 2 {
+    CalcitErr::err_str(format!("tuple expected at least 2 arguments, got {}", CrListWrap(xs.to_owned())))
   } else {
-    Ok(Calcit::Tuple(Arc::new(xs[0].to_owned()), Arc::new(xs[1].to_owned())))
+    let extra: Vec<Calcit> = if xs.len() == 2 {
+      vec![]
+    } else {
+      let mut ys: Vec<Calcit> = Vec::with_capacity(xs.len() - 2);
+      for i in 2..xs.len() {
+        ys.push(xs[i].to_owned());
+      }
+      ys
+    };
+    Ok(Calcit::Tuple(Arc::new(xs[0].to_owned()), Arc::new(xs[1].to_owned()), extra))
   }
 }
 
@@ -277,7 +286,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
   let value = invoke_args[0].to_owned();
   let s0 = CalcitScope::default();
   let class = match &invoke_args[0] {
-    Calcit::Tuple(a, _b) => (**a).to_owned(),
+    Calcit::Tuple(a, _b, _extra) => (**a).to_owned(),
     // classed should already be preprocessed
     Calcit::List(..) => runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, None, call_stack)?,
     Calcit::Map(..) => runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, None, call_stack)?,
@@ -351,10 +360,17 @@ pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("&tuple:nth expected 2 argument, got: {}", CrListWrap(xs.to_owned())));
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple(a, b), Calcit::Number(n)) => match f64_to_usize(*n) {
+    (Calcit::Tuple(a, b, extra), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(0) => Ok((**a).to_owned()),
       Ok(1) => Ok((**b).to_owned()),
-      Ok(m) => CalcitErr::err_str(format!("Tuple only got 2 elements, trying to index with {m}")),
+      Ok(m) => {
+        if m - 2 < extra.len() {
+          Ok(extra[m - 2].to_owned())
+        } else {
+          let size = extra.len() + 2;
+          CalcitErr::err_str(format!("Tuple only got {size} elements, trying to index with {m}"))
+        }
+      }
       Err(e) => CalcitErr::err_str(format!("&tuple:nth expect usize, {e}")),
     },
     (a, b) => CalcitErr::err_str(format!("&tuple:nth expected a tuple and an index, got: {a} {b}")),
@@ -366,12 +382,16 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("tuple:assoc expected 3 arguments, got: {xs:?}"));
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple(a0, a1), Calcit::Number(n)) => match f64_to_usize(*n) {
+    (Calcit::Tuple(a0, a1, extra), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx == 0 {
-          Ok(Calcit::Tuple(Arc::new(xs[2].to_owned()), a1.to_owned()))
+          Ok(Calcit::Tuple(Arc::new(xs[2].to_owned()), a1.to_owned(), extra.to_owned()))
         } else if idx == 1 {
-          Ok(Calcit::Tuple(a0.to_owned(), Arc::new(xs[2].to_owned())))
+          Ok(Calcit::Tuple(a0.to_owned(), Arc::new(xs[2].to_owned()), extra.to_owned()))
+        } else if idx - 2 < extra.len() {
+          let mut new_extra = extra.to_owned();
+          new_extra[idx - 2] = xs[2].to_owned();
+          Ok(Calcit::Tuple(a0.to_owned(), a1.to_owned(), new_extra))
         } else {
           CalcitErr::err_str(format!("Tuple only has fields of 0,1 , unknown index: {idx}"))
         }
@@ -379,6 +399,16 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Err(e) => CalcitErr::err_str(e),
     },
     (a, b, ..) => CalcitErr::err_str(format!("tuple:assoc expected a tuple, got: {a} {b}")),
+  }
+}
+
+pub fn tuple_count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("tuple:count expected 1 argument, got: {xs:?}"));
+  }
+  match &xs[0] {
+    Calcit::Tuple(_, _, extra) => Ok(Calcit::Number((extra.len() + 2) as f64)),
+    x => CalcitErr::err_str(format!("&tuple:count expected a tuple, got: {x}")),
   }
 }
 

@@ -290,6 +290,13 @@ export let _$n_tuple_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
 
   throw new Error("Does not support `nth` on this type");
 };
+export let _$n_tuple_$o_count = function (xs: CalcitValue) {
+  if (arguments.length !== 1) throw new Error("&tuple:count takes 1 arguments");
+
+  if (xs instanceof CalcitTuple) return 2;
+
+  throw new Error("Does not support `count` on this type");
+};
 
 export let _$n_record_$o_get = function (xs: CalcitValue, k: CalcitKeyword) {
   if (arguments.length !== 2) {
