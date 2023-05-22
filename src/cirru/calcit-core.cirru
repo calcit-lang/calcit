@@ -397,11 +397,11 @@
                     &let
                       k (&list:first pattern)
                       quasiquote
-                        if (&= (&list:first ~value) ~k)
+                        if (&= (nth ~value 0) ~k)
                           let
                             ~ $ map-indexed (&list:rest pattern) $ defn %key-match (idx x)
                               [] x $ quasiquote
-                                &list:nth ~value (~ (inc idx))
+                                nth ~value (~ (inc idx))
                             , ~branch
                           &key-match-internal ~value $ ~@ (&list:rest body)
                     if (&= pattern '_) branch
