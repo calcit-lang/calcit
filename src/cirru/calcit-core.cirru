@@ -741,9 +741,7 @@
                   assoc x k $ f (&list:nth x k)
                   , x
                 if (tuple? x)
-                  if (or (&= k 0) (&= k 1))
-                    assoc x k $ f (&tuple:nth x k)
-                    raise $ &str:concat "|tuple only has 0,1 fields, unknown field: " k
+                  assoc x k $ f (&tuple:nth x k)
                   if (record? x)
                     if (contains? x k)
                       assoc x k $ f (&record:get x k)
