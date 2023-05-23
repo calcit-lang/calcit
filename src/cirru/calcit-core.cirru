@@ -1689,7 +1689,9 @@
             if (nil? x) false
               if (list? x) (&list:contains? x k)
                 if (tuple? x)
-                  or (&= k 0) (&= k 1)
+                  and
+                    &>= k 0
+                    &< k (&tuple:count x)
                   .contains? x k
 
         |contains-in? $ quote
@@ -1712,7 +1714,12 @@
                       recur (&record:get xs p0) (rest path)
                       , false
                   (tuple? xs)
-                    or (&= p0 0) (&= p0 1)
+                    if
+                      and
+                        &>= p0 0
+                        &< p0 (&tuple:count xs)
+                      recur (&tuple:nth xs p0) (rest path)
+                      , false
                   true false
 
         |includes? $ quote

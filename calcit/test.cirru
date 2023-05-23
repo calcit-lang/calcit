@@ -272,6 +272,11 @@
 
             assert= :a (get (:: :a :b) 0)
             assert= :b (get (:: :a :b) 1)
+            
+            assert= :c (get (:: :a :b :c) 2)
+            assert= true $ contains?
+              :: :a :b :c
+              , 2
 
             assert= (:: 1 0) $ update (:: 0 0) 0 inc
             assert= (:: 0 1) $ update (:: 0 0) 1 inc
