@@ -397,11 +397,11 @@
                     &let
                       k (&list:first pattern)
                       quasiquote
-                        if (&= (&list:first ~value) ~k)
+                        if (&= (nth ~value 0) ~k)
                           let
                             ~ $ map-indexed (&list:rest pattern) $ defn %key-match (idx x)
                               [] x $ quasiquote
-                                &list:nth ~value (~ (inc idx))
+                                nth ~value (~ (inc idx))
                             , ~branch
                           &key-match-internal ~value $ ~@ (&list:rest body)
                     if (&= pattern '_) branch
@@ -741,9 +741,7 @@
                   assoc x k $ f (&list:nth x k)
                   , x
                 if (tuple? x)
-                  if (or (&= k 0) (&= k 1))
-                    assoc x k $ f (&tuple:nth x k)
-                    raise $ &str:concat "|tuple only has 0,1 fields, unknown field: " k
+                  assoc x k $ f (&tuple:nth x k)
                   if (record? x)
                     if (contains? x k)
                       assoc x k $ f (&record:get x k)
@@ -1673,7 +1671,8 @@
         |count $ quote
           defn count (x)
             if (nil? x) 0
-              if (tuple? x) 2
+              if (tuple? x)
+                &tuple:count x
                 if (list? x)
                   &list:count x
                   .count x

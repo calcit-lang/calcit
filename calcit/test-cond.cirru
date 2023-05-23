@@ -126,6 +126,16 @@
                 match-ab (' :c 1 2)
                 [] "|no match"
 
+              assert=
+                match-ab (:: :a 1 2)
+                [] "|pattern a:" 1
+              assert=
+                match-ab (:: :b 1 2)
+                [] "|pattern b:" 1 2
+              assert=
+                match-ab (:: :c 1 2)
+                [] "|no match"
+
         |test-tag-match $ quote
           fn ()
             log-title "|Testing tag-match"

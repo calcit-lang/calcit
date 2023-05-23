@@ -53,7 +53,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     }
     Calcit::Proc(name) => Ok(Edn::Symbol(name.to_string().into())),
     Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.to_string())),
-    Calcit::Tuple(tag, data) => {
+    Calcit::Tuple(tag, data, extra) => {
       match &**tag {
         Calcit::Symbol { sym, .. } => {
           if &**sym == "quote" {
@@ -65,7 +65,13 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             Err(format!("unknown tag for EDN: {sym}")) // TODO more types to handle
           }
         }
-        Calcit::Record(name, _, _) => Ok(Edn::tuple(Edn::Keyword(name.to_owned()), calcit_to_edn(data)?)),
+        Calcit::Record(name, _, _) => {
+          let mut extra_values = vec![];
+          for item in extra {
+            extra_values.push(calcit_to_edn(item)?);
+          }
+          Ok(Edn::tuple(Edn::Keyword(name.to_owned()), calcit_to_edn(data)?, extra_values))
+        }
         v => {
           Err(format!("EDN tuple expected 'quote or record, unknown tag: {v}"))
           // TODO more types to handle
@@ -98,7 +104,11 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Keyword(s) => Calcit::Keyword(s.to_owned()),
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::CirruQuote(nodes.to_owned()),
-    Edn::Tuple(pair) => Calcit::Tuple(Arc::new(edn_to_calcit(&pair.0)), Arc::new(edn_to_calcit(&pair.1))),
+    Edn::Tuple(pair, extra) => Calcit::Tuple(
+      Arc::new(edn_to_calcit(&pair.0)),
+      Arc::new(edn_to_calcit(&pair.1)),
+      extra.into_iter().map(edn_to_calcit).collect(),
+    ),
     Edn::List(xs) => {
       let mut ys: primes::CalcitItems = TernaryTreeList::Empty;
       for x in xs {

@@ -246,10 +246,10 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       return new CalcitCirruQuote(x[1]);
     }
     if (x[0] === "::") {
-      if (x.length !== 3) {
-        throw new Error("tuple expects 2 values");
+      if (x.length < 3) {
+        throw new Error("tuple expects at least 2 values");
       }
-      return new CalcitTuple(extract_cirru_edn(x[1]), extract_cirru_edn(x[2]));
+      return new CalcitTuple(extract_cirru_edn(x[1]), extract_cirru_edn(x[2]), x.slice(3).map(extract_cirru_edn));
     }
   }
   console.error(x);

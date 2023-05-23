@@ -264,13 +264,20 @@
             assert= :tuple (type-of (:: :a :b))
             assert= :a (nth (:: :a :b) 0)
             assert= :b (nth (:: :a :b) 1)
+            assert= :c (nth (:: :a :b :c) 2)
+
             assert= 2 (count (:: :a :b))
+            assert= 3 (count (:: :a :b :c))
+            assert= 4 (count (:: :a :b :c :d))
 
             assert= :a (get (:: :a :b) 0)
             assert= :b (get (:: :a :b) 1)
 
             assert= (:: 1 0) $ update (:: 0 0) 0 inc
             assert= (:: 0 1) $ update (:: 0 0) 1 inc
+            assert= (:: 1 0 0) $ update (:: 0 0 0) 0 inc
+            assert= (:: 0 1 0) $ update (:: 0 0 0) 1 inc
+            assert= (:: 0 0 1) $ update (:: 0 0 0) 2 inc
 
         |test-effect $ quote
           fn ()

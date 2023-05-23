@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.6.27";
+export const calcit_version = "0.6.28";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -289,6 +289,13 @@ export let _$n_tuple_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   if (xs instanceof CalcitTuple) return xs.get(k);
 
   throw new Error("Does not support `nth` on this type");
+};
+export let _$n_tuple_$o_count = function (xs: CalcitValue) {
+  if (arguments.length !== 1) throw new Error("&tuple:count takes 1 arguments");
+
+  if (xs instanceof CalcitTuple) return xs.count();
+
+  throw new Error("Does not support `count` on this type");
 };
 
 export let _$n_record_$o_get = function (xs: CalcitValue, k: CalcitKeyword) {
@@ -1253,8 +1260,8 @@ export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> =
   return ret;
 };
 
-export let _$o__$o_ = (a: CalcitValue, b: CalcitValue): CalcitTuple => {
-  return new CalcitTuple(a, b);
+export let _$o__$o_ = (a: CalcitValue, b: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
+  return new CalcitTuple(a, b, extra);
 };
 
 // mutable place for core to register
