@@ -212,7 +212,7 @@ fn call_build_script(folder_path: &Path) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
     let msg = String::from_utf8(output.stderr).unwrap_or("".to_string());
-    return Err(format!("failed to build module {}: {}", folder_path.display(), msg));
+    Err(format!("failed to build module {}: {}", folder_path.display(), msg))
   } else {
     Ok(())
   }

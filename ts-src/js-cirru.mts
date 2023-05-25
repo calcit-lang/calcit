@@ -126,13 +126,13 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     return buffer;
   }
   if (x instanceof CalcitTuple) {
-    if (x.fst instanceof CalcitSymbol && x.fst.value === "quote") {
+    if (x.tag instanceof CalcitSymbol && x.tag.value === "quote") {
       // turn `x.snd` with CalcitList into raw Cirru nodes, which is in plain Array
-      return ["quote", toWriterNode(x.snd as any)] as CirruEdnFormat;
-    } else if (x.fst instanceof CalcitRecord) {
-      return ["::", x.fst.name.toString(), to_cirru_edn(x.snd)];
+      return ["quote", toWriterNode(x.get(1) as any)] as CirruEdnFormat;
+    } else if (x.tag instanceof CalcitRecord) {
+      return ["::", x.tag.name.toString(), to_cirru_edn(x.get(1))];
     } else {
-      throw new Error(`Unsupported tag for EDN: ${x.fst}`);
+      throw new Error(`Unsupported tag for EDN: ${x.tag}`);
     }
   }
   console.error(x);
@@ -249,7 +249,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       if (x.length < 3) {
         throw new Error("tuple expects at least 2 values");
       }
-      return new CalcitTuple(extract_cirru_edn(x[1]), extract_cirru_edn(x[2]), x.slice(3).map(extract_cirru_edn));
+      return new CalcitTuple(extract_cirru_edn(x[1]), x.slice(2).map(extract_cirru_edn));
     }
   }
   console.error(x);

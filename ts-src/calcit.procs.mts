@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.6.29";
+export const calcit_version = "0.6.30";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -1260,8 +1260,8 @@ export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> =
   return ret;
 };
 
-export let _$o__$o_ = (a: CalcitValue, b: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
-  return new CalcitTuple(a, b, extra);
+export let _$o__$o_ = (tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
+  return new CalcitTuple(tag, extra);
 };
 
 // mutable place for core to register
@@ -1294,8 +1294,8 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   if (obj == null) {
     klass = calcit_builtin_classes.nil;
   } else if (obj instanceof CalcitTuple) {
-    if (obj.fst instanceof CalcitRecord) {
-      klass = obj.fst;
+    if (obj.tag instanceof CalcitRecord) {
+      klass = obj.tag;
     } else {
       throw new Error("Method invoking expected a record as class");
     }

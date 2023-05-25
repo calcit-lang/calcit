@@ -53,10 +53,11 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     }
     Calcit::Proc(name) => Ok(Edn::Symbol(name.to_string().into())),
     Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.to_string())),
-    Calcit::Tuple(tag, data, extra) => {
+    Calcit::Tuple(tag, extra) => {
       match &**tag {
         Calcit::Symbol { sym, .. } => {
           if &**sym == "quote" {
+            let data = extra.get(0).ok_or(format!("quote expected 1 argument, got: {:?}", extra))?; // TODO more types to handle
             match cirru::calcit_data_to_cirru(data) {
               Ok(v) => Ok(Edn::Quote(v)),
               Err(e) => Err(format!("failed to create quote: {e}")), // TODO more types to handle
@@ -70,7 +71,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
           for item in extra {
             extra_values.push(calcit_to_edn(item)?);
           }
-          Ok(Edn::tuple(Edn::Keyword(name.to_owned()), calcit_to_edn(data)?, extra_values))
+          Ok(Edn::tuple(Edn::Keyword(name.to_owned()), extra_values))
         }
         v => {
           Err(format!("EDN tuple expected 'quote or record, unknown tag: {v}"))
@@ -104,11 +105,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Keyword(s) => Calcit::Keyword(s.to_owned()),
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::CirruQuote(nodes.to_owned()),
-    Edn::Tuple(pair, extra) => Calcit::Tuple(
-      Arc::new(edn_to_calcit(&pair.0)),
-      Arc::new(edn_to_calcit(&pair.1)),
-      extra.into_iter().map(edn_to_calcit).collect(),
-    ),
+    Edn::Tuple(tag, extra) => Calcit::Tuple(Arc::new(edn_to_calcit(tag)), extra.iter().map(edn_to_calcit).collect()),
     Edn::List(xs) => {
       let mut ys: primes::CalcitItems = TernaryTreeList::Empty;
       for x in xs {

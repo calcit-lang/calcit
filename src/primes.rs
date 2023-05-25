@@ -117,7 +117,7 @@ pub enum Calcit {
   /// atom, holding a path to its state, data inside remains during hot code swapping
   Ref(Arc<str>, Arc<Mutex<ValueAndListeners>>),
   /// more tagged union type, more like an internal structure
-  Tuple(Arc<Calcit>, Arc<Calcit>, Vec<Calcit>),
+  Tuple(Arc<Calcit>, Vec<Calcit>),
   /// binary data, to be used by FFIs
   Buffer(Vec<u8>),
   /// cirru quoted data, for faster meta programming
@@ -184,7 +184,7 @@ impl fmt::Display for Calcit {
       },
       Calcit::CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
       Calcit::Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
-      Calcit::Tuple(a, b, extra) => {
+      Calcit::Tuple(tag, extra) => {
         let mut extra_str = String::from("");
         for item in extra {
           if !extra_str.is_empty() {
@@ -192,7 +192,7 @@ impl fmt::Display for Calcit {
           }
           extra_str.push_str(&item.to_string())
         }
-        f.write_str(&format!("(:: {a} {b} {extra_str})"))
+        f.write_str(&format!("(:: {tag} {extra_str})"))
       }
       Calcit::Buffer(buf) => {
         f.write_str("(&buffer")?;
@@ -383,10 +383,9 @@ impl Hash for Calcit {
         "ref:".hash(_state);
         name.hash(_state);
       }
-      Calcit::Tuple(a, b, extra) => {
+      Calcit::Tuple(tag, extra) => {
         "tuple:".hash(_state);
-        a.hash(_state);
-        b.hash(_state);
+        tag.hash(_state);
         extra.hash(_state);
       }
       Calcit::Buffer(buf) => {
@@ -508,15 +507,12 @@ impl Ord for Calcit {
       (Calcit::Ref(_, _), _) => Less,
       (_, Calcit::Ref(_, _)) => Greater,
 
-      (Calcit::Tuple(a0, b0, extra0), Calcit::Tuple(a1, b1, extra1)) => match a0.cmp(a1) {
-        Equal => match b0.cmp(b1) {
-          Equal => extra0.cmp(extra1),
-          v => v,
-        },
+      (Calcit::Tuple(a0, extra0), Calcit::Tuple(a1, extra1)) => match a0.cmp(a1) {
+        Equal => extra0.cmp(extra1),
         v => v,
       },
-      (Calcit::Tuple(_, _, _), _) => Less,
-      (_, Calcit::Tuple(_, _, _)) => Greater,
+      (Calcit::Tuple(_, _), _) => Less,
+      (_, Calcit::Tuple(_, _)) => Greater,
 
       (Calcit::Buffer(buf1), Calcit::Buffer(buf2)) => buf1.cmp(buf2),
       (Calcit::Buffer(..), _) => Less,
@@ -603,7 +599,7 @@ impl PartialEq for Calcit {
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
       (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
       (Calcit::Ref(a, _), Calcit::Ref(b, _)) => a == b,
-      (Calcit::Tuple(a, b, extra_a), Calcit::Tuple(c, d, extra_c)) => a == c && b == d && extra_a == extra_c,
+      (Calcit::Tuple(a, extra_a), Calcit::Tuple(c, extra_c)) => a == c && extra_a == extra_c,
       (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,
       (Calcit::CirruQuote(b), Calcit::CirruQuote(d)) => b == d,
       (Calcit::List(a), Calcit::List(b)) => a == b,

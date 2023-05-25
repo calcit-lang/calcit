@@ -248,8 +248,11 @@ export let hashFunction = (x: CalcitValue): Hash => {
   }
   if (x instanceof CalcitTuple) {
     let base = defaultHash_tuple;
-    base = mergeValueHash(base, hashFunction(x.fst));
-    base = mergeValueHash(base, hashFunction(x.snd));
+    base = mergeValueHash(base, hashFunction(x.tag));
+    for (let idx = 0; idx < x.extra.length; idx++) {
+      let item = x.extra[idx];
+      base = mergeValueHash(base, hashFunction(item));
+    }
     x.cachedHash = base;
     return base;
   }
@@ -578,7 +581,7 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   }
   if (x instanceof CalcitTuple) {
     if (y instanceof CalcitTuple) {
-      return _$n__$e_(x.fst, y.fst) && _$n__$e_(x.snd, y.snd);
+      return _$n__$e_(x.tag, y.tag) && _$n__$e_(x.get(1), y.get(1));
     }
     return false;
   }
