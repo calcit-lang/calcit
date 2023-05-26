@@ -15,23 +15,23 @@ import { CirruWriterNode } from "@cirru/writer.ts";
 // we have to inject cache in a dirty way in some cases
 const calcit_dirty_hash_key = "_calcit_cached_hash";
 
-let keywordIdx = 0;
+let tagIdx = 0;
 
-export class CalcitKeyword {
+export class CalcitTag {
   value: string;
   cachedHash: Hash;
-  // use keyword for fast comparing
+  // use tag for fast comparing
   idx: number;
   constructor(x: string) {
     this.value = x;
-    this.idx = keywordIdx;
-    keywordIdx++;
+    this.idx = tagIdx;
+    tagIdx++;
     this.cachedHash = null;
   }
   toString() {
     return `:${this.value}`;
   }
-  cmp(other: CalcitKeyword): number {
+  cmp(other: CalcitTag): number {
     if (this.idx < other.idx) {
       return -1;
     } else if (this.idx > other.idx) {
@@ -121,7 +121,7 @@ export let getStringName = (x: CalcitValue): string => {
   if (typeof x === "string") {
     return x;
   }
-  if (x instanceof CalcitKeyword) {
+  if (x instanceof CalcitTag) {
     return x.value;
   }
   if (x instanceof CalcitSymbol) {
@@ -131,7 +131,7 @@ export let getStringName = (x: CalcitValue): string => {
 };
 
 /** returns -1 when not found */
-export function findInFields(xs: Array<CalcitKeyword>, y: CalcitKeyword): number {
+export function findInFields(xs: Array<CalcitTag>, y: CalcitTag): number {
   let lower = 0;
   let upper = xs.length - 1;
 
@@ -152,30 +152,30 @@ export function findInFields(xs: Array<CalcitKeyword>, y: CalcitKeyword): number
   return -1;
 }
 
-var keywordRegistery: Record<string, CalcitKeyword> = {};
+var tagRegistery: Record<string, CalcitTag> = {};
 
-export let kwd = (content: string) => {
-  let item = keywordRegistery[content];
+export let tag = (content: string) => {
+  let item = tagRegistery[content];
   if (item != null) {
     return item;
   } else {
-    let v = new CalcitKeyword(content);
-    keywordRegistery[content] = v;
+    let v = new CalcitTag(content);
+    tagRegistery[content] = v;
     return v;
   }
 };
 
-export let castKwd = (x: CalcitValue): CalcitKeyword => {
-  if (x instanceof CalcitKeyword) {
+export let castTag = (x: CalcitValue): CalcitTag => {
+  if (x instanceof CalcitTag) {
     return x;
   }
   if (typeof x === "string") {
-    return kwd(x);
+    return tag(x);
   }
   if (x instanceof CalcitSymbol) {
-    return kwd(x.value);
+    return tag(x.value);
   }
-  throw new Error(`Cannot cast this to keyword: ${x}`);
+  throw new Error(`Cannot cast this to tag: ${x}`);
 };
 
 export var refsRegistry = new Map<string, CalcitRef>();
@@ -183,7 +183,7 @@ export var refsRegistry = new Map<string, CalcitRef>();
 let defaultHash_nil = valueHash("nil:");
 let defaultHash_number = valueHash("number:");
 let defaultHash_string = valueHash("string:");
-let defaultHash_keyword = valueHash("keyword:");
+let defaultHash_tag = valueHash("tag:");
 let defaultHash_true = valueHash("bool:true");
 let defaultHash_false = valueHash("bool:false");
 let defaultHash_symbol = valueHash("symbol:");
@@ -219,8 +219,8 @@ export let hashFunction = (x: CalcitValue): Hash => {
     return (x as any)[calcit_dirty_hash_key];
   }
 
-  if (x instanceof CalcitKeyword) {
-    let h = mergeValueHash(defaultHash_keyword, x.idx);
+  if (x instanceof CalcitTag) {
+    let h = mergeValueHash(defaultHash_tag, x.idx);
     x.cachedHash = h;
     return h;
   }
@@ -378,7 +378,7 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
   if (x instanceof CalcitSymbol) {
     return x.toString();
   }
-  if (x instanceof CalcitKeyword) {
+  if (x instanceof CalcitTag) {
     return x.toString();
   }
   if (x instanceof CalcitList || x instanceof CalcitSliceList) {
@@ -425,7 +425,7 @@ export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
   if (typeof x === "function") {
     return x;
   }
-  if (x instanceof CalcitKeyword) {
+  if (x instanceof CalcitTag) {
     if (addColon) {
       return `:${x.value}`;
     }
@@ -519,8 +519,8 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
     // comparing functions by reference
     return x === y;
   }
-  if (x instanceof CalcitKeyword) {
-    if (y instanceof CalcitKeyword) {
+  if (x instanceof CalcitTag) {
+    if (y instanceof CalcitTag) {
       return x === y;
     }
     return false;

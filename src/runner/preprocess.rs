@@ -274,7 +274,7 @@ pub fn preprocess_expr(
         process_list_call(xs, scope_defs, file_ns, check_warnings, call_stack)
       }
     }
-    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) | Calcit::CirruQuote(..) => {
+    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::CirruQuote(..) => {
       Ok((expr.to_owned(), None))
     }
     Calcit::Method(..) => Ok((expr.to_owned(), None)),
@@ -321,11 +321,11 @@ fn process_list_call(
   // == Tips ==
   // Macro from value: will be called during processing
   // Func from value: for checking arity
-  // Keyword: transforming into keyword expression
+  // Keyword: transforming into tag expression
   // Syntax: handled directly during preprocessing
   // Thunk: invalid here
   match (&head_form, &head_evaled) {
-    (Calcit::Keyword(..), _) => {
+    (Calcit::Tag(..), _) => {
       if args.len() == 1 {
         let code = Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {

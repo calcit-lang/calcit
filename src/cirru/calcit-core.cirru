@@ -138,8 +138,8 @@
         |symbol? $ quote
           defn symbol? (x) $ &= (type-of x) :symbol
 
-        |keyword? $ quote
-          defn keyword? (x) $ &= (type-of x) :keyword
+        |tag? $ quote
+          defn tag? (x) $ &= (type-of x) :tag
 
         |bool? $ quote
           defn bool? (x) $ &= (type-of x) :bool
@@ -380,16 +380,16 @@
                             ~ $ &list:nth else 0
                             ~@ $ &list:rest else
 
-        |&key-match-internal $ quote
-          defmacro &key-match-internal (value & body)
+        |&tag-match-internal $ quote
+          defmacro &tag-match-internal (value & body)
             if (&list:empty? body)
               quasiquote
-                eprintln "|[Warn] key-match found no matched case, missing `_` case?" ~value
+                eprintln "|[Warn] tag-match found no matched case, missing `_` case?" ~value
               &let
                 pair (&list:first body)
                 if
                   not $ and (list? pair) (&= 2 (&list:count pair))
-                  raise $ str-spaced "|key-match expected pairs, got:" pair
+                  raise $ str-spaced "|tag-match expected pairs, got:" pair
                 let
                     pattern $ &list:nth pair 0
                     branch $ &list:nth pair 1
@@ -399,52 +399,52 @@
                       quasiquote
                         if (&= (nth ~value 0) ~k)
                           let
-                            ~ $ map-indexed (&list:rest pattern) $ defn %key-match (idx x)
+                            ~ $ map-indexed (&list:rest pattern) $ defn %tag-match (idx x)
                               [] x $ quasiquote
                                 nth ~value (~ (inc idx))
                             , ~branch
-                          &key-match-internal ~value $ ~@ (&list:rest body)
+                          &tag-match-internal ~value $ ~@ (&list:rest body)
                     if (&= pattern '_) branch
                       raise $ str-spaced "|unknown supported pattern:" pair
 
-        |key-match $ quote
-          defmacro key-match (value & body)
+        |tag-match $ quote
+          defmacro tag-match (value & body)
             if (&list:empty? body)
               quasiquote
-                eprintln "|[Error] key-match expected some patterns and matches" ~value
+                eprintln "|[Error] tag-match expected some patterns and matches" ~value
               if (list? value)
                 &let (v# (gensym |v))
                   quasiquote
                     &let (~v# ~value)
-                      &key-match-internal ~v# $ ~@ body
+                      &tag-match-internal ~v# $ ~@ body
                 quasiquote
-                  &key-match-internal ~value $ ~@ body
+                  &tag-match-internal ~value $ ~@ body
 
-        |&tag-match-internal $ quote
-          defmacro &tag-match-internal (value & body)
+        |&field-match-internal $ quote
+          defmacro &field-match-internal (value & body)
             if (&list:empty? body)
               quasiquote
-                eprintln "|[Warn] tag-match found no matched case, missing `_` case?" ~value
+                eprintln "|[Warn] field-match found no matched case, missing `_` case?" ~value
               &let
                 pair $ first body
                 if
                   not $ list? pair
-                  raise $ str-spaced "|tag-match expected arm in list, got:" pair
+                  raise $ str-spaced "|field-match expected arm in list, got:" pair
                 let
                     pattern $ &list:nth pair 0
                   assert "|expected literal or symbol as tag"
-                    or (keyword? pattern) (symbol? pattern)
+                    or (tag? pattern) (symbol? pattern)
                   if
                     &= pattern '_
                     &let nil
-                      assert "|tag-match expected a branch after `_`"
+                      assert "|field-match expected a branch after `_`"
                         &= 2 $ &list:count pair
                       if
                         not $ &= 1 $ &list:count body
-                        eprintln "|[Warn] expected `_` beginning last branch of tag-match"
+                        eprintln "|[Warn] expected `_` beginning last branch of field-match"
                       &list:nth pair 1
                     &let nil
-                      assert "|tag-match expected an with (tag new-name body)"
+                      assert "|field-match expected an with (tag new-name body)"
                         &= 3 $ &list:count pair
                       quasiquote
                         if
@@ -452,25 +452,25 @@
                           &let
                             (~ $ &list:nth pair 1) ~value
                             ~ $ &list:nth pair 2
-                          &tag-match-internal ~value $ ~@ $ &list:rest body
+                          &field-match-internal ~value $ ~@ $ &list:rest body
 
-        |tag-match $ quote
-          defmacro tag-match (value & body)
+        |field-match $ quote
+          defmacro field-match (value & body)
             if (&list:empty? body)
               quasiquote
-                eprintln "|[Error] tag-match expected patterns for matching" ~value
+                eprintln "|[Error] field-match expected patterns for matching" ~value
               if (list? value)
                 &let (v# (gensym |v))
                   quasiquote
                     &let (~v# ~value)
                       assert "|expected map value to match"
                         map? ~value
-                      &tag-match-internal ~value ~@body
+                      &field-match-internal ~value ~@body
                 quasiquote
                   &let nil
                     assert "|expected map value to match"
                       map? ~value
-                    &tag-match-internal ~value ~@body
+                    &field-match-internal ~value ~@body
 
         |&case $ quote
           defmacro &case (item default pattern & others)
@@ -1322,7 +1322,7 @@
                   let
                     ~ $ map items
                       defn gen-items% (x)
-                        [] x ([] (turn-keyword x) var-result)
+                        [] x ([] (turn-tag x) var-result)
                     ~@ body
 
         |let[] $ quote
@@ -1366,12 +1366,12 @@
         |defrecord $ quote
           defmacro defrecord (name & xs)
             quasiquote
-              new-record (~ (turn-keyword name)) ~@xs
+              new-record (~ (turn-tag name)) ~@xs
 
         |defrecord! $ quote
           defmacro defrecord! (name & pairs)
             quasiquote
-              %{} (new-record (~ (turn-keyword name)) (~@ (map pairs &list:first))) ~@pairs
+              %{} (new-record (~ (turn-tag name)) (~@ (map pairs &list:first))) ~@pairs
 
         |;nil $ quote
           defmacro ;nil (& _body) nil
@@ -1429,8 +1429,8 @@
               not $ and (list? pair) (= 2 (&list:count pair)) (record? (&list:first pair))
               raise $ str-spaced "|method! applies on a pair, leading by record, got:" pair
             if
-              not $ or (string? name) (keyword? name) (symbol? name)
-              raise $ str-spaced "|method by string or keyword, got:" name
+              not $ or (string? name) (tag? name) (symbol? name)
+              raise $ str-spaced "|method by string or tag, got:" name
             let
                 proto $ &tuple:nth pair 0
                 f $ &record:get proto name
@@ -1441,7 +1441,7 @@
 
         |&list:sort-by $ quote
           defn &list:sort-by (xs f)
-            if (keyword? f)
+            if (tag? f)
               sort xs $ defn %&list:sort-by (a b)
                 &compare (get a f) (get b f)
 
@@ -1788,15 +1788,15 @@
               &list:concat & $ map xs &list:flatten
               [] xs
 
-        |keywordize-edn $ quote
-          defn keywordize-edn (data)
+        |tagging-edn $ quote
+          defn tagging-edn (data)
             if (list? data)
-              map data keywordize-edn
+              map data tagging-edn
               if (map? data)
                 map-kv data $ defn %keywordize (k v)
                   []
-                    if (string? k) (turn-keyword k) k
-                    keywordize-edn v
+                    if (string? k) (turn-tag k) k
+                    tagging-edn v
                 , data
 
         |print-values $ quote

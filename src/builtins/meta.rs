@@ -14,7 +14,7 @@ use crate::{
   util::number::f64_to_usize,
 };
 
-use cirru_edn::EdnKwd;
+use cirru_edn::EdnTag;
 use cirru_parser::{Cirru, CirruWriterOptions};
 
 use std::hash::{Hash, Hasher};
@@ -34,29 +34,29 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("type-of expected 1 argument, got: {xs:?}"));
   }
   match &xs[0] {
-    Calcit::Nil => Ok(Calcit::kwd("nil")),
+    Calcit::Nil => Ok(Calcit::tag("nil")),
     // CalcitRef(Calcit), // TODO
-    Calcit::Bool(..) => Ok(Calcit::kwd("bool")),
-    Calcit::Number(..) => Ok(Calcit::kwd("number")),
-    Calcit::Symbol { .. } => Ok(Calcit::kwd("symbol")),
-    Calcit::Keyword(..) => Ok(Calcit::kwd("keyword")),
-    Calcit::Str(..) => Ok(Calcit::kwd("string")),
-    Calcit::Thunk(..) => Ok(Calcit::kwd("thunk")), // internal
-    Calcit::Ref(..) => Ok(Calcit::kwd("ref")),
-    Calcit::Tuple(..) => Ok(Calcit::kwd("tuple")),
-    Calcit::Buffer(..) => Ok(Calcit::kwd("buffer")),
-    Calcit::CirruQuote(..) => Ok(Calcit::kwd("cirru-quote")),
-    Calcit::Recur(..) => Ok(Calcit::kwd("recur")),
-    Calcit::List(..) => Ok(Calcit::kwd("list")),
-    Calcit::Set(..) => Ok(Calcit::kwd("set")),
-    Calcit::Map(..) => Ok(Calcit::kwd("map")),
-    Calcit::Record(..) => Ok(Calcit::kwd("record")),
-    Calcit::Proc(..) => Ok(Calcit::kwd("fn")), // special kind proc, but also fn
-    Calcit::Macro { .. } => Ok(Calcit::kwd("macro")),
-    Calcit::Fn { .. } => Ok(Calcit::kwd("fn")),
-    Calcit::Syntax(..) => Ok(Calcit::kwd("syntax")),
-    Calcit::Method(..) => Ok(Calcit::kwd("method")),
-    Calcit::RawCode(..) => Ok(Calcit::kwd("raw-code")),
+    Calcit::Bool(..) => Ok(Calcit::tag("bool")),
+    Calcit::Number(..) => Ok(Calcit::tag("number")),
+    Calcit::Symbol { .. } => Ok(Calcit::tag("symbol")),
+    Calcit::Tag(..) => Ok(Calcit::tag("tag")),
+    Calcit::Str(..) => Ok(Calcit::tag("string")),
+    Calcit::Thunk(..) => Ok(Calcit::tag("thunk")), // internal
+    Calcit::Ref(..) => Ok(Calcit::tag("ref")),
+    Calcit::Tuple(..) => Ok(Calcit::tag("tuple")),
+    Calcit::Buffer(..) => Ok(Calcit::tag("buffer")),
+    Calcit::CirruQuote(..) => Ok(Calcit::tag("cirru-quote")),
+    Calcit::Recur(..) => Ok(Calcit::tag("recur")),
+    Calcit::List(..) => Ok(Calcit::tag("list")),
+    Calcit::Set(..) => Ok(Calcit::tag("set")),
+    Calcit::Map(..) => Ok(Calcit::tag("map")),
+    Calcit::Record(..) => Ok(Calcit::tag("record")),
+    Calcit::Proc(..) => Ok(Calcit::tag("fn")), // special kind proc, but also fn
+    Calcit::Macro { .. } => Ok(Calcit::tag("macro")),
+    Calcit::Fn { .. } => Ok(Calcit::tag("fn")),
+    Calcit::Syntax(..) => Ok(Calcit::tag("syntax")),
+    Calcit::Method(..) => Ok(Calcit::tag("method")),
+    Calcit::RawCode(..) => Ok(Calcit::tag("raw-code")),
   }
 }
 
@@ -235,7 +235,7 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       resolved: None,
       location: None,
     }),
-    Calcit::Keyword(s) => Ok(Calcit::Symbol {
+    Calcit::Tag(s) => Ok(Calcit::Symbol {
       sym: s.to_string().into(),
       ns: primes::GEN_NS.into(),
       at_def: primes::GENERATED_DEF.into(),
@@ -247,15 +247,15 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn turn_tag(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("turn-keyword cannot turn this to keyword: {xs:?}"));
+    return CalcitErr::err_str(format!("turn-tag cannot turn this to tag: {xs:?}"));
   }
   match &xs[0] {
-    Calcit::Str(s) => Ok(Calcit::kwd(s)),
-    Calcit::Keyword(s) => Ok(Calcit::Keyword(s.to_owned())),
-    Calcit::Symbol { sym, .. } => Ok(Calcit::kwd(sym)),
-    a => CalcitErr::err_str(format!("turn-keyword cannot turn this to keyword: {a}")),
+    Calcit::Str(s) => Ok(Calcit::tag(s)),
+    Calcit::Tag(s) => Ok(Calcit::Tag(s.to_owned())),
+    Calcit::Symbol { sym, .. } => Ok(Calcit::tag(sym)),
+    a => CalcitErr::err_str(format!("turn-tag cannot turn this to tag: {a}")),
   }
 }
 
@@ -306,7 +306,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
   };
   match &class {
     Calcit::Record(_, fields, values) => {
-      match find_in_fields(fields, &EdnKwd::from(name)) {
+      match find_in_fields(fields, &EdnTag::from(name)) {
         Some(idx) => {
           let method_args = invoke_args.assoc(0, value)?;
 
@@ -415,7 +415,7 @@ pub fn no_op() -> Result<Calcit, CalcitErr> {
 
 pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   // https://doc.rust-lang.org/std/env/consts/constant.OS.html
-  Ok(Calcit::kwd(std::env::consts::OS))
+  Ok(Calcit::tag(std::env::consts::OS))
 }
 
 pub fn async_sleep(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {

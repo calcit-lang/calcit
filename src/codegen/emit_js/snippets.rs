@@ -107,7 +107,7 @@ pub fn tmpl_tail_recursion(
 pub fn tmpl_import_procs(name: String) -> String {
   format!(
     "
-import {{kwd, arrayToList, listToArray, CalcitSliceList, CalcitSymbol, CalcitRecur}} from {};
+import {{tag, arrayToList, listToArray, CalcitSliceList, CalcitSymbol, CalcitRecur}} from {};
 import * as $calcit_procs from {};
 export * from {};
 ",
@@ -140,11 +140,11 @@ if (runtimeVersion !== cli_version) {{
   )
 }
 
-pub fn tmpl_keywords_init(arr: &str, prefix: &str) -> String {
+pub fn tmpl_tags_init(arr: &str, prefix: &str) -> String {
   format!(
     "
 {}.forEach(x => {{
-  _kwd[x] = {}kwd(x);
+  _tag[x] = {}tag(x);
 }});
 ",
     arr, prefix

@@ -365,7 +365,7 @@ pub fn gensym(xs: &CalcitItems, _scope: &CalcitScope, file_ns: Arc<str>, _call_s
         chunk.push_str(&n.to_string());
         chunk
       }
-      Calcit::Keyword(k) => {
+      Calcit::Tag(k) => {
         let mut chunk = k.to_string();
         chunk.push('_');
         chunk.push('_');

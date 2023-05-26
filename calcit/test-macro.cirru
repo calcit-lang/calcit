@@ -309,7 +309,7 @@
 
         |test-extract $ quote
           fn ()
-            log-title "|Extract map via keywords"
+            log-title "|Extract map via tags"
 
             inside-eval:
               &reset-gensym-index!

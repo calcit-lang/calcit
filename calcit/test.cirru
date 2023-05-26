@@ -28,9 +28,9 @@
           test-algebra.main :as test-algebra
           util.core :refer $ log-title inside-eval: inside-js:
       :defs $ {}
-        |test-keyword $ quote
-          defn test-keyword ()
-            ; assert "|keyword function" $ =
+        |test-tag $ quote
+          defn test-tag ()
+            ; assert "|tag function" $ =
               :a ({} (:a 1))
               , 1
             ; inside-eval:
@@ -150,7 +150,7 @@
                   {}
                     :c 3
                     4 5
-              keywordize-edn $ {}
+              tagging-edn $ {}
                 |a 1
                 :b $ []
                   {}
@@ -272,7 +272,7 @@
 
             assert= :a (get (:: :a :b) 0)
             assert= :b (get (:: :a :b) 1)
-            
+
             assert= :c (get (:: :a :b :c) 2)
             assert= true $ contains?
               :: :a :b :c
@@ -309,8 +309,8 @@
             inside-js:
               load-console-formatter!
 
-            log-title "|Testing keyword function"
-            test-keyword
+            log-title "|Testing tag function"
+            test-tag
 
             util.core/log-title "|Testing detects"
             test-detects
