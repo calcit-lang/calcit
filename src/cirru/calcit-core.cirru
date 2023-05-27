@@ -37,7 +37,7 @@
               &= 1 (&list:count body)
               quasiquote $ if ~condition
                 ~ (nth body 0)
-              quasiquote $ if ~condition (&let nil ~@body)
+              quasiquote $ if ~condition (&let () ~@body)
 
         |when-not $ quote
           defmacro when-not (condition & body)
@@ -45,7 +45,7 @@
               &= 1 (&list:count body)
               quasiquote $ if (not ~condition)
                 ~ (nth body 0)
-              quasiquote $ if (not ~condition) (&let nil ~@body)
+              quasiquote $ if (not ~condition) (&let () ~@body)
 
         |+ $ quote
           defn + (x & ys) $ reduce ys x &+
@@ -436,14 +436,14 @@
                     or (tag? pattern) (symbol? pattern)
                   if
                     &= pattern '_
-                    &let nil
+                    &let ()
                       assert "|field-match expected a branch after `_`"
                         &= 2 $ &list:count pair
                       if
                         not $ &= 1 $ &list:count body
                         eprintln "|[Warn] expected `_` beginning last branch of field-match"
                       &list:nth pair 1
-                    &let nil
+                    &let ()
                       assert "|field-match expected an with (tag new-name body)"
                         &= 3 $ &list:count pair
                       quasiquote
@@ -467,7 +467,7 @@
                         map? ~value
                       &field-match-internal ~value ~@body
                 quasiquote
-                  &let nil
+                  &let ()
                     assert "|expected map value to match"
                       map? ~value
                     &field-match-internal ~value ~@body
@@ -718,7 +718,7 @@
               &let
                 inner-body $ if (&= 1 (&list:count xs)) (&list:first xs)
                   quasiquote
-                    &let nil ~@xs
+                    &let () ~@xs
                 apply-args (inner-body args)
                   fn (body ys)
                     if (&list:empty? ys)
@@ -854,7 +854,7 @@
                     &let
                       ~vb ~b
                       if (not= ~va ~vb)
-                        &let nil
+                        &let ()
                           eprintln
                           eprintln "|Left: " ~va
                           eprintln "|      " $ format-to-lisp $ quote ~a
@@ -870,7 +870,7 @@
                 &let
                   ~v ~code
                   if (~f ~v) nil
-                    &let nil
+                    &let ()
                       eprintln
                       eprintln (format-to-lisp (quote ~code)) "|does not satisfy:" (format-to-lisp (quote ~f)) "| <--------"
                       eprintln "|  value is:" ~v
@@ -964,7 +964,7 @@
                   ~ $ &list:nth pairs 0
                   ~@ body
               if (&list:empty? pairs)
-                quasiquote $ &let nil ~@body
+                quasiquote $ &let () ~@body
                 quasiquote
                   &let
                     ~ $ &list:nth pairs 0
@@ -980,7 +980,7 @@
                 every? pairs list?
               raise $ str-spaced "|expects pairs in list for let, got:" pairs
             if (&list:empty? pairs)
-              quasiquote $ &let nil ~@body
+              quasiquote $ &let () ~@body
               &let
                 pair $ &list:first pairs
                 if
@@ -1057,11 +1057,11 @@
               if (string? xs) (not (string? message)) false
               quasiquote $ assert ~xs ~message
               quasiquote
-                &let nil
+                &let ()
                   if (not (string? ~message))
                     raise $ str-spaced "|expects 1st argument to be string, got:" ~message
                   if ~xs nil
-                    &let nil
+                    &let ()
                       eprintln "|Failed assertion:" (format-to-lisp (quote ~xs))
                       raise
                         ~ $ &str:concat (&str:concat message "| ") (format-to-lisp xs)
@@ -1204,7 +1204,7 @@
                     println (format-to-lisp (quote ~x)) |=> ~v
                     ~ v
                 quasiquote
-                  &let nil
+                  &let ()
                     println (format-to-lisp (quote ~x)) |=> ~x
                     ~ x
 
@@ -1222,7 +1222,7 @@
                     js/console.log (format-to-lisp (quote ~x)) |=> ~v
                     ~ v
               quasiquote
-                &let nil
+                &let ()
                   js/console.log (format-to-lisp (quote ~x)) |=> ~x
                   ~ x
 
@@ -1305,7 +1305,7 @@
               empty? body
               raise "|empty do is not okay"
             quasiquote
-              &let nil
+              &let ()
                 ~@ body
 
         |let{} $ quote
@@ -1338,12 +1338,12 @@
                   [] ([]) vars 0
                   defn let[]% (acc xs idx)
                     if (&list:empty? xs) acc
-                      &let nil
-                        when-not
-                          symbol? (&list:first xs)
+                      &let ()
+                        if
+                          not $ symbol? (&list:first xs)
                           raise $ &str:concat "|Expected symbol for vars: " (&list:first xs)
                         if (&= (&list:first xs) '&)
-                          &let nil
+                          &let ()
                             assert "|expected list spreading" (&= 2 (&list:count xs))
                             append acc $ [] (&list:nth xs 1) (quasiquote (&list:slice ~v ~idx))
                           recur

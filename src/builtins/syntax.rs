@@ -11,7 +11,7 @@ use im_ternary_tree::TernaryTreeList;
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::call_stack::CallStackList;
-use crate::primes::{self, LocatedWarning};
+use crate::primes::{self, CrListWrap, LocatedWarning};
 use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 
@@ -93,7 +93,8 @@ pub fn eval(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_sta
 
 pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match expr.get(0) {
-    Some(Calcit::Nil) => runner::evaluate_lines(&expr.drop_left(), scope, file_ns, call_stack),
+    // Some(Calcit::Nil) => runner::evaluate_lines(&expr.drop_left(), scope, file_ns, call_stack),
+    Some(Calcit::List(xs)) if xs.is_empty() => runner::evaluate_lines(&expr.drop_left(), scope, file_ns, call_stack),
     Some(Calcit::List(xs)) if xs.len() == 2 => {
       let mut body_scope = scope.to_owned();
       match (&xs[0], &xs[1]) {
@@ -106,7 +107,7 @@ pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
       runner::evaluate_lines(&expr.drop_left(), &body_scope, file_ns, call_stack)
     }
     Some(Calcit::List(xs)) => CalcitErr::err_str(format!("invalid length: {xs:?}")),
-    Some(_) => CalcitErr::err_str(format!("invalid node for &let: {expr:?}")),
+    Some(_) => CalcitErr::err_str(format!("invalid node for &let: {}", CrListWrap(expr.to_owned()))),
     None => CalcitErr::err_str("&let expected a pair or a nil"),
   }
 }

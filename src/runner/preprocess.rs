@@ -674,7 +674,7 @@ pub fn preprocess_call_let(
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
   let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
   let binding = match args.get(0) {
-    Some(Calcit::Nil) => Calcit::Nil,
+    Some(Calcit::List(ys)) if ys.is_empty() => Calcit::List(TernaryTreeList::Empty),
     Some(Calcit::List(ys)) if ys.len() == 2 => match (&ys[0], &ys[1]) {
       (Calcit::Symbol { sym, .. }, a) => {
         let loc = NodeLocation {

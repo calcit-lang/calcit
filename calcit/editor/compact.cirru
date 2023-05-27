@@ -22,7 +22,7 @@
             quasiquote $ &+ 2 (add-by-1 ~x)
         |add-num $ quote
           defmacro add-num (a b)
-            quasiquote $ &let nil
+            quasiquote $ &let ()
               &+ (~ a) (~ b)
     |app.main $ {}
       :ns $ quote
@@ -74,7 +74,7 @@
             if false (println "\"true") (println "\"false")
             if (&+ 1 2) (println "\"3") (println "\"?")
             &let (a 1) (println "\"a is:" a)
-            &let nil $ println "\"a is none"
+            &let () $ println "\"a is none"
             &let
               a $ &+ 3 4
               println "\"a is:" a

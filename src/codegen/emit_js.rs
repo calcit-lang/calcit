@@ -677,7 +677,7 @@ fn gen_let_code(
     let content = let_def_body.drop_left();
 
     match &pair {
-      Calcit::Nil => {
+      Calcit::Nil | Calcit::List(TernaryTreeList::Empty) => {
         // non content defs_code
 
         for (idx, x) in content.into_iter().enumerate() {
