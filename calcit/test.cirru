@@ -256,6 +256,7 @@
                 -> a .inc .inc
               assert= |1
                 -> a .inc .show
+              assert-detect record? $ &tuple:class a
 
         |test-tuple $ quote
           fn ()

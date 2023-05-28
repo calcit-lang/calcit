@@ -25,10 +25,11 @@ pub enum CalcitProc {
   // "::", unstable
   NativeTuple,
   // "%::"
-  NativeTupleClass,
+  NativeClassTuple,
   NativeTupleNth,
   NativeTupleAssoc,
   NativeTupleCount,
+  NativeTupleClass,
   NativeDisplayStack,
   Raise,
   Quit,
@@ -201,10 +202,11 @@ impl FromStr for CalcitProc {
       "&extract-code-into-edn" => Ok(Self::NativeExtractCodeIntoEdn),
       // tuples // unstable
       "::" => Ok(Self::NativeTuple),
-      "%::" => Ok(Self::NativeTupleClass),
+      "%::" => Ok(Self::NativeClassTuple),
       "&tuple:nth" => Ok(Self::NativeTupleNth),
       "&tuple:assoc" => Ok(Self::NativeTupleAssoc),
       "&tuple:count" => Ok(Self::NativeTupleCount),
+      "&tuple:class" => Ok(Self::NativeTupleClass),
       // effects
       "&display-stack" => Ok(Self::NativeDisplayStack),
       "raise" => Ok(Self::Raise),
@@ -381,10 +383,11 @@ impl Display for CalcitProc {
       Self::NativeHash => write!(f, "&hash"),
       Self::NativeExtractCodeIntoEdn => write!(f, "&extract-code-into-edn"),
       Self::NativeTuple => write!(f, "::"),
-      Self::NativeTupleClass => write!(f, "%::"),
+      Self::NativeClassTuple => write!(f, "%::"),
       Self::NativeTupleNth => write!(f, "&tuple:nth"),
       Self::NativeTupleAssoc => write!(f, "&tuple:assoc"),
       Self::NativeTupleCount => write!(f, "&tuple:count"),
+      Self::NativeTupleClass => write!(f, "&tuple:class"),
       Self::NativeDisplayStack => write!(f, "&display-stack"),
       Self::Raise => write!(f, "raise"),
       Self::Quit => write!(f, "quit!"),

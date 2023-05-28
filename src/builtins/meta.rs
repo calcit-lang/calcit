@@ -432,6 +432,16 @@ pub fn tuple_count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn tuple_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("tuple:class expected 1 argument, got: {xs:?}"));
+  }
+  match &xs[0] {
+    Calcit::Tuple(_tag, _extra, class) => Ok((**class).to_owned()),
+    x => CalcitErr::err_str(format!("&tuple:class expected a tuple, got: {x}")),
+  }
+}
+
 pub fn no_op() -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Nil)
 }

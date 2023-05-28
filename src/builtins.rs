@@ -73,10 +73,11 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeExtractCodeIntoEdn => meta::extract_code_into_edn(args),
     // tuple
     CalcitProc::NativeTuple => meta::new_tuple(args), // unstable solution for the name
-    CalcitProc::NativeTupleClass => meta::new_tuple_class(args),
+    CalcitProc::NativeClassTuple => meta::new_tuple_class(args),
     CalcitProc::NativeTupleNth => meta::tuple_nth(args),
     CalcitProc::NativeTupleAssoc => meta::assoc(args),
     CalcitProc::NativeTupleCount => meta::tuple_count(args),
+    CalcitProc::NativeTupleClass => meta::tuple_class(args),
     // effects
     CalcitProc::NativeDisplayStack => meta::display_stack(args, call_stack),
     CalcitProc::Raise => effects::raise(args),
