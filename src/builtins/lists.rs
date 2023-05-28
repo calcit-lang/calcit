@@ -281,10 +281,10 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
           let values = TernaryTreeList::from(&[state, x.to_owned()]);
           let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
-            Calcit::Tuple(x0, extra) => match &*x0 {
+            Calcit::Tuple(x0, extra, _class) => match &*x0 {
               Calcit::Bool(b) => {
                 let x1 = extra.get(0).ok_or(CalcitErr::use_msg_stack_location(
-                  "foldl list expected value in tuple",
+                  "foldl-shortcut list expected value in tuple",
                   call_stack,
                   x0.get_location(),
                 ))?;
@@ -324,7 +324,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
           let values = TernaryTreeList::from(&[state, x.to_owned()]);
           let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
-            Calcit::Tuple(x0, extra) => match &*x0 {
+            Calcit::Tuple(x0, extra, _class) => match &*x0 {
               Calcit::Bool(b) => {
                 let x1 = extra.get(0).ok_or(CalcitErr::use_msg_stack_location(
                   "foldl set expected value in tuple",
@@ -367,7 +367,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
           let values = TernaryTreeList::from(&[state, Calcit::List(TernaryTreeList::from(&[k.to_owned(), x.to_owned()]))]);
           let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
-            Calcit::Tuple(x0, extra) => match &*x0 {
+            Calcit::Tuple(x0, extra, _class) => match &*x0 {
               Calcit::Bool(b) => {
                 let x1 = extra.get(0).ok_or(CalcitErr::use_msg_stack_location(
                   "foldl map expected value in tuple",
@@ -434,7 +434,7 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
           let values = TernaryTreeList::from(&[state, x]);
           let pair = runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
           match pair {
-            Calcit::Tuple(x0, extra) => match &*x0 {
+            Calcit::Tuple(x0, extra, _class) => match &*x0 {
               Calcit::Bool(b) => {
                 let x1 = extra.get(0).ok_or(CalcitErr::use_msg_stack_location(
                   "foldl shortcut expected value in tuple",

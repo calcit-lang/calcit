@@ -260,8 +260,8 @@ pub fn turn_tag(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  if xs.len() < 2 {
-    CalcitErr::err_str(format!("tuple expected at least 2 arguments, got {}", CrListWrap(xs.to_owned())))
+  if xs.is_empty() {
+    CalcitErr::err_str(format!("tuple expected at least 1 arguments, got {}", CrListWrap(xs.to_owned())))
   } else {
     let extra: Vec<Calcit> = if xs.len() == 1 {
       vec![]
@@ -272,7 +272,30 @@ pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       ys
     };
-    Ok(Calcit::Tuple(Arc::new(xs[0].to_owned()), extra))
+    let base_class = Calcit::Record(EdnTag::new("base-class"), Arc::new(vec![]), Arc::new(vec![]));
+    Ok(Calcit::Tuple(Arc::new(xs[0].to_owned()), extra, Arc::new(base_class)))
+  }
+}
+
+pub fn new_tuple_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() < 2 {
+    CalcitErr::err_str(format!("tuple expected at least 2 arguments, got {}", CrListWrap(xs.to_owned())))
+  } else {
+    let class = xs[0].to_owned();
+    if let Calcit::Record(..) = class {
+    } else {
+      return CalcitErr::err_str(format!("tuple expected a record as class, got {}", class));
+    }
+    let extra: Vec<Calcit> = if xs.len() == 2 {
+      vec![]
+    } else {
+      let mut ys: Vec<Calcit> = Vec::with_capacity(xs.len() - 1);
+      for i in 2..xs.len() {
+        ys.push(xs[i].to_owned());
+      }
+      ys
+    };
+    Ok(Calcit::Tuple(Arc::new(xs[1].to_owned()), extra, Arc::new(class)))
   }
 }
 
@@ -285,8 +308,8 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
   }
   let value = invoke_args[0].to_owned();
   let s0 = CalcitScope::default();
-  let class = match &invoke_args[0] {
-    Calcit::Tuple(tag, _extra) => (**tag).to_owned(),
+  let class: Calcit = match &invoke_args[0] {
+    Calcit::Tuple(_tag, _extra, class) => (**class).to_owned(),
     // classed should already be preprocessed
     Calcit::List(..) => runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, None, call_stack)?,
     Calcit::Map(..) => runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, None, call_stack)?,
@@ -360,7 +383,7 @@ pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("&tuple:nth expected 2 argument, got: {}", CrListWrap(xs.to_owned())));
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple(tag, extra), Calcit::Number(n)) => match f64_to_usize(*n) {
+    (Calcit::Tuple(tag, extra, _class), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(0) => Ok((**tag).to_owned()),
       Ok(m) => {
         if m - 1 < extra.len() {
@@ -381,14 +404,14 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("tuple:assoc expected 3 arguments, got: {xs:?}"));
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple(tag, extra), Calcit::Number(n)) => match f64_to_usize(*n) {
+    (Calcit::Tuple(tag, extra, class), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx == 0 {
-          Ok(Calcit::Tuple(Arc::new(xs[2].to_owned()), extra.to_owned()))
+          Ok(Calcit::Tuple(Arc::new(xs[2].to_owned()), extra.to_owned(), class.to_owned()))
         } else if idx - 1 < extra.len() {
           let mut new_extra = extra.to_owned();
           new_extra[idx - 1] = xs[2].to_owned();
-          Ok(Calcit::Tuple(tag.to_owned(), new_extra))
+          Ok(Calcit::Tuple(tag.to_owned(), new_extra, class.to_owned()))
         } else {
           CalcitErr::err_str(format!("Tuple only has fields of 0,1 , unknown index: {idx}"))
         }
@@ -404,7 +427,7 @@ pub fn tuple_count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("tuple:count expected 1 argument, got: {xs:?}"));
   }
   match &xs[0] {
-    Calcit::Tuple(_tag, extra) => Ok(Calcit::Number((extra.len() + 1) as f64)),
+    Calcit::Tuple(_tag, extra, _class) => Ok(Calcit::Number((extra.len() + 1) as f64)),
     x => CalcitErr::err_str(format!("&tuple:count expected a tuple, got: {x}")),
   }
 }

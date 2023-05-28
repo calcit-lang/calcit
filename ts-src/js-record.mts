@@ -1,6 +1,6 @@
 import { initTernaryTreeMap, Hash, insert } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes.mjs";
-import { tag, castTag, toString, CalcitTag, getStringName, findInFields } from "./calcit-data.mjs";
+import { newTag, castTag, toString, CalcitTag, getStringName, findInFields } from "./calcit-data.mjs";
 
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 

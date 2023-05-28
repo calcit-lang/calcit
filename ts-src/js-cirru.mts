@@ -6,7 +6,7 @@ import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitRecord } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
-import { CalcitTag, CalcitSymbol, CalcitRecur, CalcitRef, tag } from "./calcit-data.mjs";
+import { CalcitTag, CalcitSymbol, CalcitRecur, CalcitRef, newTag } from "./calcit-data.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
@@ -142,9 +142,9 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
 /** makes sure we got string */
 let extractFieldTag = (x: string) => {
   if (x[0] === ":") {
-    return tag(x.slice(1));
+    return newTag(x.slice(1));
   } else {
-    return tag(x);
+    return newTag(x);
   }
 };
 
@@ -166,7 +166,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       return x.slice(1);
     }
     if (x[0] === ":") {
-      return tag(x.slice(1));
+      return newTag(x.slice(1));
     }
     if (x[0] === "'") {
       return new CalcitSymbol(x.slice(1));
@@ -249,7 +249,8 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       if (x.length < 3) {
         throw new Error("tuple expects at least 2 values");
       }
-      return new CalcitTuple(extract_cirru_edn(x[1]), x.slice(2).map(extract_cirru_edn));
+      let baseClass = new CalcitRecord(newTag("base-class"), [], []);
+      return new CalcitTuple(extract_cirru_edn(x[1]), x.slice(2).map(extract_cirru_edn), baseClass);
     }
   }
   console.error(x);
@@ -285,7 +286,7 @@ export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue =>
 
   if (typeof x === "string") {
     if (!noKeyword && x[0] === ":" && x.slice(1).match(/^[\w\d_\?\!\-]+$/)) {
-      return tag(x.slice(1));
+      return newTag(x.slice(1));
     }
     return x;
   }

@@ -78,4 +78,4 @@
             do true
 
       :proc $ quote ()
-      :configs $ {} (:extension nil)
+      :configs $ {}

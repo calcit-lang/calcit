@@ -99,7 +99,7 @@
               assert= 4 $ .-length a
               assert= 1 $ aget a 0
               assert= 4 $ aget a 3
-              assert= nil $ aget a 4
+              assert= js/undefined $ aget a 4
               assert= 2 (.-1 a)
             &let
               b $ js-object (:a 1) (|b 2) (:c 3)
@@ -151,4 +151,4 @@
             do true
 
       :proc $ quote ()
-      :configs $ {} (:extension nil)
+      :configs $ {}

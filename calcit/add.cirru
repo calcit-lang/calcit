@@ -10,4 +10,4 @@
           defn main! () (+ 1 2)
 
       :proc $ quote ()
-      :configs $ {} (:extension nil)
+      :configs $ {}

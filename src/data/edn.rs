@@ -53,7 +53,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     }
     Calcit::Proc(name) => Ok(Edn::Symbol(name.to_string().into())),
     Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.to_string())),
-    Calcit::Tuple(tag, extra) => {
+    Calcit::Tuple(tag, extra, _class) => {
       match &**tag {
         Calcit::Symbol { sym, .. } => {
           if &**sym == "quote" {
@@ -105,7 +105,14 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Tag(s) => Calcit::Tag(s.to_owned()),
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::CirruQuote(nodes.to_owned()),
-    Edn::Tuple(tag, extra) => Calcit::Tuple(Arc::new(edn_to_calcit(tag)), extra.iter().map(edn_to_calcit).collect()),
+    Edn::Tuple(tag, extra) => {
+      let base_class = Calcit::Record(EdnTag::new("base"), Arc::new(Vec::new()), Arc::new(Vec::new()));
+      Calcit::Tuple(
+        Arc::new(edn_to_calcit(tag)),
+        extra.iter().map(edn_to_calcit).collect(),
+        Arc::new(base_class),
+      )
+    }
     Edn::List(xs) => {
       let mut ys: primes::CalcitItems = TernaryTreeList::Empty;
       for x in xs {

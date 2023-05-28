@@ -327,7 +327,7 @@
                 fn (k v)
                   if (< v 10)
                     [] k (+ v 10)
-                    , nil
+                    :: :none
 
             assert=
               &{} :a 1 :b 2
@@ -455,4 +455,4 @@
             do true
 
       :proc $ quote ()
-      :configs $ {} (:extension nil)
+      :configs $ {}

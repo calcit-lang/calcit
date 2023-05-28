@@ -24,7 +24,8 @@
                 branch $ nth pair 1
                 quasiquote
                   if ~expr ~branch
-                    ~ $ if (empty? else) nil
+                    ~ $ if (empty? else)
+                      :: :unit
                       quasiquote
                         my-cond
                           ~ $ nth else 0

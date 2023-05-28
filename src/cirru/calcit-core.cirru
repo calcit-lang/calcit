@@ -574,17 +574,17 @@
 
         |every? $ quote
           defn every? (xs f)
-            foldl-shortcut xs nil true $ defn %every? (_acc x)
+            foldl-shortcut xs true true $ defn %every? (acc x)
               if (f x)
-                :: false nil
+                :: false acc
                 :: true false
 
         |any? $ quote
           defn any? (xs f)
-            foldl-shortcut xs nil false $ defn %any? (_acc x)
+            foldl-shortcut xs false false $ defn %any? (acc x)
               if (f x)
                 :: true true
-                :: false nil
+                :: false acc
 
         |mapcat $ quote
           defn mapcat (xs f)
@@ -1124,7 +1124,10 @@
                       assert "|expected pair returned when mapping hashmap"
                         &= 2 (&list:count result)
                       &map:assoc acc (nth result 0) (nth result 1)
-                    if (nil? result) acc
+                    if
+                      or (nil? result)
+                        tuple? result
+                      , acc
                       raise $ str-spaced "|map-kv expected list or nil, got:" result
 
         |either $ quote
@@ -1793,7 +1796,7 @@
             if (list? data)
               map data tagging-edn
               if (map? data)
-                map-kv data $ defn %keywordize (k v)
+                map-kv data $ defn %tagging (k v)
                   []
                     if (string? k) (turn-tag k) k
                     tagging-edn v

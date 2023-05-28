@@ -250,9 +250,9 @@
             log-title "|Testing method"
 
             let
-                a $ :: Num 0
+                a $ %:: Num :calcit/number 0
               assert=
-                :: Num 2
+                %:: Num :calcit/number 2
                 -> a .inc .inc
               assert= |1
                 -> a .inc .show
@@ -298,7 +298,8 @@
             println "|buffer value:" $ &buffer 0x11 |11
 
         |reload! $ quote
-          defn reload! () nil
+          defn reload! ()
+            :: :unit
 
         |main! $ quote
           defn main! ()
@@ -363,4 +364,4 @@
             do true
 
       :proc $ quote ()
-      :configs $ {} (:extension nil)
+      :configs $ {}

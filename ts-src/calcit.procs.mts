@@ -11,7 +11,7 @@ import {
   CalcitRef,
   CalcitFn,
   CalcitRecur,
-  tag,
+  newTag,
   refsRegistry,
   toString,
   getStringName,
@@ -43,53 +43,53 @@ let inNodeJs = typeof process !== "undefined" && process?.release?.name === "nod
 
 export let type_of = (x: any): CalcitTag => {
   if (typeof x === "string") {
-    return tag("string");
+    return newTag("string");
   }
   if (typeof x === "number") {
-    return tag("number");
+    return newTag("number");
   }
   if (x instanceof CalcitTag) {
-    return tag("tag");
+    return newTag("tag");
   }
   if (x instanceof CalcitList || x instanceof CalcitSliceList) {
-    return tag("list");
+    return newTag("list");
   }
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
-    return tag("map");
+    return newTag("map");
   }
   if (x == null) {
-    return tag("nil");
+    return newTag("nil");
   }
   if (x instanceof CalcitRef) {
-    return tag("ref");
+    return newTag("ref");
   }
   if (x instanceof CalcitTuple) {
-    return tag("tuple");
+    return newTag("tuple");
   }
   if (x instanceof CalcitSymbol) {
-    return tag("symbol");
+    return newTag("symbol");
   }
   if (x instanceof CalcitSet) {
-    return tag("set");
+    return newTag("set");
   }
   if (x instanceof CalcitRecord) {
-    return tag("record");
+    return newTag("record");
   }
   if (x instanceof CalcitCirruQuote) {
-    return tag("cirru-quote");
+    return newTag("cirru-quote");
   }
   if (x === true || x === false) {
-    return tag("bool");
+    return newTag("bool");
   }
   if (typeof x === "function") {
     if (x.isMacro) {
       // this is faked...
-      return tag("macro");
+      return newTag("macro");
     }
-    return tag("fn");
+    return newTag("fn");
   }
   if (typeof x === "object") {
-    return tag("js-object");
+    return newTag("js-object");
   }
   throw new Error(`Unknown data ${x}`);
 };
@@ -554,7 +554,7 @@ export let recur = (...xs: CalcitValue[]): CalcitRecur => {
 };
 
 export let _$n_get_calcit_backend = () => {
-  return tag("js");
+  return newTag("js");
 };
 
 export let not = (x: boolean): boolean => {
@@ -747,7 +747,7 @@ export let _$n_merge = (a: CalcitValue, b: CalcitMap | CalcitSliceMap): CalcitVa
         if (k instanceof CalcitTag) {
           field = k;
         } else {
-          field = tag(getStringName(k));
+          field = newTag(getStringName(k));
         }
         let position = a.findIndex(field);
         if (position >= 0) {
@@ -985,13 +985,13 @@ export let get_env = (name: string, v0: string): string => {
 
 export let turn_tag = (x: CalcitValue): CalcitTag => {
   if (typeof x === "string") {
-    return tag(x);
+    return newTag(x);
   }
   if (x instanceof CalcitTag) {
     return x;
   }
   if (x instanceof CalcitSymbol) {
-    return tag(x.value);
+    return newTag(x.value);
   }
   console.error(x);
   throw new Error("Unexpected data for tag");
@@ -1260,8 +1260,13 @@ export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> =
   return ret;
 };
 
-export let _$o__$o_ = (tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
-  return new CalcitTuple(tag, extra);
+export let _$o__$o_ = (tagName: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
+  let klass = new CalcitRecord(newTag("base-class"), [], []);
+  return new CalcitTuple(tagName, extra, klass);
+};
+
+export let _PCT__$o__$o_ = (klass: CalcitRecord, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
+  return new CalcitTuple(tag, extra, klass);
 };
 
 // mutable place for core to register
@@ -1294,8 +1299,8 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   if (obj == null) {
     klass = calcit_builtin_classes.nil;
   } else if (obj instanceof CalcitTuple) {
-    if (obj.tag instanceof CalcitRecord) {
-      klass = obj.tag;
+    if (obj.klass instanceof CalcitRecord) {
+      klass = obj.klass;
     } else {
       throw new Error("Method invoking expected a record as class");
     }
@@ -1420,7 +1425,7 @@ export let _$n_str_$o_pad_right = (s: string, size: number, pattern: string): st
 };
 
 export let _$n_get_os = (): CalcitTag => {
-  return tag("js-engine");
+  return newTag("js-engine");
 };
 
 export let _$n_buffer = (...xs: CalcitValue[]): Uint8Array => {

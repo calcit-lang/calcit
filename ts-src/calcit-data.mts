@@ -154,7 +154,7 @@ export function findInFields(xs: Array<CalcitTag>, y: CalcitTag): number {
 
 var tagRegistery: Record<string, CalcitTag> = {};
 
-export let tag = (content: string) => {
+export let newTag = (content: string) => {
   let item = tagRegistery[content];
   if (item != null) {
     return item;
@@ -170,10 +170,10 @@ export let castTag = (x: CalcitValue): CalcitTag => {
     return x;
   }
   if (typeof x === "string") {
-    return tag(x);
+    return newTag(x);
   }
   if (x instanceof CalcitSymbol) {
-    return tag(x.value);
+    return newTag(x.value);
   }
   throw new Error(`Cannot cast this to tag: ${x}`);
 };

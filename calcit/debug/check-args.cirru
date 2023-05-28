@@ -10,13 +10,16 @@
       :defs $ {}
 
         |f1 $ quote
-          defn f1 (a) nil
+          defn f1 (a)
+            :: :unit
 
         |f2 $ quote
-          defn f2 (a ? b) nil
+          defn f2 (a ? b)
+            :: :unit
 
         |f3 $ quote
-          defn f3 (a & b) nil
+          defn f3 (a & b)
+            :: :unit
 
         |main! $ quote
           defn main! ()

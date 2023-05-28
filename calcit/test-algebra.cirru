@@ -18,7 +18,8 @@
             test-mappend
 
         |reload! $ quote
-          defn reload! () nil
+          defn reload! ()
+            :: :unit
 
         |test-map $ quote
           defn test-map ()
