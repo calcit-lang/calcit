@@ -27,7 +27,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> 
         location: Some(coord.to_vec()),
       }),
       _ => match s.chars().next().expect("load first char") {
-        ':' => Ok(Calcit::kwd(&s[1..])),
+        ':' => Ok(Calcit::tag(&s[1..])),
         '.' => {
           if let Some(stripped) = s.strip_prefix(".-") {
             Ok(Calcit::Method(stripped.into(), MethodKind::Access))
@@ -202,7 +202,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string().into())),
     Calcit::Str(s) => Ok(Cirru::leaf(format!("|{s}"))),            // TODO performance
     Calcit::Symbol { sym, .. } => Ok(Cirru::Leaf((**sym).into())), // TODO performance
-    Calcit::Keyword(s) => Ok(Cirru::leaf(format!(":{s}"))),        // TODO performance
+    Calcit::Tag(s) => Ok(Cirru::leaf(format!(":{s}"))),            // TODO performance
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
       for x in xs {

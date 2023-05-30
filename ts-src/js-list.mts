@@ -325,11 +325,11 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
       let item = xs.get(idx);
       let pair = f(state, item);
       if (pair instanceof CalcitTuple) {
-        if (typeof pair.fst === "boolean") {
-          if (pair.fst) {
-            return pair.snd;
+        if (typeof pair.tag === "boolean") {
+          if (pair.tag) {
+            return pair.get(1);
           } else {
-            state = pair.snd;
+            state = pair.get(1);
           }
         }
       } else {
@@ -345,11 +345,11 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
       let item = values[idx];
       let pair = f(state, item);
       if (pair instanceof CalcitTuple) {
-        if (typeof pair.fst === "boolean") {
-          if (pair.fst) {
-            return pair.snd;
+        if (typeof pair.tag === "boolean") {
+          if (pair.tag) {
+            return pair.get(1);
           } else {
-            state = pair.snd;
+            state = pair.get(1);
           }
         }
       } else {
@@ -366,11 +366,11 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
       let pos = i << 1;
       let pair = f(state, new CalcitSliceList([xs.chunk[pos], xs.chunk[pos + 1]]));
       if (pair instanceof CalcitTuple) {
-        if (typeof pair.fst === "boolean") {
-          if (pair.fst) {
-            return pair.snd;
+        if (typeof pair.tag === "boolean") {
+          if (pair.tag) {
+            return pair.get(1);
           } else {
-            state = pair.snd;
+            state = pair.get(1);
           }
         }
       } else {
@@ -386,11 +386,11 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
       let item = pairs[idx];
       let pair = f(state, new CalcitSliceList(item));
       if (pair instanceof CalcitTuple) {
-        if (typeof pair.fst === "boolean") {
-          if (pair.fst) {
-            return pair.snd;
+        if (typeof pair.tag === "boolean") {
+          if (pair.tag) {
+            return pair.get(1);
           } else {
-            state = pair.snd;
+            state = pair.get(1);
           }
         }
       } else {
@@ -416,11 +416,11 @@ export let foldr_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
       let item = xs.get(idx);
       let pair = f(state, item);
       if (pair instanceof CalcitTuple) {
-        if (typeof pair.fst === "boolean") {
-          if (pair.fst) {
-            return pair.snd;
+        if (typeof pair.tag === "boolean") {
+          if (pair.tag) {
+            return pair.get(1);
           } else {
-            state = pair.snd;
+            state = pair.get(1);
           }
         }
       } else {

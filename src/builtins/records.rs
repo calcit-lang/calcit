@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::ops::Rem;
 use std::sync::Arc;
 
-use cirru_edn::EdnKwd;
+use cirru_edn::EdnTag;
 
 use crate::primes::{Calcit, CalcitErr, CalcitItems};
 
@@ -10,35 +10,35 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
     return CalcitErr::err_str(format!("new-record expected arguments, got {xs:?}"));
   }
-  let name_id: EdnKwd = match &xs[0] {
-    Calcit::Symbol { sym, .. } => EdnKwd::new(sym),
-    Calcit::Keyword(k) => k.to_owned(),
+  let name_id: EdnTag = match &xs[0] {
+    Calcit::Symbol { sym, .. } => EdnTag::new(sym),
+    Calcit::Tag(k) => k.to_owned(),
     a => return CalcitErr::err_str(format!("new-record expected a name, got {a}")),
   };
 
-  let mut fields: Vec<EdnKwd> = Vec::with_capacity(xs.len());
+  let mut fields: Vec<EdnTag> = Vec::with_capacity(xs.len());
   let mut values: Vec<Calcit> = Vec::with_capacity(xs.len());
 
   for x in xs.into_iter().skip(1) {
     match x {
       Calcit::Symbol { sym, .. } | Calcit::Str(sym) => {
-        fields.push(EdnKwd::new(sym));
+        fields.push(EdnTag::new(sym));
       }
-      Calcit::Keyword(s) => {
+      Calcit::Tag(s) => {
         fields.push(s.to_owned());
       }
-      a => return CalcitErr::err_str(format!("new-record fields accepets keyword/string, got a {a}")),
+      a => return CalcitErr::err_str(format!("new-record fields accepets tag/string, got a {a}")),
     }
     values.push(Calcit::Nil);
   }
   fields.sort_unstable(); // all values are nil
 
   // warn about dup
-  let mut prev: EdnKwd = EdnKwd::new(""); // actually a invalid default...
+  let mut prev: EdnTag = EdnTag::new(""); // actually a invalid default...
   for (idx, x) in fields.iter().enumerate() {
     if idx > 0 {
       if x == &prev {
-        return CalcitErr::err_str(format!("duplicated field for record: {}", Calcit::Keyword(x.to_owned())));
+        return CalcitErr::err_str(format!("duplicated field for record: {}", Calcit::Tag(x.to_owned())));
       } else {
         prev = x.to_owned();
         // checked ok
@@ -67,19 +67,19 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           let k_idx = idx * 2 + 1;
           let v_idx = k_idx + 1;
           match &xs[k_idx] {
-            Calcit::Keyword(s) => match find_in_fields(def_fields, s) {
+            Calcit::Tag(s) => match find_in_fields(def_fields, s) {
               Some(pos) => {
                 values[pos] = xs[v_idx].to_owned();
               }
               None => return CalcitErr::err_str(format!("unexpected field {s} for {def_fields:?}")),
             },
-            Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match find_in_fields(def_fields, &EdnKwd::new(s)) {
+            Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match find_in_fields(def_fields, &EdnTag::new(s)) {
               Some(pos) => {
                 values[pos] = xs[v_idx].to_owned();
               }
               None => return CalcitErr::err_str(format!("unexpected field {s} for {def_fields:?}")),
             },
-            a => return CalcitErr::err_str(format!("expected field in string/keyword, got: {a}")),
+            a => return CalcitErr::err_str(format!("expected field in string/tag, got: {a}")),
           }
         }
 
@@ -98,13 +98,13 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Record(name, fields, _values), Calcit::Map(ys)) => {
-      let mut pairs: Vec<(EdnKwd, Calcit)> = Vec::with_capacity(fields.len());
+      let mut pairs: Vec<(EdnTag, Calcit)> = Vec::with_capacity(fields.len());
       for (k, v) in ys {
         match k {
           Calcit::Str(s) => {
-            pairs.push((EdnKwd::new(s), v.to_owned()));
+            pairs.push((EdnTag::new(s), v.to_owned()));
           }
-          Calcit::Keyword(s) => {
+          Calcit::Tag(s) => {
             pairs.push((s.to_owned(), v.to_owned()));
           }
           a => return CalcitErr::err_str(format!("unknown field {a}")),
@@ -134,7 +134,7 @@ pub fn get_record_name(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("&record:get-name expected record, got: {xs:?}"));
   }
   match &xs[0] {
-    Calcit::Record(name, ..) => Ok(Calcit::Keyword(name.to_owned())),
+    Calcit::Record(name, ..) => Ok(Calcit::Tag(name.to_owned())),
     a => CalcitErr::err_str(format!("&record:get-name expected record, got: {a}")),
   }
 }
@@ -146,7 +146,7 @@ pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Calcit::Record(_name, fields, values) => {
       let mut ys: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMap::new_sync();
       for idx in 0..fields.len() {
-        ys.insert_mut(Calcit::Keyword(fields[idx].to_owned()), values[idx].to_owned());
+        ys.insert_mut(Calcit::Tag(fields[idx].to_owned()), values[idx].to_owned());
       }
       Ok(Calcit::Map(ys))
     }
@@ -166,7 +166,7 @@ pub fn matches(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 /// returns position of target
-pub fn find_in_fields(xs: &[EdnKwd], y: &EdnKwd) -> Option<usize> {
+pub fn find_in_fields(xs: &[EdnTag], y: &EdnTag) -> Option<usize> {
   if xs.is_empty() {
     return None;
   }
@@ -203,8 +203,8 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, _)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => Ok(Calcit::Bool(find_in_fields(fields, &EdnKwd::new(k)).is_some())),
-      Calcit::Keyword(k) => Ok(Calcit::Bool(find_in_fields(fields, k).is_some())),
+      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => Ok(Calcit::Bool(find_in_fields(fields, &EdnTag::new(k)).is_some())),
+      Calcit::Tag(k) => Ok(Calcit::Bool(find_in_fields(fields, k).is_some())),
       a => CalcitErr::err_str(format!("contains? got invalid field for record: {a}")),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("record contains? expected a record, got: {a}")),
@@ -215,15 +215,15 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, values)), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => match find_in_fields(fields, &EdnKwd::new(k)) {
+      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => match find_in_fields(fields, &EdnTag::new(k)) {
         Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
-      Calcit::Keyword(k) => match find_in_fields(fields, k) {
+      Calcit::Tag(k) => match find_in_fields(fields, k) {
         Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
-      a => CalcitErr::err_str(format!("record field expected to be string/keyword, got {a}")),
+      a => CalcitErr::err_str(format!("record field expected to be string/tag, got {a}")),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("record &get expected record, got: {a}")),
     (None, ..) => CalcitErr::err_str(format!("record &get expected 2 arguments, got: {xs:?}")),
@@ -233,7 +233,7 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Record(name, fields, values)), Some(a), Some(b)) => match a {
-      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::new(s)) {
+      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnTag::new(s)) {
         Some(pos) => {
           let mut new_values = (**values).to_owned();
           new_values[pos] = b.to_owned();
@@ -241,7 +241,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         }
         None => CalcitErr::err_str(format!("invalid field `{s}` for {fields:?}")),
       },
-      Calcit::Keyword(s) => match find_in_fields(fields, s) {
+      Calcit::Tag(s) => match find_in_fields(fields, s) {
         Some(pos) => {
           let mut new_values = (**values).to_owned();
           new_values[pos] = b.to_owned();
@@ -262,11 +262,11 @@ pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
   match (xs.get(0), xs.get(1), xs.get(2), xs.get(3)) {
     (Some(Calcit::Record(_name, fields, values)), Some(n), Some(a), Some(new_value)) => match a {
-      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::new(s)) {
+      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnTag::new(s)) {
         Some(_pos) => CalcitErr::err_str(format!("field `{s}` already existed")),
-        None => extend_record_field(&EdnKwd::new(s), n, fields, values, new_value),
+        None => extend_record_field(&EdnTag::new(s), n, fields, values, new_value),
       },
-      Calcit::Keyword(s) => match find_in_fields(fields, s) {
+      Calcit::Tag(s) => match find_in_fields(fields, s) {
         Some(_pos) => CalcitErr::err_str(format!("field `{s}` already existed")),
         None => extend_record_field(s, n, fields, values, new_value),
       },
@@ -278,13 +278,13 @@ pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 fn extend_record_field(
-  idx_s: &EdnKwd,
+  idx_s: &EdnTag,
   n: &Calcit,
-  fields: &[EdnKwd],
+  fields: &[EdnTag],
   values: &[Calcit],
   new_value: &Calcit,
 ) -> Result<Calcit, CalcitErr> {
-  let mut next_fields: Vec<EdnKwd> = Vec::with_capacity(fields.len());
+  let mut next_fields: Vec<EdnTag> = Vec::with_capacity(fields.len());
   let mut next_values: Vec<Calcit> = Vec::with_capacity(fields.len());
   let mut inserted: bool = false;
 
@@ -317,9 +317,9 @@ fn extend_record_field(
     next_values.push(new_value.to_owned());
   }
 
-  let new_name_id: EdnKwd = match n {
-    Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => EdnKwd::new(s),
-    Calcit::Keyword(s) => s.to_owned(),
+  let new_name_id: EdnTag = match n {
+    Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => EdnTag::new(s),
+    Calcit::Tag(s) => s.to_owned(),
     _ => return CalcitErr::err_str("expected record name"),
   };
 

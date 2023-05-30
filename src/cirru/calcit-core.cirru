@@ -37,7 +37,7 @@
               &= 1 (&list:count body)
               quasiquote $ if ~condition
                 ~ (nth body 0)
-              quasiquote $ if ~condition (&let nil ~@body)
+              quasiquote $ if ~condition (&let () ~@body)
 
         |when-not $ quote
           defmacro when-not (condition & body)
@@ -45,7 +45,7 @@
               &= 1 (&list:count body)
               quasiquote $ if (not ~condition)
                 ~ (nth body 0)
-              quasiquote $ if (not ~condition) (&let nil ~@body)
+              quasiquote $ if (not ~condition) (&let () ~@body)
 
         |+ $ quote
           defn + (x & ys) $ reduce ys x &+
@@ -138,8 +138,8 @@
         |symbol? $ quote
           defn symbol? (x) $ &= (type-of x) :symbol
 
-        |keyword? $ quote
-          defn keyword? (x) $ &= (type-of x) :keyword
+        |tag? $ quote
+          defn tag? (x) $ &= (type-of x) :tag
 
         |bool? $ quote
           defn bool? (x) $ &= (type-of x) :bool
@@ -380,16 +380,16 @@
                             ~ $ &list:nth else 0
                             ~@ $ &list:rest else
 
-        |&key-match-internal $ quote
-          defmacro &key-match-internal (value & body)
+        |&tag-match-internal $ quote
+          defmacro &tag-match-internal (value & body)
             if (&list:empty? body)
               quasiquote
-                eprintln "|[Warn] key-match found no matched case, missing `_` case?" ~value
+                eprintln "|[Warn] tag-match found no matched case, missing `_` case?" ~value
               &let
                 pair (&list:first body)
                 if
                   not $ and (list? pair) (&= 2 (&list:count pair))
-                  raise $ str-spaced "|key-match expected pairs, got:" pair
+                  raise $ str-spaced "|tag-match expected pairs, got:" pair
                 let
                     pattern $ &list:nth pair 0
                     branch $ &list:nth pair 1
@@ -399,52 +399,52 @@
                       quasiquote
                         if (&= (nth ~value 0) ~k)
                           let
-                            ~ $ map-indexed (&list:rest pattern) $ defn %key-match (idx x)
+                            ~ $ map-indexed (&list:rest pattern) $ defn %tag-match (idx x)
                               [] x $ quasiquote
                                 nth ~value (~ (inc idx))
                             , ~branch
-                          &key-match-internal ~value $ ~@ (&list:rest body)
+                          &tag-match-internal ~value $ ~@ (&list:rest body)
                     if (&= pattern '_) branch
                       raise $ str-spaced "|unknown supported pattern:" pair
 
-        |key-match $ quote
-          defmacro key-match (value & body)
+        |tag-match $ quote
+          defmacro tag-match (value & body)
             if (&list:empty? body)
               quasiquote
-                eprintln "|[Error] key-match expected some patterns and matches" ~value
+                eprintln "|[Error] tag-match expected some patterns and matches" ~value
               if (list? value)
                 &let (v# (gensym |v))
                   quasiquote
                     &let (~v# ~value)
-                      &key-match-internal ~v# $ ~@ body
+                      &tag-match-internal ~v# $ ~@ body
                 quasiquote
-                  &key-match-internal ~value $ ~@ body
+                  &tag-match-internal ~value $ ~@ body
 
-        |&tag-match-internal $ quote
-          defmacro &tag-match-internal (value & body)
+        |&field-match-internal $ quote
+          defmacro &field-match-internal (value & body)
             if (&list:empty? body)
               quasiquote
-                eprintln "|[Warn] tag-match found no matched case, missing `_` case?" ~value
+                eprintln "|[Warn] field-match found no matched case, missing `_` case?" ~value
               &let
                 pair $ first body
                 if
                   not $ list? pair
-                  raise $ str-spaced "|tag-match expected arm in list, got:" pair
+                  raise $ str-spaced "|field-match expected arm in list, got:" pair
                 let
                     pattern $ &list:nth pair 0
                   assert "|expected literal or symbol as tag"
-                    or (keyword? pattern) (symbol? pattern)
+                    or (tag? pattern) (symbol? pattern)
                   if
                     &= pattern '_
-                    &let nil
-                      assert "|tag-match expected a branch after `_`"
+                    &let ()
+                      assert "|field-match expected a branch after `_`"
                         &= 2 $ &list:count pair
                       if
                         not $ &= 1 $ &list:count body
-                        eprintln "|[Warn] expected `_` beginning last branch of tag-match"
+                        eprintln "|[Warn] expected `_` beginning last branch of field-match"
                       &list:nth pair 1
-                    &let nil
-                      assert "|tag-match expected an with (tag new-name body)"
+                    &let ()
+                      assert "|field-match expected an with (tag new-name body)"
                         &= 3 $ &list:count pair
                       quasiquote
                         if
@@ -452,25 +452,25 @@
                           &let
                             (~ $ &list:nth pair 1) ~value
                             ~ $ &list:nth pair 2
-                          &tag-match-internal ~value $ ~@ $ &list:rest body
+                          &field-match-internal ~value $ ~@ $ &list:rest body
 
-        |tag-match $ quote
-          defmacro tag-match (value & body)
+        |field-match $ quote
+          defmacro field-match (value & body)
             if (&list:empty? body)
               quasiquote
-                eprintln "|[Error] tag-match expected patterns for matching" ~value
+                eprintln "|[Error] field-match expected patterns for matching" ~value
               if (list? value)
                 &let (v# (gensym |v))
                   quasiquote
                     &let (~v# ~value)
                       assert "|expected map value to match"
                         map? ~value
-                      &tag-match-internal ~value ~@body
+                      &field-match-internal ~value ~@body
                 quasiquote
-                  &let nil
+                  &let ()
                     assert "|expected map value to match"
                       map? ~value
-                    &tag-match-internal ~value ~@body
+                    &field-match-internal ~value ~@body
 
         |&case $ quote
           defmacro &case (item default pattern & others)
@@ -574,17 +574,17 @@
 
         |every? $ quote
           defn every? (xs f)
-            foldl-shortcut xs nil true $ defn %every? (_acc x)
+            foldl-shortcut xs true true $ defn %every? (acc x)
               if (f x)
-                :: false nil
+                :: false acc
                 :: true false
 
         |any? $ quote
           defn any? (xs f)
-            foldl-shortcut xs nil false $ defn %any? (_acc x)
+            foldl-shortcut xs false false $ defn %any? (acc x)
               if (f x)
                 :: true true
-                :: false nil
+                :: false acc
 
         |mapcat $ quote
           defn mapcat (xs f)
@@ -718,7 +718,7 @@
               &let
                 inner-body $ if (&= 1 (&list:count xs)) (&list:first xs)
                   quasiquote
-                    &let nil ~@xs
+                    &let () ~@xs
                 apply-args (inner-body args)
                   fn (body ys)
                     if (&list:empty? ys)
@@ -854,7 +854,7 @@
                     &let
                       ~vb ~b
                       if (not= ~va ~vb)
-                        &let nil
+                        &let ()
                           eprintln
                           eprintln "|Left: " ~va
                           eprintln "|      " $ format-to-lisp $ quote ~a
@@ -870,7 +870,7 @@
                 &let
                   ~v ~code
                   if (~f ~v) nil
-                    &let nil
+                    &let ()
                       eprintln
                       eprintln (format-to-lisp (quote ~code)) "|does not satisfy:" (format-to-lisp (quote ~f)) "| <--------"
                       eprintln "|  value is:" ~v
@@ -964,7 +964,7 @@
                   ~ $ &list:nth pairs 0
                   ~@ body
               if (&list:empty? pairs)
-                quasiquote $ &let nil ~@body
+                quasiquote $ &let () ~@body
                 quasiquote
                   &let
                     ~ $ &list:nth pairs 0
@@ -980,7 +980,7 @@
                 every? pairs list?
               raise $ str-spaced "|expects pairs in list for let, got:" pairs
             if (&list:empty? pairs)
-              quasiquote $ &let nil ~@body
+              quasiquote $ &let () ~@body
               &let
                 pair $ &list:first pairs
                 if
@@ -1057,11 +1057,11 @@
               if (string? xs) (not (string? message)) false
               quasiquote $ assert ~xs ~message
               quasiquote
-                &let nil
+                &let ()
                   if (not (string? ~message))
                     raise $ str-spaced "|expects 1st argument to be string, got:" ~message
                   if ~xs nil
-                    &let nil
+                    &let ()
                       eprintln "|Failed assertion:" (format-to-lisp (quote ~xs))
                       raise
                         ~ $ &str:concat (&str:concat message "| ") (format-to-lisp xs)
@@ -1124,7 +1124,10 @@
                       assert "|expected pair returned when mapping hashmap"
                         &= 2 (&list:count result)
                       &map:assoc acc (nth result 0) (nth result 1)
-                    if (nil? result) acc
+                    if
+                      or (nil? result)
+                        tuple? result
+                      , acc
                       raise $ str-spaced "|map-kv expected list or nil, got:" result
 
         |either $ quote
@@ -1204,7 +1207,7 @@
                     println (format-to-lisp (quote ~x)) |=> ~v
                     ~ v
                 quasiquote
-                  &let nil
+                  &let ()
                     println (format-to-lisp (quote ~x)) |=> ~x
                     ~ x
 
@@ -1222,7 +1225,7 @@
                     js/console.log (format-to-lisp (quote ~x)) |=> ~v
                     ~ v
               quasiquote
-                &let nil
+                &let ()
                   js/console.log (format-to-lisp (quote ~x)) |=> ~x
                   ~ x
 
@@ -1305,7 +1308,7 @@
               empty? body
               raise "|empty do is not okay"
             quasiquote
-              &let nil
+              &let ()
                 ~@ body
 
         |let{} $ quote
@@ -1322,7 +1325,7 @@
                   let
                     ~ $ map items
                       defn gen-items% (x)
-                        [] x ([] (turn-keyword x) var-result)
+                        [] x ([] (turn-tag x) var-result)
                     ~@ body
 
         |let[] $ quote
@@ -1338,12 +1341,12 @@
                   [] ([]) vars 0
                   defn let[]% (acc xs idx)
                     if (&list:empty? xs) acc
-                      &let nil
-                        when-not
-                          symbol? (&list:first xs)
+                      &let ()
+                        if
+                          not $ symbol? (&list:first xs)
                           raise $ &str:concat "|Expected symbol for vars: " (&list:first xs)
                         if (&= (&list:first xs) '&)
-                          &let nil
+                          &let ()
                             assert "|expected list spreading" (&= 2 (&list:count xs))
                             append acc $ [] (&list:nth xs 1) (quasiquote (&list:slice ~v ~idx))
                           recur
@@ -1366,12 +1369,12 @@
         |defrecord $ quote
           defmacro defrecord (name & xs)
             quasiquote
-              new-record (~ (turn-keyword name)) ~@xs
+              new-record (~ (turn-tag name)) ~@xs
 
         |defrecord! $ quote
           defmacro defrecord! (name & pairs)
             quasiquote
-              %{} (new-record (~ (turn-keyword name)) (~@ (map pairs &list:first))) ~@pairs
+              %{} (new-record (~ (turn-tag name)) (~@ (map pairs &list:first))) ~@pairs
 
         |;nil $ quote
           defmacro ;nil (& _body) nil
@@ -1429,8 +1432,8 @@
               not $ and (list? pair) (= 2 (&list:count pair)) (record? (&list:first pair))
               raise $ str-spaced "|method! applies on a pair, leading by record, got:" pair
             if
-              not $ or (string? name) (keyword? name) (symbol? name)
-              raise $ str-spaced "|method by string or keyword, got:" name
+              not $ or (string? name) (tag? name) (symbol? name)
+              raise $ str-spaced "|method by string or tag, got:" name
             let
                 proto $ &tuple:nth pair 0
                 f $ &record:get proto name
@@ -1441,7 +1444,7 @@
 
         |&list:sort-by $ quote
           defn &list:sort-by (xs f)
-            if (keyword? f)
+            if (tag? f)
               sort xs $ defn %&list:sort-by (a b)
                 &compare (get a f) (get b f)
 
@@ -1689,7 +1692,9 @@
             if (nil? x) false
               if (list? x) (&list:contains? x k)
                 if (tuple? x)
-                  or (&= k 0) (&= k 1)
+                  and
+                    &>= k 0
+                    &< k (&tuple:count x)
                   .contains? x k
 
         |contains-in? $ quote
@@ -1712,7 +1717,12 @@
                       recur (&record:get xs p0) (rest path)
                       , false
                   (tuple? xs)
-                    or (&= p0 0) (&= p0 1)
+                    if
+                      and
+                        &>= p0 0
+                        &< p0 (&tuple:count xs)
+                      recur (&tuple:nth xs p0) (rest path)
+                      , false
                   true false
 
         |includes? $ quote
@@ -1781,15 +1791,15 @@
               &list:concat & $ map xs &list:flatten
               [] xs
 
-        |keywordize-edn $ quote
-          defn keywordize-edn (data)
+        |tagging-edn $ quote
+          defn tagging-edn (data)
             if (list? data)
-              map data keywordize-edn
+              map data tagging-edn
               if (map? data)
-                map-kv data $ defn %keywordize (k v)
+                map-kv data $ defn %tagging (k v)
                   []
-                    if (string? k) (turn-keyword k) k
-                    keywordize-edn v
+                    if (string? k) (turn-tag k) k
+                    tagging-edn v
                 , data
 
         |print-values $ quote

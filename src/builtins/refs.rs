@@ -6,13 +6,13 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
-use cirru_edn::EdnKwd;
+use cirru_edn::EdnTag;
 use im_ternary_tree::TernaryTreeList;
 
 use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::{call_stack::CallStackList, runner};
 
-pub(crate) type ValueAndListeners = (Calcit, HashMap<EdnKwd, Calcit>);
+pub(crate) type ValueAndListeners = (Calcit, HashMap<EdnTag, Calcit>);
 
 lazy_static! {
   static ref REFS_DICT: Mutex<HashMap<Arc<str>, Arc<Mutex<ValueAndListeners>>>> = Mutex::new(HashMap::new());
@@ -147,7 +147,7 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
 
 pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
-    (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Keyword(k)), Some(f @ Calcit::Fn { .. })) => {
+    (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Tag(k)), Some(f @ Calcit::Fn { .. })) => {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");
       if pair.1.contains_key(k) {
         CalcitErr::err_str(format!("add-watch failed, listener with key `{k}` existed"))
@@ -156,18 +156,18 @@ pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Nil)
       }
     }
-    (Some(Calcit::Ref(..)), Some(Calcit::Keyword(_)), Some(a)) => {
+    (Some(Calcit::Ref(..)), Some(Calcit::Tag(_)), Some(a)) => {
       CalcitErr::err_str(format!("add-watch expected fn instead of proc, got {a}"))
     }
-    (Some(Calcit::Ref(..)), Some(a), Some(_)) => CalcitErr::err_str(format!("add-watch expected a keyword, but got: {a}")),
+    (Some(Calcit::Ref(..)), Some(a), Some(_)) => CalcitErr::err_str(format!("add-watch expected a tag, but got: {a}")),
     (Some(a), _, _) => CalcitErr::err_str(format!("add-watch expected ref, got: {a}")),
-    (a, b, c) => CalcitErr::err_str(format!("add-watch expected ref, keyword, function, got {a:?} {b:?} {c:?}")),
+    (a, b, c) => CalcitErr::err_str(format!("add-watch expected ref, tag, function, got {a:?} {b:?} {c:?}")),
   }
 }
 
 pub fn remove_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Keyword(k))) => {
+    (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Tag(k))) => {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");
       if pair.1.contains_key(k) {
         pair.1.remove(k);
@@ -176,7 +176,7 @@ pub fn remove_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         CalcitErr::err_str(format!("remove-watch failed, listener with key `{k}` missing"))
       }
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(format!("remove-watch expected ref and keyword, got: {a} {b}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("remove-watch expected ref and tag, got: {a} {b}")),
     (a, b) => CalcitErr::err_str(format!("remove-watch expected 2 arguments, got {a:?} {b:?}")),
   }
 }

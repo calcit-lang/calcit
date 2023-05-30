@@ -14,7 +14,7 @@ use crate::{
   util::number::f64_to_usize,
 };
 
-use cirru_edn::EdnKwd;
+use cirru_edn::EdnTag;
 use cirru_parser::{Cirru, CirruWriterOptions};
 
 use std::hash::{Hash, Hasher};
@@ -34,29 +34,29 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("type-of expected 1 argument, got: {xs:?}"));
   }
   match &xs[0] {
-    Calcit::Nil => Ok(Calcit::kwd("nil")),
+    Calcit::Nil => Ok(Calcit::tag("nil")),
     // CalcitRef(Calcit), // TODO
-    Calcit::Bool(..) => Ok(Calcit::kwd("bool")),
-    Calcit::Number(..) => Ok(Calcit::kwd("number")),
-    Calcit::Symbol { .. } => Ok(Calcit::kwd("symbol")),
-    Calcit::Keyword(..) => Ok(Calcit::kwd("keyword")),
-    Calcit::Str(..) => Ok(Calcit::kwd("string")),
-    Calcit::Thunk(..) => Ok(Calcit::kwd("thunk")), // internal
-    Calcit::Ref(..) => Ok(Calcit::kwd("ref")),
-    Calcit::Tuple(..) => Ok(Calcit::kwd("tuple")),
-    Calcit::Buffer(..) => Ok(Calcit::kwd("buffer")),
-    Calcit::CirruQuote(..) => Ok(Calcit::kwd("cirru-quote")),
-    Calcit::Recur(..) => Ok(Calcit::kwd("recur")),
-    Calcit::List(..) => Ok(Calcit::kwd("list")),
-    Calcit::Set(..) => Ok(Calcit::kwd("set")),
-    Calcit::Map(..) => Ok(Calcit::kwd("map")),
-    Calcit::Record(..) => Ok(Calcit::kwd("record")),
-    Calcit::Proc(..) => Ok(Calcit::kwd("fn")), // special kind proc, but also fn
-    Calcit::Macro { .. } => Ok(Calcit::kwd("macro")),
-    Calcit::Fn { .. } => Ok(Calcit::kwd("fn")),
-    Calcit::Syntax(..) => Ok(Calcit::kwd("syntax")),
-    Calcit::Method(..) => Ok(Calcit::kwd("method")),
-    Calcit::RawCode(..) => Ok(Calcit::kwd("raw-code")),
+    Calcit::Bool(..) => Ok(Calcit::tag("bool")),
+    Calcit::Number(..) => Ok(Calcit::tag("number")),
+    Calcit::Symbol { .. } => Ok(Calcit::tag("symbol")),
+    Calcit::Tag(..) => Ok(Calcit::tag("tag")),
+    Calcit::Str(..) => Ok(Calcit::tag("string")),
+    Calcit::Thunk(..) => Ok(Calcit::tag("thunk")), // internal
+    Calcit::Ref(..) => Ok(Calcit::tag("ref")),
+    Calcit::Tuple(..) => Ok(Calcit::tag("tuple")),
+    Calcit::Buffer(..) => Ok(Calcit::tag("buffer")),
+    Calcit::CirruQuote(..) => Ok(Calcit::tag("cirru-quote")),
+    Calcit::Recur(..) => Ok(Calcit::tag("recur")),
+    Calcit::List(..) => Ok(Calcit::tag("list")),
+    Calcit::Set(..) => Ok(Calcit::tag("set")),
+    Calcit::Map(..) => Ok(Calcit::tag("map")),
+    Calcit::Record(..) => Ok(Calcit::tag("record")),
+    Calcit::Proc(..) => Ok(Calcit::tag("fn")), // special kind proc, but also fn
+    Calcit::Macro { .. } => Ok(Calcit::tag("macro")),
+    Calcit::Fn { .. } => Ok(Calcit::tag("fn")),
+    Calcit::Syntax(..) => Ok(Calcit::tag("syntax")),
+    Calcit::Method(..) => Ok(Calcit::tag("method")),
+    Calcit::RawCode(..) => Ok(Calcit::tag("raw-code")),
   }
 }
 
@@ -235,7 +235,7 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       resolved: None,
       location: None,
     }),
-    Calcit::Keyword(s) => Ok(Calcit::Symbol {
+    Calcit::Tag(s) => Ok(Calcit::Symbol {
       sym: s.to_string().into(),
       ns: primes::GEN_NS.into(),
       at_def: primes::GENERATED_DEF.into(),
@@ -247,32 +247,55 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn turn_keyword(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn turn_tag(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("turn-keyword cannot turn this to keyword: {xs:?}"));
+    return CalcitErr::err_str(format!("turn-tag cannot turn this to tag: {xs:?}"));
   }
   match &xs[0] {
-    Calcit::Str(s) => Ok(Calcit::kwd(s)),
-    Calcit::Keyword(s) => Ok(Calcit::Keyword(s.to_owned())),
-    Calcit::Symbol { sym, .. } => Ok(Calcit::kwd(sym)),
-    a => CalcitErr::err_str(format!("turn-keyword cannot turn this to keyword: {a}")),
+    Calcit::Str(s) => Ok(Calcit::tag(s)),
+    Calcit::Tag(s) => Ok(Calcit::Tag(s.to_owned())),
+    Calcit::Symbol { sym, .. } => Ok(Calcit::tag(sym)),
+    a => CalcitErr::err_str(format!("turn-tag cannot turn this to tag: {a}")),
   }
 }
 
 pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.is_empty() {
+    CalcitErr::err_str(format!("tuple expected at least 1 arguments, got {}", CrListWrap(xs.to_owned())))
+  } else {
+    let extra: Vec<Calcit> = if xs.len() == 1 {
+      vec![]
+    } else {
+      let mut ys: Vec<Calcit> = Vec::with_capacity(xs.len() - 1);
+      for i in 1..xs.len() {
+        ys.push(xs[i].to_owned());
+      }
+      ys
+    };
+    let base_class = Calcit::Record(EdnTag::new("base-class"), Arc::new(vec![]), Arc::new(vec![]));
+    Ok(Calcit::Tuple(Arc::new(xs[0].to_owned()), extra, Arc::new(base_class)))
+  }
+}
+
+pub fn new_tuple_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
     CalcitErr::err_str(format!("tuple expected at least 2 arguments, got {}", CrListWrap(xs.to_owned())))
   } else {
+    let class = xs[0].to_owned();
+    if let Calcit::Record(..) = class {
+    } else {
+      return CalcitErr::err_str(format!("tuple expected a record as class, got {}", class));
+    }
     let extra: Vec<Calcit> = if xs.len() == 2 {
       vec![]
     } else {
-      let mut ys: Vec<Calcit> = Vec::with_capacity(xs.len() - 2);
+      let mut ys: Vec<Calcit> = Vec::with_capacity(xs.len() - 1);
       for i in 2..xs.len() {
         ys.push(xs[i].to_owned());
       }
       ys
     };
-    Ok(Calcit::Tuple(Arc::new(xs[0].to_owned()), Arc::new(xs[1].to_owned()), extra))
+    Ok(Calcit::Tuple(Arc::new(xs[1].to_owned()), extra, Arc::new(class)))
   }
 }
 
@@ -285,8 +308,8 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
   }
   let value = invoke_args[0].to_owned();
   let s0 = CalcitScope::default();
-  let class = match &invoke_args[0] {
-    Calcit::Tuple(a, _b, _extra) => (**a).to_owned(),
+  let class: Calcit = match &invoke_args[0] {
+    Calcit::Tuple(_tag, _extra, class) => (**class).to_owned(),
     // classed should already be preprocessed
     Calcit::List(..) => runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, None, call_stack)?,
     Calcit::Map(..) => runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, None, call_stack)?,
@@ -306,7 +329,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
   };
   match &class {
     Calcit::Record(_, fields, values) => {
-      match find_in_fields(fields, &EdnKwd::from(name)) {
+      match find_in_fields(fields, &EdnTag::from(name)) {
         Some(idx) => {
           let method_args = invoke_args.assoc(0, value)?;
 
@@ -360,14 +383,13 @@ pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("&tuple:nth expected 2 argument, got: {}", CrListWrap(xs.to_owned())));
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple(a, b, extra), Calcit::Number(n)) => match f64_to_usize(*n) {
-      Ok(0) => Ok((**a).to_owned()),
-      Ok(1) => Ok((**b).to_owned()),
+    (Calcit::Tuple(tag, extra, _class), Calcit::Number(n)) => match f64_to_usize(*n) {
+      Ok(0) => Ok((**tag).to_owned()),
       Ok(m) => {
-        if m - 2 < extra.len() {
-          Ok(extra[m - 2].to_owned())
+        if m - 1 < extra.len() {
+          Ok(extra[m - 1].to_owned())
         } else {
-          let size = extra.len() + 2;
+          let size = extra.len() + 1;
           CalcitErr::err_str(format!("Tuple only got {size} elements, trying to index with {m}"))
         }
       }
@@ -382,16 +404,14 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("tuple:assoc expected 3 arguments, got: {xs:?}"));
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple(a0, a1, extra), Calcit::Number(n)) => match f64_to_usize(*n) {
+    (Calcit::Tuple(tag, extra, class), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx == 0 {
-          Ok(Calcit::Tuple(Arc::new(xs[2].to_owned()), a1.to_owned(), extra.to_owned()))
-        } else if idx == 1 {
-          Ok(Calcit::Tuple(a0.to_owned(), Arc::new(xs[2].to_owned()), extra.to_owned()))
-        } else if idx - 2 < extra.len() {
+          Ok(Calcit::Tuple(Arc::new(xs[2].to_owned()), extra.to_owned(), class.to_owned()))
+        } else if idx - 1 < extra.len() {
           let mut new_extra = extra.to_owned();
-          new_extra[idx - 2] = xs[2].to_owned();
-          Ok(Calcit::Tuple(a0.to_owned(), a1.to_owned(), new_extra))
+          new_extra[idx - 1] = xs[2].to_owned();
+          Ok(Calcit::Tuple(tag.to_owned(), new_extra, class.to_owned()))
         } else {
           CalcitErr::err_str(format!("Tuple only has fields of 0,1 , unknown index: {idx}"))
         }
@@ -407,8 +427,18 @@ pub fn tuple_count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str(format!("tuple:count expected 1 argument, got: {xs:?}"));
   }
   match &xs[0] {
-    Calcit::Tuple(_, _, extra) => Ok(Calcit::Number((extra.len() + 2) as f64)),
+    Calcit::Tuple(_tag, extra, _class) => Ok(Calcit::Number((extra.len() + 1) as f64)),
     x => CalcitErr::err_str(format!("&tuple:count expected a tuple, got: {x}")),
+  }
+}
+
+pub fn tuple_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("tuple:class expected 1 argument, got: {xs:?}"));
+  }
+  match &xs[0] {
+    Calcit::Tuple(_tag, _extra, class) => Ok((**class).to_owned()),
+    x => CalcitErr::err_str(format!("&tuple:class expected a tuple, got: {x}")),
   }
 }
 
@@ -418,7 +448,7 @@ pub fn no_op() -> Result<Calcit, CalcitErr> {
 
 pub fn get_os(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   // https://doc.rust-lang.org/std/env/consts/constant.OS.html
-  Ok(Calcit::kwd(std::env::consts::OS))
+  Ok(Calcit::tag(std::env::consts::OS))
 }
 
 pub fn async_sleep(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {

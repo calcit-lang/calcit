@@ -157,7 +157,7 @@ impl From<&FileChangeInfo> for Edn {
   fn from(data: &FileChangeInfo) -> Edn {
     let mut map: HashMap<Edn, Edn> = HashMap::new();
     if let Some(ns) = &data.ns {
-      map.insert(Edn::kwd("ns"), Edn::Quote(ns.to_owned()));
+      map.insert(Edn::tag("ns"), Edn::Quote(ns.to_owned()));
     }
 
     if !data.added_defs.is_empty() {

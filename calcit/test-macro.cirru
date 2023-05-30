@@ -198,7 +198,7 @@
 
               assert=
                 macroexpand $ quote $ \. x.y (println x y) x
-                quote $ defn f_x (x) (defn f_y (y) (&let nil (println x y) x))
+                quote $ defn f_x (x) (defn f_y (y) (&let () (println x y) x))
 
             println "|evaluating lambda alias"
 
@@ -309,7 +309,7 @@
 
         |test-extract $ quote
           fn ()
-            log-title "|Extract map via keywords"
+            log-title "|Extract map via tags"
 
             inside-eval:
               &reset-gensym-index!
@@ -391,7 +391,7 @@
                   &let
                     v__1 (fn () 1)
                     if (fn? v__1) nil
-                      &let nil (eprintln)
+                      &let () (eprintln)
                         eprintln (format-to-lisp (quote (fn () 1))) "|does not satisfy:" (format-to-lisp (quote fn?)) "| <--------"
                         eprintln "|  value is:" v__1
                         raise "|Not satisfied in assertion!"

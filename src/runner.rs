@@ -50,7 +50,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
         _ => evaluate_symbol(sym, scope, ns, Some(loc), call_stack),
       }
     }
-    Calcit::Keyword(_) => Ok(expr.to_owned()),
+    Calcit::Tag(_) => Ok(expr.to_owned()),
     Calcit::Str(_) => Ok(expr.to_owned()),
     Calcit::Thunk(code, v) => match v {
       None => evaluate_expr(code, scope, file_ns, call_stack),
@@ -162,12 +162,12 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               }
             })
           }
-          Calcit::Keyword(k) => {
+          Calcit::Tag(k) => {
             if rest_nodes.len() == 1 {
               let v = evaluate_expr(&rest_nodes[0], scope, file_ns, call_stack)?;
 
               if let Calcit::Map(m) = v {
-                match m.get(&Calcit::Keyword(k.to_owned())) {
+                match m.get(&Calcit::Tag(k.to_owned())) {
                   Some(value) => Ok(value.to_owned()),
                   None => Ok(Calcit::Nil),
                 }
@@ -176,7 +176,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               }
             } else {
               Err(CalcitErr::use_msg_stack(
-                format!("keyword only takes 1 argument, got: {}", CrListWrap(rest_nodes)),
+                format!("tag only takes 1 argument, got: {}", CrListWrap(rest_nodes)),
                 call_stack,
               ))
             }

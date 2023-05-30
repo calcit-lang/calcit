@@ -12,7 +12,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 use std::sync::{Arc, Mutex};
 
-use cirru_edn::{Edn, EdnKwd};
+use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
@@ -109,7 +109,7 @@ pub enum Calcit {
     location: Option<Vec<u8>>,
   },
   /// sth between string and enum, used a key or weak identifier
-  Keyword(EdnKwd),
+  Tag(EdnTag),
   Str(Arc<str>),
   /// to compile to js, global variables are stored in thunks at first, rather than evaluated
   /// and it is still different from quoted data which was intentionally turned in to data.
@@ -117,7 +117,7 @@ pub enum Calcit {
   /// atom, holding a path to its state, data inside remains during hot code swapping
   Ref(Arc<str>, Arc<Mutex<ValueAndListeners>>),
   /// more tagged union type, more like an internal structure
-  Tuple(Arc<Calcit>, Arc<Calcit>, Vec<Calcit>),
+  Tuple(Arc<Calcit>, Vec<Calcit>, Arc<Calcit>),
   /// binary data, to be used by FFIs
   Buffer(Vec<u8>),
   /// cirru quoted data, for faster meta programming
@@ -129,7 +129,7 @@ pub enum Calcit {
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   /// with only static and limited keys, for performance and checking
   /// size of keys are values should be kept consistent
-  Record(EdnKwd, Arc<Vec<EdnKwd>>, Arc<Vec<Calcit>>),
+  Record(EdnTag, Arc<Vec<EdnTag>>, Arc<Vec<Calcit>>),
   /// native functions that providing feature from Rust
   Proc(CalcitProc),
   Macro {
@@ -170,7 +170,7 @@ impl fmt::Display for Calcit {
       Calcit::Bool(v) => f.write_str(&format!("{v}")),
       Calcit::Number(n) => f.write_str(&format!("{n}")),
       Calcit::Symbol { sym, .. } => f.write_str(&format!("'{sym}")),
-      Calcit::Keyword(s) => f.write_str(&format!(":{s}")),
+      Calcit::Tag(s) => f.write_str(&format!(":{s}")),
       Calcit::Str(s) => {
         if is_simple_str(s) {
           write!(f, "|{s}")
@@ -184,7 +184,7 @@ impl fmt::Display for Calcit {
       },
       Calcit::CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
       Calcit::Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
-      Calcit::Tuple(a, b, extra) => {
+      Calcit::Tuple(tag, extra, _class) => {
         let mut extra_str = String::from("");
         for item in extra {
           if !extra_str.is_empty() {
@@ -192,7 +192,7 @@ impl fmt::Display for Calcit {
           }
           extra_str.push_str(&item.to_string())
         }
-        f.write_str(&format!("(:: {a} {b} {extra_str})"))
+        f.write_str(&format!("(:: {tag} {extra_str})"))
       }
       Calcit::Buffer(buf) => {
         f.write_str("(&buffer")?;
@@ -247,9 +247,9 @@ impl fmt::Display for Calcit {
         Ok(())
       }
       Calcit::Record(name, fields, values) => {
-        f.write_str(&format!("(%{{}} {}", Calcit::Keyword(name.to_owned())))?;
+        f.write_str(&format!("(%{{}} {}", Calcit::Tag(name.to_owned())))?;
         for idx in 0..fields.len() {
-          f.write_str(&format!(" ({} {})", Calcit::Keyword(fields[idx].to_owned()), values[idx]))?;
+          f.write_str(&format!(" ({} {})", Calcit::Tag(fields[idx].to_owned()), values[idx]))?;
         }
         f.write_str(")")
       }
@@ -367,8 +367,8 @@ impl Hash for Calcit {
         // probaly no need, also won't be used in hashing
         // ns.hash(_state);
       }
-      Calcit::Keyword(s) => {
-        "keyword:".hash(_state);
+      Calcit::Tag(s) => {
+        "tag:".hash(_state);
         s.hash(_state);
       }
       Calcit::Str(s) => {
@@ -383,11 +383,11 @@ impl Hash for Calcit {
         "ref:".hash(_state);
         name.hash(_state);
       }
-      Calcit::Tuple(a, b, extra) => {
+      Calcit::Tuple(tag, extra, _class) => {
         "tuple:".hash(_state);
-        a.hash(_state);
-        b.hash(_state);
+        tag.hash(_state);
         extra.hash(_state);
+        // _class is internal prototype data, not used in hashing
       }
       Calcit::Buffer(buf) => {
         "buffer:".hash(_state);
@@ -488,9 +488,9 @@ impl Ord for Calcit {
       (Calcit::Symbol { .. }, _) => Less,
       (_, Calcit::Symbol { .. }) => Greater,
 
-      (Calcit::Keyword(a), Calcit::Keyword(b)) => a.cmp(b),
-      (Calcit::Keyword(_), _) => Less,
-      (_, Calcit::Keyword(_)) => Greater,
+      (Calcit::Tag(a), Calcit::Tag(b)) => a.cmp(b),
+      (Calcit::Tag(_), _) => Less,
+      (_, Calcit::Tag(_)) => Greater,
 
       (Calcit::Str(a), Calcit::Str(b)) => a.cmp(b),
       (Calcit::Str(_), _) => Less,
@@ -508,11 +508,8 @@ impl Ord for Calcit {
       (Calcit::Ref(_, _), _) => Less,
       (_, Calcit::Ref(_, _)) => Greater,
 
-      (Calcit::Tuple(a0, b0, extra0), Calcit::Tuple(a1, b1, extra1)) => match a0.cmp(a1) {
-        Equal => match b0.cmp(b1) {
-          Equal => extra0.cmp(extra1),
-          v => v,
-        },
+      (Calcit::Tuple(a0, extra0, _c0), Calcit::Tuple(a1, extra1, _c1)) => match a0.cmp(a1) {
+        Equal => extra0.cmp(extra1),
         v => v,
       },
       (Calcit::Tuple(_, _, _), _) => Less,
@@ -599,11 +596,11 @@ impl PartialEq for Calcit {
       (Calcit::Bool(a), Calcit::Bool(b)) => a == b,
       (Calcit::Number(a), Calcit::Number(b)) => a == b,
       (Calcit::Symbol { sym: a, .. }, Calcit::Symbol { sym: b, .. }) => a == b,
-      (Calcit::Keyword(a), Calcit::Keyword(b)) => a == b,
+      (Calcit::Tag(a), Calcit::Tag(b)) => a == b,
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
       (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
       (Calcit::Ref(a, _), Calcit::Ref(b, _)) => a == b,
-      (Calcit::Tuple(a, b, extra_a), Calcit::Tuple(c, d, extra_c)) => a == c && b == d && extra_a == extra_c,
+      (Calcit::Tuple(a, extra_a, _c0), Calcit::Tuple(c, extra_c, _c1)) => a == c && extra_a == extra_c,
       (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,
       (Calcit::CirruQuote(b), Calcit::CirruQuote(d)) => b == d,
       (Calcit::List(a), Calcit::List(b)) => a == b,
@@ -647,9 +644,9 @@ impl Calcit {
     Calcit::Str(s.into().into())
   }
 
-  /// makes sure that keyword is from global dict, not created by fresh
-  pub fn kwd(s: &str) -> Self {
-    Calcit::Keyword(EdnKwd::from(s))
+  /// makes sure that tag is from global dict, not created by fresh
+  pub fn tag(s: &str) -> Self {
+    Calcit::Tag(EdnTag::from(s))
   }
 
   /// currently only symbol has node location
@@ -769,9 +766,9 @@ pub struct NodeLocation {
 impl From<NodeLocation> for Edn {
   fn from(v: NodeLocation) -> Self {
     Edn::map_from_iter([
-      (Edn::kwd("ns"), v.ns.into()),
-      (Edn::kwd("def"), v.def.into()),
-      (Edn::kwd("coord"), v.coord.into()),
+      (Edn::tag("ns"), v.ns.into()),
+      (Edn::tag("def"), v.def.into()),
+      (Edn::tag("coord"), v.coord.into()),
     ])
   }
 }

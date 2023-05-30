@@ -21,7 +21,8 @@
             println $ sieve-primes ([] 2 3 5 7 11 13) 17 400
 
         |reload! $ quote
-          defn reload! () nil
+          defn reload! ()
+            :: :unit
 
         |try-fibo $ quote
           defn try-fibo ()
@@ -44,4 +45,4 @@
               recur acc (inc n) limit
 
       :proc $ quote ()
-      :configs $ {} (:extension nil)
+      :configs $ {}

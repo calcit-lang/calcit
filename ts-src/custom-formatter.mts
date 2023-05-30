@@ -1,5 +1,5 @@
 import { CalcitValue } from "./js-primes.mjs";
-import { CalcitRef, CalcitSymbol, CalcitKeyword } from "./calcit-data.mjs";
+import { CalcitRef, CalcitSymbol, CalcitTag } from "./calcit-data.mjs";
 
 import { CalcitRecord } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
@@ -35,7 +35,7 @@ export let load_console_formatter_$x_ = () => {
     window["devtoolsFormatters"] = [
       {
         header: (obj, config) => {
-          if (obj instanceof CalcitKeyword) {
+          if (obj instanceof CalcitTag) {
             return ["div", { style: "color: hsl(240, 80%, 60%)" }, obj.toString()];
           }
           if (obj instanceof CalcitSymbol) {
@@ -70,8 +70,10 @@ export let load_console_formatter_$x_ = () => {
           if (obj instanceof CalcitTuple) {
             let ret: any[] = ["div", {}];
             ret.push(["div", { style: "display: inline-block; color: hsl(300, 100%, 40%); " }, "::"]);
-            ret.push(["div", { style: "margin-left: 6px; display: inline-block;" }, embedObject(obj.fst)]);
-            ret.push(["div", { style: "margin-left: 6px; display: inline-block;" }, embedObject(obj.snd)]);
+            ret.push(["div", { style: "margin-left: 6px; display: inline-block;" }, embedObject(obj.tag)]);
+            for (let idx = 0; idx < obj.extra.length; idx++) {
+              ret.push(["div", { style: "margin-left: 6px; display: inline-block;" }, embedObject(obj.extra[idx])]);
+            }
             return ret;
           }
           if (obj instanceof CalcitRef) {

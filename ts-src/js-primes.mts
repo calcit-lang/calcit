@@ -1,4 +1,4 @@
-import { CalcitKeyword, CalcitSymbol, CalcitRef, CalcitFn, CalcitRecur } from "./calcit-data.mjs";
+import { CalcitTag, CalcitSymbol, CalcitRef, CalcitFn, CalcitRecur } from "./calcit-data.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitRecord } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
@@ -15,7 +15,7 @@ export type CalcitValue =
   | CalcitList
   | CalcitSliceList
   | CalcitSet
-  | CalcitKeyword
+  | CalcitTag
   | CalcitSymbol
   | CalcitRef
   | CalcitTuple
@@ -30,7 +30,7 @@ export let is_literal = (x: CalcitValue): boolean => {
   if (typeof x == "string") return true;
   if (typeof x == "boolean") return true;
   if (typeof x == "number") return true;
-  if (x instanceof CalcitKeyword) return true;
+  if (x instanceof CalcitTag) return true;
   if (x instanceof CalcitSymbol) return true;
   return false;
 };
@@ -40,7 +40,7 @@ enum PseudoTypeIndex {
   bool,
   number,
   symbol,
-  keyword,
+  tag,
   string,
   ref,
   tuple,
@@ -60,7 +60,7 @@ let typeAsInt = (x: CalcitValue): number => {
   if (t === "boolean") return PseudoTypeIndex.bool;
   if (t === "number") return PseudoTypeIndex.number;
   if (x instanceof CalcitSymbol) return PseudoTypeIndex.symbol;
-  if (x instanceof CalcitKeyword) return PseudoTypeIndex.keyword;
+  if (x instanceof CalcitTag) return PseudoTypeIndex.tag;
   if (t === "string") return PseudoTypeIndex.string;
   if (x instanceof CalcitRef) return PseudoTypeIndex.ref;
   if (x instanceof CalcitTuple) return PseudoTypeIndex.tuple;
@@ -97,8 +97,8 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         return rawCompare(a, b);
       case PseudoTypeIndex.number:
         return rawCompare(a, b);
-      case PseudoTypeIndex.keyword:
-        return rawCompare((a as CalcitKeyword).value, (b as CalcitKeyword).value);
+      case PseudoTypeIndex.tag:
+        return rawCompare((a as CalcitTag).value, (b as CalcitTag).value);
       case PseudoTypeIndex.symbol:
         return rawCompare(a, b);
       case PseudoTypeIndex.string:

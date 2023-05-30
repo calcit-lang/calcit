@@ -64,7 +64,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeGetCalcitRunningMode => effects::calcit_running_mode(args),
     CalcitProc::GenerateId => meta::generate_id(args),
     CalcitProc::TurnSymbol => meta::turn_symbol(args),
-    CalcitProc::TurnKeyword => meta::turn_keyword(args),
+    CalcitProc::TurnTag => meta::turn_tag(args),
     CalcitProc::NativeCompare => meta::native_compare(args),
     CalcitProc::NativeGetOs => meta::get_os(args),
     CalcitProc::NativeFormatTernaryTree => meta::format_ternary_tree(args),
@@ -73,9 +73,11 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeExtractCodeIntoEdn => meta::extract_code_into_edn(args),
     // tuple
     CalcitProc::NativeTuple => meta::new_tuple(args), // unstable solution for the name
+    CalcitProc::NativeClassTuple => meta::new_tuple_class(args),
     CalcitProc::NativeTupleNth => meta::tuple_nth(args),
     CalcitProc::NativeTupleAssoc => meta::assoc(args),
     CalcitProc::NativeTupleCount => meta::tuple_count(args),
+    CalcitProc::NativeTupleClass => meta::tuple_class(args),
     // effects
     CalcitProc::NativeDisplayStack => meta::display_stack(args, call_stack),
     CalcitProc::Raise => effects::raise(args),

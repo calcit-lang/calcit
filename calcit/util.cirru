@@ -33,10 +33,12 @@
                 do (println "|env: not js. tests skipped")
 
         |main! $ quote
-          defn main! () nil
+          defn main! ()
+            :: :unit
 
         |reload! $ quote
-          defn reload! () nil
+          defn reload! ()
+            :: :unit
 
       :proc $ quote ()
-      :configs $ {} (:extension nil)
+      :configs $ {}

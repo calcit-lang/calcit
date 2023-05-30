@@ -274,7 +274,7 @@ pub fn preprocess_expr(
         process_list_call(xs, scope_defs, file_ns, check_warnings, call_stack)
       }
     }
-    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Keyword(..) | Calcit::CirruQuote(..) => {
+    Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::CirruQuote(..) => {
       Ok((expr.to_owned(), None))
     }
     Calcit::Method(..) => Ok((expr.to_owned(), None)),
@@ -321,11 +321,11 @@ fn process_list_call(
   // == Tips ==
   // Macro from value: will be called during processing
   // Func from value: for checking arity
-  // Keyword: transforming into keyword expression
+  // Keyword: transforming into tag expression
   // Syntax: handled directly during preprocessing
   // Thunk: invalid here
   match (&head_form, &head_evaled) {
-    (Calcit::Keyword(..), _) => {
+    (Calcit::Tag(..), _) => {
       if args.len() == 1 {
         let code = Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
@@ -674,7 +674,7 @@ pub fn preprocess_call_let(
   let mut xs: CalcitItems = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), head_ns.to_owned())]);
   let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
   let binding = match args.get(0) {
-    Some(Calcit::Nil) => Calcit::Nil,
+    Some(Calcit::List(ys)) if ys.is_empty() => Calcit::List(TernaryTreeList::Empty),
     Some(Calcit::List(ys)) if ys.len() == 2 => match (&ys[0], &ys[1]) {
       (Calcit::Symbol { sym, .. }, a) => {
         let loc = NodeLocation {

@@ -60,9 +60,9 @@ pub fn modify_cli_running_mode(mode: CliRunningMode) -> Result<(), String> {
 pub fn calcit_running_mode(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let mode = CLI_RUNNING_MODE.read().expect("read mode").to_owned();
   match mode {
-    CliRunningMode::Eval => Ok(Calcit::kwd("eval")),
-    CliRunningMode::Js => Ok(Calcit::kwd("js")),
-    CliRunningMode::Ir => Ok(Calcit::kwd("ir")),
+    CliRunningMode::Eval => Ok(Calcit::tag("eval")),
+    CliRunningMode::Js => Ok(Calcit::tag("js")),
+    CliRunningMode::Ir => Ok(Calcit::tag("ir")),
   }
 }
 
@@ -74,7 +74,7 @@ pub fn is_rust_eval() -> bool {
 
 // TODO
 pub fn call_get_calcit_backend(_xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  Ok(Calcit::kwd("rust"))
+  Ok(Calcit::tag("rust"))
 }
 
 pub fn quit(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {

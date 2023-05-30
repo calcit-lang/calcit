@@ -8,7 +8,7 @@ use crate::primes;
 use crate::primes::Calcit;
 use crate::{data::cirru, primes::MethodKind};
 
-use cirru_edn::{Edn, EdnKwd};
+use cirru_edn::{Edn, EdnTag};
 
 // values does not fit are just represented with specical indicates
 pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
@@ -17,7 +17,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Bool(b) => Ok(Edn::Bool(*b)),
     Calcit::Str(s) => Ok(Edn::Str((**s).into())),
     Calcit::Number(n) => Ok(Edn::Number(*n)),
-    Calcit::Keyword(s) => Ok(Edn::Keyword(s.to_owned())),
+    Calcit::Tag(s) => Ok(Edn::Tag(s.to_owned())),
     Calcit::Symbol { sym, .. } => Ok(Edn::Symbol((**sym).into())),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
@@ -41,7 +41,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       Ok(Edn::Map(ys))
     }
     Calcit::Record(name, fields, values) => {
-      let mut entries: Vec<(EdnKwd, Edn)> = Vec::with_capacity(fields.len());
+      let mut entries: Vec<(EdnTag, Edn)> = Vec::with_capacity(fields.len());
       for idx in 0..fields.len() {
         entries.push((fields[idx].to_owned(), calcit_to_edn(&values[idx])?));
       }
@@ -53,10 +53,11 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     }
     Calcit::Proc(name) => Ok(Edn::Symbol(name.to_string().into())),
     Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.to_string())),
-    Calcit::Tuple(tag, data, extra) => {
+    Calcit::Tuple(tag, extra, _class) => {
       match &**tag {
         Calcit::Symbol { sym, .. } => {
           if &**sym == "quote" {
+            let data = extra.get(0).ok_or(format!("quote expected 1 argument, got: {:?}", extra))?; // TODO more types to handle
             match cirru::calcit_data_to_cirru(data) {
               Ok(v) => Ok(Edn::Quote(v)),
               Err(e) => Err(format!("failed to create quote: {e}")), // TODO more types to handle
@@ -70,7 +71,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
           for item in extra {
             extra_values.push(calcit_to_edn(item)?);
           }
-          Ok(Edn::tuple(Edn::Keyword(name.to_owned()), calcit_to_edn(data)?, extra_values))
+          Ok(Edn::tuple(Edn::Tag(name.to_owned()), extra_values))
         }
         v => {
           Err(format!("EDN tuple expected 'quote or record, unknown tag: {v}"))
@@ -101,14 +102,17 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       resolved: None,
       location: None,
     },
-    Edn::Keyword(s) => Calcit::Keyword(s.to_owned()),
+    Edn::Tag(s) => Calcit::Tag(s.to_owned()),
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::CirruQuote(nodes.to_owned()),
-    Edn::Tuple(pair, extra) => Calcit::Tuple(
-      Arc::new(edn_to_calcit(&pair.0)),
-      Arc::new(edn_to_calcit(&pair.1)),
-      extra.into_iter().map(edn_to_calcit).collect(),
-    ),
+    Edn::Tuple(tag, extra) => {
+      let base_class = Calcit::Record(EdnTag::new("base"), Arc::new(Vec::new()), Arc::new(Vec::new()));
+      Calcit::Tuple(
+        Arc::new(edn_to_calcit(tag)),
+        extra.iter().map(edn_to_calcit).collect(),
+        Arc::new(base_class),
+      )
+    }
     Edn::List(xs) => {
       let mut ys: primes::CalcitItems = TernaryTreeList::Empty;
       for x in xs {
@@ -131,7 +135,7 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
       Calcit::Map(ys)
     }
     Edn::Record(name, entries) => {
-      let mut fields: Vec<EdnKwd> = Vec::with_capacity(entries.len());
+      let mut fields: Vec<EdnTag> = Vec::with_capacity(entries.len());
       let mut values: Vec<Calcit> = Vec::with_capacity(entries.len());
       let mut sorted = entries.to_owned();
       sorted.sort_by(|(a, _), (b, _)| a.cmp(b));

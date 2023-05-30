@@ -196,8 +196,8 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
 
   let pkg = package_data.map_get("package").map_err(io_err)?.read_str().map_err(io_err)?;
 
-  dict.insert(Edn::kwd("package"), Edn::Str(pkg));
-  dict.insert(Edn::kwd("configs"), package_data);
+  dict.insert(Edn::tag("package"), Edn::Str(pkg));
+  dict.insert(Edn::tag("configs"), package_data);
 
   let mut files: HashMap<Edn, Edn> = HashMap::new();
 
@@ -222,7 +222,7 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
             xs.get(0)
           )));
         };
-        file.insert(Edn::kwd("ns"), Edn::Quote(Cirru::List(ns_code.to_owned())));
+        file.insert(Edn::tag("ns"), Edn::Quote(Cirru::List(ns_code.to_owned())));
 
         let mut defs: HashMap<Edn, Edn> = HashMap::with_capacity(xs.len());
         for line in xs.iter().skip(1) {
@@ -245,7 +245,7 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
           }
         }
 
-        file.insert(Edn::kwd("defs"), Edn::Map(defs));
+        file.insert(Edn::tag("defs"), Edn::Map(defs));
         files.insert(Edn::str(ns_name), Edn::Map(file));
 
         if verbose {
@@ -256,7 +256,7 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
     }
   }
 
-  dict.insert(Edn::kwd("files"), Edn::Map(files));
+  dict.insert(Edn::tag("files"), Edn::Map(files));
 
   Ok(Edn::Map(dict))
 }

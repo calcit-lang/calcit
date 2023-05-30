@@ -28,9 +28,9 @@
           test-algebra.main :as test-algebra
           util.core :refer $ log-title inside-eval: inside-js:
       :defs $ {}
-        |test-keyword $ quote
-          defn test-keyword ()
-            ; assert "|keyword function" $ =
+        |test-tag $ quote
+          defn test-tag ()
+            ; assert "|tag function" $ =
               :a ({} (:a 1))
               , 1
             ; inside-eval:
@@ -150,7 +150,7 @@
                   {}
                     :c 3
                     4 5
-              keywordize-edn $ {}
+              tagging-edn $ {}
                 |a 1
                 :b $ []
                   {}
@@ -250,12 +250,13 @@
             log-title "|Testing method"
 
             let
-                a $ :: Num 0
+                a $ %:: Num :calcit/number 0
               assert=
-                :: Num 2
+                %:: Num :calcit/number 2
                 -> a .inc .inc
               assert= |1
                 -> a .inc .show
+              assert-detect record? $ &tuple:class a
 
         |test-tuple $ quote
           fn ()
@@ -272,6 +273,11 @@
 
             assert= :a (get (:: :a :b) 0)
             assert= :b (get (:: :a :b) 1)
+
+            assert= :c (get (:: :a :b :c) 2)
+            assert= true $ contains?
+              :: :a :b :c
+              , 2
 
             assert= (:: 1 0) $ update (:: 0 0) 0 inc
             assert= (:: 0 1) $ update (:: 0 0) 1 inc
@@ -293,7 +299,8 @@
             println "|buffer value:" $ &buffer 0x11 |11
 
         |reload! $ quote
-          defn reload! () nil
+          defn reload! ()
+            :: :unit
 
         |main! $ quote
           defn main! ()
@@ -304,8 +311,8 @@
             inside-js:
               load-console-formatter!
 
-            log-title "|Testing keyword function"
-            test-keyword
+            log-title "|Testing tag function"
+            test-tag
 
             util.core/log-title "|Testing detects"
             test-detects
@@ -358,4 +365,4 @@
             do true
 
       :proc $ quote ()
-      :configs $ {} (:extension nil)
+      :configs $ {}

@@ -34,4 +34,4 @@
             try-hygienic
 
       :proc $ quote ()
-      :configs $ {} (:extension nil)
+      :configs $ {}

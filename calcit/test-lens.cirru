@@ -88,6 +88,11 @@
                 {} $ :a $ :: 'quote 1
                 [] :a 1
 
+            assert= true
+              contains-in?
+                :: :a :b $ [] 1 2 3
+                [] 2 2
+
         |main! $ quote
           defn main! ()
 
@@ -97,4 +102,4 @@
             do true
 
       :proc $ quote ()
-      :configs $ {} (:extension nil)
+      :configs $ {}

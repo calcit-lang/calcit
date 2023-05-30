@@ -107,12 +107,12 @@
             println title
             println
 
-        |test-key-match $ quote
+        |test-tag-match $ quote
           fn ()
-            log-title "|Testing key-match"
+            log-title "|Testing tag-match"
             &let
               match-ab $ fn (data)
-                key-match data
+                tag-match data
                   (:a x) (' "|pattern a:" x)
                   (:b x y) (' "|pattern b:" x y)
                   _ (' "|no match")
@@ -136,12 +136,12 @@
                 match-ab (:: :c 1 2)
                 [] "|no match"
 
-        |test-tag-match $ quote
+        |test-field-match $ quote
           fn ()
-            log-title "|Testing tag-match"
+            log-title "|Testing field-match"
             &let
               match-ab $ fn (data)
-                tag-match data
+                field-match data
                   :a a $ [] :a $ :a a
                   :b b $ [] :b $ :b b
                   _ :other
@@ -153,7 +153,7 @@
                 [] :b 2
               assert= :other
                 match-ab (&{} :tag :c)
-        
+
         |test-when $ quote
           fn ()
             log-title "|Testing when"
@@ -161,7 +161,7 @@
               when true 1
             assert= 1
               when true 2 1
-            
+
             assert= 1
               when-not false 1
             assert= 1
@@ -172,7 +172,7 @@
             log-title "|Testing cond"
 
             test-when
-            
+
             test-cond
 
             test-or
@@ -181,10 +181,10 @@
 
             test-case
 
-            test-key-match
             test-tag-match
+            test-field-match
 
             , true
 
       :proc $ quote ()
-      :configs $ {} (:extension nil)
+      :configs $ {}

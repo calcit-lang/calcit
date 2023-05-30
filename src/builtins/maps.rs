@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cirru_edn::EdnKwd;
+use cirru_edn::EdnTag;
 use im_ternary_tree::TernaryTreeList;
 
 use crate::builtins::records::find_in_fields;
@@ -75,11 +75,11 @@ pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         let mut new_values = (**values).to_owned();
         for (k, v) in ys {
           match k {
-            Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnKwd::new(s)) {
+            Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnTag::new(s)) {
               Some(pos) => new_values[pos] = v.to_owned(),
               None => return CalcitErr::err_str(format!("invalid field `{s}` for {fields:?}")),
             },
-            Calcit::Keyword(s) => match find_in_fields(fields, s) {
+            Calcit::Tag(s) => match find_in_fields(fields, s) {
               Some(pos) => new_values[pos] = v.to_owned(),
               None => return CalcitErr::err_str(format!("invalid field `{s}` for {fields:?}")),
             },
@@ -113,7 +113,7 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       for idx in 0..fields.len() {
         zs.insert_mut(Calcit::List(
           TernaryTreeList::Empty
-            .push_right(Calcit::Keyword(fields[idx].to_owned()))
+            .push_right(Calcit::Tag(fields[idx].to_owned()))
             .push_right(values[idx].to_owned()),
         ));
       }

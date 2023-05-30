@@ -50,7 +50,7 @@ pub fn turn_string(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Nil) => Ok(Calcit::new_str("")),
     Some(Calcit::Bool(b)) => Ok(Calcit::Str(b.to_string().into())),
     Some(Calcit::Str(s)) => Ok(Calcit::Str(s.to_owned())),
-    Some(Calcit::Keyword(s)) => Ok(Calcit::Str(s.to_string().into())),
+    Some(Calcit::Tag(s)) => Ok(Calcit::Str(s.to_string().into())),
     Some(Calcit::Symbol { sym, .. }) => Ok(Calcit::Str(sym.to_owned())),
     Some(Calcit::Number(n)) => Ok(Calcit::Str(n.to_string().into())),
     Some(a) => CalcitErr::err_str(format!("turn-string cannot turn this to string: {a}")),
@@ -183,7 +183,7 @@ pub fn find_index(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn starts_with_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool(s.starts_with(&**pattern))),
-    (Some(Calcit::Keyword(s)), Some(Calcit::Keyword(pattern))) => Ok(Calcit::Bool((*s.to_str()).starts_with(&*pattern.to_str()))),
+    (Some(Calcit::Tag(s)), Some(Calcit::Tag(pattern))) => Ok(Calcit::Bool((*s.to_str()).starts_with(&*pattern.to_str()))),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("starts-with? expected 2 strings, got: {a} {b}")),
     (_, _) => CalcitErr::err_str("starts-with? expected 2 arguments, got nothing"),
   }

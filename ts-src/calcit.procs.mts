@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.6.28";
+export const calcit_version = "0.7.0-a3";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -7,11 +7,11 @@ import { writeCirruCode } from "@cirru/writer.ts";
 import { CalcitValue } from "./js-primes.mjs";
 import {
   CalcitSymbol,
-  CalcitKeyword,
+  CalcitTag,
   CalcitRef,
   CalcitFn,
   CalcitRecur,
-  kwd,
+  newTag,
   refsRegistry,
   toString,
   getStringName,
@@ -41,55 +41,55 @@ import { to_calcit_data, extract_cirru_edn, CalcitCirruQuote } from "./js-cirru.
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
-export let type_of = (x: any): CalcitKeyword => {
+export let type_of = (x: any): CalcitTag => {
   if (typeof x === "string") {
-    return kwd("string");
+    return newTag("string");
   }
   if (typeof x === "number") {
-    return kwd("number");
+    return newTag("number");
   }
-  if (x instanceof CalcitKeyword) {
-    return kwd("keyword");
+  if (x instanceof CalcitTag) {
+    return newTag("tag");
   }
   if (x instanceof CalcitList || x instanceof CalcitSliceList) {
-    return kwd("list");
+    return newTag("list");
   }
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) {
-    return kwd("map");
+    return newTag("map");
   }
   if (x == null) {
-    return kwd("nil");
+    return newTag("nil");
   }
   if (x instanceof CalcitRef) {
-    return kwd("ref");
+    return newTag("ref");
   }
   if (x instanceof CalcitTuple) {
-    return kwd("tuple");
+    return newTag("tuple");
   }
   if (x instanceof CalcitSymbol) {
-    return kwd("symbol");
+    return newTag("symbol");
   }
   if (x instanceof CalcitSet) {
-    return kwd("set");
+    return newTag("set");
   }
   if (x instanceof CalcitRecord) {
-    return kwd("record");
+    return newTag("record");
   }
   if (x instanceof CalcitCirruQuote) {
-    return kwd("cirru-quote");
+    return newTag("cirru-quote");
   }
   if (x === true || x === false) {
-    return kwd("bool");
+    return newTag("bool");
   }
   if (typeof x === "function") {
     if (x.isMacro) {
       // this is faked...
-      return kwd("macro");
+      return newTag("macro");
     }
-    return kwd("fn");
+    return newTag("fn");
   }
   if (typeof x === "object") {
-    return kwd("js-object");
+    return newTag("js-object");
   }
   throw new Error(`Unknown data ${x}`);
 };
@@ -298,7 +298,12 @@ export let _$n_tuple_$o_count = function (xs: CalcitValue) {
   throw new Error("Does not support `count` on this type");
 };
 
-export let _$n_record_$o_get = function (xs: CalcitValue, k: CalcitKeyword) {
+export let _$n_tuple_$o_class = function (x: CalcitTuple) {
+  if (arguments.length !== 1) throw new Error("&tuple:class takes 1 arguments");
+  return x.klass;
+};
+
+export let _$n_record_$o_get = function (xs: CalcitValue, k: CalcitTag) {
   if (arguments.length !== 2) {
     throw new Error("record &get takes 2 arguments");
   }
@@ -408,12 +413,12 @@ export let reset_$x_ = (a: CalcitRef, v: CalcitValue): null => {
   return null;
 };
 
-export let add_watch = (a: CalcitRef, k: CalcitKeyword, f: CalcitFn): null => {
+export let add_watch = (a: CalcitRef, k: CalcitTag, f: CalcitFn): null => {
   if (!(a instanceof CalcitRef)) {
     throw new Error("Expected ref for add-watch!");
   }
-  if (!(k instanceof CalcitKeyword)) {
-    throw new Error("Expected watcher key in keyword");
+  if (!(k instanceof CalcitTag)) {
+    throw new Error("Expected watcher key in tag");
   }
   if (!(typeof f === "function")) {
     throw new Error("Expected watcher function");
@@ -422,7 +427,7 @@ export let add_watch = (a: CalcitRef, k: CalcitKeyword, f: CalcitFn): null => {
   return null;
 };
 
-export let remove_watch = (a: CalcitRef, k: CalcitKeyword): null => {
+export let remove_watch = (a: CalcitRef, k: CalcitTag): null => {
   a.listeners.delete(k);
   return null;
 };
@@ -554,7 +559,7 @@ export let recur = (...xs: CalcitValue[]): CalcitRecur => {
 };
 
 export let _$n_get_calcit_backend = () => {
-  return kwd("js");
+  return newTag("js");
 };
 
 export let not = (x: boolean): boolean => {
@@ -743,11 +748,11 @@ export let _$n_merge = (a: CalcitValue, b: CalcitMap | CalcitSliceMap): CalcitVa
       let pairs = b.pairs();
       for (let idx = 0; idx < pairs.length; idx++) {
         let [k, v] = pairs[idx];
-        let field: CalcitKeyword;
-        if (k instanceof CalcitKeyword) {
+        let field: CalcitTag;
+        if (k instanceof CalcitTag) {
           field = k;
         } else {
-          field = kwd(getStringName(k));
+          field = newTag(getStringName(k));
         }
         let position = a.findIndex(field);
         if (position >= 0) {
@@ -983,18 +988,18 @@ export let get_env = (name: string, v0: string): string => {
   return v ?? v0;
 };
 
-export let turn_keyword = (x: CalcitValue): CalcitKeyword => {
+export let turn_tag = (x: CalcitValue): CalcitTag => {
   if (typeof x === "string") {
-    return kwd(x);
+    return newTag(x);
   }
-  if (x instanceof CalcitKeyword) {
+  if (x instanceof CalcitTag) {
     return x;
   }
   if (x instanceof CalcitSymbol) {
-    return kwd(x.value);
+    return newTag(x.value);
   }
   console.error(x);
-  throw new Error("Unexpected data for keyword");
+  throw new Error("Unexpected data for tag");
 };
 
 export let turn_symbol = (x: CalcitValue): CalcitSymbol => {
@@ -1004,7 +1009,7 @@ export let turn_symbol = (x: CalcitValue): CalcitSymbol => {
   if (x instanceof CalcitSymbol) {
     return x;
   }
-  if (x instanceof CalcitKeyword) {
+  if (x instanceof CalcitTag) {
     return new CalcitSymbol(x.value);
   }
   console.error(x);
@@ -1045,7 +1050,7 @@ export let turn_string = (x: CalcitValue): string => {
   if (typeof x === "string") {
     return x;
   }
-  if (x instanceof CalcitKeyword) {
+  if (x instanceof CalcitTag) {
     return x.value;
   }
   if (x instanceof CalcitSymbol) {
@@ -1069,10 +1074,10 @@ export let starts_with_$q_ = (xs: CalcitValue, y: CalcitValue): boolean => {
   if (typeof xs === "string" && typeof y === "string") {
     return xs.startsWith(y);
   }
-  if (xs instanceof CalcitKeyword && y instanceof CalcitKeyword) {
+  if (xs instanceof CalcitTag && y instanceof CalcitTag) {
     return xs.value.startsWith(y.value);
   }
-  throw new Error("expected strings or keywords");
+  throw new Error("expected strings or tags");
 };
 export let ends_with_$q_ = (xs: string, y: string): boolean => {
   return xs.endsWith(y);
@@ -1126,8 +1131,8 @@ export let bool_$q_ = (x: CalcitValue): boolean => {
 export let nil_$q_ = (x: CalcitValue): boolean => {
   return x == null;
 };
-export let keyword_$q_ = (x: CalcitValue): boolean => {
-  return x instanceof CalcitKeyword;
+export let tag_$q_ = (x: CalcitValue): boolean => {
+  return x instanceof CalcitTag;
 };
 export let map_$q_ = (x: CalcitValue): boolean => {
   return x instanceof CalcitSliceMap || x instanceof CalcitMap;
@@ -1251,7 +1256,7 @@ export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> =
     let v = xs[(idx << 1) + 1];
     if (typeof k === "string") {
       ret[k] = v;
-    } else if (k instanceof CalcitKeyword) {
+    } else if (k instanceof CalcitTag) {
       ret[turn_string(k)] = v;
     } else {
       throw new Error("Invalid key for js Object");
@@ -1260,8 +1265,13 @@ export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> =
   return ret;
 };
 
-export let _$o__$o_ = (a: CalcitValue, b: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
-  return new CalcitTuple(a, b, extra);
+export let _$o__$o_ = (tagName: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
+  let klass = new CalcitRecord(newTag("base-class"), [], []);
+  return new CalcitTuple(tagName, extra, klass);
+};
+
+export let _PCT__$o__$o_ = (klass: CalcitRecord, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
+  return new CalcitTuple(tag, extra, klass);
 };
 
 // mutable place for core to register
@@ -1294,8 +1304,8 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   if (obj == null) {
     klass = calcit_builtin_classes.nil;
   } else if (obj instanceof CalcitTuple) {
-    if (obj.fst instanceof CalcitRecord) {
-      klass = obj.fst;
+    if (obj.klass instanceof CalcitRecord) {
+      klass = obj.klass;
     } else {
       throw new Error("Method invoking expected a record as class");
     }
@@ -1419,8 +1429,8 @@ export let _$n_str_$o_pad_right = (s: string, size: number, pattern: string): st
   return s.padEnd(size, pattern);
 };
 
-export let _$n_get_os = (): CalcitKeyword => {
-  return kwd("js-engine");
+export let _$n_get_os = (): CalcitTag => {
+  return newTag("js-engine");
 };
 
 export let _$n_buffer = (...xs: CalcitValue[]): Uint8Array => {

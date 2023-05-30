@@ -6,7 +6,7 @@ import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitRecord } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
-import { CalcitKeyword, CalcitSymbol, CalcitRecur, CalcitRef, kwd } from "./calcit-data.mjs";
+import { CalcitTag, CalcitSymbol, CalcitRecur, CalcitRef, newTag } from "./calcit-data.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
@@ -59,7 +59,7 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
   if (typeof x === "boolean") {
     return x.toString();
   }
-  if (x instanceof CalcitKeyword) {
+  if (x instanceof CalcitTag) {
     return x.toString();
   }
   if (x instanceof CalcitSymbol) {
@@ -126,13 +126,13 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     return buffer;
   }
   if (x instanceof CalcitTuple) {
-    if (x.fst instanceof CalcitSymbol && x.fst.value === "quote") {
+    if (x.tag instanceof CalcitSymbol && x.tag.value === "quote") {
       // turn `x.snd` with CalcitList into raw Cirru nodes, which is in plain Array
-      return ["quote", toWriterNode(x.snd as any)] as CirruEdnFormat;
-    } else if (x.fst instanceof CalcitRecord) {
-      return ["::", x.fst.name.toString(), to_cirru_edn(x.snd)];
+      return ["quote", toWriterNode(x.get(1) as any)] as CirruEdnFormat;
+    } else if (x.tag instanceof CalcitRecord) {
+      return ["::", x.tag.name.toString(), to_cirru_edn(x.get(1))];
     } else {
-      throw new Error(`Unsupported tag for EDN: ${x.fst}`);
+      throw new Error(`Unsupported tag for EDN: ${x.tag}`);
     }
   }
   console.error(x);
@@ -140,11 +140,11 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
 };
 
 /** makes sure we got string */
-let extractFieldKwd = (x: string) => {
+let extractFieldTag = (x: string) => {
   if (x[0] === ":") {
-    return kwd(x.slice(1));
+    return newTag(x.slice(1));
   } else {
-    return kwd(x);
+    return newTag(x);
   }
 };
 
@@ -166,7 +166,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       return x.slice(1);
     }
     if (x[0] === ":") {
-      return kwd(x.slice(1));
+      return newTag(x.slice(1));
     }
     if (x[0] === "'") {
       return new CalcitSymbol(x.slice(1));
@@ -202,7 +202,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
         throw new Error("Expected string for record name");
       }
       // put to entries first, sort and then...
-      let entries: Array<[CalcitKeyword, CalcitValue]> = [];
+      let entries: Array<[CalcitTag, CalcitValue]> = [];
       x.forEach((pair, idx) => {
         if (idx <= 1) {
           return; // skip %{} name
@@ -210,7 +210,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
 
         if (pair instanceof Array && pair.length === 2) {
           if (typeof pair[0] === "string") {
-            entries.push([extractFieldKwd(pair[0]), extract_cirru_edn(pair[1])]);
+            entries.push([extractFieldTag(pair[0]), extract_cirru_edn(pair[1])]);
           } else {
             throw new Error("Expected string as field");
           }
@@ -221,14 +221,14 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       entries.sort((a, b) => {
         return a[0].cmp(b[0]);
       });
-      let fields: Array<CalcitKeyword> = [];
+      let fields: Array<CalcitTag> = [];
       let values: Array<CalcitValue> = [];
 
       for (let idx = 0; idx < entries.length; idx++) {
         fields.push(entries[idx][0]);
         values.push(entries[idx][1]);
       }
-      return new CalcitRecord(extractFieldKwd(name), fields, values);
+      return new CalcitRecord(extractFieldTag(name), fields, values);
     }
     if (x[0] === "[]") {
       return new CalcitSliceList(x.slice(1).map(extract_cirru_edn));
@@ -249,7 +249,8 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       if (x.length < 3) {
         throw new Error("tuple expects at least 2 values");
       }
-      return new CalcitTuple(extract_cirru_edn(x[1]), extract_cirru_edn(x[2]), x.slice(3).map(extract_cirru_edn));
+      let baseClass = new CalcitRecord(newTag("base-class"), [], []);
+      return new CalcitTuple(extract_cirru_edn(x[1]), x.slice(2).map(extract_cirru_edn), baseClass);
     }
   }
   console.error(x);
@@ -272,7 +273,7 @@ export let format_cirru_edn = (data: CalcitValue, useInline: boolean = true): st
   if (data instanceof CalcitSymbol) {
     return "\ndo " + to_cirru_edn(data) + "\n";
   }
-  if (data instanceof CalcitKeyword) {
+  if (data instanceof CalcitTag) {
     return "\ndo " + to_cirru_edn(data) + "\n";
   }
   return writeCirruCode([to_cirru_edn(data)], { useInline: useInline });
@@ -285,7 +286,7 @@ export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue =>
 
   if (typeof x === "string") {
     if (!noKeyword && x[0] === ":" && x.slice(1).match(/^[\w\d_\?\!\-]+$/)) {
-      return kwd(x.slice(1));
+      return newTag(x.slice(1));
     }
     return x;
   }
@@ -314,7 +315,7 @@ export let to_calcit_data = (x: any, noKeyword: boolean = false): CalcitValue =>
   if (x instanceof CalcitRecord) return x;
   if (x instanceof CalcitRecur) return x;
   if (x instanceof CalcitRef) return x;
-  if (x instanceof CalcitKeyword) return x;
+  if (x instanceof CalcitTag) return x;
   if (x instanceof CalcitSymbol) return x;
   if (x instanceof CalcitTuple) return x;
 

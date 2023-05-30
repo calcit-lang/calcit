@@ -1,17 +1,17 @@
 import { initTernaryTreeMap, Hash, insert } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes.mjs";
-import { kwd, castKwd, toString, CalcitKeyword, getStringName, findInFields } from "./calcit-data.mjs";
+import { newTag, castTag, toString, CalcitTag, getStringName, findInFields } from "./calcit-data.mjs";
 
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 
 export class CalcitRecord {
-  name: CalcitKeyword;
-  fields: Array<CalcitKeyword>;
+  name: CalcitTag;
+  fields: Array<CalcitTag>;
   values: Array<CalcitValue>;
   cachedHash: Hash;
-  constructor(name: CalcitKeyword, fields: Array<CalcitKeyword>, values?: Array<CalcitValue>) {
+  constructor(name: CalcitTag, fields: Array<CalcitTag>, values?: Array<CalcitValue>) {
     this.name = name;
-    let fieldNames = fields.map(castKwd);
+    let fieldNames = fields.map(castTag);
     this.fields = fields;
     if (values != null) {
       if (values.length !== fields.length) {
@@ -24,7 +24,7 @@ export class CalcitRecord {
     this.cachedHash = null;
   }
   get(k: CalcitValue) {
-    let field = castKwd(k);
+    let field = castTag(k);
     let idx = findInFields(this.fields, field);
     if (idx >= 0) {
       return this.values[idx];
@@ -34,7 +34,7 @@ export class CalcitRecord {
   }
   assoc(k: CalcitValue, v: CalcitValue): CalcitRecord {
     let values: Array<CalcitValue> = new Array(this.fields.length);
-    let k_id = castKwd(k);
+    let k_id = castTag(k);
     for (let idx = 0; idx < this.fields.length; idx++) {
       if (this.fields[idx] === k_id) {
         values[idx] = v;
@@ -46,7 +46,7 @@ export class CalcitRecord {
   }
   /** return -1 for missing */
   findIndex(k: CalcitValue) {
-    let field = castKwd(k);
+    let field = castTag(k);
     let idx = findInFields(this.fields, field);
     return idx;
   }
@@ -64,7 +64,7 @@ export class CalcitRecord {
 }
 
 export let new_record = (name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
-  let fieldNames = fields.map(castKwd).sort((x, y) => {
+  let fieldNames = fields.map(castTag).sort((x, y) => {
     if (x.idx < y.idx) {
       return -1;
     } else if (x.idx > y.idx) {
@@ -73,10 +73,10 @@ export let new_record = (name: CalcitValue, ...fields: Array<CalcitValue>): Calc
       throw new Error(`Unexpected duplication in record fields: ${x.toString()}`);
     }
   });
-  return new CalcitRecord(castKwd(name), fieldNames);
+  return new CalcitRecord(castTag(name), fieldNames);
 };
 
-export let fieldsEqual = (xs: Array<CalcitKeyword>, ys: Array<CalcitKeyword>): boolean => {
+export let fieldsEqual = (xs: Array<CalcitTag>, ys: Array<CalcitTag>): boolean => {
   if (xs === ys) {
     return true; // special case, referential equal
   }
@@ -106,7 +106,7 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
       let idx = -1;
       let k = proto.fields[i];
       for (let j = 0; j < proto.fields.length; j++) {
-        if (k === castKwd(xs[j * 2])) {
+        if (k === castTag(xs[j * 2])) {
           idx = j;
           break;
         }
@@ -127,7 +127,7 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
   }
 };
 
-export let _$n_record_$o_get_name = (x: CalcitRecord): CalcitKeyword => {
+export let _$n_record_$o_get_name = (x: CalcitRecord): CalcitTag => {
   if (x instanceof CalcitRecord) {
     return x.name;
   } else {
@@ -154,11 +154,11 @@ export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
       return new CalcitRecord(proto.name, proto.fields, values);
     }
   } else if (data instanceof CalcitMap || data instanceof CalcitSliceMap) {
-    let pairs_buffer: Array<[CalcitKeyword, CalcitValue]> = [];
+    let pairs_buffer: Array<[CalcitTag, CalcitValue]> = [];
     let pairs = data.pairs();
     for (let i = 0; i < pairs.length; i++) {
       let [k, v] = pairs[i];
-      pairs_buffer.push([castKwd(k), v]);
+      pairs_buffer.push([castTag(k), v]);
     }
     // mutable sort
     pairs_buffer.sort((pair1, pair2) => pair1[0].cmp(pair2[0]));
@@ -210,9 +210,9 @@ export let _$n_record_$o_matches_$q_ = (x: CalcitValue, y: CalcitValue): boolean
 export function _$n_record_$o_extend_as(obj: CalcitValue, new_name: CalcitValue, new_key: CalcitValue, new_value: CalcitValue) {
   if (arguments.length !== 4) throw new Error(`Expected 4 arguments, got ${arguments.length}`);
   if (!(obj instanceof CalcitRecord)) throw new Error("Expected record");
-  let field = castKwd(new_key);
-  let new_name_kwd = castKwd(new_name);
-  let new_fields: CalcitKeyword[] = [];
+  let field = castTag(new_key);
+  let new_name_tag = castTag(new_name);
+  let new_fields: CalcitTag[] = [];
   let new_values: CalcitValue[] = [];
   let inserted = false;
 
@@ -242,5 +242,5 @@ export function _$n_record_$o_extend_as(obj: CalcitValue, new_name: CalcitValue,
     new_values.push(new_value);
   }
 
-  return new CalcitRecord(new_name_kwd, new_fields, new_values);
+  return new CalcitRecord(new_name_tag, new_fields, new_values);
 }
