@@ -285,6 +285,9 @@
             assert= (:: 0 1 0) $ update (:: 0 0 0) 1 inc
             assert= (:: 0 0 1) $ update (:: 0 0 0) 2 inc
 
+            assert= 1 $ count $ :: :none
+            assert-detect tuple? $ parse-cirru-edn "|:: :none"
+
         |test-effect $ quote
           fn ()
             log-title "|Testing effect"
