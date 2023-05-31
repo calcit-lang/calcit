@@ -288,6 +288,14 @@
             assert= 1 $ count $ :: :none
             assert-detect tuple? $ parse-cirru-edn "|:: :none"
 
+            assert= false $ =
+              :: :t 1
+              :: :t 2
+
+            assert= false $ =
+              :: :t 1
+              :: :t 1 2
+
         |test-effect $ quote
           fn ()
             log-title "|Testing effect"
