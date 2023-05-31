@@ -73,6 +73,13 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
           }
           Ok(Edn::tuple(Edn::Tag(name.to_owned()), extra_values))
         }
+        Calcit::Tag(tag) => {
+          let mut extra_values = vec![];
+          for item in extra {
+            extra_values.push(calcit_to_edn(item)?);
+          }
+          Ok(Edn::tuple(Edn::Tag(tag.to_owned()), extra_values))
+        }
         v => {
           Err(format!("EDN tuple expected 'quote or record, unknown tag: {v}"))
           // TODO more types to handle
