@@ -308,17 +308,41 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
   }
   let value = invoke_args[0].to_owned();
   let s0 = CalcitScope::default();
-  let class: Calcit = match &invoke_args[0] {
-    Calcit::Tuple(_tag, _extra, class) => (**class).to_owned(),
+  let (tag, class): (String, Calcit) = match &invoke_args[0] {
+    Calcit::Tuple(tag, _extra, class) => (tag.to_string(), (**class).to_owned()),
     // classed should already be preprocessed
-    Calcit::List(..) => runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Map(..) => runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Number(..) => runner::evaluate_symbol("&core-number-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Str(..) => runner::evaluate_symbol("&core-string-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Set(..) => runner::evaluate_symbol("&core-set-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Record(..) => runner::evaluate_symbol("&core-record-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Nil => runner::evaluate_symbol("&core-nil-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::List(..) => (
+      "&core-list-class".to_owned(),
+      runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, None, call_stack)?,
+    ),
+    Calcit::Map(..) => (
+      "&core-map-class".to_owned(),
+      runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, None, call_stack)?,
+    ),
+    Calcit::Number(..) => (
+      "&core-number-class".to_owned(),
+      runner::evaluate_symbol("&core-number-class", &s0, primes::CORE_NS, None, call_stack)?,
+    ),
+    Calcit::Str(..) => (
+      "&core-string-class".to_owned(),
+      runner::evaluate_symbol("&core-string-class", &s0, primes::CORE_NS, None, call_stack)?,
+    ),
+    Calcit::Set(..) => (
+      "&core-set-class".to_owned(),
+      runner::evaluate_symbol("&core-set-class", &s0, primes::CORE_NS, None, call_stack)?,
+    ),
+    Calcit::Record(..) => (
+      "&core-record-class".to_owned(),
+      runner::evaluate_symbol("&core-record-class", &s0, primes::CORE_NS, None, call_stack)?,
+    ),
+    Calcit::Nil => (
+      "&core-nil-class".to_owned(),
+      runner::evaluate_symbol("&core-nil-class", &s0, primes::CORE_NS, None, call_stack)?,
+    ),
+    Calcit::Fn { .. } | Calcit::Proc(..) => (
+      "&core-fn-class".to_owned(),
+      runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, None, call_stack)?,
+    ),
     x => {
       return Err(CalcitErr::use_msg_stack_location(
         format!("cannot decide a class from: {x}"),
@@ -353,7 +377,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
         None => {
           let content = fields.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
           Err(CalcitErr::use_msg_stack(
-            format!("unknown field `{name}` in: {content}"),
+            format!("unknown method `.{name}` for {tag}.\navailable methods: {content}"),
             call_stack,
           ))
         }

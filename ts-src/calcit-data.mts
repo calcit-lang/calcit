@@ -581,7 +581,7 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   }
   if (x instanceof CalcitTuple) {
     if (y instanceof CalcitTuple) {
-      return _$n__$e_(x.tag, y.tag) && _$n__$e_(x.get(1), y.get(1));
+      return x.eq(y);
     }
     return false;
   }

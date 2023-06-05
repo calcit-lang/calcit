@@ -246,8 +246,8 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
       return new CalcitCirruQuote(x[1]);
     }
     if (x[0] === "::") {
-      if (x.length < 3) {
-        throw new Error("tuple expects at least 2 values");
+      if (x.length < 2) {
+        throw new Error("tuple expects at least 1 value1");
       }
       let baseClass = new CalcitRecord(newTag("base-class"), [], []);
       return new CalcitTuple(extract_cirru_edn(x[1]), x.slice(2).map(extract_cirru_edn), baseClass);

@@ -384,7 +384,7 @@
           defmacro &tag-match-internal (value & body)
             if (&list:empty? body)
               quasiquote
-                eprintln "|[Warn] tag-match found no matched case, missing `_` case?" ~value
+                raise $ str-spaced "|tag-match found no matched case, missing `_` for" ~value
               &let
                 pair (&list:first body)
                 if

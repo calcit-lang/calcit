@@ -1,7 +1,7 @@
 import { Hash } from "@calcit/ternary-tree";
 
 import { CalcitValue } from "./js-primes.mjs";
-import { newTag, toString } from "./calcit-data.mjs";
+import { _$n__$e_, newTag, toString } from "./calcit-data.mjs";
 import { CalcitRecord } from "./js-record.mjs";
 
 export class CalcitTuple {
@@ -37,6 +37,20 @@ export class CalcitTuple {
   }
   count() {
     return 1 + this.extra.length;
+  }
+  eq(y: CalcitTuple): boolean {
+    if (!_$n__$e_(this.tag, y.tag)) {
+      return false;
+    }
+    if (this.extra.length !== y.extra.length) {
+      return false;
+    }
+    for (let idx = 0; idx < this.extra.length; idx++) {
+      if (!_$n__$e_(this.extra[idx], y.extra[idx])) {
+        return false;
+      }
+    }
+    return true;
   }
   toString(disableJsDataWarning: boolean = false): string {
     let args = [this.tag, ...this.extra];

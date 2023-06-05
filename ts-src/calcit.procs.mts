@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.7.0-a3";
+export const calcit_version = "0.7.0-a7";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -1300,28 +1300,38 @@ export function invoke_method_closure(p: string) {
 
 export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[]) {
   let klass: CalcitRecord;
+  let tag: string;
   let value = obj;
   if (obj == null) {
+    tag = "&core-nil-class";
     klass = calcit_builtin_classes.nil;
   } else if (obj instanceof CalcitTuple) {
     if (obj.klass instanceof CalcitRecord) {
+      tag = obj.tag.toString();
       klass = obj.klass;
     } else {
       throw new Error("Method invoking expected a record as class");
     }
   } else if (typeof obj === "number") {
+    tag = "&core-number-class";
     klass = calcit_builtin_classes.number;
   } else if (typeof obj === "string") {
+    tag = "&core-string-class";
     klass = calcit_builtin_classes.string;
   } else if (typeof obj === "function") {
+    tag = "&core-fn-class";
     klass = calcit_builtin_classes.fn;
   } else if (obj instanceof CalcitSet) {
+    tag = "&core-set-class";
     klass = calcit_builtin_classes.set;
   } else if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
+    tag = "&core-list-class";
     klass = calcit_builtin_classes.list;
   } else if (obj instanceof CalcitRecord) {
+    tag = "&core-record-class";
     klass = calcit_builtin_classes.record;
   } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
+    tag = "&core-map-class";
     klass = calcit_builtin_classes.map;
   } else {
     if ((obj as any)[p] == null) {
@@ -1331,7 +1341,9 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   }
   if (klass == null) throw new Error("Cannot find class for this object for invoking");
 
-  if (!klass.contains(p)) throw new Error(`Missing method '${p}' for object: ${obj}`);
+  if (!klass.contains(p)) {
+    throw new Error(`Missing method '.${p}' for '${tag}' object '${obj}'.\navailable fields are: ${klass.fields.map((fd: CalcitTag) => fd.value).join(" ")}`);
+  }
 
   let method = klass.get(p);
   if (typeof method === "function") {
