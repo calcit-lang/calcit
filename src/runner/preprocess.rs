@@ -3,8 +3,8 @@ use crate::{
   call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
   primes,
   primes::{
-    Calcit, CalcitErr, CalcitItems, CalcitProc, CalcitScope, CalcitSyntax, ImportRule, LocatedWarning, NodeLocation, RawCodeType,
-    SymbolResolved::*, GENERATED_DEF,
+    Calcit, CalcitErr, CalcitItems, CalcitProc, CalcitScope, CalcitSyntax, CrListWrap, ImportRule, LocatedWarning, NodeLocation,
+    RawCodeType, SymbolResolved::*, GENERATED_DEF,
   },
   program, runner,
 };
@@ -324,6 +324,7 @@ fn process_list_call(
   // Keyword: transforming into tag expression
   // Syntax: handled directly during preprocessing
   // Thunk: invalid here
+
   match (&head_form, &head_evaled) {
     (Calcit::Tag(..), _) => {
       if args.len() == 1 {
@@ -344,7 +345,7 @@ fn process_list_call(
         ]));
         preprocess_expr(&code, scope_defs, file_ns, check_warnings, call_stack)
       } else {
-        Err(CalcitErr::use_msg_stack(format!("{head} expected single argument"), call_stack))
+        Err(CalcitErr::use_msg_stack(format!("{head} expected 1 hashmap to call"), call_stack))
       }
     }
     (
@@ -391,7 +392,7 @@ fn process_list_call(
         None,
       )),
       CalcitSyntax::CoreLet => Ok((
-        preprocess_call_let(name, name_ns.to_owned(), &args, scope_defs, file_ns, check_warnings, call_stack)?,
+        preprocess_core_let(name, name_ns.to_owned(), &args, scope_defs, file_ns, check_warnings, call_stack)?,
         None,
       )),
       CalcitSyntax::If
@@ -443,7 +444,12 @@ fn process_list_call(
       }
       Ok((Calcit::List(TernaryTreeList::from(&ys)), None))
     }
-    (_, _) => {
+    (h, he) => {
+      if let Calcit::Symbol { sym, resolved, .. } = h {
+        if he.is_none() && resolved.is_none() && !is_js_syntax_procs(sym) {
+          println!("warning: unresolved symbol `{}` in `{}`", sym, CrListWrap(xs.to_owned()));
+        }
+      }
       let mut ys = Vec::with_capacity(args.len() + 1);
       ys.push(head_form);
       for a in &args {
@@ -660,7 +666,7 @@ fn check_symbol(sym: &str, args: &CalcitItems, location: NodeLocation, check_war
   }
 }
 
-pub fn preprocess_call_let(
+pub fn preprocess_core_let(
   head: &CalcitSyntax,
   // where the symbol was defined
   head_ns: Arc<str>,

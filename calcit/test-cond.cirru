@@ -117,13 +117,13 @@
                   (:b x y) (' "|pattern b:" x y)
                   _ (' "|no match")
               assert=
-                match-ab (' :a 1 2)
+                match-ab (:: :a 1)
                 [] "|pattern a:" 1
               assert=
-                match-ab (' :b 1 2)
+                match-ab ([] :b 1 2)
                 [] "|pattern b:" 1 2
               assert=
-                match-ab (' :c 1 2)
+                match-ab (:: :c 1 2)
                 [] "|no match"
 
               assert=
