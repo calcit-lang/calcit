@@ -296,6 +296,13 @@
               :: :t 1
               :: :t 1 2
 
+            let
+                a $ :: :a 1
+                %r $ defrecord! %demo
+                  :get $ fn (self) 1
+                b $ &tuple:with-class a %r
+              assert= %r $ &tuple:class b
+
         |test-effect $ quote
           fn ()
             log-title "|Testing effect"

@@ -78,6 +78,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeTupleAssoc => meta::assoc(args),
     CalcitProc::NativeTupleCount => meta::tuple_count(args),
     CalcitProc::NativeTupleClass => meta::tuple_class(args),
+    CalcitProc::NativeTupleWithClass => meta::tuple_with_class(args),
     // effects
     CalcitProc::NativeDisplayStack => meta::display_stack(args, call_stack),
     CalcitProc::Raise => effects::raise(args),
