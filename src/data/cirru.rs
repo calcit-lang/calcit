@@ -27,7 +27,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> 
         location: Some(coord.to_vec()),
       }),
       _ => match s.chars().next().expect("load first char") {
-        ':' => Ok(Calcit::tag(&s[1..])),
+        ':' if s.len() > 1 && s.chars().nth(1) != Some(':') => Ok(Calcit::tag(&s[1..])),
         '.' => {
           if let Some(stripped) = s.strip_prefix(".-") {
             Ok(Calcit::Method(stripped.into(), MethodKind::Access))

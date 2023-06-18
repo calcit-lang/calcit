@@ -187,12 +187,10 @@ impl fmt::Display for Calcit {
       Calcit::Tuple(tag, extra, _class) => {
         let mut extra_str = String::from("");
         for item in extra {
-          if !extra_str.is_empty() {
-            extra_str.push(' ');
-          }
+          extra_str.push(' ');
           extra_str.push_str(&item.to_string())
         }
-        f.write_str(&format!("(:: {tag} {extra_str})"))
+        f.write_str(&format!("(:: {tag}{extra_str})"))
       }
       Calcit::Buffer(buf) => {
         f.write_str("(&buffer")?;
