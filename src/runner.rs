@@ -61,7 +61,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
     Calcit::Buffer(..) => Ok(expr.to_owned()),
     Calcit::CirruQuote(..) => Ok(expr.to_owned()),
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
-    Calcit::RawCode(_, code) => unreachable!("native code {} not expected to be evaluated", code),
+    Calcit::RawCode(_, code) => unreachable!("raw code `{}` cannot be called", code),
     Calcit::List(xs) => match xs.get(0) {
       None => Err(CalcitErr::use_msg_stack(format!("cannot evaluate empty expr: {expr}"), call_stack)),
       Some(x) => {

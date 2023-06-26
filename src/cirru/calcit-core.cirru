@@ -1817,3 +1817,10 @@
             if (some? y)
               range (inc (&- (&+ x x) y)) y
               range (inc (negate x)) x
+
+        |: $ quote
+          defmacro : (tag & args)
+            quasiquote
+              ::
+                ~ $ turn-tag tag
+                ~@ args

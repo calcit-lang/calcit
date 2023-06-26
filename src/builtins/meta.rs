@@ -466,6 +466,20 @@ pub fn tuple_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn tuple_with_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_str(format!("tuple:with-class expected 2 arguments, got: {xs:?}"));
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Tuple(tag, extra, _), b @ Calcit::Record(..)) => {
+      Ok(Calcit::Tuple(tag.to_owned(), extra.to_owned(), Arc::new(b.to_owned())))
+    }
+    (a, Calcit::Record(..)) => CalcitErr::err_str(format!("&tuple:with-class expected a tuple, got: {a}")),
+    (Calcit::Tuple(..), b) => CalcitErr::err_str(format!("&tuple:with-class expected second argument in record, got: {b}")),
+    (a, b) => CalcitErr::err_str(format!("&tuple:with-class expected a tuple and a record, got: {a} {b}")),
+  }
+}
+
 pub fn no_op() -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Nil)
 }
