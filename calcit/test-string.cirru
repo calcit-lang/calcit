@@ -180,6 +180,12 @@
               assert= "|:: :&core-list-class $ [] 1 2 3"
                 trim $ format-cirru-edn $ :: &core-list-class $ [] 1 2 3
 
+              assert= "|:: :test"
+                trim $ format-cirru-edn $ :: :test
+
+              assert= "|:: :test :a :b"
+                trim $ format-cirru-edn $ :: :test :a :b
+
               assert=
                 &cirru-quote:to-list $ cirru-quote $ a b c $ d
                 [] |a |b |c $ [] |d
