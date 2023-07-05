@@ -61,6 +61,6 @@ export class CalcitTuple {
       }
       content += toString(args[i], false, disableJsDataWarning);
     }
-    return `(&tuple ${content})`;
+    return `(:: ${content})`;
   }
 }
