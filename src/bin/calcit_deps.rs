@@ -102,9 +102,7 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
         dim_println(format!("√ found {} at {}", gray(folder), gray(&version)));
         if let GitHead::Branch(branch) = current_head {
           if options.pull_branch {
-            if options.verbose {
-              dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-            }
+            dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
             git_pull(&folder_path, &branch)?;
             dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
           }
@@ -117,15 +115,19 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
         // try if tag or branch exists in git history
         let has_target = git_check_branch_or_tag(&folder_path, &version)?;
         if !has_target {
-          if options.verbose {
-            dim_println(format!("↺ fetching {} at version {}", gray(&org_and_folder), gray(&version)));
-          }
+          dim_println(format!("↺ fetching {} at version {}", gray(&org_and_folder), gray(&version)));
           git_fetch(&folder_path)?;
           dim_println(format!("fetched {} at version {}", gray(&org_and_folder), gray(&version)));
           // fetch git repo and checkout target version
         }
         git_checkout(&folder_path, &version)?;
-        dim_println(format!("√ checked out {} at version {}", gray(&org_and_folder), gray(&version)))
+        dim_println(format!("√ checked out {} at version {}", gray(&org_and_folder), gray(&version)));
+        let build_file = folder_path.join("build.sh");
+        // if there's a build.sh file in the folder, run it
+        if build_file.exists() {
+          call_build_script(&folder_path)?;
+          dim_println(format!("ran build script for {}", gray(&org_and_folder)));
+        }
       }
     } else {
       let url = if options.ci {
@@ -133,9 +135,7 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
       } else {
         format!("git@github.com:{}.git", org_and_folder)
       };
-      if options.verbose {
-        dim_println(format!("↺ cloning {} at version {}", gray(&org_and_folder), gray(&version)));
-      }
+      dim_println(format!("↺ cloning {} at version {}", gray(&org_and_folder), gray(&version)));
       git_clone(&modules_dir, &url, &version, options.ci)?;
       // println!("downloading {} at version {}", url, version);
       dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
@@ -196,7 +196,11 @@ fn parse_cli() -> clap::ArgMatches {
 }
 
 fn dim_println(msg: String) {
-  println!("  {}", msg.truecolor(128, 128, 128));
+  if msg.chars().nth(1) == Some(' ') {
+    println!("{}", msg.truecolor(128, 128, 128));
+  } else {
+    println!("  {}", msg.truecolor(128, 128, 128));
+  }
 }
 
 fn gray(msg: &str) -> ColoredString {
