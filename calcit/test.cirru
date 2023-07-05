@@ -302,6 +302,9 @@
                   :get $ fn (self) 1
                 b $ &tuple:with-class a %r
               assert= %r $ &tuple:class b
+            
+            assert= "|(:: :a :b :c)"
+              str $ :: :a :b :c
 
         |test-effect $ quote
           fn ()

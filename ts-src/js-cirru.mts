@@ -129,8 +129,10 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     if (x.tag instanceof CalcitSymbol && x.tag.value === "quote") {
       // turn `x.snd` with CalcitList into raw Cirru nodes, which is in plain Array
       return ["quote", toWriterNode(x.get(1) as any)] as CirruEdnFormat;
+    } else if (x.tag instanceof CalcitTag) {
+      return ["::", x.tag.toString(), ...x.extra.map(to_cirru_edn)];
     } else if (x.tag instanceof CalcitRecord) {
-      return ["::", x.tag.name.toString(), to_cirru_edn(x.get(1))];
+      return ["::", x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
     } else {
       throw new Error(`Unsupported tag for EDN: ${x.tag}`);
     }
