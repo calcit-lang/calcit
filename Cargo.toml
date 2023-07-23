@@ -1,6 +1,6 @@
 [package]
 name = "calcit"
-version = "0.7.5"
+version = "0.7.6"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -26,18 +26,18 @@ cirru_parser = "0.1.24"
 clap = "3.2.25"
 dirs = "5.0.1"
 lazy_static = "1.4.0"
-notify = "6.0.0"
+notify = "6.0.1"
 notify-debouncer-mini = "0.3.0"
 walkdir = "2.3.3"
 hex = "0.4.3"
 rpds = "0.13.0"
 im_ternary_tree = "0.0.11"
 # im_ternary_tree = { path = "/Users/chenyong/repo/calcit-lang/ternary-tree.rs" }
-colored = "2"
+colored = "2.0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libloading = "0.8.0"
-ctrlc = "3.3.1"
+ctrlc = "3.4.0"
 
 [lib]
 name = "calcit"

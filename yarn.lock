@@ -2,10 +2,10 @@
 # yarn lockfile v1
 
 
-"@calcit/ternary-tree@0.0.20":
-  version "0.0.20"
-  resolved "https://registry.yarnpkg.com/@calcit/ternary-tree/-/ternary-tree-0.0.20.tgz#db1947702af88e51af45d29c5616d6ac8b968c6c"
-  integrity sha512-K2GGK9jxuP/TsphUMdDqmxexS5OfS8xu+k0PymIyUJ4qdBW+7EMwUQQM2RtZpWB6m0JvxeWSsZ6mwpdu9SaFbQ==
+"@calcit/ternary-tree@0.0.21":
+  version "0.0.21"
+  resolved "https://registry.yarnpkg.com/@calcit/ternary-tree/-/ternary-tree-0.0.21.tgz#1458f81f5685894c70edddcbf68c7a5d8e7983db"
+  integrity sha512-KUIbbWe8+ZHQHZ7C/YzjjdnHNTAcmZjEGo29UWUAdzhFiICsnIdbf1ThzHXhEBwN3upa75nSLkxllyRjh5h1jQ==
 
 "@cirru/parser.ts@^0.0.6":
   version "0.0.6"
@@ -17,12 +17,12 @@
   resolved "https://registry.yarnpkg.com/@cirru/writer.ts/-/writer.ts-0.1.3.tgz#5f54bdecaa20ba3dab16cbe6da711854138a9c0a"
   integrity sha512-vJnhmhm7we5UfQIwmZfQpF3bAFbVybzT6LbmkbQHxgijaQg3gPfNVsnSIa3g3KpmWVtvkzEx+nUy5aMwsJiV1A==
 
-"@types/node@^20.3.2":
-  version "20.3.2"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-20.3.2.tgz#fa6a90f2600e052a03c18b8cb3fd83dd4e599898"
-  integrity sha512-vOBLVQeCQfIcF/2Y7eKFTqrMnizK5lRNQ7ykML/5RuwVXVWxYkgwS7xbt4B6fKCUPgbSL5FSsjHQpaGQP/dQmw==
+"@types/node@^20.4.4":
+  version "20.4.4"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-20.4.4.tgz#c79c7cc22c9d0e97a7944954c9e663bcbd92b0cb"
+  integrity sha512-CukZhumInROvLq3+b5gLev+vgpsIqC2D0deQr/yS1WnxvmYLlJXZpaQrQiseMY+6xusl79E04UjWoqyr+t1/Ew==
 
-typescript@^5.1.3:
-  version "5.1.3"
-  resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.1.3.tgz#8d84219244a6b40b6fb2b33cc1c062f715b9e826"
-  integrity sha512-XH627E9vkeqhlZFQuL+UsyAXEnibT0kWR2FWONlr4sTjvxyJYnyefgrkyECLzM5NenmKzRAy2rR/OlYLA1HkZw==
+typescript@^5.1.6:
+  version "5.1.6"
+  resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.1.6.tgz#02f8ac202b6dad2c0dd5e0913745b47a37998274"
+  integrity sha512-zaWCozRZ6DLEWAWFrVDz1H6FVXzUSfTy5FUMWsQlU8Ym5JP9eO4xkTIROFCQvhQf61z6O/G6ugw3SgAnvvm+HA==
