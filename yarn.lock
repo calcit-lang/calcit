@@ -2,10 +2,10 @@
 # yarn lockfile v1
 
 
-"@calcit/ternary-tree@0.0.21":
-  version "0.0.21"
-  resolved "https://registry.yarnpkg.com/@calcit/ternary-tree/-/ternary-tree-0.0.21.tgz#1458f81f5685894c70edddcbf68c7a5d8e7983db"
-  integrity sha512-KUIbbWe8+ZHQHZ7C/YzjjdnHNTAcmZjEGo29UWUAdzhFiICsnIdbf1ThzHXhEBwN3upa75nSLkxllyRjh5h1jQ==
+"@calcit/ternary-tree@0.0.22":
+  version "0.0.22"
+  resolved "https://registry.yarnpkg.com/@calcit/ternary-tree/-/ternary-tree-0.0.22.tgz#ac6e0659981457b0465cbf95eba222b43ab14222"
+  integrity sha512-f+enhj0iCe6eX6/gcLRpCQeJnY38DxMUooyO3cJxE2JynyTBk/JhmdojTiggm3UX21vw4QUXz/LwGtLOcwcrGA==
 
 "@cirru/parser.ts@^0.0.6":
   version "0.0.6"
