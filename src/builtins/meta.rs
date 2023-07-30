@@ -466,6 +466,16 @@ pub fn tuple_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn tuple_params(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_str(format!("tuple:params expected 1 argument, got: {xs:?}"));
+  }
+  match &xs[0] {
+    Calcit::Tuple(_tag, extra, _class) => Ok(Calcit::List(extra.into())),
+    x => CalcitErr::err_str(format!("&tuple:params expected a tuple, got: {x}")),
+  }
+}
+
 pub fn tuple_with_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_str(format!("tuple:with-class expected 2 arguments, got: {xs:?}"));

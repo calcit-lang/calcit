@@ -302,7 +302,11 @@
                   :get $ fn (self) 1
                 b $ &tuple:with-class a %r
               assert= %r $ &tuple:class b
-            
+
+              assert=
+                &tuple:params (:: :a 1 2 3)
+                [] 1 2 3
+
             assert= "|(:: :a :b :c)"
               str $ :: :a :b :c
 

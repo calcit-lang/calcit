@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.7.7";
+export const calcit_version = "0.7.8";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -301,6 +301,11 @@ export let _$n_tuple_$o_count = function (xs: CalcitValue) {
 export let _$n_tuple_$o_class = function (x: CalcitTuple) {
   if (arguments.length !== 1) throw new Error("&tuple:class takes 1 argument");
   return x.klass;
+};
+
+export let _$n_tuple_$o_params = function (x: CalcitTuple) {
+  if (arguments.length !== 1) throw new Error("&tuple:params takes 1 argument");
+  return new CalcitSliceList(x.extra);
 };
 
 export let _$n_tuple_$o_with_class = function (x: CalcitTuple, y: CalcitRecord) {
