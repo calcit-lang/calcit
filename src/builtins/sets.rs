@@ -117,29 +117,18 @@ pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 /// use builtin function since sets need to be handled specifically
-pub fn first(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn destruct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Set(ys)) => match ys.iter().next() {
-      // TODO first element of a set.. need to be more sure...
-      Some(v) => Ok(v.to_owned()),
-      None => Ok(Calcit::Nil),
-    },
-    Some(a) => CalcitErr::err_str(format!("set:first expected a set, got: {a}")),
-    None => CalcitErr::err_str("set:first expected 1 argument"),
-  }
-}
-
-pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
-    Some(Calcit::Set(ys)) => match ys.iter().next() {
+      // first element of a set might be random
       Some(y0) => {
         let mut zs = ys.to_owned();
         zs.remove_mut(y0);
-        Ok(Calcit::Set(zs))
+        Ok(Calcit::List(vec![y0.to_owned(), Calcit::Set(zs)].into()))
       }
       None => Ok(Calcit::Nil),
     },
-    Some(a) => CalcitErr::err_str(format!("set:rest expected a set, got: {a}")),
-    None => CalcitErr::err_str("set:rest expected 1 argument"),
+    Some(a) => CalcitErr::err_str(format!("&set:destruct expected a set, got: {a}")),
+    None => CalcitErr::err_str("&set:destruct expected 1 argument"),
   }
 }

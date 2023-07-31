@@ -554,15 +554,19 @@
 
         |&set:max $ quote
           defn &set:max (xs)
-            if (&set:empty? xs) nil
-              reduce (&set:rest xs) (&set:first xs)
-                defn %max (acc x) (&max acc x)
+            &let
+              pair $ &set:destruct xs
+              if (nil? pair) nil
+                reduce (nth pair 1) (nth pair 0)
+                  defn %max (acc x) (&max acc x)
 
         |&set:min $ quote
           defn &set:min (xs)
-            if (&set:empty? xs) nil
-              reduce (&set:rest xs) (&set:first xs)
-                defn %min (acc x) (&min acc x)
+            &let
+              pair $ &set:destruct xs
+              if (nil? pair) nil
+                reduce (nth pair 1) (nth pair 0)
+                  defn %min (acc x) (&min acc x)
 
         |max $ quote
           defn max (xs)
@@ -774,11 +778,13 @@
               fn (acc pairs)
                 if (&set:empty? pairs) acc
                   &let
-                    pair $ &set:first pairs
-                    if (nil? (last pair))
-                      recur acc (&set:rest pairs)
-                      recur (include acc (&list:first pair))
-                        rest pairs
+                    set-pair $ &set:destruct pairs
+                    &let
+                      pair $ nth set-pair 0
+                      if (nil? (last pair))
+                        recur acc $ nth set-pair 1
+                        recur (include acc (&list:first pair))
+                          nth set-pair 1
 
         |vals $ quote
           defn vals (x)
@@ -1525,8 +1531,7 @@
             :min &set:min
             :to-list &set:to-list
             :union union
-            :first &set:first
-            :rest &set:rest
+            :destruct &set:destruct
             :to-set identity
             :mappend union
 
@@ -1824,3 +1829,21 @@
               ::
                 ~ $ turn-tag tag
                 ~@ args
+
+        |destruct-str $ quote
+          defn destruct-str (s)
+            if (&= s |)
+              :: :none
+              :: :some (nth s 0) (&str:slice s 1)
+
+        |destruct-list $ quote
+          defn destruct-list (xs)
+            if (&= xs $ [])
+              :: :none
+              :: :some (nth xs 0) (&list:slice xs 1)
+
+        |optionally $ quote
+          defn optionally (s)
+            if (nil? s)
+              :: :none
+              :: :some s

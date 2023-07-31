@@ -210,8 +210,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeSetCount => sets::count(args),
     CalcitProc::NativeSetEmpty => sets::empty_ques(args),
     CalcitProc::NativeSetIncludes => sets::includes_ques(args),
-    CalcitProc::NativeSetFirst => sets::first(args),
-    CalcitProc::NativeSetRest => sets::rest(args),
+    CalcitProc::NativeSetDestruct => sets::destruct(args),
     // refs
     CalcitProc::Atom => refs::atom(args),
     CalcitProc::Deref => refs::deref(args),
