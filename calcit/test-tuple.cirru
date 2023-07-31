@@ -49,6 +49,12 @@
                 (:some l0 ls) (:: :parts (number? l0) (count ls))
 
             assert=
+              :: :parts 2 1
+              tag-match (destruct-map $ &{} :a 1 :b 2)
+                (:none) (:: :empty)
+                (:some m0 ms) (:: :parts (count m0) (count ms))
+
+            assert=
               :: :empty
               tag-match (destruct-map $ &{})
                 (:none) (:: :empty)
