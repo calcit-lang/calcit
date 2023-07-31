@@ -1517,30 +1517,34 @@
         |&core-set-class $ quote
           defrecord! &core-set-class
             :add include
+            :contains? &set:includes?
             :count &set:count
+            :destruct &set:destruct
             :difference difference
-            :exclude exclude
             :empty $ defn &set:empty (x) (#{})
             :empty? &set:empty?
+            :exclude exclude
             :filter &set:filter
             :include include
             :includes? &set:includes?
-            :contains? &set:includes?
             :intersection intersection
+            :mappend union
             :max &set:max
             :min &set:min
             :to-list &set:to-list
-            :union union
-            :destruct &set:destruct
             :to-set identity
-            :mappend union
+            :union union
 
         |&core-map-class $ quote
           defrecord! &core-map-class
             :add &map:add-entry
             :assoc &map:assoc
+            :common-keys &map:common-keys
             :contains? &map:contains?
             :count &map:count
+            :destruct &map:destruct
+            :diff-keys &map:diff-keys
+            :diff-new &map:diff-new
             :dissoc &map:dissoc
             :empty $ defn &map:empty (x) (&{})
             :empty? &map:empty?
@@ -1556,14 +1560,9 @@
             :mappend merge
             :merge merge
             :to-list &map:to-list
+            :to-map identity
             :to-pairs to-pairs
             :values vals
-            :first &map:first
-            :rest &map:rest
-            :diff-new &map:diff-new
-            :diff-keys &map:diff-keys
-            :common-keys &map:common-keys
-            :to-map identity
 
         |&core-record-class $ quote
           defrecord! &core-record-class
@@ -1841,6 +1840,22 @@
             if (&= xs $ [])
               :: :none
               :: :some (nth xs 0) (&list:slice xs 1)
+        
+        |destruct-set $ quote
+          defn destruct-set (xs)
+            &let
+              pair $ &set:destruct xs
+              if (nil? pair)
+                :: :none
+                :: :some (nth pair 0) (nth pair 1)
+
+        |destruct-map $ quote
+          defn destruct-map (xs)
+            &let
+              pair $ &map:destruct xs
+              if (nil? pair)
+                :: :none
+                :: :some (nth pair 0) (nth pair 1)
 
         |optionally $ quote
           defn optionally (s)

@@ -15,6 +15,7 @@ import {
   initEmptyTernaryTreeMap,
 } from "@calcit/ternary-tree";
 import * as ternaryTree from "@calcit/ternary-tree";
+import { CalcitSliceList } from "./js-list.mjs";
 
 /** need to compare by Calcit */
 let DATA_EQUAL = (x: CalcitValue, y: CalcitValue): boolean => {
@@ -87,22 +88,15 @@ export class CalcitSet {
     return new CalcitSet(result);
   }
 
-  first(): CalcitValue {
+  destruct(): CalcitSliceList {
+    if (mapLen(this.value) === 0) {
+      return null;
+    }
     // rather suspicious solution since set has no logical order
+    let x0 = toPairsArray(this.value)[0][0];
 
-    if (mapLen(this.value) === 0) {
-      return null;
-    }
-
-    return toPairsArray(this.value)[0][0];
-  }
-  rest(): CalcitSet {
-    if (mapLen(this.value) === 0) {
-      return null;
-    }
-    let x0 = this.first();
     let result = dissocMap(this.value, x0);
-    return new CalcitSet(result);
+    return new CalcitSliceList([x0, new CalcitSet(result)]);
   }
 
   toString(disableJsDataWarning: boolean = false) {

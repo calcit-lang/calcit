@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.7.8";
+export const calcit_version = "0.7.9";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -497,12 +497,14 @@ export let _$n_str_$o_first = (xs: CalcitValue): CalcitValue => {
   console.error(xs);
   throw new Error("Expected a string");
 };
-export let _$n_map_$o_first = (xs: CalcitValue): CalcitValue => {
+
+export let _$n_map_$o_destruct = (xs: CalcitValue): CalcitValue => {
   if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
-    // TODO order may not be stable enough
-    let ys = xs.pairs();
-    if (ys.length > 0) {
-      return new CalcitSliceList(ys[0]);
+    // order not stable
+    if (xs.len() > 0) {
+      let pair = xs.pairs()[0];
+      let k0 = pair[0];
+      return new CalcitSliceList([new CalcitSliceList(pair), xs.dissoc(k0)]);
     } else {
       return null;
     }
@@ -510,13 +512,12 @@ export let _$n_map_$o_first = (xs: CalcitValue): CalcitValue => {
   console.error(xs);
   throw new Error("Expected a map");
 };
-export let _$n_set_$o_first = (xs: CalcitValue): CalcitValue => {
-  if (xs instanceof CalcitSet) {
-    return xs.first();
-  }
+
+export let _$n_set_$o_destruct = (xs: CalcitValue): CalcitValue => {
+  if (xs instanceof CalcitSet) return xs.destruct();
 
   console.error(xs);
-  throw new Error("Expected a set");
+  throw new Error("Expect a set");
 };
 
 export let timeout_call = (duration: number, f: CalcitFn): null => {
@@ -546,24 +547,6 @@ export let _$n_str_$o_rest = (xs: CalcitValue): CalcitValue => {
 
   console.error(xs);
   throw new Error("Expects a string");
-};
-export let _$n_set_$o_rest = (xs: CalcitValue): CalcitValue => {
-  if (xs instanceof CalcitSet) return xs.rest();
-
-  console.error(xs);
-  throw new Error("Expect a set");
-};
-export let _$n_map_$o_rest = (xs: CalcitValue): CalcitValue => {
-  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
-    if (xs.len() > 0) {
-      let k0 = xs.pairs()[0][0];
-      return xs.dissoc(k0);
-    } else {
-      return new CalcitSliceMap([]);
-    }
-  }
-  console.error(xs);
-  throw new Error("Expected map");
 };
 
 export let recur = (...xs: CalcitValue[]): CalcitRecur => {
