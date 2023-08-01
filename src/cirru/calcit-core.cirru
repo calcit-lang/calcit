@@ -74,8 +74,10 @@
 
         |foldl' $ quote
           defn foldl' (xs acc f)
-            if (&list:empty? xs) acc
-              recur (&list:rest xs) (f acc (&list:first xs)) f
+            list-match xs
+              () acc
+              (x0 xss)
+                recur xss (f acc x0) f
 
         |< $ quote
           defn < (x & ys)
@@ -534,10 +536,9 @@
               not $ list? path
               raise $ str-spaced "|expects path in a list, got:" path
             if (nil? base) nil
-              if (&list:empty? path) base
-                recur
-                  get base (&list:first path)
-                  rest path
+              list-match path
+                () base
+                (y0 ys) $ recur (get base y0) ys
 
         |&max $ quote
           defn &max (a b)
@@ -555,20 +556,16 @@
 
         |&list:max $ quote
           defn &list:max (xs)
-            tag-match (destruct-list xs)
-              (:none) nil
-              (:some x0 x1s)
-                reduce x1s x0
-                  defn %max (acc x) (&max acc x)
-
-            if (&list:empty? xs) nil
-              reduce (&list:rest xs) (&list:first xs)
+            list-match xs
+              () nil
+              (x0 xss) $ reduce xss x0
                 defn %max (acc x) (&max acc x)
 
         |&list:min $ quote
           defn &list:min (xs)
-            if (&list:empty? xs) nil
-              reduce (&list:rest xs) (&list:first xs)
+            list-match xs
+              () nil
+              (x0 xss) $ reduce xss x0
                 defn %min (acc x) (&min acc x)
 
         |&set:max $ quote
@@ -692,18 +689,17 @@
         |some-in? $ quote
           defn some-in? (x path)
             if (nil? x) false
-              if (&list:empty? path) true
-                &let (k $ &list:first path)
-                  if (map? x)
-                    if (contains? x k)
-                      recur (get x k) (&list:rest path)
+              list-match path
+                () true
+                (k ps) $ if (map? x)
+                  if (contains? x k)
+                    recur (get x k) ps
+                    , false
+                  if (list? x)
+                    if (number? k)
+                      recur (get x k) ps
                       , false
-                    if (list? x)
-                      if (number? k)
-                        recur (get x k) (&list:rest path)
-                        , false
-                      raise $ &str:concat "|Unknown structure for some-in? detection: " x
-
+                    raise $ &str:concat "|Unknown structure for some-in? detection: " x
 
         |zipmap $ quote
           defn zipmap (xs0 ys0)
@@ -723,11 +719,12 @@
             if (list? xs)
               apply-args (xs)
                 defn %contains-symbol? (body)
-                  if (&list:empty? body) false
-                    if
-                      contains-symbol? (&list:first body) y
+                  list-match body
+                    () false
+                    (b0 bs) $ if
+                      contains-symbol? b0 y
                       , true
-                      recur (&list:rest body)
+                      recur bs
               &= xs y
 
         |\ $ quote
@@ -776,15 +773,15 @@
             apply-args
               ({}) xs0
               defn %group-by (acc xs)
-                if (&list:empty? xs) acc
-                  let
-                      x0 $ &list:first xs
+                list-match xs
+                  () acc
+                  (x0 xss) $ let
                       key $ f x0
                     recur
                       if (contains? acc key)
                         update acc key $ \ append % x0
                         &map:assoc acc key $ [] x0
-                      rest xs
+                      , xss
 
         |keys $ quote
           defn keys (x)
@@ -815,14 +812,13 @@
             apply-args
               ({}) xs0
               fn (acc xs)
-                &let
-                  x0 (&list:first xs)
-                  if (&list:empty? xs) acc
-                    recur
-                      if (contains? acc (&list:first xs))
-                        update acc (&list:first xs) (\ &+ % 1)
-                        &map:assoc acc (&list:first xs) 1
-                      rest xs
+                list-match xs
+                  () acc
+                  (x0 xss) $ recur
+                    if (contains? acc x0)
+                      update acc x0 (\ &+ % 1)
+                      &map:assoc acc x0 1
+                    , xss
 
         |section-by $ quote
           defn section-by (xs0 n)
@@ -909,35 +905,30 @@
 
         |assoc-in $ quote
           defn assoc-in (data path v)
-            if (&list:empty? path) v
-              &let
-                p0 $ &list:first path
-                &let
-                  d $ either data $ &{}
-                  assoc d p0
-                    assoc-in
-                      if (contains? d p0) (get d p0) (&{})
-                      rest path
-                      , v
+            list-match path
+              () v
+              (p0 ps) $ &let
+                d $ either data $ &{}
+                assoc d p0
+                  assoc-in
+                    if (contains? d p0) (get d p0) (&{})
+                    , ps v
 
         |update-in $ quote
           defn update-in (data path f)
-            if (&list:empty? path)
-              f data
-              &let
-                p0 $ &list:first path
-                assoc data p0
-                  update-in (get data p0) (&list:rest path) f
+            list-match path
+              () $ f data
+              (p0 ps) $ assoc data p0
+                update-in (get data p0) ps f
 
         |dissoc-in $ quote
           defn dissoc-in (data path)
-            if (&list:empty? path) nil
-              if (&= 1 (&list:count path))
-                dissoc data (&list:first path)
-                &let
-                  p0 $ &list:first path
-                  assoc data p0
-                    dissoc-in (get data p0) (&list:rest path)
+            list-match path
+              () nil
+              (p0 ps) $ if (&= 1 (&list:count path))
+                dissoc data p0
+                assoc data p0
+                  dissoc-in (get data p0) ps
 
         |inc $ quote
           defn inc (x) $ &+ x 1
@@ -1095,26 +1086,26 @@
           defn join-str (xs0 sep)
             apply-args (| xs0 true)
               defn %join-str (acc xs beginning?)
-                if (&list:empty? xs) acc
-                  recur
+                list-match xs
+                  () acc
+                  (x0 xss) $ recur
                     &str:concat
                       if beginning? acc $ &str:concat acc sep
-                      &list:first xs
-                    &list:rest xs
-                    , false
+                      , x0
+                    , xss false
 
         |join $ quote
           defn join (xs0 sep)
             apply-args
               ([]) xs0 true
               defn %join (acc xs beginning?)
-                if (&list:empty? xs) acc
-                  recur
+                list-match xs
+                  () acc
+                  (x0 xss) $ recur
                     append
                       if beginning? acc (append acc sep)
-                      &list:first xs
-                    &list:rest xs
-                    , false
+                      , x0
+                    , xss false
 
         |repeat $ quote
           defn repeat (x n0)
@@ -1722,31 +1713,30 @@
 
         |contains-in? $ quote
           defn contains-in? (xs path)
-            if (empty? path) true
-              &let
-                p0 $ first path
-                cond
-                  (list? xs)
-                    if
-                      and (number? p0) (&list:contains? xs p0)
-                      recur (nth xs p0) (rest path)
-                      , false
-                  (map? xs)
-                    if (&map:contains? xs p0)
-                      recur (&map:get xs p0) (rest path)
-                      , false
-                  (record? xs)
-                    if (&record:contains? xs p0)
-                      recur (&record:get xs p0) (rest path)
-                      , false
-                  (tuple? xs)
-                    if
-                      and
-                        &>= p0 0
-                        &< p0 (&tuple:count xs)
-                      recur (&tuple:nth xs p0) (rest path)
-                      , false
-                  true false
+            list-match path
+              () true
+              (p0 ps) $ cond
+                (list? xs)
+                  if
+                    and (number? p0) (&list:contains? xs p0)
+                    recur (nth xs p0) ps
+                    , false
+                (map? xs)
+                  if (&map:contains? xs p0)
+                    recur (&map:get xs p0) ps
+                    , false
+                (record? xs)
+                  if (&record:contains? xs p0)
+                    recur (&record:get xs p0) ps
+                    , false
+                (tuple? xs)
+                  if
+                    and
+                      &>= p0 0
+                      &< p0 (&tuple:count xs)
+                    recur (&tuple:nth xs p0) ps
+                    , false
+                true false
 
         |includes? $ quote
           defn includes? (x k)
@@ -1789,8 +1779,10 @@
 
         |concat $ quote
           defn concat (& args)
-            if (&list:empty? args) ([])
-              .concat (first args) & (rest args)
+            list-match args
+              () $ []
+              (a0 as)
+                .concat a0 & as
 
         |&list:map-pair $ quote
           defn &list:map-pair (xs f)
@@ -1884,7 +1876,6 @@
 
         |list-match $ quote
           defmacro list-match (xs pattern1 pattern2)
-            assert "|expected a list" (list? xs)
             assert "|patterns in list" $ and (list? pattern1) (list? pattern2)
               &> (count pattern1) 1
               list? $ &list:nth pattern1 0
@@ -1896,6 +1887,9 @@
               quasiquote
                 &let
                   ~v# ~xs
+                  if
+                    not $ list? ~v#
+                    raise "|expected a list in list-match"
                   ~ $ if
                     and
                       empty? $ &list:nth pattern1 0
