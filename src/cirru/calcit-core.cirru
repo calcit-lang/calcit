@@ -381,7 +381,7 @@
                             ~@ $ &list:rest else
 
         |&tag-match-internal $ quote
-          defmacro &tag-match-internal (value & body)
+          defmacro &tag-match-internal (value t & body)
             if (&list:empty? body)
               quasiquote
                 raise $ str-spaced "|tag-match found no matched case, missing `_` for" ~value
@@ -397,13 +397,13 @@
                     &let
                       k (&list:first pattern)
                       quasiquote
-                        if (&= (nth ~value 0) ~k)
+                        if (&= ~t ~k)
                           let
                             ~ $ map-indexed (&list:rest pattern) $ defn %tag-match (idx x)
                               [] x $ quasiquote
-                                nth ~value (~ (inc idx))
+                                &tuple:nth ~value (~ (inc idx))
                             , ~branch
-                          &tag-match-internal ~value $ ~@ (&list:rest body)
+                          &tag-match-internal ~value ~t $ ~@ (&list:rest body)
                     if (&= pattern '_) branch
                       raise $ str-spaced "|unknown supported pattern:" pair
 
@@ -412,13 +412,26 @@
             if (&list:empty? body)
               quasiquote
                 eprintln "|[Error] tag-match expected some patterns and matches" ~value
-              if (list? value)
-                &let (v# (gensym |v))
+              &let
+                t# $ gensym |tag
+                if (list? value)
+                  &let (v# (gensym |v))
+                    quasiquote
+                      &let (~v# ~value)
+                        if
+                          not (tuple? ~v#)
+                          raise $ str "|tag-match expected tuple, got" ~v#
+                        &let
+                          ~t# $ &tuple:nth ~value 0
+                          &tag-match-internal ~v# ~t# $ ~@ body
                   quasiquote
-                    &let (~v# ~value)
-                      &tag-match-internal ~v# $ ~@ body
-                quasiquote
-                  &tag-match-internal ~value $ ~@ body
+                    &let ()
+                      if
+                        not (tuple? ~value)
+                        raise $ str "|tag-match expected tuple, got" ~value
+                      &let
+                        ~t# $ &tuple:nth ~value 0
+                        &tag-match-internal ~value ~t# $ ~@ body
 
         |&field-match-internal $ quote
           defmacro &field-match-internal (value & body)
@@ -542,6 +555,12 @@
 
         |&list:max $ quote
           defn &list:max (xs)
+            tag-match (destruct-list xs)
+              (:none) nil
+              (:some x0 x1s)
+                reduce x1s x0
+                  defn %max (acc x) (&max acc x)
+
             if (&list:empty? xs) nil
               reduce (&list:rest xs) (&list:first xs)
                 defn %max (acc x) (&max acc x)
@@ -1837,7 +1856,7 @@
 
         |destruct-list $ quote
           defn destruct-list (xs)
-            if (&= xs $ [])
+            if (empty? xs)
               :: :none
               :: :some (nth xs 0) (&list:slice xs 1)
         
