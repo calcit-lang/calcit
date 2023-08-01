@@ -1881,3 +1881,48 @@
             if (nil? s)
               :: :none
               :: :some s
+
+        |list-match $ quote
+          defmacro list-match (xs pattern1 pattern2)
+            assert "|expected a list" (list? xs)
+            assert "|patterns in list" $ and (list? pattern1) (list? pattern2)
+              &> (count pattern1) 1
+              list? $ &list:nth pattern1 0
+              list? $ &list:nth pattern2 0
+              &> (count pattern2) 1
+
+            &let
+              v# $ gensym |v
+              quasiquote
+                &let
+                  ~v# ~xs
+                  ~ $ if
+                    and
+                      empty? $ &list:nth pattern1 0
+                      &= 2 $ count $ &list:nth pattern2 0
+                    quasiquote
+                      &list-match-internal ~v#
+                        ~ $ &list:slice pattern1 1
+                        ~ $ &list:nth pattern2 0
+                        ~ $ &list:slice pattern2 1
+                    if
+                      and
+                        empty? $ &list:nth pattern2 0
+                        &= 2 $ count $ &list:nth pattern1 0
+                      quasiquote
+                        &list-match-internal ~v#
+                          ~ $ &list:slice pattern2 1
+                          ~ $ &list:nth pattern1 0
+                          ~ $ &list:slice pattern1 1
+                      raise "|expected empty and destruction branches"
+
+        |&list-match-internal $ quote
+          defmacro &list-match-internal (v branch1 pair branch2)
+            quasiquote
+              if (empty? ~v)
+                &let () ~@branch1
+                &let
+                  (~ (first pair)) (&list:nth ~v 0)
+                  &let
+                    (~ (&list:nth pair 1)) (&list:slice ~v 1)
+                    &let () ~@branch2

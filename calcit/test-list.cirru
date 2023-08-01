@@ -360,6 +360,35 @@
                 fn (k n)
                   > n 10
 
+        |test-match $ quote
+          fn ()
+            log-title "|Testing list match"
+            assert= :empty
+              list-match ([])
+                () :empty
+                (a b) :something
+            assert= :something
+              list-match ([] 1)
+                () :empty
+                (a b) :something
+
+            assert= :something0
+              list-match ([] 1)
+                (a b) :something0
+                () :empty
+
+            assert=
+              [] 1 $ [] 2 3
+              list-match ([] 1 2 3)
+                () nil
+                (l0 ls) ([] l0 ls)
+
+            assert=
+              [] 1 $ [] 2 3
+              list-match ([] 1 2 3)
+                () nil
+                (l0 ls) (println "|...effect in match") ([] l0 ls)
+
         |test-methods $ quote
           fn ()
             log-title "|Testing list methods"
@@ -627,6 +656,8 @@
             test-methods
 
             test-pair
+
+            test-match
 
             do true
 
