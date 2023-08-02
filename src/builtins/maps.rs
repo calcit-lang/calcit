@@ -202,9 +202,7 @@ pub fn destruct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Some(k0) => {
         let mut zs = ys.to_owned();
         zs.remove_mut(k0);
-        Ok(Calcit::List(
-          vec![Calcit::List(vec![k0.to_owned(), ys[k0].to_owned()].into()), Calcit::Map(zs)].into(),
-        ))
+        Ok(Calcit::List(vec![k0.to_owned(), ys[k0].to_owned(), Calcit::Map(zs)].into()))
       }
       None => Ok(Calcit::Nil),
     },

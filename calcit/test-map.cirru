@@ -367,9 +367,13 @@
 
             println $ .destruct $ &{} :a 1 :b 2 :c 3
             assert= true
-              list? $ nth (.destruct $ &{} :a 1 :b 2 :c 3) 0
-            assert= 2
-              count $ nth (.destruct $ &{} :a 1 :b 2 :c 3) 0
+              tag? $ nth (.destruct $ &{} :a 1 :b 2 :c 3) 0
+            assert= true
+              number? $ nth (.destruct $ &{} :a 1 :b 2 :c 3) 1
+            assert= true
+              map? $ nth (.destruct $ &{} :a 1 :b 2 :c 3) 2
+            assert= 3
+              count (.destruct $ &{} :a 1 :b 2 :c 3)
 
             assert= 2
               .count $ last $ .destruct $ &{} :a 1 :b 2 :c 3

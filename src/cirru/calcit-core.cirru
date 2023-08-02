@@ -1866,7 +1866,7 @@
               pair $ &map:destruct xs
               if (nil? pair)
                 :: :none
-                :: :some (nth pair 0) (nth pair 1)
+                :: :some & pair
 
         |optionally $ quote
           defn optionally (s)

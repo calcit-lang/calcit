@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.7.10";
+export const calcit_version = "0.7.11";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -504,7 +504,7 @@ export let _$n_map_$o_destruct = (xs: CalcitValue): CalcitValue => {
     if (xs.len() > 0) {
       let pair = xs.pairs()[0];
       let k0 = pair[0];
-      return new CalcitSliceList([new CalcitSliceList(pair), xs.dissoc(k0)]);
+      return new CalcitSliceList([pair[0], pair[1], xs.dissoc(k0)]);
     } else {
       return null;
     }
