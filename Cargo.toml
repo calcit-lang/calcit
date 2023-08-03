@@ -1,6 +1,6 @@
 [package]
 name = "calcit"
-version = "0.7.11"
+version = "0.7.12"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -22,7 +22,7 @@ exclude = [
 [dependencies]
 cirru_edn = "0.4.0"
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
-cirru_parser = "0.1.24"
+cirru_parser = "0.1.25"
 clap = "3.2.25"
 dirs = "5.0.1"
 lazy_static = "1.4.0"
