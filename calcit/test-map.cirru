@@ -207,9 +207,9 @@
 
             &let
               m $ &{} :a 1 :b 2 :c 3 :d 4
-              assert= (first m) (first m)
-              assert= (rest m) (rest m)
-              assert= 3 (count $ rest m)
+              assert= (first $ &map:destruct m) (first $ &map:destruct m)
+              assert= (last $ &map:destruct m) (last $ &map:destruct m)
+              assert= 3 (count $ last $ &map:destruct m)
 
               assert= 10
                 foldl m 0 $ fn (acc pair)
@@ -365,13 +365,18 @@
               #{} 1 2 3
               .values $ &{} :a 1 :b 2 :c 3
 
+            println $ .destruct $ &{} :a 1 :b 2 :c 3
             assert= true
-              list? $ .first $ &{} :a 1 :b 2 :c 3
-            assert= 2
-              count $ .first $ &{} :a 1 :b 2 :c 3
+              tag? $ nth (.destruct $ &{} :a 1 :b 2 :c 3) 0
+            assert= true
+              number? $ nth (.destruct $ &{} :a 1 :b 2 :c 3) 1
+            assert= true
+              map? $ nth (.destruct $ &{} :a 1 :b 2 :c 3) 2
+            assert= 3
+              count (.destruct $ &{} :a 1 :b 2 :c 3)
 
             assert= 2
-              .count $ .rest $ &{} :a 1 :b 2 :c 3
+              .count $ last $ .destruct $ &{} :a 1 :b 2 :c 3
 
             assert=
               &{} :c 3

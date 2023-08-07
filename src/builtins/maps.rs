@@ -195,31 +195,19 @@ pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-/// use builtin function since maps need to be handled specifically
-pub fn first(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
-    Some(Calcit::Map(ys)) => match ys.iter().next() {
-      // TODO order may not be stable enough
-      Some((k, v)) => Ok(Calcit::List(TernaryTreeList::from(&[k.to_owned(), v.to_owned()]))),
-      None => Ok(Calcit::Nil),
-    },
-    Some(a) => CalcitErr::err_str(format!("map:first expected a map, got: {a}")),
-    None => CalcitErr::err_str("map:first expected 1 argument"),
-  }
-}
-
-pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn destruct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(ys)) => match ys.keys().next() {
+      // order not stable
       Some(k0) => {
         let mut zs = ys.to_owned();
         zs.remove_mut(k0);
-        Ok(Calcit::Map(zs))
+        Ok(Calcit::List(vec![k0.to_owned(), ys[k0].to_owned(), Calcit::Map(zs)].into()))
       }
       None => Ok(Calcit::Nil),
     },
-    Some(a) => CalcitErr::err_str(format!("map:rest expected a map, got: {a}")),
-    None => CalcitErr::err_str("map:rest expected 1 argument"),
+    Some(a) => CalcitErr::err_str(format!("&map:destruct expected a map, got: {a}")),
+    None => CalcitErr::err_str("&map:destruct expected 1 argument"),
   }
 }
 

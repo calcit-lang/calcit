@@ -12,15 +12,15 @@
   resolved "https://registry.yarnpkg.com/@cirru/parser.ts/-/parser.ts-0.0.6.tgz#b95a84e02273fcbd71ff100925782b6f86410234"
   integrity sha512-qpDNPq+IuuwYjQFI+wzpd3ntbF7lwJs90v1XWyLQbL9Ru4ld4aHxVGwW/9F/QOu5mEGCMXtagCoYDf0HtOpDZg==
 
-"@cirru/writer.ts@^0.1.3":
-  version "0.1.3"
-  resolved "https://registry.yarnpkg.com/@cirru/writer.ts/-/writer.ts-0.1.3.tgz#5f54bdecaa20ba3dab16cbe6da711854138a9c0a"
-  integrity sha512-vJnhmhm7we5UfQIwmZfQpF3bAFbVybzT6LbmkbQHxgijaQg3gPfNVsnSIa3g3KpmWVtvkzEx+nUy5aMwsJiV1A==
+"@cirru/writer.ts@^0.1.4":
+  version "0.1.4"
+  resolved "https://registry.yarnpkg.com/@cirru/writer.ts/-/writer.ts-0.1.4.tgz#4b5851d002ab7c4891457bf8c707f09620c8f122"
+  integrity sha512-Uy3Y7jjLdaxLW9ajZuIS9rp+dhaSVU95hRRwvnP6E16PwgPl+zGs6Xqn1L7Lqw07ypujrdBBdFQyRJOLc6IHQQ==
 
-"@types/node@^20.4.4":
-  version "20.4.4"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-20.4.4.tgz#c79c7cc22c9d0e97a7944954c9e663bcbd92b0cb"
-  integrity sha512-CukZhumInROvLq3+b5gLev+vgpsIqC2D0deQr/yS1WnxvmYLlJXZpaQrQiseMY+6xusl79E04UjWoqyr+t1/Ew==
+"@types/node@^20.4.6":
+  version "20.4.6"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-20.4.6.tgz#b66b66c9bb5d49b199f03399e341c9d6036e9e88"
+  integrity sha512-q0RkvNgMweWWIvSMDiXhflGUKMdIxBo2M2tYM/0kEGDueQByFzK4KZAgu5YHGFNxziTlppNpTIBcqHQAxlfHdA==
 
 typescript@^5.1.6:
   version "5.1.6"

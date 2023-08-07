@@ -5,7 +5,7 @@
       , |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru
       , |./test-math.cirru |./test-recursion.cirru |./test-set.cirru
       , |./test-string.cirru |./test-js.cirru |./test-record.cirru
-      , |./test-nil.cirru |./test-fn.cirru |./test-algebra.cirru
+      , |./test-nil.cirru |./test-fn.cirru |./test-tuple.cirru |./test-algebra.cirru
       , |./util.cirru
   :files $ {}
     |app.main $ {}
@@ -25,6 +25,7 @@
           test-record.main :as test-record
           test-nil.main :as test-nil
           test-fn.main :as test-fn
+          test-tuple.main :as test-tuple
           test-algebra.main :as test-algebra
           util.core :refer $ log-title inside-eval: inside-js:
       :defs $ {}
@@ -302,7 +303,11 @@
                   :get $ fn (self) 1
                 b $ &tuple:with-class a %r
               assert= %r $ &tuple:class b
-            
+
+              assert=
+                &tuple:params (:: :a 1 2 3)
+                [] 1 2 3
+
             assert= "|(:: :a :b :c)"
               str $ :: :a :b :c
 
@@ -376,6 +381,7 @@
             test-record/main!
             test-nil/main!
             test-fn/main!
+            test-tuple/main!
             test-algebra/main!
 
             test-buffer

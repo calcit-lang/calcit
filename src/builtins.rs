@@ -78,6 +78,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeTupleAssoc => meta::assoc(args),
     CalcitProc::NativeTupleCount => meta::tuple_count(args),
     CalcitProc::NativeTupleClass => meta::tuple_class(args),
+    CalcitProc::NativeTupleParams => meta::tuple_params(args),
     CalcitProc::NativeTupleWithClass => meta::tuple_with_class(args),
     // effects
     CalcitProc::NativeDisplayStack => meta::display_stack(args, call_stack),
@@ -190,8 +191,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeMapEmpty => maps::empty_ques(args),
     CalcitProc::NativeMapContains => maps::contains_ques(args),
     CalcitProc::NativeMapIncludes => maps::includes_ques(args),
-    CalcitProc::NativeMapFirst => maps::first(args),
-    CalcitProc::NativeMapRest => maps::rest(args),
+    CalcitProc::NativeMapDestruct => maps::destruct(args),
     CalcitProc::NativeMapGet => maps::get(args),
     CalcitProc::NativeMapAssoc => maps::assoc(args),
     CalcitProc::NativeMapDissoc => maps::dissoc(args),
@@ -209,8 +209,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeSetCount => sets::count(args),
     CalcitProc::NativeSetEmpty => sets::empty_ques(args),
     CalcitProc::NativeSetIncludes => sets::includes_ques(args),
-    CalcitProc::NativeSetFirst => sets::first(args),
-    CalcitProc::NativeSetRest => sets::rest(args),
+    CalcitProc::NativeSetDestruct => sets::destruct(args),
     // refs
     CalcitProc::Atom => refs::atom(args),
     CalcitProc::Deref => refs::deref(args),

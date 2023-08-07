@@ -120,7 +120,7 @@
                 match-ab (:: :a 1)
                 [] "|pattern a:" 1
               assert=
-                match-ab ([] :b 1 2)
+                match-ab (:: :b 1 2)
                 [] "|pattern b:" 1 2
               assert=
                 match-ab (:: :c 1 2)

@@ -112,11 +112,13 @@
             assert=
               #{} 1 2 3
               .union (#{} 1 2) (#{} 2 3)
-
-            assert= true
-              some? $ .first $ #{} 1 2 3
-            assert= 2
-              count $ .rest $ #{} 1 2 3
+            
+            &let
+              pair $ &set:destruct $ #{} 1 2 3
+              assert= true
+                some? $ nth pair 0
+              assert= 2
+                count $ nth pair 1
 
             assert=
               #{} 1 3 5
