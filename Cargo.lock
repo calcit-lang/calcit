@@ -4,9 +4,9 @@ version = 3
 
 [[package]]
 name = "archery"
-version = "0.5.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6cd774058b1b415c4855d8b86436c04bf050c003156fe24bc326fb3fe75c343"
+checksum = "ab7d8a6d00b222909638a01ddcc8c533219e9d5bfada1613afae43481f2fc699"
 dependencies = [
  "static_assertions",
 ]
@@ -42,7 +42,7 @@ checksum = "630be753d4e58660abd17930c71b647fe46c27ea6b63cc59e1e3851406972e42"
 
 [[package]]
 name = "calcit"
-version = "0.7.12"
+version = "0.7.13"
 dependencies = [
  "cirru_edn",
  "cirru_parser",
@@ -450,9 +450,9 @@ dependencies = [
 
 [[package]]
 name = "rpds"
-version = "0.13.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bd6ce569b15c331b1e5fd8cf6adb0bf240678b5f0cdc4d0f41e11683f6feba9"
+checksum = "0e475a12283dfa5e31bd0b0a1a10b5486c0965a34eaf8a695d6df4b47810250d"
 dependencies = [
  "archery",
 ]
