@@ -479,8 +479,8 @@
                   quasiquote
                     &let (~v# ~value)
                       assert "|expected map value to match"
-                        map? ~value
-                      &field-match-internal ~value ~@body
+                        map? ~v#
+                      &field-match-internal ~v# ~@body
                 quasiquote
                   &let ()
                     assert "|expected map value to match"
@@ -1920,3 +1920,55 @@
                   &let
                     (~ (&list:nth pair 1)) (&list:slice ~v 1)
                     &let () ~@branch2
+
+        |&record-match-internal $ quote
+          defmacro &record-match-internal (value & body)
+            if (&list:empty? body)
+              quasiquote
+                eprintln "|[Warn] record-match found no matched case, missing `_` case?" ~value
+              &let
+                pair $ &list:nth body 0
+                if
+                  not $ list? pair
+                  raise $ str-spaced "|record-match expected arm in list, got:" pair
+                let
+                    pattern $ &list:nth pair 0
+                  assert "|expected record or symbol as pattern"
+                    or (record? pattern) (symbol? pattern)
+                  if
+                    &= pattern '_
+                    &let ()
+                      assert "|record-match expected a branch after `_`"
+                        &<= 3 $ &list:count pair
+                      quasiquote
+                        &let
+                          (~ $ &list:nth pair 1) ~value
+                          ~@ $ &list:slice pair 2
+                    &let ()
+                      assert "|record-match expected an with (proto new-name & body)"
+                        &<= 3 $ &list:count pair
+                      quasiquote
+                        if
+                          &record:matches? ~pattern ~value
+                          &let
+                            (~ $ &list:nth pair 1) ~value
+                            ~@ $ &list:slice pair 2
+                          &record-match-internal ~value $ ~@ $ &list:rest body
+
+        |record-match $ quote
+          defmacro record-match (value & body)
+            if (&list:empty? body)
+              quasiquote
+                eprintln "|[Error] record-match expected patterns for matching" ~value
+              if (list? value)
+                &let (v# (gensym |v))
+                  quasiquote
+                    &let (~v# ~value)
+                      assert "|expected record to match"
+                        record? ~v#
+                      &record-match-internal ~v# ~@body
+                quasiquote
+                  &let ()
+                    assert "|expected record to match"
+                      record? ~value
+                    &record-match-internal ~value ~@body

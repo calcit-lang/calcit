@@ -129,11 +129,39 @@
                 assert= 10 $ .get persian :age
                 assert= :Persian $ .get-name persian
 
+        |test-match $ quote
+          fn ()
+            log-title "|Testing record match"
+            let
+                A $ new-record :A :a
+                B $ new-record :B :b
+                C $ new-record :C :c
+                a1 $ %{} A (:a 1)
+                b1 $ %{} B (:b 2)
+                c1 $ %{} C (:c 3)
+              assert= 1
+                record-match a1
+                  A aa $ :a aa
+                  B bb $ :b bb
+                  _ o (println |others) :other
+              assert= 2
+                record-match b1
+                  A aa $ :a aa
+                  B bb $ :b bb
+                  _ o (println |others) :other
+              assert= :other
+                record-match c1
+                  A aa $ :a aa
+                  B bb $ :b bb
+                  _ o (println |others) :other
+
         |main! $ quote
           defn main! ()
             test-record
 
             test-methods
+
+            test-match
 
             do true
 
