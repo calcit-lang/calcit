@@ -65,7 +65,7 @@ pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<C
 
     let func: libloading::Symbol<EdnFfi> = lib.get(method.as_bytes()).expect("dy function not found");
     let ret = func(ys.to_owned())?;
-    Ok(edn_to_calcit(&ret))
+    Ok(edn_to_calcit(&ret, &Calcit::Nil))
   }
 }
 
@@ -152,7 +152,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
         {
           let mut real_args = TernaryTreeList::Empty;
           for p in ps {
-            real_args = real_args.push_right(edn_to_calcit(&p));
+            real_args = real_args.push_right(edn_to_calcit(&p, &Calcit::Nil));
           }
           let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack);
           match r {
@@ -169,7 +169,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
       }),
       Arc::new(track::track_task_release),
     ) {
-      Ok(ret) => edn_to_calcit(&ret),
+      Ok(ret) => edn_to_calcit(&ret, &Calcit::Nil),
       Err(e) => {
         track::track_task_release();
         // let _ = display_stack(&format!("failed to call request: {}", e), &copied_stack_1);
@@ -240,7 +240,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
       {
         let mut real_args = TernaryTreeList::Empty;
         for p in ps {
-          real_args = real_args.push_right(edn_to_calcit(&p));
+          real_args = real_args.push_right(edn_to_calcit(&p, &Calcit::Nil));
         }
         let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack);
         match r {
@@ -257,7 +257,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
     }),
     Arc::new(track::track_task_release),
   ) {
-    Ok(ret) => edn_to_calcit(&ret),
+    Ok(ret) => edn_to_calcit(&ret, &Calcit::Nil),
     Err(e) => {
       // TODO for more accurate tracking, need to place tracker inside foreign function
       // track::track_task_release();

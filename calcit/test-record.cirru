@@ -186,6 +186,21 @@
                 &record:class l1
                 &record:class $ &record:with-class a1 BirdClass
 
+        |test-edn $ quote
+          fn ()
+            let
+                content "|%{} :Lagopus (:name |La)"
+                data $ parse-cirru-edn content $ {}
+                  :Lagopus Lagopus
+              println |EDN: data
+              assert= BirdClass
+                &record:class data
+
+            let
+                l1 $ %{} Lagopus
+                  :name |LagopusA
+              println |EDN: $ format-cirru-edn l1
+
         |main! $ quote
           defn main! ()
             test-record
@@ -195,6 +210,8 @@
             test-match
 
             test-polymorphism
+
+            test-edn
 
             do true
 

@@ -197,7 +197,10 @@ pub fn format_cirru(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn parse_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match cirru_edn::parse(s) {
-      Ok(nodes) => Ok(edn::edn_to_calcit(&nodes)),
+      Ok(nodes) => match xs.get(1) {
+        Some(options) => Ok(edn::edn_to_calcit(&nodes, options)),
+        None => Ok(edn::edn_to_calcit(&nodes, &Calcit::Nil)),
+      },
       Err(e) => CalcitErr::err_str(format!("parse-cirru-edn failed, {e}")),
     },
     Some(a) => CalcitErr::err_str(format!("parse-cirru-edn expected a string, got: {a}")),
@@ -579,5 +582,5 @@ pub fn extract_code_into_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_str(format!("&extract-code-into-edn expected 1 argument, got: {xs:?}"));
   }
-  Ok(edn_to_calcit(&dump_code(&xs[0])))
+  Ok(edn_to_calcit(&dump_code(&xs[0]), &Calcit::Nil))
 }

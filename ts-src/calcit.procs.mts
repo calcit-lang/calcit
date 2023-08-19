@@ -1197,8 +1197,8 @@ export let parse_cirru_list = (code: string): CalcitList => {
   return to_calcit_data(parse(code), true) as CalcitList;
 };
 
-export let parse_cirru_edn = (code: string) => {
-  return extract_cirru_edn(parse(code)[0]);
+export let parse_cirru_edn = (code: string, options: CalcitValue) => {
+  return extract_cirru_edn(parse(code)[0], options);
 };
 
 export let format_to_lisp = (x: CalcitValue): string => {
