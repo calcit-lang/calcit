@@ -272,7 +272,7 @@ pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       ys
     };
-    let base_class = Calcit::Record(EdnTag::new("base-class"), Arc::new(vec![]), Arc::new(vec![]));
+    let base_class = Calcit::Record(EdnTag::new("base-class"), Arc::new(vec![]), Arc::new(vec![]), Arc::new(Calcit::Nil));
     Ok(Calcit::Tuple(Arc::new(xs[0].to_owned()), extra, Arc::new(base_class)))
   }
 }
@@ -310,6 +310,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
   let s0 = CalcitScope::default();
   let (tag, class): (String, Calcit) = match &invoke_args[0] {
     Calcit::Tuple(tag, _extra, class) => (tag.to_string(), (**class).to_owned()),
+    Calcit::Record(name, _f, _v, class) => (name.to_string(), (**class).to_owned()),
     // classed should already be preprocessed
     Calcit::List(..) => (
       "&core-list-class".to_owned(),
@@ -331,10 +332,6 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
       "&core-set-class".to_owned(),
       runner::evaluate_symbol("&core-set-class", &s0, primes::CORE_NS, None, call_stack)?,
     ),
-    Calcit::Record(..) => (
-      "&core-record-class".to_owned(),
-      runner::evaluate_symbol("&core-record-class", &s0, primes::CORE_NS, None, call_stack)?,
-    ),
     Calcit::Nil => (
       "&core-nil-class".to_owned(),
       runner::evaluate_symbol("&core-nil-class", &s0, primes::CORE_NS, None, call_stack)?,
@@ -352,7 +349,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     }
   };
   match &class {
-    Calcit::Record(_, fields, values) => {
+    Calcit::Record(_, fields, values, _class) => {
       match find_in_fields(fields, &EdnTag::from(name)) {
         Some(idx) => {
           let method_args = invoke_args.assoc(0, value)?;

@@ -1574,18 +1574,6 @@
             :to-pairs to-pairs
             :values vals
 
-        |&core-record-class $ quote
-          defrecord! &core-record-class
-            :get &record:get
-            :get-name &record:get-name
-            :matches? &record:matches?
-            :to-map &record:to-map
-            :count &record:count
-            :contains? &record:contains?
-            :assoc &record:assoc
-            :from-map &record:from-map
-            :extend-as &record:extend-as
-
         |&core-list-class $ quote
           defrecord! &core-list-class
             :any? any?
@@ -1681,7 +1669,6 @@
             identity &core-set-class
             identity &core-list-class
             identity &core-map-class
-            identity &core-record-class
             identity &core-nil-class
             identity &core-fn-class
 
@@ -1692,7 +1679,9 @@
                 &tuple:count x
                 if (list? x)
                   &list:count x
-                  .count x
+                  if (record? x)
+                    &record:count x
+                    .count x
 
         |empty? $ quote
           defn empty? (x)
@@ -1705,11 +1694,12 @@
           defn contains? (x k)
             if (nil? x) false
               if (list? x) (&list:contains? x k)
-                if (tuple? x)
-                  and
-                    &>= k 0
-                    &< k (&tuple:count x)
-                  .contains? x k
+                if (record? x) (&record:contains? x k)
+                  if (tuple? x)
+                    and
+                      &>= k 0
+                      &< k (&tuple:count x)
+                    .contains? x k
 
         |contains-in? $ quote
           defn contains-in? (xs path)
@@ -1769,7 +1759,8 @@
               raise $ str-spaced "|assoc does not work on nil for:" args
               if (tuple? x) (&tuple:assoc x & args)
                 if (list? x) (&list:assoc x & args)
-                  .assoc x & args
+                  if (record? x) (&record:assoc x & args)
+                    .assoc x & args
 
         |dissoc $ quote
           defn dissoc (x & args)
@@ -1851,7 +1842,7 @@
             if (empty? xs)
               :: :none
               :: :some (nth xs 0) (&list:slice xs 1)
-        
+
         |destruct-set $ quote
           defn destruct-set (xs)
             &let

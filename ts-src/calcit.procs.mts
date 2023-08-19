@@ -364,6 +364,18 @@ export let _$n_record_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: C
   throw new Error("record `assoc` expected a record");
 };
 
+export let _$n_record_$o_class = function (xs: CalcitValue) {
+  if (arguments.length !== 1) throw new Error("&record:class takes 1 argument");
+  if (xs instanceof CalcitRecord) return xs.klass;
+  throw new Error("&record:class expected a record");
+};
+
+export let _$n_record_$o_with_class = function (xs: CalcitValue, k: CalcitValue) {
+  if (arguments.length !== 2) throw new Error("&record:with-class takes 2 arguments");
+  if (xs instanceof CalcitRecord) return xs.withClass(k);
+  throw new Error("&record:with-class expected a record");
+};
+
 export let _$n_list_$o_assoc_before = function (xs: CalcitList | CalcitSliceList, k: number, v: CalcitValue): CalcitList {
   if (arguments.length !== 3) {
     throw new Error("assoc takes 3 arguments");
@@ -1276,7 +1288,6 @@ let calcit_builtin_classes = {
   set: null as CalcitRecord,
   list: null as CalcitRecord,
   map: null as CalcitRecord,
-  record: null as CalcitRecord,
   nil: null as CalcitRecord,
   fn: null as CalcitRecord,
 };
@@ -1307,6 +1318,13 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
     } else {
       throw new Error("Method invoking expected a record as class");
     }
+  } else if (obj instanceof CalcitRecord) {
+    if (obj.klass instanceof CalcitRecord) {
+      tag = obj.name.toString();
+      klass = obj.klass;
+    } else {
+      throw new Error("Method invoking expected a record as class");
+    }
   } else if (typeof obj === "number") {
     tag = "&core-number-class";
     klass = calcit_builtin_classes.number;
@@ -1322,9 +1340,6 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   } else if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
     tag = "&core-list-class";
     klass = calcit_builtin_classes.list;
-  } else if (obj instanceof CalcitRecord) {
-    tag = "&core-record-class";
-    klass = calcit_builtin_classes.record;
   } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
     tag = "&core-map-class";
     klass = calcit_builtin_classes.map;

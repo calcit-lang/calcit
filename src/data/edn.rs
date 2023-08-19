@@ -40,7 +40,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       }
       Ok(Edn::Map(ys))
     }
-    Calcit::Record(name, fields, values) => {
+    Calcit::Record(name, fields, values, _class) => {
       let mut entries: Vec<(EdnTag, Edn)> = Vec::with_capacity(fields.len());
       for idx in 0..fields.len() {
         entries.push((fields[idx].to_owned(), calcit_to_edn(&values[idx])?));
@@ -66,7 +66,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             Err(format!("unknown tag for EDN: {sym}")) // TODO more types to handle
           }
         }
-        Calcit::Record(name, _, _) => {
+        Calcit::Record(name, _, _, _) => {
           let mut extra_values = vec![];
           for item in extra {
             extra_values.push(calcit_to_edn(item)?);
@@ -113,7 +113,12 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::CirruQuote(nodes.to_owned()),
     Edn::Tuple(tag, extra) => {
-      let base_class = Calcit::Record(EdnTag::new("base"), Arc::new(Vec::new()), Arc::new(Vec::new()));
+      let base_class = Calcit::Record(
+        EdnTag::new("base"),
+        Arc::new(Vec::new()),
+        Arc::new(Vec::new()),
+        Arc::new(Calcit::Nil),
+      );
       Calcit::Tuple(
         Arc::new(edn_to_calcit(tag)),
         extra.iter().map(edn_to_calcit).collect(),
@@ -150,7 +155,8 @@ pub fn edn_to_calcit(x: &Edn) -> Calcit {
         fields.push(v.0.to_owned());
         values.push(edn_to_calcit(&v.1));
       }
-      Calcit::Record(name.to_owned(), Arc::new(fields), Arc::new(values))
+      // TODO add class in future
+      Calcit::Record(name.to_owned(), Arc::new(fields), Arc::new(values), Arc::new(Calcit::Nil))
     }
     Edn::Buffer(buf) => Calcit::Buffer(buf.to_owned()),
   }

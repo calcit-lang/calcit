@@ -8,8 +8,9 @@ export class CalcitRecord {
   name: CalcitTag;
   fields: Array<CalcitTag>;
   values: Array<CalcitValue>;
+  klass: CalcitValue;
   cachedHash: Hash;
-  constructor(name: CalcitTag, fields: Array<CalcitTag>, values?: Array<CalcitValue>) {
+  constructor(name: CalcitTag, fields: Array<CalcitTag>, values?: Array<CalcitValue>, klass?: CalcitValue) {
     this.name = name;
     let fieldNames = fields.map(castTag);
     this.fields = fields;
@@ -22,6 +23,7 @@ export class CalcitRecord {
       this.values = new Array(fieldNames.length);
     }
     this.cachedHash = null;
+    this.klass = klass;
   }
   get(k: CalcitValue) {
     let field = castTag(k);
@@ -42,7 +44,7 @@ export class CalcitRecord {
         values[idx] = this.values[idx];
       }
     }
-    return new CalcitRecord(this.name, this.fields, values);
+    return new CalcitRecord(this.name, this.fields, values, this.klass);
   }
   /** return -1 for missing */
   findIndex(k: CalcitValue) {
@@ -61,6 +63,13 @@ export class CalcitRecord {
     }
     return ret + ")";
   }
+  withClass(klass: CalcitValue): CalcitRecord {
+    if (klass instanceof CalcitRecord) {
+      return new CalcitRecord(this.name, this.fields, this.values, klass);
+    } else {
+      throw new Error("Expected a record");
+    }
+  }
 }
 
 export let new_record = (name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
@@ -74,6 +83,19 @@ export let new_record = (name: CalcitValue, ...fields: Array<CalcitValue>): Calc
     }
   });
   return new CalcitRecord(castTag(name), fieldNames);
+};
+
+export let new_class_record = (klass: CalcitRecord, name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
+  let fieldNames = fields.map(castTag).sort((x, y) => {
+    if (x.idx < y.idx) {
+      return -1;
+    } else if (x.idx > y.idx) {
+      return 1;
+    } else {
+      throw new Error(`Unexpected duplication in record fields: ${x.toString()}`);
+    }
+  });
+  return new CalcitRecord(castTag(name), fieldNames, undefined, klass);
 };
 
 export let fieldsEqual = (xs: Array<CalcitTag>, ys: Array<CalcitTag>): boolean => {
@@ -121,7 +143,7 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
       values[i] = xs[idx * 2 + 1];
     }
 
-    return new CalcitRecord(proto.name, proto.fields, values);
+    return new CalcitRecord(proto.name, proto.fields, values, proto.klass);
   } else {
     throw new Error("Expected prototype to be a record");
   }

@@ -33,16 +33,16 @@
               assert= 20 (get p1 :age)
               assert= 20 (get p2 :age)
               assert= 23 (get p3 :age)
-              assert= 23 (.get p3 :age)
+              assert= 23 (&record:get p3 :age)
 
               assert= :record $ type-of p1
               assert=
-                .to-map p1
+                &record:to-map p1
                 {} (:name |Chen) (:age 20) (:position :mainland)
 
               assert= 21
                 get
-                  .from-map Person $ {}
+                  &record:from-map Person $ {}
                     :name |Chen
                     :age 21
                     :position :mainland
@@ -54,9 +54,7 @@
 
               assert-detect identity $ &record:matches? p1 p1
               assert-detect identity $ &record:matches? p1 p2
-              assert-detect identity $ .matches? p1 p2
               assert-detect not $ &record:matches? p1 c1
-              assert-detect not $ .matches? p1 c1
 
               &let
                 p4 $ assoc p1 :age 30
@@ -97,7 +95,7 @@
             log-title "|Testing record methods"
 
             assert= :Cat
-              .get-name Cat
+              &record:get-name Cat
 
             let
                 kitty $ %{} Cat
@@ -105,29 +103,29 @@
                   :color :red
 
               assert= :red
-                .get kitty :color
+                &record:get kitty :color
               assert= true
-                .matches? kitty Cat
+                &record:matches? kitty Cat
               assert=
-                .to-map kitty
+                &record:to-map kitty
                 &{} :name |kitty :color :red
               assert= 2
-                .count kitty
+                &record:count kitty
               assert= true
-                .contains? kitty :color
+                &record:contains? kitty :color
               assert= false
-                .contains? kitty :age
+                &record:contains? kitty :age
               assert=
                 %{} kitty (:name |kitty) (:color :blue)
-                .assoc kitty :color :blue
+                &record:assoc kitty :color :blue
               assert=
-                .from-map kitty $ &{} :name |kitty :color :red
+                &record:from-map kitty $ &{} :name |kitty :color :red
                 %{} kitty (:name |kitty) (:color :red)
 
               &let
-                persian $ .extend-as kitty :Persian :age 10
-                assert= 10 $ .get persian :age
-                assert= :Persian $ .get-name persian
+                persian $ &record:extend-as kitty :Persian :age 10
+                assert= 10 $ &record:get persian :age
+                assert= :Persian $ &record:get-name persian
 
         |test-match $ quote
           fn ()
@@ -155,6 +153,39 @@
                   B bb $ :b bb
                   _ o (println |others) :other
 
+        |BirdShape $ quote
+          def BirdShape $ new-record :BirdShape :show :rename
+
+        |BirdClass $ quote
+          def BirdClass $ %{} BirdShape
+            :show $ fn (self)
+              println $ :name self
+            :rename $ fn (self name)
+              assoc self :name name
+
+        |Lagopus $ quote
+          def Lagopus $ new-class-record BirdClass :Lagopus :name
+
+        |test-polymorphism $ quote
+          fn ()
+            log-title "|Test record polymorphism"
+
+            println Lagopus
+
+            let
+                l1 $ %{} Lagopus
+                  :name |LagopusA
+                a1 $ new-record :A :name
+              println l1
+              .show l1
+              -> l1
+                .rename |LagopusB
+                .show
+
+              assert=
+                &record:class l1
+                &record:class $ &record:with-class a1 BirdClass
+
         |main! $ quote
           defn main! ()
             test-record
@@ -162,6 +193,8 @@
             test-methods
 
             test-match
+
+            test-polymorphism
 
             do true
 
