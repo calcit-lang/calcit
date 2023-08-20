@@ -162,7 +162,7 @@ fn find_file_changes(old_file: &FileInSnapShot, new_file: &FileInSnapShot) -> Re
   let removed_defs = old_defs.difference(&new_defs).map(ToOwned::to_owned).collect::<HashSet<Arc<str>>>();
   let added_defs = added_def_names
     .iter()
-    .map(|name| (name.to_owned(), new_file.defs[&**name].to_owned()))
+    .map(|name| (name.to_owned(), new_file.defs[&**name].code.to_owned()))
     .collect::<HashMap<Arc<str>, Cirru>>();
 
   let mut changed_defs: HashMap<Arc<str>, Cirru> = HashMap::new();
@@ -173,14 +173,14 @@ fn find_file_changes(old_file: &FileInSnapShot, new_file: &FileInSnapShot) -> Re
     if old_def == new_def {
       continue;
     }
-    changed_defs.insert(def_name.to_owned().to_owned(), new_def.to_owned());
+    changed_defs.insert(def_name.to_owned().to_owned(), new_def.code.to_owned());
   }
 
   Ok(FileChangeInfo {
     ns: if old_file.ns == new_file.ns {
       None
     } else {
-      Some(new_file.ns.to_owned())
+      Some(new_file.ns.code.to_owned())
     },
     added_defs,
     removed_defs,

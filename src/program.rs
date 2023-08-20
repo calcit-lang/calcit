@@ -99,11 +99,11 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Arc<str>, Arc<ImportRule>
 }
 
 fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<ProgramFileData, String> {
-  let import_map = extract_import_map(&file.ns)?;
+  let import_map = extract_import_map(&file.ns.code)?;
   let mut defs: HashMap<Arc<str>, Calcit> = HashMap::with_capacity(file.defs.len());
-  for (def, code) in &file.defs {
+  for (def, entry) in &file.defs {
     let at_def = def.to_owned();
-    defs.insert(def.to_owned(), code_to_calcit(code, ns.to_owned(), at_def, &[])?);
+    defs.insert(def.to_owned(), code_to_calcit(&entry.code, ns.to_owned(), at_def, &[])?);
   }
   Ok(ProgramFileData { import_map, defs })
 }

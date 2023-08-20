@@ -15,8 +15,8 @@ pub struct SnapshotConfigs {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileInSnapShot {
-  pub ns: Cirru,
-  pub defs: HashMap<Arc<str>, Cirru>,
+  pub ns: CodeEntry,
+  pub defs: HashMap<Arc<str>, CodeEntry>,
 }
 
 impl From<&FileInSnapShot> for Edn {
@@ -41,6 +41,37 @@ impl TryFrom<Edn> for FileInSnapShot {
 impl From<FileInSnapShot> for Edn {
   fn from(data: FileInSnapShot) -> Edn {
     Edn::map_from_iter([("ns".into(), data.ns.into()), ("defs".into(), data.defs.into())])
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeEntry {
+  pub doc: String,
+  pub code: Cirru,
+}
+
+impl TryFrom<Edn> for CodeEntry {
+  type Error = String;
+  fn try_from(data: Edn) -> Result<Self, String> {
+    Ok(CodeEntry {
+      doc: data.record_get("doc")?.try_into()?,
+      code: data.record_get("code")?.try_into()?,
+    })
+  }
+}
+
+impl From<CodeEntry> for Edn {
+  fn from(data: CodeEntry) -> Self {
+    Edn::record_from_pairs(
+      "CodeEntry".into(),
+      &[("doc".into(), data.doc.into()), ("code".into(), data.code.into())],
+    )
+  }
+}
+
+impl CodeEntry {
+  pub fn from_code(code: Cirru) -> Self {
+    CodeEntry { doc: "".to_owned(), code }
   }
 }
 
@@ -92,19 +123,22 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   let parent = path_data.parent().expect("parent path");
   let parent_str = parent.to_str().expect("get path string");
 
-  let def_dict: HashMap<Arc<str>, Cirru> = HashMap::from_iter([
+  let def_dict: HashMap<Arc<str>, CodeEntry> = HashMap::from_iter([
     (
       "calcit-filename".into(),
-      vec!["def", "calcit-filename", &format!("|{}", path.escape_default())].into(),
+      CodeEntry::from_code(vec!["def", "calcit-filename", &format!("|{}", path.escape_default())].into()),
     ),
     (
       "calcit-dirname".into(),
-      vec!["def", "calcit-dirname", &format!("|{}", parent_str.escape_default())].into(),
+      CodeEntry::from_code(vec!["def", "calcit-dirname", &format!("|{}", parent_str.escape_default())].into()),
     ),
   ]);
 
   FileInSnapShot {
-    ns: vec!["ns", ns].into(),
+    ns: CodeEntry {
+      doc: "".to_owned(),
+      code: vec!["ns", ns].into(),
+    },
     defs: def_dict,
   }
 }
@@ -126,18 +160,18 @@ pub fn gen_default() -> Snapshot {
 pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
   match cirru_parser::parse(raw) {
     Ok(lines) => {
-      let mut def_dict: HashMap<Arc<str>, Cirru> = HashMap::with_capacity(2);
+      let mut def_dict: HashMap<Arc<str>, CodeEntry> = HashMap::with_capacity(2);
       let mut func_code = vec![Cirru::leaf("defn"), "main!".into(), Cirru::List(vec![])];
       for line in lines {
         func_code.push(line.to_owned());
       }
-      def_dict.insert("main!".into(), Cirru::List(func_code));
+      def_dict.insert("main!".into(), CodeEntry::from_code(Cirru::List(func_code)));
       def_dict.insert(
         "reload!".into(),
-        vec![Cirru::leaf("defn"), "reload!".into(), Cirru::List(vec![])].into(),
+        CodeEntry::from_code(vec![Cirru::leaf("defn"), "reload!".into(), Cirru::List(vec![])].into()),
       );
       Ok(FileInSnapShot {
-        ns: vec!["ns", "app.main"].into(),
+        ns: CodeEntry::from_code(vec!["ns", "app.main"].into()),
         defs: def_dict,
       })
     }

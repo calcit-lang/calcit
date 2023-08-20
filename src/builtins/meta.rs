@@ -280,7 +280,7 @@ pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn new_tuple_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn new_class_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
     CalcitErr::err_str(format!("tuple expected at least 2 arguments, got {}", CrListWrap(xs.to_owned())))
   } else {
