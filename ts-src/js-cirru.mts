@@ -108,10 +108,22 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     return buffer;
   }
   if (x instanceof CalcitRecord) {
-    let buffer: CirruEdnFormat = ["%{}", x.name.toString()];
+    let buffer: [string, CirruEdnFormat] = ["%{}", x.name.toString()];
     for (let idx = 0; idx < x.fields.length; idx++) {
       buffer.push([x.fields[idx].toString(), to_cirru_edn(x.values[idx])]);
     }
+    // placed literals first
+    buffer.sort((a, b) => {
+      let a1_literal = is_literal(a[1] as CalcitValue);
+      let b1_literal = is_literal(b[1] as CalcitValue);
+      if (a1_literal && !b1_literal) {
+        return -1;
+      } else if (!a1_literal && b1_literal) {
+        return 1;
+      } else {
+        return _$n_compare(a[0] as CalcitValue, b[0] as CalcitValue);
+      }
+    });
     return buffer;
   }
   if (x instanceof CalcitSet) {

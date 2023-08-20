@@ -39,6 +39,15 @@
               let
                   l1 $ %{} Lagopus (:name |LagopusA)
                 println |EDN: $ format-cirru-edn l1
+              let
+                  Demo $ new-record :Demo :a :b :c :d
+                  data $ %{} Demo
+                    :a 1
+                    :b $ [] 2 3
+                    :c 4
+                    :d 5
+                assert= "|%{} :Demo (:a 1) (:c 4) (:d 5)\n  :b $ [] 2 3"
+                  trim $ format-cirru-edn data
           :doc |
         |test-match $ %{} :CodeEntry
           :code $ quote
