@@ -73,7 +73,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeExtractCodeIntoEdn => meta::extract_code_into_edn(args),
     // tuple
     CalcitProc::NativeTuple => meta::new_tuple(args), // unstable solution for the name
-    CalcitProc::NativeClassTuple => meta::new_tuple_class(args),
+    CalcitProc::NativeClassTuple => meta::new_class_tuple(args),
     CalcitProc::NativeTupleNth => meta::tuple_nth(args),
     CalcitProc::NativeTupleAssoc => meta::assoc(args),
     CalcitProc::NativeTupleCount => meta::tuple_count(args),
@@ -217,7 +217,10 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::RemoveWatch => refs::remove_watch(args),
     // records
     CalcitProc::NewRecord => records::new_record(args),
+    CalcitProc::NewClassRecord => records::new_class_record(args),
     CalcitProc::NativeRecord => records::call_record(args),
+    CalcitProc::NativeRecordClass => records::get_class(args),
+    CalcitProc::NativeRecordWithClass => records::with_class(args),
     CalcitProc::NativeRecordFromMap => records::record_from_map(args),
     CalcitProc::NativeRecordGetName => records::get_record_name(args),
     CalcitProc::NativeRecordToMap => records::turn_map(args),

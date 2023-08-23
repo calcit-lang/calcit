@@ -122,7 +122,6 @@ $calcit_procs.register_calcit_builtin_classes({{
   list: _$n_core_list_class,
   map: _$n_core_map_class,
   number: _$n_core_number_class,
-  record: _$n_core_record_class,
   set: _$n_core_set_class,
   string: _$n_core_string_class,
   nil: _$n_core_nil_class,

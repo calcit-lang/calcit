@@ -3,11 +3,14 @@
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
   :files $ {}
     |app.main $ {}
-      :ns $ quote
-        ns app.main $ :require
-      :defs $ {}
-        |main! $ quote
-          defn main! () (+ 1 2)
-
-      :proc $ quote ()
       :configs $ {}
+      :defs $ {}
+        |main! $ %{} :CodeEntry
+          :code $ quote
+            defn main! () $ + 1 2
+          :doc |
+      :ns $ %{} :CodeEntry
+        :code $ quote
+          ns app.main $ :require
+        :doc |
+      :proc $ quote ()

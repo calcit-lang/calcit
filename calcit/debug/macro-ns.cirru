@@ -4,23 +4,28 @@
     :modules $ []
   :files $ {}
     |macro-ns.lib $ {}
-      :ns $ quote
-        ns macro-ns.lib $ :require
-          [] util.core :refer $ [] log-title inside-eval:
       :defs $ {}
-        |v $ quote
-          def v 100
-        |expand-1 $ quote
-          defmacro expand-1 (n)
-            println "|local data" v
-            quasiquote
-              println ~n ~v
-
+        |expand-1 $ %{} :CodeEntry
+          :code $ quote
+            defmacro expand-1 (n) (println "|local data" v)
+              quasiquote $ println ~n ~v
+          :doc |
+        |v $ %{} :CodeEntry
+          :code $ quote (def v 100)
+          :doc |
+      :ns $ %{} :CodeEntry
+        :code $ quote
+          ns macro-ns.lib $ :require
+            [] util.core :refer $ [] log-title inside-eval:
+        :doc |
     |macro-ns.main $ {}
-      :ns $ quote
-        ns macro-ns.main $ :require
-          macro-ns.lib :refer $ expand-1
       :defs $ {}
-        |main! $ quote
-          defn main! ()
-            expand-1 1
+        |main! $ %{} :CodeEntry
+          :code $ quote
+            defn main! () $ expand-1 1
+          :doc |
+      :ns $ %{} :CodeEntry
+        :code $ quote
+          ns macro-ns.main $ :require
+            macro-ns.lib :refer $ expand-1
+        :doc |

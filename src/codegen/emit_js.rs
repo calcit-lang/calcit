@@ -906,7 +906,7 @@ fn uses_recur(xs: &Calcit) -> bool {
     Calcit::Symbol { sym: s, .. } => &**s == "recur",
     Calcit::Proc(s) => *s == CalcitProc::Recur,
     Calcit::List(ys) => match &ys.get(0) {
-      Some(Calcit::Syntax(syn, _)) if syn == &CalcitSyntax::Defn => false,
+      Some(Calcit::Syntax(CalcitSyntax::Defn, _)) => false,
       Some(Calcit::Symbol { sym, .. }) if &**sym == "defn" => false,
       _ => {
         for y in ys {

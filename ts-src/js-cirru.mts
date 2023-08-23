@@ -8,6 +8,7 @@ import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
 import { CalcitTag, CalcitSymbol, CalcitRecur, CalcitRef, newTag } from "./calcit-data.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
+import { deepEqual } from "@calcit/ternary-tree/lib/utils.mjs";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
 
@@ -107,10 +108,22 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     return buffer;
   }
   if (x instanceof CalcitRecord) {
-    let buffer: CirruEdnFormat = ["%{}", x.name.toString()];
+    let buffer: [string, CirruEdnFormat] = ["%{}", x.name.toString()];
     for (let idx = 0; idx < x.fields.length; idx++) {
       buffer.push([x.fields[idx].toString(), to_cirru_edn(x.values[idx])]);
     }
+    // placed literals first
+    buffer.sort((a, b) => {
+      let a1_literal = is_literal(a[1] as CalcitValue);
+      let b1_literal = is_literal(b[1] as CalcitValue);
+      if (a1_literal && !b1_literal) {
+        return -1;
+      } else if (!a1_literal && b1_literal) {
+        return 1;
+      } else {
+        return _$n_compare(a[0] as CalcitValue, b[0] as CalcitValue);
+      }
+    });
     return buffer;
   }
   if (x instanceof CalcitSet) {
@@ -150,7 +163,7 @@ let extractFieldTag = (x: string) => {
   }
 };
 
-export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
+export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): CalcitValue => {
   if (typeof x === "string") {
     if (x === "nil") {
       return null;
@@ -191,7 +204,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
           return; // skip first `{}` symbol
         }
         if (pair instanceof Array && pair.length === 2) {
-          result.push(extract_cirru_edn(pair[0]), extract_cirru_edn(pair[1]));
+          result.push(extract_cirru_edn(pair[0], options), extract_cirru_edn(pair[1], options));
         } else {
           throw new Error("Expected pairs for map");
         }
@@ -212,7 +225,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
 
         if (pair instanceof Array && pair.length === 2) {
           if (typeof pair[0] === "string") {
-            entries.push([extractFieldTag(pair[0]), extract_cirru_edn(pair[1])]);
+            entries.push([extractFieldTag(pair[0]), extract_cirru_edn(pair[1], options)]);
           } else {
             throw new Error("Expected string as field");
           }
@@ -230,16 +243,27 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
         fields.push(entries[idx][0]);
         values.push(entries[idx][1]);
       }
+
+      if (options instanceof CalcitMap || options instanceof CalcitSliceMap) {
+        let v = options.get(extractFieldTag(name));
+        if (v != null && v instanceof CalcitRecord) {
+          if (!deepEqual(v.fields, fields)) {
+            throw new Error(`Fields mismatch for ${name}, expected ${fields}, got ${v.fields}`);
+          }
+          return new CalcitRecord(extractFieldTag(name), fields, values, v.klass);
+        }
+      }
+
       return new CalcitRecord(extractFieldTag(name), fields, values);
     }
     if (x[0] === "[]") {
-      return new CalcitSliceList(x.slice(1).map(extract_cirru_edn));
+      return new CalcitSliceList(x.slice(1).map((x) => extract_cirru_edn(x, options)));
     }
     if (x[0] === "#{}") {
-      return new CalcitSet(x.slice(1).map(extract_cirru_edn));
+      return new CalcitSet(x.slice(1).map((x) => extract_cirru_edn(x, options)));
     }
     if (x[0] === "do" && x.length === 2) {
-      return extract_cirru_edn(x[1]);
+      return extract_cirru_edn(x[1], options);
     }
     if (x[0] === "quote") {
       if (x.length !== 2) {
@@ -252,7 +276,11 @@ export let extract_cirru_edn = (x: CirruEdnFormat): CalcitValue => {
         throw new Error("tuple expects at least 1 value1");
       }
       let baseClass = new CalcitRecord(newTag("base-class"), [], []);
-      return new CalcitTuple(extract_cirru_edn(x[1]), x.slice(2).map(extract_cirru_edn), baseClass);
+      return new CalcitTuple(
+        extract_cirru_edn(x[1], options),
+        x.slice(2).map((x) => extract_cirru_edn(x, options)),
+        baseClass
+      );
     }
   }
   console.error(x);

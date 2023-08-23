@@ -129,7 +129,7 @@ pub enum Calcit {
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   /// with only static and limited keys, for performance and checking
   /// size of keys are values should be kept consistent
-  Record(EdnTag, Arc<Vec<EdnTag>>, Arc<Vec<Calcit>>),
+  Record(EdnTag, Arc<Vec<EdnTag>>, Arc<Vec<Calcit>>, Arc<Calcit>),
   /// native functions that providing feature from Rust
   Proc(CalcitProc),
   Macro {
@@ -244,7 +244,7 @@ impl fmt::Display for Calcit {
         f.write_str(")")?;
         Ok(())
       }
-      Calcit::Record(name, fields, values) => {
+      Calcit::Record(name, fields, values, _class) => {
         f.write_str(&format!("(%{{}} {}", Calcit::Tag(name.to_owned())))?;
         for idx in 0..fields.len() {
           f.write_str(&format!(" ({} {})", Calcit::Tag(fields[idx].to_owned()), values[idx]))?;
@@ -421,7 +421,7 @@ impl Hash for Calcit {
           x.hash(_state)
         }
       }
-      Calcit::Record(name, fields, values) => {
+      Calcit::Record(name, fields, values, _class) => {
         "record:".hash(_state);
         name.hash(_state);
         fields.hash(_state);
@@ -545,8 +545,11 @@ impl Ord for Calcit {
       (Calcit::Map(_), _) => Less,
       (_, Calcit::Map(_)) => Greater,
 
-      (Calcit::Record(_name1, _fields1, _values1), Calcit::Record(_name2, _fields2, _values2)) => {
-        unreachable!("TODO records are not cmp ed") // TODO
+      (Calcit::Record(name1, _fields1, _values1, _class1), Calcit::Record(name2, _fields2, _values2, _class2)) => {
+        match name1.cmp(name2) {
+          Equal => unreachable!("TODO records are not cmp ed"), // TODO
+          ord => ord,
+        }
       }
       (Calcit::Record(..), _) => Less,
       (_, Calcit::Record(..)) => Greater,
@@ -604,7 +607,7 @@ impl PartialEq for Calcit {
       (Calcit::List(a), Calcit::List(b)) => a == b,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,
-      (Calcit::Record(name1, fields1, values1), Calcit::Record(name2, fields2, values2)) => {
+      (Calcit::Record(name1, fields1, values1, _class1), Calcit::Record(name2, fields2, values2, _class2)) => {
         name1 == name2 && fields1 == fields2 && values1 == values2
       }
 
