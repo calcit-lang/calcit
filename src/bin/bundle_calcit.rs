@@ -8,7 +8,7 @@ use std::{
   sync::Arc,
 };
 
-use calcit::snapshot::ChangesDict;
+use calcit::snapshot::{ChangesDict, CodeEntry};
 use calcit::snapshot::{FileChangeInfo, FileInSnapShot};
 
 use notify::RecursiveMode;
@@ -222,7 +222,7 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
             xs.get(0)
           )));
         };
-        file.insert(Edn::tag("ns"), Edn::Quote(Cirru::List(ns_code.to_owned())));
+        file.insert(Edn::tag("ns"), CodeEntry::from_code(Cirru::List(ns_code.to_owned())).into());
 
         let mut defs: HashMap<Edn, Edn> = HashMap::with_capacity(xs.len());
         for line in xs.iter().skip(1) {
@@ -231,7 +231,7 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
               (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
                 let x0 = &**x0;
                 if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" || x0.starts_with("def") {
-                  defs.insert(Edn::str((*x1).to_owned()), Edn::Quote(line.to_owned()));
+                  defs.insert(Edn::str((*x1).to_owned()), CodeEntry::from_code(line.to_owned()).into());
                 } else {
                   return Err(io_err(format!("invalid def op: {x0}")));
                 }
