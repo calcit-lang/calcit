@@ -827,7 +827,7 @@
         |dec $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn dec (x) (&- x 1)
-        |def $ %{} :CodeEntry (:doc |)
+        |def $ %{} :CodeEntry (:doc "|special macro to expose value to definition")
           :code $ quote
             defmacro def (_name x) x
         |defn-w-log $ %{} :CodeEntry (:doc |)
@@ -1130,24 +1130,6 @@
           :code $ quote
             defn intersection (base & xs)
               reduce xs base $ fn (acc item) (&set:intersection acc item)
-        |invoke $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defn invoke (pair name & params)
-              if
-                not $ and (list? pair)
-                  = 2 $ &list:count pair
-                  record? $ &list:first pair
-                raise $ str-spaced "|method! applies on a pair, leading by record, got:" pair
-              if
-                not $ or (string? name) (tag? name) (symbol? name)
-                raise $ str-spaced "|method by string or tag, got:" name
-              let
-                  proto $ &tuple:nth pair 0
-                  f $ &record:get proto name
-                if
-                  not $ fn? f
-                  raise $ str-spaced "|expected function, got:" f
-                f pair & params
         |join $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn join (xs0 sep)
@@ -1479,10 +1461,6 @@
                     &= 2 $ &list:count pair
                     , false
                   &map:assoc acc (&list:first pair) (last pair)
-        |print-values $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defn print-values (& args)
-              println & $ &list:map args to-lispy-string
         |range-bothway $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn range-bothway (x ? y)
@@ -1838,6 +1816,6 @@
               &let
                 ys $ &list:concat & xs
                 quasiquote $ &{} ~@ys
-      :ns $ %{} :CodeEntry (:doc |)
+      :ns $ %{} :CodeEntry (:doc "|built-in function and macros in `calcit.core`")
         :code $ quote
           ns calcit.core $ :require

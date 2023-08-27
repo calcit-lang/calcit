@@ -54,7 +54,6 @@
             defn demos () (println "\"demo")
               println $ &+ 2 2
               println "\"f1" $ f1
-              print-values 1 "\"1" :a $ [] 1 2
               println $ &{} :a 1 :b 2
               println $ #{} 1 2 3 |four
               lib/f2
