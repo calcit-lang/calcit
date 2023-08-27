@@ -6,20 +6,17 @@
     |app.main $ {}
       :configs $ {}
       :defs $ {}
-        |%Num $ %{} :CodeEntry
+        |%Num $ %{} :CodeEntry (:doc |)
           :code $ quote (defrecord %Num :inc :show)
-          :doc |
-        |*ref-demo $ %{} :CodeEntry
+        |*ref-demo $ %{} :CodeEntry (:doc |)
           :code $ quote (defatom *ref-demo 0)
-          :doc |
-        |Num $ %{} :CodeEntry
+        |Num $ %{} :CodeEntry (:doc |)
           :code $ quote
             def Num $ %{} %Num
               :inc $ fn (x) (update x 1 inc)
               :show $ fn (x)
                 str $ &tuple:nth x 1
-          :doc |
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! ()
               println $ &get-os
@@ -58,12 +55,10 @@
               test-buffer
               inside-js: $ test-js/main!
               do true
-          :doc |
-        |reload! $ %{} :CodeEntry
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
-          :doc |
-        |test-arguments $ %{} :CodeEntry
+        |test-arguments $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing arguments")
               let
@@ -71,13 +66,11 @@
                 assert= (f1 :a) ([] :a nil nil)
                 assert= (f1 :a :b) ([] :a :b nil)
                 assert= (f1 :a :b :c) ([] :a :b :c)
-          :doc |
-        |test-buffer $ %{} :CodeEntry
+        |test-buffer $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title |Buffer)
               println "|buffer value:" $ &buffer 0x11 |11
-          :doc |
-        |test-cirru-parser $ %{} :CodeEntry
+        |test-cirru-parser $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing Cirru parser")
               assert= (parse-cirru-list "|def f (a b) $ + a b")
@@ -99,8 +92,7 @@
                 tagging-edn $ {} (|a 1)
                   :b $ []
                     {} (|c 3) (4 5)
-          :doc |
-        |test-detects $ %{} :CodeEntry
+        |test-detects $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-detects ()
               assert-detect fn? $ fn () 1
@@ -148,19 +140,16 @@
                 {,} :a $ [] 1
                 [] :a 1
               assert= false $ some-in? ([] 1 2 3) ([] :a)
-          :doc |
-        |test-display-stack $ %{} :CodeEntry
+        |test-display-stack $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing display stack") (&display-stack "|show stack here")
-          :doc |
-        |test-effect $ %{} :CodeEntry
+        |test-effect $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing effect")
               println "|Env mode:" $ get-env |mode
               println "|Env mode:" $ get-env |m0 "|default m0"
               eprintln "|stdout message"
-          :doc |
-        |test-fn $ %{} :CodeEntry
+        |test-fn $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing fn")
               &let
@@ -170,8 +159,7 @@
                 coll-f $ fn (& xs) xs
                 assert= ([] 1 2 3 4 5)
                   coll-f 1 & ([] 2 3 4) 5
-          :doc |
-        |test-fn-eq $ %{} :CodeEntry
+        |test-fn-eq $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing equality of functions")
               let
@@ -180,14 +168,12 @@
                 assert= a a
                 assert= b b
                 assert= false $ &= a b
-          :doc |
-        |test-if $ %{} :CodeEntry
+        |test-if $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing if with nil")
               assert= (if false 1) (if nil 1)
               assert= (if false 1 2) (if nil 1 2)
-          :doc |
-        |test-method $ %{} :CodeEntry
+        |test-method $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing method")
               let
@@ -195,8 +181,7 @@
                 assert= (%:: Num :calcit/number 2) (-> a .inc .inc)
                 assert= |1 $ -> a .inc .show
                 assert-detect record? $ &tuple:class a
-          :doc |
-        |test-refs $ %{} :CodeEntry
+        |test-refs $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
               add-watch *ref-demo :change $ fn (prev current) (println "|change happened:" prev current)
@@ -208,8 +193,7 @@
                   *l $ atom 1
                 reset! *l 2
                 assert= 2 @*l
-          :doc |
-        |test-tag $ %{} :CodeEntry
+        |test-tag $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-tag ()
               ; assert "|tag function" $ =
@@ -222,8 +206,7 @@
                 .map
                   [] $ &{} :a 1
                   , :a
-          :doc |
-        |test-try $ %{} :CodeEntry
+        |test-try $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing try")
               assert= :true $ try
@@ -239,8 +222,7 @@
                 fn () $ try (raise |false)
                   fn (error) (str :a)
               println "|Finished testing try"
-          :doc |
-        |test-tuple $ %{} :CodeEntry
+        |test-tuple $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing tuple")
               assert= :tuple $ type-of (:: :a :b)
@@ -278,10 +260,8 @@
                   &tuple:params $ :: :a 1 2 3
                   [] 1 2 3
               assert= "|(:: :a :b :c)" $ str (:: :a :b :c)
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns app.main $ :require (test-cond.main :as test-cond) (test-gynienic.main :as test-gynienic) (test-lens.main :as test-lens) (test-list.main :as test-list) (test-macro.main :as test-macro) (test-map.main :as test-map) (test-math.main :as test-math) (test-recursion.main :as test-recursion) (test-set.main :as test-set) (test-string.main :as test-string) (test-js.main :as test-js) (test-record.main :as test-record) (test-nil.main :as test-nil) (test-fn.main :as test-fn) (test-tuple.main :as test-tuple) (test-algebra.main :as test-algebra)
             util.core :refer $ log-title inside-eval: inside-js:
-        :doc |
       :proc $ quote ()

@@ -5,15 +5,13 @@
     |test-set.main $ {}
       :configs $ {}
       :defs $ {}
-        |log-title $ %{} :CodeEntry
+        |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
-          :doc |
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing set") (test-set) (test-methods) (do true)
-          :doc |
-        |test-methods $ %{} :CodeEntry
+        |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= (#{} 1 2 3)
@@ -57,8 +55,7 @@
                   fn (x) (&> x 5)
               assert= 4 $ .max (#{} 1 2 3 4)
               assert= 1 $ .min (#{} 1 2 3 4)
-          :doc |
-        |test-set $ %{} :CodeEntry
+        |test-set $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-set ()
               assert= 4 $ count (#{} 1 2 3 4)
@@ -110,9 +107,7 @@
               assert=
                 &hash $ #{} 3 4 2 1
                 &hash $ #{} 3 2 1 4
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-set.main $ :require
-        :doc |
       :proc $ quote ()

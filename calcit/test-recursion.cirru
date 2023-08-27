@@ -5,10 +5,9 @@
     |test-recursion.main $ {}
       :configs $ {}
       :defs $ {}
-        |*count-effects $ %{} :CodeEntry
+        |*count-effects $ %{} :CodeEntry (:doc |)
           :code $ quote (defatom *count-effects 0)
-          :doc |
-        |hole-series $ %{} :CodeEntry
+        |hole-series $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn hole-series (x)
               if (&<= x 0) (raise "\"unexpected small number")
@@ -30,27 +29,23 @@
                           &+
                             &* 2 $ hole-series (&+ unit 1)
                             hole-series unit
-          :doc |
-        |log-title $ %{} :CodeEntry
+        |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
-          :doc |
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing hole series") (test-hole-series) (; set-trace-fn! |app.main |hole-series)
               ; println $ hole-series 100
               log-title "|Testing loop"
               test-loop
               do true
-          :doc |
-        |test-hole-series $ %{} :CodeEntry
+        |test-hole-series $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-hole-series () $ assert "|hole series numbers"
               =
                 map (range 1 20) hole-series
                 [] 0 1 0 1 2 3 2 1 0 1 2 3 4 5 6 7 8 9 8
-          :doc |
-        |test-loop $ %{} :CodeEntry
+        |test-loop $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= 55 $ apply
@@ -69,9 +64,7 @@
                   do (swap! *count-effects + x)
                     recur $ dec x
               assert= 6 @*count-effects
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-recursion.main $ :require
-        :doc |
       :proc $ quote ()

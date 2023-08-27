@@ -5,29 +5,24 @@
     |test-record.main $ {}
       :configs $ {} (:extension nil)
       :defs $ {}
-        |BirdClass $ %{} :CodeEntry
+        |BirdClass $ %{} :CodeEntry (:doc |)
           :code $ quote
             def BirdClass $ %{} BirdShape
               :show $ fn (self)
                 println $ :name self
               :rename $ fn (self name) (assoc self :name name)
-          :doc |
-        |BirdShape $ %{} :CodeEntry
+        |BirdShape $ %{} :CodeEntry (:doc |)
           :code $ quote
             def BirdShape $ new-record :BirdShape :show :rename
-          :doc |
-        |Cat $ %{} :CodeEntry
+        |Cat $ %{} :CodeEntry (:doc |)
           :code $ quote (defrecord Cat :name :color)
-          :doc |
-        |Lagopus $ %{} :CodeEntry
+        |Lagopus $ %{} :CodeEntry (:doc |)
           :code $ quote
             def Lagopus $ new-class-record BirdClass :Lagopus :name
-          :doc |
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (do true)
-          :doc |
-        |test-edn $ %{} :CodeEntry
+        |test-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               let
@@ -41,15 +36,12 @@
                 println |EDN: $ format-cirru-edn l1
               let
                   Demo $ new-record :Demo :a :b :c :d
-                  data $ %{} Demo
-                    :a 1
+                  data $ %{} Demo (:a 1)
                     :b $ [] 2 3
                     :c 4
                     :d 5
-                assert= "|%{} :Demo (:a 1) (:c 4) (:d 5)\n  :b $ [] 2 3"
-                  trim $ format-cirru-edn data
-          :doc |
-        |test-match $ %{} :CodeEntry
+                assert= "|%{} :Demo (:a 1) (:c 4) (:d 5)\n  :b $ [] 2 3" $ trim (format-cirru-edn data)
+        |test-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing record match")
               let
@@ -71,8 +63,7 @@
                   A aa $ :a aa
                   B bb $ :b bb
                   _ o (println |others) :other
-          :doc |
-        |test-methods $ %{} :CodeEntry
+        |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing record methods")
               assert= :Cat $ &record:get-name Cat
@@ -94,8 +85,7 @@
                   persian $ &record:extend-as kitty :Persian :age 10
                   assert= 10 $ &record:get persian :age
                   assert= :Persian $ &record:get-name persian
-          :doc |
-        |test-polymorphism $ %{} :CodeEntry
+        |test-polymorphism $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test record polymorphism") (println Lagopus)
               let
@@ -106,8 +96,7 @@
                 -> l1 (.rename |LagopusB) (.show)
                 assert= (&record:class l1)
                   &record:class $ &record:with-class a1 BirdClass
-          :doc |
-        |test-record $ %{} :CodeEntry
+        |test-record $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing record")
               let
@@ -156,10 +145,8 @@
                 assert= 3 $ count p1
                 assert= 21 $ get (update p1 :age inc) :age
                 assert= Cat $ new-record 'Cat :name :color
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-record.main $ :require
             [] util.core :refer $ [] log-title inside-js:
-        :doc |
       :proc $ quote ()

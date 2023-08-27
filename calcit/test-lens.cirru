@@ -5,15 +5,13 @@
     |test-lens.main $ {}
       :configs $ {}
       :defs $ {}
-        |log-title $ %{} :CodeEntry
+        |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
-          :doc |
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing lens") (test-lens) (do true)
-          :doc |
-        |test-lens $ %{} :CodeEntry
+        |test-lens $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-lens ()
               assert=
@@ -106,9 +104,7 @@
               assert= true $ contains-in?
                 :: :a :b $ [] 1 2 3
                 [] 2 2
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-lens.main $ :require
-        :doc |
       :proc $ quote ()

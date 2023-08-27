@@ -5,36 +5,30 @@
     |util.core $ {}
       :configs $ {}
       :defs $ {}
-        |inside-eval: $ %{} :CodeEntry
+        |inside-eval: $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro inside-eval: (& body)
               if
                 = :eval $ &get-calcit-running-mode
                 quasiquote $ do (println "|env: eval") ~@body
                 quasiquote $ do (println "|env: not eval. tests skipped")
-          :doc |
-        |inside-js: $ %{} :CodeEntry
+        |inside-js: $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro inside-js: (& body)
               if
                 not= :eval $ &get-calcit-running-mode
                 quasiquote $ do (println "|env: js") ~@body
                 quasiquote $ do (println "|env: not js. tests skipped")
-          :doc |
-        |log-title $ %{} :CodeEntry
+        |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
-          :doc |
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ :: :unit
-          :doc |
-        |reload! $ %{} :CodeEntry
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns util.core $ :require
-        :doc |
       :proc $ quote ()

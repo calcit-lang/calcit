@@ -6,29 +6,24 @@
     |test-list.main $ {}
       :configs $ {} (:extension nil)
       :defs $ {}
-        |*counted $ %{} :CodeEntry
+        |*counted $ %{} :CodeEntry (:doc |)
           :code $ quote (defatom *counted 0)
-          :doc |
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing list") (test-list) (log-title "|Testing foldl") (test-foldl) (log-title "|Testing every/any") (test-every) (log-title "|Testing groups") (test-groups) (log-title "|Testing apply") (test-apply) (log-title "|Testing join") (test-join) (log-title "|Testing repeat") (test-repeat) (log-title "|Testing sort") (test-sort) (test-alias) (test-doseq) (test-let[]) (test-methods) (test-pair) (test-match) (do true)
-          :doc |
-        |test-alias $ %{} :CodeEntry
+        |test-alias $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing alias")
               assert= (' 1 2 3) ([] 1 2 3)
-          :doc |
-        |test-apply $ %{} :CodeEntry
+        |test-apply $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-apply ()
               assert= 10 $ apply + ([] 1 2 3 4)
               assert= 10 $ + & ([] 1 2 3 4)
-          :doc |
-        |test-comma $ %{} :CodeEntry
+        |test-comma $ %{} :CodeEntry (:doc |)
           :code $ quote
             assert= ([] 1 2 3 4) ([,] 1 , 2 , 3 , 4)
-          :doc |
-        |test-doseq $ %{} :CodeEntry
+        |test-doseq $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing doseq")
               inside-eval: $ =
@@ -50,8 +45,7 @@
                 swap! *counted &+ n
               assert= 10 $ deref *counted
               assert= 10 @*counted
-          :doc |
-        |test-every $ %{} :CodeEntry
+        |test-every $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-every ()
               let
@@ -66,8 +60,7 @@
                   fn (x) (&> x 4)
               assert-detect some? 1
               assert-detect not $ some? nil
-          :doc |
-        |test-foldl $ %{} :CodeEntry
+        |test-foldl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-foldl ()
               assert= 1 $ get ([] 1 2 3) 0
@@ -88,8 +81,7 @@
               assert=
                 reduce ([] 3 4 5) 2 +
                 , 14
-          :doc |
-        |test-groups $ %{} :CodeEntry
+        |test-groups $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-groups ()
               assert=
@@ -110,8 +102,7 @@
               assert=
                 section-by ([]) 2
                 []
-          :doc |
-        |test-join $ %{} :CodeEntry
+        |test-join $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= |1-2-3-4 $ join-str ([] 1 2 3 4) |-
@@ -121,8 +112,7 @@
                 join ([] 1 2 3 4) 10
               assert= ([])
                 join ([]) 10
-          :doc |
-        |test-let[] $ %{} :CodeEntry
+        |test-let[] $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing let[]")
               inside-eval: $ println
@@ -130,8 +120,7 @@
                   quote $ let[] (a b c & d) ([] 1 2 3 4 5) (println a) (println b) (println c) (println d)
               let[] (a b c & d) ([] 1 2 3 4 5) (assert= 1 a) (assert= 2 b) (assert= 3 c)
                 assert= ([] 4 5) d
-          :doc |
-        |test-list $ %{} :CodeEntry
+        |test-list $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-list () $ let
                 a $ [] 1 2 3
@@ -281,8 +270,7 @@
                   take ([] 1 2 3 4 5 6) 1
                   , 0
                 , 0
-          :doc |
-        |test-match $ %{} :CodeEntry
+        |test-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing list match")
               assert= :empty $ list-match ([])
@@ -305,8 +293,7 @@
                 list-match ([] 1 2 3)
                   () nil
                   (l0 ls) (println "|...effect in match") ([] l0 ls)
-          :doc |
-        |test-methods $ %{} :CodeEntry
+        |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing list methods")
               assert= true $ .any? ([] 1 2 3 4)
@@ -441,8 +428,7 @@
                 .dissoc ([] :a :b :c) 2
               assert= ([] 1 2 3)
                 distinct $ [] 1 2 3 1 2
-          :doc |
-        |test-pair $ %{} :CodeEntry
+        |test-pair $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert=
@@ -456,8 +442,7 @@
                 .filter-pair
                   [] ([] :a 2) ([] :b 12) ([] :b 112)
                   fn (k n) (> n 10)
-          :doc |
-        |test-repeat $ %{} :CodeEntry
+        |test-repeat $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= (repeat :a 5) ([] :a :a :a :a :a)
@@ -466,16 +451,13 @@
                 [] :a 1 :b 2 :c 3 :d 4
               assert= ([] :a 1 :b 2 :c 3 :d 4)
                 interleave ([] :a :b :c :d) ([] 1 2 3 4)
-          :doc |
-        |test-sort $ %{} :CodeEntry
+        |test-sort $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () $ assert=
               sort ([] 4 3 2 1) (\ &- % %2)
               [] 1 2 3 4
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-list.main $ :require
             util.core :refer $ log-title inside-eval:
-        :doc |
       :proc $ quote ()

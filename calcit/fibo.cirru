@@ -8,22 +8,19 @@
     |app.main $ {}
       :configs $ {}
       :defs $ {}
-        |fibo $ %{} :CodeEntry
+        |fibo $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn fibo (x)
               if (< x 2) 1 $ +
                 fibo $ - x 1
                 fibo $ - x 2
-          :doc |
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (println "\"Loaded program!") (try-fibo)
-          :doc |
-        |reload! $ %{} :CodeEntry
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
-          :doc |
-        |sieve-primes $ %{} :CodeEntry
+        |sieve-primes $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn sieve-primes (acc n limit)
               if (&> n limit) acc $ if
@@ -31,20 +28,16 @@
                   &> (.rem n m) 0
                 recur (conj acc n) (inc n) limit
                 recur acc (inc n) limit
-          :doc |
-        |try-fibo $ %{} :CodeEntry
+        |try-fibo $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn try-fibo () $ let
                 n 22
               println "\"fibo result:" n $ fibo n
-          :doc |
-        |try-prime $ %{} :CodeEntry
+        |try-prime $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn try-prime () $ println
               sieve-primes ([] 2 3 5 7 11 13) 17 400
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns app.main $ :require
-        :doc |
       :proc $ quote ()

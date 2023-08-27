@@ -6,17 +6,15 @@
     |test-macro.main $ {}
       :configs $ {} (:extension nil)
       :defs $ {}
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing cond") (test-cond) (test-case) (log-title "|Testing expr in case") (test-expr-in-case) (test-thread-macros) (test-lambda) (test-gensym) (test-w-log) (test-with-cpu-time) (test-assert) (test-extract) (test-detector) (test-if-let) (test-flipped) (test-misc) (do true)
-          :doc |
-        |test-assert $ %{} :CodeEntry
+        |test-assert $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Assert in different order")
               assert (= 1 1) |string
               assert |string $ = 1 1
-          :doc |
-        |test-case $ %{} :CodeEntry
+        |test-case $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-case () (log-title "|Testing case")
               let
@@ -44,8 +42,7 @@
                     &case v__2 nil (1 |one) (2 |two) (3 |three)
                   quote $ if (&= v__2 1) |one
                     &case v__2 nil (2 |two) (3 |three)
-          :doc |
-        |test-cond $ %{} :CodeEntry
+        |test-cond $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-cond () $ let
                 compare-x $ fn (x)
@@ -58,8 +55,7 @@
               assert= (compare-x 10) |>5
               assert= (compare-x 6) |>5
               assert= (compare-x 4) |<=5
-          :doc |
-        |test-detector $ %{} :CodeEntry
+        |test-detector $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Detector function")
               inside-eval: (&reset-gensym-index!)
@@ -77,8 +73,7 @@
                           , "| <--------"
                       eprintln "|  value is:" v__1
                       raise "|Not satisfied in assertion!"
-          :doc |
-        |test-expr-in-case $ %{} :CodeEntry
+        |test-expr-in-case $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-expr-in-case () $ assert= |5
               case (+ 1 4)
@@ -88,8 +83,7 @@
                 (+ 2 2) |4
                 (+ 2 3) |5
                 (+ 2 4) |6
-          :doc |
-        |test-extract $ %{} :CodeEntry
+        |test-extract $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Extract map via tags")
               inside-eval: (&reset-gensym-index!)
@@ -146,21 +140,18 @@
                       [] 3 4
                     ({} c d) ({,} :c 5 :d 6)
                   [] a b c d
-          :doc |
-        |test-flipped $ %{} :CodeEntry
+        |test-flipped $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title |flipped)
               assert=
                 flipped [] 1 2 $ + 3 4
                 [] 7 2 1
-          :doc |
-        |test-gensym $ %{} :CodeEntry
+        |test-gensym $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () $ inside-eval: (log-title "|Testing gensym") (&reset-gensym-index!)
               assert= (gensym) 'G__1
               assert= (gensym |a) 'a__2
-          :doc |
-        |test-if-let $ %{} :CodeEntry
+        |test-if-let $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|if let")
               assert= 6 $ if-let
@@ -172,8 +163,7 @@
               assert= 2 $ if-let (a nil) 1 2
               assert= nil $ when-let (a nil) 1 2
               assert= 2 $ when-let (a 10) 1 2
-          :doc |
-        |test-lambda $ %{} :CodeEntry
+        |test-lambda $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing lambda macro")
               inside-eval:
@@ -228,14 +218,12 @@
                   \. x.y (println "|inside lambda alias" x y) x
                   , 2
                 , 3
-          :doc |
-        |test-misc $ %{} :CodeEntry
+        |test-misc $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title |misc)
               assert= (noted nothing 1) 1
               inside-eval: $ println (&extract-code-into-edn 'code)
-          :doc |
-        |test-thread-macros $ %{} :CodeEntry
+        |test-thread-macros $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-thread-macros () (log-title "|Testing thread macros")
               inside-eval:
@@ -286,8 +274,7 @@
               assert= 35 $ ->% 3 (+ % 4) (* % 5)
               assert= 36 $ ->% 3 (+ % %) (* % %)
               assert= 18 $ %<- (+ % %) (* % %) 3
-          :doc |
-        |test-w-log $ %{} :CodeEntry
+        |test-w-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing w-log") (&reset-gensym-index!)
               inside-eval: $ assert=
@@ -329,8 +316,7 @@
                 assert= 7 $ f2 3 4
                 assert= 11 $ f2 & ([] 5 6)
                 assert= 7 $ f3 3 4
-          :doc |
-        |test-with-cpu-time $ %{} :CodeEntry
+        |test-with-cpu-time $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing with-cpu-time")
               inside-eval: (&reset-gensym-index!)
@@ -354,10 +340,8 @@
               assert=
                 with-cpu-time $ &+ 1 2
                 , 3
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-macro.main $ :require
             [] util.core :refer $ [] log-title inside-eval:
-        :doc |
       :proc $ quote ()

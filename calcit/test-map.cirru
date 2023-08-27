@@ -6,11 +6,10 @@
     |test-map.main $ {}
       :configs $ {}
       :defs $ {}
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map pairs") (test-pairs) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-keys) (test-get) (test-select) (test-methods) (test-diff) (do true)
-          :doc |
-        |test-diff $ %{} :CodeEntry
+        |test-diff $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing diff")
               assert=
@@ -31,8 +30,7 @@
               assert=
                 &map:common-keys (&{} :a 1 :b 2) (&{} :a 2 :c 3)
                 #{} :a
-          :doc |
-        |test-get $ %{} :CodeEntry
+        |test-get $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing get")
               assert= nil $ get (&{}) :a
@@ -51,8 +49,7 @@
                 assert= 10 $ foldl m 0
                   fn (acc pair)
                     let[] (k v) pair $ &+ acc v
-          :doc |
-        |test-keys $ %{} :CodeEntry
+        |test-keys $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing keys")
               assert=
@@ -61,8 +58,7 @@
               assert=
                 keys-non-nil $ {} (:a 1) (:b 2) (:c nil)
                 #{} :a :b
-          :doc |
-        |test-map-comma $ %{} :CodeEntry
+        |test-map-comma $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing {,}")
               inside-eval: $ assert=
@@ -71,8 +67,7 @@
                   section-by ([] :a 1 :b 2 :c 3) 2
               assert= ({,} :a 1 , :b 2 , :c 3)
                 {} (:a 1) (:b 2) (:c 3)
-          :doc |
-        |test-maps $ %{} :CodeEntry
+        |test-maps $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-maps ()
               assert= 2 $ count
@@ -137,8 +132,7 @@
                 assert=
                   &hash $ &{} :a 1 :b 2 3 :c
                   &hash $ &{} 3 :c :a 1 :b 2
-          :doc |
-        |test-methods $ %{} :CodeEntry
+        |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing map methods")
               assert= (&{} :a 1 :b 2)
@@ -239,16 +233,14 @@
                 .common-keys (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)
               assert= (&{} :a 1)
                 .to-map $ &{} :a 1
-          :doc |
-        |test-native-map-syntax $ %{} :CodeEntry
+        |test-native-map-syntax $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-native-map-syntax () $ inside-eval:
               assert=
                 macroexpand $ quote
                   {} $ :a 1
                 quote $ &{} :a 1
-          :doc |
-        |test-pairs $ %{} :CodeEntry
+        |test-pairs $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert=
@@ -283,8 +275,7 @@
                   {} (:a 1) (:b 2) (:c 3) (:d 4)
                   fn (k v) (&> v 2)
                 {} (:c 3) (:d 4)
-          :doc |
-        |test-select $ %{} :CodeEntry
+        |test-select $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing select")
               assert=
@@ -307,10 +298,8 @@
                   {} (:a 1) (:b 2) (:c 3)
                   [] :c :d
                 {} (:a 1) (:b 2)
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-map.main $ :require
             [] util.core :refer $ [] log-title inside-eval: inside-js:
-        :doc |
       :proc $ quote ()

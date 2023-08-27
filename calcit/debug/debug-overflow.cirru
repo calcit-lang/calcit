@@ -5,7 +5,7 @@
   :files $ {}
     |debug-overflow.main $ {}
       :defs $ {}
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (println |TODO) (; rec 1 2 3 4 5 6 7 8 9)
               println $ my-cond
@@ -13,8 +13,7 @@
                   , 1
                 (&> 3 2) 2
                 true 0
-          :doc |
-        |my-cond $ %{} :CodeEntry
+        |my-cond $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro my-cond (pair & else)
               &let
@@ -26,8 +25,7 @@
                       quasiquote $ my-cond
                         ~ $ nth else 0
                         ~@ $ rest else
-          :doc |
-        |rec $ %{} :CodeEntry
+        |rec $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro rec (x0 & xs)
               quasiquote $ if (&> ~x0 10) "|Too large"
@@ -35,9 +33,7 @@
                   ~ $ empty? xs
                   , ~x0 $ &+ ~x0
                     rec $ ~@ xs
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns debug-overflow.main $ :require
             [] util.core :refer $ [] log-title inside-eval:
-        :doc |
