@@ -46,7 +46,7 @@
               assert= |1.2 $ .format 1.23456789 1
               assert= |0x11 $ .display-by 17 16
               inside-eval: (; TODO not stable)
-                ; assert= "|({} (:c ([] 3)) (:a 1) (:b |2) (:d ({} (([] 1 2) 3))))" $ pr-str
+                ; assert= "|({} (:c ([] 3)) (:a 1) (:b |2) (:d ({} (([] 1 2) 3))))" $ to-lispy-string
                   {} (:a 1) (:b |2)
                     :c $ [] 3
                     :d $ {}
@@ -57,7 +57,7 @@
                   edn-demo "|%{} :Person (:age 23) (:name |Chen)"
                 ; "no stable order"
                 assert=
-                  count $ pr-str
+                  count $ to-lispy-string
                     %{} Person (:name |Chen) (:age 23)
                   count "|(%{} :Person (:name |Chen) (:age 23))"
                 ; "no stable order"

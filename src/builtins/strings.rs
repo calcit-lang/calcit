@@ -232,10 +232,10 @@ pub fn parse_float(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn pr_str(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn lispy_string(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(a) => Ok(Calcit::Str(a.to_string().into())),
-    None => CalcitErr::err_str("pr-str expected 1 argument, got nothing"),
+    None => CalcitErr::err_str("to-lispy-string expected 1 argument, got nothing"),
   }
 }
 pub fn blank_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {

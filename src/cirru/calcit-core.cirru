@@ -5,7 +5,7 @@
   :files $ {}
     |calcit.core $ {}
       :defs $ {}
-        |%<- $ %{} :CodeEntry (:doc |)
+        |%<- $ %{} :CodeEntry (:doc "|pass value as `%` into several expressions, in reversed order")
           :code $ quote
             defmacro %<- (& xs)
               quasiquote $ ->%
@@ -488,7 +488,7 @@
                         &list:rest x0
                       , & $ &list:rest xs
                     recur ([] x0 base) & $ &list:rest xs
-        |->% $ %{} :CodeEntry (:doc |)
+        |->% $ %{} :CodeEntry (:doc "|pass value as `%` into several expressions")
           :code $ quote
             defmacro ->% (base & xs)
               if (&list:empty? xs) base $ let
@@ -498,7 +498,7 @@
                     map (butlast xs)
                       defn %->% (x) ([] '% x)
                 quasiquote $ let ~pairs ~tail
-        |->> $ %{} :CodeEntry (:doc |)
+        |->> $ %{} :CodeEntry (:doc "|thread macro passing value at end of each expression")
           :code $ quote
             defmacro ->> (base & xs)
               if (&list:empty? xs) (quasiquote ~base)
@@ -507,11 +507,11 @@
                   if (list? x0)
                     recur (append x0 base) & $ &list:rest xs
                     recur ([] x0 base) & $ &list:rest xs
-        |/ $ %{} :CodeEntry (:doc |)
+        |/ $ %{} :CodeEntry (:doc "|dividing")
           :code $ quote
             defn / (x & ys)
               if (&list:empty? ys) (&/ 1 x) (reduce ys x &/)
-        |/= $ %{} :CodeEntry (:doc |)
+        |/= $ %{} :CodeEntry (:doc "|not equal")
           :code $ quote
             defn /= (a b) (not= a b)
         |: $ %{} :CodeEntry (:doc |)
@@ -1482,7 +1482,7 @@
         |print-values $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn print-values (& args)
-              println & $ &list:map args pr-str
+              println & $ &list:map args to-lispy-string
         |range-bothway $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn range-bothway (x ? y)
@@ -1704,7 +1704,7 @@
                       if (contains? x k)
                         assoc x k $ f (&record:get x k)
                         , x
-                      raise $ &str:concat "|Cannot update key on item: " (pr-str x)
+                      raise $ &str:concat "|Cannot update key on item: " (to-lispy-string x)
         |update-in $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn update-in (data path f)
