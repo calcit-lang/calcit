@@ -1023,7 +1023,7 @@ export let turn_symbol = (x: CalcitValue): CalcitSymbol => {
   throw new Error("Unexpected data for symbol");
 };
 
-export let pr_str = (...args: CalcitValue[]): string => {
+export let to_lispy_string = (...args: CalcitValue[]): string => {
   return args.map((x) => toString(x, true)).join(" ");
 };
 

@@ -5,24 +5,19 @@
   :files $ {}
     |check-args.main $ {}
       :defs $ {}
-        |f1 $ %{} :CodeEntry
+        |f1 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn f1 (a) (:: :unit)
-          :doc |
-        |f2 $ %{} :CodeEntry
+        |f2 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn f2 (a ? b) (:: :unit)
-          :doc |
-        |f3 $ %{} :CodeEntry
+        |f3 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn f3 (a & b) (:: :unit)
-          :doc |
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (; "bad case examples for args checking") (f1 1 4) (f2 1) (f2 1 2) (f2 1 2 4) (f2) (f3 1) (f3 1 2) (f3 1 2 3) (f3)
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns check-args.main $ :require
             [] util.core :refer $ [] log-title inside-eval:
-        :doc |

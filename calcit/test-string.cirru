@@ -5,15 +5,13 @@
     |test-string.main $ {}
       :configs $ {}
       :defs $ {}
-        |log-title $ %{} :CodeEntry
+        |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
-          :doc |
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing str") (test-str) (test-includes) (log-title "|Testing parse") (test-parse) (log-title "|Testing trim") (test-trim) (test-format) (test-char) (test-whitespace) (test-lisp-style) (test-methods) (test-bitwise) (do true)
-          :doc |
-        |test-bitwise $ %{} :CodeEntry
+        |test-bitwise $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= (bit-and 15 7) 7
@@ -27,8 +25,7 @@
               assert= |0b10001 $ &number:display-by 17 2
               assert= |0o21 $ &number:display-by 17 8
               assert= |0x11 $ &number:display-by 17 16
-          :doc |
-        |test-char $ %{} :CodeEntry
+        |test-char $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test char")
               assert= 97 $ .get-char-code |a
@@ -40,8 +37,7 @@
               assert= |c $ last |abc
               assert= nil $ first |
               assert= nil $ last |
-          :doc |
-        |test-format $ %{} :CodeEntry
+        |test-format $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing format")
               assert= |1.2346 $ .format 1.23456789 4
@@ -50,7 +46,7 @@
               assert= |1.2 $ .format 1.23456789 1
               assert= |0x11 $ .display-by 17 16
               inside-eval: (; TODO not stable)
-                ; assert= "|({} (:c ([] 3)) (:a 1) (:b |2) (:d ({} (([] 1 2) 3))))" $ pr-str
+                ; assert= "|({} (:c ([] 3)) (:a 1) (:b |2) (:d ({} (([] 1 2) 3))))" $ to-lispy-string
                   {} (:a 1) (:b |2)
                     :c $ [] 3
                     :d $ {}
@@ -61,7 +57,7 @@
                   edn-demo "|%{} :Person (:age 23) (:name |Chen)"
                 ; "no stable order"
                 assert=
-                  count $ pr-str
+                  count $ to-lispy-string
                     %{} Person (:name |Chen) (:age 23)
                   count "|(%{} :Person (:name |Chen) (:age 23))"
                 ; "no stable order"
@@ -115,8 +111,7 @@
                 assert= (.escape "|\t") "|\"\\t\""
                 assert= (.escape |a) "|\"a\""
               println |hashing: $ &hash 1
-          :doc |
-        |test-includes $ %{} :CodeEntry
+        |test-includes $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing includes")
               assert= true $ includes? |abc |abc
@@ -137,8 +132,7 @@
               assert= |0abc $ strip-prefix |0abc |ab
               assert= |aba $ strip-suffix |ababc |bc
               assert= |abc0 $ strip-suffix |abc0 |bc
-          :doc |
-        |test-lisp-style $ %{} :CodeEntry
+        |test-lisp-style $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test lisp style")
               assert=
@@ -163,8 +157,7 @@
                 trim $ format-to-cirru
                   quote $ defn (a b) (+ a b)
                 , "|defn (a b)\n  + a b"
-          :doc |
-        |test-methods $ %{} :CodeEntry
+        |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-methods () (log-title "|Testing string methods")
               assert= true $ .blank? |
@@ -210,12 +203,10 @@
               assert= |a00000 $ .pad-right |a 6 |0
               assert= |12312a $ .pad-left |a 6 |123
               assert= |a12312 $ .pad-right |a 6 |123
-          :doc |
-        |test-parse $ %{} :CodeEntry
+        |test-parse $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () $ assert= 0 (parse-float |0)
-          :doc |
-        |test-str $ %{} :CodeEntry
+        |test-str $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-str ()
               assert= (&str:concat |a |b) |ab
@@ -244,8 +235,7 @@
               assert-detect identity $ < |a |b
               assert-detect identity $ < |aa |ab
               assert-detect not $ > |aa |ab
-          :doc |
-        |test-trim $ %{} :CodeEntry
+        |test-trim $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               assert= | $ trim "|    "
@@ -253,8 +243,7 @@
               assert= |1 $ trim "|\n1\n"
               assert= | $ trim |______ |_
               assert= |1 $ trim |__1__ |_
-          :doc |
-        |test-whitespace $ %{} :CodeEntry
+        |test-whitespace $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test blank?")
               assert-detect identity $ blank? |
@@ -266,10 +255,8 @@
               assert-detect not $ blank? |1
               assert-detect not $ blank? "| 1"
               assert-detect not $ blank? "|1 "
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-string.main $ :require
             [] util.core :refer $ [] inside-eval:
-        :doc |
       :proc $ quote ()

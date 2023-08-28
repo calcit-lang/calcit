@@ -4,15 +4,13 @@
   :files $ {}
     |test-fn.main $ {}
       :defs $ {}
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing fn") (doc-fn "|this is comment for fn")
+            defn main! () (log-title "|Testing fn")
               assert= 1 $ .call identity 1
               assert= 3 $ .call &+ 1 2
               assert= 3 $ .call-args &+ ([] 1 2)
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-fn.main $ :require
             util.core :refer $ log-title
-        :doc |

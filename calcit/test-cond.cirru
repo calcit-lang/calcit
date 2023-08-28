@@ -6,15 +6,13 @@
     |test-cond.main $ {}
       :configs $ {}
       :defs $ {}
-        |log-title $ %{} :CodeEntry
+        |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
-          :doc |
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing cond") (test-when) (test-cond) (test-or) (test-and) (test-either) (test-case) (test-tag-match) (test-field-match) true
-          :doc |
-        |test-and $ %{} :CodeEntry
+        |test-and $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing and")
               assert= (and 1) 1
@@ -34,8 +32,7 @@
               assert=
                 and (> 10 9) (> 10 11)
                 , false
-          :doc |
-        |test-case $ %{} :CodeEntry
+        |test-case $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-case ()
               let
@@ -55,8 +52,7 @@
                 assert= (detect-x 0) |nothing
                 assert= (detect-x 1) |one
                 assert= (detect-x 2) |two
-          :doc |
-        |test-cond $ %{} :CodeEntry
+        |test-cond $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-cond () $ let
                 compare-x $ fn (x)
@@ -69,8 +65,7 @@
               assert= (compare-x 10) |>5
               assert= (compare-x 6) |>5
               assert= (compare-x 4) |<=5
-          :doc |
-        |test-either $ %{} :CodeEntry
+        |test-either $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing either")
               assert= 1 $ either nil 1
@@ -78,8 +73,7 @@
               assert= nil $ either nil nil
               assert= 1 $ either nil nil 1
               assert= 1 $ either (do nil) (do 1) (do nil)
-          :doc |
-        |test-field-match $ %{} :CodeEntry
+        |test-field-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing field-match")
               &let
@@ -95,8 +89,7 @@
                   match-ab $ &{} :tag :b :b 2
                   [] :b 2
                 assert= :other $ match-ab (&{} :tag :c)
-          :doc |
-        |test-or $ %{} :CodeEntry
+        |test-or $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing or")
               assert= (or 1) 1
@@ -117,8 +110,7 @@
               assert=
                 or (> 10 12) (> 10 11)
                 , false
-          :doc |
-        |test-tag-match $ %{} :CodeEntry
+        |test-tag-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing tag-match")
               &let
@@ -146,18 +138,15 @@
                 assert=
                   match-ab $ :: :c 1 2
                   [] "|no match"
-          :doc |
-        |test-when $ %{} :CodeEntry
+        |test-when $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing when")
               assert= 1 $ when true 1
               assert= 1 $ when true 2 1
               assert= 1 $ when-not false 1
               assert= 1 $ when-not false 2 1
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-cond.main $ :require
             [] util.core :refer $ [] inside-eval:
-        :doc |
       :proc $ quote ()

@@ -4,16 +4,14 @@
   :files $ {}
     |test-nil.main $ {}
       :defs $ {}
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing nil")
               assert= ([]) (.to-list nil)
               assert= ({}) (.to-map nil)
               assert= nil $ .map nil inc
               assert= nil $ .filter nil inc
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-nil.main $ :require
             util.core :refer $ log-title
-        :doc |

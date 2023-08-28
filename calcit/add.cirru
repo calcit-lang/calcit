@@ -5,12 +5,10 @@
     |app.main $ {}
       :configs $ {}
       :defs $ {}
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ + 1 2
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns app.main $ :require
-        :doc |
       :proc $ quote ()

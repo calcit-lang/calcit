@@ -5,15 +5,13 @@
   :files $ {}
     |test-algebra.main $ {}
       :defs $ {}
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing algebra") (; "\"Experimental code, to simulate usages like Monad") (test-map) (test-bind) (test-apply) (test-mappend)
-          :doc |
-        |reload! $ %{} :CodeEntry
+        |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
-          :doc |
-        |test-apply $ %{} :CodeEntry
+        |test-apply $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-apply ()
               assert= nil $ .apply nil ([] inc)
@@ -27,8 +25,7 @@
                   f2 $ fn (y z) (* 2 y z)
                   f3 $ .apply f1 f2
                 assert= 78 $ f3 3
-          :doc |
-        |test-bind $ %{} :CodeEntry
+        |test-bind $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-bind ()
               assert= nil $ .bind nil inc
@@ -40,8 +37,7 @@
                   f2 $ fn (x y) (* 2 x y)
                   f3 $ .bind f1 f2
                 assert= 78 $ f3 3
-          :doc |
-        |test-map $ %{} :CodeEntry
+        |test-map $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-map ()
               assert= nil $ .map nil inc
@@ -58,8 +54,7 @@
                   f2 $ fn (x) (* x 2)
                   f3 $ .map f1 f2
                 assert= 16 $ f3 3
-          :doc |
-        |test-mappend $ %{} :CodeEntry
+        |test-mappend $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-mappend ()
               assert= 1 $ .mappend nil 1
@@ -77,9 +72,7 @@
                     .slice x 0 $ dec (count x)
                   f3 $ .mappend f1 f2
                 assert= |234123 $ f3 |1234
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-algebra $ :require
             util.core :refer $ log-title inside-eval:
-        :doc |

@@ -5,11 +5,10 @@
     |test-js.main $ {}
       :configs $ {}
       :defs $ {}
-        |log-title $ %{} :CodeEntry
+        |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
-          :doc |
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async)
               when (> 1 2)
@@ -23,8 +22,7 @@
                 wo-js-log $ {} (:a 1)
               w-js-log "|log demo"
               do true
-          :doc |
-        |test-async $ %{} :CodeEntry
+        |test-async $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () $ let
                 f1 $ fn () (hint-fn async)
@@ -35,8 +33,7 @@
                 f2 $ fn () (hint-fn async)
                   js-await $ f1
               f2
-          :doc |
-        |test-collection $ %{} :CodeEntry
+        |test-collection $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing quick collection syntax")
               &let
@@ -52,8 +49,7 @@
                 assert= 2 $ .-b b
                 assert= 3 $ .-c b
                 assert= 2 $ aget b |b
-          :doc |
-        |test-js $ %{} :CodeEntry
+        |test-js $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               js/console.log $ js/Math.pow 4 4
@@ -101,8 +97,7 @@
               assert=
                 &{} |a 1 :b 2 |c $ [] 3 4
                 to-calcit-data $ &js-object |a 1 |:b 2 :c ([] 3 4)
-          :doc |
-        |test-let-example $ %{} :CodeEntry
+        |test-let-example $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing code emitting of using let")
               let
@@ -121,9 +116,7 @@
                     if (>= b 5) xs $ recur (conj xs b) (inc b)
                 assert= a $ [] 0 1 2 3 4
                 assert= b -1
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-js.main $ :require (|os :as os)
-        :doc |
       :proc $ quote ()

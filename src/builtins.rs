@@ -138,7 +138,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::GetCharCode => strings::get_char_code(args),
     CalcitProc::CharFromCode => strings::char_from_code(args),
     CalcitProc::ParseFloat => strings::parse_float(args),
-    CalcitProc::PrStr => strings::pr_str(args),
+    CalcitProc::PrStr => strings::lispy_string(args),
     CalcitProc::IsBlank => strings::blank_ques(args),
     CalcitProc::NativeStrConcat => strings::binary_str_concat(args),
     CalcitProc::NativeStrSlice => strings::str_slice(args),

@@ -4,7 +4,7 @@
   :files $ {}
     |test-tuple.main $ {}
       :defs $ {}
-        |main! $ %{} :CodeEntry
+        |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing tuple")
               assert= (:: :parts |1 |23)
@@ -52,9 +52,7 @@
                   (:none) (:: :empty)
                   (:some k0 v0 ms)
                     :: :parts $ count ms
-          :doc |
-      :ns $ %{} :CodeEntry
+      :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-tuple.main $ :require
             util.core :refer $ log-title
-        :doc |
