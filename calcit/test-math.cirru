@@ -2,8 +2,7 @@
 {} (:package |test-math)
   :configs $ {} (:init-fn |test-math.main/main!) (:reload-fn |test-math.main/reload!)
   :files $ {}
-    |test-math.main $ {}
-      :configs $ {} (:extension nil)
+    |test-math.main $ %{} :FileEntry
       :defs $ {}
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -104,4 +103,3 @@
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-math.main $ :require
-      :proc $ quote ()

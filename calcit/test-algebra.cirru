@@ -3,7 +3,7 @@
   :configs $ {} (:init-fn |test-algebra/main!) (:reload-fn |test-algebra/reload!)
     :modules $ [] |./util.cirru
   :files $ {}
-    |test-algebra.main $ {}
+    |test-algebra.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote

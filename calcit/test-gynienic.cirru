@@ -2,7 +2,7 @@
 {} (:package |test-gynienic)
   :configs $ {} (:init-fn |test-gynienic.main/main!) (:reload-fn |test-gynienic.main/reload!)
   :files $ {}
-    |test-gynienic.lib $ {}
+    |test-gynienic.lib $ %{} :FileEntry
       :defs $ {}
         |add-11 $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -17,8 +17,7 @@
             defn add-2 (x) (&+ x 2)
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote (:ns test-gynienic.lib)
-    |test-gynienic.main $ {}
-      :configs $ {}
+    |test-gynienic.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -34,4 +33,3 @@
         :code $ quote
           ns test-gynienic.main $ :require
             [] test-gynienic.lib :refer $ [] add-11
-      :proc $ quote ()

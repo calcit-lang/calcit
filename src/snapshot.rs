@@ -32,8 +32,8 @@ impl TryFrom<Edn> for FileInSnapShot {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     Ok(FileInSnapShot {
-      ns: data.map_get_some("ns")?.try_into()?,
-      defs: data.map_get_some("defs")?.try_into()?,
+      ns: data.record_get("ns")?.try_into()?,
+      defs: data.record_get("defs")?.try_into()?,
     })
   }
 }

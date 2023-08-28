@@ -5,8 +5,7 @@
     :prime $ {} (:init-fn |app.main/try-prime) (:reload-fn |app.main/try-prime)
       :modules $ []
   :files $ {}
-    |app.main $ {}
-      :configs $ {}
+    |app.main $ %{} :FileEntry
       :defs $ {}
         |fibo $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -40,4 +39,3 @@
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns app.main $ :require
-      :proc $ quote ()

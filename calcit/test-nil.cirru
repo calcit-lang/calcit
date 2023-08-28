@@ -2,7 +2,7 @@
 {} (:package |test-nil)
   :configs $ {} (:init-fn |test-nil.main/main!) (:reload-fn |test-nil.main/reload!)
   :files $ {}
-    |test-nil.main $ {}
+    |test-nil.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote

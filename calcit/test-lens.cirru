@@ -2,8 +2,7 @@
 {} (:package |test-lens)
   :configs $ {} (:init-fn |test-lens.main/main!) (:reload-fn |test-lens.main/reload!)
   :files $ {}
-    |test-lens.main $ {}
-      :configs $ {}
+    |test-lens.main $ %{} :FileEntry
       :defs $ {}
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -107,4 +106,3 @@
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-lens.main $ :require
-      :proc $ quote ()

@@ -2,8 +2,7 @@
 {} (:package |test-js)
   :configs $ {} (:init-fn |test-js.main/main!) (:reload-fn |test-js.main/reload!)
   :files $ {}
-    |test-js.main $ {}
-      :configs $ {}
+    |test-js.main $ %{} :FileEntry
       :defs $ {}
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -119,4 +118,3 @@
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-js.main $ :require (|os :as os)
-      :proc $ quote ()

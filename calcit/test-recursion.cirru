@@ -2,8 +2,7 @@
 {} (:package |test-recursion)
   :configs $ {} (:init-fn |test-recursion.main/main!) (:reload-fn |test-recursion.main/reload!)
   :files $ {}
-    |test-recursion.main $ {}
-      :configs $ {}
+    |test-recursion.main $ %{} :FileEntry
       :defs $ {}
         |*count-effects $ %{} :CodeEntry (:doc |)
           :code $ quote (defatom *count-effects 0)
@@ -67,4 +66,3 @@
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-recursion.main $ :require
-      :proc $ quote ()

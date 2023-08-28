@@ -3,7 +3,7 @@
   :configs $ {} (:init-fn |macro-ns.main/main!) (:reload-fn |macro-ns.main/reload!)
     :modules $ []
   :files $ {}
-    |macro-ns.lib $ {}
+    |macro-ns.lib $ %{} :FileEntry
       :defs $ {}
         |expand-1 $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -15,7 +15,7 @@
         :code $ quote
           ns macro-ns.lib $ :require
             [] util.core :refer $ [] log-title inside-eval:
-    |macro-ns.main $ {}
+    |macro-ns.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote

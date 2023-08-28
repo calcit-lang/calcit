@@ -3,7 +3,7 @@
   :configs $ {} (:init-fn |debug-overflow.main/main!) (:reload-fn |debug-overflow.main/reload!)
     :modules $ []
   :files $ {}
-    |debug-overflow.main $ {}
+    |debug-overflow.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote

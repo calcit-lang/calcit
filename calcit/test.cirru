@@ -3,8 +3,7 @@
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
     :modules $ [] |./test-cond.cirru |./test-gynienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-js.cirru |./test-record.cirru |./test-nil.cirru |./test-fn.cirru |./test-tuple.cirru |./test-algebra.cirru |./util.cirru
   :files $ {}
-    |app.main $ {}
-      :configs $ {}
+    |app.main $ %{} :FileEntry
       :defs $ {}
         |%Num $ %{} :CodeEntry (:doc |)
           :code $ quote (defrecord %Num :inc :show)
@@ -264,4 +263,3 @@
         :code $ quote
           ns app.main $ :require (test-cond.main :as test-cond) (test-gynienic.main :as test-gynienic) (test-lens.main :as test-lens) (test-list.main :as test-list) (test-macro.main :as test-macro) (test-map.main :as test-map) (test-math.main :as test-math) (test-recursion.main :as test-recursion) (test-set.main :as test-set) (test-string.main :as test-string) (test-js.main :as test-js) (test-record.main :as test-record) (test-nil.main :as test-nil) (test-fn.main :as test-fn) (test-tuple.main :as test-tuple) (test-algebra.main :as test-algebra)
             util.core :refer $ log-title inside-eval: inside-js:
-      :proc $ quote ()
