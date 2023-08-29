@@ -42,7 +42,7 @@ checksum = "630be753d4e58660abd17930c71b647fe46c27ea6b63cc59e1e3851406972e42"
 
 [[package]]
 name = "calcit"
-version = "0.8.0-a3"
+version = "0.8.0-a4"
 dependencies = [
  "cirru_edn",
  "cirru_parser",
@@ -74,9 +74,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cirru_edn"
-version = "0.4.2"
+version = "0.5.0-a1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5399b8563cb708471e8ded7433bc65e725fa17e38eb339de468445c1f3ee3c70"
+checksum = "ff7e59395ca8c23d923a6aca424890c47237cafae0fc93e9216658e57f0e5d0b"
 dependencies = [
  "cirru_parser",
  "hex",

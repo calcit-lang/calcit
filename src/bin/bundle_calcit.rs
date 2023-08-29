@@ -122,8 +122,8 @@ where
 }
 
 fn find_compact_changes(new_data: &Edn, old_data: &Edn) -> Result<ChangesDict, String> {
-  let old_files: HashMap<Arc<str>, FileInSnapShot> = old_data.map_get("files")?.try_into()?;
-  let new_files: HashMap<Arc<str>, FileInSnapShot> = new_data.map_get("files")?.try_into()?;
+  let old_files: HashMap<Arc<str>, FileInSnapShot> = old_data.view_map()?.get_or_nil("files").try_into()?;
+  let new_files: HashMap<Arc<str>, FileInSnapShot> = new_data.view_map()?.get_or_nil("files").try_into()?;
   let old_namespaces = old_files.keys().collect::<HashSet<_>>();
   let new_namespaces = new_files.keys().collect::<HashSet<_>>();
   let added_namespaces = new_namespaces.difference(&old_namespaces).collect::<HashSet<_>>();
@@ -194,7 +194,12 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
   let content = read_file(package_file)?;
   let package_data = cirru_edn::parse(&content).map_err(io_err)?;
 
-  let pkg = package_data.map_get("package").map_err(io_err)?.read_str().map_err(io_err)?;
+  let pkg = package_data
+    .view_map()
+    .map_err(io_err)?
+    .get_or_nil("package")
+    .read_str()
+    .map_err(io_err)?;
 
   dict.insert(Edn::tag("package"), Edn::Str(pkg));
   dict.insert(Edn::tag("configs"), package_data);

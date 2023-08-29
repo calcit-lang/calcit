@@ -18,7 +18,7 @@ impl TryFrom<cirru_edn::Edn> for PackageDeps {
   type Error = String;
 
   fn try_from(value: cirru_edn::Edn) -> Result<Self, Self::Error> {
-    let deps = value.map_get("dependencies")?;
+    let deps = value.view_map()?.get_or_nil("dependencies");
     if let cirru_edn::Edn::Map(dict) = deps {
       let mut deps: HashMap<String, String> = HashMap::new();
       for (k, v) in dict {
