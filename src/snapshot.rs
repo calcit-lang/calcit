@@ -31,9 +31,10 @@ impl From<&FileInSnapShot> for Edn {
 impl TryFrom<Edn> for FileInSnapShot {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
+    let data = data.view_record()?;
     Ok(FileInSnapShot {
-      ns: data.view_record()?.get("ns").try_into()?,
-      defs: data.view_record()?.get("defs").try_into()?,
+      ns: data["ns"].to_owned().try_into()?,
+      defs: data["defs"].to_owned().try_into()?,
     })
   }
 }
@@ -53,9 +54,10 @@ pub struct CodeEntry {
 impl TryFrom<Edn> for CodeEntry {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
+    let data = data.view_record()?;
     Ok(CodeEntry {
-      doc: data.view_record()?.get("doc").try_into()?,
-      code: data.view_record()?.get("code").try_into()?,
+      doc: data["doc"].to_owned().try_into()?,
+      code: data["code"].to_owned().try_into()?,
     })
   }
 }
@@ -87,14 +89,15 @@ pub struct Snapshot {
 impl TryFrom<Edn> for SnapshotConfigs {
   type Error = String;
   fn try_from(data: Edn) -> Result<SnapshotConfigs, String> {
+    let data = data.view_map()?;
     let c = SnapshotConfigs {
-      init_fn: data.view_map()?.get_or_nil("init-fn").try_into()?,
-      reload_fn: data.view_map()?.get_or_nil("reload-fn").try_into()?,
-      version: match data.view_map()?.get_or_nil("version") {
+      init_fn: data.get_or_nil("init-fn").try_into()?,
+      reload_fn: data.get_or_nil("reload-fn").try_into()?,
+      version: match data.get_or_nil("version") {
         Edn::Nil => "".into(),
         x => x.try_into()?,
       },
-      modules: match data.view_map()?.get_or_nil("modules") {
+      modules: match data.get_or_nil("modules") {
         Edn::Nil => vec![],
         v => v.try_into()?,
       },
@@ -105,14 +108,15 @@ impl TryFrom<Edn> for SnapshotConfigs {
 
 /// parse snapshot
 pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
-  let pkg: Arc<str> = data.view_map()?.get_or_nil("package").try_into()?;
-  let mut files: HashMap<Arc<str>, FileInSnapShot> = data.view_map()?.get_or_nil("files").try_into()?;
+  let data = data.view_map()?;
+  let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
+  let mut files: HashMap<Arc<str>, FileInSnapShot> = data.get_or_nil("files").try_into()?;
   let meta_ns = format!("{pkg}.$meta");
   files.insert(meta_ns.to_owned().into(), gen_meta_ns(&meta_ns, path));
   let s = Snapshot {
     package: pkg,
-    configs: data.view_map()?.get_or_nil("configs").try_into()?,
-    entries: data.view_map()?.get_or_nil("entries").try_into()?,
+    configs: data.get_or_nil("configs").try_into()?,
+    entries: data.get_or_nil("entries").try_into()?,
     files,
   };
   Ok(s)
@@ -235,14 +239,15 @@ impl TryFrom<Edn> for FileChangeInfo {
   type Error = String;
 
   fn try_from(data: Edn) -> Result<Self, Self::Error> {
+    let data = data.view_map()?;
     Ok(Self {
-      ns: match data.view_map()?.get_or_nil("ns") {
+      ns: match data.get_or_nil("ns") {
         Edn::Nil => None,
         ns => Some(ns.try_into()?),
       },
-      added_defs: data.view_map()?.get_or_nil("added-defs").try_into()?,
-      removed_defs: data.view_map()?.get_or_nil("removed-defs").try_into()?,
-      changed_defs: data.view_map()?.get_or_nil("changed-defs").try_into()?,
+      added_defs: data.get_or_nil("added-defs").try_into()?,
+      removed_defs: data.get_or_nil("removed-defs").try_into()?,
+      changed_defs: data.get_or_nil("changed-defs").try_into()?,
     })
   }
 }
@@ -264,10 +269,11 @@ impl TryFrom<Edn> for ChangesDict {
   type Error = String;
 
   fn try_from(data: Edn) -> Result<Self, Self::Error> {
+    let data = data.view_map()?;
     Ok(Self {
-      added: data.view_map()?.get_or_nil("added").try_into()?,
-      changed: data.view_map()?.get_or_nil("changed").try_into()?,
-      removed: data.view_map()?.get_or_nil("removed").try_into()?,
+      added: data.get_or_nil("added").try_into()?,
+      changed: data.get_or_nil("changed").try_into()?,
+      removed: data.get_or_nil("removed").try_into()?,
     })
   }
 }
