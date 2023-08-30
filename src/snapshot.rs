@@ -1,4 +1,4 @@
-use cirru_edn::Edn;
+use cirru_edn::{Edn, EdnMapView, EdnTag};
 use cirru_parser::Cirru;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
@@ -21,10 +21,13 @@ pub struct FileInSnapShot {
 
 impl From<&FileInSnapShot> for Edn {
   fn from(data: &FileInSnapShot) -> Edn {
-    Edn::map_from_iter([
-      ("ns".into(), data.ns.to_owned().into()),
-      ("defs".into(), data.defs.to_owned().into()),
-    ])
+    Edn::Record(
+      EdnTag::new("FileEntry"),
+      vec![
+        ("ns".into(), data.ns.to_owned().into()),
+        ("defs".into(), data.defs.to_owned().into()),
+      ],
+    )
   }
 }
 
@@ -147,17 +150,19 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   }
 }
 
-pub fn gen_default() -> Snapshot {
-  Snapshot {
-    package: "app".into(),
-    configs: SnapshotConfigs {
-      init_fn: "app.main/main!".into(),
-      reload_fn: "app.main/reload!".into(),
-      version: "0.0.0".into(),
-      modules: vec![],
-    },
-    entries: HashMap::new(),
-    files: HashMap::new(),
+impl Default for Snapshot {
+  fn default() -> Snapshot {
+    Snapshot {
+      package: "".into(),
+      configs: SnapshotConfigs {
+        init_fn: "".into(),
+        reload_fn: "".into(),
+        version: "".into(),
+        modules: vec![],
+      },
+      entries: HashMap::new(),
+      files: HashMap::new(),
+    }
   }
 }
 
@@ -193,9 +198,9 @@ pub struct FileChangeInfo {
 
 impl From<&FileChangeInfo> for Edn {
   fn from(data: &FileChangeInfo) -> Edn {
-    let mut map: HashMap<Edn, Edn> = HashMap::new();
+    let mut map = EdnMapView::default();
     if let Some(ns) = &data.ns {
-      map.insert(Edn::tag("ns"), Edn::Quote(ns.to_owned()));
+      map.insert_key("ns", Edn::Quote(ns.to_owned()));
     }
 
     if !data.added_defs.is_empty() {
@@ -204,17 +209,14 @@ impl From<&FileChangeInfo> for Edn {
         .iter()
         .map(|(name, def)| (Edn::str(&**name), Edn::Quote(def.to_owned())))
         .collect();
-      map.insert(Edn::str("added-defs"), Edn::Map(defs));
+      map.insert_key("added-defs", Edn::Map(defs));
     }
     if !data.removed_defs.is_empty() {
-      map.insert(
-        Edn::str("removed-defs"),
-        Edn::Set(data.removed_defs.iter().map(|s| Edn::str(&**s)).collect()),
-      );
+      map.insert_key("removed-defs", Edn::Set(data.removed_defs.iter().map(|s| Edn::str(&**s)).collect()));
     }
     if !data.changed_defs.is_empty() {
-      map.insert(
-        Edn::str("changed-defs"),
+      map.insert_key(
+        "changed-defs",
         Edn::Map(
           data
             .changed_defs
@@ -224,7 +226,7 @@ impl From<&FileChangeInfo> for Edn {
         ),
       );
     }
-    Edn::Map(map)
+    map.into()
   }
 }
 

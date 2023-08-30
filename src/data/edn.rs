@@ -1,5 +1,3 @@
-use std::collections::hash_map::HashMap;
-use std::collections::hash_set::HashSet;
 use std::sync::Arc;
 
 use im_ternary_tree::TernaryTreeList;
@@ -8,7 +6,7 @@ use crate::primes;
 use crate::primes::Calcit;
 use crate::{data::cirru, primes::MethodKind};
 
-use cirru_edn::{Edn, EdnTag};
+use cirru_edn::{Edn, EdnListView, EdnMapView, EdnRecordView, EdnSetView, EdnTag};
 
 // values does not fit are just represented with specical indicates
 pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
@@ -20,32 +18,32 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Tag(s) => Ok(Edn::Tag(s.to_owned())),
     Calcit::Symbol { sym, .. } => Ok(Edn::Symbol((**sym).into())),
     Calcit::List(xs) => {
-      let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
+      let mut ys = EdnListView::default();
       for x in xs {
         ys.push(calcit_to_edn(x)?);
       }
-      Ok(Edn::List(ys))
+      Ok(ys.into())
     }
     Calcit::Set(xs) => {
-      let mut ys: HashSet<Edn> = HashSet::new();
+      let mut ys = EdnSetView::default();
       for x in xs {
         ys.insert(calcit_to_edn(x)?);
       }
-      Ok(Edn::Set(ys))
+      Ok(ys.into())
     }
     Calcit::Map(xs) => {
-      let mut ys: HashMap<Edn, Edn> = HashMap::with_capacity(xs.size());
+      let mut ys = EdnMapView::default();
       for (k, x) in xs {
         ys.insert(calcit_to_edn(k)?, calcit_to_edn(x)?);
       }
-      Ok(Edn::Map(ys))
+      Ok(ys.into())
     }
     Calcit::Record(name, fields, values, _class) => {
-      let mut entries: Vec<(EdnTag, Edn)> = Vec::with_capacity(fields.len());
+      let mut entries = EdnRecordView::new(name.to_owned());
       for idx in 0..fields.len() {
-        entries.push((fields[idx].to_owned(), calcit_to_edn(&values[idx])?));
+        entries.insert(fields[idx].to_owned(), calcit_to_edn(&values[idx])?);
       }
-      Ok(Edn::Record(name.to_owned(), entries))
+      Ok(entries.into())
     }
     Calcit::Fn { name, def_ns, args, .. } => {
       println!("[Warn] fn to EDN: {def_ns}/{name} {args:?}");
