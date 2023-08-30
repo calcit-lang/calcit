@@ -5,6 +5,7 @@
 
 mod git;
 
+use cirru_edn::Edn;
 use colored::*;
 use git::*;
 use std::{collections::HashMap, fs, path::Path};
@@ -14,25 +15,25 @@ struct PackageDeps {
   dependencies: HashMap<String, String>,
 }
 
-impl TryFrom<cirru_edn::Edn> for PackageDeps {
+impl TryFrom<Edn> for PackageDeps {
   type Error = String;
 
-  fn try_from(value: cirru_edn::Edn) -> Result<Self, Self::Error> {
+  fn try_from(value: Edn) -> Result<Self, Self::Error> {
     let deps = value.view_map()?.get_or_nil("dependencies");
-    if let cirru_edn::Edn::Map(dict) = deps {
-      let mut deps: HashMap<String, String> = HashMap::new();
-      for (k, v) in dict {
-        if let cirru_edn::Edn::Str(k) = k {
-          if let cirru_edn::Edn::Str(v) = v {
-            deps.insert(k.into_string(), v.into());
-          }
+    let dict = deps.view_map()?.0;
+
+    let mut deps: HashMap<String, String> = HashMap::new();
+    for (k, v) in &dict {
+      match (k, v) {
+        (Edn::Str(k), Edn::Str(v)) => {
+          deps.insert(k.to_owned().into_string(), v.to_owned().into());
+        }
+        _ => {
+          return Err(format!("invalid dependency: {} {}", k, v));
         }
       }
-      Ok(PackageDeps { dependencies: deps })
-    } else {
-      println!("{:?} {:?}", deps, value);
-      Err("dependencies should be a map".to_string())
     }
+    Ok(PackageDeps { dependencies: deps })
   }
 }
 
