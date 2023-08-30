@@ -74,9 +74,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cirru_edn"
-version = "0.5.0-a2"
+version = "0.5.0-a3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd167e86ebe7eeb8f2f901c43e8bf452d762e413c3426dafdfcb46adbcf7cad7"
+checksum = "216fc9ff3f09ad75dad154c4498a5afbf69dee468910f997013da39c49eddf63"
 dependencies = [
  "cirru_parser",
  "hex",
