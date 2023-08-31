@@ -2,8 +2,7 @@
 {} (:package |test-set)
   :configs $ {} (:init-fn |test-set.main/main!) (:reload-fn |test-set.main/reload!)
   :files $ {}
-    |test-set.main $ {}
-      :configs $ {}
+    |test-set.main $ %{} :FileEntry
       :defs $ {}
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -110,4 +109,3 @@
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-set.main $ :require
-      :proc $ quote ()

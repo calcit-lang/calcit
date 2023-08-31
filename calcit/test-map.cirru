@@ -3,8 +3,7 @@
   :configs $ {} (:init-fn |test-map.main/main!) (:reload-fn |test-map.main/reload!)
     :modules $ [] |./util.cirru
   :files $ {}
-    |test-map.main $ {}
-      :configs $ {}
+    |test-map.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -302,4 +301,3 @@
         :code $ quote
           ns test-map.main $ :require
             [] util.core :refer $ [] log-title inside-eval: inside-js:
-      :proc $ quote ()

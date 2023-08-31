@@ -2,8 +2,7 @@
 {} (:package |app)
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
   :files $ {}
-    |app.main $ {}
-      :configs $ {}
+    |app.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -11,4 +10,3 @@
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns app.main $ :require
-      :proc $ quote ()

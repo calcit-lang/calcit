@@ -2,8 +2,7 @@
 {} (:package |util)
   :configs $ {} (:init-fn |util.core/main!) (:reload-fn |util.core/reload!)
   :files $ {}
-    |util.core $ {}
-      :configs $ {}
+    |util.core $ %{} :FileEntry
       :defs $ {}
         |inside-eval: $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -31,4 +30,3 @@
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns util.core $ :require
-      :proc $ quote ()

@@ -3,7 +3,7 @@
   :configs $ {} (:init-fn |check-args.main/main!) (:reload-fn |check-args.main/reload!)
     :modules $ []
   :files $ {}
-    |check-args.main $ {}
+    |check-args.main $ %{} :FileEntry
       :defs $ {}
         |f1 $ %{} :CodeEntry (:doc |)
           :code $ quote

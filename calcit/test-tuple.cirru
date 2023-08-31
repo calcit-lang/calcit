@@ -2,7 +2,7 @@
 {} (:package |test-tuple)
   :configs $ {} (:init-fn |test-tuple.main/main!) (:reload-fn |test-tuple.main/reload!)
   :files $ {}
-    |test-tuple.main $ {}
+    |test-tuple.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote

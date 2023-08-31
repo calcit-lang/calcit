@@ -3,8 +3,7 @@
   :configs $ {} (:init-fn |test-macro.main/main!) (:reload-fn |test-macro.main/reload!)
     :modules $ [] |./util.cirru
   :files $ {}
-    |test-macro.main $ {}
-      :configs $ {} (:extension nil)
+    |test-macro.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -344,4 +343,3 @@
         :code $ quote
           ns test-macro.main $ :require
             [] util.core :refer $ [] log-title inside-eval:
-      :proc $ quote ()

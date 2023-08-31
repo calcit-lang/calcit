@@ -3,8 +3,7 @@
   :configs $ {} (:init-fn |test-cond.main/main!) (:reload-fn |test-cond.main/reload!)
     :modules $ [] |./util.cirru
   :files $ {}
-    |test-cond.main $ {}
-      :configs $ {}
+    |test-cond.main $ %{} :FileEntry
       :defs $ {}
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -149,4 +148,3 @@
         :code $ quote
           ns test-cond.main $ :require
             [] util.core :refer $ [] inside-eval:
-      :proc $ quote ()

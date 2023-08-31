@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use walkdir::WalkDir;
 
-use cirru_edn::Edn;
+use cirru_edn::{Edn, EdnMapView, EdnRecordView, EdnTag};
 use cirru_parser::Cirru;
 
 pub fn main() -> io::Result<()> {
@@ -52,7 +52,7 @@ pub fn main() -> io::Result<()> {
 
     let (tx, rx) = channel();
 
-    let mut debouncer = new_debouncer(Duration::from_micros(200), None, tx).expect("create watcher");
+    let mut debouncer = new_debouncer(Duration::from_micros(200), tx).expect("create watcher");
     debouncer
       .watcher()
       .watch(Path::new(base_dir), RecursiveMode::Recursive)
@@ -122,19 +122,19 @@ where
 }
 
 fn find_compact_changes(new_data: &Edn, old_data: &Edn) -> Result<ChangesDict, String> {
-  let old_files: HashMap<Arc<str>, FileInSnapShot> = old_data.map_get("files")?.try_into()?;
-  let new_files: HashMap<Arc<str>, FileInSnapShot> = new_data.map_get("files")?.try_into()?;
+  let old_files: HashMap<Arc<str>, FileInSnapShot> = old_data.view_map()?.get_or_nil("files").try_into()?;
+  let new_files: HashMap<Arc<str>, FileInSnapShot> = new_data.view_map()?.get_or_nil("files").try_into()?;
   let old_namespaces = old_files.keys().collect::<HashSet<_>>();
   let new_namespaces = new_files.keys().collect::<HashSet<_>>();
   let added_namespaces = new_namespaces.difference(&old_namespaces).collect::<HashSet<_>>();
   let common_namespaces = new_namespaces.intersection(&old_namespaces).collect::<HashSet<_>>();
   let removed_namespaces = old_namespaces
     .difference(&new_namespaces)
-    .map(|x| x.to_owned().to_owned())
+    .map(|x| (*x).to_owned())
     .collect::<HashSet<Arc<_>>>();
   let added_files = added_namespaces
     .iter()
-    .map(|name| (name.to_owned().to_owned().to_owned(), new_files[**name].to_owned()))
+    .map(|name| ((**name).to_owned(), new_files[**name].to_owned()))
     .collect::<HashMap<Arc<str>, FileInSnapShot>>();
 
   let mut changed_files: HashMap<Arc<str>, FileChangeInfo> = HashMap::new();
@@ -189,17 +189,22 @@ fn find_file_changes(old_file: &FileInSnapShot, new_file: &FileInSnapShot) -> Re
 }
 
 fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Result<Edn, io::Error> {
-  let mut dict: HashMap<Edn, Edn> = HashMap::new();
+  let mut dict = EdnMapView::default();
 
   let content = read_file(package_file)?;
   let package_data = cirru_edn::parse(&content).map_err(io_err)?;
 
-  let pkg = package_data.map_get("package").map_err(io_err)?.read_str().map_err(io_err)?;
+  let pkg = package_data
+    .view_map()
+    .map_err(io_err)?
+    .get_or_nil("package")
+    .read_str()
+    .map_err(io_err)?;
 
-  dict.insert(Edn::tag("package"), Edn::Str(pkg));
-  dict.insert(Edn::tag("configs"), package_data);
+  dict.insert_key("package", Edn::Str(pkg));
+  dict.insert_key("configs", package_data);
 
-  let mut files: HashMap<Edn, Edn> = HashMap::new();
+  let mut files = EdnMapView::default();
 
   for dir_entry in WalkDir::new(base_dir) {
     let entry = dir_entry?;
@@ -210,7 +215,7 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
         let content = read_file(entry_path)?;
         let xs = cirru_parser::parse(&content).map_err(io_err)?;
 
-        let mut file: HashMap<Edn, Edn> = HashMap::new();
+        let mut file = EdnRecordView::new(EdnTag::new("FileEntry"));
         let (ns_name, ns_code) = if let Some(Cirru::List(ns_form)) = xs.get(0) {
           match (ns_form.get(0), ns_form.get(1)) {
             (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) if &**x0 == "ns" => (x1.to_string(), ns_form),
@@ -222,9 +227,9 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
             xs.get(0)
           )));
         };
-        file.insert(Edn::tag("ns"), CodeEntry::from_code(Cirru::List(ns_code.to_owned())).into());
+        file.insert(EdnTag::new("ns"), CodeEntry::from_code(Cirru::List(ns_code.to_owned())).into());
 
-        let mut defs: HashMap<Edn, Edn> = HashMap::with_capacity(xs.len());
+        let mut defs = EdnMapView::default();
         for line in xs.iter().skip(1) {
           if let Cirru::List(ys) = line {
             match (ys.get(0), ys.get(1)) {
@@ -245,8 +250,8 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
           }
         }
 
-        file.insert(Edn::tag("defs"), Edn::Map(defs));
-        files.insert(Edn::str(ns_name), Edn::Map(file));
+        file.insert(EdnTag::new("defs"), defs.into());
+        files.insert(Edn::str(ns_name), file.into());
 
         if verbose {
           println!("bundling {}", entry_path.display());
@@ -256,9 +261,9 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
     }
   }
 
-  dict.insert(Edn::tag("files"), Edn::Map(files));
+  dict.insert_key("files", files.into());
 
-  Ok(Edn::Map(dict))
+  Ok(dict.into())
 }
 
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");

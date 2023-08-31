@@ -3,7 +3,7 @@
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.1)
     :modules $ []
   :files $ {}
-    |app.lib $ {}
+    |app.lib $ %{} :FileEntry
       :defs $ {}
         |f2 $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -13,7 +13,7 @@
             defn f3 (x) (println "\"f3 in lib") (println "\"v:" x)
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote (ns app.lib)
-    |app.macro $ {}
+    |app.macro $ %{} :FileEntry
       :defs $ {}
         |add-by-1 $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -30,7 +30,7 @@
                 &+ (~ a) (~ b)
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote (ns app.macro)
-    |app.main $ {}
+    |app.main $ %{} :FileEntry
       :defs $ {}
         |add-more $ %{} :CodeEntry (:doc |)
           :code $ quote

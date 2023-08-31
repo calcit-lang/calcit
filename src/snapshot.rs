@@ -1,4 +1,4 @@
-use cirru_edn::Edn;
+use cirru_edn::{Edn, EdnMapView, EdnTag};
 use cirru_parser::Cirru;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
@@ -21,19 +21,23 @@ pub struct FileInSnapShot {
 
 impl From<&FileInSnapShot> for Edn {
   fn from(data: &FileInSnapShot) -> Edn {
-    Edn::map_from_iter([
-      ("ns".into(), data.ns.to_owned().into()),
-      ("defs".into(), data.defs.to_owned().into()),
-    ])
+    Edn::Record(
+      EdnTag::new("FileEntry"),
+      vec![
+        ("ns".into(), data.ns.to_owned().into()),
+        ("defs".into(), data.defs.to_owned().into()),
+      ],
+    )
   }
 }
 
 impl TryFrom<Edn> for FileInSnapShot {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
+    let data = data.view_record()?;
     Ok(FileInSnapShot {
-      ns: data.map_get_some("ns")?.try_into()?,
-      defs: data.map_get_some("defs")?.try_into()?,
+      ns: data["ns"].to_owned().try_into()?,
+      defs: data["defs"].to_owned().try_into()?,
     })
   }
 }
@@ -53,9 +57,10 @@ pub struct CodeEntry {
 impl TryFrom<Edn> for CodeEntry {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
+    let data = data.view_record()?;
     Ok(CodeEntry {
-      doc: data.record_get("doc")?.try_into()?,
-      code: data.record_get("code")?.try_into()?,
+      doc: data["doc"].to_owned().try_into()?,
+      code: data["code"].to_owned().try_into()?,
     })
   }
 }
@@ -87,14 +92,15 @@ pub struct Snapshot {
 impl TryFrom<Edn> for SnapshotConfigs {
   type Error = String;
   fn try_from(data: Edn) -> Result<SnapshotConfigs, String> {
+    let data = data.view_map()?;
     let c = SnapshotConfigs {
-      init_fn: data.map_get("init-fn")?.try_into()?,
-      reload_fn: data.map_get("reload-fn")?.try_into()?,
-      version: match data.map_get("version")? {
+      init_fn: data.get_or_nil("init-fn").try_into()?,
+      reload_fn: data.get_or_nil("reload-fn").try_into()?,
+      version: match data.get_or_nil("version") {
         Edn::Nil => "".into(),
         x => x.try_into()?,
       },
-      modules: match data.map_get("modules")? {
+      modules: match data.get_or_nil("modules") {
         Edn::Nil => vec![],
         v => v.try_into()?,
       },
@@ -105,14 +111,15 @@ impl TryFrom<Edn> for SnapshotConfigs {
 
 /// parse snapshot
 pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
-  let pkg: Arc<str> = data.map_get("package")?.try_into()?;
-  let mut files: HashMap<Arc<str>, FileInSnapShot> = data.map_get("files")?.try_into()?;
+  let data = data.view_map()?;
+  let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
+  let mut files: HashMap<Arc<str>, FileInSnapShot> = data.get_or_nil("files").try_into()?;
   let meta_ns = format!("{pkg}.$meta");
   files.insert(meta_ns.to_owned().into(), gen_meta_ns(&meta_ns, path));
   let s = Snapshot {
     package: pkg,
-    configs: data.map_get("configs")?.try_into()?,
-    entries: data.map_get("entries")?.try_into()?,
+    configs: data.get_or_nil("configs").try_into()?,
+    entries: data.get_or_nil("entries").try_into()?,
     files,
   };
   Ok(s)
@@ -143,17 +150,19 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   }
 }
 
-pub fn gen_default() -> Snapshot {
-  Snapshot {
-    package: "app".into(),
-    configs: SnapshotConfigs {
-      init_fn: "app.main/main!".into(),
-      reload_fn: "app.main/reload!".into(),
-      version: "0.0.0".into(),
-      modules: vec![],
-    },
-    entries: HashMap::new(),
-    files: HashMap::new(),
+impl Default for Snapshot {
+  fn default() -> Snapshot {
+    Snapshot {
+      package: "".into(),
+      configs: SnapshotConfigs {
+        init_fn: "".into(),
+        reload_fn: "".into(),
+        version: "".into(),
+        modules: vec![],
+      },
+      entries: HashMap::new(),
+      files: HashMap::new(),
+    }
   }
 }
 
@@ -189,9 +198,9 @@ pub struct FileChangeInfo {
 
 impl From<&FileChangeInfo> for Edn {
   fn from(data: &FileChangeInfo) -> Edn {
-    let mut map: HashMap<Edn, Edn> = HashMap::new();
+    let mut map = EdnMapView::default();
     if let Some(ns) = &data.ns {
-      map.insert(Edn::tag("ns"), Edn::Quote(ns.to_owned()));
+      map.insert_key("ns", Edn::Quote(ns.to_owned()));
     }
 
     if !data.added_defs.is_empty() {
@@ -200,17 +209,14 @@ impl From<&FileChangeInfo> for Edn {
         .iter()
         .map(|(name, def)| (Edn::str(&**name), Edn::Quote(def.to_owned())))
         .collect();
-      map.insert(Edn::str("added-defs"), Edn::Map(defs));
+      map.insert_key("added-defs", Edn::Map(defs));
     }
     if !data.removed_defs.is_empty() {
-      map.insert(
-        Edn::str("removed-defs"),
-        Edn::Set(data.removed_defs.iter().map(|s| Edn::str(&**s)).collect()),
-      );
+      map.insert_key("removed-defs", Edn::Set(data.removed_defs.iter().map(|s| Edn::str(&**s)).collect()));
     }
     if !data.changed_defs.is_empty() {
-      map.insert(
-        Edn::str("changed-defs"),
+      map.insert_key(
+        "changed-defs",
         Edn::Map(
           data
             .changed_defs
@@ -220,7 +226,7 @@ impl From<&FileChangeInfo> for Edn {
         ),
       );
     }
-    Edn::Map(map)
+    map.into()
   }
 }
 
@@ -235,14 +241,15 @@ impl TryFrom<Edn> for FileChangeInfo {
   type Error = String;
 
   fn try_from(data: Edn) -> Result<Self, Self::Error> {
+    let data = data.view_map()?;
     Ok(Self {
-      ns: match data.map_get("ns")? {
+      ns: match data.get_or_nil("ns") {
         Edn::Nil => None,
         ns => Some(ns.try_into()?),
       },
-      added_defs: data.map_get("added-defs")?.try_into()?,
-      removed_defs: data.map_get("removed-defs")?.try_into()?,
-      changed_defs: data.map_get("changed-defs")?.try_into()?,
+      added_defs: data.get_or_nil("added-defs").try_into()?,
+      removed_defs: data.get_or_nil("removed-defs").try_into()?,
+      changed_defs: data.get_or_nil("changed-defs").try_into()?,
     })
   }
 }
@@ -264,10 +271,11 @@ impl TryFrom<Edn> for ChangesDict {
   type Error = String;
 
   fn try_from(data: Edn) -> Result<Self, Self::Error> {
+    let data = data.view_map()?;
     Ok(Self {
-      added: data.map_get_some("added")?.try_into()?,
-      changed: data.map_get_some("changed")?.try_into()?,
-      removed: data.map_get_some("removed")?.try_into()?,
+      added: data.get_or_nil("added").try_into()?,
+      changed: data.get_or_nil("changed").try_into()?,
+      removed: data.get_or_nil("removed").try_into()?,
     })
   }
 }

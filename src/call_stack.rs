@@ -3,6 +3,7 @@ use crate::data::edn;
 use crate::primes::NodeLocation;
 use crate::primes::{Calcit, CalcitItems};
 use cirru_edn::Edn;
+use cirru_edn::EdnListView;
 use std::fmt;
 use std::fs;
 use std::hash::Hash;
@@ -88,9 +89,9 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc
     eprintln!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" });
   }
 
-  let mut stack_list: Vec<Edn> = Vec::with_capacity(stack.len());
+  let mut stack_list = EdnListView::default();
   for s in stack {
-    let mut args: Vec<Edn> = Vec::with_capacity(s.args.len());
+    let mut args = EdnListView::default();
     for a in &*s.args {
       args.push(edn::calcit_to_edn(a)?);
     }

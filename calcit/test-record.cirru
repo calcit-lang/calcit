@@ -2,8 +2,7 @@
 {} (:package |test-record)
   :configs $ {} (:init-fn |test-record.main/main!) (:reload-fn |test-record.main/reload!)
   :files $ {}
-    |test-record.main $ {}
-      :configs $ {} (:extension nil)
+    |test-record.main $ %{} :FileEntry
       :defs $ {}
         |BirdClass $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -149,4 +148,3 @@
         :code $ quote
           ns test-record.main $ :require
             [] util.core :refer $ [] log-title inside-js:
-      :proc $ quote ()

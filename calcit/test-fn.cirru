@@ -2,7 +2,7 @@
 {} (:package |test-fn)
   :configs $ {} (:init-fn |test-fn.main/main!) (:reload-fn |test-fn.main/reload!)
   :files $ {}
-    |test-fn.main $ {}
+    |test-fn.main $ %{} :FileEntry
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote

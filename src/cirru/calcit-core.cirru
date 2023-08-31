@@ -3,7 +3,7 @@
   :configs $ {} (:init-fn |TODO) (:reload-fn |TODO) (:version |TODO)
     :modules $ []
   :files $ {}
-    |calcit.core $ {}
+    |calcit.core $ %{} :FileEntry
       :defs $ {}
         |%<- $ %{} :CodeEntry (:doc "|pass value as `%` into several expressions, in reversed order")
           :code $ quote
@@ -507,7 +507,7 @@
                   if (list? x0)
                     recur (append x0 base) & $ &list:rest xs
                     recur ([] x0 base) & $ &list:rest xs
-        |/ $ %{} :CodeEntry (:doc "|dividing")
+        |/ $ %{} :CodeEntry (:doc |dividing)
           :code $ quote
             defn / (x & ys)
               if (&list:empty? ys) (&/ 1 x) (reduce ys x &/)

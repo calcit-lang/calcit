@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use cirru_edn::{format, Edn};
+use cirru_edn::{format, Edn, EdnListView};
 
 use crate::primes::{Calcit, CalcitItems, ImportRule, SymbolResolved::*};
 use crate::program;
@@ -193,17 +193,17 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
 }
 
 fn dump_items_code(xs: &CalcitItems) -> Edn {
-  let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
+  let mut ys = EdnListView::default();
   for x in xs {
     ys.push(dump_code(x));
   }
-  Edn::List(ys)
+  ys.into()
 }
 
 fn dump_args_code(xs: &[Arc<str>]) -> Edn {
-  let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
+  let mut ys = EdnListView::default();
   for x in xs {
     ys.push(Edn::sym(&*x.to_owned()));
   }
-  Edn::List(ys)
+  ys.into()
 }

@@ -3,8 +3,7 @@
   :configs $ {} (:init-fn |test-list.main/main!) (:reload-fn |test-list.main/reload!)
     :modules $ [] |./util.cirru
   :files $ {}
-    |test-list.main $ {}
-      :configs $ {} (:extension nil)
+    |test-list.main $ %{} :FileEntry
       :defs $ {}
         |*counted $ %{} :CodeEntry (:doc |)
           :code $ quote (defatom *counted 0)
@@ -460,4 +459,3 @@
         :code $ quote
           ns test-list.main $ :require
             util.core :refer $ log-title inside-eval:
-      :proc $ quote ()

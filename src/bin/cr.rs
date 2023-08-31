@@ -53,7 +53,7 @@ fn main() -> Result<(), String> {
 
   let core_snapshot = calcit::load_core_snapshot()?;
 
-  let mut snapshot = snapshot::gen_default(); // placeholder data
+  let mut snapshot = snapshot::Snapshot::default(); // placeholder data
 
   if let Some(snippet) = cli_matches.value_of("eval") {
     eval_once = true;
@@ -185,7 +185,7 @@ fn main() -> Result<(), String> {
 pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, assets_watch: Arc<Option<String>>) {
   println!("\nRunning: in watch mode...\n");
   let (tx, rx) = channel();
-  let mut debouncer = new_debouncer(Duration::from_millis(200), None, tx).expect("create watcher");
+  let mut debouncer = new_debouncer(Duration::from_millis(200), tx).expect("create watcher");
   let config = notify::Config::default();
   debouncer
     .watcher()

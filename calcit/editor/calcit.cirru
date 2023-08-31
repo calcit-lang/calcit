@@ -3,8 +3,7 @@
   :configs $ {} (:compact-output? true) (:extension |.cljs) (:init-fn |app.main/main!) (:local-ui? false) (:output |src) (:port 6001) (:reload-fn |app.main/reload!) (:version |0.0.1)
     :modules $ []
   :files $ {}
-    |app.lib $ {}
-      :configs $ {}
+    |app.lib $ %{} :FileEntry
       :defs $ {}
         |f2 $ %{} :CodeEntry (:doc |)
           :code $ %{} :Expr (:at 1618661020393) (:by |u0)
@@ -39,8 +38,7 @@
           :data $ {}
             |T $ %{} :Leaf (:at 1618661017191) (:by |u0) (:text |ns)
             |j $ %{} :Leaf (:at 1618661017191) (:by |u0) (:text |app.lib)
-    |app.macro $ {}
-      :configs $ {}
+    |app.macro $ %{} :FileEntry
       :defs $ {}
         |add-by-1 $ %{} :CodeEntry (:doc |)
           :code $ %{} :Expr (:at 1618740276250) (:by |u0)
@@ -109,8 +107,7 @@
           :data $ {}
             |T $ %{} :Leaf (:at 1618663277036) (:by |u0) (:text |ns)
             |j $ %{} :Leaf (:at 1618663277036) (:by |u0) (:text |app.macro)
-    |app.main $ {}
-      :configs $ {}
+    |app.main $ %{} :FileEntry
       :defs $ {}
         |add-more $ %{} :CodeEntry (:doc |)
           :code $ %{} :Expr (:at 1618730350902) (:by |u0)

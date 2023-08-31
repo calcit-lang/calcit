@@ -2,8 +2,7 @@
 {} (:package |test-string)
   :configs $ {} (:init-fn |test-string.main/main!) (:reload-fn |test-string.main/reload!)
   :files $ {}
-    |test-string.main $ {}
-      :configs $ {}
+    |test-string.main $ %{} :FileEntry
       :defs $ {}
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -259,4 +258,3 @@
         :code $ quote
           ns test-string.main $ :require
             [] util.core :refer $ [] inside-eval:
-      :proc $ quote ()
