@@ -123,6 +123,16 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
         }
         git_checkout(&folder_path, &version)?;
         dim_println(format!("√ checked out {} at version {}", gray(&org_and_folder), gray(&version)));
+
+        let current_head = git_current_head(&folder_path)?;
+        if let GitHead::Branch(branch) = current_head {
+          if options.pull_branch {
+            dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
+            git_pull(&folder_path, &branch)?;
+            dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
+          }
+        }
+
         let build_file = folder_path.join("build.sh");
         // if there's a build.sh file in the folder, run it
         if build_file.exists() {
