@@ -114,6 +114,7 @@ pub fn git_fetch(dir: &PathBuf) -> Result<(), String> {
     .current_dir(dir)
     .arg("fetch")
     .arg("origin")
+    .arg("--tags")
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
