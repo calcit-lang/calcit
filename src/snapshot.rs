@@ -153,11 +153,11 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
 impl Default for Snapshot {
   fn default() -> Snapshot {
     Snapshot {
-      package: "".into(),
+      package: "app".into(),
       configs: SnapshotConfigs {
-        init_fn: "".into(),
-        reload_fn: "".into(),
-        version: "".into(),
+        init_fn: "app.main/main!".into(),
+        reload_fn: "app.main/reload!".into(),
+        version: "0.0.0".into(),
         modules: vec![],
       },
       entries: HashMap::new(),
