@@ -1407,6 +1407,12 @@
           :code $ quote
             defn nil? (x)
               &= (type-of x) :nil
+        |non-nil! $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn non-nil! (x)
+              if (nil? x)
+                raise "|expected non nil value"
+                , x
         |not= $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn not= (x y)

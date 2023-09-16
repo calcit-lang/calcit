@@ -81,7 +81,6 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {
-            eprintln!("\nfailed, {failure}");
             call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
             Err(failure)
           }
