@@ -139,6 +139,8 @@
                 {,} :a $ [] 1
                 [] :a 1
               assert= false $ some-in? ([] 1 2 3) ([] :a)
+              assert= 1
+                non-nil! 1
         |test-display-stack $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing display stack") (&display-stack "|show stack here")
