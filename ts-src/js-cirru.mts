@@ -25,7 +25,11 @@ export class CalcitCirruQuote {
   }
   /** provide a simple text representation in Console or std out, with indentations */
   textForm(): string {
-    return writeCirruCode(this.value);
+    if (Array.isArray(this.value) && this.value.every((x) => Array.isArray(x))) {
+      return writeCirruCode(this.value);
+    } else {
+      return this.toString();
+    }
   }
 }
 
