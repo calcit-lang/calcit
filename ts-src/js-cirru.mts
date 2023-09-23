@@ -203,10 +203,15 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
         if (idx === 0) {
           return; // skip first `{}` symbol
         }
-        if (pair instanceof Array && pair.length === 2) {
-          result.push(extract_cirru_edn(pair[0], options), extract_cirru_edn(pair[1], options));
+        if (pair instanceof Array) {
+          if (pair[0] === ";") return;
+          if (pair.length === 2) {
+            result.push(extract_cirru_edn(pair[0], options), extract_cirru_edn(pair[1], options));
+          } else {
+            throw new Error(`Expected a pair, got size ${pair.length}`);
+          }
         } else {
-          throw new Error("Expected pairs for map");
+          throw new Error(`Expected pairs for map, got ${pair}`);
         }
       });
       return new CalcitSliceMap(result);
@@ -222,15 +227,19 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
         if (idx <= 1) {
           return; // skip %{} name
         }
-
-        if (pair instanceof Array && pair.length === 2) {
-          if (typeof pair[0] === "string") {
-            entries.push([extractFieldTag(pair[0]), extract_cirru_edn(pair[1], options)]);
+        if (pair instanceof Array) {
+          if (pair[0] === ";") return;
+          if (pair.length === 2) {
+            if (typeof pair[0] === "string") {
+              entries.push([extractFieldTag(pair[0]), extract_cirru_edn(pair[1], options)]);
+            } else {
+              throw new Error("Expected string as field");
+            }
           } else {
-            throw new Error("Expected string as field");
+            throw new Error("Expected pair of size 2");
           }
         } else {
-          throw new Error("Expected pairs for map");
+          throw new Error("Expected pairs for reocrd");
         }
       });
       entries.sort((a, b) => {
@@ -256,11 +265,27 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
 
       return new CalcitRecord(extractFieldTag(name), fields, values);
     }
+    let notComment = (x: any) => {
+      if (x instanceof Array && x[0] === ";") {
+        return false;
+      }
+      return true;
+    };
     if (x[0] === "[]") {
-      return new CalcitSliceList(x.slice(1).map((x) => extract_cirru_edn(x, options)));
+      return new CalcitSliceList(
+        x
+          .slice(1)
+          .filter(notComment)
+          .map((x) => extract_cirru_edn(x, options))
+      );
     }
     if (x[0] === "#{}") {
-      return new CalcitSet(x.slice(1).map((x) => extract_cirru_edn(x, options)));
+      return new CalcitSet(
+        x
+          .slice(1)
+          .filter(notComment)
+          .map((x) => extract_cirru_edn(x, options))
+      );
     }
     if (x[0] === "do" && x.length === 2) {
       return extract_cirru_edn(x[1], options);
@@ -278,7 +303,10 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
       let baseClass = new CalcitRecord(newTag("base-class"), [], []);
       return new CalcitTuple(
         extract_cirru_edn(x[1], options),
-        x.slice(2).map((x) => extract_cirru_edn(x, options)),
+        x
+          .slice(2)
+          .filter(notComment)
+          .map((x) => extract_cirru_edn(x, options)),
         baseClass
       );
     }

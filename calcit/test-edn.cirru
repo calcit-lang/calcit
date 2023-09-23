@@ -9,7 +9,9 @@
             defn log-title (title) (println) (println title) (println)
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing edn") (test-edn)
+            defn main! () (log-title "|Testing edn")
+              test-edn
+              test-edn-comment
         |test-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-edn ()
@@ -64,6 +66,24 @@
                   format-cirru-edn $ :: :test
                 assert= "|:: :test :a :b" $ trim
                   format-cirru-edn $ :: :test :a :b
+
+        |test-edn-comment $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-edn-comment ()
+              log-title "|Testing edn comment"
+              assert=
+                [] 1 2 (; comment) 3
+                parse-cirru-edn "|[] 1 2 (; comment) 3"
+              assert=
+                {}
+                  :a 1
+                  :b 2
+                  ; comment
+                parse-cirru-edn "|{} (:a 1) (:b 2)"
+
+              assert=
+                :: :a 1
+                parse-cirru-edn "|:: :a (; comment) 1"
 
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote

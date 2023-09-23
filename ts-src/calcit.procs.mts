@@ -1198,7 +1198,12 @@ export let parse_cirru_list = (code: string): CalcitList => {
 };
 
 export let parse_cirru_edn = (code: string, options: CalcitValue) => {
-  return extract_cirru_edn(parse(code)[0], options);
+  let nodes = parse(code);
+  if (nodes.length === 1) {
+    return extract_cirru_edn(nodes[0], options);
+  } else {
+    throw new Error(`Expected EDN in a single node, got ${nodes.length}`);
+  }
 };
 
 export let format_to_lisp = (x: CalcitValue): string => {
