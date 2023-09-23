@@ -831,8 +831,12 @@ pub enum MethodKind {
   Invoke,
   /// (.!f a)
   InvokeNative,
+  /// (.?!f a)
+  InvokeNativeOptional,
   /// (.-p a)
   Access,
+  /// (.?-p a)
+  AccessOptional,
 }
 
 impl fmt::Display for MethodKind {
@@ -840,7 +844,9 @@ impl fmt::Display for MethodKind {
     match self {
       MethodKind::Invoke => write!(f, "invoke"),
       MethodKind::InvokeNative => write!(f, "invoke-native"),
-      MethodKind::Access => write!(f, "read-property"),
+      MethodKind::InvokeNativeOptional => write!(f, "invoke-native-optional"),
+      MethodKind::Access => write!(f, "access"),
+      MethodKind::AccessOptional => write!(f, "access-optional"),
     }
   }
 }

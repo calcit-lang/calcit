@@ -90,6 +90,8 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       MethodKind::Access => Ok(Edn::Symbol(format!(".-{name}").into())),
       MethodKind::InvokeNative => Ok(Edn::Symbol(format!(".!{name}").into())),
       MethodKind::Invoke => Ok(Edn::Symbol(format!(".{name}").into())),
+      MethodKind::AccessOptional => Ok(Edn::Symbol(format!(".?-{name}").into())),
+      MethodKind::InvokeNativeOptional => Ok(Edn::Symbol(format!(".?!{name}").into())),
     },
     a => Err(format!("not able to generate EDN: {a}")), // TODO more types to handle
   }

@@ -169,6 +169,8 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
         MethodKind::Access => ".-",
         MethodKind::InvokeNative => ".!",
         MethodKind::Invoke => ".",
+        MethodKind::AccessOptional => ".?-",
+        MethodKind::InvokeNativeOptional => ".?!",
       };
       Ok(format!("new {var_prefix}CalcitSymbol(\"{code}{}\")", name.escape_default()))
     }
@@ -499,6 +501,18 @@ fn gen_call_code(
           Err(format!("accessor takes only 1 argument, {xs:?}"))
         }
       }
+      MethodKind::AccessOptional => {
+        if body.len() == 1 {
+          let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+          if matches_js_var(name) {
+            Ok(format!("{return_code}{obj}?.{name}"))
+          } else {
+            Ok(format!("{return_code}{obj}?.[{}]", escape_cirru_str(name)))
+          }
+        } else {
+          Err(format!("optional accessor takes only 1 argument, {xs:?}"))
+        }
+      }
       MethodKind::InvokeNative => {
         if !body.is_empty() {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
@@ -511,7 +525,22 @@ fn gen_call_code(
           };
           Ok(format!("{return_code}{caller}({args_code})"))
         } else {
-          Err(format!("expected at least 1 object, got {xs}"))
+          Err(format!("invoke-native expected at least 1 object, got {xs}"))
+        }
+      }
+      MethodKind::InvokeNativeOptional => {
+        if !body.is_empty() {
+          let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+          let args_code = gen_args_code(&body.skip(1).expect("get args"), ns, local_defs, file_imports, tags)?;
+
+          let caller = if matches_js_var(name) {
+            format!("{obj}.{name}")
+          } else {
+            format!("{obj}[{}]", escape_cirru_str(name))
+          };
+          Ok(format!("{return_code}{caller}?.({args_code})"))
+        } else {
+          Err(format!("invoke-native-optional expected at least 1 object, got {xs}"))
         }
       }
       MethodKind::Invoke => {
