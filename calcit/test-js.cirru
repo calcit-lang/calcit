@@ -102,9 +102,12 @@
                 assert= (.-a a) 2
                 set! (.-a-b a) 3
                 assert= (.-a-b a) 3
-              assert= 2 $ aget
+              assert/deepEqual
                 to-js-data $ [] 1 2 3
-                , 1
+                js-array 1 2 3
+              assert/deepEqual
+                to-js-data $ :: :a 1 2
+                js-array |a 1 2
               assert-detect identity $ instance? js/Number (new js/Number 1)
               assert-detect not $ instance? js/String (new js/Number 1)
               assert=
@@ -136,4 +139,4 @@
                 assert= b -1
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
-          ns test-js.main $ :require (|os :as os)
+          ns test-js.main $ :require (|os :as os) (|assert :as assert)

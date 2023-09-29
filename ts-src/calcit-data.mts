@@ -437,6 +437,14 @@ export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
     }
     return Symbol(x.value);
   }
+  if (x instanceof CalcitTuple) {
+    var result: any[] = [to_js_data(x.tag)];
+    for (let i = 0; i < x.extra.length; i++) {
+      let item = x.extra[i];
+      result.push(to_js_data(item));
+    }
+    return result;
+  }
   if (x instanceof CalcitList || x instanceof CalcitSliceList) {
     var result: any[] = [];
     for (let item of x.items()) {
