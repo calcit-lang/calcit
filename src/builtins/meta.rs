@@ -31,7 +31,7 @@ lazy_static! {
 
 pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("type-of expected 1 argument, got: {xs:?}"));
+    return CalcitErr::err_nodes("type-of expected 1 argument, got:", xs);
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::tag("nil")),
@@ -217,7 +217,7 @@ pub fn format_cirru_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn cirru_quote_to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("&cirru-quote:to-list expected 1 argument, got: {xs:?}"));
+    return CalcitErr::err_nodes("&cirru-quote:to-list expected 1 argument, got:", xs);
   }
   match &xs[0] {
     Calcit::CirruQuote(ys) => Ok(cirru_to_calcit(ys)),
@@ -228,7 +228,7 @@ pub fn cirru_quote_to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 /// missing location for a dynamic symbol
 pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("turn-symbol expected 1 argument, got: {xs:?}"));
+    return CalcitErr::err_nodes("turn-symbol expected 1 argument, got:", xs);
   }
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::Symbol {
@@ -252,7 +252,7 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn turn_tag(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("turn-tag cannot turn this to tag: {xs:?}"));
+    return CalcitErr::err_nodes("turn-tag cannot turn this to tag:", xs);
   }
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::tag(s)),
@@ -264,7 +264,7 @@ pub fn turn_tag(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
-    CalcitErr::err_str(format!("tuple expected at least 1 arguments, got {}", CrListWrap(xs.to_owned())))
+    CalcitErr::err_str(format!("tuple expected at least 1 arguments, got: {}", CrListWrap(xs.to_owned())))
   } else {
     let extra: Vec<Calcit> = if xs.len() == 1 {
       vec![]
@@ -282,12 +282,12 @@ pub fn new_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn new_class_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
-    CalcitErr::err_str(format!("tuple expected at least 2 arguments, got {}", CrListWrap(xs.to_owned())))
+    CalcitErr::err_str(format!("tuple expected at least 2 arguments, got: {}", CrListWrap(xs.to_owned())))
   } else {
     let class = xs[0].to_owned();
     if let Calcit::Record(..) = class {
     } else {
-      return CalcitErr::err_str(format!("tuple expected a record as class, got {}", class));
+      return CalcitErr::err_str(format!("tuple expected a record as class, got: {}", class));
     }
     let extra: Vec<Calcit> = if xs.len() == 2 {
       vec![]
@@ -305,7 +305,7 @@ pub fn new_class_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if invoke_args.is_empty() {
     return Err(CalcitErr::use_msg_stack(
-      format!("expected operand for method invoking: {invoke_args:?}"),
+      format!("expected operand for method invoking: {}", Calcit::List(invoke_args.to_owned())),
       call_stack,
     ));
   }
@@ -393,7 +393,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
 
 pub fn native_compare(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_str(format!("&compare expected 2 values, got {xs:?}"));
+    return CalcitErr::err_nodes("&compare expected 2 values, got:", xs);
   }
   match xs[0].cmp(&xs[1]) {
     Ordering::Less => Ok(Calcit::Number(-1.0)),
@@ -404,7 +404,7 @@ pub fn native_compare(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_str(format!("&tuple:nth expected 2 argument, got: {}", CrListWrap(xs.to_owned())));
+    return CalcitErr::err_nodes("&tuple:nth expected 2 argument, got:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Tuple(tag, extra, _class), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -414,7 +414,7 @@ pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           Ok(extra[m - 1].to_owned())
         } else {
           let size = extra.len() + 1;
-          CalcitErr::err_str(format!("Tuple only got {size} elements, trying to index with {m}"))
+          CalcitErr::err_str(format!("Tuple only got: {size} elements, trying to index with {m}"))
         }
       }
       Err(e) => CalcitErr::err_str(format!("&tuple:nth expect usize, {e}")),
@@ -425,7 +425,7 @@ pub fn tuple_nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
-    return CalcitErr::err_str(format!("tuple:assoc expected 3 arguments, got: {xs:?}"));
+    return CalcitErr::err_nodes("tuple:assoc expected 3 arguments, got:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Tuple(tag, extra, class), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -448,7 +448,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn tuple_count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("tuple:count expected 1 argument, got: {xs:?}"));
+    return CalcitErr::err_nodes("tuple:count expected 1 argument, got:", xs);
   }
   match &xs[0] {
     Calcit::Tuple(_tag, extra, _class) => Ok(Calcit::Number((extra.len() + 1) as f64)),
@@ -458,7 +458,7 @@ pub fn tuple_count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn tuple_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("tuple:class expected 1 argument, got: {xs:?}"));
+    return CalcitErr::err_nodes("tuple:class expected 1 argument, got:", xs);
   }
   match &xs[0] {
     Calcit::Tuple(_tag, _extra, class) => Ok((**class).to_owned()),
@@ -468,7 +468,7 @@ pub fn tuple_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn tuple_params(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("tuple:params expected 1 argument, got: {xs:?}"));
+    return CalcitErr::err_nodes("tuple:params expected 1 argument, got:", xs);
   }
   match &xs[0] {
     Calcit::Tuple(_tag, extra, _class) => Ok(Calcit::List(extra.into())),
@@ -478,7 +478,7 @@ pub fn tuple_params(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn tuple_with_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_str(format!("tuple:with-class expected 2 arguments, got: {xs:?}"));
+    return CalcitErr::err_nodes("tuple:with-class expected 2 arguments, got:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Tuple(tag, extra, _), b @ Calcit::Record(..)) => {
@@ -526,7 +526,7 @@ pub fn async_sleep(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calci
 
 pub fn format_ternary_tree(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("&format-ternary-tree expected 1 argument, got: {xs:?}"));
+    return CalcitErr::err_nodes("&format-ternary-tree expected 1 argument, got:", xs);
   }
   match &xs[0] {
     Calcit::List(ys) => Ok(Calcit::Str(ys.format_inline().into())),
@@ -536,7 +536,7 @@ pub fn format_ternary_tree(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn buffer(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
-    return CalcitErr::err_str(format!("&buffer expected hex values: {xs:?}"));
+    return CalcitErr::err_nodes("&buffer expected hex values:", xs);
   }
   let mut buf: Vec<u8> = Vec::new();
   for x in xs {
@@ -569,7 +569,7 @@ pub fn buffer(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn hash(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("&hash expected 1 argument, got: {xs:?}"));
+    return CalcitErr::err_nodes("&hash expected 1 argument, got:", xs);
   }
 
   let mut s = DefaultHasher::new();
@@ -580,7 +580,7 @@ pub fn hash(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 // extract out calcit internal meta code
 pub fn extract_code_into_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("&extract-code-into-edn expected 1 argument, got: {xs:?}"));
+    return CalcitErr::err_nodes("&extract-code-into-edn expected 1 argument, got:", xs);
   }
   Ok(edn_to_calcit(&dump_code(&xs[0]), &Calcit::Nil))
 }

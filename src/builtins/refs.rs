@@ -42,7 +42,7 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
       }
       a => {
         return Err(CalcitErr::use_msg_stack_location(
-          format!("expected fn to trigger after `reset!`, got {a}"),
+          format!("expected fn to trigger after `reset!`, got: {a}"),
           call_stack,
           a.get_location(),
         ))
@@ -122,7 +122,7 @@ pub fn deref(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 /// need to be syntax since triggering internal functions requires program data
 pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
-    return CalcitErr::err_str(format!("reset! excepted 2 arguments, got: {expr:?}"));
+    return CalcitErr::err_nodes("reset! excepted 2 arguments, got:", expr);
   }
   // println!("reset! {:?}", expr[0]);
   let target = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
@@ -157,11 +157,11 @@ pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
     }
     (Some(Calcit::Ref(..)), Some(Calcit::Tag(_)), Some(a)) => {
-      CalcitErr::err_str(format!("add-watch expected fn instead of proc, got {a}"))
+      CalcitErr::err_str(format!("add-watch expected fn instead of proc, got: {a}"))
     }
     (Some(Calcit::Ref(..)), Some(a), Some(_)) => CalcitErr::err_str(format!("add-watch expected a tag, but got: {a}")),
     (Some(a), _, _) => CalcitErr::err_str(format!("add-watch expected ref, got: {a}")),
-    (a, b, c) => CalcitErr::err_str(format!("add-watch expected ref, tag, function, got {a:?} {b:?} {c:?}")),
+    (a, b, c) => CalcitErr::err_str(format!("add-watch expected ref, tag, function, got: {a:?} {b:?} {c:?}")),
   }
 }
 
@@ -177,6 +177,6 @@ pub fn remove_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("remove-watch expected ref and tag, got: {a} {b}")),
-    (a, b) => CalcitErr::err_str(format!("remove-watch expected 2 arguments, got {a:?} {b:?}")),
+    (a, b) => CalcitErr::err_str(format!("remove-watch expected 2 arguments, got: {a:?} {b:?}")),
   }
 }

@@ -37,18 +37,18 @@ pub fn inject_platform_apis() {
 // &call-dylib-edn
 pub fn call_dylib_edn(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
-    return CalcitErr::err_str(format!("&call-dylib-edn expected >2 arguments, got {}", CrListWrap(xs.to_owned())));
+    return CalcitErr::err_str(format!("&call-dylib-edn expected >2 arguments, got: {}", CrListWrap(xs.to_owned())));
   }
   let lib_name: String = if let Calcit::Str(s) = &xs[0] {
     (**s).to_owned()
   } else {
-    return CalcitErr::err_str(format!("&call-dylib-edn expected a lib_name, got {}", xs[0]));
+    return CalcitErr::err_str(format!("&call-dylib-edn expected a lib_name, got: {}", xs[0]));
   };
 
   let method: String = if let Calcit::Str(s) = &xs[1] {
     (**s).to_owned()
   } else {
-    return CalcitErr::err_str(format!("&call-dylib-edn expected a method name, got {}", xs[1]));
+    return CalcitErr::err_str(format!("&call-dylib-edn expected a method name, got: {}", xs[1]));
   };
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
   for v in xs.into_iter().skip(2) {
@@ -98,7 +98,7 @@ pub fn stderr_println(xs: &CalcitItems, _call_stack: &CallStackList) -> Result<C
 pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
     return CalcitErr::err_str(format!(
-      "&call-dylib-edn-fn expected >3 arguments, got {}",
+      "&call-dylib-edn-fn expected >3 arguments, got: {}",
       CrListWrap(xs.to_owned())
     ));
   }
@@ -106,13 +106,13 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
   let lib_name: String = if let Calcit::Str(s) = &xs[0] {
     (**s).to_owned()
   } else {
-    return CalcitErr::err_str(format!("&call-dylib-edn-fn expected a lib_name, got {}", xs[0]));
+    return CalcitErr::err_str(format!("&call-dylib-edn-fn expected a lib_name, got: {}", xs[0]));
   };
 
   let method: String = if let Calcit::Str(s) = &xs[1] {
     (**s).to_owned()
   } else {
-    return CalcitErr::err_str(format!("&call-dylib-edn-fn expected a method name, got {}", xs[1]));
+    return CalcitErr::err_str(format!("&call-dylib-edn-fn expected a method name, got: {}", xs[1]));
   };
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len() - 2);
   let callback = xs[xs.len() - 1].to_owned();
@@ -188,7 +188,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
 pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
     return CalcitErr::err_str(format!(
-      "&blocking-dylib-edn-fn expected >3 arguments, got {}",
+      "&blocking-dylib-edn-fn expected >3 arguments, got: {}",
       CrListWrap(xs.to_owned())
     ));
   }
@@ -196,13 +196,13 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
   let lib_name: String = if let Calcit::Str(s) = &xs[0] {
     (**s).to_owned()
   } else {
-    return CalcitErr::err_str(format!("&blocking-dylib-edn-fn expected a lib_name, got {}", xs[0]));
+    return CalcitErr::err_str(format!("&blocking-dylib-edn-fn expected a lib_name, got: {}", xs[0]));
   };
 
   let method: String = if let Calcit::Str(s) = &xs[1] {
     (**s).to_owned()
   } else {
-    return CalcitErr::err_str(format!("&blocking-dylib-edn-fn expected a method name, got {}", xs[1]));
+    return CalcitErr::err_str(format!("&blocking-dylib-edn-fn expected a method name, got: {}", xs[1]));
   };
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len() - 2);
   let callback = xs[xs.len() - 1].to_owned();

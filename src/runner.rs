@@ -172,7 +172,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
                   None => Ok(Calcit::Nil),
                 }
               } else {
-                Err(CalcitErr::use_msg_stack(format!("expected a hashmap, got {v}"), call_stack))
+                Err(CalcitErr::use_msg_stack(format!("expected a hashmap, got: {v}"), call_stack))
               }
             } else {
               Err(CalcitErr::use_msg_stack(

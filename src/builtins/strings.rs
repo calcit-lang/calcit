@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use im_ternary_tree::TernaryTreeList;
 
 use crate::primes;
-use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
+use crate::primes::{Calcit, CalcitErr, CalcitItems};
 use crate::util::number::f64_to_usize;
 
 pub fn binary_str_concat(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -29,7 +29,7 @@ pub fn trim(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         let c: char = p.chars().next().expect("first char");
         Ok(Calcit::Str(s.trim_matches(c).to_owned().into()))
       } else {
-        CalcitErr::err_str(format!("trim expected pattern in a char, got {p}"))
+        CalcitErr::err_str(format!("trim expected pattern in a char, got: {p}"))
       }
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("trim expected 2 strings, but got: {a} {b}")),
@@ -151,7 +151,7 @@ pub fn str_slice(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Err(e) => CalcitErr::err_str(e),
     },
     (Some(a), Some(b)) => CalcitErr::err_str(format!("&str:slice expected string and number, got: {a} {b}")),
-    (_, _) => CalcitErr::err_str(format!("&str:slice expected string and numbers, got: {xs:?}")),
+    (_, _) => CalcitErr::err_nodes("&str:slice expected string and numbers, got:", xs),
   }
 }
 
@@ -166,7 +166,7 @@ pub fn compare_string(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Number(v as f64))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("&str:compare expected 2 strings, got: {a}, {b}")),
-    (_, _) => CalcitErr::err_str(format!("&str:compare expected 2 string, got: {xs:?}")),
+    (_, _) => CalcitErr::err_nodes("&str:compare expected 2 string, got:", xs),
   }
 }
 
@@ -254,7 +254,7 @@ pub fn escape(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       chunk.push('"');
       Ok(Calcit::Str(chunk.into()))
     }
-    Some(a) => CalcitErr::err_str(format!("escape expected 1 string, got {a}")),
+    Some(a) => CalcitErr::err_str(format!("escape expected 1 string, got: {a}")),
     None => CalcitErr::err_str("escape expected 1 argument, got nothing"),
   }
 }
@@ -282,7 +282,7 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Err(e) => CalcitErr::err_str(e),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("strings contains? expected a string, got: {a}")),
-    (None, ..) => CalcitErr::err_str(format!("strings contains? expected 2 arguments, got: {xs:?}")),
+    (None, ..) => CalcitErr::err_nodes("strings contains? expected 2 arguments, got:", xs),
   }
 }
 
@@ -291,7 +291,7 @@ pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Str(xs)), Some(Calcit::Str(a))) => Ok(Calcit::Bool(xs.contains(&**a))),
     (Some(Calcit::Str(_)), Some(a)) => CalcitErr::err_str(format!("string `includes?` expected a string, got: {a}")),
     (Some(a), ..) => CalcitErr::err_str(format!("string `includes?` expected string, got: {a}")),
-    (None, ..) => CalcitErr::err_str(format!("string `includes?` expected 2 arguments, got: {xs:?}")),
+    (None, ..) => CalcitErr::err_nodes("string `includes?` expected 2 arguments, got:", xs),
   }
 }
 pub fn nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -303,9 +303,9 @@ pub fn nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       },
       Err(e) => CalcitErr::err_str(format!("string nth expect usize, {e}")),
     },
-    (Some(_), None) => CalcitErr::err_str(format!("string nth expected a string and index, got: {xs:?}")),
-    (None, Some(_)) => CalcitErr::err_str(format!("string nth expected a string and index, got: {xs:?}")),
-    (_, _) => CalcitErr::err_str(format!("string nth expected 2 argument, got: {}", CrListWrap(xs.to_owned()))),
+    (Some(_), None) => CalcitErr::err_nodes("string nth expected a string and index, got:", xs),
+    (None, Some(_)) => CalcitErr::err_nodes("string nth expected a string and index, got:", xs),
+    (_, _) => CalcitErr::err_nodes("string nth expected 2 argument, got:", xs),
   }
 }
 
@@ -316,7 +316,7 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       None => Ok(Calcit::Nil),
     },
     Some(a) => CalcitErr::err_str(format!("str:first expected a string, got: {a}")),
-    None => CalcitErr::err_str("str:first expected 1 argument"),
+    None => CalcitErr::err_str("str:first expected 1 argument, got nothing"),
   }
 }
 
@@ -335,7 +335,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Str(buffer.into()))
     }
     Some(a) => CalcitErr::err_str(format!("str:rest expected a string, got: {a}")),
-    None => CalcitErr::err_str("str:rest expected 1 argument"),
+    None => CalcitErr::err_str("str:rest expected 1 argument, got nothing"),
   }
 }
 
@@ -367,7 +367,7 @@ pub fn pad_left(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       (a, b, c) => CalcitErr::err_str(format!("&str:pad-left expected string, number, string, got: {a} {b} {c}")),
     }
   } else {
-    CalcitErr::err_str(format!("&str:pad-left expected 3 arguments, {xs:?}"))
+    CalcitErr::err_nodes("&str:pad-left expected 3 arguments, got:", xs)
   }
 }
 
@@ -398,6 +398,6 @@ pub fn pad_right(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       (a, b, c) => CalcitErr::err_str(format!("&str:pad-right expected string, number, string, got: {a} {b} {c}")),
     }
   } else {
-    CalcitErr::err_str(format!("&str:pad-right expected 3 arguments, {xs:?}"))
+    CalcitErr::err_nodes("&str:pad-right expected 3 arguments, got:", xs)
   }
 }
