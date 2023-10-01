@@ -32,7 +32,7 @@ pub fn main() -> io::Result<()> {
       if ext_str == "cirru" {
         out_path.to_path_buf()
       } else {
-        return Err(io_err(format!("expected *.cirru file, got {ext_str}")));
+        return Err(io_err(format!("expected *.cirru file, got: {ext_str}")));
       }
     }
     None => out_path.join("compact.cirru"),

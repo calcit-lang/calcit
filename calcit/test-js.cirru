@@ -48,6 +48,25 @@
                 assert= 2 $ .-b b
                 assert= 3 $ .-c b
                 assert= 2 $ aget b |b
+              let
+                  c nil
+                  d $ js-object (:a 2)
+                  e $ js-array 1 2 3
+                assert= nil $ .?-a c
+                assert= nil $ .?-1 c
+                assert= 2 $ .?-a d
+                assert= 2 $ .?-1 e
+              let
+                  caller $ fn () 2
+                  c $ js-object
+                  d $ js-object (:f caller)
+                  e $ js-array caller
+                  f $ js-array
+                assert= nil $ .?!f c
+                assert= 2 $ .?!f d
+                assert= nil $ .?!2 f
+                assert= 2 $ .?!0 e
+
         |test-js $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
@@ -83,9 +102,12 @@
                 assert= (.-a a) 2
                 set! (.-a-b a) 3
                 assert= (.-a-b a) 3
-              assert= 2 $ aget
+              assert/deepEqual
                 to-js-data $ [] 1 2 3
-                , 1
+                js-array 1 2 3
+              assert/deepEqual
+                to-js-data $ :: :a 1 2
+                js-array |a 1 2
               assert-detect identity $ instance? js/Number (new js/Number 1)
               assert-detect not $ instance? js/String (new js/Number 1)
               assert=
@@ -117,4 +139,4 @@
                 assert= b -1
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
-          ns test-js.main $ :require (|os :as os)
+          ns test-js.main $ :require (|os :as os) (|assert :as assert)

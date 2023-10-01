@@ -18,7 +18,7 @@ pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Ok(Calcit::Map(ys))
   } else {
     CalcitErr::err_str(format!(
-      "&{{}} expected even number of arguments, got {}",
+      "&{{}} expected even number of arguments, got: {}",
       CrListWrap(xs.to_owned())
     ))
   }
@@ -26,7 +26,7 @@ pub fn call_new_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
-    return CalcitErr::err_str(format!("map dissoc expected at least 2 arguments: {xs:?}"));
+    return CalcitErr::err_nodes("map dissoc expected at least 2 arguments:", xs);
   }
   match xs.get(0) {
     Some(Calcit::Map(base)) => {
@@ -42,7 +42,7 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Map(ys.to_owned()))
     }
     Some(a) => CalcitErr::err_str(format!("map dissoc expected a map, got: {a}")),
-    _ => CalcitErr::err_str(format!("map dissoc expected 2 arguments, got: {xs:?}")),
+    _ => CalcitErr::err_nodes("map dissoc expected 2 arguments, got:", xs),
   }
 }
 
@@ -56,7 +56,7 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
     }
     (Some(a), ..) => CalcitErr::err_str(format!("map &get expected map, got: {a}")),
-    (None, ..) => CalcitErr::err_str(format!("map &get expected 2 arguments, got: {xs:?}")),
+    (None, ..) => CalcitErr::err_nodes("map &get expected 2 arguments, got:", xs),
   }
 }
 
@@ -96,7 +96,7 @@ pub fn call_merge(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       (a, b) => CalcitErr::err_str(format!("expected 2 maps, got: {a} {b}")),
     }
   } else {
-    CalcitErr::err_str(format!("expected 2 arguments, got: {xs:?}"))
+    CalcitErr::err_nodes("expected 2 arguments, got:", xs)
   }
 }
 
@@ -124,7 +124,7 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Set(zs))
     }
-    Some(a) => CalcitErr::err_str(format!("to-pairs expected a map, got {a}")),
+    Some(a) => CalcitErr::err_str(format!("to-pairs expected a map, got: {a}")),
     None => CalcitErr::err_str("to-pairs expected 1 argument, got nothing"),
   }
 }
@@ -141,7 +141,7 @@ pub fn call_merge_non_nil(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Map(zs))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("expected 2 maps, got: {a} {b}")),
-    (_, _) => CalcitErr::err_str(format!("expected 2 arguments, got: {xs:?}")),
+    (_, _) => CalcitErr::err_nodes("expected 2 arguments, got:", xs),
   }
 }
 
@@ -181,7 +181,7 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains_key(a))),
     (Some(a), ..) => CalcitErr::err_str(format!("map contains? expected a map, got: {a}")),
-    (None, ..) => CalcitErr::err_str(format!("map contains? expected 2 arguments, got: {xs:?}")),
+    (None, ..) => CalcitErr::err_nodes("map contains? expected 2 arguments, got:", xs),
   }
 }
 
@@ -196,7 +196,7 @@ pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Bool(false))
     }
     (Some(a), ..) => CalcitErr::err_str(format!("map `includes?` expected a map, got: {a}")),
-    (None, ..) => CalcitErr::err_str(format!("map `includes?` expected 2 arguments, got: {xs:?}")),
+    (None, ..) => CalcitErr::err_nodes("map `includes?` expected 2 arguments, got:", xs),
   }
 }
 
@@ -212,7 +212,7 @@ pub fn destruct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       None => Ok(Calcit::Nil),
     },
     Some(a) => CalcitErr::err_str(format!("&map:destruct expected a map, got: {a}")),
-    None => CalcitErr::err_str("&map:destruct expected 1 argument"),
+    None => CalcitErr::err_nodes("&map:destruct expected 1 argument, got:", xs),
   }
 }
 
@@ -220,7 +220,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(base)) => {
       if xs.len() % 2 != 1 {
-        CalcitErr::err_str(format!("map:assoc expected odd number of arguments, got {xs:?}"))
+        CalcitErr::err_nodes("map:assoc expected odd number of arguments, got:", xs)
       } else {
         let size = (xs.len() - 1) / 2;
         let mut ys = base.to_owned();
@@ -231,7 +231,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
     }
     Some(a) => CalcitErr::err_str(format!("map:assoc expected a map, got: {a}")),
-    None => CalcitErr::err_str(format!("map:assoc expected 3 arguments, got: {xs:?}")),
+    None => CalcitErr::err_nodes("map:assoc expected 3 arguments, got:", xs),
   }
 }
 
@@ -247,7 +247,7 @@ pub fn diff_new(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Map(zs.to_owned()))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("map:new_entries expected 2 maps, got: {a} {b}")),
-    (..) => CalcitErr::err_str(format!("map:new_entries expected 2 arguments, got: {xs:?}")),
+    (..) => CalcitErr::err_nodes("map:new_entries expected 2 arguments, got", xs),
   }
 }
 
@@ -263,7 +263,7 @@ pub fn diff_keys(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Set(ks))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("map:diff-keys expected 2 maps, got: {a} {b}")),
-    (..) => CalcitErr::err_str(format!("map:diff-keys expected 2 arguments, got: {xs:?}")),
+    (..) => CalcitErr::err_nodes("map:diff-keys expected 2 arguments, got:", xs),
   }
 }
 
@@ -279,6 +279,6 @@ pub fn common_keys(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Set(ks))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("map:diff-keys expected 2 maps, got: {a} {b}")),
-    (..) => CalcitErr::err_str(format!("map:diff-keys expected 2 arguments, got: {xs:?}")),
+    (..) => CalcitErr::err_nodes("map:diff-keys expected 2 arguments, got:", xs),
   }
 }

@@ -88,7 +88,7 @@ pub fn set_to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::List(ys))
     }
     Some(a) => CalcitErr::err_str(format!("&set:to-list expected a set: {a}")),
-    None => CalcitErr::err_str("&set:to-list expected 1 argument, got none"),
+    None => CalcitErr::err_str("&set:to-list expected 1 argument, got nothing"),
   }
 }
 
@@ -96,7 +96,7 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Set(ys)) => Ok(Calcit::Number(ys.size() as f64)),
     Some(a) => CalcitErr::err_str(format!("set count expected a set, got: {a}")),
-    None => CalcitErr::err_str("set count expected 1 argument"),
+    None => CalcitErr::err_str("set count expected 1 argument, got nothing"),
   }
 }
 
@@ -104,7 +104,7 @@ pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Set(ys)) => Ok(Calcit::Bool(ys.is_empty())),
     Some(a) => CalcitErr::err_str(format!("set empty? expected some set, got: {a}")),
-    None => CalcitErr::err_str("set empty? expected 1 argument"),
+    None => CalcitErr::err_str("set empty? expected 1 argument, got nothing"),
   }
 }
 
@@ -112,7 +112,7 @@ pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Set(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
     (Some(a), ..) => CalcitErr::err_str(format!("sets `includes?` expected set, got: {a}")),
-    (None, ..) => CalcitErr::err_str(format!("sets `includes?` expected 2 arguments, got: {xs:?}")),
+    (None, ..) => CalcitErr::err_nodes("sets `includes?` expected 2 arguments, got:", xs),
   }
 }
 
@@ -129,6 +129,6 @@ pub fn destruct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       None => Ok(Calcit::Nil),
     },
     Some(a) => CalcitErr::err_str(format!("&set:destruct expected a set, got: {a}")),
-    None => CalcitErr::err_str("&set:destruct expected 1 argument"),
+    None => CalcitErr::err_str("&set:destruct expected 1 argument, got nothing"),
   }
 }

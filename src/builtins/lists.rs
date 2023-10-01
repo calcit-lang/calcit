@@ -15,7 +15,7 @@ pub fn new_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("list count expected a list, got: {xs:?}"));
+    return CalcitErr::err_nodes("list count expected a list, got:", xs);
   }
   match &xs[0] {
     Calcit::List(ys) => Ok(Calcit::Number(ys.len() as f64)),
@@ -81,7 +81,7 @@ pub fn prepend(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("list:rest expected a list, got: {xs:?}"));
+    return CalcitErr::err_nodes("list:rest expected a list, got:", xs);
   }
   match &xs[0] {
     Calcit::List(ys) => {
@@ -97,7 +97,7 @@ pub fn rest(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn butlast(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("butlast expected a list, got: {xs:?}"));
+    return CalcitErr::err_nodes("butlast expected a list, got:", xs);
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::Nil),
@@ -128,7 +128,7 @@ pub fn concat(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn range(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() || xs.len() > 3 {
-    return CalcitErr::err_str(format!("expected 1~3 arguments for range: {xs:?}"));
+    return CalcitErr::err_nodes("expected 1~3 arguments for range:", xs);
   }
   let (base, bound) = match (&xs[0], xs.get(1)) {
     (Calcit::Number(bound), None) => (0.0, *bound),
@@ -168,7 +168,7 @@ pub fn range(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn reverse(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("butlast expected a list, got: {xs:?}"));
+    return CalcitErr::err_nodes("butlast expected a list, got:", xs);
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::Nil),
@@ -256,7 +256,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
     }
   } else {
     Err(CalcitErr::use_msg_stack(
-      format!("foldl expected 3 arguments, got: {xs:?}"),
+      format!("foldl expected 3 arguments, got: {}", Calcit::List(xs.to_owned())),
       call_stack,
     ))
   }
@@ -407,7 +407,10 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
     }
   } else {
     Err(CalcitErr::use_msg_stack(
-      format!("foldl-shortcut expected 4 arguments list,state,default,fn, got: {xs:?}"),
+      format!(
+        "foldl-shortcut expected 4 arguments list,state,default,fn, got: {}",
+        Calcit::List(xs.to_owned())
+      ),
       call_stack,
     ))
   }
@@ -474,7 +477,10 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
     }
   } else {
     Err(CalcitErr::use_msg_stack(
-      format!("foldr-shortcut expected 4 arguments list,state,default,fn, got: {xs:?}"),
+      format!(
+        "foldr-shortcut expected 4 arguments list,state,default,fn, got: {}",
+        Calcit::List(xs.to_owned())
+      ),
       call_stack,
     ))
   }
@@ -549,7 +555,7 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
     }
   } else {
     Err(CalcitErr::use_msg_stack(
-      format!("sort expected 2 arguments, got: {xs:?}"),
+      format!("sort expected 2 arguments, got: {}", Calcit::List(xs.to_owned())),
       call_stack,
     ))
   }
@@ -574,7 +580,7 @@ pub fn first(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 // real implementation relies of ternary-tree
 pub fn assoc_before(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
-    return CalcitErr::err_str(format!("invalid arguments to assoc-before: {xs:?}"));
+    return CalcitErr::err_nodes("invalid arguments to assoc-before:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -590,7 +596,7 @@ pub fn assoc_before(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn assoc_after(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
-    return CalcitErr::err_str(format!("invalid arguments to assoc-after: {xs:?}"));
+    return CalcitErr::err_nodes("invalid arguments to assoc-after:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -606,7 +612,7 @@ pub fn assoc_after(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("list empty? expected a list, got: {xs:?}"));
+    return CalcitErr::err_nodes("list empty? expected a list, got:", xs);
   }
   match &xs[0] {
     Calcit::List(ys) => Ok(Calcit::Bool(ys.is_empty())),
@@ -616,7 +622,7 @@ pub fn empty_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_str(format!("list contains? expected list and a index, got: {xs:?}"));
+    return CalcitErr::err_nodes("list contains? expected list and a index, got:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(xs), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -631,13 +637,13 @@ pub fn includes_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(xs.index_of(a).is_some())),
     (Some(a), ..) => CalcitErr::err_str(format!("list `includes?` expected list, list, got: {a}")),
-    (None, ..) => CalcitErr::err_str(format!("list `includes?` expected 2 arguments, got: {xs:?}")),
+    (None, ..) => CalcitErr::err_nodes("list `includes?` expected 2 arguments, got:", xs),
   }
 }
 
 pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
-    return CalcitErr::err_str(format!("list:assoc expected 3 arguments, got: {xs:?}"));
+    return CalcitErr::err_nodes("list:assoc expected 3 arguments, got:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -664,13 +670,13 @@ pub fn dissoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Err(e) => CalcitErr::err_str(format!("dissoc expected number, {e}")),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("list dissoc expected a list, got: {a}")),
-    (_, _) => CalcitErr::err_str(format!("list dissoc expected 2 arguments, got: {xs:?}")),
+    (_, _) => CalcitErr::err_nodes("list dissoc expected 2 arguments, got:", xs),
   }
 }
 
 pub fn list_to_set(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("&list:to-set expected a single argument in list, got {xs:?}"));
+    return CalcitErr::err_nodes("&list:to-set expected a single argument in list, got:", xs);
   }
   match &xs[0] {
     Calcit::List(ys) => {
@@ -680,13 +686,13 @@ pub fn list_to_set(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Set(zs))
     }
-    a => CalcitErr::err_str(format!("&list:to-set expected a list, got {a}")),
+    a => CalcitErr::err_str(format!("&list:to-set expected a list, got: {a}")),
   }
 }
 
 pub fn distinct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("&list:distinct expected a single argument in list, got {xs:?}"));
+    return CalcitErr::err_nodes("&list:distinct expected a single argument in list, got:", xs);
   }
   match &xs[0] {
     Calcit::List(ys) => {
@@ -698,6 +704,6 @@ pub fn distinct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::List(zs))
     }
-    a => CalcitErr::err_str(format!("&list:distinct expected a list, got {a}")),
+    a => CalcitErr::err_str(format!("&list:distinct expected a list, got: {a}")),
   }
 }

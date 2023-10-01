@@ -33,6 +33,10 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> 
             Ok(Calcit::Method(stripped.into(), MethodKind::Access))
           } else if let Some(stripped) = s.strip_prefix(".!") {
             Ok(Calcit::Method(stripped.into(), MethodKind::InvokeNative))
+          } else if let Some(stripped) = s.strip_prefix(".?-") {
+            Ok(Calcit::Method(stripped.into(), MethodKind::AccessOptional))
+          } else if let Some(stripped) = s.strip_prefix(".?!") {
+            Ok(Calcit::Method(stripped.into(), MethodKind::InvokeNativeOptional))
           } else {
             Ok(Calcit::Method(s[1..].to_owned().into(), MethodKind::Invoke))
           }
@@ -217,6 +221,8 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
       MethodKind::Access => Ok(Cirru::leaf(format!(".-{name}"))),
       MethodKind::InvokeNative => Ok(Cirru::leaf(format!(".!{name}"))),
       MethodKind::Invoke => Ok(Cirru::leaf(format!(".{name}"))),
+      MethodKind::AccessOptional => Ok(Cirru::leaf(format!(".?-{name}"))),
+      MethodKind::InvokeNativeOptional => Ok(Cirru::leaf(format!(".?!{name}"))),
     },
     _ => Err(format!("unknown data to convert to Cirru: {x}")),
   }

@@ -644,7 +644,7 @@ pub fn preprocess_defn(
       a.get_location().or_else(|| b.get_location()),
     )),
     (a, b) => Err(CalcitErr::use_msg_stack(
-      format!("defn or defmacro expected name and args, got {a:?} {b:?}",),
+      format!("defn or defmacro expected name and args, got: {a:?} {b:?}",),
       call_stack,
     )),
   }
@@ -701,10 +701,15 @@ pub fn preprocess_core_let(
         ))
       }
     },
-    Some(a @ Calcit::List(_)) => return Err(CalcitErr::use_msg_stack(format!("expected binding of a pair, got {a}"), call_stack)),
+    Some(a @ Calcit::List(_)) => {
+      return Err(CalcitErr::use_msg_stack(
+        format!("expected binding of a pair, got: {a}"),
+        call_stack,
+      ))
+    }
     Some(a) => {
       return Err(CalcitErr::use_msg_stack_location(
-        format!("expected binding of a pair, got {a}"),
+        format!("expected binding of a pair, got: {a}"),
         call_stack,
         a.get_location(),
       ))

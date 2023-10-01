@@ -169,6 +169,8 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
         MethodKind::Access => ".-",
         MethodKind::InvokeNative => ".!",
         MethodKind::Invoke => ".",
+        MethodKind::AccessOptional => ".?-",
+        MethodKind::InvokeNativeOptional => ".?!",
       };
       Ok(format!("new {var_prefix}CalcitSymbol(\"{code}{}\")", name.escape_default()))
     }
@@ -305,18 +307,18 @@ fn gen_call_code(
               gen_stack::pop_call_stack();
               Ok(format!("{return_code}( {cond_code} ? {true_code} : {false_code} )"))
             }
-            (_, _) => Err(format!("if expected 2~3 nodes, got: {body:?}")),
+            (_, _) => Err(format!("if expected 2~3 nodes, got: {}", Calcit::List(body))),
           };
         }
         CalcitSyntax::CoreLet => gen_let_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
 
         CalcitSyntax::Quote => match body.get(0) {
           Some(item) => quote_to_js(item, var_prefix, tags),
-          None => Err(format!("quote expected a node, got nothing from {body:?}")),
+          None => Err(format!("quote expected a node, got nothing from {}", Calcit::List(body))),
         },
         CalcitSyntax::Defatom => {
           match (body.get(0), body.get(1)) {
-            _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {body:?}")),
+            _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {}", Calcit::List(body))),
             (Some(Calcit::Symbol { sym, .. }), Some(v)) => {
               // let _name = escape_var(sym); // TODO
               let ref_path = wrap_js_str(&format!("{ns}/{sym}"));
@@ -328,7 +330,7 @@ fn gen_call_code(
                 &var_prefix, &ref_path, &var_prefix, &ref_path
               ))
             }
-            (_, _) => Err(format!("defatom expected name and value, got: {body:?}")),
+            (_, _) => Err(format!("defatom expected name and value, got: {}", Calcit::List(body))),
           }
         }
 
@@ -348,7 +350,7 @@ fn gen_call_code(
               _ => ret,
             }
           }
-          (_, _) => Err(format!("defn expected name arguments, got: {body:?}")),
+          (_, _) => Err(format!("defn expected name arguments, got: {}", Calcit::List(body))),
         },
 
         CalcitSyntax::Defmacro => Ok(format!("/* Unexpected macro {xs} */")),
@@ -368,7 +370,7 @@ fn gen_call_code(
               None => Ok(snippets::tmpl_fn_wrapper(code)),
             }
           }
-          (_, _) => Err(format!("try expected 2 nodes, got {body:?}")),
+          (_, _) => Err(format!("try expected 2 nodes, got: {}", Calcit::List(body))),
         },
         _ => {
           let args_code = gen_args_code(&body, ns, local_defs, file_imports, tags)?;
@@ -401,7 +403,7 @@ fn gen_call_code(
             _ => Ok(make_fn_wrapper(&ret)),
           }
         }
-        None => Err(format!("raise expected 1~2 arguments, got {body:?}")),
+        None => Err(format!("raise expected 1~2 arguments, got: {}", Calcit::List(body))),
       }
     }
     Calcit::Proc(_) => {
@@ -436,8 +438,8 @@ fn gen_call_code(
               let target = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?; // TODO could be simpler
               Ok(format!("{return_code}(typeof {target} !== 'undefined')"))
             }
-            Some(a) => Err(format!("exists? expected a symbol, got {a}")),
-            None => Err(format!("exists? expected 1 node, got {body:?}")),
+            Some(a) => Err(format!("exists? expected a symbol, got: {a}")),
+            None => Err(format!("exists? expected 1 node, got: {}", Calcit::List(body))),
           }
         }
         "new" => match body.get(0) {
@@ -464,7 +466,7 @@ fn gen_call_code(
             to_js_code(v, ns, local_defs, file_imports, tags, None)?,
             to_js_code(ctor, ns, local_defs, file_imports, tags, None)?
           )),
-          (_, _) => Err(format!("instance? expected 2 arguments, got {body:?}")),
+          (_, _) => Err(format!("instance? expected 2 arguments, got: {}", Calcit::List(body))),
         },
         "set!" => match (body.get(0), body.get(1)) {
           (Some(target), Some(v)) => Ok(format!(
@@ -472,7 +474,7 @@ fn gen_call_code(
             to_js_code(target, ns, local_defs, file_imports, tags, None)?,
             to_js_code(v, ns, local_defs, file_imports, tags, None)?
           )),
-          (_, _) => Err(format!("set! expected 2 nodes, got {body:?}")),
+          (_, _) => Err(format!("set! expected 2 nodes, got: {}", Calcit::List(body))),
         },
         _ => {
           // TODO
@@ -496,7 +498,19 @@ fn gen_call_code(
             Ok(format!("{return_code}{obj}[{}]", escape_cirru_str(name)))
           }
         } else {
-          Err(format!("accessor takes only 1 argument, {xs:?}"))
+          Err(format!("accessor takes only 1 argument, {xs}"))
+        }
+      }
+      MethodKind::AccessOptional => {
+        if body.len() == 1 {
+          let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+          if matches_js_var(name) {
+            Ok(format!("{return_code}{obj}?.{name}"))
+          } else {
+            Ok(format!("{return_code}{obj}?.[{}]", escape_cirru_str(name)))
+          }
+        } else {
+          Err(format!("optional accessor takes only 1 argument, {xs}"))
         }
       }
       MethodKind::InvokeNative => {
@@ -511,7 +525,22 @@ fn gen_call_code(
           };
           Ok(format!("{return_code}{caller}({args_code})"))
         } else {
-          Err(format!("expected at least 1 object, got {xs}"))
+          Err(format!("invoke-native expected at least 1 object, got: {xs}"))
+        }
+      }
+      MethodKind::InvokeNativeOptional => {
+        if !body.is_empty() {
+          let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
+          let args_code = gen_args_code(&body.skip(1).expect("get args"), ns, local_defs, file_imports, tags)?;
+
+          let caller = if matches_js_var(name) {
+            format!("{obj}.{name}")
+          } else {
+            format!("{obj}[{}]", escape_cirru_str(name))
+          };
+          Ok(format!("{return_code}{caller}?.({args_code})"))
+        } else {
+          Err(format!("invoke-native-optional expected at least 1 object, got: {xs}"))
         }
       }
       MethodKind::Invoke => {
@@ -529,7 +558,7 @@ fn gen_call_code(
             args_code
           ))
         } else {
-          Err(format!("expected at least 1 object, got {xs}"))
+          Err(format!("expected at least 1 object, got: {xs}"))
         }
       }
     },
@@ -586,7 +615,7 @@ fn gen_symbol_code(
       }
       Some(ResolvedRaw) => Err(format!("not going to generate from raw symbol, {s}")),
       Some(ResolvedLocal) => Err(format!("symbol with ns should not be local, {s}")),
-      None => Err(format!("expected symbol with ns being resolved: {xs:?}")),
+      None => Err(format!("expected symbol with ns being resolved: {xs}")),
     }
   } else if is_js_syntax_procs(s) || is_proc_name(s) || CalcitSyntax::is_valid(s) {
     // return Ok(format!("{}{}", var_prefix, escape_var(s)));
@@ -616,7 +645,7 @@ fn gen_symbol_code(
     println!("[Warn] detected variable inside core not resolved");
     Ok(format!("{var_prefix}{}", escape_var(s)))
   } else if def_ns.is_empty() {
-    Err(format!("Unexpected ns at symbol, {xs:?}"))
+    Err(format!("Unexpected ns at symbol, {xs}"))
   } else if def_ns != passed_defs.ns {
     track_ns_import(s, ImportedTarget::ReferNs(def_ns.into()), passed_defs.file_imports)?;
 
@@ -786,7 +815,7 @@ fn gen_if_code(
   base_return_label: Option<&str>,
 ) -> Result<String, String> {
   if body.len() < 2 || body.len() > 3 {
-    Err(format!("if expected 2~3 nodes, got: {body:?}"))
+    Err(format!("if expected 2~3 nodes, got: {}", Calcit::List(body.to_owned())))
   } else {
     let mut chunk: String = String::from("");
     let mut cond_node = body[0].to_owned();
@@ -808,7 +837,7 @@ fn gen_if_code(
           if let Some(Calcit::Syntax(syn, _ns)) = ys.get(0) {
             if syn == &CalcitSyntax::If {
               if ys.len() < 3 || ys.len() > 4 {
-                return Err(format!("if expected 2~3 nodes, got: {ys:?}"));
+                return Err(format!("if expected 2~3 nodes, got: {}", Calcit::List(ys.to_owned())));
               }
               cond_node = ys[1].to_owned();
               true_node = ys[2].to_owned();

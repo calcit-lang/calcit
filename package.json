@@ -1,6 +1,6 @@
 {
   "name": "@calcit/procs",
-  "version": "0.8.1",
+  "version": "0.8.3",
   "main": "./lib/calcit.procs.mjs",
   "devDependencies": {
     "@types/node": "^20.6.2",
@@ -12,7 +12,7 @@
     "cp-mac": "cargo build --release && rm -rfv builds/* && node scripts/cp-version.js && scp builds/* rsync-user@calcit-lang.org:/web-assets/repo/calcit-lang/binaries/macos/",
     "eval": "cargo run --bin cr -- -e",
     "try-rs": "cargo run --bin cr -- calcit/test.cirru -1",
-    "try-js-brk": "cargo run --bin cr -- calcit/test.cirru --emit-js -1 && node js-out/main.mjs",
+    "try-js-brk": "cargo run --bin cr -- calcit/test.cirru --emit-js -1 && node --inspect-brk js-out/main.mjs",
     "try-js": "cargo run --bin cr -- calcit/test.cirru --emit-js -1 && node js-out/main.mjs"
   },
   "repository": {

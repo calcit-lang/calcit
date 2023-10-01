@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.8.1";
+export const calcit_version = "0.8.3";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -1198,7 +1198,12 @@ export let parse_cirru_list = (code: string): CalcitList => {
 };
 
 export let parse_cirru_edn = (code: string, options: CalcitValue) => {
-  return extract_cirru_edn(parse(code)[0], options);
+  let nodes = parse(code);
+  if (nodes.length === 1) {
+    return extract_cirru_edn(nodes[0], options);
+  } else {
+    throw new Error(`Expected EDN in a single node, got ${nodes.length}`);
+  }
 };
 
 export let format_to_lisp = (x: CalcitValue): string => {

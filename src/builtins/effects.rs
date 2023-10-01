@@ -109,7 +109,7 @@ pub fn get_env(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         }
       },
     },
-    Some(a) => CalcitErr::err_str(format!("get-env expected a string, got {a}")),
+    Some(a) => CalcitErr::err_str(format!("get-env expected a string, got: {a}")),
     None => CalcitErr::err_str("get-env expected an argument, got nothing"),
   }
 }

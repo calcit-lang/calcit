@@ -530,7 +530,7 @@ impl Ord for Calcit {
           if a == b {
             Equal
           } else {
-            unreachable!("TODO sets are not cmp ed") // TODO
+            unreachable!("TODO sets are not cmp ed")
           }
         }
         a => a,
@@ -540,14 +540,13 @@ impl Ord for Calcit {
 
       (Calcit::Map(a), Calcit::Map(b)) => {
         unreachable!("TODO maps are not cmp ed {:?} {:?}", a, b)
-        // TODO
       }
       (Calcit::Map(_), _) => Less,
       (_, Calcit::Map(_)) => Greater,
 
       (Calcit::Record(name1, _fields1, _values1, _class1), Calcit::Record(name2, _fields2, _values2, _class2)) => {
         match name1.cmp(name2) {
-          Equal => unreachable!("TODO records are not cmp ed"), // TODO
+          Equal => unreachable!("TODO records are not cmp ed"),
           ord => ord,
         }
       }
@@ -730,6 +729,15 @@ impl CalcitErr {
       location: None,
     })
   }
+  /// display nodes in error message
+  pub fn err_nodes<T: Into<String>>(msg: T, nodes: &CalcitItems) -> Result<Calcit, Self> {
+    Err(CalcitErr {
+      msg: format!("{} {}", msg.into(), CrListWrap(nodes.to_owned())),
+      warnings: vec![],
+      stack: rpds::List::new_sync(),
+      location: None,
+    })
+  }
   pub fn err_str_location<T: Into<String>>(msg: T, location: Option<Arc<NodeLocation>>) -> Result<Calcit, Self> {
     Err(CalcitErr {
       msg: msg.into(),
@@ -831,8 +839,12 @@ pub enum MethodKind {
   Invoke,
   /// (.!f a)
   InvokeNative,
+  /// (.?!f a)
+  InvokeNativeOptional,
   /// (.-p a)
   Access,
+  /// (.?-p a)
+  AccessOptional,
 }
 
 impl fmt::Display for MethodKind {
@@ -840,7 +852,9 @@ impl fmt::Display for MethodKind {
     match self {
       MethodKind::Invoke => write!(f, "invoke"),
       MethodKind::InvokeNative => write!(f, "invoke-native"),
-      MethodKind::Access => write!(f, "read-property"),
+      MethodKind::InvokeNativeOptional => write!(f, "invoke-native-optional"),
+      MethodKind::Access => write!(f, "access"),
+      MethodKind::AccessOptional => write!(f, "access-optional"),
     }
   }
 }

@@ -8,12 +8,12 @@ use crate::primes::{Calcit, CalcitErr, CalcitItems};
 
 pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
-    return CalcitErr::err_str(format!("new-record expected arguments, got {xs:?}"));
+    return CalcitErr::err_nodes("new-record expected arguments, got:", xs);
   }
   let name_id: EdnTag = match &xs[0] {
     Calcit::Symbol { sym, .. } => EdnTag::new(sym),
     Calcit::Tag(k) => k.to_owned(),
-    a => return CalcitErr::err_str(format!("new-record expected a name, got {a}")),
+    a => return CalcitErr::err_str(format!("new-record expected a name, got: {a}")),
   };
 
   let mut fields: Vec<EdnTag> = Vec::with_capacity(xs.len());
@@ -52,16 +52,16 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 
 pub fn new_class_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
-    return CalcitErr::err_str(format!("new-record expected arguments, got {xs:?}"));
+    return CalcitErr::err_nodes("new-record expected arguments, got:", xs);
   }
   let class: Calcit = match &xs[0] {
     a @ Calcit::Record(..) => a.to_owned(),
-    b => return CalcitErr::err_str(format!("new-class-record expected a class, got {b}")),
+    b => return CalcitErr::err_str(format!("new-class-record expected a class, got: {b}")),
   };
   let name_id: EdnTag = match &xs[1] {
     Calcit::Symbol { sym, .. } => EdnTag::new(sym),
     Calcit::Tag(k) => k.to_owned(),
-    a => return CalcitErr::err_str(format!("new-record expected a name, got {a}")),
+    a => return CalcitErr::err_str(format!("new-record expected a name, got: {a}")),
   };
 
   let mut fields: Vec<EdnTag> = Vec::with_capacity(xs.len());
@@ -101,7 +101,7 @@ pub fn new_class_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {
-    return CalcitErr::err_str(format!("&%{{}} expected at least 2 arguments, got {xs:?}"));
+    return CalcitErr::err_nodes("&%{{}} expected at least 2 arguments, got:", xs);
   }
   match &xs[0] {
     Calcit::Record(name, def_fields, v0, class) => {
@@ -139,28 +139,28 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
           class.to_owned(),
         ))
       } else {
-        CalcitErr::err_str(format!("&%{{}} expected pairs, got: {xs:?}"))
+        CalcitErr::err_nodes("&%{{}} expected pairs, got:", xs)
       }
     }
-    a => CalcitErr::err_str(format!("&%{{}} expected a record as prototype, got {a}")),
+    a => CalcitErr::err_str(format!("&%{{}} expected a record as prototype, got: {a}")),
   }
 }
 
 pub fn get_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size != 1 {
-    return CalcitErr::err_str(format!("&record:class expected 1 argument, got {xs:?}"));
+    return CalcitErr::err_nodes("&record:class expected 1 argument, got:", xs);
   }
   match &xs[0] {
     Calcit::Record(_name, _def_fields, _v0, class) => Ok((**class).to_owned()),
-    a => CalcitErr::err_str(format!("&record:class expected a record as prototype, got {a}")),
+    a => CalcitErr::err_str(format!("&record:class expected a record as prototype, got: {a}")),
   }
 }
 
 pub fn with_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {
-    return CalcitErr::err_str(format!("&record:with-class expected at least 2 arguments, got {xs:?}"));
+    return CalcitErr::err_nodes("&record:with-class expected at least 2 arguments, got:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Record(name, def_fields, v0, _class), c @ Calcit::Record(..)) => Ok(Calcit::Record(
@@ -169,14 +169,14 @@ pub fn with_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       v0.to_owned(),
       Arc::new(c.to_owned()),
     )),
-    (Calcit::Record(..), b) => CalcitErr::err_str(format!("&record:with-class expected a record as class, got {b}")),
-    (a, _b) => CalcitErr::err_str(format!("&record:with-class expected a record, got {a}")),
+    (Calcit::Record(..), b) => CalcitErr::err_str(format!("&record:with-class expected a record as class, got: {b}")),
+    (a, _b) => CalcitErr::err_str(format!("&record:with-class expected a record, got: {a}")),
   }
 }
 
 pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_str(format!("&record:from-map expected 2 arguments, got {xs:?}"));
+    return CalcitErr::err_nodes("&record:from-map expected 2 arguments, got:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Record(name, fields, _values, class), Calcit::Map(ys)) => {
@@ -212,13 +212,13 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         class.to_owned(),
       ))
     }
-    (a, b) => CalcitErr::err_str(format!("&record:from-map expected a record and a map, got {a} {b}")),
+    (a, b) => CalcitErr::err_str(format!("&record:from-map expected a record and a map, got: {a} {b}")),
   }
 }
 
 pub fn get_record_name(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("&record:get-name expected record, got: {xs:?}"));
+    return CalcitErr::err_nodes("&record:get-name expected record, got::", xs);
   }
   match &xs[0] {
     Calcit::Record(name, ..) => Ok(Calcit::Tag(name.to_owned())),
@@ -227,7 +227,7 @@ pub fn get_record_name(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("&record:to-map expected 1 argument, got: {xs:?}"));
+    return CalcitErr::err_nodes("&record:to-map expected 1 argument, got::", xs);
   }
   match &xs[0] {
     Calcit::Record(_name, fields, values, _class) => {
@@ -237,18 +237,18 @@ pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Map(ys))
     }
-    a => CalcitErr::err_str(format!("&record:to-map expected a record, got {a}")),
+    a => CalcitErr::err_str(format!("&record:to-map expected a record, got: {a}")),
   }
 }
 pub fn matches(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_str(format!("&record:matches? expected 2 arguments, got {xs:?}"));
+    return CalcitErr::err_nodes("&record:matches? expected 2 arguments, got:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Record(left, left_fields, ..), Calcit::Record(right, right_fields, ..)) => {
       Ok(Calcit::Bool(left == right && left_fields == right_fields))
     }
-    (a, b) => CalcitErr::err_str(format!("&record:matches? expected 2 records, got {a} {b}")),
+    (a, b) => CalcitErr::err_str(format!("&record:matches? expected 2 records, got: {a} {b}")),
   }
 }
 
@@ -279,7 +279,7 @@ pub fn find_in_fields(xs: &[EdnTag], y: &EdnTag) -> Option<usize> {
 
 pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(format!("record count expected 1 argument: {xs:?}"));
+    return CalcitErr::err_nodes("record count expected 1 argument::", xs);
   }
   match &xs[0] {
     Calcit::Record(_name, fields, _, _) => Ok(Calcit::Number(fields.len() as f64)),
@@ -310,7 +310,7 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
         Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
-      a => CalcitErr::err_str(format!("record field expected to be string/tag, got {a}")),
+      a => CalcitErr::err_str(format!("record field expected to be string/tag, got: {a}")),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("record &get expected record, got: {a}")),
     (None, ..) => CalcitErr::err_str(format!("record &get expected 2 arguments, got: {xs:?}")),
@@ -349,13 +349,13 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       a => CalcitErr::err_str(format!("invalid field `{a}` for {fields:?}")),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("record:assoc expected a record, got: {a}")),
-    (None, ..) => CalcitErr::err_str(format!("record:assoc expected 3 arguments, got: {xs:?}")),
+    (None, ..) => CalcitErr::err_nodes("record:assoc expected 3 arguments, got:", xs),
   }
 }
 
 pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 4 {
-    return CalcitErr::err_str(format!("record:extend-as expected 4 arguments, got: {xs:?}"));
+    return CalcitErr::err_nodes("record:extend-as expected 4 arguments, got::", xs);
   }
   match (xs.get(0), xs.get(1), xs.get(2), xs.get(3)) {
     (Some(Calcit::Record(_name, fields, values, class)), Some(n), Some(a), Some(new_value)) => match a {
@@ -370,7 +370,7 @@ pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       a => CalcitErr::err_str(format!("invalid field `{a}` for {fields:?}")),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("record:extend-as expected a record, got: {a}")),
-    (None, ..) => CalcitErr::err_str(format!("record:extend-as expected 4 arguments, got: {xs:?}")),
+    (None, ..) => CalcitErr::err_nodes("record:extend-as expected 4 arguments, got:", xs),
   }
 }
 
