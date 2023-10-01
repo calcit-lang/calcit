@@ -13,7 +13,6 @@ pub mod runner;
 pub mod snapshot;
 pub mod util;
 
-use dirs::home_dir;
 use primes::LocatedWarning;
 use std::cell::RefCell;
 use std::fs;
@@ -91,34 +90,26 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
   }
 }
 
-pub fn load_module(path: &str, base_dir: &Path) -> Result<snapshot::Snapshot, String> {
+pub fn load_module(path: &str, base_dir: &Path, module_folder: &Path) -> Result<snapshot::Snapshot, String> {
   let mut file_path = String::from(path);
   if file_path.ends_with('/') {
     file_path.push_str("compact.cirru");
   }
 
-  let fullpath: String = if file_path.starts_with("./") {
-    let new_path = base_dir.join(file_path);
-    new_path.to_str().expect("path").to_string()
+  let fullpath = if file_path.starts_with("./") {
+    base_dir.join(&file_path).as_path().to_owned()
   } else if file_path.starts_with('/') {
-    file_path
+    Path::new(&file_path).to_owned()
   } else {
-    match home_dir() {
-      Some(buf) => {
-        let home = buf.as_path();
-        let p = home.join(".config/calcit/modules/").join(file_path);
-        p.to_str().expect("path").to_string()
-      }
-      None => return Err(String::from("failed to load $HOME")),
-    }
+    module_folder.join(&file_path).as_path().to_owned()
   };
 
-  println!("loading module: {fullpath}");
+  println!("loading: {}", file_path.as_str());
 
   let mut content = fs::read_to_string(&fullpath).unwrap_or_else(|_| panic!("expected Cirru snapshot {fullpath:?}"));
   strip_shebang(&mut content);
   let data = cirru_edn::parse(&content)?;
   // println!("reading: {}", content);
-  let snapshot = snapshot::load_snapshot_data(&data, &fullpath)?;
+  let snapshot = snapshot::load_snapshot_data(&data, &fullpath.display().to_string())?;
   Ok(snapshot)
 }

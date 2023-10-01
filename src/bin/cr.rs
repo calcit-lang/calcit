@@ -12,6 +12,7 @@ mod injection;
 use calcit::primes::LocatedWarning;
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
+use dirs::home_dir;
 use im_ternary_tree::TernaryTreeList;
 use notify::RecursiveMode;
 use notify_debouncer_mini::new_debouncer;
@@ -55,6 +56,13 @@ fn main() -> Result<(), String> {
 
   let mut snapshot = snapshot::Snapshot::default(); // placeholder data
 
+  let module_folder = home_dir()
+    .map(|buf| buf.as_path().join(".config/calcit/modules/"))
+    .expect("failed to load $HOME");
+  println!("module folder: {}", module_folder.to_str().expect("extract path"));
+
+  let base_dir = cli_options.entry_path.parent().expect("extract parent");
+
   if let Some(snippet) = cli_matches.value_of("eval") {
     eval_once = true;
     match snapshot::create_file_from_snippet(snippet) {
@@ -65,7 +73,7 @@ fn main() -> Result<(), String> {
     }
     if let Some(cli_deps) = cli_matches.values_of("dep") {
       for module_path in cli_deps {
-        let module_data = calcit::load_module(module_path, cli_options.entry_path.parent().expect("extract parent"))?;
+        let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
         for (k, v) in &module_data.files {
           snapshot.files.insert(k.to_owned(), v.to_owned());
         }
@@ -99,7 +107,7 @@ fn main() -> Result<(), String> {
 
     // attach modules
     for module_path in &snapshot.configs.modules {
-      let module_data = calcit::load_module(module_path, cli_options.entry_path.parent().expect("extract parent"))?;
+      let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
       for (k, v) in &module_data.files {
         snapshot.files.insert(k.to_owned(), v.to_owned());
       }
