@@ -158,7 +158,7 @@ export let peekDefatom = (path: string): CalcitRef => {
   return refsRegistry.get(path);
 };
 
-export let deref = (x: CalcitRef): CalcitValue => {
+export let _$n_atom_$o_deref = (x: CalcitRef): CalcitValue => {
   return x.value;
 };
 

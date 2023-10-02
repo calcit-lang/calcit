@@ -163,7 +163,7 @@ pub enum CalcitProc {
   NativeSetAssoc,
   // refs
   Atom,
-  Deref,
+  AtomDeref,
   AddWatch,
   RemoveWatch,
   // records
@@ -346,7 +346,7 @@ impl FromStr for CalcitProc {
       "&set:assoc" => Ok(Self::NativeSetAssoc),
       // refs
       "atom" => Ok(Self::Atom),
-      "deref" => Ok(Self::Deref),
+      "&atom:deref" => Ok(Self::AtomDeref),
       "add-watch" => Ok(Self::AddWatch),
       "remove-watch" => Ok(Self::RemoveWatch),
       // records
@@ -518,7 +518,7 @@ impl Display for CalcitProc {
       Self::NativeSetDestruct => write!(f, "&set:destruct"),
       Self::NativeSetAssoc => write!(f, "&set:assoc"),
       Self::Atom => write!(f, "atom"),
-      Self::Deref => write!(f, "deref"),
+      Self::AtomDeref => write!(f, "&atom:deref"),
       Self::AddWatch => write!(f, "add-watch"),
       Self::RemoveWatch => write!(f, "remove-watch"),
       Self::NewRecord => write!(f, "new-record"),

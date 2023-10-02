@@ -53,11 +53,27 @@
               test-tuple/main!
               test-algebra/main!
               test-buffer
+              test-atom
               inside-js: $ test-js/main!
               do true
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
+        |test-atom $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            fn ()
+              let
+                  *a $ atom 1
+                assert= 1 $ deref *a
+                assert= 1 $ &atom:deref *a
+              let
+                  %A $ defrecord! %A
+                    :deref $ fn (self)
+                      tag-match self
+                        (:atom x) x
+                assert= 1 $ deref $ %:: %A :atom 1
+                assert= 1 $ deref $ %:: %A :atom 1
+                assert= 2 $ deref $ %:: %A :atom 2
         |test-arguments $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing arguments")

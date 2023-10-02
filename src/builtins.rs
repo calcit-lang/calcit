@@ -212,7 +212,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeSetDestruct => sets::destruct(args),
     // refs
     CalcitProc::Atom => refs::atom(args),
-    CalcitProc::Deref => refs::deref(args),
+    CalcitProc::AtomDeref => refs::atom_deref(args),
     CalcitProc::AddWatch => refs::add_watch(args),
     CalcitProc::RemoveWatch => refs::remove_watch(args),
     // records
