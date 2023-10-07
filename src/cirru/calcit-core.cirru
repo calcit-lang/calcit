@@ -1594,11 +1594,15 @@
               if (ends-with? s piece)
                 &str:slice s 0 $ &- (&str:count s) (&str:count piece)
                 , s
+        |deref $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn deref (*a)
+              if (ref? *a) (&atom:deref *a) (.deref *a)
         |swap! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro swap! (a f & args)
               quasiquote $ reset! ~a
-                ~f (deref ~a) ~@args
+                ~f (&atom:deref ~a) ~@args
         |symbol? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn symbol? (x)

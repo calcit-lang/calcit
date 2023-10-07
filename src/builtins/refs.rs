@@ -108,7 +108,8 @@ pub fn atom(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn deref(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+/// previously `deref`, but `deref` now turned into a function calling `&atom:deref`
+pub fn atom_deref(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Ref(_path, locked_pair)) => {
       let pair = (**locked_pair).lock().expect("read pair from block");

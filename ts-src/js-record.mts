@@ -34,6 +34,15 @@ export class CalcitRecord {
       throw new Error(`Cannot find :${field} among (${this.fields.join(",")})`);
     }
   }
+  getOrNil(k: CalcitValue) {
+    let field = castTag(k);
+    let idx = findInFields(this.fields, field);
+    if (idx >= 0) {
+      return this.values[idx];
+    } else {
+      return undefined;
+    }
+  }
   assoc(k: CalcitValue, v: CalcitValue): CalcitRecord {
     let values: Array<CalcitValue> = new Array(this.fields.length);
     let k_id = castTag(k);

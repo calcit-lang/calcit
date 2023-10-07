@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.8.3";
+export const calcit_version = "0.8.4";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -158,7 +158,7 @@ export let peekDefatom = (path: string): CalcitRef => {
   return refsRegistry.get(path);
 };
 
-export let deref = (x: CalcitRef): CalcitValue => {
+export let _$n_atom_$o_deref = (x: CalcitRef): CalcitValue => {
   return x.value;
 };
 
@@ -1309,10 +1309,9 @@ export function invoke_method_closure(p: string) {
   };
 }
 
-export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[]) {
+function lookup_class(obj: CalcitValue): [CalcitRecord, string] {
   let klass: CalcitRecord;
   let tag: string;
-  let value = obj;
   if (obj == null) {
     tag = "&core-nil-class";
     klass = calcit_builtin_classes.nil;
@@ -1349,20 +1348,19 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
     tag = "&core-map-class";
     klass = calcit_builtin_classes.map;
   } else {
-    if ((obj as any)[p] == null) {
-      throw new Error(`Missing method \`${p}\` on object`);
-    }
-    return (obj as any)[p](...args); // trying to call native JavaScript method
+    throw new Error("Cannot find class for this object for invoking");
   }
-  if (klass == null) throw new Error("Cannot find class for this object for invoking");
+  return [klass, tag];
+}
 
-  if (!klass.contains(p)) {
-    throw new Error(`Missing method '.${p}' for '${tag}' object '${obj}'.\navailable fields are: ${klass.fields.map((fd: CalcitTag) => fd.value).join(" ")}`);
+export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[]) {
+  let [klass, tag] = lookup_class(obj);
+  let method = klass.getOrNil(p);
+  if (method == null) {
+    throw new Error(`No method '.${p}' for '${tag}' object '${obj}'.\navailable fields are: ${klass.fields.map((fd: CalcitTag) => fd.value).join(" ")}`);
   }
-
-  let method = klass.get(p);
   if (typeof method === "function") {
-    return method(value, ...args);
+    return method(obj, ...args);
   } else {
     throw new Error("Method for invoking is not a function");
   }
