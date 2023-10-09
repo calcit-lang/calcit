@@ -106,7 +106,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
           } => Edn::map_from_iter([
             (Edn::tag("kind"), Edn::tag("def")),
             (Edn::tag("ns"), Edn::Str((**r_ns).into())),
-            (Edn::tag("at_def"), Edn::Str((**at_def).into())),
+            (Edn::tag("at-def"), Edn::Str((**at_def).into())),
             (Edn::tag("def"), Edn::Str((**r_def).into())),
             (
               Edn::tag("rule"),
@@ -134,6 +134,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       Edn::map_from_iter([
         (Edn::tag("kind"), Edn::tag("symbol")),
         (Edn::tag("val"), Edn::Str((**sym).into())),
+        (Edn::tag("at-def"), Edn::Str((**at_def).into())),
         (Edn::tag("ns"), Edn::Str((**ns).into())),
         (Edn::tag("resolved"), resolved),
       ])
