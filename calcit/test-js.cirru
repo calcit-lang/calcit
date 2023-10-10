@@ -102,6 +102,8 @@
                 assert= (.-a a) 2
                 set! (.-a-b a) 3
                 assert= (.-a-b a) 3
+              ; js/console.log $ range 1000
+              ; js/console.log $ repeat ({} (:a (range 10))) 400
               assert/deepEqual
                 to-js-data $ [] 1 2 3
                 js-array 1 2 3

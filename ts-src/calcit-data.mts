@@ -404,7 +404,7 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
   }
 
   if (!disableJsDataWarning) {
-    console.warn("Unknown structure to string, better use `console.log`", x);
+    console.warn("Non Calcit data in stringify", x);
   }
   return `(#js ${JSON.stringify(x)})`;
 };
