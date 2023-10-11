@@ -12,6 +12,8 @@
             defn main! () (log-title "|Testing edn")
               test-edn
               test-edn-comment
+              inside-eval:
+                test-symbol
         |test-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-edn ()
@@ -84,6 +86,18 @@
               assert=
                 :: :a 1
                 parse-cirru-edn "|:: :a (; comment) 1"
+
+        |test-symbol $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-symbol ()
+              log-title "|Testing symbol to edn"
+              assert=
+                &extract-code-into-edn 'aa
+                {} (:ns "|test-edn.main")
+                  :resolved ({} (|kind nil))
+                  :kind :symbol
+                  :val |aa
+                  :at-def |test-symbol
 
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote

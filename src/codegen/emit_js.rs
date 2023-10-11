@@ -1365,7 +1365,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       ),
     )?;
     if wrote_new {
-      println!("Emitted js file: {}", js_file_path.to_str().expect("exptract path"));
+      println!("emitted: {}", js_file_path.to_str().expect("exptract path"));
     } else {
       unchanged_ns.insert(ns.to_owned());
     }

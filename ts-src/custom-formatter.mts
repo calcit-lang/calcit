@@ -30,6 +30,13 @@ let embedObject = (x: CalcitValue) => {
   ];
 };
 
+let shortPreview = (x: string) => {
+  if (x.length > 102) {
+    return x.substring(0, 100) + "...";
+  }
+  return x;
+};
+
 export let load_console_formatter_$x_ = () => {
   if (typeof window === "object") {
     window["devtoolsFormatters"] = [
@@ -45,12 +52,12 @@ export let load_console_formatter_$x_ = () => {
             return [
               "div",
               { style: "color: hsl(280, 80%, 60%, 0.4)" },
-              obj.toString(true, true),
+              shortPreview(obj.toString(true, true)),
               ["span", { style: "font-size: 80%; vertical-align: 0.7em; color: hsl(280, 80%, 60%, 0.8)" }, `${obj.len()}`],
             ];
           }
           if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
-            return ["div", { style: "color: hsl(280, 80%, 60%, 0.4)" }, obj.toString(true, true)];
+            return ["div", { style: "color: hsl(280, 80%, 60%, 0.4)" }, shortPreview(obj.toString(true, true))];
           }
           if (obj instanceof CalcitSet) {
             return ["div", { style: "color: hsl(280, 80%, 60%, 0.4)" }, obj.toString(true)];
@@ -112,12 +119,13 @@ export let load_console_formatter_$x_ = () => {
         },
         body: (obj, config) => {
           if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
+            let flexMode = obj.len() > 40 ? "inline-flex" : "flex";
             return ["div", { style: "color: hsl(280, 80%, 60%)" }].concat(
               obj.toArray().map((x, idx) => {
                 return [
                   "div",
-                  { style: "margin-left: 8px; display: flex;" },
-                  ["span", { style: "font-family: monospace; margin-right: 8px; color: hsl(280,80%,90%); flex-shrink: 0;" }, idx],
+                  { style: `margin-left: 8px; display: ${flexMode}; padding-right: 16px;` },
+                  ["span", { style: "font-family: monospace; margin-right: 8px; color: hsl(280,80%,85%); flex-shrink: 0; font-size: 10px;" }, idx],
                   embedObject(x),
                 ];
               }) as any[]
