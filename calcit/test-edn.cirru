@@ -98,6 +98,22 @@
                   :kind :symbol
                   :val |aa
                   :at-def |test-symbol
+              let
+                  data $ [] 1 2 $ &{} :a 1 :b $ :: :t 3 |a true
+                assert= data
+                  eval $ &data-to-code data
+              let
+                  d $ new-record :A :a
+                assert= d
+                  eval $ &data-to-code d
+              let
+                  data $ #{} 1 2 3
+                assert= data
+                  eval $ &data-to-code data
+              let
+                  d $ [] :t 's
+                assert= d
+                  eval $ &data-to-code d
 
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote

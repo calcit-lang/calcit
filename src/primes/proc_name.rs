@@ -22,6 +22,7 @@ pub enum CalcitProc {
   NativeBuffer,
   NativeHash,
   NativeExtractCodeIntoEdn,
+  NativeDataToCode,
   // "::", unstable
   NativeTuple,
   // "%::"
@@ -160,7 +161,6 @@ pub enum CalcitProc {
   NativeSetEmpty,
   NativeSetIncludes,
   NativeSetDestruct,
-  NativeSetAssoc,
   // refs
   Atom,
   AtomDeref,
@@ -203,6 +203,7 @@ impl FromStr for CalcitProc {
       "&buffer" => Ok(Self::NativeBuffer),
       "&hash" => Ok(Self::NativeHash),
       "&extract-code-into-edn" => Ok(Self::NativeExtractCodeIntoEdn),
+      "&data-to-code" => Ok(Self::NativeDataToCode),
       // tuples // unstable
       "::" => Ok(Self::NativeTuple),
       "%::" => Ok(Self::NativeClassTuple),
@@ -343,7 +344,6 @@ impl FromStr for CalcitProc {
       "&set:empty?" => Ok(Self::NativeSetEmpty),
       "&set:includes?" => Ok(Self::NativeSetIncludes),
       "&set:destruct" => Ok(Self::NativeSetDestruct),
-      "&set:assoc" => Ok(Self::NativeSetAssoc),
       // refs
       "atom" => Ok(Self::Atom),
       "&atom:deref" => Ok(Self::AtomDeref),
@@ -388,6 +388,7 @@ impl Display for CalcitProc {
       Self::NativeBuffer => write!(f, "&buffer"),
       Self::NativeHash => write!(f, "&hash"),
       Self::NativeExtractCodeIntoEdn => write!(f, "&extract-code-into-edn"),
+      Self::NativeDataToCode => write!(f, "&data-to-code"),
       Self::NativeTuple => write!(f, "::"),
       Self::NativeClassTuple => write!(f, "%::"),
       Self::NativeTupleNth => write!(f, "&tuple:nth"),
@@ -516,7 +517,6 @@ impl Display for CalcitProc {
       Self::NativeSetEmpty => write!(f, "&set:empty?"),
       Self::NativeSetIncludes => write!(f, "&set:includes?"),
       Self::NativeSetDestruct => write!(f, "&set:destruct"),
-      Self::NativeSetAssoc => write!(f, "&set:assoc"),
       Self::Atom => write!(f, "atom"),
       Self::AtomDeref => write!(f, "&atom:deref"),
       Self::AddWatch => write!(f, "add-watch"),
