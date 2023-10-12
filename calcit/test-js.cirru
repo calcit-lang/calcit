@@ -10,6 +10,7 @@
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async)
+              test-data-gen
               when (> 1 2)
                 raise $ str "|error of math" 2 1
                 raise "|base error"
@@ -139,6 +140,19 @@
                     if (>= b 5) xs $ recur (conj xs b) (inc b)
                 assert= a $ [] 0 1 2 3 4
                 assert= b -1
+
+        |load-data-code $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defmacro load-data-code (s)
+              &data-to-code $ parse-cirru-edn s
+
+        |test-data-gen $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            fn ()
+              log-title "|Testing code gen from Cirru Edn"
+              assert=
+                :: :code $ parse-cirru "|+ 1 2"
+                load-data-code "|:: :code $ quote $ $ + 1 2"
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-js.main $ :require (|os :as os) (|assert :as assert)

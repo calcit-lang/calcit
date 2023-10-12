@@ -114,6 +114,10 @@
                   d $ [] :t 's
                 assert= d
                   eval $ &data-to-code d
+              let
+                  code $ quote $ + 1 2
+                assert= code
+                  eval $ &data-to-code code
 
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
