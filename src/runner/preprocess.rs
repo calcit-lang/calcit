@@ -279,6 +279,7 @@ pub fn preprocess_expr(
     }
     Calcit::Method(..) => Ok((expr.to_owned(), None)),
     Calcit::Proc(..) => Ok((expr.to_owned(), None)),
+    Calcit::Syntax(..) => Ok((expr.to_owned(), None)),
     _ => {
       let mut warnings = check_warnings.borrow_mut();
       let loc = NodeLocation {

@@ -6,10 +6,11 @@ use crate::{
   codegen::gen_ir::dump_code,
   data::{
     cirru::{self, cirru_to_calcit},
+    data_to_calcit,
     edn::{self, edn_to_calcit},
   },
   primes,
-  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope, CrListWrap},
+  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope, CrListWrap, GENERATED_DEF, GEN_NS},
   runner,
   util::number::f64_to_usize,
 };
@@ -577,10 +578,25 @@ pub fn hash(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Number(s.finish() as f64))
 }
 
-// extract out calcit internal meta code
+/// extract out calcit internal meta code
 pub fn extract_code_into_edn(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("&extract-code-into-edn expected 1 argument, got:", xs);
   }
   Ok(edn_to_calcit(&dump_code(&xs[0]), &Calcit::Nil))
+}
+
+/// turns data back into code in generating js
+pub fn data_to_code(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes("&data-to-code expected 1 argument, got:", xs);
+  }
+
+  let gen_ns: Arc<str> = Arc::from(GEN_NS);
+  let gen_def: Arc<str> = Arc::from(GENERATED_DEF);
+
+  match data_to_calcit(&xs[0], gen_ns, gen_def) {
+    Ok(v) => Ok(v),
+    Err(e) => CalcitErr::err_str(format!("&data-to-code failed: {e}")),
+  }
 }

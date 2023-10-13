@@ -71,6 +71,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeBuffer => meta::buffer(args),
     CalcitProc::NativeHash => meta::hash(args),
     CalcitProc::NativeExtractCodeIntoEdn => meta::extract_code_into_edn(args),
+    CalcitProc::NativeDataToCode => meta::data_to_code(args),
     // tuple
     CalcitProc::NativeTuple => meta::new_tuple(args), // unstable solution for the name
     CalcitProc::NativeClassTuple => meta::new_class_tuple(args),
@@ -230,7 +231,6 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitItems, call_stack: &CallS
     CalcitProc::NativeRecordGet => records::get(args),
     CalcitProc::NativeRecordAssoc => records::assoc(args),
     CalcitProc::NativeRecordExtendAs => records::extend_as(args),
-    a => Err(CalcitErr::use_msg_stack(format!("No such proc: {a}"), call_stack)),
   }
 }
 
