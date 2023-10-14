@@ -1475,6 +1475,14 @@ export let _$n_buffer = (...xs: CalcitValue[]): Uint8Array => {
   return buf;
 };
 
+export let _$n_cirru_nth = (xs: CalcitCirruQuote, idx: number) => {
+  if (xs instanceof CalcitCirruQuote) {
+    return xs.nth(idx);
+  } else {
+    throw new Error("Expected a Cirru Quote");
+  }
+};
+
 export let _$n_hash = (x: CalcitValue): number => {
   return hashFunction(x);
 };

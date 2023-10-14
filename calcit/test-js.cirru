@@ -151,8 +151,8 @@
             fn ()
               log-title "|Testing code gen from Cirru Edn"
               assert=
-                :: :code $ parse-cirru "|+ 1 2"
-                load-data-code "|:: :code $ quote $ $ + 1 2"
+                :: :code $ &cirru-nth (parse-cirru "|+ 1 2") 0
+                load-data-code "|:: :code $ quote $ + 1 2"
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-js.main $ :require (|os :as os) (|assert :as assert)

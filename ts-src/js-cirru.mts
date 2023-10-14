@@ -15,6 +15,9 @@ type CirruEdnFormat = string | CirruEdnFormat[];
 export class CalcitCirruQuote {
   value: CirruWriterNode;
   constructor(value: CirruWriterNode) {
+    if (value == null) {
+      throw new Error("cirru node cannot be null");
+    }
     this.value = value;
   }
   toString(): string {
@@ -22,6 +25,17 @@ export class CalcitCirruQuote {
   }
   toList(): CalcitValue {
     return to_calcit_data(this.value, true);
+  }
+  nth(idx: number): CalcitValue {
+    if (Array.isArray(this.value)) {
+      if (idx < this.value.length) {
+        return new CalcitCirruQuote(this.value[idx]);
+      } else {
+        throw new Error(`nth out of range: ${idx}`);
+      }
+    } else {
+      throw new Error(`&cirru-nth does not read into a string: ${this.value}`);
+    }
   }
   /** provide a simple text representation in Console or std out, with indentations */
   textForm(): string {
