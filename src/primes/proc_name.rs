@@ -23,6 +23,7 @@ pub enum CalcitProc {
   NativeHash,
   NativeExtractCodeIntoEdn,
   NativeDataToCode,
+  NativeCirruType,
   NativeCirruNth,
   // "::", unstable
   NativeTuple,
@@ -206,6 +207,7 @@ impl FromStr for CalcitProc {
       "&extract-code-into-edn" => Ok(Self::NativeExtractCodeIntoEdn),
       "&data-to-code" => Ok(Self::NativeDataToCode),
       "&cirru-nth" => Ok(Self::NativeCirruNth),
+      "&cirru-type" => Ok(Self::NativeCirruType),
       // tuples // unstable
       "::" => Ok(Self::NativeTuple),
       "%::" => Ok(Self::NativeClassTuple),
@@ -392,6 +394,7 @@ impl Display for CalcitProc {
       Self::NativeExtractCodeIntoEdn => write!(f, "&extract-code-into-edn"),
       Self::NativeDataToCode => write!(f, "&data-to-code"),
       Self::NativeCirruNth => write!(f, "&cirru-nth"),
+      Self::NativeCirruType => write!(f, "&cirru-type"),
       Self::NativeTuple => write!(f, "::"),
       Self::NativeClassTuple => write!(f, "%::"),
       Self::NativeTupleNth => write!(f, "&tuple:nth"),

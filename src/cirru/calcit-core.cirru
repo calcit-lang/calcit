@@ -1407,6 +1407,10 @@
         |negate $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn negate (x) (&- 0 x)
+        |abs $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn abs (x)
+              if (&< x 0) (&- 0 x) x
         |nil? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn nil? (x)

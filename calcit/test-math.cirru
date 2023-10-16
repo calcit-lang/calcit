@@ -70,6 +70,8 @@
               assert= 9 $ sqrt 81
               println |PI &PI
               println |E &E
+              assert= 4 (abs 4)
+              assert= (negate -4) (abs -4)
         |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing number methods")

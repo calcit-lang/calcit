@@ -604,7 +604,7 @@ pub fn data_to_code(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 /// util function to read CirruQuote, only used in list
 pub fn cirru_nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_nodes("&cirru-nth expected 2 argument, got:", xs);
+    return CalcitErr::err_nodes("&cirru-nth expected 2 arguments, got:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::CirruQuote(code), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -619,5 +619,18 @@ pub fn cirru_nth(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     },
     (Calcit::CirruQuote(_c), x) => CalcitErr::err_str(format!("expected number index, got: {x}")),
     (x, _y) => CalcitErr::err_str(format!("expected cirru quote, got: {x}")),
+  }
+}
+
+pub fn cirru_type(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes("&cirru-type expected 1 argument, got:", xs);
+  }
+  match &xs[0] {
+    Calcit::CirruQuote(code) => match code {
+      Cirru::List(_) => Ok(Calcit::Tag("list".into())),
+      Cirru::Leaf(_) => Ok(Calcit::Tag("leaf".into())),
+    },
+    a => CalcitErr::err_str(format!("expected cirru quote, got: ${a}")),
   }
 }

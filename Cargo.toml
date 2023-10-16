@@ -1,6 +1,6 @@
 [package]
 name = "calcit"
-version = "0.8.8"
+version = "0.8.9"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -36,7 +36,7 @@ im_ternary_tree = "0.0.11"
 colored = "2.0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-libloading = "0.8.0"
+libloading = "0.8.1"
 ctrlc = "3.4.1"
 
 [lib]
