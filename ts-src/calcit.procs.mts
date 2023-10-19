@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.8.8";
+export const calcit_version = "0.8.9";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -1473,6 +1473,22 @@ export let _$n_buffer = (...xs: CalcitValue[]): Uint8Array => {
   }
 
   return buf;
+};
+
+export let _$n_cirru_nth = (xs: CalcitCirruQuote, idx: number) => {
+  if (xs instanceof CalcitCirruQuote) {
+    return xs.nth(idx);
+  } else {
+    throw new Error("Expected a Cirru Quote");
+  }
+};
+
+export let _$n_cirru_type = (xs: CalcitCirruQuote, idx: number) => {
+  if (xs instanceof CalcitCirruQuote) {
+    return Array.isArray(xs.value) ? newTag("list") : newTag("leaf");
+  } else {
+    throw new Error("Expected a Cirru Quote");
+  }
 };
 
 export let _$n_hash = (x: CalcitValue): number => {

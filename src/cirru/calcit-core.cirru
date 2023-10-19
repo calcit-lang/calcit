@@ -1327,6 +1327,10 @@
           :code $ quote
             defn list? (x)
               &= (type-of x) :list
+        |cirru-quote? $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn cirru-quote? (x)
+              &= (type-of x) :cirru-quote
         |loop $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro loop (pairs & body)
@@ -1403,6 +1407,10 @@
         |negate $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn negate (x) (&- 0 x)
+        |abs $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn abs (x)
+              if (&< x 0) (&- 0 x) x
         |nil? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn nil? (x)

@@ -38,6 +38,14 @@
                   parse-cirru-edn "|{} $ :code $ quote $ + 1 2 3"
                 assert= (:: :a 1) (parse-cirru-edn "|:: :a 1")
                 assert= :cirru-quote $ type-of (parse-cirru "|a b")
+                let
+                    tree $ parse-cirru "|a b"
+                    t0 $ &cirru-nth tree 0
+                    t00 $ &cirru-nth t0 0
+                  assert= :list $ &cirru-type t0
+                  assert= :leaf $ &cirru-type t00
+                println $ parse-cirru "|a b"
+                println $ &cirru-nth (parse-cirru "|a b") 0
                 assert= "|{} $ :code\n  quote $ + 1 2 3" $ trim
                   format-cirru-edn $ {}
                     :code $ :: 'quote ([] |+ |1 |2 |3)
