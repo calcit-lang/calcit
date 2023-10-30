@@ -1,100 +1,53 @@
 use std::cmp::Ordering;
 use std::cmp::Ordering::*;
-use std::fmt;
-use std::sync::Arc;
 
 /// core syntax inside Calcit
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, EnumString, strum_macros::Display)]
 pub enum CalcitSyntax {
+  #[strum(serialize = "defn")]
   Defn,
+  #[strum(serialize = "defmacro")]
   Defmacro,
+  #[strum(serialize = "if")]
   If,
   /// `&let` that binds only 1 local
+  #[strum(serialize = "&let")]
   CoreLet,
   /// to turn code into quoted data
+  #[strum(serialize = "quote")]
   Quote,
   /// used inside macro
+  #[strum(serialize = "quasiquote")]
   Quasiquote,
+  #[strum(serialize = "gensym")]
   Gensym,
+  #[strum(serialize = "eval")]
   Eval,
   /// expand macro until recursive calls are resolved
+  #[strum(serialize = "macroexpand")]
   Macroexpand,
   /// expand macro just once for debugging, even `Recur` is returned
+  #[strum(serialize = "macroexpand-1")]
   Macroexpand1,
   /// expand macro until macros inside are resolved
+  #[strum(serialize = "macroexpand-all")]
   MacroexpandAll,
   /// it has special behaviors of try catch
+  #[strum(serialize = "try")]
   Try,
   /// referenced state defined and attached undefined namespace
+  #[strum(serialize = "defatom")]
   Defatom,
   /// `reset!` value to atom
+  #[strum(serialize = "reset!")]
   Reset,
   /// a hint mark inside function, currently only used for `async`
+  #[strum(serialize = "hint-fn")]
   HintFn,
 }
 
+use strum_macros::EnumString;
 use CalcitSyntax::*;
-
-impl fmt::Display for CalcitSyntax {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    let buf = match self {
-      Defn => "defn",
-      Defmacro => "defmacro",
-      If => "if",
-      CoreLet => "&let",
-      Quote => "quote",
-      Quasiquote => "quasiquote",
-      Gensym => "gensym",
-      Eval => "eval",
-      Macroexpand => "macroexpand",
-      Macroexpand1 => "macroexpand-1",
-      MacroexpandAll => "macroexpand-all",
-      Try => "try",
-      Defatom => "defatom",
-      Reset => "reset!",
-      HintFn => "hint-fn",
-    };
-    f.write_str(buf)
-  }
-}
-
-impl TryFrom<&str> for CalcitSyntax {
-  type Error = String;
-  fn try_from(s: &str) -> Result<Self, Self::Error> {
-    match s {
-      "defn" => Ok(Defn),
-      "defmacro" => Ok(Defmacro),
-      "if" => Ok(If),
-      "&let" => Ok(CoreLet),
-      "quote" => Ok(Quote),
-      "quasiquote" => Ok(Quasiquote),
-      "gensym" => Ok(Gensym),
-      "eval" => Ok(Eval),
-      "macroexpand" => Ok(Macroexpand),
-      "macroexpand-1" => Ok(Macroexpand1),
-      "macroexpand-all" => Ok(MacroexpandAll),
-      "try" => Ok(Try),
-      "defatom" => Ok(Defatom),
-      "reset!" => Ok(Reset),
-      "hint-fn" => Ok(HintFn),
-      _ => Err(format!("Unknown format! {s}")),
-    }
-  }
-}
-
-impl TryFrom<Arc<str>> for CalcitSyntax {
-  type Error = String;
-  fn try_from(s: Arc<str>) -> Result<Self, Self::Error> {
-    Self::try_from(&*s)
-  }
-}
-
-impl TryFrom<&Arc<str>> for CalcitSyntax {
-  type Error = String;
-  fn try_from(s: &Arc<str>) -> Result<Self, Self::Error> {
-    Self::try_from(&**s)
-  }
-}
 
 impl CalcitSyntax {
   /// check is given name is a syntax name

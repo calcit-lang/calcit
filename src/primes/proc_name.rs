@@ -1,546 +1,345 @@
-use std::{
-  fmt::{Display, Formatter},
-  str::FromStr,
-};
+use strum_macros::EnumString;
 
 /// represent builtin functions for performance reasons.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumString, strum_macros::Display)]
 pub enum CalcitProc {
   // meta
+  #[strum(serialize = "type-of")]
   TypeOf,
+  #[strum(serialize = "recur")]
   Recur,
+  #[strum(serialize = "format-to-lisp")]
   FormatToLisp,
+  #[strum(serialize = "format-to-cirru")]
   FormatToCirru,
+  #[strum(serialize = "&reset-gensym-index!")]
   NativeResetGenSymIndex,
+  #[strum(serialize = "&get-calcit-running-mode")]
   NativeGetCalcitRunningMode,
+  #[strum(serialize = "generate-id!")]
   GenerateId,
+  #[strum(serialize = "turn-symbol")]
   TurnSymbol,
+  #[strum(serialize = "turn-tag")]
   TurnTag,
+  #[strum(serialize = "&compare")]
   NativeCompare,
+  #[strum(serialize = "&get-os")]
   NativeGetOs,
+  #[strum(serialize = "&format-ternary-tree")]
   NativeFormatTernaryTree,
+  #[strum(serialize = "&buffer")]
   NativeBuffer,
+  #[strum(serialize = "&hash")]
   NativeHash,
+  #[strum(serialize = "&extract-code-into-edn")]
   NativeExtractCodeIntoEdn,
+  #[strum(serialize = "&data-to-code")]
   NativeDataToCode,
+  #[strum(serialize = "&cirru-type")]
   NativeCirruType,
+  #[strum(serialize = "&cirru-nth")]
   NativeCirruNth,
-  // "::", unstable
+  #[strum(serialize = "::")]
   NativeTuple,
-  // "%::"
+  #[strum(serialize = "%::")]
   NativeClassTuple,
+  #[strum(serialize = "&tuple:nth")]
   NativeTupleNth,
+  #[strum(serialize = "&tuple:assoc")]
   NativeTupleAssoc,
+  #[strum(serialize = "&tuple:count")]
   NativeTupleCount,
+  #[strum(serialize = "&tuple:class")]
   NativeTupleClass,
+  #[strum(serialize = "&tuple:params")]
   NativeTupleParams,
+  #[strum(serialize = "&tuple:with-class")]
   NativeTupleWithClass,
+  #[strum(serialize = "&display-stack")]
   NativeDisplayStack,
+  #[strum(serialize = "raise")]
   Raise,
+  #[strum(serialize = "quit!")]
   Quit,
+  #[strum(serialize = "get-env")]
   GetEnv,
+  #[strum(serialize = "&get-calcit-backend")]
   NativeGetCalcitBackend,
+  #[strum(serialize = "read-file")]
   ReadFile,
+  #[strum(serialize = "write-file")]
   WriteFile,
   // external format
+  #[strum(serialize = "parse-cirru")]
   ParseCirru,
+  #[strum(serialize = "parse-cirru-list")]
   ParseCirruList,
+  #[strum(serialize = "format-cirru")]
   FormatCirru,
+  #[strum(serialize = "parse-cirru-edn")]
   ParseCirruEdn,
+  #[strum(serialize = "format-cirru-edn")]
   FormatCirruEdn,
+  #[strum(serialize = "&cirru-quote:to-list")]
   NativeCirruQuoteToList,
   // time
+  #[strum(serialize = "cpu-time")]
   CpuTime,
   // logics
+  #[strum(serialize = "&=")]
   NativeEquals,
+  #[strum(serialize = "&<")]
   NativeLessThan,
+  #[strum(serialize = "&>")]
   NativeGreaterThan,
+  #[strum(serialize = "not")]
   Not,
+  #[strum(serialize = "identical?")]
   Identical,
   // math
+  #[strum(serialize = "&+")]
   NativeAdd,
+  #[strum(serialize = "&-")]
   NativeMinus,
+  #[strum(serialize = "&*")]
   NativeMultiply,
+  #[strum(serialize = "&/")]
   NativeDivide,
+  #[strum(serialize = "round")]
   Round,
+  #[strum(serialize = "floor")]
   Floor,
+  #[strum(serialize = "sin")]
   Sin,
+  #[strum(serialize = "cos")]
   Cos,
+  #[strum(serialize = "pow")]
   Pow,
+  #[strum(serialize = "ceil")]
   Ceil,
+  #[strum(serialize = "sqrt")]
   Sqrt,
+  #[strum(serialize = "round?")]
   IsRound,
+  #[strum(serialize = "&number:fract")]
   NativeNumberFract,
+  #[strum(serialize = "&number:rem")]
   NativeNumberRem,
+  #[strum(serialize = "&number:format")]
   NativeNumberFormat,
+  #[strum(serialize = "&number:display-by")]
   NativeNumberDisplayBy,
+  #[strum(serialize = "bit-shl")]
   BitShl,
+  #[strum(serialize = "bit-shr")]
   BitShr,
+  #[strum(serialize = "bit-and")]
   BitAnd,
+  #[strum(serialize = "bit-or")]
   BitOr,
+  #[strum(serialize = "bit-xor")]
   BitXor,
+  #[strum(serialize = "bit-not")]
   BitNot,
   // strings
+  #[strum(serialize = "&str:concat")]
   NativeStrConcat,
+  #[strum(serialize = "trim")]
   Trim,
+  #[strum(serialize = "&str")]
   NativeStr,
+  #[strum(serialize = "turn-string")]
   TurnString,
+  #[strum(serialize = "split")]
   Split,
+  #[strum(serialize = "split-lines")]
   SplitLines,
+  #[strum(serialize = "starts-with?")]
   StartsWith,
+  #[strum(serialize = "ends-with?")]
   EndsWith,
+  #[strum(serialize = "get-char-code")]
   GetCharCode,
+  #[strum(serialize = "char-from-code")]
   CharFromCode,
+  #[strum(serialize = "to-lispy-string")]
   PrStr,
+  #[strum(serialize = "parse-float")]
   ParseFloat,
+  #[strum(serialize = "blank?")]
   IsBlank,
+  #[strum(serialize = "&str:compare")]
   NativeStrCompare,
+  #[strum(serialize = "&str:replace")]
   NativeStrReplace,
+  #[strum(serialize = "&str:slice")]
   NativeStrSlice,
+  #[strum(serialize = "&str:find-index")]
   NativeStrFindIndex,
+  #[strum(serialize = "&str:escape")]
   NativeStrEscape,
+  #[strum(serialize = "&str:count")]
   NativeStrCount,
+  #[strum(serialize = "&str:empty?")]
   NativeStrEmpty,
+  #[strum(serialize = "&str:contains?")]
   NativeStrContains,
+  #[strum(serialize = "&str:includes?")]
   NativeStrIncludes,
+  #[strum(serialize = "&str:nth")]
   NativeStrNth,
+  #[strum(serialize = "&str:first")]
   NativeStrFirst,
+  #[strum(serialize = "&str:rest")]
   NativeStrRest,
+  #[strum(serialize = "&str:pad-left")]
   NativeStrPadLeft,
+  #[strum(serialize = "&str:pad-right")]
   NativeStrPadRight,
   // lists
+  #[strum(serialize = "[]")]
   List,
+  #[strum(serialize = "append")]
   Append,
+  #[strum(serialize = "prepend")]
   Prepend,
+  #[strum(serialize = "butlast")]
   Butlast,
+  #[strum(serialize = "range")]
   Range,
+  #[strum(serialize = "sort")]
   Sort,
+  #[strum(serialize = "foldl")]
   Foldl,
+  #[strum(serialize = "foldl-shortcut")]
   FoldlShortcut,
+  #[strum(serialize = "foldr-shortcut")]
   FoldrShortcut,
+  #[strum(serialize = "&list:reverse")]
   NativeListReverse,
+  #[strum(serialize = "&list:concat")]
   NativeListConcat,
+  #[strum(serialize = "&list:count")]
   NativeListCount,
+  #[strum(serialize = "&list:empty?")]
   NativeListEmpty,
+  #[strum(serialize = "&list:slice")]
   NativeListSlice,
+  #[strum(serialize = "&list:assoc-before")]
   NativeListAssocBefore,
+  #[strum(serialize = "&list:assoc-after")]
   NativeListAssocAfter,
+  #[strum(serialize = "&list:contains?")]
   NativeListContains,
+  #[strum(serialize = "&list:includes?")]
   NativeListIncludes,
+  #[strum(serialize = "&list:nth")]
   NativeListNth,
+  #[strum(serialize = "&list:first")]
   NativeListFirst,
+  #[strum(serialize = "&list:rest")]
   NativeListRest,
+  #[strum(serialize = "&list:assoc")]
   NativeListAssoc,
+  #[strum(serialize = "&list:dissoc")]
   NativeListDissoc,
+  #[strum(serialize = "&list:to-set")]
   NativeListToSet,
+  #[strum(serialize = "&list:distinct")]
   NativeListDistinct,
   // maps
+  #[strum(serialize = "&{}")]
   NativeMap,
+  #[strum(serialize = "&merge")]
   NativeMerge,
+  #[strum(serialize = "to-pairs")]
   ToPairs,
+  #[strum(serialize = "&merge-non-nil")]
   NativeMergeNonNil,
+  #[strum(serialize = "&map:get")]
   NativeMapGet,
+  #[strum(serialize = "&map:dissoc")]
   NativeMapDissoc,
+  #[strum(serialize = "&map:to-list")]
   NativeMapToList,
+  #[strum(serialize = "&map:count")]
   NativeMapCount,
+  #[strum(serialize = "&map:empty?")]
   NativeMapEmpty,
+  #[strum(serialize = "&map:contains?")]
   NativeMapContains,
+  #[strum(serialize = "&map:includes?")]
   NativeMapIncludes,
+  #[strum(serialize = "&map:destruct")]
   NativeMapDestruct,
+  #[strum(serialize = "&map:assoc")]
   NativeMapAssoc,
+  #[strum(serialize = "&map:diff-new")]
   NativeMapDiffNew,
+  #[strum(serialize = "&map:diff-keys")]
   NativeMapDiffKeys,
+  #[strum(serialize = "&map:common-keys")]
   NativeMapCommonKeys,
   // sets
+  #[strum(serialize = "#{}")]
   Set,
+  #[strum(serialize = "&include")]
   NativeInclude,
+  #[strum(serialize = "&exclude")]
   NativeExclude,
+  #[strum(serialize = "&difference")]
   NativeDifference,
+  #[strum(serialize = "&union")]
   NativeUnion,
+  #[strum(serialize = "&set:intersection")]
   NativeSetIntersection,
+  #[strum(serialize = "&set:to-list")]
   NativeSetToList,
+  #[strum(serialize = "&set:count")]
   NativeSetCount,
+  #[strum(serialize = "&set:empty?")]
   NativeSetEmpty,
+  #[strum(serialize = "&set:includes?")]
   NativeSetIncludes,
+  #[strum(serialize = "&set:destruct")]
   NativeSetDestruct,
   // refs
+  #[strum(serialize = "atom")]
   Atom,
+  #[strum(serialize = "&atom:deref")]
   AtomDeref,
+  #[strum(serialize = "add-watch")]
   AddWatch,
+  #[strum(serialize = "remove-watch")]
   RemoveWatch,
   // records
+  #[strum(serialize = "new-record")]
   NewRecord,
+  #[strum(serialize = "new-class-record")]
   NewClassRecord,
+  #[strum(serialize = "&%{}")]
   NativeRecord,
+  #[strum(serialize = "&record:class")]
   NativeRecordClass,
+  #[strum(serialize = "&record:with-class")]
   NativeRecordWithClass,
+  #[strum(serialize = "&record:matches?")]
   NativeRecordMatches,
+  #[strum(serialize = "&record:from-map")]
   NativeRecordFromMap,
+  #[strum(serialize = "&record:get-name")]
   NativeRecordGetName,
+  #[strum(serialize = "&record:to-map")]
   NativeRecordToMap,
+  #[strum(serialize = "&record:count")]
   NativeRecordCount,
+  #[strum(serialize = "&record:contains?")]
   NativeRecordContains,
+  #[strum(serialize = "&record:get")]
   NativeRecordGet,
+  #[strum(serialize = "&record:assoc")]
   NativeRecordAssoc,
+  #[strum(serialize = "&record:extend-as")]
   NativeRecordExtendAs,
-}
-
-impl FromStr for CalcitProc {
-  type Err = String;
-
-  fn from_str(s: &str) -> Result<Self, Self::Err> {
-    match s {
-      "type-of" => Ok(Self::TypeOf),
-      "recur" => Ok(Self::Recur),
-      "format-to-lisp" => Ok(Self::FormatToLisp),
-      "format-to-cirru" => Ok(Self::FormatToCirru),
-      "&reset-gensym-index!" => Ok(Self::NativeResetGenSymIndex),
-      "&get-calcit-running-mode" => Ok(Self::NativeGetCalcitRunningMode),
-      "generate-id!" => Ok(Self::GenerateId),
-      "turn-symbol" => Ok(Self::TurnSymbol),
-      "turn-tag" => Ok(Self::TurnTag),
-      "&compare" => Ok(Self::NativeCompare),
-      "&get-os" => Ok(Self::NativeGetOs),
-      "&format-ternary-tree" => Ok(Self::NativeFormatTernaryTree),
-      "&buffer" => Ok(Self::NativeBuffer),
-      "&hash" => Ok(Self::NativeHash),
-      "&extract-code-into-edn" => Ok(Self::NativeExtractCodeIntoEdn),
-      "&data-to-code" => Ok(Self::NativeDataToCode),
-      "&cirru-nth" => Ok(Self::NativeCirruNth),
-      "&cirru-type" => Ok(Self::NativeCirruType),
-      // tuples // unstable
-      "::" => Ok(Self::NativeTuple),
-      "%::" => Ok(Self::NativeClassTuple),
-      "&tuple:nth" => Ok(Self::NativeTupleNth),
-      "&tuple:assoc" => Ok(Self::NativeTupleAssoc),
-      "&tuple:count" => Ok(Self::NativeTupleCount),
-      "&tuple:class" => Ok(Self::NativeTupleClass),
-      "&tuple:params" => Ok(Self::NativeTupleParams),
-      "&tuple:with-class" => Ok(Self::NativeTupleWithClass),
-      // effects
-      "&display-stack" => Ok(Self::NativeDisplayStack),
-      "raise" => Ok(Self::Raise),
-      "quit!" => Ok(Self::Quit),
-      "get-env" => Ok(Self::GetEnv),
-      "&get-calcit-backend" => Ok(Self::NativeGetCalcitBackend),
-      "read-file" => Ok(Self::ReadFile),
-      "write-file" => Ok(Self::WriteFile),
-      // external format
-      "parse-cirru" => Ok(Self::ParseCirru),
-      "parse-cirru-list" => Ok(Self::ParseCirruList),
-      "format-cirru" => Ok(Self::FormatCirru),
-      "parse-cirru-edn" => Ok(Self::ParseCirruEdn),
-      "format-cirru-edn" => Ok(Self::FormatCirruEdn),
-      "&cirru-quote:to-list" => Ok(Self::NativeCirruQuoteToList),
-      // time
-      "cpu-time" => Ok(Self::CpuTime),
-      // logics
-      "&=" => Ok(Self::NativeEquals),
-      "&<" => Ok(Self::NativeLessThan),
-      "&>" => Ok(Self::NativeGreaterThan),
-      "not" => Ok(Self::Not),
-      "identical?" => Ok(Self::Identical),
-      // math
-      "&+" => Ok(Self::NativeAdd),
-      "&-" => Ok(Self::NativeMinus),
-      "&*" => Ok(Self::NativeMultiply),
-      "&/" => Ok(Self::NativeDivide),
-      "round" => Ok(Self::Round),
-      "floor" => Ok(Self::Floor),
-      "sin" => Ok(Self::Sin),
-      "cos" => Ok(Self::Cos),
-      "pow" => Ok(Self::Pow),
-      "ceil" => Ok(Self::Ceil),
-      "sqrt" => Ok(Self::Sqrt),
-      "round?" => Ok(Self::IsRound),
-      "&number:fract" => Ok(Self::NativeNumberFract),
-      "&number:rem" => Ok(Self::NativeNumberRem),
-      "&number:format" => Ok(Self::NativeNumberFormat),
-      "&number:display-by" => Ok(Self::NativeNumberDisplayBy),
-      "bit-shl" => Ok(Self::BitShl),
-      "bit-shr" => Ok(Self::BitShr),
-      "bit-and" => Ok(Self::BitAnd),
-      "bit-or" => Ok(Self::BitOr),
-      "bit-xor" => Ok(Self::BitXor),
-      "bit-not" => Ok(Self::BitNot),
-      // strings
-      "&str:concat" => Ok(Self::NativeStrConcat),
-      "trim" => Ok(Self::Trim),
-      "&str" => Ok(Self::NativeStr),
-      "turn-string" => Ok(Self::TurnString),
-      "split" => Ok(Self::Split),
-      "split-lines" => Ok(Self::SplitLines),
-      "starts-with?" => Ok(Self::StartsWith),
-      "ends-with?" => Ok(Self::EndsWith),
-      "get-char-code" => Ok(Self::GetCharCode),
-      "char-from-code" => Ok(Self::CharFromCode),
-      "to-lispy-string" => Ok(Self::PrStr),
-      "parse-float" => Ok(Self::ParseFloat),
-      "blank?" => Ok(Self::IsBlank),
-      "&str:compare" => Ok(Self::NativeStrCompare),
-      "&str:replace" => Ok(Self::NativeStrReplace),
-      "&str:slice" => Ok(Self::NativeStrSlice),
-      "&str:find-index" => Ok(Self::NativeStrFindIndex),
-      "&str:escape" => Ok(Self::NativeStrEscape),
-      "&str:count" => Ok(Self::NativeStrCount),
-      "&str:empty?" => Ok(Self::NativeStrEmpty),
-      "&str:contains?" => Ok(Self::NativeStrContains),
-      "&str:includes?" => Ok(Self::NativeStrIncludes),
-      "&str:nth" => Ok(Self::NativeStrNth),
-      "&str:first" => Ok(Self::NativeStrFirst),
-      "&str:rest" => Ok(Self::NativeStrRest),
-      "&str:pad-left" => Ok(Self::NativeStrPadLeft),
-      "&str:pad-right" => Ok(Self::NativeStrPadRight),
-      // lists
-      "[]" => Ok(Self::List),
-      // used as an alias for `[]`, experimental => Ok(Self::),
-      "'" => Ok(Self::List),
-      "append" => Ok(Self::Append),
-      "prepend" => Ok(Self::Prepend),
-      "butlast" => Ok(Self::Butlast),
-      "range" => Ok(Self::Range),
-      "sort" => Ok(Self::Sort),
-      "foldl" => Ok(Self::Foldl),
-      "foldl-shortcut" => Ok(Self::FoldlShortcut),
-      "foldr-shortcut" => Ok(Self::FoldrShortcut),
-      "&list:reverse" => Ok(Self::NativeListReverse),
-      "&list:concat" => Ok(Self::NativeListConcat),
-      "&list:count" => Ok(Self::NativeListCount),
-      "&list:empty?" => Ok(Self::NativeListEmpty),
-      "&list:slice" => Ok(Self::NativeListSlice),
-      "&list:assoc-before" => Ok(Self::NativeListAssocBefore),
-      "&list:assoc-after" => Ok(Self::NativeListAssocAfter),
-      "&list:contains?" => Ok(Self::NativeListContains),
-      "&list:includes?" => Ok(Self::NativeListIncludes),
-      "&list:nth" => Ok(Self::NativeListNth),
-      "&list:first" => Ok(Self::NativeListFirst),
-      "&list:rest" => Ok(Self::NativeListRest),
-      "&list:assoc" => Ok(Self::NativeListAssoc),
-      "&list:dissoc" => Ok(Self::NativeListDissoc),
-      "&list:to-set" => Ok(Self::NativeListToSet),
-      "&list:distinct" => Ok(Self::NativeListDistinct),
-      // maps
-      "&{}" => Ok(Self::NativeMap),
-      "&merge" => Ok(Self::NativeMerge),
-      "to-pairs" => Ok(Self::ToPairs),
-      "&merge-non-nil" => Ok(Self::NativeMergeNonNil),
-      "&map:get" => Ok(Self::NativeMapGet),
-      "&map:dissoc" => Ok(Self::NativeMapDissoc),
-      "&map:to-list" => Ok(Self::NativeMapToList),
-      "&map:count" => Ok(Self::NativeMapCount),
-      "&map:empty?" => Ok(Self::NativeMapEmpty),
-      "&map:contains?" => Ok(Self::NativeMapContains),
-      "&map:includes?" => Ok(Self::NativeMapIncludes),
-      "&map:destruct" => Ok(Self::NativeMapDestruct),
-      "&map:assoc" => Ok(Self::NativeMapAssoc),
-      "&map:diff-new" => Ok(Self::NativeMapDiffNew),
-      "&map:diff-keys" => Ok(Self::NativeMapDiffKeys),
-      "&map:common-keys" => Ok(Self::NativeMapCommonKeys),
-      // sets
-      "#{}" => Ok(Self::Set),
-      "&include" => Ok(Self::NativeInclude),
-      "&exclude" => Ok(Self::NativeExclude),
-      "&difference" => Ok(Self::NativeDifference),
-      "&union" => Ok(Self::NativeUnion),
-      "&set:intersection" => Ok(Self::NativeSetIntersection),
-      "&set:to-list" => Ok(Self::NativeSetToList),
-      "&set:count" => Ok(Self::NativeSetCount),
-      "&set:empty?" => Ok(Self::NativeSetEmpty),
-      "&set:includes?" => Ok(Self::NativeSetIncludes),
-      "&set:destruct" => Ok(Self::NativeSetDestruct),
-      // refs
-      "atom" => Ok(Self::Atom),
-      "&atom:deref" => Ok(Self::AtomDeref),
-      "add-watch" => Ok(Self::AddWatch),
-      "remove-watch" => Ok(Self::RemoveWatch),
-      // records
-      "new-record" => Ok(Self::NewRecord),
-      "new-class-record" => Ok(Self::NewClassRecord),
-      "&%{}" => Ok(Self::NativeRecord),
-      "&record:class" => Ok(Self::NativeRecordClass),
-      "&record:with-class" => Ok(Self::NativeRecordWithClass),
-      "&record:matches?" => Ok(Self::NativeRecordMatches),
-      "&record:from-map" => Ok(Self::NativeRecordFromMap),
-      "&record:get-name" => Ok(Self::NativeRecordGetName),
-      "&record:to-map" => Ok(Self::NativeRecordToMap),
-      "&record:count" => Ok(Self::NativeRecordCount),
-      "&record:contains?" => Ok(Self::NativeRecordContains),
-      "&record:get" => Ok(Self::NativeRecordGet),
-      "&record:assoc" => Ok(Self::NativeRecordAssoc),
-      "&record:extend-as" => Ok(Self::NativeRecordExtendAs),
-      _ => Err(format!("unknown proc: {}", s)),
-    }
-  }
-}
-
-impl Display for CalcitProc {
-  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Self::TypeOf => write!(f, "type-of"),
-      Self::Recur => write!(f, "recur"),
-      Self::FormatToLisp => write!(f, "format-to-lisp"),
-      Self::FormatToCirru => write!(f, "format-to-cirru"),
-
-      Self::NativeResetGenSymIndex => write!(f, "&reset-gensym-index!"),
-      Self::NativeGetCalcitRunningMode => write!(f, "&get-calcit-running-mode"),
-      Self::GenerateId => write!(f, "generate-id!"),
-      Self::TurnSymbol => write!(f, "turn-symbol"),
-      Self::TurnTag => write!(f, "turn-tag"),
-      Self::NativeCompare => write!(f, "&compare"),
-      Self::NativeGetOs => write!(f, "&get-os"),
-      Self::NativeFormatTernaryTree => write!(f, "&format-ternary-tree"),
-      Self::NativeBuffer => write!(f, "&buffer"),
-      Self::NativeHash => write!(f, "&hash"),
-      Self::NativeExtractCodeIntoEdn => write!(f, "&extract-code-into-edn"),
-      Self::NativeDataToCode => write!(f, "&data-to-code"),
-      Self::NativeCirruNth => write!(f, "&cirru-nth"),
-      Self::NativeCirruType => write!(f, "&cirru-type"),
-      Self::NativeTuple => write!(f, "::"),
-      Self::NativeClassTuple => write!(f, "%::"),
-      Self::NativeTupleNth => write!(f, "&tuple:nth"),
-      Self::NativeTupleAssoc => write!(f, "&tuple:assoc"),
-      Self::NativeTupleCount => write!(f, "&tuple:count"),
-      Self::NativeTupleClass => write!(f, "&tuple:class"),
-      Self::NativeTupleParams => write!(f, "&tuple:params"),
-      Self::NativeTupleWithClass => write!(f, "&tuple:with-class"),
-      Self::NativeDisplayStack => write!(f, "&display-stack"),
-      Self::Raise => write!(f, "raise"),
-      Self::Quit => write!(f, "quit!"),
-      Self::GetEnv => write!(f, "get-env"),
-      Self::NativeGetCalcitBackend => write!(f, "&get-calcit-backend"),
-      Self::ReadFile => write!(f, "read-file"),
-      Self::WriteFile => write!(f, "write-file"),
-      Self::ParseCirru => write!(f, "parse-cirru"),
-      Self::ParseCirruList => write!(f, "parse-cirru-list"),
-      Self::FormatCirru => write!(f, "format-cirru"),
-      Self::ParseCirruEdn => write!(f, "parse-cirru-edn"),
-      Self::FormatCirruEdn => write!(f, "format-cirru-edn"),
-      Self::NativeCirruQuoteToList => write!(f, "&cirru-quote:to-list"),
-      Self::CpuTime => write!(f, "cpu-time"),
-      Self::NativeEquals => write!(f, "&="),
-      Self::NativeLessThan => write!(f, "&<"),
-      Self::NativeGreaterThan => write!(f, "&>"),
-      Self::Not => write!(f, "not"),
-      Self::Identical => write!(f, "identical?"),
-      Self::NativeAdd => write!(f, "&+"),
-      Self::NativeMinus => write!(f, "&-"),
-      Self::NativeMultiply => write!(f, "&*"),
-      Self::NativeDivide => write!(f, "&/"),
-      Self::Round => write!(f, "round"),
-      Self::Floor => write!(f, "floor"),
-      Self::Sin => write!(f, "sin"),
-      Self::Cos => write!(f, "cos"),
-      Self::Pow => write!(f, "pow"),
-      Self::Ceil => write!(f, "ceil"),
-      Self::Sqrt => write!(f, "sqrt"),
-      Self::IsRound => write!(f, "round?"),
-      Self::NativeNumberFract => write!(f, "&number:fract"),
-      Self::NativeNumberRem => write!(f, "&number:rem"),
-      Self::NativeNumberFormat => write!(f, "&number:format"),
-      Self::NativeNumberDisplayBy => write!(f, "&number:display-by"),
-      Self::BitShl => write!(f, "bit-shl"),
-      Self::BitShr => write!(f, "bit-shr"),
-      Self::BitAnd => write!(f, "bit-and"),
-      Self::BitOr => write!(f, "bit-or"),
-      Self::BitXor => write!(f, "bit-xor"),
-      Self::BitNot => write!(f, "bit-not"),
-      Self::NativeStrConcat => write!(f, "&str:concat"),
-      Self::Trim => write!(f, "trim"),
-      Self::NativeStr => write!(f, "&str"),
-      Self::TurnString => write!(f, "turn-string"),
-      Self::Split => write!(f, "split"),
-      Self::SplitLines => write!(f, "split-lines"),
-      Self::StartsWith => write!(f, "starts-with?"),
-      Self::EndsWith => write!(f, "ends-with?"),
-      Self::GetCharCode => write!(f, "get-char-code"),
-      Self::CharFromCode => write!(f, "char-from-code"),
-      Self::PrStr => write!(f, "to-lispy-string"),
-      Self::ParseFloat => write!(f, "parse-float"),
-      Self::IsBlank => write!(f, "blank?"),
-      Self::NativeStrCompare => write!(f, "&str:compare"),
-      Self::NativeStrReplace => write!(f, "&str:replace"),
-      Self::NativeStrSlice => write!(f, "&str:slice"),
-      Self::NativeStrFindIndex => write!(f, "&str:find-index"),
-      Self::NativeStrEscape => write!(f, "&str:escape"),
-      Self::NativeStrCount => write!(f, "&str:count"),
-      Self::NativeStrEmpty => write!(f, "&str:empty?"),
-      Self::NativeStrContains => write!(f, "&str:contains?"),
-      Self::NativeStrIncludes => write!(f, "&str:includes?"),
-      Self::NativeStrNth => write!(f, "&str:nth"),
-      Self::NativeStrFirst => write!(f, "&str:first"),
-      Self::NativeStrRest => write!(f, "&str:rest"),
-      Self::NativeStrPadLeft => write!(f, "&str:pad-left"),
-      Self::NativeStrPadRight => write!(f, "&str:pad-right"),
-      Self::List => write!(f, "[]"),
-      Self::Append => write!(f, "append"),
-      Self::Prepend => write!(f, "prepend"),
-      Self::Butlast => write!(f, "butlast"),
-      Self::Range => write!(f, "range"),
-      Self::Sort => write!(f, "sort"),
-      Self::Foldl => write!(f, "foldl"),
-      Self::FoldlShortcut => write!(f, "foldl-shortcut"),
-      Self::FoldrShortcut => write!(f, "foldr-shortcut"),
-      Self::NativeListReverse => write!(f, "&list:reverse"),
-      Self::NativeListConcat => write!(f, "&list:concat"),
-      Self::NativeListCount => write!(f, "&list:count"),
-      Self::NativeListEmpty => write!(f, "&list:empty?"),
-      Self::NativeListSlice => write!(f, "&list:slice"),
-      Self::NativeListAssocBefore => write!(f, "&list:assoc-before"),
-      Self::NativeListAssocAfter => write!(f, "&list:assoc-after"),
-      Self::NativeListContains => write!(f, "&list:contains?"),
-      Self::NativeListIncludes => write!(f, "&list:includes?"),
-      Self::NativeListNth => write!(f, "&list:nth"),
-      Self::NativeListFirst => write!(f, "&list:first"),
-      Self::NativeListRest => write!(f, "&list:rest"),
-      Self::NativeListAssoc => write!(f, "&list:assoc"),
-      Self::NativeListDissoc => write!(f, "&list:dissoc"),
-      Self::NativeListToSet => write!(f, "&list:to-set"),
-      Self::NativeListDistinct => write!(f, "&list:distinct"),
-      Self::NativeMap => write!(f, "&{{}}"),
-      Self::NativeMerge => write!(f, "&merge"),
-      Self::ToPairs => write!(f, "to-pairs"),
-      Self::NativeMergeNonNil => write!(f, "&merge-non-nil"),
-      Self::NativeMapGet => write!(f, "&map:get"),
-      Self::NativeMapDissoc => write!(f, "&map:dissoc"),
-      Self::NativeMapToList => write!(f, "&map:to-list"),
-      Self::NativeMapCount => write!(f, "&map:count"),
-      Self::NativeMapEmpty => write!(f, "&map:empty?"),
-      Self::NativeMapContains => write!(f, "&map:contains?"),
-      Self::NativeMapIncludes => write!(f, "&map:includes?"),
-      Self::NativeMapDestruct => write!(f, "&map:destruct"),
-      Self::NativeMapAssoc => write!(f, "&map:assoc"),
-      Self::NativeMapDiffNew => write!(f, "&map:diff-new"),
-      Self::NativeMapDiffKeys => write!(f, "&map:diff-keys"),
-      Self::NativeMapCommonKeys => write!(f, "&map:common-keys"),
-      Self::Set => write!(f, "#{{}}"),
-      Self::NativeInclude => write!(f, "&include"),
-      Self::NativeExclude => write!(f, "&exclude"),
-      Self::NativeDifference => write!(f, "&difference"),
-      Self::NativeUnion => write!(f, "&union"),
-      Self::NativeSetIntersection => write!(f, "&set:intersection"),
-      Self::NativeSetToList => write!(f, "&set:to-list"),
-      Self::NativeSetCount => write!(f, "&set:count"),
-      Self::NativeSetEmpty => write!(f, "&set:empty?"),
-      Self::NativeSetIncludes => write!(f, "&set:includes?"),
-      Self::NativeSetDestruct => write!(f, "&set:destruct"),
-      Self::Atom => write!(f, "atom"),
-      Self::AtomDeref => write!(f, "&atom:deref"),
-      Self::AddWatch => write!(f, "add-watch"),
-      Self::RemoveWatch => write!(f, "remove-watch"),
-      Self::NewRecord => write!(f, "new-record"),
-      Self::NewClassRecord => write!(f, "new-class-record"),
-      Self::NativeRecord => write!(f, "&%{{}}"),
-      Self::NativeRecordClass => write!(f, "&record:class"),
-      Self::NativeRecordWithClass => write!(f, "&record:with-class"),
-      Self::NativeRecordMatches => write!(f, "&record:matches?"),
-      Self::NativeRecordFromMap => write!(f, "&record:from-map"),
-      Self::NativeRecordGetName => write!(f, "&record:get-name"),
-      Self::NativeRecordToMap => write!(f, "&record:to-map"),
-      Self::NativeRecordCount => write!(f, "&record:count"),
-      Self::NativeRecordContains => write!(f, "&record:contains?"),
-      Self::NativeRecordGet => write!(f, "&record:get"),
-      Self::NativeRecordAssoc => write!(f, "&record:assoc"),
-      Self::NativeRecordExtendAs => write!(f, "&record:extend-as"),
-    }
-  }
 }

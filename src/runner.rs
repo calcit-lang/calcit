@@ -5,6 +5,7 @@ use im_ternary_tree::TernaryTreeList;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+use strum::ParseError;
 
 use crate::builtins::{self, is_registered_proc, IMPORTED_PROCS};
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
@@ -248,7 +249,9 @@ pub fn evaluate_symbol(
     None => {
       if CalcitSyntax::is_valid(sym) {
         Ok(Calcit::Syntax(
-          sym.try_into().map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?,
+          sym
+            .parse()
+            .map_err(|e: ParseError| CalcitErr::use_msg_stack(sym.to_string() + " " + &e.to_string(), call_stack))?,
           file_ns.to_owned().into(),
         ))
       } else if let Some(v) = scope.get(sym) {
