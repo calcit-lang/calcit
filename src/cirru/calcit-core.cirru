@@ -1834,6 +1834,9 @@
               &let
                 ys $ &list:concat & xs
                 quasiquote $ &{} ~@ys
+        |' $ %{} :CodeEntry (:doc "|alias for []")
+          :code $ quote
+            def "'" []
       :ns $ %{} :CodeEntry (:doc "|built-in function and macros in `calcit.core`")
         :code $ quote
           ns calcit.core $ :require

@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use im_ternary_tree::TernaryTreeList;
+use strum::ParseError;
 
 /// only macro and func are cared about during preprocessing
 /// only used in preprocess defs
@@ -191,7 +192,9 @@ pub fn preprocess_expr(
         } else if CalcitSyntax::is_valid(def) {
           Ok((
             Calcit::Syntax(
-              def.try_into().map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?,
+              def
+                .parse()
+                .map_err(|e: ParseError| CalcitErr::use_msg_stack(def.to_string() + " " + &e.to_string(), call_stack))?,
               def_ns.to_owned(),
             ),
             None,
