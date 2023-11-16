@@ -35,7 +35,7 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
     Cirru::Leaf(_) => Err(String::from("Expected import rule in expr")),
     Cirru::List(rule_nodes) => {
       let mut xs = rule_nodes.to_owned();
-      match xs.get(0) {
+      match xs.first() {
         // strip leading `[]` symbols
         Some(Cirru::Leaf(s)) if &**s == "[]" => xs = xs[1..4].to_vec(),
         _ => (),
@@ -76,7 +76,7 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
 fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Arc<str>, Arc<ImportRule>>, String> {
   match nodes {
     Cirru::Leaf(_) => unreachable!("Expected expr for ns"),
-    Cirru::List(xs) => match (xs.get(0), xs.get(1), xs.get(2)) {
+    Cirru::List(xs) => match (xs.first(), xs.get(1), xs.get(2)) {
       // Too many clones
       (Some(x), Some(Cirru::Leaf(_)), Some(Cirru::List(xs))) if x.eq_leaf("ns") => {
         if !xs.is_empty() && xs[0].eq_leaf(":require") {

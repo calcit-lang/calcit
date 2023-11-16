@@ -283,7 +283,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
           match pair {
             Calcit::Tuple(x0, extra, _class) => match &*x0 {
               Calcit::Bool(b) => {
-                let x1 = extra.get(0).ok_or(CalcitErr::use_msg_stack_location(
+                let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   "foldl-shortcut list expected value in tuple",
                   call_stack,
                   x0.get_location(),
@@ -326,7 +326,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
           match pair {
             Calcit::Tuple(x0, extra, _class) => match &*x0 {
               Calcit::Bool(b) => {
-                let x1 = extra.get(0).ok_or(CalcitErr::use_msg_stack_location(
+                let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   "foldl set expected value in tuple",
                   call_stack,
                   x0.get_location(),
@@ -369,7 +369,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
           match pair {
             Calcit::Tuple(x0, extra, _class) => match &*x0 {
               Calcit::Bool(b) => {
-                let x1 = extra.get(0).ok_or(CalcitErr::use_msg_stack_location(
+                let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   "foldl map expected value in tuple",
                   call_stack,
                   x0.get_location(),
@@ -439,7 +439,7 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
           match pair {
             Calcit::Tuple(x0, extra, _class) => match &*x0 {
               Calcit::Bool(b) => {
-                let x1 = extra.get(0).ok_or(CalcitErr::use_msg_stack_location(
+                let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   "foldl shortcut expected value in tuple",
                   call_stack,
                   x0.get_location(),
