@@ -143,6 +143,17 @@ export let load_console_formatter_$x_ = () => {
           if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
             let ret: any[] = ["div", { style: "color: hsl(280, 80%, 60%)" }];
             let pairs = obj.pairs();
+            pairs.sort((pa, pb) => {
+              let ka = pa[0].toString();
+              let kb = pb[0].toString();
+              if (ka < kb) {
+                return -1;
+              } else if (ka > kb) {
+                return 1;
+              } else {
+                return 0;
+              }
+            });
             for (let idx = 0; idx < pairs.length; idx++) {
               let [k, v] = pairs[idx];
               ret.push([
