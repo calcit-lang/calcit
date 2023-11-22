@@ -4,11 +4,12 @@ version = 3
 
 [[package]]
 name = "archery"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab7d8a6d00b222909638a01ddcc8c533219e9d5bfada1613afae43481f2fc699"
+checksum = "487955f60962765486ce000015a3492ca45c34a2ebbf12bc0aa2b5110ca6e7d2"
 dependencies = [
  "static_assertions",
+ "triomphe",
 ]
 
 [[package]]
@@ -480,9 +481,9 @@ dependencies = [
 
 [[package]]
 name = "rpds"
-version = "1.0.1"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99334e9410cf4d16241bb88b27bc282e140327a4c4759be76f8a96e6d0cd0f35"
+checksum = "a0e15515d3ce3313324d842629ea4905c25a13f81953eadb88f85516f59290a4"
 dependencies = [
  "archery",
 ]
@@ -591,6 +592,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "triomphe"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0eee8098afad3fb0c54a9007aab6804558410503ad676d4633f9c2559a00ac0f"
 
 [[package]]
 name = "unicode-ident"

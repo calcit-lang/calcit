@@ -1,5 +1,5 @@
 // CALCIT VERSION
-export const calcit_version = "0.8.10";
+export const calcit_version = "0.8.11";
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
@@ -1348,13 +1348,17 @@ function lookup_class(obj: CalcitValue): [CalcitRecord, string] {
     tag = "&core-map-class";
     klass = calcit_builtin_classes.map;
   } else {
-    throw new Error("Cannot find class for this object for invoking");
+    return null;
   }
   return [klass, tag];
 }
 
 export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[]) {
-  let [klass, tag] = lookup_class(obj);
+  let pair = lookup_class(obj);
+  if (pair == null) {
+    throw new Error(`No class for ${obj?.toString() || JSON.stringify(obj)} to lookup .${p}`);
+  }
+  let [klass, tag] = pair;
   let method = klass.getOrNil(p);
   if (method == null) {
     throw new Error(`No method '.${p}' for '${tag}' object '${obj}'.\navailable fields are: ${klass.fields.map((fd: CalcitTag) => fd.value).join(" ")}`);

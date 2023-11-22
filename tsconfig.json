@@ -9,7 +9,7 @@
     "strictNullChecks": false,
     "moduleResolution": "node",
     "module": "esnext",
-    "target": "es2015",
+    "target": "es2020",
     "jsx": "react",
     "lib": ["es2016", "dom"],
     "types": ["node"],
