@@ -14,6 +14,7 @@
     "lib": ["es2016", "dom"],
     "types": ["node"],
     "baseUrl": "./ts-src/",
+    "resolveJsonModule": true,
     "verbatimModuleSyntax": false
   },
   "include": ["./ts-src/*"]

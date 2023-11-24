@@ -1,5 +1,7 @@
-// CALCIT VERSION
-export const calcit_version = "0.8.11";
+import pkg from "./package.json" assert { type: "json" };
+
+export const calcit_version = pkg.version;
+export const calcit_package_json = pkg;
 
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
