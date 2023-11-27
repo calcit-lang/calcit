@@ -216,15 +216,15 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
         let xs = cirru_parser::parse(&content).map_err(io_err)?;
 
         let mut file = EdnRecordView::new(EdnTag::new("FileEntry"));
-        let (ns_name, ns_code) = if let Some(Cirru::List(ns_form)) = xs.get(0) {
-          match (ns_form.get(0), ns_form.get(1)) {
+        let (ns_name, ns_code) = if let Some(Cirru::List(ns_form)) = xs.first() {
+          match (ns_form.first(), ns_form.get(1)) {
             (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) if &**x0 == "ns" => (x1.to_string(), ns_form),
             (a, b) => return Err(io_err(format!("in valid ns starts {a:?} {b:?}"))),
           }
         } else {
           return Err(io_err(format!(
             "first expression of file should be a ns form, got: {:?}",
-            xs.get(0)
+            xs.first()
           )));
         };
         file.insert(EdnTag::new("ns"), CodeEntry::from_code(Cirru::List(ns_code.to_owned())).into());
@@ -232,7 +232,7 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
         let mut defs = EdnMapView::default();
         for line in xs.iter().skip(1) {
           if let Cirru::List(ys) = line {
-            match (ys.get(0), ys.get(1)) {
+            match (ys.first(), ys.get(1)) {
               (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
                 let x0 = &**x0;
                 if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" || x0.starts_with("def") {
