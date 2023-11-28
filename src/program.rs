@@ -38,6 +38,8 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
       match xs.first() {
         // strip leading `[]` symbols
         Some(Cirru::Leaf(s)) if &**s == "[]" => xs = xs[1..4].to_vec(),
+        // allow using comment
+        Some(Cirru::Leaf(s)) if &**s == ";" => return Ok(vec![]),
         _ => (),
       }
       match (&xs[0], &xs[1], &xs[2]) {
