@@ -184,6 +184,7 @@ pub fn starts_with_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool(s.starts_with(&**pattern))),
     (Some(Calcit::Tag(s)), Some(Calcit::Tag(pattern))) => Ok(Calcit::Bool((*s.to_str()).starts_with(&*pattern.to_str()))),
+    (Some(Calcit::Tag(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool((*s.to_str()).starts_with(&**pattern))),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("starts-with? expected 2 strings, got: {a} {b}")),
     (_, _) => CalcitErr::err_str("starts-with? expected 2 arguments, got nothing"),
   }
