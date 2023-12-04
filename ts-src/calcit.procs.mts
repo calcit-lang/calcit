@@ -1086,6 +1086,9 @@ export let starts_with_$q_ = (xs: CalcitValue, y: CalcitValue): boolean => {
   if (xs instanceof CalcitTag && y instanceof CalcitTag) {
     return xs.value.startsWith(y.value);
   }
+  if (xs instanceof CalcitTag && typeof y === "string") {
+    return xs.value.startsWith(y);
+  }
   throw new Error("expected strings or tags");
 };
 export let ends_with_$q_ = (xs: string, y: string): boolean => {
