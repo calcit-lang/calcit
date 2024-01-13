@@ -1825,7 +1825,7 @@
             defmacro {,} (& body)
               &let
                 xs $ &list:filter body
-                  defn %{,} (x) (not= x ',)
+                  defn &{,} (x) (not= x ',)
                 quasiquote $ pairs-map
                   section-by ([] ~@xs) 2
         |{} $ %{} :CodeEntry (:doc |)
