@@ -1522,5 +1522,9 @@ export let macroexpand = unavailableProc;
 export let macroexpand_all = unavailableProc;
 export let _$n_get_calcit_running_mode = unavailableProc;
 
+export let _calcit_args_mismatch = (name: string, expected: number, got: number) => {
+  return new Error(`\`${name}\` expected ${expected} params, got ${got}`);
+};
+
 // already handled in code emitter
 export let raise = unavailableProc;

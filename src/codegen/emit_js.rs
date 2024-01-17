@@ -343,7 +343,7 @@ fn gen_call_code(
               local_defs,
               file_imports,
             };
-            let ret = gen_js_func(sym, &get_raw_args(ys)?, &func_body, &passed_defs, false, tags);
+            let ret = gen_js_func(sym, &get_raw_args(ys)?, &func_body, &passed_defs, false, tags, ns);
             gen_stack::pop_call_stack();
             match ret {
               Ok(code) => Ok(format!("{return_code}{code}")),
@@ -957,6 +957,7 @@ fn gen_js_func(
   passed_defs: &PassedDefs,
   exported: bool,
   tags: &RefCell<HashSet<EdnTag>>,
+  at_ns: &str,
 ) -> Result<String, String> {
   let var_prefix = if passed_defs.ns == "calcit.core" { "" } else { "$calcit." };
   let mut local_defs = passed_defs.local_defs.to_owned();
@@ -1008,7 +1009,7 @@ fn gen_js_func(
   } else if has_optional {
     snippets::tmpl_args_between(args_count, args_count + optional_count)
   } else {
-    snippets::tmpl_args_exact(name, args_count)
+    snippets::tmpl_args_exact(name, args_count, at_ns)
   };
 
   let mut body: CalcitItems = TernaryTreeList::Empty;
@@ -1265,7 +1266,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
             local_defs: &def_names,
             file_imports: &file_imports,
           };
-          defs_code.push_str(&gen_js_func(&def, args, code, &passed_defs, true, &collected_tags)?);
+          defs_code.push_str(&gen_js_func(&def, args, code, &passed_defs, true, &collected_tags, &ns)?);
           gen_stack::pop_call_stack();
         }
         Calcit::Thunk(code, _) => {
@@ -1354,15 +1355,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     let js_file_path = code_emit_path.join(to_mjs_filename(&ns));
     let wrote_new = write_file_if_changed(
       &js_file_path,
-      &format!(
-        "{}{}{}\n{}\n\n{}\n{}",
-        import_code,
-        tags_code,
-        snippets::tmpl_errors_init(),
-        defs_code,
-        vals_code,
-        direct_code
-      ),
+      &format!("{}{}\n{}\n\n{}\n{}", import_code, tags_code, defs_code, vals_code, direct_code),
     )?;
     if wrote_new {
       println!("emitted: {}", js_file_path.to_str().expect("exptract path"));
