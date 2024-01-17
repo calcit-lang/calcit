@@ -1,4 +1,4 @@
-use crate::builtins::meta::js_gensym;
+use crate::{builtins::meta::js_gensym, codegen::emit_js::get_proc_prefix};
 
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -39,11 +39,12 @@ if (arguments.length > {}) throw new Error('too many arguments');",
   )
 }
 
-pub fn tmpl_args_exact(name: &str, args_count: usize) -> String {
+pub fn tmpl_args_exact(name: &str, args_count: usize, at_ns: &str) -> String {
+  let proc_ns = get_proc_prefix(at_ns);
   format!(
     "
-if (arguments.length !== {}) throw _calcit_args_mismatch('{}', {}, arguments.length);",
-    args_count, name, args_count
+  if (arguments.length !== {}) throw {}_calcit_args_mismatch('{}', {}, arguments.length);",
+    args_count, proc_ns, name, args_count
   )
 }
 
@@ -147,15 +148,5 @@ pub fn tmpl_tags_init(arr: &str, prefix: &str) -> String {
 }});
 ",
     arr, prefix
-  )
-}
-
-pub fn tmpl_errors_init() -> String {
-  String::from(
-    "
-let _calcit_args_mismatch = (name, expected, got) => {
-  return new Error(`\\`${name}\\` expected ${expected} params, got ${got}`);
-};
-",
   )
 }
