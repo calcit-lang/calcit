@@ -54,7 +54,7 @@ pub enum ImportRule {
 
 /// scope in the semantics of persistent data structure
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CalcitScope(rpds::HashTrieMapSync<Arc<str>, Calcit>);
+pub struct CalcitScope(pub rpds::HashTrieMapSync<Arc<str>, Calcit>);
 
 impl Default for CalcitScope {
   fn default() -> Self {
@@ -83,9 +83,6 @@ impl CalcitScope {
   pub fn insert(&mut self, key: Arc<str>, value: Calcit) {
     self.0.insert_mut(key, value);
   }
-  pub fn list_variables(&self) -> Vec<Arc<str>> {
-    self.0.keys().cloned().collect()
-  }
 }
 
 pub type CalcitItems = TernaryTreeList<Calcit>;
@@ -106,7 +103,7 @@ pub enum Calcit {
     at_def: Arc<str>,
     resolved: Option<Arc<SymbolResolved>>,
     /// positions in the tree of Cirru
-    location: Option<Vec<u8>>,
+    location: Option<Arc<Vec<u8>>>,
   },
   /// sth between string and enum, used a key or weak identifier
   Tag(EdnTag),
@@ -769,7 +766,7 @@ impl CalcitErr {
 pub struct NodeLocation {
   pub ns: Arc<str>,
   pub def: Arc<str>,
-  pub coord: Vec<u8>,
+  pub coord: Arc<Vec<u8>>,
 }
 
 impl From<NodeLocation> for Edn {
@@ -777,7 +774,7 @@ impl From<NodeLocation> for Edn {
     Edn::map_from_iter([
       (Edn::tag("ns"), v.ns.into()),
       (Edn::tag("def"), v.def.into()),
-      (Edn::tag("coord"), v.coord.into()),
+      (Edn::tag("coord"), (*v.coord).to_owned().into()),
     ])
   }
 }
@@ -801,7 +798,7 @@ impl fmt::Display for NodeLocation {
 }
 
 impl NodeLocation {
-  pub fn new(ns: Arc<str>, def: Arc<str>, coord: Vec<u8>) -> Self {
+  pub fn new(ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8>>) -> Self {
     NodeLocation { ns, def, coord }
   }
 }

@@ -155,7 +155,7 @@ pub fn preprocess_expr(
       Some((ns_alias, def_part)) => {
         if &*ns_alias == "js" {
           Ok((Calcit::RawCode(RawCodeType::Js, def_part), None))
-        } else if let Some(target_ns) = program::lookup_ns_target_in_import(def_ns.to_owned(), &ns_alias) {
+        } else if let Some(target_ns) = program::lookup_ns_target_in_import(def_ns, &ns_alias) {
           // TODO js syntax to handle in future
           preprocess_ns_def(target_ns, def_part, def.to_owned(), None, check_warnings, call_stack)
         } else if program::has_def_code(&ns_alias, &def_part) {
@@ -288,7 +288,7 @@ pub fn preprocess_expr(
       let loc = NodeLocation {
         ns: file_ns,
         def: GENERATED_DEF.into(),
-        coord: vec![],
+        coord: Arc::new(vec![]),
       };
       warnings.push(LocatedWarning::new(
         format!("[Warn] unexpected data during preprocess: {expr:?}"),
@@ -334,12 +334,12 @@ fn process_list_call(
       if args.len() == 1 {
         let code = Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
-            sym: String::from("get").into(),
-            ns: String::from(primes::CORE_NS).into(),
-            at_def: String::from(primes::GENERATED_DEF).into(),
+            sym: "get".into(),
+            ns: primes::CORE_NS.into(),
+            at_def: primes::GENERATED_DEF.into(),
             resolved: Some(Arc::new(ResolvedDef {
-              ns: String::from(primes::CORE_NS).into(),
-              def: String::from("get").into(),
+              ns: primes::CORE_NS.into(),
+              def: "get".into(),
               rule: None,
             })),
             location: None,
@@ -362,7 +362,7 @@ fn process_list_call(
         ..
       }),
     ) => {
-      let mut current_values = Box::new(args.to_owned());
+      let mut current_values = args.to_owned();
 
       // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
@@ -377,7 +377,7 @@ fn process_list_call(
         let code = runner::evaluate_lines(body, &body_scope, file_ns.to_owned(), &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
-            current_values = Box::new(ys.to_owned());
+            current_values = ys.to_owned();
           }
           _ => {
             // println!("gen code: {} {}", code, &code.lisp_str());
@@ -505,7 +505,7 @@ fn check_fn_args(
           continue;
         } else {
           let mut warnings = check_warnings.borrow_mut();
-          let loc = NodeLocation::new(file_ns.to_owned(), GENERATED_DEF.into(), vec![]);
+          let loc = NodeLocation::new(file_ns.to_owned(), GENERATED_DEF.into(), Arc::new(vec![]));
           warnings.push(LocatedWarning::new(
             format!(
               "[Warn] lack of args in {} `{:?}` with `{}`, at {}/{}",
@@ -522,7 +522,7 @@ fn check_fn_args(
       }
       (None, Some(_)) => {
         let mut warnings = check_warnings.borrow_mut();
-        let loc = NodeLocation::new(file_ns.to_owned(), GENERATED_DEF.into(), vec![]);
+        let loc = NodeLocation::new(file_ns.to_owned(), GENERATED_DEF.into(), Arc::new(vec![]));
         warnings.push(LocatedWarning::new(
           format!(
             "[Warn] too many args for {} `{:?}` with `{}`, at {}/{}",
@@ -690,7 +690,7 @@ pub fn preprocess_core_let(
         let loc = NodeLocation {
           ns: head_ns,
           def: GENERATED_DEF.into(),
-          coord: vec![],
+          coord: Arc::new(vec![]),
         };
         check_symbol(sym, args, loc, check_warnings);
         body_defs.insert(sym.to_owned());

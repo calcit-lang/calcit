@@ -14,7 +14,7 @@ pub struct CalcitStack {
   pub ns: Arc<str>,
   pub def: Arc<str>,
   pub code: Calcit, // built in functions may not contain code
-  pub args: Box<CalcitItems>,
+  pub args: CalcitItems,
   pub kind: StackKind,
 }
 
@@ -66,7 +66,7 @@ pub fn extend_call_stack(
     ns,
     def,
     code,
-    args: Box::new(args.to_owned()),
+    args: args.to_owned(),
     kind,
   })
 }
@@ -92,7 +92,7 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc
   let mut stack_list = EdnListView::default();
   for s in stack {
     let mut args = EdnListView::default();
-    for a in &*s.args {
+    for a in &s.args {
       args.push(edn::calcit_to_edn(a)?);
     }
     let info = Edn::map_from_iter([

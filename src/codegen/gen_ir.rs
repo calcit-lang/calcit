@@ -120,7 +120,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
             (
               Edn::tag("location"),
               match location {
-                Some(xs) => xs.to_owned().into(),
+                Some(xs) => (**xs).to_owned().into(),
                 None => Edn::Nil,
               },
             ),

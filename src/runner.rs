@@ -235,7 +235,7 @@ pub fn evaluate_symbol(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let v = match parse_ns_def(sym) {
-    Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns.into(), &ns_part) {
+    Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns, &ns_part) {
       Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, call_stack) {
         Ok(v) => Ok(v),
         Err(e) => Err(e),
@@ -252,7 +252,7 @@ pub fn evaluate_symbol(
           sym
             .parse()
             .map_err(|e: ParseError| CalcitErr::use_msg_stack(sym.to_string() + " " + &e.to_string(), call_stack))?,
-          file_ns.to_owned().into(),
+          file_ns.into(),
         ))
       } else if let Some(v) = scope.get(sym) {
         // although scope is detected first, it would trigger warning during preprocess
@@ -275,9 +275,15 @@ pub fn evaluate_symbol(
         match program::lookup_def_target_in_import(file_ns, sym) {
           Some(target_ns) => eval_symbol_from_program(sym, &target_ns, call_stack),
           None => {
-            let vars = scope.list_variables();
+            let mut vars = String::new();
+            for (i, k) in scope.0.keys().enumerate() {
+              if i > 0 {
+                vars.push(',');
+              }
+              vars.push_str(k);
+            }
             Err(CalcitErr::use_msg_stack_location(
-              format!("unknown symbol `{sym}` in {}", vars.join(",")),
+              format!("unknown symbol `{sym}` in {}", vars),
               call_stack,
               location,
             ))
@@ -376,7 +382,7 @@ pub fn bind_args(
   let mut optional = false;
 
   let collected_args = args.to_owned();
-  let collected_values = Arc::new(values);
+  let collected_values = Rc::new(values);
   let pop_args_idx = Rc::new(RefCell::new(0));
   let pop_values_idx = Rc::new(RefCell::new(0));
 
@@ -482,7 +488,7 @@ pub fn evaluate_args(
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<CalcitItems, CalcitErr> {
-  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len());
+  let mut ret: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
   let mut spreading = false;
   for item in items {
     match item {
@@ -504,7 +510,7 @@ pub fn evaluate_args(
                   },
                   _ => x.to_owned(),
                 };
-                ret.push(y.to_owned());
+                ret = ret.push(y.to_owned());
               }
               spreading = false
             }
@@ -524,10 +530,10 @@ pub fn evaluate_args(
             },
             _ => v.to_owned(),
           };
-          ret.push(y);
+          ret = ret.push(y);
         }
       }
     }
   }
-  Ok(TernaryTreeList::from(&ret))
+  Ok(ret)
 }
