@@ -362,7 +362,7 @@ pub fn run_fn(
     let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
     match v {
       Calcit::Recur(xs) => {
-        current_values = Box::new(xs.to_owned());
+        current_values = Box::new(xs);
       }
       result => return Ok(result),
     }
