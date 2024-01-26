@@ -381,31 +381,29 @@ pub fn bind_args(
   let mut spreading = false;
   let mut optional = false;
 
-  let collected_args = args.to_owned();
-  let collected_values = Rc::new(values);
   let pop_args_idx = Rc::new(RefCell::new(0));
   let pop_values_idx = Rc::new(RefCell::new(0));
 
   let args_pop_front = || -> Option<Arc<str>> {
     let mut p = pop_args_idx.borrow_mut();
-    let ret = collected_args.get(*p);
+    let ret = args.get(*p);
     *p += 1;
     ret.map(|x| x.to_owned())
   };
 
   let values_pop_front = || -> Option<&Calcit> {
     let mut p = pop_values_idx.borrow_mut();
-    let ret = collected_values.get(*p);
+    let ret = values.get(*p);
     *p += 1;
     ret
   };
   let is_args_empty = || -> bool {
     let p = pop_args_idx.borrow();
-    *p >= (*collected_args).len()
+    *p >= (*args).len()
   };
   let is_values_empty = || -> bool {
     let p = pop_values_idx.borrow();
-    *p >= (*collected_values).len()
+    *p >= (*values).len()
   };
 
   while let Some(sym) = args_pop_front() {
@@ -421,7 +419,7 @@ pub fn bind_args(
           scope.insert(sym.to_owned(), Calcit::List(chunk));
           if !is_args_empty() {
             return Err(CalcitErr::use_msg_stack(
-              format!("extra args `{collected_args:?}` after spreading in `{args:?}`",),
+              format!("extra args `{args:?}` after spreading in `{args:?}`",),
               call_stack,
             ));
           }
@@ -455,7 +453,7 @@ pub fn bind_args(
     Err(CalcitErr::use_msg_stack(
       format!(
         "extra args `{}` not handled while passing values `{}` to args `{:?}`",
-        CrListWrap((*collected_values).to_owned()),
+        CrListWrap((*values).to_owned()),
         CrListWrap(values.to_owned()),
         args,
       ),
