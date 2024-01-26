@@ -2,8 +2,6 @@ pub mod preprocess;
 pub mod track;
 
 use im_ternary_tree::TernaryTreeList;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::Arc;
 use strum::ParseError;
 
@@ -383,43 +381,31 @@ pub fn bind_args(
   let mut spreading = false;
   let mut optional = false;
 
-  let pop_args_idx = Rc::new(RefCell::new(0));
-  let pop_values_idx = Rc::new(RefCell::new(0));
+  // TODO turn this mut
 
-  let args_pop_front = || -> Option<Arc<str>> {
-    let mut p = pop_args_idx.borrow_mut();
-    let ret = args.get(*p);
-    *p += 1;
-    ret.map(|x| x.to_owned())
-  };
+  let mut pop_args_idx = 0;
+  let mut pop_values_idx = 0;
 
-  let values_pop_front = || -> Option<&Calcit> {
-    let mut p = pop_values_idx.borrow_mut();
-    let ret = values.get(*p);
-    *p += 1;
+  while let Some(sym) = {
+    let ret = args.get(pop_args_idx);
+    pop_args_idx += 1;
     ret
-  };
-  let is_args_empty = || -> bool {
-    let p = pop_args_idx.borrow();
-    *p >= (*args).len()
-  };
-  let is_values_empty = || -> bool {
-    let p = pop_values_idx.borrow();
-    *p >= (*values).len()
-  };
-
-  while let Some(sym) = args_pop_front() {
+  } {
     if spreading {
-      match &*sym {
+      match &**sym {
         "&" => return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {args:?}"), call_stack)),
         "?" => return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {args:?}"), call_stack)),
         _ => {
           let mut chunk: CalcitItems = TernaryTreeList::Empty;
-          while let Some(v) = values_pop_front() {
+          while let Some(v) = {
+            let ret = values.get(pop_values_idx);
+            pop_values_idx += 1;
+            ret
+          } {
             chunk = chunk.push_right(v.to_owned());
           }
           scope.insert(sym.to_owned(), Calcit::List(chunk));
-          if !is_args_empty() {
+          if pop_args_idx < args.len() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{args:?}` after spreading in `{args:?}`",),
               call_stack,
@@ -428,10 +414,14 @@ pub fn bind_args(
         }
       }
     } else {
-      match &*sym {
+      match &**sym {
         "&" => spreading = true,
         "?" => optional = true,
-        _ => match values_pop_front() {
+        _ => match {
+          let ret = values.get(pop_values_idx);
+          pop_values_idx += 1;
+          ret
+        } {
           Some(v) => {
             scope.insert(sym.to_owned(), v.to_owned());
           }
@@ -449,7 +439,8 @@ pub fn bind_args(
       }
     }
   }
-  if is_values_empty() {
+
+  if pop_values_idx >= values.len() {
     Ok(scope)
   } else {
     Err(CalcitErr::use_msg_stack(
