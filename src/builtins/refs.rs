@@ -2,6 +2,7 @@
 //! - defined with `defatom`, which is global atom that retains after hot swapping
 //! - defined with `atom`, which is barely a piece of local mutable state
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
@@ -62,22 +63,15 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_
 
       let path_info: Arc<str> = path.into();
 
-      let defined = {
-        let dict = REFS_DICT.lock().expect("read refs");
-        dict.contains_key(&path_info)
-      };
-
-      if defined {
-        let dict = REFS_DICT.lock().expect("read dict");
-        let pair = dict.get(&path_info).expect("read pair");
-
-        Ok(Calcit::Ref(path_info, pair.to_owned()))
-      } else {
-        let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
-        let pair_value = Arc::new(Mutex::new((v, HashMap::new())));
-        let mut dict = REFS_DICT.lock().expect("read refs");
-        dict.insert(path_info.to_owned(), pair_value.to_owned());
-        Ok(Calcit::Ref(path_info, pair_value))
+      let mut dict = REFS_DICT.lock().expect("read refs");
+      match dict.entry(path_info.clone()) {
+        Entry::Occupied(entry) => Ok(Calcit::Ref(path_info, entry.get().to_owned())),
+        Entry::Vacant(entry) => {
+          let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
+          let pair_value = Arc::new(Mutex::new((v, HashMap::new())));
+          entry.insert(pair_value.to_owned());
+          Ok(Calcit::Ref(path_info, pair_value))
+        }
       }
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
@@ -150,11 +144,12 @@ pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Tag(k)), Some(f @ Calcit::Fn { .. })) => {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");
-      if pair.1.contains_key(k) {
-        CalcitErr::err_str(format!("add-watch failed, listener with key `{k}` existed"))
-      } else {
-        pair.1.insert(k.to_owned(), f.to_owned());
-        Ok(Calcit::Nil)
+      match pair.1.get(k) {
+        Some(_) => CalcitErr::err_str(format!("add-watch failed, listener with key `{k}` existed")),
+        None => {
+          pair.1.insert(k.to_owned(), f.to_owned());
+          Ok(Calcit::Nil)
+        }
       }
     }
     (Some(Calcit::Ref(..)), Some(Calcit::Tag(_)), Some(a)) => {
@@ -170,11 +165,13 @@ pub fn remove_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Tag(k))) => {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");
-      if pair.1.contains_key(k) {
-        pair.1.remove(k);
-        Ok(Calcit::Nil)
-      } else {
-        CalcitErr::err_str(format!("remove-watch failed, listener with key `{k}` missing"))
+
+      match pair.1.get(k) {
+        None => CalcitErr::err_str(format!("remove-watch failed, listener with key `{k}` missing")),
+        Some(_) => {
+          pair.1.remove(k);
+          Ok(Calcit::Nil)
+        }
       }
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("remove-watch expected ref and tag, got: {a} {b}")),

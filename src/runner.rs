@@ -191,19 +191,21 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
           } => {
             let ps = IMPORTED_PROCS.read().expect("read procs");
             let name = &*sym.to_owned();
-            if ps.contains_key(name) {
-              let f = ps[name];
-              let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-              f(&values, call_stack)
-            } else {
-              let error_location = location
-                .as_ref()
-                .map(|l| NodeLocation::new(ns.to_owned(), at_def.to_owned(), l.to_owned()));
-              Err(CalcitErr::use_msg_stack_location(
-                format!("cannot evaluate symbol directly: {ns}/{sym} in {at_def}, {resolved:?}"),
-                call_stack,
-                error_location,
-              ))
+            match ps.get(name) {
+              Some(f) => {
+                let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
+                f(&values, call_stack)
+              }
+              None => {
+                let error_location = location
+                  .as_ref()
+                  .map(|l| NodeLocation::new(ns.to_owned(), at_def.to_owned(), l.to_owned()));
+                Err(CalcitErr::use_msg_stack_location(
+                  format!("cannot evaluate symbol directly: {ns}/{sym} in {at_def}, {resolved:?}"),
+                  call_stack,
+                  error_location,
+                ))
+              }
             }
           }
           a => Err(CalcitErr::use_msg_stack_location(

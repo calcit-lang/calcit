@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -175,20 +176,19 @@ pub fn lookup_default_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>
 /// lookup and return value
 pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
   let s2 = PROGRAM_EVALED_DATA_STATE.read().expect("read program data");
-  if s2.contains_key(ns) && s2[ns].contains_key(def) {
-    Some(s2[ns][def].to_owned())
-  } else {
-    // eprintln!("failed to lookup {} {}", ns, def);
-    None
-  }
+  s2.get(ns)?.get(def).cloned()
 }
 
 // Dirty mutating global states
 pub fn write_evaled_def(ns: &str, def: &str, value: Calcit) -> Result<(), String> {
   // println!("writing {} {}", ns, def);
   let mut program = PROGRAM_EVALED_DATA_STATE.write().expect("read program data");
-  if !program.contains_key(ns) {
-    (*program).insert(String::from(ns).into(), HashMap::new());
+
+  match (*program).entry(Arc::from(ns)) {
+    Entry::Occupied(_) => (),
+    Entry::Vacant(entry) => {
+      entry.insert(HashMap::new());
+    }
   }
 
   let file = program.get_mut(ns).ok_or_else(|| format!("can not write to: {ns}"))?;
