@@ -370,10 +370,12 @@ fn process_list_call(
       let code = Calcit::List(xs.to_owned());
       let next_stack = extend_call_stack(call_stack, def_ns.to_owned(), name.to_owned(), StackKind::Macro, code, &args);
 
+      let mut body_scope = CalcitScope::default();
+
       loop {
         // need to handle recursion
         // println!("evaling line: {:?}", body);
-        let body_scope = runner::bind_args(def_args, &current_values, &CalcitScope::default(), &next_stack)?;
+        runner::bind_args(&mut body_scope, def_args, &current_values, &next_stack)?;
         let code = runner::evaluate_lines(body, &body_scope, file_ns.to_owned(), &next_stack)?;
         match code {
           Calcit::Recur(ys) => {

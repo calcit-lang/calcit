@@ -67,20 +67,12 @@ impl CalcitScope {
   pub fn new(data: rpds::HashTrieMapSync<Arc<str>, Calcit>) -> Self {
     CalcitScope(data)
   }
-  /// check if contains
-  pub fn has(&self, sym: &str) -> bool {
-    self.0.contains_key(sym)
-  }
   /// load value of a symbol from the scope
   pub fn get(&self, key: &str) -> Option<&Calcit> {
     self.0.get(key)
   }
-  /// associate new value  to scope
-  pub fn assoc(&self, key: Arc<str>, value: Calcit) -> Self {
-    Self::new(self.0.insert(key, value))
-  }
   /// mutable insertiong of variable
-  pub fn insert(&mut self, key: Arc<str>, value: Calcit) {
+  pub fn insert_mut(&mut self, key: Arc<str>, value: Calcit) {
     self.0.insert_mut(key, value);
   }
 }

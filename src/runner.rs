@@ -146,9 +146,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               &rest_nodes,
             );
 
+            let mut body_scope = CalcitScope::default();
+
             Ok(loop {
               // need to handle recursion
-              let body_scope = bind_args(args, &current_values, &CalcitScope::default(), call_stack)?;
+              bind_args(&mut body_scope, args, &current_values, call_stack)?;
               let code = evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
@@ -356,16 +358,23 @@ pub fn run_fn(
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut current_values = Box::new(values.to_owned());
-  loop {
-    let body_scope = bind_args(args, &current_values, scope, call_stack)?;
-    let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
-    match v {
-      Calcit::Recur(xs) => {
-        current_values = Box::new(xs);
+  let mut body_scope = scope.to_owned();
+  bind_args(&mut body_scope, args, values, call_stack)?;
+
+  let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
+
+  if let Calcit::Recur(xs) = v {
+    let mut current_values = xs;
+    loop {
+      bind_args(&mut body_scope, args, &current_values, call_stack)?;
+      let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
+      match v {
+        Calcit::Recur(xs) => current_values = xs,
+        result => return Ok(result),
       }
-      result => return Ok(result),
     }
+  } else {
+    Ok(v)
   }
 }
 
@@ -385,12 +394,11 @@ impl MutIndex {
 /// create new scope by writing new args
 /// notice that `&` is a mark for spreading, `?` for optional arguments
 pub fn bind_args(
+  scope: &mut CalcitScope,
   args: &[Arc<str>],
   values: &CalcitItems,
-  base_scope: &CalcitScope,
   call_stack: &CallStackList,
-) -> Result<CalcitScope, CalcitErr> {
-  let mut scope = base_scope.to_owned();
+) -> Result<(), CalcitErr> {
   let mut spreading = false;
   let mut optional = false;
 
@@ -407,7 +415,7 @@ pub fn bind_args(
           while let Some(v) = values.get(pop_values_idx.get_and_inc()) {
             chunk = chunk.push_right(v.to_owned());
           }
-          scope.insert(sym.to_owned(), Calcit::List(chunk));
+          scope.insert_mut(sym.to_owned(), Calcit::List(chunk));
           if pop_args_idx.0 < args.len() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{args:?}` after spreading in `{args:?}`",),
@@ -422,11 +430,11 @@ pub fn bind_args(
         "?" => optional = true,
         _ => match values.get(pop_values_idx.get_and_inc()) {
           Some(v) => {
-            scope.insert(sym.to_owned(), v.to_owned());
+            scope.insert_mut(sym.to_owned(), v.to_owned());
           }
           None => {
             if optional {
-              scope.insert(sym.to_owned(), Calcit::Nil);
+              scope.insert_mut(sym.to_owned(), Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
                 format!("too few values `{}` passed to args `{args:?}`", CrListWrap(values.to_owned())),
@@ -440,7 +448,7 @@ pub fn bind_args(
   }
 
   if pop_values_idx.0 >= values.len() {
-    Ok(scope)
+    Ok(())
   } else {
     Err(CalcitErr::use_msg_stack(
       format!(
