@@ -214,8 +214,8 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
       }
       Ok(Cirru::List(ys))
     }
-    Calcit::Proc(s) => Ok(Cirru::Leaf(s.to_string().into())),
-    Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.to_string().into())),
+    Calcit::Proc(s) => Ok(Cirru::Leaf(s.as_ref().into())),
+    Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.as_ref().into())),
     Calcit::CirruQuote(code) => Ok(code.to_owned()),
     Calcit::Method(name, kind) => match kind {
       MethodKind::Access => Ok(Cirru::leaf(format!(".-{name}"))),

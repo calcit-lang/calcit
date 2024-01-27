@@ -78,7 +78,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             let next_stack = extend_call_stack(
               call_stack,
               def_ns.to_owned(),
-              s.to_string().into(),
+              Arc::from(s.as_ref()),
               StackKind::Syntax,
               expr.to_owned(),
               &rest_nodes,
@@ -253,7 +253,7 @@ pub fn evaluate_symbol(
         Ok(Calcit::Syntax(
           sym
             .parse()
-            .map_err(|e: ParseError| CalcitErr::use_msg_stack(sym.to_string() + " " + &e.to_string(), call_stack))?,
+            .map_err(|e: ParseError| CalcitErr::use_msg_stack(format!("{} {}", sym, e), call_stack))?,
           file_ns.into(),
         ))
       } else if let Some(v) = scope.get(sym) {

@@ -1,5 +1,7 @@
+use strum_macros::{AsRefStr, EnumString};
+
 /// core syntax inside Calcit
-#[derive(Debug, Clone, PartialEq, EnumString, strum_macros::Display, PartialOrd, Eq, Ord)]
+#[derive(Debug, Clone, PartialEq, EnumString, strum_macros::Display, AsRefStr, PartialOrd, Eq, Ord)]
 pub enum CalcitSyntax {
   #[strum(serialize = "defn")]
   Defn,
@@ -42,8 +44,6 @@ pub enum CalcitSyntax {
   #[strum(serialize = "hint-fn")]
   HintFn,
 }
-
-use strum_macros::EnumString;
 
 impl CalcitSyntax {
   /// check is given name is a syntax name

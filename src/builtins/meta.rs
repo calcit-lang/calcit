@@ -91,8 +91,8 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
       Cirru::List(xs)
     }
     Calcit::Symbol { sym, .. } => Cirru::Leaf((**sym).into()),
-    Calcit::Syntax(s, _ns) => Cirru::Leaf(s.to_string().into()),
-    Calcit::Proc(s) => Cirru::Leaf(s.to_string().into()),
+    Calcit::Syntax(s, _ns) => Cirru::Leaf(s.as_ref().into()),
+    Calcit::Proc(s) => Cirru::Leaf(s.as_ref().into()),
     a => Cirru::leaf(format!("{a}")),
   }
 }
@@ -240,7 +240,7 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       location: None,
     }),
     Calcit::Tag(s) => Ok(Calcit::Symbol {
-      sym: s.to_string().into(),
+      sym: s.to_str().into(),
       ns: primes::GEN_NS.into(),
       at_def: primes::GENERATED_DEF.into(),
       resolved: None,
@@ -310,40 +310,20 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
       call_stack,
     ));
   }
-  let value = invoke_args[0].to_owned();
   let s0 = CalcitScope::default();
-  let (tag, class): (String, Calcit) = match &invoke_args[0] {
-    Calcit::Tuple(tag, _extra, class) => (tag.to_string(), (**class).to_owned()),
-    Calcit::Record(name, _f, _v, class) => (name.to_string(), (**class).to_owned()),
+  let class: Calcit = match &invoke_args[0] {
+    Calcit::Tuple(_tag, _extra, class) => (**class).to_owned(),
+    Calcit::Record(_name, _f, _v, class) => (**class).to_owned(),
     // classed should already be preprocessed
-    Calcit::List(..) => (
-      "&core-list-class".to_owned(),
-      runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, None, call_stack)?,
-    ),
-    Calcit::Map(..) => (
-      "&core-map-class".to_owned(),
-      runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, None, call_stack)?,
-    ),
-    Calcit::Number(..) => (
-      "&core-number-class".to_owned(),
-      runner::evaluate_symbol("&core-number-class", &s0, primes::CORE_NS, None, call_stack)?,
-    ),
-    Calcit::Str(..) => (
-      "&core-string-class".to_owned(),
-      runner::evaluate_symbol("&core-string-class", &s0, primes::CORE_NS, None, call_stack)?,
-    ),
-    Calcit::Set(..) => (
-      "&core-set-class".to_owned(),
-      runner::evaluate_symbol("&core-set-class", &s0, primes::CORE_NS, None, call_stack)?,
-    ),
-    Calcit::Nil => (
-      "&core-nil-class".to_owned(),
-      runner::evaluate_symbol("&core-nil-class", &s0, primes::CORE_NS, None, call_stack)?,
-    ),
-    Calcit::Fn { .. } | Calcit::Proc(..) => (
-      "&core-fn-class".to_owned(),
-      runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, None, call_stack)?,
-    ),
+    Calcit::List(..) => runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, None, call_stack)?,
+
+    Calcit::Map(..) => runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, None, call_stack)?,
+
+    Calcit::Number(..) => runner::evaluate_symbol("&core-number-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Str(..) => runner::evaluate_symbol("&core-string-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Set(..) => runner::evaluate_symbol("&core-set-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Nil => runner::evaluate_symbol("&core-nil-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, None, call_stack)?,
     x => {
       return Err(CalcitErr::use_msg_stack_location(
         format!("cannot decide a class from: {x}"),
@@ -353,10 +333,10 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     }
   };
   match &class {
-    Calcit::Record(_, fields, values, _class) => {
+    Calcit::Record(r_name, fields, values, _class) => {
       match find_in_fields(fields, &EdnTag::from(name)) {
         Some(idx) => {
-          let method_args = invoke_args.assoc(0, value)?;
+          let method_args = invoke_args.assoc(0, invoke_args[0].to_owned())?;
 
           match &values[idx] {
             // dirty copy...
@@ -378,7 +358,10 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
         None => {
           let content = fields.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
           Err(CalcitErr::use_msg_stack(
-            format!("unknown method `.{name}` for {tag}.\navailable methods: {content}"),
+            format!(
+              "unknown method `.{name}` for {r_name}: {}.\navailable methods: {content}",
+              &invoke_args[0]
+            ),
             call_stack,
           ))
         }

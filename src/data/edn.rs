@@ -49,8 +49,8 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       println!("[Warn] fn to EDN: {def_ns}/{name} {args:?}");
       Ok(Edn::str(x.to_string()))
     }
-    Calcit::Proc(name) => Ok(Edn::Symbol(name.to_string().into())),
-    Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.to_string())),
+    Calcit::Proc(name) => Ok(Edn::Symbol(name.as_ref().into())),
+    Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.as_ref())),
     Calcit::Tuple(tag, extra, _class) => {
       match &**tag {
         Calcit::Symbol { sym, .. } => {
