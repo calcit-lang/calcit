@@ -369,6 +369,19 @@ pub fn run_fn(
   }
 }
 
+/// syntax sugar for index value
+#[derive(Debug, Default, PartialEq, PartialOrd)]
+struct MutIndex(usize);
+
+impl MutIndex {
+  /// get value first, ant then increase value
+  fn get_and_inc(&mut self) -> usize {
+    let ret = self.0;
+    self.0 += 1;
+    ret
+  }
+}
+
 /// create new scope by writing new args
 /// notice that `&` is a mark for spreading, `?` for optional arguments
 pub fn bind_args(
@@ -381,31 +394,21 @@ pub fn bind_args(
   let mut spreading = false;
   let mut optional = false;
 
-  // TODO turn this mut
+  let mut pop_args_idx = MutIndex::default();
+  let mut pop_values_idx = MutIndex::default();
 
-  let mut pop_args_idx = 0;
-  let mut pop_values_idx = 0;
-
-  while let Some(sym) = {
-    let ret = args.get(pop_args_idx);
-    pop_args_idx += 1;
-    ret
-  } {
+  while let Some(sym) = args.get(pop_args_idx.get_and_inc()) {
     if spreading {
       match &**sym {
         "&" => return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {args:?}"), call_stack)),
         "?" => return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {args:?}"), call_stack)),
         _ => {
           let mut chunk: CalcitItems = TernaryTreeList::Empty;
-          while let Some(v) = {
-            let ret = values.get(pop_values_idx);
-            pop_values_idx += 1;
-            ret
-          } {
+          while let Some(v) = values.get(pop_values_idx.get_and_inc()) {
             chunk = chunk.push_right(v.to_owned());
           }
           scope.insert(sym.to_owned(), Calcit::List(chunk));
-          if pop_args_idx < args.len() {
+          if pop_args_idx.0 < args.len() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{args:?}` after spreading in `{args:?}`",),
               call_stack,
@@ -417,11 +420,7 @@ pub fn bind_args(
       match &**sym {
         "&" => spreading = true,
         "?" => optional = true,
-        _ => match {
-          let ret = values.get(pop_values_idx);
-          pop_values_idx += 1;
-          ret
-        } {
+        _ => match values.get(pop_values_idx.get_and_inc()) {
           Some(v) => {
             scope.insert(sym.to_owned(), v.to_owned());
           }
@@ -440,7 +439,7 @@ pub fn bind_args(
     }
   }
 
-  if pop_values_idx >= values.len() {
+  if pop_values_idx.0 >= values.len() {
     Ok(scope)
   } else {
     Err(CalcitErr::use_msg_stack(
