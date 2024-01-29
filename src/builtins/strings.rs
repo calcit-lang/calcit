@@ -1,6 +1,5 @@
 use std::char;
 use std::cmp::Ordering;
-use std::sync::Arc;
 
 use im_ternary_tree::TernaryTreeList;
 
@@ -51,7 +50,7 @@ pub fn turn_string(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Nil) => Ok(Calcit::new_str("")),
     Some(Calcit::Bool(b)) => Ok(Calcit::Str(b.to_string().into())),
     Some(Calcit::Str(s)) => Ok(Calcit::Str(s.to_owned())),
-    Some(Calcit::Tag(s)) => Ok(Calcit::Str(Arc::from(s.to_str()))),
+    Some(Calcit::Tag(s)) => Ok(Calcit::Str(s.to_str())),
     Some(Calcit::Symbol { sym, .. }) => Ok(Calcit::Str(sym.to_owned())),
     Some(Calcit::Number(n)) => Ok(Calcit::Str(n.to_string().into())),
     Some(a) => CalcitErr::err_str(format!("turn-string cannot turn this to string: {a}")),

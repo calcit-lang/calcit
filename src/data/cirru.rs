@@ -20,7 +20,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
       "::" => Ok(Calcit::Symbol {
-        sym: (**s).into(),
+        sym: s.clone(),
         ns,
         at_def: def,
         resolved: None,
@@ -48,14 +48,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8
         },
         '\'' if s.len() > 1 => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
-            sym: String::from("quote").into(),
+            sym: Arc::from("quote"),
             ns: ns.to_owned(),
-            at_def: def.to_owned(),
+            at_def: def.clone(),
             resolved: None,
             location: Some(coord.clone()),
           },
           Calcit::Symbol {
-            sym: String::from(&s[1..]).into(),
+            sym: Arc::from(&s[1..]),
             ns,
             at_def: def,
             resolved: None,
@@ -65,14 +65,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8
         // TODO also detect simple variables
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
-            sym: String::from("~@").into(),
+            sym: Arc::from("~@"),
             ns: ns.to_owned(),
             at_def: def.to_owned(),
             resolved: None,
             location: Some(coord.clone()),
           },
           Calcit::Symbol {
-            sym: String::from(&s[2..]).into(),
+            sym: Arc::from(&s[2..]),
             ns,
             at_def: def,
             resolved: None,
@@ -81,14 +81,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8
         ]))),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
-            sym: String::from("~").into(),
+            sym: Arc::from("~"),
             ns: ns.to_owned(),
             at_def: def.to_owned(),
             resolved: None,
             location: Some(coord.clone()),
           },
           Calcit::Symbol {
-            sym: String::from(&s[1..]).into(),
+            sym: Arc::from(&s[1..]),
             ns,
             at_def: def,
             resolved: None,
@@ -97,14 +97,14 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8
         ]))),
         '@' => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
-            sym: String::from("deref").into(),
+            sym: Arc::from("deref"),
             ns: ns.to_owned(),
             at_def: def.to_owned(),
             resolved: None,
             location: Some(coord.clone()),
           },
           Calcit::Symbol {
-            sym: String::from(&s[1..]).into(),
+            sym: Arc::from(&s[1..]),
             ns,
             at_def: def,
             resolved: None,

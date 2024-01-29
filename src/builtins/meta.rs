@@ -240,7 +240,7 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       location: None,
     }),
     Calcit::Tag(s) => Ok(Calcit::Symbol {
-      sym: s.to_str().into(),
+      sym: s.to_str(),
       ns: primes::GEN_NS.into(),
       at_def: primes::GENERATED_DEF.into(),
       resolved: None,
