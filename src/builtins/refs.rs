@@ -2,7 +2,6 @@
 //! - defined with `defatom`, which is global atom that retains after hot swapping
 //! - defined with `atom`, which is barely a piece of local mutable state
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
@@ -63,13 +62,19 @@ pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_
 
       let path_info: Arc<str> = path.into();
 
-      let mut dict = REFS_DICT.lock().expect("read refs");
-      match dict.entry(path_info.clone()) {
-        Entry::Occupied(entry) => Ok(Calcit::Ref(path_info, entry.get().to_owned())),
-        Entry::Vacant(entry) => {
+      let defined = {
+        let dict = REFS_DICT.lock().expect("read refs");
+        dict.get(&path_info).map(ToOwned::to_owned)
+        // need to release lock before calling `evaluate_expr`
+      };
+
+      match defined {
+        Some(v) => Ok(Calcit::Ref(path_info, v.to_owned())),
+        None => {
           let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
           let pair_value = Arc::new(Mutex::new((v, HashMap::new())));
-          entry.insert(pair_value.to_owned());
+          let mut dict = REFS_DICT.lock().expect("read refs");
+          dict.insert(path_info.to_owned(), pair_value.to_owned());
           Ok(Calcit::Ref(path_info, pair_value))
         }
       }
