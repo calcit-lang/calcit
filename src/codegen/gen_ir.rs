@@ -90,14 +90,8 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     Calcit::Str(s) => Edn::Str((**s).into()),
     Calcit::Bool(b) => Edn::Bool(b.to_owned()),
     Calcit::Tag(s) => Edn::Tag(s.to_owned()),
-    Calcit::Symbol {
-      sym,
-      ns,
-      at_def,
-      resolved,
-      location,
-    } => {
-      let resolved = match resolved {
+    Calcit::Symbol { sym, info, location } => {
+      let resolved = match &info.resolved {
         Some(resolved) => match &**resolved {
           ResolvedDef {
             ns: r_ns,
@@ -106,7 +100,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
           } => Edn::map_from_iter([
             (Edn::tag("kind"), Edn::tag("def")),
             (Edn::tag("ns"), Edn::Str((**r_ns).into())),
-            (Edn::tag("at-def"), Edn::Str((**at_def).into())),
+            (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
             (Edn::tag("def"), Edn::Str((**r_def).into())),
             (
               Edn::tag("rule"),
@@ -134,8 +128,8 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       Edn::map_from_iter([
         (Edn::tag("kind"), Edn::tag("symbol")),
         (Edn::tag("val"), Edn::Str((**sym).into())),
-        (Edn::tag("at-def"), Edn::Str((**at_def).into())),
-        (Edn::tag("ns"), Edn::Str((**ns).into())),
+        (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
+        (Edn::tag("ns"), Edn::Str((*info.ns).into())),
         (Edn::tag("resolved"), resolved),
       ])
     }

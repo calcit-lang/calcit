@@ -60,9 +60,11 @@ pub fn data_to_calcit(x: &Calcit, ns: Arc<str>, at_def: Arc<str>) -> Result<Calc
     Calcit::Record(tag, fields, values, _class) => {
       let mut ys = TernaryTreeList::from(&[Calcit::Symbol {
         sym: "defrecord!".into(),
-        ns: ns.to_owned(),
-        at_def: at_def.to_owned(),
-        resolved: None,
+        info: Arc::new(crate::primes::CalcitSymbolInfo {
+          ns: ns.to_owned(),
+          at_def: at_def.to_owned(),
+          resolved: None,
+        }),
         location: None,
       }]);
       ys = ys.push_right(Calcit::Tag(tag.to_owned()));

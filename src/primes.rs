@@ -1,5 +1,6 @@
 mod eval_node;
 mod proc_name;
+mod symbol;
 mod syntax_name;
 
 use core::cmp::Ord;
@@ -18,6 +19,7 @@ use im_ternary_tree::TernaryTreeList;
 
 pub use proc_name::CalcitProc;
 use rpds::HashTrieMapSync;
+pub use symbol::CalcitSymbolInfo;
 pub use syntax_name::CalcitSyntax;
 
 use crate::builtins::ValueAndListeners;
@@ -91,9 +93,7 @@ pub enum Calcit {
   Number(f64),
   Symbol {
     sym: Arc<str>,
-    ns: Arc<str>,
-    at_def: Arc<str>,
-    resolved: Option<Arc<SymbolResolved>>,
+    info: Arc<CalcitSymbolInfo>,
     /// positions in the tree of Cirru
     location: Option<Arc<Vec<u8>>>,
   },
@@ -641,9 +641,9 @@ impl Calcit {
   /// currently only symbol has node location
   pub fn get_location(&self) -> Option<NodeLocation> {
     match self {
-      Calcit::Symbol { ns, at_def, location, .. } => Some(NodeLocation::new(
-        ns.to_owned(),
-        at_def.to_owned(),
+      Calcit::Symbol { info, location, .. } => Some(NodeLocation::new(
+        info.ns.to_owned(),
+        info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
       )),
       _ => None,

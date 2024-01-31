@@ -8,8 +8,8 @@ use strum::ParseError;
 use crate::builtins::{self, is_registered_proc, IMPORTED_PROCS};
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
 use crate::primes::{
-  Calcit, CalcitErr, CalcitItems, CalcitProc, CalcitScope, CalcitSyntax, CrListWrap, MethodKind, NodeLocation, SymbolResolved::*,
-  CORE_NS,
+  Calcit, CalcitErr, CalcitItems, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CrListWrap, MethodKind, NodeLocation,
+  SymbolResolved::*, CORE_NS,
 };
 use crate::program;
 use crate::util::string::has_ns_part;
@@ -22,16 +22,9 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
     Calcit::Bool(_) => Ok(expr.to_owned()),
     Calcit::Number(_) => Ok(expr.to_owned()),
     Calcit::Symbol { sym, .. } if &**sym == "&" => Ok(expr.to_owned()),
-    Calcit::Symbol {
-      sym,
-      ns,
-      at_def,
-      resolved,
-      location,
-      ..
-    } => {
-      let loc = NodeLocation::new(ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default());
-      match resolved {
+    Calcit::Symbol { sym, info, location, .. } => {
+      let loc = NodeLocation::new(info.ns.to_owned(), info.at_def.to_owned(), location.to_owned().unwrap_or_default());
+      match &info.resolved {
         Some(resolved_info) => match &*resolved_info.to_owned() {
           ResolvedDef {
             ns: r_ns,
@@ -44,9 +37,9 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             }
             evaluate_symbol(r_def, scope, r_ns, Some(loc), call_stack)
           }
-          _ => evaluate_symbol(sym, scope, ns, Some(loc), call_stack),
+          _ => evaluate_symbol(sym, scope, &info.ns, Some(loc), call_stack),
         },
-        _ => evaluate_symbol(sym, scope, ns, Some(loc), call_stack),
+        _ => evaluate_symbol(sym, scope, &info.ns, Some(loc), call_stack),
       }
     }
     Calcit::Tag(_) => Ok(expr.to_owned()),
@@ -182,13 +175,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               ))
             }
           }
-          Calcit::Symbol {
-            sym,
-            ns,
-            at_def,
-            resolved,
-            location,
-          } => {
+          Calcit::Symbol { sym, info, location } => {
             let ps = IMPORTED_PROCS.read().expect("read procs");
             let name = &*sym.to_owned();
             match ps.get(name) {
@@ -199,7 +186,10 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               None => {
                 let error_location = location
                   .as_ref()
-                  .map(|l| NodeLocation::new(ns.to_owned(), at_def.to_owned(), l.to_owned()));
+                  .map(|l| NodeLocation::new(info.ns.to_owned(), info.at_def.to_owned(), l.to_owned()));
+                let ns = &info.ns;
+                let at_def = &info.at_def;
+                let resolved = &info.resolved;
                 Err(CalcitErr::use_msg_stack_location(
                   format!("cannot evaluate symbol directly: {ns}/{sym} in {at_def}, {resolved:?}"),
                   call_stack,
@@ -264,9 +254,11 @@ pub fn evaluate_symbol(
       } else if is_registered_proc(sym) {
         Ok(Calcit::Symbol {
           sym: sym.into(),
-          ns: file_ns.into(),
-          at_def: file_ns.into(),
-          resolved: None,
+          info: Arc::new(CalcitSymbolInfo {
+            ns: file_ns.into(),
+            at_def: file_ns.into(),
+            resolved: None,
+          }),
           location: location.map(|x| x.coord),
         })
       } else if program::lookup_def_code(CORE_NS, sym).is_some() {

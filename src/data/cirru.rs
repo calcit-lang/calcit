@@ -21,9 +21,11 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8
       // special tuple syntax
       "::" => Ok(Calcit::Symbol {
         sym: s.clone(),
-        ns,
-        at_def: def,
-        resolved: None,
+        info: Arc::new(crate::primes::CalcitSymbolInfo {
+          ns,
+          at_def: def,
+          resolved: None,
+        }),
         location: Some(Arc::new(coord.to_vec())),
       }),
       _ => match s.chars().next().expect("load first char") {
@@ -49,16 +51,20 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8
         '\'' if s.len() > 1 => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: Arc::from("quote"),
-            ns: ns.to_owned(),
-            at_def: def.clone(),
-            resolved: None,
+            info: Arc::new(crate::primes::CalcitSymbolInfo {
+              ns: ns.to_owned(),
+              at_def: def.clone(),
+              resolved: None,
+            }),
             location: Some(coord.clone()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            ns,
-            at_def: def,
-            resolved: None,
+            info: Arc::new(crate::primes::CalcitSymbolInfo {
+              ns,
+              at_def: def,
+              resolved: None,
+            }),
             location: Some(coord.clone()),
           },
         ]))),
@@ -66,48 +72,60 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: Arc::from("~@"),
-            ns: ns.to_owned(),
-            at_def: def.to_owned(),
-            resolved: None,
+            info: Arc::new(crate::primes::CalcitSymbolInfo {
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
+              resolved: None,
+            }),
             location: Some(coord.clone()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[2..]),
-            ns,
-            at_def: def,
-            resolved: None,
+            info: Arc::new(crate::primes::CalcitSymbolInfo {
+              ns,
+              at_def: def,
+              resolved: None,
+            }),
             location: Some(coord.clone()),
           },
         ]))),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: Arc::from("~"),
-            ns: ns.to_owned(),
-            at_def: def.to_owned(),
-            resolved: None,
+            info: Arc::new(crate::primes::CalcitSymbolInfo {
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
+              resolved: None,
+            }),
             location: Some(coord.clone()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            ns,
-            at_def: def,
-            resolved: None,
+            info: Arc::new(crate::primes::CalcitSymbolInfo {
+              ns,
+              at_def: def,
+              resolved: None,
+            }),
             location: Some(coord.clone()),
           },
         ]))),
         '@' => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: Arc::from("deref"),
-            ns: ns.to_owned(),
-            at_def: def.to_owned(),
-            resolved: None,
+            info: Arc::new(crate::primes::CalcitSymbolInfo {
+              ns: ns.to_owned(),
+              at_def: def.to_owned(),
+              resolved: None,
+            }),
             location: Some(coord.clone()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            ns,
-            at_def: def,
-            resolved: None,
+            info: Arc::new(crate::primes::CalcitSymbolInfo {
+              ns,
+              at_def: def,
+              resolved: None,
+            }),
             location: Some(coord.clone()),
           },
         ]))),
@@ -120,9 +138,11 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8
           } else {
             Ok(Calcit::Symbol {
               sym: (**s).into(),
-              ns,
-              at_def: def,
-              resolved: None,
+              info: Arc::new(crate::primes::CalcitSymbolInfo {
+                ns,
+                at_def: def,
+                resolved: None,
+              }),
               location: Some(coord.clone()),
             })
           }

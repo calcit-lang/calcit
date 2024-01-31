@@ -10,7 +10,7 @@ use crate::{
     edn::{self, edn_to_calcit},
   },
   primes,
-  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope, CrListWrap, GENERATED_DEF, GEN_NS},
+  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSymbolInfo, CrListWrap, GENERATED_DEF, GEN_NS},
   runner,
   util::number::f64_to_usize,
 };
@@ -234,16 +234,20 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::Symbol {
       sym: s.to_owned(),
-      ns: primes::GEN_NS.into(),
-      at_def: primes::GENERATED_DEF.into(),
-      resolved: None,
+      info: Arc::new(CalcitSymbolInfo {
+        ns: primes::GEN_NS.into(),
+        at_def: primes::GENERATED_DEF.into(),
+        resolved: None,
+      }),
       location: None,
     }),
     Calcit::Tag(s) => Ok(Calcit::Symbol {
       sym: s.to_str(),
-      ns: primes::GEN_NS.into(),
-      at_def: primes::GENERATED_DEF.into(),
-      resolved: None,
+      info: Arc::new(CalcitSymbolInfo {
+        ns: primes::GEN_NS.into(),
+        at_def: primes::GENERATED_DEF.into(),
+        resolved: None,
+      }),
       location: None,
     }),
     a @ Calcit::Symbol { .. } => Ok(a.to_owned()),

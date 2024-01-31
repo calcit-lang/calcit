@@ -104,9 +104,11 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     Edn::Number(n) => Calcit::Number(*n),
     Edn::Symbol(s) => Calcit::Symbol {
       sym: (**s).into(),
-      ns: primes::GEN_NS.into(),
-      at_def: primes::GENERATED_DEF.into(),
-      resolved: None,
+      info: Arc::new(crate::primes::CalcitSymbolInfo {
+        ns: primes::GEN_NS.into(),
+        at_def: primes::GENERATED_DEF.into(),
+        resolved: None,
+      }),
       location: None,
     },
     Edn::Tag(s) => Calcit::Tag(s.to_owned()),

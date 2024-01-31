@@ -3,8 +3,8 @@ use crate::{
   call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
   primes,
   primes::{
-    Calcit, CalcitErr, CalcitItems, CalcitProc, CalcitScope, CalcitSyntax, CrListWrap, ImportRule, LocatedWarning, NodeLocation,
-    RawCodeType, SymbolResolved::*, GENERATED_DEF,
+    Calcit, CalcitErr, CalcitItems, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CrListWrap, ImportRule, LocatedWarning,
+    NodeLocation, RawCodeType, SymbolResolved::*, GENERATED_DEF,
   },
   program, runner,
 };
@@ -46,13 +46,15 @@ pub fn preprocess_ns_def(
       Ok((
         Calcit::Symbol {
           sym: original_sym.to_owned(),
-          ns: ns.to_owned(),
-          at_def: def.to_owned(),
-          resolved: Some(Arc::new(ResolvedDef {
+          info: Arc::new(CalcitSymbolInfo {
             ns: ns.to_owned(),
-            def: def.to_owned(),
-            rule: import_rule,
-          })),
+            at_def: def.to_owned(),
+            resolved: Some(Arc::new(ResolvedDef {
+              ns: ns.to_owned(),
+              def: def.to_owned(),
+              rule: import_rule,
+            })),
+          }),
           location: None,
         },
         pick_macro_fn(v),
@@ -90,13 +92,15 @@ pub fn preprocess_ns_def(
           Ok((
             Calcit::Symbol {
               sym: original_sym.to_owned(),
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
-              resolved: Some(Arc::new(ResolvedDef {
+              info: Arc::new(CalcitSymbolInfo {
                 ns: ns.to_owned(),
-                def: def.to_owned(),
-                rule: Some(Arc::new(ImportRule::NsReferDef(ns.to_owned(), def.to_owned()))),
-              })),
+                at_def: def.to_owned(),
+                resolved: Some(Arc::new(ResolvedDef {
+                  ns: ns.to_owned(),
+                  def: def.to_owned(),
+                  rule: Some(Arc::new(ImportRule::NsReferDef(ns.to_owned(), def.to_owned()))),
+                })),
+              }),
               location: None,
             },
             pick_macro_fn(v),
@@ -105,13 +109,15 @@ pub fn preprocess_ns_def(
         None if ns.starts_with('|') || ns.starts_with('"') => Ok((
           Calcit::Symbol {
             sym: original_sym.to_owned(),
-            ns: ns.to_owned(),
-            at_def: def.to_owned(),
-            resolved: Some(Arc::new(ResolvedDef {
+            info: Arc::new(CalcitSymbolInfo {
               ns: ns.to_owned(),
-              def: def.to_owned(),
-              rule: import_rule,
-            })),
+              at_def: def.to_owned(),
+              resolved: Some(Arc::new(ResolvedDef {
+                ns: ns.to_owned(),
+                def: def.to_owned(),
+                rule: import_rule,
+              })),
+            }),
             location: None,
           },
           None,
@@ -146,16 +152,12 @@ pub fn preprocess_expr(
   // println!("preprocessing @{} {}", file_ns, expr);
   match expr {
     Calcit::Symbol {
-      sym: def,
-      ns: def_ns,
-      at_def,
-      location,
-      ..
+      sym: def, info, location, ..
     } => match runner::parse_ns_def(def) {
       Some((ns_alias, def_part)) => {
         if &*ns_alias == "js" {
           Ok((Calcit::RawCode(RawCodeType::Js, def_part), None))
-        } else if let Some(target_ns) = program::lookup_ns_target_in_import(def_ns, &ns_alias) {
+        } else if let Some(target_ns) = program::lookup_ns_target_in_import(&info.ns, &ns_alias) {
           // TODO js syntax to handle in future
           preprocess_ns_def(target_ns, def_part, def.to_owned(), None, check_warnings, call_stack)
         } else if program::has_def_code(&ns_alias, &def_part) {
@@ -166,14 +168,18 @@ pub fn preprocess_expr(
         }
       }
       None => {
+        let def_ns = &info.ns;
+        let at_def = &info.at_def;
         let def_ref = &**def;
         if def_ref == "~" || def_ref == "~@" || def_ref == "&" || def_ref == "?" {
           Ok((
             Calcit::Symbol {
               sym: def.to_owned(),
-              ns: def_ns.to_owned(),
-              at_def: at_def.to_owned(),
-              resolved: Some(Arc::new(ResolvedRaw)),
+              info: Arc::new(CalcitSymbolInfo {
+                ns: def_ns.to_owned(),
+                at_def: at_def.to_owned(),
+                resolved: Some(Arc::new(ResolvedRaw)),
+              }),
               location: location.to_owned(),
             },
             None,
@@ -182,9 +188,11 @@ pub fn preprocess_expr(
           Ok((
             Calcit::Symbol {
               sym: def.to_owned(),
-              ns: def_ns.to_owned(),
-              at_def: at_def.to_owned(),
-              resolved: Some(Arc::new(ResolvedLocal)),
+              info: Arc::new(CalcitSymbolInfo {
+                ns: def_ns.to_owned(),
+                at_def: at_def.to_owned(),
+                resolved: Some(Arc::new(ResolvedLocal)),
+              }),
               location: location.to_owned(),
             },
             None,
@@ -216,9 +224,11 @@ pub fn preprocess_expr(
           Ok((
             Calcit::Symbol {
               sym: def.to_owned(),
-              ns: def_ns.to_owned(),
-              at_def: at_def.to_owned(),
-              resolved: Some(Arc::new(ResolvedRaw)),
+              info: Arc::new(CalcitSymbolInfo {
+                ns: def_ns.to_owned(),
+                at_def: at_def.to_owned(),
+                resolved: Some(Arc::new(ResolvedRaw)),
+              }),
               location: location.to_owned(),
             },
             None,
@@ -244,9 +254,11 @@ pub fn preprocess_expr(
                 Ok((
                   Calcit::Symbol {
                     sym: def.to_owned(),
-                    ns: def_ns.to_owned(),
-                    at_def: at_def.to_owned(),
-                    resolved: target,
+                    info: Arc::new(CalcitSymbolInfo {
+                      ns: def_ns.to_owned(),
+                      at_def: at_def.to_owned(),
+                      resolved: target,
+                    }),
                     location: location.to_owned(),
                   },
                   None,
@@ -335,13 +347,15 @@ fn process_list_call(
         let code = Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: "get".into(),
-            ns: primes::CORE_NS.into(),
-            at_def: primes::GENERATED_DEF.into(),
-            resolved: Some(Arc::new(ResolvedDef {
+            info: Arc::new(crate::primes::CalcitSymbolInfo {
               ns: primes::CORE_NS.into(),
-              def: "get".into(),
-              rule: None,
-            })),
+              at_def: primes::GENERATED_DEF.into(),
+              resolved: Some(Arc::new(ResolvedDef {
+                ns: primes::CORE_NS.into(),
+                def: "get".into(),
+                rule: None,
+              })),
+            }),
             location: None,
           },
           args[0].to_owned(),
@@ -451,8 +465,8 @@ fn process_list_call(
       Ok((Calcit::List(TernaryTreeList::from(&ys)), None))
     }
     (h, he) => {
-      if let Calcit::Symbol { sym, resolved, .. } = h {
-        if he.is_none() && resolved.is_none() && !is_js_syntax_procs(sym) {
+      if let Calcit::Symbol { sym, info, .. } = h {
+        if he.is_none() && info.resolved.is_none() && !is_js_syntax_procs(sym) {
           println!("warning: unresolved symbol `{}` in `{}`", sym, CrListWrap(xs.to_owned()));
         }
       }
@@ -550,7 +564,7 @@ fn check_fn_args(
 // TODO this native implementation only handles symbols
 fn grab_def_name(x: &Calcit) -> Arc<str> {
   match x {
-    Calcit::Symbol { at_def: def_name, .. } => def_name.to_owned(),
+    Calcit::Symbol { info, .. } => info.at_def.to_owned(),
     _ => String::from("??").into(),
   }
 }
@@ -588,8 +602,7 @@ pub fn preprocess_defn(
     (
       Some(Calcit::Symbol {
         sym: def_name,
-        ns: def_name_ns,
-        at_def,
+        info,
         location,
         ..
       }),
@@ -599,9 +612,11 @@ pub fn preprocess_defn(
 
       xs = xs.push_right(Calcit::Symbol {
         sym: def_name.to_owned(),
-        ns: def_name_ns.to_owned(),
-        at_def: at_def.to_owned(),
-        resolved: Some(Arc::new(ResolvedRaw)),
+        info: Arc::new(CalcitSymbolInfo {
+          ns: info.ns.to_owned(),
+          at_def: info.at_def.to_owned(),
+          resolved: Some(Arc::new(ResolvedRaw)),
+        }),
         location: location.to_owned(),
       });
       let mut zs: CalcitItems = TernaryTreeList::Empty;
@@ -609,18 +624,23 @@ pub fn preprocess_defn(
         match y {
           Calcit::Symbol {
             sym,
-            ns: def_ns,
-            at_def,
+            info,
             location: arg_location,
             ..
           } => {
-            let loc = NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), arg_location.to_owned().unwrap_or_default());
+            let loc = NodeLocation::new(
+              info.ns.to_owned(),
+              info.at_def.to_owned(),
+              arg_location.to_owned().unwrap_or_default(),
+            );
             check_symbol(sym, args, loc, check_warnings);
             zs = zs.push_right(Calcit::Symbol {
               sym: sym.to_owned(),
-              ns: def_ns.to_owned(),
-              at_def: at_def.to_owned(),
-              resolved: Some(Arc::new(ResolvedRaw)),
+              info: Arc::new(CalcitSymbolInfo {
+                ns: info.ns.to_owned(),
+                at_def: info.at_def.to_owned(),
+                resolved: Some(Arc::new(ResolvedRaw)),
+              }),
               location: arg_location.to_owned(),
             });
             // skip argument syntax marks

@@ -11,7 +11,7 @@ use im_ternary_tree::TernaryTreeList;
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::call_stack::CallStackList;
-use crate::primes::{self, CrListWrap, LocatedWarning};
+use crate::primes::{self, CalcitSymbolInfo, CrListWrap, LocatedWarning};
 use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 
@@ -381,9 +381,11 @@ pub fn gensym(xs: &CalcitItems, _scope: &CalcitScope, file_ns: Arc<str>, _call_s
   };
   Ok(Calcit::Symbol {
     sym: s.into(),
-    ns: file_ns,
-    at_def: primes::GENERATED_DEF.into(),
-    resolved: None,
+    info: Arc::new(CalcitSymbolInfo {
+      ns: file_ns,
+      at_def: primes::GENERATED_DEF.into(),
+      resolved: None,
+    }),
     location: None,
   })
 }

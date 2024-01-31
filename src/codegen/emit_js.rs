@@ -202,21 +202,15 @@ fn to_js_code(
     gen_call_code(ys, ns, local_defs, xs, file_imports, tags, return_label)
   } else {
     let ret = match xs {
-      Calcit::Symbol {
-        sym,
-        ns: def_ns,
-        at_def,
-        resolved,
-        ..
-      } => {
-        let resolved_info = resolved.to_owned().map(|v| (*v).to_owned());
+      Calcit::Symbol { sym, info, .. } => {
+        let resolved_info = info.resolved.to_owned().map(|v| (*v).to_owned());
         let passed_defs = PassedDefs {
           ns,
           local_defs,
           file_imports,
         };
 
-        gen_symbol_code(sym, def_ns, at_def, resolved_info, xs, &passed_defs)
+        gen_symbol_code(sym, &info.ns, &info.at_def, resolved_info, xs, &passed_defs)
       }
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
