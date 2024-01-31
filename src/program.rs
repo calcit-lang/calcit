@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -105,7 +106,10 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
   let mut defs: HashMap<Arc<str>, Calcit> = HashMap::with_capacity(file.defs.len());
   for (def, entry) in &file.defs {
     let at_def = def.to_owned();
-    defs.insert(def.to_owned(), code_to_calcit(&entry.code, ns.to_owned(), at_def, &[])?);
+    defs.insert(
+      def.to_owned(),
+      code_to_calcit(&entry.code, ns.to_owned(), at_def, Arc::new(vec![]))?,
+    );
   }
   Ok(ProgramFileData { import_map, defs })
 }
@@ -146,9 +150,9 @@ pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<Arc<str>> {
   }
 }
 
-pub fn lookup_ns_target_in_import(ns: Arc<str>, alias: &str) -> Option<Arc<str>> {
+pub fn lookup_ns_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>> {
   let program = { PROGRAM_CODE_DATA.read().expect("read program code") };
-  let file = program.get(&*ns)?;
+  let file = program.get(ns)?;
   let import_rule = file.import_map.get(alias)?;
   match &**import_rule {
     ImportRule::NsReferDef(_ns, _def) => None,
@@ -172,20 +176,19 @@ pub fn lookup_default_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>
 /// lookup and return value
 pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
   let s2 = PROGRAM_EVALED_DATA_STATE.read().expect("read program data");
-  if s2.contains_key(ns) && s2[ns].contains_key(def) {
-    Some(s2[ns][def].to_owned())
-  } else {
-    // eprintln!("failed to lookup {} {}", ns, def);
-    None
-  }
+  s2.get(ns)?.get(def).cloned()
 }
 
 // Dirty mutating global states
 pub fn write_evaled_def(ns: &str, def: &str, value: Calcit) -> Result<(), String> {
   // println!("writing {} {}", ns, def);
   let mut program = PROGRAM_EVALED_DATA_STATE.write().expect("read program data");
-  if !program.contains_key(ns) {
-    (*program).insert(String::from(ns).into(), HashMap::new());
+
+  match (*program).entry(Arc::from(ns)) {
+    Entry::Occupied(_) => (),
+    Entry::Vacant(entry) => {
+      entry.insert(HashMap::new());
+    }
   }
 
   let file = program.get_mut(ns).ok_or_else(|| format!("can not write to: {ns}"))?;
@@ -208,6 +211,7 @@ pub fn clone_evaled_program() -> ProgramEvaledData {
 
 pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String> {
   let mut program_code = PROGRAM_CODE_DATA.write().expect("open program code");
+  let coord0 = Arc::new(vec![]);
 
   for (ns, file) in &changes.added {
     program_code.insert(ns.to_owned(), extract_file_data(file, ns.to_owned())?);
@@ -224,7 +228,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
     for (def, code) in &info.added_defs {
       file
         .defs
-        .insert(def.to_owned(), code_to_calcit(code, ns.to_owned(), def.to_owned(), &[])?);
+        .insert(def.to_owned(), code_to_calcit(code, ns.to_owned(), def.to_owned(), coord0.clone())?);
     }
     for def in &info.removed_defs {
       file.defs.remove(def);
@@ -232,7 +236,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
     for (def, code) in &info.changed_defs {
       file
         .defs
-        .insert(def.to_owned(), code_to_calcit(code, ns.to_owned(), def.to_owned(), &[])?);
+        .insert(def.to_owned(), code_to_calcit(code, ns.to_owned(), def.to_owned(), coord0.clone())?);
     }
   }
 

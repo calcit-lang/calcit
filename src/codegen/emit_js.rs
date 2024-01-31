@@ -147,7 +147,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
     Calcit::Number(n) => Ok(n.to_string()),
     Calcit::Nil => Ok(String::from("null")),
     // mainly for methods, which are recognized during reading
-    Calcit::Proc(p) => Ok(format!("new {var_prefix}CalcitSymbol({})", escape_cirru_str(&p.to_string()))),
+    Calcit::Proc(p) => Ok(format!("new {var_prefix}CalcitSymbol({})", escape_cirru_str(p.as_ref()))),
     Calcit::List(ys) => {
       let mut chunk = String::from("");
       for y in ys {
@@ -161,7 +161,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
     Calcit::Tag(s) => {
       let mut tags = tags.borrow_mut();
       tags.insert(s.to_owned());
-      Ok(format!("_tag[{}]", escape_cirru_str(&s.to_string())))
+      Ok(format!("_tag[{}]", escape_cirru_str(&s.to_str())))
     }
     Calcit::CirruQuote(code) => Ok(format!("new {var_prefix}CalcitCirruQuote({})", cirru_to_js(code)?)),
     Calcit::Method(name, kind) => {
@@ -223,7 +223,7 @@ fn to_js_code(
         // println!("gen proc {} under {}", s, ns,);
         // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
         // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
-        Ok(format!("{proc_prefix}{}", escape_var(&s.to_string())))
+        Ok(format!("{proc_prefix}{}", escape_var(s.as_ref())))
       }
       Calcit::Method(name, kind) => {
         let proc_prefix = get_proc_prefix(ns);
@@ -235,7 +235,7 @@ fn to_js_code(
       }
       Calcit::Syntax(s, ..) => {
         let proc_prefix = get_proc_prefix(ns);
-        Ok(format!("{proc_prefix}{}", escape_var(&s.to_string())))
+        Ok(format!("{proc_prefix}{}", escape_var(s.as_ref())))
       }
       Calcit::Str(s) => Ok(escape_cirru_str(s)),
       Calcit::Bool(b) => Ok(b.to_string()),
@@ -244,7 +244,7 @@ fn to_js_code(
       Calcit::Tag(s) => {
         let mut tags = tags.borrow_mut();
         tags.insert(s.to_owned());
-        Ok(format!("_tag[{}]", wrap_js_str(&s.to_string())))
+        Ok(format!("_tag[{}]", wrap_js_str(&s.to_str())))
       }
       Calcit::List(_) => unreachable!("[Error] list handled in another branch"),
       Calcit::CirruQuote(code) => {
@@ -1345,7 +1345,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     ordered_tags.sort();
 
     for s in ordered_tags {
-      let name = escape_cirru_str(&s.to_string());
+      let name = escape_cirru_str(&s.to_str());
       write!(tag_arr, "{name},").expect("write");
     }
     tag_arr.push(']');

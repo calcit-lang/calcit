@@ -17,3 +17,5 @@ builds/
 .vscode/
 
 .DS_Store
+
+/profile.json

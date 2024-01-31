@@ -247,7 +247,7 @@ pub fn diff_new(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Map(zs.to_owned()))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("map:new_entries expected 2 maps, got: {a} {b}")),
-    (..) => CalcitErr::err_nodes("map:new_entries expected 2 arguments, got", xs),
+    (..) => CalcitErr::err_nodes("map:diff-new expected 2 arguments, got", xs),
   }
 }
 
@@ -279,6 +279,6 @@ pub fn common_keys(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Set(ks))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("map:diff-keys expected 2 maps, got: {a} {b}")),
-    (..) => CalcitErr::err_nodes("map:diff-keys expected 2 arguments, got:", xs),
+    (..) => CalcitErr::err_nodes("map:common-keys expected 2 arguments, got:", xs),
   }
 }

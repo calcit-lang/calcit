@@ -2,9 +2,9 @@
 
 > Semantically a dialect of ClojureScript. Built with Rust. Compiles to JavaScript ES Modules.
 
-- Home http://calcit-lang.org/
-- API Doc http://apis.calcit-lang.org/
-- Guidebook http://guide.calcit-lang.org/
+- Home https://calcit-lang.org/
+- API Doc https://apis.calcit-lang.org/
+- Guidebook https://guide.calcit-lang.org/
 
 [Browse examples](https://github.com/calcit-lang/calcit/tree/main/calcit) or also [try WASM version online](https://github.com/calcit-lang/calcit-wasm-play).
 

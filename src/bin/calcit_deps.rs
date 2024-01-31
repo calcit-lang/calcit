@@ -8,11 +8,11 @@ mod git;
 use cirru_edn::Edn;
 use colored::*;
 use git::*;
-use std::{collections::HashMap, fs, path::Path};
+use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PackageDeps {
-  dependencies: HashMap<String, String>,
+  dependencies: HashMap<Arc<str>, Arc<str>>,
 }
 
 impl TryFrom<Edn> for PackageDeps {
@@ -22,11 +22,11 @@ impl TryFrom<Edn> for PackageDeps {
     let deps = value.view_map()?.get_or_nil("dependencies");
     let dict = deps.view_map()?.0;
 
-    let mut deps: HashMap<String, String> = HashMap::new();
+    let mut deps: HashMap<Arc<str>, Arc<str>> = HashMap::new();
     for (k, v) in &dict {
       match (k, v) {
         (Edn::Str(k), Edn::Str(v)) => {
-          deps.insert(k.to_owned().into_string(), v.to_owned().into());
+          deps.insert(k.to_owned(), v.to_owned());
         }
         _ => {
           return Err(format!("invalid dependency: {} {}", k, v));
@@ -75,7 +75,7 @@ pub fn main() -> Result<(), String> {
   }
 }
 
-fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(), String> {
+fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: &CliArgs) -> Result<(), String> {
   // ~/.config/calcit/modules/
   let clone_target = if options.local_debug {
     println!("{}", "  [DEBUG] local debug mode, cloning to test-modules/".yellow());
@@ -99,7 +99,7 @@ fn download_deps(deps: HashMap<String, String>, options: &CliArgs) -> Result<(),
       // println!("module {} exists", folder);
       // check branch
       let current_head = git_current_head(&folder_path)?;
-      if current_head.get_name() == version {
+      if current_head.get_name() == *version {
         dim_println(format!("√ found {} at {}", gray(folder), gray(&version)));
         if let GitHead::Branch(branch) = current_head {
           if options.pull_branch {

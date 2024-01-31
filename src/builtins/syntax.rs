@@ -100,7 +100,7 @@ pub fn syntax_let(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
       match (&xs[0], &xs[1]) {
         (Calcit::Symbol { sym: s, .. }, ys) => {
           let value = runner::evaluate_expr(ys, scope, file_ns.to_owned(), call_stack)?;
-          body_scope.insert(s.to_owned(), value);
+          body_scope.insert_mut(s.to_owned(), value);
         }
         (a, _) => return CalcitErr::err_str(format!("invalid binding name: {a}")),
       }
@@ -204,10 +204,11 @@ pub fn macroexpand(
           Calcit::Macro { def_ns, args, body, .. } => {
             // mutable operation
             let mut rest_nodes = xs.drop_left();
+            let mut body_scope = scope.to_owned();
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              let body_scope = runner::bind_args(&args, &rest_nodes, scope, call_stack)?;
+              runner::bind_args(&mut body_scope, &args, &rest_nodes, call_stack)?;
               let v = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
@@ -244,7 +245,8 @@ pub fn macroexpand_1(
         let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
           Calcit::Macro { def_ns, args, body, .. } => {
-            let body_scope = runner::bind_args(&args, &xs.drop_left(), scope, call_stack)?;
+            let mut body_scope = scope.to_owned();
+            runner::bind_args(&mut body_scope, &args, &xs.drop_left(), call_stack)?;
             runner::evaluate_lines(&body, &body_scope, def_ns, call_stack)
           }
           _ => Ok(quoted_code),
@@ -277,10 +279,11 @@ pub fn macroexpand_all(
             // mutable operation
             let mut rest_nodes = xs.drop_left();
             let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
+            let mut body_scope = scope.to_owned();
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              let body_scope = runner::bind_args(&args, &rest_nodes, scope, call_stack)?;
+              runner::bind_args(&mut body_scope, &args, &rest_nodes, call_stack)?;
               let v = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {

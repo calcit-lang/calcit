@@ -13,7 +13,7 @@ pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args:
     ns: ns.into(),
     def: def.into(),
     code,
-    args: Box::new(args.to_owned()),
+    args: args.to_owned(),
     kind,
   })
 }

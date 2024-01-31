@@ -2,8 +2,6 @@ pub mod preprocess;
 pub mod track;
 
 use im_ternary_tree::TernaryTreeList;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::Arc;
 use strum::ParseError;
 
@@ -80,7 +78,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             let next_stack = extend_call_stack(
               call_stack,
               def_ns.to_owned(),
-              s.to_string().into(),
+              Arc::from(s.as_ref()),
               StackKind::Syntax,
               expr.to_owned(),
               &rest_nodes,
@@ -148,9 +146,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               &rest_nodes,
             );
 
+            let mut body_scope = CalcitScope::default();
+
             Ok(loop {
               // need to handle recursion
-              let body_scope = bind_args(args, &current_values, &CalcitScope::default(), call_stack)?;
+              bind_args(&mut body_scope, args, &current_values, call_stack)?;
               let code = evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
@@ -191,19 +191,21 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
           } => {
             let ps = IMPORTED_PROCS.read().expect("read procs");
             let name = &*sym.to_owned();
-            if ps.contains_key(name) {
-              let f = ps[name];
-              let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-              f(&values, call_stack)
-            } else {
-              let error_location = location
-                .as_ref()
-                .map(|l| NodeLocation::new(ns.to_owned(), at_def.to_owned(), l.to_owned()));
-              Err(CalcitErr::use_msg_stack_location(
-                format!("cannot evaluate symbol directly: {ns}/{sym} in {at_def}, {resolved:?}"),
-                call_stack,
-                error_location,
-              ))
+            match ps.get(name) {
+              Some(f) => {
+                let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
+                f(&values, call_stack)
+              }
+              None => {
+                let error_location = location
+                  .as_ref()
+                  .map(|l| NodeLocation::new(ns.to_owned(), at_def.to_owned(), l.to_owned()));
+                Err(CalcitErr::use_msg_stack_location(
+                  format!("cannot evaluate symbol directly: {ns}/{sym} in {at_def}, {resolved:?}"),
+                  call_stack,
+                  error_location,
+                ))
+              }
             }
           }
           a => Err(CalcitErr::use_msg_stack_location(
@@ -235,7 +237,7 @@ pub fn evaluate_symbol(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let v = match parse_ns_def(sym) {
-    Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns.into(), &ns_part) {
+    Some((ns_part, def_part)) => match program::lookup_ns_target_in_import(file_ns, &ns_part) {
       Some(target_ns) => match eval_symbol_from_program(&def_part, &target_ns, call_stack) {
         Ok(v) => Ok(v),
         Err(e) => Err(e),
@@ -251,8 +253,8 @@ pub fn evaluate_symbol(
         Ok(Calcit::Syntax(
           sym
             .parse()
-            .map_err(|e: ParseError| CalcitErr::use_msg_stack(sym.to_string() + " " + &e.to_string(), call_stack))?,
-          file_ns.to_owned().into(),
+            .map_err(|e: ParseError| CalcitErr::use_msg_stack(format!("{} {}", sym, e), call_stack))?,
+          file_ns.into(),
         ))
       } else if let Some(v) = scope.get(sym) {
         // although scope is detected first, it would trigger warning during preprocess
@@ -275,9 +277,15 @@ pub fn evaluate_symbol(
         match program::lookup_def_target_in_import(file_ns, sym) {
           Some(target_ns) => eval_symbol_from_program(sym, &target_ns, call_stack),
           None => {
-            let vars = scope.list_variables();
+            let mut vars = String::new();
+            for (i, k) in scope.0.keys().enumerate() {
+              if i > 0 {
+                vars.push(',');
+              }
+              vars.push_str(k);
+            }
             Err(CalcitErr::use_msg_stack_location(
-              format!("unknown symbol `{sym}` in {}", vars.join(",")),
+              format!("unknown symbol `{sym}` in {}", vars),
               call_stack,
               location,
             ))
@@ -350,88 +358,83 @@ pub fn run_fn(
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut current_values = Box::new(values.to_owned());
-  loop {
-    let body_scope = bind_args(args, &current_values, scope, call_stack)?;
-    let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
-    match v {
-      Calcit::Recur(xs) => {
-        current_values = Box::new(xs.to_owned());
+  let mut body_scope = scope.to_owned();
+  bind_args(&mut body_scope, args, values, call_stack)?;
+
+  let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
+
+  if let Calcit::Recur(xs) = v {
+    let mut current_values = xs;
+    loop {
+      bind_args(&mut body_scope, args, &current_values, call_stack)?;
+      let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
+      match v {
+        Calcit::Recur(xs) => current_values = xs,
+        result => return Ok(result),
       }
-      result => return Ok(result),
     }
+  } else {
+    Ok(v)
+  }
+}
+
+/// syntax sugar for index value
+#[derive(Debug, Default, PartialEq, PartialOrd)]
+struct MutIndex(usize);
+
+impl MutIndex {
+  /// get value first, ant then increase value
+  fn get_and_inc(&mut self) -> usize {
+    let ret = self.0;
+    self.0 += 1;
+    ret
   }
 }
 
 /// create new scope by writing new args
 /// notice that `&` is a mark for spreading, `?` for optional arguments
 pub fn bind_args(
+  scope: &mut CalcitScope,
   args: &[Arc<str>],
   values: &CalcitItems,
-  base_scope: &CalcitScope,
   call_stack: &CallStackList,
-) -> Result<CalcitScope, CalcitErr> {
-  let mut scope = base_scope.to_owned();
+) -> Result<(), CalcitErr> {
   let mut spreading = false;
   let mut optional = false;
 
-  let collected_args = args.to_owned();
-  let collected_values = Arc::new(values);
-  let pop_args_idx = Rc::new(RefCell::new(0));
-  let pop_values_idx = Rc::new(RefCell::new(0));
+  let mut pop_args_idx = MutIndex::default();
+  let mut pop_values_idx = MutIndex::default();
 
-  let args_pop_front = || -> Option<Arc<str>> {
-    let mut p = pop_args_idx.borrow_mut();
-    let ret = collected_args.get(*p);
-    *p += 1;
-    ret.map(|x| x.to_owned())
-  };
-
-  let values_pop_front = || -> Option<&Calcit> {
-    let mut p = pop_values_idx.borrow_mut();
-    let ret = collected_values.get(*p);
-    *p += 1;
-    ret
-  };
-  let is_args_empty = || -> bool {
-    let p = pop_args_idx.borrow();
-    *p >= (*collected_args).len()
-  };
-  let is_values_empty = || -> bool {
-    let p = pop_values_idx.borrow();
-    *p >= (*collected_values).len()
-  };
-
-  while let Some(sym) = args_pop_front() {
+  while let Some(sym) = args.get(pop_args_idx.get_and_inc()) {
     if spreading {
-      match &*sym {
+      match &**sym {
         "&" => return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {args:?}"), call_stack)),
         "?" => return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {args:?}"), call_stack)),
         _ => {
           let mut chunk: CalcitItems = TernaryTreeList::Empty;
-          while let Some(v) = values_pop_front() {
+          while let Some(v) = values.get(pop_values_idx.get_and_inc()) {
             chunk = chunk.push_right(v.to_owned());
           }
-          scope.insert(sym.to_owned(), Calcit::List(chunk));
-          if !is_args_empty() {
+          scope.insert_mut(sym.to_owned(), Calcit::List(chunk));
+          if pop_args_idx.0 < args.len() {
             return Err(CalcitErr::use_msg_stack(
-              format!("extra args `{collected_args:?}` after spreading in `{args:?}`",),
+              format!("extra args `{args:?}` after spreading in `{args:?}`",),
               call_stack,
             ));
           }
         }
       }
     } else {
-      match &*sym {
+      match &**sym {
         "&" => spreading = true,
         "?" => optional = true,
-        _ => match values_pop_front() {
+        _ => match values.get(pop_values_idx.get_and_inc()) {
           Some(v) => {
-            scope.insert(sym.to_owned(), v.to_owned());
+            scope.insert_mut(sym.to_owned(), v.to_owned());
           }
           None => {
             if optional {
-              scope.insert(sym.to_owned(), Calcit::Nil);
+              scope.insert_mut(sym.to_owned(), Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
                 format!("too few values `{}` passed to args `{args:?}`", CrListWrap(values.to_owned())),
@@ -443,13 +446,14 @@ pub fn bind_args(
       }
     }
   }
-  if is_values_empty() {
-    Ok(scope)
+
+  if pop_values_idx.0 >= values.len() {
+    Ok(())
   } else {
     Err(CalcitErr::use_msg_stack(
       format!(
         "extra args `{}` not handled while passing values `{}` to args `{:?}`",
-        CrListWrap((*collected_values).to_owned()),
+        CrListWrap((*values).to_owned()),
         CrListWrap(values.to_owned()),
         args,
       ),
@@ -482,7 +486,7 @@ pub fn evaluate_args(
   file_ns: Arc<str>,
   call_stack: &CallStackList,
 ) -> Result<CalcitItems, CalcitErr> {
-  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len());
+  let mut ret: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
   let mut spreading = false;
   for item in items {
     match item {
@@ -504,7 +508,7 @@ pub fn evaluate_args(
                   },
                   _ => x.to_owned(),
                 };
-                ret.push(y.to_owned());
+                ret = ret.push(y.to_owned());
               }
               spreading = false
             }
@@ -524,10 +528,10 @@ pub fn evaluate_args(
             },
             _ => v.to_owned(),
           };
-          ret.push(y);
+          ret = ret.push(y);
         }
       }
     }
   }
-  Ok(TernaryTreeList::from(&ret))
+  Ok(ret)
 }

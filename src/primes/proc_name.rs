@@ -1,7 +1,7 @@
-use strum_macros::EnumString;
+use strum_macros::{AsRefStr, EnumString};
 
 /// represent builtin functions for performance reasons.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumString, strum_macros::Display)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumString, strum_macros::Display, AsRefStr)]
 pub enum CalcitProc {
   // meta
   #[strum(serialize = "type-of")]

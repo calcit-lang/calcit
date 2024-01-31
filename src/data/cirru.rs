@@ -6,7 +6,7 @@ use im_ternary_tree::TernaryTreeList;
 use crate::primes::{Calcit, CalcitProc, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
-pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> Result<Calcit, String> {
+pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8>>) -> Result<Calcit, String> {
   match xs {
     Cirru::Leaf(s) => match &**s {
       "nil" => Ok(Calcit::Nil),
@@ -20,11 +20,11 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> 
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
       "::" => Ok(Calcit::Symbol {
-        sym: (**s).into(),
+        sym: s.clone(),
         ns,
         at_def: def,
         resolved: None,
-        location: Some(coord.to_vec()),
+        location: Some(Arc::new(coord.to_vec())),
       }),
       _ => match s.chars().next().expect("load first char") {
         ':' if s.len() > 1 && s.chars().nth(1) != Some(':') => Ok(Calcit::tag(&s[1..])),
@@ -48,67 +48,67 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> 
         },
         '\'' if s.len() > 1 => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
-            sym: String::from("quote").into(),
+            sym: Arc::from("quote"),
             ns: ns.to_owned(),
-            at_def: def.to_owned(),
+            at_def: def.clone(),
             resolved: None,
-            location: Some(coord.to_vec()),
+            location: Some(coord.clone()),
           },
           Calcit::Symbol {
-            sym: String::from(&s[1..]).into(),
+            sym: Arc::from(&s[1..]),
             ns,
             at_def: def,
             resolved: None,
-            location: Some(coord.to_vec()),
+            location: Some(coord.clone()),
           },
         ]))),
         // TODO also detect simple variables
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
-            sym: String::from("~@").into(),
+            sym: Arc::from("~@"),
             ns: ns.to_owned(),
             at_def: def.to_owned(),
             resolved: None,
-            location: Some(coord.to_vec()),
+            location: Some(coord.clone()),
           },
           Calcit::Symbol {
-            sym: String::from(&s[2..]).into(),
+            sym: Arc::from(&s[2..]),
             ns,
             at_def: def,
             resolved: None,
-            location: Some(coord.to_vec()),
+            location: Some(coord.clone()),
           },
         ]))),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
-            sym: String::from("~").into(),
+            sym: Arc::from("~"),
             ns: ns.to_owned(),
             at_def: def.to_owned(),
             resolved: None,
-            location: Some(coord.to_vec()),
+            location: Some(coord.clone()),
           },
           Calcit::Symbol {
-            sym: String::from(&s[1..]).into(),
+            sym: Arc::from(&s[1..]),
             ns,
             at_def: def,
             resolved: None,
-            location: Some(coord.to_vec()),
+            location: Some(coord.clone()),
           },
         ]))),
         '@' => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
-            sym: String::from("deref").into(),
+            sym: Arc::from("deref"),
             ns: ns.to_owned(),
             at_def: def.to_owned(),
             resolved: None,
-            location: Some(coord.to_vec()),
+            location: Some(coord.clone()),
           },
           Calcit::Symbol {
-            sym: String::from(&s[1..]).into(),
+            sym: Arc::from(&s[1..]),
             ns,
             at_def: def,
             resolved: None,
-            location: Some(coord.to_vec()),
+            location: Some(coord.clone()),
           },
         ]))),
         // TODO future work of reader literal expanding
@@ -123,7 +123,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> 
               ns,
               at_def: def,
               resolved: None,
-              location: Some(coord.to_vec()),
+              location: Some(coord.clone()),
             })
           }
         }
@@ -132,7 +132,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> 
     Cirru::List(ys) => {
       let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
       for (idx, y) in ys.iter().enumerate() {
-        let mut next_coord = coord.to_owned();
+        let mut next_coord: Vec<u8> = (**coord).to_owned();
         next_coord.push(idx as u8); // code not supposed to be fatter than 256 children
 
         if let Cirru::List(ys) = y {
@@ -152,7 +152,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: &[u8]) -> 
           }
         }
 
-        zs.push(code_to_calcit(y, ns.to_owned(), def.to_owned(), &next_coord)?)
+        zs.push(code_to_calcit(y, ns.to_owned(), def.to_owned(), Arc::new(next_coord))?)
       }
       Ok(Calcit::List(TernaryTreeList::from(&zs)))
     }
@@ -214,8 +214,8 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
       }
       Ok(Cirru::List(ys))
     }
-    Calcit::Proc(s) => Ok(Cirru::Leaf(s.to_string().into())),
-    Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.to_string().into())),
+    Calcit::Proc(s) => Ok(Cirru::Leaf(s.as_ref().into())),
+    Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.as_ref().into())),
     Calcit::CirruQuote(code) => Ok(code.to_owned()),
     Calcit::Method(name, kind) => match kind {
       MethodKind::Access => Ok(Cirru::leaf(format!(".-{name}"))),
