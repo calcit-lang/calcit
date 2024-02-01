@@ -11,7 +11,7 @@ use im_ternary_tree::TernaryTreeList;
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::call_stack::CallStackList;
-use crate::primes::{self, CalcitSymbolInfo, CrListWrap, LocatedWarning};
+use crate::primes::{self, CalcitMacro, CalcitSymbolInfo, CrListWrap, LocatedWarning};
 use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 
@@ -33,11 +33,13 @@ pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>) -> Resul
 pub fn defmacro(expr: &CalcitItems, _scope: &CalcitScope, def_ns: Arc<str>) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => Ok(Calcit::Macro {
-      name: s.to_owned(),
-      def_ns,
       id: gen_core_id(),
-      args: Arc::new(get_raw_args(xs)?),
-      body: Arc::new(expr.skip(2)?),
+      info: Arc::new(CalcitMacro {
+        name: s.to_owned(),
+        def_ns,
+        args: Arc::new(get_raw_args(xs)?),
+        body: Arc::new(expr.skip(2)?),
+      }),
     }),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid structure for defmacro: {a} {b}")),
     _ => CalcitErr::err_str(format!("invalid structure for defmacro: {}", Calcit::List(expr.to_owned()))),
@@ -201,15 +203,15 @@ pub fn macroexpand(
         }
         let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
-          Calcit::Macro { def_ns, args, body, .. } => {
+          Calcit::Macro { info, .. } => {
             // mutable operation
             let mut rest_nodes = xs.drop_left();
             let mut body_scope = scope.to_owned();
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              runner::bind_args(&mut body_scope, &args, &rest_nodes, call_stack)?;
-              let v = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), call_stack)?;
+              runner::bind_args(&mut body_scope, &info.args, &rest_nodes, call_stack)?;
+              let v = runner::evaluate_lines(&info.body, &body_scope, info.def_ns.to_owned(), call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
                   rest_nodes = rest_code.to_owned();
@@ -244,10 +246,10 @@ pub fn macroexpand_1(
         }
         let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
-          Calcit::Macro { def_ns, args, body, .. } => {
+          Calcit::Macro { info, .. } => {
             let mut body_scope = scope.to_owned();
-            runner::bind_args(&mut body_scope, &args, &xs.drop_left(), call_stack)?;
-            runner::evaluate_lines(&body, &body_scope, def_ns, call_stack)
+            runner::bind_args(&mut body_scope, &info.args, &xs.drop_left(), call_stack)?;
+            runner::evaluate_lines(&info.body, &body_scope, info.def_ns.clone(), call_stack)
           }
           _ => Ok(quoted_code),
         }
@@ -275,7 +277,7 @@ pub fn macroexpand_all(
         }
         let v = runner::evaluate_expr(&xs[0], scope, file_ns.to_owned(), call_stack)?;
         match v {
-          Calcit::Macro { def_ns, args, body, .. } => {
+          Calcit::Macro { info, .. } => {
             // mutable operation
             let mut rest_nodes = xs.drop_left();
             let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
@@ -283,8 +285,8 @@ pub fn macroexpand_all(
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              runner::bind_args(&mut body_scope, &args, &rest_nodes, call_stack)?;
-              let v = runner::evaluate_lines(&body, &body_scope, def_ns.to_owned(), call_stack)?;
+              runner::bind_args(&mut body_scope, &info.args, &rest_nodes, call_stack)?;
+              let v = runner::evaluate_lines(&info.body, &body_scope, info.def_ns.to_owned(), call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
                   rest_nodes = rest_code.to_owned();

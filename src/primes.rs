@@ -1,4 +1,5 @@
 mod eval_node;
+mod fns;
 mod proc_name;
 mod symbol;
 mod syntax_name;
@@ -17,6 +18,7 @@ use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
+pub use fns::{CalcitFn, CalcitMacro};
 pub use proc_name::CalcitProc;
 use rpds::HashTrieMapSync;
 pub use symbol::CalcitSymbolInfo;
@@ -122,12 +124,8 @@ pub enum Calcit {
   /// native functions that providing feature from Rust
   Proc(CalcitProc),
   Macro {
-    name: Arc<str>,
-    /// where it was defined
-    def_ns: Arc<str>,
     id: Arc<str>,
-    args: Arc<Vec<Arc<str>>>,
-    body: Arc<CalcitItems>,
+    info: Arc<CalcitMacro>,
   },
   Fn {
     name: Arc<str>,
@@ -241,10 +239,11 @@ impl fmt::Display for Calcit {
         f.write_str(")")
       }
       Calcit::Proc(name) => f.write_str(&format!("(&proc {name})")),
-      Calcit::Macro { name, args, body, .. } => {
+      Calcit::Macro { info, .. } => {
+        let name = &info.name;
         f.write_str(&format!("(&macro {name} ("))?;
         let mut need_space = false;
-        for a in &**args {
+        for a in &**info.args {
           if need_space {
             f.write_str(" ")?;
           }
@@ -253,7 +252,7 @@ impl fmt::Display for Calcit {
         }
         f.write_str(") (")?;
         need_space = false;
-        for b in &**body {
+        for b in &*info.body {
           if need_space {
             f.write_str(" ")?;
           }

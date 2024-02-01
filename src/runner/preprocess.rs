@@ -366,31 +366,29 @@ fn process_list_call(
         Err(CalcitErr::use_msg_stack(format!("{head} expected 1 hashmap to call"), call_stack))
       }
     }
-    (
-      _,
-      Some(Calcit::Macro {
-        name,
-        def_ns,
-        args: def_args,
-        body,
-        ..
-      }),
-    ) => {
+    (_, Some(Calcit::Macro { info, .. })) => {
       let mut current_values = args.to_owned();
 
       // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let code = Calcit::List(xs.to_owned());
-      let next_stack = extend_call_stack(call_stack, def_ns.to_owned(), name.to_owned(), StackKind::Macro, code, &args);
+      let next_stack = extend_call_stack(
+        call_stack,
+        info.def_ns.to_owned(),
+        info.name.to_owned(),
+        StackKind::Macro,
+        code,
+        &args,
+      );
 
       let mut body_scope = CalcitScope::default();
 
       loop {
         // need to handle recursion
         // println!("evaling line: {:?}", body);
-        runner::bind_args(&mut body_scope, def_args, &current_values, &next_stack)?;
-        let code = runner::evaluate_lines(body, &body_scope, file_ns.to_owned(), &next_stack)?;
+        runner::bind_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
+        let code = runner::evaluate_lines(&info.body, &body_scope, file_ns.to_owned(), &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
             current_values = ys.to_owned();

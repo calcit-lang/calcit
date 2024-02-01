@@ -117,9 +117,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
 
             run_fn(&values, def_scope, args, body, def_ns.to_owned(), &next_stack)
           }
-          Calcit::Macro {
-            name, def_ns, args, body, ..
-          } => {
+          Calcit::Macro { info, .. } => {
             println!(
               "[Warn] macro should already be handled during preprocessing: {}",
               Calcit::List(xs.to_owned()).lisp_str()
@@ -132,8 +130,8 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
 
             let next_stack = extend_call_stack(
               call_stack,
-              def_ns.to_owned(),
-              name.to_owned(),
+              info.def_ns.to_owned(),
+              info.name.to_owned(),
               StackKind::Macro,
               expr.to_owned(),
               &rest_nodes,
@@ -143,8 +141,8 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
 
             Ok(loop {
               // need to handle recursion
-              bind_args(&mut body_scope, args, &current_values, call_stack)?;
-              let code = evaluate_lines(body, &body_scope, def_ns.to_owned(), &next_stack)?;
+              bind_args(&mut body_scope, &info.args, &current_values, call_stack)?;
+              let code = evaluate_lines(&info.body, &body_scope, info.def_ns.to_owned(), &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
                   current_values = Box::new(ys.to_owned());
