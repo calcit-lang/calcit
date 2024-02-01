@@ -231,23 +231,20 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("turn-symbol expected 1 argument, got:", xs);
   }
+  let info = Arc::new(CalcitSymbolInfo {
+    ns: primes::GEN_NS.into(),
+    at_def: primes::GENERATED_DEF.into(),
+    resolved: None,
+  });
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::Symbol {
       sym: s.to_owned(),
-      info: Arc::new(CalcitSymbolInfo {
-        ns: primes::GEN_NS.into(),
-        at_def: primes::GENERATED_DEF.into(),
-        resolved: None,
-      }),
+      info: info.to_owned(),
       location: None,
     }),
     Calcit::Tag(s) => Ok(Calcit::Symbol {
       sym: s.to_str(),
-      info: Arc::new(CalcitSymbolInfo {
-        ns: primes::GEN_NS.into(),
-        at_def: primes::GENERATED_DEF.into(),
-        resolved: None,
-      }),
+      info: info.to_owned(),
       location: None,
     }),
     a @ Calcit::Symbol { .. } => Ok(a.to_owned()),

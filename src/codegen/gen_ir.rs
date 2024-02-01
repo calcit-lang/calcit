@@ -92,7 +92,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     Calcit::Tag(s) => Edn::Tag(s.to_owned()),
     Calcit::Symbol { sym, info, location } => {
       let resolved = match &info.resolved {
-        Some(resolved) => match &**resolved {
+        Some(resolved) => match &resolved {
           ResolvedDef {
             ns: r_ns,
             def: r_def,
@@ -104,7 +104,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
             (Edn::tag("def"), Edn::Str((**r_def).into())),
             (
               Edn::tag("rule"),
-              match import_rule.to_owned().map(|x| (*x).to_owned()) {
+              match import_rule.to_owned().map(|x| x.to_owned()) {
                 Some(ImportRule::NsAs(_n)) => Edn::tag("ns"),
                 Some(ImportRule::NsDefault(_n)) => Edn::tag("default"),
                 Some(ImportRule::NsReferDef(_ns, _def)) => Edn::tag("def"),

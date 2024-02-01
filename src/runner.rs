@@ -25,20 +25,17 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
     Calcit::Symbol { sym, info, location, .. } => {
       let loc = NodeLocation::new(info.ns.to_owned(), info.at_def.to_owned(), location.to_owned().unwrap_or_default());
       match &info.resolved {
-        Some(resolved_info) => match &*resolved_info.to_owned() {
-          ResolvedDef {
-            ns: r_ns,
-            def: r_def,
-            rule,
-          } => {
-            if rule.is_some() && sym != r_def {
-              // dirty check for namespaced imported variables
-              return eval_symbol_from_program(r_def, r_ns, call_stack);
-            }
-            evaluate_symbol(r_def, scope, r_ns, Some(loc), call_stack)
+        Some(ResolvedDef {
+          ns: r_ns,
+          def: r_def,
+          rule,
+        }) => {
+          if rule.is_some() && sym != r_def {
+            // dirty check for namespaced imported variables
+            return eval_symbol_from_program(r_def, r_ns, call_stack);
           }
-          _ => evaluate_symbol(sym, scope, &info.ns, Some(loc), call_stack),
-        },
+          evaluate_symbol(r_def, scope, r_ns, Some(loc), call_stack)
+        }
         _ => evaluate_symbol(sym, scope, &info.ns, Some(loc), call_stack),
       }
     }

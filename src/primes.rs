@@ -18,10 +18,10 @@ use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
-pub use fns::{CalcitFn, CalcitMacro};
+pub use fns::{CalcitFn, CalcitMacro, CalcitScope};
 pub use proc_name::CalcitProc;
-use rpds::HashTrieMapSync;
 pub use symbol::CalcitSymbolInfo;
+pub use symbol::{ImportRule, SymbolResolved};
 pub use syntax_name::CalcitSyntax;
 
 use crate::builtins::ValueAndListeners;
@@ -29,57 +29,6 @@ use crate::call_stack::CallStackList;
 
 /// dead simple counter for ID generator, better use nanoid in business
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
-
-/// resolved value of real meaning of a symbol
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SymbolResolved {
-  /// a local variable
-  ResolvedLocal,
-  /// raw syntax, no target, for example `&` is a raw syntax
-  ResolvedRaw,
-  /// definition attached on namespace
-  ResolvedDef {
-    ns: Arc<str>,
-    def: Arc<str>,
-    rule: Option<Arc<ImportRule>>,
-  },
-}
-
-/// defRule: ns def
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ImportRule {
-  /// ns imported via `:as`
-  NsAs(Arc<str>),
-  /// (ns, def) imported via `:refer`
-  NsReferDef(Arc<str>, Arc<str>),
-  /// ns imported via `:default`, js only
-  NsDefault(Arc<str>),
-}
-
-/// scope in the semantics of persistent data structure
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CalcitScope(pub rpds::HashTrieMapSync<Arc<str>, Calcit>);
-
-impl Default for CalcitScope {
-  fn default() -> Self {
-    CalcitScope(HashTrieMapSync::new_sync())
-  }
-}
-
-impl CalcitScope {
-  /// create a new scope from a piece of hashmap
-  pub fn new(data: rpds::HashTrieMapSync<Arc<str>, Calcit>) -> Self {
-    CalcitScope(data)
-  }
-  /// load value of a symbol from the scope
-  pub fn get(&self, key: &str) -> Option<&Calcit> {
-    self.0.get(key)
-  }
-  /// mutable insertiong of variable
-  pub fn insert_mut(&mut self, key: Arc<str>, value: Calcit) {
-    self.0.insert_mut(key, value);
-  }
-}
 
 pub type CalcitItems = TernaryTreeList<Calcit>;
 

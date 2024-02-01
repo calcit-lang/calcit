@@ -203,14 +203,13 @@ fn to_js_code(
   } else {
     let ret = match xs {
       Calcit::Symbol { sym, info, .. } => {
-        let resolved_info = info.resolved.to_owned().map(|v| (*v).to_owned());
         let passed_defs = PassedDefs {
           ns,
           local_defs,
           file_imports,
         };
 
-        gen_symbol_code(sym, &info.ns, &info.at_def, resolved_info, xs, &passed_defs)
+        gen_symbol_code(sym, &info.ns, &info.at_def, info.resolved.to_owned(), xs, &passed_defs)
       }
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
@@ -627,7 +626,7 @@ fn gen_symbol_code(
       // functions under core uses built $calcit module entry
       return Ok(format!("{var_prefix}{}", escape_var(s)));
     }
-    if let Some(ImportRule::NsDefault(_s)) = import_rule.map(|x| (*x).to_owned()) {
+    if let Some(ImportRule::NsDefault(_s)) = import_rule.map(|x| x.to_owned()) {
       // imports that using :default are special
       track_ns_import(s, ImportedTarget::DefaultNs(r_ns), passed_defs.file_imports)?;
     } else {
