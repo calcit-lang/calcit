@@ -46,7 +46,7 @@ pub enum Calcit {
     sym: Arc<str>,
     info: Arc<CalcitSymbolInfo>,
     /// positions in the tree of Cirru
-    location: Option<Vec<u8>>,
+    location: Option<Arc<Vec<u8>>>,
   },
   /// sth between string and enum, used a key or weak identifier
   Tag(EdnTag),
@@ -586,8 +586,8 @@ impl Calcit {
   pub fn get_location(&self) -> Option<NodeLocation> {
     match self {
       Calcit::Symbol { info, location, .. } => Some(NodeLocation::new(
-        info.ns.to_owned(),
-        info.at_def.to_owned(),
+        info.ns.clone(),
+        info.at_def.clone(),
         location.to_owned().unwrap_or_default(),
       )),
       _ => None,
@@ -702,7 +702,7 @@ impl CalcitErr {
 pub struct NodeLocation {
   pub ns: Arc<str>,
   pub def: Arc<str>,
-  pub coord: Vec<u8>,
+  pub coord: Arc<Vec<u8>>,
 }
 
 impl From<NodeLocation> for Edn {
@@ -734,8 +734,12 @@ impl fmt::Display for NodeLocation {
 }
 
 impl NodeLocation {
-  pub fn new(ns: Arc<str>, def: Arc<str>, coord: Vec<u8>) -> Self {
-    NodeLocation { ns, def, coord }
+  pub fn new(ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8>>) -> Self {
+    NodeLocation {
+      ns,
+      def,
+      coord: coord.to_owned(),
+    }
   }
 }
 

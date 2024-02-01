@@ -246,7 +246,7 @@ pub fn handle_syntax(
   name: &CalcitSyntax,
   nodes: &CalcitItems,
   scope: &CalcitScope,
-  file_ns: Arc<str>,
+  file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   match name {

@@ -10,7 +10,7 @@ use crate::{
 pub mod cirru;
 pub mod edn;
 
-pub fn data_to_calcit(x: &Calcit, ns: Arc<str>, at_def: Arc<str>) -> Result<Calcit, String> {
+pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, String> {
   match x {
     Calcit::Syntax(s, ns) => Ok(Calcit::Syntax(s.to_owned(), ns.to_owned())),
     Calcit::Proc(p) => Ok(Calcit::Proc(p.to_owned())),
@@ -29,31 +29,31 @@ pub fn data_to_calcit(x: &Calcit, ns: Arc<str>, at_def: Arc<str>) -> Result<Calc
     Calcit::Nil => Ok(Calcit::Nil),
     Calcit::Tuple(t, extra, _class) => {
       let mut ys = TernaryTreeList::from(&[Calcit::Proc(CalcitProc::NativeTuple)]);
-      ys = ys.push_right(data_to_calcit(t, ns.to_owned(), at_def.to_owned())?);
+      ys = ys.push_right(data_to_calcit(t, ns, at_def)?);
       for x in extra {
-        ys = ys.push_right(data_to_calcit(x, ns.to_owned(), at_def.to_owned())?);
+        ys = ys.push_right(data_to_calcit(x, ns, at_def)?);
       }
       Ok(Calcit::List(ys))
     }
     Calcit::List(xs) => {
       let mut ys = TernaryTreeList::from(&[Calcit::Proc(CalcitProc::List)]);
       for x in xs {
-        ys = ys.push_right(data_to_calcit(x, ns.to_owned(), at_def.to_owned())?);
+        ys = ys.push_right(data_to_calcit(x, ns, at_def)?);
       }
       Ok(Calcit::List(ys))
     }
     Calcit::Set(xs) => {
       let mut ys = TernaryTreeList::from(&[Calcit::Proc(CalcitProc::Set)]);
       for x in xs {
-        ys = ys.push_right(data_to_calcit(x, ns.to_owned(), at_def.to_owned())?);
+        ys = ys.push_right(data_to_calcit(x, ns, at_def)?);
       }
       Ok(Calcit::List(ys))
     }
     Calcit::Map(xs) => {
       let mut ys = TernaryTreeList::from(&[Calcit::Proc(CalcitProc::NativeMap)]);
       for (k, v) in xs {
-        ys = ys.push_right(data_to_calcit(k, ns.to_owned(), at_def.to_owned())?);
-        ys = ys.push_right(data_to_calcit(v, ns.to_owned(), at_def.to_owned())?);
+        ys = ys.push_right(data_to_calcit(k, ns, at_def)?);
+        ys = ys.push_right(data_to_calcit(v, ns, at_def)?);
       }
       Ok(Calcit::List(ys))
     }
@@ -61,8 +61,8 @@ pub fn data_to_calcit(x: &Calcit, ns: Arc<str>, at_def: Arc<str>) -> Result<Calc
       let mut ys = TernaryTreeList::from(&[Calcit::Symbol {
         sym: "defrecord!".into(),
         info: Arc::new(crate::primes::CalcitSymbolInfo {
-          ns: ns.to_owned(),
-          at_def: at_def.to_owned(),
+          ns: Arc::from(ns),
+          at_def: Arc::from(at_def),
           resolved: None,
         }),
         location: None,
@@ -72,7 +72,7 @@ pub fn data_to_calcit(x: &Calcit, ns: Arc<str>, at_def: Arc<str>) -> Result<Calc
       for i in 0..size {
         ys = ys.push(Calcit::List(TernaryTreeList::from(&[
           Calcit::Tag(fields[i].to_owned()),
-          data_to_calcit(&values[i], ns.to_owned(), at_def.to_owned())?,
+          data_to_calcit(&values[i], ns, at_def)?,
         ])))
       }
       Ok(Calcit::List(ys))

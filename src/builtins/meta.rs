@@ -574,10 +574,7 @@ pub fn data_to_code(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("&data-to-code expected 1 argument, got:", xs);
   }
 
-  let gen_ns: Arc<str> = Arc::from(GEN_NS);
-  let gen_def: Arc<str> = Arc::from(GENERATED_DEF);
-
-  match data_to_calcit(&xs[0], gen_ns, gen_def) {
+  match data_to_calcit(&xs[0], GEN_NS, GENERATED_DEF) {
     Ok(v) => Ok(v),
     Err(e) => CalcitErr::err_str(format!("&data-to-code failed: {e}")),
   }

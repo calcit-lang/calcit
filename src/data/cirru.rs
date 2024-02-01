@@ -6,7 +6,13 @@ use im_ternary_tree::TernaryTreeList;
 use crate::primes::{Calcit, CalcitProc, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
-pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Vec<u8>) -> Result<Calcit, String> {
+pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result<Calcit, String> {
+  let symbol_info = Arc::new(crate::primes::CalcitSymbolInfo {
+    ns: Arc::from(ns),
+    at_def: Arc::from(def),
+    resolved: None,
+  });
+  let coord = Arc::from(coord);
   match xs {
     Cirru::Leaf(s) => match &**s {
       "nil" => Ok(Calcit::Nil),
@@ -21,11 +27,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Vec<u8>) -
       // special tuple syntax
       "::" => Ok(Calcit::Symbol {
         sym: s.clone(),
-        info: Arc::new(crate::primes::CalcitSymbolInfo {
-          ns,
-          at_def: def,
-          resolved: None,
-        }),
+        info: symbol_info.clone(),
         location: Some(coord),
       }),
       _ => match s.chars().next().expect("load first char") {
@@ -51,20 +53,12 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Vec<u8>) -
         '\'' if s.len() > 1 => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: Arc::from("quote"),
-            info: Arc::new(crate::primes::CalcitSymbolInfo {
-              ns: ns.to_owned(),
-              at_def: def.clone(),
-              resolved: None,
-            }),
+            info: symbol_info.clone(),
             location: Some(coord.clone()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: Arc::new(crate::primes::CalcitSymbolInfo {
-              ns,
-              at_def: def,
-              resolved: None,
-            }),
+            info: symbol_info.clone(),
             location: Some(coord.clone()),
           },
         ]))),
@@ -72,60 +66,36 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Vec<u8>) -
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: Arc::from("~@"),
-            info: Arc::new(crate::primes::CalcitSymbolInfo {
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
-              resolved: None,
-            }),
+            info: symbol_info.clone(),
             location: Some(coord.clone()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[2..]),
-            info: Arc::new(crate::primes::CalcitSymbolInfo {
-              ns,
-              at_def: def,
-              resolved: None,
-            }),
+            info: symbol_info.clone(),
             location: Some(coord.clone()),
           },
         ]))),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: Arc::from("~"),
-            info: Arc::new(crate::primes::CalcitSymbolInfo {
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
-              resolved: None,
-            }),
+            info: symbol_info.clone(),
             location: Some(coord.clone()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: Arc::new(crate::primes::CalcitSymbolInfo {
-              ns,
-              at_def: def,
-              resolved: None,
-            }),
+            info: symbol_info.clone(),
             location: Some(coord.clone()),
           },
         ]))),
         '@' => Ok(Calcit::List(TernaryTreeList::from(&[
           Calcit::Symbol {
             sym: Arc::from("deref"),
-            info: Arc::new(crate::primes::CalcitSymbolInfo {
-              ns: ns.to_owned(),
-              at_def: def.to_owned(),
-              resolved: None,
-            }),
+            info: symbol_info.clone(),
             location: Some(coord.clone()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: Arc::new(crate::primes::CalcitSymbolInfo {
-              ns,
-              at_def: def,
-              resolved: None,
-            }),
+            info: symbol_info.clone(),
             location: Some(coord.clone()),
           },
         ]))),
@@ -138,11 +108,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Vec<u8>) -
           } else {
             Ok(Calcit::Symbol {
               sym: (**s).into(),
-              info: Arc::new(crate::primes::CalcitSymbolInfo {
-                ns,
-                at_def: def,
-                resolved: None,
-              }),
+              info: symbol_info.clone(),
               location: Some(coord.clone()),
             })
           }
@@ -152,7 +118,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Vec<u8>) -
     Cirru::List(ys) => {
       let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
       for (idx, y) in ys.iter().enumerate() {
-        let mut next_coord: Vec<u8> = coord.to_owned();
+        let mut next_coord: Vec<u8> = (*coord).to_owned();
         next_coord.push(idx as u8); // code not supposed to be fatter than 256 children
 
         if let Cirru::List(ys) = y {
@@ -172,7 +138,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Vec<u8>) -
           }
         }
 
-        zs.push(code_to_calcit(y, ns.to_owned(), def.to_owned(), next_coord)?)
+        zs.push(code_to_calcit(y, ns, def, next_coord)?)
       }
       Ok(Calcit::List(TernaryTreeList::from(&zs)))
     }

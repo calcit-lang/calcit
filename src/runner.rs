@@ -14,7 +14,7 @@ use crate::primes::{
 use crate::program;
 use crate::util::string::has_ns_part;
 
-pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   // println!("eval code: {}", expr.lisp_str());
 
   match expr {
@@ -23,7 +23,6 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
     Calcit::Number(_) => Ok(expr.to_owned()),
     Calcit::Symbol { sym, .. } if &**sym == "&" => Ok(expr.to_owned()),
     Calcit::Symbol { sym, info, location, .. } => {
-      let loc = NodeLocation::new(info.ns.to_owned(), info.at_def.to_owned(), location.to_owned().unwrap_or_default());
       match &info.resolved {
         Some(ResolvedDef {
           ns: r_ns,
@@ -32,11 +31,16 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
         }) => {
           if rule.is_some() && sym != r_def {
             // dirty check for namespaced imported variables
-            return eval_symbol_from_program(r_def, r_ns, call_stack);
+            eval_symbol_from_program(r_def, r_ns, call_stack)
+          } else {
+            let loc = NodeLocation::new(info.ns.clone(), info.at_def.clone(), location.to_owned().unwrap_or_default());
+            evaluate_symbol(r_def, scope, r_ns, Some(loc), call_stack)
           }
-          evaluate_symbol(r_def, scope, r_ns, Some(loc), call_stack)
         }
-        _ => evaluate_symbol(sym, scope, &info.ns, Some(loc), call_stack),
+        _ => {
+          let loc = NodeLocation::new(info.ns.clone(), info.at_def.clone(), location.to_owned().unwrap_or_default());
+          evaluate_symbol(sym, scope, &info.ns, Some(loc), call_stack)
+        }
       }
     }
     Calcit::Tag(_) => Ok(expr.to_owned()),
@@ -57,7 +61,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
         // println!("eval expr: {}", expr.lisp_str());
         // println!("eval expr: {}", x);
 
-        let v = evaluate_expr(x, scope, file_ns.to_owned(), call_stack)?;
+        let v = evaluate_expr(x, scope, file_ns, call_stack)?;
         let rest_nodes = xs.drop_left();
         let ret = match &v {
           Calcit::Proc(p) => {
@@ -85,8 +89,15 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             })
           }
           Calcit::Method(name, kind) => {
-            let values = evaluate_args(&rest_nodes, scope, file_ns.to_owned(), call_stack)?;
-            let next_stack = extend_call_stack(call_stack, file_ns, name.to_owned(), StackKind::Method, Calcit::Nil, &values);
+            let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
+            let next_stack = extend_call_stack(
+              call_stack,
+              Arc::from(file_ns),
+              name.to_owned(),
+              StackKind::Method,
+              Calcit::Nil,
+              &values,
+            );
 
             if *kind == MethodKind::Invoke {
               builtins::meta::invoke_method(name, &values, &next_stack)
@@ -132,7 +143,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
             Ok(loop {
               // need to handle recursion
               bind_args(&mut body_scope, &info.args, &current_values, call_stack)?;
-              let code = evaluate_lines(&info.body, &body_scope, info.def_ns.to_owned(), &next_stack)?;
+              let code = evaluate_lines(&info.body, &body_scope, &info.def_ns, &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
                   current_values = Box::new(ys.to_owned());
@@ -174,7 +185,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               None => {
                 let error_location = location
                   .as_ref()
-                  .map(|l| NodeLocation::new(info.ns.to_owned(), info.at_def.to_owned(), l.to_owned()));
+                  .map(|l| NodeLocation::new(info.ns.clone(), info.at_def.clone(), l.clone()));
                 let ns = &info.ns;
                 let at_def = &info.at_def;
                 let resolved = &info.resolved;
@@ -284,7 +295,7 @@ pub fn evaluate_symbol(
 
 /// make sure a thunk at global is called
 pub fn evaluate_def_thunk(code: &Arc<Calcit>, file_ns: &str, sym: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  let evaled_v = evaluate_expr(code, &CalcitScope::default(), file_ns.into(), call_stack)?;
+  let evaled_v = evaluate_expr(code, &CalcitScope::default(), file_ns, call_stack)?;
   // and write back to program state to fix duplicated evalution
   // still using thunk since js and IR requires bare code
   let next = if builtins::effects::is_rust_eval() {
@@ -318,7 +329,7 @@ fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList) -> 
     Some(v) => Ok(v),
     None => match program::lookup_def_code(ns, sym) {
       Some(code) => {
-        let v = evaluate_expr(&code, &CalcitScope::default(), ns.into(), call_stack)?;
+        let v = evaluate_expr(&code, &CalcitScope::default(), ns, call_stack)?;
         program::write_evaled_def(ns, sym, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
         Ok(v)
       }
@@ -334,13 +345,13 @@ pub fn run_fn(values: &CalcitItems, info: &CalcitFn, call_stack: &CallStackList)
   let mut body_scope = (*info.scope).to_owned();
   bind_args(&mut body_scope, &info.args, values, call_stack)?;
 
-  let v = evaluate_lines(&info.body, &body_scope, info.def_ns.to_owned(), call_stack)?;
+  let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
 
   if let Calcit::Recur(xs) = v {
     let mut current_values = xs;
     loop {
       bind_args(&mut body_scope, &info.args, &current_values, call_stack)?;
-      let v = evaluate_lines(&info.body, &body_scope, info.def_ns.to_owned(), call_stack)?;
+      let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
       match v {
         Calcit::Recur(xs) => current_values = xs,
         result => return Ok(result),
@@ -438,12 +449,12 @@ pub fn bind_args(
 pub fn evaluate_lines(
   lines: &CalcitItems,
   scope: &CalcitScope,
-  file_ns: Arc<str>,
+  file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut ret: Calcit = Calcit::Nil;
   for line in lines {
-    match evaluate_expr(line, scope, file_ns.to_owned(), call_stack) {
+    match evaluate_expr(line, scope, file_ns, call_stack) {
       Ok(v) => ret = v,
       Err(e) => return Err(e),
     }
@@ -456,7 +467,7 @@ pub fn evaluate_lines(
 pub fn evaluate_args(
   items: &CalcitItems,
   scope: &CalcitScope,
-  file_ns: Arc<str>,
+  file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<CalcitItems, CalcitErr> {
   let mut ret: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
@@ -467,7 +478,7 @@ pub fn evaluate_args(
         spreading = true;
       }
       _ => {
-        let v = evaluate_expr(item, scope, file_ns.to_owned(), call_stack)?;
+        let v = evaluate_expr(item, scope, file_ns, call_stack)?;
 
         if spreading {
           match v {
@@ -476,7 +487,7 @@ pub fn evaluate_args(
                 // extract thunk before calling functions
                 let y = match x {
                   Calcit::Thunk(code, v) => match v {
-                    None => evaluate_expr(code, scope, file_ns.to_owned(), call_stack)?,
+                    None => evaluate_expr(code, scope, file_ns, call_stack)?,
                     Some(data) => (**data).to_owned(),
                   },
                   _ => x.to_owned(),
@@ -496,7 +507,7 @@ pub fn evaluate_args(
           // extract thunk before calling functions
           let y = match v {
             Calcit::Thunk(code, value) => match value {
-              None => evaluate_expr(&code, scope, file_ns.to_owned(), call_stack)?,
+              None => evaluate_expr(&code, scope, file_ns, call_stack)?,
               Some(data) => (*data).to_owned(),
             },
             _ => v.to_owned(),
