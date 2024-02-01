@@ -316,15 +316,17 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
     Calcit::Tuple(_tag, _extra, class) => (**class).to_owned(),
     Calcit::Record(_name, _f, _v, class) => (**class).to_owned(),
     // classed should already be preprocessed
-    Calcit::List(..) => runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::List(..) => runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?,
 
-    Calcit::Map(..) => runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Map(..) => runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?,
 
-    Calcit::Number(..) => runner::evaluate_symbol("&core-number-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Str(..) => runner::evaluate_symbol("&core-string-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Set(..) => runner::evaluate_symbol("&core-set-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Nil => runner::evaluate_symbol("&core-nil-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Number(..) => runner::evaluate_symbol("&core-number-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?,
+    Calcit::Str(..) => runner::evaluate_symbol("&core-string-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?,
+    Calcit::Set(..) => runner::evaluate_symbol("&core-set-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?,
+    Calcit::Nil => runner::evaluate_symbol("&core-nil-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?,
+    Calcit::Fn { .. } | Calcit::Proc(..) => {
+      runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?
+    }
     x => {
       return Err(CalcitErr::use_msg_stack_location(
         format!("cannot decide a class from: {x}"),

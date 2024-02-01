@@ -33,14 +33,10 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
             // dirty check for namespaced imported variables
             eval_symbol_from_program(r_def, r_ns, call_stack)
           } else {
-            let loc = NodeLocation::new(info.ns.clone(), info.at_def.clone(), location.to_owned().unwrap_or_default());
-            evaluate_symbol(r_def, scope, r_ns, Some(loc), call_stack)
+            evaluate_symbol(r_def, scope, r_ns, &info.at_def, location, call_stack)
           }
         }
-        _ => {
-          let loc = NodeLocation::new(info.ns.clone(), info.at_def.clone(), location.to_owned().unwrap_or_default());
-          evaluate_symbol(sym, scope, &info.ns, Some(loc), call_stack)
-        }
+        _ => evaluate_symbol(sym, scope, &info.ns, &info.at_def, location, call_stack),
       }
     }
     Calcit::Tag(_) => Ok(expr.to_owned()),
@@ -222,7 +218,8 @@ pub fn evaluate_symbol(
   sym: &str,
   scope: &CalcitScope,
   file_ns: &str,
-  location: Option<NodeLocation>,
+  at_def: &str,
+  location: &Option<Arc<Vec<u8>>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let v = match parse_ns_def(sym) {
@@ -234,7 +231,11 @@ pub fn evaluate_symbol(
       None => Err(CalcitErr::use_msg_stack_location(
         format!("unknown ns target: {ns_part}/{def_part}"),
         call_stack,
-        location,
+        Some(NodeLocation::new(
+          Arc::from(file_ns),
+          Arc::from(at_def),
+          location.to_owned().unwrap_or_default(),
+        )),
       )),
     },
     None => {
@@ -258,7 +259,7 @@ pub fn evaluate_symbol(
             at_def: file_ns.into(),
             resolved: None,
           }),
-          location: location.map(|x| x.coord),
+          location: location.to_owned(),
         })
       } else if program::lookup_def_code(CORE_NS, sym).is_some() {
         eval_symbol_from_program(sym, CORE_NS, call_stack)
@@ -278,7 +279,11 @@ pub fn evaluate_symbol(
             Err(CalcitErr::use_msg_stack_location(
               format!("unknown symbol `{sym}` in {}", vars),
               call_stack,
-              location,
+              Some(NodeLocation::new(
+                Arc::from(file_ns),
+                Arc::from(at_def),
+                location.to_owned().unwrap_or_default(),
+              )),
             ))
           }
         }
