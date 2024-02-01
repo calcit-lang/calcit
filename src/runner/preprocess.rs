@@ -300,7 +300,7 @@ pub fn preprocess_expr(
       let loc = NodeLocation {
         ns: file_ns,
         def: GENERATED_DEF.into(),
-        coord: Arc::new(vec![]),
+        coord: vec![],
       };
       warnings.push(LocatedWarning::new(
         format!("[Warn] unexpected data during preprocess: {expr:?}"),
@@ -519,7 +519,7 @@ fn check_fn_args(
           continue;
         } else {
           let mut warnings = check_warnings.borrow_mut();
-          let loc = NodeLocation::new(file_ns.to_owned(), GENERATED_DEF.into(), Arc::new(vec![]));
+          let loc = NodeLocation::new(file_ns.to_owned(), GENERATED_DEF.into(), vec![]);
           warnings.push(LocatedWarning::new(
             format!(
               "[Warn] lack of args in {} `{:?}` with `{}`, at {}/{}",
@@ -536,7 +536,7 @@ fn check_fn_args(
       }
       (None, Some(_)) => {
         let mut warnings = check_warnings.borrow_mut();
-        let loc = NodeLocation::new(file_ns.to_owned(), GENERATED_DEF.into(), Arc::new(vec![]));
+        let loc = NodeLocation::new(file_ns.to_owned(), GENERATED_DEF.into(), vec![]);
         warnings.push(LocatedWarning::new(
           format!(
             "[Warn] too many args for {} `{:?}` with `{}`, at {}/{}",
@@ -710,7 +710,7 @@ pub fn preprocess_core_let(
         let loc = NodeLocation {
           ns: head_ns,
           def: GENERATED_DEF.into(),
-          coord: Arc::new(vec![]),
+          coord: vec![],
         };
         check_symbol(sym, args, loc, check_warnings);
         body_defs.insert(sym.to_owned());

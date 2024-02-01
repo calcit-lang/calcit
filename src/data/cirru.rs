@@ -6,7 +6,7 @@ use im_ternary_tree::TernaryTreeList;
 use crate::primes::{Calcit, CalcitProc, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
-pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8>>) -> Result<Calcit, String> {
+pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Vec<u8>) -> Result<Calcit, String> {
   match xs {
     Cirru::Leaf(s) => match &**s {
       "nil" => Ok(Calcit::Nil),
@@ -26,7 +26,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8
           at_def: def,
           resolved: None,
         }),
-        location: Some(Arc::new(coord.to_vec())),
+        location: Some(coord),
       }),
       _ => match s.chars().next().expect("load first char") {
         ':' if s.len() > 1 && s.chars().nth(1) != Some(':') => Ok(Calcit::tag(&s[1..])),
@@ -152,7 +152,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8
     Cirru::List(ys) => {
       let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
       for (idx, y) in ys.iter().enumerate() {
-        let mut next_coord: Vec<u8> = (**coord).to_owned();
+        let mut next_coord: Vec<u8> = coord.to_owned();
         next_coord.push(idx as u8); // code not supposed to be fatter than 256 children
 
         if let Cirru::List(ys) = y {
@@ -172,7 +172,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8
           }
         }
 
-        zs.push(code_to_calcit(y, ns.to_owned(), def.to_owned(), Arc::new(next_coord))?)
+        zs.push(code_to_calcit(y, ns.to_owned(), def.to_owned(), next_coord)?)
       }
       Ok(Calcit::List(TernaryTreeList::from(&zs)))
     }
