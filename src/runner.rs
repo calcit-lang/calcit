@@ -8,8 +8,8 @@ use strum::ParseError;
 use crate::builtins::{self, is_registered_proc, IMPORTED_PROCS};
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
 use crate::primes::{
-  Calcit, CalcitErr, CalcitItems, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CrListWrap, MethodKind, NodeLocation,
-  SymbolResolved::*, CORE_NS,
+  Calcit, CalcitErr, CalcitFn, CalcitItems, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CrListWrap, MethodKind,
+  NodeLocation, SymbolResolved::*, CORE_NS,
 };
 use crate::program;
 use crate::util::string::has_ns_part;
@@ -97,25 +97,18 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: Arc<str>, call
               CalcitErr::err_str(format!("unknown method for rust runtime: {kind}"))
             }
           }
-          Calcit::Fn {
-            name,
-            def_ns,
-            scope: def_scope,
-            args,
-            body,
-            ..
-          } => {
+          Calcit::Fn { info, .. } => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
             let next_stack = extend_call_stack(
               call_stack,
-              def_ns.to_owned(),
-              name.to_owned(),
+              info.def_ns.to_owned(),
+              info.name.to_owned(),
               StackKind::Fn,
               expr.to_owned(),
               &values,
             );
 
-            run_fn(&values, def_scope, args, body, def_ns.to_owned(), &next_stack)
+            run_fn(&values, info, &next_stack)
           }
           Calcit::Macro { info, .. } => {
             println!(
@@ -340,24 +333,17 @@ fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList) -> 
   }
 }
 
-pub fn run_fn(
-  values: &CalcitItems,
-  scope: &CalcitScope,
-  args: &[Arc<str>],
-  body: &CalcitItems,
-  file_ns: Arc<str>,
-  call_stack: &CallStackList,
-) -> Result<Calcit, CalcitErr> {
-  let mut body_scope = scope.to_owned();
-  bind_args(&mut body_scope, args, values, call_stack)?;
+pub fn run_fn(values: &CalcitItems, info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  let mut body_scope = (*info.scope).to_owned();
+  bind_args(&mut body_scope, &info.args, values, call_stack)?;
 
-  let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
+  let v = evaluate_lines(&info.body, &body_scope, info.def_ns.to_owned(), call_stack)?;
 
   if let Calcit::Recur(xs) = v {
     let mut current_values = xs;
     loop {
-      bind_args(&mut body_scope, args, &current_values, call_stack)?;
-      let v = evaluate_lines(body, &body_scope, file_ns.to_owned(), call_stack)?;
+      bind_args(&mut body_scope, &info.args, &current_values, call_stack)?;
+      let v = evaluate_lines(&info.body, &body_scope, info.def_ns.to_owned(), call_stack)?;
       match v {
         Calcit::Recur(xs) => current_values = xs,
         result => return Ok(result),

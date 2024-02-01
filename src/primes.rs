@@ -128,13 +128,8 @@ pub enum Calcit {
     info: Arc<CalcitMacro>,
   },
   Fn {
-    name: Arc<str>,
-    /// where it was defined
-    def_ns: Arc<str>,
     id: Arc<str>,
-    scope: Arc<CalcitScope>,
-    args: Arc<Vec<Arc<str>>>,
-    body: Arc<CalcitItems>,
+    info: Arc<CalcitFn>,
   },
   /// name, ns... notice that `ns` is a meta info
   Syntax(CalcitSyntax, Arc<str>),
@@ -261,10 +256,11 @@ impl fmt::Display for Calcit {
         }
         f.write_str("))")
       }
-      Calcit::Fn { name, args, body, .. } => {
+      Calcit::Fn { info, .. } => {
+        let name = &info.name;
         f.write_str(&format!("(&fn {name} ("))?;
         let mut need_space = false;
-        for a in &**args {
+        for a in &*info.args {
           if need_space {
             f.write_str(" ")?;
           }
@@ -273,7 +269,7 @@ impl fmt::Display for Calcit {
         }
         f.write_str(") ")?;
         need_space = false;
-        for b in &**body {
+        for b in &*info.body {
           if need_space {
             f.write_str(" ")?;
           }

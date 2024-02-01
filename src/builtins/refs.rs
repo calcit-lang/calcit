@@ -34,11 +34,9 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
 
   for f in listeners.values() {
     match f {
-      Calcit::Fn {
-        def_ns, scope, args, body, ..
-      } => {
+      Calcit::Fn { info, .. } => {
         let values = TernaryTreeList::from(&[v.to_owned(), prev.to_owned()]);
-        runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
+        runner::run_fn(&values, info, call_stack)?;
       }
       a => {
         return Err(CalcitErr::use_msg_stack_location(

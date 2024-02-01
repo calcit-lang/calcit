@@ -134,15 +134,13 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       ])
     }
 
-    Calcit::Fn {
-      name, def_ns, args, body, ..
-    } => {
+    Calcit::Fn { info, .. } => {
       Edn::map_from_iter([
         (Edn::tag("kind"), Edn::tag("fn")),
-        (Edn::tag("name"), Edn::Str((**name).into())),
-        (Edn::tag("ns"), Edn::Str((**def_ns).into())),
-        (Edn::tag("args"), dump_args_code(args)), // TODO
-        (Edn::tag("code"), dump_items_code(body)),
+        (Edn::tag("name"), Edn::Str((*info.name).into())),
+        (Edn::tag("ns"), Edn::Str((*info.def_ns).into())),
+        (Edn::tag("args"), dump_args_code(&info.args)), // TODO
+        (Edn::tag("code"), dump_items_code(&info.body)),
       ])
     }
     Calcit::Macro { info, .. } => {

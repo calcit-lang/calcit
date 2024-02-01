@@ -146,15 +146,12 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
     match func(
       ys.to_owned(),
       Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
-        if let Calcit::Fn {
-          def_ns, scope, args, body, ..
-        } = &callback
-        {
+        if let Calcit::Fn { info, .. } = &callback {
           let mut real_args = TernaryTreeList::Empty;
           for p in ps {
             real_args = real_args.push_right(edn_to_calcit(&p, &Calcit::Nil));
           }
-          let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack);
+          let r = runner::run_fn(&real_args, info, &copied_stack);
           match r {
             Ok(ret) => calcit_to_edn(&ret),
             Err(e) => {
@@ -234,15 +231,12 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
   match func(
     ys.to_owned(),
     Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
-      if let Calcit::Fn {
-        def_ns, scope, args, body, ..
-      } = &callback
-      {
+      if let Calcit::Fn { info, .. } = &callback {
         let mut real_args = TernaryTreeList::Empty;
         for p in ps {
           real_args = real_args.push_right(edn_to_calcit(&p, &Calcit::Nil));
         }
-        let r = runner::run_fn(&real_args, scope, args, body, def_ns.to_owned(), &copied_stack);
+        let r = runner::run_fn(&real_args, info, &copied_stack);
         match r {
           Ok(ret) => calcit_to_edn(&ret),
           Err(e) => {
@@ -276,11 +270,8 @@ pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit,
     let cb = Arc::new(xs[0].to_owned());
     let copied_stack = Arc::new(call_stack.to_owned());
     ctrlc::set_handler(move || {
-      if let Calcit::Fn {
-        def_ns, scope, args, body, ..
-      } = cb.as_ref()
-      {
-        if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, scope, args, body, def_ns.to_owned(), &copied_stack) {
+      if let Calcit::Fn { info, .. } = cb.as_ref() {
+        if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, info, &copied_stack) {
           eprintln!("error: {e}");
         }
       }

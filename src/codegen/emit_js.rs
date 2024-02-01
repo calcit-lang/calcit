@@ -1086,8 +1086,8 @@ fn contains_symbol(xs: &Calcit, y: &str) -> bool {
   match xs {
     Calcit::Symbol { sym, .. } => &**sym == y,
     Calcit::Thunk(code, _) => contains_symbol(code, y),
-    Calcit::Fn { body, .. } => {
-      for x in &**body {
+    Calcit::Fn { info, .. } => {
+      for x in &*info.body {
         if contains_symbol(x, y) {
           return true;
         }
@@ -1247,20 +1247,22 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         Calcit::Proc(..) => {
           writeln!(defs_code, "\nvar {} = $calcit_procs.{};", escape_var(&def), escape_var(&def)).expect("write");
         }
-        Calcit::Fn {
-          name,
-          def_ns,
-          args,
-          body: code,
-          ..
-        } => {
-          gen_stack::push_call_stack(def_ns, name, StackKind::Codegen, f.to_owned(), &TernaryTreeList::Empty);
+        Calcit::Fn { info, .. } => {
+          gen_stack::push_call_stack(&info.def_ns, &info.name, StackKind::Codegen, f.to_owned(), &TernaryTreeList::Empty);
           let passed_defs = PassedDefs {
             ns: &ns,
             local_defs: &def_names,
             file_imports: &file_imports,
           };
-          defs_code.push_str(&gen_js_func(&def, args, code, &passed_defs, true, &collected_tags, &ns)?);
+          defs_code.push_str(&gen_js_func(
+            &def,
+            &info.args,
+            &info.body,
+            &passed_defs,
+            true,
+            &collected_tags,
+            &ns,
+          )?);
           gen_stack::pop_call_stack();
         }
         Calcit::Thunk(code, _) => {

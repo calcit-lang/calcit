@@ -11,19 +11,21 @@ use im_ternary_tree::TernaryTreeList;
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::call_stack::CallStackList;
-use crate::primes::{self, CalcitMacro, CalcitSymbolInfo, CrListWrap, LocatedWarning};
+use crate::primes::{self, CalcitFn, CalcitMacro, CalcitSymbolInfo, CrListWrap, LocatedWarning};
 use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope};
 use crate::runner;
 
 pub fn defn(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
     (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => Ok(Calcit::Fn {
-      name: s.to_owned(),
-      def_ns: file_ns,
       id: gen_core_id(),
-      scope: Arc::new(scope.to_owned()),
-      args: Arc::new(get_raw_args(xs)?),
-      body: Arc::new(expr.skip(2)?),
+      info: Arc::new(CalcitFn {
+        name: s.to_owned(),
+        def_ns: file_ns,
+        scope: Arc::new(scope.to_owned()),
+        args: Arc::new(get_raw_args(xs)?),
+        body: Arc::new(expr.skip(2)?),
+      }),
     }),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid args type for defn: {a} , {b}")),
     _ => CalcitErr::err_str("inefficient arguments for defn"),
@@ -328,11 +330,9 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call
         let f = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
         let err_data = Calcit::Str(failure.msg.to_owned().into());
         match f {
-          Calcit::Fn {
-            def_ns, scope, args, body, ..
-          } => {
+          Calcit::Fn { info, .. } => {
             let values = TernaryTreeList::from(&[err_data]);
-            runner::run_fn(&values, &scope, &args, &body, def_ns, call_stack)
+            runner::run_fn(&values, &info, call_stack)
           }
           Calcit::Proc(proc) => builtins::handle_proc(proc, &TernaryTreeList::from(&[err_data]), call_stack),
           a => CalcitErr::err_str(format!("try expected a function handler, got: {a}")),

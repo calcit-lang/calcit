@@ -45,7 +45,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       }
       Ok(entries.into())
     }
-    Calcit::Fn { name, def_ns, args, .. } => {
+    Calcit::Fn { info, .. } => {
+      let def_ns = &info.def_ns;
+      let name = &info.name;
+      let args = &info.args;
       println!("[Warn] fn to EDN: {def_ns}/{name} {args:?}");
       Ok(Edn::str(x.to_string()))
     }

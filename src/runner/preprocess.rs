@@ -436,15 +436,15 @@ fn process_list_call(
       call_stack,
     )),
 
-    (
-      _,
-      Some(Calcit::Fn {
-        name: f_name,
-        args: f_args,
-        ..
-      }),
-    ) => {
-      check_fn_args(f_args, &args, file_ns.to_owned(), f_name.to_owned(), def_name, check_warnings);
+    (_, Some(Calcit::Fn { info, .. })) => {
+      check_fn_args(
+        &info.args,
+        &args,
+        file_ns.to_owned(),
+        info.name.to_owned(),
+        def_name,
+        check_warnings,
+      );
       let mut ys = Vec::with_capacity(args.len() + 1);
       ys.push(head_form);
       for a in &args {

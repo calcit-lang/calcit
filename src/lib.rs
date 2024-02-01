@@ -73,10 +73,8 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
   match program::lookup_evaled_def(&init_ns, &init_def) {
     None => CalcitErr::err_str(format!("entry not initialized: {init_ns}/{init_def}")),
     Some(entry) => match entry {
-      Calcit::Fn {
-        def_ns, scope, args, body, ..
-      } => {
-        let result = runner::run_fn(&params, &scope, &args, &body, def_ns, &rpds::List::new_sync());
+      Calcit::Fn { info, .. } => {
+        let result = runner::run_fn(&params, &info, &rpds::List::new_sync());
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {
