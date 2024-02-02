@@ -207,6 +207,8 @@ pub fn preprocess_expr(
             ),
             None,
           ))
+        } else if *def == info.at_def {
+          preprocess_ns_def(def_ns, def, def, None, check_warnings, call_stack)
         } else if let Ok(p) = def.parse::<CalcitProc>() {
           Ok((Calcit::Proc(p), None))
         } else if program::has_def_code(primes::CORE_NS, def) {
@@ -220,7 +222,7 @@ pub fn preprocess_expr(
               info: Arc::new(CalcitSymbolInfo {
                 ns: def_ns.to_owned(),
                 at_def: at_def.to_owned(),
-                resolved: Some(ResolvedRaw),
+                resolved: Some(ResolvedRegistered),
               }),
               location: location.to_owned(),
             },

@@ -608,6 +608,7 @@ fn gen_symbol_code(
       }
       Some(ResolvedRaw) => Err(format!("not going to generate from raw symbol, {s}")),
       Some(ResolvedLocal) => Err(format!("symbol with ns should not be local, {s}")),
+      Some(ResolvedRegistered) => Err(format!("symbol registered should not be local, {s}")),
       None => Err(format!("expected symbol with ns being resolved: {xs}")),
     }
   } else if is_js_syntax_procs(s) || is_proc_name(s) || CalcitSyntax::is_valid(s) {

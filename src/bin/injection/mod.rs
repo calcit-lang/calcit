@@ -151,7 +151,7 @@ pub fn call_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Result
           for p in ps {
             real_args = real_args.push_right(edn_to_calcit(&p, &Calcit::Nil));
           }
-          let r = runner::run_fn(&real_args, info, &copied_stack);
+          let r = runner::run_fn(real_args, info, &copied_stack);
           match r {
             Ok(ret) => calcit_to_edn(&ret),
             Err(e) => {
@@ -236,7 +236,7 @@ pub fn blocking_dylib_edn_fn(xs: &CalcitItems, call_stack: &CallStackList) -> Re
         for p in ps {
           real_args = real_args.push_right(edn_to_calcit(&p, &Calcit::Nil));
         }
-        let r = runner::run_fn(&real_args, info, &copied_stack);
+        let r = runner::run_fn(real_args, info, &copied_stack);
         match r {
           Ok(ret) => calcit_to_edn(&ret),
           Err(e) => {
@@ -271,7 +271,7 @@ pub fn on_ctrl_c(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit,
     let copied_stack = Arc::new(call_stack.to_owned());
     ctrlc::set_handler(move || {
       if let Calcit::Fn { info, .. } = cb.as_ref() {
-        if let Err(e) = runner::run_fn(&TernaryTreeList::Empty, info, &copied_stack) {
+        if let Err(e) = runner::run_fn(TernaryTreeList::Empty, info, &copied_stack) {
           eprintln!("error: {e}");
         }
       }

@@ -7,6 +7,8 @@ pub enum SymbolResolved {
   ResolvedLocal,
   /// raw syntax, no target, for example `&` is a raw syntax
   ResolvedRaw,
+  /// registered from runtime
+  ResolvedRegistered,
   /// definition attached on namespace
   ResolvedDef {
     ns: Arc<str>,

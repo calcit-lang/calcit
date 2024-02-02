@@ -67,7 +67,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
     None => CalcitErr::err_str(format!("entry not initialized: {init_ns}/{init_def}")),
     Some(entry) => match entry {
       Calcit::Fn { info, .. } => {
-        let result = runner::run_fn(&params, &info, &rpds::List::new_sync());
+        let result = runner::run_fn(params, &info, &rpds::List::new_sync());
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {

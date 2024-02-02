@@ -69,8 +69,10 @@ pub fn quote(expr: &CalcitItems, _scope: &CalcitScope, _file_ns: &str) -> Result
 }
 
 pub fn syntax_if(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if expr.len() > 3 {
+    return CalcitErr::err_nodes("too many nodes for if, got:", expr);
+  }
   match (expr.get(0), expr.get(1)) {
-    _ if expr.len() > 3 => CalcitErr::err_nodes("too many nodes for if, got:", expr),
     (Some(cond), Some(true_branch)) => {
       let cond_value = runner::evaluate_expr(cond, scope, file_ns, call_stack)?;
       match cond_value {
@@ -322,7 +324,7 @@ pub fn call_try(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_sta
         match f {
           Calcit::Fn { info, .. } => {
             let values = TernaryTreeList::from(&[err_data]);
-            runner::run_fn(&values, &info, call_stack)
+            runner::run_fn(values, &info, call_stack)
           }
           Calcit::Proc(proc) => builtins::handle_proc(proc, &TernaryTreeList::from(&[err_data]), call_stack),
           a => CalcitErr::err_str(format!("try expected a function handler, got: {a}")),

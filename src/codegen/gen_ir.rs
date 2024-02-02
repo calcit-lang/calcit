@@ -121,6 +121,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
           ]),
           ResolvedLocal => Edn::map_from_iter([("kind".into(), Edn::tag("local"))]),
           ResolvedRaw => Edn::map_from_iter([("kind".into(), Edn::tag("raw"))]),
+          ResolvedRegistered => Edn::map_from_iter([("kind".into(), Edn::tag("registered"))]),
         },
         None => Edn::map_from_iter([("kind".into(), Edn::Nil)]),
       };

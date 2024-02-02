@@ -10,8 +10,8 @@ use crate::{
     edn::{self, edn_to_calcit},
   },
   primes,
-  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope, CalcitSymbolInfo, CrListWrap, GENERATED_DEF, GEN_NS},
-  runner,
+  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitSymbolInfo, CrListWrap, GENERATED_DEF, GEN_NS},
+  runner::{self},
   util::number::f64_to_usize,
 };
 
@@ -311,22 +311,19 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
       call_stack,
     ));
   }
-  let s0 = CalcitScope::default();
   let class: Calcit = match &invoke_args[0] {
     Calcit::Tuple(_tag, _extra, class) => (**class).to_owned(),
     Calcit::Record(_name, _f, _v, class) => (**class).to_owned(),
     // classed should already be preprocessed
-    Calcit::List(..) => runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?,
+    Calcit::List(..) => runner::evaluate_symbol_from_program("&core-list-class", primes::CORE_NS, call_stack)?,
 
-    Calcit::Map(..) => runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?,
+    Calcit::Map(..) => runner::evaluate_symbol_from_program("&core-map-class", primes::CORE_NS, call_stack)?,
 
-    Calcit::Number(..) => runner::evaluate_symbol("&core-number-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?,
-    Calcit::Str(..) => runner::evaluate_symbol("&core-string-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?,
-    Calcit::Set(..) => runner::evaluate_symbol("&core-set-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?,
-    Calcit::Nil => runner::evaluate_symbol("&core-nil-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?,
-    Calcit::Fn { .. } | Calcit::Proc(..) => {
-      runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, GENERATED_DEF, &None, call_stack)?
-    }
+    Calcit::Number(..) => runner::evaluate_symbol_from_program("&core-number-class", primes::CORE_NS, call_stack)?,
+    Calcit::Str(..) => runner::evaluate_symbol_from_program("&core-string-class", primes::CORE_NS, call_stack)?,
+    Calcit::Set(..) => runner::evaluate_symbol_from_program("&core-set-class", primes::CORE_NS, call_stack)?,
+    Calcit::Nil => runner::evaluate_symbol_from_program("&core-nil-class", primes::CORE_NS, call_stack)?,
+    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol_from_program("&core-fn-class", primes::CORE_NS, call_stack)?,
     x => {
       return Err(CalcitErr::use_msg_stack_location(
         format!("cannot decide a class from: {x}"),
@@ -343,7 +340,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
 
           match &values[idx] {
             // dirty copy...
-            Calcit::Fn { info, .. } => runner::run_fn(&method_args, info, call_stack),
+            Calcit::Fn { info, .. } => runner::run_fn(method_args, info, call_stack),
             Calcit::Proc(proc) => builtins::handle_proc(*proc, &method_args, call_stack),
             Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
               format!("cannot get syntax here since instance is always evaluated, got: {syn}"),

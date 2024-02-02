@@ -187,7 +187,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
       (Calcit::List(xs), Calcit::Fn { info, .. }) => {
         for x in xs {
           let values = TernaryTreeList::from(&[ret, x.to_owned()]);
-          ret = runner::run_fn(&values, info, call_stack)?;
+          ret = runner::run_fn(values, info, call_stack)?;
         }
         Ok(ret)
       }
@@ -202,7 +202,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
       (Calcit::Set(xs), Calcit::Fn { info, .. }) => {
         for x in xs {
           let values = TernaryTreeList::from(&[ret, x.to_owned()]);
-          ret = runner::run_fn(&values, info, call_stack)?;
+          ret = runner::run_fn(values, info, call_stack)?;
         }
         Ok(ret)
       }
@@ -217,7 +217,7 @@ pub fn foldl(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Cal
       (Calcit::Map(xs), Calcit::Fn { info, .. }) => {
         for (k, x) in xs {
           let values = TernaryTreeList::from(&[ret, Calcit::List(TernaryTreeList::from(&[k.to_owned(), x.to_owned()]))]);
-          ret = runner::run_fn(&values, info, call_stack)?;
+          ret = runner::run_fn(values, info, call_stack)?;
         }
         Ok(ret)
       }
@@ -259,7 +259,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
         let mut state = acc.to_owned();
         for x in xs {
           let values = TernaryTreeList::from(&[state, x.to_owned()]);
-          let pair = runner::run_fn(&values, info, call_stack)?;
+          let pair = runner::run_fn(values, info, call_stack)?;
           match pair {
             Calcit::Tuple(x0, extra, _class) => match &*x0 {
               Calcit::Bool(b) => {
@@ -297,7 +297,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
         let mut state = acc.to_owned();
         for x in xs {
           let values = TernaryTreeList::from(&[state, x.to_owned()]);
-          let pair = runner::run_fn(&values, info, call_stack)?;
+          let pair = runner::run_fn(values, info, call_stack)?;
           match pair {
             Calcit::Tuple(x0, extra, _class) => match &*x0 {
               Calcit::Bool(b) => {
@@ -335,7 +335,7 @@ pub fn foldl_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
         let mut state = acc.to_owned();
         for (k, x) in xs {
           let values = TernaryTreeList::from(&[state, Calcit::List(TernaryTreeList::from(&[k.to_owned(), x.to_owned()]))]);
-          let pair = runner::run_fn(&values, info, call_stack)?;
+          let pair = runner::run_fn(values, info, call_stack)?;
           match pair {
             Calcit::Tuple(x0, extra, _class) => match &*x0 {
               Calcit::Bool(b) => {
@@ -400,7 +400,7 @@ pub fn foldr_shortcut(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Ca
         for i in 0..size {
           let x = xs[size - 1 - i].to_owned();
           let values = TernaryTreeList::from(&[state, x]);
-          let pair = runner::run_fn(&values, info, call_stack)?;
+          let pair = runner::run_fn(values, info, call_stack)?;
           match pair {
             Calcit::Tuple(x0, extra, _class) => match &*x0 {
               Calcit::Bool(b) => {
@@ -459,7 +459,7 @@ pub fn sort(xs: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, Calc
         let mut xs2: Vec<&Calcit> = xs.into_iter().collect::<Vec<&Calcit>>();
         xs2.sort_by(|a, b| -> Ordering {
           let values = TernaryTreeList::from(&[(*a).to_owned(), (*b).to_owned()]);
-          let v = runner::run_fn(&values, info, call_stack);
+          let v = runner::run_fn(values, info, call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
             Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
