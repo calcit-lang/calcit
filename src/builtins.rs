@@ -18,7 +18,7 @@ use crate::call_stack::CallStackList;
 
 pub(crate) use refs::ValueAndListeners;
 
-pub type FnType = fn(xs: &CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
+pub type FnType = fn(xs: CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
 pub type SyntaxType = fn(expr: &CalcitCompactList, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
 lazy_static! {

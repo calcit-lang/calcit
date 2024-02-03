@@ -180,7 +180,9 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
             match ps.get(name) {
               Some(f) => {
                 let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-                f(&values, call_stack)
+                // weird, but it's faster to pass `values` than passing `&values`
+                // also println slows down code a bit. could't figure out, didn't read asm either
+                f(values, call_stack)
               }
               None => {
                 let error_location = location

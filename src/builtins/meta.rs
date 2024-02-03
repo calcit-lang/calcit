@@ -489,7 +489,7 @@ pub fn get_os(_xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::tag(std::env::consts::OS))
 }
 
-pub fn async_sleep(xs: &CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn async_sleep(xs: CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   use std::{thread, time};
   let sec = if xs.is_empty() {
     1.0
