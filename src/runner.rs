@@ -9,7 +9,7 @@ use crate::calcit::{
   Calcit, CalcitCompactList, CalcitErr, CalcitFn, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, MethodKind,
   NodeLocation, SymbolResolved::*, CORE_NS,
 };
-use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
+use crate::call_stack::{extend_call_stack, CallStackList, StackArgsList, StackKind};
 use crate::program;
 use crate::util::string::has_ns_part;
 
@@ -75,7 +75,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               Arc::from(s.as_ref()),
               StackKind::Syntax,
               expr.to_owned(),
-              rest_nodes.to_owned().into(),
+              StackArgsList::List(rest_nodes.0.to_owned()),
             );
 
             builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
@@ -96,7 +96,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               name.to_owned(),
               StackKind::Method,
               Calcit::Nil,
-              values.to_owned(),
+              StackArgsList::Compact(values.to_owned()),
             );
 
             if *kind == MethodKind::Invoke {
@@ -113,7 +113,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               info.name.to_owned(),
               StackKind::Fn,
               expr.to_owned(),
-              values.to_owned(),
+              StackArgsList::Compact(values.to_owned()),
             );
 
             run_fn(values, info, &next_stack)
@@ -135,7 +135,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               info.name.to_owned(),
               StackKind::Macro,
               expr.to_owned(),
-              rest_nodes.clone().into(),
+              StackArgsList::List(rest_nodes.0),
             );
 
             let mut body_scope = CalcitScope::default();

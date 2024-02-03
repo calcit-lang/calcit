@@ -19,7 +19,7 @@ use crate::builtins::syntax::get_raw_args;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
 use crate::calcit::{self, CalcitList, CalcitProc, MethodKind};
 use crate::calcit::{Calcit, CalcitCompactList, CalcitSyntax, ImportRule, SymbolResolved::*};
-use crate::call_stack::StackKind;
+use crate::call_stack::{StackArgsList, StackKind};
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
 
@@ -290,7 +290,7 @@ fn gen_call_code(
           }
           match (body.get_inner(0), body.get_inner(1)) {
             (Some(condition), Some(true_branch)) => {
-              gen_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), CalcitList::new_compact());
+              gen_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), StackArgsList::default());
               let false_code = match body.get(2) {
                 Some(fal) => to_js_code(&fal, ns, local_defs, file_imports, tags, None)?,
                 None => String::from("null"),
@@ -315,7 +315,7 @@ fn gen_call_code(
             (Some(Calcit::Symbol { sym, .. }), Some(v)) => {
               // let _name = escape_var(sym); // TODO
               let ref_path = wrap_js_str(&format!("{ns}/{sym}"));
-              gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), CalcitList::new_compact());
+              gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), StackArgsList::default());
               let value_code = &to_js_code(v, ns, local_defs, file_imports, tags, None)?;
               gen_stack::pop_call_stack();
               Ok(format!(
@@ -330,7 +330,7 @@ fn gen_call_code(
         CalcitSyntax::Defn => match (body.get_inner(0), body.get_inner(1)) {
           (Some(Calcit::Symbol { sym, .. }), Some(Calcit::List(ys))) => {
             let func_body = body.skip(2)?;
-            gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), CalcitList::new_compact());
+            gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), StackArgsList::default());
             let passed_defs = PassedDefs {
               ns,
               local_defs,
@@ -350,7 +350,7 @@ fn gen_call_code(
         CalcitSyntax::Quasiquote => Ok(format!("(/* Unexpected quasiquote {} */ null)", xs.lisp_str())),
         CalcitSyntax::Try => match (body.get(0), body.get(1)) {
           (Some(expr), Some(handler)) => {
-            gen_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), CalcitList::new_compact());
+            gen_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), StackArgsList::default());
             let next_return_label = return_label.unwrap_or("return ");
             let try_code = to_js_code(&expr, ns, local_defs, file_imports, tags, Some(next_return_label))?;
             let err_var = js_gensym("errMsg");
@@ -1260,13 +1260,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           writeln!(defs_code, "\nvar {} = $calcit_procs.{};", escape_var(&def), escape_var(&def)).expect("write");
         }
         Calcit::Fn { info, .. } => {
-          gen_stack::push_call_stack(
-            &info.def_ns,
-            &info.name,
-            StackKind::Codegen,
-            f.to_owned(),
-            CalcitList::new_compact(),
-          );
+          gen_stack::push_call_stack(&info.def_ns, &info.name, StackKind::Codegen, f.to_owned(), StackArgsList::default());
           let passed_defs = PassedDefs {
             ns: &ns,
             local_defs: &def_names,
@@ -1286,7 +1280,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         Calcit::Thunk(code, _) => {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
-          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, (**code).to_owned(), CalcitList::new_compact());
+          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, (**code).to_owned(), StackArgsList::default());
           writeln!(
             vals_code,
             "\nexport var {} = {};",

@@ -5,7 +5,7 @@ use crate::{
     Calcit, CalcitCompactList, CalcitErr, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, ImportRule,
     LocatedWarning, NodeLocation, RawCodeType, SymbolResolved::*, GENERATED_DEF,
   },
-  call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
+  call_stack::{extend_call_stack, CalcitStack, CallStackList, StackArgsList, StackKind},
   program, runner,
 };
 
@@ -73,7 +73,7 @@ pub fn preprocess_ns_def(
             Arc::from(def),
             StackKind::Fn,
             code.to_owned(),
-            CalcitList::new_compact(),
+            StackArgsList::default(),
           );
 
           let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
@@ -281,7 +281,7 @@ pub fn preprocess_expr(
       } else {
         // TODO whether function bothers this...
         // println!("start calling: {}", expr);
-        process_list_call(&xs.into(), scope_defs, file_ns, check_warnings, call_stack)
+        process_list_call(xs, scope_defs, file_ns, check_warnings, call_stack)
       }
     }
     Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::CirruQuote(..) => {
@@ -307,7 +307,7 @@ pub fn preprocess_expr(
 }
 
 fn process_list_call(
-  xs: &CalcitCompactList,
+  xs: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -340,7 +340,7 @@ fn process_list_call(
     (Calcit::Tag(..), _) => {
       if args.len() == 1 {
         let code = Calcit::List(CalcitList::from(&[
-          Calcit::Symbol {
+          Arc::new(Calcit::Symbol {
             sym: "get".into(),
             info: Arc::new(crate::calcit::CalcitSymbolInfo {
               ns: calcit::CORE_NS.into(),
@@ -352,7 +352,7 @@ fn process_list_call(
               }),
             }),
             location: None,
-          },
+          }),
           args[0].to_owned(),
           head.to_owned(),
         ]));
@@ -362,19 +362,19 @@ fn process_list_call(
       }
     }
     (_, Some(Calcit::Macro { info, .. })) => {
-      let mut current_values = args.to_owned();
+      let mut current_values: CalcitCompactList = args.to_owned().into();
 
       // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
-      let code = Calcit::List(xs.into());
+      let code = Calcit::List(xs.to_owned());
       let next_stack = extend_call_stack(
         call_stack,
         info.def_ns.to_owned(),
         info.name.to_owned(),
         StackKind::Macro,
         code,
-        args,
+        StackArgsList::List(args.0),
       );
 
       let mut body_scope = CalcitScope::default();
@@ -441,7 +441,7 @@ fn process_list_call(
       Ok((Calcit::List(CalcitList(ys)), None))
     }
     (Calcit::Method(_, _), _) => {
-      let mut ys = CalcitList::new_inner_from(&[Arc::new(head.to_owned())]);
+      let mut ys = CalcitList::new_inner_from(&[head.to_owned()]);
       for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
         ys = ys.push(Arc::new(form));
@@ -451,7 +451,7 @@ fn process_list_call(
     (h, he) => {
       if let Calcit::Symbol { sym, info, .. } = h {
         if he.is_none() && info.resolved.is_none() && !is_js_syntax_procs(sym) {
-          println!("warning: unresolved symbol `{}` in `{}`", sym, CalcitList::from(xs));
+          println!("warning: unresolved symbol `{}` in `{}`", sym, xs);
         }
       }
       let mut ys = CalcitList::new_inner_from(&[Arc::new(head_form)]);
@@ -468,7 +468,7 @@ fn process_list_call(
 // detects arguments of top-level functions when possible
 fn check_fn_args(
   defined_args: &[Arc<str>],
-  params: &CalcitCompactList,
+  params: &CalcitList,
   file_ns: &str,
   f_name: &str,
   def_name: &str,
@@ -480,7 +480,7 @@ fn check_fn_args(
 
   loop {
     let d = defined_args.get(i);
-    let r = params.get(j);
+    let r = params.get_inner(j);
 
     match (d, r) {
       (None, None) => return,
@@ -509,11 +509,7 @@ fn check_fn_args(
           warnings.push(LocatedWarning::new(
             format!(
               "[Warn] lack of args in {} `{:?}` with `{}`, at {}/{}",
-              f_name,
-              defined_args,
-              CalcitList::from(params),
-              file_ns,
-              def_name
+              f_name, defined_args, params, file_ns, def_name
             ),
             loc,
           ));
@@ -526,11 +522,7 @@ fn check_fn_args(
         warnings.push(LocatedWarning::new(
           format!(
             "[Warn] too many args for {} `{:?}` with `{}`, at {}/{}",
-            f_name,
-            defined_args,
-            CalcitList::from(params),
-            file_ns,
-            def_name
+            f_name, defined_args, params, file_ns, def_name
           ),
           loc,
         ));
@@ -557,7 +549,7 @@ fn grab_def_name(x: &Calcit) -> Arc<str> {
 pub fn preprocess_each_items(
   head: &CalcitSyntax,
   head_ns: &str,
-  args: &CalcitCompactList,
+  args: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -574,7 +566,7 @@ pub fn preprocess_each_items(
 pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
-  args: &CalcitCompactList,
+  args: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -582,7 +574,7 @@ pub fn preprocess_defn(
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
   let mut xs: TernaryTreeList<Arc<Calcit>> = TernaryTreeList::from(&[Arc::new(Calcit::Syntax(head.to_owned(), Arc::from(head_ns)))]);
-  match (args.get(0), args.get(1)) {
+  match (args.get_inner(0), args.get_inner(1)) {
     (
       Some(Calcit::Symbol {
         sym: def_name,
@@ -658,16 +650,11 @@ pub fn preprocess_defn(
 }
 
 // warn if this symbol is used
-fn check_symbol(sym: &str, args: &CalcitCompactList, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
+fn check_symbol(sym: &str, args: &CalcitList, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
   if is_proc_name(sym) || CalcitSyntax::is_valid(sym) || program::has_def_code(calcit::CORE_NS, sym) {
     let mut warnings = check_warnings.borrow_mut();
     warnings.push(LocatedWarning::new(
-      format!(
-        "[Warn] local binding `{}` shadowed `calcit.core/{}`, with {}",
-        sym,
-        sym,
-        CalcitList::from(args)
-      ),
+      format!("[Warn] local binding `{}` shadowed `calcit.core/{}`, with {}", sym, sym, args),
       location,
     ));
   }
@@ -677,7 +664,7 @@ pub fn preprocess_core_let(
   head: &CalcitSyntax,
   // where the symbol was defined
   head_ns: &str,
-  args: &CalcitCompactList,
+  args: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
   // where called
   file_ns: &str,
@@ -686,7 +673,7 @@ pub fn preprocess_core_let(
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: TernaryTreeList<Arc<Calcit>> = TernaryTreeList::from(&[Arc::new(Calcit::Syntax(head.to_owned(), Arc::from(head_ns)))]);
   let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
-  let binding = match args.get(0) {
+  let binding = match args.get_inner(0) {
     Some(Calcit::List(ys)) if ys.is_empty() => Calcit::List(CalcitList::default()),
     Some(Calcit::List(ys)) if ys.len() == 2 => match (&*ys[0], &*ys[1]) {
       (Calcit::Symbol { sym, .. }, a) => {
@@ -739,13 +726,13 @@ pub fn preprocess_core_let(
 pub fn preprocess_quote(
   head: &CalcitSyntax,
   head_ns: &str,
-  args: &CalcitCompactList,
+  args: &CalcitList,
   _scope_defs: &HashSet<Arc<str>>,
   _file_ns: &str,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: TernaryTreeList<Arc<Calcit>> = TernaryTreeList::from(&[Arc::new(Calcit::Syntax(head.to_owned(), Arc::from(head_ns)))]);
   for a in args {
-    xs = xs.push_right(Arc::new(a.to_owned()));
+    xs = xs.push_right(a.to_owned());
   }
   Ok(Calcit::List(xs.into()))
 }
@@ -753,7 +740,7 @@ pub fn preprocess_quote(
 pub fn preprocess_defatom(
   head: &CalcitSyntax,
   head_ns: &str,
-  args: &CalcitCompactList,
+  args: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -772,7 +759,7 @@ pub fn preprocess_defatom(
 pub fn preprocess_quasiquote(
   head: &CalcitSyntax,
   head_ns: &str,
-  args: &CalcitCompactList,
+  args: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
