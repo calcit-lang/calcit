@@ -45,7 +45,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       }
       Ok(entries.into())
     }
-    Calcit::Fn { name, def_ns, args, .. } => {
+    Calcit::Fn { info, .. } => {
+      let def_ns = &info.def_ns;
+      let name = &info.name;
+      let args = &info.args;
       println!("[Warn] fn to EDN: {def_ns}/{name} {args:?}");
       Ok(Edn::str(x.to_string()))
     }
@@ -104,9 +107,11 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     Edn::Number(n) => Calcit::Number(*n),
     Edn::Symbol(s) => Calcit::Symbol {
       sym: (**s).into(),
-      ns: primes::GEN_NS.into(),
-      at_def: primes::GENERATED_DEF.into(),
-      resolved: None,
+      info: Arc::new(crate::primes::CalcitSymbolInfo {
+        ns: primes::GEN_NS.into(),
+        at_def: primes::GENERATED_DEF.into(),
+        resolved: None,
+      }),
       location: None,
     },
     Edn::Tag(s) => Calcit::Tag(s.to_owned()),

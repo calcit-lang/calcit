@@ -141,9 +141,9 @@ fn main() -> Result<(), String> {
 
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
-    calcit::primes::CORE_NS.into(),
-    calcit::primes::BUILTIN_CLASSES_ENTRY.into(),
-    calcit::primes::BUILTIN_CLASSES_ENTRY.into(),
+    calcit::primes::CORE_NS,
+    calcit::primes::BUILTIN_CLASSES_ENTRY,
+    calcit::primes::BUILTIN_CLASSES_ENTRY,
     None,
     check_warnings,
     &rpds::List::new_sync(),
@@ -272,9 +272,9 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
       // when there's services, make sure their code get preprocessed too
       let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
       if let Err(e) = runner::preprocess::preprocess_ns_def(
-        entries.init_ns.to_owned(),
-        entries.init_def.to_owned(),
-        entries.init_def.to_owned(),
+        &entries.init_ns,
+        &entries.init_def,
+        &entries.init_def,
         None,
         check_warnings,
         &rpds::List::new_sync(),
@@ -325,9 +325,9 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
 
   // preprocess to init
   match runner::preprocess::preprocess_ns_def(
-    entries.init_ns.to_owned(),
-    entries.init_def.to_owned(),
-    entries.init_def.to_owned(),
+    &entries.init_ns,
+    &entries.init_def,
+    &entries.init_def,
     None,
     check_warnings,
     &rpds::List::new_sync(),
@@ -350,9 +350,9 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
 
   // preprocess to reload
   match runner::preprocess::preprocess_ns_def(
-    entries.reload_ns.to_owned(),
-    entries.reload_def.to_owned(),
-    entries.init_def.to_owned(),
+    &entries.reload_ns,
+    &entries.reload_def,
+    &entries.init_def,
     None,
     check_warnings,
     &rpds::List::new_sync(),

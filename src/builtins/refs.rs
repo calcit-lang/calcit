@@ -34,11 +34,9 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
 
   for f in listeners.values() {
     match f {
-      Calcit::Fn {
-        def_ns, scope, args, body, ..
-      } => {
+      Calcit::Fn { info, .. } => {
         let values = TernaryTreeList::from(&[v.to_owned(), prev.to_owned()]);
-        runner::run_fn(&values, scope, args, body, def_ns.to_owned(), call_stack)?;
+        runner::run_fn(values, info, call_stack)?;
       }
       a => {
         return Err(CalcitErr::use_msg_stack_location(
@@ -53,10 +51,10 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
 }
 
 /// syntax to prevent expr re-evaluating
-pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match (expr.get(0), expr.get(1)) {
-    (Some(Calcit::Symbol { sym, ns, .. }), Some(code)) => {
-      let mut path: String = (**ns).to_owned();
+    (Some(Calcit::Symbol { sym, info, .. }), Some(code)) => {
+      let mut path: String = (*info.ns).to_owned();
       path.push('/');
       path.push_str(sym);
 
@@ -120,13 +118,13 @@ pub fn atom_deref(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 /// need to be syntax since triggering internal functions requires program data
-pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
     return CalcitErr::err_nodes("reset! excepted 2 arguments, got:", expr);
   }
   // println!("reset! {:?}", expr[0]);
-  let target = runner::evaluate_expr(&expr[0], scope, file_ns.to_owned(), call_stack)?;
-  let new_value = runner::evaluate_expr(&expr[1], scope, file_ns.to_owned(), call_stack)?;
+  let target = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
+  let new_value = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
   match (target, &new_value) {
     (Calcit::Ref(_path, locked_pair), v) => {
       modify_ref(locked_pair, v.to_owned(), call_stack)?;
@@ -134,7 +132,7 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: Arc<str>, ca
     }
     // if reset! called before deref, we need to trigger the thunk
     (Calcit::Thunk(code, _thunk_data), _) => match &expr[0] {
-      Calcit::Symbol { sym, .. } => runner::evaluate_def_thunk(&code, &file_ns, sym, call_stack),
+      Calcit::Symbol { sym, .. } => runner::evaluate_def_thunk(&code, file_ns, sym, call_stack),
       _ => CalcitErr::err_str(format!("reset! expected a symbol, got: {:?}", expr[0])),
     },
     (a, b) => Err(CalcitErr::use_msg_stack_location(

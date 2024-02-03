@@ -1,5 +1,7 @@
 mod eval_node;
+mod fns;
 mod proc_name;
+mod symbol;
 mod syntax_name;
 
 use core::cmp::Ord;
@@ -16,8 +18,10 @@ use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
+pub use fns::{CalcitFn, CalcitMacro, CalcitScope};
 pub use proc_name::CalcitProc;
-use rpds::HashTrieMapSync;
+pub use symbol::CalcitSymbolInfo;
+pub use symbol::{ImportRule, SymbolResolved};
 pub use syntax_name::CalcitSyntax;
 
 use crate::builtins::ValueAndListeners;
@@ -25,57 +29,6 @@ use crate::call_stack::CallStackList;
 
 /// dead simple counter for ID generator, better use nanoid in business
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
-
-/// resolved value of real meaning of a symbol
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SymbolResolved {
-  /// a local variable
-  ResolvedLocal,
-  /// raw syntax, no target, for example `&` is a raw syntax
-  ResolvedRaw,
-  /// definition attached on namespace
-  ResolvedDef {
-    ns: Arc<str>,
-    def: Arc<str>,
-    rule: Option<Arc<ImportRule>>,
-  },
-}
-
-/// defRule: ns def
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ImportRule {
-  /// ns imported via `:as`
-  NsAs(Arc<str>),
-  /// (ns, def) imported via `:refer`
-  NsReferDef(Arc<str>, Arc<str>),
-  /// ns imported via `:default`, js only
-  NsDefault(Arc<str>),
-}
-
-/// scope in the semantics of persistent data structure
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CalcitScope(pub rpds::HashTrieMapSync<Arc<str>, Calcit>);
-
-impl Default for CalcitScope {
-  fn default() -> Self {
-    CalcitScope(HashTrieMapSync::new_sync())
-  }
-}
-
-impl CalcitScope {
-  /// create a new scope from a piece of hashmap
-  pub fn new(data: rpds::HashTrieMapSync<Arc<str>, Calcit>) -> Self {
-    CalcitScope(data)
-  }
-  /// load value of a symbol from the scope
-  pub fn get(&self, key: &str) -> Option<&Calcit> {
-    self.0.get(key)
-  }
-  /// mutable insertiong of variable
-  pub fn insert_mut(&mut self, key: Arc<str>, value: Calcit) {
-    self.0.insert_mut(key, value);
-  }
-}
 
 pub type CalcitItems = TernaryTreeList<Calcit>;
 
@@ -91,9 +44,7 @@ pub enum Calcit {
   Number(f64),
   Symbol {
     sym: Arc<str>,
-    ns: Arc<str>,
-    at_def: Arc<str>,
-    resolved: Option<Arc<SymbolResolved>>,
+    info: Arc<CalcitSymbolInfo>,
     /// positions in the tree of Cirru
     location: Option<Arc<Vec<u8>>>,
   },
@@ -122,21 +73,12 @@ pub enum Calcit {
   /// native functions that providing feature from Rust
   Proc(CalcitProc),
   Macro {
-    name: Arc<str>,
-    /// where it was defined
-    def_ns: Arc<str>,
     id: Arc<str>,
-    args: Arc<Vec<Arc<str>>>,
-    body: Arc<CalcitItems>,
+    info: Arc<CalcitMacro>,
   },
   Fn {
-    name: Arc<str>,
-    /// where it was defined
-    def_ns: Arc<str>,
     id: Arc<str>,
-    scope: Arc<CalcitScope>,
-    args: Arc<Vec<Arc<str>>>,
-    body: Arc<CalcitItems>,
+    info: Arc<CalcitFn>,
   },
   /// name, ns... notice that `ns` is a meta info
   Syntax(CalcitSyntax, Arc<str>),
@@ -241,10 +183,11 @@ impl fmt::Display for Calcit {
         f.write_str(")")
       }
       Calcit::Proc(name) => f.write_str(&format!("(&proc {name})")),
-      Calcit::Macro { name, args, body, .. } => {
+      Calcit::Macro { info, .. } => {
+        let name = &info.name;
         f.write_str(&format!("(&macro {name} ("))?;
         let mut need_space = false;
-        for a in &**args {
+        for a in &**info.args {
           if need_space {
             f.write_str(" ")?;
           }
@@ -253,7 +196,7 @@ impl fmt::Display for Calcit {
         }
         f.write_str(") (")?;
         need_space = false;
-        for b in &**body {
+        for b in &*info.body {
           if need_space {
             f.write_str(" ")?;
           }
@@ -262,10 +205,11 @@ impl fmt::Display for Calcit {
         }
         f.write_str("))")
       }
-      Calcit::Fn { name, args, body, .. } => {
+      Calcit::Fn { info, .. } => {
+        let name = &info.name;
         f.write_str(&format!("(&fn {name} ("))?;
         let mut need_space = false;
-        for a in &**args {
+        for a in &*info.args {
           if need_space {
             f.write_str(" ")?;
           }
@@ -274,7 +218,7 @@ impl fmt::Display for Calcit {
         }
         f.write_str(") ")?;
         need_space = false;
-        for b in &**body {
+        for b in &*info.body {
           if need_space {
             f.write_str(" ")?;
           }
@@ -641,9 +585,9 @@ impl Calcit {
   /// currently only symbol has node location
   pub fn get_location(&self) -> Option<NodeLocation> {
     match self {
-      Calcit::Symbol { ns, at_def, location, .. } => Some(NodeLocation::new(
-        ns.to_owned(),
-        at_def.to_owned(),
+      Calcit::Symbol { info, location, .. } => Some(NodeLocation::new(
+        info.ns.clone(),
+        info.at_def.clone(),
         location.to_owned().unwrap_or_default(),
       )),
       _ => None,
@@ -791,7 +735,11 @@ impl fmt::Display for NodeLocation {
 
 impl NodeLocation {
   pub fn new(ns: Arc<str>, def: Arc<str>, coord: Arc<Vec<u8>>) -> Self {
-    NodeLocation { ns, def, coord }
+    NodeLocation {
+      ns,
+      def,
+      coord: coord.to_owned(),
+    }
   }
 }
 

@@ -10,8 +10,8 @@ use crate::{
     edn::{self, edn_to_calcit},
   },
   primes,
-  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitScope, CrListWrap, GENERATED_DEF, GEN_NS},
-  runner,
+  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitSymbolInfo, CrListWrap, GENERATED_DEF, GEN_NS},
+  runner::{self},
   util::number::f64_to_usize,
 };
 
@@ -231,19 +231,20 @@ pub fn turn_symbol(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("turn-symbol expected 1 argument, got:", xs);
   }
+  let info = Arc::new(CalcitSymbolInfo {
+    ns: primes::GEN_NS.into(),
+    at_def: primes::GENERATED_DEF.into(),
+    resolved: None,
+  });
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::Symbol {
       sym: s.to_owned(),
-      ns: primes::GEN_NS.into(),
-      at_def: primes::GENERATED_DEF.into(),
-      resolved: None,
+      info: info.to_owned(),
       location: None,
     }),
     Calcit::Tag(s) => Ok(Calcit::Symbol {
       sym: s.to_str(),
-      ns: primes::GEN_NS.into(),
-      at_def: primes::GENERATED_DEF.into(),
-      resolved: None,
+      info: info.to_owned(),
       location: None,
     }),
     a @ Calcit::Symbol { .. } => Ok(a.to_owned()),
@@ -310,20 +311,19 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
       call_stack,
     ));
   }
-  let s0 = CalcitScope::default();
   let class: Calcit = match &invoke_args[0] {
     Calcit::Tuple(_tag, _extra, class) => (**class).to_owned(),
     Calcit::Record(_name, _f, _v, class) => (**class).to_owned(),
     // classed should already be preprocessed
-    Calcit::List(..) => runner::evaluate_symbol("&core-list-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::List(..) => runner::evaluate_symbol_from_program("&core-list-class", primes::CORE_NS, call_stack)?,
 
-    Calcit::Map(..) => runner::evaluate_symbol("&core-map-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Map(..) => runner::evaluate_symbol_from_program("&core-map-class", primes::CORE_NS, call_stack)?,
 
-    Calcit::Number(..) => runner::evaluate_symbol("&core-number-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Str(..) => runner::evaluate_symbol("&core-string-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Set(..) => runner::evaluate_symbol("&core-set-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Nil => runner::evaluate_symbol("&core-nil-class", &s0, primes::CORE_NS, None, call_stack)?,
-    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol("&core-fn-class", &s0, primes::CORE_NS, None, call_stack)?,
+    Calcit::Number(..) => runner::evaluate_symbol_from_program("&core-number-class", primes::CORE_NS, call_stack)?,
+    Calcit::Str(..) => runner::evaluate_symbol_from_program("&core-string-class", primes::CORE_NS, call_stack)?,
+    Calcit::Set(..) => runner::evaluate_symbol_from_program("&core-set-class", primes::CORE_NS, call_stack)?,
+    Calcit::Nil => runner::evaluate_symbol_from_program("&core-nil-class", primes::CORE_NS, call_stack)?,
+    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol_from_program("&core-fn-class", primes::CORE_NS, call_stack)?,
     x => {
       return Err(CalcitErr::use_msg_stack_location(
         format!("cannot decide a class from: {x}"),
@@ -340,9 +340,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallSta
 
           match &values[idx] {
             // dirty copy...
-            Calcit::Fn {
-              def_ns, scope, args, body, ..
-            } => runner::run_fn(&method_args, scope, args, body, def_ns.to_owned(), call_stack),
+            Calcit::Fn { info, .. } => runner::run_fn(method_args, info, call_stack),
             Calcit::Proc(proc) => builtins::handle_proc(*proc, &method_args, call_stack),
             Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
               format!("cannot get syntax here since instance is always evaluated, got: {syn}"),
@@ -575,10 +573,7 @@ pub fn data_to_code(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("&data-to-code expected 1 argument, got:", xs);
   }
 
-  let gen_ns: Arc<str> = Arc::from(GEN_NS);
-  let gen_def: Arc<str> = Arc::from(GENERATED_DEF);
-
-  match data_to_calcit(&xs[0], gen_ns, gen_def) {
+  match data_to_calcit(&xs[0], GEN_NS, GENERATED_DEF) {
     Ok(v) => Ok(v),
     Err(e) => CalcitErr::err_str(format!("&data-to-code failed: {e}")),
   }

@@ -202,21 +202,14 @@ fn to_js_code(
     gen_call_code(ys, ns, local_defs, xs, file_imports, tags, return_label)
   } else {
     let ret = match xs {
-      Calcit::Symbol {
-        sym,
-        ns: def_ns,
-        at_def,
-        resolved,
-        ..
-      } => {
-        let resolved_info = resolved.to_owned().map(|v| (*v).to_owned());
+      Calcit::Symbol { sym, info, .. } => {
         let passed_defs = PassedDefs {
           ns,
           local_defs,
           file_imports,
         };
 
-        gen_symbol_code(sym, def_ns, at_def, resolved_info, xs, &passed_defs)
+        gen_symbol_code(sym, &info.ns, &info.at_def, info.resolved.to_owned(), xs, &passed_defs)
       }
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
@@ -615,6 +608,7 @@ fn gen_symbol_code(
       }
       Some(ResolvedRaw) => Err(format!("not going to generate from raw symbol, {s}")),
       Some(ResolvedLocal) => Err(format!("symbol with ns should not be local, {s}")),
+      Some(ResolvedRegistered) => Err(format!("symbol registered should not be local, {s}")),
       None => Err(format!("expected symbol with ns being resolved: {xs}")),
     }
   } else if is_js_syntax_procs(s) || is_proc_name(s) || CalcitSyntax::is_valid(s) {
@@ -633,7 +627,7 @@ fn gen_symbol_code(
       // functions under core uses built $calcit module entry
       return Ok(format!("{var_prefix}{}", escape_var(s)));
     }
-    if let Some(ImportRule::NsDefault(_s)) = import_rule.map(|x| (*x).to_owned()) {
+    if let Some(ImportRule::NsDefault(_s)) = import_rule.map(|x| x.to_owned()) {
       // imports that using :default are special
       track_ns_import(s, ImportedTarget::DefaultNs(r_ns), passed_defs.file_imports)?;
     } else {
@@ -1092,8 +1086,8 @@ fn contains_symbol(xs: &Calcit, y: &str) -> bool {
   match xs {
     Calcit::Symbol { sym, .. } => &**sym == y,
     Calcit::Thunk(code, _) => contains_symbol(code, y),
-    Calcit::Fn { body, .. } => {
-      for x in &**body {
+    Calcit::Fn { info, .. } => {
+      for x in &*info.body {
         if contains_symbol(x, y) {
           return true;
         }
@@ -1253,20 +1247,22 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         Calcit::Proc(..) => {
           writeln!(defs_code, "\nvar {} = $calcit_procs.{};", escape_var(&def), escape_var(&def)).expect("write");
         }
-        Calcit::Fn {
-          name,
-          def_ns,
-          args,
-          body: code,
-          ..
-        } => {
-          gen_stack::push_call_stack(def_ns, name, StackKind::Codegen, f.to_owned(), &TernaryTreeList::Empty);
+        Calcit::Fn { info, .. } => {
+          gen_stack::push_call_stack(&info.def_ns, &info.name, StackKind::Codegen, f.to_owned(), &TernaryTreeList::Empty);
           let passed_defs = PassedDefs {
             ns: &ns,
             local_defs: &def_names,
             file_imports: &file_imports,
           };
-          defs_code.push_str(&gen_js_func(&def, args, code, &passed_defs, true, &collected_tags, &ns)?);
+          defs_code.push_str(&gen_js_func(
+            &def,
+            &info.args,
+            &info.body,
+            &passed_defs,
+            true,
+            &collected_tags,
+            &ns,
+          )?);
           gen_stack::pop_call_stack();
         }
         Calcit::Thunk(code, _) => {

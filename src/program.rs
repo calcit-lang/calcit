@@ -106,10 +106,7 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
   let mut defs: HashMap<Arc<str>, Calcit> = HashMap::with_capacity(file.defs.len());
   for (def, entry) in &file.defs {
     let at_def = def.to_owned();
-    defs.insert(
-      def.to_owned(),
-      code_to_calcit(&entry.code, ns.to_owned(), at_def, Arc::new(vec![]))?,
-    );
+    defs.insert(def.to_owned(), code_to_calcit(&entry.code, &ns, &at_def, vec![])?);
   }
   Ok(ProgramFileData { import_map, defs })
 }
@@ -211,7 +208,7 @@ pub fn clone_evaled_program() -> ProgramEvaledData {
 
 pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String> {
   let mut program_code = PROGRAM_CODE_DATA.write().expect("open program code");
-  let coord0 = Arc::new(vec![]);
+  let coord0 = vec![];
 
   for (ns, file) in &changes.added {
     program_code.insert(ns.to_owned(), extract_file_data(file, ns.to_owned())?);
@@ -226,17 +223,13 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       file.import_map = extract_import_map(v)?;
     }
     for (def, code) in &info.added_defs {
-      file
-        .defs
-        .insert(def.to_owned(), code_to_calcit(code, ns.to_owned(), def.to_owned(), coord0.clone())?);
+      file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def, coord0.clone())?);
     }
     for def in &info.removed_defs {
       file.defs.remove(def);
     }
     for (def, code) in &info.changed_defs {
-      file
-        .defs
-        .insert(def.to_owned(), code_to_calcit(code, ns.to_owned(), def.to_owned(), coord0.clone())?);
+      file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def, coord0.clone())?);
     }
   }
 
