@@ -18,7 +18,7 @@ use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::syntax::get_raw_args;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
 use crate::call_stack::StackKind;
-use crate::primes::{self, CalcitProc, MethodKind};
+use crate::primes::{self, CalcitList, CalcitProc, MethodKind};
 use crate::primes::{Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
@@ -256,7 +256,7 @@ fn to_js_code(
 }
 
 fn gen_call_code(
-  ys: &CalcitItems,
+  ys: &CalcitList,
   ns: &str,
   local_defs: &HashSet<Arc<str>>,
   xs: &Calcit,
@@ -274,12 +274,12 @@ fn gen_call_code(
 
   let head = ys[0].to_owned();
   let body = ys.drop_left();
-  match &head {
+  match &*head {
     Calcit::Syntax(s, ..) => {
-      match s {
+      match &s {
         CalcitSyntax::If => {
-          if let Some(Calcit::List(ys)) = body.get(2) {
-            if let Some(Calcit::Syntax(syn, ..)) = ys.get(0) {
+          if let Some(Calcit::List(ys)) = body.get_inner(2) {
+            if let Some(Calcit::Syntax(syn, ..)) = ys.get_inner(0) {
               if syn == &CalcitSyntax::If {
                 return gen_if_code(&body, local_defs, xs, ns, file_imports, tags, return_label);
               }
@@ -288,11 +288,11 @@ fn gen_call_code(
           if return_label.is_some() {
             return gen_if_code(&body, local_defs, xs, ns, file_imports, tags, return_label);
           }
-          return match (body.get(0), body.get(1)) {
+          match (body.get_inner(0), body.get_inner(1)) {
             (Some(condition), Some(true_branch)) => {
-              gen_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
+              gen_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), CalcitList::default());
               let false_code = match body.get(2) {
-                Some(fal) => to_js_code(fal, ns, local_defs, file_imports, tags, None)?,
+                Some(fal) => to_js_code(&fal, ns, local_defs, file_imports, tags, None)?,
                 None => String::from("null"),
               };
               let cond_code = to_js_code(condition, ns, local_defs, file_imports, tags, None)?;
@@ -301,21 +301,21 @@ fn gen_call_code(
               Ok(format!("{return_code}( {cond_code} ? {true_code} : {false_code} )"))
             }
             (_, _) => Err(format!("if expected 2~3 nodes, got: {}", Calcit::List(body))),
-          };
+          }
         }
         CalcitSyntax::CoreLet => gen_let_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
 
         CalcitSyntax::Quote => match body.get(0) {
-          Some(item) => quote_to_js(item, var_prefix, tags),
+          Some(item) => quote_to_js(&item, var_prefix, tags),
           None => Err(format!("quote expected a node, got nothing from {}", Calcit::List(body))),
         },
         CalcitSyntax::Defatom => {
-          match (body.get(0), body.get(1)) {
+          match (body.get_inner(0), body.get_inner(1)) {
             _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {}", Calcit::List(body))),
             (Some(Calcit::Symbol { sym, .. }), Some(v)) => {
               // let _name = escape_var(sym); // TODO
               let ref_path = wrap_js_str(&format!("{ns}/{sym}"));
-              gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
+              gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), CalcitList::default());
               let value_code = &to_js_code(v, ns, local_defs, file_imports, tags, None)?;
               gen_stack::pop_call_stack();
               Ok(format!(
@@ -327,16 +327,16 @@ fn gen_call_code(
           }
         }
 
-        CalcitSyntax::Defn => match (body.get(0), body.get(1)) {
+        CalcitSyntax::Defn => match (body.get_inner(0), body.get_inner(1)) {
           (Some(Calcit::Symbol { sym, .. }), Some(Calcit::List(ys))) => {
             let func_body = body.skip(2)?;
-            gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
+            gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), CalcitList::default());
             let passed_defs = PassedDefs {
               ns,
               local_defs,
               file_imports,
             };
-            let ret = gen_js_func(sym, &get_raw_args(ys)?, &func_body, &passed_defs, false, tags, ns);
+            let ret = gen_js_func(sym, &get_raw_args(ys)?, &func_body.into(), &passed_defs, false, tags, ns);
             gen_stack::pop_call_stack();
             match ret {
               Ok(code) => Ok(format!("{return_code}{code}")),
@@ -350,11 +350,11 @@ fn gen_call_code(
         CalcitSyntax::Quasiquote => Ok(format!("(/* Unexpected quasiquote {} */ null)", xs.lisp_str())),
         CalcitSyntax::Try => match (body.get(0), body.get(1)) {
           (Some(expr), Some(handler)) => {
-            gen_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), &TernaryTreeList::Empty);
+            gen_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), CalcitList::default());
             let next_return_label = return_label.unwrap_or("return ");
-            let try_code = to_js_code(expr, ns, local_defs, file_imports, tags, Some(next_return_label))?;
+            let try_code = to_js_code(&expr, ns, local_defs, file_imports, tags, Some(next_return_label))?;
             let err_var = js_gensym("errMsg");
-            let handler = to_js_code(handler, ns, local_defs, file_imports, tags, None)?;
+            let handler = to_js_code(&handler, ns, local_defs, file_imports, tags, None)?;
 
             gen_stack::pop_call_stack();
             let code = snippets::tmpl_try(err_var, try_code, handler, next_return_label);
@@ -380,9 +380,9 @@ fn gen_call_code(
       // not core syntax, but treat as macro for better debugging experience
       match body.get(0) {
         Some(m) => {
-          let message: String = to_js_code(m, ns, local_defs, file_imports, tags, None)?;
+          let message: String = to_js_code(&m, ns, local_defs, file_imports, tags, None)?;
           let data_code = match body.get(1) {
-            Some(d) => to_js_code(d, ns, local_defs, file_imports, tags, None)?,
+            Some(d) => to_js_code(&d, ns, local_defs, file_imports, tags, None)?,
             None => String::from("null"),
           };
           let err_var = js_gensym("err");
@@ -426,7 +426,7 @@ fn gen_call_code(
         }
         "exists?" => {
           // not core syntax, but treat as macro for availability
-          match body.get(0) {
+          match body.get_inner(0) {
             Some(Calcit::Symbol { .. }) | Some(Calcit::RawCode(..)) => {
               let target = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?; // TODO could be simpler
               Ok(format!("{return_code}(typeof {target} !== 'undefined')"))
@@ -435,7 +435,7 @@ fn gen_call_code(
             None => Err(format!("exists? expected 1 node, got: {}", Calcit::List(body))),
           }
         }
-        "new" => match body.get(0) {
+        "new" => match body.get_inner(0) {
           Some(ctor) => {
             let args = body.drop_left();
             let args_code = gen_args_code(&args, ns, local_defs, file_imports, tags)?;
@@ -448,11 +448,11 @@ fn gen_call_code(
           }
           None => Err(format!("`new` expected constructor, got nothing, {xs}")),
         },
-        "js-await" => match body.get(0) {
+        "js-await" => match body.get_inner(0) {
           Some(body) => Ok(format!("(await {})", to_js_code(body, ns, local_defs, file_imports, tags, None)?,)),
           None => Err(format!("`new` expected constructor, got nothing, {xs}")),
         },
-        "instance?" => match (body.get(0), body.get(1)) {
+        "instance?" => match (body.get_inner(0), body.get_inner(1)) {
           (Some(ctor), Some(v)) => Ok(format!(
             "{}({} instanceof {})",
             return_code,
@@ -461,7 +461,7 @@ fn gen_call_code(
           )),
           (_, _) => Err(format!("instance? expected 2 arguments, got: {}", Calcit::List(body))),
         },
-        "set!" => match (body.get(0), body.get(1)) {
+        "set!" => match (body.get_inner(0), body.get_inner(1)) {
           (Some(target), Some(v)) => Ok(format!(
             "{} = {}",
             to_js_code(target, ns, local_defs, file_imports, tags, None)?,
@@ -675,7 +675,7 @@ fn track_ns_import(sym: &str, import_rule: ImportedTarget, file_imports: &RefCel
 }
 
 fn gen_let_code(
-  body: &CalcitItems,
+  body: &CalcitList,
   local_defs: &HashSet<Arc<str>>,
   xs: &Calcit,
   ns: &str,
@@ -699,8 +699,20 @@ fn gen_let_code(
     let pair = let_def_body[0].to_owned();
     let content = let_def_body.drop_left();
 
-    match &pair {
-      Calcit::Nil | Calcit::List(TernaryTreeList::Empty) => {
+    match &*let_def_body[0] {
+      Calcit::Nil => {
+        for (idx, x) in content.into_iter().enumerate() {
+          if idx == content.len() - 1 {
+            body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, Some(return_label))?);
+            body_part.push('\n');
+          } else {
+            body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, None)?);
+            body_part.push_str(";\n");
+          }
+        }
+        break;
+      }
+      Calcit::List(xs) if xs.is_empty() => {
         // non content defs_code
 
         for (idx, x) in content.into_iter().enumerate() {
@@ -718,18 +730,18 @@ fn gen_let_code(
         let def_name = xs[0].to_owned();
         let def_code = xs[1].to_owned();
 
-        match def_name {
+        match &*def_name {
           Calcit::Symbol { sym, .. } => {
             // TODO `let` inside expressions makes syntax error
-            let left = escape_var(&sym);
+            let left = escape_var(sym);
             let right = to_js_code(&def_code, ns, &scoped_defs, file_imports, tags, None)?;
             writeln!(defs_code, "let {left} = {right};").expect("write");
 
-            if scoped_defs.contains(&sym) {
+            if scoped_defs.contains(sym) {
               for (idx, x) in content.into_iter().enumerate() {
                 if idx == content.len() - 1 {
                   // normally, last item of function body returns as return value(even in recursion)
-                  if local_defs.contains(&sym) {
+                  if local_defs.contains(sym) {
                     // however, to shallow a conflicted variable, we need to return explicitly
                     body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, Some("return "))?);
                   } else {
@@ -743,7 +755,7 @@ fn gen_let_code(
               }
 
               // first variable is using conflicted name
-              let ret = if local_defs.contains(&sym) {
+              let ret = if local_defs.contains(sym) {
                 make_let_with_bind(&left, &right, &body_part)
               } else {
                 make_let_with_wrapper(&left, &right, &body_part)
@@ -757,9 +769,9 @@ fn gen_let_code(
               scoped_defs.insert(sym.to_owned());
 
               if content.len() == 1 {
-                match &content[0] {
-                  Calcit::List(ys) if ys.len() > 2 => match (&ys[0], &ys[1]) {
-                    (Calcit::Syntax(sym, _ns), Calcit::List(zs)) if sym == &CalcitSyntax::CoreLet && zs.len() == 2 => match &zs[0] {
+                match &*content[0] {
+                  Calcit::List(ys) if ys.len() > 2 => match (&*ys[0], &*ys[1]) {
+                    (Calcit::Syntax(sym, _ns), Calcit::List(zs)) if sym == &CalcitSyntax::CoreLet && zs.len() == 2 => match &*zs[0] {
                       Calcit::Symbol { sym: s2, .. } if !scoped_defs.contains(s2) => {
                         let_def_body = ys.drop_left();
                         continue;
@@ -800,7 +812,7 @@ fn gen_let_code(
 }
 
 fn gen_if_code(
-  body: &CalcitItems,
+  body: &CalcitList,
   local_defs: &HashSet<Arc<str>>,
   _xs: &Calcit,
   ns: &str,
@@ -827,8 +839,8 @@ fn gen_if_code(
       write!(chunk, "\n{else_mark}if ({cond_code}) {{ {true_code} }}").expect("write");
 
       if let Some(false_node) = some_false_node {
-        if let Calcit::List(ys) = false_node {
-          if let Some(Calcit::Syntax(syn, _ns)) = ys.get(0) {
+        if let Calcit::List(ys) = &*false_node {
+          if let Some(Calcit::Syntax(syn, _ns)) = ys.get_inner(0) {
             if syn == &CalcitSyntax::If {
               if ys.len() < 3 || ys.len() > 4 {
                 return Err(format!("if expected 2~3 nodes, got: {}", Calcit::List(ys.to_owned())));
@@ -842,7 +854,7 @@ fn gen_if_code(
           }
         }
 
-        let false_code = to_js_code(false_node, ns, local_defs, file_imports, tags, Some(return_label))?;
+        let false_code = to_js_code(&false_node, ns, local_defs, file_imports, tags, Some(return_label))?;
         write!(chunk, " else {{ {false_code} }}").expect("write");
       } else {
         write!(chunk, " else {{ {return_label} null; }}").expect("write");
@@ -859,7 +871,7 @@ fn gen_if_code(
 }
 
 fn gen_args_code(
-  body: &CalcitItems,
+  body: &CalcitList,
   ns: &str,
   local_defs: &HashSet<Arc<str>>,
   file_imports: &RefCell<ImportsDict>,
@@ -869,7 +881,7 @@ fn gen_args_code(
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
   let mut spreading = false;
   for x in body {
-    match x {
+    match &**x {
       Calcit::Symbol { sym, .. } if &**sym == "&" => {
         spreading = true;
       }
@@ -928,7 +940,7 @@ fn uses_recur(xs: &Calcit) -> bool {
   match xs {
     Calcit::Symbol { sym: s, .. } => &**s == "recur",
     Calcit::Proc(s) => *s == CalcitProc::Recur,
-    Calcit::List(ys) => match &ys.get(0) {
+    Calcit::List(ys) => match &ys.get_inner(0) {
       Some(Calcit::Syntax(CalcitSyntax::Defn, _)) => false,
       Some(Calcit::Symbol { sym, .. }) if &**sym == "defn" => false,
       _ => {
@@ -1011,7 +1023,7 @@ fn gen_js_func(
 
   for line in raw_body {
     if let Calcit::List(xs) = line {
-      if let Some(Calcit::Syntax(sym, _ns)) = xs.get(0) {
+      if let Some(Calcit::Syntax(sym, _ns)) = xs.get_inner(0) {
         if sym == &CalcitSyntax::HintFn {
           if hinted_async(xs) {
             async_prefix = String::from("async ")
@@ -1072,9 +1084,9 @@ fn gen_js_func(
 }
 
 /// this is a very rough implementation for now
-fn hinted_async(xs: &TernaryTreeList<Calcit>) -> bool {
+fn hinted_async(xs: &CalcitList) -> bool {
   for x in xs {
-    match x {
+    match &**x {
       Calcit::Symbol { sym, .. } if &**sym == "async" => return true,
       _ => {}
     }
@@ -1248,7 +1260,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           writeln!(defs_code, "\nvar {} = $calcit_procs.{};", escape_var(&def), escape_var(&def)).expect("write");
         }
         Calcit::Fn { info, .. } => {
-          gen_stack::push_call_stack(&info.def_ns, &info.name, StackKind::Codegen, f.to_owned(), &TernaryTreeList::Empty);
+          gen_stack::push_call_stack(&info.def_ns, &info.name, StackKind::Codegen, f.to_owned(), CalcitList::default());
           let passed_defs = PassedDefs {
             ns: &ns,
             local_defs: &def_names,
@@ -1268,7 +1280,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         Calcit::Thunk(code, _) => {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
-          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, (**code).to_owned(), &TernaryTreeList::Empty);
+          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, (**code).to_owned(), CalcitList::default());
           writeln!(
             vals_code,
             "\nexport var {} = {};",

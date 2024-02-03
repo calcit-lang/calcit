@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use cirru_edn::EdnTag;
 use im_ternary_tree::TernaryTreeList;
 
-use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitScope};
+use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitList, CalcitScope};
 use crate::{call_stack::CallStackList, runner};
 
 pub(crate) type ValueAndListeners = (Calcit, HashMap<EdnTag, Calcit>);
@@ -51,8 +51,8 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
 }
 
 /// syntax to prevent expr re-evaluating
-pub fn defatom(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  match (expr.get(0), expr.get(1)) {
+pub fn defatom(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  match (expr.get_inner(0), expr.get_inner(1)) {
     (Some(Calcit::Symbol { sym, info, .. }), Some(code)) => {
       let mut path: String = (*info.ns).to_owned();
       path.push('/');
@@ -118,9 +118,9 @@ pub fn atom_deref(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 /// need to be syntax since triggering internal functions requires program data
-pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
-    return CalcitErr::err_nodes("reset! excepted 2 arguments, got:", expr);
+    return CalcitErr::err_nodes("reset! excepted 2 arguments, got:", &expr.into());
   }
   // println!("reset! {:?}", expr[0]);
   let target = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
@@ -131,7 +131,7 @@ pub fn reset_bang(expr: &CalcitItems, scope: &CalcitScope, file_ns: &str, call_s
       Ok(Calcit::Nil)
     }
     // if reset! called before deref, we need to trigger the thunk
-    (Calcit::Thunk(code, _thunk_data), _) => match &expr[0] {
+    (Calcit::Thunk(code, _thunk_data), _) => match &*expr[0] {
       Calcit::Symbol { sym, .. } => runner::evaluate_def_thunk(&code, file_ns, sym, call_stack),
       _ => CalcitErr::err_str(format!("reset! expected a symbol, got: {:?}", expr[0])),
     },

@@ -1,7 +1,8 @@
 use crate::data::cirru;
 use crate::data::edn;
+use crate::primes::Calcit;
+use crate::primes::CalcitList;
 use crate::primes::NodeLocation;
-use crate::primes::{Calcit, CalcitItems};
 use cirru_edn::Edn;
 use cirru_edn::EdnListView;
 use std::fmt;
@@ -14,7 +15,7 @@ pub struct CalcitStack {
   pub ns: Arc<str>,
   pub def: Arc<str>,
   pub code: Calcit, // built in functions may not contain code
-  pub args: CalcitItems,
+  pub args: CalcitList,
   pub kind: StackKind,
 }
 
@@ -60,15 +61,9 @@ pub fn extend_call_stack(
   def: Arc<str>,
   kind: StackKind,
   code: Calcit,
-  args: &CalcitItems,
+  args: CalcitList,
 ) -> CallStackList {
-  stack.push_front(CalcitStack {
-    ns,
-    def,
-    code,
-    args: args.to_owned(),
-    kind,
-  })
+  stack.push_front(CalcitStack { ns, def, code, args, kind })
 }
 
 // show simplified version of stack

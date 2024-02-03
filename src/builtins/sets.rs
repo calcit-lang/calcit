@@ -1,6 +1,4 @@
-use im_ternary_tree::TernaryTreeList;
-
-use crate::primes::{Calcit, CalcitErr, CalcitItems};
+use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitList};
 
 pub fn new_set(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   let mut ys = rpds::HashTrieSet::new_sync();
@@ -81,7 +79,7 @@ pub fn call_intersection(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn set_to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Set(xs)) => {
-      let mut ys: CalcitItems = TernaryTreeList::Empty;
+      let mut ys = CalcitList::default();
       for x in xs {
         ys = ys.push_right(x.to_owned());
       }

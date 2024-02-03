@@ -1,5 +1,6 @@
 mod eval_node;
 mod fns;
+mod list;
 mod proc_name;
 mod symbol;
 mod syntax_name;
@@ -19,6 +20,7 @@ use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
 pub use fns::{CalcitFn, CalcitMacro, CalcitScope};
+pub use list::CalcitList;
 pub use proc_name::CalcitProc;
 pub use symbol::CalcitSymbolInfo;
 pub use symbol::{ImportRule, SymbolResolved};
@@ -63,8 +65,8 @@ pub enum Calcit {
   /// cirru quoted data, for faster meta programming
   CirruQuote(Cirru),
   /// not for data, but for recursion
-  Recur(CalcitItems),
-  List(CalcitItems),
+  Recur(Arc<TernaryTreeList<Calcit>>),
+  List(CalcitList),
   Set(rpds::HashTrieSetSync<Calcit>),
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   /// with only static and limited keys, for performance and checking
@@ -148,7 +150,7 @@ impl fmt::Display for Calcit {
       }
       Calcit::Recur(xs) => {
         f.write_str("(&recur")?;
-        for x in xs {
+        for x in &**xs {
           f.write_str(&format!(" {x}"))?;
         }
         f.write_str(")")
@@ -251,7 +253,7 @@ fn buffer_bit_hex(n: u8) -> String {
 /// special types wraps vector of calcit data for displaying
 impl fmt::Display for CrListWrap {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&format_to_lisp(&Calcit::List(self.0.to_owned()))) // TODO performance
+    f.write_str(&format_to_lisp(&Calcit::List(self.0.to_owned().into()))) // TODO performance
   }
 }
 
@@ -334,7 +336,7 @@ impl Hash for Calcit {
       }
       Calcit::List(v) => {
         "list:".hash(_state);
-        v.hash(_state);
+        v.0.hash(_state);
       }
       Calcit::Set(v) => {
         "set:".hash(_state);
@@ -454,7 +456,7 @@ impl Ord for Calcit {
       (Calcit::Recur(_), _) => Less,
       (_, Calcit::Recur(_)) => Greater,
 
-      (Calcit::List(a), Calcit::List(b)) => a.cmp(b),
+      (Calcit::List(a), Calcit::List(b)) => a.0.cmp(&b.0),
       (Calcit::List(_), _) => Less,
       (_, Calcit::List(_)) => Greater,
 
@@ -536,7 +538,7 @@ impl PartialEq for Calcit {
       (Calcit::Tuple(a, extra_a, _c0), Calcit::Tuple(c, extra_c, _c1)) => a == c && extra_a == extra_c,
       (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,
       (Calcit::CirruQuote(b), Calcit::CirruQuote(d)) => b == d,
-      (Calcit::List(a), Calcit::List(b)) => a == b,
+      (Calcit::List(a), Calcit::List(b)) => a.0 == b.0,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,
       (Calcit::Record(name1, fields1, values1, _class1), Calcit::Record(name2, fields2, values2, _class2)) => {

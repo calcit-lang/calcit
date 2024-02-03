@@ -10,13 +10,14 @@ use crate::{
     edn::{self, edn_to_calcit},
   },
   primes,
-  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitSymbolInfo, CrListWrap, GENERATED_DEF, GEN_NS},
+  primes::{gen_core_id, Calcit, CalcitErr, CalcitItems, CalcitList, CalcitSymbolInfo, CrListWrap, GENERATED_DEF, GEN_NS},
   runner::{self},
   util::number::f64_to_usize,
 };
 
 use cirru_edn::EdnTag;
 use cirru_parser::{Cirru, CirruWriterOptions};
+use im_ternary_tree::TernaryTreeList;
 
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::AtomicUsize;
@@ -62,7 +63,7 @@ pub fn type_of(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn recur(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
-  Ok(Calcit::Recur(xs.to_owned()))
+  Ok(Calcit::Recur(Arc::new(xs.to_owned())))
 }
 
 pub fn format_to_lisp(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
@@ -307,7 +308,7 @@ pub fn new_class_tuple(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn invoke_method(name: &str, invoke_args: &CalcitItems, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if invoke_args.is_empty() {
     return Err(CalcitErr::use_msg_stack(
-      format!("expected operand for method invoking: {}", Calcit::List(invoke_args.to_owned())),
+      format!("expected operand for method invoking: {}", Calcit::List(invoke_args.into())),
       call_stack,
     ));
   }
@@ -453,7 +454,14 @@ pub fn tuple_params(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("tuple:params expected 1 argument, got:", xs);
   }
   match &xs[0] {
-    Calcit::Tuple(_tag, extra, _class) => Ok(Calcit::List(extra.into())),
+    Calcit::Tuple(_tag, extra, _class) => {
+      // Ok(Calcit::List(extra.iter().map(|x| Arc::new(x.to_owned())).collect_into(vec![])))
+      let mut ys = TernaryTreeList::Empty;
+      for x in extra {
+        ys = ys.push_right(Arc::new(x.to_owned()));
+      }
+      Ok(Calcit::List(CalcitList(ys)))
+    }
     x => CalcitErr::err_str(format!("&tuple:params expected a tuple, got: {x}")),
   }
 }
@@ -511,7 +519,7 @@ pub fn format_ternary_tree(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("&format-ternary-tree expected 1 argument, got:", xs);
   }
   match &xs[0] {
-    Calcit::List(ys) => Ok(Calcit::Str(ys.format_inline().into())),
+    Calcit::List(ys) => Ok(Calcit::Str(ys.0.format_inline().into())),
     a => CalcitErr::err_str(format!("&format-ternary-tree expected a list, got: {a}")),
   }
 }

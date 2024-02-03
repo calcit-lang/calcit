@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use crate::call_stack::CallStackList;
-use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitProc, CalcitScope, CalcitSyntax};
+use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitList, CalcitProc, CalcitScope, CalcitSyntax};
 
 pub(crate) use refs::ValueAndListeners;
 
@@ -244,7 +244,7 @@ pub fn register_import_proc(name: &str, f: FnType) {
 
 pub fn handle_syntax(
   name: &CalcitSyntax,
-  nodes: &CalcitItems,
+  nodes: &CalcitList,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use im_ternary_tree::TernaryTreeList;
 
 use crate::{
-  primes::{CalcitProc, CalcitSyntax},
+  primes::{CalcitList, CalcitProc, CalcitSyntax},
   Calcit,
 };
 
@@ -18,11 +18,11 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     Calcit::Number(n) => Ok(Calcit::Number(*n)),
     Calcit::Str(s) => Ok(Calcit::Str(s.to_owned())),
     Calcit::Tag(k) => Ok(Calcit::Tag(k.to_owned())),
-    Calcit::CirruQuote(_) => Ok(Calcit::List(TernaryTreeList::from(&[
+    Calcit::CirruQuote(_) => Ok(Calcit::List(CalcitList::from(&[
       Calcit::Syntax(CalcitSyntax::Quote, "quote".into()),
       x.to_owned(),
     ]))),
-    Calcit::Symbol { .. } => Ok(Calcit::List(TernaryTreeList::from(vec![
+    Calcit::Symbol { .. } => Ok(Calcit::List(CalcitList::from(vec![
       Calcit::Syntax(CalcitSyntax::Quote, "quote".into()),
       x.to_owned(),
     ]))),
@@ -33,21 +33,21 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       for x in extra {
         ys = ys.push_right(data_to_calcit(x, ns, at_def)?);
       }
-      Ok(Calcit::List(ys))
+      Ok(Calcit::List(ys.into()))
     }
     Calcit::List(xs) => {
       let mut ys = TernaryTreeList::from(&[Calcit::Proc(CalcitProc::List)]);
       for x in xs {
         ys = ys.push_right(data_to_calcit(x, ns, at_def)?);
       }
-      Ok(Calcit::List(ys))
+      Ok(Calcit::List(ys.into()))
     }
     Calcit::Set(xs) => {
       let mut ys = TernaryTreeList::from(&[Calcit::Proc(CalcitProc::Set)]);
       for x in xs {
         ys = ys.push_right(data_to_calcit(x, ns, at_def)?);
       }
-      Ok(Calcit::List(ys))
+      Ok(Calcit::List(ys.into()))
     }
     Calcit::Map(xs) => {
       let mut ys = TernaryTreeList::from(&[Calcit::Proc(CalcitProc::NativeMap)]);
@@ -55,7 +55,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         ys = ys.push_right(data_to_calcit(k, ns, at_def)?);
         ys = ys.push_right(data_to_calcit(v, ns, at_def)?);
       }
-      Ok(Calcit::List(ys))
+      Ok(Calcit::List(ys.into()))
     }
     Calcit::Record(tag, fields, values, _class) => {
       let mut ys = TernaryTreeList::from(&[Calcit::Symbol {
@@ -70,12 +70,12 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       ys = ys.push_right(Calcit::Tag(tag.to_owned()));
       let size = fields.len();
       for i in 0..size {
-        ys = ys.push(Calcit::List(TernaryTreeList::from(&[
+        ys = ys.push(Calcit::List(CalcitList::from(&[
           Calcit::Tag(fields[i].to_owned()),
           data_to_calcit(&values[i], ns, at_def)?,
         ])))
       }
-      Ok(Calcit::List(ys))
+      Ok(Calcit::List(ys.into()))
     }
     Calcit::Ref(_, _) => Err(format!("data_to_calcit not implemented for ref: {}", x)),
     Calcit::Thunk(code, _) => Ok((**code).to_owned()),

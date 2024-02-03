@@ -4,7 +4,7 @@ use cirru_edn::EdnTag;
 use im_ternary_tree::TernaryTreeList;
 
 use crate::builtins::records::find_in_fields;
-use crate::primes::{Calcit, CalcitErr, CalcitItems, CrListWrap};
+use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitList, CrListWrap};
 
 use crate::util::number::is_even;
 
@@ -108,7 +108,7 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for (k, v) in ys {
         zs.insert_mut(Calcit::List(
-          TernaryTreeList::Empty.push_right(k.to_owned()).push_right(v.to_owned()),
+          CalcitList::default().push_right(k.to_owned()).push_right(v.to_owned()),
         ));
       }
       Ok(Calcit::Set(zs))
@@ -117,7 +117,7 @@ pub fn to_pairs(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for idx in 0..fields.len() {
         zs.insert_mut(Calcit::List(
-          TernaryTreeList::Empty
+          CalcitList::default()
             .push_right(Calcit::Tag(fields[idx].to_owned()))
             .push_right(values[idx].to_owned()),
         ));
@@ -149,12 +149,12 @@ pub fn call_merge_non_nil(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 pub fn to_list(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(m)) => {
-      let mut ys: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
+      let mut ys: TernaryTreeList<Arc<Calcit>> = TernaryTreeList::Empty;
       for (k, v) in m {
-        let zs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[k.to_owned(), v.to_owned()]);
-        ys = ys.push_right(Calcit::List(zs));
+        let zs: TernaryTreeList<Arc<Calcit>> = TernaryTreeList::from(&[Arc::new(k.to_owned()), Arc::new(v.to_owned())]);
+        ys = ys.push_right(Arc::new(Calcit::List(CalcitList(zs))));
       }
-      Ok(Calcit::List(ys))
+      Ok(Calcit::List(CalcitList(ys)))
     }
     Some(a) => CalcitErr::err_str(format!("&map:to-list expected a map, got: {a}")),
     None => CalcitErr::err_str("&map:to-list expected a map, got nothing"),
@@ -207,7 +207,9 @@ pub fn destruct(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       Some(k0) => {
         let mut zs = ys.to_owned();
         zs.remove_mut(k0);
-        Ok(Calcit::List(vec![k0.to_owned(), ys[k0].to_owned(), Calcit::Map(zs)].into()))
+        Ok(Calcit::List(
+          vec![Arc::new(k0.to_owned()), Arc::new(ys[k0].to_owned()), Arc::new(Calcit::Map(zs))].into(),
+        ))
       }
       None => Ok(Calcit::Nil),
     },

@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use cirru_parser::Cirru;
-use im_ternary_tree::TernaryTreeList;
 
-use crate::primes::{Calcit, CalcitProc, MethodKind};
+use crate::primes::{Calcit, CalcitList, CalcitProc, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result<Calcit, String> {
@@ -50,7 +49,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           Ok(n) => Ok(Calcit::Number(n as f64)),
           Err(e) => Err(format!("failed to parse hex: {s} => {e:?}")),
         },
-        '\'' if s.len() > 1 => Ok(Calcit::List(TernaryTreeList::from(&[
+        '\'' if s.len() > 1 => Ok(Calcit::List(CalcitList::from(&[
           Calcit::Symbol {
             sym: Arc::from("quote"),
             info: symbol_info.clone(),
@@ -63,7 +62,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           },
         ]))),
         // TODO also detect simple variables
-        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(TernaryTreeList::from(&[
+        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(CalcitList::from(&[
           Calcit::Symbol {
             sym: Arc::from("~@"),
             info: symbol_info.clone(),
@@ -75,7 +74,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
             location: Some(coord.clone()),
           },
         ]))),
-        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(TernaryTreeList::from(&[
+        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(CalcitList::from(&[
           Calcit::Symbol {
             sym: Arc::from("~"),
             info: symbol_info.clone(),
@@ -87,7 +86,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
             location: Some(coord.clone()),
           },
         ]))),
-        '@' => Ok(Calcit::List(TernaryTreeList::from(&[
+        '@' => Ok(Calcit::List(CalcitList::from(&[
           Calcit::Symbol {
             sym: Arc::from("deref"),
             info: symbol_info.clone(),
@@ -140,7 +139,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
 
         zs.push(code_to_calcit(y, ns, def, next_coord)?)
       }
-      Ok(Calcit::List(TernaryTreeList::from(&zs)))
+      Ok(Calcit::List(CalcitList::from(&zs)))
     }
   }
 }
@@ -154,7 +153,7 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
       for y in ys {
         zs.push(cirru_to_calcit(y));
       }
-      Calcit::List(TernaryTreeList::from(&zs))
+      Calcit::List(CalcitList::from(&zs))
     }
   }
 }

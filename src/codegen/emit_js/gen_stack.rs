@@ -1,19 +1,19 @@
 use std::sync::Mutex;
 
 use crate::call_stack::{CalcitStack, CallStackList, StackKind};
-use crate::primes::{Calcit, CalcitItems};
+use crate::primes::{Calcit, CalcitList};
 
 lazy_static! {
   static ref CALL_STACK: Mutex<rpds::ListSync<CalcitStack>> = Mutex::new(rpds::List::new_sync());
 }
 
-pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: &CalcitItems) {
+pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: CalcitList) {
   let mut stack = CALL_STACK.lock().expect("open call stack");
   stack.push_front_mut(CalcitStack {
     ns: ns.into(),
     def: def.into(),
     code,
-    args: args.to_owned(),
+    args,
     kind,
   })
 }

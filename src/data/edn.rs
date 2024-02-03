@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use im_ternary_tree::TernaryTreeList;
 
-use crate::primes;
 use crate::primes::Calcit;
+use crate::primes::{self, CalcitList};
 use crate::{data::cirru, primes::MethodKind};
 
 use cirru_edn::{Edn, EdnListView, EdnMapView, EdnRecordView, EdnSetView, EdnTag};
@@ -131,11 +131,11 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
       )
     }
     Edn::List(xs) => {
-      let mut ys: primes::CalcitItems = TernaryTreeList::Empty;
+      let mut ys: TernaryTreeList<Arc<primes::Calcit>> = TernaryTreeList::Empty;
       for x in xs {
-        ys = ys.push_right(edn_to_calcit(x, options))
+        ys = ys.push_right(Arc::new(edn_to_calcit(x, options)))
       }
-      Calcit::List(ys)
+      Calcit::List(CalcitList(ys))
     }
     Edn::Set(xs) => {
       let mut ys: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();

@@ -1,9 +1,10 @@
 use std::char;
 use std::cmp::Ordering;
+use std::sync::Arc;
 
 use im_ternary_tree::TernaryTreeList;
 
-use crate::primes;
+use crate::primes::{self, CalcitList};
 use crate::primes::{Calcit, CalcitErr, CalcitItems};
 use crate::util::number::f64_to_usize;
 
@@ -62,13 +63,13 @@ pub fn split(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => {
       let pieces = (**s).split(&**pattern);
-      let mut ys: CalcitItems = TernaryTreeList::Empty;
+      let mut ys: TernaryTreeList<Arc<Calcit>> = TernaryTreeList::Empty;
       for p in pieces {
         if !p.is_empty() {
-          ys = ys.push_right(Calcit::Str(p.into()));
+          ys = ys.push_right(Arc::new(Calcit::Str(p.into())));
         }
       }
-      Ok(Calcit::List(ys))
+      Ok(Calcit::List(CalcitList(ys)))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("split expected 2 strings, got: {a} {b}")),
     (_, _) => CalcitErr::err_str("split expected 2 arguments, got nothing"),
@@ -120,9 +121,9 @@ pub fn split_lines(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
       let lines = s.split('\n');
       let mut ys = TernaryTreeList::Empty;
       for line in lines {
-        ys = ys.push_right(Calcit::Str(line.to_owned().into()));
+        ys = ys.push_right(Arc::new(Calcit::Str(line.to_owned().into())));
       }
-      Ok(Calcit::List(ys))
+      Ok(Calcit::List(CalcitList(ys)))
     }
     Some(a) => CalcitErr::err_str(format!("split-lines expected 1 string, got: {a}")),
     _ => CalcitErr::err_str("split-lines expected 1 argument, got nothing"),

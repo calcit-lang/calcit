@@ -7,8 +7,8 @@ use std::sync::Arc;
 use crate::builtins::{self, is_registered_proc, IMPORTED_PROCS};
 use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
 use crate::primes::{
-  Calcit, CalcitErr, CalcitFn, CalcitItems, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CrListWrap, MethodKind,
-  NodeLocation, SymbolResolved::*, CORE_NS,
+  Calcit, CalcitErr, CalcitFn, CalcitItems, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CrListWrap,
+  MethodKind, NodeLocation, SymbolResolved::*, CORE_NS,
 };
 use crate::program;
 use crate::util::string::has_ns_part;
@@ -61,7 +61,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         // println!("eval expr: {}", expr.lisp_str());
         // println!("eval expr: {}", x);
 
-        let v = evaluate_expr(x, scope, file_ns, call_stack)?;
+        let v = evaluate_expr(&x, scope, file_ns, call_stack)?;
         let rest_nodes = xs.drop_left();
         let ret = match &v {
           Calcit::Proc(p) => {
@@ -75,7 +75,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               Arc::from(s.as_ref()),
               StackKind::Syntax,
               expr.to_owned(),
-              &rest_nodes,
+              rest_nodes.to_owned(),
             );
 
             builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
@@ -96,7 +96,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               name.to_owned(),
               StackKind::Method,
               Calcit::Nil,
-              &values,
+              values.to_owned().into(),
             );
 
             if *kind == MethodKind::Invoke {
@@ -113,7 +113,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               info.name.to_owned(),
               StackKind::Fn,
               expr.to_owned(),
-              &values,
+              values.to_owned().into(),
             );
 
             run_fn(values, info, &next_stack)
@@ -135,18 +135,18 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               info.name.to_owned(),
               StackKind::Macro,
               expr.to_owned(),
-              &rest_nodes,
+              rest_nodes,
             );
 
             let mut body_scope = CalcitScope::default();
 
             Ok(loop {
               // need to handle recursion
-              bind_args(&mut body_scope, &info.args, &current_values, call_stack)?;
+              bind_args(&mut body_scope, &info.args, &(*current_values).into(), call_stack)?;
               let code = evaluate_lines(&info.body, &body_scope, &info.def_ns, &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
-                  current_values = Box::new(ys.to_owned());
+                  current_values = Box::new((*ys).to_owned().into());
                 }
                 _ => {
                   // println!("gen code: {} {}", x, &code.lisp_str()));
@@ -169,7 +169,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               }
             } else {
               Err(CalcitErr::use_msg_stack(
-                format!("tag only takes 1 argument, got: {}", CrListWrap(rest_nodes)),
+                format!("tag only takes 1 argument, got: {}", CrListWrap(rest_nodes.into())),
                 call_stack,
               ))
             }
@@ -198,7 +198,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
             }
           }
           a => Err(CalcitErr::use_msg_stack_location(
-            format!("cannot be used as operator: {a} in {}", CrListWrap(xs.to_owned())),
+            format!("cannot be used as operator: {a} in {}", xs),
             call_stack,
             a.get_location(),
           )),
@@ -445,7 +445,7 @@ pub fn bind_args(
           while let Some(v) = values.get(pop_values_idx.get_and_inc()) {
             chunk = chunk.push_right(v.to_owned());
           }
-          scope.insert_mut(sym.to_owned(), Calcit::List(chunk));
+          scope.insert_mut(sym.to_owned(), Calcit::List(chunk.into()));
           if pop_args_idx.0 < args.len() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{args:?}` after spreading in `{args:?}`",),
@@ -511,7 +511,7 @@ pub fn evaluate_lines(
 /// evaluate symbols before calling a function
 /// notice that `&` is used to spread a list
 pub fn evaluate_args(
-  items: &CalcitItems,
+  items: &CalcitList,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
@@ -519,7 +519,7 @@ pub fn evaluate_args(
   let mut ret: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
   let mut spreading = false;
   for item in items {
-    match item {
+    match &**item {
       Calcit::Symbol { sym: s, .. } if &**s == "&" => {
         spreading = true;
       }
@@ -531,12 +531,12 @@ pub fn evaluate_args(
             Calcit::List(xs) => {
               for x in &xs {
                 // extract thunk before calling functions
-                let y = match x {
+                let y = match &**x {
                   Calcit::Thunk(code, v) => match v {
                     None => evaluate_expr(code, scope, file_ns, call_stack)?,
                     Some(data) => (**data).to_owned(),
                   },
-                  _ => x.to_owned(),
+                  _ => (**x).to_owned(),
                 };
                 ret = ret.push(y.to_owned());
               }
