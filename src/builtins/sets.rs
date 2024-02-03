@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::calcit::{Calcit, CalcitCompactList, CalcitErr, CalcitList};
 
 pub fn new_set(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
@@ -79,9 +81,9 @@ pub fn call_intersection(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 pub fn set_to_list(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Set(xs)) => {
-      let mut ys = CalcitList::new_compact();
+      let mut ys = CalcitList::new_inner();
       for x in xs {
-        ys = ys.push_right(x.to_owned());
+        ys = ys.push_right(Arc::new(x.to_owned()));
       }
       Ok(Calcit::List(ys.into()))
     }

@@ -73,7 +73,7 @@ pub fn preprocess_ns_def(
             Arc::from(def),
             StackKind::Fn,
             code.to_owned(),
-            CalcitList::default(),
+            CalcitList::new_compact(),
           );
 
           let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
@@ -374,7 +374,7 @@ fn process_list_call(
         info.name.to_owned(),
         StackKind::Macro,
         code,
-        args.into(),
+        args,
       );
 
       let mut body_scope = CalcitScope::default();
@@ -433,22 +433,20 @@ fn process_list_call(
 
     (_, Some(Calcit::Fn { info, .. })) => {
       check_fn_args(&info.args, &args, file_ns, &info.name, &def_name, check_warnings);
-      let mut ys = Vec::with_capacity(args.len() + 1);
-      ys.push(head_form);
+      let mut ys = CalcitList::new_inner_from(&[Arc::new(head_form)]);
       for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
-        ys.push(form);
+        ys = ys.push(Arc::new(form));
       }
-      Ok((Calcit::List(CalcitList::from(&ys)), None))
+      Ok((Calcit::List(CalcitList(ys)), None))
     }
     (Calcit::Method(_, _), _) => {
-      let mut ys = Vec::with_capacity(args.len());
-      ys.push(head.to_owned());
+      let mut ys = CalcitList::new_inner_from(&[Arc::new(head.to_owned())]);
       for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
-        ys.push(form);
+        ys = ys.push(Arc::new(form));
       }
-      Ok((Calcit::List(CalcitList::from(&ys)), None))
+      Ok((Calcit::List(CalcitList(ys)), None))
     }
     (h, he) => {
       if let Calcit::Symbol { sym, info, .. } = h {
@@ -456,13 +454,13 @@ fn process_list_call(
           println!("warning: unresolved symbol `{}` in `{}`", sym, CalcitList::from(xs));
         }
       }
-      let mut ys = Vec::with_capacity(args.len() + 1);
-      ys.push(head_form);
+      let mut ys = CalcitList::new_inner_from(&[Arc::new(head_form)]);
+
       for a in &args {
         let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
-        ys.push(form);
+        ys = ys.push(Arc::new(form));
       }
-      Ok((Calcit::List(CalcitList::from(&ys)), None))
+      Ok((Calcit::List(CalcitList(ys)), None))
     }
   }
 }

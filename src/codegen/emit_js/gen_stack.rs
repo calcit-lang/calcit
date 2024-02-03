@@ -1,13 +1,14 @@
 use std::sync::Mutex;
 
-use crate::calcit::{Calcit, CalcitList};
+use crate::calcit::Calcit;
 use crate::call_stack::{CalcitStack, CallStackList, StackKind};
+use crate::CalcitCompactList;
 
 lazy_static! {
   static ref CALL_STACK: Mutex<rpds::ListSync<CalcitStack>> = Mutex::new(rpds::List::new_sync());
 }
 
-pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: CalcitList) {
+pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: CalcitCompactList) {
   let mut stack = CALL_STACK.lock().expect("open call stack");
   stack.push_front_mut(CalcitStack {
     ns: ns.into(),
@@ -25,7 +26,7 @@ pub fn pop_call_stack() {
     match xs {
       Some(v) => *stack = v,
       None => {
-        println!("empty stack")
+        eprintln!("empty stack, nothing to pop")
       }
     }
   }

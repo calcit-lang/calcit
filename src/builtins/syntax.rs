@@ -8,12 +8,12 @@ use std::sync::Arc;
 
 use im_ternary_tree::TernaryTreeList;
 
-use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::calcit::{self, CalcitFn, CalcitList, CalcitMacro, CalcitSymbolInfo, LocatedWarning};
 use crate::calcit::{gen_core_id, Calcit, CalcitErr, CalcitScope};
 use crate::call_stack::CallStackList;
 use crate::runner;
+use crate::{builtins, CalcitCompactList};
 
 pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
   match (expr.get_inner(0), expr.get_inner(1)) {
@@ -158,13 +158,13 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &Cal
         }
       }
       (_, _) => {
-        let mut ret: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
+        let mut ret = CalcitList::new_inner();
         for y in ys {
           match replace_code(y, scope, file_ns, call_stack)? {
-            SpanResult::Single(z) => ret = ret.push_right(z),
+            SpanResult::Single(z) => ret = ret.push_right(Arc::new(z)),
             SpanResult::Range(pieces) => {
               for piece in &pieces {
-                ret = ret.push_right((**piece).to_owned());
+                ret = ret.push_right(piece.to_owned());
               }
             }
           }
@@ -204,16 +204,16 @@ pub fn macroexpand(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
         match v {
           Calcit::Macro { info, .. } => {
             // mutable operation
-            let mut rest_nodes = xs.drop_left();
+            let mut rest_nodes: CalcitCompactList = xs.drop_left().into();
             let mut body_scope = scope.to_owned();
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              runner::bind_args(&mut body_scope, &info.args, &rest_nodes.into(), call_stack)?;
+              runner::bind_args(&mut body_scope, &info.args, &rest_nodes, call_stack)?;
               let v = runner::evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
-                  rest_nodes = (*rest_code).to_owned().into();
+                  rest_nodes = (*rest_code).to_owned();
                 }
                 _ => return Ok(v),
               }
@@ -268,17 +268,17 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
         match v {
           Calcit::Macro { info, .. } => {
             // mutable operation
-            let mut rest_nodes = xs.drop_left();
+            let mut rest_nodes: CalcitCompactList = xs.drop_left().into();
             let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
             let mut body_scope = scope.to_owned();
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              runner::bind_args(&mut body_scope, &info.args, &rest_nodes.into(), call_stack)?;
+              runner::bind_args(&mut body_scope, &info.args, &rest_nodes, call_stack)?;
               let v = runner::evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
-                  rest_nodes = (*rest_code).to_owned().into();
+                  rest_nodes = (*rest_code).to_owned();
                 }
                 _ => {
                   let (resolved, _v) = runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, check_warnings, call_stack)?;

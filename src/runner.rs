@@ -75,7 +75,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               Arc::from(s.as_ref()),
               StackKind::Syntax,
               expr.to_owned(),
-              rest_nodes.to_owned(),
+              rest_nodes.to_owned().into(),
             );
 
             builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
@@ -96,7 +96,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               name.to_owned(),
               StackKind::Method,
               Calcit::Nil,
-              values.to_owned().into(),
+              values.to_owned(),
             );
 
             if *kind == MethodKind::Invoke {
@@ -113,7 +113,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               info.name.to_owned(),
               StackKind::Fn,
               expr.to_owned(),
-              values.to_owned().into(),
+              values.to_owned(),
             );
 
             run_fn(values, info, &next_stack)
@@ -125,7 +125,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
             );
 
             // TODO moving to preprocess
-            let mut current_values = Box::new(rest_nodes.to_owned());
+            let mut current_values: CalcitCompactList = rest_nodes.clone().into();
             // println!("eval macro: {} {}", x, expr.lisp_str()));
             // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
@@ -135,18 +135,18 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               info.name.to_owned(),
               StackKind::Macro,
               expr.to_owned(),
-              rest_nodes,
+              rest_nodes.clone().into(),
             );
 
             let mut body_scope = CalcitScope::default();
 
             Ok(loop {
               // need to handle recursion
-              bind_args(&mut body_scope, &info.args, &(*current_values).into(), call_stack)?;
+              bind_args(&mut body_scope, &info.args, &current_values, call_stack)?;
               let code = evaluate_lines(&info.body, &body_scope, &info.def_ns, &next_stack)?;
               match code {
                 Calcit::Recur(ys) => {
-                  current_values = Box::new((*ys).to_owned().into());
+                  current_values = (*ys).to_owned();
                 }
                 _ => {
                   // println!("gen code: {} {}", x, &code.lisp_str()));
@@ -429,6 +429,8 @@ pub fn bind_args(
   values: &CalcitCompactList,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
+  // println!("bind args: {:?} {:?} {:?}", args, values, call_stack.last());
+
   let mut spreading = false;
   let mut optional = false;
 
@@ -441,9 +443,9 @@ pub fn bind_args(
         "&" => return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {args:?}"), call_stack)),
         "?" => return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {args:?}"), call_stack)),
         _ => {
-          let mut chunk: CalcitCompactList = TernaryTreeList::Empty;
+          let mut chunk = CalcitList::new_inner();
           while let Some(v) = values.get(pop_values_idx.get_and_inc()) {
-            chunk = chunk.push_right(v.to_owned());
+            chunk = chunk.push_right(Arc::new(v.to_owned()));
           }
           scope.insert_mut(sym.to_owned(), Calcit::List(chunk.into()));
           if pop_args_idx.0 < args.len() {
@@ -467,7 +469,7 @@ pub fn bind_args(
               scope.insert_mut(sym.to_owned(), Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
-                format!("too few values `{}` passed to args `{args:?}`", CalcitList::from(values.to_owned())),
+                format!("too few values `{:?}` passed to args `{args:?}`", values),
                 call_stack,
               ));
             }

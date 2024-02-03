@@ -115,7 +115,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
       },
     },
     Cirru::List(ys) => {
-      let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
+      let mut zs = CalcitList::new_inner();
       for (idx, y) in ys.iter().enumerate() {
         let mut next_coord: Vec<u8> = (*coord).to_owned();
         next_coord.push(idx as u8); // code not supposed to be fatter than 256 children
@@ -128,7 +128,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
             if ys[0] == Cirru::leaf("cirru-quote") {
               // special rule for Cirru code
               if ys.len() == 2 {
-                zs.push(Calcit::CirruQuote(ys[1].clone()));
+                zs = zs.push(Arc::new(Calcit::CirruQuote(ys[1].clone())));
               } else {
                 return Err(format!("expected 1 argument, got: {ys:?}"));
               }
@@ -137,9 +137,9 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           }
         }
 
-        zs.push(code_to_calcit(y, ns, def, next_coord)?)
+        zs = zs.push(Arc::new(code_to_calcit(y, ns, def, next_coord)?));
       }
-      Ok(Calcit::List(CalcitList::from(&zs)))
+      Ok(Calcit::List(CalcitList(zs)))
     }
   }
 }
@@ -149,11 +149,11 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
   match xs {
     Cirru::Leaf(s) => Calcit::Str((**s).into()),
     Cirru::List(ys) => {
-      let mut zs: Vec<Calcit> = Vec::with_capacity(ys.len());
+      let mut zs = CalcitList::new_inner();
       for y in ys {
-        zs.push(cirru_to_calcit(y));
+        zs = zs.push(Arc::new(cirru_to_calcit(y)));
       }
-      Calcit::List(CalcitList::from(&zs))
+      Calcit::List(CalcitList(zs))
     }
   }
 }

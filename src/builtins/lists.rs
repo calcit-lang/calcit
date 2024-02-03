@@ -151,16 +151,16 @@ pub fn range(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_str("range cannot construct list with step 0");
   }
 
-  let mut ys = CalcitList::new_compact();
+  let mut ys = CalcitList::new_inner();
   let mut i = base;
   if step > 0.0 {
     while i < bound {
-      ys = ys.push_right(Calcit::Number(i));
+      ys = ys.push_right(Arc::new(Calcit::Number(i)));
       i += step;
     }
   } else {
     while i > bound {
-      ys = ys.push_right(Calcit::Number(i));
+      ys = ys.push_right(Arc::new(Calcit::Number(i)));
       i += step;
     }
   }
@@ -478,10 +478,10 @@ pub fn sort(xs: &CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit
             }
           }
         });
-        let mut ys: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
+        let mut ys = CalcitList::new_inner();
         for x in xs2.iter() {
           // TODO ??
-          ys = ys.push_right((**x).to_owned())
+          ys = ys.push_right(x.to_owned())
         }
         Ok(Calcit::List(ys.into()))
       }
@@ -507,10 +507,10 @@ pub fn sort(xs: &CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit
             }
           }
         });
-        let mut ys: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
+        let mut ys = CalcitList::new_inner();
         for x in xs2.iter() {
           // TODO ??
-          ys = ys.push_right((**x).to_owned())
+          ys = ys.push_right(x.to_owned())
         }
         Ok(Calcit::List(ys.into()))
       }
