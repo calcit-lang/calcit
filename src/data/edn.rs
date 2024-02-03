@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
-use im_ternary_tree::TernaryTreeList;
-
-use crate::primes::Calcit;
-use crate::primes::{self, CalcitList};
-use crate::{data::cirru, primes::MethodKind};
+use crate::calcit::Calcit;
+use crate::calcit::{self, CalcitList};
+use crate::{calcit::MethodKind, data::cirru};
 
 use cirru_edn::{Edn, EdnListView, EdnMapView, EdnRecordView, EdnSetView, EdnTag};
 
@@ -107,9 +105,9 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     Edn::Number(n) => Calcit::Number(*n),
     Edn::Symbol(s) => Calcit::Symbol {
       sym: (**s).into(),
-      info: Arc::new(crate::primes::CalcitSymbolInfo {
-        ns: primes::GEN_NS.into(),
-        at_def: primes::GENERATED_DEF.into(),
+      info: Arc::new(crate::calcit::CalcitSymbolInfo {
+        ns: calcit::GEN_NS.into(),
+        at_def: calcit::GENERATED_DEF.into(),
         resolved: None,
       }),
       location: None,
@@ -131,7 +129,7 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
       )
     }
     Edn::List(xs) => {
-      let mut ys: TernaryTreeList<Arc<primes::Calcit>> = TernaryTreeList::Empty;
+      let mut ys = CalcitList::new_inner();
       for x in xs {
         ys = ys.push_right(Arc::new(edn_to_calcit(x, options)))
       }

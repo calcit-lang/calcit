@@ -17,9 +17,9 @@ use cirru_edn::EdnTag;
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::syntax::get_raw_args;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
+use crate::calcit::{self, CalcitList, CalcitProc, MethodKind};
+use crate::calcit::{Calcit, CalcitCompactList, CalcitSyntax, ImportRule, SymbolResolved::*};
 use crate::call_stack::StackKind;
-use crate::primes::{self, CalcitList, CalcitProc, MethodKind};
-use crate::primes::{Calcit, CalcitItems, CalcitSyntax, ImportRule, SymbolResolved::*};
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
 
@@ -265,7 +265,7 @@ fn gen_call_code(
   return_label: Option<&str>,
 ) -> Result<String, String> {
   let return_code = return_label.unwrap_or("");
-  let var_prefix = if ns == primes::CORE_NS { "" } else { "$calcit." };
+  let var_prefix = if ns == calcit::CORE_NS { "" } else { "$calcit." };
   let proc_prefix = get_proc_prefix(ns);
   if ys.is_empty() {
     println!("[Warn] Unexpected empty list inside {xs}");
@@ -578,12 +578,12 @@ fn gen_symbol_code(
   s: &str,
   def_ns: &str,
   at_def: &str,
-  resolved: Option<primes::SymbolResolved>,
+  resolved: Option<calcit::SymbolResolved>,
   xs: &Calcit,
   passed_defs: &PassedDefs,
 ) -> Result<String, String> {
   // println!("gen symbol: {} {} {} {:?}", s, def_ns, ns, resolved);
-  let var_prefix = if passed_defs.ns == primes::CORE_NS { "" } else { "$calcit." };
+  let var_prefix = if passed_defs.ns == calcit::CORE_NS { "" } else { "$calcit." };
   if has_ns_part(s) {
     let pieces = s.split('/').collect::<Vec<&str>>();
     let ns_part = pieces[0];
@@ -623,7 +623,7 @@ fn gen_symbol_code(
     rule: import_rule,
   }) = resolved.to_owned()
   {
-    if &*r_ns == primes::CORE_NS {
+    if &*r_ns == calcit::CORE_NS {
       // functions under core uses built $calcit module entry
       return Ok(format!("{var_prefix}{}", escape_var(s)));
     }
@@ -634,7 +634,7 @@ fn gen_symbol_code(
       track_ns_import(s, ImportedTarget::ReferNs(r_ns), passed_defs.file_imports)?;
     }
     Ok(escape_var(s))
-  } else if def_ns == primes::CORE_NS {
+  } else if def_ns == calcit::CORE_NS {
     // local variales inside calcit.core also uses this ns
     println!("[Warn] detected variable inside core not resolved");
     Ok(format!("{var_prefix}{}", escape_var(s)))
@@ -908,7 +908,7 @@ fn gen_args_code(
 }
 
 fn list_to_js_code(
-  xs: &CalcitItems,
+  xs: &CalcitCompactList,
   ns: &str,
   local_defs: HashSet<Arc<str>>,
   return_label: &str,
@@ -959,7 +959,7 @@ fn uses_recur(xs: &Calcit) -> bool {
 fn gen_js_func(
   name: &str,
   args: &[Arc<str>],
-  raw_body: &CalcitItems,
+  raw_body: &CalcitCompactList,
   passed_defs: &PassedDefs,
   exported: bool,
   tags: &RefCell<HashSet<EdnTag>>,
@@ -1018,7 +1018,7 @@ fn gen_js_func(
     snippets::tmpl_args_exact(name, args_count, at_ns)
   };
 
-  let mut body: CalcitItems = TernaryTreeList::Empty;
+  let mut body: CalcitCompactList = TernaryTreeList::Empty;
   let mut async_prefix: String = String::from("");
 
   for line in raw_body {
@@ -1241,7 +1241,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     // println!("deps order: {:?}", deps_in_order);
 
     for def in deps_in_order {
-      if &*ns == primes::CORE_NS {
+      if &*ns == calcit::CORE_NS {
         // some defs from core can be replaced by calcit.procs
         if is_js_unavailable_procs(&def) {
           continue;
@@ -1303,7 +1303,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         }
       }
     }
-    if &*ns == primes::CORE_NS {
+    if &*ns == calcit::CORE_NS {
       // add at end of file to register builtin classes
       direct_code.push_str(&snippets::tmpl_classes_registering())
     }
@@ -1395,7 +1395,7 @@ fn is_cirru_string(s: &str) -> bool {
 
 #[inline(always)]
 fn get_proc_prefix(ns: &str) -> &str {
-  if ns == primes::CORE_NS {
+  if ns == calcit::CORE_NS {
     "$calcit_procs."
   } else {
     "$calcit."

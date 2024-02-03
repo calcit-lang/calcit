@@ -10,9 +10,9 @@ use im_ternary_tree::TernaryTreeList;
 
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
+use crate::calcit::{self, CalcitFn, CalcitList, CalcitMacro, CalcitSymbolInfo, LocatedWarning};
+use crate::calcit::{gen_core_id, Calcit, CalcitErr, CalcitScope};
 use crate::call_stack::CallStackList;
-use crate::primes::{self, CalcitFn, CalcitList, CalcitMacro, CalcitSymbolInfo, LocatedWarning};
-use crate::primes::{gen_core_id, Calcit, CalcitErr, CalcitScope};
 use crate::runner;
 
 pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
@@ -372,7 +372,7 @@ pub fn gensym(xs: &CalcitList, _scope: &CalcitScope, file_ns: &str, _call_stack:
     sym: s.into(),
     info: Arc::new(CalcitSymbolInfo {
       ns: Arc::from(file_ns),
-      at_def: primes::GENERATED_DEF.into(),
+      at_def: calcit::GENERATED_DEF.into(),
       resolved: None,
     }),
     location: None,

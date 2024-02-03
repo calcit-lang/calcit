@@ -9,7 +9,7 @@ use std::time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 mod injection;
 
-use calcit::primes::LocatedWarning;
+use calcit::calcit::LocatedWarning;
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use dirs::home_dir;
@@ -141,9 +141,9 @@ fn main() -> Result<(), String> {
 
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
-    calcit::primes::CORE_NS,
-    calcit::primes::BUILTIN_CLASSES_ENTRY,
-    calcit::primes::BUILTIN_CLASSES_ENTRY,
+    calcit::calcit::CORE_NS,
+    calcit::calcit::BUILTIN_CLASSES_ENTRY,
+    calcit::calcit::BUILTIN_CLASSES_ENTRY,
     None,
     check_warnings,
     &rpds::List::new_sync(),

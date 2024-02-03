@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use crate::primes::{Calcit, CalcitErr, CalcitItems};
+use crate::calcit::{Calcit, CalcitCompactList, CalcitErr};
 
-pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn new_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
     return CalcitErr::err_nodes("new-record expected arguments, got:", xs);
   }
@@ -50,7 +50,7 @@ pub fn new_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Record(name_id, Arc::new(fields), Arc::new(values), Arc::new(Calcit::Nil)))
 }
 
-pub fn new_class_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn new_class_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
     return CalcitErr::err_nodes("new-record expected arguments, got:", xs);
   }
@@ -98,7 +98,7 @@ pub fn new_class_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Record(name_id, Arc::new(fields), Arc::new(values), Arc::new(class)))
 }
 
-pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn call_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {
     return CalcitErr::err_nodes("&%{{}} expected at least 2 arguments, got:", xs);
@@ -146,7 +146,7 @@ pub fn call_record(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn get_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn get_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size != 1 {
     return CalcitErr::err_nodes("&record:class expected 1 argument, got:", xs);
@@ -157,7 +157,7 @@ pub fn get_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn with_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn with_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {
     return CalcitErr::err_nodes("&record:with-class expected at least 2 arguments, got:", xs);
@@ -174,7 +174,7 @@ pub fn with_class(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn record_from_map(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes("&record:from-map expected 2 arguments, got:", xs);
   }
@@ -216,7 +216,7 @@ pub fn record_from_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn get_record_name(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn get_record_name(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("&record:get-name expected record, got::", xs);
   }
@@ -225,7 +225,7 @@ pub fn get_record_name(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     a => CalcitErr::err_str(format!("&record:get-name expected record, got: {a}")),
   }
 }
-pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn turn_map(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("&record:to-map expected 1 argument, got::", xs);
   }
@@ -240,7 +240,7 @@ pub fn turn_map(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
     a => CalcitErr::err_str(format!("&record:to-map expected a record, got: {a}")),
   }
 }
-pub fn matches(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn matches(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes("&record:matches? expected 2 arguments, got:", xs);
   }
@@ -277,7 +277,7 @@ pub fn find_in_fields(xs: &[EdnTag], y: &EdnTag) -> Option<usize> {
   }
 }
 
-pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn count(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("record count expected 1 argument::", xs);
   }
@@ -287,7 +287,7 @@ pub fn count(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn contains_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, _, _)), Some(a)) => match a {
       Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => Ok(Calcit::Bool(find_in_fields(fields, &EdnTag::new(k)).is_some())),
@@ -299,7 +299,7 @@ pub fn contains_ques(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn get(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(_name, fields, values, _class)), Some(a)) => match a {
       Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => match find_in_fields(fields, &EdnTag::new(k)) {
@@ -317,7 +317,7 @@ pub fn get(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn assoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Record(name, fields, values, class)), Some(a), Some(b)) => match a {
       Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnTag::new(s)) {
@@ -353,7 +353,7 @@ pub fn assoc(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn extend_as(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn extend_as(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   if xs.len() != 4 {
     return CalcitErr::err_nodes("record:extend-as expected 4 arguments, got::", xs);
   }

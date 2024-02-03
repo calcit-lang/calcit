@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
+use crate::calcit::{Calcit, CalcitList};
 use crate::call_stack::{CalcitStack, CallStackList, StackKind};
-use crate::primes::{Calcit, CalcitList};
 
 lazy_static! {
   static ref CALL_STACK: Mutex<rpds::ListSync<CalcitStack>> = Mutex::new(rpds::List::new_sync());

@@ -20,7 +20,7 @@ use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
 pub use fns::{CalcitFn, CalcitMacro, CalcitScope};
-pub use list::CalcitList;
+pub use list::{CalcitCompactList, CalcitList};
 pub use proc_name::CalcitProc;
 pub use symbol::CalcitSymbolInfo;
 pub use symbol::{ImportRule, SymbolResolved};
@@ -31,12 +31,6 @@ use crate::call_stack::CallStackList;
 
 /// dead simple counter for ID generator, better use nanoid in business
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
-
-pub type CalcitItems = TernaryTreeList<Calcit>;
-
-/// special types wraps vector of calcit data for displaying
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq)]
-pub struct CrListWrap(pub TernaryTreeList<Calcit>);
 
 /// dynamic data defined in Calcit
 #[derive(Debug, Clone)]
@@ -248,13 +242,6 @@ fn is_simple_str(tok: &str) -> bool {
 /// encode as hex string like `ff`
 fn buffer_bit_hex(n: u8) -> String {
   hex::encode(vec![n])
-}
-
-/// special types wraps vector of calcit data for displaying
-impl fmt::Display for CrListWrap {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&format_to_lisp(&Calcit::List(self.0.to_owned().into()))) // TODO performance
-  }
 }
 
 /// display data into Lisp style for readability
@@ -665,9 +652,9 @@ impl CalcitErr {
     })
   }
   /// display nodes in error message
-  pub fn err_nodes<T: Into<String>>(msg: T, nodes: &CalcitItems) -> Result<Calcit, Self> {
+  pub fn err_nodes<T: Into<String>>(msg: T, nodes: &CalcitCompactList) -> Result<Calcit, Self> {
     Err(CalcitErr {
-      msg: format!("{} {}", msg.into(), CrListWrap(nodes.to_owned())),
+      msg: format!("{} {}", msg.into(), CalcitList::from(nodes)),
       warnings: vec![],
       stack: rpds::List::new_sync(),
       location: None,

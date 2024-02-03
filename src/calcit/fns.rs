@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use rpds::HashTrieMapSync;
 
-use crate::{Calcit, CalcitItems};
+use crate::{Calcit, CalcitCompactList};
 
 #[derive(Debug, Clone)]
 pub struct CalcitFn {
@@ -11,7 +11,7 @@ pub struct CalcitFn {
   pub def_ns: Arc<str>,
   pub scope: Arc<CalcitScope>,
   pub args: Arc<Vec<Arc<str>>>,
-  pub body: Arc<CalcitItems>,
+  pub body: Arc<CalcitCompactList>,
 }
 
 /// Macro variant of Calcit data
@@ -21,7 +21,7 @@ pub struct CalcitMacro {
   /// where it was defined
   pub def_ns: Arc<str>,
   pub args: Arc<Vec<Arc<str>>>,
-  pub body: Arc<CalcitItems>,
+  pub body: Arc<CalcitCompactList>,
 }
 
 /// scope in the semantics of persistent data structure

@@ -5,11 +5,11 @@ use im_ternary_tree::TernaryTreeList;
 use std::sync::Arc;
 
 use crate::builtins::{self, is_registered_proc, IMPORTED_PROCS};
-use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
-use crate::primes::{
-  Calcit, CalcitErr, CalcitFn, CalcitItems, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CrListWrap,
-  MethodKind, NodeLocation, SymbolResolved::*, CORE_NS,
+use crate::calcit::{
+  Calcit, CalcitCompactList, CalcitErr, CalcitFn, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, MethodKind,
+  NodeLocation, SymbolResolved::*, CORE_NS,
 };
+use crate::call_stack::{extend_call_stack, CallStackList, StackKind};
 use crate::program;
 use crate::util::string::has_ns_part;
 
@@ -169,7 +169,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               }
             } else {
               Err(CalcitErr::use_msg_stack(
-                format!("tag only takes 1 argument, got: {}", CrListWrap(rest_nodes.into())),
+                format!("tag only takes 1 argument, got: {}", rest_nodes),
                 call_stack,
               ))
             }
@@ -387,7 +387,7 @@ pub fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList)
   Ok(None)
 }
 
-pub fn run_fn(values: CalcitItems, info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn run_fn(values: CalcitCompactList, info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut body_scope = (*info.scope).to_owned();
   bind_args(&mut body_scope, &info.args, &values, call_stack)?;
 
@@ -426,7 +426,7 @@ impl MutIndex {
 pub fn bind_args(
   scope: &mut CalcitScope,
   args: &[Arc<str>],
-  values: &CalcitItems,
+  values: &CalcitCompactList,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
   let mut spreading = false;
@@ -441,7 +441,7 @@ pub fn bind_args(
         "&" => return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {args:?}"), call_stack)),
         "?" => return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {args:?}"), call_stack)),
         _ => {
-          let mut chunk: CalcitItems = TernaryTreeList::Empty;
+          let mut chunk: CalcitCompactList = TernaryTreeList::Empty;
           while let Some(v) = values.get(pop_values_idx.get_and_inc()) {
             chunk = chunk.push_right(v.to_owned());
           }
@@ -467,7 +467,7 @@ pub fn bind_args(
               scope.insert_mut(sym.to_owned(), Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
-                format!("too few values `{}` passed to args `{args:?}`", CrListWrap(values.to_owned())),
+                format!("too few values `{}` passed to args `{args:?}`", CalcitList::from(values.to_owned())),
                 call_stack,
               ));
             }
@@ -482,9 +482,8 @@ pub fn bind_args(
   } else {
     Err(CalcitErr::use_msg_stack(
       format!(
-        "extra args `{}` not handled while passing values `{}` to args `{:?}`",
-        CrListWrap(values.to_owned()),
-        CrListWrap(values.to_owned()),
+        "extra args `{args:?}` not handled while passing values `{}` to args `{:?}`",
+        CalcitList::from(values),
         args,
       ),
       call_stack,
@@ -493,7 +492,7 @@ pub fn bind_args(
 }
 
 pub fn evaluate_lines(
-  lines: &CalcitItems,
+  lines: &CalcitCompactList,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
@@ -515,7 +514,7 @@ pub fn evaluate_args(
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
-) -> Result<CalcitItems, CalcitErr> {
+) -> Result<CalcitCompactList, CalcitErr> {
   let mut ret: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
   let mut spreading = false;
   for item in items {

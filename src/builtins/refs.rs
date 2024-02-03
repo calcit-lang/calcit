@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use cirru_edn::EdnTag;
 use im_ternary_tree::TernaryTreeList;
 
-use crate::primes::{Calcit, CalcitErr, CalcitItems, CalcitList, CalcitScope};
+use crate::calcit::{Calcit, CalcitCompactList, CalcitErr, CalcitList, CalcitScope};
 use crate::{call_stack::CallStackList, runner};
 
 pub(crate) type ValueAndListeners = (Calcit, HashMap<EdnTag, Calcit>);
@@ -90,7 +90,7 @@ pub fn defatom(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack
 static ATOM_ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 /// proc
-pub fn atom(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn atom(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(value) => {
       let atom_idx = ATOM_ID_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -106,7 +106,7 @@ pub fn atom(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
 }
 
 /// previously `deref`, but `deref` now turned into a function calling `&atom:deref`
-pub fn atom_deref(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn atom_deref(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Ref(_path, locked_pair)) => {
       let pair = (**locked_pair).lock().expect("read pair from block");
@@ -143,7 +143,7 @@ pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
   }
 }
 
-pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn add_watch(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Tag(k)), Some(f @ Calcit::Fn { .. })) => {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");
@@ -164,7 +164,7 @@ pub fn add_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn remove_watch(xs: &CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn remove_watch(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Tag(k))) => {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");

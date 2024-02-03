@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use cirru_parser::Cirru;
 
-use crate::primes::{Calcit, CalcitList, CalcitProc, MethodKind};
+use crate::calcit::{Calcit, CalcitList, CalcitProc, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result<Calcit, String> {
-  let symbol_info = Arc::new(crate::primes::CalcitSymbolInfo {
+  let symbol_info = Arc::new(crate::calcit::CalcitSymbolInfo {
     ns: Arc::from(ns),
     at_def: Arc::from(def),
     resolved: None,

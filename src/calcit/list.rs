@@ -206,8 +206,13 @@ impl<'a> Iterator for CalcitListRefIntoIterator<'a> {
 }
 
 impl CalcitList {
-  pub fn new() -> CalcitList {
-    CalcitList(TernaryTreeList::Empty)
+  /// create a new list without Arc
+  pub fn new_compact() -> CalcitCompactList {
+    TernaryTreeList::Empty
+  }
+  /// create a new list without Arc
+  pub fn new_inner() -> TernaryTreeList<Arc<Calcit>> {
+    TernaryTreeList::Empty
   }
 
   pub fn push(&mut self, x: Arc<Calcit>) {
@@ -312,3 +317,5 @@ impl CalcitList {
     self.0.index_of(&Arc::new(x.to_owned()))
   }
 }
+
+pub type CalcitCompactList = TernaryTreeList<Calcit>;

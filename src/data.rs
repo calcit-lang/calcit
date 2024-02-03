@@ -3,7 +3,7 @@ use std::sync::Arc;
 use im_ternary_tree::TernaryTreeList;
 
 use crate::{
-  primes::{CalcitList, CalcitProc, CalcitSyntax},
+  calcit::{CalcitList, CalcitProc, CalcitSyntax},
   Calcit,
 };
 
@@ -60,7 +60,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     Calcit::Record(tag, fields, values, _class) => {
       let mut ys = TernaryTreeList::from(&[Calcit::Symbol {
         sym: "defrecord!".into(),
-        info: Arc::new(crate::primes::CalcitSymbolInfo {
+        info: Arc::new(crate::calcit::CalcitSymbolInfo {
           ns: Arc::from(ns),
           at_def: Arc::from(at_def),
           resolved: None,

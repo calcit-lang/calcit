@@ -4,22 +4,22 @@ extern crate lazy_static;
 pub mod data;
 
 pub mod builtins;
+pub mod calcit;
 pub mod call_stack;
 pub mod cli_args;
 pub mod codegen;
-pub mod primes;
 pub mod program;
 pub mod runner;
 pub mod snapshot;
 pub mod util;
 
-use primes::LocatedWarning;
+use calcit::LocatedWarning;
 use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-pub use primes::{Calcit, CalcitErr, CalcitItems};
+pub use calcit::{Calcit, CalcitCompactList, CalcitErr};
 
 use crate::util::string::strip_shebang;
 
@@ -41,7 +41,7 @@ pub struct ProgramEntries {
   pub reload_def: Arc<str>,
 }
 
-pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitCompactList) -> Result<Calcit, CalcitErr> {
   let check_warnings = RefCell::new(LocatedWarning::default_list());
 
   // preprocess to init

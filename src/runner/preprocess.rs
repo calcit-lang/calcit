@@ -1,11 +1,11 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
-  call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
-  primes,
-  primes::{
-    Calcit, CalcitErr, CalcitItems, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CrListWrap, ImportRule,
+  calcit,
+  calcit::{
+    Calcit, CalcitCompactList, CalcitErr, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, ImportRule,
     LocatedWarning, NodeLocation, RawCodeType, SymbolResolved::*, GENERATED_DEF,
   },
+  call_stack::{extend_call_stack, CalcitStack, CallStackList, StackKind},
   program, runner,
 };
 
@@ -211,8 +211,8 @@ pub fn preprocess_expr(
           preprocess_ns_def(def_ns, def, def, None, check_warnings, call_stack)
         } else if let Ok(p) = def.parse::<CalcitProc>() {
           Ok((Calcit::Proc(p), None))
-        } else if program::has_def_code(primes::CORE_NS, def) {
-          preprocess_ns_def(primes::CORE_NS, def, def, None, check_warnings, call_stack)
+        } else if program::has_def_code(calcit::CORE_NS, def) {
+          preprocess_ns_def(calcit::CORE_NS, def, def, None, check_warnings, call_stack)
         } else if program::has_def_code(def_ns, def) {
           preprocess_ns_def(def_ns, def, def, None, check_warnings, call_stack)
         } else if is_registered_proc(def) {
@@ -307,7 +307,7 @@ pub fn preprocess_expr(
 }
 
 fn process_list_call(
-  xs: &CalcitItems,
+  xs: &CalcitCompactList,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -342,11 +342,11 @@ fn process_list_call(
         let code = Calcit::List(CalcitList::from(&[
           Calcit::Symbol {
             sym: "get".into(),
-            info: Arc::new(crate::primes::CalcitSymbolInfo {
-              ns: primes::CORE_NS.into(),
-              at_def: primes::GENERATED_DEF.into(),
+            info: Arc::new(crate::calcit::CalcitSymbolInfo {
+              ns: calcit::CORE_NS.into(),
+              at_def: calcit::GENERATED_DEF.into(),
               resolved: Some(ResolvedDef {
-                ns: primes::CORE_NS.into(),
+                ns: calcit::CORE_NS.into(),
                 def: "get".into(),
                 rule: None,
               }),
@@ -453,7 +453,7 @@ fn process_list_call(
     (h, he) => {
       if let Calcit::Symbol { sym, info, .. } = h {
         if he.is_none() && info.resolved.is_none() && !is_js_syntax_procs(sym) {
-          println!("warning: unresolved symbol `{}` in `{}`", sym, CrListWrap(xs.to_owned()));
+          println!("warning: unresolved symbol `{}` in `{}`", sym, CalcitList::from(xs));
         }
       }
       let mut ys = Vec::with_capacity(args.len() + 1);
@@ -470,7 +470,7 @@ fn process_list_call(
 // detects arguments of top-level functions when possible
 fn check_fn_args(
   defined_args: &[Arc<str>],
-  params: &CalcitItems,
+  params: &CalcitCompactList,
   file_ns: &str,
   f_name: &str,
   def_name: &str,
@@ -513,7 +513,7 @@ fn check_fn_args(
               "[Warn] lack of args in {} `{:?}` with `{}`, at {}/{}",
               f_name,
               defined_args,
-              primes::CrListWrap(params.to_owned()),
+              CalcitList::from(params),
               file_ns,
               def_name
             ),
@@ -530,7 +530,7 @@ fn check_fn_args(
             "[Warn] too many args for {} `{:?}` with `{}`, at {}/{}",
             f_name,
             defined_args,
-            primes::CrListWrap(params.to_owned()),
+            CalcitList::from(params),
             file_ns,
             def_name
           ),
@@ -559,7 +559,7 @@ fn grab_def_name(x: &Calcit) -> Arc<str> {
 pub fn preprocess_each_items(
   head: &CalcitSyntax,
   head_ns: &str,
-  args: &CalcitItems,
+  args: &CalcitCompactList,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -576,7 +576,7 @@ pub fn preprocess_each_items(
 pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
-  args: &CalcitItems,
+  args: &CalcitCompactList,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -605,7 +605,7 @@ pub fn preprocess_defn(
         }),
         location: location.to_owned(),
       }));
-      let mut zs: TernaryTreeList<Arc<Calcit>> = TernaryTreeList::Empty;
+      let mut zs = CalcitList::new_inner();
       for y in ys {
         match &**y {
           Calcit::Symbol {
@@ -660,15 +660,15 @@ pub fn preprocess_defn(
 }
 
 // warn if this symbol is used
-fn check_symbol(sym: &str, args: &CalcitItems, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
-  if is_proc_name(sym) || CalcitSyntax::is_valid(sym) || program::has_def_code(primes::CORE_NS, sym) {
+fn check_symbol(sym: &str, args: &CalcitCompactList, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
+  if is_proc_name(sym) || CalcitSyntax::is_valid(sym) || program::has_def_code(calcit::CORE_NS, sym) {
     let mut warnings = check_warnings.borrow_mut();
     warnings.push(LocatedWarning::new(
       format!(
         "[Warn] local binding `{}` shadowed `calcit.core/{}`, with {}",
         sym,
         sym,
-        primes::CrListWrap(args.to_owned())
+        CalcitList::from(args)
       ),
       location,
     ));
@@ -679,7 +679,7 @@ pub fn preprocess_core_let(
   head: &CalcitSyntax,
   // where the symbol was defined
   head_ns: &str,
-  args: &CalcitItems,
+  args: &CalcitCompactList,
   scope_defs: &HashSet<Arc<str>>,
   // where called
   file_ns: &str,
@@ -741,7 +741,7 @@ pub fn preprocess_core_let(
 pub fn preprocess_quote(
   head: &CalcitSyntax,
   head_ns: &str,
-  args: &CalcitItems,
+  args: &CalcitCompactList,
   _scope_defs: &HashSet<Arc<str>>,
   _file_ns: &str,
 ) -> Result<Calcit, CalcitErr> {
@@ -755,7 +755,7 @@ pub fn preprocess_quote(
 pub fn preprocess_defatom(
   head: &CalcitSyntax,
   head_ns: &str,
-  args: &CalcitItems,
+  args: &CalcitCompactList,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -774,7 +774,7 @@ pub fn preprocess_defatom(
 pub fn preprocess_quasiquote(
   head: &CalcitSyntax,
   head_ns: &str,
-  args: &CalcitItems,
+  args: &CalcitCompactList,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -804,7 +804,7 @@ pub fn preprocess_quasiquote_internal(
     Calcit::List(ys) if ys.is_empty() => Ok(x.to_owned()),
     Calcit::List(ys) => match &*ys.0[0] {
       Calcit::Symbol { sym, .. } if &**sym == "~" || &**sym == "~@" => {
-        let mut xs: TernaryTreeList<Arc<Calcit>> = TernaryTreeList::Empty;
+        let mut xs = CalcitList::new_inner();
         for y in &ys.0 {
           let (form, _) = preprocess_expr(y, scope_defs, file_ns, check_warnings, call_stack)?;
           xs = xs.push_right(Arc::new(form.to_owned()));
@@ -812,7 +812,7 @@ pub fn preprocess_quasiquote_internal(
         Ok(Calcit::List(xs.into()))
       }
       _ => {
-        let mut xs: TernaryTreeList<Arc<Calcit>> = TernaryTreeList::Empty;
+        let mut xs = CalcitList::new_inner();
         for y in &ys.0 {
           xs = xs.push_right(Arc::new(
             preprocess_quasiquote_internal(y, scope_defs, file_ns, check_warnings, call_stack)?.to_owned(),

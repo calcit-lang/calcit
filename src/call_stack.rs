@@ -1,8 +1,8 @@
+use crate::calcit::Calcit;
+use crate::calcit::CalcitList;
+use crate::calcit::NodeLocation;
 use crate::data::cirru;
 use crate::data::edn;
-use crate::primes::Calcit;
-use crate::primes::CalcitList;
-use crate::primes::NodeLocation;
 use cirru_edn::Edn;
 use cirru_edn::EdnListView;
 use std::fmt;

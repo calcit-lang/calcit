@@ -5,8 +5,8 @@ use std::sync::RwLock;
 
 use cirru_parser::Cirru;
 
+use crate::calcit::{Calcit, ImportRule};
 use crate::data::cirru::code_to_calcit;
-use crate::primes::{Calcit, ImportRule};
 use crate::snapshot;
 use crate::snapshot::Snapshot;
 use crate::util::string::extract_pkg_from_ns;
