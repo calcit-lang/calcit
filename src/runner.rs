@@ -559,7 +559,7 @@ pub fn evaluate_args(
               None => evaluate_expr(&code, scope, file_ns, call_stack)?,
               Some(data) => (*data).to_owned(),
             },
-            _ => v.to_owned(),
+            _ => v,
           };
           ret = ret.push(y);
         }
