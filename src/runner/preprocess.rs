@@ -1,9 +1,8 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
-  calcit,
   calcit::{
-    Calcit, CalcitCompactList, CalcitErr, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax, ImportRule,
-    LocatedWarning, NodeLocation, RawCodeType, SymbolResolved::*, GENERATED_DEF,
+    self, CalciltLocalInfo, Calcit, CalcitCompactList, CalcitErr, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax,
+    ImportRule, LocatedWarning, NodeLocation, RawCodeType, SymbolResolved::*, GENERATED_DEF,
   },
   call_stack::{extend_call_stack, CalcitStack, CallStackList, StackArgsList, StackKind},
   program, runner,
@@ -186,12 +185,11 @@ pub fn preprocess_expr(
           ))
         } else if scope_defs.contains(def) {
           Ok((
-            Calcit::Symbol {
+            Calcit::Local {
               sym: def.to_owned(),
-              info: Arc::new(CalcitSymbolInfo {
+              info: Arc::new(CalciltLocalInfo {
                 ns: def_ns.to_owned(),
                 at_def: at_def.to_owned(),
-                resolved: Some(ResolvedLocal),
               }),
               location: location.to_owned(),
             },
@@ -676,7 +674,7 @@ pub fn preprocess_core_let(
   let binding = match args.get_inner(0) {
     Some(Calcit::List(ys)) if ys.is_empty() => Calcit::List(CalcitList::default()),
     Some(Calcit::List(ys)) if ys.len() == 2 => match (&*ys[0], &*ys[1]) {
-      (Calcit::Symbol { sym, .. }, a) => {
+      (Calcit::Symbol { sym, info, location }, a) => {
         let loc = NodeLocation {
           ns: Arc::from(head_ns),
           def: GENERATED_DEF.into(),
@@ -685,7 +683,15 @@ pub fn preprocess_core_let(
         check_symbol(sym, args, loc, check_warnings);
         body_defs.insert(sym.to_owned());
         let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
-        Calcit::List(CalcitList::from(vec![ys[0].to_owned(), Arc::from(form)]))
+        let name = Calcit::Local {
+          sym: sym.to_owned(),
+          info: Arc::new(CalciltLocalInfo {
+            ns: info.ns.to_owned(),
+            at_def: info.at_def.to_owned(),
+          }),
+          location: location.to_owned(),
+        };
+        Calcit::List(CalcitList::from(vec![Arc::new(name), Arc::from(form)]))
       }
       (a, b) => {
         return Err(CalcitErr::use_msg_stack_location(

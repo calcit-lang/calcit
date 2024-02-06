@@ -3,8 +3,6 @@ use std::sync::Arc;
 /// resolved value of real meaning of a symbol
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SymbolResolved {
-  /// a local variable
-  ResolvedLocal,
   /// raw syntax, no target, for example `&` is a raw syntax
   ResolvedRaw,
   /// registered from runtime
@@ -33,4 +31,10 @@ pub struct CalcitSymbolInfo {
   pub ns: Arc<str>,
   pub at_def: Arc<str>,
   pub resolved: Option<SymbolResolved>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CalciltLocalInfo {
+  pub ns: Arc<str>,
+  pub at_def: Arc<str>,
 }

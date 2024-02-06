@@ -104,7 +104,12 @@ pub fn syntax_let(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
     Some(Calcit::List(xs)) if xs.len() == 2 => {
       let mut body_scope = scope.to_owned();
       match (&*xs[0], &*xs[1]) {
+        (Calcit::Local { sym: s, .. }, ys) => {
+          let value = runner::evaluate_expr(ys, scope, file_ns, call_stack)?;
+          body_scope.insert_mut(s.to_owned(), value);
+        }
         (Calcit::Symbol { sym: s, .. }, ys) => {
+          println!("[Warn] slow path of {s}, prefer local");
           let value = runner::evaluate_expr(ys, scope, file_ns, call_stack)?;
           body_scope.insert_mut(s.to_owned(), value);
         }

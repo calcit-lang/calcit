@@ -35,7 +35,6 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
             evaluate_symbol_from_program(r_def, r_ns, call_stack)
           }
         }
-        Some(ResolvedLocal) => evaluate_symbol_from_scope(sym, scope),
         Some(ResolvedRegistered) => evaluate_symbol_from_registered(sym, file_ns, &info.at_def, location),
         _ => {
           // println!("[Warn] slow path reading symbol: {}", sym);
@@ -43,6 +42,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         }
       }
     }
+    Calcit::Local { sym, .. } => evaluate_symbol_from_scope(sym, scope),
     Calcit::Tag(_) => Ok(expr.to_owned()),
     Calcit::Str(_) => Ok(expr.to_owned()),
     Calcit::Thunk(code, v) => match v {

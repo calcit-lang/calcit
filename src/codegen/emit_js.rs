@@ -211,6 +211,7 @@ fn to_js_code(
 
         gen_symbol_code(sym, &info.ns, &info.at_def, info.resolved.to_owned(), xs, &passed_defs)
       }
+      Calcit::Local { sym, .. } => Ok(escape_var(sym)),
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
         // println!("gen proc {} under {}", s, ns,);
@@ -607,7 +608,6 @@ fn gen_symbol_code(
         }
       }
       Some(ResolvedRaw) => Err(format!("not going to generate from raw symbol, {s}")),
-      Some(ResolvedLocal) => Err(format!("symbol with ns should not be local, {s}")),
       Some(ResolvedRegistered) => Err(format!("symbol registered should not be local, {s}")),
       None => Err(format!("expected symbol with ns being resolved: {xs}")),
     }
@@ -615,7 +615,7 @@ fn gen_symbol_code(
     // return Ok(format!("{}{}", var_prefix, escape_var(s)));
     let proc_prefix = get_proc_prefix(passed_defs.ns);
     Ok(format!("{proc_prefix}{}", escape_var(s)))
-  } else if matches!(resolved, Some(ResolvedLocal)) || passed_defs.local_defs.contains(s) {
+  } else if passed_defs.local_defs.contains(s) {
     Ok(escape_var(s))
   } else if let Some(ResolvedDef {
     ns: r_ns,
@@ -731,7 +731,7 @@ fn gen_let_code(
         let def_code = xs[1].to_owned();
 
         match &*def_name {
-          Calcit::Symbol { sym, .. } => {
+          Calcit::Local { sym, .. } => {
             // TODO `let` inside expressions makes syntax error
             let left = escape_var(sym);
             let right = to_js_code(&def_code, ns, &scoped_defs, file_imports, tags, None)?;

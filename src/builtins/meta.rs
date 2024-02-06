@@ -59,6 +59,7 @@ pub fn type_of(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     Calcit::Syntax(..) => Ok(Calcit::tag("syntax")),
     Calcit::Method(..) => Ok(Calcit::tag("method")),
     Calcit::RawCode(..) => Ok(Calcit::tag("raw-code")),
+    Calcit::Local { .. } => Ok(Calcit::tag("local")),
   }
 }
 
@@ -92,6 +93,7 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
       Cirru::List(xs)
     }
     Calcit::Symbol { sym, .. } => Cirru::Leaf((**sym).into()),
+    Calcit::Local { sym, .. } => Cirru::Leaf((**sym).into()),
     Calcit::Syntax(s, _ns) => Cirru::Leaf(s.as_ref().into()),
     Calcit::Proc(s) => Cirru::Leaf(s.as_ref().into()),
     a => Cirru::leaf(format!("{a}")),

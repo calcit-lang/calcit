@@ -22,8 +22,7 @@ use im_ternary_tree::TernaryTreeList;
 pub use fns::{CalcitFn, CalcitMacro, CalcitScope};
 pub use list::{CalcitCompactList, CalcitList};
 pub use proc_name::CalcitProc;
-pub use symbol::CalcitSymbolInfo;
-pub use symbol::{ImportRule, SymbolResolved};
+pub use symbol::{CalciltLocalInfo, CalcitSymbolInfo, ImportRule, SymbolResolved};
 pub use syntax_name::CalcitSyntax;
 
 use crate::builtins::ValueAndListeners;
@@ -42,6 +41,12 @@ pub enum Calcit {
     sym: Arc<str>,
     info: Arc<CalcitSymbolInfo>,
     /// positions in the tree of Cirru
+    location: Option<Arc<Vec<u8>>>,
+  },
+  /// local variable
+  Local {
+    sym: Arc<str>,
+    info: Arc<CalciltLocalInfo>,
     location: Option<Arc<Vec<u8>>>,
   },
   /// sth between string and enum, used a key or weak identifier
@@ -97,6 +102,7 @@ impl fmt::Display for Calcit {
       Calcit::Bool(v) => f.write_str(&format!("{v}")),
       Calcit::Number(n) => f.write_str(&format!("{n}")),
       Calcit::Symbol { sym, .. } => f.write_str(&format!("'{sym}")),
+      Calcit::Local { sym, .. } => f.write_str(&format!("'{sym}")),
       Calcit::Tag(s) => f.write_str(&format!(":{s}")),
       Calcit::Str(s) => {
         if is_simple_str(s) {
@@ -259,6 +265,7 @@ pub fn format_to_lisp(x: &Calcit) -> String {
       s
     }
     Calcit::Symbol { sym, .. } => sym.to_string(),
+    Calcit::Local { sym, .. } => sym.to_string(),
     Calcit::Syntax(s, _ns) => s.to_string(),
     Calcit::Proc(s) => s.to_string(),
     a => format!("{a}"),
@@ -286,6 +293,10 @@ impl Hash for Calcit {
         sym.hash(_state);
         // probaly no need, also won't be used in hashing
         // ns.hash(_state);
+      }
+      Calcit::Local { sym, .. } => {
+        "local:".hash(_state);
+        sym.hash(_state);
       }
       Calcit::Tag(s) => {
         "tag:".hash(_state);
@@ -408,6 +419,10 @@ impl Ord for Calcit {
       (Calcit::Symbol { .. }, _) => Less,
       (_, Calcit::Symbol { .. }) => Greater,
 
+      (Calcit::Local { sym: a, .. }, Calcit::Local { sym: b, .. }) => a.cmp(b),
+      (Calcit::Local { .. }, _) => Less,
+      (_, Calcit::Local { .. }) => Greater,
+
       (Calcit::Tag(a), Calcit::Tag(b)) => a.cmp(b),
       (Calcit::Tag(_), _) => Less,
       (_, Calcit::Tag(_)) => Greater,
@@ -518,6 +533,10 @@ impl PartialEq for Calcit {
       (Calcit::Bool(a), Calcit::Bool(b)) => a == b,
       (Calcit::Number(a), Calcit::Number(b)) => a == b,
       (Calcit::Symbol { sym: a, .. }, Calcit::Symbol { sym: b, .. }) => a == b,
+      (Calcit::Local { sym: a, .. }, Calcit::Local { sym: b, .. }) => a == b,
+      // special case for symbol and local, compatible with old implementation
+      (Calcit::Symbol { sym: a, .. }, Calcit::Local { sym: b, .. }) => a == b,
+      (Calcit::Local { sym: a, .. }, Calcit::Symbol { sym: b, .. }) => a == b,
       (Calcit::Tag(a), Calcit::Tag(b)) => a == b,
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
       (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
@@ -575,6 +594,11 @@ impl Calcit {
   pub fn get_location(&self) -> Option<NodeLocation> {
     match self {
       Calcit::Symbol { info, location, .. } => Some(NodeLocation::new(
+        info.ns.clone(),
+        info.at_def.clone(),
+        location.to_owned().unwrap_or_default(),
+      )),
+      Calcit::Local { info, location, .. } => Some(NodeLocation::new(
         info.ns.clone(),
         info.at_def.clone(),
         location.to_owned().unwrap_or_default(),
