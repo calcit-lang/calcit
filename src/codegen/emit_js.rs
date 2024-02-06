@@ -7,7 +7,7 @@ use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -17,19 +17,26 @@ use cirru_edn::EdnTag;
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::syntax::get_raw_args;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
-use crate::calcit::{self, CalcitList, CalcitProc, MethodKind};
-use crate::calcit::{Calcit, CalcitCompactList, CalcitSyntax, ImportRule, SymbolResolved::*};
+use crate::calcit::{self, CalcitImport, CalcitList, CalcitProc, MethodKind};
+use crate::calcit::{Calcit, CalcitCompactList, CalcitSyntax, ImportInfo};
 use crate::call_stack::{StackArgsList, StackKind};
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
 
-type ImportsDict = BTreeMap<Arc<str>, ImportedTarget>;
+struct ImportsDict(HashSet<CalcitImport>);
 
-#[derive(Debug, PartialEq, Clone, Eq)]
-pub enum ImportedTarget {
-  AsNs(Arc<str>),
-  DefaultNs(Arc<str>),
-  ReferNs(Arc<str>),
+impl ImportsDict {
+  fn new() -> Self {
+    ImportsDict(HashSet::new())
+  }
+
+  fn insert(&mut self, item: CalcitImport) {
+    self.0.insert(item);
+  }
+
+  fn is_empty(&self) -> bool {
+    self.0.is_empty()
+  }
 }
 
 fn to_js_import_name(ns: &str, mjs_mode: bool) -> String {
@@ -198,6 +205,7 @@ fn to_js_code(
   tags: &RefCell<HashSet<EdnTag>>,
   return_label: Option<&str>,
 ) -> Result<String, String> {
+  // println!("to js code handle: {} {:?}", xs, xs);
   if let Calcit::List(ys) = xs {
     gen_call_code(ys, ns, local_defs, xs, file_imports, tags, return_label)
   } else {
@@ -209,7 +217,27 @@ fn to_js_code(
           file_imports,
         };
 
-        gen_symbol_code(sym, &info.ns, &info.at_def, info.resolved.to_owned(), xs, &passed_defs)
+        gen_symbol_code(sym, &info.at_ns, &info.at_def, xs, &passed_defs)
+      }
+      Calcit::Import(item @ CalcitImport { def, info, .. }) => {
+        match &**info {
+          ImportInfo::Core { at_ns } => {
+            if &**at_ns == calcit::CORE_NS {
+              // functions under core uses built $calcit module entry
+              Ok(escape_var(def))
+            } else {
+              Ok(format!("$calcit.{}", escape_var(def)))
+            }
+          }
+          ImportInfo::NsAs { alias, .. } => {
+            file_imports.borrow_mut().insert(item.to_owned());
+            Ok(format!("{}.{}", escape_ns(alias), escape_var(def)))
+          }
+          _ => {
+            file_imports.borrow_mut().insert(item.to_owned());
+            Ok(escape_var(def))
+          }
+        }
       }
       Calcit::Local { sym, .. } => Ok(escape_var(sym)),
       Calcit::Proc(s) => {
@@ -313,7 +341,7 @@ fn gen_call_code(
         CalcitSyntax::Defatom => {
           match (body.get_inner(0), body.get_inner(1)) {
             _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {}", Calcit::List(body))),
-            (Some(Calcit::Symbol { sym, .. }), Some(v)) => {
+            (Some(Calcit::Symbol { sym, .. }), Some(v)) | (Some(Calcit::Import(CalcitImport { def: sym, .. })), Some(v)) => {
               // let _name = escape_var(sym); // TODO
               let ref_path = wrap_js_str(&format!("{ns}/{sym}"));
               gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), StackArgsList::default());
@@ -575,64 +603,17 @@ struct PassedDefs<'a> {
   file_imports: &'a RefCell<ImportsDict>,
 }
 
-fn gen_symbol_code(
-  s: &str,
-  def_ns: &str,
-  at_def: &str,
-  resolved: Option<calcit::SymbolResolved>,
-  xs: &Calcit,
-  passed_defs: &PassedDefs,
-) -> Result<String, String> {
+fn gen_symbol_code(s: &str, def_ns: &str, at_def: &str, xs: &Calcit, passed_defs: &PassedDefs) -> Result<String, String> {
   // println!("gen symbol: {} {} {} {:?}", s, def_ns, ns, resolved);
   let var_prefix = if passed_defs.ns == calcit::CORE_NS { "" } else { "$calcit." };
   if has_ns_part(s) {
-    let pieces = s.split('/').collect::<Vec<&str>>();
-    let ns_part = pieces[0];
-    let def_part = pieces[1];
-    // TODO dirty code
-    // TODO namespace part supposed be parsed during preprocessing, this mimics old behaviors
-    match resolved {
-      Some(ResolvedDef {
-        ns: r_ns,
-        def: _r_def,
-        rule: _import_rule, /* None */
-      }) => {
-        if is_cirru_string(&r_ns) {
-          track_ns_import(ns_part, ImportedTarget::AsNs(r_ns), passed_defs.file_imports)?;
-          // Ok(escape_ns_var(s, ns_part))
-          Ok(format!("{}.{}", escape_ns(ns_part), escape_var(def_part)))
-        } else {
-          track_ns_import(&r_ns, ImportedTarget::AsNs(r_ns.to_owned()), passed_defs.file_imports)?;
-          // Ok(escape_ns_var(s, &r_ns))
-          Ok(format!("{}.{}", escape_ns(&r_ns), escape_var(def_part)))
-        }
-      }
-      Some(ResolvedRaw) => Err(format!("not going to generate from raw symbol, {s}")),
-      Some(ResolvedRegistered) => Err(format!("symbol registered should not be local, {s}")),
-      None => Err(format!("expected symbol with ns being resolved: {xs}")),
-    }
+    // TODO
+    unreachable!("unknown feature: {s} {def_ns} {at_def} {xs}");
   } else if is_js_syntax_procs(s) || is_proc_name(s) || CalcitSyntax::is_valid(s) {
     // return Ok(format!("{}{}", var_prefix, escape_var(s)));
     let proc_prefix = get_proc_prefix(passed_defs.ns);
     Ok(format!("{proc_prefix}{}", escape_var(s)))
   } else if passed_defs.local_defs.contains(s) {
-    Ok(escape_var(s))
-  } else if let Some(ResolvedDef {
-    ns: r_ns,
-    def: _r_def,
-    rule: import_rule,
-  }) = resolved.to_owned()
-  {
-    if &*r_ns == calcit::CORE_NS {
-      // functions under core uses built $calcit module entry
-      return Ok(format!("{var_prefix}{}", escape_var(s)));
-    }
-    if let Some(ImportRule::NsDefault(_s)) = import_rule.map(|x| x.to_owned()) {
-      // imports that using :default are special
-      track_ns_import(s, ImportedTarget::DefaultNs(r_ns), passed_defs.file_imports)?;
-    } else {
-      track_ns_import(s, ImportedTarget::ReferNs(r_ns), passed_defs.file_imports)?;
-    }
     Ok(escape_var(s))
   } else if def_ns == calcit::CORE_NS {
     // local variales inside calcit.core also uses this ns
@@ -641,8 +622,6 @@ fn gen_symbol_code(
   } else if def_ns.is_empty() {
     Err(format!("Unexpected ns at symbol, {xs}"))
   } else if def_ns != passed_defs.ns {
-    track_ns_import(s, ImportedTarget::ReferNs(def_ns.into()), passed_defs.file_imports)?;
-
     // probably via macro
     // TODO dirty code collecting imports
 
@@ -653,24 +632,6 @@ fn gen_symbol_code(
   } else {
     println!("[Warn] Unexpected case, code gen for `{s}` in {}/{at_def}", passed_defs.ns);
     Ok(format!("{var_prefix}{}", escape_var(s)))
-  }
-}
-
-// track but compare first, return Err if a different one existed
-fn track_ns_import(sym: &str, import_rule: ImportedTarget, file_imports: &RefCell<ImportsDict>) -> Result<(), String> {
-  let mut dict = file_imports.borrow_mut();
-  match dict.get(&Arc::from(sym.to_owned())) {
-    Some(v) => {
-      if *v == import_rule {
-        Ok(())
-      } else {
-        Err(format!("conflicted import rule, previous {v:?}, now {import_rule:?}"))
-      }
-    }
-    None => {
-      dict.insert(sym.to_owned().into(), import_rule);
-      Ok(())
-    }
   }
 }
 
@@ -1097,6 +1058,7 @@ fn hinted_async(xs: &CalcitList) -> bool {
 fn contains_symbol(xs: &Calcit, y: &str) -> bool {
   match xs {
     Calcit::Symbol { sym, .. } => &**sym == y,
+    Calcit::Import(CalcitImport { def, .. }) => &**def == y,
     Calcit::Thunk(code, _) => contains_symbol(code, y),
     Calcit::Fn { info, .. } => {
       for x in &*info.body {
@@ -1187,10 +1149,10 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 
   let program = program::clone_evaled_program();
   for (ns, file) in program {
-    // println!("start handling: {}", ns);
+    // println!("\nstart handling: {}\n", ns);
     // side-effects, reset tracking state
 
-    let file_imports: RefCell<ImportsDict> = RefCell::new(BTreeMap::new());
+    let file_imports: RefCell<ImportsDict> = RefCell::new(ImportsDict::new());
     let collected_tags: RefCell<HashSet<EdnTag>> = RefCell::new(HashSet::new());
 
     let mut defs_in_current: HashSet<Arc<str>> = HashSet::new();
@@ -1310,34 +1272,43 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 
     let collected_imports = file_imports.borrow();
     if !collected_imports.is_empty() {
-      // println!("imports: {:?}", collected_imports);
-      for (def, item) in collected_imports.iter() {
-        // println!("implicit import {} in {} ", def, ns);
-        match item {
-          ImportedTarget::AsNs(target_ns) => {
-            if is_cirru_string(target_ns) {
-              let import_target = wrap_js_str(&target_ns[1..]);
-              write!(import_code, "\nimport * as {} from {import_target};", escape_ns(def)).expect("write");
+      let mut xs = collected_imports.0.clone().into_iter().collect::<Vec<_>>();
+      xs.sort();
+      for item in &xs {
+        // println!("import item: {:?}", item);
+        match &*item.info {
+          ImportInfo::NsAs { alias, .. } => {
+            let import_target = if is_cirru_string(&item.ns) {
+              wrap_js_str(&item.ns[1..])
             } else {
-              let import_target = to_js_import_name(target_ns, true);
-              write!(import_code, "\nimport * as {} from {import_target};", escape_ns(target_ns)).expect("write");
-            }
-          }
-          ImportedTarget::DefaultNs(target_ns) => {
-            if is_cirru_string(target_ns) {
-              let import_target = wrap_js_str(&target_ns[1..]);
-              write!(import_code, "\nimport {} from {import_target};", escape_var(def)).expect("write");
-            } else {
-              unreachable!("only js import leads to default ns, but got: {}", target_ns)
-            }
-          }
-          ImportedTarget::ReferNs(target_ns) => {
-            let import_target = if is_cirru_string(target_ns) {
-              wrap_js_str(&target_ns[1..])
-            } else {
-              to_js_import_name(target_ns, true)
+              to_js_import_name(&item.ns, true)
             };
-            write!(import_code, "\nimport {{ {} }} from {import_target};", escape_var(def)).expect("write");
+            write!(import_code, "\nimport * as {} from {import_target};", escape_ns(alias)).expect("write");
+          }
+          ImportInfo::JsDefault { alias, at_ns, .. } => {
+            if is_cirru_string(&item.ns) {
+              let import_target = wrap_js_str(&at_ns[1..]);
+              write!(import_code, "\nimport {} from {import_target};", escape_var(alias)).expect("write");
+            } else {
+              unreachable!("only js import leads to default ns, but got: {}", at_ns)
+            }
+          }
+          ImportInfo::NsReferDef { .. } => {
+            let import_target = if is_cirru_string(&item.ns) {
+              wrap_js_str(&item.ns[1..])
+            } else {
+              to_js_import_name(&item.ns, true)
+            };
+            write!(import_code, "\nimport {{ {} }} from {import_target};", escape_var(&item.def)).expect("write");
+          }
+          ImportInfo::Core { at_ns } => {
+            if at_ns == &item.ns {
+              continue;
+            }
+            write!(import_code, "\nimport {{ {} }} from {core_lib};", escape_var(&item.def)).expect("write");
+          }
+          ImportInfo::SameFile { .. } => {
+            // nothing to do
           }
         }
       }

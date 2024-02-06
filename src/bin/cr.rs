@@ -143,8 +143,6 @@ fn main() -> Result<(), String> {
   runner::preprocess::preprocess_ns_def(
     calcit::calcit::CORE_NS,
     calcit::calcit::BUILTIN_CLASSES_ENTRY,
-    calcit::calcit::BUILTIN_CLASSES_ENTRY,
-    None,
     check_warnings,
     &rpds::List::new_sync(),
   )
@@ -271,14 +269,9 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
     if task_size > 1 {
       // when there's services, make sure their code get preprocessed too
       let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
-      if let Err(e) = runner::preprocess::preprocess_ns_def(
-        &entries.init_ns,
-        &entries.init_def,
-        &entries.init_def,
-        None,
-        check_warnings,
-        &rpds::List::new_sync(),
-      ) {
+      if let Err(e) =
+        runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &rpds::List::new_sync())
+      {
         return Err(e.to_string());
       }
 
@@ -324,14 +317,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   gen_stack::clear_stack();
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(
-    &entries.init_ns,
-    &entries.init_def,
-    &entries.init_def,
-    None,
-    check_warnings,
-    &rpds::List::new_sync(),
-  ) {
+  match runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &rpds::List::new_sync()) {
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
@@ -349,14 +335,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(
-    &entries.reload_ns,
-    &entries.reload_def,
-    &entries.init_def,
-    None,
-    check_warnings,
-    &rpds::List::new_sync(),
-  ) {
+  match runner::preprocess::preprocess_ns_def(&entries.reload_ns, &entries.reload_def, check_warnings, &rpds::List::new_sync()) {
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");

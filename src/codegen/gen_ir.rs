@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use cirru_edn::{format, Edn, EdnListView};
 
-use crate::calcit::{Calcit, CalcitCompactList, ImportRule, SymbolResolved::*};
+use crate::calcit::{Calcit, CalcitCompactList, CalcitImport, ImportInfo, SymbolResolved::*};
 use crate::program;
 
 #[derive(Debug)]
@@ -90,35 +90,9 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     Calcit::Str(s) => Edn::Str((**s).into()),
     Calcit::Bool(b) => Edn::Bool(b.to_owned()),
     Calcit::Tag(s) => Edn::Tag(s.to_owned()),
-    Calcit::Symbol { sym, info, location } => {
+    Calcit::Symbol { sym, info, .. } => {
       let resolved = match &info.resolved {
         Some(resolved) => match &resolved {
-          ResolvedDef {
-            ns: r_ns,
-            def: r_def,
-            rule: import_rule,
-          } => Edn::map_from_iter([
-            (Edn::tag("kind"), Edn::tag("def")),
-            (Edn::tag("ns"), Edn::Str((**r_ns).into())),
-            (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
-            (Edn::tag("def"), Edn::Str((**r_def).into())),
-            (
-              Edn::tag("rule"),
-              match import_rule.to_owned().map(|x| x.to_owned()) {
-                Some(ImportRule::NsAs(_n)) => Edn::tag("ns"),
-                Some(ImportRule::NsDefault(_n)) => Edn::tag("default"),
-                Some(ImportRule::NsReferDef(_ns, _def)) => Edn::tag("def"),
-                None => Edn::Nil,
-              },
-            ),
-            (
-              Edn::tag("location"),
-              match location {
-                Some(xs) => (**xs).to_owned().into(),
-                None => Edn::Nil,
-              },
-            ),
-          ]),
           ResolvedRaw => Edn::map_from_iter([("kind".into(), Edn::tag("raw"))]),
           ResolvedRegistered => Edn::map_from_iter([("kind".into(), Edn::tag("registered"))]),
         },
@@ -129,10 +103,40 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
         (Edn::tag("kind"), Edn::tag("symbol")),
         (Edn::tag("val"), Edn::Str((**sym).into())),
         (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
-        (Edn::tag("ns"), Edn::Str((*info.ns).into())),
+        (Edn::tag("ns"), Edn::Str((*info.at_ns).into())),
         (Edn::tag("resolved"), resolved),
       ])
     }
+    Calcit::Local { sym, info, .. } => Edn::map_from_iter([
+      (Edn::tag("kind"), Edn::tag("local")),
+      (Edn::tag("val"), Edn::Str((**sym).into())),
+      (
+        Edn::tag("info"),
+        Edn::map_from_iter([
+          (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
+          (Edn::tag("ns"), Edn::Str((*info.at_ns).into())),
+        ]),
+      ),
+    ]),
+
+    Calcit::Import(CalcitImport { ns, def, info }) => Edn::map_from_iter([
+      (Edn::tag("kind"), Edn::tag("import")),
+      (Edn::tag("ns"), Edn::Str((**ns).into())),
+      (Edn::tag("def"), Edn::Str((**def).into())),
+      (
+        Edn::tag("rule"),
+        match &**info {
+          ImportInfo::NsAs { .. } => Edn::tag("as"),
+          ImportInfo::JsDefault { .. } => Edn::tag("js-default"),
+          ImportInfo::NsReferDef { .. } => Edn::tag("refer"),
+          ImportInfo::SameFile { .. } => Edn::tag("same-file"),
+          ImportInfo::Core { at_ns } => Edn::map_from_iter([
+            (Edn::tag("kind"), Edn::tag("core")),
+            (Edn::tag("at_ns"), Edn::Str((**at_ns).into())),
+          ]),
+        },
+      ),
+    ]),
 
     Calcit::Fn { info, .. } => {
       Edn::map_from_iter([

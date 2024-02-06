@@ -28,6 +28,10 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       Calcit::Syntax(CalcitSyntax::Quote, "quote".into()),
       x.to_owned(),
     ]))),
+    Calcit::Import { .. } => Ok(Calcit::List(CalcitList::from(vec![
+      Calcit::Syntax(CalcitSyntax::Quote, "quote".into()),
+      x.to_owned(),
+    ]))),
     Calcit::Nil => Ok(Calcit::Nil),
     Calcit::Tuple(t, extra, _class) => {
       let mut ys = CalcitList::new_inner_from(&[Arc::new(Calcit::Proc(CalcitProc::NativeTuple))]);
@@ -63,7 +67,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       let mut ys = CalcitList::new_inner_from(&[Arc::new(Calcit::Symbol {
         sym: "defrecord!".into(),
         info: Arc::new(crate::calcit::CalcitSymbolInfo {
-          ns: Arc::from(ns),
+          at_ns: Arc::from(ns),
           at_def: Arc::from(at_def),
           resolved: None,
         }),

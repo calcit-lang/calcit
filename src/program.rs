@@ -5,7 +5,7 @@ use std::sync::RwLock;
 
 use cirru_parser::Cirru;
 
-use crate::calcit::{Calcit, ImportRule};
+use crate::calcit::Calcit;
 use crate::data::cirru::code_to_calcit;
 use crate::snapshot;
 use crate::snapshot::Snapshot;
@@ -21,6 +21,17 @@ pub struct ProgramFileData {
 }
 
 type ImportMapPair = (Arc<str>, Arc<ImportRule>);
+
+/// defRule: ns def
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportRule {
+  /// ns imported via `:as`
+  NsAs(Arc<str>),
+  /// (ns, def) imported via `:refer`
+  NsReferDef(Arc<str>, Arc<str>),
+  /// ns imported via `:default`, js only
+  NsDefault(Arc<str>),
+}
 
 pub type ProgramCodeData = HashMap<Arc<str>, ProgramFileData>;
 
@@ -159,9 +170,9 @@ pub fn lookup_ns_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>> {
 }
 
 // imported via :default
-pub fn lookup_default_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>> {
+pub fn lookup_default_target_in_import(at_ns: &str, alias: &str) -> Option<Arc<str>> {
   let program = { PROGRAM_CODE_DATA.read().expect("read program code") };
-  let file = program.get(ns)?;
+  let file = program.get(at_ns)?;
   let import_rule = file.import_map.get(alias)?;
   match &**import_rule {
     ImportRule::NsReferDef(_ns, _def) => None,

@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use cirru_parser::Cirru;
 
-use crate::calcit::{Calcit, CalcitList, CalcitProc, MethodKind};
+use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitProc, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result<Calcit, String> {
   let symbol_info = Arc::new(crate::calcit::CalcitSymbolInfo {
-    ns: Arc::from(ns),
+    at_ns: Arc::from(ns),
     at_def: Arc::from(def),
     resolved: None,
   });
@@ -192,6 +192,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Str(s) => Ok(Cirru::leaf(format!("|{s}"))),            // TODO performance
     Calcit::Symbol { sym, .. } => Ok(Cirru::Leaf((**sym).into())), // TODO performance
     Calcit::Local { sym, .. } => Ok(Cirru::Leaf((**sym).into())),  // TODO performance
+    Calcit::Import(CalcitImport { ns, def, .. }) => Ok(Cirru::Leaf((format!("{ns}/{def}")).into())), // TODO performance
     Calcit::Tag(s) => Ok(Cirru::leaf(format!(":{s}"))),            // TODO performance
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
@@ -201,6 +202,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
       Ok(Cirru::List(ys))
     }
     Calcit::Proc(s) => Ok(Cirru::Leaf(s.as_ref().into())),
+    Calcit::Fn { .. } => Ok(Cirru::Leaf(format!("(fn {})", x).into())), // TODO more details
     Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.as_ref().into())),
     Calcit::CirruQuote(code) => Ok(code.to_owned()),
     Calcit::Method(name, kind) => match kind {

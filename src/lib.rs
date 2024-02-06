@@ -45,7 +45,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitCompactL
   let check_warnings = RefCell::new(LocatedWarning::default_list());
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, &check_warnings, &rpds::List::new_sync()) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &check_warnings, &rpds::List::new_sync()) {
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");

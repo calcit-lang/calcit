@@ -1,17 +1,16 @@
 use crate::{
-  builtins,
-  builtins::records::find_in_fields,
-  calcit,
-  calcit::{gen_core_id, Calcit, CalcitCompactList, CalcitErr, CalcitList, CalcitSymbolInfo, GENERATED_DEF, GEN_NS},
-  call_stack,
-  call_stack::CallStackList,
+  builtins::{self, records::find_in_fields},
+  calcit::{
+    self, gen_core_id, Calcit, CalcitCompactList, CalcitErr, CalcitImport, CalcitList, CalcitSymbolInfo, GENERATED_DEF, GEN_NS,
+  },
+  call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
   data::{
     cirru::{self, cirru_to_calcit},
     data_to_calcit,
     edn::{self, edn_to_calcit},
   },
-  runner::{self},
+  runner,
   util::number::f64_to_usize,
 };
 
@@ -60,6 +59,7 @@ pub fn type_of(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     Calcit::Method(..) => Ok(Calcit::tag("method")),
     Calcit::RawCode(..) => Ok(Calcit::tag("raw-code")),
     Calcit::Local { .. } => Ok(Calcit::tag("local")),
+    Calcit::Import { .. } => Ok(Calcit::tag("import")),
   }
 }
 
@@ -94,6 +94,7 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
     }
     Calcit::Symbol { sym, .. } => Cirru::Leaf((**sym).into()),
     Calcit::Local { sym, .. } => Cirru::Leaf((**sym).into()),
+    Calcit::Import(CalcitImport { def, .. }) => Cirru::Leaf((format!("{def}")).into()), // TODO ns
     Calcit::Syntax(s, _ns) => Cirru::Leaf(s.as_ref().into()),
     Calcit::Proc(s) => Cirru::Leaf(s.as_ref().into()),
     a => Cirru::leaf(format!("{a}")),
@@ -235,7 +236,7 @@ pub fn turn_symbol(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("turn-symbol expected 1 argument, got:", xs);
   }
   let info = Arc::new(CalcitSymbolInfo {
-    ns: calcit::GEN_NS.into(),
+    at_ns: calcit::GEN_NS.into(),
     at_def: calcit::GENERATED_DEF.into(),
     resolved: None,
   });

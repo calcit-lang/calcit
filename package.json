@@ -13,7 +13,8 @@
     "eval": "cargo run --bin cr -- -e",
     "try-rs": "cargo run --bin cr -- calcit/test.cirru -1",
     "try-js-brk": "cargo run --bin cr -- calcit/test.cirru --emit-js -1 && node --inspect-brk js-out/main.mjs",
-    "try-js": "cargo run --bin cr -- calcit/test.cirru --emit-js -1 && node js-out/main.mjs"
+    "try-js": "cargo run --bin cr -- calcit/test.cirru --emit-js -1 && node js-out/main.mjs",
+    "try-ir": "cargo run --bin cr -- calcit/test.cirru --emit-ir -1"
   },
   "repository": {
     "type": "git",

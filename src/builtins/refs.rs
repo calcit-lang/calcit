@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use cirru_edn::EdnTag;
 use im_ternary_tree::TernaryTreeList;
 
-use crate::calcit::{Calcit, CalcitCompactList, CalcitErr, CalcitList, CalcitScope};
+use crate::calcit::{Calcit, CalcitCompactList, CalcitErr, CalcitImport, CalcitList, CalcitScope};
 use crate::{call_stack::CallStackList, runner};
 
 pub(crate) type ValueAndListeners = (Calcit, HashMap<EdnTag, Calcit>);
@@ -54,11 +54,40 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
 pub fn defatom(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match (expr.get_inner(0), expr.get_inner(1)) {
     (Some(Calcit::Symbol { sym, info, .. }), Some(code)) => {
-      let mut path: String = (*info.ns).to_owned();
+      let mut path: String = (*info.at_ns).to_owned();
       path.push('/');
       path.push_str(sym);
 
       let path_info: Arc<str> = path.into();
+
+      println!("defatom symbol {:?}", path_info);
+
+      let defined = {
+        let dict = REFS_DICT.lock().expect("read refs");
+        dict.get(&path_info).map(ToOwned::to_owned)
+        // need to release lock before calling `evaluate_expr`
+      };
+
+      match defined {
+        Some(v) => Ok(Calcit::Ref(path_info, v.to_owned())),
+        None => {
+          let v = runner::evaluate_expr(code, scope, file_ns, call_stack)?;
+          let pair_value = Arc::new(Mutex::new((v, HashMap::new())));
+          let mut dict = REFS_DICT.lock().expect("read refs");
+          dict.insert(path_info.to_owned(), pair_value.to_owned());
+          Ok(Calcit::Ref(path_info, pair_value))
+        }
+      }
+    }
+
+    (Some(Calcit::Import(CalcitImport { def, ns, .. })), Some(code)) => {
+      let mut path: String = ns.to_string();
+      path.push('/');
+      path.push_str(def);
+
+      let path_info: Arc<str> = path.into();
+
+      println!("defatom import {:?}", path_info);
 
       let defined = {
         let dict = REFS_DICT.lock().expect("read refs");
@@ -97,6 +126,7 @@ pub fn atom(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
       let path: String = format!("atom-{atom_idx}");
 
       let path_info: Arc<str> = path.into();
+      println!("atom {:?}", path_info);
 
       let pair_value = Arc::new(Mutex::new((value.to_owned(), HashMap::new())));
       Ok(Calcit::Ref(path_info, pair_value))
@@ -109,6 +139,7 @@ pub fn atom(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 pub fn atom_deref(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Ref(_path, locked_pair)) => {
+      println!("deref import {:?}", _path);
       let pair = (**locked_pair).lock().expect("read pair from block");
       Ok(pair.0.to_owned())
     }
@@ -122,17 +153,33 @@ pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
   if expr.len() < 2 {
     return CalcitErr::err_nodes("reset! excepted 2 arguments, got:", &expr.into());
   }
-  // println!("reset! {:?}", expr[0]);
+  println!("reset! {:?}", expr[0]);
   let target = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
   let new_value = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
   match (target, &new_value) {
     (Calcit::Ref(_path, locked_pair), v) => {
+      println!("reset defatom {:?} {}", _path, v);
       modify_ref(locked_pair, v.to_owned(), call_stack)?;
       Ok(Calcit::Nil)
     }
     // if reset! called before deref, we need to trigger the thunk
     (Calcit::Thunk(code, _thunk_data), _) => match &*expr[0] {
-      Calcit::Symbol { sym, .. } => runner::evaluate_def_thunk(&code, file_ns, sym, call_stack),
+      Calcit::Symbol { sym, .. } | Calcit::Import(CalcitImport { def: sym, .. }) => {
+        let ret = runner::evaluate_def_thunk(&code, file_ns, sym, call_stack);
+        match (ret, &new_value) {
+          (Ok(Calcit::Ref(_path, locked_pair)), v) => {
+            println!("reset defatom {:?} {}", _path, v);
+            modify_ref(locked_pair, v.to_owned(), call_stack)?;
+            Ok(Calcit::Nil)
+          }
+          (Ok(a), _) => Err(CalcitErr::use_msg_stack_location(
+            format!("reset! expected a ref, got: {a}"),
+            call_stack,
+            a.get_location(),
+          )),
+          (Err(e), _) => Err(e),
+        }
+      }
       _ => CalcitErr::err_str(format!("reset! expected a symbol, got: {:?}", expr[0])),
     },
     (a, b) => Err(CalcitErr::use_msg_stack_location(
