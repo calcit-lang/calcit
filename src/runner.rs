@@ -39,7 +39,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
       Some(data) => Ok((**data).to_owned()),
     },
     Calcit::Ref(..) => Ok(expr.to_owned()),
-    Calcit::Tuple(..) => Ok(expr.to_owned()),
+    Calcit::Tuple { .. } => Ok(expr.to_owned()),
     Calcit::Buffer(..) => Ok(expr.to_owned()),
     Calcit::CirruQuote(..) => Ok(expr.to_owned()),
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),

@@ -52,7 +52,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     }
     Calcit::Proc(name) => Ok(Edn::Symbol(name.as_ref().into())),
     Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.as_ref())),
-    Calcit::Tuple(tag, extra, _class) => {
+    Calcit::Tuple { tag, extra, .. } => {
       match &**tag {
         Calcit::Symbol { sym, .. } => {
           if &**sym == "quote" {
@@ -121,11 +121,11 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
         values: Arc::new(Vec::new()),
         class: Arc::new(Calcit::Nil),
       };
-      Calcit::Tuple(
-        Arc::new(edn_to_calcit(tag, options)),
-        extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
-        Arc::new(base_class),
-      )
+      Calcit::Tuple {
+        tag: Arc::new(edn_to_calcit(tag, options)),
+        extra: extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
+        class: Arc::new(base_class),
+      }
     }
     Edn::List(xs) => {
       let mut ys = CalcitList::new_inner();

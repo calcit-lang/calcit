@@ -62,7 +62,11 @@ pub enum Calcit {
   /// atom, holding a path to its state, data inside remains during hot code swapping
   Ref(Arc<str>, Arc<Mutex<ValueAndListeners>>),
   /// more tagged union type, more like an internal structure
-  Tuple(Arc<Calcit>, Vec<Calcit>, Arc<Calcit>),
+  Tuple {
+    tag: Arc<Calcit>,
+    extra: Vec<Calcit>,
+    class: Arc<Calcit>,
+  },
   /// binary data, to be used by FFIs
   Buffer(Vec<u8>),
   /// cirru quoted data, for faster meta programming
@@ -128,7 +132,7 @@ impl fmt::Display for Calcit {
       },
       Calcit::CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
       Calcit::Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
-      Calcit::Tuple(tag, extra, _class) => {
+      Calcit::Tuple { tag, extra, .. } => {
         let mut extra_str = String::from("");
         for item in extra {
           extra_str.push(' ');
@@ -337,7 +341,7 @@ impl Hash for Calcit {
         "ref:".hash(_state);
         name.hash(_state);
       }
-      Calcit::Tuple(tag, extra, _class) => {
+      Calcit::Tuple { tag, extra, .. } => {
         "tuple:".hash(_state);
         tag.hash(_state);
         extra.hash(_state);
@@ -476,12 +480,19 @@ impl Ord for Calcit {
       (Calcit::Ref(_, _), _) => Less,
       (_, Calcit::Ref(_, _)) => Greater,
 
-      (Calcit::Tuple(a0, extra0, _c0), Calcit::Tuple(a1, extra1, _c1)) => match a0.cmp(a1) {
+      (
+        Calcit::Tuple {
+          tag: a0, extra: extra0, ..
+        },
+        Calcit::Tuple {
+          tag: a1, extra: extra1, ..
+        },
+      ) => match a0.cmp(a1) {
         Equal => extra0.cmp(extra1),
         v => v,
       },
-      (Calcit::Tuple(_, _, _), _) => Less,
-      (_, Calcit::Tuple(_, _, _)) => Greater,
+      (Calcit::Tuple { .. }, _) => Less,
+      (_, Calcit::Tuple { .. }) => Greater,
 
       (Calcit::Buffer(buf1), Calcit::Buffer(buf2)) => buf1.cmp(buf2),
       (Calcit::Buffer(..), _) => Less,
@@ -578,7 +589,14 @@ impl PartialEq for Calcit {
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
       (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
       (Calcit::Ref(a, _), Calcit::Ref(b, _)) => a == b,
-      (Calcit::Tuple(a, extra_a, _c0), Calcit::Tuple(c, extra_c, _c1)) => a == c && extra_a == extra_c,
+      (
+        Calcit::Tuple {
+          tag: a, extra: extra_a, ..
+        },
+        Calcit::Tuple {
+          tag: c, extra: extra_c, ..
+        },
+      ) => a == c && extra_a == extra_c,
       (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,
       (Calcit::CirruQuote(b), Calcit::CirruQuote(d)) => b == d,
       (Calcit::List(a), Calcit::List(b)) => a.0 == b.0,

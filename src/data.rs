@@ -34,7 +34,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     ]))),
     Calcit::Registered(s) => Ok(Calcit::Registered(s.to_owned())),
     Calcit::Nil => Ok(Calcit::Nil),
-    Calcit::Tuple(t, extra, _class) => {
+    Calcit::Tuple { tag: t, extra, .. } => {
       let mut ys = CalcitList::new_inner_from(&[Arc::new(Calcit::Proc(CalcitProc::NativeTuple))]);
       ys = ys.push_right(data_to_calcit(t, ns, at_def)?.into());
       for x in extra {
