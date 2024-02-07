@@ -22,7 +22,7 @@ use im_ternary_tree::TernaryTreeList;
 pub use fns::{CalcitFn, CalcitMacro, CalcitScope};
 pub use list::{CalcitCompactList, CalcitList};
 pub use proc_name::CalcitProc;
-pub use symbol::{CalciltLocalInfo, CalcitImport, CalcitSymbolInfo, ImportInfo, SymbolResolved};
+pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
 pub use syntax_name::CalcitSyntax;
 
 use crate::builtins::ValueAndListeners;
@@ -46,7 +46,7 @@ pub enum Calcit {
   /// local variable
   Local {
     sym: Arc<str>,
-    info: Arc<CalciltLocalInfo>,
+    info: Arc<CalcitSymbolInfo>,
     location: Option<Arc<Vec<u8>>>,
   },
   /// things that can be looked up from program snapshot, also things in :require block

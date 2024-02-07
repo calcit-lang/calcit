@@ -1,8 +1,8 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, CalciltLocalInfo, Calcit, CalcitCompactList, CalcitErr, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo,
-    CalcitSyntax, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, SymbolResolved::*, GENERATED_DEF,
+    self, Calcit, CalcitCompactList, CalcitErr, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax,
+    ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
   },
   call_stack::{extend_call_stack, CalcitStack, CallStackList, StackArgsList, StackKind},
   program, runner,
@@ -151,7 +151,6 @@ pub fn preprocess_expr(
               info: Arc::new(CalcitSymbolInfo {
                 at_ns: def_ns.to_owned(),
                 at_def: at_def.to_owned(),
-                resolved: Some(ResolvedRaw),
               }),
               location: location.to_owned(),
             },
@@ -161,7 +160,7 @@ pub fn preprocess_expr(
           Ok((
             Calcit::Local {
               sym: def.to_owned(),
-              info: Arc::new(CalciltLocalInfo {
+              info: Arc::new(CalcitSymbolInfo {
                 at_ns: def_ns.to_owned(),
                 at_def: at_def.to_owned(),
               }),
@@ -435,8 +434,8 @@ fn process_list_call(
       Ok((Calcit::List(CalcitList(ys)), None))
     }
     (h, he) => {
-      if let Calcit::Symbol { sym, info, .. } = h {
-        if he.is_none() && info.resolved.is_none() && !is_js_syntax_procs(sym) {
+      if let Calcit::Symbol { sym, .. } = h {
+        if he.is_none() && !is_js_syntax_procs(sym) {
           println!("warning: unresolved symbol `{}` in `{}`", sym, xs);
         }
       }
@@ -577,7 +576,6 @@ pub fn preprocess_defn(
         info: Arc::new(CalcitSymbolInfo {
           at_ns: info.at_ns.to_owned(),
           at_def: info.at_def.to_owned(),
-          resolved: Some(ResolvedRaw),
         }),
         location: location.to_owned(),
       }));
@@ -597,7 +595,6 @@ pub fn preprocess_defn(
               info: Arc::new(CalcitSymbolInfo {
                 at_ns: info.at_ns.to_owned(),
                 at_def: info.at_def.to_owned(),
-                resolved: Some(ResolvedRaw),
               }),
               location: arg_location.to_owned(),
             };
@@ -673,7 +670,7 @@ pub fn preprocess_core_let(
         let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
         let name = Calcit::Local {
           sym: sym.to_owned(),
-          info: Arc::new(CalciltLocalInfo {
+          info: Arc::new(CalcitSymbolInfo {
             at_ns: info.at_ns.to_owned(),
             at_def: info.at_def.to_owned(),
           }),

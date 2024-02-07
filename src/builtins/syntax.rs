@@ -378,7 +378,6 @@ pub fn gensym(xs: &CalcitList, _scope: &CalcitScope, file_ns: &str, _call_stack:
     info: Arc::new(CalcitSymbolInfo {
       at_ns: Arc::from(file_ns),
       at_def: calcit::GENERATED_DEF.into(),
-      resolved: None,
     }),
     location: None,
   })

@@ -9,7 +9,6 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
   let symbol_info = Arc::new(crate::calcit::CalcitSymbolInfo {
     at_ns: Arc::from(ns),
     at_def: Arc::from(def),
-    resolved: None,
   });
   let coord = Arc::from(coord);
   match xs {

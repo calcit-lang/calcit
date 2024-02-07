@@ -240,7 +240,6 @@ pub fn turn_symbol(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   let info = Arc::new(CalcitSymbolInfo {
     at_ns: calcit::GEN_NS.into(),
     at_def: calcit::GENERATED_DEF.into(),
-    resolved: None,
   });
   match &xs[0] {
     Calcit::Str(s) => Ok(Calcit::Symbol {

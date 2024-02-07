@@ -108,7 +108,6 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
       info: Arc::new(crate::calcit::CalcitSymbolInfo {
         at_ns: calcit::GEN_NS.into(),
         at_def: calcit::GENERATED_DEF.into(),
-        resolved: None,
       }),
       location: None,
     },

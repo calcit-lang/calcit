@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use cirru_edn::{format, Edn, EdnListView};
 
-use crate::calcit::{Calcit, CalcitCompactList, CalcitImport, ImportInfo, SymbolResolved::*};
+use crate::calcit::{Calcit, CalcitCompactList, CalcitImport, ImportInfo};
 use crate::program;
 
 #[derive(Debug)]
@@ -90,22 +90,12 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     Calcit::Str(s) => Edn::Str((**s).into()),
     Calcit::Bool(b) => Edn::Bool(b.to_owned()),
     Calcit::Tag(s) => Edn::Tag(s.to_owned()),
-    Calcit::Symbol { sym, info, .. } => {
-      let resolved = match &info.resolved {
-        Some(resolved) => match &resolved {
-          ResolvedRaw => Edn::map_from_iter([("kind".into(), Edn::tag("raw"))]),
-        },
-        None => Edn::map_from_iter([("kind".into(), Edn::Nil)]),
-      };
-
-      Edn::map_from_iter([
-        (Edn::tag("kind"), Edn::tag("symbol")),
-        (Edn::tag("val"), Edn::Str((**sym).into())),
-        (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
-        (Edn::tag("ns"), Edn::Str((*info.at_ns).into())),
-        (Edn::tag("resolved"), resolved),
-      ])
-    }
+    Calcit::Symbol { sym, info, .. } => Edn::map_from_iter([
+      (Edn::tag("kind"), Edn::tag("symbol")),
+      (Edn::tag("val"), Edn::Str((**sym).into())),
+      (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
+      (Edn::tag("ns"), Edn::Str((*info.at_ns).into())),
+    ]),
     Calcit::Local { sym, info, .. } => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("local")),
       (Edn::tag("val"), Edn::Str((**sym).into())),

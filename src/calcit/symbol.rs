@@ -3,22 +3,8 @@ use std::{
   sync::Arc,
 };
 
-/// resolved value of real meaning of a symbol
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SymbolResolved {
-  /// raw syntax, no target, for example `&` is a raw syntax
-  ResolvedRaw,
-}
-
-#[derive(Debug, Clone)]
 pub struct CalcitSymbolInfo {
-  pub at_ns: Arc<str>,
-  pub at_def: Arc<str>,
-  pub resolved: Option<SymbolResolved>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CalciltLocalInfo {
   pub at_ns: Arc<str>,
   pub at_def: Arc<str>,
 }

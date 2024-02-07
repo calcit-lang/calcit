@@ -70,7 +70,6 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         info: Arc::new(crate::calcit::CalcitSymbolInfo {
           at_ns: Arc::from(ns),
           at_def: Arc::from(at_def),
-          resolved: None,
         }),
         location: None,
       })]);
