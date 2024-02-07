@@ -9,7 +9,17 @@ use im_ternary_tree::TernaryTreeList;
 use std::fmt;
 use std::fs;
 use std::hash::Hash;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+
+lazy_static! {
+  static ref TRACK_STACK: AtomicBool = AtomicBool::new(true);
+}
+
+/// control global stack usage
+pub fn set_using_stack(b: bool) {
+  TRACK_STACK.store(b, std::sync::atomic::Ordering::Relaxed);
+}
 
 #[derive(Debug, PartialEq, Clone, Eq, Ord, PartialOrd, Hash)]
 pub struct CalcitStack {
@@ -70,13 +80,24 @@ impl Default for StackArgsList {
 /// create new entry to the tree
 pub fn extend_call_stack(
   stack: &CallStackList,
-  ns: Arc<str>,
-  def: Arc<str>,
+  ns: &str,
+  def: &str,
   kind: StackKind,
-  code: Calcit,
-  args: StackArgsList,
+  code: &Calcit,
+  args: &StackArgsList,
 ) -> CallStackList {
-  stack.push_front(CalcitStack { ns, def, code, args, kind })
+  let b = TRACK_STACK.load(std::sync::atomic::Ordering::Relaxed);
+  if b {
+    stack.push_front(CalcitStack {
+      ns: Arc::from(ns),
+      def: Arc::from(def),
+      code: code.to_owned(),
+      args: args.to_owned(),
+      kind,
+    })
+  } else {
+    stack.to_owned()
+  }
 }
 
 // show simplified version of stack

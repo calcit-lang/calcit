@@ -29,6 +29,7 @@ pub struct CLIOptions {
   reload_libs: bool,
   emit_js: bool,
   emit_ir: bool,
+  disable_stack: bool,
 }
 
 fn main() -> Result<(), String> {
@@ -46,6 +47,7 @@ fn main() -> Result<(), String> {
     reload_libs: cli_matches.is_present("reload-libs"),
     emit_js: cli_matches.is_present("emit-js"),
     emit_ir: cli_matches.is_present("emit-ir"),
+    disable_stack: cli_matches.is_present("disable-stack"),
   };
   let mut eval_once = cli_matches.is_present("once");
   let assets_watch = cli_matches.value_of("watch-dir");
@@ -60,6 +62,11 @@ fn main() -> Result<(), String> {
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
     .expect("failed to load $HOME");
   println!("module folder: {}", module_folder.to_str().expect("extract path"));
+
+  if cli_options.disable_stack {
+    call_stack::set_using_stack(false);
+    println!("stack trace disabled.")
+  }
 
   let base_dir = cli_options.entry_path.parent().expect("extract parent");
 

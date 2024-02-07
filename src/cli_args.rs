@@ -25,6 +25,12 @@ pub fn parse_cli() -> clap::ArgMatches {
         .takes_value(false),
     )
     .arg(
+      clap::Arg::new("disable-stack")
+        .help("disable stack trace for errors")
+        .long("disable-stack")
+        .takes_value(false),
+    )
+    .arg(
       clap::Arg::new("eval")
         .help("evaluate a snippet")
         .short('e')

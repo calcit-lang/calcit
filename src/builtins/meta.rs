@@ -337,33 +337,33 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitCompactList, call_stack: &C
     Calcit::Record(CalcitRecord { class, .. }) => method_call(class, v0, name, method_args, call_stack),
     // classed should already be preprocessed
     Calcit::List(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, call_stack)?;
+      let class = runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
 
     Calcit::Map(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-map-class", calcit::CORE_NS, call_stack)?;
+      let class = runner::evaluate_symbol_from_program("&core-map-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
 
     Calcit::Number(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-number-class", calcit::CORE_NS, call_stack)?;
+      let class = runner::evaluate_symbol_from_program("&core-number-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
     Calcit::Str(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-string-class", calcit::CORE_NS, call_stack)?;
+      let class = runner::evaluate_symbol_from_program("&core-string-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
     Calcit::Set(..) => {
-      let class = &runner::evaluate_symbol_from_program("&core-set-class", calcit::CORE_NS, call_stack)?;
+      let class = &runner::evaluate_symbol_from_program("&core-set-class", calcit::CORE_NS, None, call_stack)?;
       method_call(class, v0, name, method_args, call_stack)
     }
     Calcit::Nil => {
-      let class = runner::evaluate_symbol_from_program("&core-nil-class", calcit::CORE_NS, call_stack)?;
+      let class = runner::evaluate_symbol_from_program("&core-nil-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
     Calcit::Fn { .. } | Calcit::Proc(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-fn-class", calcit::CORE_NS, call_stack)?;
+      let class = runner::evaluate_symbol_from_program("&core-fn-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
     x => Err(CalcitErr::use_msg_stack_location(

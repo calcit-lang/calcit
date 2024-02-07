@@ -1152,7 +1152,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
   let mut unchanged_ns: HashSet<Arc<str>> = HashSet::new();
 
   let program = program::clone_evaled_program();
-  for (ns, file) in program {
+  for (ns, file) in program.iter() {
     // println!("\nstart handling: {}\n", ns);
     // side-effects, reset tracking state
 
@@ -1203,7 +1203,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       def_names.insert(def.to_owned());
     }
 
-    let deps_in_order = sort_by_deps(&file);
+    let deps_in_order = sort_by_deps(&file.to_hashmap());
     // println!("deps order: {:?}", deps_in_order);
 
     for def in deps_in_order {
@@ -1218,7 +1218,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         }
       }
 
-      let f = file[&def].to_owned();
+      let f = file.lookup(&def).unwrap().0.to_owned();
 
       match &f {
         // probably not work here

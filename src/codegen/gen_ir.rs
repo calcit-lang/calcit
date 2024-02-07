@@ -48,10 +48,10 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
 
   let mut files: HashMap<Arc<str>, IrDataFile> = HashMap::new();
 
-  for (ns, file_info) in program_data {
+  for (ns, file_info) in program_data.iter() {
     let mut defs: HashMap<Arc<str>, Edn> = HashMap::new();
-    for (def, code) in file_info {
-      defs.insert(def, dump_code(&code));
+    for (def, code) in file_info.iter() {
+      defs.insert(def, dump_code(code));
     }
 
     let file = IrDataFile { defs };
@@ -108,7 +108,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       ),
     ]),
 
-    Calcit::Import(CalcitImport { ns, def, info }) => Edn::map_from_iter([
+    Calcit::Import(CalcitImport { ns, def, info, .. }) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("import")),
       (Edn::tag("ns"), Edn::Str((**ns).into())),
       (Edn::tag("def"), Edn::Str((**def).into())),

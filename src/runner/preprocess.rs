@@ -47,14 +47,7 @@ pub fn preprocess_ns_def(
           // write a nil value first to prevent dead loop
           program::write_evaled_def(ns, def, Calcit::Nil).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
 
-          let next_stack = extend_call_stack(
-            call_stack,
-            Arc::from(ns),
-            Arc::from(def),
-            StackKind::Fn,
-            code.to_owned(),
-            StackArgsList::default(),
-          );
+          let next_stack = extend_call_stack(call_stack, ns, def, StackKind::Fn, &code, &StackArgsList::default());
 
           let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
@@ -108,6 +101,8 @@ pub fn preprocess_expr(
         if &*ns_alias == "js" {
           Ok((Calcit::RawCode(RawCodeType::Js, def_part), None))
         } else if let Some(target_ns) = program::lookup_ns_target_in_import(&info.at_ns, &ns_alias) {
+          // TODO js syntax to handle in future
+          let macro_fn = preprocess_ns_def(&target_ns, &def_part, check_warnings, call_stack)?;
           let form = Calcit::Import(CalcitImport {
             ns: target_ns.to_owned(),
             def: def_part.to_owned(),
@@ -116,12 +111,12 @@ pub fn preprocess_expr(
               at_def: info.at_def.to_owned(),
               at_ns: ns_alias,
             }),
+            coord: program::tip_coord(&target_ns, &def_part),
           });
-
-          // TODO js syntax to handle in future
-          let macro_fn = preprocess_ns_def(&target_ns, &def_part, check_warnings, call_stack)?;
           Ok((form, macro_fn))
         } else if program::has_def_code(&ns_alias, &def_part) {
+          // refer to namespace/def directly for some usages
+          let macro_fn = preprocess_ns_def(&ns_alias, &def_part, check_warnings, call_stack)?;
           let form = Calcit::Import(CalcitImport {
             ns: ns_alias.to_owned(),
             def: def_part.to_owned(),
@@ -129,10 +124,8 @@ pub fn preprocess_expr(
               at_ns: info.at_ns.to_owned(),
               at_def: info.at_def.to_owned(),
             }),
+            coord: program::tip_coord(&ns_alias, &def_part),
           });
-
-          // refer to namespace/def directly for some usages
-          let macro_fn = preprocess_ns_def(&ns_alias, &def_part, check_warnings, call_stack)?;
 
           Ok((form, macro_fn))
         } else {
@@ -180,37 +173,39 @@ pub fn preprocess_expr(
           ))
         } else if *def == info.at_def {
           // recursion
+          let macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
           let form = Calcit::Import(CalcitImport {
             ns: def_ns.to_owned(),
             def: def.to_owned(),
             info: Arc::new(ImportInfo::SameFile {
               at_def: info.at_def.to_owned(),
             }),
+            coord: program::tip_coord(def_ns, def),
           });
-          let macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
           Ok((form, macro_fn))
         } else if let Ok(p) = def.parse::<CalcitProc>() {
           Ok((Calcit::Proc(p), None))
         } else if program::has_def_code(calcit::CORE_NS, def) {
           // println!("find in core def: {}", def);
+          let macro_fn = preprocess_ns_def(calcit::CORE_NS, def, check_warnings, call_stack)?;
           let form = Calcit::Import(CalcitImport {
             ns: calcit::CORE_NS.into(),
             def: def.clone(),
             info: Arc::new(ImportInfo::Core { at_ns: file_ns.into() }),
+            coord: program::tip_coord(calcit::CORE_NS, def),
           });
-          let macro_fn = preprocess_ns_def(calcit::CORE_NS, def, check_warnings, call_stack)?;
           Ok((form, macro_fn))
         } else if program::has_def_code(def_ns, def) {
           // same file
+          let macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
           let form = Calcit::Import(CalcitImport {
             ns: def_ns.to_owned(),
             def: def.to_owned(),
             info: Arc::new(ImportInfo::SameFile {
               at_def: info.at_def.to_owned(),
             }),
+            coord: program::tip_coord(def_ns, def),
           });
-
-          let macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
           Ok((form, macro_fn))
         } else if is_registered_proc(def) {
           Ok((Calcit::Registered(def.to_owned()), None))
@@ -221,6 +216,7 @@ pub fn preprocess_expr(
               // effect
               // TODO js syntax to handle in future
 
+              let macro_fn = preprocess_ns_def(&target_ns, def, check_warnings, call_stack)?;
               let form = Calcit::Import(CalcitImport {
                 ns: target_ns.to_owned(),
                 def: def.to_owned(),
@@ -228,9 +224,8 @@ pub fn preprocess_expr(
                   at_ns: def_ns.to_owned(),
                   at_def: at_def.to_owned(),
                 }),
+                coord: program::tip_coord(&target_ns, def),
               });
-
-              let macro_fn = preprocess_ns_def(&target_ns, def, check_warnings, call_stack)?;
               Ok((form, macro_fn))
             }
             // TODO check js_mode
@@ -248,6 +243,7 @@ pub fn preprocess_expr(
                       at_ns: def_ns.to_owned(),
                       at_def: at_def.to_owned(),
                     }),
+                    coord: None,
                   }),
                   None,
                 ))
@@ -338,6 +334,7 @@ fn process_list_call(
           ns: calcit::CORE_NS.into(),
           def: "get".into(),
           info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
+          coord: program::tip_coord(calcit::CORE_NS, "get"),
         });
 
         let code = Calcit::List(CalcitList::from(&[Arc::new(get_method), args[0].to_owned(), head.to_owned()]));
@@ -355,11 +352,11 @@ fn process_list_call(
       let code = Calcit::List(xs.to_owned());
       let next_stack = extend_call_stack(
         call_stack,
-        info.def_ns.to_owned(),
-        info.name.to_owned(),
+        &info.def_ns,
+        &info.name,
         StackKind::Macro,
-        code,
-        StackArgsList::List(args.0),
+        &code,
+        &StackArgsList::List(args.0),
       );
 
       let mut body_scope = CalcitScope::default();

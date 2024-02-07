@@ -27,9 +27,9 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
       evaluate_symbol(sym, scope, &info.at_ns, &info.at_def, location, call_stack)
     }
     Calcit::Local { sym, .. } => evaluate_symbol_from_scope(sym, scope),
-    Calcit::Import(CalcitImport { ns, def, .. }) => {
+    Calcit::Import(CalcitImport { ns, def, coord, .. }) => {
       // TODO might have quick path
-      evaluate_symbol_from_program(def, ns, call_stack)
+      evaluate_symbol_from_program(def, ns, *coord, call_stack)
     }
     Calcit::Registered(alias) => Ok(Calcit::Registered(alias.to_owned())),
     Calcit::Tag(_) => Ok(expr.to_owned()),
@@ -48,7 +48,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
       None => Err(CalcitErr::use_msg_stack(format!("cannot evaluate empty expr: {expr}"), call_stack)),
       Some(x) => {
         // println!("eval expr: {}", expr.lisp_str());
-        // println!("eval expr: {}", x);
+        // println!("eval expr x: {}", x);
 
         let v = evaluate_expr(&x, scope, file_ns, call_stack)?;
         let rest_nodes = xs.drop_left();
@@ -60,11 +60,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
           Calcit::Syntax(s, def_ns) => {
             let next_stack = extend_call_stack(
               call_stack,
-              def_ns.to_owned(),
-              Arc::from(s.as_ref()),
+              def_ns,
+              s.as_ref(),
               StackKind::Syntax,
-              expr.to_owned(),
-              StackArgsList::List(rest_nodes.0.to_owned()),
+              expr,
+              &StackArgsList::List(rest_nodes.0.to_owned()),
             );
 
             builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
@@ -81,11 +81,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
             let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
             let next_stack = extend_call_stack(
               call_stack,
-              Arc::from(file_ns),
-              name.to_owned(),
+              file_ns,
+              name,
               StackKind::Method,
-              Calcit::Nil,
-              StackArgsList::Compact(values.to_owned()),
+              &Calcit::Nil,
+              &StackArgsList::Compact(values.to_owned()),
             );
 
             if *kind == MethodKind::Invoke {
@@ -98,11 +98,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
             let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
             let next_stack = extend_call_stack(
               call_stack,
-              info.def_ns.to_owned(),
-              info.name.to_owned(),
+              &info.def_ns,
+              &info.name,
               StackKind::Fn,
-              expr.to_owned(),
-              StackArgsList::Compact(values.to_owned()),
+              expr,
+              &StackArgsList::Compact(values.to_owned()),
             );
 
             run_fn(values, info, &next_stack)
@@ -120,11 +120,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
 
             let next_stack = extend_call_stack(
               call_stack,
-              info.def_ns.to_owned(),
-              info.name.to_owned(),
+              &info.def_ns,
+              &info.name,
               StackKind::Macro,
-              expr.to_owned(),
-              StackArgsList::List(rest_nodes.0),
+              expr,
+              &StackArgsList::List(rest_nodes.0),
             );
 
             let mut body_scope = CalcitScope::default();
@@ -270,8 +270,22 @@ pub fn evaluate_symbol_from_scope(sym: &str, scope: &CalcitScope) -> Result<Calc
 }
 
 /// a quick path of evaluating symbols, without checking scope and import
-pub fn evaluate_symbol_from_program(sym: &str, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  let v = if file_ns == CORE_NS {
+pub fn evaluate_symbol_from_program(
+  sym: &str,
+  file_ns: &str,
+  coord: Option<(usize, usize)>,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let v0 = match coord {
+    Some((ns_idx, def_idx)) => program::load_by_index(ns_idx, file_ns, def_idx, sym),
+    None => None,
+  };
+  // if v0.is_none() {
+  //   println!("slow path reading symbol: {}/{}", file_ns, sym)
+  // }
+  let v = if let Some(v) = v0 {
+    v
+  } else if file_ns == CORE_NS {
     if let Some(v) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
       v
     } else {
@@ -294,7 +308,7 @@ pub fn evaluate_symbol_from_program(sym: &str, file_ns: &str, call_stack: &CallS
 
 /// make sure a thunk at global is called
 pub fn evaluate_def_thunk(code: &Arc<Calcit>, file_ns: &str, sym: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  println!("from thnk: {}", sym);
+  println!("from thunk: {}", sym);
   let evaled_v = evaluate_expr(code, &CalcitScope::default(), file_ns, call_stack)?;
   // and write back to program state to fix duplicated evalution
   // still using thunk since js and IR requires bare code
