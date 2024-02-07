@@ -190,7 +190,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     },
     Calcit::Set(_) => Err(CalcitErr::use_msg_stack("unexpected set for expr", call_stack)),
     Calcit::Map(_) => Err(CalcitErr::use_msg_stack("unexpected map for expr", call_stack)),
-    Calcit::Record(..) => Err(CalcitErr::use_msg_stack("unexpected record for expr", call_stack)),
+    Calcit::Record { .. } => Err(CalcitErr::use_msg_stack("unexpected record for expr", call_stack)),
     Calcit::Proc(_) => Ok(expr.to_owned()),
     Calcit::Macro { .. } => Ok(expr.to_owned()),
     Calcit::Fn { .. } => Ok(expr.to_owned()),

@@ -64,7 +64,9 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       }
       Ok(Calcit::List(ys.into()))
     }
-    Calcit::Record(tag, fields, values, _class) => {
+    Calcit::Record {
+      name: tag, fields, values, ..
+    } => {
       let mut ys = CalcitList::new_inner_from(&[Arc::new(Calcit::Symbol {
         sym: "defrecord!".into(),
         info: Arc::new(crate::calcit::CalcitSymbolInfo {

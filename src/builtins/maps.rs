@@ -68,7 +68,15 @@ pub fn call_merge(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
         }
         Ok(Calcit::Map(zs))
       }
-      (Calcit::Record(name, fields, values, class), Calcit::Map(ys)) => {
+      (
+        Calcit::Record {
+          name,
+          fields,
+          values,
+          class,
+        },
+        Calcit::Map(ys),
+      ) => {
         let mut new_values = (**values).to_owned();
         for (k, v) in ys {
           match k {
@@ -83,12 +91,12 @@ pub fn call_merge(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
             a => return CalcitErr::err_str(format!("invalid field key: {a}")),
           }
         }
-        Ok(Calcit::Record(
-          name.to_owned(),
-          fields.to_owned(),
-          Arc::new(new_values),
-          class.to_owned(),
-        ))
+        Ok(Calcit::Record {
+          name: name.to_owned(),
+          fields: fields.to_owned(),
+          values: Arc::new(new_values),
+          class: class.to_owned(),
+        })
       }
       (a, b) => CalcitErr::err_str(format!("expected 2 maps, got: {a} {b}")),
     }
@@ -110,7 +118,7 @@ pub fn to_pairs(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Set(zs))
     }
-    Some(Calcit::Record(_name, fields, values, _class)) => {
+    Some(Calcit::Record { fields, values, .. }) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for idx in 0..fields.len() {
         zs.insert_mut(Calcit::List(

@@ -36,7 +36,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       }
       Ok(ys.into())
     }
-    Calcit::Record(name, fields, values, _class) => {
+    Calcit::Record { name, fields, values, .. } => {
       let mut entries = EdnRecordView::new(name.to_owned());
       for idx in 0..fields.len() {
         entries.insert(fields[idx].to_owned(), calcit_to_edn(&values[idx])?);
@@ -65,7 +65,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             Err(format!("unknown tag for EDN: {sym}")) // TODO more types to handle
           }
         }
-        Calcit::Record(name, _, _, _) => {
+        Calcit::Record { name, .. } => {
           let mut extra_values = vec![];
           for item in extra {
             extra_values.push(calcit_to_edn(item)?);
@@ -115,12 +115,12 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::CirruQuote(nodes.to_owned()),
     Edn::Tuple(tag, extra) => {
-      let base_class = Calcit::Record(
-        EdnTag::new("base"),
-        Arc::new(Vec::new()),
-        Arc::new(Vec::new()),
-        Arc::new(Calcit::Nil),
-      );
+      let base_class = Calcit::Record {
+        name: EdnTag::new("base"),
+        fields: Arc::new(Vec::new()),
+        values: Arc::new(Vec::new()),
+        class: Arc::new(Calcit::Nil),
+      };
       Calcit::Tuple(
         Arc::new(edn_to_calcit(tag, options)),
         extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
@@ -159,14 +159,29 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
       }
 
       match find_record_in_options(&name.to_str(), options) {
-        Some(Calcit::Record(pre_name, pre_fields, pre_values, pre_class)) => {
+        Some(Calcit::Record {
+          name: pre_name,
+          fields: pre_fields,
+          values: pre_values,
+          class: pre_class,
+        }) => {
           if fields == *pre_fields {
-            Calcit::Record(pre_name, pre_fields, pre_values, pre_class)
+            Calcit::Record {
+              name: pre_name,
+              fields: pre_fields,
+              values: pre_values,
+              class: pre_class,
+            }
           } else {
             unreachable!("record fields mismatch: {:?} vs {:?}", fields, pre_fields)
           }
         }
-        _ => Calcit::Record(name.to_owned(), Arc::new(fields), Arc::new(values), Arc::new(Calcit::Nil)),
+        _ => Calcit::Record {
+          name: name.to_owned(),
+          fields: Arc::new(fields),
+          values: Arc::new(values),
+          class: Arc::new(Calcit::Nil),
+        },
       }
     }
     Edn::Buffer(buf) => Calcit::Buffer(buf.to_owned()),

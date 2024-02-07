@@ -74,7 +74,12 @@ pub enum Calcit {
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   /// with only static and limited keys, for performance and checking
   /// size of keys are values should be kept consistent
-  Record(EdnTag, Arc<Vec<EdnTag>>, Arc<Vec<Calcit>>, Arc<Calcit>),
+  Record {
+    name: EdnTag,
+    fields: Arc<Vec<EdnTag>>,
+    values: Arc<Vec<Calcit>>,
+    class: Arc<Calcit>,
+  },
   /// native functions that providing feature from Rust
   Proc(CalcitProc),
   Macro {
@@ -183,7 +188,7 @@ impl fmt::Display for Calcit {
         f.write_str(")")?;
         Ok(())
       }
-      Calcit::Record(name, fields, values, _class) => {
+      Calcit::Record { name, fields, values, .. } => {
         f.write_str(&format!("(%{{}} {}", Calcit::Tag(name.to_owned())))?;
         for idx in 0..fields.len() {
           f.write_str(&format!(" ({} {})", Calcit::Tag(fields[idx].to_owned()), values[idx]))?;
@@ -372,7 +377,7 @@ impl Hash for Calcit {
           x.hash(_state)
         }
       }
-      Calcit::Record(name, fields, values, _class) => {
+      Calcit::Record { name, fields, values, .. } => {
         "record:".hash(_state);
         name.hash(_state);
         fields.hash(_state);
@@ -509,14 +514,12 @@ impl Ord for Calcit {
       (Calcit::Map(_), _) => Less,
       (_, Calcit::Map(_)) => Greater,
 
-      (Calcit::Record(name1, _fields1, _values1, _class1), Calcit::Record(name2, _fields2, _values2, _class2)) => {
-        match name1.cmp(name2) {
-          Equal => unreachable!("TODO records are not cmp ed"),
-          ord => ord,
-        }
-      }
-      (Calcit::Record(..), _) => Less,
-      (_, Calcit::Record(..)) => Greater,
+      (Calcit::Record { name: name1, .. }, Calcit::Record { name: name2, .. }) => match name1.cmp(name2) {
+        Equal => unreachable!("TODO records are not cmp ed"),
+        ord => ord,
+      },
+      (Calcit::Record { .. }, _) => Less,
+      (_, Calcit::Record { .. }) => Greater,
 
       (Calcit::Proc(a), Calcit::Proc(b)) => a.cmp(b),
       (Calcit::Proc(_), _) => Less,
@@ -581,9 +584,20 @@ impl PartialEq for Calcit {
       (Calcit::List(a), Calcit::List(b)) => a.0 == b.0,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,
-      (Calcit::Record(name1, fields1, values1, _class1), Calcit::Record(name2, fields2, values2, _class2)) => {
-        name1 == name2 && fields1 == fields2 && values1 == values2
-      }
+      (
+        Calcit::Record {
+          name: name1,
+          fields: fields1,
+          values: values1,
+          ..
+        },
+        Calcit::Record {
+          name: name2,
+          fields: fields2,
+          values: values2,
+          ..
+        },
+      ) => name1 == name2 && fields1 == fields2 && values1 == values2,
 
       // functions compared with nanoid
       (Calcit::Proc(a), Calcit::Proc(b)) => a == b,

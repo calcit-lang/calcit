@@ -51,7 +51,7 @@ pub fn type_of(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     Calcit::List(..) => Ok(Calcit::tag("list")),
     Calcit::Set(..) => Ok(Calcit::tag("set")),
     Calcit::Map(..) => Ok(Calcit::tag("map")),
-    Calcit::Record(..) => Ok(Calcit::tag("record")),
+    Calcit::Record { .. } => Ok(Calcit::tag("record")),
     Calcit::Proc(..) => Ok(Calcit::tag("fn")), // special kind proc, but also fn
     Calcit::Macro { .. } => Ok(Calcit::tag("macro")),
     Calcit::Fn { .. } => Ok(Calcit::tag("fn")),
@@ -282,7 +282,12 @@ pub fn new_tuple(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
       }
       ys
     };
-    let base_class = Calcit::Record(EdnTag::new("base-class"), Arc::new(vec![]), Arc::new(vec![]), Arc::new(Calcit::Nil));
+    let base_class = Calcit::Record {
+      name: EdnTag::new("base-class"),
+      fields: Arc::new(vec![]),
+      values: Arc::new(vec![]),
+      class: Arc::new(Calcit::Nil),
+    };
     Ok(Calcit::Tuple(Arc::new(xs[0].to_owned()), extra, Arc::new(base_class)))
   }
 }
@@ -292,7 +297,7 @@ pub fn new_class_tuple(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     CalcitErr::err_str(format!("tuple expected at least 2 arguments, got: {}", CalcitList::from(xs)))
   } else {
     let class = xs[0].to_owned();
-    if let Calcit::Record(..) = class {
+    if let Calcit::Record { .. } = class {
     } else {
       return CalcitErr::err_str(format!("tuple expected a record as class, got: {}", class));
     }
@@ -318,7 +323,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitCompactList, call_stack: &C
   }
   let class: Calcit = match &invoke_args[0] {
     Calcit::Tuple(_tag, _extra, class) => (**class).to_owned(),
-    Calcit::Record(_name, _f, _v, class) => (**class).to_owned(),
+    Calcit::Record { class, .. } => (**class).to_owned(),
     // classed should already be preprocessed
     Calcit::List(..) => runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, call_stack)?,
 
@@ -338,7 +343,12 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitCompactList, call_stack: &C
     }
   };
   match &class {
-    Calcit::Record(r_name, fields, values, _class) => {
+    Calcit::Record {
+      name: r_name,
+      fields,
+      values,
+      ..
+    } => {
       match find_in_fields(fields, &EdnTag::from(name)) {
         Some(idx) => {
           let method_args = invoke_args.assoc(0, invoke_args[0].to_owned())?;
@@ -475,10 +485,10 @@ pub fn tuple_with_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("tuple:with-class expected 2 arguments, got:", xs);
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple(tag, extra, _), b @ Calcit::Record(..)) => {
+    (Calcit::Tuple(tag, extra, _), b @ Calcit::Record { .. }) => {
       Ok(Calcit::Tuple(tag.to_owned(), extra.to_owned(), Arc::new(b.to_owned())))
     }
-    (a, Calcit::Record(..)) => CalcitErr::err_str(format!("&tuple:with-class expected a tuple, got: {a}")),
+    (a, Calcit::Record { .. }) => CalcitErr::err_str(format!("&tuple:with-class expected a tuple, got: {a}")),
     (Calcit::Tuple(..), b) => CalcitErr::err_str(format!("&tuple:with-class expected second argument in record, got: {b}")),
     (a, b) => CalcitErr::err_str(format!("&tuple:with-class expected a tuple and a record, got: {a} {b}")),
   }
