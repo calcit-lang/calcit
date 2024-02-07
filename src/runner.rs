@@ -4,10 +4,10 @@ pub mod track;
 use im_ternary_tree::TernaryTreeList;
 use std::sync::Arc;
 
-use crate::builtins::{self, is_registered_proc, IMPORTED_PROCS};
+use crate::builtins::{self, IMPORTED_PROCS};
 use crate::calcit::{
-  Calcit, CalcitCompactList, CalcitErr, CalcitFn, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax,
-  MethodKind, NodeLocation, SymbolResolved::*, CORE_NS,
+  Calcit, CalcitCompactList, CalcitErr, CalcitFn, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSyntax, MethodKind,
+  NodeLocation, CORE_NS,
 };
 use crate::call_stack::{extend_call_stack, CallStackList, StackArgsList, StackKind};
 use crate::program;
@@ -23,19 +23,15 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Calcit::Symbol { sym, .. } if &**sym == "&" => Ok(expr.to_owned()),
 
     Calcit::Symbol { sym, info, location, .. } => {
-      match &info.resolved {
-        Some(ResolvedRegistered) => evaluate_symbol_from_registered(sym, file_ns, &info.at_def, location),
-        _ => {
-          // println!("[Warn] slow path reading symbol: {}", sym);
-          evaluate_symbol(sym, scope, &info.at_ns, &info.at_def, location, call_stack)
-        }
-      }
+      // println!("[Warn] slow path reading symbol: {}", sym);
+      evaluate_symbol(sym, scope, &info.at_ns, &info.at_def, location, call_stack)
     }
     Calcit::Local { sym, .. } => evaluate_symbol_from_scope(sym, scope),
     Calcit::Import(CalcitImport { ns, def, .. }) => {
       // TODO might have quick path
       evaluate_symbol_from_program(def, ns, call_stack)
     }
+    Calcit::Registered(alias) => Ok(Calcit::Registered(alias.to_owned())),
     Calcit::Tag(_) => Ok(expr.to_owned()),
     Calcit::Str(_) => Ok(expr.to_owned()),
     Calcit::Thunk(code, v) => match v {
@@ -167,33 +163,23 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
               ))
             }
           }
-          Calcit::Symbol { sym, info, location } => {
+          Calcit::Registered(alias) => {
             let ps = IMPORTED_PROCS.read().expect("read procs");
-            let name = &*sym.to_owned();
-            match ps.get(name) {
+            match ps.get(alias) {
               Some(f) => {
                 let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
                 // weird, but it's faster to pass `values` than passing `&values`
                 // also println slows down code a bit. could't figure out, didn't read asm either
                 f(values, call_stack)
               }
-              None => {
-                let error_location = location
-                  .as_ref()
-                  .map(|l| NodeLocation::new(info.at_ns.clone(), info.at_def.clone(), l.clone()));
-                let ns = &info.at_ns;
-                let at_def = &info.at_def;
-                let resolved = &info.resolved;
-                Err(CalcitErr::use_msg_stack_location(
-                  format!("cannot evaluate symbol directly: {ns}/{sym} in {at_def}, {resolved:?}"),
-                  call_stack,
-                  error_location,
-                ))
-              }
+              None => Err(CalcitErr::use_msg_stack(
+                format!("cannot evaluate symbol directly: {file_ns}/{alias}"),
+                call_stack,
+              )),
             }
           }
           a => Err(CalcitErr::use_msg_stack_location(
-            format!("cannot be used as operator: {a} in {}", xs),
+            format!("cannot be used as operator: {a:?} in {}", xs),
             call_stack,
             a.get_location(),
           )),
@@ -251,16 +237,6 @@ pub fn evaluate_symbol(
         Ok(v)
       } else if let Some(target_ns) = program::lookup_def_target_in_import(file_ns, sym) {
         eval_symbol_from_program(sym, &target_ns, call_stack).map(|v| v.expect("value"))
-      } else if is_registered_proc(sym) {
-        Ok(Calcit::Symbol {
-          sym: sym.into(),
-          info: Arc::new(CalcitSymbolInfo {
-            at_ns: file_ns.into(),
-            at_def: at_def.into(),
-            resolved: Some(ResolvedRegistered),
-          }),
-          location: location.to_owned(),
-        })
       } else {
         let mut vars = String::new();
         for (i, k) in scope.0.keys().enumerate() {
@@ -287,28 +263,6 @@ pub fn evaluate_symbol(
     Calcit::Thunk(code, None) => evaluate_def_thunk(&code, file_ns, sym, call_stack),
     _ => Ok(v),
   }
-}
-
-pub fn evaluate_symbol_from_registered(
-  sym: &str,
-  file_ns: &str,
-  at_def: &str,
-  location: &Option<Arc<Vec<u8>>>,
-) -> Result<Calcit, CalcitErr> {
-  let v = if is_registered_proc(sym) {
-    Calcit::Symbol {
-      sym: sym.into(),
-      info: Arc::new(CalcitSymbolInfo {
-        at_ns: file_ns.into(),
-        at_def: at_def.into(),
-        resolved: Some(ResolvedRegistered),
-      }),
-      location: location.to_owned(),
-    }
-  } else {
-    unreachable!("expected symbol from registered, this is a quick path, should succeed")
-  };
-  Ok(v)
 }
 
 pub fn evaluate_symbol_from_scope(sym: &str, scope: &CalcitScope) -> Result<Calcit, CalcitErr> {

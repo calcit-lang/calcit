@@ -8,8 +8,6 @@ use std::{
 pub enum SymbolResolved {
   /// raw syntax, no target, for example `&` is a raw syntax
   ResolvedRaw,
-  /// registered from runtime
-  ResolvedRegistered,
 }
 
 #[derive(Debug, Clone)]

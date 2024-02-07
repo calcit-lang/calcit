@@ -247,6 +247,10 @@ fn to_js_code(
         // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
         Ok(format!("{proc_prefix}{}", escape_var(s.as_ref())))
       }
+      Calcit::Registered(alias) => {
+        let proc_prefix = get_proc_prefix(ns);
+        Ok(format!("{proc_prefix}{}", escape_var(alias)))
+      }
       Calcit::Method(name, kind) => {
         let proc_prefix = get_proc_prefix(ns);
         if *kind == MethodKind::Invoke {
@@ -437,7 +441,7 @@ fn gen_call_code(
         args_code
       ))
     }
-    Calcit::Symbol { sym: s, .. } => {
+    Calcit::Symbol { sym: s, .. } | Calcit::Registered(s) => {
       match &**s {
         ";" => Ok(format!("(/* {} */ null)", Calcit::List(body))),
 

@@ -239,7 +239,7 @@ fn handle_proc_internal(name: CalcitProc, args: &CalcitCompactList, call_stack: 
 /// inject into procs
 pub fn register_import_proc(name: &str, f: FnType) {
   let mut ps = IMPORTED_PROCS.write().expect("open procs");
-  (*ps).insert(name.to_owned().into(), f);
+  (*ps).insert(Arc::from(name), f);
 }
 
 pub fn handle_syntax(

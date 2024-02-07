@@ -49,7 +49,10 @@ pub enum Calcit {
     info: Arc<CalciltLocalInfo>,
     location: Option<Arc<Vec<u8>>>,
   },
+  /// things that can be looked up from program snapshot, also things in :require block
   Import(CalcitImport),
+  /// registered in runtime
+  Registered(Arc<str>),
   /// sth between string and enum, used a key or weak identifier
   Tag(EdnTag),
   Str(Arc<str>),
@@ -105,6 +108,7 @@ impl fmt::Display for Calcit {
       Calcit::Symbol { sym, .. } => f.write_str(&format!("'{sym}")),
       Calcit::Local { sym, .. } => f.write_str(&format!("'{sym}")),
       Calcit::Import(CalcitImport { ns, def, .. }) => f.write_str(&format!("{ns}/{def}")),
+      Calcit::Registered(alias) => f.write_str(&format!("{alias}")),
       Calcit::Tag(s) => f.write_str(&format!(":{s}")),
       Calcit::Str(s) => {
         if is_simple_str(s) {
@@ -269,6 +273,7 @@ pub fn format_to_lisp(x: &Calcit) -> String {
     Calcit::Symbol { sym, .. } => sym.to_string(),
     Calcit::Local { sym, .. } => sym.to_string(),
     Calcit::Import(CalcitImport { ns, def, .. }) => format!("{ns}/{def}"),
+    Calcit::Registered(alias) => format!("{alias}"),
     Calcit::Tag(s) => format!(":{s}"),
     Calcit::Syntax(s, _ns) => s.to_string(),
     Calcit::Proc(s) => s.to_string(),
@@ -306,6 +311,10 @@ impl Hash for Calcit {
         "import:".hash(_state);
         ns.hash(_state);
         def.hash(_state);
+      }
+      Calcit::Registered(alias) => {
+        "registered:".hash(_state);
+        alias.hash(_state);
       }
       Calcit::Tag(s) => {
         "tag:".hash(_state);
@@ -438,6 +447,10 @@ impl Ord for Calcit {
       (Calcit::Import { .. }, _) => Less,
       (_, Calcit::Import { .. }) => Greater,
 
+      (Calcit::Registered(a), Calcit::Registered(b)) => a.cmp(b),
+      (Calcit::Registered(_), _) => Less,
+      (_, Calcit::Registered(_)) => Greater,
+
       (Calcit::Tag(a), Calcit::Tag(b)) => a.cmp(b),
       (Calcit::Tag(_), _) => Less,
       (_, Calcit::Tag(_)) => Greater,
@@ -555,6 +568,7 @@ impl PartialEq for Calcit {
       (Calcit::Local { sym: a, .. }, Calcit::Symbol { sym: b, .. }) => a == b,
       (Calcit::Symbol { sym: a, .. }, Calcit::Import(CalcitImport { def: b, .. })) => a == b,
       (Calcit::Import(CalcitImport { def: b, .. }), Calcit::Symbol { sym: a, .. }) => a == b,
+      (Calcit::Registered(a), Calcit::Registered(b)) => a == b,
 
       (Calcit::Import(CalcitImport { ns: a, def: a1, .. }), Calcit::Import(CalcitImport { ns: b, def: b1, .. })) => a == b && a1 == b1,
       (Calcit::Tag(a), Calcit::Tag(b)) => a == b,

@@ -94,7 +94,6 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       let resolved = match &info.resolved {
         Some(resolved) => match &resolved {
           ResolvedRaw => Edn::map_from_iter([("kind".into(), Edn::tag("raw"))]),
-          ResolvedRegistered => Edn::map_from_iter([("kind".into(), Edn::tag("registered"))]),
         },
         None => Edn::map_from_iter([("kind".into(), Edn::Nil)]),
       };
@@ -136,6 +135,11 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
           ]),
         },
       ),
+    ]),
+
+    Calcit::Registered(alias) => Edn::map_from_iter([
+      (Edn::tag("kind"), Edn::tag("registered")),
+      (Edn::tag("alias"), Edn::Str((**alias).into())),
     ]),
 
     Calcit::Fn { info, .. } => {

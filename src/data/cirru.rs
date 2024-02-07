@@ -193,7 +193,8 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Symbol { sym, .. } => Ok(Cirru::Leaf((**sym).into())), // TODO performance
     Calcit::Local { sym, .. } => Ok(Cirru::Leaf((**sym).into())),  // TODO performance
     Calcit::Import(CalcitImport { ns, def, .. }) => Ok(Cirru::Leaf((format!("{ns}/{def}")).into())), // TODO performance
-    Calcit::Tag(s) => Ok(Cirru::leaf(format!(":{s}"))),            // TODO performance
+    Calcit::Registered(s) => Ok(Cirru::Leaf(s.as_ref().into())),
+    Calcit::Tag(s) => Ok(Cirru::leaf(format!(":{s}"))), // TODO performance
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
       for x in xs {

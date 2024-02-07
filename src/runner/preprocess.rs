@@ -214,18 +214,7 @@ pub fn preprocess_expr(
           let macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
           Ok((form, macro_fn))
         } else if is_registered_proc(def) {
-          Ok((
-            Calcit::Symbol {
-              sym: def.to_owned(),
-              info: Arc::new(CalcitSymbolInfo {
-                at_ns: def_ns.to_owned(),
-                at_def: at_def.to_owned(),
-                resolved: Some(ResolvedRegistered),
-              }),
-              location: location.to_owned(),
-            },
-            None,
-          ))
+          Ok((Calcit::Registered(def.to_owned()), None))
         } else {
           match program::lookup_def_target_in_import(def_ns, def) {
             // referred to another namespace/def
