@@ -2,8 +2,10 @@ mod eval_node;
 mod fns;
 mod list;
 mod proc_name;
+mod record;
 mod symbol;
 mod syntax_name;
+mod tuple;
 
 use core::cmp::Ord;
 use std::cmp::Eq;
@@ -22,8 +24,10 @@ use im_ternary_tree::TernaryTreeList;
 pub use fns::{CalcitFn, CalcitMacro, CalcitScope};
 pub use list::{CalcitCompactList, CalcitList};
 pub use proc_name::CalcitProc;
+pub use record::CalcitRecord;
 pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
 pub use syntax_name::CalcitSyntax;
+pub use tuple::CalcitTuple;
 
 use crate::builtins::ValueAndListeners;
 use crate::call_stack::CallStackList;
@@ -62,11 +66,7 @@ pub enum Calcit {
   /// atom, holding a path to its state, data inside remains during hot code swapping
   Ref(Arc<str>, Arc<Mutex<ValueAndListeners>>),
   /// more tagged union type, more like an internal structure
-  Tuple {
-    tag: Arc<Calcit>,
-    extra: Vec<Calcit>,
-    class: Arc<Calcit>,
-  },
+  Tuple(CalcitTuple),
   /// binary data, to be used by FFIs
   Buffer(Vec<u8>),
   /// cirru quoted data, for faster meta programming
@@ -78,12 +78,7 @@ pub enum Calcit {
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   /// with only static and limited keys, for performance and checking
   /// size of keys are values should be kept consistent
-  Record {
-    name: EdnTag,
-    fields: Arc<Vec<EdnTag>>,
-    values: Arc<Vec<Calcit>>,
-    class: Arc<Calcit>,
-  },
+  Record(CalcitRecord),
   /// native functions that providing feature from Rust
   Proc(CalcitProc),
   Macro {
@@ -132,7 +127,7 @@ impl fmt::Display for Calcit {
       },
       Calcit::CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
       Calcit::Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
-      Calcit::Tuple { tag, extra, .. } => {
+      Calcit::Tuple(CalcitTuple { tag, extra, .. }) => {
         let mut extra_str = String::from("");
         for item in extra {
           extra_str.push(' ');
@@ -192,7 +187,7 @@ impl fmt::Display for Calcit {
         f.write_str(")")?;
         Ok(())
       }
-      Calcit::Record { name, fields, values, .. } => {
+      Calcit::Record(CalcitRecord { name, fields, values, .. }) => {
         f.write_str(&format!("(%{{}} {}", Calcit::Tag(name.to_owned())))?;
         for idx in 0..fields.len() {
           f.write_str(&format!(" ({} {})", Calcit::Tag(fields[idx].to_owned()), values[idx]))?;
@@ -341,7 +336,7 @@ impl Hash for Calcit {
         "ref:".hash(_state);
         name.hash(_state);
       }
-      Calcit::Tuple { tag, extra, .. } => {
+      Calcit::Tuple(CalcitTuple { tag, extra, .. }) => {
         "tuple:".hash(_state);
         tag.hash(_state);
         extra.hash(_state);
@@ -381,7 +376,7 @@ impl Hash for Calcit {
           x.hash(_state)
         }
       }
-      Calcit::Record { name, fields, values, .. } => {
+      Calcit::Record(CalcitRecord { name, fields, values, .. }) => {
         "record:".hash(_state);
         name.hash(_state);
         fields.hash(_state);
@@ -481,12 +476,12 @@ impl Ord for Calcit {
       (_, Calcit::Ref(_, _)) => Greater,
 
       (
-        Calcit::Tuple {
+        Calcit::Tuple(CalcitTuple {
           tag: a0, extra: extra0, ..
-        },
-        Calcit::Tuple {
+        }),
+        Calcit::Tuple(CalcitTuple {
           tag: a1, extra: extra1, ..
-        },
+        }),
       ) => match a0.cmp(a1) {
         Equal => extra0.cmp(extra1),
         v => v,
@@ -525,7 +520,7 @@ impl Ord for Calcit {
       (Calcit::Map(_), _) => Less,
       (_, Calcit::Map(_)) => Greater,
 
-      (Calcit::Record { name: name1, .. }, Calcit::Record { name: name2, .. }) => match name1.cmp(name2) {
+      (Calcit::Record(CalcitRecord { name: name1, .. }), Calcit::Record(CalcitRecord { name: name2, .. })) => match name1.cmp(name2) {
         Equal => unreachable!("TODO records are not cmp ed"),
         ord => ord,
       },
@@ -590,12 +585,12 @@ impl PartialEq for Calcit {
       (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
       (Calcit::Ref(a, _), Calcit::Ref(b, _)) => a == b,
       (
-        Calcit::Tuple {
+        Calcit::Tuple(CalcitTuple {
           tag: a, extra: extra_a, ..
-        },
-        Calcit::Tuple {
+        }),
+        Calcit::Tuple(CalcitTuple {
           tag: c, extra: extra_c, ..
-        },
+        }),
       ) => a == c && extra_a == extra_c,
       (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,
       (Calcit::CirruQuote(b), Calcit::CirruQuote(d)) => b == d,
@@ -603,18 +598,18 @@ impl PartialEq for Calcit {
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,
       (
-        Calcit::Record {
+        Calcit::Record(CalcitRecord {
           name: name1,
           fields: fields1,
           values: values1,
           ..
-        },
-        Calcit::Record {
+        }),
+        Calcit::Record(CalcitRecord {
           name: name2,
           fields: fields2,
           values: values2,
           ..
-        },
+        }),
       ) => name1 == name2 && fields1 == fields2 && values1 == values2,
 
       // functions compared with nanoid

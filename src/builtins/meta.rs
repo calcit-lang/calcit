@@ -1,7 +1,8 @@
 use crate::{
   builtins::{self, records::find_in_fields},
   calcit::{
-    self, gen_core_id, Calcit, CalcitCompactList, CalcitErr, CalcitImport, CalcitList, CalcitSymbolInfo, GENERATED_DEF, GEN_NS,
+    self, gen_core_id, Calcit, CalcitCompactList, CalcitErr, CalcitImport, CalcitList, CalcitRecord, CalcitSymbolInfo, CalcitTuple,
+    GENERATED_DEF, GEN_NS,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -282,17 +283,17 @@ pub fn new_tuple(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
       }
       ys
     };
-    let base_class = Calcit::Record {
+    let base_class = Calcit::Record(CalcitRecord {
       name: EdnTag::new("base-class"),
       fields: Arc::new(vec![]),
       values: Arc::new(vec![]),
       class: Arc::new(Calcit::Nil),
-    };
-    Ok(Calcit::Tuple {
+    });
+    Ok(Calcit::Tuple(CalcitTuple {
       tag: Arc::new(xs[0].to_owned()),
       extra,
       class: Arc::new(base_class),
-    })
+    }))
   }
 }
 
@@ -314,11 +315,11 @@ pub fn new_class_tuple(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
       }
       ys
     };
-    Ok(Calcit::Tuple {
+    Ok(Calcit::Tuple(CalcitTuple {
       tag: Arc::new(xs[1].to_owned()),
       extra,
       class: Arc::new(class),
-    })
+    }))
   }
 }
 
@@ -330,8 +331,8 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitCompactList, call_stack: &C
     ));
   }
   let class: Calcit = match &invoke_args[0] {
-    Calcit::Tuple { class, .. } => (**class).to_owned(),
-    Calcit::Record { class, .. } => (**class).to_owned(),
+    Calcit::Tuple(CalcitTuple { class, .. }) => (**class).to_owned(),
+    Calcit::Record(CalcitRecord { class, .. }) => (**class).to_owned(),
     // classed should already be preprocessed
     Calcit::List(..) => runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, call_stack)?,
 
@@ -351,12 +352,12 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitCompactList, call_stack: &C
     }
   };
   match &class {
-    Calcit::Record {
+    Calcit::Record(CalcitRecord {
       name: r_name,
       fields,
       values,
       ..
-    } => {
+    }) => {
       match find_in_fields(fields, &EdnTag::from(name)) {
         Some(idx) => {
           let method_args = invoke_args.assoc(0, invoke_args[0].to_owned())?;
@@ -412,7 +413,7 @@ pub fn tuple_nth(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("&tuple:nth expected 2 argument, got:", xs);
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple { tag, extra, .. }, Calcit::Number(n)) => match f64_to_usize(*n) {
+    (Calcit::Tuple(CalcitTuple { tag, extra, .. }), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(0) => Ok((**tag).to_owned()),
       Ok(m) => {
         if m - 1 < extra.len() {
@@ -433,22 +434,22 @@ pub fn assoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("tuple:assoc expected 3 arguments, got:", xs);
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple { tag, extra, class }, Calcit::Number(n)) => match f64_to_usize(*n) {
+    (Calcit::Tuple(CalcitTuple { tag, extra, class }), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx == 0 {
-          Ok(Calcit::Tuple {
+          Ok(Calcit::Tuple(CalcitTuple {
             tag: Arc::new(xs[2].to_owned()),
             extra: extra.to_owned(),
             class: class.to_owned(),
-          })
+          }))
         } else if idx - 1 < extra.len() {
           let mut new_extra = extra.to_owned();
           new_extra[idx - 1] = xs[2].to_owned();
-          Ok(Calcit::Tuple {
+          Ok(Calcit::Tuple(CalcitTuple {
             tag: tag.to_owned(),
             extra: new_extra,
             class: class.to_owned(),
-          })
+          }))
         } else {
           CalcitErr::err_str(format!("Tuple only has fields of 0,1 , unknown index: {idx}"))
         }
@@ -464,7 +465,7 @@ pub fn tuple_count(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("tuple:count expected 1 argument, got:", xs);
   }
   match &xs[0] {
-    Calcit::Tuple { extra, .. } => Ok(Calcit::Number((extra.len() + 1) as f64)),
+    Calcit::Tuple(CalcitTuple { extra, .. }) => Ok(Calcit::Number((extra.len() + 1) as f64)),
     x => CalcitErr::err_str(format!("&tuple:count expected a tuple, got: {x}")),
   }
 }
@@ -474,7 +475,7 @@ pub fn tuple_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("tuple:class expected 1 argument, got:", xs);
   }
   match &xs[0] {
-    Calcit::Tuple { class, .. } => Ok((**class).to_owned()),
+    Calcit::Tuple(CalcitTuple { class, .. }) => Ok((**class).to_owned()),
     x => CalcitErr::err_str(format!("&tuple:class expected a tuple, got: {x}")),
   }
 }
@@ -484,7 +485,7 @@ pub fn tuple_params(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("tuple:params expected 1 argument, got:", xs);
   }
   match &xs[0] {
-    Calcit::Tuple { extra, .. } => {
+    Calcit::Tuple(CalcitTuple { extra, .. }) => {
       // Ok(Calcit::List(extra.iter().map(|x| Arc::new(x.to_owned())).collect_into(vec![])))
       let mut ys = TernaryTreeList::Empty;
       for x in extra {
@@ -501,11 +502,11 @@ pub fn tuple_with_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("tuple:with-class expected 2 arguments, got:", xs);
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple { tag, extra, .. }, b @ Calcit::Record { .. }) => Ok(Calcit::Tuple {
+    (Calcit::Tuple(CalcitTuple { tag, extra, .. }), b @ Calcit::Record { .. }) => Ok(Calcit::Tuple(CalcitTuple {
       tag: tag.to_owned(),
       extra: extra.to_owned(),
       class: Arc::new(b.to_owned()),
-    }),
+    })),
     (a, Calcit::Record { .. }) => CalcitErr::err_str(format!("&tuple:with-class expected a tuple, got: {a}")),
     (Calcit::Tuple { .. }, b) => CalcitErr::err_str(format!("&tuple:with-class expected second argument in record, got: {b}")),
     (a, b) => CalcitErr::err_str(format!("&tuple:with-class expected a tuple and a record, got: {a} {b}")),
