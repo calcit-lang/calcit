@@ -4,7 +4,7 @@ use crate::calcit::{self, CalcitList, CalcitTuple};
 use crate::calcit::{Calcit, CalcitRecord};
 use crate::{calcit::MethodKind, data::cirru};
 
-use cirru_edn::{Edn, EdnListView, EdnMapView, EdnRecordView, EdnSetView, EdnTag};
+use cirru_edn::{Edn, EdnListView, EdnMapView, EdnRecordView, EdnSetView, EdnTag, EdnTupleView};
 
 // values does not fit are just represented with specical indicates
 pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
@@ -114,7 +114,7 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     Edn::Tag(s) => Calcit::Tag(s.to_owned()),
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::CirruQuote(nodes.to_owned()),
-    Edn::Tuple(tag, extra) => {
+    Edn::Tuple(EdnTupleView { tag, extra }) => {
       let base_class = Calcit::Record(CalcitRecord {
         name: EdnTag::new("base"),
         fields: Arc::new(Vec::new()),
@@ -127,28 +127,28 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
         class: Arc::new(base_class),
       })
     }
-    Edn::List(xs) => {
+    Edn::List(EdnListView(xs)) => {
       let mut ys = CalcitList::new_inner();
       for x in xs {
         ys = ys.push_right(Arc::new(edn_to_calcit(x, options)))
       }
       Calcit::List(CalcitList(ys))
     }
-    Edn::Set(xs) => {
+    Edn::Set(EdnSetView(xs)) => {
       let mut ys: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for x in xs {
         ys.insert_mut(edn_to_calcit(x, options));
       }
       Calcit::Set(ys)
     }
-    Edn::Map(xs) => {
+    Edn::Map(EdnMapView(xs)) => {
       let mut ys: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMap::new_sync();
       for (k, v) in xs {
         ys.insert_mut(edn_to_calcit(k, options), edn_to_calcit(v, options));
       }
       Calcit::Map(ys)
     }
-    Edn::Record(name, entries) => {
+    Edn::Record(EdnRecordView { tag: name, pairs: entries }) => {
       let mut fields: Vec<EdnTag> = Vec::with_capacity(entries.len());
       let mut values: Vec<Calcit> = Vec::with_capacity(entries.len());
       let mut sorted = entries.to_owned();

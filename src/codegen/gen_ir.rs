@@ -165,7 +165,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       for x in xs {
         ys.push(dump_code(x));
       }
-      Edn::List(ys)
+      Edn::from(ys)
     }
     Calcit::Method(method, kind) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("method")),
