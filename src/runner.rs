@@ -238,13 +238,7 @@ pub fn evaluate_symbol(
       } else if let Some(target_ns) = program::lookup_def_target_in_import(file_ns, sym) {
         eval_symbol_from_program(sym, &target_ns, call_stack).map(|v| v.expect("value"))
       } else {
-        let mut vars = String::new();
-        for (i, k) in scope.0.keys().enumerate() {
-          if i > 0 {
-            vars.push(',');
-          }
-          vars.push_str(k);
-        }
+        let vars = scope.get_names();
         Err(CalcitErr::use_msg_stack_location(
           format!("unknown symbol `{sym}` in {}", vars),
           call_stack,

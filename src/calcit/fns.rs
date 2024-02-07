@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{fmt::Display, sync::Arc};
 
-use rpds::HashTrieMapSync;
+use im_ternary_tree::TernaryTreeList;
 
 use crate::{Calcit, CalcitCompactList};
 
@@ -24,27 +24,59 @@ pub struct CalcitMacro {
   pub body: Arc<CalcitCompactList>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScopePair {
+  pub key: Arc<str>,
+  pub value: Calcit,
+}
+
+impl Display for ScopePair {
+  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    write!(f, "{}: {}", self.key, self.value)
+  }
+}
+
 /// scope in the semantics of persistent data structure
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CalcitScope(pub rpds::HashTrieMapSync<Arc<str>, Calcit>);
+pub struct CalcitScope(TernaryTreeList<ScopePair>);
 
 impl Default for CalcitScope {
   fn default() -> Self {
-    CalcitScope(HashTrieMapSync::new_sync())
+    Self(TernaryTreeList::Empty)
   }
 }
 
 impl CalcitScope {
-  /// create a new scope from a piece of hashmap
-  pub fn new(data: rpds::HashTrieMapSync<Arc<str>, Calcit>) -> Self {
-    CalcitScope(data)
-  }
   /// load value of a symbol from the scope
   pub fn get(&self, key: &str) -> Option<&Calcit> {
-    self.0.get(key)
+    let size = self.0.len();
+    for i in 0..size {
+      let idx = size - 1 - i;
+      match self.0.get(idx) {
+        Some(pair) => {
+          if &*pair.key == key {
+            return Some(&pair.value);
+          }
+        }
+        None => continue,
+      }
+    }
+    None
   }
+
   /// mutable insertiong of variable
   pub fn insert_mut(&mut self, key: Arc<str>, value: Calcit) {
-    self.0.insert_mut(key, value);
+    self.0 = self.0.push(ScopePair { key, value })
+  }
+
+  pub fn get_names(&self) -> String {
+    let mut vars = String::new();
+    for (i, k) in self.0.into_iter().enumerate() {
+      if i > 0 {
+        vars.push(',');
+      }
+      vars.push_str(&k.key);
+    }
+    vars
   }
 }
