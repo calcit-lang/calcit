@@ -190,7 +190,7 @@ impl fmt::Display for Calcit {
       Calcit::Record(CalcitRecord { name, fields, values, .. }) => {
         f.write_str(&format!("(%{{}} {}", Calcit::Tag(name.to_owned())))?;
         for idx in 0..fields.len() {
-          f.write_str(&format!(" ({} {})", Calcit::Tag(fields[idx].to_owned()), values[idx]))?;
+          f.write_str(&format!(" ({} {})", Calcit::tag(fields[idx].ref_str()), values[idx]))?;
         }
         f.write_str(")")
       }
@@ -584,37 +584,16 @@ impl PartialEq for Calcit {
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
       (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
       (Calcit::Ref(a, _), Calcit::Ref(b, _)) => a == b,
-      (
-        Calcit::Tuple(CalcitTuple {
-          tag: a, extra: extra_a, ..
-        }),
-        Calcit::Tuple(CalcitTuple {
-          tag: c, extra: extra_c, ..
-        }),
-      ) => a == c && extra_a == extra_c,
+      (Calcit::Tuple(a), Calcit::Tuple(b)) => a == b,
       (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,
       (Calcit::CirruQuote(b), Calcit::CirruQuote(d)) => b == d,
       (Calcit::List(a), Calcit::List(b)) => a.0 == b.0,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,
-      (
-        Calcit::Record(CalcitRecord {
-          name: name1,
-          fields: fields1,
-          values: values1,
-          ..
-        }),
-        Calcit::Record(CalcitRecord {
-          name: name2,
-          fields: fields2,
-          values: values2,
-          ..
-        }),
-      ) => name1 == name2 && fields1 == fields2 && values1 == values2,
-
-      // functions compared with nanoid
+      (Calcit::Record(a), Calcit::Record(b)) => a == b,
       (Calcit::Proc(a), Calcit::Proc(b)) => a == b,
       (Calcit::Macro { id: a, .. }, Calcit::Macro { id: b, .. }) => a == b,
+      // functions compared with nanoid
       (Calcit::Fn { id: a, .. }, Calcit::Fn { id: b, .. }) => a == b,
       (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a == b,
       (Calcit::Method(a, b), Calcit::Method(c, d)) => a == c && b == d,

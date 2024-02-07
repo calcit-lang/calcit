@@ -1,5 +1,5 @@
 use crate::{
-  builtins::{self, records::find_in_fields},
+  builtins::{self},
   calcit::{
     self, gen_core_id, Calcit, CalcitCompactList, CalcitErr, CalcitImport, CalcitList, CalcitRecord, CalcitSymbolInfo, CalcitTuple,
     GENERATED_DEF, GEN_NS,
@@ -249,7 +249,7 @@ pub fn turn_symbol(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
       location: None,
     }),
     Calcit::Tag(s) => Ok(Calcit::Symbol {
-      sym: s.to_str(),
+      sym: s.arc_str(),
       info: info.to_owned(),
       location: None,
     }),
@@ -330,39 +330,62 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitCompactList, call_stack: &C
       call_stack,
     ));
   }
-  let class: Calcit = match &invoke_args[0] {
-    Calcit::Tuple(CalcitTuple { class, .. }) => (**class).to_owned(),
-    Calcit::Record(CalcitRecord { class, .. }) => (**class).to_owned(),
+  let method_args = invoke_args.assoc(0, invoke_args[0].to_owned())?;
+  let v0 = &invoke_args[0];
+  match v0 {
+    Calcit::Tuple(CalcitTuple { class, .. }) => method_call(class, v0, name, method_args, call_stack),
+    Calcit::Record(CalcitRecord { class, .. }) => method_call(class, v0, name, method_args, call_stack),
     // classed should already be preprocessed
-    Calcit::List(..) => runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, call_stack)?,
-
-    Calcit::Map(..) => runner::evaluate_symbol_from_program("&core-map-class", calcit::CORE_NS, call_stack)?,
-
-    Calcit::Number(..) => runner::evaluate_symbol_from_program("&core-number-class", calcit::CORE_NS, call_stack)?,
-    Calcit::Str(..) => runner::evaluate_symbol_from_program("&core-string-class", calcit::CORE_NS, call_stack)?,
-    Calcit::Set(..) => runner::evaluate_symbol_from_program("&core-set-class", calcit::CORE_NS, call_stack)?,
-    Calcit::Nil => runner::evaluate_symbol_from_program("&core-nil-class", calcit::CORE_NS, call_stack)?,
-    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol_from_program("&core-fn-class", calcit::CORE_NS, call_stack)?,
-    x => {
-      return Err(CalcitErr::use_msg_stack_location(
-        format!("cannot decide a class from: {x}"),
-        call_stack,
-        x.get_location(),
-      ))
+    Calcit::List(..) => {
+      let class = runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, call_stack)?;
+      method_call(&class, v0, name, method_args, call_stack)
     }
-  };
-  match &class {
-    Calcit::Record(CalcitRecord {
-      name: r_name,
-      fields,
-      values,
-      ..
-    }) => {
-      match find_in_fields(fields, &EdnTag::from(name)) {
-        Some(idx) => {
-          let method_args = invoke_args.assoc(0, invoke_args[0].to_owned())?;
 
-          match &values[idx] {
+    Calcit::Map(..) => {
+      let class = runner::evaluate_symbol_from_program("&core-map-class", calcit::CORE_NS, call_stack)?;
+      method_call(&class, v0, name, method_args, call_stack)
+    }
+
+    Calcit::Number(..) => {
+      let class = runner::evaluate_symbol_from_program("&core-number-class", calcit::CORE_NS, call_stack)?;
+      method_call(&class, v0, name, method_args, call_stack)
+    }
+    Calcit::Str(..) => {
+      let class = runner::evaluate_symbol_from_program("&core-string-class", calcit::CORE_NS, call_stack)?;
+      method_call(&class, v0, name, method_args, call_stack)
+    }
+    Calcit::Set(..) => {
+      let class = &runner::evaluate_symbol_from_program("&core-set-class", calcit::CORE_NS, call_stack)?;
+      method_call(class, v0, name, method_args, call_stack)
+    }
+    Calcit::Nil => {
+      let class = runner::evaluate_symbol_from_program("&core-nil-class", calcit::CORE_NS, call_stack)?;
+      method_call(&class, v0, name, method_args, call_stack)
+    }
+    Calcit::Fn { .. } | Calcit::Proc(..) => {
+      let class = runner::evaluate_symbol_from_program("&core-fn-class", calcit::CORE_NS, call_stack)?;
+      method_call(&class, v0, name, method_args, call_stack)
+    }
+    x => Err(CalcitErr::use_msg_stack_location(
+      format!("cannot decide a class from: {x}"),
+      call_stack,
+      x.get_location(),
+    )),
+  }
+}
+
+fn method_call(
+  class: &Calcit,
+  v0: &Calcit,
+  name: &str,
+  method_args: CalcitCompactList,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  match class {
+    Calcit::Record(record @ CalcitRecord { name: r_name, fields, .. }) => {
+      match record.get(name) {
+        Some(v) => {
+          match v {
             // dirty copy...
             Calcit::Fn { info, .. } => runner::run_fn(method_args, info, call_stack),
             Calcit::Proc(proc) => builtins::handle_proc(*proc, &method_args, call_stack),
@@ -380,10 +403,7 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitCompactList, call_stack: &C
         None => {
           let content = fields.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
           Err(CalcitErr::use_msg_stack(
-            format!(
-              "unknown method `.{name}` for {r_name}: {}.\navailable methods: {content}",
-              &invoke_args[0]
-            ),
+            format!("unknown method `.{name}` for {r_name}: {}.\navailable methods: {content}", v0),
             call_stack,
           ))
         }

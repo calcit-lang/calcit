@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::ops::Rem;
 use std::sync::Arc;
 
@@ -38,7 +37,7 @@ pub fn new_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   for (idx, x) in fields.iter().enumerate() {
     if idx > 0 {
       if x == &prev {
-        return CalcitErr::err_str(format!("duplicated field for record: {}", Calcit::Tag(x.to_owned())));
+        return CalcitErr::err_str(format!("duplicated field for record: {}", x));
       } else {
         prev = x.to_owned();
         // checked ok
@@ -91,7 +90,7 @@ pub fn new_class_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   for (idx, x) in fields.iter().enumerate() {
     if idx > 0 {
       if x == &prev {
-        return CalcitErr::err_str(format!("duplicated field for record: {}", Calcit::Tag(x.to_owned())));
+        return CalcitErr::err_str(format!("duplicated field for record: {}", x));
       } else {
         prev = x.to_owned();
         // checked ok
@@ -114,12 +113,14 @@ pub fn call_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("&%{{}} expected at least 2 arguments, got:", xs);
   }
   match &xs[0] {
-    Calcit::Record(CalcitRecord {
-      name,
-      fields: def_fields,
-      values: v0,
-      class,
-    }) => {
+    Calcit::Record(
+      record @ CalcitRecord {
+        name,
+        fields: def_fields,
+        values: v0,
+        class,
+      },
+    ) => {
       if (args_size - 1).rem(2) == 0 {
         let size = (args_size - 1) / 2;
         if size != def_fields.len() {
@@ -131,13 +132,13 @@ pub fn call_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
           let k_idx = idx * 2 + 1;
           let v_idx = k_idx + 1;
           match &xs[k_idx] {
-            Calcit::Tag(s) => match find_in_fields(def_fields, s) {
+            Calcit::Tag(s) => match record.index_of(s.ref_str()) {
               Some(pos) => {
                 values[pos] = xs[v_idx].to_owned();
               }
               None => return CalcitErr::err_str(format!("unexpected field {s} for {def_fields:?}")),
             },
-            Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match find_in_fields(def_fields, &EdnTag::new(s)) {
+            Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match record.index_of(s) {
               Some(pos) => {
                 values[pos] = xs[v_idx].to_owned();
               }
@@ -284,31 +285,6 @@ pub fn matches(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-/// returns position of target
-pub fn find_in_fields(xs: &[EdnTag], y: &EdnTag) -> Option<usize> {
-  if xs.is_empty() {
-    return None;
-  }
-  let mut lower = 0;
-  let mut upper = xs.len() - 1;
-
-  while (upper - lower) > 1 {
-    let pos = (lower + upper) >> 1;
-    let v = xs[pos].to_owned();
-    match y.cmp(&v) {
-      Ordering::Less => upper = pos - 1,
-      Ordering::Greater => lower = pos + 1,
-      Ordering::Equal => return Some(pos),
-    }
-  }
-
-  match y {
-    _ if y == &xs[lower] => Some(lower),
-    _ if y == &xs[upper] => Some(upper),
-    _ => None,
-  }
-}
-
 pub fn count(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("record count expected 1 argument::", xs);
@@ -321,9 +297,9 @@ pub fn count(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 
 pub fn contains_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Record(CalcitRecord { fields, .. })), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => Ok(Calcit::Bool(find_in_fields(fields, &EdnTag::new(k)).is_some())),
-      Calcit::Tag(k) => Ok(Calcit::Bool(find_in_fields(fields, k).is_some())),
+    (Some(Calcit::Record(record)), Some(a)) => match a {
+      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => Ok(Calcit::Bool(record.index_of(k).is_some())),
+      Calcit::Tag(k) => Ok(Calcit::Bool(record.index_of(k.ref_str()).is_some())),
       a => CalcitErr::err_str(format!("contains? got invalid field for record: {a}")),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("record contains? expected a record, got: {a}")),
@@ -333,12 +309,12 @@ pub fn contains_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 
 pub fn get(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::Record(CalcitRecord { fields, values, .. })), Some(a)) => match a {
-      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => match find_in_fields(fields, &EdnTag::new(k)) {
+    (Some(Calcit::Record(record @ CalcitRecord { values, .. })), Some(a)) => match a {
+      Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => match record.index_of(k) {
         Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
-      Calcit::Tag(k) => match find_in_fields(fields, k) {
+      Calcit::Tag(k) => match record.index_of(k.ref_str()) {
         Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
@@ -352,16 +328,18 @@ pub fn get(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 pub fn assoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (
-      Some(Calcit::Record(CalcitRecord {
-        name,
-        fields,
-        values,
-        class,
-      })),
+      Some(Calcit::Record(
+        record @ CalcitRecord {
+          name,
+          fields,
+          values,
+          class,
+        },
+      )),
       Some(a),
       Some(b),
     ) => match a {
-      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnTag::new(s)) {
+      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
         Some(pos) => {
           let mut new_values = (**values).to_owned();
           new_values[pos] = b.to_owned();
@@ -374,7 +352,7 @@ pub fn assoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
         }
         None => CalcitErr::err_str(format!("invalid field `{s}` for {fields:?}")),
       },
-      Calcit::Tag(s) => match find_in_fields(fields, s) {
+      Calcit::Tag(s) => match record.index_of(s.ref_str()) {
         Some(pos) => {
           let mut new_values = (**values).to_owned();
           new_values[pos] = b.to_owned();
@@ -399,73 +377,24 @@ pub fn extend_as(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("record:extend-as expected 4 arguments, got::", xs);
   }
   match (xs.get(0), xs.get(1), xs.get(2), xs.get(3)) {
-    (Some(Calcit::Record(CalcitRecord { fields, values, class, .. })), Some(n), Some(a), Some(new_value)) => match a {
-      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnTag::new(s)) {
+    (Some(Calcit::Record(record)), Some(n), Some(a), Some(new_value)) => match a {
+      Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
         Some(_pos) => CalcitErr::err_str(format!("field `{s}` already existed")),
-        None => extend_record_field(&EdnTag::new(s), n, fields, values, new_value, class),
+        None => match record.extend_field(&EdnTag::new(s), n, new_value) {
+          Ok(new_record) => Ok(Calcit::Record(new_record)),
+          Err(e) => Err(CalcitErr::use_str(e)),
+        },
       },
-      Calcit::Tag(s) => match find_in_fields(fields, s) {
+      Calcit::Tag(s) => match record.index_of(s.ref_str()) {
         Some(_pos) => CalcitErr::err_str(format!("field `{s}` already existed")),
-        None => extend_record_field(s, n, fields, values, new_value, class),
+        None => match record.extend_field(s, n, new_value) {
+          Ok(new_record) => Ok(Calcit::Record(new_record)),
+          Err(e) => Err(CalcitErr::use_str(e)),
+        },
       },
-      a => CalcitErr::err_str(format!("invalid field `{a}` for {fields:?}")),
+      a => CalcitErr::err_str(format!("invalid field `{a}` for {:?}", record.fields)),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("record:extend-as expected a record, got: {a}")),
     (None, ..) => CalcitErr::err_nodes("record:extend-as expected 4 arguments, got:", xs),
   }
-}
-
-fn extend_record_field(
-  idx_s: &EdnTag,
-  n: &Calcit,
-  fields: &[EdnTag],
-  values: &[Calcit],
-  new_value: &Calcit,
-  class: &Calcit,
-) -> Result<Calcit, CalcitErr> {
-  let mut next_fields: Vec<EdnTag> = Vec::with_capacity(fields.len());
-  let mut next_values: Vec<Calcit> = Vec::with_capacity(fields.len());
-  let mut inserted: bool = false;
-
-  for (i, k) in fields.iter().enumerate() {
-    if inserted {
-      next_fields.push(k.to_owned());
-      next_values.push(values[i].to_owned());
-    } else {
-      match idx_s.cmp(k) {
-        Ordering::Less => {
-          next_fields.push(idx_s.to_owned());
-          next_values.push(new_value.to_owned());
-
-          next_fields.push(k.to_owned());
-          next_values.push(values[i].to_owned());
-          inserted = true;
-        }
-        Ordering::Greater => {
-          next_fields.push(k.to_owned());
-          next_values.push(values[i].to_owned());
-        }
-        Ordering::Equal => {
-          unreachable!("does not equal")
-        }
-      }
-    }
-  }
-  if !inserted {
-    next_fields.push(idx_s.to_owned());
-    next_values.push(new_value.to_owned());
-  }
-
-  let new_name_id: EdnTag = match n {
-    Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => EdnTag::new(s),
-    Calcit::Tag(s) => s.to_owned(),
-    _ => return CalcitErr::err_str("expected record name"),
-  };
-
-  Ok(Calcit::Record(CalcitRecord {
-    name: new_name_id,
-    fields: Arc::new(next_fields),
-    values: Arc::new(next_values),
-    class: Arc::new(class.to_owned()),
-  }))
 }

@@ -168,7 +168,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
     Calcit::Tag(s) => {
       let mut tags = tags.borrow_mut();
       tags.insert(s.to_owned());
-      Ok(format!("_tag[{}]", escape_cirru_str(&s.to_str())))
+      Ok(format!("_tag[{}]", escape_cirru_str(s.ref_str())))
     }
     Calcit::CirruQuote(code) => Ok(format!("new {var_prefix}CalcitCirruQuote({})", cirru_to_js(code)?)),
     Calcit::Method(name, kind) => {
@@ -270,7 +270,7 @@ fn to_js_code(
       Calcit::Tag(s) => {
         let mut tags = tags.borrow_mut();
         tags.insert(s.to_owned());
-        Ok(format!("_tag[{}]", wrap_js_str(&s.to_str())))
+        Ok(format!("_tag[{}]", wrap_js_str(s.ref_str())))
       }
       Calcit::List(_) => unreachable!("[Error] list handled in another branch"),
       Calcit::CirruQuote(code) => {
@@ -1328,7 +1328,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     ordered_tags.sort();
 
     for s in ordered_tags {
-      let name = escape_cirru_str(&s.to_str());
+      let name = escape_cirru_str(s.ref_str());
       write!(tag_arr, "{name},").expect("write");
     }
     tag_arr.push(']');

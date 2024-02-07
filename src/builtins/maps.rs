@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use cirru_edn::EdnTag;
 use im_ternary_tree::TernaryTreeList;
 
-use crate::builtins::records::find_in_fields;
 use crate::calcit::{Calcit, CalcitCompactList, CalcitErr, CalcitList, CalcitRecord};
 
 use crate::util::number::is_even;
@@ -69,22 +67,24 @@ pub fn call_merge(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Map(zs))
       }
       (
-        Calcit::Record(CalcitRecord {
-          name,
-          fields,
-          values,
-          class,
-        }),
+        Calcit::Record(
+          record @ CalcitRecord {
+            name,
+            fields,
+            values,
+            class,
+          },
+        ),
         Calcit::Map(ys),
       ) => {
         let mut new_values = (**values).to_owned();
         for (k, v) in ys {
           match k {
-            Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match find_in_fields(fields, &EdnTag::new(s)) {
+            Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
               Some(pos) => new_values[pos] = v.to_owned(),
               None => return CalcitErr::err_str(format!("invalid field `{s}` for {fields:?}")),
             },
-            Calcit::Tag(s) => match find_in_fields(fields, s) {
+            Calcit::Tag(s) => match record.index_of(s.ref_str()) {
               Some(pos) => new_values[pos] = v.to_owned(),
               None => return CalcitErr::err_str(format!("invalid field `{s}` for {fields:?}")),
             },

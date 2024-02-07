@@ -158,19 +158,19 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
         values.push(edn_to_calcit(&v.1, options));
       }
 
-      match find_record_in_options(&name.to_str(), options) {
+      match find_record_in_options(&name.arc_str(), options) {
         Some(Calcit::Record(CalcitRecord {
           name: pre_name,
           fields: pre_fields,
           values: pre_values,
           class: pre_class,
         })) => {
-          if fields == *pre_fields {
+          if fields == **pre_fields {
             Calcit::Record(CalcitRecord {
-              name: pre_name,
-              fields: pre_fields,
-              values: pre_values,
-              class: pre_class,
+              name: pre_name.to_owned(),
+              fields: pre_fields.clone(),
+              values: pre_values.clone(),
+              class: pre_class.clone(),
             })
           } else {
             unreachable!("record fields mismatch: {:?} vs {:?}", fields, pre_fields)
@@ -188,9 +188,9 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
   }
 }
 /// find a record field in options
-fn find_record_in_options(name: &str, options: &Calcit) -> Option<Calcit> {
+fn find_record_in_options<'a>(name: &str, options: &'a Calcit) -> Option<&'a Calcit> {
   match options {
-    Calcit::Map(ys) => ys.get(&Calcit::Tag(name.into())).map(ToOwned::to_owned),
+    Calcit::Map(ys) => ys.get(&Calcit::Tag(name.into())),
     _ => None,
   }
 }

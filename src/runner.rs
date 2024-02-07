@@ -277,7 +277,13 @@ pub fn evaluate_symbol_from_scope(sym: &str, scope: &CalcitScope) -> Result<Calc
 
 /// a quick path of evaluating symbols, without checking scope and import
 pub fn evaluate_symbol_from_program(sym: &str, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  let v = if let Some(v) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
+  let v = if file_ns == CORE_NS {
+    if let Some(v) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
+      v
+    } else {
+      unreachable!("expected symbol from path, this is a quick path, should succeed")
+    }
+  } else if let Some(v) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
     v
   } else if let Some(v) = eval_symbol_from_program(sym, file_ns, call_stack)? {
     v

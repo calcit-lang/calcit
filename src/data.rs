@@ -79,7 +79,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       let size = fields.len();
       for i in 0..size {
         ys = ys.push(Arc::new(Calcit::List(CalcitList::from(&[
-          Calcit::Tag(fields[i].to_owned()),
+          Calcit::tag(fields[i].ref_str()),
           data_to_calcit(&values[i], ns, at_def)?,
         ]))))
       }
