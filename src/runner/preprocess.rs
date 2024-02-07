@@ -4,7 +4,7 @@ use crate::{
     self, Calcit, CalcitCompactList, CalcitErr, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax,
     ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
   },
-  call_stack::{extend_call_stack, CalcitStack, CallStackList, StackArgsList, StackKind},
+  call_stack::{CallStackList, StackKind},
   program, runner,
 };
 
@@ -30,7 +30,7 @@ pub fn preprocess_ns_def(
   raw_ns: &str,
   raw_def: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
-  call_stack: &rpds::ListSync<CalcitStack>,
+  call_stack: &CallStackList,
 ) -> Result<Option<Calcit>, CalcitErr> {
   let ns = raw_ns;
   let def = raw_def;
@@ -47,7 +47,7 @@ pub fn preprocess_ns_def(
           // write a nil value first to prevent dead loop
           program::write_evaled_def(ns, def, Calcit::Nil).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
 
-          let next_stack = extend_call_stack(call_stack, ns, def, StackKind::Fn, &code, &StackArgsList::default());
+          let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &TernaryTreeList::Empty);
 
           let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
@@ -350,14 +350,7 @@ fn process_list_call(
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let code = Calcit::List(xs.to_owned());
-      let next_stack = extend_call_stack(
-        call_stack,
-        &info.def_ns,
-        &info.name,
-        StackKind::Macro,
-        &code,
-        &StackArgsList::List(args.0),
-      );
+      let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &code, &args.0);
 
       let mut body_scope = CalcitScope::default();
 

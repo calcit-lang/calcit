@@ -9,7 +9,7 @@ use crate::calcit::{
   Calcit, CalcitCompactList, CalcitErr, CalcitFn, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSyntax, MethodKind,
   NodeLocation, CORE_NS,
 };
-use crate::call_stack::{extend_call_stack, CallStackList, StackArgsList, StackKind};
+use crate::call_stack::{using_stack, CallStackList, StackKind};
 use crate::program;
 use crate::util::string::has_ns_part;
 
@@ -58,14 +58,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
             builtins::handle_proc(*p, &values, call_stack)
           }
           Calcit::Syntax(s, def_ns) => {
-            let next_stack = extend_call_stack(
-              call_stack,
-              def_ns,
-              s.as_ref(),
-              StackKind::Syntax,
-              expr,
-              &StackArgsList::List(rest_nodes.0.to_owned()),
-            );
+            let next_stack = if using_stack() {
+              call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, expr, &rest_nodes.0)
+            } else {
+              call_stack.to_owned()
+            };
 
             builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
               if e.stack.is_empty() {
@@ -79,14 +76,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
           }
           Calcit::Method(name, kind) => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-            let next_stack = extend_call_stack(
-              call_stack,
-              file_ns,
-              name,
-              StackKind::Method,
-              &Calcit::Nil,
-              &StackArgsList::Compact(values.to_owned()),
-            );
+            let next_stack = if using_stack() {
+              call_stack.extend_compact(file_ns, name, StackKind::Method, &Calcit::Nil, &values)
+            } else {
+              call_stack.to_owned()
+            };
 
             if *kind == MethodKind::Invoke {
               builtins::meta::invoke_method(name, &values, &next_stack)
@@ -96,14 +90,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
           }
           Calcit::Fn { info, .. } => {
             let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-            let next_stack = extend_call_stack(
-              call_stack,
-              &info.def_ns,
-              &info.name,
-              StackKind::Fn,
-              expr,
-              &StackArgsList::Compact(values.to_owned()),
-            );
+            let next_stack = if using_stack() {
+              call_stack.extend_compact(&info.def_ns, &info.name, StackKind::Fn, expr, &values)
+            } else {
+              call_stack.to_owned()
+            };
 
             run_fn(values, info, &next_stack)
           }
@@ -118,14 +109,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
             // println!("eval macro: {} {}", x, expr.lisp_str()));
             // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
-            let next_stack = extend_call_stack(
-              call_stack,
-              &info.def_ns,
-              &info.name,
-              StackKind::Macro,
-              expr,
-              &StackArgsList::List(rest_nodes.0),
-            );
+            let next_stack = if using_stack() {
+              call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, expr, &rest_nodes.0)
+            } else {
+              call_stack.to_owned()
+            };
 
             let mut body_scope = CalcitScope::default();
 

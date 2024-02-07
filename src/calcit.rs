@@ -672,7 +672,7 @@ pub struct CalcitErr {
   pub msg: String,
   pub warnings: Vec<LocatedWarning>,
   pub location: Option<Arc<NodeLocation>>,
-  pub stack: rpds::ListSync<crate::call_stack::CalcitStack>,
+  pub stack: CallStackList,
 }
 
 impl fmt::Display for CalcitErr {
@@ -692,7 +692,7 @@ impl From<String> for CalcitErr {
     CalcitErr {
       msg,
       warnings: vec![],
-      stack: rpds::List::new_sync(),
+      stack: CallStackList::default(),
       location: None,
     }
   }
@@ -703,7 +703,7 @@ impl CalcitErr {
     CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: rpds::List::new_sync(),
+      stack: CallStackList::default(),
       location: None,
     }
   }
@@ -711,7 +711,7 @@ impl CalcitErr {
     Err(CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: rpds::List::new_sync(),
+      stack: CallStackList::default(),
       location: None,
     })
   }
@@ -720,7 +720,7 @@ impl CalcitErr {
     Err(CalcitErr {
       msg: format!("{} {}", msg.into(), CalcitList::from(nodes)),
       warnings: vec![],
-      stack: rpds::List::new_sync(),
+      stack: CallStackList::default(),
       location: None,
     })
   }
@@ -728,7 +728,7 @@ impl CalcitErr {
     Err(CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: rpds::List::new_sync(),
+      stack: CallStackList::default(),
       location,
     })
   }
