@@ -4,7 +4,7 @@ use std::{fmt::Debug, sync::Arc};
 /// it's optimized for faster reading with index, while searching being very slow.
 /// it ensures that it index does not change, which offers oppotunity for user to cache the index value
 #[derive(Debug, Clone)]
-pub struct EntryBook<T>(Vec<EntryPiece<T>>)
+pub struct EntryBook<T>(Vec<EntryPair<T>>)
 where
   T: Clone;
 
@@ -26,13 +26,13 @@ where
     for piece in self.0.iter_mut() {
       // println!("comparing {} and {}", &*piece.key, key);
       if piece.key == key {
-        *piece = EntryPiece { key, value: Some(value) };
+        *piece = EntryPair { key, value: Some(value) };
 
         return;
       }
     }
 
-    self.0.push(EntryPiece { key, value: Some(value) })
+    self.0.push(EntryPair { key, value: Some(value) })
   }
 
   pub fn len(&self) -> usize {
@@ -152,7 +152,7 @@ where
 }
 
 #[derive(Debug, Clone)]
-pub struct EntryPiece<T>
+pub struct EntryPair<T>
 where
   T: Clone,
 {
