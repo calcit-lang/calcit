@@ -60,7 +60,7 @@ pub fn defatom(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack
 
       let path_info: Arc<str> = path.into();
 
-      println!("defatom symbol {:?}", path_info);
+      // println!("defatom symbol {:?}", path_info);
 
       let defined = {
         let dict = REFS_DICT.lock().expect("read refs");
@@ -87,7 +87,7 @@ pub fn defatom(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack
 
       let path_info: Arc<str> = path.into();
 
-      println!("defatom import {:?}", path_info);
+      // println!("defatom import {:?}", path_info);
 
       let defined = {
         let dict = REFS_DICT.lock().expect("read refs");
@@ -126,7 +126,7 @@ pub fn atom(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
       let path: String = format!("atom-{atom_idx}");
 
       let path_info: Arc<str> = path.into();
-      println!("atom {:?}", path_info);
+      // println!("atom {:?}", path_info);
 
       let pair_value = Arc::new(Mutex::new((value.to_owned(), HashMap::new())));
       Ok(Calcit::Ref(path_info, pair_value))
@@ -139,7 +139,7 @@ pub fn atom(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 pub fn atom_deref(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Ref(_path, locked_pair)) => {
-      println!("deref import {:?}", _path);
+      // println!("deref import {:?}", _path);
       let pair = (**locked_pair).lock().expect("read pair from block");
       Ok(pair.0.to_owned())
     }
@@ -153,12 +153,12 @@ pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
   if expr.len() < 2 {
     return CalcitErr::err_nodes("reset! excepted 2 arguments, got:", &expr.into());
   }
-  println!("reset! {:?}", expr[0]);
+  // println!("reset! {:?}", expr[0]);
   let target = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
   let new_value = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
   match (target, &new_value) {
     (Calcit::Ref(_path, locked_pair), v) => {
-      println!("reset defatom {:?} {}", _path, v);
+      // println!("reset defatom {:?} {}", _path, v);
       modify_ref(locked_pair, v.to_owned(), call_stack)?;
       Ok(Calcit::Nil)
     }
@@ -168,7 +168,7 @@ pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
         let ret = runner::evaluate_def_thunk(&code, file_ns, sym, call_stack);
         match (ret, &new_value) {
           (Ok(Calcit::Ref(_path, locked_pair)), v) => {
-            println!("reset defatom {:?} {}", _path, v);
+            // println!("reset defatom {:?} {}", _path, v);
             modify_ref(locked_pair, v.to_owned(), call_stack)?;
             Ok(Calcit::Nil)
           }

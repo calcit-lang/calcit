@@ -264,6 +264,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
   // clear data in evaled states
   program::clear_all_program_evaled_defs(entries.init_ns.to_owned(), entries.reload_ns.to_owned(), settings.reload_libs)?;
   builtins::meta::force_reset_gensym_index()?;
+  println!("cleared evaled states and reset gensym index.");
 
   let task = if settings.emit_js {
     run_codegen(entries, &settings.emit_path, false)

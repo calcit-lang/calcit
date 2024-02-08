@@ -172,7 +172,8 @@ pub fn preprocess_expr(
             None,
           ))
         } else if *def == info.at_def {
-          // recursion
+          // call function from same file
+          // println!("same file: {}/{} at {}/{}", def_ns, def, file_ns, at_def);
           let macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
           let form = Calcit::Import(CalcitImport {
             ns: def_ns.to_owned(),
@@ -197,12 +198,20 @@ pub fn preprocess_expr(
           Ok((form, macro_fn))
         } else if program::has_def_code(def_ns, def) {
           // same file
+          // println!("again same file: {}/{} at {}/{}", def_ns, def, file_ns, at_def);
           let macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
           let form = Calcit::Import(CalcitImport {
             ns: def_ns.to_owned(),
             def: def.to_owned(),
-            info: Arc::new(ImportInfo::SameFile {
-              at_def: info.at_def.to_owned(),
+            info: Arc::new(if &**def_ns == file_ns {
+              ImportInfo::SameFile {
+                at_def: info.at_def.to_owned(),
+              }
+            } else {
+              ImportInfo::NsReferDef {
+                at_ns: file_ns.into(),
+                at_def: at_def.to_owned(),
+              }
             }),
             coord: program::tip_coord(def_ns, def),
           });
@@ -240,7 +249,7 @@ pub fn preprocess_expr(
                     def: Arc::from("default"),
                     info: Arc::new(ImportInfo::JsDefault {
                       alias: def.to_owned(),
-                      at_ns: def_ns.to_owned(),
+                      at_ns: file_ns.into(),
                       at_def: at_def.to_owned(),
                     }),
                     coord: None,

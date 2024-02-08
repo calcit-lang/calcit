@@ -296,7 +296,7 @@ pub fn evaluate_symbol_from_program(
 
 /// make sure a thunk at global is called
 pub fn evaluate_def_thunk(code: &Arc<Calcit>, file_ns: &str, sym: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  println!("from thunk: {}", sym);
+  // println!("from thunk: {}", sym);
   let evaled_v = evaluate_expr(code, &CalcitScope::default(), file_ns, call_stack)?;
   // and write back to program state to fix duplicated evalution
   // still using thunk since js and IR requires bare code

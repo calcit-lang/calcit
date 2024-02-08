@@ -92,7 +92,11 @@ pub struct CalcitImport {
 /// compare at namespace level, ignore at_def
 impl PartialEq for CalcitImport {
   fn eq(&self, other: &Self) -> bool {
-    self.ns == other.ns && self.info == other.info && self.def == other.def
+    match (&*self.info, &*other.info) {
+      // duplication of NsAs handled specially
+      (ImportInfo::NsAs { alias, .. }, ImportInfo::NsAs { alias: a2, .. }) => alias == a2 && self.ns == other.ns,
+      _ => self.ns == other.ns && self.info == other.info && self.def == other.def,
+    }
   }
 }
 
@@ -100,8 +104,16 @@ impl Eq for CalcitImport {}
 
 impl Hash for CalcitImport {
   fn hash<H: Hasher>(&self, state: &mut H) {
-    self.ns.hash(state);
-    // ignores different in def
-    self.info.hash(state);
+    match &*self.info {
+      ImportInfo::NsAs { alias, .. } => {
+        self.ns.hash(state);
+        alias.hash(state);
+      }
+      _ => {
+        self.ns.hash(state);
+        // ignores different in def
+        self.info.hash(state);
+      }
+    }
   }
 }

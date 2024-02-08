@@ -21,11 +21,18 @@ impl<T> EntryBook<T>
 where
   T: Clone,
 {
+  /// find entry and insert, even if it's a tombstone
   pub fn insert(&mut self, key: Arc<str>, value: T) {
-    match self.lookup_mut(&key) {
-      Some((v, _)) => *v = value,
-      None => self.0.push(EntryPiece { key, value: Some(value) }),
+    for piece in self.0.iter_mut() {
+      // println!("comparing {} and {}", &*piece.key, key);
+      if piece.key == key {
+        *piece = EntryPiece { key, value: Some(value) };
+
+        return;
+      }
     }
+
+    self.0.push(EntryPiece { key, value: Some(value) })
   }
 
   pub fn len(&self) -> usize {
@@ -118,13 +125,12 @@ where
   }
 
   /// can not really remove key, use a default value as tombstone
-  pub fn remove(&mut self, key: &str) -> T {
+  pub fn remove(&mut self, key: &str) {
     for piece in self.0.iter_mut() {
       if &*piece.key == key {
         piece.value = None;
       }
     }
-    unreachable!("key {} not found", key);
   }
 
   pub fn keys(&self) -> impl Iterator<Item = &Arc<str>> {

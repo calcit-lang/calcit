@@ -31,6 +31,7 @@ impl ImportsDict {
   }
 
   fn insert(&mut self, item: CalcitImport) {
+    // println!("insert import: {:?}", item);
     self.0.insert(item);
   }
 
@@ -229,9 +230,14 @@ fn to_js_code(
               Ok(format!("$calcit.{}", escape_var(def)))
             }
           }
-          ImportInfo::NsAs { alias, .. } => {
+          ImportInfo::NsAs { .. } => {
             file_imports.borrow_mut().insert(item.to_owned());
-            Ok(format!("{}.{}", escape_ns(alias), escape_var(def)))
+            Ok(format!("{}.{}", escape_ns(&item.ns), escape_var(def)))
+          }
+          ImportInfo::JsDefault { alias, .. } => {
+            // println!("Js Default: {:?}", info);
+            file_imports.borrow_mut().insert(item.to_owned());
+            Ok(escape_var(alias))
           }
           _ => {
             file_imports.borrow_mut().insert(item.to_owned());
@@ -1281,17 +1287,17 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       for item in &xs {
         // println!("import item: {:?}", item);
         match &*item.info {
-          ImportInfo::NsAs { alias, .. } => {
+          ImportInfo::NsAs { .. } => {
             let import_target = if is_cirru_string(&item.ns) {
               wrap_js_str(&item.ns[1..])
             } else {
               to_js_import_name(&item.ns, true)
             };
-            write!(import_code, "\nimport * as {} from {import_target};", escape_ns(alias)).expect("write");
+            write!(import_code, "\nimport * as {} from {import_target};", escape_ns(&item.ns)).expect("write");
           }
           ImportInfo::JsDefault { alias, at_ns, .. } => {
             if is_cirru_string(&item.ns) {
-              let import_target = wrap_js_str(&at_ns[1..]);
+              let import_target = wrap_js_str(&item.ns[1..]);
               write!(import_code, "\nimport {} from {import_target};", escape_var(alias)).expect("write");
             } else {
               unreachable!("only js import leads to default ns, but got: {}", at_ns)
