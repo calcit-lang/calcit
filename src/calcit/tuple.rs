@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use crate::Calcit;
 
+use super::CalcitRecord;
+
 #[derive(Debug, Clone)]
 pub struct CalcitTuple {
   pub tag: Arc<Calcit>,
   pub extra: Vec<Calcit>,
-  pub class: Arc<Calcit>,
+  pub class: Option<Arc<CalcitRecord>>,
 }
 
 impl PartialEq for CalcitTuple {

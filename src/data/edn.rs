@@ -114,19 +114,11 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     Edn::Tag(s) => Calcit::Tag(s.to_owned()),
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::CirruQuote(nodes.to_owned()),
-    Edn::Tuple(EdnTupleView { tag, extra }) => {
-      let base_class = Calcit::Record(CalcitRecord {
-        name: EdnTag::new("base"),
-        fields: Arc::new(Vec::new()),
-        values: Arc::new(Vec::new()),
-        class: Arc::new(Calcit::Nil),
-      });
-      Calcit::Tuple(CalcitTuple {
-        tag: Arc::new(edn_to_calcit(tag, options)),
-        extra: extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
-        class: Arc::new(base_class),
-      })
-    }
+    Edn::Tuple(EdnTupleView { tag, extra }) => Calcit::Tuple(CalcitTuple {
+      tag: Arc::new(edn_to_calcit(tag, options)),
+      extra: extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
+      class: None,
+    }),
     Edn::List(EdnListView(xs)) => {
       let mut ys = CalcitList::new_inner();
       for x in xs {
@@ -180,7 +172,7 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
           name: name.to_owned(),
           fields: Arc::new(fields),
           values: Arc::new(values),
-          class: Arc::new(Calcit::Nil),
+          class: None,
         }),
       }
     }

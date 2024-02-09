@@ -13,6 +13,7 @@ use std::cmp::Ordering;
 use std::cmp::Ordering::*;
 use std::fmt;
 use std::fmt::Display;
+use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 use std::sync::{Arc, Mutex};
@@ -127,13 +128,28 @@ impl fmt::Display for Calcit {
       },
       Calcit::CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
       Calcit::Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
-      Calcit::Tuple(CalcitTuple { tag, extra, .. }) => {
-        let mut extra_str = String::from("");
-        for item in extra {
-          extra_str.push(' ');
-          extra_str.push_str(&item.to_string())
+      Calcit::Tuple(CalcitTuple { tag, extra, class }) => {
+        if let Some(record) = class {
+          f.write_str("(%:: ")?;
+          f.write_str(&tag.to_string())?;
+
+          for item in extra {
+            f.write_char(' ')?;
+            f.write_str(&item.to_string())?;
+          }
+          f.write_str(&format!(" (:class {})", record.name))?;
+          f.write_str(")")
+        } else {
+          f.write_str("(:: ")?;
+          f.write_str(&tag.to_string())?;
+
+          for item in extra {
+            f.write_char(' ')?;
+            f.write_str(&item.to_string())?;
+          }
+
+          f.write_str(")")
         }
-        f.write_str(&format!("(:: {tag}{extra_str})"))
       }
       Calcit::Buffer(buf) => {
         f.write_str("(&buffer")?;

@@ -113,15 +113,32 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       (Edn::tag("ns"), Edn::Str((**ns).into())),
       (Edn::tag("def"), Edn::Str((**def).into())),
       (
-        Edn::tag("rule"),
+        Edn::tag("info"),
         match &**info {
-          ImportInfo::NsAs { .. } => Edn::tag("as"),
-          ImportInfo::JsDefault { .. } => Edn::tag("js-default"),
-          ImportInfo::NsReferDef { .. } => Edn::tag("refer"),
-          ImportInfo::SameFile { .. } => Edn::tag("same-file"),
+          ImportInfo::NsAs { alias, at_ns, at_def } => Edn::map_from_iter([
+            (Edn::tag("kind"), Edn::tag("as")),
+            (Edn::tag("alias"), Edn::Str((**alias).into())),
+            (Edn::tag("at-ns"), Edn::Str((**at_ns).into())),
+            (Edn::tag("at-def"), Edn::Str((**at_def).into())),
+          ]),
+          ImportInfo::JsDefault { alias, at_ns, at_def } => Edn::map_from_iter([
+            (Edn::tag("kind"), Edn::tag("js-default")),
+            (Edn::tag("alias"), Edn::Str((**alias).into())),
+            (Edn::tag("at-ns"), Edn::Str((**at_ns).into())),
+            (Edn::tag("at-def"), Edn::Str((**at_def).into())),
+          ]),
+          ImportInfo::NsReferDef { at_ns, at_def } => Edn::map_from_iter([
+            (Edn::tag("kind"), Edn::tag("refer")),
+            (Edn::tag("at-ns"), Edn::Str((**at_ns).into())),
+            (Edn::tag("at-def"), Edn::Str((**at_def).into())),
+          ]),
+          ImportInfo::SameFile { at_def } => Edn::map_from_iter([
+            (Edn::tag("kind"), Edn::tag("same-file")),
+            (Edn::tag("at-def"), Edn::Str((**at_def).into())),
+          ]),
           ImportInfo::Core { at_ns } => Edn::map_from_iter([
             (Edn::tag("kind"), Edn::tag("core")),
-            (Edn::tag("at_ns"), Edn::Str((**at_ns).into())),
+            (Edn::tag("at-ns"), Edn::Str((**at_ns).into())),
           ]),
         },
       ),

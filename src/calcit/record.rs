@@ -9,7 +9,7 @@ pub struct CalcitRecord {
   pub name: EdnTag,
   pub fields: Arc<Vec<EdnTag>>,
   pub values: Arc<Vec<Calcit>>,
-  pub class: Arc<Calcit>,
+  pub class: Option<Arc<CalcitRecord>>,
 }
 
 impl PartialEq for CalcitRecord {
@@ -19,6 +19,17 @@ impl PartialEq for CalcitRecord {
 }
 
 impl Eq for CalcitRecord {}
+
+impl Default for CalcitRecord {
+  fn default() -> CalcitRecord {
+    CalcitRecord {
+      name: EdnTag::new("record"),
+      fields: Arc::new(vec![]),
+      values: Arc::new(vec![]),
+      class: None,
+    }
+  }
+}
 
 impl CalcitRecord {
   /// returns position of target

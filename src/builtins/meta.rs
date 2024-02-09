@@ -15,7 +15,6 @@ use crate::{
   util::number::f64_to_usize,
 };
 
-use cirru_edn::EdnTag;
 use cirru_parser::{Cirru, CirruWriterOptions};
 use im_ternary_tree::TernaryTreeList;
 
@@ -283,16 +282,10 @@ pub fn new_tuple(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
       }
       ys
     };
-    let base_class = Calcit::Record(CalcitRecord {
-      name: EdnTag::new("base-class"),
-      fields: Arc::new(vec![]),
-      values: Arc::new(vec![]),
-      class: Arc::new(Calcit::Nil),
-    });
     Ok(Calcit::Tuple(CalcitTuple {
       tag: Arc::new(xs[0].to_owned()),
       extra,
-      class: Arc::new(base_class),
+      class: None,
     }))
   }
 }
@@ -302,24 +295,24 @@ pub fn new_class_tuple(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     CalcitErr::err_str(format!("tuple expected at least 2 arguments, got: {}", CalcitList::from(xs)))
   } else {
     let class = xs[0].to_owned();
-    if let Calcit::Record { .. } = class {
+    if let Calcit::Record(record) = class {
+      let extra: Vec<Calcit> = if xs.len() == 2 {
+        vec![]
+      } else {
+        let mut ys: Vec<Calcit> = Vec::with_capacity(xs.len() - 1);
+        for i in 2..xs.len() {
+          ys.push(xs[i].to_owned());
+        }
+        ys
+      };
+      Ok(Calcit::Tuple(CalcitTuple {
+        tag: Arc::new(xs[1].to_owned()),
+        extra,
+        class: Some(Arc::new(record)),
+      }))
     } else {
-      return CalcitErr::err_str(format!("tuple expected a record as class, got: {}", class));
+      CalcitErr::err_str(format!("tuple expected a record as class, got: {}", class))
     }
-    let extra: Vec<Calcit> = if xs.len() == 2 {
-      vec![]
-    } else {
-      let mut ys: Vec<Calcit> = Vec::with_capacity(xs.len() - 1);
-      for i in 2..xs.len() {
-        ys.push(xs[i].to_owned());
-      }
-      ys
-    };
-    Ok(Calcit::Tuple(CalcitTuple {
-      tag: Arc::new(xs[1].to_owned()),
-      extra,
-      class: Arc::new(class),
-    }))
   }
 }
 
@@ -333,19 +326,30 @@ pub fn invoke_method(name: &str, invoke_args: &CalcitCompactList, call_stack: &C
   let method_args = invoke_args.assoc(0, invoke_args[0].to_owned())?;
   let v0 = &invoke_args[0];
   match v0 {
-    Calcit::Tuple(CalcitTuple { class, .. }) => method_call(class, v0, name, method_args, call_stack),
-    Calcit::Record(CalcitRecord { class, .. }) => method_call(class, v0, name, method_args, call_stack),
+    Calcit::Tuple(CalcitTuple { class, .. }) => match class {
+      Some(record) => method_record(record, v0, name, method_args, call_stack),
+      None => Err(CalcitErr::use_msg_stack(
+        format!("cannot find class for method invoking: {v0}"),
+        call_stack,
+      )),
+    },
+    Calcit::Record(CalcitRecord { class, .. }) => match class {
+      Some(record) => method_record(record, v0, name, method_args, call_stack),
+      None => Err(CalcitErr::use_msg_stack(
+        format!("cannot find class for method invoking: {v0}"),
+        call_stack,
+      )),
+    },
+
     // classed should already be preprocessed
     Calcit::List(..) => {
       let class = runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
-
     Calcit::Map(..) => {
       let class = runner::evaluate_symbol_from_program("&core-map-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
-
     Calcit::Number(..) => {
       let class = runner::evaluate_symbol_from_program("&core-number-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
@@ -381,39 +385,51 @@ fn method_call(
   method_args: CalcitCompactList,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
+  // match &class {
+  //   Some(record) => method_record(record, v0, name, method_args, call_stack),
+  //   None => CalcitErr::err_str(format!("cannot find class for method invoking: {v0}")),
+  // }
   match class {
-    Calcit::Record(record @ CalcitRecord { name: r_name, fields, .. }) => {
-      match record.get(name) {
-        Some(v) => {
-          match v {
-            // dirty copy...
-            Calcit::Fn { info, .. } => runner::run_fn(method_args, info, call_stack),
-            Calcit::Proc(proc) => builtins::handle_proc(*proc, &method_args, call_stack),
-            Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
-              format!("cannot get syntax here since instance is always evaluated, got: {syn}"),
-              call_stack,
-            )),
-            y => Err(CalcitErr::use_msg_stack_location(
-              format!("expected a function to invoke, got: {y}"),
-              call_stack,
-              y.get_location(),
-            )),
-          }
-        }
-        None => {
-          let content = fields.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
-          Err(CalcitErr::use_msg_stack(
-            format!("unknown method `.{name}` for {r_name}: {}.\navailable methods: {content}", v0),
-            call_stack,
-          ))
-        }
-      }
-    }
+    Calcit::Record(record) => method_record(record, v0, name, method_args, call_stack),
     x => Err(CalcitErr::use_msg_stack_location(
-      format!("method invoking expected a record as class, got: {x}"),
+      format!("cannot find class for method invoking: {v0}"),
       call_stack,
       x.get_location(),
     )),
+  }
+}
+
+fn method_record(
+  class: &CalcitRecord,
+  v0: &Calcit,
+  name: &str,
+  method_args: CalcitCompactList,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  match class.get(name) {
+    Some(v) => {
+      match v {
+        // dirty copy...
+        Calcit::Fn { info, .. } => runner::run_fn(method_args, info, call_stack),
+        Calcit::Proc(proc) => builtins::handle_proc(*proc, &method_args, call_stack),
+        Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
+          format!("cannot get syntax here since instance is always evaluated, got: {syn}"),
+          call_stack,
+        )),
+        y => Err(CalcitErr::use_msg_stack_location(
+          format!("expected a function to invoke, got: {y}"),
+          call_stack,
+          y.get_location(),
+        )),
+      }
+    }
+    None => {
+      let content = class.fields.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
+      Err(CalcitErr::use_msg_stack(
+        format!("unknown method `.{name}` for {}: {}.\navailable methods: {content}", class.name, v0),
+        call_stack,
+      ))
+    }
   }
 }
 
@@ -495,7 +511,10 @@ pub fn tuple_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("tuple:class expected 1 argument, got:", xs);
   }
   match &xs[0] {
-    Calcit::Tuple(CalcitTuple { class, .. }) => Ok((**class).to_owned()),
+    Calcit::Tuple(CalcitTuple { class, .. }) => match class {
+      None => Ok(Calcit::Nil),
+      Some(class) => Ok(Calcit::Record((**class).to_owned())),
+    },
     x => CalcitErr::err_str(format!("&tuple:class expected a tuple, got: {x}")),
   }
 }
@@ -522,10 +541,10 @@ pub fn tuple_with_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("tuple:with-class expected 2 arguments, got:", xs);
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple(CalcitTuple { tag, extra, .. }), b @ Calcit::Record { .. }) => Ok(Calcit::Tuple(CalcitTuple {
+    (Calcit::Tuple(CalcitTuple { tag, extra, .. }), Calcit::Record(record)) => Ok(Calcit::Tuple(CalcitTuple {
       tag: tag.to_owned(),
       extra: extra.to_owned(),
-      class: Arc::new(b.to_owned()),
+      class: Some(Arc::new(record.to_owned())),
     })),
     (a, Calcit::Record { .. }) => CalcitErr::err_str(format!("&tuple:with-class expected a tuple, got: {a}")),
     (Calcit::Tuple { .. }, b) => CalcitErr::err_str(format!("&tuple:with-class expected second argument in record, got: {b}")),

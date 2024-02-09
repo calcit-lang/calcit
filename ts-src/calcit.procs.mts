@@ -1283,8 +1283,7 @@ export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> =
 };
 
 export let _$o__$o_ = (tagName: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
-  let klass = new CalcitRecord(newTag("base-class"), [], []);
-  return new CalcitTuple(tagName, extra, klass);
+  return new CalcitTuple(tagName, extra, null);
 };
 
 export let _PCT__$o__$o_ = (klass: CalcitRecord, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {

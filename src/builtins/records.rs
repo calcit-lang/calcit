@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use crate::calcit::{Calcit, CalcitCompactList, CalcitErr, CalcitRecord};
+use crate::calcit::{Calcit, CalcitCompactList, CalcitErr, CalcitRecord, CalcitTuple};
 
 pub fn new_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
@@ -50,7 +50,7 @@ pub fn new_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     name: name_id,
     fields: Arc::new(fields),
     values: Arc::new(values),
-    class: Arc::new(Calcit::Nil),
+    class: None,
   }))
 }
 
@@ -58,8 +58,8 @@ pub fn new_class_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
     return CalcitErr::err_nodes("new-record expected arguments, got:", xs);
   }
-  let class: Calcit = match &xs[0] {
-    a @ Calcit::Record { .. } => a.to_owned(),
+  let class = match &xs[0] {
+    Calcit::Record(class) => class.to_owned(),
     b => return CalcitErr::err_str(format!("new-class-record expected a class, got: {b}")),
   };
   let name_id: EdnTag = match &xs[1] {
@@ -103,7 +103,7 @@ pub fn new_class_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     name: name_id,
     fields: Arc::new(fields),
     values: Arc::new(values),
-    class: Arc::new(class),
+    class: Some(Arc::new(class)),
   }))
 }
 
@@ -168,7 +168,14 @@ pub fn get_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("&record:class expected 1 argument, got:", xs);
   }
   match &xs[0] {
-    Calcit::Record(CalcitRecord { class, .. }) => Ok((**class).to_owned()),
+    Calcit::Record(CalcitRecord { class, .. }) => match class {
+      Some(c) => Ok(Calcit::Record((**c).to_owned())),
+      None => CalcitErr::err_str(format!("&record:class expected a class, got: nil for {}", &xs[0])),
+    },
+    Calcit::Tuple(CalcitTuple { class, .. }) => match class {
+      None => CalcitErr::err_str(format!("&record:class expected a class, got: nil for {}", &xs[0])),
+      Some(c) => Ok(Calcit::Record((**c).to_owned())),
+    },
     a => CalcitErr::err_str(format!("&record:class expected a record as prototype, got: {a}")),
   }
 }
@@ -186,12 +193,12 @@ pub fn with_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
         values: v0,
         ..
       }),
-      c @ Calcit::Record { .. },
+      Calcit::Record(class),
     ) => Ok(Calcit::Record(CalcitRecord {
       name: name.to_owned(),
       fields: def_fields.to_owned(),
       values: v0.to_owned(),
-      class: Arc::new(c.to_owned()),
+      class: Some(Arc::new(class.to_owned())),
     })),
     (Calcit::Record { .. }, b) => CalcitErr::err_str(format!("&record:with-class expected a record as class, got: {b}")),
     (a, _b) => CalcitErr::err_str(format!("&record:with-class expected a record, got: {a}")),
