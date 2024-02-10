@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::calcit::{self, CalcitList, CalcitTuple};
+use crate::calcit::{self, CalcitImport, CalcitList, CalcitTuple};
 use crate::calcit::{Calcit, CalcitRecord};
 use crate::{calcit::MethodKind, data::cirru};
 
@@ -15,6 +15,9 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Number(n) => Ok(Edn::Number(*n)),
     Calcit::Tag(s) => Ok(Edn::Tag(s.to_owned())),
     Calcit::Symbol { sym, .. } => Ok(Edn::Symbol((**sym).into())),
+    Calcit::Local { sym, .. } => Ok(Edn::Symbol((**sym).into())),
+    Calcit::Import(CalcitImport { def, .. }) => Ok(Edn::Symbol((**def).into())),
+    Calcit::Registered(def) => Ok(Edn::Symbol((**def).into())),
     Calcit::List(xs) => {
       let mut ys = EdnListView::default();
       for x in xs {
@@ -94,7 +97,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       MethodKind::AccessOptional => Ok(Edn::Symbol(format!(".?-{name}").into())),
       MethodKind::InvokeNativeOptional => Ok(Edn::Symbol(format!(".?!{name}").into())),
     },
-    a => Err(format!("not able to generate EDN: {a}")), // TODO more types to handle
+    a => Err(format!("not able to generate EDN: {a:?}")), // TODO more types to handle
   }
 }
 

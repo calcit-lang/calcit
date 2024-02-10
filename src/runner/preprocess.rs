@@ -1,8 +1,8 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitCompactList, CalcitErr, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax,
-    ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
+    self, Calcit, CalcitArgLabel, CalcitCompactList, CalcitErr, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo,
+    CalcitSyntax, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
   },
   call_stack::{CallStackList, StackKind},
   program, runner,
@@ -449,9 +449,9 @@ fn process_list_call(
   }
 }
 
-// detects arguments of top-level functions when possible
+/// detects arguments of top-level functions when possible
 fn check_fn_args(
-  defined_args: &[Arc<str>],
+  defined_args: &[CalcitArgLabel],
   params: &CalcitList,
   file_ns: &str,
   f_name: &str,
@@ -472,11 +472,11 @@ fn check_fn_args(
         // dynamic values, can't tell yet
         return;
       }
-      (Some(sym), _) if &**sym == "&" => {
+      (Some(CalcitArgLabel::RestMark), _) => {
         // dynamic args rule, all okay
         return;
       }
-      (Some(sym), _) if &**sym == "?" => {
+      (Some(CalcitArgLabel::OptionalMark), _) => {
         // dynamic args rule, all okay
         optional = true;
         i += 1;
@@ -581,7 +581,7 @@ pub fn preprocess_defn(
       let mut zs = CalcitList::new_inner();
       for y in ys {
         match &**y {
-          Calcit::Symbol {
+          s @ Calcit::Symbol {
             sym,
             info,
             location: arg_location,
@@ -589,17 +589,22 @@ pub fn preprocess_defn(
           } => {
             let loc = NodeLocation::new(info.at_ns.clone(), info.at_def.clone(), arg_location.to_owned().unwrap_or_default());
             check_symbol(sym, args, loc, check_warnings);
-            let s = Calcit::Symbol {
-              sym: sym.to_owned(),
-              info: Arc::new(CalcitSymbolInfo {
-                at_ns: info.at_ns.to_owned(),
-                at_def: info.at_def.to_owned(),
-              }),
-              location: arg_location.to_owned(),
-            };
-            zs = zs.push_right(Arc::new(s));
-            // skip argument syntax marks
-            if &**sym != "&" && &**sym != "?" {
+            if &**sym == "&" || &**sym == "?" {
+              zs = zs.push_right(Arc::new(s.to_owned()));
+              continue;
+            } else {
+              let s = Calcit::Local {
+                sym: sym.to_owned(),
+                info: Arc::new(CalcitSymbolInfo {
+                  at_ns: info.at_ns.to_owned(),
+                  at_def: info.at_def.to_owned(),
+                }),
+                location: arg_location.to_owned(),
+              };
+              // println!("created local: {:?}", s);
+              zs = zs.push_right(Arc::new(s));
+
+              // track local in scope
               body_defs.insert(sym.to_owned());
             }
           }

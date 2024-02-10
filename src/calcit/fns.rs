@@ -4,13 +4,34 @@ use im_ternary_tree::TernaryTreeList;
 
 use crate::{Calcit, CalcitCompactList};
 
+/// structure of a function arguments
+#[derive(Debug, Clone)]
+pub enum CalcitArgLabel {
+  /// variable
+  Name(Arc<str>),
+  /// `?``
+  OptionalMark,
+  /// `&`
+  RestMark,
+}
+
+impl Display for CalcitArgLabel {
+  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    match self {
+      CalcitArgLabel::Name(s) => write!(f, "{}", s),
+      CalcitArgLabel::OptionalMark => write!(f, "?"),
+      CalcitArgLabel::RestMark => write!(f, "&"),
+    }
+  }
+}
+
 #[derive(Debug, Clone)]
 pub struct CalcitFn {
   pub name: Arc<str>,
   /// where it was defined
   pub def_ns: Arc<str>,
   pub scope: Arc<CalcitScope>,
-  pub args: Arc<Vec<Arc<str>>>,
+  pub args: Arc<Vec<CalcitArgLabel>>,
   pub body: Arc<CalcitCompactList>,
 }
 
@@ -20,7 +41,7 @@ pub struct CalcitMacro {
   pub name: Arc<str>,
   /// where it was defined
   pub def_ns: Arc<str>,
-  pub args: Arc<Vec<Arc<str>>>,
+  pub args: Arc<Vec<CalcitArgLabel>>,
   pub body: Arc<CalcitCompactList>,
 }
 

@@ -17,7 +17,7 @@ use cirru_edn::EdnTag;
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::syntax::get_raw_args;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
-use crate::calcit::{self, CalcitImport, CalcitList, CalcitProc, MethodKind};
+use crate::calcit::{self, CalcitArgLabel, CalcitImport, CalcitList, CalcitProc, MethodKind};
 use crate::calcit::{Calcit, CalcitCompactList, CalcitSyntax, ImportInfo};
 use crate::call_stack::StackKind;
 use crate::program;
@@ -929,7 +929,7 @@ fn uses_recur(xs: &Calcit) -> bool {
 
 fn gen_js_func(
   name: &str,
-  args: &[Arc<str>],
+  args: &[CalcitArgLabel],
   raw_body: &CalcitCompactList,
   passed_defs: &PassedDefs,
   exported: bool,
@@ -946,38 +946,48 @@ fn gen_js_func(
   let mut optional_count = 0;
   for sym in args {
     if spreading {
-      if !args_code.is_empty() {
-        args_code.push_str(", ");
+      if let CalcitArgLabel::Name(sym) = sym {
+        if !args_code.is_empty() {
+          args_code.push_str(", ");
+        }
+        local_defs.insert(sym.to_owned());
+        let arg_name = escape_var(sym);
+        args_code.push_str("...");
+        args_code.push_str(&arg_name);
+        // js list and calcit-js are different in spreading
+        write!(spreading_code, "\n{arg_name} = {var_prefix}arrayToList({arg_name});").expect("write");
+        break; // no more args after spreading argument
+      } else {
+        return Err(format!("unexpected argument after spreading: {}", sym));
       }
-      local_defs.insert(sym.to_owned());
-      let arg_name = escape_var(sym);
-      args_code.push_str("...");
-      args_code.push_str(&arg_name);
-      // js list and calcit-js are different in spreading
-      write!(spreading_code, "\n{arg_name} = {var_prefix}arrayToList({arg_name});").expect("write");
-      break; // no more args after spreading argument
     } else if has_optional {
-      if !args_code.is_empty() {
-        args_code.push_str(", ");
+      if let CalcitArgLabel::Name(sym) = sym {
+        if !args_code.is_empty() {
+          args_code.push_str(", ");
+        }
+        local_defs.insert(sym.to_owned());
+        args_code.push_str(&escape_var(sym));
+        optional_count += 1;
+      } else {
+        return Err(format!("unexpected argument after optional: {}", sym));
       }
-      local_defs.insert(sym.to_owned());
-      args_code.push_str(&escape_var(sym));
-      optional_count += 1;
     } else {
-      if &**sym == "&" {
-        spreading = true;
-        continue;
+      match sym {
+        CalcitArgLabel::RestMark => {
+          spreading = true;
+        }
+        CalcitArgLabel::OptionalMark => {
+          has_optional = true;
+        }
+        CalcitArgLabel::Name(sym) => {
+          if !args_code.is_empty() {
+            args_code.push_str(", ");
+          }
+          local_defs.insert(sym.to_owned());
+          args_code.push_str(&escape_var(sym));
+          args_count += 1;
+        }
       }
-      if &**sym == "?" {
-        has_optional = true;
-        continue;
-      }
-      if !args_code.is_empty() {
-        args_code.push_str(", ");
-      }
-      local_defs.insert(sym.to_owned());
-      args_code.push_str(&escape_var(sym));
-      args_count += 1;
     }
   }
 

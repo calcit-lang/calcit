@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use crate::builtins::{self, IMPORTED_PROCS};
 use crate::calcit::{
-  Calcit, CalcitCompactList, CalcitErr, CalcitFn, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSyntax, MethodKind,
-  NodeLocation, CORE_NS,
+  Calcit, CalcitArgLabel, CalcitCompactList, CalcitErr, CalcitFn, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSyntax,
+  MethodKind, NodeLocation, CORE_NS,
 };
 use crate::call_stack::{using_stack, CallStackList, StackKind};
 use crate::program;
@@ -377,11 +377,11 @@ impl MutIndex {
 /// notice that `&` is a mark for spreading, `?` for optional arguments
 pub fn bind_args(
   scope: &mut CalcitScope,
-  args: &[Arc<str>],
+  args: &[CalcitArgLabel],
   values: &CalcitCompactList,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
-  // println!("bind args: {:?} {:?} {:?}", args, values, call_stack.last());
+  // println!("bind args: {:?} {}", args, values);
 
   let mut spreading = false;
   let mut optional = false;
@@ -389,17 +389,15 @@ pub fn bind_args(
   let mut pop_args_idx = MutIndex::default();
   let mut pop_values_idx = MutIndex::default();
 
-  while let Some(sym) = args.get(pop_args_idx.get_and_inc()) {
+  while let Some(arg) = args.get(pop_args_idx.get_and_inc()) {
     if spreading {
-      match &**sym {
-        "&" => return Err(CalcitErr::use_msg_stack(format!("invalid & in args: {args:?}"), call_stack)),
-        "?" => return Err(CalcitErr::use_msg_stack(format!("invalid ? in args: {args:?}"), call_stack)),
-        _ => {
+      match arg {
+        CalcitArgLabel::Name(name) => {
           let mut chunk = CalcitList::new_inner();
           while let Some(v) = values.get(pop_values_idx.get_and_inc()) {
             chunk = chunk.push_right(Arc::new(v.to_owned()));
           }
-          scope.insert_mut(sym.to_owned(), Calcit::List(chunk.into()));
+          scope.insert_mut(name.to_owned(), Calcit::List(chunk.into()));
           if pop_args_idx.0 < args.len() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{args:?}` after spreading in `{args:?}`",),
@@ -407,21 +405,27 @@ pub fn bind_args(
             ));
           }
         }
+        _ => {
+          return Err(CalcitErr::use_msg_stack(
+            format!("invalid control insode spreading mode: {args:?}"),
+            call_stack,
+          ));
+        }
       }
     } else {
-      match &**sym {
-        "&" => spreading = true,
-        "?" => optional = true,
-        _ => match values.get(pop_values_idx.get_and_inc()) {
+      match arg {
+        CalcitArgLabel::RestMark => spreading = true,
+        CalcitArgLabel::OptionalMark => optional = true,
+        CalcitArgLabel::Name(name) => match values.get(pop_values_idx.get_and_inc()) {
           Some(v) => {
-            scope.insert_mut(sym.to_owned(), v.to_owned());
+            scope.insert_mut(name.to_owned(), v.to_owned());
           }
           None => {
             if optional {
-              scope.insert_mut(sym.to_owned(), Calcit::Nil);
+              scope.insert_mut(name.to_owned(), Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
-                format!("too few values `{:?}` passed to args `{args:?}`", values),
+                format!("too few values `{}` passed to args `{args:?}`", values),
                 call_stack,
               ));
             }
@@ -516,5 +520,6 @@ pub fn evaluate_args(
       }
     }
   }
+  // println!("Evaluated args: {}", ret);
   Ok(ret)
 }

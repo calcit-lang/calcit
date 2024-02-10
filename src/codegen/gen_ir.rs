@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use cirru_edn::{format, Edn, EdnListView};
 
-use crate::calcit::{Calcit, CalcitCompactList, CalcitImport, ImportInfo};
+use crate::calcit::{Calcit, CalcitArgLabel, CalcitCompactList, CalcitImport, ImportInfo};
 use crate::program;
 
 #[derive(Debug)]
@@ -205,10 +205,10 @@ fn dump_items_code(xs: &CalcitCompactList) -> Edn {
   ys.into()
 }
 
-fn dump_args_code(xs: &[Arc<str>]) -> Edn {
+fn dump_args_code(xs: &[CalcitArgLabel]) -> Edn {
   let mut ys = EdnListView::default();
   for x in xs {
-    ys.push(Edn::sym(&*x.to_owned()));
+    ys.push(Edn::sym(&*x.to_string()));
   }
   ys.into()
 }

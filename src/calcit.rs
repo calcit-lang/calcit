@@ -22,7 +22,7 @@ use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
-pub use fns::{CalcitFn, CalcitMacro, CalcitScope};
+pub use fns::{CalcitArgLabel, CalcitFn, CalcitMacro, CalcitScope};
 pub use list::{CalcitCompactList, CalcitList};
 pub use proc_name::CalcitProc;
 pub use record::CalcitRecord;
@@ -219,7 +219,7 @@ impl fmt::Display for Calcit {
           if need_space {
             f.write_str(" ")?;
           }
-          f.write_str(a)?;
+          f.write_str(&a.to_string())?;
           need_space = true;
         }
         f.write_str(") (")?;
@@ -241,7 +241,7 @@ impl fmt::Display for Calcit {
           if need_space {
             f.write_str(" ")?;
           }
-          f.write_str(a)?;
+          f.write_str(&a.to_string())?;
           need_space = true;
         }
         f.write_str(") ")?;

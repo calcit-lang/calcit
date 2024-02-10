@@ -9,7 +9,7 @@ use std::sync::Arc;
 use im_ternary_tree::TernaryTreeList;
 
 use crate::builtins::meta::NS_SYMBOL_DICT;
-use crate::calcit::{self, CalcitFn, CalcitList, CalcitMacro, CalcitSymbolInfo, LocatedWarning};
+use crate::calcit::{self, CalcitArgLabel, CalcitFn, CalcitList, CalcitMacro, CalcitSymbolInfo, LocatedWarning};
 use crate::calcit::{gen_core_id, Calcit, CalcitErr, CalcitScope};
 use crate::call_stack::CallStackList;
 use crate::runner;
@@ -23,7 +23,7 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
         name: s.to_owned(),
         def_ns: Arc::from(file_ns),
         scope: Arc::new(scope.to_owned()),
-        args: Arc::new(get_raw_args(xs)?),
+        args: Arc::new(get_raw_args_fn(xs)?),
         body: Arc::new(expr.skip(2)?.into()),
       }),
     }),
@@ -48,13 +48,52 @@ pub fn defmacro(expr: &CalcitList, _scope: &CalcitScope, def_ns: &str) -> Result
   }
 }
 
-pub fn get_raw_args(args: &CalcitList) -> Result<Vec<Arc<str>>, String> {
-  let mut xs: Vec<Arc<str>> = vec![];
+pub fn get_raw_args(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String> {
+  let mut xs: Vec<CalcitArgLabel> = vec![];
   for item in args {
-    if let Calcit::Symbol { sym, .. } = &**item {
-      xs.push(sym.to_owned());
-    } else {
-      return Err(format!("Unexpected argument: {item}"));
+    match &**item {
+      Calcit::Local { sym, .. } => {
+        xs.push(CalcitArgLabel::Name(sym.to_owned()));
+      }
+      Calcit::Symbol { sym, .. } => {
+        if &**sym == "?" {
+          xs.push(CalcitArgLabel::OptionalMark);
+        } else if &**sym == "&" {
+          xs.push(CalcitArgLabel::RestMark);
+        } else {
+          // during macro processing, we still git symbol
+          xs.push(CalcitArgLabel::Name(sym.to_owned()));
+          // return Err(format!("Unexpected argument label: {item}"));
+        }
+      }
+      _ => {
+        return Err(format!("Unexpected argument: {item}"));
+      }
+    }
+  }
+  // println!("Making macro args: {:?} from {:?}", xs, args);
+  Ok(xs)
+}
+
+pub fn get_raw_args_fn(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String> {
+  let mut xs: Vec<CalcitArgLabel> = vec![];
+  for item in args {
+    match &**item {
+      Calcit::Local { sym, .. } => {
+        xs.push(CalcitArgLabel::Name(sym.to_owned()));
+      }
+      Calcit::Symbol { sym, .. } => {
+        if &**sym == "?" {
+          xs.push(CalcitArgLabel::OptionalMark);
+        } else if &**sym == "&" {
+          xs.push(CalcitArgLabel::RestMark);
+        } else {
+          return Err(format!("Unexpected argument label: {item}"));
+        }
+      }
+      _ => {
+        return Err(format!("Unexpected argument: {item}"));
+      }
     }
   }
   Ok(xs)
