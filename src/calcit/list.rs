@@ -222,8 +222,8 @@ impl CalcitList {
     self.0.is_empty()
   }
 
-  pub fn get(&self, idx: usize) -> Option<Arc<Calcit>> {
-    self.0.get(idx).map(|x| x.to_owned())
+  pub fn get(&self, idx: usize) -> Option<&Arc<Calcit>> {
+    self.0.get(idx)
   }
 
   /// referce to inner Calcit value

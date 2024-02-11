@@ -331,7 +331,7 @@ fn gen_call_code(
             (Some(condition), Some(true_branch)) => {
               gen_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), TernaryTreeList::Empty);
               let false_code = match body.get(2) {
-                Some(fal) => to_js_code(&fal, ns, local_defs, file_imports, tags, None)?,
+                Some(fal) => to_js_code(fal, ns, local_defs, file_imports, tags, None)?,
                 None => String::from("null"),
               };
               let cond_code = to_js_code(condition, ns, local_defs, file_imports, tags, None)?;
@@ -345,7 +345,7 @@ fn gen_call_code(
         CalcitSyntax::CoreLet => gen_let_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
 
         CalcitSyntax::Quote => match body.get(0) {
-          Some(item) => quote_to_js(&item, var_prefix, tags),
+          Some(item) => quote_to_js(item, var_prefix, tags),
           None => Err(format!("quote expected a node, got nothing from {}", Calcit::List(body))),
         },
         CalcitSyntax::Defatom => {
@@ -391,9 +391,9 @@ fn gen_call_code(
           (Some(expr), Some(handler)) => {
             gen_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), TernaryTreeList::Empty);
             let next_return_label = return_label.unwrap_or("return ");
-            let try_code = to_js_code(&expr, ns, local_defs, file_imports, tags, Some(next_return_label))?;
+            let try_code = to_js_code(expr, ns, local_defs, file_imports, tags, Some(next_return_label))?;
             let err_var = js_gensym("errMsg");
-            let handler = to_js_code(&handler, ns, local_defs, file_imports, tags, None)?;
+            let handler = to_js_code(handler, ns, local_defs, file_imports, tags, None)?;
 
             gen_stack::pop_call_stack();
             let code = snippets::tmpl_try(err_var, try_code, handler, next_return_label);
@@ -419,9 +419,9 @@ fn gen_call_code(
       // not core syntax, but treat as macro for better debugging experience
       match body.get(0) {
         Some(m) => {
-          let message: String = to_js_code(&m, ns, local_defs, file_imports, tags, None)?;
+          let message: String = to_js_code(m, ns, local_defs, file_imports, tags, None)?;
           let data_code = match body.get(1) {
-            Some(d) => to_js_code(&d, ns, local_defs, file_imports, tags, None)?,
+            Some(d) => to_js_code(d, ns, local_defs, file_imports, tags, None)?,
             None => String::from("null"),
           };
           let err_var = js_gensym("err");
@@ -810,7 +810,7 @@ fn gen_if_code(
       write!(chunk, "\n{else_mark}if ({cond_code}) {{ {true_code} }}").expect("write");
 
       if let Some(false_node) = some_false_node {
-        if let Calcit::List(ys) = &*false_node {
+        if let Calcit::List(ys) = &**false_node {
           if let Some(Calcit::Syntax(syn, _ns)) = ys.get_inner(0) {
             if syn == &CalcitSyntax::If {
               if ys.len() < 3 || ys.len() > 4 {
@@ -825,7 +825,7 @@ fn gen_if_code(
           }
         }
 
-        let false_code = to_js_code(&false_node, ns, local_defs, file_imports, tags, Some(return_label))?;
+        let false_code = to_js_code(false_node, ns, local_defs, file_imports, tags, Some(return_label))?;
         write!(chunk, " else {{ {false_code} }}").expect("write");
       } else {
         write!(chunk, " else {{ {return_label} null; }}").expect("write");

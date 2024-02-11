@@ -50,7 +50,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         // println!("eval expr: {}", expr.lisp_str());
         // println!("eval expr x: {}", x);
 
-        let v = evaluate_expr(&x, scope, file_ns, call_stack)?;
+        let v = evaluate_expr(x, scope, file_ns, call_stack)?;
         let rest_nodes = xs.drop_left();
         let ret = match &v {
           Calcit::Proc(p) => {
@@ -273,14 +273,14 @@ pub fn evaluate_symbol_from_program(
   // }
   let v = if let Some(v) = v0 {
     v
+  } else if let Some(v) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
+    v
   } else if file_ns == CORE_NS {
     if let Some(v) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
       v
     } else {
       unreachable!("expected symbol from path, this is a quick path, should succeed")
     }
-  } else if let Some(v) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
-    v
   } else if let Some(v) = eval_symbol_from_program(sym, file_ns, call_stack)? {
     v
   } else {

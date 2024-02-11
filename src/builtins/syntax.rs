@@ -108,22 +108,23 @@ pub fn quote(expr: &CalcitList, _scope: &CalcitScope, _file_ns: &str) -> Result<
 }
 
 pub fn syntax_if(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  if expr.len() > 3 {
+  let l = expr.len();
+  if l > 3 {
     return CalcitErr::err_nodes("too many nodes for if, got:", &expr.into());
   }
-  match (expr.get(0), expr.get(1)) {
-    (Some(cond), Some(true_branch)) => {
-      let cond_value = runner::evaluate_expr(&cond, scope, file_ns, call_stack)?;
-      match cond_value {
-        Calcit::Nil | Calcit::Bool(false) => match expr.get(2) {
-          Some(false_branch) => runner::evaluate_expr(&false_branch, scope, file_ns, call_stack),
-          None => Ok(Calcit::Nil),
-        },
-        _ => runner::evaluate_expr(&true_branch, scope, file_ns, call_stack),
-      }
-    }
-    (None, _) => CalcitErr::err_nodes("insufficient nodes for if, got:", &expr.into()),
-    _ => CalcitErr::err_nodes("invalid if form, got:", &expr.into()),
+  if l < 2 {
+    return CalcitErr::err_nodes("insufficient nodes for if, got:", &expr.into());
+  }
+  let cond = &*expr[0];
+  let true_branch = &*expr[1];
+
+  let cond_value = runner::evaluate_expr(cond, scope, file_ns, call_stack)?;
+  match cond_value {
+    Calcit::Nil | Calcit::Bool(false) => match expr.get(2) {
+      Some(false_branch) => runner::evaluate_expr(false_branch, scope, file_ns, call_stack),
+      None => Ok(Calcit::Nil),
+    },
+    _ => runner::evaluate_expr(true_branch, scope, file_ns, call_stack),
   }
 }
 
@@ -173,7 +174,7 @@ pub fn quasiquote(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
   match expr.get(0) {
     None => CalcitErr::err_str("quasiquote expected a node"),
     Some(code) => {
-      match replace_code(&code, scope, file_ns, call_stack)? {
+      match replace_code(code, scope, file_ns, call_stack)? {
         SpanResult::Single(v) => {
           // println!("replace result: {:?}", v);
           Ok(v)

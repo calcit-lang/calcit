@@ -31,7 +31,7 @@ pub fn nth(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   match (&xs[0], &xs[1]) {
     (Calcit::List(ys), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => match ys.get(idx) {
-        Some(v) => Ok((*v).to_owned()),
+        Some(v) => Ok((**v).to_owned()),
         None => Ok(Calcit::Nil),
       },
       Err(e) => CalcitErr::err_str(format!("nth expect usize, {e}")),

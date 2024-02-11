@@ -662,6 +662,40 @@ impl Calcit {
       _ => None,
     }
   }
+
+  /// during evaluation, maybe skip evaluation since evaluated data is already in the value
+  pub fn is_expr_evaluated(&self) -> bool {
+    match self {
+      Calcit::Nil => true,
+      Calcit::Bool(_) => true,
+      Calcit::Number(_) => true,
+      Calcit::Symbol { sym, .. } if &**sym == "&" => true,
+
+      Calcit::Symbol { .. } => false,
+
+      Calcit::Local { .. } => false,
+      Calcit::Import(..) => false,
+      Calcit::Registered(..) => true,
+      Calcit::Tag(_) => true,
+      Calcit::Str(_) => true,
+      Calcit::Thunk(..) => false,
+      Calcit::Ref(..) => true,
+      Calcit::Tuple { .. } => true,
+      Calcit::Buffer(..) => true,
+      Calcit::CirruQuote(..) => true,
+      Calcit::Recur(_) => true,
+      Calcit::RawCode(..) => true,
+      Calcit::List(..) => false,
+      Calcit::Set(_) => true,
+      Calcit::Map(_) => true,
+      Calcit::Record { .. } => true,
+      Calcit::Proc(_) => true,
+      Calcit::Macro { .. } => true,
+      Calcit::Fn { .. } => true,
+      Calcit::Syntax(_, _) => true,
+      Calcit::Method(..) => true,
+    }
+  }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
