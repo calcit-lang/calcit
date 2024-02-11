@@ -214,10 +214,6 @@ impl CalcitList {
     ys
   }
 
-  pub fn push(&mut self, x: Arc<Calcit>) {
-    self.0.push(x);
-  }
-
   pub fn len(&self) -> usize {
     self.0.len()
   }

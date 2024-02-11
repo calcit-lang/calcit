@@ -112,20 +112,21 @@ pub fn to_pairs(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Map(ys)) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for (k, v) in ys {
-        zs.insert_mut(Calcit::List(
-          CalcitList::default().push_right(k.to_owned()).push_right(v.to_owned()),
-        ));
+        let mut chunk = CalcitList::new_inner();
+        chunk = chunk.push_right(Arc::new(k.to_owned()));
+        chunk = chunk.push_right(Arc::new(v.to_owned()));
+
+        zs.insert_mut(Calcit::List(CalcitList(chunk)));
       }
       Ok(Calcit::Set(zs))
     }
     Some(Calcit::Record(CalcitRecord { fields, values, .. })) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for idx in 0..fields.len() {
-        zs.insert_mut(Calcit::List(
-          CalcitList::default()
-            .push_right(Calcit::Tag(fields[idx].to_owned()))
-            .push_right(values[idx].to_owned()),
-        ));
+        let mut chunk = CalcitList::new_inner();
+        chunk = chunk.push_right(Arc::new(Calcit::Tag(fields[idx].to_owned())));
+        chunk = chunk.push_right(Arc::new(values[idx].to_owned()));
+        zs.insert_mut(Calcit::List(CalcitList(chunk)));
       }
       Ok(Calcit::Set(zs))
     }

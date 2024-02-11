@@ -631,13 +631,16 @@ pub fn assoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn dissoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(Calcit::List(xs)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes("&list:dissoc expects 3 arguments, got:", xs);
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::List(xs), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(at) => Ok(Calcit::List(xs.dissoc(at)?)),
       Err(e) => CalcitErr::err_str(format!("dissoc expected number, {e}")),
     },
-    (Some(a), ..) => CalcitErr::err_str(format!("list dissoc expected a list, got: {a}")),
-    (_, _) => CalcitErr::err_nodes("list dissoc expected 2 arguments, got:", xs),
+    (Calcit::List(_xs), a) => CalcitErr::err_str(format!("&list:dissoc expects a number in second argument, got {}", a)),
+    (a, ..) => CalcitErr::err_str(format!("list dissoc expected a list, got: {a}")),
   }
 }
 
