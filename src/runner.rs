@@ -488,14 +488,7 @@ pub fn evaluate_args(
             Calcit::List(xs) => {
               for x in &xs {
                 // extract thunk before calling functions
-                let y = match &**x {
-                  Calcit::Thunk(code, v) => match v {
-                    None => evaluate_expr(code, scope, file_ns, call_stack)?,
-                    Some(data) => (**data).to_owned(),
-                  },
-                  _ => (**x).to_owned(),
-                };
-                ret = ret.push(y.to_owned());
+                ret = ret.push((**x).to_owned());
               }
               spreading = false
             }
@@ -508,14 +501,7 @@ pub fn evaluate_args(
           }
         } else {
           // extract thunk before calling functions
-          let y = match v {
-            Calcit::Thunk(code, value) => match value {
-              None => evaluate_expr(&code, scope, file_ns, call_stack)?,
-              Some(data) => (*data).to_owned(),
-            },
-            _ => v,
-          };
-          ret = ret.push(y);
+          ret = ret.push(v.to_owned());
         }
       }
     }
