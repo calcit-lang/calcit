@@ -1079,7 +1079,7 @@ fn contains_symbol(xs: &Calcit, y: &str) -> bool {
   match xs {
     Calcit::Symbol { sym, .. } => &**sym == y,
     Calcit::Import(CalcitImport { def, .. }) => &**def == y,
-    Calcit::Thunk(code, _) => contains_symbol(code, y),
+    Calcit::Thunk(thunk) => contains_symbol(thunk.get_code(), y),
     Calcit::Fn { info, .. } => {
       for x in &*info.body {
         if contains_symbol(x, y) {
@@ -1259,15 +1259,15 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           )?);
           gen_stack::pop_call_stack();
         }
-        Calcit::Thunk(code, _) => {
+        Calcit::Thunk(thunk) => {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
-          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, (**code).to_owned(), TernaryTreeList::Empty);
+          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, thunk.get_code().to_owned(), TernaryTreeList::Empty);
           writeln!(
             vals_code,
             "\nexport var {} = {};",
             escape_var(&def),
-            to_js_code(code, &ns, &def_names, &file_imports, &collected_tags, None)?
+            to_js_code(thunk.get_code(), &ns, &def_names, &file_imports, &collected_tags, None)?
           )
           .expect("write");
           gen_stack::pop_call_stack()

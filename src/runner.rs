@@ -34,10 +34,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Calcit::Registered(alias) => Ok(Calcit::Registered(alias.to_owned())),
     Calcit::Tag(_) => Ok(expr.to_owned()),
     Calcit::Str(_) => Ok(expr.to_owned()),
-    Calcit::Thunk(code, v) => match v {
-      None => evaluate_expr(code, scope, file_ns, call_stack),
-      Some(data) => Ok((**data).to_owned()),
-    },
+    Calcit::Thunk(thunk) => Ok(thunk.evaluated(scope, call_stack)?),
     Calcit::Ref(..) => Ok(expr.to_owned()),
     Calcit::Tuple { .. } => Ok(expr.to_owned()),
     Calcit::Buffer(..) => Ok(expr.to_owned()),
@@ -240,9 +237,7 @@ pub fn evaluate_symbol(
     }
   }?;
   match v {
-    Calcit::Thunk(_code, Some(data)) => Ok((*data).to_owned()),
-    // extra check to make sure code in thunks evaluated
-    Calcit::Thunk(code, None) => evaluate_def_thunk(&code, file_ns, sym, call_stack),
+    Calcit::Thunk(thunk) => thunk.evaluated(scope, call_stack),
     _ => Ok(v),
   }
 }
@@ -287,27 +282,9 @@ pub fn evaluate_symbol_from_program(
     unreachable!("expected symbol from path, this is a quick path, should succeed")
   };
   match v {
-    Calcit::Thunk(_code, Some(data)) => Ok((*data).to_owned()),
-    // extra check to make sure code in thunks evaluated
-    Calcit::Thunk(code, None) => evaluate_def_thunk(&code, file_ns, sym, call_stack),
+    Calcit::Thunk(thunk) => thunk.evaluated(&CalcitScope::default(), call_stack),
     _ => Ok(v),
   }
-}
-
-/// make sure a thunk at global is called
-pub fn evaluate_def_thunk(code: &Arc<Calcit>, file_ns: &str, sym: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  // println!("from thunk: {}", sym);
-  let evaled_v = evaluate_expr(code, &CalcitScope::default(), file_ns, call_stack)?;
-  // and write back to program state to fix duplicated evalution
-  // still using thunk since js and IR requires bare code
-  let next = if builtins::effects::is_rust_eval() {
-    // no longer useful for evaling
-    Arc::new(Calcit::Nil)
-  } else {
-    code.to_owned()
-  };
-  program::write_evaled_def(file_ns, sym, Calcit::Thunk(next, Some(Arc::new(evaled_v.to_owned()))))?;
-  Ok(evaled_v)
 }
 
 pub fn parse_ns_def(s: &str) -> Option<(Arc<str>, Arc<str>)> {
@@ -481,27 +458,48 @@ pub fn evaluate_args(
         spreading = true;
       }
       _ => {
-        let v = evaluate_expr(item, scope, file_ns, call_stack)?;
+        if item.is_expr_evaluated() {
+          let v = &**item;
 
-        if spreading {
-          match v {
-            Calcit::List(xs) => {
-              for x in &xs {
-                // extract thunk before calling functions
-                ret = ret.push((**x).to_owned());
+          if spreading {
+            match v {
+              Calcit::List(xs) => {
+                for x in xs {
+                  ret = ret.push((**x).to_owned());
+                }
+                spreading = false
               }
-              spreading = false
+              a => {
+                return Err(CalcitErr::use_msg_stack(
+                  format!("expected list for spreading, got: {a}"),
+                  call_stack,
+                ))
+              }
             }
-            a => {
-              return Err(CalcitErr::use_msg_stack(
-                format!("expected list for spreading, got: {a}"),
-                call_stack,
-              ))
-            }
+          } else {
+            ret = ret.push(v.to_owned());
           }
         } else {
-          // extract thunk before calling functions
-          ret = ret.push(v.to_owned());
+          let v = evaluate_expr(item, scope, file_ns, call_stack)?;
+
+          if spreading {
+            match v {
+              Calcit::List(xs) => {
+                for x in &xs {
+                  ret = ret.push((**x).to_owned());
+                }
+                spreading = false
+              }
+              a => {
+                return Err(CalcitErr::use_msg_stack(
+                  format!("expected list for spreading, got: {a}"),
+                  call_stack,
+                ))
+              }
+            }
+          } else {
+            ret = ret.push(v.to_owned());
+          }
         }
       }
     }

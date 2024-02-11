@@ -163,21 +163,20 @@ pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
       Ok(Calcit::Nil)
     }
     // if reset! called before deref, we need to trigger the thunk
-    (Calcit::Thunk(code, _thunk_data), _) => match &*expr[0] {
-      Calcit::Symbol { sym, .. } | Calcit::Import(CalcitImport { def: sym, .. }) => {
-        let ret = runner::evaluate_def_thunk(&code, file_ns, sym, call_stack);
+    (Calcit::Thunk(thunk), _) => match &*expr[0] {
+      Calcit::Symbol { .. } | Calcit::Import(CalcitImport { .. }) => {
+        let ret = thunk.evaluated(scope, call_stack)?;
         match (ret, &new_value) {
-          (Ok(Calcit::Ref(_path, locked_pair)), v) => {
+          (Calcit::Ref(_path, locked_pair), v) => {
             // println!("reset defatom {:?} {}", _path, v);
             modify_ref(locked_pair, v.to_owned(), call_stack)?;
             Ok(Calcit::Nil)
           }
-          (Ok(a), _) => Err(CalcitErr::use_msg_stack_location(
+          (a, _) => Err(CalcitErr::use_msg_stack_location(
             format!("reset! expected a ref, got: {a}"),
             call_stack,
             a.get_location(),
           )),
-          (Err(e), _) => Err(e),
         }
       }
       _ => CalcitErr::err_str(format!("reset! expected a symbol, got: {:?}", expr[0])),

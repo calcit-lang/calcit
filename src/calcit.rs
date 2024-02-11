@@ -5,6 +5,7 @@ mod proc_name;
 mod record;
 mod symbol;
 mod syntax_name;
+mod thunk;
 mod tuple;
 
 use core::cmp::Ord;
@@ -28,6 +29,7 @@ pub use proc_name::CalcitProc;
 pub use record::CalcitRecord;
 pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
 pub use syntax_name::CalcitSyntax;
+pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
 
 use crate::builtins::ValueAndListeners;
@@ -63,7 +65,7 @@ pub enum Calcit {
   Str(Arc<str>),
   /// to compile to js, global variables are stored in thunks at first, rather than evaluated
   /// and it is still different from quoted data which was intentionally turned in to data.
-  Thunk(Arc<Calcit>, Option<Arc<Calcit>>), // code, value
+  Thunk(CalcitThunk), // code, value
   /// atom, holding a path to its state, data inside remains during hot code swapping
   Ref(Arc<str>, Arc<Mutex<ValueAndListeners>>),
   /// more tagged union type, more like an internal structure
@@ -122,9 +124,9 @@ impl fmt::Display for Calcit {
           write!(f, "\"|{}\"", s.escape_default())
         }
       } // TODO, escaping choices
-      Calcit::Thunk(code, v) => match v {
-        Some(data) => f.write_str(&format!("(&thunk {data} {code})")),
-        None => f.write_str(&format!("(&thunk _ {code})")),
+      Calcit::Thunk(thunk) => match thunk {
+        CalcitThunk::Code { code, .. } => f.write_str(&format!("(&thunk _ {code})")),
+        CalcitThunk::Evaled { code, value } => f.write_str(&format!("(&thunk {value} {code})")),
       },
       Calcit::CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
       Calcit::Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
@@ -344,9 +346,8 @@ impl Hash for Calcit {
         "string:".hash(_state);
         s.hash(_state);
       }
-      Calcit::Thunk(v, _) => {
-        "quote:".hash(_state);
-        v.hash(_state);
+      Calcit::Thunk(..) => {
+        unreachable!("thunk should not be used in hashing")
       }
       Calcit::Ref(name, _locked_pair) => {
         "ref:".hash(_state);
@@ -479,9 +480,9 @@ impl Ord for Calcit {
       (Calcit::Str(_), _) => Less,
       (_, Calcit::Str(_)) => Greater,
 
-      (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a.cmp(b),
-      (Calcit::Thunk(_, _), _) => Less,
-      (_, Calcit::Thunk(_, _)) => Greater,
+      (Calcit::Thunk(a), Calcit::Thunk(b)) => a.cmp(b),
+      (Calcit::Thunk(_), _) => Less,
+      (_, Calcit::Thunk(_)) => Greater,
 
       (Calcit::CirruQuote(a), Calcit::CirruQuote(b)) => a.cmp(b),
       (Calcit::CirruQuote(_), _) => Less,
@@ -598,7 +599,7 @@ impl PartialEq for Calcit {
       (Calcit::Import(CalcitImport { ns: a, def: a1, .. }), Calcit::Import(CalcitImport { ns: b, def: b1, .. })) => a == b && a1 == b1,
       (Calcit::Tag(a), Calcit::Tag(b)) => a == b,
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
-      (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
+      (Calcit::Thunk(a), Calcit::Thunk(b)) => a == b,
       (Calcit::Ref(a, _), Calcit::Ref(b, _)) => a == b,
       (Calcit::Tuple(a), Calcit::Tuple(b)) => a == b,
       (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,

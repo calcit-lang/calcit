@@ -176,7 +176,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       (Edn::tag("kind"), Edn::tag("syntax")),
       (Edn::tag("name"), Edn::Str((name.to_string()).into())),
     ]),
-    Calcit::Thunk(code, _) => dump_code(code),
+    Calcit::Thunk(thunk) => dump_code(thunk.get_code()),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
       for x in xs {

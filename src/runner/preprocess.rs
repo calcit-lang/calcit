@@ -2,7 +2,7 @@ use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitCompactList, CalcitErr, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo,
-    CalcitSyntax, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
+    CalcitSyntax, CalcitThunk, CalcitThunkInfo, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
   },
   call_stack::{CallStackList, StackKind},
   program, runner,
@@ -15,16 +15,7 @@ use std::sync::Arc;
 use im_ternary_tree::TernaryTreeList;
 use strum::ParseError;
 
-/// only macro and func are cared about during preprocessing
-/// only used in preprocess defs
-fn pick_macro_fn(x: Calcit) -> Option<Calcit> {
-  match &x {
-    Calcit::Fn { .. } | Calcit::Macro { .. } => Some(x),
-    _ => None,
-  }
-}
-
-/// returns the resolved symbol(only functions and macros are put into Some),
+/// returns the resolved symbol(only functions and macros are used),
 /// if code related is not preprocessed, do it internally.
 pub fn preprocess_ns_def(
   raw_ns: &str,
@@ -38,7 +29,7 @@ pub fn preprocess_ns_def(
   match program::lookup_evaled_def(ns, def) {
     Some(v) => {
       // println!("{}/{} has inited", ns, def);
-      Ok(pick_macro_fn(v))
+      Ok(Some(v))
     }
     None => {
       // println!("init for... {}/{}", ns, def);
@@ -57,12 +48,18 @@ pub fn preprocess_ns_def(
               Err(e) => return Err(e),
             }
           } else {
-            Calcit::Thunk(Arc::new(resolved_code), None)
+            Calcit::Thunk(CalcitThunk::Code {
+              code: Arc::new(resolved_code),
+              info: Arc::new(CalcitThunkInfo {
+                ns: ns.into(),
+                def: def.into(),
+              }),
+            })
           };
           // println!("\nwriting value to: {}/{} {:?}", ns, def, v);
           program::write_evaled_def(ns, def, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
 
-          Ok(pick_macro_fn(v))
+          Ok(Some(v))
         }
         None if ns.starts_with('|') || ns.starts_with('"') => Ok(None),
         None => Err(CalcitErr::use_msg_stack(

@@ -86,7 +86,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       Ok(Calcit::List(ys.into()))
     }
     Calcit::Ref(_, _) => Err(format!("data_to_calcit not implemented for ref: {}", x)),
-    Calcit::Thunk(code, _) => Ok((**code).to_owned()),
+    Calcit::Thunk(thunk) => Ok(thunk.get_code().to_owned()),
     Calcit::Buffer(_) => Err(format!("data_to_calcit not implemented for buffer: {}", x)),
     Calcit::Recur(_xs) => Err(format!("data_to_calcit not implemented for recur: {}", x)),
     Calcit::Macro { .. } => Err(format!("data_to_calcit not implemented for macro: {}", x)),
