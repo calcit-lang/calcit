@@ -49,7 +49,7 @@ pub fn preprocess_ns_def(
 
           let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &TernaryTreeList::Empty);
 
-          let (resolved_code, _resolve_value) = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
+          let resolved_code = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
           let v = if is_fn_or_macro(&resolved_code) {
             match runner::evaluate_expr(&resolved_code, &CalcitScope::default(), ns, &next_stack) {
@@ -91,7 +91,7 @@ pub fn preprocess_expr(
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
-) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
+) -> Result<Calcit, CalcitErr> {
   // println!("preprocessing @{} {}", file_ns, expr);
   match expr {
     Calcit::Symbol {
@@ -99,10 +99,12 @@ pub fn preprocess_expr(
     } => match runner::parse_ns_def(def) {
       Some((ns_alias, def_part)) => {
         if &*ns_alias == "js" {
-          Ok((Calcit::RawCode(RawCodeType::Js, def_part), None))
-        } else if let Some(target_ns) = program::lookup_ns_target_in_import(&info.at_ns, &ns_alias) {
+          Ok(Calcit::RawCode(RawCodeType::Js, def_part))
           // TODO js syntax to handle in future
-          let macro_fn = preprocess_ns_def(&target_ns, &def_part, check_warnings, call_stack)?;
+        } else if let Some(target_ns) = program::lookup_ns_target_in_import(&info.at_ns, &ns_alias) {
+          // make sure the target is preprocessed
+          let _macro_fn = preprocess_ns_def(&target_ns, &def_part, check_warnings, call_stack)?;
+
           let form = Calcit::Import(CalcitImport {
             ns: target_ns.to_owned(),
             def: def_part.to_owned(),
@@ -113,10 +115,13 @@ pub fn preprocess_expr(
             }),
             coord: program::tip_coord(&target_ns, &def_part),
           });
-          Ok((form, macro_fn))
+          Ok(form)
         } else if program::has_def_code(&ns_alias, &def_part) {
           // refer to namespace/def directly for some usages
-          let macro_fn = preprocess_ns_def(&ns_alias, &def_part, check_warnings, call_stack)?;
+
+          // make sure the target is preprocessed
+          let _macro_fn = preprocess_ns_def(&ns_alias, &def_part, check_warnings, call_stack)?;
+
           let form = Calcit::Import(CalcitImport {
             ns: ns_alias.to_owned(),
             def: def_part.to_owned(),
@@ -127,7 +132,7 @@ pub fn preprocess_expr(
             coord: program::tip_coord(&ns_alias, &def_part),
           });
 
-          Ok((form, macro_fn))
+          Ok(form)
         } else {
           Err(CalcitErr::use_msg_stack(format!("unknown ns target: {def}"), call_stack))
         }
@@ -138,43 +143,37 @@ pub fn preprocess_expr(
         let def_ref = &**def;
         // println!("def {} - {} {} {}", def_ref, def_ns, file_ns, at_def);
         if def_ref == "~" || def_ref == "~@" || def_ref == "&" || def_ref == "?" {
-          Ok((
-            Calcit::Symbol {
-              sym: def.to_owned(),
-              info: Arc::new(CalcitSymbolInfo {
-                at_ns: def_ns.to_owned(),
-                at_def: at_def.to_owned(),
-              }),
-              location: location.to_owned(),
-            },
-            None,
-          ))
+          Ok(Calcit::Symbol {
+            sym: def.to_owned(),
+            info: Arc::new(CalcitSymbolInfo {
+              at_ns: def_ns.to_owned(),
+              at_def: at_def.to_owned(),
+            }),
+            location: location.to_owned(),
+          })
         } else if scope_defs.contains(def) {
-          Ok((
-            Calcit::Local {
-              sym: def.to_owned(),
-              info: Arc::new(CalcitSymbolInfo {
-                at_ns: def_ns.to_owned(),
-                at_def: at_def.to_owned(),
-              }),
-              location: location.to_owned(),
-            },
-            None,
-          ))
+          Ok(Calcit::Local {
+            sym: def.to_owned(),
+            info: Arc::new(CalcitSymbolInfo {
+              at_ns: def_ns.to_owned(),
+              at_def: at_def.to_owned(),
+            }),
+            location: location.to_owned(),
+          })
         } else if CalcitSyntax::is_valid(def) {
-          Ok((
-            Calcit::Syntax(
-              def
-                .parse()
-                .map_err(|e: ParseError| CalcitErr::use_msg_stack(def.to_string() + " " + &e.to_string(), call_stack))?,
-              def_ns.to_owned(),
-            ),
-            None,
+          Ok(Calcit::Syntax(
+            def
+              .parse()
+              .map_err(|e: ParseError| CalcitErr::use_msg_stack(def.to_string() + " " + &e.to_string(), call_stack))?,
+            def_ns.to_owned(),
           ))
         } else if *def == info.at_def {
           // call function from same file
           // println!("same file: {}/{} at {}/{}", def_ns, def, file_ns, at_def);
-          let macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
+
+          // make sure the target is preprocessed
+          let _macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
+
           let form = Calcit::Import(CalcitImport {
             ns: def_ns.to_owned(),
             def: def.to_owned(),
@@ -183,23 +182,29 @@ pub fn preprocess_expr(
             }),
             coord: program::tip_coord(def_ns, def),
           });
-          Ok((form, macro_fn))
+          Ok(form)
         } else if let Ok(p) = def.parse::<CalcitProc>() {
-          Ok((Calcit::Proc(p), None))
+          Ok(Calcit::Proc(p))
         } else if program::has_def_code(calcit::CORE_NS, def) {
           // println!("find in core def: {}", def);
-          let macro_fn = preprocess_ns_def(calcit::CORE_NS, def, check_warnings, call_stack)?;
+
+          // make sure the target is preprocessed
+          let _macro_fn = preprocess_ns_def(calcit::CORE_NS, def, check_warnings, call_stack)?;
+
           let form = Calcit::Import(CalcitImport {
             ns: calcit::CORE_NS.into(),
             def: def.clone(),
             info: Arc::new(ImportInfo::Core { at_ns: file_ns.into() }),
             coord: program::tip_coord(calcit::CORE_NS, def),
           });
-          Ok((form, macro_fn))
+          Ok(form)
         } else if program::has_def_code(def_ns, def) {
           // same file
           // println!("again same file: {}/{} at {}/{}", def_ns, def, file_ns, at_def);
-          let macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
+
+          // make sure the target is preprocessed
+          let _macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
+
           let form = Calcit::Import(CalcitImport {
             ns: def_ns.to_owned(),
             def: def.to_owned(),
@@ -215,9 +220,9 @@ pub fn preprocess_expr(
             }),
             coord: program::tip_coord(def_ns, def),
           });
-          Ok((form, macro_fn))
+          Ok(form)
         } else if is_registered_proc(def) {
-          Ok((Calcit::Registered(def.to_owned()), None))
+          Ok(Calcit::Registered(def.to_owned()))
         } else {
           match program::lookup_def_target_in_import(def_ns, def) {
             // referred to another namespace/def
@@ -225,7 +230,9 @@ pub fn preprocess_expr(
               // effect
               // TODO js syntax to handle in future
 
-              let macro_fn = preprocess_ns_def(&target_ns, def, check_warnings, call_stack)?;
+              // make sure the target is preprocessed
+              let _macro_fn = preprocess_ns_def(&target_ns, def, check_warnings, call_stack)?;
+
               let form = Calcit::Import(CalcitImport {
                 ns: target_ns.to_owned(),
                 def: def.to_owned(),
@@ -235,27 +242,24 @@ pub fn preprocess_expr(
                 }),
                 coord: program::tip_coord(&target_ns, def),
               });
-              Ok((form, macro_fn))
+              Ok(form)
             }
             // TODO check js_mode
-            None if is_js_syntax_procs(def) => Ok((expr.to_owned(), None)),
-            None if def.starts_with('.') => Ok((expr.to_owned(), None)),
+            None if is_js_syntax_procs(def) => Ok(expr.to_owned()),
+            None if def.starts_with('.') => Ok(expr.to_owned()),
             None => {
               let from_default = program::lookup_default_target_in_import(def_ns, def);
               if let Some(target_ns) = from_default {
-                Ok((
-                  Calcit::Import(CalcitImport {
-                    ns: target_ns.to_owned(),
-                    def: Arc::from("default"),
-                    info: Arc::new(ImportInfo::JsDefault {
-                      alias: def.to_owned(),
-                      at_ns: file_ns.into(),
-                      at_def: at_def.to_owned(),
-                    }),
-                    coord: None,
+                Ok(Calcit::Import(CalcitImport {
+                  ns: target_ns.to_owned(),
+                  def: Arc::from("default"),
+                  info: Arc::new(ImportInfo::JsDefault {
+                    alias: def.to_owned(),
+                    at_ns: file_ns.into(),
+                    at_def: at_def.to_owned(),
                   }),
-                  None,
-                ))
+                  coord: None,
+                }))
               } else {
                 let mut names: Vec<Arc<str>> = Vec::with_capacity(scope_defs.len());
                 for def in scope_defs {
@@ -266,7 +270,7 @@ pub fn preprocess_expr(
                   format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" ")),
                   NodeLocation::new(def_ns.clone(), at_def.clone(), location.to_owned().unwrap_or_default()),
                 ));
-                Ok((expr.to_owned(), None))
+                Ok(expr.to_owned())
               }
             }
           }
@@ -275,7 +279,7 @@ pub fn preprocess_expr(
     },
     Calcit::List(xs) => {
       if xs.is_empty() {
-        Ok((expr.to_owned(), None))
+        Ok(expr.to_owned())
       } else {
         // TODO whether function bothers this...
         // println!("start calling: {}", expr);
@@ -283,12 +287,12 @@ pub fn preprocess_expr(
       }
     }
     Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::CirruQuote(..) => {
-      Ok((expr.to_owned(), None))
+      Ok(expr.to_owned())
     }
-    Calcit::Method(..) => Ok((expr.to_owned(), None)),
-    Calcit::Proc(..) => Ok((expr.to_owned(), None)),
-    Calcit::Syntax(..) => Ok((expr.to_owned(), None)),
-    Calcit::Import { .. } => Ok((expr.to_owned(), None)),
+    Calcit::Method(..) => Ok(expr.to_owned()),
+    Calcit::Proc(..) => Ok(expr.to_owned()),
+    Calcit::Syntax(..) => Ok(expr.to_owned()),
+    Calcit::Import { .. } => Ok(expr.to_owned()),
     _ => {
       println!("unknown expr: {}", expr);
       let mut warnings = check_warnings.borrow_mut();
@@ -301,7 +305,7 @@ pub fn preprocess_expr(
         format!("[Warn] unexpected data during preprocess: {expr:?}"),
         loc,
       ));
-      Ok((expr.to_owned(), None))
+      Ok(expr.to_owned())
     }
   }
 }
@@ -312,11 +316,16 @@ fn process_list_call(
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
-) -> Result<(Calcit, Option<Calcit>), CalcitErr> {
+) -> Result<Calcit, CalcitErr> {
   let head = &xs[0];
-  let (head_form, head_evaled) = preprocess_expr(head, scope_defs, file_ns, check_warnings, call_stack)?;
+  let head_form = preprocess_expr(head, scope_defs, file_ns, check_warnings, call_stack)?;
   let args = xs.drop_left();
   let def_name = grab_def_name(head);
+
+  let head_value = match &head_form {
+    Calcit::Import(CalcitImport { ns, def, .. }) => preprocess_ns_def(ns, def, check_warnings, call_stack)?,
+    _ => None,
+  };
 
   // println!(
   //   "handling list call: {} {:?}, {}",
@@ -336,23 +345,8 @@ fn process_list_call(
   // Syntax: handled directly during preprocessing
   // Thunk: invalid here
 
-  match (&head_form, &head_evaled) {
-    (Calcit::Tag(..), _) => {
-      if args.len() == 1 {
-        let get_method = Calcit::Import(CalcitImport {
-          ns: calcit::CORE_NS.into(),
-          def: "get".into(),
-          info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
-          coord: program::tip_coord(calcit::CORE_NS, "get"),
-        });
-
-        let code = Calcit::List(CalcitList::from(&[Arc::new(get_method), args[0].to_owned(), head.to_owned()]));
-        preprocess_expr(&code, scope_defs, file_ns, check_warnings, call_stack)
-      } else {
-        Err(CalcitErr::use_msg_stack(format!("{head} expected 1 hashmap to call"), call_stack))
-      }
-    }
-    (_, Some(Calcit::Macro { info, .. })) => {
+  match head_value {
+    Some(Calcit::Macro { info, .. }) => {
       let mut current_values: CalcitCompactList = args.to_owned().into();
 
       // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
@@ -379,73 +373,121 @@ fn process_list_call(
         }
       }
     }
-    (Calcit::Syntax(name, name_ns), _) => match name {
-      CalcitSyntax::Quasiquote => Ok((
-        preprocess_quasiquote(name, name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
-        None,
-      )),
-      CalcitSyntax::Defn | CalcitSyntax::Defmacro => Ok((
-        preprocess_defn(name, name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
-        None,
-      )),
-      CalcitSyntax::CoreLet => Ok((
-        preprocess_core_let(name, name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
-        None,
-      )),
-      CalcitSyntax::If
-      | CalcitSyntax::Try
-      | CalcitSyntax::Macroexpand
-      | CalcitSyntax::MacroexpandAll
-      | CalcitSyntax::Macroexpand1
-      | CalcitSyntax::Gensym
-      | CalcitSyntax::Reset => Ok((
-        preprocess_each_items(name, name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
-        None,
-      )),
-      CalcitSyntax::Quote | CalcitSyntax::Eval | CalcitSyntax::HintFn => {
-        Ok((preprocess_quote(name, name_ns, &args, scope_defs, file_ns)?, None))
-      }
-      CalcitSyntax::Defatom => Ok((
-        preprocess_defatom(name, name_ns, &args, scope_defs, file_ns, check_warnings, call_stack)?,
-        None,
-      )),
-    },
-    (Calcit::Thunk(..), _) => Err(CalcitErr::use_msg_stack(
-      format!("does not know how to preprocess a thunk: {head}"),
-      call_stack,
-    )),
 
-    (_, Some(Calcit::Fn { info, .. })) => {
+    Some(Calcit::Fn { info, .. }) => {
       check_fn_args(&info.args, &args, file_ns, &info.name, &def_name, check_warnings);
-      let mut ys = CalcitList::new_inner_from(&[Arc::new(head_form)]);
+      let mut ys = CalcitList::new_inner_from(&[Arc::new(head_form.to_owned())]);
       for a in &args {
-        let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+        let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
         ys = ys.push(Arc::new(form));
       }
-      Ok((Calcit::List(CalcitList(ys)), None))
+      Ok(Calcit::List(CalcitList(ys)))
     }
-    (Calcit::Method(_, _), _) => {
-      let mut ys = CalcitList::new_inner_from(&[head.to_owned()]);
-      for a in &args {
-        let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
-        ys = ys.push(Arc::new(form));
-      }
-      Ok((Calcit::List(CalcitList(ys)), None))
-    }
-    (h, he) => {
-      if let Calcit::Symbol { sym, .. } = h {
-        if he.is_none() && !is_js_syntax_procs(sym) {
-          println!("warning: unresolved symbol `{}` in `{}`", sym, xs);
+
+    _ => match &head_form {
+      Calcit::Tag(..) => {
+        if args.len() == 1 {
+          let get_method = Calcit::Import(CalcitImport {
+            ns: calcit::CORE_NS.into(),
+            def: "get".into(),
+            info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
+            coord: program::tip_coord(calcit::CORE_NS, "get"),
+          });
+
+          let code = Calcit::List(CalcitList::from(&[Arc::new(get_method), args[0].to_owned(), head.to_owned()]));
+          preprocess_expr(&code, scope_defs, file_ns, check_warnings, call_stack)
+        } else {
+          Err(CalcitErr::use_msg_stack(format!("{head} expected 1 hashmap to call"), call_stack))
         }
       }
-      let mut ys = CalcitList::new_inner_from(&[Arc::new(head_form)]);
 
-      for a in &args {
-        let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
-        ys = ys.push(Arc::new(form));
+      Calcit::Syntax(name, name_ns) => match name {
+        CalcitSyntax::Quasiquote => Ok(preprocess_quasiquote(
+          name,
+          name_ns,
+          &args,
+          scope_defs,
+          file_ns,
+          check_warnings,
+          call_stack,
+        )?),
+        CalcitSyntax::Defn | CalcitSyntax::Defmacro => Ok(preprocess_defn(
+          name,
+          name_ns,
+          &args,
+          scope_defs,
+          file_ns,
+          check_warnings,
+          call_stack,
+        )?),
+        CalcitSyntax::CoreLet => Ok(preprocess_core_let(
+          name,
+          name_ns,
+          &args,
+          scope_defs,
+          file_ns,
+          check_warnings,
+          call_stack,
+        )?),
+        CalcitSyntax::If
+        | CalcitSyntax::Try
+        | CalcitSyntax::Macroexpand
+        | CalcitSyntax::MacroexpandAll
+        | CalcitSyntax::Macroexpand1
+        | CalcitSyntax::Gensym
+        | CalcitSyntax::Reset => Ok(preprocess_each_items(
+          name,
+          name_ns,
+          &args,
+          scope_defs,
+          file_ns,
+          check_warnings,
+          call_stack,
+        )?),
+        CalcitSyntax::Quote | CalcitSyntax::Eval | CalcitSyntax::HintFn => {
+          Ok(preprocess_quote(name, name_ns, &args, scope_defs, file_ns)?)
+        }
+        CalcitSyntax::Defatom => Ok(preprocess_defatom(
+          name,
+          name_ns,
+          &args,
+          scope_defs,
+          file_ns,
+          check_warnings,
+          call_stack,
+        )?),
+      },
+      Calcit::Thunk(..) => Err(CalcitErr::use_msg_stack(
+        format!("does not know how to preprocess a thunk: {head}"),
+        call_stack,
+      )),
+
+      Calcit::Method(_, _) => {
+        let mut ys = CalcitList::new_inner_from(&[head.to_owned()]);
+        for a in &args {
+          let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+          ys = ys.push(Arc::new(form));
+        }
+        Ok(Calcit::List(CalcitList(ys)))
       }
-      Ok((Calcit::List(CalcitList(ys)), None))
-    }
+      Calcit::Proc(..)
+      | Calcit::Local { .. }
+      | Calcit::Import { .. }
+      | Calcit::Registered { .. }
+      | Calcit::List(..)
+      | Calcit::RawCode(..)
+      | Calcit::Symbol { .. } => {
+        let mut ys = CalcitList::new_inner_from(&[Arc::new(head_form)]);
+        for a in &args {
+          let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+          ys = ys.push(Arc::new(form));
+        }
+        Ok(Calcit::List(CalcitList(ys)))
+      }
+      h => {
+        unreachable!("unknown head: {:?}", h);
+      }
+    },
   }
 }
 
@@ -541,7 +583,7 @@ pub fn preprocess_each_items(
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: TernaryTreeList<Arc<Calcit>> = TernaryTreeList::from(&[Arc::new(Calcit::Syntax(head.to_owned(), Arc::from(head_ns)))]);
   for a in args {
-    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+    let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
     xs = xs.push_right(Arc::new(form));
   }
   Ok(Calcit::List(xs.into()))
@@ -619,7 +661,7 @@ pub fn preprocess_defn(
       xs = xs.push_right(Arc::new(Calcit::List(zs.into())));
 
       for a in args.into_iter().skip(2) {
-        let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
+        let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
         xs = xs.push_right(Arc::new(form));
       }
       Ok(Calcit::List(xs.into()))
@@ -671,7 +713,7 @@ pub fn preprocess_core_let(
         };
         check_symbol(sym, args, loc, check_warnings);
         body_defs.insert(sym.to_owned());
-        let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
+        let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
         let name = Calcit::Local {
           sym: sym.to_owned(),
           info: Arc::new(CalcitSymbolInfo {
@@ -712,7 +754,7 @@ pub fn preprocess_core_let(
   };
   xs = xs.push_right(Arc::new(binding));
   for a in args.into_iter().skip(1) {
-    let (form, _v) = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
+    let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
     xs = xs.push_right(Arc::new(form));
   }
   Ok(Calcit::List(xs.into()))
@@ -744,7 +786,7 @@ pub fn preprocess_defatom(
   let mut xs: TernaryTreeList<Arc<Calcit>> = TernaryTreeList::from(&[Arc::new(Calcit::Syntax(head.to_owned(), Arc::from(head_ns)))]);
   for a in args {
     // TODO
-    let (form, _v) = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+    let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
     xs = xs.push_right(Arc::new(form.to_owned()));
   }
   Ok(Calcit::List(xs.into()))
@@ -786,7 +828,7 @@ pub fn preprocess_quasiquote_internal(
       Calcit::Symbol { sym, .. } if &**sym == "~" || &**sym == "~@" => {
         let mut xs = CalcitList::new_inner();
         for y in &ys.0 {
-          let (form, _) = preprocess_expr(y, scope_defs, file_ns, check_warnings, call_stack)?;
+          let form = preprocess_expr(y, scope_defs, file_ns, check_warnings, call_stack)?;
           xs = xs.push_right(Arc::new(form.to_owned()));
         }
         Ok(Calcit::List(xs.into()))

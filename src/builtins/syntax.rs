@@ -325,7 +325,7 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
                   rest_nodes = (*rest_code).to_owned();
                 }
                 _ => {
-                  let (resolved, _v) = runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, check_warnings, call_stack)?;
+                  let resolved = runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, check_warnings, call_stack)?;
                   let warnings = check_warnings.borrow();
                   LocatedWarning::print_list(&warnings);
 
@@ -336,8 +336,7 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
           }
           _ => {
             let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
-            let (resolved, _v) =
-              runner::preprocess::preprocess_expr(&quoted_code, &HashSet::new(), file_ns, check_warnings, call_stack)?;
+            let resolved = runner::preprocess::preprocess_expr(&quoted_code, &HashSet::new(), file_ns, check_warnings, call_stack)?;
             LocatedWarning::print_list(&check_warnings.borrow());
             Ok(resolved)
           }
