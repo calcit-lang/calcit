@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
-use crate::primes::Calcit;
-use crate::primes::CalcitProc;
+use crate::calcit::Calcit;
+use crate::calcit::CalcitProc;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]

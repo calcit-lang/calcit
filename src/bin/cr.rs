@@ -9,7 +9,8 @@ use std::time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 mod injection;
 
-use calcit::primes::LocatedWarning;
+use calcit::calcit::LocatedWarning;
+use calcit::call_stack::CallStackList;
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use dirs::home_dir;
@@ -29,6 +30,7 @@ pub struct CLIOptions {
   reload_libs: bool,
   emit_js: bool,
   emit_ir: bool,
+  disable_stack: bool,
 }
 
 fn main() -> Result<(), String> {
@@ -46,6 +48,7 @@ fn main() -> Result<(), String> {
     reload_libs: cli_matches.is_present("reload-libs"),
     emit_js: cli_matches.is_present("emit-js"),
     emit_ir: cli_matches.is_present("emit-ir"),
+    disable_stack: cli_matches.is_present("disable-stack"),
   };
   let mut eval_once = cli_matches.is_present("once");
   let assets_watch = cli_matches.value_of("watch-dir");
@@ -60,6 +63,11 @@ fn main() -> Result<(), String> {
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
     .expect("failed to load $HOME");
   println!("module folder: {}", module_folder.to_str().expect("extract path"));
+
+  if cli_options.disable_stack {
+    call_stack::set_using_stack(false);
+    println!("stack trace disabled.")
+  }
 
   let base_dir = cli_options.entry_path.parent().expect("extract parent");
 
@@ -141,12 +149,10 @@ fn main() -> Result<(), String> {
 
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
-    calcit::primes::CORE_NS,
-    calcit::primes::BUILTIN_CLASSES_ENTRY,
-    calcit::primes::BUILTIN_CLASSES_ENTRY,
-    None,
+    calcit::calcit::CORE_NS,
+    calcit::calcit::BUILTIN_CLASSES_ENTRY,
     check_warnings,
-    &rpds::List::new_sync(),
+    &CallStackList::default(),
   )
   .map_err(|e| e.msg)?;
 
@@ -258,6 +264,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
   // clear data in evaled states
   program::clear_all_program_evaled_defs(entries.init_ns.to_owned(), entries.reload_ns.to_owned(), settings.reload_libs)?;
   builtins::meta::force_reset_gensym_index()?;
+  println!("cleared evaled states and reset gensym index.");
 
   let task = if settings.emit_js {
     run_codegen(entries, &settings.emit_path, false)
@@ -271,14 +278,9 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
     if task_size > 1 {
       // when there's services, make sure their code get preprocessed too
       let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
-      if let Err(e) = runner::preprocess::preprocess_ns_def(
-        &entries.init_ns,
-        &entries.init_def,
-        &entries.init_def,
-        None,
-        check_warnings,
-        &rpds::List::new_sync(),
-      ) {
+      if let Err(e) =
+        runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default())
+      {
         return Err(e.to_string());
       }
 
@@ -324,14 +326,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   gen_stack::clear_stack();
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(
-    &entries.init_ns,
-    &entries.init_def,
-    &entries.init_def,
-    None,
-    check_warnings,
-    &rpds::List::new_sync(),
-  ) {
+  match runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
@@ -349,14 +344,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
   }
 
   // preprocess to reload
-  match runner::preprocess::preprocess_ns_def(
-    &entries.reload_ns,
-    &entries.reload_def,
-    &entries.init_def,
-    None,
-    check_warnings,
-    &rpds::List::new_sync(),
-  ) {
+  match runner::preprocess::preprocess_ns_def(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");

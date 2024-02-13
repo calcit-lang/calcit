@@ -1,17 +1,20 @@
-use std::collections::hash_map::Entry;
+mod entry_book;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
 
 use cirru_parser::Cirru;
 
+use crate::calcit::Calcit;
 use crate::data::cirru::code_to_calcit;
-use crate::primes::{Calcit, ImportRule};
 use crate::snapshot;
 use crate::snapshot::Snapshot;
 use crate::util::string::extract_pkg_from_ns;
 
-pub type ProgramEvaledData = HashMap<Arc<str>, HashMap<Arc<str>, Calcit>>;
+use self::entry_book::EntryBook;
+
+pub type ProgramEvaledData = EntryBook<EntryBook<Calcit>>;
 
 /// information extracted from snapshot
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,11 +25,22 @@ pub struct ProgramFileData {
 
 type ImportMapPair = (Arc<str>, Arc<ImportRule>);
 
+/// defRule: ns def
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportRule {
+  /// ns imported via `:as`
+  NsAs(Arc<str>),
+  /// (ns, def) imported via `:refer`
+  NsReferDef(Arc<str>, Arc<str>),
+  /// ns imported via `:default`, js only
+  NsDefault(Arc<str>),
+}
+
 pub type ProgramCodeData = HashMap<Arc<str>, ProgramFileData>;
 
 lazy_static! {
   /// data of program running
-  static ref PROGRAM_EVALED_DATA_STATE: RwLock<ProgramEvaledData> = RwLock::new(HashMap::new());
+  static ref PROGRAM_EVALED_DATA_STATE: RwLock<ProgramEvaledData> = RwLock::new(EntryBook::default());
   /// raw code information before program running
   pub static ref PROGRAM_CODE_DATA: RwLock<ProgramCodeData> = RwLock::new(HashMap::new());
 }
@@ -158,10 +172,19 @@ pub fn lookup_ns_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>> {
   }
 }
 
+/// try if we can load coord from evaled data
+pub fn tip_coord(ns: &str, def: &str) -> Option<(usize, usize)> {
+  let program = { PROGRAM_EVALED_DATA_STATE.read().expect("read program code") };
+  match program.lookup(ns) {
+    Some(file) => file.0.lookup(def).map(|(_, v)| (file.1, v)),
+    None => None,
+  }
+}
+
 // imported via :default
-pub fn lookup_default_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>> {
+pub fn lookup_default_target_in_import(at_ns: &str, alias: &str) -> Option<Arc<str>> {
   let program = { PROGRAM_CODE_DATA.read().expect("read program code") };
-  let file = program.get(ns)?;
+  let file = program.get(at_ns)?;
   let import_rule = file.import_map.get(alias)?;
   match &**import_rule {
     ImportRule::NsReferDef(_ns, _def) => None,
@@ -173,7 +196,22 @@ pub fn lookup_default_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>
 /// lookup and return value
 pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
   let s2 = PROGRAM_EVALED_DATA_STATE.read().expect("read program data");
-  s2.get(ns)?.get(def).cloned()
+  s2.lookup(ns)?.0.lookup(def).map(|p| p.0).cloned()
+}
+
+pub fn load_by_index(ns_idx: usize, ns: &str, def_idx: usize, def: &str) -> Option<Calcit> {
+  let s2 = PROGRAM_EVALED_DATA_STATE.read().expect("read program data");
+  let (file, ns_cache) = s2.load(ns_idx);
+  if ns == ns_cache {
+    let (value, def_cache) = file.load(def_idx);
+    if def == def_cache {
+      Some(value.to_owned())
+    } else {
+      None
+    }
+  } else {
+    None
+  }
 }
 
 // Dirty mutating global states
@@ -181,15 +219,16 @@ pub fn write_evaled_def(ns: &str, def: &str, value: Calcit) -> Result<(), String
   // println!("writing {} {}", ns, def);
   let mut program = PROGRAM_EVALED_DATA_STATE.write().expect("read program data");
 
-  match (*program).entry(Arc::from(ns)) {
-    Entry::Occupied(_) => (),
-    Entry::Vacant(entry) => {
-      entry.insert(HashMap::new());
+  match program.lookup_mut(ns) {
+    Some(file_entry) => {
+      file_entry.0.insert(Arc::from(def), value);
+    }
+    None => {
+      let mut file_entry = EntryBook::default();
+      file_entry.insert(Arc::from(def), value);
+      program.insert(Arc::from(ns), file_entry);
     }
   }
-
-  let file = program.get_mut(ns).ok_or_else(|| format!("can not write to: {ns}"))?;
-  file.insert(String::from(def).into(), value);
 
   Ok(())
 }
@@ -197,13 +236,7 @@ pub fn write_evaled_def(ns: &str, def: &str, value: Calcit) -> Result<(), String
 // take a snapshot for codegen
 pub fn clone_evaled_program() -> ProgramEvaledData {
   let program = &PROGRAM_EVALED_DATA_STATE.read().expect("read program data");
-
-  let mut xs: ProgramEvaledData = HashMap::new();
-  let ys = program.keys();
-  for k in ys {
-    xs.insert(k.to_owned(), program[k].to_owned());
-  }
-  xs
+  (**program).clone()
 }
 
 pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String> {

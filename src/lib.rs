@@ -4,22 +4,23 @@ extern crate lazy_static;
 pub mod data;
 
 pub mod builtins;
+pub mod calcit;
 pub mod call_stack;
 pub mod cli_args;
 pub mod codegen;
-pub mod primes;
 pub mod program;
 pub mod runner;
 pub mod snapshot;
 pub mod util;
 
-use primes::LocatedWarning;
+use calcit::LocatedWarning;
+use call_stack::CallStackList;
 use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-pub use primes::{Calcit, CalcitErr, CalcitItems};
+pub use calcit::{Calcit, CalcitCompactList, CalcitErr};
 
 use crate::util::string::strip_shebang;
 
@@ -41,11 +42,11 @@ pub struct ProgramEntries {
   pub reload_def: Arc<str>,
 }
 
-pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -> Result<Calcit, CalcitErr> {
+pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitCompactList) -> Result<Calcit, CalcitErr> {
   let check_warnings = RefCell::new(LocatedWarning::default_list());
 
   // preprocess to init
-  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &init_def, None, &check_warnings, &rpds::List::new_sync()) {
+  match runner::preprocess::preprocess_ns_def(&init_ns, &init_def, &check_warnings, &CallStackList::default()) {
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
@@ -59,7 +60,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
     return Err(CalcitErr {
       msg: format!("Found {} warnings, runner blocked", warnings.len()),
       warnings: warnings.to_owned(),
-      stack: rpds::List::new_sync(),
+      stack: CallStackList::default(),
       location: None,
     });
   }
@@ -67,7 +68,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitItems) -
     None => CalcitErr::err_str(format!("entry not initialized: {init_ns}/{init_def}")),
     Some(entry) => match entry {
       Calcit::Fn { info, .. } => {
-        let result = runner::run_fn(params, &info, &rpds::List::new_sync());
+        let result = runner::run_fn(params, &info, &CallStackList::default());
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {

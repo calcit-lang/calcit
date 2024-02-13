@@ -102,7 +102,6 @@
               assert=
                 &extract-code-into-edn 'aa
                 {} (:ns "|test-edn.main")
-                  :resolved ({} (|kind nil))
                   :kind :symbol
                   :val |aa
                   :at-def |test-symbol

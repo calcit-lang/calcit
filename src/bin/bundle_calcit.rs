@@ -156,14 +156,18 @@ fn find_compact_changes(new_data: &Edn, old_data: &Edn) -> Result<ChangesDict, S
 }
 
 fn find_file_changes(old_file: &FileInSnapShot, new_file: &FileInSnapShot) -> Result<FileChangeInfo, String> {
-  let old_defs = old_file.defs.keys().map(ToOwned::to_owned).collect::<HashSet<Arc<str>>>();
-  let new_defs = new_file.defs.keys().map(ToOwned::to_owned).collect::<HashSet<Arc<str>>>();
-  let added_def_names = new_defs.difference(&old_defs).map(ToOwned::to_owned).collect::<HashSet<Arc<str>>>();
-  let removed_defs = old_defs.difference(&new_defs).map(ToOwned::to_owned).collect::<HashSet<Arc<str>>>();
-  let added_defs = added_def_names
-    .iter()
-    .map(|name| (name.to_owned(), new_file.defs[&**name].code.to_owned()))
+  let old_defs = old_file.defs.keys().collect::<HashSet<&Arc<str>>>();
+  let new_defs = new_file.defs.keys().collect::<HashSet<&Arc<str>>>();
+
+  let added_defs = new_defs
+    .difference(&old_defs)
+    .map(|name| ((*name).clone(), new_file.defs[&**name].code.to_owned()))
     .collect::<HashMap<Arc<str>, Cirru>>();
+
+  let removed_defs = old_defs
+    .difference(&new_defs)
+    .map(|name| (*name).to_owned())
+    .collect::<HashSet<Arc<str>>>();
 
   let mut changed_defs: HashMap<Arc<str>, Cirru> = HashMap::new();
   let common_defs = new_defs.intersection(&old_defs).collect::<HashSet<_>>();

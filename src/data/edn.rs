@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
-use im_ternary_tree::TernaryTreeList;
+use crate::calcit::{self, CalcitImport, CalcitList, CalcitTuple};
+use crate::calcit::{Calcit, CalcitRecord};
+use crate::{calcit::MethodKind, data::cirru};
 
-use crate::primes;
-use crate::primes::Calcit;
-use crate::{data::cirru, primes::MethodKind};
-
-use cirru_edn::{Edn, EdnListView, EdnMapView, EdnRecordView, EdnSetView, EdnTag};
+use cirru_edn::{Edn, EdnListView, EdnMapView, EdnRecordView, EdnSetView, EdnTag, EdnTupleView};
 
 // values does not fit are just represented with specical indicates
 pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
@@ -17,6 +15,9 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Number(n) => Ok(Edn::Number(*n)),
     Calcit::Tag(s) => Ok(Edn::Tag(s.to_owned())),
     Calcit::Symbol { sym, .. } => Ok(Edn::Symbol((**sym).into())),
+    Calcit::Local { sym, .. } => Ok(Edn::Symbol((**sym).into())),
+    Calcit::Import(CalcitImport { def, .. }) => Ok(Edn::Symbol((**def).into())),
+    Calcit::Registered(def) => Ok(Edn::Symbol((**def).into())),
     Calcit::List(xs) => {
       let mut ys = EdnListView::default();
       for x in xs {
@@ -38,7 +39,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       }
       Ok(ys.into())
     }
-    Calcit::Record(name, fields, values, _class) => {
+    Calcit::Record(CalcitRecord { name, fields, values, .. }) => {
       let mut entries = EdnRecordView::new(name.to_owned());
       for idx in 0..fields.len() {
         entries.insert(fields[idx].to_owned(), calcit_to_edn(&values[idx])?);
@@ -54,7 +55,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     }
     Calcit::Proc(name) => Ok(Edn::Symbol(name.as_ref().into())),
     Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.as_ref())),
-    Calcit::Tuple(tag, extra, _class) => {
+    Calcit::Tuple(CalcitTuple { tag, extra, .. }) => {
       match &**tag {
         Calcit::Symbol { sym, .. } => {
           if &**sym == "quote" {
@@ -67,7 +68,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             Err(format!("unknown tag for EDN: {sym}")) // TODO more types to handle
           }
         }
-        Calcit::Record(name, _, _, _) => {
+        Calcit::Record(CalcitRecord { name, .. }) => {
           let mut extra_values = vec![];
           for item in extra {
             extra_values.push(calcit_to_edn(item)?);
@@ -96,7 +97,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       MethodKind::AccessOptional => Ok(Edn::Symbol(format!(".?-{name}").into())),
       MethodKind::InvokeNativeOptional => Ok(Edn::Symbol(format!(".?!{name}").into())),
     },
-    a => Err(format!("not able to generate EDN: {a}")), // TODO more types to handle
+    a => Err(format!("not able to generate EDN: {a:?}")), // TODO more types to handle
   }
 }
 
@@ -107,51 +108,42 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     Edn::Number(n) => Calcit::Number(*n),
     Edn::Symbol(s) => Calcit::Symbol {
       sym: (**s).into(),
-      info: Arc::new(crate::primes::CalcitSymbolInfo {
-        ns: primes::GEN_NS.into(),
-        at_def: primes::GENERATED_DEF.into(),
-        resolved: None,
+      info: Arc::new(crate::calcit::CalcitSymbolInfo {
+        at_ns: calcit::GEN_NS.into(),
+        at_def: calcit::GENERATED_DEF.into(),
       }),
       location: None,
     },
     Edn::Tag(s) => Calcit::Tag(s.to_owned()),
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::CirruQuote(nodes.to_owned()),
-    Edn::Tuple(tag, extra) => {
-      let base_class = Calcit::Record(
-        EdnTag::new("base"),
-        Arc::new(Vec::new()),
-        Arc::new(Vec::new()),
-        Arc::new(Calcit::Nil),
-      );
-      Calcit::Tuple(
-        Arc::new(edn_to_calcit(tag, options)),
-        extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
-        Arc::new(base_class),
-      )
-    }
-    Edn::List(xs) => {
-      let mut ys: primes::CalcitItems = TernaryTreeList::Empty;
+    Edn::Tuple(EdnTupleView { tag, extra }) => Calcit::Tuple(CalcitTuple {
+      tag: Arc::new(edn_to_calcit(tag, options)),
+      extra: extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
+      class: None,
+    }),
+    Edn::List(EdnListView(xs)) => {
+      let mut ys = CalcitList::new_inner();
       for x in xs {
-        ys = ys.push_right(edn_to_calcit(x, options))
+        ys = ys.push_right(Arc::new(edn_to_calcit(x, options)))
       }
-      Calcit::List(ys)
+      Calcit::List(CalcitList(ys))
     }
-    Edn::Set(xs) => {
+    Edn::Set(EdnSetView(xs)) => {
       let mut ys: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for x in xs {
         ys.insert_mut(edn_to_calcit(x, options));
       }
       Calcit::Set(ys)
     }
-    Edn::Map(xs) => {
+    Edn::Map(EdnMapView(xs)) => {
       let mut ys: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMap::new_sync();
       for (k, v) in xs {
         ys.insert_mut(edn_to_calcit(k, options), edn_to_calcit(v, options));
       }
       Calcit::Map(ys)
     }
-    Edn::Record(name, entries) => {
+    Edn::Record(EdnRecordView { tag: name, pairs: entries }) => {
       let mut fields: Vec<EdnTag> = Vec::with_capacity(entries.len());
       let mut values: Vec<Calcit> = Vec::with_capacity(entries.len());
       let mut sorted = entries.to_owned();
@@ -161,24 +153,39 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
         values.push(edn_to_calcit(&v.1, options));
       }
 
-      match find_record_in_options(&name.to_str(), options) {
-        Some(Calcit::Record(pre_name, pre_fields, pre_values, pre_class)) => {
-          if fields == *pre_fields {
-            Calcit::Record(pre_name, pre_fields, pre_values, pre_class)
+      match find_record_in_options(&name.arc_str(), options) {
+        Some(Calcit::Record(CalcitRecord {
+          name: pre_name,
+          fields: pre_fields,
+          values: pre_values,
+          class: pre_class,
+        })) => {
+          if fields == **pre_fields {
+            Calcit::Record(CalcitRecord {
+              name: pre_name.to_owned(),
+              fields: pre_fields.clone(),
+              values: pre_values.clone(),
+              class: pre_class.clone(),
+            })
           } else {
             unreachable!("record fields mismatch: {:?} vs {:?}", fields, pre_fields)
           }
         }
-        _ => Calcit::Record(name.to_owned(), Arc::new(fields), Arc::new(values), Arc::new(Calcit::Nil)),
+        _ => Calcit::Record(CalcitRecord {
+          name: name.to_owned(),
+          fields: Arc::new(fields),
+          values: Arc::new(values),
+          class: None,
+        }),
       }
     }
     Edn::Buffer(buf) => Calcit::Buffer(buf.to_owned()),
   }
 }
 /// find a record field in options
-fn find_record_in_options(name: &str, options: &Calcit) -> Option<Calcit> {
+fn find_record_in_options<'a>(name: &str, options: &'a Calcit) -> Option<&'a Calcit> {
   match options {
-    Calcit::Map(ys) => ys.get(&Calcit::Tag(name.into())).map(ToOwned::to_owned),
+    Calcit::Map(ys) => ys.get(&Calcit::Tag(name.into())),
     _ => None,
   }
 }

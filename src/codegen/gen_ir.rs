@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use cirru_edn::{format, Edn, EdnListView};
 
-use crate::primes::{Calcit, CalcitItems, ImportRule, SymbolResolved::*};
+use crate::calcit::{Calcit, CalcitArgLabel, CalcitCompactList, CalcitImport, ImportInfo};
 use crate::program;
 
 #[derive(Debug)]
@@ -48,10 +48,10 @@ pub fn emit_ir(init_fn: &str, reload_fn: &str, emit_path: &str) -> Result<(), St
 
   let mut files: HashMap<Arc<str>, IrDataFile> = HashMap::new();
 
-  for (ns, file_info) in program_data {
+  for (ns, file_info) in program_data.iter() {
     let mut defs: HashMap<Arc<str>, Edn> = HashMap::new();
-    for (def, code) in file_info {
-      defs.insert(def, dump_code(&code));
+    for (def, code) in file_info.iter() {
+      defs.insert(def, dump_code(code));
     }
 
     let file = IrDataFile { defs };
@@ -90,50 +90,64 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     Calcit::Str(s) => Edn::Str((**s).into()),
     Calcit::Bool(b) => Edn::Bool(b.to_owned()),
     Calcit::Tag(s) => Edn::Tag(s.to_owned()),
-    Calcit::Symbol { sym, info, location } => {
-      let resolved = match &info.resolved {
-        Some(resolved) => match &resolved {
-          ResolvedDef {
-            ns: r_ns,
-            def: r_def,
-            rule: import_rule,
-          } => Edn::map_from_iter([
-            (Edn::tag("kind"), Edn::tag("def")),
-            (Edn::tag("ns"), Edn::Str((**r_ns).into())),
-            (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
-            (Edn::tag("def"), Edn::Str((**r_def).into())),
-            (
-              Edn::tag("rule"),
-              match import_rule.to_owned().map(|x| x.to_owned()) {
-                Some(ImportRule::NsAs(_n)) => Edn::tag("ns"),
-                Some(ImportRule::NsDefault(_n)) => Edn::tag("default"),
-                Some(ImportRule::NsReferDef(_ns, _def)) => Edn::tag("def"),
-                None => Edn::Nil,
-              },
-            ),
-            (
-              Edn::tag("location"),
-              match location {
-                Some(xs) => (**xs).to_owned().into(),
-                None => Edn::Nil,
-              },
-            ),
-          ]),
-          ResolvedLocal => Edn::map_from_iter([("kind".into(), Edn::tag("local"))]),
-          ResolvedRaw => Edn::map_from_iter([("kind".into(), Edn::tag("raw"))]),
-          ResolvedRegistered => Edn::map_from_iter([("kind".into(), Edn::tag("registered"))]),
-        },
-        None => Edn::map_from_iter([("kind".into(), Edn::Nil)]),
-      };
+    Calcit::Symbol { sym, info, .. } => Edn::map_from_iter([
+      (Edn::tag("kind"), Edn::tag("symbol")),
+      (Edn::tag("val"), Edn::Str((**sym).into())),
+      (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
+      (Edn::tag("ns"), Edn::Str((*info.at_ns).into())),
+    ]),
+    Calcit::Local { sym, info, .. } => Edn::map_from_iter([
+      (Edn::tag("kind"), Edn::tag("local")),
+      (Edn::tag("val"), Edn::Str((**sym).into())),
+      (
+        Edn::tag("info"),
+        Edn::map_from_iter([
+          (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
+          (Edn::tag("ns"), Edn::Str((*info.at_ns).into())),
+        ]),
+      ),
+    ]),
 
-      Edn::map_from_iter([
-        (Edn::tag("kind"), Edn::tag("symbol")),
-        (Edn::tag("val"), Edn::Str((**sym).into())),
-        (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
-        (Edn::tag("ns"), Edn::Str((*info.ns).into())),
-        (Edn::tag("resolved"), resolved),
-      ])
-    }
+    Calcit::Import(CalcitImport { ns, def, info, .. }) => Edn::map_from_iter([
+      (Edn::tag("kind"), Edn::tag("import")),
+      (Edn::tag("ns"), Edn::Str((**ns).into())),
+      (Edn::tag("def"), Edn::Str((**def).into())),
+      (
+        Edn::tag("info"),
+        match &**info {
+          ImportInfo::NsAs { alias, at_ns, at_def } => Edn::map_from_iter([
+            (Edn::tag("kind"), Edn::tag("as")),
+            (Edn::tag("alias"), Edn::Str((**alias).into())),
+            (Edn::tag("at-ns"), Edn::Str((**at_ns).into())),
+            (Edn::tag("at-def"), Edn::Str((**at_def).into())),
+          ]),
+          ImportInfo::JsDefault { alias, at_ns, at_def } => Edn::map_from_iter([
+            (Edn::tag("kind"), Edn::tag("js-default")),
+            (Edn::tag("alias"), Edn::Str((**alias).into())),
+            (Edn::tag("at-ns"), Edn::Str((**at_ns).into())),
+            (Edn::tag("at-def"), Edn::Str((**at_def).into())),
+          ]),
+          ImportInfo::NsReferDef { at_ns, at_def } => Edn::map_from_iter([
+            (Edn::tag("kind"), Edn::tag("refer")),
+            (Edn::tag("at-ns"), Edn::Str((**at_ns).into())),
+            (Edn::tag("at-def"), Edn::Str((**at_def).into())),
+          ]),
+          ImportInfo::SameFile { at_def } => Edn::map_from_iter([
+            (Edn::tag("kind"), Edn::tag("same-file")),
+            (Edn::tag("at-def"), Edn::Str((**at_def).into())),
+          ]),
+          ImportInfo::Core { at_ns } => Edn::map_from_iter([
+            (Edn::tag("kind"), Edn::tag("core")),
+            (Edn::tag("at-ns"), Edn::Str((**at_ns).into())),
+          ]),
+        },
+      ),
+    ]),
+
+    Calcit::Registered(alias) => Edn::map_from_iter([
+      (Edn::tag("kind"), Edn::tag("registered")),
+      (Edn::tag("alias"), Edn::Str((**alias).into())),
+    ]),
 
     Calcit::Fn { info, .. } => {
       Edn::map_from_iter([
@@ -162,13 +176,13 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       (Edn::tag("kind"), Edn::tag("syntax")),
       (Edn::tag("name"), Edn::Str((name.to_string()).into())),
     ]),
-    Calcit::Thunk(code, _) => dump_code(code),
+    Calcit::Thunk(thunk) => dump_code(thunk.get_code()),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
       for x in xs {
         ys.push(dump_code(x));
       }
-      Edn::List(ys)
+      Edn::from(ys)
     }
     Calcit::Method(method, kind) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("method")),
@@ -183,7 +197,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
   }
 }
 
-fn dump_items_code(xs: &CalcitItems) -> Edn {
+fn dump_items_code(xs: &CalcitCompactList) -> Edn {
   let mut ys = EdnListView::default();
   for x in xs {
     ys.push(dump_code(x));
@@ -191,10 +205,10 @@ fn dump_items_code(xs: &CalcitItems) -> Edn {
   ys.into()
 }
 
-fn dump_args_code(xs: &[Arc<str>]) -> Edn {
+fn dump_args_code(xs: &[CalcitArgLabel]) -> Edn {
   let mut ys = EdnListView::default();
   for x in xs {
-    ys.push(Edn::sym(&*x.to_owned()));
+    ys.push(Edn::sym(&*x.to_string()));
   }
   ys.into()
 }

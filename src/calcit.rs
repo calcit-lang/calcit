@@ -1,8 +1,12 @@
 mod eval_node;
 mod fns;
+mod list;
 mod proc_name;
+mod record;
 mod symbol;
 mod syntax_name;
+mod thunk;
+mod tuple;
 
 use core::cmp::Ord;
 use std::cmp::Eq;
@@ -10,6 +14,7 @@ use std::cmp::Ordering;
 use std::cmp::Ordering::*;
 use std::fmt;
 use std::fmt::Display;
+use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 use std::sync::{Arc, Mutex};
@@ -18,23 +23,20 @@ use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
-pub use fns::{CalcitFn, CalcitMacro, CalcitScope};
+pub use fns::{CalcitArgLabel, CalcitFn, CalcitMacro, CalcitScope};
+pub use list::{CalcitCompactList, CalcitList};
 pub use proc_name::CalcitProc;
-pub use symbol::CalcitSymbolInfo;
-pub use symbol::{ImportRule, SymbolResolved};
+pub use record::CalcitRecord;
+pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
 pub use syntax_name::CalcitSyntax;
+pub use thunk::{CalcitThunk, CalcitThunkInfo};
+pub use tuple::CalcitTuple;
 
 use crate::builtins::ValueAndListeners;
 use crate::call_stack::CallStackList;
 
 /// dead simple counter for ID generator, better use nanoid in business
 static ID_GEN: AtomicUsize = AtomicUsize::new(0);
-
-pub type CalcitItems = TernaryTreeList<Calcit>;
-
-/// special types wraps vector of calcit data for displaying
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq)]
-pub struct CrListWrap(pub TernaryTreeList<Calcit>);
 
 /// dynamic data defined in Calcit
 #[derive(Debug, Clone)]
@@ -48,28 +50,38 @@ pub enum Calcit {
     /// positions in the tree of Cirru
     location: Option<Arc<Vec<u8>>>,
   },
+  /// local variable
+  Local {
+    sym: Arc<str>,
+    info: Arc<CalcitSymbolInfo>,
+    location: Option<Arc<Vec<u8>>>,
+  },
+  /// things that can be looked up from program snapshot, also things in :require block
+  Import(CalcitImport),
+  /// registered in runtime
+  Registered(Arc<str>),
   /// sth between string and enum, used a key or weak identifier
   Tag(EdnTag),
   Str(Arc<str>),
   /// to compile to js, global variables are stored in thunks at first, rather than evaluated
   /// and it is still different from quoted data which was intentionally turned in to data.
-  Thunk(Arc<Calcit>, Option<Arc<Calcit>>), // code, value
+  Thunk(CalcitThunk), // code, value
   /// atom, holding a path to its state, data inside remains during hot code swapping
   Ref(Arc<str>, Arc<Mutex<ValueAndListeners>>),
   /// more tagged union type, more like an internal structure
-  Tuple(Arc<Calcit>, Vec<Calcit>, Arc<Calcit>),
+  Tuple(CalcitTuple),
   /// binary data, to be used by FFIs
   Buffer(Vec<u8>),
   /// cirru quoted data, for faster meta programming
   CirruQuote(Cirru),
   /// not for data, but for recursion
-  Recur(CalcitItems),
-  List(CalcitItems),
+  Recur(Arc<TernaryTreeList<Calcit>>),
+  List(CalcitList),
   Set(rpds::HashTrieSetSync<Calcit>),
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   /// with only static and limited keys, for performance and checking
   /// size of keys are values should be kept consistent
-  Record(EdnTag, Arc<Vec<EdnTag>>, Arc<Vec<Calcit>>, Arc<Calcit>),
+  Record(CalcitRecord),
   /// native functions that providing feature from Rust
   Proc(CalcitProc),
   Macro {
@@ -101,6 +113,9 @@ impl fmt::Display for Calcit {
       Calcit::Bool(v) => f.write_str(&format!("{v}")),
       Calcit::Number(n) => f.write_str(&format!("{n}")),
       Calcit::Symbol { sym, .. } => f.write_str(&format!("'{sym}")),
+      Calcit::Local { sym, .. } => f.write_str(&format!("'{sym}")),
+      Calcit::Import(CalcitImport { ns, def, .. }) => f.write_str(&format!("{ns}/{def}")),
+      Calcit::Registered(alias) => f.write_str(&format!("{alias}")),
       Calcit::Tag(s) => f.write_str(&format!(":{s}")),
       Calcit::Str(s) => {
         if is_simple_str(s) {
@@ -109,19 +124,34 @@ impl fmt::Display for Calcit {
           write!(f, "\"|{}\"", s.escape_default())
         }
       } // TODO, escaping choices
-      Calcit::Thunk(code, v) => match v {
-        Some(data) => f.write_str(&format!("(&thunk {data} {code})")),
-        None => f.write_str(&format!("(&thunk _ {code})")),
+      Calcit::Thunk(thunk) => match thunk {
+        CalcitThunk::Code { code, .. } => f.write_str(&format!("(&thunk _ {code})")),
+        CalcitThunk::Evaled { code, value } => f.write_str(&format!("(&thunk {value} {code})")),
       },
       Calcit::CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
       Calcit::Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
-      Calcit::Tuple(tag, extra, _class) => {
-        let mut extra_str = String::from("");
-        for item in extra {
-          extra_str.push(' ');
-          extra_str.push_str(&item.to_string())
+      Calcit::Tuple(CalcitTuple { tag, extra, class }) => {
+        if let Some(record) = class {
+          f.write_str("(%:: ")?;
+          f.write_str(&tag.to_string())?;
+
+          for item in extra {
+            f.write_char(' ')?;
+            f.write_str(&item.to_string())?;
+          }
+          f.write_str(&format!(" (:class {})", record.name))?;
+          f.write_str(")")
+        } else {
+          f.write_str("(:: ")?;
+          f.write_str(&tag.to_string())?;
+
+          for item in extra {
+            f.write_char(' ')?;
+            f.write_str(&item.to_string())?;
+          }
+
+          f.write_str(")")
         }
-        f.write_str(&format!("(:: {tag}{extra_str})"))
       }
       Calcit::Buffer(buf) => {
         f.write_str("(&buffer")?;
@@ -148,7 +178,7 @@ impl fmt::Display for Calcit {
       }
       Calcit::Recur(xs) => {
         f.write_str("(&recur")?;
-        for x in xs {
+        for x in &**xs {
           f.write_str(&format!(" {x}"))?;
         }
         f.write_str(")")
@@ -175,10 +205,10 @@ impl fmt::Display for Calcit {
         f.write_str(")")?;
         Ok(())
       }
-      Calcit::Record(name, fields, values, _class) => {
+      Calcit::Record(CalcitRecord { name, fields, values, .. }) => {
         f.write_str(&format!("(%{{}} {}", Calcit::Tag(name.to_owned())))?;
         for idx in 0..fields.len() {
-          f.write_str(&format!(" ({} {})", Calcit::Tag(fields[idx].to_owned()), values[idx]))?;
+          f.write_str(&format!(" ({} {})", Calcit::tag(fields[idx].ref_str()), values[idx]))?;
         }
         f.write_str(")")
       }
@@ -191,7 +221,7 @@ impl fmt::Display for Calcit {
           if need_space {
             f.write_str(" ")?;
           }
-          f.write_str(a)?;
+          f.write_str(&a.to_string())?;
           need_space = true;
         }
         f.write_str(") (")?;
@@ -213,7 +243,7 @@ impl fmt::Display for Calcit {
           if need_space {
             f.write_str(" ")?;
           }
-          f.write_str(a)?;
+          f.write_str(&a.to_string())?;
           need_space = true;
         }
         f.write_str(") ")?;
@@ -248,13 +278,6 @@ fn buffer_bit_hex(n: u8) -> String {
   hex::encode(vec![n])
 }
 
-/// special types wraps vector of calcit data for displaying
-impl fmt::Display for CrListWrap {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&format_to_lisp(&Calcit::List(self.0.to_owned()))) // TODO performance
-  }
-}
-
 /// display data into Lisp style for readability
 pub fn format_to_lisp(x: &Calcit) -> String {
   match x {
@@ -270,6 +293,10 @@ pub fn format_to_lisp(x: &Calcit) -> String {
       s
     }
     Calcit::Symbol { sym, .. } => sym.to_string(),
+    Calcit::Local { sym, .. } => sym.to_string(),
+    Calcit::Import(CalcitImport { ns, def, .. }) => format!("{ns}/{def}"),
+    Calcit::Registered(alias) => format!("{alias}"),
+    Calcit::Tag(s) => format!(":{s}"),
     Calcit::Syntax(s, _ns) => s.to_string(),
     Calcit::Proc(s) => s.to_string(),
     a => format!("{a}"),
@@ -298,6 +325,19 @@ impl Hash for Calcit {
         // probaly no need, also won't be used in hashing
         // ns.hash(_state);
       }
+      Calcit::Local { sym, .. } => {
+        "local:".hash(_state);
+        sym.hash(_state);
+      }
+      Calcit::Import(CalcitImport { ns, def, .. }) => {
+        "import:".hash(_state);
+        ns.hash(_state);
+        def.hash(_state);
+      }
+      Calcit::Registered(alias) => {
+        "registered:".hash(_state);
+        alias.hash(_state);
+      }
       Calcit::Tag(s) => {
         "tag:".hash(_state);
         s.hash(_state);
@@ -306,15 +346,14 @@ impl Hash for Calcit {
         "string:".hash(_state);
         s.hash(_state);
       }
-      Calcit::Thunk(v, _) => {
-        "quote:".hash(_state);
-        v.hash(_state);
+      Calcit::Thunk(..) => {
+        unreachable!("thunk should not be used in hashing")
       }
       Calcit::Ref(name, _locked_pair) => {
         "ref:".hash(_state);
         name.hash(_state);
       }
-      Calcit::Tuple(tag, extra, _class) => {
+      Calcit::Tuple(CalcitTuple { tag, extra, .. }) => {
         "tuple:".hash(_state);
         tag.hash(_state);
         extra.hash(_state);
@@ -334,7 +373,7 @@ impl Hash for Calcit {
       }
       Calcit::List(v) => {
         "list:".hash(_state);
-        v.hash(_state);
+        v.0.hash(_state);
       }
       Calcit::Set(v) => {
         "set:".hash(_state);
@@ -354,7 +393,7 @@ impl Hash for Calcit {
           x.hash(_state)
         }
       }
-      Calcit::Record(name, fields, values, _class) => {
+      Calcit::Record(CalcitRecord { name, fields, values, .. }) => {
         "record:".hash(_state);
         name.hash(_state);
         fields.hash(_state);
@@ -419,6 +458,20 @@ impl Ord for Calcit {
       (Calcit::Symbol { .. }, _) => Less,
       (_, Calcit::Symbol { .. }) => Greater,
 
+      (Calcit::Local { sym: a, .. }, Calcit::Local { sym: b, .. }) => a.cmp(b),
+      (Calcit::Local { .. }, _) => Less,
+      (_, Calcit::Local { .. }) => Greater,
+
+      (Calcit::Import(CalcitImport { ns: a, def: a1, .. }), Calcit::Import(CalcitImport { ns: b, def: b1, .. })) => {
+        a.cmp(b).then(a1.cmp(b1))
+      }
+      (Calcit::Import { .. }, _) => Less,
+      (_, Calcit::Import { .. }) => Greater,
+
+      (Calcit::Registered(a), Calcit::Registered(b)) => a.cmp(b),
+      (Calcit::Registered(_), _) => Less,
+      (_, Calcit::Registered(_)) => Greater,
+
       (Calcit::Tag(a), Calcit::Tag(b)) => a.cmp(b),
       (Calcit::Tag(_), _) => Less,
       (_, Calcit::Tag(_)) => Greater,
@@ -427,9 +480,9 @@ impl Ord for Calcit {
       (Calcit::Str(_), _) => Less,
       (_, Calcit::Str(_)) => Greater,
 
-      (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a.cmp(b),
-      (Calcit::Thunk(_, _), _) => Less,
-      (_, Calcit::Thunk(_, _)) => Greater,
+      (Calcit::Thunk(a), Calcit::Thunk(b)) => a.cmp(b),
+      (Calcit::Thunk(_), _) => Less,
+      (_, Calcit::Thunk(_)) => Greater,
 
       (Calcit::CirruQuote(a), Calcit::CirruQuote(b)) => a.cmp(b),
       (Calcit::CirruQuote(_), _) => Less,
@@ -439,12 +492,19 @@ impl Ord for Calcit {
       (Calcit::Ref(_, _), _) => Less,
       (_, Calcit::Ref(_, _)) => Greater,
 
-      (Calcit::Tuple(a0, extra0, _c0), Calcit::Tuple(a1, extra1, _c1)) => match a0.cmp(a1) {
+      (
+        Calcit::Tuple(CalcitTuple {
+          tag: a0, extra: extra0, ..
+        }),
+        Calcit::Tuple(CalcitTuple {
+          tag: a1, extra: extra1, ..
+        }),
+      ) => match a0.cmp(a1) {
         Equal => extra0.cmp(extra1),
         v => v,
       },
-      (Calcit::Tuple(_, _, _), _) => Less,
-      (_, Calcit::Tuple(_, _, _)) => Greater,
+      (Calcit::Tuple { .. }, _) => Less,
+      (_, Calcit::Tuple { .. }) => Greater,
 
       (Calcit::Buffer(buf1), Calcit::Buffer(buf2)) => buf1.cmp(buf2),
       (Calcit::Buffer(..), _) => Less,
@@ -454,7 +514,7 @@ impl Ord for Calcit {
       (Calcit::Recur(_), _) => Less,
       (_, Calcit::Recur(_)) => Greater,
 
-      (Calcit::List(a), Calcit::List(b)) => a.cmp(b),
+      (Calcit::List(a), Calcit::List(b)) => a.0.cmp(&b.0),
       (Calcit::List(_), _) => Less,
       (_, Calcit::List(_)) => Greater,
 
@@ -477,14 +537,12 @@ impl Ord for Calcit {
       (Calcit::Map(_), _) => Less,
       (_, Calcit::Map(_)) => Greater,
 
-      (Calcit::Record(name1, _fields1, _values1, _class1), Calcit::Record(name2, _fields2, _values2, _class2)) => {
-        match name1.cmp(name2) {
-          Equal => unreachable!("TODO records are not cmp ed"),
-          ord => ord,
-        }
-      }
-      (Calcit::Record(..), _) => Less,
-      (_, Calcit::Record(..)) => Greater,
+      (Calcit::Record(CalcitRecord { name: name1, .. }), Calcit::Record(CalcitRecord { name: name2, .. })) => match name1.cmp(name2) {
+        Equal => unreachable!("TODO records are not cmp ed"),
+        ord => ord,
+      },
+      (Calcit::Record { .. }, _) => Less,
+      (_, Calcit::Record { .. }) => Greater,
 
       (Calcit::Proc(a), Calcit::Proc(b)) => a.cmp(b),
       (Calcit::Proc(_), _) => Less,
@@ -529,23 +587,30 @@ impl PartialEq for Calcit {
       (Calcit::Bool(a), Calcit::Bool(b)) => a == b,
       (Calcit::Number(a), Calcit::Number(b)) => a == b,
       (Calcit::Symbol { sym: a, .. }, Calcit::Symbol { sym: b, .. }) => a == b,
+      (Calcit::Local { sym: a, .. }, Calcit::Local { sym: b, .. }) => a == b,
+
+      // special case for symbol and local, compatible with old implementation
+      (Calcit::Symbol { sym: a, .. }, Calcit::Local { sym: b, .. }) => a == b,
+      (Calcit::Local { sym: a, .. }, Calcit::Symbol { sym: b, .. }) => a == b,
+      (Calcit::Symbol { sym: a, .. }, Calcit::Import(CalcitImport { def: b, .. })) => a == b,
+      (Calcit::Import(CalcitImport { def: b, .. }), Calcit::Symbol { sym: a, .. }) => a == b,
+      (Calcit::Registered(a), Calcit::Registered(b)) => a == b,
+
+      (Calcit::Import(CalcitImport { ns: a, def: a1, .. }), Calcit::Import(CalcitImport { ns: b, def: b1, .. })) => a == b && a1 == b1,
       (Calcit::Tag(a), Calcit::Tag(b)) => a == b,
       (Calcit::Str(a), Calcit::Str(b)) => a == b,
-      (Calcit::Thunk(a, _), Calcit::Thunk(b, _)) => a == b,
+      (Calcit::Thunk(a), Calcit::Thunk(b)) => a == b,
       (Calcit::Ref(a, _), Calcit::Ref(b, _)) => a == b,
-      (Calcit::Tuple(a, extra_a, _c0), Calcit::Tuple(c, extra_c, _c1)) => a == c && extra_a == extra_c,
+      (Calcit::Tuple(a), Calcit::Tuple(b)) => a == b,
       (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,
       (Calcit::CirruQuote(b), Calcit::CirruQuote(d)) => b == d,
-      (Calcit::List(a), Calcit::List(b)) => a == b,
+      (Calcit::List(a), Calcit::List(b)) => a.0 == b.0,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,
-      (Calcit::Record(name1, fields1, values1, _class1), Calcit::Record(name2, fields2, values2, _class2)) => {
-        name1 == name2 && fields1 == fields2 && values1 == values2
-      }
-
-      // functions compared with nanoid
+      (Calcit::Record(a), Calcit::Record(b)) => a == b,
       (Calcit::Proc(a), Calcit::Proc(b)) => a == b,
       (Calcit::Macro { id: a, .. }, Calcit::Macro { id: b, .. }) => a == b,
+      // functions compared with nanoid
       (Calcit::Fn { id: a, .. }, Calcit::Fn { id: b, .. }) => a == b,
       (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a == b,
       (Calcit::Method(a, b), Calcit::Method(c, d)) => a == c && b == d,
@@ -586,11 +651,50 @@ impl Calcit {
   pub fn get_location(&self) -> Option<NodeLocation> {
     match self {
       Calcit::Symbol { info, location, .. } => Some(NodeLocation::new(
-        info.ns.clone(),
+        info.at_ns.clone(),
+        info.at_def.clone(),
+        location.to_owned().unwrap_or_default(),
+      )),
+      Calcit::Local { info, location, .. } => Some(NodeLocation::new(
+        info.at_ns.clone(),
         info.at_def.clone(),
         location.to_owned().unwrap_or_default(),
       )),
       _ => None,
+    }
+  }
+
+  /// during evaluation, maybe skip evaluation since evaluated data is already in the value
+  pub fn is_expr_evaluated(&self) -> bool {
+    match self {
+      Calcit::Nil => true,
+      Calcit::Bool(_) => true,
+      Calcit::Number(_) => true,
+      Calcit::Symbol { sym, .. } if &**sym == "&" => true,
+
+      Calcit::Symbol { .. } => false,
+
+      Calcit::Local { .. } => false,
+      Calcit::Import(..) => false,
+      Calcit::Registered(..) => true,
+      Calcit::Tag(_) => true,
+      Calcit::Str(_) => true,
+      Calcit::Thunk(..) => false,
+      Calcit::Ref(..) => true,
+      Calcit::Tuple { .. } => true,
+      Calcit::Buffer(..) => true,
+      Calcit::CirruQuote(..) => true,
+      Calcit::Recur(_) => true,
+      Calcit::RawCode(..) => true,
+      Calcit::List(..) => false,
+      Calcit::Set(_) => true,
+      Calcit::Map(_) => true,
+      Calcit::Record { .. } => true,
+      Calcit::Proc(_) => true,
+      Calcit::Macro { .. } => true,
+      Calcit::Fn { .. } => true,
+      Calcit::Syntax(_, _) => true,
+      Calcit::Method(..) => true,
     }
   }
 }
@@ -619,7 +723,7 @@ pub struct CalcitErr {
   pub msg: String,
   pub warnings: Vec<LocatedWarning>,
   pub location: Option<Arc<NodeLocation>>,
-  pub stack: rpds::ListSync<crate::call_stack::CalcitStack>,
+  pub stack: CallStackList,
 }
 
 impl fmt::Display for CalcitErr {
@@ -639,7 +743,7 @@ impl From<String> for CalcitErr {
     CalcitErr {
       msg,
       warnings: vec![],
-      stack: rpds::List::new_sync(),
+      stack: CallStackList::default(),
       location: None,
     }
   }
@@ -650,7 +754,7 @@ impl CalcitErr {
     CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: rpds::List::new_sync(),
+      stack: CallStackList::default(),
       location: None,
     }
   }
@@ -658,16 +762,16 @@ impl CalcitErr {
     Err(CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: rpds::List::new_sync(),
+      stack: CallStackList::default(),
       location: None,
     })
   }
   /// display nodes in error message
-  pub fn err_nodes<T: Into<String>>(msg: T, nodes: &CalcitItems) -> Result<Calcit, Self> {
+  pub fn err_nodes<T: Into<String>>(msg: T, nodes: &CalcitCompactList) -> Result<Calcit, Self> {
     Err(CalcitErr {
-      msg: format!("{} {}", msg.into(), CrListWrap(nodes.to_owned())),
+      msg: format!("{} {}", msg.into(), CalcitList::from(nodes)),
       warnings: vec![],
-      stack: rpds::List::new_sync(),
+      stack: CallStackList::default(),
       location: None,
     })
   }
@@ -675,7 +779,7 @@ impl CalcitErr {
     Err(CalcitErr {
       msg: msg.into(),
       warnings: vec![],
-      stack: rpds::List::new_sync(),
+      stack: CallStackList::default(),
       location,
     })
   }

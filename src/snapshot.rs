@@ -1,4 +1,4 @@
-use cirru_edn::{Edn, EdnMapView, EdnTag};
+use cirru_edn::{Edn, EdnMapView, EdnRecordView, EdnSetView, EdnTag};
 use cirru_parser::Cirru;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
@@ -21,13 +21,13 @@ pub struct FileInSnapShot {
 
 impl From<&FileInSnapShot> for Edn {
   fn from(data: &FileInSnapShot) -> Edn {
-    Edn::Record(
-      EdnTag::new("FileEntry"),
-      vec![
+    Edn::Record(EdnRecordView {
+      tag: EdnTag::new("FileEntry"),
+      pairs: vec![
         ("ns".into(), data.ns.to_owned().into()),
         ("defs".into(), data.defs.to_owned().into()),
       ],
-    )
+    })
   }
 }
 
@@ -209,21 +209,24 @@ impl From<&FileChangeInfo> for Edn {
         .iter()
         .map(|(name, def)| (Edn::str(&**name), Edn::Quote(def.to_owned())))
         .collect();
-      map.insert_key("added-defs", Edn::Map(defs));
+      map.insert_key("added-defs", Edn::from(defs));
     }
     if !data.removed_defs.is_empty() {
-      map.insert_key("removed-defs", Edn::Set(data.removed_defs.iter().map(|s| Edn::str(&**s)).collect()));
+      map.insert_key(
+        "removed-defs",
+        Edn::Set(EdnSetView(data.removed_defs.iter().map(|s| Edn::str(&**s)).collect())),
+      );
     }
     if !data.changed_defs.is_empty() {
       map.insert_key(
         "changed-defs",
-        Edn::Map(
+        Edn::Map(EdnMapView(
           data
             .changed_defs
             .iter()
             .map(|(name, def)| (Edn::str(&**name), Edn::Quote(def.to_owned())))
             .collect(),
-        ),
+        )),
       );
     }
     map.into()
