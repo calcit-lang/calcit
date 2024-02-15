@@ -47,130 +47,12 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         // println!("eval expr: {}", expr.lisp_str());
         // println!("eval expr x: {}", x);
 
-        let v = evaluate_expr(x, scope, file_ns, call_stack)?;
-        let rest_nodes = xs.drop_left();
-        let ret = match &v {
-          Calcit::Proc(p) => {
-            let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-            builtins::handle_proc(*p, &values, call_stack)
-          }
-          Calcit::Syntax(s, def_ns) => {
-            let next_stack = if using_stack() {
-              call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, expr, &rest_nodes.0)
-            } else {
-              call_stack.to_owned()
-            };
-
-            builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
-              if e.stack.is_empty() {
-                let mut e2 = e;
-                e2.stack = call_stack.to_owned();
-                e2
-              } else {
-                e
-              }
-            })
-          }
-          Calcit::Method(name, kind) => {
-            let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-            let next_stack = if using_stack() {
-              call_stack.extend_compact(file_ns, name, StackKind::Method, &Calcit::Nil, &values)
-            } else {
-              call_stack.to_owned()
-            };
-
-            if *kind == MethodKind::Invoke {
-              builtins::meta::invoke_method(name, &values, &next_stack)
-            } else {
-              CalcitErr::err_str(format!("unknown method for rust runtime: {kind}"))
-            }
-          }
-          Calcit::Fn { info, .. } => {
-            let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-            let next_stack = if using_stack() {
-              call_stack.extend_compact(&info.def_ns, &info.name, StackKind::Fn, expr, &values)
-            } else {
-              call_stack.to_owned()
-            };
-
-            run_fn(values, info, &next_stack)
-          }
-          Calcit::Macro { info, .. } => {
-            println!(
-              "[Warn] macro should already be handled during preprocessing: {}",
-              Calcit::List(xs.to_owned()).lisp_str()
-            );
-
-            // TODO moving to preprocess
-            let mut current_values: CalcitCompactList = rest_nodes.clone().into();
-            // println!("eval macro: {} {}", x, expr.lisp_str()));
-            // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
-
-            let next_stack = if using_stack() {
-              call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, expr, &rest_nodes.0)
-            } else {
-              call_stack.to_owned()
-            };
-
-            let mut body_scope = CalcitScope::default();
-
-            Ok(loop {
-              // need to handle recursion
-              bind_args(&mut body_scope, &info.args, &current_values, call_stack)?;
-              let code = evaluate_lines(&info.body, &body_scope, &info.def_ns, &next_stack)?;
-              match code {
-                Calcit::Recur(ys) => {
-                  current_values = (*ys).to_owned();
-                }
-                _ => {
-                  // println!("gen code: {} {}", x, &code.lisp_str()));
-                  break evaluate_expr(&code, scope, file_ns, &next_stack)?;
-                }
-              }
-            })
-          }
-          Calcit::Tag(k) => {
-            if rest_nodes.len() == 1 {
-              let v = evaluate_expr(&rest_nodes[0], scope, file_ns, call_stack)?;
-
-              if let Calcit::Map(m) = v {
-                match m.get(&Calcit::Tag(k.to_owned())) {
-                  Some(value) => Ok(value.to_owned()),
-                  None => Ok(Calcit::Nil),
-                }
-              } else {
-                Err(CalcitErr::use_msg_stack(format!("expected a hashmap, got: {v}"), call_stack))
-              }
-            } else {
-              Err(CalcitErr::use_msg_stack(
-                format!("tag only takes 1 argument, got: {}", rest_nodes),
-                call_stack,
-              ))
-            }
-          }
-          Calcit::Registered(alias) => {
-            let ps = IMPORTED_PROCS.read().expect("read procs");
-            match ps.get(alias) {
-              Some(f) => {
-                let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
-                // weird, but it's faster to pass `values` than passing `&values`
-                // also println slows down code a bit. could't figure out, didn't read asm either
-                f(values, call_stack)
-              }
-              None => Err(CalcitErr::use_msg_stack(
-                format!("cannot evaluate symbol directly: {file_ns}/{alias}"),
-                call_stack,
-              )),
-            }
-          }
-          a => Err(CalcitErr::use_msg_stack_location(
-            format!("cannot be used as operator: {a:?} in {}", xs),
-            call_stack,
-            a.get_location(),
-          )),
-        };
-
-        ret
+        if x.is_expr_evaluated() {
+          call_expr(&x, &xs, scope, file_ns, call_stack)
+        } else {
+          let v = evaluate_expr(x, scope, file_ns, call_stack)?;
+          call_expr(&v, &xs, scope, file_ns, call_stack)
+        }
       }
     },
     Calcit::Set(_) => Err(CalcitErr::use_msg_stack("unexpected set for expr", call_stack)),
@@ -181,6 +63,142 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Calcit::Fn { .. } => Ok(expr.to_owned()),
     Calcit::Syntax(_, _) => Ok(expr.to_owned()),
     Calcit::Method(..) => Ok(expr.to_owned()),
+  }
+}
+
+pub fn call_expr(
+  v: &Calcit,
+  xs: &CalcitList,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let rest_nodes = xs.drop_left();
+  match v {
+    Calcit::Proc(p) => {
+      let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
+      builtins::handle_proc(*p, &values, call_stack)
+    }
+    Calcit::Syntax(s, def_ns) => {
+      let next_stack = if using_stack() {
+        call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, &Calcit::List(xs.to_owned()), &rest_nodes.0)
+      } else {
+        call_stack.to_owned()
+      };
+
+      builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
+        if e.stack.is_empty() {
+          let mut e2 = e;
+          e2.stack = call_stack.to_owned();
+          e2
+        } else {
+          e
+        }
+      })
+    }
+    Calcit::Method(name, kind) => {
+      let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
+      let next_stack = if using_stack() {
+        call_stack.extend_compact(file_ns, name, StackKind::Method, &Calcit::Nil, &values)
+      } else {
+        call_stack.to_owned()
+      };
+
+      if *kind == MethodKind::Invoke {
+        builtins::meta::invoke_method(name, &values, &next_stack)
+      } else {
+        CalcitErr::err_str(format!("unknown method for rust runtime: {kind}"))
+      }
+    }
+    Calcit::Fn { info, .. } => {
+      let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
+      let next_stack = if using_stack() {
+        call_stack.extend_compact(&info.def_ns, &info.name, StackKind::Fn, &Calcit::List(xs.to_owned()), &values)
+      } else {
+        call_stack.to_owned()
+      };
+
+      run_fn(values, info, &next_stack)
+    }
+    Calcit::Macro { info, .. } => {
+      println!(
+        "[Warn] macro should already be handled during preprocessing: {}",
+        &Calcit::List(xs.to_owned()).lisp_str()
+      );
+
+      // TODO moving to preprocess
+      let mut current_values: CalcitCompactList = rest_nodes.clone().into();
+      // println!("eval macro: {} {}", x, expr.lisp_str()));
+      // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
+
+      let next_stack = if using_stack() {
+        call_stack.extend(
+          &info.def_ns,
+          &info.name,
+          StackKind::Macro,
+          &Calcit::List(xs.to_owned()),
+          &rest_nodes.0,
+        )
+      } else {
+        call_stack.to_owned()
+      };
+
+      let mut body_scope = CalcitScope::default();
+
+      Ok(loop {
+        // need to handle recursion
+        bind_args(&mut body_scope, &info.args, &current_values, call_stack)?;
+        let code = evaluate_lines(&info.body, &body_scope, &info.def_ns, &next_stack)?;
+        match code {
+          Calcit::Recur(ys) => {
+            current_values = (*ys).to_owned();
+          }
+          _ => {
+            // println!("gen code: {} {}", x, &code.lisp_str()));
+            break evaluate_expr(&code, scope, file_ns, &next_stack)?;
+          }
+        }
+      })
+    }
+    Calcit::Tag(k) => {
+      if rest_nodes.len() == 1 {
+        let v = evaluate_expr(&rest_nodes[0], scope, file_ns, call_stack)?;
+
+        if let Calcit::Map(m) = v {
+          match m.get(&Calcit::Tag(k.to_owned())) {
+            Some(value) => Ok(value.to_owned()),
+            None => Ok(Calcit::Nil),
+          }
+        } else {
+          Err(CalcitErr::use_msg_stack(format!("expected a hashmap, got: {v}"), call_stack))
+        }
+      } else {
+        Err(CalcitErr::use_msg_stack(
+          format!("tag only takes 1 argument, got: {}", rest_nodes),
+          call_stack,
+        ))
+      }
+    }
+    Calcit::Registered(alias) => {
+      let ps = IMPORTED_PROCS.read().expect("read procs");
+      match ps.get(alias) {
+        Some(f) => {
+          let values = evaluate_args(&rest_nodes, scope, file_ns, call_stack)?;
+          // weird, but it's faster to pass `values` than passing `&values`
+          // also println slows down code a bit. could't figure out, didn't read asm either
+          f(values, call_stack)
+        }
+        None => Err(CalcitErr::use_msg_stack(
+          format!("cannot evaluate symbol directly: {file_ns}/{alias}"),
+          call_stack,
+        )),
+      }
+    }
+    a => Err(CalcitErr::use_msg_stack_location(
+      format!("cannot be used as operator: {a:?} in {}", &Calcit::List(xs.to_owned())),
+      call_stack,
+      a.get_location(),
+    )),
   }
 }
 
