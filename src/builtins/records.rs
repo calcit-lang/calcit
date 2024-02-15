@@ -2,10 +2,11 @@ use std::ops::Rem;
 use std::sync::Arc;
 
 use cirru_edn::EdnTag;
+use im_ternary_tree::TernaryTreeList;
 
-use crate::calcit::{Calcit, CalcitCompactList, CalcitErr, CalcitRecord, CalcitTuple};
+use crate::calcit::{Calcit, CalcitErr, CalcitRecord, CalcitTuple};
 
-pub fn new_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn new_record(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
     return CalcitErr::err_nodes("new-record expected arguments, got:", xs);
   }
@@ -54,7 +55,7 @@ pub fn new_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }))
 }
 
-pub fn new_class_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn new_class_record(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
     return CalcitErr::err_nodes("new-record expected arguments, got:", xs);
   }
@@ -107,7 +108,7 @@ pub fn new_class_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }))
 }
 
-pub fn call_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn call_record(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {
     return CalcitErr::err_nodes("&%{{}} expected at least 2 arguments, got:", xs);
@@ -162,7 +163,7 @@ pub fn call_record(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn get_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn get_class(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size != 1 {
     return CalcitErr::err_nodes("&record:class expected 1 argument, got:", xs);
@@ -180,7 +181,7 @@ pub fn get_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn with_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn with_class(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {
     return CalcitErr::err_nodes("&record:with-class expected at least 2 arguments, got:", xs);
@@ -205,7 +206,7 @@ pub fn with_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn record_from_map(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn record_from_map(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes("&record:from-map expected 2 arguments, got:", xs);
   }
@@ -247,7 +248,7 @@ pub fn record_from_map(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn get_record_name(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn get_record_name(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("&record:get-name expected record, got::", xs);
   }
@@ -256,7 +257,7 @@ pub fn get_record_name(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     a => CalcitErr::err_str(format!("&record:get-name expected record, got: {a}")),
   }
 }
-pub fn turn_map(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn turn_map(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("&record:to-map expected 1 argument, got::", xs);
   }
@@ -271,7 +272,7 @@ pub fn turn_map(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
     a => CalcitErr::err_str(format!("&record:to-map expected a record, got: {a}")),
   }
 }
-pub fn matches(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn matches(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes("&record:matches? expected 2 arguments, got:", xs);
   }
@@ -292,7 +293,7 @@ pub fn matches(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn count(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn count(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("record count expected 1 argument::", xs);
   }
@@ -302,7 +303,7 @@ pub fn count(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn contains_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn contains_ques(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(record)), Some(a)) => match a {
       Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => Ok(Calcit::Bool(record.index_of(k).is_some())),
@@ -314,7 +315,7 @@ pub fn contains_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn get(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn get(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Record(record @ CalcitRecord { values, .. })), Some(a)) => match a {
       Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => match record.index_of(k) {
@@ -332,7 +333,7 @@ pub fn get(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn assoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn assoc(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (
       Some(Calcit::Record(
@@ -379,7 +380,7 @@ pub fn assoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn extend_as(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn extend_as(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 4 {
     return CalcitErr::err_nodes("record:extend-as expected 4 arguments, got::", xs);
   }

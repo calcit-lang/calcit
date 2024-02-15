@@ -8,7 +8,7 @@ use crate::Calcit;
 
 #[derive(Debug, PartialEq, Clone, Eq, Ord, PartialOrd, Hash)]
 /// abstraction over im_ternary_tree::TernaryTreeList
-pub struct CalcitList(pub TernaryTreeList<Arc<Calcit>>);
+pub struct CalcitList(pub TernaryTreeList<Calcit>);
 
 impl Display for CalcitList {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -16,9 +16,15 @@ impl Display for CalcitList {
   }
 }
 
-impl From<TernaryTreeList<Arc<Calcit>>> for CalcitList {
-  fn from(xs: TernaryTreeList<Arc<Calcit>>) -> CalcitList {
+impl From<TernaryTreeList<Calcit>> for CalcitList {
+  fn from(xs: TernaryTreeList<Calcit>) -> CalcitList {
     CalcitList(xs)
+  }
+}
+
+impl From<CalcitList> for Calcit {
+  fn from(xs: CalcitList) -> Calcit {
+    Calcit::List(Arc::new(xs))
   }
 }
 
@@ -26,7 +32,7 @@ impl From<CalcitList> for TernaryTreeList<Calcit> {
   fn from(xs: CalcitList) -> TernaryTreeList<Calcit> {
     let mut ys = TernaryTreeList::Empty;
     for x in &xs.0 {
-      ys = ys.push((**x).to_owned());
+      ys = ys.push((*x).to_owned());
     }
     ys
   }
@@ -36,7 +42,7 @@ impl From<&CalcitList> for TernaryTreeList<Calcit> {
   fn from(xs: &CalcitList) -> TernaryTreeList<Calcit> {
     let mut ys = TernaryTreeList::Empty;
     for x in &xs.0 {
-      ys = ys.push((**x).to_owned());
+      ys = ys.push((*x).to_owned());
     }
     ys
   }
@@ -47,7 +53,7 @@ impl From<&TernaryTreeList<Calcit>> for CalcitList {
   fn from(xs: &TernaryTreeList<Calcit>) -> CalcitList {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
-      ys = ys.push(Arc::new(x.to_owned()));
+      ys = ys.push(x.to_owned());
     }
     CalcitList(ys)
   }
@@ -57,7 +63,7 @@ impl From<Vec<Calcit>> for CalcitList {
   fn from(xs: Vec<Calcit>) -> CalcitList {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
-      ys = ys.push(Arc::new(x));
+      ys = ys.push(x);
     }
     CalcitList(ys)
   }
@@ -67,7 +73,7 @@ impl From<&Vec<Arc<Calcit>>> for CalcitList {
   fn from(xs: &Vec<Arc<Calcit>>) -> CalcitList {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
-      ys = ys.push(x.to_owned());
+      ys = ys.push((**x).to_owned());
     }
     CalcitList(ys)
   }
@@ -77,7 +83,7 @@ impl From<Vec<Arc<Calcit>>> for CalcitList {
   fn from(xs: Vec<Arc<Calcit>>) -> CalcitList {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
-      ys = ys.push(x.to_owned());
+      ys = ys.push((*x).to_owned());
     }
     CalcitList(ys)
   }
@@ -87,7 +93,7 @@ impl From<&[Arc<Calcit>]> for CalcitList {
   fn from(xs: &[Arc<Calcit>]) -> CalcitList {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
-      ys = ys.push(x.to_owned());
+      ys = ys.push((**x).to_owned());
     }
     CalcitList(ys)
   }
@@ -97,7 +103,7 @@ impl From<&[&Arc<Calcit>]> for CalcitList {
   fn from(xs: &[&Arc<Calcit>]) -> CalcitList {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
-      ys = ys.push((*x).to_owned());
+      ys = ys.push((***x).to_owned());
     }
     CalcitList(ys)
   }
@@ -107,7 +113,7 @@ impl From<&[Calcit; 2]> for CalcitList {
   fn from(xs: &[Calcit; 2]) -> CalcitList {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
-      ys = ys.push(Arc::new(x.to_owned()));
+      ys = ys.push(x.to_owned());
     }
     CalcitList(ys)
   }
@@ -117,7 +123,7 @@ impl From<&[Arc<Calcit>; 3]> for CalcitList {
   fn from(xs: &[Arc<Calcit>; 3]) -> CalcitList {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
-      ys = ys.push(x.to_owned());
+      ys = ys.push((**x).to_owned());
     }
     CalcitList(ys)
   }
@@ -127,9 +133,9 @@ impl From<&[Arc<Calcit>; 1]> for Calcit {
   fn from(xs: &[Arc<Calcit>; 1]) -> Calcit {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
-      ys = ys.push(x.to_owned());
+      ys = ys.push((**x).to_owned());
     }
-    Calcit::List(CalcitList(ys))
+    Calcit::List(Arc::new(CalcitList(ys)))
   }
 }
 
@@ -137,9 +143,9 @@ impl From<&[Arc<Calcit>; 2]> for Calcit {
   fn from(xs: &[Arc<Calcit>; 2]) -> Calcit {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
-      ys = ys.push(x.to_owned());
+      ys = ys.push((**x).to_owned());
     }
-    Calcit::List(CalcitList(ys))
+    Calcit::List(Arc::new(CalcitList(ys)))
   }
 }
 
@@ -147,9 +153,9 @@ impl From<&[Arc<Calcit>; 3]> for Calcit {
   fn from(xs: &[Arc<Calcit>; 3]) -> Calcit {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
-      ys = ys.push(x.to_owned());
+      ys = ys.push((**x).to_owned());
     }
-    Calcit::List(CalcitList(ys))
+    Calcit::List(Arc::new(CalcitList(ys)))
   }
 }
 
@@ -160,16 +166,16 @@ impl Default for CalcitList {
 }
 
 impl Index<usize> for CalcitList {
-  type Output = Arc<Calcit>;
+  type Output = Calcit;
 
-  fn index(&self, idx: usize) -> &Arc<Calcit> {
+  fn index(&self, idx: usize) -> &Calcit {
     &self.0[idx]
   }
 }
 
 // experimental code to turn `&TernaryTree<_>` into iterator
 impl<'a> IntoIterator for &'a CalcitList {
-  type Item = &'a Arc<Calcit>;
+  type Item = &'a Calcit;
   type IntoIter = CalcitListRefIntoIterator<'a>;
 
   fn into_iter(self) -> Self::IntoIter {
@@ -178,12 +184,12 @@ impl<'a> IntoIterator for &'a CalcitList {
 }
 
 pub struct CalcitListRefIntoIterator<'a> {
-  value: &'a TernaryTreeList<Arc<Calcit>>,
+  value: &'a TernaryTreeList<Calcit>,
   index: usize,
 }
 
 impl<'a> Iterator for CalcitListRefIntoIterator<'a> {
-  type Item = &'a Arc<Calcit>;
+  type Item = &'a Calcit;
   fn next(&mut self) -> Option<Self::Item> {
     if self.index < self.value.len() {
       // println!("get: {} {}", self.value.format_inline(), self.index);
@@ -198,15 +204,15 @@ impl<'a> Iterator for CalcitListRefIntoIterator<'a> {
 
 impl CalcitList {
   /// create a new list without Arc
-  pub fn new_compact() -> CalcitCompactList {
+  pub fn new_compact() -> TernaryTreeList<Calcit> {
     TernaryTreeList::Empty
   }
   /// create a new list without Arc
-  pub fn new_inner() -> TernaryTreeList<Arc<Calcit>> {
+  pub fn new_inner() -> TernaryTreeList<Calcit> {
     TernaryTreeList::Empty
   }
 
-  pub fn new_inner_from(xs: &[Arc<Calcit>]) -> TernaryTreeList<Arc<Calcit>> {
+  pub fn new_inner_from(xs: &[Calcit]) -> TernaryTreeList<Calcit> {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
       ys = ys.push(x.to_owned());
@@ -222,26 +228,20 @@ impl CalcitList {
     self.0.is_empty()
   }
 
-  pub fn get(&self, idx: usize) -> Option<&Arc<Calcit>> {
+  pub fn get(&self, idx: usize) -> Option<&Calcit> {
     self.0.get(idx)
   }
 
   /// referce to inner Calcit value
   pub fn get_inner(&self, idx: usize) -> Option<&Calcit> {
-    self.0.get(idx).map(|x| &**x)
+    self.0.get(idx)
   }
 
   pub fn to_vec(&self) -> Vec<Calcit> {
-    self.0.iter().map(|x| (**x).to_owned()).collect()
+    self.0.iter().map(|x| (*x).to_owned()).collect()
   }
 
   pub fn push_right(&self, x: Calcit) -> Self {
-    let mut ys = self.0.clone();
-    ys = ys.push_right(Arc::new(x));
-    CalcitList(ys)
-  }
-
-  pub fn push_right_arc(&self, x: Arc<Calcit>) -> Self {
     let mut ys = self.0.clone();
     ys = ys.push_right(x);
     CalcitList(ys)
@@ -249,7 +249,7 @@ impl CalcitList {
 
   pub fn push_left(&self, x: Calcit) -> Self {
     let mut ys = self.0.clone();
-    ys = ys.push_left(Arc::new(x));
+    ys = ys.push_left(x);
     CalcitList(ys)
   }
 
@@ -285,7 +285,7 @@ impl CalcitList {
 
   pub fn assoc(&self, idx: usize, x: Calcit) -> Result<Self, String> {
     let mut ys = self.0.clone();
-    ys = ys.assoc(idx, Arc::new(x))?;
+    ys = ys.assoc(idx, x)?;
     Ok(CalcitList(ys))
   }
 
@@ -297,13 +297,13 @@ impl CalcitList {
 
   pub fn assoc_before(&self, idx: usize, x: Calcit) -> Result<Self, String> {
     let mut ys = self.0.clone();
-    ys = ys.assoc_before(idx, Arc::new(x))?;
+    ys = ys.assoc_before(idx, x)?;
     Ok(CalcitList(ys))
   }
 
   pub fn assoc_after(&self, idx: usize, x: Calcit) -> Result<Self, String> {
     let mut ys = self.0.clone();
-    ys = ys.assoc_after(idx, Arc::new(x))?;
+    ys = ys.assoc_after(idx, x)?;
     Ok(CalcitList(ys))
   }
 
@@ -312,5 +312,3 @@ impl CalcitList {
     self.0.index_of(&Arc::new(x.to_owned()))
   }
 }
-
-pub type CalcitCompactList = TernaryTreeList<Calcit>;

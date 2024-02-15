@@ -24,7 +24,7 @@ use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
 pub use fns::{CalcitArgLabel, CalcitFn, CalcitMacro, CalcitScope};
-pub use list::{CalcitCompactList, CalcitList};
+pub use list::CalcitList;
 pub use proc_name::CalcitProc;
 pub use record::CalcitRecord;
 pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
@@ -76,7 +76,7 @@ pub enum Calcit {
   CirruQuote(Cirru),
   /// not for data, but for recursion
   Recur(Arc<TernaryTreeList<Calcit>>),
-  List(CalcitList),
+  List(Arc<CalcitList>),
   Set(rpds::HashTrieSetSync<Calcit>),
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
   /// with only static and limited keys, for performance and checking
@@ -185,7 +185,7 @@ impl fmt::Display for Calcit {
       }
       Calcit::List(xs) => {
         f.write_str("([]")?;
-        for x in xs {
+        for x in &**xs {
           f.write_str(&format!(" {x}"))?;
         }
         f.write_str(")")
@@ -619,6 +619,18 @@ impl PartialEq for Calcit {
   }
 }
 
+impl From<TernaryTreeList<Calcit>> for Calcit {
+  fn from(xs: TernaryTreeList<Calcit>) -> Calcit {
+    Calcit::List(Arc::new(CalcitList(xs)))
+  }
+}
+
+impl From<&TernaryTreeList<Calcit>> for Calcit {
+  fn from(xs: &TernaryTreeList<Calcit>) -> Calcit {
+    Calcit::List(Arc::new(CalcitList::from(xs)))
+  }
+}
+
 pub const CORE_NS: &str = "calcit.core";
 pub const BUILTIN_CLASSES_ENTRY: &str = "&init-builtin-classes!";
 pub const GEN_NS: &str = "calcit.gen";
@@ -767,7 +779,7 @@ impl CalcitErr {
     })
   }
   /// display nodes in error message
-  pub fn err_nodes<T: Into<String>>(msg: T, nodes: &CalcitCompactList) -> Result<Calcit, Self> {
+  pub fn err_nodes<T: Into<String>>(msg: T, nodes: &TernaryTreeList<Calcit>) -> Result<Calcit, Self> {
     Err(CalcitErr {
       msg: format!("{} {}", msg.into(), CalcitList::from(nodes)),
       warnings: vec![],

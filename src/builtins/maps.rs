@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use im_ternary_tree::TernaryTreeList;
 
-use crate::calcit::{Calcit, CalcitCompactList, CalcitErr, CalcitList, CalcitRecord};
+use crate::calcit::{Calcit, CalcitErr, CalcitList, CalcitRecord};
 
 use crate::util::number::is_even;
 
-pub fn call_new_map(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn call_new_map(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if is_even(xs.len()) {
     let n = xs.len() >> 1;
     let mut ys = rpds::HashTrieMap::new_sync();
@@ -19,7 +19,7 @@ pub fn call_new_map(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn dissoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn dissoc(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
     return CalcitErr::err_nodes("map dissoc expected at least 2 arguments:", xs);
   }
@@ -41,7 +41,7 @@ pub fn dissoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn get(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn get(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(a)) => {
       let ys = &mut xs.to_owned();
@@ -55,7 +55,7 @@ pub fn get(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn call_merge(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn call_merge(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() == 2 {
     match (&xs[0], &xs[1]) {
       (Calcit::Map(xs), Calcit::Nil) => Ok(Calcit::Map(xs.to_owned())),
@@ -106,17 +106,17 @@ pub fn call_merge(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 }
 
 /// to set
-pub fn to_pairs(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn to_pairs(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     // get a random order from internals
     Some(Calcit::Map(ys)) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for (k, v) in ys {
         let mut chunk = CalcitList::new_inner();
-        chunk = chunk.push_right(Arc::new(k.to_owned()));
-        chunk = chunk.push_right(Arc::new(v.to_owned()));
+        chunk = chunk.push_right(k.to_owned());
+        chunk = chunk.push_right(v.to_owned());
 
-        zs.insert_mut(Calcit::List(CalcitList(chunk)));
+        zs.insert_mut(Calcit::from(CalcitList(chunk)));
       }
       Ok(Calcit::Set(zs))
     }
@@ -124,9 +124,9 @@ pub fn to_pairs(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for idx in 0..fields.len() {
         let mut chunk = CalcitList::new_inner();
-        chunk = chunk.push_right(Arc::new(Calcit::Tag(fields[idx].to_owned())));
-        chunk = chunk.push_right(Arc::new(values[idx].to_owned()));
-        zs.insert_mut(Calcit::List(CalcitList(chunk)));
+        chunk = chunk.push_right(Calcit::Tag(fields[idx].to_owned()));
+        chunk = chunk.push_right(values[idx].to_owned());
+        zs.insert_mut(Calcit::from(CalcitList(chunk)));
       }
       Ok(Calcit::Set(zs))
     }
@@ -135,7 +135,7 @@ pub fn to_pairs(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn call_merge_non_nil(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn call_merge_non_nil(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
       let mut zs: rpds::HashTrieMapSync<Calcit, Calcit> = xs.to_owned();
@@ -152,22 +152,22 @@ pub fn call_merge_non_nil(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 }
 
 /// out to list, but with a arbitrary order
-pub fn to_list(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn to_list(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(m)) => {
       let mut ys = CalcitList::new_inner();
       for (k, v) in m {
-        let zs: TernaryTreeList<Arc<Calcit>> = TernaryTreeList::from(&[Arc::new(k.to_owned()), Arc::new(v.to_owned())]);
-        ys = ys.push_right(Arc::new(Calcit::List(CalcitList(zs))));
+        let zs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[k.to_owned(), v.to_owned()]);
+        ys = ys.push_right(Calcit::from(CalcitList(zs)));
       }
-      Ok(Calcit::List(CalcitList(ys)))
+      Ok(Calcit::from(CalcitList(ys)))
     }
     Some(a) => CalcitErr::err_str(format!("&map:to-list expected a map, got: {a}")),
     None => CalcitErr::err_str("&map:to-list expected a map, got nothing"),
   }
 }
 
-pub fn count(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn count(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.size() as f64)),
     Some(a) => CalcitErr::err_str(format!("map count expected a map, got: {a}")),
@@ -175,7 +175,7 @@ pub fn count(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn empty_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn empty_ques(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(ys)) => Ok(Calcit::Bool(ys.is_empty())),
     Some(a) => CalcitErr::err_str(format!("map empty? expected some map, got: {a}")),
@@ -183,7 +183,7 @@ pub fn empty_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn contains_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn contains_ques(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains_key(a))),
     (Some(a), ..) => CalcitErr::err_str(format!("map contains? expected a map, got: {a}")),
@@ -191,7 +191,7 @@ pub fn contains_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn includes_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn includes_ques(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(ys)), Some(a)) => {
       for (_k, v) in ys {
@@ -206,16 +206,18 @@ pub fn includes_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn destruct(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn destruct(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(ys)) => match ys.keys().next() {
       // order not stable
       Some(k0) => {
         let mut zs = ys.to_owned();
         zs.remove_mut(k0);
-        Ok(Calcit::List(
-          vec![Arc::new(k0.to_owned()), Arc::new(ys[k0].to_owned()), Arc::new(Calcit::Map(zs))].into(),
-        ))
+        Ok(Calcit::from(CalcitList::from(vec![
+          k0.to_owned(),
+          ys[k0].to_owned(),
+          Calcit::Map(zs),
+        ])))
       }
       None => Ok(Calcit::Nil),
     },
@@ -224,7 +226,7 @@ pub fn destruct(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn assoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn assoc(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Map(base)) => {
       if xs.len() % 2 != 1 {
@@ -243,7 +245,7 @@ pub fn assoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn diff_new(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn diff_new(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
       let zs = &mut xs.to_owned();
@@ -259,7 +261,7 @@ pub fn diff_new(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn diff_keys(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn diff_keys(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
       let mut ks: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
@@ -275,7 +277,7 @@ pub fn diff_keys(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn common_keys(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn common_keys(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
       let mut ks: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();

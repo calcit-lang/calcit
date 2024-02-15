@@ -1,8 +1,7 @@
 use crate::{
   builtins::{self},
   calcit::{
-    self, gen_core_id, Calcit, CalcitCompactList, CalcitErr, CalcitImport, CalcitList, CalcitRecord, CalcitSymbolInfo, CalcitTuple,
-    GENERATED_DEF, GEN_NS,
+    self, gen_core_id, Calcit, CalcitErr, CalcitImport, CalcitList, CalcitRecord, CalcitSymbolInfo, CalcitTuple, GENERATED_DEF, GEN_NS,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -30,7 +29,7 @@ lazy_static! {
   pub(crate) static ref NS_SYMBOL_DICT: Mutex<HashMap<Arc<str>, usize>> = Mutex::new(HashMap::new());
 }
 
-pub fn type_of(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn type_of(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("type-of expected 1 argument, got:", xs);
   }
@@ -64,18 +63,18 @@ pub fn type_of(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn recur(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn recur(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Recur(Arc::new(xs.to_owned())))
 }
 
-pub fn format_to_lisp(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn format_to_lisp(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(v) => Ok(Calcit::Str(v.lisp_str().into())),
     None => CalcitErr::err_str("format-to-lisp expected 1 argument"),
   }
 }
 
-pub fn format_to_cirru(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn format_to_cirru(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(v) => cirru_parser::format(&[transform_code_to_cirru(v)], CirruWriterOptions { use_inline: false })
       .map(|s| Calcit::Str(s.into()))
@@ -88,7 +87,7 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
   match x {
     Calcit::List(ys) => {
       let mut xs: Vec<Cirru> = Vec::with_capacity(ys.len());
-      for y in ys {
+      for y in &**ys {
         xs.push(transform_code_to_cirru(y));
       }
       Cirru::List(xs)
@@ -103,7 +102,7 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
   }
 }
 
-pub fn reset_gensym_index(_xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn reset_gensym_index(_xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   force_reset_gensym_index()?;
   Ok(Calcit::Nil)
 }
@@ -130,7 +129,7 @@ pub fn js_gensym(name: &str) -> String {
 }
 
 /// TODO, move out to calcit
-pub fn generate_id(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn generate_id(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   let size = match xs.get(0) {
     Some(Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(size) => Some(size),
@@ -154,12 +153,12 @@ pub fn generate_id(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn display_stack(_xs: &CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn display_stack(_xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   call_stack::show_stack(call_stack);
   Ok(Calcit::Nil)
 }
 
-pub fn parse_cirru_list(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn parse_cirru_list(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
       Ok(nodes) => Ok(cirru::cirru_to_calcit(&Cirru::List(nodes))),
@@ -171,7 +170,7 @@ pub fn parse_cirru_list(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 }
 
 /// it returns a piece of quoted Cirru data, rather than a list
-pub fn parse_cirru(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn parse_cirru(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
       Ok(nodes) => Ok(Calcit::CirruQuote(Cirru::List(nodes))),
@@ -182,7 +181,7 @@ pub fn parse_cirru(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn format_cirru(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn format_cirru(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(a) => {
       let options = cirru_parser::CirruWriterOptions { use_inline: false };
@@ -201,7 +200,7 @@ pub fn format_cirru(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn parse_cirru_edn(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn parse_cirru_edn(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match cirru_edn::parse(s) {
       Ok(nodes) => match xs.get(1) {
@@ -215,14 +214,14 @@ pub fn parse_cirru_edn(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn format_cirru_edn(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn format_cirru_edn(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)?, true)?.into())),
     None => CalcitErr::err_str("format-cirru-edn expected 1 argument"),
   }
 }
 
-pub fn cirru_quote_to_list(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn cirru_quote_to_list(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("&cirru-quote:to-list expected 1 argument, got:", xs);
   }
@@ -233,7 +232,7 @@ pub fn cirru_quote_to_list(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> 
 }
 
 /// missing location for a dynamic symbol
-pub fn turn_symbol(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn turn_symbol(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("turn-symbol expected 1 argument, got:", xs);
   }
@@ -257,7 +256,7 @@ pub fn turn_symbol(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn turn_tag(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn turn_tag(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("turn-tag cannot turn this to tag:", xs);
   }
@@ -269,7 +268,7 @@ pub fn turn_tag(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn new_tuple(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn new_tuple(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
     CalcitErr::err_str(format!("tuple expected at least 1 arguments, got: {}", CalcitList::from(xs)))
   } else {
@@ -290,7 +289,7 @@ pub fn new_tuple(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn new_class_tuple(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn new_class_tuple(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
     CalcitErr::err_str(format!("tuple expected at least 2 arguments, got: {}", CalcitList::from(xs)))
   } else {
@@ -316,10 +315,13 @@ pub fn new_class_tuple(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn invoke_method(name: &str, invoke_args: &CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn invoke_method(name: &str, invoke_args: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if invoke_args.is_empty() {
     return Err(CalcitErr::use_msg_stack(
-      format!("expected operand for method invoking: {}", Calcit::List(invoke_args.into())),
+      format!(
+        "expected operand for method invoking: {}",
+        Calcit::List(Arc::new(invoke_args.into()))
+      ),
       call_stack,
     ));
   }
@@ -382,7 +384,7 @@ fn method_call(
   class: &Calcit,
   v0: &Calcit,
   name: &str,
-  method_args: CalcitCompactList,
+  method_args: TernaryTreeList<Calcit>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   // match &class {
@@ -403,7 +405,7 @@ fn method_record(
   class: &CalcitRecord,
   v0: &Calcit,
   name: &str,
-  method_args: CalcitCompactList,
+  method_args: TernaryTreeList<Calcit>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   match class.get(name) {
@@ -433,7 +435,7 @@ fn method_record(
   }
 }
 
-pub fn native_compare(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn native_compare(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes("&compare expected 2 values, got:", xs);
   }
@@ -444,7 +446,7 @@ pub fn native_compare(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn tuple_nth(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn tuple_nth(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes("&tuple:nth expected 2 argument, got:", xs);
   }
@@ -465,7 +467,7 @@ pub fn tuple_nth(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn assoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn assoc(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
     return CalcitErr::err_nodes("tuple:assoc expected 3 arguments, got:", xs);
   }
@@ -496,7 +498,7 @@ pub fn assoc(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn tuple_count(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn tuple_count(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("tuple:count expected 1 argument, got:", xs);
   }
@@ -506,7 +508,7 @@ pub fn tuple_count(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn tuple_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn tuple_class(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("tuple:class expected 1 argument, got:", xs);
   }
@@ -519,7 +521,7 @@ pub fn tuple_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn tuple_params(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn tuple_params(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("tuple:params expected 1 argument, got:", xs);
   }
@@ -528,15 +530,15 @@ pub fn tuple_params(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
       // Ok(Calcit::List(extra.iter().map(|x| Arc::new(x.to_owned())).collect_into(vec![])))
       let mut ys = TernaryTreeList::Empty;
       for x in extra {
-        ys = ys.push_right(Arc::new(x.to_owned()));
+        ys = ys.push_right(x.to_owned());
       }
-      Ok(Calcit::List(CalcitList(ys)))
+      Ok(Calcit::from(CalcitList(ys)))
     }
     x => CalcitErr::err_str(format!("&tuple:params expected a tuple, got: {x}")),
   }
 }
 
-pub fn tuple_with_class(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn tuple_with_class(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes("tuple:with-class expected 2 arguments, got:", xs);
   }
@@ -556,12 +558,12 @@ pub fn no_op() -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Nil)
 }
 
-pub fn get_os(_xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn get_os(_xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   // https://doc.rust-lang.org/std/env/consts/constant.OS.html
   Ok(Calcit::tag(std::env::consts::OS))
 }
 
-pub fn async_sleep(xs: CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn async_sleep(xs: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   use std::{thread, time};
   let sec = if xs.is_empty() {
     1.0
@@ -586,7 +588,7 @@ pub fn async_sleep(xs: CalcitCompactList, call_stack: &CallStackList) -> Result<
   Ok(Calcit::Nil)
 }
 
-pub fn format_ternary_tree(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn format_ternary_tree(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("&format-ternary-tree expected 1 argument, got:", xs);
   }
@@ -596,7 +598,7 @@ pub fn format_ternary_tree(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> 
   }
 }
 
-pub fn buffer(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn buffer(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
     return CalcitErr::err_nodes("&buffer expected hex values:", xs);
   }
@@ -629,7 +631,7 @@ pub fn buffer(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Buffer(buf))
 }
 
-pub fn hash(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn hash(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("&hash expected 1 argument, got:", xs);
   }
@@ -640,7 +642,7 @@ pub fn hash(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 }
 
 /// extract out calcit internal meta code
-pub fn extract_code_into_edn(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn extract_code_into_edn(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("&extract-code-into-edn expected 1 argument, got:", xs);
   }
@@ -648,7 +650,7 @@ pub fn extract_code_into_edn(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr
 }
 
 /// turns data back into code in generating js
-pub fn data_to_code(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn data_to_code(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("&data-to-code expected 1 argument, got:", xs);
   }
@@ -660,7 +662,7 @@ pub fn data_to_code(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 }
 
 /// util function to read CirruQuote, only used in list
-pub fn cirru_nth(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn cirru_nth(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes("&cirru-nth expected 2 arguments, got:", xs);
   }
@@ -680,7 +682,7 @@ pub fn cirru_nth(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn cirru_type(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn cirru_type(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("&cirru-type expected 1 argument, got:", xs);
   }

@@ -1,27 +1,29 @@
-use crate::calcit::{Calcit, CalcitCompactList, CalcitErr};
+use im_ternary_tree::TernaryTreeList;
 
-pub fn binary_equal(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+use crate::{Calcit, CalcitErr};
+
+pub fn binary_equal(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(a), Some(b)) => Ok(Calcit::Bool(a == b)),
     (_, _) => CalcitErr::err_nodes("&= expected 2 arguments, got:", xs),
   }
 }
 
-pub fn binary_less(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn binary_less(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(a), Some(b)) => Ok(Calcit::Bool(a < b)),
     (_, _) => CalcitErr::err_nodes("&< expected 2 arguments, got:", xs),
   }
 }
 
-pub fn binary_greater(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn binary_greater(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(a), Some(b)) => Ok(Calcit::Bool(a > b)),
     (_, _) => CalcitErr::err_nodes("&> expected 2 arguments, got:", xs),
   }
 }
 
-pub fn not(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn not(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes("not expected bool or nil, got:", xs);
   }

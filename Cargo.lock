@@ -291,9 +291,9 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "im_ternary_tree"
-version = "0.0.13"
+version = "0.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50e59b39a03bd4daadd4b95862f9555c79535a76003867524df231e4f4a781ae"
+checksum = "8ac42ba3d10642b97a482a5a347ce4b9a5c6b332e2ee4b9aa12419f1455ed5f5"
 
 [[package]]
 name = "indexmap"

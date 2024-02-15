@@ -7,7 +7,7 @@ use im_ternary_tree::TernaryTreeList;
 
 use calcit::{
   builtins,
-  calcit::{Calcit, CalcitCompactList, CalcitErr, CalcitList},
+  calcit::{Calcit, CalcitErr, CalcitList},
   call_stack::{display_stack, CallStackList},
   data::edn::{calcit_to_edn, edn_to_calcit},
   runner::track,
@@ -36,7 +36,7 @@ pub fn inject_platform_apis() {
 }
 
 // &call-dylib-edn
-pub fn call_dylib_edn(xs: CalcitCompactList, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn call_dylib_edn(xs: TernaryTreeList<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
     return CalcitErr::err_str(format!("&call-dylib-edn expected >2 arguments, got: {}", CalcitList::from(&xs)));
   }
@@ -70,7 +70,7 @@ pub fn call_dylib_edn(xs: CalcitCompactList, _call_stack: &CallStackList) -> Res
   }
 }
 
-pub fn stdout_println(xs: CalcitCompactList, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn stdout_println(xs: TernaryTreeList<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut s = String::from("");
   for (idx, x) in xs.into_iter().enumerate() {
     if idx > 0 {
@@ -82,7 +82,7 @@ pub fn stdout_println(xs: CalcitCompactList, _call_stack: &CallStackList) -> Res
   Ok(Calcit::Nil)
 }
 
-pub fn stderr_println(xs: CalcitCompactList, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn stderr_println(xs: TernaryTreeList<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut s = String::from("");
   for (idx, x) in xs.into_iter().enumerate() {
     if idx > 0 {
@@ -96,7 +96,7 @@ pub fn stderr_println(xs: CalcitCompactList, _call_stack: &CallStackList) -> Res
 
 /// pass callback function to FFI function, so it can call multiple times
 /// currently for HTTP servers
-pub fn call_dylib_edn_fn(xs: CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn call_dylib_edn_fn(xs: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
     return CalcitErr::err_str(format!("&call-dylib-edn-fn expected >3 arguments, got: {}", CalcitList::from(&xs)));
   }
@@ -180,7 +180,7 @@ pub fn call_dylib_edn_fn(xs: CalcitCompactList, call_stack: &CallStackList) -> R
 
 /// (experimental) pass callback function to FFI function, blocking the thread,
 /// used by calcit-paint, where main thread is required
-pub fn blocking_dylib_edn_fn(xs: CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn blocking_dylib_edn_fn(xs: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
     return CalcitErr::err_str(format!(
       "&blocking-dylib-edn-fn expected >3 arguments, got: {}",
@@ -263,7 +263,7 @@ pub fn blocking_dylib_edn_fn(xs: CalcitCompactList, call_stack: &CallStackList) 
 
 /// need to put it here since the crate does not compile for dylib
 #[no_mangle]
-pub fn on_ctrl_c(xs: CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn on_ctrl_c(xs: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 1 {
     let cb = Arc::new(xs[0].to_owned());
     let copied_stack = Arc::new(call_stack.to_owned());
