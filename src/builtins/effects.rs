@@ -23,7 +23,7 @@ lazy_static! {
   static ref CLI_RUNNING_MODE: RwLock<CliRunningMode> = RwLock::new(CliRunningMode::Eval);
 }
 
-pub fn raise(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn raise(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   let mut s = String::from("");
   for (idx, x) in xs.into_iter().enumerate() {
     if idx > 0 {
@@ -39,7 +39,7 @@ pub fn init_effects_states() {
   let _eff = STARTED_INSTANT.read().expect("read instant");
 }
 
-pub fn cpu_time(_xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn cpu_time(_xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   let now = Instant::now();
   let started = STARTED_INSTANT.read().expect("read instant").to_owned();
 
@@ -59,7 +59,7 @@ pub fn modify_cli_running_mode(mode: CliRunningMode) -> Result<(), String> {
   Ok(())
 }
 
-pub fn calcit_running_mode(_xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn calcit_running_mode(_xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   let mode = CLI_RUNNING_MODE.read().expect("read mode").to_owned();
   match mode {
     CliRunningMode::Eval => Ok(Calcit::tag("eval")),
@@ -75,11 +75,11 @@ pub fn is_rust_eval() -> bool {
 }
 
 // TODO
-pub fn call_get_calcit_backend(_xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn call_get_calcit_backend(_xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::tag("rust"))
 }
 
-pub fn quit(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn quit(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(n)) => match f64_to_i32(*n) {
       Ok(code) => exit(code),
@@ -90,7 +90,7 @@ pub fn quit(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn get_env(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn get_env(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() > 2 {
     return CalcitErr::err_str("get-env get 1~2 arguments");
   }
@@ -116,7 +116,7 @@ pub fn get_env(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn read_file(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn read_file(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Str(s)) => match fs::read_to_string(&**s) {
       Ok(content) => Ok(Calcit::Str(content.into())),
@@ -127,7 +127,7 @@ pub fn read_file(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn write_file(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn write_file(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Str(path)), Some(Calcit::Str(content))) => match fs::write(&**path, &**content) {
       Ok(_) => Ok(Calcit::Nil),

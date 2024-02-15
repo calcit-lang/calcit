@@ -119,7 +119,7 @@ pub fn defatom(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack
 static ATOM_ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 /// proc
-pub fn atom(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn atom(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(value) => {
       let atom_idx = ATOM_ID_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -136,7 +136,7 @@ pub fn atom(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
 }
 
 /// previously `deref`, but `deref` now turned into a function calling `&atom:deref`
-pub fn atom_deref(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn atom_deref(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Ref(_path, locked_pair)) => {
       // println!("deref import {:?}", _path);
@@ -189,7 +189,7 @@ pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
   }
 }
 
-pub fn add_watch(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn add_watch(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1), xs.get(2)) {
     (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Tag(k)), Some(f @ Calcit::Fn { .. })) => {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");
@@ -210,7 +210,7 @@ pub fn add_watch(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn remove_watch(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn remove_watch(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Tag(k))) => {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");

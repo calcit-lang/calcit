@@ -10,13 +10,13 @@ use crate::builtins;
 use crate::call_stack::CallStackList;
 use crate::runner;
 
-pub fn new_list(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn new_list(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::List(Arc::new(xs.into())))
 }
 
-pub fn count(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn count(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes("list count expected a list, got:", xs);
+    return CalcitErr::err_nodes("list count expected a list, got:", &xs);
   }
   match &xs[0] {
     Calcit::List(ys) => Ok(Calcit::Number(ys.len() as f64)),
@@ -24,7 +24,7 @@ pub fn count(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn nth(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn nth(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_str(format!("nth expected 2 argument, got: {}", CalcitList::from(xs)));
   }
@@ -40,7 +40,7 @@ pub fn nth(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn slice(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn slice(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 && xs.len() != 3 {
     return CalcitErr::err_str(format!("slice expected 2~3 argument, got: {}", CalcitList::from(xs)));
   }
@@ -62,7 +62,7 @@ pub fn slice(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn append(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn append(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_str(format!("append expected 2 arguments, got: {}", CalcitList::from(xs)));
   }
@@ -72,7 +72,7 @@ pub fn append(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn prepend(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn prepend(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(ys)), Some(a)) => Ok(Calcit::List(Arc::new(ys.push_left(a.to_owned())))),
     (Some(a), _) => CalcitErr::err_str(format!("prepend expected list, got: {a}")),
@@ -80,9 +80,9 @@ pub fn prepend(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn rest(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn rest(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes("list:rest expected a list, got:", xs);
+    return CalcitErr::err_nodes("list:rest expected a list, got:", &xs);
   }
   match &xs[0] {
     Calcit::List(ys) => {
@@ -96,9 +96,9 @@ pub fn rest(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn butlast(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn butlast(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes("butlast expected a list, got:", xs);
+    return CalcitErr::err_nodes("butlast expected a list, got:", &xs);
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::Nil),
@@ -113,9 +113,9 @@ pub fn butlast(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn concat(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn concat(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   let mut ys = CalcitList::new_inner();
-  for x in xs {
+  for x in &xs {
     if let Calcit::List(zs) = x {
       for z in &zs.0 {
         ys = ys.push_right(z.to_owned());
@@ -127,9 +127,9 @@ pub fn concat(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::List(Arc::new(ys.into())))
 }
 
-pub fn range(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn range(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() || xs.len() > 3 {
-    return CalcitErr::err_nodes("expected 1~3 arguments for range:", xs);
+    return CalcitErr::err_nodes("expected 1~3 arguments for range:", &xs);
   }
   let (base, bound) = match (&xs[0], xs.get(1)) {
     (Calcit::Number(bound), None) => (0.0, *bound),
@@ -167,9 +167,9 @@ pub fn range(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::from(ys))
 }
 
-pub fn reverse(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn reverse(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes("butlast expected a list, got:", xs);
+    return CalcitErr::err_nodes("butlast expected a list, got:", &xs);
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::Nil),
@@ -179,7 +179,7 @@ pub fn reverse(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
 }
 
 /// foldl using syntax for performance, it's supposed to be a function
-pub fn foldl(xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn foldl(xs: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 3 {
     let mut ret = xs[1].to_owned();
 
@@ -195,7 +195,7 @@ pub fn foldl(xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         for x in &xs.0 {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(*proc, &TernaryTreeList::from(&[ret, (*x).to_owned()]), call_stack)?;
+          ret = builtins::handle_proc(*proc, TernaryTreeList::from(&[ret, (*x).to_owned()]), call_stack)?;
         }
         Ok(ret)
       }
@@ -210,7 +210,7 @@ pub fn foldl(xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result
       (Calcit::Set(xs), Calcit::Proc(proc)) => {
         for x in xs {
           // println!("foldl args, {} {}", ret, x.to_owned());
-          ret = builtins::handle_proc(*proc, &TernaryTreeList::from(&[ret, x.to_owned()]), call_stack)?;
+          ret = builtins::handle_proc(*proc, TernaryTreeList::from(&[ret, x.to_owned()]), call_stack)?;
         }
         Ok(ret)
       }
@@ -227,7 +227,7 @@ pub fn foldl(xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result
           // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(
             *proc,
-            &TernaryTreeList::from(&[ret, Calcit::from(CalcitList::from(vec![k.to_owned(), x.to_owned()]))]),
+            TernaryTreeList::from(&[ret, Calcit::from(CalcitList::from(vec![k.to_owned(), x.to_owned()]))]),
             call_stack,
           )?;
         }
@@ -250,7 +250,7 @@ pub fn foldl(xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result
 
 /// foldl-shortcut using syntax for performance, it's supposed to be a function
 /// by returning `:: bool acc`, bool indicates where performace a shortcut return
-pub fn foldl_shortcut(xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn foldl_shortcut(xs: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 4 {
     let acc = &xs[1];
     let default_value = &xs[2];
@@ -387,7 +387,7 @@ pub fn foldl_shortcut(xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) 
   }
 }
 
-pub fn foldr_shortcut(xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn foldr_shortcut(xs: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 4 {
     // let xs = runner::evaluate_expr(&expr[0], scope, file_ns)?;
     let acc = &xs[1];
@@ -452,7 +452,7 @@ pub fn foldr_shortcut(xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) 
   }
 }
 
-pub fn sort(xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn sort(xs: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 2 {
     match (&xs[0], &xs[1]) {
       // dirty since only functions being call directly then we become fast
@@ -492,7 +492,7 @@ pub fn sort(xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<
         }
         xs2.sort_by(|a, b| -> Ordering {
           let values = TernaryTreeList::from(&[(*a).to_owned(), (*b).to_owned()]);
-          let v = builtins::handle_proc(*proc, &values, call_stack);
+          let v = builtins::handle_proc(*proc, values, call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
             Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
@@ -528,7 +528,7 @@ pub fn sort(xs: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<
   }
 }
 
-pub fn first(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn first(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_str("list:first expected 1 argument");
   }
@@ -545,9 +545,9 @@ pub fn first(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
 }
 
 // real implementation relies of ternary-tree
-pub fn assoc_before(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn assoc_before(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
-    return CalcitErr::err_nodes("invalid arguments to assoc-before:", xs);
+    return CalcitErr::err_nodes("invalid arguments to assoc-before:", &xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -561,9 +561,9 @@ pub fn assoc_before(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn assoc_after(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn assoc_after(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
-    return CalcitErr::err_nodes("invalid arguments to assoc-after:", xs);
+    return CalcitErr::err_nodes("invalid arguments to assoc-after:", &xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -577,9 +577,9 @@ pub fn assoc_after(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn empty_ques(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn empty_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes("list empty? expected a list, got:", xs);
+    return CalcitErr::err_nodes("list empty? expected a list, got:", &xs);
   }
   match &xs[0] {
     Calcit::List(ys) => Ok(Calcit::Bool(ys.is_empty())),
@@ -587,9 +587,9 @@ pub fn empty_ques(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn contains_ques(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn contains_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_nodes("list contains? expected list and a index, got:", xs);
+    return CalcitErr::err_nodes("list contains? expected list and a index, got:", &xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(xs), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -600,17 +600,17 @@ pub fn contains_ques(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> 
   }
 }
 
-pub fn includes_ques(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn includes_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(xs.index_of(a).is_some())),
     (Some(a), ..) => CalcitErr::err_str(format!("list `includes?` expected list, list, got: {a}")),
-    (None, ..) => CalcitErr::err_nodes("list `includes?` expected 2 arguments, got:", xs),
+    (None, ..) => CalcitErr::err_nodes("list `includes?` expected 2 arguments, got:", &xs),
   }
 }
 
-pub fn assoc(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn assoc(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
-    return CalcitErr::err_nodes("list:assoc expected 3 arguments, got:", xs);
+    return CalcitErr::err_nodes("list:assoc expected 3 arguments, got:", &xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -630,9 +630,9 @@ pub fn assoc(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn dissoc(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn dissoc(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_nodes("&list:dissoc expects 3 arguments, got:", xs);
+    return CalcitErr::err_nodes("&list:dissoc expects 3 arguments, got:", &xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(xs), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -644,9 +644,9 @@ pub fn dissoc(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn list_to_set(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn list_to_set(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes("&list:to-set expected a single argument in list, got:", xs);
+    return CalcitErr::err_nodes("&list:to-set expected a single argument in list, got:", &xs);
   }
   match &xs[0] {
     Calcit::List(ys) => {
@@ -660,9 +660,9 @@ pub fn list_to_set(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn distinct(xs: &TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn distinct(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes("&list:distinct expected a single argument in list, got:", xs);
+    return CalcitErr::err_nodes("&list:distinct expected a single argument in list, got:", &xs);
   }
   match &xs[0] {
     Calcit::List(ys) => {

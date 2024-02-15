@@ -42,7 +42,7 @@ pub fn is_registered_proc(s: &str) -> bool {
 }
 
 /// make sure that stack information attached in errors from procs
-pub fn handle_proc(name: CalcitProc, args: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn handle_proc(name: CalcitProc, args: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   handle_proc_internal(name, args, call_stack).map_err(|e| {
     if e.stack.is_empty() {
       let mut e2 = e;
@@ -54,7 +54,7 @@ pub fn handle_proc(name: CalcitProc, args: &TernaryTreeList<Calcit>, call_stack:
   })
 }
 
-fn handle_proc_internal(name: CalcitProc, args: &TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+fn handle_proc_internal(name: CalcitProc, args: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match name {
     // meta
     CalcitProc::TypeOf => meta::type_of(args),

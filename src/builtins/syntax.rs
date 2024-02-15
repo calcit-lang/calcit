@@ -365,7 +365,7 @@ pub fn call_try(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stac
             let values = TernaryTreeList::from(&[err_data]);
             runner::run_fn(values, &info, call_stack)
           }
-          Calcit::Proc(proc) => builtins::handle_proc(proc, &TernaryTreeList::from(&[err_data]), call_stack),
+          Calcit::Proc(proc) => builtins::handle_proc(proc, TernaryTreeList::from(&[err_data]), call_stack),
           a => CalcitErr::err_str(format!("try expected a function handler, got: {a}")),
         }
       }

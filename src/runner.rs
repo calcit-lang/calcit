@@ -78,7 +78,7 @@ pub fn call_expr(
   match v {
     Calcit::Proc(p) => {
       let values = evaluate_args(rest_nodes, scope, file_ns, call_stack)?;
-      builtins::handle_proc(*p, &values, call_stack)
+      builtins::handle_proc(*p, values, call_stack)
     }
     Calcit::Syntax(s, def_ns) => {
       let next_stack = if using_stack() {
