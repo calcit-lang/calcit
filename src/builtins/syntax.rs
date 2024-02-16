@@ -118,13 +118,13 @@ pub fn syntax_if(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_sta
   let cond = &expr[0];
   let true_branch = &expr[1];
 
-  let cond_value = runner::evaluate_expr(&cond, scope, file_ns, call_stack)?;
+  let cond_value = runner::evaluate_expr(cond, scope, file_ns, call_stack)?;
   match cond_value {
     Calcit::Nil | Calcit::Bool(false) => match expr.get(2) {
       Some(false_branch) => runner::evaluate_expr(false_branch, scope, file_ns, call_stack),
       None => Ok(Calcit::Nil),
     },
-    _ => runner::evaluate_expr(&true_branch, scope, file_ns, call_stack),
+    _ => runner::evaluate_expr(true_branch, scope, file_ns, call_stack),
   }
 }
 

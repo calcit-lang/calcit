@@ -810,7 +810,7 @@ fn gen_if_code(
       write!(chunk, "\n{else_mark}if ({cond_code}) {{ {true_code} }}").expect("write");
 
       if let Some(false_node) = some_false_node {
-        if let Calcit::List(ys) = &*false_node {
+        if let Calcit::List(ys) = false_node {
           if let Some(Calcit::Syntax(syn, _ns)) = ys.get_inner(0) {
             if syn == &CalcitSyntax::If {
               if ys.len() < 3 || ys.len() > 4 {
@@ -852,7 +852,7 @@ fn gen_args_code(
   let var_prefix = if ns == "calcit.core" { "" } else { "$calcit." };
   let mut spreading = false;
   for x in body {
-    match &*x {
+    match x {
       Calcit::Symbol { sym, .. } if &**sym == "&" => {
         spreading = true;
       }
@@ -1067,7 +1067,7 @@ fn gen_js_func(
 /// this is a very rough implementation for now
 fn hinted_async(xs: &CalcitList) -> bool {
   for x in xs {
-    match &*x {
+    match x {
       Calcit::Symbol { sym, .. } if &**sym == "async" => return true,
       _ => {}
     }

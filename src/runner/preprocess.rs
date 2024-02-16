@@ -619,7 +619,7 @@ pub fn preprocess_defn(
       });
       let mut zs = CalcitList::new_inner();
       for y in &**ys {
-        match &*y {
+        match y {
           s @ Calcit::Symbol {
             sym,
             info,
@@ -627,7 +627,7 @@ pub fn preprocess_defn(
             ..
           } => {
             let loc = NodeLocation::new(info.at_ns.clone(), info.at_def.clone(), arg_location.to_owned().unwrap_or_default());
-            check_symbol(&sym, args, loc, check_warnings);
+            check_symbol(sym, args, loc, check_warnings);
             if &**sym == "&" || &**sym == "?" {
               zs = zs.push_right(s.to_owned());
               continue;

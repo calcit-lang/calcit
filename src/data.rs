@@ -36,31 +36,31 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     Calcit::Nil => Ok(Calcit::Nil),
     Calcit::Tuple(CalcitTuple { tag: t, extra, .. }) => {
       let mut ys = CalcitList::new_inner_from(&[Calcit::Proc(CalcitProc::NativeTuple)]);
-      ys = ys.push_right(data_to_calcit(t, ns, at_def)?.into());
+      ys = ys.push_right(data_to_calcit(t, ns, at_def)?);
       for x in extra {
-        ys = ys.push_right(data_to_calcit(x, ns, at_def)?.into());
+        ys = ys.push_right(data_to_calcit(x, ns, at_def)?);
       }
       Ok(Calcit::from(ys))
     }
     Calcit::List(xs) => {
       let mut ys = CalcitList::new_inner_from(&[Calcit::Proc(CalcitProc::List)]);
       for x in &**xs {
-        ys = ys.push_right(data_to_calcit(x, ns, at_def)?.into());
+        ys = ys.push_right(data_to_calcit(x, ns, at_def)?);
       }
       Ok(Calcit::from(ys))
     }
     Calcit::Set(xs) => {
       let mut ys = CalcitList::new_inner_from(&[Calcit::Proc(CalcitProc::Set)]);
       for x in xs {
-        ys = ys.push_right(data_to_calcit(x, ns, at_def)?.into());
+        ys = ys.push_right(data_to_calcit(x, ns, at_def)?);
       }
       Ok(Calcit::from(ys))
     }
     Calcit::Map(xs) => {
       let mut ys = CalcitList::new_inner_from(&[Calcit::Proc(CalcitProc::NativeMap)]);
       for (k, v) in xs {
-        ys = ys.push_right(data_to_calcit(k, ns, at_def)?.into());
-        ys = ys.push_right(data_to_calcit(v, ns, at_def)?.into());
+        ys = ys.push_right(data_to_calcit(k, ns, at_def)?);
+        ys = ys.push_right(data_to_calcit(v, ns, at_def)?);
       }
       Ok(Calcit::List(Arc::new(ys.into())))
     }
@@ -75,7 +75,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         }),
         location: None,
       }]);
-      ys = ys.push_right(Calcit::Tag(tag.to_owned()).into());
+      ys = ys.push_right(Calcit::Tag(tag.to_owned()));
       let size = fields.len();
       for i in 0..size {
         ys = ys.push(Calcit::from(CalcitList::from(&[

@@ -52,10 +52,10 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         // println!("eval expr x: {}", x);
 
         if x.is_expr_evaluated() {
-          call_expr(&x, &xs, scope, file_ns, call_stack)
+          call_expr(x, xs, scope, file_ns, call_stack)
         } else {
           let v = evaluate_expr(x, scope, file_ns, call_stack)?;
-          call_expr(&v, &xs, scope, file_ns, call_stack)
+          call_expr(&v, xs, scope, file_ns, call_stack)
         }
       }
     },
@@ -472,16 +472,14 @@ pub fn evaluate_args(
   let mut ret: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
   let mut spreading = false;
   for item in &items {
-    match &*item {
+    match item {
       Calcit::Symbol { sym: s, .. } if &**s == "&" => {
         spreading = true;
       }
       _ => {
         if item.is_expr_evaluated() {
-          let v = &*item;
-
           if spreading {
-            match v {
+            match item {
               Calcit::List(xs) => {
                 for x in &**xs {
                   ret = ret.push((*x).to_owned());
@@ -496,7 +494,7 @@ pub fn evaluate_args(
               }
             }
           } else {
-            ret = ret.push(v.to_owned());
+            ret = ret.push(item.to_owned());
           }
         } else {
           let v = evaluate_expr(item, scope, file_ns, call_stack)?;
