@@ -100,7 +100,7 @@ pub fn call_expr(
     Calcit::Method(name, kind) => {
       let values = evaluate_args(rest_nodes, scope, file_ns, call_stack)?;
       let next_stack = if using_stack() {
-        call_stack.extend_compact(file_ns, name, StackKind::Method, &Calcit::Nil, &values)
+        call_stack.extend(file_ns, name, StackKind::Method, &Calcit::Nil, &values)
       } else {
         call_stack.to_owned()
       };
@@ -114,7 +114,7 @@ pub fn call_expr(
     Calcit::Fn { info, .. } => {
       let values = evaluate_args(rest_nodes, scope, file_ns, call_stack)?;
       let next_stack = if using_stack() {
-        call_stack.extend_compact(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs.to_owned()), &values)
+        call_stack.extend(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs.to_owned()), &values)
       } else {
         call_stack.to_owned()
       };

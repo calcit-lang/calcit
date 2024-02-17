@@ -96,22 +96,6 @@ impl CallStackList {
       self.to_owned()
     }
   }
-
-  /// create new entry to the tree
-  pub fn extend_compact(&self, ns: &str, def: &str, kind: StackKind, code: &Calcit, args: &TernaryTreeList<Calcit>) -> CallStackList {
-    let b = TRACK_STACK.load(std::sync::atomic::Ordering::Relaxed);
-    if b {
-      self.push_left(CalcitStack {
-        ns: Arc::from(ns),
-        def: Arc::from(def),
-        code: code.to_owned(),
-        args: args.to_owned(),
-        kind,
-      })
-    } else {
-      self.to_owned()
-    }
-  }
 }
 
 // show simplified version of stack

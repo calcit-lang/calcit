@@ -179,19 +179,24 @@ impl<'a> IntoIterator for &'a CalcitList {
   type IntoIter = CalcitListRefIntoIterator<'a>;
 
   fn into_iter(self) -> Self::IntoIter {
-    CalcitListRefIntoIterator { value: &self.0, index: 0 }
+    CalcitListRefIntoIterator {
+      value: &self.0,
+      index: 0,
+      size: self.len(),
+    }
   }
 }
 
 pub struct CalcitListRefIntoIterator<'a> {
   value: &'a TernaryTreeList<Calcit>,
   index: usize,
+  size: usize,
 }
 
 impl<'a> Iterator for CalcitListRefIntoIterator<'a> {
   type Item = &'a Calcit;
   fn next(&mut self) -> Option<Self::Item> {
-    if self.index < self.value.len() {
+    if self.index < self.size {
       // println!("get: {} {}", self.value.format_inline(), self.index);
       let ret = self.value.ref_get(self.index);
       self.index += 1;
