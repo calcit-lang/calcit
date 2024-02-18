@@ -1,6 +1,6 @@
 [package]
 name = "calcit"
-version = "0.8.31"
+version = "0.8.32"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -20,9 +20,10 @@ exclude = [
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cirru_edn = "0.6.0"
+cirru_edn = "0.6.1"
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
-cirru_parser = "0.1.28"
+cirru_parser = "0.1.29"
+# cirru_parser = { path = "/Users/chenyong/repo/cirru/parser.rs" }
 clap = "3.2.25"
 dirs = "5.0.1"
 lazy_static = "1.4.0"
