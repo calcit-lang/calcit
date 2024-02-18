@@ -82,7 +82,7 @@ pub fn call_expr(
     }
     Calcit::Syntax(s, def_ns) => {
       if using_stack() {
-        let next_stack = call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, &Calcit::from(xs.to_owned()), &rest_nodes.0);
+        let next_stack = call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, &Calcit::from(xs), &rest_nodes.0);
         builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
           if e.stack.is_empty() {
             let mut e2 = e;
@@ -112,7 +112,7 @@ pub fn call_expr(
     Calcit::Fn { info, .. } => {
       let values = evaluate_args(rest_nodes, scope, file_ns, call_stack)?;
       if using_stack() {
-        let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs.to_owned()), &values);
+        let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs), &values);
         run_fn(values, info, &next_stack)
       } else {
         run_fn(values, info, call_stack)
@@ -124,16 +124,16 @@ pub fn call_expr(
         &Calcit::from(xs.to_owned()).lisp_str()
       );
 
-      // TODO moving to preprocess
-      let mut current_values: TernaryTreeList<Calcit> = rest_nodes.to_owned().into();
-      // println!("eval macro: {} {}", x, expr.lisp_str()));
-      // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
-
       let next_stack = if using_stack() {
         call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &Calcit::from(xs), &rest_nodes.0)
       } else {
         call_stack.to_owned()
       };
+
+      // TODO moving to preprocess
+      let mut current_values: TernaryTreeList<Calcit> = rest_nodes.into();
+      // println!("eval macro: {} {}", x, expr.lisp_str()));
+      // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let mut body_scope = CalcitScope::default();
 
@@ -304,7 +304,7 @@ pub fn parse_ns_def(s: &str) -> Option<(Arc<str>, Arc<str>)> {
   let pieces: Vec<&str> = s.split('/').collect();
   if pieces.len() == 2 {
     if !pieces[0].is_empty() && !pieces[1].is_empty() {
-      Some((pieces[0].to_owned().into(), pieces[1].to_owned().into()))
+      Some((pieces[0].into(), pieces[1].into()))
     } else {
       None
     }

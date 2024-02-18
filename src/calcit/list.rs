@@ -65,51 +65,11 @@ impl From<&TernaryTreeList<Calcit>> for CalcitList {
   }
 }
 
-impl From<Vec<Calcit>> for CalcitList {
-  fn from(xs: Vec<Calcit>) -> CalcitList {
-    let mut ys = TernaryTreeList::Empty;
-    for x in xs {
-      ys = ys.push(x);
-    }
-    CalcitList(ys)
-  }
-}
-
 impl From<&Vec<Arc<Calcit>>> for CalcitList {
   fn from(xs: &Vec<Arc<Calcit>>) -> CalcitList {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
       ys = ys.push((**x).to_owned());
-    }
-    CalcitList(ys)
-  }
-}
-
-impl From<Vec<Arc<Calcit>>> for CalcitList {
-  fn from(xs: Vec<Arc<Calcit>>) -> CalcitList {
-    let mut ys = TernaryTreeList::Empty;
-    for x in xs {
-      ys = ys.push((*x).to_owned());
-    }
-    CalcitList(ys)
-  }
-}
-
-impl From<&[Arc<Calcit>]> for CalcitList {
-  fn from(xs: &[Arc<Calcit>]) -> CalcitList {
-    let mut ys = TernaryTreeList::Empty;
-    for x in xs {
-      ys = ys.push((**x).to_owned());
-    }
-    CalcitList(ys)
-  }
-}
-
-impl From<&[&Arc<Calcit>]> for CalcitList {
-  fn from(xs: &[&Arc<Calcit>]) -> CalcitList {
-    let mut ys = TernaryTreeList::Empty;
-    for x in xs {
-      ys = ys.push((***x).to_owned());
     }
     CalcitList(ys)
   }
@@ -125,43 +85,13 @@ impl From<&[Calcit; 2]> for CalcitList {
   }
 }
 
-impl From<&[Arc<Calcit>; 3]> for CalcitList {
-  fn from(xs: &[Arc<Calcit>; 3]) -> CalcitList {
+impl From<&[Calcit; 3]> for CalcitList {
+  fn from(xs: &[Calcit; 3]) -> CalcitList {
     let mut ys = TernaryTreeList::Empty;
     for x in xs {
-      ys = ys.push((**x).to_owned());
+      ys = ys.push(x.to_owned());
     }
     CalcitList(ys)
-  }
-}
-
-impl From<&[Arc<Calcit>; 1]> for Calcit {
-  fn from(xs: &[Arc<Calcit>; 1]) -> Calcit {
-    let mut ys = TernaryTreeList::Empty;
-    for x in xs {
-      ys = ys.push((**x).to_owned());
-    }
-    Calcit::List(Arc::new(CalcitList(ys)))
-  }
-}
-
-impl From<&[Arc<Calcit>; 2]> for Calcit {
-  fn from(xs: &[Arc<Calcit>; 2]) -> Calcit {
-    let mut ys = TernaryTreeList::Empty;
-    for x in xs {
-      ys = ys.push((**x).to_owned());
-    }
-    Calcit::List(Arc::new(CalcitList(ys)))
-  }
-}
-
-impl From<&[Arc<Calcit>; 3]> for Calcit {
-  fn from(xs: &[Arc<Calcit>; 3]) -> Calcit {
-    let mut ys = TernaryTreeList::Empty;
-    for x in xs {
-      ys = ys.push((**x).to_owned());
-    }
-    Calcit::List(Arc::new(CalcitList(ys)))
   }
 }
 

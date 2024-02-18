@@ -124,7 +124,7 @@ pub fn destruct(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       Some(y0) => {
         let mut zs = ys.to_owned();
         zs.remove_mut(y0);
-        Ok(Calcit::from(CalcitList::from(vec![y0.to_owned(), Calcit::Set(zs)])))
+        Ok(Calcit::from(CalcitList::from(&[y0.to_owned(), Calcit::Set(zs)])))
       }
       None => Ok(Calcit::Nil),
     },

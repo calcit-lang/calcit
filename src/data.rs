@@ -20,15 +20,15 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       Calcit::Syntax(CalcitSyntax::Quote, "quote".into()),
       x.to_owned(),
     ]))),
-    Calcit::Symbol { .. } => Ok(Calcit::from(CalcitList::from(vec![
+    Calcit::Symbol { .. } => Ok(Calcit::from(CalcitList::from(&[
       Calcit::Syntax(CalcitSyntax::Quote, "quote".into()),
       x.to_owned(),
     ]))),
-    Calcit::Local { .. } => Ok(Calcit::from(CalcitList::from(vec![
+    Calcit::Local { .. } => Ok(Calcit::from(CalcitList::from(&[
       Calcit::Syntax(CalcitSyntax::Quote, "quote".into()),
       x.to_owned(),
     ]))),
-    Calcit::Import { .. } => Ok(Calcit::from(CalcitList::from(vec![
+    Calcit::Import { .. } => Ok(Calcit::from(CalcitList::from(&[
       Calcit::Syntax(CalcitSyntax::Quote, "quote".into()),
       x.to_owned(),
     ]))),

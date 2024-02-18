@@ -217,7 +217,7 @@ pub fn foldl(xs: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<
       // also handles map
       (Calcit::Map(xs), Calcit::Fn { info, .. }) => {
         for (k, x) in xs {
-          let values = TernaryTreeList::from(&[ret, Calcit::from(CalcitList::from(vec![k.to_owned(), x.to_owned()]))]);
+          let values = TernaryTreeList::from(&[ret, Calcit::from(CalcitList::from(&[k.to_owned(), x.to_owned()]))]);
           ret = runner::run_fn(values, info, call_stack)?;
         }
         Ok(ret)
@@ -227,7 +227,7 @@ pub fn foldl(xs: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<
           // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(
             *proc,
-            TernaryTreeList::from(&[ret, Calcit::from(CalcitList::from(vec![k.to_owned(), x.to_owned()]))]),
+            TernaryTreeList::from(&[ret, Calcit::from(CalcitList::from(&[k.to_owned(), x.to_owned()]))]),
             call_stack,
           )?;
         }

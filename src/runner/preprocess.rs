@@ -344,7 +344,7 @@ fn process_list_call(
 
   match head_value {
     Some(Calcit::Macro { info, .. }) => {
-      let mut current_values: TernaryTreeList<Calcit> = args.to_owned().into();
+      let mut current_values: TernaryTreeList<Calcit> = (&args).into();
 
       // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
@@ -391,7 +391,7 @@ fn process_list_call(
             coord: program::tip_coord(calcit::CORE_NS, "get"),
           });
 
-          let code = Calcit::from(CalcitList::from(vec![get_method, args[0].to_owned(), head.to_owned()]));
+          let code = Calcit::from(CalcitList::from(&[get_method, args[0].to_owned(), head.to_owned()]));
           preprocess_expr(&code, scope_defs, file_ns, check_warnings, call_stack)
         } else {
           Err(CalcitErr::use_msg_stack(format!("{head} expected 1 hashmap to call"), call_stack))
@@ -723,7 +723,7 @@ pub fn preprocess_core_let(
           }),
           location: location.to_owned(),
         };
-        Calcit::from(CalcitList::from(vec![name, form]))
+        Calcit::from(CalcitList::from(&[name, form]))
       }
       (a, b) => {
         return Err(CalcitErr::use_msg_stack_location(
