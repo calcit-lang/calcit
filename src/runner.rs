@@ -515,7 +515,7 @@ pub fn evaluate_args(
               }
             }
           } else {
-            ret = ret.push(v.to_owned());
+            ret = ret.push(v);
           }
         }
       }

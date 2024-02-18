@@ -198,7 +198,7 @@ impl<'a> Iterator for CalcitListRefIntoIterator<'a> {
   fn next(&mut self) -> Option<Self::Item> {
     if self.index < self.size {
       // println!("get: {} {}", self.value.format_inline(), self.index);
-      let ret = self.value.ref_get(self.index);
+      let ret = self.value.loop_get(self.index);
       self.index += 1;
       ret
     } else {
@@ -247,68 +247,57 @@ impl CalcitList {
   }
 
   pub fn push_right(&self, x: Calcit) -> Self {
-    let mut ys = self.0.clone();
-    ys = ys.push_right(x);
+    let ys = self.0.push_right(x);
     CalcitList(ys)
   }
 
   pub fn push_left(&self, x: Calcit) -> Self {
-    let mut ys = self.0.clone();
-    ys = ys.push_left(x);
+    let ys = self.0.push_left(x);
     CalcitList(ys)
   }
 
   pub fn drop_left(&self) -> Self {
-    let mut ys = self.0.clone();
-    ys = ys.drop_left();
+    let ys = self.0.drop_left();
     CalcitList(ys)
   }
 
   pub fn skip(&self, n: usize) -> Result<Self, String> {
-    let mut ys = self.0.clone();
-    ys = ys.skip(n)?;
+    let ys = self.0.skip(n)?;
     Ok(CalcitList(ys))
   }
 
   pub fn butlast(&self) -> Result<Self, String> {
-    let mut ys = self.0.clone();
-    ys = ys.butlast()?;
+    let ys = self.0.butlast()?;
     Ok(CalcitList(ys))
   }
 
   pub fn slice(&self, start: usize, end: usize) -> Result<Self, String> {
-    let mut ys = self.0.clone();
-    ys = ys.slice(start, end)?;
+    let ys = self.0.slice(start, end)?;
     Ok(CalcitList(ys))
   }
 
   pub fn reverse(&self) -> Self {
-    let mut ys = self.0.clone();
-    ys = ys.reverse();
+    let ys = self.0.reverse();
     CalcitList(ys)
   }
 
   pub fn assoc(&self, idx: usize, x: Calcit) -> Result<Self, String> {
-    let mut ys = self.0.clone();
-    ys = ys.assoc(idx, x)?;
+    let ys = self.0.assoc(idx, x)?;
     Ok(CalcitList(ys))
   }
 
   pub fn dissoc(&self, idx: usize) -> Result<Self, String> {
-    let mut ys = self.0.clone();
-    ys = ys.dissoc(idx)?;
+    let ys = self.0.dissoc(idx)?;
     Ok(CalcitList(ys))
   }
 
   pub fn assoc_before(&self, idx: usize, x: Calcit) -> Result<Self, String> {
-    let mut ys = self.0.clone();
-    ys = ys.assoc_before(idx, x)?;
+    let ys = self.0.assoc_before(idx, x)?;
     Ok(CalcitList(ys))
   }
 
   pub fn assoc_after(&self, idx: usize, x: Calcit) -> Result<Self, String> {
-    let mut ys = self.0.clone();
-    ys = ys.assoc_after(idx, x)?;
+    let ys = self.0.assoc_after(idx, x)?;
     Ok(CalcitList(ys))
   }
 

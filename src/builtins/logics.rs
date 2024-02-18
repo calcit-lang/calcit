@@ -10,16 +10,18 @@ pub fn binary_equal(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn binary_less(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(a), Some(b)) => Ok(Calcit::Bool(a < b)),
-    (_, _) => CalcitErr::err_nodes("&< expected 2 arguments, got:", &xs),
+  if xs.len() == 2 {
+    Ok(Calcit::Bool(xs[0] < xs[1]))
+  } else {
+    CalcitErr::err_nodes("&< expected 2 arguments, got:", &xs)
   }
 }
 
 pub fn binary_greater(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
-    (Some(a), Some(b)) => Ok(Calcit::Bool(a > b)),
-    (_, _) => CalcitErr::err_nodes("&> expected 2 arguments, got:", &xs),
+  if xs.len() == 2 {
+    Ok(Calcit::Bool(xs[0] > xs[1]))
+  } else {
+    CalcitErr::err_nodes("&> expected 2 arguments, got:", &xs)
   }
 }
 
