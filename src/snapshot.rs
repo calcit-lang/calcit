@@ -23,10 +23,7 @@ impl From<&FileInSnapShot> for Edn {
   fn from(data: &FileInSnapShot) -> Edn {
     Edn::Record(EdnRecordView {
       tag: EdnTag::new("FileEntry"),
-      pairs: vec![
-        ("ns".into(), data.ns.to_owned().into()),
-        ("defs".into(), data.defs.to_owned().into()),
-      ],
+      pairs: vec![("ns".into(), Edn::from(&data.ns)), ("defs".into(), Edn::from(data.defs.to_owned()))], // TODO
     })
   }
 }
@@ -70,6 +67,18 @@ impl From<CodeEntry> for Edn {
     Edn::record_from_pairs(
       "CodeEntry".into(),
       &[("doc".into(), data.doc.into()), ("code".into(), data.code.into())],
+    )
+  }
+}
+
+impl From<&CodeEntry> for Edn {
+  fn from(data: &CodeEntry) -> Self {
+    Edn::record_from_pairs(
+      "CodeEntry".into(),
+      &[
+        ("doc".into(), data.doc.to_owned().into()),
+        ("code".into(), data.code.to_owned().into()),
+      ],
     )
   }
 }
