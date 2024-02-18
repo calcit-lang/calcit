@@ -163,9 +163,9 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
           if fields == **pre_fields {
             Calcit::Record(CalcitRecord {
               name: pre_name.to_owned(),
-              fields: pre_fields.clone(),
-              values: pre_values.clone(),
-              class: pre_class.clone(),
+              fields: pre_fields.to_owned(),
+              values: pre_values.to_owned(),
+              class: pre_class.to_owned(),
             })
           } else {
             unreachable!("record fields mismatch: {:?} vs {:?}", fields, pre_fields)

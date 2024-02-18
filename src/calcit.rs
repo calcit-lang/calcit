@@ -663,13 +663,13 @@ impl Calcit {
   pub fn get_location(&self) -> Option<NodeLocation> {
     match self {
       Calcit::Symbol { info, location, .. } => Some(NodeLocation::new(
-        info.at_ns.clone(),
-        info.at_def.clone(),
+        info.at_ns.to_owned(),
+        info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
       )),
       Calcit::Local { info, location, .. } => Some(NodeLocation::new(
-        info.at_ns.clone(),
-        info.at_def.clone(),
+        info.at_ns.to_owned(),
+        info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
       )),
       _ => None,

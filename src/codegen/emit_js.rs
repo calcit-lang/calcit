@@ -1292,7 +1292,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
 
     let collected_imports = file_imports.borrow();
     if !collected_imports.is_empty() {
-      let mut xs = collected_imports.0.clone().into_iter().collect::<Vec<_>>();
+      let mut xs = collected_imports.0.iter().to_owned().collect::<Vec<_>>();
       xs.sort();
       for item in &xs {
         // println!("import item: {:?}", item);

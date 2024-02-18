@@ -72,7 +72,7 @@ impl CalcitRecord {
 
     for (i, k) in self.fields.iter().enumerate() {
       if inserted {
-        next_fields.push(k.clone());
+        next_fields.push(k.to_owned());
         next_values.push(self.values[i].to_owned());
       } else {
         match new_field.ref_str().cmp(k.ref_str()) {
@@ -80,12 +80,12 @@ impl CalcitRecord {
             next_fields.push(new_field.to_owned());
             next_values.push(new_value.to_owned());
 
-            next_fields.push(k.clone());
+            next_fields.push(k.to_owned());
             next_values.push(self.values[i].to_owned());
             inserted = true;
           }
           Ordering::Greater => {
-            next_fields.push(k.clone());
+            next_fields.push(k.to_owned());
             next_values.push(self.values[i].to_owned());
           }
           Ordering::Equal => {

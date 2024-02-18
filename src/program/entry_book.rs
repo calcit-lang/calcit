@@ -62,7 +62,7 @@ where
   }
 
   pub fn read_keys(&self) -> Vec<Arc<str>> {
-    self.0.iter().map(|piece| piece.key.clone()).collect()
+    self.0.iter().map(|piece| piece.key.to_owned()).collect()
   }
 
   pub fn load(&self, idx: usize) -> (&T, &str) {
@@ -98,7 +98,7 @@ where
     self
       .0
       .iter()
-      .filter_map(|piece| piece.value.as_ref().map(|v| (piece.key.clone(), v)))
+      .filter_map(|piece| piece.value.as_ref().map(|v| (piece.key.to_owned(), v)))
   }
 
   pub fn get_mut(&mut self, idx: usize) -> Option<&mut T> {
@@ -142,7 +142,7 @@ where
     for piece in &self.0 {
       match &piece.value {
         Some(v) => {
-          res.insert(piece.key.clone(), v.clone());
+          res.insert(piece.key.to_owned(), v.to_owned());
         }
         None => {}
       }

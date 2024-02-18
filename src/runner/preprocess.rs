@@ -190,7 +190,7 @@ pub fn preprocess_expr(
 
           let form = Calcit::Import(CalcitImport {
             ns: calcit::CORE_NS.into(),
-            def: def.clone(),
+            def: def.to_owned(),
             info: Arc::new(ImportInfo::Core { at_ns: file_ns.into() }),
             coord: program::tip_coord(calcit::CORE_NS, def),
           });
@@ -265,7 +265,7 @@ pub fn preprocess_expr(
                 let mut warnings = check_warnings.borrow_mut();
                 warnings.push(LocatedWarning::new(
                   format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" ")),
-                  NodeLocation::new(def_ns.clone(), at_def.clone(), location.to_owned().unwrap_or_default()),
+                  NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
                 ));
                 Ok(expr.to_owned())
               }
@@ -626,7 +626,11 @@ pub fn preprocess_defn(
             location: arg_location,
             ..
           } => {
-            let loc = NodeLocation::new(info.at_ns.clone(), info.at_def.clone(), arg_location.to_owned().unwrap_or_default());
+            let loc = NodeLocation::new(
+              info.at_ns.to_owned(),
+              info.at_def.to_owned(),
+              arg_location.to_owned().unwrap_or_default(),
+            );
             check_symbol(sym, args, loc, check_warnings);
             if &**sym == "&" || &**sym == "?" {
               zs = zs.push_right(s.to_owned());

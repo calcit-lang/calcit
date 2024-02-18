@@ -128,7 +128,7 @@ pub fn call_expr(
       );
 
       // TODO moving to preprocess
-      let mut current_values: TernaryTreeList<Calcit> = rest_nodes.clone().into();
+      let mut current_values: TernaryTreeList<Calcit> = rest_nodes.to_owned().into();
       // println!("eval macro: {} {}", x, expr.lisp_str()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 

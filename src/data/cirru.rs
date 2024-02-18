@@ -24,8 +24,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
       "::" => Ok(Calcit::Symbol {
-        sym: s.clone(),
-        info: symbol_info.clone(),
+        sym: s.to_owned(),
+        info: symbol_info.to_owned(),
         location: Some(coord),
       }),
       _ => match s.chars().next().expect("load first char") {
@@ -51,50 +51,50 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
         '\'' if s.len() > 1 => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Symbol {
             sym: Arc::from("quote"),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
         ]))),
         // TODO also detect simple variables
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Symbol {
             sym: Arc::from("~@"),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[2..]),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
         ]))),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Symbol {
             sym: Arc::from("~"),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
         ]))),
         '@' => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Symbol {
             sym: Arc::from("deref"),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
         ]))),
         // TODO future work of reader literal expanding
@@ -106,8 +106,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           } else {
             Ok(Calcit::Symbol {
               sym: (**s).into(),
-              info: symbol_info.clone(),
-              location: Some(coord.clone()),
+              info: symbol_info.to_owned(),
+              location: Some(coord.to_owned()),
             })
           }
         }
@@ -127,7 +127,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
             if ys[0] == Cirru::leaf("cirru-quote") {
               // special rule for Cirru code
               if ys.len() == 2 {
-                zs = zs.push(Calcit::CirruQuote(ys[1].clone()));
+                zs = zs.push(Calcit::CirruQuote(ys[1].to_owned()));
               } else {
                 return Err(format!("expected 1 argument, got: {ys:?}"));
               }

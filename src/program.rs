@@ -236,7 +236,7 @@ pub fn write_evaled_def(ns: &str, def: &str, value: Calcit) -> Result<(), String
 // take a snapshot for codegen
 pub fn clone_evaled_program() -> ProgramEvaledData {
   let program = &PROGRAM_EVALED_DATA_STATE.read().expect("read program data");
-  (**program).clone()
+  (**program).to_owned()
 }
 
 pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String> {
@@ -256,13 +256,13 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       file.import_map = extract_import_map(v)?;
     }
     for (def, code) in &info.added_defs {
-      file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def, coord0.clone())?);
+      file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def, coord0.to_owned())?);
     }
     for def in &info.removed_defs {
       file.defs.remove(def);
     }
     for (def, code) in &info.changed_defs {
-      file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def, coord0.clone())?);
+      file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def, coord0.to_owned())?);
     }
   }
 

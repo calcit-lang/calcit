@@ -188,11 +188,12 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     Calcit::Method(method, kind) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("method")),
       (Edn::tag("behavior"), Edn::Str((kind.to_string()).into())),
-      (Edn::tag("method"), Edn::Str(method.clone())),
+      (Edn::tag("method"), Edn::Str(method.to_owned())),
     ]),
-    Calcit::RawCode(_, code) => {
-      Edn::map_from_iter([(Edn::tag("kind"), Edn::tag("raw-code")), (Edn::tag("code"), Edn::Str(code.clone()))])
-    }
+    Calcit::RawCode(_, code) => Edn::map_from_iter([
+      (Edn::tag("kind"), Edn::tag("raw-code")),
+      (Edn::tag("code"), Edn::Str(code.to_owned())),
+    ]),
     Calcit::CirruQuote(code) => Edn::map_from_iter([(Edn::tag("kind"), Edn::tag("cirru-quote")), (Edn::tag("code"), code.into())]),
     a => unreachable!("invalid data for generating code: {:?}", a),
   }
