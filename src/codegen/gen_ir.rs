@@ -4,8 +4,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use cirru_edn::{format, Edn, EdnListView};
+use im_ternary_tree::TernaryTreeList;
 
-use crate::calcit::{Calcit, CalcitArgLabel, CalcitCompactList, CalcitImport, ImportInfo};
+use crate::calcit::{Calcit, CalcitArgLabel, CalcitImport, ImportInfo};
 use crate::program;
 
 #[derive(Debug)]
@@ -179,7 +180,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     Calcit::Thunk(thunk) => dump_code(thunk.get_code()),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
-      for x in xs {
+      for x in &**xs {
         ys.push(dump_code(x));
       }
       Edn::from(ys)
@@ -187,17 +188,18 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     Calcit::Method(method, kind) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("method")),
       (Edn::tag("behavior"), Edn::Str((kind.to_string()).into())),
-      (Edn::tag("method"), Edn::Str(method.clone())),
+      (Edn::tag("method"), Edn::Str(method.to_owned())),
     ]),
-    Calcit::RawCode(_, code) => {
-      Edn::map_from_iter([(Edn::tag("kind"), Edn::tag("raw-code")), (Edn::tag("code"), Edn::Str(code.clone()))])
-    }
+    Calcit::RawCode(_, code) => Edn::map_from_iter([
+      (Edn::tag("kind"), Edn::tag("raw-code")),
+      (Edn::tag("code"), Edn::Str(code.to_owned())),
+    ]),
     Calcit::CirruQuote(code) => Edn::map_from_iter([(Edn::tag("kind"), Edn::tag("cirru-quote")), (Edn::tag("code"), code.into())]),
     a => unreachable!("invalid data for generating code: {:?}", a),
   }
 }
 
-fn dump_items_code(xs: &CalcitCompactList) -> Edn {
+fn dump_items_code(xs: &TernaryTreeList<Calcit>) -> Edn {
   let mut ys = EdnListView::default();
   for x in xs {
     ys.push(dump_code(x));

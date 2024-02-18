@@ -24,8 +24,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
       "::" => Ok(Calcit::Symbol {
-        sym: s.clone(),
-        info: symbol_info.clone(),
+        sym: s.to_owned(),
+        info: symbol_info.to_owned(),
         location: Some(coord),
       }),
       _ => match s.chars().next().expect("load first char") {
@@ -48,53 +48,53 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           Ok(n) => Ok(Calcit::Number(n as f64)),
           Err(e) => Err(format!("failed to parse hex: {s} => {e:?}")),
         },
-        '\'' if s.len() > 1 => Ok(Calcit::List(CalcitList::from(&[
+        '\'' if s.len() > 1 => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Symbol {
             sym: Arc::from("quote"),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
         ]))),
         // TODO also detect simple variables
-        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::List(CalcitList::from(&[
+        '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Symbol {
             sym: Arc::from("~@"),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[2..]),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
         ]))),
-        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::List(CalcitList::from(&[
+        '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Symbol {
             sym: Arc::from("~"),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
         ]))),
-        '@' => Ok(Calcit::List(CalcitList::from(&[
+        '@' => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Symbol {
             sym: Arc::from("deref"),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: symbol_info.clone(),
-            location: Some(coord.clone()),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
           },
         ]))),
         // TODO future work of reader literal expanding
@@ -106,8 +106,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           } else {
             Ok(Calcit::Symbol {
               sym: (**s).into(),
-              info: symbol_info.clone(),
-              location: Some(coord.clone()),
+              info: symbol_info.to_owned(),
+              location: Some(coord.to_owned()),
             })
           }
         }
@@ -127,7 +127,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
             if ys[0] == Cirru::leaf("cirru-quote") {
               // special rule for Cirru code
               if ys.len() == 2 {
-                zs = zs.push(Arc::new(Calcit::CirruQuote(ys[1].clone())));
+                zs = zs.push(Calcit::CirruQuote(ys[1].to_owned()));
               } else {
                 return Err(format!("expected 1 argument, got: {ys:?}"));
               }
@@ -136,9 +136,9 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           }
         }
 
-        zs = zs.push(Arc::new(code_to_calcit(y, ns, def, next_coord)?));
+        zs = zs.push(code_to_calcit(y, ns, def, next_coord)?);
       }
-      Ok(Calcit::List(CalcitList(zs)))
+      Ok(Calcit::from(CalcitList(zs)))
     }
   }
 }
@@ -150,9 +150,9 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
     Cirru::List(ys) => {
       let mut zs = CalcitList::new_inner();
       for y in ys {
-        zs = zs.push(Arc::new(cirru_to_calcit(y)));
+        zs = zs.push(cirru_to_calcit(y));
       }
-      Calcit::List(CalcitList(zs))
+      Calcit::from(CalcitList(zs))
     }
   }
 }
@@ -167,7 +167,7 @@ pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
     Calcit::Str(s) => Ok(Cirru::Leaf((**s).into())),
     Calcit::List(ys) => {
       let mut zs: Vec<Cirru> = Vec::with_capacity(ys.len());
-      for y in ys {
+      for y in &**ys {
         match calcit_data_to_cirru(y) {
           Ok(v) => {
             zs.push(v);
@@ -196,7 +196,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Tag(s) => Ok(Cirru::leaf(format!(":{s}"))), // TODO performance
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
-      for x in xs {
+      for x in &**xs {
         ys.push(calcit_to_cirru(x)?);
       }
       Ok(Cirru::List(ys))

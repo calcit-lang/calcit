@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 use im_ternary_tree::TernaryTreeList;
 
-use crate::{Calcit, CalcitCompactList};
+use crate::Calcit;
 
 /// structure of a function arguments
 #[derive(Debug, Clone)]
@@ -32,7 +32,7 @@ pub struct CalcitFn {
   pub def_ns: Arc<str>,
   pub scope: Arc<CalcitScope>,
   pub args: Arc<Vec<CalcitArgLabel>>,
-  pub body: Arc<CalcitCompactList>,
+  pub body: Arc<TernaryTreeList<Calcit>>,
 }
 
 /// Macro variant of Calcit data
@@ -42,7 +42,7 @@ pub struct CalcitMacro {
   /// where it was defined
   pub def_ns: Arc<str>,
   pub args: Arc<Vec<CalcitArgLabel>>,
-  pub body: Arc<CalcitCompactList>,
+  pub body: Arc<TernaryTreeList<Calcit>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

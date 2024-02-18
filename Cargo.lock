@@ -62,7 +62,7 @@ checksum = "b4682ae6287fcf752ecaabbfcc7b6f9b72aa33933dc23a554d853aea8eea8635"
 
 [[package]]
 name = "calcit"
-version = "0.8.30"
+version = "0.8.31"
 dependencies = [
  "cirru_edn",
  "cirru_parser",
@@ -291,9 +291,9 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "im_ternary_tree"
-version = "0.0.13"
+version = "0.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50e59b39a03bd4daadd4b95862f9555c79535a76003867524df231e4f4a781ae"
+checksum = "148c4e9b5a8d46fde17d94b44f205436f7b633db1692591a1b849396d37b37f7"
 
 [[package]]
 name = "indexmap"

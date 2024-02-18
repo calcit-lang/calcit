@@ -20,7 +20,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Registered(def) => Ok(Edn::Symbol((**def).into())),
     Calcit::List(xs) => {
       let mut ys = EdnListView::default();
-      for x in xs {
+      for x in &**xs {
         ys.push(calcit_to_edn(x)?);
       }
       Ok(ys.into())
@@ -125,9 +125,9 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     Edn::List(EdnListView(xs)) => {
       let mut ys = CalcitList::new_inner();
       for x in xs {
-        ys = ys.push_right(Arc::new(edn_to_calcit(x, options)))
+        ys = ys.push_right(edn_to_calcit(x, options))
       }
-      Calcit::List(CalcitList(ys))
+      Calcit::from(CalcitList(ys))
     }
     Edn::Set(EdnSetView(xs)) => {
       let mut ys: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
@@ -163,9 +163,9 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
           if fields == **pre_fields {
             Calcit::Record(CalcitRecord {
               name: pre_name.to_owned(),
-              fields: pre_fields.clone(),
-              values: pre_values.clone(),
-              class: pre_class.clone(),
+              fields: pre_fields.to_owned(),
+              values: pre_values.to_owned(),
+              class: pre_class.to_owned(),
             })
           } else {
             unreachable!("record fields mismatch: {:?} vs {:?}", fields, pre_fields)

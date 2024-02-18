@@ -13,13 +13,14 @@ pub mod syntax;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use crate::calcit::{Calcit, CalcitCompactList, CalcitErr, CalcitList, CalcitProc, CalcitScope, CalcitSyntax};
-use crate::call_stack::CallStackList;
+use crate::calcit::{Calcit, CalcitErr, CalcitList, CalcitProc, CalcitScope, CalcitSyntax};
+use crate::call_stack::{using_stack, CallStackList};
 
+use im_ternary_tree::TernaryTreeList;
 pub(crate) use refs::ValueAndListeners;
 
-pub type FnType = fn(xs: CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
-pub type SyntaxType = fn(expr: &CalcitCompactList, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
+pub type FnType = fn(xs: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
+pub type SyntaxType = fn(expr: &TernaryTreeList<Calcit>, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
 lazy_static! {
   /// TODO dont use pub
@@ -41,19 +42,23 @@ pub fn is_registered_proc(s: &str) -> bool {
 }
 
 /// make sure that stack information attached in errors from procs
-pub fn handle_proc(name: CalcitProc, args: &CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  handle_proc_internal(name, args, call_stack).map_err(|e| {
-    if e.stack.is_empty() {
-      let mut e2 = e;
-      e2.stack = call_stack.to_owned();
-      e2
-    } else {
-      e
-    }
-  })
+pub fn handle_proc(name: CalcitProc, args: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if using_stack() {
+    handle_proc_internal(name, args, call_stack).map_err(|e| {
+      if e.stack.is_empty() {
+        let mut e2 = e;
+        e2.stack = call_stack.to_owned();
+        e2
+      } else {
+        e
+      }
+    })
+  } else {
+    handle_proc_internal(name, args, call_stack)
+  }
 }
 
-fn handle_proc_internal(name: CalcitProc, args: &CalcitCompactList, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+fn handle_proc_internal(name: CalcitProc, args: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match name {
     // meta
     CalcitProc::TypeOf => meta::type_of(args),

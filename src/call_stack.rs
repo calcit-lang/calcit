@@ -2,7 +2,6 @@ use crate::calcit::Calcit;
 use crate::calcit::NodeLocation;
 use crate::data::cirru;
 use crate::data::edn;
-use crate::CalcitCompactList;
 use cirru_edn::Edn;
 use cirru_edn::EdnListView;
 use im_ternary_tree::TernaryTreeList;
@@ -27,17 +26,11 @@ pub fn using_stack() -> bool {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Ord, PartialOrd, Hash)]
-pub enum StackArgsList {
-  List(TernaryTreeList<Arc<Calcit>>),
-  Compact(CalcitCompactList),
-}
-
-#[derive(Debug, PartialEq, Clone, Eq, Ord, PartialOrd, Hash)]
 pub struct CalcitStack {
   pub ns: Arc<str>,
   pub def: Arc<str>,
   pub code: Calcit, // built in functions may not contain code
-  pub args: StackArgsList,
+  pub args: TernaryTreeList<Calcit>,
   pub kind: StackKind,
 }
 
@@ -89,30 +82,14 @@ impl CallStackList {
   }
 
   /// create new entry to the tree
-  pub fn extend(&self, ns: &str, def: &str, kind: StackKind, code: &Calcit, args: &TernaryTreeList<Arc<Calcit>>) -> CallStackList {
+  pub fn extend(&self, ns: &str, def: &str, kind: StackKind, code: &Calcit, args: &TernaryTreeList<Calcit>) -> CallStackList {
     let b = TRACK_STACK.load(std::sync::atomic::Ordering::Relaxed);
     if b {
       self.push_left(CalcitStack {
         ns: Arc::from(ns),
         def: Arc::from(def),
         code: code.to_owned(),
-        args: StackArgsList::List(args.to_owned()),
-        kind,
-      })
-    } else {
-      self.to_owned()
-    }
-  }
-
-  /// create new entry to the tree
-  pub fn extend_compact(&self, ns: &str, def: &str, kind: StackKind, code: &Calcit, args: &CalcitCompactList) -> CallStackList {
-    let b = TRACK_STACK.load(std::sync::atomic::Ordering::Relaxed);
-    if b {
-      self.push_left(CalcitStack {
-        ns: Arc::from(ns),
-        def: Arc::from(def),
-        code: code.to_owned(),
-        args: StackArgsList::Compact(args.to_owned()),
+        args: args.to_owned(),
         kind,
       })
     } else {
@@ -142,17 +119,8 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc
   let mut stack_list = EdnListView::default();
   for s in &stack.0 {
     let mut args = EdnListView::default();
-    match &s.args {
-      StackArgsList::List(xs) => {
-        for v in xs.iter() {
-          args.push(edn::calcit_to_edn(v)?);
-        }
-      }
-      StackArgsList::Compact(xs) => {
-        for v in xs.iter() {
-          args.push(edn::calcit_to_edn(v)?);
-        }
-      }
+    for v in s.args.iter() {
+      args.push(edn::calcit_to_edn(v)?);
     }
     let info = Edn::map_from_iter([
       (Edn::tag("def"), format!("{}/{}", s.ns, s.def).into()),

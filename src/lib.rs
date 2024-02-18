@@ -15,12 +15,13 @@ pub mod util;
 
 use calcit::LocatedWarning;
 use call_stack::CallStackList;
+use im_ternary_tree::TernaryTreeList;
 use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-pub use calcit::{Calcit, CalcitCompactList, CalcitErr};
+pub use calcit::{Calcit, CalcitErr};
 
 use crate::util::string::strip_shebang;
 
@@ -42,7 +43,7 @@ pub struct ProgramEntries {
   pub reload_def: Arc<str>,
 }
 
-pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   let check_warnings = RefCell::new(LocatedWarning::default_list());
 
   // preprocess to init

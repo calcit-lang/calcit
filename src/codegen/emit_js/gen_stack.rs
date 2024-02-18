@@ -1,20 +1,21 @@
 use std::sync::Mutex;
 
+use im_ternary_tree::TernaryTreeList;
+
 use crate::calcit::Calcit;
-use crate::call_stack::{CalcitStack, CallStackList, StackArgsList, StackKind};
-use crate::CalcitCompactList;
+use crate::call_stack::{CalcitStack, CallStackList, StackKind};
 
 lazy_static! {
   static ref CALL_STACK: Mutex<rpds::ListSync<CalcitStack>> = Mutex::new(rpds::List::new_sync());
 }
 
-pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: CalcitCompactList) {
+pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: TernaryTreeList<Calcit>) {
   let mut stack = CALL_STACK.lock().expect("open call stack");
   stack.push_front_mut(CalcitStack {
     ns: ns.into(),
     def: def.into(),
     code,
-    args: StackArgsList::Compact(args),
+    args,
     kind,
   })
 }

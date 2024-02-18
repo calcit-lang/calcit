@@ -161,7 +161,7 @@ fn find_file_changes(old_file: &FileInSnapShot, new_file: &FileInSnapShot) -> Re
 
   let added_defs = new_defs
     .difference(&old_defs)
-    .map(|name| ((*name).clone(), new_file.defs[&**name].code.to_owned()))
+    .map(|name| ((*name).to_owned(), new_file.defs[&**name].code.to_owned()))
     .collect::<HashMap<Arc<str>, Cirru>>();
 
   let removed_defs = old_defs

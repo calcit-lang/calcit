@@ -1,8 +1,10 @@
-use crate::calcit::{Calcit, CalcitCompactList, CalcitErr};
+use im_ternary_tree::TernaryTreeList;
+
+use crate::calcit::{Calcit, CalcitErr};
 
 use crate::util::number::{f64_to_i32, is_integer};
 
-pub fn binary_add(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn binary_add(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a + b)),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid types for &+: {a} {b}")),
@@ -11,7 +13,7 @@ pub fn binary_add(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn binary_minus(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn binary_minus(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a - b)),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid types for &-: {a} {b}")),
@@ -20,7 +22,7 @@ pub fn binary_minus(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn binary_multiply(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn binary_multiply(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a * b)),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid types for &*: {a} {b}")),
@@ -29,7 +31,7 @@ pub fn binary_multiply(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn binary_divide(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn binary_divide(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a / b)),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid types for &/: {a} {b}")),
@@ -38,7 +40,7 @@ pub fn binary_divide(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn round_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn round_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(n)) => Ok(Calcit::Bool(is_integer(*n))),
     Some(a) => CalcitErr::err_str(format!("round? expected a number: {a}")),
@@ -46,7 +48,7 @@ pub fn round_ques(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn floor(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn floor(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n.floor())),
     Some(a) => CalcitErr::err_str(format!("rand expected a number: {a}")),
@@ -55,7 +57,7 @@ pub fn floor(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
 }
 
 // TODO semantics of Rust and JavaScript are different
-pub fn fractional(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn fractional(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n - n.floor())),
     Some(a) => CalcitErr::err_str(format!("fractional expected a number: {a}")),
@@ -63,7 +65,7 @@ pub fn fractional(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn rem(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn rem(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(base)), Some(Calcit::Number(step))) => match (f64_to_i32(*base), f64_to_i32(*step)) {
       (Ok(a), Ok(b)) => Ok(Calcit::Number((a % b) as f64)),
@@ -75,42 +77,42 @@ pub fn rem(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn round(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn round(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n.round())),
     Some(a) => CalcitErr::err_str(format!("round expected a number: {a}")),
     a => CalcitErr::err_str(format!("round expected 1 number: {a:?}")),
   }
 }
-pub fn sin(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn sin(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n.sin())),
     Some(a) => CalcitErr::err_str(format!("sin expected a number: {a}")),
     a => CalcitErr::err_str(format!("sin expected 1 number: {a:?}")),
   }
 }
-pub fn cos(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn cos(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n.cos())),
     Some(a) => CalcitErr::err_str(format!("cos expected a number: {a}")),
     a => CalcitErr::err_str(format!("cos expected 1 number: {a:?}")),
   }
 }
-pub fn pow(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn pow(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(base)), Some(Calcit::Number(step))) => Ok(Calcit::Number(base.powf(*step))),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("pow expected 2 numbers, got: {a:?} {b:?}")),
     (a, b) => CalcitErr::err_str(format!("pow expected 2 numbers, got: {a:?} {b:?}")),
   }
 }
-pub fn ceil(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn ceil(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n.ceil())),
     Some(a) => CalcitErr::err_str(format!("ceil expected a number: {a}")),
     a => CalcitErr::err_str(format!("ceil expected 1 number: {a:?}")),
   }
 }
-pub fn sqrt(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn sqrt(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n.sqrt())),
     Some(a) => CalcitErr::err_str(format!("sqrt expected a number: {a}")),
@@ -118,7 +120,7 @@ pub fn sqrt(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn bit_shr(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn bit_shr(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value >> step) as f64)),
@@ -130,7 +132,7 @@ pub fn bit_shr(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn bit_shl(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn bit_shl(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value << step) as f64)),
@@ -142,7 +144,7 @@ pub fn bit_shl(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn bit_and(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn bit_and(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value & step) as f64)),
@@ -154,7 +156,7 @@ pub fn bit_and(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn bit_or(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn bit_or(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value | step) as f64)),
@@ -166,7 +168,7 @@ pub fn bit_or(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn bit_xor(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn bit_xor(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match (xs.get(0), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value ^ step) as f64)),
@@ -178,7 +180,7 @@ pub fn bit_xor(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn bit_not(xs: &CalcitCompactList) -> Result<Calcit, CalcitErr> {
+pub fn bit_not(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   match xs.get(0) {
     Some(Calcit::Number(n)) => match f64_to_i32(*n) {
       Ok(value) => Ok(Calcit::Number(!value as f64)),
