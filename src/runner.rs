@@ -81,45 +81,42 @@ pub fn call_expr(
       builtins::handle_proc(*p, values, call_stack)
     }
     Calcit::Syntax(s, def_ns) => {
-      let next_stack = if using_stack() {
-        call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, &Calcit::from(xs.to_owned()), &rest_nodes.0)
+      if using_stack() {
+        let next_stack = call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, &Calcit::from(xs.to_owned()), &rest_nodes.0);
+        builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
+          if e.stack.is_empty() {
+            let mut e2 = e;
+            e2.stack = call_stack.to_owned();
+            e2
+          } else {
+            e
+          }
+        })
       } else {
-        call_stack.to_owned()
-      };
-
-      builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
-        if e.stack.is_empty() {
-          let mut e2 = e;
-          e2.stack = call_stack.to_owned();
-          e2
-        } else {
-          e
-        }
-      })
+        builtins::handle_syntax(s, &rest_nodes, scope, file_ns, call_stack)
+      }
     }
     Calcit::Method(name, kind) => {
-      let values = evaluate_args(rest_nodes, scope, file_ns, call_stack)?;
-      let next_stack = if using_stack() {
-        call_stack.extend(file_ns, name, StackKind::Method, &Calcit::Nil, &values)
-      } else {
-        call_stack.to_owned()
-      };
-
       if *kind == MethodKind::Invoke {
-        builtins::meta::invoke_method(name, &values, &next_stack)
+        let values = evaluate_args(rest_nodes, scope, file_ns, call_stack)?;
+        if using_stack() {
+          let next_stack = call_stack.extend(file_ns, name, StackKind::Method, &Calcit::Nil, &values);
+          builtins::meta::invoke_method(name, &values, &next_stack)
+        } else {
+          builtins::meta::invoke_method(name, &values, call_stack)
+        }
       } else {
         CalcitErr::err_str(format!("unknown method for rust runtime: {kind}"))
       }
     }
     Calcit::Fn { info, .. } => {
       let values = evaluate_args(rest_nodes, scope, file_ns, call_stack)?;
-      let next_stack = if using_stack() {
-        call_stack.extend(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs.to_owned()), &values)
+      if using_stack() {
+        let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs.to_owned()), &values);
+        run_fn(values, info, &next_stack)
       } else {
-        call_stack.to_owned()
-      };
-
-      run_fn(values, info, &next_stack)
+        run_fn(values, info, call_stack)
+      }
     }
     Calcit::Macro { info, .. } => {
       println!(
@@ -133,13 +130,7 @@ pub fn call_expr(
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let next_stack = if using_stack() {
-        call_stack.extend(
-          &info.def_ns,
-          &info.name,
-          StackKind::Macro,
-          &Calcit::from(xs.to_owned()),
-          &rest_nodes.0,
-        )
+        call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &Calcit::from(xs), &rest_nodes.0)
       } else {
         call_stack.to_owned()
       };

@@ -28,6 +28,12 @@ impl From<CalcitList> for Calcit {
   }
 }
 
+impl From<&CalcitList> for Calcit {
+  fn from(xs: &CalcitList) -> Calcit {
+    Calcit::List(Arc::new(xs.to_owned()))
+  }
+}
+
 impl From<CalcitList> for TernaryTreeList<Calcit> {
   fn from(xs: CalcitList) -> TernaryTreeList<Calcit> {
     let mut ys = TernaryTreeList::Empty;
