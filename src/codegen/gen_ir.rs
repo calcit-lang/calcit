@@ -6,7 +6,7 @@ use std::sync::Arc;
 use cirru_edn::{format, Edn, EdnListView};
 use im_ternary_tree::TernaryTreeList;
 
-use crate::calcit::{Calcit, CalcitArgLabel, CalcitImport, ImportInfo};
+use crate::calcit::{Calcit, CalcitArgLabel, CalcitImport, CalcitLocal, ImportInfo};
 use crate::program;
 
 #[derive(Debug)]
@@ -97,9 +97,10 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
       (Edn::tag("ns"), Edn::Str((*info.at_ns).into())),
     ]),
-    Calcit::Local { sym, info, .. } => Edn::map_from_iter([
+    Calcit::Local(CalcitLocal { sym, idx, info, .. }) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("local")),
       (Edn::tag("val"), Edn::Str((**sym).into())),
+      (Edn::tag("idx"), Edn::Number(*idx as f64)),
       (
         Edn::tag("info"),
         Edn::map_from_iter([

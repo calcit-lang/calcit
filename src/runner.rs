@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use crate::builtins::{self, IMPORTED_PROCS};
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitErr, CalcitFn, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSyntax, MethodKind,
-  NodeLocation, CORE_NS,
+  Calcit, CalcitArgLabel, CalcitErr, CalcitFn, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope, CalcitSyntax,
+  MethodKind, NodeLocation, CORE_NS,
 };
 use crate::call_stack::{using_stack, CallStackList, StackKind};
 use crate::program;
@@ -40,7 +40,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
       // println!("[Warn] slow path reading symbol: {}", sym);
       evaluate_symbol(sym, scope, &info.at_ns, &info.at_def, location, call_stack)
     }
-    Calcit::Local { sym, .. } => evaluate_symbol_from_scope(sym, scope),
+    Calcit::Local(CalcitLocal { idx, .. }) => evaluate_symbol_from_scope(*idx, scope),
     Calcit::Import(CalcitImport { ns, def, coord, .. }) => {
       // TODO might have quick path
       evaluate_symbol_from_program(def, ns, *coord, call_stack)
@@ -221,7 +221,7 @@ pub fn evaluate_symbol(
     None => {
       if let Ok(v) = sym.parse::<CalcitSyntax>() {
         Ok(Calcit::Syntax(v, file_ns.into()))
-      } else if let Some(v) = scope.get(sym) {
+      } else if let Some(v) = scope.get_by_name(sym) {
         // although scope is detected first, it would trigger warning during preprocess
         Ok(v.to_owned())
       } else if let Ok(p) = sym.parse::<CalcitProc>() {
@@ -252,11 +252,11 @@ pub fn evaluate_symbol(
   }
 }
 
-pub fn evaluate_symbol_from_scope(sym: &str, scope: &CalcitScope) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_symbol_from_scope(idx: u16, scope: &CalcitScope) -> Result<Calcit, CalcitErr> {
   // although scope is detected first, it would trigger warning during preprocess
   Ok(
     scope
-      .get(sym)
+      .get(idx)
       .expect("expected symbol from scope, this is a quick path, should succeed")
       .to_owned(),
   )
@@ -266,7 +266,7 @@ pub fn evaluate_symbol_from_scope(sym: &str, scope: &CalcitScope) -> Result<Calc
 pub fn evaluate_symbol_from_program(
   sym: &str,
   file_ns: &str,
-  coord: Option<(usize, usize)>,
+  coord: Option<(u16, u16)>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let v0 = match coord {
@@ -342,9 +342,8 @@ pub fn run_fn(values: TernaryTreeList<Calcit>, info: &CalcitFn, call_stack: &Cal
         result => return Ok(result),
       }
     }
-  } else {
-    Ok(v)
   }
+  Ok(v)
 }
 
 /// syntax sugar for index value
@@ -379,12 +378,12 @@ pub fn bind_args(
   while let Some(arg) = args.get(pop_args_idx.get_and_inc()) {
     if spreading {
       match arg {
-        CalcitArgLabel::Name(name) => {
+        CalcitArgLabel::Idx(idx) => {
           let mut chunk = CalcitList::new_inner();
           while let Some(v) = values.get(pop_values_idx.get_and_inc()) {
             chunk = chunk.push_right(v.to_owned());
           }
-          scope.insert_mut(name.to_owned(), Calcit::List(Arc::new(chunk.into())));
+          scope.insert_mut(*idx, Calcit::List(Arc::new(chunk.into())));
           if pop_args_idx.0 < args.len() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{args:?}` after spreading in `{args:?}`",),
@@ -403,13 +402,13 @@ pub fn bind_args(
       match arg {
         CalcitArgLabel::RestMark => spreading = true,
         CalcitArgLabel::OptionalMark => optional = true,
-        CalcitArgLabel::Name(name) => match values.get(pop_values_idx.get_and_inc()) {
+        CalcitArgLabel::Idx(idx) => match values.get(pop_values_idx.get_and_inc()) {
           Some(v) => {
-            scope.insert_mut(name.to_owned(), v.to_owned());
+            scope.insert_mut(*idx, v.to_owned());
           }
           None => {
             if optional {
-              scope.insert_mut(name.to_owned(), Calcit::Nil);
+              scope.insert_mut(*idx, Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
                 format!("too few values `{}` passed to args `{args:?}`", values),

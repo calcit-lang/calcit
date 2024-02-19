@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use cirru_parser::Cirru;
 
-use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitProc, MethodKind};
+use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitLocal, CalcitProc, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result<Calcit, String> {
@@ -190,7 +190,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string().into())),
     Calcit::Str(s) => Ok(Cirru::leaf(format!("|{s}"))),            // TODO performance
     Calcit::Symbol { sym, .. } => Ok(Cirru::Leaf((**sym).into())), // TODO performance
-    Calcit::Local { sym, .. } => Ok(Cirru::Leaf((**sym).into())),  // TODO performance
+    Calcit::Local(CalcitLocal { sym, .. }) => Ok(Cirru::Leaf((**sym).into())), // TODO performance
     Calcit::Import(CalcitImport { ns, def, .. }) => Ok(Cirru::Leaf((format!("{ns}/{def}")).into())), // TODO performance
     Calcit::Registered(s) => Ok(Cirru::Leaf(s.as_ref().into())),
     Calcit::Tag(s) => Ok(Cirru::leaf(format!(":{s}"))), // TODO performance

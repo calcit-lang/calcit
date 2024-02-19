@@ -17,7 +17,7 @@ use cirru_edn::EdnTag;
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::syntax::get_raw_args;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
-use crate::calcit::{self, CalcitArgLabel, CalcitImport, CalcitList, CalcitProc, MethodKind};
+use crate::calcit::{self, CalcitArgLabel, CalcitImport, CalcitList, CalcitLocal, CalcitProc, MethodKind};
 use crate::calcit::{Calcit, CalcitSyntax, ImportInfo};
 use crate::call_stack::StackKind;
 use crate::program;
@@ -245,7 +245,7 @@ fn to_js_code(
           }
         }
       }
-      Calcit::Local { sym, .. } => Ok(escape_var(sym)),
+      Calcit::Local(CalcitLocal { sym, .. }) => Ok(escape_var(sym)),
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
         // println!("gen proc {} under {}", s, ns,);
@@ -702,7 +702,7 @@ fn gen_let_code(
         let def_code = xs[1].to_owned();
 
         match &def_name {
-          Calcit::Local { sym, .. } => {
+          Calcit::Local(CalcitLocal { sym, .. }) => {
             // TODO `let` inside expressions makes syntax error
             let left = escape_var(sym);
             let right = to_js_code(&def_code, ns, &scoped_defs, file_imports, tags, None)?;
@@ -946,12 +946,13 @@ fn gen_js_func(
   let mut optional_count = 0;
   for sym in args {
     if spreading {
-      if let CalcitArgLabel::Name(sym) = sym {
+      if let CalcitArgLabel::Idx(idx) = sym {
         if !args_code.is_empty() {
           args_code.push_str(", ");
         }
-        local_defs.insert(sym.to_owned());
-        let arg_name = escape_var(sym);
+        let sym = CalcitLocal::read_name(*idx);
+        let arg_name = escape_var(&sym);
+        local_defs.insert(sym.into());
         args_code.push_str("...");
         args_code.push_str(&arg_name);
         // js list and calcit-js are different in spreading
@@ -961,12 +962,13 @@ fn gen_js_func(
         return Err(format!("unexpected argument after spreading: {}", sym));
       }
     } else if has_optional {
-      if let CalcitArgLabel::Name(sym) = sym {
+      if let CalcitArgLabel::Idx(idx) = sym {
         if !args_code.is_empty() {
           args_code.push_str(", ");
         }
-        local_defs.insert(sym.to_owned());
-        args_code.push_str(&escape_var(sym));
+        let sym = CalcitLocal::read_name(*idx);
+        args_code.push_str(&escape_var(&sym));
+        local_defs.insert(sym.into());
         optional_count += 1;
       } else {
         return Err(format!("unexpected argument after optional: {}", sym));
@@ -979,12 +981,13 @@ fn gen_js_func(
         CalcitArgLabel::OptionalMark => {
           has_optional = true;
         }
-        CalcitArgLabel::Name(sym) => {
+        CalcitArgLabel::Idx(idx) => {
           if !args_code.is_empty() {
             args_code.push_str(", ");
           }
-          local_defs.insert(sym.to_owned());
-          args_code.push_str(&escape_var(sym));
+          let sym = CalcitLocal::read_name(*idx);
+          args_code.push_str(&escape_var(&sym));
+          local_defs.insert(sym.into());
           args_count += 1;
         }
       }

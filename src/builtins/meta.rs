@@ -1,7 +1,8 @@
 use crate::{
-  builtins::{self},
+  builtins,
   calcit::{
-    self, gen_core_id, Calcit, CalcitErr, CalcitImport, CalcitList, CalcitRecord, CalcitSymbolInfo, CalcitTuple, GENERATED_DEF, GEN_NS,
+    self, gen_core_id, Calcit, CalcitErr, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo, CalcitTuple,
+    GENERATED_DEF, GEN_NS,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -93,7 +94,7 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
       Cirru::List(xs)
     }
     Calcit::Symbol { sym, .. } => Cirru::Leaf((**sym).into()),
-    Calcit::Local { sym, .. } => Cirru::Leaf((**sym).into()),
+    Calcit::Local(CalcitLocal { sym, .. }) => Cirru::Leaf((**sym).into()),
     Calcit::Import(CalcitImport { def, .. }) => Cirru::Leaf((format!("{def}")).into()), // TODO ns
     Calcit::Registered(alias) => Cirru::Leaf((**alias).into()),
     Calcit::Syntax(s, _ns) => Cirru::Leaf(s.as_ref().into()),

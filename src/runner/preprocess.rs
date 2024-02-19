@@ -1,8 +1,8 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitArgLabel, CalcitErr, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax,
-    CalcitThunk, CalcitThunkInfo, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
+    self, Calcit, CalcitArgLabel, CalcitErr, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope, CalcitSymbolInfo,
+    CalcitSyntax, CalcitThunk, CalcitThunkInfo, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
   },
   call_stack::{CallStackList, StackKind},
   program, runner,
@@ -149,14 +149,15 @@ pub fn preprocess_expr(
             location: location.to_owned(),
           })
         } else if scope_defs.contains(def) {
-          Ok(Calcit::Local {
+          Ok(Calcit::Local(CalcitLocal {
+            idx: CalcitLocal::track_sym(def),
             sym: def.to_owned(),
             info: Arc::new(CalcitSymbolInfo {
               at_ns: def_ns.to_owned(),
               at_def: at_def.to_owned(),
             }),
             location: location.to_owned(),
-          })
+          }))
         } else if CalcitSyntax::is_valid(def) {
           Ok(Calcit::Syntax(
             def
@@ -636,14 +637,15 @@ pub fn preprocess_defn(
               zs = zs.push_right(s.to_owned());
               continue;
             } else {
-              let s = Calcit::Local {
+              let s = Calcit::Local(CalcitLocal {
+                idx: CalcitLocal::track_sym(sym),
                 sym: sym.to_owned(),
                 info: Arc::new(CalcitSymbolInfo {
                   at_ns: info.at_ns.to_owned(),
                   at_def: info.at_def.to_owned(),
                 }),
                 location: arg_location.to_owned(),
-              };
+              });
               // println!("created local: {:?}", s);
               zs = zs.push_right(s);
 
@@ -715,14 +717,15 @@ pub fn preprocess_core_let(
         check_symbol(sym, args, loc, check_warnings);
         body_defs.insert(sym.to_owned());
         let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
-        let name = Calcit::Local {
+        let name = Calcit::Local(CalcitLocal {
+          idx: CalcitLocal::track_sym(sym),
           sym: sym.to_owned(),
           info: Arc::new(CalcitSymbolInfo {
             at_ns: info.at_ns.to_owned(),
             at_def: info.at_def.to_owned(),
           }),
           location: location.to_owned(),
-        };
+        });
         Calcit::from(CalcitList::from(&[name, form]))
       }
       (a, b) => {

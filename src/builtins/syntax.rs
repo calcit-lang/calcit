@@ -10,7 +10,7 @@ use im_ternary_tree::TernaryTreeList;
 
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
-use crate::calcit::{self, CalcitArgLabel, CalcitFn, CalcitList, CalcitMacro, CalcitSymbolInfo, LocatedWarning};
+use crate::calcit::{self, CalcitArgLabel, CalcitFn, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo, LocatedWarning};
 use crate::calcit::{gen_core_id, Calcit, CalcitErr, CalcitScope};
 use crate::call_stack::CallStackList;
 use crate::runner;
@@ -52,8 +52,8 @@ pub fn get_raw_args(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String> {
   let mut xs: Vec<CalcitArgLabel> = vec![];
   for item in args {
     match item {
-      Calcit::Local { sym, .. } => {
-        xs.push(CalcitArgLabel::Name(sym.to_owned()));
+      Calcit::Local(CalcitLocal { idx, .. }) => {
+        xs.push(CalcitArgLabel::Idx(*idx));
       }
       Calcit::Symbol { sym, .. } => {
         if &**sym == "?" {
@@ -61,8 +61,9 @@ pub fn get_raw_args(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String> {
         } else if &**sym == "&" {
           xs.push(CalcitArgLabel::RestMark);
         } else {
+          let idx = CalcitLocal::track_sym(sym);
           // during macro processing, we still git symbol
-          xs.push(CalcitArgLabel::Name(sym.to_owned()));
+          xs.push(CalcitArgLabel::Idx(idx));
           // return Err(format!("Unexpected argument label: {item}"));
         }
       }
@@ -79,8 +80,8 @@ pub fn get_raw_args_fn(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String>
   let mut xs: Vec<CalcitArgLabel> = vec![];
   for item in args {
     match item {
-      Calcit::Local { sym, .. } => {
-        xs.push(CalcitArgLabel::Name(sym.to_owned()));
+      Calcit::Local(CalcitLocal { idx, .. }) => {
+        xs.push(CalcitArgLabel::Idx(*idx));
       }
       Calcit::Symbol { sym, .. } => {
         if &**sym == "?" {
@@ -144,14 +145,15 @@ pub fn syntax_let(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
     Some(Calcit::List(xs)) if xs.len() == 2 => {
       let mut body_scope = scope.to_owned();
       match (&xs[0], &xs[1]) {
-        (Calcit::Local { sym: s, .. }, ys) => {
+        (Calcit::Local(CalcitLocal { idx, .. }), ys) => {
           let value = runner::evaluate_expr(ys, scope, file_ns, call_stack)?;
-          body_scope.insert_mut(s.to_owned(), value);
+          body_scope.insert_mut(*idx, value);
         }
         (Calcit::Symbol { sym: s, .. }, ys) => {
           println!("[Warn] slow path of {s}, prefer local");
           let value = runner::evaluate_expr(ys, scope, file_ns, call_stack)?;
-          body_scope.insert_mut(s.to_owned(), value);
+          let idx = CalcitLocal::track_sym(s);
+          body_scope.insert_mut(idx, value);
         }
         (a, _) => return CalcitErr::err_str(format!("invalid binding name: {a}")),
       }

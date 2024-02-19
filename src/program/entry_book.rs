@@ -44,14 +44,14 @@ where
   }
 
   /// O(n) search, search from start to end
-  pub fn lookup(&self, key: &str) -> Option<(&T, usize)> {
+  pub fn lookup(&self, key: &str) -> Option<(&T, u16)> {
     // println!("searching {} in keys {:?}", key, self.read_keys());
     for (idx, piece) in self.0.iter().enumerate() {
       if &*piece.key == key {
         match &piece.value {
           Some(v) => {
             // println!("found {} at {}", key, idx);
-            return Some((v, idx));
+            return Some((v, idx as u16));
           }
           None => continue,
         }
@@ -65,8 +65,8 @@ where
     self.0.iter().map(|piece| piece.key.to_owned()).collect()
   }
 
-  pub fn load(&self, idx: usize) -> (&T, &str) {
-    match self.0.get(idx) {
+  pub fn load(&self, idx: u16) -> (&T, &str) {
+    match self.0.get(idx as usize) {
       Some(piece) => match &piece.value {
         Some(v) => (v, &*piece.key),
         None => unreachable!("given index {} is invalid in current book of size {}", idx, self.0.len()),
@@ -111,12 +111,12 @@ where
     }
   }
 
-  pub fn lookup_mut(&mut self, key: &str) -> Option<(&mut T, usize)> {
+  pub fn lookup_mut(&mut self, key: &str) -> Option<(&mut T, u16)> {
     for (idx, piece) in self.0.iter_mut().enumerate() {
       // println!("comparing {} and {}", &*piece.key, key);
       if &*piece.key == key {
         match &mut piece.value {
-          Some(v) => return Some((v, idx)),
+          Some(v) => return Some((v, idx as u16)),
           None => return None,
         }
       }
