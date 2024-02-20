@@ -28,12 +28,18 @@ impl Display for CalcitArgLabel {
 }
 
 #[derive(Debug, Clone)]
+pub enum CalcitFnArgs {
+  MarkedArgs(Vec<CalcitArgLabel>),
+  Args(Vec<u16>),
+}
+
+#[derive(Debug, Clone)]
 pub struct CalcitFn {
   pub name: Arc<str>,
   /// where it was defined
   pub def_ns: Arc<str>,
   pub scope: Arc<CalcitScope>,
-  pub args: Arc<Vec<CalcitArgLabel>>,
+  pub args: Arc<CalcitFnArgs>,
   pub body: Arc<TernaryTreeList<Calcit>>,
 }
 

@@ -10,7 +10,9 @@ use im_ternary_tree::TernaryTreeList;
 
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
-use crate::calcit::{self, CalcitArgLabel, CalcitFn, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo, LocatedWarning};
+use crate::calcit::{
+  self, CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo, LocatedWarning,
+};
 use crate::calcit::{gen_core_id, Calcit, CalcitErr, CalcitScope};
 use crate::call_stack::CallStackList;
 use crate::runner;
@@ -76,8 +78,9 @@ pub fn get_raw_args(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String> {
   Ok(xs)
 }
 
-pub fn get_raw_args_fn(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String> {
+pub fn get_raw_args_fn(args: &CalcitList) -> Result<CalcitFnArgs, String> {
   let mut xs: Vec<CalcitArgLabel> = vec![];
+  let mut has_mark = false;
   for item in args {
     match item {
       Calcit::Local(CalcitLocal { idx, .. }) => {
@@ -86,8 +89,10 @@ pub fn get_raw_args_fn(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String>
       Calcit::Symbol { sym, .. } => {
         if &**sym == "?" {
           xs.push(CalcitArgLabel::OptionalMark);
+          has_mark = true;
         } else if &**sym == "&" {
           xs.push(CalcitArgLabel::RestMark);
+          has_mark = true;
         } else {
           return Err(format!("Unexpected argument label: {item}"));
         }
@@ -97,7 +102,20 @@ pub fn get_raw_args_fn(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String>
       }
     }
   }
-  Ok(xs)
+  if has_mark {
+    Ok(CalcitFnArgs::MarkedArgs(xs))
+  } else {
+    let mut ys: Vec<u16> = vec![];
+    for x in &xs {
+      match x {
+        CalcitArgLabel::Idx(idx) => {
+          ys.push(*idx);
+        }
+        _ => return Err(format!("Unexpected argument label: {x}")),
+      }
+    }
+    Ok(CalcitFnArgs::Args(ys))
+  }
 }
 
 pub fn quote(expr: &CalcitList, _scope: &CalcitScope, _file_ns: &str) -> Result<Calcit, CalcitErr> {
@@ -256,7 +274,7 @@ pub fn macroexpand(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              runner::bind_args(&mut body_scope, &info.args, &rest_nodes, call_stack)?;
+              runner::bind_marked_args(&mut body_scope, &info.args, &rest_nodes, call_stack)?;
               let v = runner::evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
@@ -289,7 +307,7 @@ pub fn macroexpand_1(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call
         match v {
           Calcit::Macro { info, .. } => {
             let mut body_scope = scope.to_owned();
-            runner::bind_args(&mut body_scope, &info.args, &xs.drop_left().into(), call_stack)?;
+            runner::bind_marked_args(&mut body_scope, &info.args, &xs.drop_left().into(), call_stack)?;
             runner::evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)
           }
           _ => Ok(quoted_code),
@@ -321,7 +339,7 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              runner::bind_args(&mut body_scope, &info.args, &rest_nodes, call_stack)?;
+              runner::bind_marked_args(&mut body_scope, &info.args, &rest_nodes, call_stack)?;
               let v = runner::evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {

@@ -15,9 +15,9 @@ use std::sync::Arc;
 use cirru_edn::EdnTag;
 
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
-use crate::builtins::syntax::get_raw_args;
+use crate::builtins::syntax::get_raw_args_fn;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
-use crate::calcit::{self, CalcitArgLabel, CalcitImport, CalcitList, CalcitLocal, CalcitProc, MethodKind};
+use crate::calcit::{self, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, MethodKind};
 use crate::calcit::{Calcit, CalcitSyntax, ImportInfo};
 use crate::call_stack::StackKind;
 use crate::program;
@@ -375,7 +375,7 @@ fn gen_call_code(
               local_defs,
               file_imports,
             };
-            let ret = gen_js_func(sym, &get_raw_args(ys)?, &func_body.into(), &passed_defs, false, tags, ns);
+            let ret = gen_js_func(sym, &get_raw_args_fn(ys)?, &func_body.into(), &passed_defs, false, tags, ns);
             gen_stack::pop_call_stack();
             match ret {
               Ok(code) => Ok(format!("{return_code}{code}")),
@@ -929,7 +929,7 @@ fn uses_recur(xs: &Calcit) -> bool {
 
 fn gen_js_func(
   name: &str,
-  args: &[CalcitArgLabel],
+  args: &CalcitFnArgs,
   raw_body: &TernaryTreeList<Calcit>,
   passed_defs: &PassedDefs,
   exported: bool,
@@ -944,52 +944,68 @@ fn gen_js_func(
   let mut has_optional = false;
   let mut args_count = 0;
   let mut optional_count = 0;
-  for sym in args {
-    if spreading {
-      if let CalcitArgLabel::Idx(idx) = sym {
-        if !args_code.is_empty() {
-          args_code.push_str(", ");
+
+  match args {
+    CalcitFnArgs::MarkedArgs(args) => {
+      for sym in args {
+        if spreading {
+          if let CalcitArgLabel::Idx(idx) = sym {
+            if !args_code.is_empty() {
+              args_code.push_str(", ");
+            }
+            let sym = CalcitLocal::read_name(*idx);
+            let arg_name = escape_var(&sym);
+            local_defs.insert(sym.into());
+            args_code.push_str("...");
+            args_code.push_str(&arg_name);
+            // js list and calcit-js are different in spreading
+            write!(spreading_code, "\n{arg_name} = {var_prefix}arrayToList({arg_name});").expect("write");
+            break; // no more args after spreading argument
+          } else {
+            return Err(format!("unexpected argument after spreading: {}", sym));
+          }
+        } else if has_optional {
+          if let CalcitArgLabel::Idx(idx) = sym {
+            if !args_code.is_empty() {
+              args_code.push_str(", ");
+            }
+            let sym = CalcitLocal::read_name(*idx);
+            args_code.push_str(&escape_var(&sym));
+            local_defs.insert(sym.into());
+            optional_count += 1;
+          } else {
+            return Err(format!("unexpected argument after optional: {}", sym));
+          }
+        } else {
+          match sym {
+            CalcitArgLabel::RestMark => {
+              spreading = true;
+            }
+            CalcitArgLabel::OptionalMark => {
+              has_optional = true;
+            }
+            CalcitArgLabel::Idx(idx) => {
+              if !args_code.is_empty() {
+                args_code.push_str(", ");
+              }
+              let sym = CalcitLocal::read_name(*idx);
+              args_code.push_str(&escape_var(&sym));
+              local_defs.insert(sym.into());
+              args_count += 1;
+            }
+          }
         }
-        let sym = CalcitLocal::read_name(*idx);
-        let arg_name = escape_var(&sym);
-        local_defs.insert(sym.into());
-        args_code.push_str("...");
-        args_code.push_str(&arg_name);
-        // js list and calcit-js are different in spreading
-        write!(spreading_code, "\n{arg_name} = {var_prefix}arrayToList({arg_name});").expect("write");
-        break; // no more args after spreading argument
-      } else {
-        return Err(format!("unexpected argument after spreading: {}", sym));
       }
-    } else if has_optional {
-      if let CalcitArgLabel::Idx(idx) = sym {
+    }
+    CalcitFnArgs::Args(args) => {
+      for idx in args {
         if !args_code.is_empty() {
           args_code.push_str(", ");
         }
         let sym = CalcitLocal::read_name(*idx);
         args_code.push_str(&escape_var(&sym));
         local_defs.insert(sym.into());
-        optional_count += 1;
-      } else {
-        return Err(format!("unexpected argument after optional: {}", sym));
-      }
-    } else {
-      match sym {
-        CalcitArgLabel::RestMark => {
-          spreading = true;
-        }
-        CalcitArgLabel::OptionalMark => {
-          has_optional = true;
-        }
-        CalcitArgLabel::Idx(idx) => {
-          if !args_code.is_empty() {
-            args_code.push_str(", ");
-          }
-          let sym = CalcitLocal::read_name(*idx);
-          args_code.push_str(&escape_var(&sym));
-          local_defs.insert(sym.into());
-          args_count += 1;
-        }
+        args_count += 1;
       }
     }
   }

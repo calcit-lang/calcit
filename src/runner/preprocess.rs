@@ -1,8 +1,8 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitArgLabel, CalcitErr, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope, CalcitSymbolInfo,
-    CalcitSyntax, CalcitThunk, CalcitThunkInfo, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
+    self, Calcit, CalcitArgLabel, CalcitErr, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope,
+    CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
   },
   call_stack::{CallStackList, StackKind},
   program, runner,
@@ -358,7 +358,7 @@ fn process_list_call(
       loop {
         // need to handle recursion
         // println!("evaling line: {:?}", body);
-        runner::bind_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
+        runner::bind_marked_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
         let code = runner::evaluate_lines(&info.body, &body_scope, file_ns, &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
@@ -373,7 +373,14 @@ fn process_list_call(
     }
 
     Some(Calcit::Fn { info, .. }) => {
-      check_fn_args(&info.args, &args, file_ns, &info.name, &def_name, check_warnings);
+      match &*info.args {
+        CalcitFnArgs::MarkedArgs(xs) => {
+          check_fn_marked_args(xs, &args, file_ns, &info.name, &def_name, check_warnings);
+        }
+        CalcitFnArgs::Args(xs) => {
+          check_fn_args(xs, &args, file_ns, &info.name, &def_name, check_warnings);
+        }
+      }
       let mut ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
       for a in &args {
         let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
@@ -490,7 +497,7 @@ fn process_list_call(
 }
 
 /// detects arguments of top-level functions when possible
-fn check_fn_args(
+fn check_fn_marked_args(
   defined_args: &[CalcitArgLabel],
   params: &CalcitList,
   file_ns: &str,
@@ -558,6 +565,31 @@ fn check_fn_args(
         continue;
       }
     }
+  }
+}
+
+/// quick path check function without marks
+fn check_fn_args(
+  defined_args: &[u16],
+  params: &CalcitList,
+  file_ns: &str,
+  f_name: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  let expected_size = defined_args.len();
+  let actual_size = params.len();
+
+  if expected_size != actual_size {
+    let mut warnings = check_warnings.borrow_mut();
+    let loc = NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![]));
+    warnings.push(LocatedWarning::new(
+      format!(
+        "[Warn] expected {} args in {} `{:?}` with `{}`, at {}/{}",
+        expected_size, f_name, defined_args, params, file_ns, def_name
+      ),
+      loc,
+    ));
   }
 }
 

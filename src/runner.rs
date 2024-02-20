@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use crate::builtins::{self, IMPORTED_PROCS};
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitErr, CalcitFn, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope, CalcitSyntax,
-  MethodKind, NodeLocation, CORE_NS,
+  Calcit, CalcitArgLabel, CalcitErr, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope,
+  CalcitSyntax, MethodKind, NodeLocation, CORE_NS,
 };
 use crate::call_stack::{using_stack, CallStackList, StackKind};
 use crate::program;
@@ -139,7 +139,7 @@ pub fn call_expr(
 
       Ok(loop {
         // need to handle recursion
-        bind_args(&mut body_scope, &info.args, &current_values, call_stack)?;
+        bind_marked_args(&mut body_scope, &info.args, &current_values, call_stack)?;
         let code = evaluate_lines(&info.body, &body_scope, &info.def_ns, &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
@@ -328,14 +328,20 @@ pub fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList)
 
 pub fn run_fn(values: TernaryTreeList<Calcit>, info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut body_scope = (*info.scope).to_owned();
-  bind_args(&mut body_scope, &info.args, &values, call_stack)?;
+  match &*info.args {
+    CalcitFnArgs::Args(args) => bind_args(&mut body_scope, args, &values, call_stack)?,
+    CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &values, call_stack)?,
+  }
 
   let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
 
   if let Calcit::Recur(xs) = v {
     let mut current_values = xs;
     loop {
-      bind_args(&mut body_scope, &info.args, &current_values, call_stack)?;
+      match &*info.args {
+        CalcitFnArgs::Args(args) => bind_args(&mut body_scope, args, &current_values, call_stack)?,
+        CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &current_values, call_stack)?,
+      }
       let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
       match v {
         Calcit::Recur(xs) => current_values = xs,
@@ -361,7 +367,7 @@ impl MutIndex {
 
 /// create new scope by writing new args
 /// notice that `&` is a mark for spreading, `?` for optional arguments
-pub fn bind_args(
+pub fn bind_marked_args(
   scope: &mut CalcitScope,
   args: &[CalcitArgLabel],
   values: &TernaryTreeList<Calcit>,
@@ -433,6 +439,32 @@ pub fn bind_args(
       call_stack,
     ))
   }
+}
+
+/// quick path bind args
+pub fn bind_args(
+  scope: &mut CalcitScope,
+  args: &[u16],
+  values: &TernaryTreeList<Calcit>,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  // println!("bind args: {:?} {}", args, values);
+
+  let expected_len = args.len();
+  let actual_len = values.len();
+
+  if expected_len != actual_len {
+    return Err(CalcitErr::use_msg_stack(
+      format!("expected {} args, got {}", expected_len, actual_len),
+      call_stack,
+    ));
+  }
+
+  for (idx, v) in args.iter().enumerate() {
+    scope.insert_mut(*v, values[idx].to_owned());
+  }
+
+  Ok(())
 }
 
 pub fn evaluate_lines(

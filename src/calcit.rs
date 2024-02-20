@@ -24,7 +24,7 @@ use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
-pub use fns::{CalcitArgLabel, CalcitFn, CalcitMacro, CalcitScope};
+pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitMacro, CalcitScope};
 pub use list::CalcitList;
 pub use local::CalcitLocal;
 pub use proc_name::CalcitProc;
@@ -237,12 +237,25 @@ impl fmt::Display for Calcit {
         let name = &info.name;
         f.write_str(&format!("(&fn {name} ("))?;
         let mut need_space = false;
-        for a in &*info.args {
-          if need_space {
-            f.write_str(" ")?;
+        match &*info.args {
+          CalcitFnArgs::MarkedArgs(xs) => {
+            for a in xs {
+              if need_space {
+                f.write_str(" ")?;
+              }
+              f.write_str(&a.to_string())?;
+              need_space = true;
+            }
           }
-          f.write_str(&a.to_string())?;
-          need_space = true;
+          CalcitFnArgs::Args(xs) => {
+            for a in xs {
+              if need_space {
+                f.write_str(" ")?;
+              }
+              f.write_str(&a.to_string())?;
+              need_space = true;
+            }
+          }
         }
         f.write_str(") ")?;
         need_space = false;
