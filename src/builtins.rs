@@ -54,7 +54,7 @@ pub fn handle_proc(name: CalcitProc, args: &[Calcit], call_stack: &CallStackList
       }
     })
   } else {
-    handle_proc_internal(name, args, call_stack) // TODO perf
+    handle_proc_internal(name, args, call_stack)
   }
 }
 
