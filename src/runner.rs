@@ -113,9 +113,9 @@ pub fn call_expr(
       let values = evaluate_args(rest_nodes, scope, file_ns, call_stack)?;
       if using_stack() {
         let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs), &values);
-        run_fn(&values, info, &next_stack)
+        run_fn_owned(values, info, &next_stack)
       } else {
-        run_fn(&values, info, call_stack)
+        run_fn_owned(values, info, call_stack)
       }
     }
     Calcit::Macro { info, .. } => {
@@ -335,7 +335,14 @@ pub fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList)
 pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut body_scope = (*info.scope).to_owned();
   match &*info.args {
-    CalcitFnArgs::Args(args) => bind_args(&mut body_scope, args, values, call_stack)?,
+    CalcitFnArgs::Args(args) => {
+      if args.len() != values.len() {
+        unreachable!("args length mismatch")
+      }
+      for (idx, v) in args.iter().enumerate() {
+        body_scope.insert_mut(*v, values[idx].to_owned());
+      }
+    }
     CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, values, call_stack)?,
   }
 
@@ -345,7 +352,55 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
     let mut current_values = xs.to_vec();
     loop {
       match &*info.args {
-        CalcitFnArgs::Args(args) => bind_args(&mut body_scope, args, &current_values, call_stack)?,
+        CalcitFnArgs::Args(args) => {
+          if args.len() != current_values.len() {
+            unreachable!("args length mismatch")
+          }
+          for (idx, v) in args.iter().enumerate() {
+            body_scope.insert_mut(*v, current_values[idx].to_owned());
+          }
+        }
+        CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &current_values, call_stack)?,
+      }
+      let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
+      match v {
+        Calcit::Recur(xs) => current_values = xs.to_vec(),
+        result => return Ok(result),
+      }
+    }
+  }
+  Ok(v)
+}
+
+/// quick path for `run_fn` which takes ownership of values
+pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  let mut body_scope = (*info.scope).to_owned();
+  match &*info.args {
+    CalcitFnArgs::Args(args) => {
+      if args.len() != values.len() {
+        unreachable!("args length mismatch")
+      }
+      for (idx, v) in values.into_iter().enumerate() {
+        body_scope.insert_mut(args[idx], v);
+      }
+    }
+    CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &values, call_stack)?,
+  }
+
+  let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
+
+  if let Calcit::Recur(xs) = v {
+    let mut current_values = xs.to_vec();
+    loop {
+      match &*info.args {
+        CalcitFnArgs::Args(args) => {
+          if args.len() != current_values.len() {
+            unreachable!("args length mismatch")
+          }
+          for (idx, v) in current_values.into_iter().enumerate() {
+            body_scope.insert_mut(args[idx], v);
+          }
+        }
         CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &current_values, call_stack)?,
       }
       let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
@@ -444,27 +499,6 @@ pub fn bind_marked_args(
       call_stack,
     ))
   }
-}
-
-/// quick path bind args
-pub fn bind_args(scope: &mut CalcitScope, args: &[u16], values: &[Calcit], call_stack: &CallStackList) -> Result<(), CalcitErr> {
-  // println!("bind args: {:?} {}", args, values);
-
-  let expected_len = args.len();
-  let actual_len = values.len();
-
-  if expected_len != actual_len {
-    return Err(CalcitErr::use_msg_stack(
-      format!("expected {} args, got {}", expected_len, actual_len),
-      call_stack,
-    ));
-  }
-
-  for (idx, v) in args.iter().enumerate() {
-    scope.insert_mut(*v, values[idx].to_owned());
-  }
-
-  Ok(())
 }
 
 pub fn evaluate_lines(
