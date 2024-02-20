@@ -7,8 +7,8 @@ use crate::calcit::CalcitList;
 use crate::calcit::{Calcit, CalcitErr};
 use crate::util::number::f64_to_usize;
 
-pub fn binary_str_concat(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn binary_str_concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Nil), Some(Calcit::Nil)) => Ok(Calcit::new_str("")),
     (Some(Calcit::Nil), Some(b)) => Ok(Calcit::Str(b.turn_string().into())),
     (Some(a), Some(Calcit::Nil)) => Ok(Calcit::Str(a.turn_string().into())),
@@ -21,8 +21,8 @@ pub fn binary_str_concat(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitEr
   }
 }
 
-pub fn trim(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn trim(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), None) => Ok(Calcit::Str(s.trim().to_owned().into())),
     (Some(Calcit::Str(s)), Some(Calcit::Str(p))) => {
       if p.len() == 1 {
@@ -38,15 +38,15 @@ pub fn trim(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
 }
 
 /// just format value to string
-pub fn call_str(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn call_str(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(a) => Ok(Calcit::Str(a.turn_string().into())),
     None => CalcitErr::err_str("&str expected 1 argument, got nothing"),
   }
 }
 
-pub fn turn_string(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn turn_string(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Nil) => Ok(Calcit::new_str("")),
     Some(Calcit::Bool(b)) => Ok(Calcit::Str(b.to_string().into())),
     Some(Calcit::Str(s)) => Ok(Calcit::Str(s.to_owned())),
@@ -58,8 +58,8 @@ pub fn turn_string(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn split(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn split(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => {
       let pieces = (**s).split(&**pattern);
       let mut ys = CalcitList::new_inner();
@@ -75,8 +75,8 @@ pub fn split(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn format_number(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn format_number(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(x))) => {
       let size = f64_to_usize(*x)?;
       Ok(Calcit::Str(format!("{n:.size$}").into()))
@@ -87,8 +87,8 @@ pub fn format_number(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
 }
 
 /// displays in binary, octal, or hexadecimal
-pub fn display_number_by(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn display_number_by(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(x))) => {
       let value = f64_to_usize(*n)? as i32;
       let size = f64_to_usize(*x)?;
@@ -104,15 +104,15 @@ pub fn display_number_by(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitEr
   }
 }
 
-pub fn replace(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1), xs.get(2)) {
+pub fn replace(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1), xs.get(2)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(p)), Some(Calcit::Str(r))) => Ok(Calcit::Str(s.replace(&**p, r).into())),
     (Some(a), Some(b), Some(c)) => CalcitErr::err_str(format!("str:replace expected 3 strings, got: {a} {b} {c}")),
     (_, _, _) => CalcitErr::err_str(format!("str:replace expected 3 arguments, got: {}", CalcitList::from(xs))),
   }
 }
-pub fn split_lines(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn split_lines(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Str(s)) => {
       let lines = s.split('\n');
       let mut ys = TernaryTreeList::Empty;
@@ -125,8 +125,8 @@ pub fn split_lines(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
     _ => CalcitErr::err_str("split-lines expected 1 argument, got nothing"),
   }
 }
-pub fn str_slice(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn str_slice(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(from) => {
         let to: usize = match xs.get(2) {
@@ -148,12 +148,12 @@ pub fn str_slice(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       Err(e) => CalcitErr::err_str(e),
     },
     (Some(a), Some(b)) => CalcitErr::err_str(format!("&str:slice expected string and number, got: {a} {b}")),
-    (_, _) => CalcitErr::err_nodes("&str:slice expected string and numbers, got:", &xs),
+    (_, _) => CalcitErr::err_nodes("&str:slice expected string and numbers, got:", xs),
   }
 }
 
-pub fn compare_string(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn compare_string(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(a)), Some(Calcit::Str(b))) => {
       let v = match a.cmp(b) {
         Ordering::Less => -1,
@@ -163,12 +163,12 @@ pub fn compare_string(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> 
       Ok(Calcit::Number(v as f64))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("&str:compare expected 2 strings, got: {a}, {b}")),
-    (_, _) => CalcitErr::err_nodes("&str:compare expected 2 string, got:", &xs),
+    (_, _) => CalcitErr::err_nodes("&str:compare expected 2 string, got:", xs),
   }
 }
 
-pub fn find_index(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn find_index(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => match s.find(&**pattern) {
       Some(idx) => Ok(Calcit::Number(idx as f64)),
       None => Ok(Calcit::Number(-1.0)), // TODO maybe nil?
@@ -177,8 +177,8 @@ pub fn find_index(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
     (_, _) => CalcitErr::err_str("str:find-index expected 2 arguments, got nothing"),
   }
 }
-pub fn starts_with_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn starts_with_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool(s.starts_with(&**pattern))),
     (Some(Calcit::Tag(s)), Some(Calcit::Tag(pattern))) => Ok(Calcit::Bool((*s.ref_str()).starts_with(pattern.ref_str()))),
     (Some(Calcit::Tag(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool((*s.ref_str()).starts_with(&**pattern))),
@@ -186,15 +186,15 @@ pub fn starts_with_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr
     (_, _) => CalcitErr::err_str("starts-with? expected 2 arguments, got nothing"),
   }
 }
-pub fn ends_with_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn ends_with_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool(s.ends_with(&**pattern))),
     (Some(a), Some(b)) => CalcitErr::err_str(format!("ends-with? expected 2 strings, got: {a} {b}")),
     (_, _) => CalcitErr::err_str("ends-with? expected 2 arguments, got nothing"),
   }
 }
-pub fn get_char_code(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn get_char_code(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Str(s)) => {
       if s.chars().count() == 1 {
         match s.chars().next() {
@@ -209,8 +209,8 @@ pub fn get_char_code(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
     _ => CalcitErr::err_str("get-char-code expected 1 argument, got nothing"),
   }
 }
-pub fn char_from_code(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn char_from_code(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Number(x)) => match f64_to_usize(*x) {
       Ok(n) => Ok(Calcit::Str((char::from_u32(n as u32).expect("create char")).to_string().into())),
       Err(e) => CalcitErr::err_str(format!("char_from_code expected number, got: {e}")),
@@ -219,8 +219,8 @@ pub fn char_from_code(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> 
     _ => CalcitErr::err_str("char_from_code expected 1 arguments, got nothing"),
   }
 }
-pub fn parse_float(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn parse_float(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Str(s)) => match s.parse::<f64>() {
       Ok(n) => Ok(Calcit::Number(n)),
       Err(e) => CalcitErr::err_str(format!("parse-float failed, {e}")),
@@ -230,22 +230,22 @@ pub fn parse_float(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn lispy_string(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn lispy_string(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(a) => Ok(Calcit::Str(a.to_string().into())),
     None => CalcitErr::err_str("to-lispy-string expected 1 argument, got nothing"),
   }
 }
-pub fn blank_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn blank_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Str(s)) => Ok(Calcit::Bool(s.trim().is_empty())),
     Some(a) => CalcitErr::err_str(format!("blank? expected 1 string, got: {a}")),
     None => CalcitErr::err_str("blank? expected 1 argument, got nothing"),
   }
 }
 
-pub fn escape(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn escape(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Str(s)) => {
       let mut chunk = String::from('"');
       chunk.push_str(&s.escape_default().to_string());
@@ -257,43 +257,43 @@ pub fn escape(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn count(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Str(s)) => Ok(Calcit::Number(s.chars().count() as f64)),
     Some(a) => CalcitErr::err_str(format!("string count expected a string, got: {a}")),
     None => CalcitErr::err_str("string count expected 1 argument"),
   }
 }
 
-pub fn empty_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn empty_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Str(s)) => Ok(Calcit::Bool(s.is_empty())),
     Some(a) => CalcitErr::err_str(format!("string empty? expected a string, got: {a}")),
     None => CalcitErr::err_str("string empty? expected 1 argument"),
   }
 }
 
-pub fn contains_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => Ok(Calcit::Bool(idx < s.chars().count())),
       Err(e) => CalcitErr::err_str(e),
     },
     (Some(a), ..) => CalcitErr::err_str(format!("strings contains? expected a string, got: {a}")),
-    (None, ..) => CalcitErr::err_nodes("strings contains? expected 2 arguments, got:", &xs),
+    (None, ..) => CalcitErr::err_nodes("strings contains? expected 2 arguments, got:", xs),
   }
 }
 
-pub fn includes_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn includes_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(xs)), Some(Calcit::Str(a))) => Ok(Calcit::Bool(xs.contains(&**a))),
     (Some(Calcit::Str(_)), Some(a)) => CalcitErr::err_str(format!("string `includes?` expected a string, got: {a}")),
     (Some(a), ..) => CalcitErr::err_str(format!("string `includes?` expected string, got: {a}")),
-    (None, ..) => CalcitErr::err_nodes("string `includes?` expected 2 arguments, got:", &xs),
+    (None, ..) => CalcitErr::err_nodes("string `includes?` expected 2 arguments, got:", xs),
   }
 }
-pub fn nth(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => match s.chars().nth(idx) {
         Some(v) => Ok(Calcit::Str(v.to_string().into())),
@@ -301,14 +301,14 @@ pub fn nth(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       },
       Err(e) => CalcitErr::err_str(format!("string nth expect usize, {e}")),
     },
-    (Some(_), None) => CalcitErr::err_nodes("string nth expected a string and index, got:", &xs),
-    (None, Some(_)) => CalcitErr::err_nodes("string nth expected a string and index, got:", &xs),
-    (_, _) => CalcitErr::err_nodes("string nth expected 2 argument, got:", &xs),
+    (Some(_), None) => CalcitErr::err_nodes("string nth expected a string and index, got:", xs),
+    (None, Some(_)) => CalcitErr::err_nodes("string nth expected a string and index, got:", xs),
+    (_, _) => CalcitErr::err_nodes("string nth expected 2 argument, got:", xs),
   }
 }
 
-pub fn first(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn first(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Str(s)) => match s.chars().next() {
       Some(c) => Ok(Calcit::Str(c.to_string().into())),
       None => Ok(Calcit::Nil),
@@ -318,8 +318,8 @@ pub fn first(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn rest(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn rest(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Str(s)) => {
       let mut buffer = String::with_capacity(s.len() - 1);
       let mut is_first = true;
@@ -337,7 +337,7 @@ pub fn rest(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn pad_left(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn pad_left(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() == 3 {
     match (&xs[0], &xs[1], &xs[2]) {
       (Calcit::Str(s), Calcit::Number(n), Calcit::Str(pattern)) => {
@@ -365,11 +365,11 @@ pub fn pad_left(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       (a, b, c) => CalcitErr::err_str(format!("&str:pad-left expected string, number, string, got: {a} {b} {c}")),
     }
   } else {
-    CalcitErr::err_nodes("&str:pad-left expected 3 arguments, got:", &xs)
+    CalcitErr::err_nodes("&str:pad-left expected 3 arguments, got:", xs)
   }
 }
 
-pub fn pad_right(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn pad_right(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() == 3 {
     match (&xs[0], &xs[1], &xs[2]) {
       (Calcit::Str(s), Calcit::Number(n), Calcit::Str(pattern)) => {
@@ -396,6 +396,6 @@ pub fn pad_right(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       (a, b, c) => CalcitErr::err_str(format!("&str:pad-right expected string, number, string, got: {a} {b} {c}")),
     }
   } else {
-    CalcitErr::err_nodes("&str:pad-right expected 3 arguments, got:", &xs)
+    CalcitErr::err_nodes("&str:pad-right expected 3 arguments, got:", xs)
   }
 }

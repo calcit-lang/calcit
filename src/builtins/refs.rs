@@ -7,7 +7,6 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
 use cirru_edn::EdnTag;
-use im_ternary_tree::TernaryTreeList;
 
 use crate::calcit::{Calcit, CalcitErr, CalcitImport, CalcitList, CalcitScope};
 use crate::{call_stack::CallStackList, runner};
@@ -35,8 +34,7 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
   for f in listeners.values() {
     match f {
       Calcit::Fn { info, .. } => {
-        let values = TernaryTreeList::from(&[v.to_owned(), prev.to_owned()]);
-        runner::run_fn(values, info, call_stack)?;
+        runner::run_fn(&[v.to_owned(), prev.to_owned()], info, call_stack)?;
       }
       a => {
         return Err(CalcitErr::use_msg_stack_location(
@@ -119,8 +117,8 @@ pub fn defatom(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack
 static ATOM_ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
 /// proc
-pub fn atom(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn atom(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(value) => {
       let atom_idx = ATOM_ID_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
       let path: String = format!("atom-{atom_idx}");
@@ -136,8 +134,8 @@ pub fn atom(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
 }
 
 /// previously `deref`, but `deref` now turned into a function calling `&atom:deref`
-pub fn atom_deref(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn atom_deref(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Ref(_path, locked_pair)) => {
       // println!("deref import {:?}", _path);
       let pair = (**locked_pair).lock().expect("read pair from block");
@@ -151,7 +149,7 @@ pub fn atom_deref(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
 /// need to be syntax since triggering internal functions requires program data
 pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
-    return CalcitErr::err_nodes("reset! excepted 2 arguments, got:", &expr.into());
+    return CalcitErr::err_nodes("reset! excepted 2 arguments, got:", &expr.to_vec());
   }
   // println!("reset! {:?}", expr[0]);
   let target = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
@@ -189,8 +187,8 @@ pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
   }
 }
 
-pub fn add_watch(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1), xs.get(2)) {
+pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1), xs.get(2)) {
     (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Tag(k)), Some(f @ Calcit::Fn { .. })) => {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");
       match pair.1.get(k) {
@@ -210,8 +208,8 @@ pub fn add_watch(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn remove_watch(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn remove_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Tag(k))) => {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");
 

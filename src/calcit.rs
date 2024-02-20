@@ -73,7 +73,7 @@ pub enum Calcit {
   /// cirru quoted data, for faster meta programming
   CirruQuote(Cirru),
   /// not for data, but for recursion
-  Recur(Arc<TernaryTreeList<Calcit>>),
+  Recur(Vec<Calcit>),
   List(Arc<CalcitList>),
   Set(rpds::HashTrieSetSync<Calcit>),
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
@@ -790,7 +790,7 @@ impl CalcitErr {
     })
   }
   /// display nodes in error message
-  pub fn err_nodes<T: Into<String>>(msg: T, nodes: &TernaryTreeList<Calcit>) -> Result<Calcit, Self> {
+  pub fn err_nodes<T: Into<String>>(msg: T, nodes: &[Calcit]) -> Result<Calcit, Self> {
     Err(CalcitErr {
       msg: format!("{} {}", msg.into(), CalcitList::from(nodes)),
       warnings: vec![],

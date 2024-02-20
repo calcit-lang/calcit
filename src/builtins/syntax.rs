@@ -6,8 +6,6 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use im_ternary_tree::TernaryTreeList;
-
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::calcit::{
@@ -122,17 +120,17 @@ pub fn quote(expr: &CalcitList, _scope: &CalcitScope, _file_ns: &str) -> Result<
   if expr.len() == 1 {
     Ok(expr[0].to_owned())
   } else {
-    CalcitErr::err_nodes("unexpected data for quote, got:", &expr.into())
+    CalcitErr::err_nodes("unexpected data for quote, got:", &expr.to_vec())
   }
 }
 
 pub fn syntax_if(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let l = expr.len();
   if l > 3 {
-    return CalcitErr::err_nodes("too many nodes for if, got:", &expr.into());
+    return CalcitErr::err_nodes("too many nodes for if, got:", &expr.to_vec());
   }
   if l < 2 {
-    return CalcitErr::err_nodes("insufficient nodes for if, got:", &expr.into());
+    return CalcitErr::err_nodes("insufficient nodes for if, got:", &expr.to_vec());
   }
   let cond = &expr[0];
   let true_branch = &expr[1];
@@ -152,7 +150,7 @@ pub fn eval(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &
     let v = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
     runner::evaluate_expr(&v, scope, file_ns, call_stack)
   } else {
-    CalcitErr::err_nodes("unexpected data for evaling, got:", &expr.into())
+    CalcitErr::err_nodes("unexpected data for evaling, got:", &expr.to_vec())
   }
 }
 
@@ -177,7 +175,7 @@ pub fn syntax_let(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
       }
       runner::evaluate_lines(&expr.drop_left().into(), &body_scope, file_ns, call_stack)
     }
-    Some(Calcit::List(xs)) => CalcitErr::err_nodes("invalid length for &let , got:", &(xs.0)),
+    Some(Calcit::List(xs)) => CalcitErr::err_nodes("invalid length for &let , got:", &(xs.0.to_vec())),
     Some(_) => CalcitErr::err_str(format!("invalid node for &let: {}", expr.to_owned())),
     None => CalcitErr::err_str("&let expected a pair or a nil"),
   }
@@ -199,7 +197,7 @@ pub fn quasiquote(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
           // println!("replace result: {:?}", v);
           Ok(v)
         }
-        SpanResult::Range(xs) => CalcitErr::err_nodes("expected single result from quasiquote, got:", &xs.0),
+        SpanResult::Range(xs) => CalcitErr::err_nodes("expected single result from quasiquote, got:", &xs.0.to_vec()),
       }
     }
   }
@@ -269,12 +267,12 @@ pub fn macroexpand(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
         match v {
           Calcit::Macro { info, .. } => {
             // mutable operation
-            let mut rest_nodes: TernaryTreeList<Calcit> = xs.drop_left().into();
+            let mut rest_nodes: Vec<Calcit> = xs.drop_left().to_vec();
             let mut body_scope = scope.to_owned();
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
             // keep expanding until return value is not a recur
             loop {
-              runner::bind_marked_args(&mut body_scope, &info.args, &rest_nodes, call_stack)?;
+              runner::bind_marked_args(&mut body_scope, &info.args, &rest_nodes.to_vec(), call_stack)?;
               let v = runner::evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
@@ -290,7 +288,7 @@ pub fn macroexpand(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
       a => Ok(a.to_owned()),
     }
   } else {
-    CalcitErr::err_nodes("macroexpand expected excaclty 1 argument, got:", &expr.into())
+    CalcitErr::err_nodes("macroexpand expected excaclty 1 argument, got:", &expr.to_vec())
   }
 }
 
@@ -307,7 +305,7 @@ pub fn macroexpand_1(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call
         match v {
           Calcit::Macro { info, .. } => {
             let mut body_scope = scope.to_owned();
-            runner::bind_marked_args(&mut body_scope, &info.args, &xs.drop_left().into(), call_stack)?;
+            runner::bind_marked_args(&mut body_scope, &info.args, &xs.drop_left().to_vec(), call_stack)?;
             runner::evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)
           }
           _ => Ok(quoted_code),
@@ -316,7 +314,7 @@ pub fn macroexpand_1(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call
       a => Ok(a.to_owned()),
     }
   } else {
-    CalcitErr::err_nodes("macroexpand expected excaclty 1 argument, got:", &expr.into())
+    CalcitErr::err_nodes("macroexpand expected excaclty 1 argument, got:", &expr.to_vec())
   }
 }
 
@@ -333,7 +331,7 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
         match v {
           Calcit::Macro { info, .. } => {
             // mutable operation
-            let mut rest_nodes: TernaryTreeList<Calcit> = xs.drop_left().into();
+            let mut rest_nodes: Vec<Calcit> = xs.drop_left().to_vec();
             let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
             let mut body_scope = scope.to_owned();
             // println!("macro: {:?} ... {:?}", args, rest_nodes);
@@ -343,7 +341,7 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
               let v = runner::evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
-                  rest_nodes = (*rest_code).to_owned();
+                  rest_nodes = (*rest_code).to_vec();
                 }
                 _ => {
                   let resolved = runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, check_warnings, call_stack)?;
@@ -366,7 +364,7 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
       a => Ok(a.to_owned()),
     }
   } else {
-    CalcitErr::err_nodes("macroexpand expected excaclty 1 argument, got:", &expr.into())
+    CalcitErr::err_nodes("macroexpand expected excaclty 1 argument, got:", &expr.to_vec())
   }
 }
 
@@ -381,17 +379,14 @@ pub fn call_try(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stac
         let f = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
         let err_data = Calcit::Str(failure.msg.to_owned().into());
         match f {
-          Calcit::Fn { info, .. } => {
-            let values = TernaryTreeList::from(&[err_data]);
-            runner::run_fn(values, &info, call_stack)
-          }
-          Calcit::Proc(proc) => builtins::handle_proc(proc, TernaryTreeList::from(&[err_data]), call_stack),
+          Calcit::Fn { info, .. } => runner::run_fn(&[err_data], &info, call_stack),
+          Calcit::Proc(proc) => builtins::handle_proc(proc, &[err_data], call_stack),
           a => CalcitErr::err_str(format!("try expected a function handler, got: {a}")),
         }
       }
     }
   } else {
-    CalcitErr::err_nodes("try expected 2 arguments, got:", &expr.into())
+    CalcitErr::err_nodes("try expected 2 arguments, got:", &expr.to_vec())
   }
 }
 

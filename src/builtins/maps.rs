@@ -6,7 +6,7 @@ use crate::calcit::{Calcit, CalcitErr, CalcitList, CalcitRecord};
 
 use crate::util::number::is_even;
 
-pub fn call_new_map(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn call_new_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if is_even(xs.len()) {
     let n = xs.len() >> 1;
     let mut ys = rpds::HashTrieMap::new_sync();
@@ -19,15 +19,15 @@ pub fn call_new_map(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn dissoc(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn dissoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
-    return CalcitErr::err_nodes("map dissoc expected at least 2 arguments:", &xs);
+    return CalcitErr::err_nodes("map dissoc expected at least 2 arguments:", xs);
   }
-  match xs.get(0) {
+  match xs.first() {
     Some(Calcit::Map(base)) => {
       let ys = &mut base.to_owned();
       let mut skip_first = true;
-      for x in &xs {
+      for x in xs {
         if skip_first {
           skip_first = false;
           continue;
@@ -37,12 +37,12 @@ pub fn dissoc(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Map(ys.to_owned()))
     }
     Some(a) => CalcitErr::err_str(format!("map dissoc expected a map, got: {a}")),
-    _ => CalcitErr::err_nodes("map dissoc expected 2 arguments, got:", &xs),
+    _ => CalcitErr::err_nodes("map dissoc expected 2 arguments, got:", xs),
   }
 }
 
-pub fn get(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(a)) => {
       let ys = &mut xs.to_owned();
       match ys.get(a) {
@@ -51,11 +51,11 @@ pub fn get(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       }
     }
     (Some(a), ..) => CalcitErr::err_str(format!("map &get expected map, got: {a}")),
-    (None, ..) => CalcitErr::err_nodes("map &get expected 2 arguments, got:", &xs),
+    (None, ..) => CalcitErr::err_nodes("map &get expected 2 arguments, got:", xs),
   }
 }
 
-pub fn call_merge(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() == 2 {
     match (&xs[0], &xs[1]) {
       (Calcit::Map(xs), Calcit::Nil) => Ok(Calcit::Map(xs.to_owned())),
@@ -101,13 +101,13 @@ pub fn call_merge(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       (a, b) => CalcitErr::err_str(format!("expected 2 maps, got: {a} {b}")),
     }
   } else {
-    CalcitErr::err_nodes("expected 2 arguments, got:", &xs)
+    CalcitErr::err_nodes("expected 2 arguments, got:", xs)
   }
 }
 
 /// to set
-pub fn to_pairs(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn to_pairs(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     // get a random order from internals
     Some(Calcit::Map(ys)) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
@@ -135,8 +135,8 @@ pub fn to_pairs(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn call_merge_non_nil(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn call_merge_non_nil(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
       let mut zs: rpds::HashTrieMapSync<Calcit, Calcit> = xs.to_owned();
       for (k, v) in ys {
@@ -147,13 +147,13 @@ pub fn call_merge_non_nil(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitE
       Ok(Calcit::Map(zs))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("expected 2 maps, got: {a} {b}")),
-    (_, _) => CalcitErr::err_nodes("expected 2 arguments, got:", &xs),
+    (_, _) => CalcitErr::err_nodes("expected 2 arguments, got:", xs),
   }
 }
 
 /// out to list, but with a arbitrary order
-pub fn to_list(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Map(m)) => {
       let mut ys = CalcitList::new_inner();
       for (k, v) in m {
@@ -167,32 +167,32 @@ pub fn to_list(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn count(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.size() as f64)),
     Some(a) => CalcitErr::err_str(format!("map count expected a map, got: {a}")),
     None => CalcitErr::err_str("map count expected 1 argument"),
   }
 }
 
-pub fn empty_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn empty_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Map(ys)) => Ok(Calcit::Bool(ys.is_empty())),
     Some(a) => CalcitErr::err_str(format!("map empty? expected some map, got: {a}")),
     None => CalcitErr::err_str("map empty? expected 1 argument"),
   }
 }
 
-pub fn contains_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains_key(a))),
     (Some(a), ..) => CalcitErr::err_str(format!("map contains? expected a map, got: {a}")),
-    (None, ..) => CalcitErr::err_nodes("map contains? expected 2 arguments, got:", &xs),
+    (None, ..) => CalcitErr::err_nodes("map contains? expected 2 arguments, got:", xs),
   }
 }
 
-pub fn includes_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn includes_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(ys)), Some(a)) => {
       for (_k, v) in ys {
         if v == a {
@@ -202,12 +202,12 @@ pub fn includes_ques(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Bool(false))
     }
     (Some(a), ..) => CalcitErr::err_str(format!("map `includes?` expected a map, got: {a}")),
-    (None, ..) => CalcitErr::err_nodes("map `includes?` expected 2 arguments, got:", &xs),
+    (None, ..) => CalcitErr::err_nodes("map `includes?` expected 2 arguments, got:", xs),
   }
 }
 
-pub fn destruct(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn destruct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Map(ys)) => match ys.keys().next() {
       // order not stable
       Some(k0) => {
@@ -218,15 +218,15 @@ pub fn destruct(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       None => Ok(Calcit::Nil),
     },
     Some(a) => CalcitErr::err_str(format!("&map:destruct expected a map, got: {a}")),
-    None => CalcitErr::err_nodes("&map:destruct expected 1 argument, got:", &xs),
+    None => CalcitErr::err_nodes("&map:destruct expected 1 argument, got:", xs),
   }
 }
 
-pub fn assoc(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Map(base)) => {
       if xs.len() % 2 != 1 {
-        CalcitErr::err_nodes("map:assoc expected odd number of arguments, got:", &xs)
+        CalcitErr::err_nodes("map:assoc expected odd number of arguments, got:", xs)
       } else {
         let size = (xs.len() - 1) / 2;
         let mut ys = base.to_owned();
@@ -237,12 +237,12 @@ pub fn assoc(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       }
     }
     Some(a) => CalcitErr::err_str(format!("map:assoc expected a map, got: {a}")),
-    None => CalcitErr::err_nodes("map:assoc expected 3 arguments, got:", &xs),
+    None => CalcitErr::err_nodes("map:assoc expected 3 arguments, got:", xs),
   }
 }
 
-pub fn diff_new(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn diff_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
       let zs = &mut xs.to_owned();
       for k in ys.keys() {
@@ -253,12 +253,12 @@ pub fn diff_new(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Map(zs.to_owned()))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("map:new_entries expected 2 maps, got: {a} {b}")),
-    (..) => CalcitErr::err_nodes("map:diff-new expected 2 arguments, got", &xs),
+    (..) => CalcitErr::err_nodes("map:diff-new expected 2 arguments, got", xs),
   }
 }
 
-pub fn diff_keys(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn diff_keys(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
       let mut ks: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for k in xs.keys() {
@@ -269,12 +269,12 @@ pub fn diff_keys(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Set(ks))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("map:diff-keys expected 2 maps, got: {a} {b}")),
-    (..) => CalcitErr::err_nodes("map:diff-keys expected 2 arguments, got:", &xs),
+    (..) => CalcitErr::err_nodes("map:diff-keys expected 2 arguments, got:", xs),
   }
 }
 
-pub fn common_keys(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn common_keys(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
       let mut ks: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for k in xs.keys() {
@@ -285,6 +285,6 @@ pub fn common_keys(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Set(ks))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("map:diff-keys expected 2 maps, got: {a} {b}")),
-    (..) => CalcitErr::err_nodes("map:common-keys expected 2 arguments, got:", &xs),
+    (..) => CalcitErr::err_nodes("map:common-keys expected 2 arguments, got:", xs),
   }
 }

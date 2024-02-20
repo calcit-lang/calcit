@@ -38,7 +38,7 @@ pub fn preprocess_ns_def(
           // write a nil value first to prevent dead loop
           program::write_evaled_def(ns, def, Calcit::Nil).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
 
-          let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &TernaryTreeList::Empty);
+          let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
           let resolved_code = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
@@ -345,13 +345,13 @@ fn process_list_call(
 
   match head_value {
     Some(Calcit::Macro { info, .. }) => {
-      let mut current_values: TernaryTreeList<Calcit> = (&args).into();
+      let mut current_values: Vec<Calcit> = args.to_vec();
 
       // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let code = Calcit::List(Arc::new(xs.to_owned()));
-      let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &code, &args.0);
+      let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &code, &args.0.to_vec());
 
       let mut body_scope = CalcitScope::default();
 
@@ -362,7 +362,7 @@ fn process_list_call(
         let code = runner::evaluate_lines(&info.body, &body_scope, file_ns, &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
-            current_values = (*ys).to_owned();
+            current_values = ys;
           }
           _ => {
             // println!("gen code: {} {}", code, &code.lisp_str());

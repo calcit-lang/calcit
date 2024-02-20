@@ -78,11 +78,11 @@ pub fn call_expr(
   match v {
     Calcit::Proc(p) => {
       let values = evaluate_args(rest_nodes, scope, file_ns, call_stack)?;
-      builtins::handle_proc(*p, values, call_stack)
+      builtins::handle_proc(*p, &values, call_stack)
     }
     Calcit::Syntax(s, def_ns) => {
       if using_stack() {
-        let next_stack = call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, &Calcit::from(xs), &rest_nodes.0);
+        let next_stack = call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, &Calcit::from(xs), &rest_nodes.0.to_vec());
         builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
           if e.stack.is_empty() {
             let mut e2 = e;
@@ -113,9 +113,9 @@ pub fn call_expr(
       let values = evaluate_args(rest_nodes, scope, file_ns, call_stack)?;
       if using_stack() {
         let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs), &values);
-        run_fn(values, info, &next_stack)
+        run_fn(&values, info, &next_stack)
       } else {
-        run_fn(values, info, call_stack)
+        run_fn(&values, info, call_stack)
       }
     }
     Calcit::Macro { info, .. } => {
@@ -125,13 +125,19 @@ pub fn call_expr(
       );
 
       let next_stack = if using_stack() {
-        call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &Calcit::from(xs), &rest_nodes.0)
+        call_stack.extend(
+          &info.def_ns,
+          &info.name,
+          StackKind::Macro,
+          &Calcit::from(xs),
+          &rest_nodes.0.to_vec(),
+        )
       } else {
         call_stack.to_owned()
       };
 
       // TODO moving to preprocess
-      let mut current_values: TernaryTreeList<Calcit> = rest_nodes.into();
+      let mut current_values: Vec<Calcit> = rest_nodes.to_vec();
       // println!("eval macro: {} {}", x, expr.lisp_str()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
@@ -143,7 +149,7 @@ pub fn call_expr(
         let code = evaluate_lines(&info.body, &body_scope, &info.def_ns, &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
-            current_values = (*ys).to_owned();
+            current_values = ys;
           }
           _ => {
             // println!("gen code: {} {}", x, &code.lisp_str()));
@@ -326,17 +332,17 @@ pub fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList)
   Ok(None)
 }
 
-pub fn run_fn(values: TernaryTreeList<Calcit>, info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut body_scope = (*info.scope).to_owned();
   match &*info.args {
-    CalcitFnArgs::Args(args) => bind_args(&mut body_scope, args, &values, call_stack)?,
-    CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &values, call_stack)?,
+    CalcitFnArgs::Args(args) => bind_args(&mut body_scope, args, values, call_stack)?,
+    CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, values, call_stack)?,
   }
 
   let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
 
   if let Calcit::Recur(xs) = v {
-    let mut current_values = xs;
+    let mut current_values = xs.to_vec();
     loop {
       match &*info.args {
         CalcitFnArgs::Args(args) => bind_args(&mut body_scope, args, &current_values, call_stack)?,
@@ -344,7 +350,7 @@ pub fn run_fn(values: TernaryTreeList<Calcit>, info: &CalcitFn, call_stack: &Cal
       }
       let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
       match v {
-        Calcit::Recur(xs) => current_values = xs,
+        Calcit::Recur(xs) => current_values = xs.to_vec(),
         result => return Ok(result),
       }
     }
@@ -370,7 +376,7 @@ impl MutIndex {
 pub fn bind_marked_args(
   scope: &mut CalcitScope,
   args: &[CalcitArgLabel],
-  values: &TernaryTreeList<Calcit>,
+  values: &[Calcit],
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
   // println!("bind args: {:?} {}", args, values);
@@ -417,7 +423,7 @@ pub fn bind_marked_args(
               scope.insert_mut(*idx, Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
-                format!("too few values `{}` passed to args `{args:?}`", values),
+                format!("too few values `{:?}` passed to args `{args:?}`", values),
                 call_stack,
               ));
             }
@@ -432,9 +438,8 @@ pub fn bind_marked_args(
   } else {
     Err(CalcitErr::use_msg_stack(
       format!(
-        "extra args `{args:?}` not handled while passing values `{}` to args `{:?}`",
-        CalcitList::from(values),
-        args,
+        "extra args `{args:?}` not handled while passing values `{:?}` to args `{:?}`",
+        values, args,
       ),
       call_stack,
     ))
@@ -442,12 +447,7 @@ pub fn bind_marked_args(
 }
 
 /// quick path bind args
-pub fn bind_args(
-  scope: &mut CalcitScope,
-  args: &[u16],
-  values: &TernaryTreeList<Calcit>,
-  call_stack: &CallStackList,
-) -> Result<(), CalcitErr> {
+pub fn bind_args(scope: &mut CalcitScope, args: &[u16], values: &[Calcit], call_stack: &CallStackList) -> Result<(), CalcitErr> {
   // println!("bind args: {:?} {}", args, values);
 
   let expected_len = args.len();
@@ -490,8 +490,8 @@ pub fn evaluate_args(
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
-) -> Result<TernaryTreeList<Calcit>, CalcitErr> {
-  let mut ret: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
+) -> Result<Vec<Calcit>, CalcitErr> {
+  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len());
   let mut spreading = false;
   for item in &items {
     match item {
@@ -504,7 +504,7 @@ pub fn evaluate_args(
             match item {
               Calcit::List(xs) => {
                 for x in &**xs {
-                  ret = ret.push((*x).to_owned());
+                  ret.push((*x).to_owned());
                 }
                 spreading = false
               }
@@ -516,7 +516,7 @@ pub fn evaluate_args(
               }
             }
           } else {
-            ret = ret.push(item.to_owned());
+            ret.push(item.to_owned());
           }
         } else {
           let v = evaluate_expr(item, scope, file_ns, call_stack)?;
@@ -525,7 +525,7 @@ pub fn evaluate_args(
             match v {
               Calcit::List(xs) => {
                 for x in &*xs {
-                  ret = ret.push((*x).to_owned());
+                  ret.push((*x).to_owned());
                 }
                 spreading = false
               }
@@ -537,7 +537,7 @@ pub fn evaluate_args(
               }
             }
           } else {
-            ret = ret.push(v);
+            ret.push(v);
           }
         }
       }

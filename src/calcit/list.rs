@@ -75,6 +75,16 @@ impl From<&Vec<Arc<Calcit>>> for CalcitList {
   }
 }
 
+impl From<&[Calcit]> for CalcitList {
+  fn from(xs: &[Calcit]) -> CalcitList {
+    let mut ys = TernaryTreeList::Empty;
+    for x in xs {
+      ys = ys.push(x.to_owned());
+    }
+    CalcitList(ys)
+  }
+}
+
 impl From<&[Calcit; 2]> for CalcitList {
   fn from(xs: &[Calcit; 2]) -> CalcitList {
     let mut ys = TernaryTreeList::Empty;

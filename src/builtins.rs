@@ -19,7 +19,7 @@ use crate::call_stack::{using_stack, CallStackList};
 use im_ternary_tree::TernaryTreeList;
 pub(crate) use refs::ValueAndListeners;
 
-pub type FnType = fn(xs: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
+pub type FnType = fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
 pub type SyntaxType = fn(expr: &TernaryTreeList<Calcit>, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
 lazy_static! {
@@ -42,7 +42,7 @@ pub fn is_registered_proc(s: &str) -> bool {
 }
 
 /// make sure that stack information attached in errors from procs
-pub fn handle_proc(name: CalcitProc, args: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn handle_proc(name: CalcitProc, args: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if using_stack() {
     handle_proc_internal(name, args, call_stack).map_err(|e| {
       if e.stack.is_empty() {
@@ -54,11 +54,11 @@ pub fn handle_proc(name: CalcitProc, args: TernaryTreeList<Calcit>, call_stack: 
       }
     })
   } else {
-    handle_proc_internal(name, args, call_stack)
+    handle_proc_internal(name, args, call_stack) // TODO perf
   }
 }
 
-fn handle_proc_internal(name: CalcitProc, args: TernaryTreeList<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match name {
     // meta
     CalcitProc::TypeOf => meta::type_of(args),

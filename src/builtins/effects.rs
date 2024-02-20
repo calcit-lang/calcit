@@ -4,8 +4,6 @@ use std::process::exit;
 use std::sync::RwLock;
 use std::time::Instant;
 
-use im_ternary_tree::TernaryTreeList;
-
 use crate::{
   calcit::{Calcit, CalcitErr},
   util::number::f64_to_i32,
@@ -23,9 +21,9 @@ lazy_static! {
   static ref CLI_RUNNING_MODE: RwLock<CliRunningMode> = RwLock::new(CliRunningMode::Eval);
 }
 
-pub fn raise(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn raise(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let mut s = String::from("");
-  for (idx, x) in xs.into_iter().enumerate() {
+  for (idx, x) in xs.iter().enumerate() {
     if idx > 0 {
       s.push(' ');
     }
@@ -39,7 +37,7 @@ pub fn init_effects_states() {
   let _eff = STARTED_INSTANT.read().expect("read instant");
 }
 
-pub fn cpu_time(_xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn cpu_time(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let now = Instant::now();
   let started = STARTED_INSTANT.read().expect("read instant").to_owned();
 
@@ -59,7 +57,7 @@ pub fn modify_cli_running_mode(mode: CliRunningMode) -> Result<(), String> {
   Ok(())
 }
 
-pub fn calcit_running_mode(_xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn calcit_running_mode(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let mode = CLI_RUNNING_MODE.read().expect("read mode").to_owned();
   match mode {
     CliRunningMode::Eval => Ok(Calcit::tag("eval")),
@@ -75,12 +73,12 @@ pub fn is_rust_eval() -> bool {
 }
 
 // TODO
-pub fn call_get_calcit_backend(_xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn call_get_calcit_backend(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::tag("rust"))
 }
 
-pub fn quit(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn quit(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Number(n)) => match f64_to_i32(*n) {
       Ok(code) => exit(code),
       Err(e) => unreachable!("quit failed to get code from f64, {}", e),
@@ -90,11 +88,11 @@ pub fn quit(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn get_env(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
+pub fn get_env(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() > 2 {
     return CalcitErr::err_str("get-env get 1~2 arguments");
   }
-  match xs.get(0) {
+  match xs.first() {
     Some(Calcit::Str(s)) => match env::var(&**s) {
       Ok(v) => {
         let has_default = xs.len() == 2;
@@ -116,8 +114,8 @@ pub fn get_env(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn read_file(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match xs.get(0) {
+pub fn read_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
     Some(Calcit::Str(s)) => match fs::read_to_string(&**s) {
       Ok(content) => Ok(Calcit::Str(content.into())),
       Err(e) => CalcitErr::err_str(format!("read-file failed at {}: {e}", &**s)),
@@ -127,8 +125,8 @@ pub fn read_file(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn write_file(xs: TernaryTreeList<Calcit>) -> Result<Calcit, CalcitErr> {
-  match (xs.get(0), xs.get(1)) {
+pub fn write_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(path)), Some(Calcit::Str(content))) => match fs::write(&**path, &**content) {
       Ok(_) => Ok(Calcit::Nil),
       Err(e) => CalcitErr::err_str(format!("write-file failed, {e}")),
