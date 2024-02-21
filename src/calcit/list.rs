@@ -259,8 +259,4 @@ impl CalcitList {
       size: self.len(),
     }
   }
-
-  pub fn traverse(&self, f: impl Fn(&Calcit)) {
-    self.0.traverse(f)
-  }
 }

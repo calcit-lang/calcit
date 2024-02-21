@@ -580,6 +580,15 @@ fn check_fn_args(
   let expected_size = defined_args.len();
   let actual_size = params.len();
 
+  // TODO handle this correctly after implemented call-spread
+  for item in params {
+    if let Calcit::Symbol { sym, .. } = item {
+      if &**sym == "&" {
+        return; // no need to check
+      }
+    }
+  }
+
   if expected_size != actual_size {
     let mut warnings = check_warnings.borrow_mut();
     let loc = NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![]));
