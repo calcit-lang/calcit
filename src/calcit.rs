@@ -293,7 +293,7 @@ pub fn format_to_lisp(x: &Calcit) -> String {
   match x {
     Calcit::List(ys) => {
       let mut s = String::from("(");
-      for (idx, y) in ys.into_iter().enumerate() {
+      for (idx, y) in (ys.0).iter().enumerate() {
         if idx > 0 {
           s.push(' ');
         }

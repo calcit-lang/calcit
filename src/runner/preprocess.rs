@@ -695,7 +695,7 @@ pub fn preprocess_defn(
       }
       xs = xs.push_right(Calcit::List(Arc::new(zs.into())));
 
-      for a in args.into_iter().skip(2) {
+      for a in args.iter().skip(2) {
         let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
         xs = xs.push_right(form);
       }
@@ -789,7 +789,7 @@ pub fn preprocess_core_let(
     }
   };
   xs = xs.push_right(binding);
-  for a in args.into_iter().skip(1) {
+  for a in args.iter().skip(1) {
     let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
     xs = xs.push_right(form);
   }

@@ -122,10 +122,10 @@ impl Index<usize> for CalcitList {
 // experimental code to turn `&TernaryTree<_>` into iterator
 impl<'a> IntoIterator for &'a CalcitList {
   type Item = &'a Calcit;
-  type IntoIter = CalcitListRefIntoIterator<'a>;
+  type IntoIter = CalcitListIterator<'a>;
 
   fn into_iter(self) -> Self::IntoIter {
-    CalcitListRefIntoIterator {
+    CalcitListIterator {
       value: &self.0,
       index: 0,
       size: self.len(),
@@ -133,13 +133,13 @@ impl<'a> IntoIterator for &'a CalcitList {
   }
 }
 
-pub struct CalcitListRefIntoIterator<'a> {
+pub struct CalcitListIterator<'a> {
   value: &'a TernaryTreeList<Calcit>,
   index: usize,
   size: usize,
 }
 
-impl<'a> Iterator for CalcitListRefIntoIterator<'a> {
+impl<'a> Iterator for CalcitListIterator<'a> {
   type Item = &'a Calcit;
   fn next(&mut self) -> Option<Self::Item> {
     if self.index < self.size {
@@ -250,5 +250,17 @@ impl CalcitList {
   pub fn index_of(&self, x: &Calcit) -> Option<usize> {
     // TODO slow
     self.0.index_of(&Arc::new(x.to_owned()))
+  }
+
+  pub fn iter(&self) -> CalcitListIterator {
+    CalcitListIterator {
+      value: &self.0,
+      index: 0,
+      size: self.len(),
+    }
+  }
+
+  pub fn traverse(&self, f: impl Fn(&Calcit)) {
+    self.0.traverse(f)
   }
 }

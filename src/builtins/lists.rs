@@ -457,7 +457,7 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
       // dirty since only functions being call directly then we become fast
       (Calcit::List(xs), Calcit::Fn { info, .. }) => {
         let mut xs2: Vec<Calcit> = vec![];
-        for x in (**xs).into_iter() {
+        for x in &**xs {
           xs2.push(x.to_owned())
         }
         xs2.sort_by(|a, b| -> Ordering {
@@ -485,7 +485,7 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
       }
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         let mut xs2: Vec<Calcit> = vec![];
-        for x in (**xs).into_iter() {
+        for x in &**xs {
           xs2.push(x.to_owned())
         }
         xs2.sort_by(|a, b| -> Ordering {

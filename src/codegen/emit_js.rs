@@ -672,7 +672,7 @@ fn gen_let_code(
 
     match &let_def_body[0] {
       Calcit::Nil => {
-        for (idx, x) in content.into_iter().enumerate() {
+        for (idx, x) in content.iter().enumerate() {
           if idx == content.len() - 1 {
             body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, Some(return_label))?);
             body_part.push('\n');
@@ -686,7 +686,7 @@ fn gen_let_code(
       Calcit::List(xs) if xs.is_empty() => {
         // non content defs_code
 
-        for (idx, x) in content.into_iter().enumerate() {
+        for (idx, x) in content.iter().enumerate() {
           if idx == content.len() - 1 {
             body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, Some(return_label))?);
             body_part.push('\n');
@@ -709,7 +709,7 @@ fn gen_let_code(
             writeln!(defs_code, "let {left} = {right};").expect("write");
 
             if scoped_defs.contains(sym) {
-              for (idx, x) in content.into_iter().enumerate() {
+              for (idx, x) in content.iter().enumerate() {
                 if idx == content.len() - 1 {
                   // normally, last item of function body returns as return value(even in recursion)
                   if local_defs.contains(sym) {
@@ -755,7 +755,7 @@ fn gen_let_code(
                 }
               }
 
-              for (idx, x) in content.into_iter().enumerate() {
+              for (idx, x) in content.iter().enumerate() {
                 if idx == content.len() - 1 {
                   body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, Some(return_label))?);
                   body_part.push('\n');
