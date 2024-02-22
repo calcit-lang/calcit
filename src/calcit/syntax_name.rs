@@ -43,6 +43,21 @@ pub enum CalcitSyntax {
   /// a hint mark inside function, currently only used for `async`
   #[strum(serialize = "hint-fn")]
   HintFn,
+  /// special call for handling `&` spreading
+  #[strum(serialize = "&call-spread")]
+  CallSpread,
+  /// spreading in function definition and call
+  #[strum(serialize = "&")]
+  ArgSpread,
+  /// optional argument in function definition
+  #[strum(serialize = "?")]
+  ArgOptional,
+  /// interpolate value in macro
+  #[strum(serialize = "~")]
+  MacroInterpolate,
+  /// spreading interpolate value in macro
+  #[strum(serialize = "~@")]
+  MacroInterpolateSpread,
 }
 
 impl CalcitSyntax {

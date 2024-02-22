@@ -182,6 +182,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
       };
       Ok(format!("new {var_prefix}CalcitSymbol(\"{code}{}\")", name.escape_default()))
     }
+    Calcit::Syntax(s, _) => Ok(format!("new {var_prefix}CalcitSymbol('{}')", s.to_string().escape_default())),
     _ => unreachable!("Unexpected data in quote for js: {}", xs),
   }
 }
@@ -404,6 +405,8 @@ fn gen_call_code(
           }
           (_, _) => Err(format!("try expected 2 nodes, got: {}", body)),
         },
+        // for `&call-spread`, just translate as normal call
+        CalcitSyntax::CallSpread => gen_call_code(&body, ns, local_defs, xs, file_imports, tags, return_label),
         _ => {
           let args_code = gen_args_code(&body, ns, local_defs, file_imports, tags)?;
           Ok(format!(
@@ -853,7 +856,7 @@ fn gen_args_code(
   let mut spreading = false;
   for x in body {
     match x {
-      Calcit::Symbol { sym, .. } if &**sym == "&" => {
+      Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
         spreading = true;
       }
       _ => {

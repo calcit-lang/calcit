@@ -70,6 +70,9 @@ pub enum CalcitProc {
   ReadFile,
   #[strum(serialize = "write-file")]
   WriteFile,
+  /// to detect syntax `&`
+  #[strum(serialize = "is-spreading-mark?")]
+  IsSpreadingMark,
   // external format
   #[strum(serialize = "parse-cirru")]
   ParseCirru,

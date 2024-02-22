@@ -1,8 +1,8 @@
 use crate::{
   builtins,
   calcit::{
-    self, gen_core_id, Calcit, CalcitErr, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo, CalcitTuple,
-    GENERATED_DEF, GEN_NS,
+    self, gen_core_id, Calcit, CalcitErr, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo, CalcitSyntax,
+    CalcitTuple, GENERATED_DEF, GEN_NS,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -689,5 +689,15 @@ pub fn cirru_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Cirru::Leaf(_) => Ok(Calcit::Tag("leaf".into())),
     },
     a => CalcitErr::err_str(format!("expected cirru quote, got: ${a}")),
+  }
+}
+
+pub fn is_spreading_mark(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes("is-speading-mark? expected 1 argument, got:", xs);
+  }
+  match &xs[0] {
+    Calcit::Syntax(CalcitSyntax::ArgSpread, _) => Ok(Calcit::Bool(true)),
+    _ => Ok(Calcit::Bool(false)),
   }
 }

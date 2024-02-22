@@ -12,7 +12,11 @@ pub struct CalcitList(pub TernaryTreeList<Calcit>);
 
 impl Display for CalcitList {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "CalcitList({})", self.0.format_inline())
+    write!(f, "(&CalcitList")?;
+    for x in &self.0 {
+      write!(f, " {}", x)?;
+    }
+    write!(f, ")")
   }
 }
 

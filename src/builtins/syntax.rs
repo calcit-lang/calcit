@@ -9,11 +9,11 @@ use std::sync::Arc;
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::calcit::{
-  self, CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo, LocatedWarning,
+  self, CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax, LocatedWarning,
 };
 use crate::calcit::{gen_core_id, Calcit, CalcitErr, CalcitScope};
 use crate::call_stack::CallStackList;
-use crate::runner;
+use crate::runner::{self, call_expr, evaluate_expr};
 
 pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
   match (expr.get_inner(0), expr.get_inner(1)) {
@@ -55,20 +55,20 @@ pub fn get_raw_args(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String> {
       Calcit::Local(CalcitLocal { idx, .. }) => {
         xs.push(CalcitArgLabel::Idx(*idx));
       }
+      Calcit::Syntax(CalcitSyntax::ArgOptional, _) => {
+        xs.push(CalcitArgLabel::OptionalMark);
+      }
+      Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
+        xs.push(CalcitArgLabel::RestMark);
+      }
       Calcit::Symbol { sym, .. } => {
-        if &**sym == "?" {
-          xs.push(CalcitArgLabel::OptionalMark);
-        } else if &**sym == "&" {
-          xs.push(CalcitArgLabel::RestMark);
-        } else {
-          let idx = CalcitLocal::track_sym(sym);
-          // during macro processing, we still git symbol
-          xs.push(CalcitArgLabel::Idx(idx));
-          // return Err(format!("Unexpected argument label: {item}"));
-        }
+        let idx = CalcitLocal::track_sym(sym);
+        // during macro processing, we still git symbol
+        xs.push(CalcitArgLabel::Idx(idx));
+        // return Err(format!("Unexpected argument label: {item}"));
       }
       _ => {
-        return Err(format!("Unexpected argument: {item}"));
+        return Err(format!("raw args unexpected argument: {item}"));
       }
     }
   }
@@ -84,19 +84,21 @@ pub fn get_raw_args_fn(args: &CalcitList) -> Result<CalcitFnArgs, String> {
       Calcit::Local(CalcitLocal { idx, .. }) => {
         xs.push(CalcitArgLabel::Idx(*idx));
       }
+      Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
+        xs.push(CalcitArgLabel::RestMark);
+        has_mark = true;
+      }
+      Calcit::Syntax(CalcitSyntax::ArgOptional, _) => {
+        xs.push(CalcitArgLabel::OptionalMark);
+        has_mark = true;
+      }
       Calcit::Symbol { sym, .. } => {
-        if &**sym == "?" {
-          xs.push(CalcitArgLabel::OptionalMark);
-          has_mark = true;
-        } else if &**sym == "&" {
-          xs.push(CalcitArgLabel::RestMark);
-          has_mark = true;
-        } else {
-          return Err(format!("Unexpected argument label: {item}"));
-        }
+        let idx = CalcitLocal::track_sym(sym);
+        // during macro processing, we still git symbol
+        xs.push(CalcitArgLabel::Idx(idx));
       }
       _ => {
-        return Err(format!("Unexpected argument: {item}"));
+        return Err(format!("raw args fn unexpected argument: {item:?}"));
       }
     }
   }
@@ -209,11 +211,11 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &Cal
   }
   match c {
     Calcit::List(ys) => match (ys.get_inner(0), ys.get_inner(1)) {
-      (Some(Calcit::Symbol { sym, .. }), Some(expr)) if &**sym == "~" => {
+      (Some(Calcit::Syntax(CalcitSyntax::MacroInterpolate, _)), Some(expr)) => {
         let value = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         Ok(SpanResult::Single(value))
       }
-      (Some(Calcit::Symbol { sym, .. }), Some(expr)) if &**sym == "~@" => {
+      (Some(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, _)), Some(expr)) => {
         let ret = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         match ret {
           Calcit::List(zs) => Ok(SpanResult::Range(zs.to_owned())),
@@ -249,7 +251,8 @@ pub fn has_unquote(xs: &Calcit) -> bool {
       }
       false
     }
-    Calcit::Symbol { sym: s, .. } if &**s == "~" || &**s == "~@" => true,
+    Calcit::Syntax(CalcitSyntax::MacroInterpolate, _) => true,
+    Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, _) => true,
     _ => false,
   }
 }
@@ -365,6 +368,22 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
     }
   } else {
     CalcitErr::err_nodes("macroexpand expected excaclty 1 argument, got:", &expr.to_vec())
+  }
+}
+
+/// inserted automatically when `&` syntax is recognized in calling
+pub fn call_spread(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if expr.len() < 3 {
+    return CalcitErr::err_nodes("call-spread expected at least 3 arguments, got:", &expr.to_vec());
+  }
+
+  let x = &expr[0];
+
+  if x.is_expr_evaluated() {
+    call_expr(x, expr, scope, file_ns, call_stack, true)
+  } else {
+    let v = evaluate_expr(x, scope, file_ns, call_stack)?;
+    call_expr(&v, expr, scope, file_ns, call_stack, true)
   }
 }
 
