@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use cirru_parser::Cirru;
 
-use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitLocal, CalcitProc, MethodKind};
+use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result<Calcit, String> {
@@ -21,6 +21,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
       "&newline" => Ok(Calcit::new_str("\n")),
       "&tab" => Ok(Calcit::new_str("\t")),
       "&calcit-version" => Ok(Calcit::new_str(env!("CARGO_PKG_VERSION"))),
+      "&" => Ok(Calcit::Syntax(CalcitSyntax::ArgSpread, ns.into())),
+      "?" => Ok(Calcit::Syntax(CalcitSyntax::ArgOptional, ns.into())),
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
       "::" => Ok(Calcit::Symbol {
@@ -62,11 +64,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
         ]))),
         // TODO also detect simple variables
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Symbol {
-            sym: Arc::from("~@"),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
-          },
+          Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into()),
           Calcit::Symbol {
             sym: Arc::from(&s[2..]),
             info: symbol_info.to_owned(),
@@ -74,11 +72,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           },
         ]))),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Symbol {
-            sym: Arc::from("~"),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
-          },
+          Calcit::Syntax(CalcitSyntax::MacroInterpolate, ns.into()),
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
             info: symbol_info.to_owned(),
@@ -86,11 +80,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           },
         ]))),
         '@' => Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Symbol {
-            sym: Arc::from("deref"),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
-          },
+          Calcit::Proc(CalcitProc::AtomDeref),
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
             info: symbol_info.to_owned(),

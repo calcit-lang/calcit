@@ -14,7 +14,7 @@ use crate::program;
 use crate::util::string::has_ns_part;
 
 pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  // println!("eval code: {}", expr.lisp_str());
+  println!("eval code: {}", expr.lisp_str());
 
   match expr {
     Calcit::Nil
@@ -48,8 +48,8 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Calcit::List(xs) => match xs.get(0) {
       None => Err(CalcitErr::use_msg_stack(format!("cannot evaluate empty expr: {expr}"), call_stack)),
       Some(x) => {
-        // println!("eval expr: {}", expr.lisp_str());
-        // println!("eval expr x: {}", x);
+        println!("eval expr: {}", expr.lisp_str());
+        println!("eval expr x: {}", x);
 
         if x.is_expr_evaluated() {
           call_expr(x, xs, scope, file_ns, call_stack)
@@ -74,6 +74,7 @@ pub fn call_expr(
   file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
+  println!("calling expr: {}", xs);
   let rest_nodes = xs.drop_left();
   match v {
     Calcit::Proc(p) => {
@@ -517,6 +518,7 @@ pub fn evaluate_lines(
   Ok(ret)
 }
 
+/// TODO: simplify this
 /// evaluate symbols before calling a function
 /// notice that `&` is used to spread a list
 pub fn evaluate_args(
@@ -529,7 +531,7 @@ pub fn evaluate_args(
   let mut spreading = false;
   for item in &items {
     match item {
-      Calcit::Symbol { sym: s, .. } if &**s == "&" => {
+      Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
         spreading = true;
       }
       _ => {
@@ -579,4 +581,68 @@ pub fn evaluate_args(
   }
   // println!("Evaluated args: {}", ret);
   Ok(ret)
+}
+
+// evaluate symbols before calling a function
+/// notice that `&` is used to spread a list
+pub fn evaluate_spreaded_args(
+  items: CalcitList,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<CalcitList, CalcitErr> {
+  let mut ret = CalcitList::new_inner();
+  let mut spreading = false;
+  for item in &items {
+    match item {
+      Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
+        spreading = true;
+      }
+      _ => {
+        if item.is_expr_evaluated() {
+          if spreading {
+            match item {
+              Calcit::List(xs) => {
+                for x in &**xs {
+                  ret = ret.push((*x).to_owned());
+                }
+                spreading = false
+              }
+              a => {
+                return Err(CalcitErr::use_msg_stack(
+                  format!("expected list for spreading, got: {a}"),
+                  call_stack,
+                ))
+              }
+            }
+          } else {
+            ret = ret.push(item.to_owned());
+          }
+        } else {
+          let v = evaluate_expr(item, scope, file_ns, call_stack)?;
+
+          if spreading {
+            match v {
+              Calcit::List(xs) => {
+                for x in &*xs {
+                  ret = ret.push((*x).to_owned());
+                }
+                spreading = false
+              }
+              a => {
+                return Err(CalcitErr::use_msg_stack(
+                  format!("expected list for spreading, got: {a}"),
+                  call_stack,
+                ))
+              }
+            }
+          } else {
+            ret = ret.push(v);
+          }
+        }
+      }
+    }
+  }
+  // println!("Evaluated args: {}", ret);
+  Ok(CalcitList(ret))
 }

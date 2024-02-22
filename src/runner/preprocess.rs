@@ -281,7 +281,7 @@ pub fn preprocess_expr(
       } else {
         // TODO whether function bothers this...
         // println!("start calling: {}", expr);
-        process_list_call(xs, scope_defs, file_ns, check_warnings, call_stack)
+        preprocess_list_call(xs, scope_defs, file_ns, check_warnings, call_stack)
       }
     }
     Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::CirruQuote(..) => {
@@ -308,7 +308,7 @@ pub fn preprocess_expr(
   }
 }
 
-fn process_list_call(
+fn preprocess_list_call(
   xs: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: &str,
@@ -382,11 +382,22 @@ fn process_list_call(
         }
       }
       let mut ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
+      let mut has_spread = false;
       for a in &args {
+        if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
+          has_spread = true;
+          ys = ys.push(a.to_owned());
+          continue;
+        }
         let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
         ys = ys.push(form);
       }
-      Ok(Calcit::from(CalcitList(ys)))
+      if has_spread {
+        ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, info.def_ns.to_owned()));
+        Ok(Calcit::from(CalcitList(ys)))
+      } else {
+        Ok(Calcit::from(CalcitList(ys)))
+      }
     }
 
     _ => match &head_form {
@@ -461,6 +472,18 @@ fn process_list_call(
           check_warnings,
           call_stack,
         )?),
+        CalcitSyntax::CallSpread => {
+          let mut ys = CalcitList::new_inner_from(&[head_form]);
+          for a in &args {
+            let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+            ys = ys.push(form);
+          }
+          Ok(Calcit::from(CalcitList(ys)))
+        }
+        CalcitSyntax::ArgSpread => CalcitErr::err_nodes("`&` cannot be preprocessed as operator", &xs.to_vec()),
+        CalcitSyntax::ArgOptional => CalcitErr::err_nodes("`?` cannot be preprocessed as operator", &xs.to_vec()),
+        CalcitSyntax::MacroInterpolate => CalcitErr::err_nodes("`~` cannot be preprocessed as operator", &xs.to_vec()),
+        CalcitSyntax::MacroInterpolateSpread => CalcitErr::err_nodes("`~@` cannot be preprocessed as operator", &xs.to_vec()),
       },
       Calcit::Thunk(..) => Err(CalcitErr::use_msg_stack(
         format!("does not know how to preprocess a thunk: {head}"),
@@ -469,11 +492,22 @@ fn process_list_call(
 
       Calcit::Method(_, _) => {
         let mut ys = CalcitList::new_inner_from(&[head.to_owned()]);
+        let mut has_spread = false;
         for a in &args {
+          if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
+            has_spread = true;
+            ys = ys.push(a.to_owned());
+            continue;
+          }
           let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
           ys = ys.push(form);
         }
-        Ok(Calcit::from(CalcitList(ys)))
+        if has_spread {
+          ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, file_ns.into()));
+          Ok(Calcit::from(CalcitList(ys)))
+        } else {
+          Ok(Calcit::from(CalcitList(ys)))
+        }
       }
       Calcit::Proc(..)
       | Calcit::Local { .. }
@@ -483,11 +517,22 @@ fn process_list_call(
       | Calcit::RawCode(..)
       | Calcit::Symbol { .. } => {
         let mut ys = CalcitList::new_inner_from(&[head_form]);
+        let mut has_spread = false;
         for a in &args {
+          if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
+            has_spread = true;
+            ys = ys.push(a.to_owned());
+            continue;
+          }
           let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
           ys = ys.push(form);
         }
-        Ok(Calcit::from(CalcitList(ys)))
+        if has_spread {
+          ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, file_ns.into()));
+          Ok(Calcit::from(CalcitList(ys)))
+        } else {
+          Ok(Calcit::from(CalcitList(ys)))
+        }
       }
       h => {
         unreachable!("unknown head: {:?}", h);
@@ -662,7 +707,11 @@ pub fn preprocess_defn(
       let mut zs = CalcitList::new_inner();
       for y in &**ys {
         match y {
-          s @ Calcit::Symbol {
+          Calcit::Syntax(CalcitSyntax::ArgSpread, _)
+          | Calcit::Syntax(CalcitSyntax::ArgOptional, _)
+          | Calcit::Syntax(CalcitSyntax::MacroInterpolate, _)
+          | Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, _) => zs = zs.push(y.to_owned()),
+          Calcit::Symbol {
             sym,
             info,
             location: arg_location,
@@ -674,25 +723,20 @@ pub fn preprocess_defn(
               arg_location.to_owned().unwrap_or_default(),
             );
             check_symbol(sym, args, loc, check_warnings);
-            if &**sym == "&" || &**sym == "?" {
-              zs = zs.push_right(s.to_owned());
-              continue;
-            } else {
-              let s = Calcit::Local(CalcitLocal {
-                idx: CalcitLocal::track_sym(sym),
-                sym: sym.to_owned(),
-                info: Arc::new(CalcitSymbolInfo {
-                  at_ns: info.at_ns.to_owned(),
-                  at_def: info.at_def.to_owned(),
-                }),
-                location: arg_location.to_owned(),
-              });
-              // println!("created local: {:?}", s);
-              zs = zs.push_right(s);
+            let s = Calcit::Local(CalcitLocal {
+              idx: CalcitLocal::track_sym(sym),
+              sym: sym.to_owned(),
+              info: Arc::new(CalcitSymbolInfo {
+                at_ns: info.at_ns.to_owned(),
+                at_def: info.at_def.to_owned(),
+              }),
+              location: arg_location.to_owned(),
+            });
+            // println!("created local: {:?}", s);
+            zs = zs.push_right(s);
 
-              // track local in scope
-              body_defs.insert(sym.to_owned());
-            }
+            // track local in scope
+            body_defs.insert(sym.to_owned());
           }
           _ => {
             return Err(CalcitErr::use_msg_stack(
@@ -864,7 +908,7 @@ pub fn preprocess_quasiquote_internal(
   match x {
     Calcit::List(ys) if ys.is_empty() => Ok(x.to_owned()),
     Calcit::List(ys) => match &ys.0[0] {
-      Calcit::Symbol { sym, .. } if &**sym == "~" || &**sym == "~@" => {
+      Calcit::Syntax(CalcitSyntax::MacroInterpolate, _) | &Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, _) => {
         let mut xs = CalcitList::new_inner();
         for y in &ys.0 {
           let form = preprocess_expr(y, scope_defs, file_ns, check_warnings, call_stack)?;

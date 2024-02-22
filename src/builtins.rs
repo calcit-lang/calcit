@@ -266,12 +266,19 @@ pub fn handle_syntax(
     CalcitSyntax::Macroexpand => syntax::macroexpand(nodes, scope, file_ns, call_stack),
     CalcitSyntax::Macroexpand1 => syntax::macroexpand_1(nodes, scope, file_ns, call_stack),
     CalcitSyntax::MacroexpandAll => syntax::macroexpand_all(nodes, scope, file_ns, call_stack),
+    CalcitSyntax::CallSpread => syntax::call_spread(nodes, scope, file_ns, call_stack),
     CalcitSyntax::Try => syntax::call_try(nodes, scope, file_ns, call_stack),
     // "define reference" although it uses a confusing name "atom"
     CalcitSyntax::Defatom => refs::defatom(nodes, scope, file_ns, call_stack),
     CalcitSyntax::Reset => refs::reset_bang(nodes, scope, file_ns, call_stack),
     // different behavoirs, in Rust interpreter it's nil, in js codegen it's nothing
     CalcitSyntax::HintFn => meta::no_op(),
+    CalcitSyntax::ArgSpread => CalcitErr::err_nodes("`&` cannot be used as operator", &nodes.to_vec()),
+    CalcitSyntax::ArgOptional => CalcitErr::err_nodes("`?` cannot be used as operator", &nodes.to_vec()),
+    CalcitSyntax::MacroInterpolate => CalcitErr::err_nodes("`~` cannot be used as operator", &nodes.to_vec()),
+    CalcitSyntax::MacroInterpolateSpread => {
+      return CalcitErr::err_nodes("`~@` cannot be used as operator", &nodes.to_vec());
+    }
   }
 }
 
