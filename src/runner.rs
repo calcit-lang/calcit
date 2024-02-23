@@ -39,10 +39,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
       evaluate_symbol(sym, scope, &info.at_ns, &info.at_def, location, call_stack)
     }
     Calcit::Local(CalcitLocal { idx, .. }) => evaluate_symbol_from_scope(*idx, scope),
-    Calcit::Import(CalcitImport { ns, def, coord, .. }) => {
-      // TODO might have quick path
-      evaluate_symbol_from_program(def, ns, *coord, call_stack)
-    }
+    Calcit::Import(CalcitImport { ns, def, coord, .. }) => evaluate_symbol_from_program(def, ns, *coord, call_stack),
     Calcit::List(xs) => match xs.get(0) {
       None => Err(CalcitErr::use_msg_stack(format!("cannot evaluate empty expr: {expr}"), call_stack)),
       Some(x) => {
@@ -190,6 +187,7 @@ pub fn call_expr(
       }
     }
     Calcit::Registered(alias) => {
+      // call directly to reduce clone
       let ps = IMPORTED_PROCS.read().expect("read procs");
       match ps.get(alias) {
         Some(f) => {

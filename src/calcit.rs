@@ -396,7 +396,7 @@ impl Hash for Calcit {
       }
       Calcit::Map(v) => {
         "map:".hash(_state);
-        // TODO order for map is not stable
+        // order for map is not stable
         let mut xs: Vec<_> = v.iter().collect();
         xs.sort();
         for x in xs {
@@ -426,7 +426,7 @@ impl Hash for Calcit {
       Calcit::Syntax(name, _ns) => {
         "syntax:".hash(_state);
         // syntax name can be used as identity
-        name.to_string().hash(_state); // TODO
+        name.to_string().hash(_state);
       }
       Calcit::Method(name, call_native) => {
         "method:".hash(_state);

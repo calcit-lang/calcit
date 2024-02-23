@@ -167,11 +167,12 @@ pub fn compare_string(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// returns -1 if not found
 pub fn find_index(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => match s.find(&**pattern) {
       Some(idx) => Ok(Calcit::Number(idx as f64)),
-      None => Ok(Calcit::Number(-1.0)), // TODO maybe nil?
+      None => Ok(Calcit::Number(-1.0)),
     },
     (Some(a), Some(b)) => CalcitErr::err_str(format!("str:find-index expected 2 strings, got: {a} {b}")),
     (_, _) => CalcitErr::err_str("str:find-index expected 2 arguments, got nothing"),

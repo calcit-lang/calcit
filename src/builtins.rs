@@ -23,8 +23,7 @@ pub type FnType = fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calc
 pub type SyntaxType = fn(expr: &TernaryTreeList<Calcit>, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
 lazy_static! {
-  /// TODO dont use pub
-  pub static ref IMPORTED_PROCS: RwLock<HashMap<Arc<str>, FnType>> = RwLock::new(HashMap::new());
+  pub(crate) static ref IMPORTED_PROCS: RwLock<HashMap<Arc<str>, FnType>> = RwLock::new(HashMap::new());
 }
 
 pub fn is_proc_name(s: &str) -> bool {

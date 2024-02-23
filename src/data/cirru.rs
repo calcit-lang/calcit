@@ -56,7 +56,6 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
             location: Some(coord),
           },
         ]))),
-        // TODO also detect simple variables
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into()),
           Calcit::Symbol {
@@ -171,12 +170,12 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Bool(true) => Ok(Cirru::leaf("true")),
     Calcit::Bool(false) => Ok(Cirru::leaf("false")),
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string().into())),
-    Calcit::Str(s) => Ok(Cirru::leaf(format!("|{s}"))),            // TODO performance
-    Calcit::Symbol { sym, .. } => Ok(Cirru::Leaf((**sym).into())), // TODO performance
-    Calcit::Local(CalcitLocal { sym, .. }) => Ok(Cirru::Leaf((**sym).into())), // TODO performance
-    Calcit::Import(CalcitImport { ns, def, .. }) => Ok(Cirru::Leaf((format!("{ns}/{def}")).into())), // TODO performance
+    Calcit::Str(s) => Ok(Cirru::leaf(format!("|{s}"))),
+    Calcit::Symbol { sym, .. } => Ok(Cirru::Leaf(sym.to_owned())),
+    Calcit::Local(CalcitLocal { sym, .. }) => Ok(Cirru::Leaf(sym.to_owned())),
+    Calcit::Import(CalcitImport { ns, def, .. }) => Ok(Cirru::Leaf((format!("{ns}/{def}")).into())),
     Calcit::Registered(s) => Ok(Cirru::Leaf(s.as_ref().into())),
-    Calcit::Tag(s) => Ok(Cirru::leaf(format!(":{s}"))), // TODO performance
+    Calcit::Tag(s) => Ok(Cirru::leaf(format!(":{s}"))),
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
       for x in &**xs {

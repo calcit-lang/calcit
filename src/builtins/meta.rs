@@ -36,7 +36,6 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::tag("nil")),
-    // CalcitRef(Calcit), // TODO
     Calcit::Bool(..) => Ok(Calcit::tag("bool")),
     Calcit::Number(..) => Ok(Calcit::tag("number")),
     Calcit::Symbol { .. } => Ok(Calcit::tag("symbol")),
@@ -129,7 +128,7 @@ pub fn js_gensym(name: &str) -> String {
   chunk
 }
 
-/// TODO, move out to calcit
+/// TODO, move to registered functions
 pub fn generate_id(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let size = match xs.first() {
     Some(Calcit::Number(n)) => match f64_to_usize(*n) {

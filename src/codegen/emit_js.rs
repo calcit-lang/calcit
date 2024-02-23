@@ -349,23 +349,20 @@ fn gen_call_code(
           Some(item) => quote_to_js(item, var_prefix, tags),
           None => Err(format!("quote expected a node, got nothing from {}", body)),
         },
-        CalcitSyntax::Defatom => {
-          match (body.get_inner(0), body.get_inner(1)) {
-            _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {}", body)),
-            (Some(Calcit::Symbol { sym, .. }), Some(v)) | (Some(Calcit::Import(CalcitImport { def: sym, .. })), Some(v)) => {
-              // let _name = escape_var(sym); // TODO
-              let ref_path = wrap_js_str(&format!("{ns}/{sym}"));
-              gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &[]);
-              let value_code = &to_js_code(v, ns, local_defs, file_imports, tags, None)?;
-              gen_stack::pop_call_stack();
-              Ok(format!(
-                "\n({}peekDefatom({}) ?? {}defatom({}, {value_code}))\n",
-                &var_prefix, &ref_path, &var_prefix, &ref_path
-              ))
-            }
-            (_, _) => Err(format!("defatom expected name and value, got: {}", body)),
+        CalcitSyntax::Defatom => match (body.get_inner(0), body.get_inner(1)) {
+          _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {}", body)),
+          (Some(Calcit::Symbol { sym, .. }), Some(v)) | (Some(Calcit::Import(CalcitImport { def: sym, .. })), Some(v)) => {
+            let ref_path = wrap_js_str(&format!("{ns}/{sym}"));
+            gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &[]);
+            let value_code = &to_js_code(v, ns, local_defs, file_imports, tags, None)?;
+            gen_stack::pop_call_stack();
+            Ok(format!(
+              "\n({}peekDefatom({}) ?? {}defatom({}, {value_code}))\n",
+              &var_prefix, &ref_path, &var_prefix, &ref_path
+            ))
           }
-        }
+          (_, _) => Err(format!("defatom expected name and value, got: {}", body)),
+        },
 
         CalcitSyntax::Defn => match (body.get_inner(0), body.get_inner(1)) {
           (Some(Calcit::Symbol { sym, .. }), Some(Calcit::List(ys))) => {
@@ -620,9 +617,9 @@ fn gen_symbol_code(s: &str, def_ns: &str, at_def: &str, xs: &Calcit, passed_defs
   // println!("gen symbol: {} {} {} {:?}", s, def_ns, ns, resolved);
   let var_prefix = if passed_defs.ns == calcit::CORE_NS { "" } else { "$calcit." };
   if has_ns_part(s) {
-    // TODO
     unreachable!("unknown feature: {s} {def_ns} {at_def} {xs}");
-  } else if is_js_syntax_procs(s) || is_proc_name(s) || CalcitSyntax::is_valid(s) {
+  }
+  if is_js_syntax_procs(s) || is_proc_name(s) || CalcitSyntax::is_valid(s) {
     // return Ok(format!("{}{}", var_prefix, escape_var(s)));
     let proc_prefix = get_proc_prefix(passed_defs.ns);
     Ok(format!("{proc_prefix}{}", escape_var(s)))

@@ -58,7 +58,6 @@ impl From<&CalcitList> for TernaryTreeList<Calcit> {
   }
 }
 
-// TODO maybe slow
 impl From<&TernaryTreeList<Calcit>> for CalcitList {
   fn from(xs: &TernaryTreeList<Calcit>) -> CalcitList {
     let mut ys = TernaryTreeList::Empty;
@@ -252,8 +251,7 @@ impl CalcitList {
   }
 
   pub fn index_of(&self, x: &Calcit) -> Option<usize> {
-    // TODO slow
-    self.0.index_of(&Arc::new(x.to_owned()))
+    self.0.index_of(x)
   }
 
   pub fn iter(&self) -> CalcitListIterator {

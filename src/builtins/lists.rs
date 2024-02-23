@@ -478,7 +478,6 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
         });
         let mut ys = CalcitList::new_inner();
         for x in xs2.iter() {
-          // TODO ??
           ys = ys.push_right(x.to_owned())
         }
         Ok(Calcit::List(Arc::new(ys.into())))
@@ -506,7 +505,6 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
         });
         let mut ys = CalcitList::new_inner();
         for x in xs2.iter() {
-          // TODO ??
           ys = ys.push_right(x.to_owned())
         }
         Ok(Calcit::List(Arc::new(ys.into())))
