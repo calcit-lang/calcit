@@ -6,7 +6,7 @@ use std::sync::Arc;
 use cirru_edn::{format, Edn, EdnListView};
 use im_ternary_tree::TernaryTreeList;
 
-use crate::calcit::{Calcit, CalcitArgLabel, CalcitImport, ImportInfo};
+use crate::calcit::{Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, ImportInfo};
 use crate::program;
 
 #[derive(Debug)]
@@ -97,9 +97,10 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
       (Edn::tag("ns"), Edn::Str((*info.at_ns).into())),
     ]),
-    Calcit::Local { sym, info, .. } => Edn::map_from_iter([
+    Calcit::Local(CalcitLocal { sym, idx, info, .. }) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("local")),
       (Edn::tag("val"), Edn::Str((**sym).into())),
+      (Edn::tag("idx"), Edn::Number(*idx as f64)),
       (
         Edn::tag("info"),
         Edn::map_from_iter([
@@ -155,7 +156,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
         (Edn::tag("kind"), Edn::tag("fn")),
         (Edn::tag("name"), Edn::Str((*info.name).into())),
         (Edn::tag("ns"), Edn::Str((*info.def_ns).into())),
-        (Edn::tag("args"), dump_args_code(&info.args)), // TODO
+        (Edn::tag("args"), dump_fn_args_code(&info.args)), // TODO
         (Edn::tag("code"), dump_items_code(&info.body)),
       ])
     }
@@ -204,6 +205,25 @@ fn dump_items_code(xs: &TernaryTreeList<Calcit>) -> Edn {
   for x in xs {
     ys.push(dump_code(x));
   }
+  ys.into()
+}
+
+fn dump_fn_args_code(xs: &CalcitFnArgs) -> Edn {
+  let mut ys = EdnListView::default();
+  match xs {
+    CalcitFnArgs::MarkedArgs(xs) => {
+      for x in xs {
+        ys.push(Edn::Str(x.to_string().into()));
+      }
+    }
+    CalcitFnArgs::Args(xs) => {
+      for x in xs {
+        let sym = CalcitLocal::read_name(*x);
+        ys.push(Edn::Str(sym.into()));
+      }
+    }
+  }
+
   ys.into()
 }
 

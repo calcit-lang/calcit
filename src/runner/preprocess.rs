@@ -1,8 +1,8 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitArgLabel, CalcitErr, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax,
-    CalcitThunk, CalcitThunkInfo, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
+    self, Calcit, CalcitArgLabel, CalcitErr, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope,
+    CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
   },
   call_stack::{CallStackList, StackKind},
   program, runner,
@@ -38,7 +38,7 @@ pub fn preprocess_ns_def(
           // write a nil value first to prevent dead loop
           program::write_evaled_def(ns, def, Calcit::Nil).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
 
-          let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &TernaryTreeList::Empty);
+          let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
           let resolved_code = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
@@ -149,14 +149,15 @@ pub fn preprocess_expr(
             location: location.to_owned(),
           })
         } else if scope_defs.contains(def) {
-          Ok(Calcit::Local {
+          Ok(Calcit::Local(CalcitLocal {
+            idx: CalcitLocal::track_sym(def),
             sym: def.to_owned(),
             info: Arc::new(CalcitSymbolInfo {
               at_ns: def_ns.to_owned(),
               at_def: at_def.to_owned(),
             }),
             location: location.to_owned(),
-          })
+          }))
         } else if CalcitSyntax::is_valid(def) {
           Ok(Calcit::Syntax(
             def
@@ -344,24 +345,24 @@ fn process_list_call(
 
   match head_value {
     Some(Calcit::Macro { info, .. }) => {
-      let mut current_values: TernaryTreeList<Calcit> = (&args).into();
+      let mut current_values: Vec<Calcit> = args.to_vec();
 
       // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let code = Calcit::List(Arc::new(xs.to_owned()));
-      let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &code, &args.0);
+      let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &code, &args.0.to_vec());
 
       let mut body_scope = CalcitScope::default();
 
       loop {
         // need to handle recursion
         // println!("evaling line: {:?}", body);
-        runner::bind_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
+        runner::bind_marked_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
         let code = runner::evaluate_lines(&info.body, &body_scope, file_ns, &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
-            current_values = (*ys).to_owned();
+            current_values = ys;
           }
           _ => {
             // println!("gen code: {} {}", code, &code.lisp_str());
@@ -372,7 +373,14 @@ fn process_list_call(
     }
 
     Some(Calcit::Fn { info, .. }) => {
-      check_fn_args(&info.args, &args, file_ns, &info.name, &def_name, check_warnings);
+      match &*info.args {
+        CalcitFnArgs::MarkedArgs(xs) => {
+          check_fn_marked_args(xs, &args, file_ns, &info.name, &def_name, check_warnings);
+        }
+        CalcitFnArgs::Args(xs) => {
+          check_fn_args(xs, &args, file_ns, &info.name, &def_name, check_warnings);
+        }
+      }
       let mut ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
       for a in &args {
         let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
@@ -489,7 +497,7 @@ fn process_list_call(
 }
 
 /// detects arguments of top-level functions when possible
-fn check_fn_args(
+fn check_fn_marked_args(
   defined_args: &[CalcitArgLabel],
   params: &CalcitList,
   file_ns: &str,
@@ -557,6 +565,40 @@ fn check_fn_args(
         continue;
       }
     }
+  }
+}
+
+/// quick path check function without marks
+fn check_fn_args(
+  defined_args: &[u16],
+  params: &CalcitList,
+  file_ns: &str,
+  f_name: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  let expected_size = defined_args.len();
+  let actual_size = params.len();
+
+  // TODO handle this correctly after implemented call-spread
+  for item in params {
+    if let Calcit::Symbol { sym, .. } = item {
+      if &**sym == "&" {
+        return; // no need to check
+      }
+    }
+  }
+
+  if expected_size != actual_size {
+    let mut warnings = check_warnings.borrow_mut();
+    let loc = NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![]));
+    warnings.push(LocatedWarning::new(
+      format!(
+        "[Warn] expected {} args in {} `{:?}` with `{}`, at {}/{}",
+        expected_size, f_name, defined_args, params, file_ns, def_name
+      ),
+      loc,
+    ));
   }
 }
 
@@ -636,14 +678,15 @@ pub fn preprocess_defn(
               zs = zs.push_right(s.to_owned());
               continue;
             } else {
-              let s = Calcit::Local {
+              let s = Calcit::Local(CalcitLocal {
+                idx: CalcitLocal::track_sym(sym),
                 sym: sym.to_owned(),
                 info: Arc::new(CalcitSymbolInfo {
                   at_ns: info.at_ns.to_owned(),
                   at_def: info.at_def.to_owned(),
                 }),
                 location: arg_location.to_owned(),
-              };
+              });
               // println!("created local: {:?}", s);
               zs = zs.push_right(s);
 
@@ -661,7 +704,7 @@ pub fn preprocess_defn(
       }
       xs = xs.push_right(Calcit::List(Arc::new(zs.into())));
 
-      for a in args.into_iter().skip(2) {
+      for a in args.iter().skip(2) {
         let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
         xs = xs.push_right(form);
       }
@@ -715,14 +758,15 @@ pub fn preprocess_core_let(
         check_symbol(sym, args, loc, check_warnings);
         body_defs.insert(sym.to_owned());
         let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
-        let name = Calcit::Local {
+        let name = Calcit::Local(CalcitLocal {
+          idx: CalcitLocal::track_sym(sym),
           sym: sym.to_owned(),
           info: Arc::new(CalcitSymbolInfo {
             at_ns: info.at_ns.to_owned(),
             at_def: info.at_def.to_owned(),
           }),
           location: location.to_owned(),
-        };
+        });
         Calcit::from(CalcitList::from(&[name, form]))
       }
       (a, b) => {
@@ -754,7 +798,7 @@ pub fn preprocess_core_let(
     }
   };
   xs = xs.push_right(binding);
-  for a in args.into_iter().skip(1) {
+  for a in args.iter().skip(1) {
     let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
     xs = xs.push_right(form);
   }

@@ -4,7 +4,6 @@ use crate::data::cirru;
 use crate::data::edn;
 use cirru_edn::Edn;
 use cirru_edn::EdnListView;
-use im_ternary_tree::TernaryTreeList;
 use std::fmt;
 use std::fs;
 use std::hash::Hash;
@@ -30,7 +29,7 @@ pub struct CalcitStack {
   pub ns: Arc<str>,
   pub def: Arc<str>,
   pub code: Calcit, // built in functions may not contain code
-  pub args: TernaryTreeList<Calcit>,
+  pub args: Vec<Calcit>,
   pub kind: StackKind,
 }
 
@@ -82,7 +81,7 @@ impl CallStackList {
   }
 
   /// create new entry to the tree
-  pub fn extend(&self, ns: &str, def: &str, kind: StackKind, code: &Calcit, args: &TernaryTreeList<Calcit>) -> CallStackList {
+  pub fn extend(&self, ns: &str, def: &str, kind: StackKind, code: &Calcit, args: &[Calcit]) -> CallStackList {
     let b = TRACK_STACK.load(std::sync::atomic::Ordering::Relaxed);
     if b {
       self.push_left(CalcitStack {

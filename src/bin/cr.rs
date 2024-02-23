@@ -14,7 +14,6 @@ use calcit::call_stack::CallStackList;
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use dirs::home_dir;
-use im_ternary_tree::TernaryTreeList;
 use notify::RecursiveMode;
 use notify_debouncer_mini::new_debouncer;
 
@@ -163,7 +162,7 @@ fn main() -> Result<(), String> {
   } else {
     let started_time = Instant::now();
 
-    let v = calcit::run_program(entries.init_ns.to_owned(), entries.init_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
+    let v = calcit::run_program(entries.init_ns.to_owned(), entries.init_def.to_owned(), &[]).map_err(|e| {
       LocatedWarning::print_list(&e.warnings);
       e.msg
     })?;
@@ -287,7 +286,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
       let warnings = check_warnings.borrow();
       throw_on_warnings(&warnings)?;
     }
-    let v = calcit::run_program(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), TernaryTreeList::Empty).map_err(|e| {
+    let v = calcit::run_program(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), &[]).map_err(|e| {
       LocatedWarning::print_list(&e.warnings);
       e.msg
     })?;

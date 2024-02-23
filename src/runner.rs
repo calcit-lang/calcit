@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use crate::builtins::{self, IMPORTED_PROCS};
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitErr, CalcitFn, CalcitImport, CalcitList, CalcitProc, CalcitScope, CalcitSyntax, MethodKind,
-  NodeLocation, CORE_NS,
+  Calcit, CalcitArgLabel, CalcitErr, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope,
+  CalcitSyntax, MethodKind, NodeLocation, CORE_NS,
 };
 use crate::call_stack::{using_stack, CallStackList, StackKind};
 use crate::program;
@@ -40,7 +40,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
       // println!("[Warn] slow path reading symbol: {}", sym);
       evaluate_symbol(sym, scope, &info.at_ns, &info.at_def, location, call_stack)
     }
-    Calcit::Local { sym, .. } => evaluate_symbol_from_scope(sym, scope),
+    Calcit::Local(CalcitLocal { idx, .. }) => evaluate_symbol_from_scope(*idx, scope),
     Calcit::Import(CalcitImport { ns, def, coord, .. }) => {
       // TODO might have quick path
       evaluate_symbol_from_program(def, ns, *coord, call_stack)
@@ -78,11 +78,11 @@ pub fn call_expr(
   match v {
     Calcit::Proc(p) => {
       let values = evaluate_args(rest_nodes, scope, file_ns, call_stack)?;
-      builtins::handle_proc(*p, values, call_stack)
+      builtins::handle_proc(*p, &values, call_stack)
     }
     Calcit::Syntax(s, def_ns) => {
       if using_stack() {
-        let next_stack = call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, &Calcit::from(xs), &rest_nodes.0);
+        let next_stack = call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, &Calcit::from(xs), &rest_nodes.0.to_vec());
         builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
           if e.stack.is_empty() {
             let mut e2 = e;
@@ -113,9 +113,9 @@ pub fn call_expr(
       let values = evaluate_args(rest_nodes, scope, file_ns, call_stack)?;
       if using_stack() {
         let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Fn, &Calcit::from(xs), &values);
-        run_fn(values, info, &next_stack)
+        run_fn_owned(values, info, &next_stack)
       } else {
-        run_fn(values, info, call_stack)
+        run_fn_owned(values, info, call_stack)
       }
     }
     Calcit::Macro { info, .. } => {
@@ -125,13 +125,19 @@ pub fn call_expr(
       );
 
       let next_stack = if using_stack() {
-        call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &Calcit::from(xs), &rest_nodes.0)
+        call_stack.extend(
+          &info.def_ns,
+          &info.name,
+          StackKind::Macro,
+          &Calcit::from(xs),
+          &rest_nodes.0.to_vec(),
+        )
       } else {
         call_stack.to_owned()
       };
 
       // TODO moving to preprocess
-      let mut current_values: TernaryTreeList<Calcit> = rest_nodes.into();
+      let mut current_values: Vec<Calcit> = rest_nodes.to_vec();
       // println!("eval macro: {} {}", x, expr.lisp_str()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
@@ -139,11 +145,11 @@ pub fn call_expr(
 
       Ok(loop {
         // need to handle recursion
-        bind_args(&mut body_scope, &info.args, &current_values, call_stack)?;
+        bind_marked_args(&mut body_scope, &info.args, &current_values, call_stack)?;
         let code = evaluate_lines(&info.body, &body_scope, &info.def_ns, &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
-            current_values = (*ys).to_owned();
+            current_values = ys;
           }
           _ => {
             // println!("gen code: {} {}", x, &code.lisp_str()));
@@ -221,7 +227,7 @@ pub fn evaluate_symbol(
     None => {
       if let Ok(v) = sym.parse::<CalcitSyntax>() {
         Ok(Calcit::Syntax(v, file_ns.into()))
-      } else if let Some(v) = scope.get(sym) {
+      } else if let Some(v) = scope.get_by_name(sym) {
         // although scope is detected first, it would trigger warning during preprocess
         Ok(v.to_owned())
       } else if let Ok(p) = sym.parse::<CalcitProc>() {
@@ -252,11 +258,11 @@ pub fn evaluate_symbol(
   }
 }
 
-pub fn evaluate_symbol_from_scope(sym: &str, scope: &CalcitScope) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_symbol_from_scope(idx: u16, scope: &CalcitScope) -> Result<Calcit, CalcitErr> {
   // although scope is detected first, it would trigger warning during preprocess
   Ok(
     scope
-      .get(sym)
+      .get(idx)
       .expect("expected symbol from scope, this is a quick path, should succeed")
       .to_owned(),
   )
@@ -266,7 +272,7 @@ pub fn evaluate_symbol_from_scope(sym: &str, scope: &CalcitScope) -> Result<Calc
 pub fn evaluate_symbol_from_program(
   sym: &str,
   file_ns: &str,
-  coord: Option<(usize, usize)>,
+  coord: Option<(u16, u16)>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let v0 = match coord {
@@ -326,25 +332,85 @@ pub fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList)
   Ok(None)
 }
 
-pub fn run_fn(values: TernaryTreeList<Calcit>, info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut body_scope = (*info.scope).to_owned();
-  bind_args(&mut body_scope, &info.args, &values, call_stack)?;
+  match &*info.args {
+    CalcitFnArgs::Args(args) => {
+      if args.len() != values.len() {
+        unreachable!("args length mismatch")
+      }
+      for (idx, v) in args.iter().enumerate() {
+        body_scope.insert_mut(*v, values[idx].to_owned());
+      }
+    }
+    CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, values, call_stack)?,
+  }
 
   let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
 
   if let Calcit::Recur(xs) = v {
-    let mut current_values = xs;
+    let mut current_values = xs.to_vec();
     loop {
-      bind_args(&mut body_scope, &info.args, &current_values, call_stack)?;
+      match &*info.args {
+        CalcitFnArgs::Args(args) => {
+          if args.len() != current_values.len() {
+            unreachable!("args length mismatch")
+          }
+          for (idx, v) in args.iter().enumerate() {
+            body_scope.insert_mut(*v, current_values[idx].to_owned());
+          }
+        }
+        CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &current_values, call_stack)?,
+      }
       let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
       match v {
-        Calcit::Recur(xs) => current_values = xs,
+        Calcit::Recur(xs) => current_values = xs.to_vec(),
         result => return Ok(result),
       }
     }
-  } else {
-    Ok(v)
   }
+  Ok(v)
+}
+
+/// quick path for `run_fn` which takes ownership of values
+pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  let mut body_scope = (*info.scope).to_owned();
+  match &*info.args {
+    CalcitFnArgs::Args(args) => {
+      if args.len() != values.len() {
+        unreachable!("args length mismatch")
+      }
+      for (idx, v) in values.into_iter().enumerate() {
+        body_scope.insert_mut(args[idx], v);
+      }
+    }
+    CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &values, call_stack)?,
+  }
+
+  let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
+
+  if let Calcit::Recur(xs) = v {
+    let mut current_values = xs.to_vec();
+    loop {
+      match &*info.args {
+        CalcitFnArgs::Args(args) => {
+          if args.len() != current_values.len() {
+            unreachable!("args length mismatch")
+          }
+          for (idx, v) in current_values.into_iter().enumerate() {
+            body_scope.insert_mut(args[idx], v);
+          }
+        }
+        CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &current_values, call_stack)?,
+      }
+      let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
+      match v {
+        Calcit::Recur(xs) => current_values = xs.to_vec(),
+        result => return Ok(result),
+      }
+    }
+  }
+  Ok(v)
 }
 
 /// syntax sugar for index value
@@ -362,10 +428,10 @@ impl MutIndex {
 
 /// create new scope by writing new args
 /// notice that `&` is a mark for spreading, `?` for optional arguments
-pub fn bind_args(
+pub fn bind_marked_args(
   scope: &mut CalcitScope,
   args: &[CalcitArgLabel],
-  values: &TernaryTreeList<Calcit>,
+  values: &[Calcit],
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
   // println!("bind args: {:?} {}", args, values);
@@ -379,12 +445,12 @@ pub fn bind_args(
   while let Some(arg) = args.get(pop_args_idx.get_and_inc()) {
     if spreading {
       match arg {
-        CalcitArgLabel::Name(name) => {
+        CalcitArgLabel::Idx(idx) => {
           let mut chunk = CalcitList::new_inner();
           while let Some(v) = values.get(pop_values_idx.get_and_inc()) {
             chunk = chunk.push_right(v.to_owned());
           }
-          scope.insert_mut(name.to_owned(), Calcit::List(Arc::new(chunk.into())));
+          scope.insert_mut(*idx, Calcit::List(Arc::new(chunk.into())));
           if pop_args_idx.0 < args.len() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{args:?}` after spreading in `{args:?}`",),
@@ -403,16 +469,16 @@ pub fn bind_args(
       match arg {
         CalcitArgLabel::RestMark => spreading = true,
         CalcitArgLabel::OptionalMark => optional = true,
-        CalcitArgLabel::Name(name) => match values.get(pop_values_idx.get_and_inc()) {
+        CalcitArgLabel::Idx(idx) => match values.get(pop_values_idx.get_and_inc()) {
           Some(v) => {
-            scope.insert_mut(name.to_owned(), v.to_owned());
+            scope.insert_mut(*idx, v.to_owned());
           }
           None => {
             if optional {
-              scope.insert_mut(name.to_owned(), Calcit::Nil);
+              scope.insert_mut(*idx, Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
-                format!("too few values `{}` passed to args `{args:?}`", values),
+                format!("too few values `{:?}` passed to args `{args:?}`", values),
                 call_stack,
               ));
             }
@@ -427,9 +493,8 @@ pub fn bind_args(
   } else {
     Err(CalcitErr::use_msg_stack(
       format!(
-        "extra args `{args:?}` not handled while passing values `{}` to args `{:?}`",
-        CalcitList::from(values),
-        args,
+        "extra args `{args:?}` not handled while passing values `{:?}` to args `{:?}`",
+        values, args,
       ),
       call_stack,
     ))
@@ -459,8 +524,8 @@ pub fn evaluate_args(
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
-) -> Result<TernaryTreeList<Calcit>, CalcitErr> {
-  let mut ret: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
+) -> Result<Vec<Calcit>, CalcitErr> {
+  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len());
   let mut spreading = false;
   for item in &items {
     match item {
@@ -473,7 +538,7 @@ pub fn evaluate_args(
             match item {
               Calcit::List(xs) => {
                 for x in &**xs {
-                  ret = ret.push((*x).to_owned());
+                  ret.push((*x).to_owned());
                 }
                 spreading = false
               }
@@ -485,7 +550,7 @@ pub fn evaluate_args(
               }
             }
           } else {
-            ret = ret.push(item.to_owned());
+            ret.push(item.to_owned());
           }
         } else {
           let v = evaluate_expr(item, scope, file_ns, call_stack)?;
@@ -494,7 +559,7 @@ pub fn evaluate_args(
             match v {
               Calcit::List(xs) => {
                 for x in &*xs {
-                  ret = ret.push((*x).to_owned());
+                  ret.push((*x).to_owned());
                 }
                 spreading = false
               }
@@ -506,7 +571,7 @@ pub fn evaluate_args(
               }
             }
           } else {
-            ret = ret.push(v);
+            ret.push(v);
           }
         }
       }

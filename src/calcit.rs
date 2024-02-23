@@ -1,6 +1,6 @@
-mod eval_node;
 mod fns;
 mod list;
+mod local;
 mod proc_name;
 mod record;
 mod symbol;
@@ -23,8 +23,9 @@ use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
-pub use fns::{CalcitArgLabel, CalcitFn, CalcitMacro, CalcitScope};
+pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitMacro, CalcitScope};
 pub use list::CalcitList;
+pub use local::CalcitLocal;
 pub use proc_name::CalcitProc;
 pub use record::CalcitRecord;
 pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
@@ -51,11 +52,7 @@ pub enum Calcit {
     location: Option<Arc<Vec<u8>>>,
   },
   /// local variable
-  Local {
-    sym: Arc<str>,
-    info: Arc<CalcitSymbolInfo>,
-    location: Option<Arc<Vec<u8>>>,
-  },
+  Local(CalcitLocal),
   /// things that can be looked up from program snapshot, also things in :require block
   Import(CalcitImport),
   /// registered in runtime
@@ -75,7 +72,7 @@ pub enum Calcit {
   /// cirru quoted data, for faster meta programming
   CirruQuote(Cirru),
   /// not for data, but for recursion
-  Recur(Arc<TernaryTreeList<Calcit>>),
+  Recur(Vec<Calcit>),
   List(Arc<CalcitList>),
   Set(rpds::HashTrieSetSync<Calcit>),
   Map(rpds::HashTrieMapSync<Calcit, Calcit>),
@@ -113,7 +110,7 @@ impl fmt::Display for Calcit {
       Calcit::Bool(v) => f.write_str(&format!("{v}")),
       Calcit::Number(n) => f.write_str(&format!("{n}")),
       Calcit::Symbol { sym, .. } => f.write_str(&format!("'{sym}")),
-      Calcit::Local { sym, .. } => f.write_str(&format!("'{sym}")),
+      Calcit::Local(CalcitLocal { sym, .. }) => f.write_str(&format!("'{sym}")),
       Calcit::Import(CalcitImport { ns, def, .. }) => f.write_str(&format!("{ns}/{def}")),
       Calcit::Registered(alias) => f.write_str(&format!("{alias}")),
       Calcit::Tag(s) => f.write_str(&format!(":{s}")),
@@ -239,12 +236,25 @@ impl fmt::Display for Calcit {
         let name = &info.name;
         f.write_str(&format!("(&fn {name} ("))?;
         let mut need_space = false;
-        for a in &*info.args {
-          if need_space {
-            f.write_str(" ")?;
+        match &*info.args {
+          CalcitFnArgs::MarkedArgs(xs) => {
+            for a in xs {
+              if need_space {
+                f.write_str(" ")?;
+              }
+              f.write_str(&a.to_string())?;
+              need_space = true;
+            }
           }
-          f.write_str(&a.to_string())?;
-          need_space = true;
+          CalcitFnArgs::Args(xs) => {
+            for a in xs {
+              if need_space {
+                f.write_str(" ")?;
+              }
+              f.write_str(&a.to_string())?;
+              need_space = true;
+            }
+          }
         }
         f.write_str(") ")?;
         need_space = false;
@@ -283,7 +293,7 @@ pub fn format_to_lisp(x: &Calcit) -> String {
   match x {
     Calcit::List(ys) => {
       let mut s = String::from("(");
-      for (idx, y) in ys.into_iter().enumerate() {
+      for (idx, y) in (ys.0).iter().enumerate() {
         if idx > 0 {
           s.push(' ');
         }
@@ -293,7 +303,7 @@ pub fn format_to_lisp(x: &Calcit) -> String {
       s
     }
     Calcit::Symbol { sym, .. } => sym.to_string(),
-    Calcit::Local { sym, .. } => sym.to_string(),
+    Calcit::Local(CalcitLocal { sym, .. }) => sym.to_string(),
     Calcit::Import(CalcitImport { ns, def, .. }) => format!("{ns}/{def}"),
     Calcit::Registered(alias) => format!("{alias}"),
     Calcit::Tag(s) => format!(":{s}"),
@@ -325,7 +335,7 @@ impl Hash for Calcit {
         // probaly no need, also won't be used in hashing
         // ns.hash(_state);
       }
-      Calcit::Local { sym, .. } => {
+      Calcit::Local(CalcitLocal { sym, .. }) => {
         "local:".hash(_state);
         sym.hash(_state);
       }
@@ -458,7 +468,7 @@ impl Ord for Calcit {
       (Calcit::Symbol { .. }, _) => Less,
       (_, Calcit::Symbol { .. }) => Greater,
 
-      (Calcit::Local { sym: a, .. }, Calcit::Local { sym: b, .. }) => a.cmp(b),
+      (Calcit::Local(CalcitLocal { sym: a, .. }), Calcit::Local(CalcitLocal { sym: b, .. })) => a.cmp(b),
       (Calcit::Local { .. }, _) => Less,
       (_, Calcit::Local { .. }) => Greater,
 
@@ -587,11 +597,11 @@ impl PartialEq for Calcit {
       (Calcit::Bool(a), Calcit::Bool(b)) => a == b,
       (Calcit::Number(a), Calcit::Number(b)) => a == b,
       (Calcit::Symbol { sym: a, .. }, Calcit::Symbol { sym: b, .. }) => a == b,
-      (Calcit::Local { sym: a, .. }, Calcit::Local { sym: b, .. }) => a == b,
+      (Calcit::Local(CalcitLocal { sym: a, .. }), Calcit::Local(CalcitLocal { sym: b, .. })) => a == b,
 
       // special case for symbol and local, compatible with old implementation
-      (Calcit::Symbol { sym: a, .. }, Calcit::Local { sym: b, .. }) => a == b,
-      (Calcit::Local { sym: a, .. }, Calcit::Symbol { sym: b, .. }) => a == b,
+      (Calcit::Symbol { sym: a, .. }, Calcit::Local(CalcitLocal { sym: b, .. })) => a == b,
+      (Calcit::Local(CalcitLocal { sym: a, .. }), Calcit::Symbol { sym: b, .. }) => a == b,
       (Calcit::Symbol { sym: a, .. }, Calcit::Import(CalcitImport { def: b, .. })) => a == b,
       (Calcit::Import(CalcitImport { def: b, .. }), Calcit::Symbol { sym: a, .. }) => a == b,
       (Calcit::Registered(a), Calcit::Registered(b)) => a == b,
@@ -667,7 +677,7 @@ impl Calcit {
         info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
       )),
-      Calcit::Local { info, location, .. } => Some(NodeLocation::new(
+      Calcit::Local(CalcitLocal { info, location, .. }) => Some(NodeLocation::new(
         info.at_ns.to_owned(),
         info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
@@ -779,7 +789,7 @@ impl CalcitErr {
     })
   }
   /// display nodes in error message
-  pub fn err_nodes<T: Into<String>>(msg: T, nodes: &TernaryTreeList<Calcit>) -> Result<Calcit, Self> {
+  pub fn err_nodes<T: Into<String>>(msg: T, nodes: &[Calcit]) -> Result<Calcit, Self> {
     Err(CalcitErr {
       msg: format!("{} {}", msg.into(), CalcitList::from(nodes)),
       warnings: vec![],

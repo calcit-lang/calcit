@@ -12,7 +12,7 @@ use crate::snapshot;
 use crate::snapshot::Snapshot;
 use crate::util::string::extract_pkg_from_ns;
 
-use self::entry_book::EntryBook;
+pub use entry_book::EntryBook;
 
 pub type ProgramEvaledData = EntryBook<EntryBook<Calcit>>;
 
@@ -173,7 +173,7 @@ pub fn lookup_ns_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>> {
 }
 
 /// try if we can load coord from evaled data
-pub fn tip_coord(ns: &str, def: &str) -> Option<(usize, usize)> {
+pub fn tip_coord(ns: &str, def: &str) -> Option<(u16, u16)> {
   let program = { PROGRAM_EVALED_DATA_STATE.read().expect("read program code") };
   match program.lookup(ns) {
     Some(file) => file.0.lookup(def).map(|(_, v)| (file.1, v)),
@@ -199,7 +199,7 @@ pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
   s2.lookup(ns)?.0.lookup(def).map(|p| p.0).cloned()
 }
 
-pub fn load_by_index(ns_idx: usize, ns: &str, def_idx: usize, def: &str) -> Option<Calcit> {
+pub fn load_by_index(ns_idx: u16, ns: &str, def_idx: u16, def: &str) -> Option<Calcit> {
   let s2 = PROGRAM_EVALED_DATA_STATE.read().expect("read program data");
   let (file, ns_cache) = s2.load(ns_idx);
   if ns == ns_cache {

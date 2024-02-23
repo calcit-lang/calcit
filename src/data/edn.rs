@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::calcit::{self, CalcitImport, CalcitList, CalcitTuple};
+use crate::calcit::{self, CalcitImport, CalcitList, CalcitLocal, CalcitTuple};
 use crate::calcit::{Calcit, CalcitRecord};
 use crate::{calcit::MethodKind, data::cirru};
 
@@ -15,7 +15,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Number(n) => Ok(Edn::Number(*n)),
     Calcit::Tag(s) => Ok(Edn::Tag(s.to_owned())),
     Calcit::Symbol { sym, .. } => Ok(Edn::Symbol((**sym).into())),
-    Calcit::Local { sym, .. } => Ok(Edn::Symbol((**sym).into())),
+    Calcit::Local(CalcitLocal { sym, .. }) => Ok(Edn::Symbol((**sym).into())),
     Calcit::Import(CalcitImport { def, .. }) => Ok(Edn::Symbol((**def).into())),
     Calcit::Registered(def) => Ok(Edn::Symbol((**def).into())),
     Calcit::List(xs) => {

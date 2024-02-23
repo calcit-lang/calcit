@@ -15,9 +15,9 @@ use std::sync::Arc;
 use cirru_edn::EdnTag;
 
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
-use crate::builtins::syntax::get_raw_args;
+use crate::builtins::syntax::get_raw_args_fn;
 use crate::builtins::{is_js_syntax_procs, is_proc_name};
-use crate::calcit::{self, CalcitArgLabel, CalcitImport, CalcitList, CalcitProc, MethodKind};
+use crate::calcit::{self, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, MethodKind};
 use crate::calcit::{Calcit, CalcitSyntax, ImportInfo};
 use crate::call_stack::StackKind;
 use crate::program;
@@ -245,7 +245,7 @@ fn to_js_code(
           }
         }
       }
-      Calcit::Local { sym, .. } => Ok(escape_var(sym)),
+      Calcit::Local(CalcitLocal { sym, .. }) => Ok(escape_var(sym)),
       Calcit::Proc(s) => {
         let proc_prefix = get_proc_prefix(ns);
         // println!("gen proc {} under {}", s, ns,);
@@ -329,7 +329,7 @@ fn gen_call_code(
           }
           match (body.get_inner(0), body.get_inner(1)) {
             (Some(condition), Some(true_branch)) => {
-              gen_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), TernaryTreeList::Empty);
+              gen_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), &[]);
               let false_code = match body.get(2) {
                 Some(fal) => to_js_code(fal, ns, local_defs, file_imports, tags, None)?,
                 None => String::from("null"),
@@ -354,7 +354,7 @@ fn gen_call_code(
             (Some(Calcit::Symbol { sym, .. }), Some(v)) | (Some(Calcit::Import(CalcitImport { def: sym, .. })), Some(v)) => {
               // let _name = escape_var(sym); // TODO
               let ref_path = wrap_js_str(&format!("{ns}/{sym}"));
-              gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), TernaryTreeList::Empty);
+              gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &[]);
               let value_code = &to_js_code(v, ns, local_defs, file_imports, tags, None)?;
               gen_stack::pop_call_stack();
               Ok(format!(
@@ -369,13 +369,13 @@ fn gen_call_code(
         CalcitSyntax::Defn => match (body.get_inner(0), body.get_inner(1)) {
           (Some(Calcit::Symbol { sym, .. }), Some(Calcit::List(ys))) => {
             let func_body = body.skip(2)?;
-            gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), TernaryTreeList::Empty);
+            gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &[]);
             let passed_defs = PassedDefs {
               ns,
               local_defs,
               file_imports,
             };
-            let ret = gen_js_func(sym, &get_raw_args(ys)?, &func_body.into(), &passed_defs, false, tags, ns);
+            let ret = gen_js_func(sym, &get_raw_args_fn(ys)?, &func_body.into(), &passed_defs, false, tags, ns);
             gen_stack::pop_call_stack();
             match ret {
               Ok(code) => Ok(format!("{return_code}{code}")),
@@ -389,7 +389,7 @@ fn gen_call_code(
         CalcitSyntax::Quasiquote => Ok(format!("(/* Unexpected quasiquote {} */ null)", xs.lisp_str())),
         CalcitSyntax::Try => match (body.get(0), body.get(1)) {
           (Some(expr), Some(handler)) => {
-            gen_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), TernaryTreeList::Empty);
+            gen_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), &[]);
             let next_return_label = return_label.unwrap_or("return ");
             let try_code = to_js_code(expr, ns, local_defs, file_imports, tags, Some(next_return_label))?;
             let err_var = js_gensym("errMsg");
@@ -672,7 +672,7 @@ fn gen_let_code(
 
     match &let_def_body[0] {
       Calcit::Nil => {
-        for (idx, x) in content.into_iter().enumerate() {
+        for (idx, x) in content.iter().enumerate() {
           if idx == content.len() - 1 {
             body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, Some(return_label))?);
             body_part.push('\n');
@@ -686,7 +686,7 @@ fn gen_let_code(
       Calcit::List(xs) if xs.is_empty() => {
         // non content defs_code
 
-        for (idx, x) in content.into_iter().enumerate() {
+        for (idx, x) in content.iter().enumerate() {
           if idx == content.len() - 1 {
             body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, Some(return_label))?);
             body_part.push('\n');
@@ -702,14 +702,14 @@ fn gen_let_code(
         let def_code = xs[1].to_owned();
 
         match &def_name {
-          Calcit::Local { sym, .. } => {
+          Calcit::Local(CalcitLocal { sym, .. }) => {
             // TODO `let` inside expressions makes syntax error
             let left = escape_var(sym);
             let right = to_js_code(&def_code, ns, &scoped_defs, file_imports, tags, None)?;
             writeln!(defs_code, "let {left} = {right};").expect("write");
 
             if scoped_defs.contains(sym) {
-              for (idx, x) in content.into_iter().enumerate() {
+              for (idx, x) in content.iter().enumerate() {
                 if idx == content.len() - 1 {
                   // normally, last item of function body returns as return value(even in recursion)
                   if local_defs.contains(sym) {
@@ -755,7 +755,7 @@ fn gen_let_code(
                 }
               }
 
-              for (idx, x) in content.into_iter().enumerate() {
+              for (idx, x) in content.iter().enumerate() {
                 if idx == content.len() - 1 {
                   body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, Some(return_label))?);
                   body_part.push('\n');
@@ -929,7 +929,7 @@ fn uses_recur(xs: &Calcit) -> bool {
 
 fn gen_js_func(
   name: &str,
-  args: &[CalcitArgLabel],
+  args: &CalcitFnArgs,
   raw_body: &TernaryTreeList<Calcit>,
   passed_defs: &PassedDefs,
   exported: bool,
@@ -944,49 +944,68 @@ fn gen_js_func(
   let mut has_optional = false;
   let mut args_count = 0;
   let mut optional_count = 0;
-  for sym in args {
-    if spreading {
-      if let CalcitArgLabel::Name(sym) = sym {
-        if !args_code.is_empty() {
-          args_code.push_str(", ");
-        }
-        local_defs.insert(sym.to_owned());
-        let arg_name = escape_var(sym);
-        args_code.push_str("...");
-        args_code.push_str(&arg_name);
-        // js list and calcit-js are different in spreading
-        write!(spreading_code, "\n{arg_name} = {var_prefix}arrayToList({arg_name});").expect("write");
-        break; // no more args after spreading argument
-      } else {
-        return Err(format!("unexpected argument after spreading: {}", sym));
-      }
-    } else if has_optional {
-      if let CalcitArgLabel::Name(sym) = sym {
-        if !args_code.is_empty() {
-          args_code.push_str(", ");
-        }
-        local_defs.insert(sym.to_owned());
-        args_code.push_str(&escape_var(sym));
-        optional_count += 1;
-      } else {
-        return Err(format!("unexpected argument after optional: {}", sym));
-      }
-    } else {
-      match sym {
-        CalcitArgLabel::RestMark => {
-          spreading = true;
-        }
-        CalcitArgLabel::OptionalMark => {
-          has_optional = true;
-        }
-        CalcitArgLabel::Name(sym) => {
-          if !args_code.is_empty() {
-            args_code.push_str(", ");
+
+  match args {
+    CalcitFnArgs::MarkedArgs(args) => {
+      for sym in args {
+        if spreading {
+          if let CalcitArgLabel::Idx(idx) = sym {
+            if !args_code.is_empty() {
+              args_code.push_str(", ");
+            }
+            let sym = CalcitLocal::read_name(*idx);
+            let arg_name = escape_var(&sym);
+            local_defs.insert(sym.into());
+            args_code.push_str("...");
+            args_code.push_str(&arg_name);
+            // js list and calcit-js are different in spreading
+            write!(spreading_code, "\n{arg_name} = {var_prefix}arrayToList({arg_name});").expect("write");
+            break; // no more args after spreading argument
+          } else {
+            return Err(format!("unexpected argument after spreading: {}", sym));
           }
-          local_defs.insert(sym.to_owned());
-          args_code.push_str(&escape_var(sym));
-          args_count += 1;
+        } else if has_optional {
+          if let CalcitArgLabel::Idx(idx) = sym {
+            if !args_code.is_empty() {
+              args_code.push_str(", ");
+            }
+            let sym = CalcitLocal::read_name(*idx);
+            args_code.push_str(&escape_var(&sym));
+            local_defs.insert(sym.into());
+            optional_count += 1;
+          } else {
+            return Err(format!("unexpected argument after optional: {}", sym));
+          }
+        } else {
+          match sym {
+            CalcitArgLabel::RestMark => {
+              spreading = true;
+            }
+            CalcitArgLabel::OptionalMark => {
+              has_optional = true;
+            }
+            CalcitArgLabel::Idx(idx) => {
+              if !args_code.is_empty() {
+                args_code.push_str(", ");
+              }
+              let sym = CalcitLocal::read_name(*idx);
+              args_code.push_str(&escape_var(&sym));
+              local_defs.insert(sym.into());
+              args_count += 1;
+            }
+          }
         }
+      }
+    }
+    CalcitFnArgs::Args(args) => {
+      for idx in args {
+        if !args_code.is_empty() {
+          args_code.push_str(", ");
+        }
+        let sym = CalcitLocal::read_name(*idx);
+        args_code.push_str(&escape_var(&sym));
+        local_defs.insert(sym.into());
+        args_count += 1;
       }
     }
   }
@@ -1242,7 +1261,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           writeln!(defs_code, "\nvar {} = $calcit_procs.{};", escape_var(&def), escape_var(&def)).expect("write");
         }
         Calcit::Fn { info, .. } => {
-          gen_stack::push_call_stack(&info.def_ns, &info.name, StackKind::Codegen, f.to_owned(), TernaryTreeList::Empty);
+          gen_stack::push_call_stack(&info.def_ns, &info.name, StackKind::Codegen, f.to_owned(), &[]);
           let passed_defs = PassedDefs {
             ns: &ns,
             local_defs: &def_names,
@@ -1262,7 +1281,7 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
         Calcit::Thunk(thunk) => {
           // TODO need topological sorting for accuracy
           // values are called directly, put them after fns
-          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, thunk.get_code().to_owned(), TernaryTreeList::Empty);
+          gen_stack::push_call_stack(&ns, &def, StackKind::Codegen, thunk.get_code().to_owned(), &[]);
           writeln!(
             vals_code,
             "\nexport var {} = {};",
