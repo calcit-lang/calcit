@@ -615,12 +615,21 @@ fn check_fn_args(
   let expected_size = defined_args.len();
   let actual_size = params.len();
 
-  // TODO handle this correctly after implemented call-spread
-  for item in params {
-    if let Calcit::Symbol { sym, .. } = item {
-      if &**sym == "&" {
-        return; // no need to check
+  for (idx, item) in params.iter().enumerate() {
+    if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = item {
+      if expected_size < (idx + 1) {
+        let mut warnings = check_warnings.borrow_mut();
+        let loc = NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![]));
+        let args = CalcitLocal::display_args(defined_args);
+        warnings.push(LocatedWarning::new(
+          format!(
+            "[Warn] expected {} args in {} `{}`, got spreading form `{}`, at {}/{}",
+            expected_size, f_name, args, params, file_ns, def_name
+          ),
+          loc,
+        ));
       }
+      return; // no need to check
     }
   }
 

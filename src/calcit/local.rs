@@ -36,4 +36,21 @@ impl CalcitLocal {
     let (_, s) = locals.load(idx);
     s.to_string()
   }
+
+  /// display local variables from numbers
+  pub fn display_args(xs: &[u16]) -> String {
+    let mut s = "(".to_owned();
+    let mut first = true;
+    for i in xs {
+      let name = Self::read_name(*i);
+      if first {
+        first = false;
+      } else {
+        s.push(' ');
+      }
+      s.push_str(&name);
+    }
+    s.push(')');
+    s
+  }
 }
