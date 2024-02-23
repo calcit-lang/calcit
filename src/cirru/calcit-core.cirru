@@ -505,8 +505,8 @@
                 &let
                   x0 $ &list:first xs
                   if (list? x0)
-                    recur (append x0 base) & $ &list:rest xs
-                    recur ([] x0 base) & $ &list:rest xs
+                    &call-spread recur (append x0 base) & $ &list:rest xs
+                    &call-spread recur ([] x0 base) & $ &list:rest xs
         |/ $ %{} :CodeEntry (:doc |dividing)
           :code $ quote
             defn / (x & ys)

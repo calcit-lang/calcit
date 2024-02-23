@@ -531,9 +531,7 @@ pub fn evaluate_lines(
   Ok(ret)
 }
 
-/// TODO: simplify this
-/// evaluate symbols before calling a function
-/// notice that `&` is used to spread a list
+/// quick path evaluate symbols before calling a function, not need to check `&` for spreading
 pub fn evaluate_args(
   items: CalcitList,
   scope: &CalcitScope,
@@ -541,55 +539,16 @@ pub fn evaluate_args(
   call_stack: &CallStackList,
 ) -> Result<Vec<Calcit>, CalcitErr> {
   let mut ret: Vec<Calcit> = Vec::with_capacity(items.len());
-  let mut spreading = false;
   for item in &items {
-    match item {
-      Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
-        spreading = true;
-      }
-      _ => {
-        if item.is_expr_evaluated() {
-          if spreading {
-            match item {
-              Calcit::List(xs) => {
-                for x in &**xs {
-                  ret.push((*x).to_owned());
-                }
-                spreading = false
-              }
-              a => {
-                return Err(CalcitErr::use_msg_stack(
-                  format!("expected list for spreading, got: {a}"),
-                  call_stack,
-                ))
-              }
-            }
-          } else {
-            ret.push(item.to_owned());
-          }
-        } else {
-          let v = evaluate_expr(item, scope, file_ns, call_stack)?;
+    // if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = item {
+    //   unreachable!("unexpected spread in args: {items}, should be handled before calling this")
+    // }
 
-          if spreading {
-            match v {
-              Calcit::List(xs) => {
-                for x in &*xs {
-                  ret.push((*x).to_owned());
-                }
-                spreading = false
-              }
-              a => {
-                return Err(CalcitErr::use_msg_stack(
-                  format!("expected list for spreading, got: {a}"),
-                  call_stack,
-                ))
-              }
-            }
-          } else {
-            ret.push(v);
-          }
-        }
-      }
+    if item.is_expr_evaluated() {
+      ret.push(item.to_owned());
+    } else {
+      let v = evaluate_expr(item, scope, file_ns, call_stack)?;
+      ret.push(v);
     }
   }
   // println!("Evaluated args: {}", ret);
