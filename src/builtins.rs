@@ -302,5 +302,6 @@ pub fn is_js_syntax_procs(s: &str) -> bool {
       | "to-calcit-data"
       | "to-cirru-edn"
       | "to-js-data"
+      | "&raw-code"
   )
 }

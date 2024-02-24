@@ -5,7 +5,7 @@ use crate::{
     CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
   },
   call_stack::{CallStackList, StackKind},
-  program, runner,
+  codegen, program, runner,
 };
 
 use std::cell::RefCell;
@@ -232,9 +232,7 @@ pub fn preprocess_expr(
               });
               Ok(form)
             }
-            // TODO check js_mode
-            None if is_js_syntax_procs(def) => Ok(expr.to_owned()),
-            None if def.starts_with('.') => Ok(expr.to_owned()),
+            None if codegen::codegen_mode() && is_js_syntax_procs(def) => Ok(expr.to_owned()),
             None => {
               let from_default = program::lookup_default_target_in_import(def_ns, def);
               if let Some(target_ns) = from_default {

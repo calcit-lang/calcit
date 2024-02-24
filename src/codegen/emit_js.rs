@@ -508,6 +508,11 @@ fn gen_call_code(
           )),
           (_, _) => Err(format!("set! expected 2 nodes, got: {}", body)),
         },
+        "&raw-code" => match body.get_inner(0) {
+          Some(Calcit::Str(s)) => Ok((**s).to_owned()),
+          Some(a) => Err(format!("&raw-code expected a string, got: {a}")),
+          None => Err(format!("&raw-code expected 1 node, got: {}", body)),
+        },
         _ => {
           // TODO
           let args_code = gen_args_code(&body, ns, local_defs, file_imports, tags)?;

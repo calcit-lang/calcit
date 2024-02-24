@@ -307,6 +307,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
 
 fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Result<(), String> {
   let started_time = Instant::now();
+  codegen::set_codegen_mode(true);
 
   if ir_mode {
     builtins::effects::modify_cli_running_mode(builtins::effects::CliRunningMode::Ir)?;
