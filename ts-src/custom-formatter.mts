@@ -41,7 +41,7 @@ let styles = (o: any) => {
   let keys = Object.keys(o);
   for (let idx = 0; idx < keys.length; idx++) {
     let key = keys[idx];
-    styleCode += `${kabab(key)}: ${(o as any)[key]};`;
+    styleCode += `${kabab(key)}:${(o as any)[key]};`;
   }
   return {
     style: styleCode,
@@ -62,6 +62,15 @@ let div = (style: any, ...children: any[]) => {
 let span = (style: any, ...children: any[]) => {
   return ["span", styles(style), ...children];
 };
+let table = (style: any, ...children: any[]) => {
+  return ["table", styles(style), ...children];
+};
+let tr = (style: any, ...children: any[]) => {
+  return ["tr", styles(style), ...children];
+};
+let td = (style: any, ...children: any[]) => {
+  return ["td", styles(style), ...children];
+};
 
 export let load_console_formatter_$x_ = () => {
   if (typeof window === "object") {
@@ -81,7 +90,7 @@ export let load_console_formatter_$x_ = () => {
               if (is_literal(obj.get(idx))) {
                 preview += obj.get(idx).toString();
               } else {
-                preview += "...";
+                preview += "..";
                 break;
               }
             }
@@ -109,7 +118,7 @@ export let load_console_formatter_$x_ = () => {
               if (is_literal(k) && is_literal(v)) {
                 preview += `(${k.toString()} ${v.toString()})`;
               } else {
-                preview += "...";
+                preview += "..";
                 break;
               }
             }
@@ -156,10 +165,24 @@ export let load_console_formatter_$x_ = () => {
         },
         hasBody: (obj) => {
           if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
-            return obj.len() > 0;
+            let has_collection = false;
+            for (let idx = 0; idx < obj.len(); idx++) {
+              if (!is_literal(obj.get(idx))) {
+                has_collection = true;
+                break;
+              }
+            }
+            return obj.len() > 0 && has_collection;
           }
           if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
-            return obj.len() > 0;
+            let has_collection = false;
+            for (let [k, v] of obj.pairs()) {
+              if (!is_literal(k) || !is_literal(v)) {
+                has_collection = true;
+                break;
+              }
+            }
+            return obj.len() > 0 && has_collection;
           }
           if (obj instanceof CalcitSet) {
             return obj.len() > 0;
@@ -202,7 +225,7 @@ export let load_console_formatter_$x_ = () => {
             return ret;
           }
           if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
-            let ret: any[] = div({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
+            let ret: any[] = table({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
             let pairs = obj.pairs();
             pairs.sort((pa, pb) => {
               let ka = pa[0].toString();
@@ -218,29 +241,27 @@ export let load_console_formatter_$x_ = () => {
             for (let idx = 0; idx < pairs.length; idx++) {
               let [k, v] = pairs[idx];
               ret.push(
-                div(
+                tr(
                   {
                     marginLeft: "8px",
-                    display: "flex",
                   },
-                  div({ marginLeft: "8px", flexShrink: 0, display: "inline-block" }, embedObject(k)),
-                  div({ marginLeft: "8px", display: "inline-block" }, embedObject(v))
+                  td({ marginLeft: "8px", verticalAlign: "top" }, embedObject(k)),
+                  td({ marginLeft: "8px" }, embedObject(v))
                 )
               );
             }
             return ret;
           }
           if (obj instanceof CalcitRecord) {
-            let ret: any[] = div({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
+            let ret: any[] = table({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
             for (let idx = 0; idx < obj.fields.length; idx++) {
               ret.push(
-                div(
+                tr(
                   {
                     marginLeft: "8px",
-                    display: "flex",
                   },
-                  div({ marginLeft: "8px", display: "inline-block" }, embedObject(obj.fields[idx])),
-                  div({ marginLeft: "8px", display: "inline-block" }, embedObject(obj.values[idx]))
+                  td({ marginLeft: "8px", verticalAlign: "top" }, embedObject(obj.fields[idx])),
+                  td({ marginLeft: "8px" }, embedObject(obj.values[idx]))
                 )
               );
             }
