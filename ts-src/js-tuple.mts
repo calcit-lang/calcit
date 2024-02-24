@@ -62,7 +62,6 @@ export class CalcitTuple {
       content += toString(args[i], false, disableJsDataWarning);
     }
     if (this.klass instanceof CalcitRecord) {
-      console.log("CLASS", this.klass);
       return `(%:: ${content} (:class ${this.klass.name.value}))`;
     } else {
       return `(:: ${content})`;

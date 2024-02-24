@@ -1,4 +1,4 @@
-import { CalcitValue } from "./js-primes.mjs";
+import { CalcitValue, is_literal } from "./js-primes.mjs";
 import { CalcitRef, CalcitSymbol, CalcitTag } from "./calcit-data.mjs";
 
 import { CalcitRecord } from "./js-record.mjs";
@@ -30,11 +30,37 @@ let embedObject = (x: CalcitValue) => {
   ];
 };
 
-let shortPreview = (x: string) => {
-  if (x.length > 102) {
-    return x.substring(0, 100) + "...";
+/** camel case to kabab case */
+let kabab = (s: string) => {
+  return s.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+};
+
+/** returns {style: "..."} */
+let styles = (o: any) => {
+  let styleCode = "";
+  let keys = Object.keys(o);
+  for (let idx = 0; idx < keys.length; idx++) {
+    let key = keys[idx];
+    styleCode += `${kabab(key)}: ${(o as any)[key]};`;
   }
-  return x;
+  return {
+    style: styleCode,
+  };
+};
+
+let hsl = (/** 0~360 */ h: number, /** 0~100 */ s: number, /** 0~100 */ l: number, /** 0~1 */ a?: number) => {
+  if (a != null) {
+    return `hsla(${h}, ${s}%, ${l}%, ${a})`;
+  }
+  return `hsl(${h}, ${s}%, ${l}%)`;
+};
+
+/** create element */
+let div = (style: any, ...children: any[]) => {
+  return ["div", styles(style), ...children];
+};
+let span = (style: any, ...children: any[]) => {
+  return ["span", styles(style), ...children];
 };
 
 export let load_console_formatter_$x_ = () => {
@@ -43,65 +69,88 @@ export let load_console_formatter_$x_ = () => {
       {
         header: (obj, config) => {
           if (obj instanceof CalcitTag) {
-            return ["div", { style: "color: hsl(240, 80%, 60%)" }, obj.toString()];
+            return div({ color: hsl(240, 80, 60) }, obj.toString());
           }
           if (obj instanceof CalcitSymbol) {
-            return ["div", { style: "color: hsl(340, 80%, 60%)" }, obj.toString()];
+            return div({ color: hsl(240, 80, 60) }, obj.toString());
           }
           if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
-            return [
-              "div",
-              { style: "color: hsl(280, 80%, 60%, 0.4)" },
-              shortPreview(obj.toString(true, true)),
-              ["span", { style: "font-size: 80%; vertical-align: 0.7em; color: hsl(280, 80%, 60%, 0.8)" }, `${obj.len()}`],
-            ];
+            let preview = "";
+            for (let idx = 0; idx < obj.len(); idx++) {
+              preview += " ";
+              if (is_literal(obj.get(idx))) {
+                preview += obj.get(idx).toString();
+              } else {
+                preview += "...";
+                break;
+              }
+            }
+            return div(
+              {
+                color: hsl(280, 80, 60, 0.4),
+              },
+              `[]`,
+              span(
+                {
+                  fontSize: "8px",
+                  verticalAlign: "middle",
+                  color: hsl(280, 80, 80, 0.8),
+                },
+                `${obj.len()}`
+              ),
+              " ",
+              preview
+            );
           }
           if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
-            return ["div", { style: "color: hsl(280, 80%, 60%, 0.4)" }, shortPreview(obj.toString(true, true))];
+            let preview = "";
+            for (let [k, v] of obj.pairs()) {
+              preview += " ";
+              if (is_literal(k) && is_literal(v)) {
+                preview += `(${k.toString()} ${v.toString()})`;
+              } else {
+                preview += "...";
+                break;
+              }
+            }
+            return div({ color: hsl(280, 80, 60, 0.4) }, "{}", preview);
           }
           if (obj instanceof CalcitSet) {
-            return ["div", { style: "color: hsl(280, 80%, 60%, 0.4)" }, obj.toString(true)];
+            return div({ color: hsl(280, 80, 60, 0.4) }, obj.toString(true));
           }
           if (obj instanceof CalcitRecord) {
-            let ret: any[] = ["div", { style: "color: hsl(280, 80%, 60%)" }, `%{} ${obj.name}`];
-            for (let idx = 0; idx < obj.fields.length; idx++) {
-              ret.push([
-                "div",
-                { style: "margin-left: 8px;" },
-                ["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(obj.fields[idx])],
-                ["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(obj.values[idx])],
-              ]);
-            }
+            let ret: any[] = div({ color: hsl(280, 80, 60, 0.4) }, `%{} ${obj.name} ...`);
             return ret;
           }
           if (obj instanceof CalcitTuple) {
-            let ret: any[] = ["div", {}];
-            ret.push(["div", { style: "display: inline-block; color: hsl(300, 100%, 40%); " }, "::"]);
-            ret.push(["div", { style: "margin-left: 6px; display: inline-block;" }, embedObject(obj.tag)]);
+            let ret: any[] = div(
+              {},
+              div({ display: "inline-block", color: hsl(300, 100, 40) }, "::"),
+              div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.tag))
+            );
             for (let idx = 0; idx < obj.extra.length; idx++) {
-              ret.push(["div", { style: "margin-left: 6px; display: inline-block;" }, embedObject(obj.extra[idx])]);
+              ret.push(div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.extra[idx])));
             }
             return ret;
           }
           if (obj instanceof CalcitRef) {
-            return [
-              "div",
-              { style: "color: hsl(280, 80%, 60%)" },
+            return div(
+              {
+                color: hsl(280, 80, 60),
+              },
               `Ref ${obj.path}`,
-              ["div", { style: "color: hsl(280, 80%, 60%)" }, ["div", { style: "margin-left: 8px;" }, embedObject(obj.value)]],
-            ];
+              div({ color: hsl(280, 80, 60) }, div({ marginLeft: "8px" }, embedObject(obj.value)))
+            );
           }
           if (obj instanceof CalcitCirruQuote) {
-            return [
-              "div",
-              { style: "color: hsl(240, 80%, 60%); display: flex;" },
+            return div(
+              { color: hsl(280, 80, 60), display: "flex" },
               `CirruQuote`,
-              [
-                "div",
-                { style: "color: hsl(280, 80%, 60%); padding: 4px 4px; margin: 0 4px 2px; border: 1px solid hsl(0,70%,90%); border-radius: 4px;" },
-                obj.textForm().trim(),
-              ],
-            ];
+              div(
+                { color: hsl(280, 80, 60), padding: "4px 4px", margin: "0 4px 2px", border: "1px solid hsl(0,70%,90%)", borderRadius: "4px" },
+                obj.textForm().trim()
+              )
+            );
           }
           return null;
         },
@@ -115,33 +164,45 @@ export let load_console_formatter_$x_ = () => {
           if (obj instanceof CalcitSet) {
             return obj.len() > 0;
           }
+          if (obj instanceof CalcitRecord) {
+            return obj.fields.length > 0;
+          }
           return false;
         },
         body: (obj, config) => {
           if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
             let flexMode = obj.len() > 40 ? "inline-flex" : "flex";
-            return ["div", { style: "color: hsl(280, 80%, 60%)" }].concat(
-              obj.toArray().map((x, idx) => {
-                return [
-                  "div",
-                  { style: `margin-left: 8px; display: ${flexMode}; padding-right: 16px;` },
-                  ["span", { style: "font-family: monospace; margin-right: 8px; color: hsl(280,80%,85%); flex-shrink: 0; font-size: 10px;" }, idx],
-                  embedObject(x),
-                ];
-              }) as any[]
+            return div(
+              { color: hsl(280, 80, 60), borderLeft: "1px solid #eee" },
+              ...(obj.toArray().map((x, idx) => {
+                return div(
+                  { marginLeft: "8px", display: flexMode, paddingRight: "16px" },
+                  span(
+                    {
+                      fontFamily: "monospace",
+                      marginRight: "8px",
+                      color: hsl(280, 80, 90),
+                      flexShrink: 0,
+                      fontSize: "10px",
+                    },
+                    idx
+                  ),
+                  embedObject(x)
+                );
+              }) as any[])
             );
           }
           if (obj instanceof CalcitSet) {
-            let ret: any[] = ["div", { style: "color: hsl(280, 80%, 60%)" }];
+            let ret: any[] = div({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
             let values = obj.values();
             for (let idx = 0; idx < values.length; idx++) {
               let x = values[idx];
-              ret.push(["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(x)]);
+              ret.push(div({ marginLeft: "8px", display: "inline-block" }, embedObject(x)));
             }
             return ret;
           }
           if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
-            let ret: any[] = ["div", { style: "color: hsl(280, 80%, 60%)" }];
+            let ret: any[] = div({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
             let pairs = obj.pairs();
             pairs.sort((pa, pb) => {
               let ka = pa[0].toString();
@@ -156,12 +217,32 @@ export let load_console_formatter_$x_ = () => {
             });
             for (let idx = 0; idx < pairs.length; idx++) {
               let [k, v] = pairs[idx];
-              ret.push([
-                "div",
-                { style: "margin-left: 8px; display: flex;" },
-                ["div", { style: "margin-left: 8px; flex-shrink: 0; display: inline-block;" }, embedObject(k)],
-                ["div", { style: "margin-left: 8px; display: inline-block;" }, embedObject(v)],
-              ]);
+              ret.push(
+                div(
+                  {
+                    marginLeft: "8px",
+                    display: "flex",
+                  },
+                  div({ marginLeft: "8px", flexShrink: 0, display: "inline-block" }, embedObject(k)),
+                  div({ marginLeft: "8px", display: "inline-block" }, embedObject(v))
+                )
+              );
+            }
+            return ret;
+          }
+          if (obj instanceof CalcitRecord) {
+            let ret: any[] = div({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
+            for (let idx = 0; idx < obj.fields.length; idx++) {
+              ret.push(
+                div(
+                  {
+                    marginLeft: "8px",
+                    display: "flex",
+                  },
+                  div({ marginLeft: "8px", display: "inline-block" }, embedObject(obj.fields[idx])),
+                  div({ marginLeft: "8px", display: "inline-block" }, embedObject(obj.values[idx]))
+                )
+              );
             }
             return ret;
           }
