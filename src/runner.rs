@@ -40,17 +40,17 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     }
     Calcit::Local(CalcitLocal { idx, .. }) => evaluate_symbol_from_scope(*idx, scope),
     Calcit::Import(CalcitImport { ns, def, coord, .. }) => evaluate_symbol_from_program(def, ns, *coord, call_stack),
-    Calcit::List(xs) => match xs.get(0) {
+    Calcit::List(xs) => match xs.first() {
       None => Err(CalcitErr::use_msg_stack(format!("cannot evaluate empty expr: {expr}"), call_stack)),
       Some(x) => {
         // println!("eval expr: {}", expr.lisp_str());
         // println!("eval expr x: {}", x);
 
         if x.is_expr_evaluated() {
-          call_expr(x, xs, scope, file_ns, call_stack, false)
+          call_expr(x, &xs.0, scope, file_ns, call_stack, false)
         } else {
           let v = evaluate_expr(x, scope, file_ns, call_stack)?;
-          call_expr(&v, xs, scope, file_ns, call_stack, false)
+          call_expr(&v, &xs.0, scope, file_ns, call_stack, false)
         }
       }
     },
@@ -64,7 +64,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
 
 pub fn call_expr(
   v: &Calcit,
-  xs: &CalcitList,
+  xs: &TernaryTreeList<Calcit>,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
@@ -83,7 +83,7 @@ pub fn call_expr(
     }
     Calcit::Syntax(s, def_ns) => {
       if using_stack() {
-        let next_stack = call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, &Calcit::from(xs), &rest_nodes.0.to_vec());
+        let next_stack = call_stack.extend(def_ns, s.as_ref(), StackKind::Syntax, &Calcit::from(xs), &rest_nodes.to_vec());
         builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
           if e.stack.is_empty() {
             let mut e2 = e;
@@ -134,13 +134,7 @@ pub fn call_expr(
       );
 
       let next_stack = if using_stack() {
-        call_stack.extend(
-          &info.def_ns,
-          &info.name,
-          StackKind::Macro,
-          &Calcit::from(xs),
-          &rest_nodes.0.to_vec(),
-        )
+        call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &Calcit::from(xs), &rest_nodes.to_vec())
       } else {
         call_stack.to_owned()
       };
@@ -368,7 +362,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
       match &*info.args {
         CalcitFnArgs::Args(args) => {
           if args.len() != current_values.len() {
-            unreachable!("args length mismatch")
+            unreachable!("args length mismatch in recur")
           }
           for (idx, v) in args.iter().enumerate() {
             body_scope.insert_mut(*v, current_values[idx].to_owned());
@@ -409,7 +403,7 @@ pub fn run_fn_owned(values: Vec<Calcit>, info: &CalcitFn, call_stack: &CallStack
       match &*info.args {
         CalcitFnArgs::Args(args) => {
           if args.len() != current_values.len() {
-            unreachable!("args length mismatch")
+            unreachable!("args length mismatch in recur")
           }
           for (idx, v) in current_values.into_iter().enumerate() {
             body_scope.insert_mut(args[idx], v);
@@ -533,7 +527,7 @@ pub fn evaluate_lines(
 
 /// quick path evaluate symbols before calling a function, not need to check `&` for spreading
 pub fn evaluate_args(
-  items: CalcitList,
+  items: TernaryTreeList<Calcit>,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
@@ -558,63 +552,63 @@ pub fn evaluate_args(
 // evaluate symbols before calling a function
 /// notice that `&` is used to spread a list
 pub fn evaluate_spreaded_args(
-  items: CalcitList,
+  items: TernaryTreeList<Calcit>,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<Vec<Calcit>, CalcitErr> {
-  let mut ret: Vec<Calcit> = vec![];
+  let mut ret: Vec<Calcit> = Vec::with_capacity(items.len());
   let mut spreading = false;
-  for item in &items {
-    match item {
-      Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
-        spreading = true;
-      }
-      _ => {
-        if item.is_expr_evaluated() {
-          if spreading {
-            match item {
-              Calcit::List(xs) => {
-                for x in &**xs {
-                  ret.push((*x).to_owned());
-                }
-                spreading = false
-              }
-              a => {
-                return Err(CalcitErr::use_msg_stack(
-                  format!("expected list for spreading, got: {a}"),
-                  call_stack,
-                ))
-              }
+
+  items.traverse_result(&mut |item| match item {
+    Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
+      spreading = true;
+      Ok(())
+    }
+    _ => {
+      if item.is_expr_evaluated() {
+        if spreading {
+          match item {
+            Calcit::List(xs) => {
+              xs.traverse(&mut |x| {
+                ret.push(x.to_owned());
+              });
+              spreading = false;
+              Ok(())
             }
-          } else {
-            ret.push(item.to_owned());
+            a => Err(CalcitErr::use_msg_stack(
+              format!("expected list for spreading, got: {a}"),
+              call_stack,
+            )),
           }
         } else {
-          let v = evaluate_expr(item, scope, file_ns, call_stack)?;
+          ret.push(item.to_owned());
+          Ok(())
+        }
+      } else {
+        let v = evaluate_expr(item, scope, file_ns, call_stack)?;
 
-          if spreading {
-            match v {
-              Calcit::List(xs) => {
-                for x in &*xs {
-                  ret.push((*x).to_owned());
-                }
-                spreading = false
-              }
-              a => {
-                return Err(CalcitErr::use_msg_stack(
-                  format!("expected list for spreading, got: {a}"),
-                  call_stack,
-                ))
-              }
+        if spreading {
+          match v {
+            Calcit::List(xs) => {
+              xs.traverse(&mut |x| {
+                ret.push(x.to_owned());
+              });
+              spreading = false;
+              Ok(())
             }
-          } else {
-            ret.push(v);
+            a => Err(CalcitErr::use_msg_stack(
+              format!("expected list for spreading, got: {a}"),
+              call_stack,
+            )),
           }
+        } else {
+          ret.push(v);
+          Ok(())
         }
       }
     }
-  }
+  })?;
   // println!("Evaluated args: {}", ret);
   Ok(ret)
 }

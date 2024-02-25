@@ -181,9 +181,9 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     Calcit::Thunk(thunk) => dump_code(thunk.get_code()),
     Calcit::List(xs) => {
       let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
-      for x in &**xs {
+      xs.traverse(&mut |x| {
         ys.push(dump_code(x));
-      }
+      });
       Edn::from(ys)
     }
     Calcit::Method(method, kind) => Edn::map_from_iter([

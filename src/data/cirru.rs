@@ -154,14 +154,13 @@ pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
     Calcit::Str(s) => Ok(Cirru::Leaf((**s).into())),
     Calcit::List(ys) => {
       let mut zs: Vec<Cirru> = Vec::with_capacity(ys.len());
-      for y in &**ys {
-        match calcit_data_to_cirru(y) {
-          Ok(v) => {
-            zs.push(v);
-          }
-          Err(e) => return Err(e),
+      ys.traverse_result(&mut |y| match calcit_data_to_cirru(y) {
+        Ok(v) => {
+          zs.push(v);
+          Ok(())
         }
-      }
+        Err(e) => Err(e),
+      })?;
       Ok(Cirru::List(zs))
     }
     a => Err(format!("unknown data for cirru: {a}")),
@@ -183,9 +182,10 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Tag(s) => Ok(Cirru::leaf(format!(":{s}"))),
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
-      for x in &**xs {
+      xs.traverse_result::<String>(&mut |x| {
         ys.push(calcit_to_cirru(x)?);
-      }
+        Ok(())
+      })?;
       Ok(Cirru::List(ys))
     }
     Calcit::Proc(s) => Ok(Cirru::Leaf(s.as_ref().into())),

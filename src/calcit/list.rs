@@ -186,9 +186,8 @@ impl CalcitList {
     self.0.get(idx)
   }
 
-  /// referce to inner Calcit value
-  pub fn get_inner(&self, idx: usize) -> Option<&Calcit> {
-    self.0.get(idx)
+  pub fn first(&self) -> Option<&Calcit> {
+    self.0.first()
   }
 
   pub fn to_vec(&self) -> Vec<Calcit> {
@@ -252,6 +251,14 @@ impl CalcitList {
 
   pub fn index_of(&self, x: &Calcit) -> Option<usize> {
     self.0.index_of(x)
+  }
+
+  pub fn traverse(&self, f: &mut dyn FnMut(&Calcit)) {
+    self.0.traverse(f)
+  }
+
+  pub fn traverse_result<S>(&self, f: &mut dyn FnMut(&Calcit) -> Result<(), S>) -> Result<(), S> {
+    self.0.traverse_result(f)
   }
 
   pub fn iter(&self) -> CalcitListIterator {

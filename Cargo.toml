@@ -20,7 +20,7 @@ exclude = [
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cirru_edn = "0.6.1"
+cirru_edn = "0.6.3"
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
 cirru_parser = "0.1.29"
 # cirru_parser = { path = "/Users/chenyong/repo/cirru/parser.rs" }
@@ -32,7 +32,7 @@ notify-debouncer-mini = "0.4.1"
 walkdir = "2.4.0"
 hex = "0.4.3"
 rpds = "1.1.0"
-im_ternary_tree = "0.0.17"
+im_ternary_tree = "0.0.18"
 # im_ternary_tree = { path = "/Users/chenyong/repo/calcit-lang/ternary-tree.rs" }
 colored = "2.0.4"
 strum = "0.25"

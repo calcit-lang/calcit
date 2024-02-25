@@ -44,9 +44,10 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     }
     Calcit::List(xs) => {
       let mut ys = CalcitList::new_inner_from(&[Calcit::Proc(CalcitProc::List)]);
-      for x in &**xs {
+      xs.traverse_result::<String>(&mut |x| {
         ys = ys.push_right(data_to_calcit(x, ns, at_def)?);
-      }
+        Ok(())
+      })?;
       Ok(Calcit::from(ys))
     }
     Calcit::Set(xs) => {

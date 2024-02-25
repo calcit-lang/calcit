@@ -13,7 +13,7 @@ pub mod syntax;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use crate::calcit::{Calcit, CalcitErr, CalcitList, CalcitProc, CalcitScope, CalcitSyntax};
+use crate::calcit::{Calcit, CalcitErr, CalcitProc, CalcitScope, CalcitSyntax};
 use crate::call_stack::{using_stack, CallStackList};
 
 use im_ternary_tree::TernaryTreeList;
@@ -249,7 +249,7 @@ pub fn register_import_proc(name: &str, f: FnType) {
 
 pub fn handle_syntax(
   name: &CalcitSyntax,
-  nodes: &CalcitList,
+  nodes: &TernaryTreeList<Calcit>,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,

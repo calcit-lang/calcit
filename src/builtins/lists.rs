@@ -457,9 +457,9 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
       // dirty since only functions being call directly then we become fast
       (Calcit::List(xs), Calcit::Fn { info, .. }) => {
         let mut xs2: Vec<Calcit> = vec![];
-        for x in &**xs {
-          xs2.push(x.to_owned())
-        }
+        xs.traverse(&mut |x| {
+          xs2.push(x.to_owned());
+        });
         xs2.sort_by(|a, b| -> Ordering {
           let v = runner::run_fn(&[(*a).to_owned(), (*b).to_owned()], info, call_stack);
           match v {
@@ -484,9 +484,9 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
       }
       (Calcit::List(xs), Calcit::Proc(proc)) => {
         let mut xs2: Vec<Calcit> = vec![];
-        for x in &**xs {
-          xs2.push(x.to_owned())
-        }
+        xs.traverse(&mut |x| {
+          xs2.push(x.to_owned());
+        });
         xs2.sort_by(|a, b| -> Ordering {
           let v = builtins::handle_proc(*proc, &[(*a).to_owned(), (*b).to_owned()], call_stack);
           match v {
@@ -646,9 +646,9 @@ pub fn list_to_set(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::List(ys) => {
       let mut zs = rpds::HashTrieSet::new_sync();
-      for y in &**ys {
-        zs.insert_mut((*y).to_owned());
-      }
+      ys.traverse(&mut |y| {
+        zs.insert_mut(y.to_owned());
+      });
       Ok(Calcit::Set(zs))
     }
     a => CalcitErr::err_str(format!("&list:to-set expected a list, got: {a}")),
@@ -662,11 +662,11 @@ pub fn distinct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::List(ys) => {
       let mut zs = CalcitList::new_inner();
-      for y in &**ys {
+      ys.traverse(&mut |y| {
         if zs.index_of(y).is_none() {
-          zs = zs.push_right((*y).to_owned());
+          zs = zs.push_right(y.to_owned());
         }
-      }
+      });
       Ok(Calcit::from(CalcitList(zs)))
     }
     a => CalcitErr::err_str(format!("&list:distinct expected a list, got: {a}")),

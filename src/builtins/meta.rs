@@ -87,9 +87,9 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
   match x {
     Calcit::List(ys) => {
       let mut xs: Vec<Cirru> = Vec::with_capacity(ys.len());
-      for y in &**ys {
+      ys.traverse(&mut |y| {
         xs.push(transform_code_to_cirru(y));
-      }
+      });
       Cirru::List(xs)
     }
     Calcit::Symbol { sym, .. } => Cirru::Leaf((**sym).into()),

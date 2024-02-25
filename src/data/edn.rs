@@ -20,9 +20,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Calcit::Registered(def) => Ok(Edn::Symbol((**def).into())),
     Calcit::List(xs) => {
       let mut ys = EdnListView::default();
-      for x in &**xs {
+      xs.traverse_result::<String>(&mut |x| {
         ys.push(calcit_to_edn(x)?);
-      }
+        Ok(())
+      })?;
       Ok(ys.into())
     }
     Calcit::Set(xs) => {
