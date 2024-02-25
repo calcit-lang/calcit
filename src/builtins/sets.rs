@@ -79,11 +79,11 @@ pub fn call_intersection(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn set_to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Set(xs)) => {
-      let mut ys = CalcitList::new_inner();
+      let mut ys = vec![];
       for x in xs {
-        ys = ys.push_right(x.to_owned());
+        ys.push(x.to_owned());
       }
-      Ok(Calcit::from(CalcitList(ys)))
+      Ok(Calcit::from(ys))
     }
     Some(a) => CalcitErr::err_str(format!("&set:to-list expected a set: {a}")),
     None => CalcitErr::err_str("&set:to-list expected 1 argument, got nothing"),

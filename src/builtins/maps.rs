@@ -116,7 +116,7 @@ pub fn to_pairs(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         chunk = chunk.push_right(k.to_owned());
         chunk = chunk.push_right(v.to_owned());
 
-        zs.insert_mut(Calcit::from(CalcitList(chunk)));
+        zs.insert_mut(Calcit::from(CalcitList::List(chunk)));
       }
       Ok(Calcit::Set(zs))
     }
@@ -126,7 +126,7 @@ pub fn to_pairs(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let mut chunk = CalcitList::new_inner();
         chunk = chunk.push_right(Calcit::Tag(fields[idx].to_owned()));
         chunk = chunk.push_right(values[idx].to_owned());
-        zs.insert_mut(Calcit::from(CalcitList(chunk)));
+        zs.insert_mut(Calcit::from(CalcitList::List(chunk)));
       }
       Ok(Calcit::Set(zs))
     }
@@ -158,9 +158,9 @@ pub fn to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let mut ys = CalcitList::new_inner();
       for (k, v) in m {
         let zs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[k.to_owned(), v.to_owned()]);
-        ys = ys.push_right(Calcit::from(CalcitList(zs)));
+        ys = ys.push_right(Calcit::from(CalcitList::List(zs)));
       }
-      Ok(Calcit::from(CalcitList(ys)))
+      Ok(Calcit::from(CalcitList::List(ys)))
     }
     Some(a) => CalcitErr::err_str(format!("&map:to-list expected a map, got: {a}")),
     None => CalcitErr::err_str("&map:to-list expected a map, got nothing"),

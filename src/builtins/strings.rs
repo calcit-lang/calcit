@@ -68,7 +68,7 @@ pub fn split(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           ys = ys.push_right(Calcit::Str(p.into()));
         }
       }
-      Ok(Calcit::from(CalcitList(ys)))
+      Ok(Calcit::from(CalcitList::List(ys)))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("split expected 2 strings, got: {a} {b}")),
     (_, _) => CalcitErr::err_str("split expected 2 arguments, got nothing"),
@@ -119,7 +119,7 @@ pub fn split_lines(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       for line in lines {
         ys = ys.push_right(Calcit::Str(line.to_owned().into()));
       }
-      Ok(Calcit::from(CalcitList(ys)))
+      Ok(Calcit::from(CalcitList::List(ys)))
     }
     Some(a) => CalcitErr::err_str(format!("split-lines expected 1 string, got: {a}")),
     _ => CalcitErr::err_str("split-lines expected 1 argument, got nothing"),

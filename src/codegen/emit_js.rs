@@ -374,7 +374,7 @@ fn gen_call_code(
               local_defs,
               file_imports,
             };
-            let ret = gen_js_func(sym, &get_raw_args_fn(ys)?, &func_body.into(), &passed_defs, false, tags, ns);
+            let ret = gen_js_func(sym, &get_raw_args_fn(ys)?, &func_body.to_vec(), &passed_defs, false, tags, ns);
             gen_stack::pop_call_stack();
             match ret {
               Ok(code) => Ok(format!("{return_code}{code}")),
@@ -936,7 +936,7 @@ fn uses_recur(xs: &Calcit) -> bool {
 fn gen_js_func(
   name: &str,
   args: &CalcitFnArgs,
-  raw_body: &TernaryTreeList<Calcit>,
+  raw_body: &[Calcit],
   passed_defs: &PassedDefs,
   exported: bool,
   tags: &RefCell<HashSet<EdnTag>>,

@@ -1,8 +1,8 @@
 pub mod preprocess;
 pub mod track;
 
-use im_ternary_tree::TernaryTreeList;
 use std::sync::Arc;
+use std::vec;
 
 use crate::builtins::{self, IMPORTED_PROCS};
 use crate::calcit::{
@@ -47,10 +47,10 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         // println!("eval expr x: {}", x);
 
         if x.is_expr_evaluated() {
-          call_expr(x, &xs.0, scope, file_ns, call_stack, false)
+          call_expr(x, xs, scope, file_ns, call_stack, false)
         } else {
           let v = evaluate_expr(x, scope, file_ns, call_stack)?;
-          call_expr(&v, &xs.0, scope, file_ns, call_stack, false)
+          call_expr(&v, xs, scope, file_ns, call_stack, false)
         }
       }
     },
@@ -64,7 +64,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
 
 pub fn call_expr(
   v: &Calcit,
-  xs: &TernaryTreeList<Calcit>,
+  xs: &CalcitList,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
@@ -149,7 +149,7 @@ pub fn call_expr(
       Ok(loop {
         // need to handle recursion
         bind_marked_args(&mut body_scope, &info.args, &current_values, call_stack)?;
-        let code = evaluate_lines(&info.body, &body_scope, &info.def_ns, &next_stack)?;
+        let code = evaluate_lines(&info.body.to_vec(), &body_scope, &info.def_ns, &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
             current_values = ys;
@@ -354,7 +354,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
     CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, values, call_stack)?,
   }
 
-  let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
+  let v = evaluate_lines(&info.body.to_vec(), &body_scope, &info.def_ns, call_stack)?;
 
   if let Calcit::Recur(xs) = v {
     let mut current_values = xs.to_vec();
@@ -370,7 +370,7 @@ pub fn run_fn(values: &[Calcit], info: &CalcitFn, call_stack: &CallStackList) ->
         }
         CalcitFnArgs::MarkedArgs(args) => bind_marked_args(&mut body_scope, args, &current_values, call_stack)?,
       }
-      let v = evaluate_lines(&info.body, &body_scope, &info.def_ns, call_stack)?;
+      let v = evaluate_lines(&info.body.to_vec(), &body_scope, &info.def_ns, call_stack)?;
       match v {
         Calcit::Recur(xs) => current_values = xs.to_vec(),
         result => return Ok(result),
@@ -454,11 +454,11 @@ pub fn bind_marked_args(
     if spreading {
       match arg {
         CalcitArgLabel::Idx(idx) => {
-          let mut chunk = CalcitList::new_inner();
+          let mut chunk: Vec<Calcit> = vec![];
           while let Some(v) = values.get(pop_values_idx.get_and_inc()) {
-            chunk = chunk.push_right(v.to_owned());
+            chunk.push(v.to_owned());
           }
-          scope.insert_mut(*idx, Calcit::List(Arc::new(chunk.into())));
+          scope.insert_mut(*idx, Calcit::from(CalcitList::Vector(chunk)));
           if pop_args_idx.0 < args.len() {
             return Err(CalcitErr::use_msg_stack(
               format!("extra args `{args:?}` after spreading in `{args:?}`",),
@@ -509,12 +509,7 @@ pub fn bind_marked_args(
   }
 }
 
-pub fn evaluate_lines(
-  lines: &TernaryTreeList<Calcit>,
-  scope: &CalcitScope,
-  file_ns: &str,
-  call_stack: &CallStackList,
-) -> Result<Calcit, CalcitErr> {
+pub fn evaluate_lines(lines: &[Calcit], scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut ret: Calcit = Calcit::Nil;
   for line in lines {
     match evaluate_expr(line, scope, file_ns, call_stack) {
@@ -527,7 +522,7 @@ pub fn evaluate_lines(
 
 /// quick path evaluate symbols before calling a function, not need to check `&` for spreading
 pub fn evaluate_args(
-  items: TernaryTreeList<Calcit>,
+  items: CalcitList,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,
@@ -552,7 +547,7 @@ pub fn evaluate_args(
 // evaluate symbols before calling a function
 /// notice that `&` is used to spread a list
 pub fn evaluate_spreaded_args(
-  items: TernaryTreeList<Calcit>,
+  items: CalcitList,
   scope: &CalcitScope,
   file_ns: &str,
   call_stack: &CallStackList,

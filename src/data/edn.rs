@@ -124,11 +124,11 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
       class: None,
     }),
     Edn::List(EdnListView(xs)) => {
-      let mut ys = CalcitList::new_inner();
+      let mut ys: Vec<Calcit> = vec![];
       for x in xs {
-        ys = ys.push_right(edn_to_calcit(x, options))
+        ys.push(edn_to_calcit(x, options))
       }
-      Calcit::from(CalcitList(ys))
+      Calcit::from(CalcitList::Vector(ys))
     }
     Edn::Set(EdnSetView(xs)) => {
       let mut ys: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();

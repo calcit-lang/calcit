@@ -40,7 +40,7 @@ pub struct CalcitFn {
   pub def_ns: Arc<str>,
   pub scope: Arc<CalcitScope>,
   pub args: Arc<CalcitFnArgs>,
-  pub body: Arc<TernaryTreeList<Calcit>>,
+  pub body: Vec<Calcit>,
 }
 
 /// Macro variant of Calcit data
@@ -50,7 +50,7 @@ pub struct CalcitMacro {
   /// where it was defined
   pub def_ns: Arc<str>,
   pub args: Arc<Vec<CalcitArgLabel>>,
-  pub body: Arc<TernaryTreeList<Calcit>>,
+  pub body: Arc<Vec<Calcit>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

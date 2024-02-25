@@ -4,7 +4,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use cirru_edn::{format, Edn, EdnListView};
-use im_ternary_tree::TernaryTreeList;
 
 use crate::calcit::{Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, ImportInfo};
 use crate::program;
@@ -200,7 +199,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
   }
 }
 
-fn dump_items_code(xs: &TernaryTreeList<Calcit>) -> Edn {
+fn dump_items_code(xs: &[Calcit]) -> Edn {
   let mut ys = EdnListView::default();
   for x in xs {
     ys.push(dump_code(x));

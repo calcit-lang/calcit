@@ -16,7 +16,6 @@ use crate::{
 };
 
 use cirru_parser::{Cirru, CirruWriterOptions};
-use im_ternary_tree::TernaryTreeList;
 
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::AtomicUsize;
@@ -524,11 +523,11 @@ pub fn tuple_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Tuple(CalcitTuple { extra, .. }) => {
       // Ok(Calcit::List(extra.iter().map(|x| Arc::new(x.to_owned())).collect_into(vec![])))
-      let mut ys = TernaryTreeList::Empty;
+      let mut ys = vec![];
       for x in extra {
-        ys = ys.push_right(x.to_owned());
+        ys.push(x.to_owned());
       }
-      Ok(Calcit::from(CalcitList(ys)))
+      Ok(Calcit::from(ys))
     }
     x => CalcitErr::err_str(format!("&tuple:params expected a tuple, got: {x}")),
   }
@@ -589,7 +588,10 @@ pub fn format_ternary_tree(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("&format-ternary-tree expected 1 argument, got:", xs);
   }
   match &xs[0] {
-    Calcit::List(ys) => Ok(Calcit::Str(ys.0.format_inline().into())),
+    Calcit::List(ys) => match &**ys {
+      CalcitList::List(ys) => Ok(Calcit::Str(ys.format_inline().into())),
+      a => CalcitErr::err_str(format!("&format-ternary-tree expected a list, currently it's a vector: {a}")),
+    },
     a => CalcitErr::err_str(format!("&format-ternary-tree expected a list, got: {a}")),
   }
 }

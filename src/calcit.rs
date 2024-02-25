@@ -294,7 +294,7 @@ pub fn format_to_lisp(x: &Calcit) -> String {
   match x {
     Calcit::List(ys) => {
       let mut s = String::from("(");
-      for (idx, y) in (ys.0).iter().enumerate() {
+      for (idx, y) in ys.iter().enumerate() {
         if idx > 0 {
           s.push(' ');
         }
@@ -384,7 +384,7 @@ impl Hash for Calcit {
       }
       Calcit::List(v) => {
         "list:".hash(_state);
-        v.0.hash(_state);
+        v.hash(_state);
       }
       Calcit::Set(v) => {
         "set:".hash(_state);
@@ -525,7 +525,7 @@ impl Ord for Calcit {
       (Calcit::Recur(_), _) => Less,
       (_, Calcit::Recur(_)) => Greater,
 
-      (Calcit::List(a), Calcit::List(b)) => a.0.cmp(&b.0),
+      (Calcit::List(a), Calcit::List(b)) => a.cmp(b),
       (Calcit::List(_), _) => Less,
       (_, Calcit::List(_)) => Greater,
 
@@ -615,7 +615,7 @@ impl PartialEq for Calcit {
       (Calcit::Tuple(a), Calcit::Tuple(b)) => a == b,
       (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,
       (Calcit::CirruQuote(b), Calcit::CirruQuote(d)) => b == d,
-      (Calcit::List(a), Calcit::List(b)) => a.0 == b.0,
+      (Calcit::List(a), Calcit::List(b)) => a == b,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,
       (Calcit::Record(a), Calcit::Record(b)) => a == b,
@@ -632,7 +632,13 @@ impl PartialEq for Calcit {
 
 impl From<TernaryTreeList<Calcit>> for Calcit {
   fn from(xs: TernaryTreeList<Calcit>) -> Calcit {
-    Calcit::List(Arc::new(CalcitList(xs)))
+    Calcit::List(Arc::new(CalcitList::List(xs)))
+  }
+}
+
+impl From<Vec<Calcit>> for Calcit {
+  fn from(xs: Vec<Calcit>) -> Calcit {
+    Calcit::List(Arc::new(CalcitList::Vector(xs)))
   }
 }
 

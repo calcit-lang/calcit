@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, vec};
 
 use cirru_parser::Cirru;
 
@@ -102,7 +102,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
       },
     },
     Cirru::List(ys) => {
-      let mut zs = CalcitList::new_inner();
+      let mut zs: Vec<Calcit> = vec![];
       for (idx, y) in ys.iter().enumerate() {
         let mut next_coord: Vec<u8> = (*coord).to_owned();
         next_coord.push(idx as u8); // code not supposed to be fatter than 256 children
@@ -115,7 +115,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
             if ys[0] == Cirru::leaf("cirru-quote") {
               // special rule for Cirru code
               if ys.len() == 2 {
-                zs = zs.push(Calcit::CirruQuote(ys[1].to_owned()));
+                zs.push(Calcit::CirruQuote(ys[1].to_owned()));
                 continue;
               }
               return Err(format!("expected 1 argument, got: {ys:?}"));
@@ -123,9 +123,9 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           }
         }
 
-        zs = zs.push(code_to_calcit(y, ns, def, next_coord)?);
+        zs.push(code_to_calcit(y, ns, def, next_coord)?);
       }
-      Ok(Calcit::from(CalcitList(zs)))
+      Ok(Calcit::from(CalcitList::Vector(zs)))
     }
   }
 }
@@ -135,11 +135,11 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
   match xs {
     Cirru::Leaf(s) => Calcit::Str((**s).into()),
     Cirru::List(ys) => {
-      let mut zs = CalcitList::new_inner();
+      let mut zs: Vec<Calcit> = vec![];
       for y in ys {
-        zs = zs.push(cirru_to_calcit(y));
+        zs.push(cirru_to_calcit(y));
       }
-      Calcit::from(CalcitList(zs))
+      Calcit::from(CalcitList::Vector(zs))
     }
   }
 }
