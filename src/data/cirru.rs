@@ -73,7 +73,12 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           },
         ]))),
         '@' => Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Proc(CalcitProc::AtomDeref),
+          // `deref` expands to `.deref` or `&atom:deref`
+          Calcit::Symbol {
+            sym: Arc::from("deref"),
+            info: symbol_info.to_owned(),
+            location: Some(coord.to_owned()),
+          },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
             info: symbol_info.to_owned(),

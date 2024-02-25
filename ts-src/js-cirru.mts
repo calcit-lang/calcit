@@ -1,7 +1,7 @@
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { CirruWriterNode, writeCirruCode } from "@cirru/writer.ts";
 
-import { CalcitValue, is_literal, _$n_compare } from "./js-primes.mjs";
+import { CalcitValue, isLiteral, _$n_compare } from "./js-primes.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitRecord } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
@@ -99,10 +99,10 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
       pairs_buffer.push(pairs[idx]);
     }
     pairs_buffer.sort((a, b) => {
-      let a0_literal = is_literal(a[0]);
-      let a1_literal = is_literal(a[1]);
-      let b0_literal = is_literal(b[0]);
-      let b1_literal = is_literal(b[1]);
+      let a0_literal = isLiteral(a[0]);
+      let a1_literal = isLiteral(a[1]);
+      let b0_literal = isLiteral(b[0]);
+      let b1_literal = isLiteral(b[1]);
       if (a0_literal && b0_literal) {
         if (a1_literal && !b1_literal) {
           return -1;
@@ -132,8 +132,8 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     }
     // placed literals first
     buffer.sort((a, b) => {
-      let a1_literal = is_literal(a[1] as CalcitValue);
-      let b1_literal = is_literal(b[1] as CalcitValue);
+      let a1_literal = isLiteral(a[1] as CalcitValue);
+      let b1_literal = isLiteral(b[1] as CalcitValue);
       if (a1_literal && !b1_literal) {
         return -1;
       } else if (!a1_literal && b1_literal) {

@@ -1,4 +1,4 @@
-import { CalcitValue, is_literal } from "./js-primes.mjs";
+import { CalcitValue, isLiteral } from "./js-primes.mjs";
 import { CalcitRef, CalcitSymbol, CalcitTag } from "./calcit-data.mjs";
 
 import { CalcitRecord } from "./js-record.mjs";
@@ -41,7 +41,10 @@ let styles = (o: any) => {
   let keys = Object.keys(o);
   for (let idx = 0; idx < keys.length; idx++) {
     let key = keys[idx];
-    styleCode += `${kabab(key)}:${(o as any)[key]};`;
+    let value = (o as any)[key];
+    if (value) {
+      styleCode += `${kabab(key)}:${value};`;
+    }
   }
   return {
     style: styleCode,
@@ -72,6 +75,21 @@ let td = (style: any, ...children: any[]) => {
   return ["td", styles(style), ...children];
 };
 
+/** handle null value in nested data */
+let saveString = (v: CalcitValue) => {
+  if (typeof v === "string") {
+    if (v.match(/[\s\"\n\t\,]/)) {
+      return `"|${v}"`;
+    } else {
+      return `|${v}`;
+    }
+  } else if (v != null && v.toString) {
+    return v.toString();
+  } else {
+    return "nil";
+  }
+};
+
 export let load_console_formatter_$x_ = () => {
   if (typeof window === "object") {
     window["devtoolsFormatters"] = [
@@ -85,18 +103,20 @@ export let load_console_formatter_$x_ = () => {
           }
           if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
             let preview = "";
+            let hasCollection = false;
             for (let idx = 0; idx < obj.len(); idx++) {
               preview += " ";
-              if (is_literal(obj.get(idx))) {
-                preview += obj.get(idx).toString();
+              if (isLiteral(obj.get(idx))) {
+                preview += saveString(obj.get(idx));
               } else {
                 preview += "..";
+                hasCollection = true;
                 break;
               }
             }
             return div(
               {
-                color: hsl(280, 80, 60, 0.4),
+                color: hasCollection ? hsl(280, 80, 60, 0.4) : null,
               },
               `[]`,
               span(
@@ -113,16 +133,18 @@ export let load_console_formatter_$x_ = () => {
           }
           if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
             let preview = "";
+            let hasCollection = false;
             for (let [k, v] of obj.pairs()) {
               preview += " ";
-              if (is_literal(k) && is_literal(v)) {
-                preview += `(${k.toString()} ${v.toString()})`;
+              if (isLiteral(k) && isLiteral(v)) {
+                preview += `(${saveString(k)} ${saveString(v)})`;
               } else {
                 preview += "..";
+                hasCollection = true;
                 break;
               }
             }
-            return div({ color: hsl(280, 80, 60, 0.4) }, "{}", preview);
+            return div({ color: hasCollection ? hsl(280, 80, 60, 0.4) : undefined }, "{}", preview);
           }
           if (obj instanceof CalcitSet) {
             return div({ color: hsl(280, 80, 60, 0.4) }, obj.toString(true));
@@ -132,15 +154,28 @@ export let load_console_formatter_$x_ = () => {
             return ret;
           }
           if (obj instanceof CalcitTuple) {
-            let ret: any[] = div(
-              {},
-              div({ display: "inline-block", color: hsl(300, 100, 40) }, "::"),
-              div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.tag))
-            );
-            for (let idx = 0; idx < obj.extra.length; idx++) {
-              ret.push(div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.extra[idx])));
+            if (obj.klass) {
+              let ret: any[] = div(
+                {},
+                div({ display: "inline-block", color: hsl(300, 100, 40) }, "%::"),
+                div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.klass)),
+                div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.tag))
+              );
+              for (let idx = 0; idx < obj.extra.length; idx++) {
+                ret.push(div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.extra[idx])));
+              }
+              return ret;
+            } else {
+              let ret: any[] = div(
+                {},
+                div({ display: "inline-block", color: hsl(300, 100, 40) }, "::"),
+                div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.tag))
+              );
+              for (let idx = 0; idx < obj.extra.length; idx++) {
+                ret.push(div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.extra[idx])));
+              }
+              return ret;
             }
-            return ret;
           }
           if (obj instanceof CalcitRef) {
             return div(
@@ -165,24 +200,12 @@ export let load_console_formatter_$x_ = () => {
         },
         hasBody: (obj) => {
           if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
-            let has_collection = false;
-            for (let idx = 0; idx < obj.len(); idx++) {
-              if (!is_literal(obj.get(idx))) {
-                has_collection = true;
-                break;
-              }
-            }
-            return obj.len() > 0 && has_collection;
+            let hasCollection = obj.nestedDataInChildren();
+            return obj.len() > 0 && hasCollection;
           }
           if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
-            let has_collection = false;
-            for (let [k, v] of obj.pairs()) {
-              if (!is_literal(k) || !is_literal(v)) {
-                has_collection = true;
-                break;
-              }
-            }
-            return obj.len() > 0 && has_collection;
+            let hasCollection = obj.nestedDataInChildren();
+            return obj.len() > 0 && hasCollection;
           }
           if (obj instanceof CalcitSet) {
             return obj.len() > 0;
@@ -228,8 +251,8 @@ export let load_console_formatter_$x_ = () => {
             let ret: any[] = table({ color: hsl(280, 80, 60), borderLeft: "1px solid #eee" });
             let pairs = obj.pairs();
             pairs.sort((pa, pb) => {
-              let ka = pa[0].toString();
-              let kb = pb[0].toString();
+              let ka = saveString(pa[0]);
+              let kb = saveString(pb[0]);
               if (ka < kb) {
                 return -1;
               } else if (ka > kb) {

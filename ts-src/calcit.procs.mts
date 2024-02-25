@@ -161,7 +161,11 @@ export let peekDefatom = (path: string): CalcitRef => {
 };
 
 export let _$n_atom_$o_deref = (x: CalcitRef): CalcitValue => {
-  return x.value;
+  if (x instanceof CalcitRef) {
+    return x.value;
+  } else {
+    throw new Error("Expected CalcitRef");
+  }
 };
 
 export let _$n__ADD_ = (x: number, y: number): number => {

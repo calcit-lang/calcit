@@ -25,7 +25,7 @@ export type CalcitValue =
   | CalcitCirruQuote
   | null;
 
-export let is_literal = (x: CalcitValue): boolean => {
+export let isLiteral = (x: CalcitValue): boolean => {
   if (x == null) return true;
   if (typeof x == "string") return true;
   if (typeof x == "boolean") return true;
