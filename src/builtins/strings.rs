@@ -62,13 +62,13 @@ pub fn split(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => {
       let pieces = (**s).split(&**pattern);
-      let mut ys = CalcitList::new_inner();
+      let mut ys = vec![];
       for p in pieces {
         if !p.is_empty() {
-          ys = ys.push_right(Calcit::Str(p.into()));
+          ys.push(Calcit::Str(p.into()));
         }
       }
-      Ok(Calcit::from(CalcitList::List(ys)))
+      Ok(Calcit::from(ys))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("split expected 2 strings, got: {a} {b}")),
     (_, _) => CalcitErr::err_str("split expected 2 arguments, got nothing"),

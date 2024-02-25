@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use im_ternary_tree::TernaryTreeList;
-
 use crate::calcit::{Calcit, CalcitErr, CalcitList, CalcitRecord};
 
 use crate::util::number::is_even;
@@ -112,21 +110,16 @@ pub fn to_pairs(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Map(ys)) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for (k, v) in ys {
-        let mut chunk = CalcitList::new_inner();
-        chunk = chunk.push_right(k.to_owned());
-        chunk = chunk.push_right(v.to_owned());
-
-        zs.insert_mut(Calcit::from(CalcitList::List(chunk)));
+        let chunk = vec![k.to_owned(), v.to_owned()];
+        zs.insert_mut(Calcit::from(chunk));
       }
       Ok(Calcit::Set(zs))
     }
     Some(Calcit::Record(CalcitRecord { fields, values, .. })) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
       for idx in 0..fields.len() {
-        let mut chunk = CalcitList::new_inner();
-        chunk = chunk.push_right(Calcit::Tag(fields[idx].to_owned()));
-        chunk = chunk.push_right(values[idx].to_owned());
-        zs.insert_mut(Calcit::from(CalcitList::List(chunk)));
+        let chunk = vec![Calcit::Tag(fields[idx].to_owned()), values[idx].to_owned()];
+        zs.insert_mut(Calcit::from(chunk));
       }
       Ok(Calcit::Set(zs))
     }
@@ -155,12 +148,12 @@ pub fn call_merge_non_nil(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Map(m)) => {
-      let mut ys = CalcitList::new_inner();
+      let mut ys = vec![];
       for (k, v) in m {
-        let zs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[k.to_owned(), v.to_owned()]);
-        ys = ys.push_right(Calcit::from(CalcitList::List(zs)));
+        let zs = vec![k.to_owned(), v.to_owned()];
+        ys.push(Calcit::from(zs));
       }
-      Ok(Calcit::from(CalcitList::List(ys)))
+      Ok(Calcit::from(ys))
     }
     Some(a) => CalcitErr::err_str(format!("&map:to-list expected a map, got: {a}")),
     None => CalcitErr::err_str("&map:to-list expected a map, got nothing"),

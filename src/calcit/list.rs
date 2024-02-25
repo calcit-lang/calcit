@@ -184,11 +184,6 @@ impl<'a> Iterator for CalcitListIterator<'a> {
 }
 
 impl CalcitList {
-  /// create a new list without Arc
-  pub fn new_compact() -> TernaryTreeList<Calcit> {
-    TernaryTreeList::Empty
-  }
-  /// create a new list without Arc
   pub fn new_inner() -> TernaryTreeList<Calcit> {
     TernaryTreeList::Empty
   }
@@ -256,11 +251,7 @@ impl CalcitList {
 
   pub fn push_left(&self, x: Calcit) -> Self {
     match self {
-      CalcitList::Vector(xs) => {
-        let mut ys = vec![x];
-        ys.extend_from_slice(xs);
-        CalcitList::Vector(ys)
-      }
+      CalcitList::Vector(xs) => CalcitList::List(TernaryTreeList::from(xs).prepend(x)),
       CalcitList::List(xs) => CalcitList::List(xs.push_left(x)),
     }
   }

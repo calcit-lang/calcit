@@ -8,9 +8,9 @@ use crate::{
   codegen, program, runner,
 };
 
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::{cell::RefCell, vec};
 
 use im_ternary_tree::TernaryTreeList;
 use strum::ParseError;
@@ -463,14 +463,14 @@ fn preprocess_list_call(
           call_stack,
         )?),
         CalcitSyntax::CallSpread => {
-          let mut ys = CalcitList::new_inner_from(&[head_form]);
+          let mut ys = vec![head_form];
 
           args.traverse_result::<CalcitErr>(&mut |a| {
             let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
-            ys = ys.push(form);
+            ys.push(form);
             Ok(())
           })?;
-          Ok(Calcit::from(CalcitList::List(ys)))
+          Ok(Calcit::from(ys))
         }
         CalcitSyntax::ArgSpread => CalcitErr::err_nodes("`&` cannot be preprocessed as operator", &xs.to_vec()),
         CalcitSyntax::ArgOptional => CalcitErr::err_nodes("`?` cannot be preprocessed as operator", &xs.to_vec()),
@@ -710,7 +710,7 @@ pub fn preprocess_defn(
         }),
         location: location.to_owned(),
       });
-      let mut zs = CalcitList::new_inner();
+      let mut zs = vec![];
 
       ys.traverse_result(&mut |y| {
         match y {
@@ -718,7 +718,7 @@ pub fn preprocess_defn(
           | Calcit::Syntax(CalcitSyntax::ArgOptional, _)
           | Calcit::Syntax(CalcitSyntax::MacroInterpolate, _)
           | Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, _) => {
-            zs = zs.push(y.to_owned());
+            zs.push(y.to_owned());
             Ok(())
           }
           Calcit::Symbol {
@@ -743,7 +743,7 @@ pub fn preprocess_defn(
               location: arg_location.to_owned(),
             });
             // println!("created local: {:?}", s);
-            zs = zs.push_right(s);
+            zs.push(s);
 
             // track local in scope
             body_defs.insert(sym.to_owned());
@@ -755,7 +755,7 @@ pub fn preprocess_defn(
           )),
         }
       })?;
-      xs = xs.push_right(Calcit::List(Arc::new(zs.into())));
+      xs = xs.push_right(Calcit::from(zs));
 
       let mut to_skip = 2;
       args.traverse_result::<CalcitErr>(&mut |a| {
@@ -939,19 +939,19 @@ pub fn preprocess_quasiquote_internal(
     Calcit::List(ys) if ys.is_empty() => Ok(x.to_owned()),
     Calcit::List(ys) => match &ys[0] {
       Calcit::Syntax(CalcitSyntax::MacroInterpolate, _) | &Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, _) => {
-        let mut xs = CalcitList::new_inner();
+        let mut xs = vec![];
         for y in &**ys {
           let form = preprocess_expr(y, scope_defs, file_ns, check_warnings, call_stack)?;
-          xs = xs.push_right(form.to_owned());
+          xs.push(form.to_owned());
         }
-        Ok(Calcit::List(Arc::new(xs.into())))
+        Ok(Calcit::from(xs))
       }
       _ => {
-        let mut xs = CalcitList::new_inner();
+        let mut xs = vec![];
         for y in &**ys {
-          xs = xs.push_right(preprocess_quasiquote_internal(y, scope_defs, file_ns, check_warnings, call_stack)?.to_owned());
+          xs.push(preprocess_quasiquote_internal(y, scope_defs, file_ns, check_warnings, call_stack)?.to_owned());
         }
-        Ok(Calcit::List(Arc::new(xs.into())))
+        Ok(Calcit::from(xs))
       }
     },
     _ => Ok(x.to_owned()),
