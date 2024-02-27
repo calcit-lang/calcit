@@ -8,7 +8,13 @@ mod git;
 use cirru_edn::Edn;
 use colored::*;
 use git::*;
-use std::{collections::HashMap, fs, path::Path, sync::Arc};
+use std::{
+  collections::HashMap,
+  fs,
+  path::{Path, PathBuf},
+  sync::Arc,
+  thread,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PackageDeps {
@@ -90,78 +96,103 @@ fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: &CliArgs) -> Result
     dim_println(format!("created dir: {:?}", modules_dir));
   }
 
+  let mut children = vec![];
+
   for (org_and_folder, version) in deps {
-    // check if exists
-    let (_org, folder) = org_and_folder.split_once('/').ok_or("invalid name")?;
-    // split with / into (org,folder)
-    let folder_path = modules_dir.join(folder);
-    if folder_path.exists() {
-      // println!("module {} exists", folder);
-      // check branch
-      let current_head = git_current_head(&folder_path)?;
-      if current_head.get_name() == *version {
-        dim_println(format!("√ found {} at {}", gray(folder), gray(&version)));
-        if let GitHead::Branch(branch) = current_head {
-          if options.pull_branch {
-            dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-            git_pull(&folder_path, &branch)?;
-            dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
-          }
-        }
-        continue;
-      } else {
-        // let msg = format!("module {} is at version {:?}, but required {}", folder, current_head, version);
-        // println!("  {}", msg.yellow());
+    // cloned
 
-        // try if tag or branch exists in git history
-        let has_target = git_check_branch_or_tag(&folder_path, &version)?;
-        if !has_target {
-          dim_println(format!("↺ fetching {} at version {}", gray(&org_and_folder), gray(&version)));
-          git_fetch(&folder_path)?;
-          dim_println(format!("fetched {} at version {}", gray(&org_and_folder), gray(&version)));
-          // fetch git repo and checkout target version
-        }
-        git_checkout(&folder_path, &version)?;
-        dim_println(format!("√ checked out {} at version {}", gray(&org_and_folder), gray(&version)));
+    let org_and_folder = org_and_folder.clone();
+    let options = options.to_owned();
+    let modules_dir = modules_dir.clone();
 
-        let current_head = git_current_head(&folder_path)?;
-        if let GitHead::Branch(branch) = current_head {
-          if options.pull_branch {
-            dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-            git_pull(&folder_path, &branch)?;
-            dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
-          }
-        }
+    // TODO too many threads do not make it faster though
+    let ret = thread::spawn(move || {
+      let ret = handle_path(modules_dir, version, options, org_and_folder);
+      if let Err(e) = ret {
+        eprintln!("Thread error: {}", e);
+      }
+    });
+    children.push(ret);
+  }
+  for child in children {
+    child.join().unwrap();
+  }
 
-        let build_file = folder_path.join("build.sh");
-        // if there's a build.sh file in the folder, run it
-        if build_file.exists() {
-          call_build_script(&folder_path)?;
-          dim_println(format!("ran build script for {}", gray(&org_and_folder)));
+  Ok(())
+}
+
+fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: CliArgs, org_and_folder: Arc<str>) -> Result<(), String> {
+  // check if exists
+  let (_org, folder) = org_and_folder.split_once('/').ok_or("invalid name")?;
+  // split with / into (org,folder)
+
+  let folder_path = modules_dir.join(folder);
+  if folder_path.exists() {
+    // println!("module {} exists", folder);
+    // check branch
+    let current_head = git_current_head(&folder_path)?;
+    if current_head.get_name() == *version {
+      dim_println(format!("√ found {} of {}", gray(&version), gray(folder)));
+      if let GitHead::Branch(branch) = current_head {
+        if options.pull_branch {
+          dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
+          git_pull(&folder_path, &branch)?;
+          dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
         }
       }
-    } else {
-      let url = if options.ci {
-        format!("https://github.com/{}.git", org_and_folder)
-      } else {
-        format!("git@github.com:{}.git", org_and_folder)
-      };
-      dim_println(format!("↺ cloning {} at version {}", gray(&org_and_folder), gray(&version)));
-      git_clone(&modules_dir, &url, &version, options.ci)?;
-      // println!("downloading {} at version {}", url, version);
-      dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
+      return Ok(());
+    }
+    // let msg = format!("module {} is at version {:?}, but required {}", folder, current_head, version);
+    // println!("  {}", msg.yellow());
 
-      if !options.ci {
-        let build_file = folder_path.join("build.sh");
-        // if there's a build.sh file in the folder, run it
-        if build_file.exists() {
-          call_build_script(&folder_path)?;
-          dim_println(format!("ran build script for {}", gray(&org_and_folder)));
-        }
+    // try if tag or branch exists in git history
+    let has_target = git_check_branch_or_tag(&folder_path, &version)?;
+    if !has_target {
+      dim_println(format!("↺ fetching {} at version {}", gray(&org_and_folder), gray(&version)));
+      git_fetch(&folder_path)?;
+      dim_println(format!("fetched {} at version {}", gray(&org_and_folder), gray(&version)));
+      // fetch git repo and checkout target version
+    }
+    git_checkout(&folder_path, &version)?;
+    dim_println(format!("√ checked out {} of {}", gray(&version), gray(&org_and_folder)));
+
+    let current_head = git_current_head(&folder_path)?;
+    if let GitHead::Branch(branch) = current_head {
+      if options.pull_branch {
+        dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
+        git_pull(&folder_path, &branch)?;
+        dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
+      }
+    }
+
+    let build_file = folder_path.join("build.sh");
+    // if there's a build.sh file in the folder, run it
+    if build_file.exists() {
+      let build_msg = call_build_script(&folder_path)?;
+      dim_println(format!("ran build script for {}", gray(&org_and_folder)));
+      dim_println(build_msg);
+    }
+  } else {
+    let url = if options.ci {
+      format!("https://github.com/{}.git", org_and_folder)
+    } else {
+      format!("git@github.com:{}.git", org_and_folder)
+    };
+    dim_println(format!("↺ cloning {} at version {}", gray(&org_and_folder), gray(&version)));
+    git_clone(&modules_dir, &url, &version, options.ci)?;
+    // println!("downloading {} at version {}", url, version);
+    dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
+
+    if !options.ci {
+      let build_file = folder_path.join("build.sh");
+      // if there's a build.sh file in the folder, run it
+      if build_file.exists() {
+        let build_msg = call_build_script(&folder_path)?;
+        dim_println(format!("ran build script for {}", gray(&org_and_folder)));
+        dim_println(build_msg);
       }
     }
   }
-
   Ok(())
 }
 
@@ -214,21 +245,36 @@ fn dim_println(msg: String) {
   }
 }
 
+fn err_println(msg: String) {
+  if msg.chars().nth(1) == Some(' ') {
+    println!("{}", msg.truecolor(255, 80, 80));
+  } else {
+    println!("  {}", msg.truecolor(255, 80, 80));
+  }
+}
+
 fn gray(msg: &str) -> ColoredString {
   msg.truecolor(172, 172, 172)
 }
 
+fn indent4(msg: &str) -> String {
+  let ret = msg.lines().map(|line| format!("    {}", line)).collect::<Vec<String>>().join("\n");
+  format!("\n{}\n", ret)
+}
+
 /// calcit dynamic libs uses a `build.sh` script to build Rust `.so` files
-fn call_build_script(folder_path: &Path) -> Result<(), String> {
+fn call_build_script(folder_path: &Path) -> Result<String, String> {
   let output = std::process::Command::new("sh")
     .arg("build.sh")
     .current_dir(folder_path)
     .output()
     .map_err(|e| e.to_string())?;
-  if !output.status.success() {
-    let msg = String::from_utf8(output.stderr).unwrap_or("".to_string());
-    Err(format!("failed to build module {}: {}", folder_path.display(), msg))
+  if output.status.success() {
+    let msg = String::from_utf8(output.stdout).unwrap_or("".to_string());
+    Ok(indent4(&msg))
   } else {
-    Ok(())
+    let msg = String::from_utf8(output.stderr).unwrap_or("".to_string());
+    err_println(indent4(&msg));
+    Err(format!("failed to build module {}", folder_path.display()))
   }
 }
