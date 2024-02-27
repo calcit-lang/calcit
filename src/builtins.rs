@@ -23,8 +23,7 @@ pub type FnType = fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calc
 pub type SyntaxType = fn(expr: &TernaryTreeList<Calcit>, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
 lazy_static! {
-  /// TODO dont use pub
-  pub static ref IMPORTED_PROCS: RwLock<HashMap<Arc<str>, FnType>> = RwLock::new(HashMap::new());
+  pub(crate) static ref IMPORTED_PROCS: RwLock<HashMap<Arc<str>, FnType>> = RwLock::new(HashMap::new());
 }
 
 pub fn is_proc_name(s: &str) -> bool {
@@ -79,6 +78,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     CalcitProc::NativeDataToCode => meta::data_to_code(args),
     CalcitProc::NativeCirruNth => meta::cirru_nth(args),
     CalcitProc::NativeCirruType => meta::cirru_type(args),
+    CalcitProc::IsSpreadingMark => meta::is_spreading_mark(args),
     // tuple
     CalcitProc::NativeTuple => meta::new_tuple(args), // unstable solution for the name
     CalcitProc::NativeClassTuple => meta::new_class_tuple(args),
@@ -266,12 +266,17 @@ pub fn handle_syntax(
     CalcitSyntax::Macroexpand => syntax::macroexpand(nodes, scope, file_ns, call_stack),
     CalcitSyntax::Macroexpand1 => syntax::macroexpand_1(nodes, scope, file_ns, call_stack),
     CalcitSyntax::MacroexpandAll => syntax::macroexpand_all(nodes, scope, file_ns, call_stack),
+    CalcitSyntax::CallSpread => syntax::call_spread(nodes, scope, file_ns, call_stack),
     CalcitSyntax::Try => syntax::call_try(nodes, scope, file_ns, call_stack),
     // "define reference" although it uses a confusing name "atom"
     CalcitSyntax::Defatom => refs::defatom(nodes, scope, file_ns, call_stack),
     CalcitSyntax::Reset => refs::reset_bang(nodes, scope, file_ns, call_stack),
     // different behavoirs, in Rust interpreter it's nil, in js codegen it's nothing
     CalcitSyntax::HintFn => meta::no_op(),
+    CalcitSyntax::ArgSpread => CalcitErr::err_nodes("`&` cannot be used as operator", &nodes.to_vec()),
+    CalcitSyntax::ArgOptional => CalcitErr::err_nodes("`?` cannot be used as operator", &nodes.to_vec()),
+    CalcitSyntax::MacroInterpolate => CalcitErr::err_nodes("`~` cannot be used as operator", &nodes.to_vec()),
+    CalcitSyntax::MacroInterpolateSpread => CalcitErr::err_nodes("`~@` cannot be used as operator", &nodes.to_vec()),
   }
 }
 
@@ -297,5 +302,6 @@ pub fn is_js_syntax_procs(s: &str) -> bool {
       | "to-calcit-data"
       | "to-cirru-edn"
       | "to-js-data"
+      | "&raw-code"
   )
 }

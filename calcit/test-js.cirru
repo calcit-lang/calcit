@@ -11,6 +11,7 @@
           :code $ quote
             defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async)
               test-data-gen
+              test-regexp
               when (> 1 2)
                 raise $ str "|error of math" 2 1
                 raise "|base error"
@@ -153,6 +154,14 @@
               assert=
                 :: :code $ &cirru-nth (parse-cirru "|+ 1 2") 0
                 load-data-code "|:: :code $ quote $ + 1 2"
+        |test-regexp $ %{} :CodeEntry (:doc "|try raw code and regexp")
+          :code $ quote
+            fn ()
+              let
+                  pattern $ &raw-code "|/^\\d+$/"
+                js/console.log pattern
+                assert= true $ .!test pattern "|12"
+                assert= false $ .!test pattern "|xy"
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-js.main $ :require (|os :as os) (|assert :as assert)

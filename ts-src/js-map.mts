@@ -1,6 +1,6 @@
 import * as ternaryTree from "@calcit/ternary-tree";
 
-import { CalcitValue } from "./js-primes.mjs";
+import { CalcitValue, isLiteral } from "./js-primes.mjs";
 import { CalcitSet } from "./js-set.mjs";
 
 import {
@@ -174,9 +174,18 @@ export class CalcitMap {
     }
     return new CalcitSet(ret);
   }
+
+  /** detecthing in custom formatter */
+  nestedDataInChildren() {
+    for (let [k, v] of this.pairs()) {
+      if (!isLiteral(k) || !isLiteral(v)) {
+        return true;
+      }
+    }
+  }
 }
 
-// store small map in linear array to reduce cost of building tree
+/* store small map in linear array to reduce cost of building tree  */
 export class CalcitSliceMap {
   cachedHash: Hash;
   /** in arrayMode, only flatten values, instead of tree structure */
@@ -368,5 +377,14 @@ export class CalcitSliceMap {
       }
     }
     return new CalcitSet(ret);
+  }
+
+  /** detecthing in custom formatter */
+  nestedDataInChildren() {
+    for (let [k, v] of this.pairs()) {
+      if (!isLiteral(k) || !isLiteral(v)) {
+        return true;
+      }
+    }
   }
 }

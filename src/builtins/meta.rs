@@ -1,8 +1,8 @@
 use crate::{
   builtins,
   calcit::{
-    self, gen_core_id, Calcit, CalcitErr, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo, CalcitTuple,
-    GENERATED_DEF, GEN_NS,
+    self, gen_core_id, Calcit, CalcitErr, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo, CalcitSyntax,
+    CalcitTuple, GENERATED_DEF, GEN_NS,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -16,7 +16,6 @@ use crate::{
 };
 
 use cirru_parser::{Cirru, CirruWriterOptions};
-use im_ternary_tree::TernaryTreeList;
 
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::AtomicUsize;
@@ -36,7 +35,6 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::tag("nil")),
-    // CalcitRef(Calcit), // TODO
     Calcit::Bool(..) => Ok(Calcit::tag("bool")),
     Calcit::Number(..) => Ok(Calcit::tag("number")),
     Calcit::Symbol { .. } => Ok(Calcit::tag("symbol")),
@@ -88,9 +86,9 @@ fn transform_code_to_cirru(x: &Calcit) -> Cirru {
   match x {
     Calcit::List(ys) => {
       let mut xs: Vec<Cirru> = Vec::with_capacity(ys.len());
-      for y in &**ys {
+      ys.traverse(&mut |y| {
         xs.push(transform_code_to_cirru(y));
-      }
+      });
       Cirru::List(xs)
     }
     Calcit::Symbol { sym, .. } => Cirru::Leaf((**sym).into()),
@@ -129,7 +127,7 @@ pub fn js_gensym(name: &str) -> String {
   chunk
 }
 
-/// TODO, move out to calcit
+/// TODO, move to registered functions
 pub fn generate_id(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let size = match xs.first() {
     Some(Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -525,11 +523,11 @@ pub fn tuple_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Tuple(CalcitTuple { extra, .. }) => {
       // Ok(Calcit::List(extra.iter().map(|x| Arc::new(x.to_owned())).collect_into(vec![])))
-      let mut ys = TernaryTreeList::Empty;
+      let mut ys = vec![];
       for x in extra {
-        ys = ys.push_right(x.to_owned());
+        ys.push(x.to_owned());
       }
-      Ok(Calcit::from(CalcitList(ys)))
+      Ok(Calcit::from(ys))
     }
     x => CalcitErr::err_str(format!("&tuple:params expected a tuple, got: {x}")),
   }
@@ -590,7 +588,10 @@ pub fn format_ternary_tree(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("&format-ternary-tree expected 1 argument, got:", xs);
   }
   match &xs[0] {
-    Calcit::List(ys) => Ok(Calcit::Str(ys.0.format_inline().into())),
+    Calcit::List(ys) => match &**ys {
+      CalcitList::List(ys) => Ok(Calcit::Str(ys.format_inline().into())),
+      a => CalcitErr::err_str(format!("&format-ternary-tree expected a list, currently it's a vector: {a}")),
+    },
     a => CalcitErr::err_str(format!("&format-ternary-tree expected a list, got: {a}")),
   }
 }
@@ -689,5 +690,15 @@ pub fn cirru_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Cirru::Leaf(_) => Ok(Calcit::Tag("leaf".into())),
     },
     a => CalcitErr::err_str(format!("expected cirru quote, got: ${a}")),
+  }
+}
+
+pub fn is_spreading_mark(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes("is-speading-mark? expected 1 argument, got:", xs);
+  }
+  match &xs[0] {
+    Calcit::Syntax(CalcitSyntax::ArgSpread, _) => Ok(Calcit::Bool(true)),
+    _ => Ok(Calcit::Bool(false)),
   }
 }

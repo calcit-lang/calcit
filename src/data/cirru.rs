@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{sync::Arc, vec};
 
 use cirru_parser::Cirru;
 
-use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitLocal, CalcitProc, MethodKind};
+use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result<Calcit, String> {
@@ -21,13 +21,13 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
       "&newline" => Ok(Calcit::new_str("\n")),
       "&tab" => Ok(Calcit::new_str("\t")),
       "&calcit-version" => Ok(Calcit::new_str(env!("CARGO_PKG_VERSION"))),
+      "&" => Ok(Calcit::Syntax(CalcitSyntax::ArgSpread, ns.into())),
+      "?" => Ok(Calcit::Syntax(CalcitSyntax::ArgOptional, ns.into())),
+      "~" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolate, ns.into())),
+      "~@" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into())),
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
-      "::" => Ok(Calcit::Symbol {
-        sym: s.to_owned(),
-        info: symbol_info.to_owned(),
-        location: Some(coord),
-      }),
+      "::" => Ok(Calcit::Proc(CalcitProc::NativeTuple)),
       _ => match s.chars().next().expect("load first char") {
         ':' if s.len() > 1 && s.chars().nth(1) != Some(':') => Ok(Calcit::tag(&s[1..])),
         '.' => {
@@ -49,24 +49,15 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           Err(e) => Err(format!("failed to parse hex: {s} => {e:?}")),
         },
         '\'' if s.len() > 1 => Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Symbol {
-            sym: Arc::from("quote"),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
-          },
+          Calcit::Syntax(CalcitSyntax::Quote, ns.into()),
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
             info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
+            location: Some(coord),
           },
         ]))),
-        // TODO also detect simple variables
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Symbol {
-            sym: Arc::from("~@"),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
-          },
+          Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into()),
           Calcit::Symbol {
             sym: Arc::from(&s[2..]),
             info: symbol_info.to_owned(),
@@ -74,11 +65,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           },
         ]))),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Symbol {
-            sym: Arc::from("~"),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
-          },
+          Calcit::Syntax(CalcitSyntax::MacroInterpolate, ns.into()),
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
             info: symbol_info.to_owned(),
@@ -86,6 +73,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           },
         ]))),
         '@' => Ok(Calcit::from(CalcitList::from(&[
+          // `deref` expands to `.deref` or `&atom:deref`
           Calcit::Symbol {
             sym: Arc::from("deref"),
             info: symbol_info.to_owned(),
@@ -114,7 +102,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
       },
     },
     Cirru::List(ys) => {
-      let mut zs = CalcitList::new_inner();
+      let mut zs: Vec<Calcit> = vec![];
       for (idx, y) in ys.iter().enumerate() {
         let mut next_coord: Vec<u8> = (*coord).to_owned();
         next_coord.push(idx as u8); // code not supposed to be fatter than 256 children
@@ -127,18 +115,17 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
             if ys[0] == Cirru::leaf("cirru-quote") {
               // special rule for Cirru code
               if ys.len() == 2 {
-                zs = zs.push(Calcit::CirruQuote(ys[1].to_owned()));
-              } else {
-                return Err(format!("expected 1 argument, got: {ys:?}"));
+                zs.push(Calcit::CirruQuote(ys[1].to_owned()));
+                continue;
               }
-              continue;
+              return Err(format!("expected 1 argument, got: {ys:?}"));
             }
           }
         }
 
-        zs = zs.push(code_to_calcit(y, ns, def, next_coord)?);
+        zs.push(code_to_calcit(y, ns, def, next_coord)?);
       }
-      Ok(Calcit::from(CalcitList(zs)))
+      Ok(Calcit::from(CalcitList::Vector(zs)))
     }
   }
 }
@@ -148,11 +135,11 @@ pub fn cirru_to_calcit(xs: &Cirru) -> Calcit {
   match xs {
     Cirru::Leaf(s) => Calcit::Str((**s).into()),
     Cirru::List(ys) => {
-      let mut zs = CalcitList::new_inner();
+      let mut zs: Vec<Calcit> = vec![];
       for y in ys {
-        zs = zs.push(cirru_to_calcit(y));
+        zs.push(cirru_to_calcit(y));
       }
-      Calcit::from(CalcitList(zs))
+      Calcit::from(CalcitList::Vector(zs))
     }
   }
 }
@@ -167,14 +154,13 @@ pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
     Calcit::Str(s) => Ok(Cirru::Leaf((**s).into())),
     Calcit::List(ys) => {
       let mut zs: Vec<Cirru> = Vec::with_capacity(ys.len());
-      for y in &**ys {
-        match calcit_data_to_cirru(y) {
-          Ok(v) => {
-            zs.push(v);
-          }
-          Err(e) => return Err(e),
+      ys.traverse_result(&mut |y| match calcit_data_to_cirru(y) {
+        Ok(v) => {
+          zs.push(v);
+          Ok(())
         }
-      }
+        Err(e) => Err(e),
+      })?;
       Ok(Cirru::List(zs))
     }
     a => Err(format!("unknown data for cirru: {a}")),
@@ -188,17 +174,18 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
     Calcit::Bool(true) => Ok(Cirru::leaf("true")),
     Calcit::Bool(false) => Ok(Cirru::leaf("false")),
     Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string().into())),
-    Calcit::Str(s) => Ok(Cirru::leaf(format!("|{s}"))),            // TODO performance
-    Calcit::Symbol { sym, .. } => Ok(Cirru::Leaf((**sym).into())), // TODO performance
-    Calcit::Local(CalcitLocal { sym, .. }) => Ok(Cirru::Leaf((**sym).into())), // TODO performance
-    Calcit::Import(CalcitImport { ns, def, .. }) => Ok(Cirru::Leaf((format!("{ns}/{def}")).into())), // TODO performance
+    Calcit::Str(s) => Ok(Cirru::leaf(format!("|{s}"))),
+    Calcit::Symbol { sym, .. } => Ok(Cirru::Leaf(sym.to_owned())),
+    Calcit::Local(CalcitLocal { sym, .. }) => Ok(Cirru::Leaf(sym.to_owned())),
+    Calcit::Import(CalcitImport { ns, def, .. }) => Ok(Cirru::Leaf((format!("{ns}/{def}")).into())),
     Calcit::Registered(s) => Ok(Cirru::Leaf(s.as_ref().into())),
-    Calcit::Tag(s) => Ok(Cirru::leaf(format!(":{s}"))), // TODO performance
+    Calcit::Tag(s) => Ok(Cirru::leaf(format!(":{s}"))),
     Calcit::List(xs) => {
       let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
-      for x in &**xs {
+      xs.traverse_result::<String>(&mut |x| {
         ys.push(calcit_to_cirru(x)?);
-      }
+        Ok(())
+      })?;
       Ok(Cirru::List(ys))
     }
     Calcit::Proc(s) => Ok(Cirru::Leaf(s.as_ref().into())),

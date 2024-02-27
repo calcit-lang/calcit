@@ -50,7 +50,7 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
 
 /// syntax to prevent expr re-evaluating
 pub fn defatom(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  match (expr.get_inner(0), expr.get_inner(1)) {
+  match (expr.first(), expr.get(1)) {
     (Some(Calcit::Symbol { sym, info, .. }), Some(code)) => {
       let mut path: String = (*info.at_ns).to_owned();
       path.push('/');

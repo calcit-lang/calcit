@@ -5,12 +5,12 @@ use crate::{
     CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
   },
   call_stack::{CallStackList, StackKind},
-  program, runner,
+  codegen, program, runner,
 };
 
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::{cell::RefCell, vec};
 
 use im_ternary_tree::TernaryTreeList;
 use strum::ParseError;
@@ -73,7 +73,7 @@ pub fn preprocess_ns_def(
 
 fn is_fn_or_macro(code: &Calcit) -> bool {
   match code {
-    Calcit::List(xs) => match xs.get_inner(0) {
+    Calcit::List(xs) => match xs.first() {
       Some(Calcit::Symbol { sym, .. }) => &**sym == "defn" || &**sym == "defmacro",
       Some(Calcit::Syntax(s, ..)) => s == &CalcitSyntax::Defn || s == &CalcitSyntax::Defmacro,
       _ => false,
@@ -137,18 +137,8 @@ pub fn preprocess_expr(
       None => {
         let def_ns = &info.at_ns;
         let at_def = &info.at_def;
-        let def_ref = &**def;
-        // println!("def {} - {} {} {}", def_ref, def_ns, file_ns, at_def);
-        if def_ref == "~" || def_ref == "~@" || def_ref == "&" || def_ref == "?" {
-          Ok(Calcit::Symbol {
-            sym: def.to_owned(),
-            info: Arc::new(CalcitSymbolInfo {
-              at_ns: def_ns.to_owned(),
-              at_def: at_def.to_owned(),
-            }),
-            location: location.to_owned(),
-          })
-        } else if scope_defs.contains(def) {
+        // println!("def {} - {} {} {}", def, def_ns, file_ns, at_def);
+        if scope_defs.contains(def) {
           Ok(Calcit::Local(CalcitLocal {
             idx: CalcitLocal::track_sym(def),
             sym: def.to_owned(),
@@ -242,9 +232,7 @@ pub fn preprocess_expr(
               });
               Ok(form)
             }
-            // TODO check js_mode
-            None if is_js_syntax_procs(def) => Ok(expr.to_owned()),
-            None if def.starts_with('.') => Ok(expr.to_owned()),
+            None if codegen::codegen_mode() && is_js_syntax_procs(def) => Ok(expr.to_owned()),
             None => {
               let from_default = program::lookup_default_target_in_import(def_ns, def);
               if let Some(target_ns) = from_default {
@@ -281,7 +269,7 @@ pub fn preprocess_expr(
       } else {
         // TODO whether function bothers this...
         // println!("start calling: {}", expr);
-        process_list_call(xs, scope_defs, file_ns, check_warnings, call_stack)
+        preprocess_list_call(xs, scope_defs, file_ns, check_warnings, call_stack)
       }
     }
     Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::CirruQuote(..) => {
@@ -308,7 +296,7 @@ pub fn preprocess_expr(
   }
 }
 
-fn process_list_call(
+fn preprocess_list_call(
   xs: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
   file_ns: &str,
@@ -351,7 +339,7 @@ fn process_list_call(
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
       let code = Calcit::List(Arc::new(xs.to_owned()));
-      let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &code, &args.0.to_vec());
+      let next_stack = call_stack.extend(&info.def_ns, &info.name, StackKind::Macro, &code, &args.to_vec());
 
       let mut body_scope = CalcitScope::default();
 
@@ -359,7 +347,7 @@ fn process_list_call(
         // need to handle recursion
         // println!("evaling line: {:?}", body);
         runner::bind_marked_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
-        let code = runner::evaluate_lines(&info.body, &body_scope, file_ns, &next_stack)?;
+        let code = runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack)?;
         match code {
           Calcit::Recur(ys) => {
             current_values = ys;
@@ -382,11 +370,24 @@ fn process_list_call(
         }
       }
       let mut ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
-      for a in &args {
+      let mut has_spread = false;
+
+      args.traverse_result::<CalcitErr>(&mut |a| {
+        if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
+          has_spread = true;
+          ys = ys.push(a.to_owned());
+          return Ok(());
+        }
         let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
         ys = ys.push(form);
+        Ok(())
+      })?;
+      if has_spread {
+        ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, info.def_ns.to_owned()));
+        Ok(Calcit::from(CalcitList::from(ys)))
+      } else {
+        Ok(Calcit::from(CalcitList::from(ys)))
       }
-      Ok(Calcit::from(CalcitList(ys)))
     }
 
     _ => match &head_form {
@@ -461,6 +462,20 @@ fn process_list_call(
           check_warnings,
           call_stack,
         )?),
+        CalcitSyntax::CallSpread => {
+          let mut ys = vec![head_form];
+
+          args.traverse_result::<CalcitErr>(&mut |a| {
+            let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+            ys.push(form);
+            Ok(())
+          })?;
+          Ok(Calcit::from(ys))
+        }
+        CalcitSyntax::ArgSpread => CalcitErr::err_nodes("`&` cannot be preprocessed as operator", &xs.to_vec()),
+        CalcitSyntax::ArgOptional => CalcitErr::err_nodes("`?` cannot be preprocessed as operator", &xs.to_vec()),
+        CalcitSyntax::MacroInterpolate => CalcitErr::err_nodes("`~` cannot be preprocessed as operator", &xs.to_vec()),
+        CalcitSyntax::MacroInterpolateSpread => CalcitErr::err_nodes("`~@` cannot be preprocessed as operator", &xs.to_vec()),
       },
       Calcit::Thunk(..) => Err(CalcitErr::use_msg_stack(
         format!("does not know how to preprocess a thunk: {head}"),
@@ -469,11 +484,24 @@ fn process_list_call(
 
       Calcit::Method(_, _) => {
         let mut ys = CalcitList::new_inner_from(&[head.to_owned()]);
-        for a in &args {
+        let mut has_spread = false;
+
+        args.traverse_result::<CalcitErr>(&mut |a| {
+          if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
+            has_spread = true;
+            ys = ys.push(a.to_owned());
+            return Ok(());
+          }
           let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
           ys = ys.push(form);
+          Ok(())
+        })?;
+        if has_spread {
+          ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, file_ns.into()));
+          Ok(Calcit::from(CalcitList::List(ys)))
+        } else {
+          Ok(Calcit::from(CalcitList::List(ys)))
         }
-        Ok(Calcit::from(CalcitList(ys)))
       }
       Calcit::Proc(..)
       | Calcit::Local { .. }
@@ -483,11 +511,24 @@ fn process_list_call(
       | Calcit::RawCode(..)
       | Calcit::Symbol { .. } => {
         let mut ys = CalcitList::new_inner_from(&[head_form]);
-        for a in &args {
+        let mut has_spread = false;
+
+        args.traverse_result::<CalcitErr>(&mut |a| {
+          if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
+            has_spread = true;
+            ys = ys.push(a.to_owned());
+            return Ok(());
+          }
           let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
           ys = ys.push(form);
+          Ok(())
+        })?;
+        if has_spread {
+          ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, file_ns.into()));
+          Ok(Calcit::from(CalcitList::List(ys)))
+        } else {
+          Ok(Calcit::from(CalcitList::List(ys)))
         }
-        Ok(Calcit::from(CalcitList(ys)))
       }
       h => {
         unreachable!("unknown head: {:?}", h);
@@ -511,7 +552,7 @@ fn check_fn_marked_args(
 
   loop {
     let d = defined_args.get(i);
-    let r = params.get_inner(j);
+    let r = params.get(j);
 
     match (d, r) {
       (None, None) => return,
@@ -580,12 +621,21 @@ fn check_fn_args(
   let expected_size = defined_args.len();
   let actual_size = params.len();
 
-  // TODO handle this correctly after implemented call-spread
-  for item in params {
-    if let Calcit::Symbol { sym, .. } = item {
-      if &**sym == "&" {
-        return; // no need to check
+  for (idx, item) in params.iter().enumerate() {
+    if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = item {
+      if expected_size < (idx + 1) {
+        let mut warnings = check_warnings.borrow_mut();
+        let loc = NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![]));
+        let args = CalcitLocal::display_args(defined_args);
+        warnings.push(LocatedWarning::new(
+          format!(
+            "[Warn] expected {} args in {} `{}`, got spreading form `{}`, at {}/{}",
+            expected_size, f_name, args, params, file_ns, def_name
+          ),
+          loc,
+        ));
       }
+      return; // no need to check
     }
   }
 
@@ -621,10 +671,11 @@ pub fn preprocess_each_items(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
-  for a in args {
+  args.traverse_result::<CalcitErr>(&mut |a| {
     let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
     xs = xs.push_right(form);
-  }
+    Ok(())
+  })?;
   Ok(Calcit::List(Arc::new(xs.into())))
 }
 
@@ -639,7 +690,7 @@ pub fn preprocess_defn(
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
   let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
-  match (args.get_inner(0), args.get_inner(1)) {
+  match (args.first(), args.get(1)) {
     (
       Some(Calcit::Symbol {
         sym: def_name,
@@ -659,10 +710,18 @@ pub fn preprocess_defn(
         }),
         location: location.to_owned(),
       });
-      let mut zs = CalcitList::new_inner();
-      for y in &**ys {
+      let mut zs = vec![];
+
+      ys.traverse_result(&mut |y| {
         match y {
-          s @ Calcit::Symbol {
+          Calcit::Syntax(CalcitSyntax::ArgSpread, _)
+          | Calcit::Syntax(CalcitSyntax::ArgOptional, _)
+          | Calcit::Syntax(CalcitSyntax::MacroInterpolate, _)
+          | Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, _) => {
+            zs.push(y.to_owned());
+            Ok(())
+          }
+          Calcit::Symbol {
             sym,
             info,
             location: arg_location,
@@ -674,40 +733,41 @@ pub fn preprocess_defn(
               arg_location.to_owned().unwrap_or_default(),
             );
             check_symbol(sym, args, loc, check_warnings);
-            if &**sym == "&" || &**sym == "?" {
-              zs = zs.push_right(s.to_owned());
-              continue;
-            } else {
-              let s = Calcit::Local(CalcitLocal {
-                idx: CalcitLocal::track_sym(sym),
-                sym: sym.to_owned(),
-                info: Arc::new(CalcitSymbolInfo {
-                  at_ns: info.at_ns.to_owned(),
-                  at_def: info.at_def.to_owned(),
-                }),
-                location: arg_location.to_owned(),
-              });
-              // println!("created local: {:?}", s);
-              zs = zs.push_right(s);
+            let s = Calcit::Local(CalcitLocal {
+              idx: CalcitLocal::track_sym(sym),
+              sym: sym.to_owned(),
+              info: Arc::new(CalcitSymbolInfo {
+                at_ns: info.at_ns.to_owned(),
+                at_def: info.at_def.to_owned(),
+              }),
+              location: arg_location.to_owned(),
+            });
+            // println!("created local: {:?}", s);
+            zs.push(s);
 
-              // track local in scope
-              body_defs.insert(sym.to_owned());
-            }
+            // track local in scope
+            body_defs.insert(sym.to_owned());
+            Ok(())
           }
-          _ => {
-            return Err(CalcitErr::use_msg_stack(
-              format!("expected defn args to be symbols, got: {y}"),
-              call_stack,
-            ))
-          }
+          _ => Err(CalcitErr::use_msg_stack(
+            format!("expected defn args to be symbols, got: {y}"),
+            call_stack,
+          )),
         }
-      }
-      xs = xs.push_right(Calcit::List(Arc::new(zs.into())));
+      })?;
+      xs = xs.push_right(Calcit::from(zs));
 
-      for a in args.iter().skip(2) {
+      let mut to_skip = 2;
+      args.traverse_result::<CalcitErr>(&mut |a| {
+        if to_skip > 0 {
+          to_skip -= 1;
+          return Ok(());
+        }
         let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
         xs = xs.push_right(form);
-      }
+        Ok(())
+      })?;
+
       Ok(Calcit::List(Arc::new(xs.into())))
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
@@ -744,9 +804,9 @@ pub fn preprocess_core_let(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
+  let mut xs: Vec<Calcit> = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
   let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
-  let binding = match args.get_inner(0) {
+  let binding = match args.first() {
     Some(Calcit::List(ys)) if ys.is_empty() => Calcit::from(CalcitList::default()),
     Some(Calcit::List(ys)) if ys.len() == 2 => match (&ys[0], &ys[1]) {
       (Calcit::Symbol { sym, info, location }, a) => {
@@ -797,12 +857,19 @@ pub fn preprocess_core_let(
       ))
     }
   };
-  xs = xs.push_right(binding);
-  for a in args.iter().skip(1) {
+  xs.push(binding);
+
+  let mut skipped_head = false;
+  args.traverse_result::<CalcitErr>(&mut |a| {
+    if !skipped_head {
+      skipped_head = true;
+      return Ok(());
+    }
     let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
-    xs = xs.push_right(form);
-  }
-  Ok(Calcit::List(Arc::from(CalcitList(xs))))
+    xs.push(form);
+    Ok(())
+  })?;
+  Ok(Calcit::List(Arc::from(CalcitList::Vector(xs))))
 }
 
 pub fn preprocess_quote(
@@ -813,9 +880,11 @@ pub fn preprocess_quote(
   _file_ns: &str,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
-  for a in args {
+
+  args.traverse_result::<CalcitErr>(&mut |a| {
     xs = xs.push_right(a.to_owned());
-  }
+    Ok(())
+  })?;
   Ok(Calcit::List(Arc::new(xs.into())))
 }
 
@@ -829,12 +898,14 @@ pub fn preprocess_defatom(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
-  for a in args {
+
+  args.traverse_result::<CalcitErr>(&mut |a| {
     // TODO
     let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
     xs = xs.push_right(form.to_owned());
-  }
-  Ok(Calcit::List(Arc::new(CalcitList(xs))))
+    Ok(())
+  })?;
+  Ok(Calcit::List(Arc::new(CalcitList::List(xs))))
 }
 
 /// need to handle experssions inside unquote snippets
@@ -848,9 +919,12 @@ pub fn preprocess_quasiquote(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
-  for a in args {
-    xs = xs.push_right(preprocess_quasiquote_internal(a, scope_defs, file_ns, check_warnings, call_stack)?);
-  }
+
+  args.traverse_result::<CalcitErr>(&mut |a| {
+    let form = preprocess_quasiquote_internal(a, scope_defs, file_ns, check_warnings, call_stack)?;
+    xs = xs.push_right(form);
+    Ok(())
+  })?;
   Ok(Calcit::List(Arc::new(xs.into())))
 }
 
@@ -863,21 +937,21 @@ pub fn preprocess_quasiquote_internal(
 ) -> Result<Calcit, CalcitErr> {
   match x {
     Calcit::List(ys) if ys.is_empty() => Ok(x.to_owned()),
-    Calcit::List(ys) => match &ys.0[0] {
-      Calcit::Symbol { sym, .. } if &**sym == "~" || &**sym == "~@" => {
-        let mut xs = CalcitList::new_inner();
-        for y in &ys.0 {
+    Calcit::List(ys) => match &ys[0] {
+      Calcit::Syntax(CalcitSyntax::MacroInterpolate, _) | &Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, _) => {
+        let mut xs = vec![];
+        for y in &**ys {
           let form = preprocess_expr(y, scope_defs, file_ns, check_warnings, call_stack)?;
-          xs = xs.push_right(form.to_owned());
+          xs.push(form.to_owned());
         }
-        Ok(Calcit::List(Arc::new(xs.into())))
+        Ok(Calcit::from(xs))
       }
       _ => {
-        let mut xs = CalcitList::new_inner();
-        for y in &ys.0 {
-          xs = xs.push_right(preprocess_quasiquote_internal(y, scope_defs, file_ns, check_warnings, call_stack)?.to_owned());
+        let mut xs = vec![];
+        for y in &**ys {
+          xs.push(preprocess_quasiquote_internal(y, scope_defs, file_ns, check_warnings, call_stack)?.to_owned());
         }
-        Ok(Calcit::List(Arc::new(xs.into())))
+        Ok(Calcit::from(xs))
       }
     },
     _ => Ok(x.to_owned()),

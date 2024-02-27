@@ -505,8 +505,8 @@
                 &let
                   x0 $ &list:first xs
                   if (list? x0)
-                    recur (append x0 base) & $ &list:rest xs
-                    recur ([] x0 base) & $ &list:rest xs
+                    &call-spread recur (append x0 base) & $ &list:rest xs
+                    &call-spread recur ([] x0 base) & $ &list:rest xs
         |/ $ %{} :CodeEntry (:doc |dividing)
           :code $ quote
             defn / (x & ys)
@@ -1250,7 +1250,11 @@
           :code $ quote
             defmacro let[] (vars data & body)
               if
-                not $ and (list? vars) (every? vars symbol?)
+                not $ and (list? vars)
+                  every? vars $ fn (x)
+                    or
+                      symbol? x
+                      is-spreading-mark? x
                 raise $ str-spaced "|expects a list of definitions, got:" vars
               let
                   variable? $ symbol? data
@@ -1260,10 +1264,12 @@
                     defn let[]% (acc xs idx)
                       if (&list:empty? xs) acc $ &let ()
                         if
-                          not $ symbol? (&list:first xs)
+                          not $ or
+                            symbol? (&list:first xs)
+                            is-spreading-mark? (&list:first xs)
                           raise $ &str:concat "|Expected symbol for vars: " (&list:first xs)
                         if
-                          &= (&list:first xs) '&
+                          is-spreading-mark? (&list:first xs)
                           &let ()
                             assert "|expected list spreading" $ &= 2 (&list:count xs)
                             append acc $ [] (&list:nth xs 1)
@@ -1615,6 +1621,10 @@
           :code $ quote
             defn symbol? (x)
               &= (type-of x) :symbol
+        |syntax? $ %{} :CodeEntry (:doc "|detecting syntax element")
+          :code $ quote
+            defn syntax? (x)
+              &= (type-of x) :syntax
         |tag-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro tag-match (value & body)

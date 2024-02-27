@@ -72,7 +72,6 @@ pub fn is_rust_eval() -> bool {
   matches!(mode, CliRunningMode::Eval)
 }
 
-// TODO
 pub fn call_get_calcit_backend(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::tag("rust"))
 }

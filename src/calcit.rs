@@ -182,9 +182,10 @@ impl fmt::Display for Calcit {
       }
       Calcit::List(xs) => {
         f.write_str("([]")?;
-        for x in &**xs {
-          f.write_str(&format!(" {x}"))?;
-        }
+        xs.traverse_result(&mut |x| match f.write_str(&format!(" {x}")) {
+          Ok(_) => Ok(()),
+          Err(e) => Err(e),
+        })?;
         f.write_str(")")
       }
       Calcit::Set(xs) => {
@@ -293,7 +294,7 @@ pub fn format_to_lisp(x: &Calcit) -> String {
   match x {
     Calcit::List(ys) => {
       let mut s = String::from("(");
-      for (idx, y) in (ys.0).iter().enumerate() {
+      for (idx, y) in ys.iter().enumerate() {
         if idx > 0 {
           s.push(' ');
         }
@@ -383,7 +384,7 @@ impl Hash for Calcit {
       }
       Calcit::List(v) => {
         "list:".hash(_state);
-        v.0.hash(_state);
+        v.hash(_state);
       }
       Calcit::Set(v) => {
         "set:".hash(_state);
@@ -396,7 +397,7 @@ impl Hash for Calcit {
       }
       Calcit::Map(v) => {
         "map:".hash(_state);
-        // TODO order for map is not stable
+        // order for map is not stable
         let mut xs: Vec<_> = v.iter().collect();
         xs.sort();
         for x in xs {
@@ -426,7 +427,7 @@ impl Hash for Calcit {
       Calcit::Syntax(name, _ns) => {
         "syntax:".hash(_state);
         // syntax name can be used as identity
-        name.to_string().hash(_state); // TODO
+        name.to_string().hash(_state);
       }
       Calcit::Method(name, call_native) => {
         "method:".hash(_state);
@@ -524,7 +525,7 @@ impl Ord for Calcit {
       (Calcit::Recur(_), _) => Less,
       (_, Calcit::Recur(_)) => Greater,
 
-      (Calcit::List(a), Calcit::List(b)) => a.0.cmp(&b.0),
+      (Calcit::List(a), Calcit::List(b)) => a.cmp(b),
       (Calcit::List(_), _) => Less,
       (_, Calcit::List(_)) => Greater,
 
@@ -614,7 +615,7 @@ impl PartialEq for Calcit {
       (Calcit::Tuple(a), Calcit::Tuple(b)) => a == b,
       (Calcit::Buffer(b), Calcit::Buffer(d)) => b == d,
       (Calcit::CirruQuote(b), Calcit::CirruQuote(d)) => b == d,
-      (Calcit::List(a), Calcit::List(b)) => a.0 == b.0,
+      (Calcit::List(a), Calcit::List(b)) => a == b,
       (Calcit::Set(a), Calcit::Set(b)) => a == b,
       (Calcit::Map(a), Calcit::Map(b)) => a == b,
       (Calcit::Record(a), Calcit::Record(b)) => a == b,
@@ -631,7 +632,13 @@ impl PartialEq for Calcit {
 
 impl From<TernaryTreeList<Calcit>> for Calcit {
   fn from(xs: TernaryTreeList<Calcit>) -> Calcit {
-    Calcit::List(Arc::new(CalcitList(xs)))
+    Calcit::List(Arc::new(CalcitList::List(xs)))
+  }
+}
+
+impl From<Vec<Calcit>> for Calcit {
+  fn from(xs: Vec<Calcit>) -> Calcit {
+    Calcit::List(Arc::new(CalcitList::Vector(xs)))
   }
 }
 
@@ -688,36 +695,11 @@ impl Calcit {
 
   /// during evaluation, maybe skip evaluation since evaluated data is already in the value
   pub fn is_expr_evaluated(&self) -> bool {
-    match self {
-      Calcit::Nil => true,
-      Calcit::Bool(_) => true,
-      Calcit::Number(_) => true,
-      Calcit::Symbol { sym, .. } if &**sym == "&" => true,
-
-      Calcit::Symbol { .. } => false,
-
-      Calcit::Local { .. } => false,
-      Calcit::Import(..) => false,
-      Calcit::Registered(..) => true,
-      Calcit::Tag(_) => true,
-      Calcit::Str(_) => true,
-      Calcit::Thunk(..) => false,
-      Calcit::Ref(..) => true,
-      Calcit::Tuple { .. } => true,
-      Calcit::Buffer(..) => true,
-      Calcit::CirruQuote(..) => true,
-      Calcit::Recur(_) => true,
-      Calcit::RawCode(..) => true,
-      Calcit::List(..) => false,
-      Calcit::Set(_) => true,
-      Calcit::Map(_) => true,
-      Calcit::Record { .. } => true,
-      Calcit::Proc(_) => true,
-      Calcit::Macro { .. } => true,
-      Calcit::Fn { .. } => true,
-      Calcit::Syntax(_, _) => true,
-      Calcit::Method(..) => true,
-    }
+    !matches!(
+      self,
+      // variants that need to be further evaluated
+      Calcit::Symbol { .. } | Calcit::Local { .. } | Calcit::Import(..) | Calcit::Thunk(..) | Calcit::List(..)
+    )
   }
 }
 

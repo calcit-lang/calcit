@@ -1,6 +1,6 @@
 import * as ternaryTree from "@calcit/ternary-tree";
 
-import { CalcitValue } from "./js-primes.mjs";
+import { CalcitValue, isLiteral } from "./js-primes.mjs";
 
 import {
   TernaryTreeList,
@@ -105,6 +105,13 @@ export class CalcitList {
   }
   reverse() {
     return new CalcitList(ternaryTree.reverse(this.value));
+  }
+  nestedDataInChildren(): boolean {
+    for (let idx = 0; idx < this.len(); idx++) {
+      if (!isLiteral(this.get(idx))) {
+        return true;
+      }
+    }
   }
 }
 
@@ -253,6 +260,13 @@ export class CalcitSliceList {
   }
   reverse() {
     return this.turnListMode().reverse();
+  }
+  nestedDataInChildren(): boolean {
+    for (let idx = 0; idx < this.len(); idx++) {
+      if (!isLiteral(this.get(idx))) {
+        return true;
+      }
+    }
   }
 }
 

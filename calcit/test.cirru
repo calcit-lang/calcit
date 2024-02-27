@@ -211,6 +211,13 @@
                   *l $ atom 1
                 reset! *l 2
                 assert= 2 @*l
+
+              let
+                  Deref $ defrecord! Deref
+                    :deref $ fn (self) 2
+                  v $ %:: Deref :value 1
+                assert= 2 @v
+                assert= (nth v 1) 1
         |test-tag $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-tag ()
