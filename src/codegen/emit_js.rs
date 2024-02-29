@@ -99,7 +99,7 @@ fn escape_var(name: &str) -> String {
 fn escape_ns(name: &str) -> String {
   // use `$` to tell namespace from normal variables, thus able to use same token like clj
   let piece = if is_cirru_string(name) {
-    name[1..].to_owned() // TODO
+    name[1..].replace('@', "_AT_").replace('/', "_SLSH_").replace('.', "_DOT_") // TODO
   } else {
     name.to_owned()
   };
