@@ -456,14 +456,17 @@
                     if (list? pattern)
                       &let
                         k $ &list:first pattern
-                        quasiquote $ if (&= ~t ~k)
-                          let
-                            ~ $ map-indexed (&list:rest pattern)
-                              defn %tag-match (idx x)
-                                [] x $ quasiquote
-                                  &tuple:nth ~value $ ~ (inc idx)
-                            , ~branch
-                          &tag-match-internal ~value ~t $ ~@ (&list:rest body)
+                        &let
+                          size $ &list:count pattern
+                          quasiquote $ if
+                            if (&= ~t ~k) (&= ~size (&tuple:count ~value)) false
+                            let
+                              ~ $ map-indexed (&list:rest pattern)
+                                defn %tag-match (idx x)
+                                  [] x $ quasiquote
+                                    &tuple:nth ~value $ ~ (inc idx)
+                              , ~branch
+                            &tag-match-internal ~value ~t $ ~@ (&list:rest body)
                       if (&= pattern '_) branch $ raise (str-spaced "|unknown supported pattern:" pair)
         |* $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1632,23 +1635,16 @@
                 quasiquote $ eprintln "|[Error] tag-match expected some patterns and matches" ~value
                 &let
                   t# $ gensym |tag
-                  if (list? value)
-                    &let
-                      v# $ gensym |v
-                      quasiquote $ &let (~v# ~value)
-                        if
-                          not $ tuple? ~v#
-                          raise $ str "|tag-match expected tuple, got" ~v#
-                        &let
-                          ~t# $ &tuple:nth ~value 0
-                          &tag-match-internal ~v# ~t# $ ~@ body
-                    quasiquote $ &let ()
+                  &let
+                    v# $ gensym |v
+                    quasiquote $ &let (~v# ~value)
                       if
-                        not $ tuple? ~value
-                        raise $ str "|tag-match expected tuple, got" ~value
+                        not $ tuple? ~v#
+                        raise $ str "|tag-match expected tuple, got" ~v#
                       &let
                         ~t# $ &tuple:nth ~value 0
-                        &tag-match-internal ~value ~t# $ ~@ body
+                        &tag-match-internal ~v# ~t# $ ~@ body
+
         |tag? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn tag? (x)

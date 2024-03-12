@@ -52,6 +52,23 @@
                   (:none) (:: :empty)
                   (:some k0 v0 ms)
                     :: :parts $ count ms
+
+              assert= 1 $ try-size $ :: :dyn
+              assert= 2 $ try-size $ :: :dyn 1
+              assert= 3 $ try-size $ :: :dyn 1 2
+              assert= 4 $ try-size $ :: :dyn 1 2 3
+              assert= :many $ try-size $ :: :dyn 1 2 3 4
+              assert= :many $ try-size $ :: :dyn 1 2 3 4 5
+        |try-size $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn try-size (x)
+              tag-match x
+                (:dyn) 1
+                (:dyn x) 2
+                (:dyn x y) 3
+                (:dyn x y z) 4
+                _ :many
+
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-tuple.main $ :require

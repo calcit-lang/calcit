@@ -112,6 +112,12 @@
         |test-tag-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing tag-match")
+
+              ; println |EXPANDED $ format-to-cirru $ macroexpand-all $ quote $ tag-match (:: :a 1)
+                (:a x) 1
+                (:a x y) 2
+                _ :none
+
               &let
                 match-ab $ fn (data)
                   tag-match data
@@ -130,7 +136,7 @@
                   [] "|no match"
                 assert=
                   match-ab $ :: :a 1 2
-                  [] "|pattern a:" 1
+                  [] "|no match"
                 assert=
                   match-ab $ :: :b 1 2
                   [] "|pattern b:" 1 2
