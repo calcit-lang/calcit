@@ -22,6 +22,9 @@ let embedObject = (x: CalcitValue) => {
   if (x == null) {
     return null;
   }
+  if (typeof x === "string") {
+    return span({ whiteSpace: "pre-line", color: hsl(120, 70, 50), maxWidth: "100vw" }, `|${x}`);
+  }
   return [
     "object",
     {
@@ -144,13 +147,13 @@ export let load_console_formatter_$x_ = () => {
                 break;
               }
             }
-            return div({ color: hasCollection ? hsl(280, 80, 60, 0.4) : undefined }, "{}", preview);
+            return div({ color: hasCollection ? hsl(280, 80, 60, 0.4) : undefined, maxWidth: "100%", whiteSpace: "normal" }, "{}", preview);
           }
           if (obj instanceof CalcitSet) {
             return div({ color: hsl(280, 80, 60, 0.4) }, obj.toString(true));
           }
           if (obj instanceof CalcitRecord) {
-            let ret: any[] = div({ color: hsl(280, 80, 60, 0.4) }, `%{} ${obj.name} ...`);
+            let ret: any[] = div({ color: hsl(280, 80, 60, 0.4), maxWidth: "100%" }, `%{} ${obj.name} ...`);
             return ret;
           }
           if (obj instanceof CalcitTuple) {
@@ -230,6 +233,7 @@ export let load_console_formatter_$x_ = () => {
                       color: hsl(280, 80, 90),
                       flexShrink: 0,
                       fontSize: "10px",
+                      whiteSpace: "nowrap",
                     },
                     idx
                   ),
@@ -265,11 +269,9 @@ export let load_console_formatter_$x_ = () => {
               let [k, v] = pairs[idx];
               ret.push(
                 tr(
-                  {
-                    marginLeft: "8px",
-                  },
-                  td({ marginLeft: "8px", verticalAlign: "top" }, embedObject(k)),
-                  td({ marginLeft: "8px" }, embedObject(v))
+                  {},
+                  td({ paddingLeft: "8px", verticalAlign: "top", whiteSpace: "nowrap", minWidth: "40px" }, embedObject(k)),
+                  td({ paddingLeft: "8px" }, embedObject(v))
                 )
               );
             }
@@ -280,11 +282,9 @@ export let load_console_formatter_$x_ = () => {
             for (let idx = 0; idx < obj.fields.length; idx++) {
               ret.push(
                 tr(
-                  {
-                    marginLeft: "8px",
-                  },
-                  td({ marginLeft: "8px", verticalAlign: "top" }, embedObject(obj.fields[idx])),
-                  td({ marginLeft: "8px" }, embedObject(obj.values[idx]))
+                  {},
+                  td({ paddingLeft: "8px", verticalAlign: "top", whiteSpace: "pre", minWidth: "40px" }, embedObject(obj.fields[idx])),
+                  td({ paddingLeft: "8px" }, embedObject(obj.values[idx]))
                 )
               );
             }
