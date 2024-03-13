@@ -12,6 +12,7 @@
             defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async)
               test-data-gen
               test-regexp
+              test-property
               when (> 1 2)
                 raise $ str "|error of math" 2 1
                 raise "|base error"
@@ -162,6 +163,15 @@
                 js/console.log pattern
                 assert= true $ .!test pattern "|12"
                 assert= false $ .!test pattern "|xy"
+        |test-property $ %{} :CodeEntry (:doc "|try property ops")
+          :code $ quote
+            fn ()
+              let
+                  a $ js-object
+                js-set a |b 1
+                assert= 1 $ js-get a |b
+                js-delete a |b
+                assert= nil $ js-get a |b
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-js.main $ :require (|os :as os) (|assert :as assert)
