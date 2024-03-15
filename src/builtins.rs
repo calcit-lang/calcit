@@ -287,6 +287,9 @@ pub fn is_js_syntax_procs(s: &str) -> bool {
     s,
     "aget"
       | "aset"
+      | "js-get" // alias for aget
+      | "js-set" // alias for aset
+      | "js-delete"
       | "exists?"
       | "extract-cirru-edn"
       | "foldl"

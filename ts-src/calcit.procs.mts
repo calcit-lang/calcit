@@ -983,6 +983,12 @@ export let aget = (x: any, name: string): any => {
 export let aset = (x: any, name: string, v: any): any => {
   return (x[name] = v);
 };
+export let js_get = aget;
+export let js_set = aset;
+/** generates `delete a.b` */
+export let js_delete = (obj: any, name: string): any => {
+  return delete obj[name];
+};
 
 export let get_env = (name: string, v0: string): string => {
   let v = undefined;
