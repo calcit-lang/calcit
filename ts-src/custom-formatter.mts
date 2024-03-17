@@ -9,13 +9,12 @@ import { CalcitTuple } from "./js-tuple.mjs";
 import { CalcitCirruQuote } from "./js-cirru.mjs";
 
 declare global {
-  interface Window {
-    devtoolsFormatters: {
-      header: (obj: any, config: any) => any[];
-      hasBody: (obj: any) => boolean;
-      body: (obj: any, config: any) => any[];
-    }[];
-  }
+  // https://www.mattzeunert.com/2016/02/19/custom-chrome-devtools-object-formatters.html
+  var devtoolsFormatters: {
+    header: (obj: any, config: any) => any[];
+    hasBody: (obj: any) => boolean;
+    body: (obj: any, config: any) => any[];
+  }[];
 }
 
 let embedObject = (x: CalcitValue) => {
@@ -94,8 +93,8 @@ let saveString = (v: CalcitValue) => {
 };
 
 export let load_console_formatter_$x_ = () => {
-  if (typeof window === "object") {
-    window["devtoolsFormatters"] = [
+  if (typeof globalThis === "object") {
+    globalThis["devtoolsFormatters"] = [
       {
         header: (obj, config) => {
           if (obj instanceof CalcitTag) {
