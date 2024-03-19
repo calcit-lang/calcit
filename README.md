@@ -17,7 +17,7 @@ Core design:
 - Compiles to JavaScript in ES Modules, JavaScript Interop
 - Hot code swapping friendly
 
-### Install
+### Install ![GitHub Release](https://img.shields.io/github/v/release/calcit-lang/calcit)
 
 Build and install with Rust:
 
