@@ -30,10 +30,15 @@
                 f1 $ fn () (hint-fn async)
                   new js/Promise $ fn (resolve reject)
                     js/setTimeout
-                      fn () (println "|async code finished after 1s") (resolve true)
-                      , 1000
+                      fn () (println "|async code finished after 200ms") (resolve true)
+                      , 200
                 f2 $ fn () (hint-fn async)
                   js-await $ f1
+                  assert= true $ if true
+                    js-await $ f1
+                  let
+                      a $ js-await $ f1
+                    assert= true a
               f2
         |test-collection $ %{} :CodeEntry (:doc |)
           :code $ quote
