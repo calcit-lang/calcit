@@ -196,8 +196,12 @@ fn make_let_with_wrapper(left: &str, right: &str, body: &str) -> String {
   format!("(function __let__(){{ \nlet {left} = {right};\n {body} }})()")
 }
 
-fn make_fn_wrapper(body: &str) -> String {
-  format!("(function __fn__(){{\n{body}\n}})()")
+fn make_fn_wrapper(body: &str, is_async: bool) -> String {
+  if is_async {
+    format!("await (async function _async_fn_(){{\n{body}\n}})()")
+  } else {
+    format!("(function _fn_(){{\n{body}\n}})()")
+  }
 }
 
 fn to_js_code(
@@ -421,6 +425,7 @@ fn gen_call_code(
       match body.first() {
         Some(m) => {
           let message: String = to_js_code(m, ns, local_defs, file_imports, tags, None)?;
+          let has_await = detect_await(&body);
           let data_code = match body.get(1) {
             Some(d) => to_js_code(d, ns, local_defs, file_imports, tags, None)?,
             None => String::from("null"),
@@ -433,7 +438,7 @@ fn gen_call_code(
           // println!("inside raise: {:?} {}", return_label, xs);
           match return_label {
             Some(_) => Ok(ret),
-            _ => Ok(make_fn_wrapper(&ret)),
+            _ => Ok(make_fn_wrapper(&ret, has_await)),
           }
         }
         None => Err(format!("raise expected 1~2 arguments, got: {}", body)),
@@ -651,6 +656,25 @@ fn gen_symbol_code(s: &str, def_ns: &str, at_def: &str, xs: &Calcit, passed_defs
   }
 }
 
+fn detect_await(xs: &CalcitList) -> bool {
+  for x in xs {
+    match x {
+      Calcit::List(al) => {
+        if detect_await(al) {
+          return true;
+        }
+      }
+      Calcit::Symbol { sym, .. } => {
+        if &**sym == "js-await" {
+          return true;
+        }
+      }
+      _ => {}
+    }
+  }
+  false
+}
+
 fn gen_let_code(
   body: &CalcitList,
   local_defs: &HashSet<Arc<str>>,
@@ -662,6 +686,7 @@ fn gen_let_code(
 ) -> Result<String, String> {
   let mut let_def_body = body.to_owned();
   let return_label = base_return_label.unwrap_or("return ");
+  let has_await = detect_await(body);
 
   // defined new local variable
   let mut scoped_defs = local_defs.to_owned();
@@ -784,7 +809,7 @@ fn gen_let_code(
   if base_return_label.is_some() {
     Ok(format!("{defs_code}{body_part}"))
   } else {
-    Ok(make_fn_wrapper(&format!("{defs_code}{body_part}")))
+    Ok(make_fn_wrapper(&format!("{defs_code}{body_part}"), has_await))
   }
 }
 
@@ -805,6 +830,7 @@ fn gen_if_code(
     let mut true_node = body[1].to_owned();
     let mut some_false_node = body.get(2);
     let mut need_else = false;
+    let has_await = detect_await(body);
 
     let return_label = base_return_label.unwrap_or("return ");
 
@@ -842,7 +868,7 @@ fn gen_if_code(
     if base_return_label.is_some() {
       Ok(chunk)
     } else {
-      Ok(make_fn_wrapper(&chunk))
+      Ok(make_fn_wrapper(&chunk, has_await))
     }
   }
 }

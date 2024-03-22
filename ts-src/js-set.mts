@@ -1,4 +1,4 @@
-import { CalcitValue } from "./js-primes.mjs";
+import { CalcitValue, isLiteral } from "./js-primes.mjs";
 import { toString } from "./calcit-data.mjs";
 import {
   TernaryTreeMap,
@@ -109,5 +109,14 @@ export class CalcitSet {
 
   values() {
     return [...ternaryTree.toKeys(this.value)];
+  }
+
+  nestedDataInChildren(): boolean {
+    for (let k of ternaryTree.toKeys(this.value)) {
+      if (!isLiteral(k)) {
+        return true;
+      }
+    }
+    return false;
   }
 }

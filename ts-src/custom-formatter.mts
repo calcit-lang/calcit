@@ -9,13 +9,12 @@ import { CalcitTuple } from "./js-tuple.mjs";
 import { CalcitCirruQuote } from "./js-cirru.mjs";
 
 declare global {
-  interface Window {
-    devtoolsFormatters: {
-      header: (obj: any, config: any) => any[];
-      hasBody: (obj: any) => boolean;
-      body: (obj: any, config: any) => any[];
-    }[];
-  }
+  // https://www.mattzeunert.com/2016/02/19/custom-chrome-devtools-object-formatters.html
+  var devtoolsFormatters: {
+    header: (obj: any, config: any) => any[];
+    hasBody: (obj: any) => boolean;
+    body: (obj: any, config: any) => any[];
+  }[];
 }
 
 let embedObject = (x: CalcitValue) => {
@@ -94,8 +93,8 @@ let saveString = (v: CalcitValue) => {
 };
 
 export let load_console_formatter_$x_ = () => {
-  if (typeof window === "object") {
-    window["devtoolsFormatters"] = [
+  if (typeof globalThis === "object") {
+    globalThis["devtoolsFormatters"] = [
       {
         header: (obj, config) => {
           if (obj instanceof CalcitTag) {
@@ -119,7 +118,8 @@ export let load_console_formatter_$x_ = () => {
             }
             return div(
               {
-                color: hasCollection ? hsl(280, 80, 60, 0.4) : null,
+                color: hasCollection ? hsl(280, 80, 60, 0.4) : hsl(280, 80, 60),
+                marginRight: "16px",
               },
               `[]`,
               span(
@@ -130,7 +130,6 @@ export let load_console_formatter_$x_ = () => {
                 },
                 `${obj.len()}`
               ),
-              " ",
               preview
             );
           }
@@ -147,10 +146,38 @@ export let load_console_formatter_$x_ = () => {
                 break;
               }
             }
-            return div({ color: hasCollection ? hsl(280, 80, 60, 0.4) : undefined, maxWidth: "100%", whiteSpace: "normal" }, "{}", preview);
+            return div(
+              { color: hasCollection ? hsl(280, 80, 60, 0.4) : hsl(280, 80, 60), marginRight: "16px", maxWidth: "100%", whiteSpace: "normal" },
+              "{}",
+              preview
+            );
           }
           if (obj instanceof CalcitSet) {
-            return div({ color: hsl(280, 80, 60, 0.4) }, obj.toString(true));
+            let preview = "";
+            let hasCollection = false;
+            for (let item of obj.values()) {
+              preview += " ";
+              if (isLiteral(item)) {
+                preview += saveString(item);
+              } else {
+                preview += "..";
+                hasCollection = true;
+                break;
+              }
+            }
+            return div(
+              { color: hasCollection ? hsl(280, 80, 60, 0.4) : hsl(280, 80, 60), marginRight: "16px" },
+              "#{}",
+              span(
+                {
+                  fontSize: "8px",
+                  verticalAlign: "middle",
+                  color: hsl(280, 80, 80, 0.8),
+                },
+                `${obj.len()}`
+              ),
+              preview
+            );
           }
           if (obj instanceof CalcitRecord) {
             let ret: any[] = div({ color: hsl(280, 80, 60, 0.4), maxWidth: "100%" }, `%{} ${obj.name} ...`);
@@ -159,7 +186,7 @@ export let load_console_formatter_$x_ = () => {
           if (obj instanceof CalcitTuple) {
             if (obj.klass) {
               let ret: any[] = div(
-                {},
+                { marginRight: "16px" },
                 div({ display: "inline-block", color: hsl(300, 100, 40) }, "%::"),
                 div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.klass)),
                 div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.tag))
@@ -170,7 +197,7 @@ export let load_console_formatter_$x_ = () => {
               return ret;
             } else {
               let ret: any[] = div(
-                {},
+                { marginRight: "16px" },
                 div({ display: "inline-block", color: hsl(300, 100, 40) }, "::"),
                 div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.tag))
               );
@@ -191,7 +218,7 @@ export let load_console_formatter_$x_ = () => {
           }
           if (obj instanceof CalcitCirruQuote) {
             return div(
-              { color: hsl(280, 80, 60), display: "flex" },
+              { color: hsl(280, 80, 60), display: "flex", marginRight: "16px" },
               `CirruQuote`,
               div(
                 { color: hsl(280, 80, 60), padding: "4px 4px", margin: "0 4px 2px", border: "1px solid hsl(0,70%,90%)", borderRadius: "4px" },
@@ -211,7 +238,8 @@ export let load_console_formatter_$x_ = () => {
             return obj.len() > 0 && hasCollection;
           }
           if (obj instanceof CalcitSet) {
-            return obj.len() > 0;
+            let hasCollection = obj.nestedDataInChildren();
+            return obj.len() > 0 && hasCollection;
           }
           if (obj instanceof CalcitRecord) {
             return obj.fields.length > 0;
