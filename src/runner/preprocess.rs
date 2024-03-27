@@ -530,9 +530,7 @@ fn preprocess_list_call(
           Ok(Calcit::from(CalcitList::List(ys)))
         }
       }
-      h => {
-        unreachable!("unknown head: {:?}", h);
-      }
+      h => Err(CalcitErr::use_msg_stack(format!("unknown head `{}` in {}", h, xs), call_stack)),
     },
   }
 }
