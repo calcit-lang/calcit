@@ -90,11 +90,18 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     Calcit::Str(s) => Edn::Str((**s).into()),
     Calcit::Bool(b) => Edn::Bool(b.to_owned()),
     Calcit::Tag(s) => Edn::Tag(s.to_owned()),
-    Calcit::Symbol { sym, info, .. } => Edn::map_from_iter([
+    Calcit::Symbol { sym, info, location } => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("symbol")),
       (Edn::tag("val"), Edn::Str((**sym).into())),
       (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
       (Edn::tag("ns"), Edn::Str((*info.at_ns).into())),
+      (
+        Edn::tag("location"),
+        match location {
+          None => Edn::Nil,
+          Some(xs) => Edn::from(xs.iter().map(|x| Edn::Number(*x as f64)).collect::<Vec<Edn>>()),
+        },
+      ),
     ]),
     Calcit::Local(CalcitLocal { sym, idx, info, .. }) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("local")),
