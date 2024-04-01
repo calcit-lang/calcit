@@ -105,6 +105,7 @@
                   :kind :symbol
                   :val |aa
                   :at-def |test-symbol
+                  :location $ [] 4 1 1
               let
                   data $ [] 1 2 $ &{} :a 1 :b $ :: :t 3 |a true
                 assert= data
