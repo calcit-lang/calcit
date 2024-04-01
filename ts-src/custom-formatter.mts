@@ -180,8 +180,19 @@ export let load_console_formatter_$x_ = () => {
             );
           }
           if (obj instanceof CalcitRecord) {
-            let ret: any[] = div({ color: hsl(280, 80, 60, 0.4), maxWidth: "100%" }, `%{} ${obj.name} ...`);
-            return ret;
+            if (obj.klass) {
+              let ret: any[] = div(
+                { color: hsl(280, 80, 60, 0.4), maxWidth: "100%" },
+                span({}, "%{}"),
+                span({ marginLeft: "6px" }, embedObject(obj.klass)),
+                span({ marginLeft: "6px" }, embedObject(obj.name)),
+                span({ marginLeft: "6px" }, `...`)
+              );
+              return ret;
+            } else {
+              let ret: any[] = div({ color: hsl(280, 80, 60, 0.4), maxWidth: "100%" }, `%{} ${obj.name} ...`);
+              return ret;
+            }
           }
           if (obj instanceof CalcitTuple) {
             if (obj.klass) {

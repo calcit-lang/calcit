@@ -318,14 +318,13 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
       if (x.length < 2) {
         throw new Error("tuple expects at least 1 value1");
       }
-      let baseClass = new CalcitRecord(newTag("base-class"), [], []);
       return new CalcitTuple(
         extract_cirru_edn(x[1], options),
         x
           .slice(2)
           .filter(notComment)
           .map((x) => extract_cirru_edn(x, options)),
-        baseClass
+        undefined
       );
     }
   }
