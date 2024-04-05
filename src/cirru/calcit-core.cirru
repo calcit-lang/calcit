@@ -459,7 +459,7 @@
                         &let
                           size $ &list:count pattern
                           quasiquote $ if
-                            if (&= ~t ~k) (&= ~size (&tuple:count ~value)) false
+                            if (identical? ~t ~k) (identical? ~size (&tuple:count ~value)) false
                             let
                               ~ $ map-indexed (&list:rest pattern)
                                 defn %tag-match (idx x)

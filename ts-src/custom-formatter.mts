@@ -106,7 +106,8 @@ export let load_console_formatter_$x_ = () => {
           if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
             let preview = "";
             let hasCollection = false;
-            for (let idx = 0; idx < obj.len(); idx++) {
+            let size = obj.len();
+            for (let idx = 0; idx < size; idx++) {
               preview += " ";
               if (isLiteral(obj.get(idx))) {
                 preview += saveString(obj.get(idx));

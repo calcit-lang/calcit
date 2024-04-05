@@ -1,6 +1,6 @@
 {
   "name": "@calcit/procs",
-  "version": "0.8.46",
+  "version": "0.8.47",
   "main": "./lib/calcit.procs.mjs",
   "devDependencies": {
     "@types/node": "^20.11.28",
@@ -23,6 +23,6 @@
   "dependencies": {
     "@calcit/ternary-tree": "0.0.23",
     "@cirru/parser.ts": "^0.0.6",
-    "@cirru/writer.ts": "^0.1.4"
+    "@cirru/writer.ts": "^0.1.5"
   }
 }
