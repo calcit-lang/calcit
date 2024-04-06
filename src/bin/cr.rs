@@ -30,6 +30,7 @@ pub struct CLIOptions {
   emit_js: bool,
   emit_ir: bool,
   disable_stack: bool,
+  skip_arity_check: bool,
 }
 
 fn main() -> Result<(), String> {
@@ -48,6 +49,7 @@ fn main() -> Result<(), String> {
     emit_js: cli_matches.is_present("emit-js"),
     emit_ir: cli_matches.is_present("emit-ir"),
     disable_stack: cli_matches.is_present("disable-stack"),
+    skip_arity_check: cli_matches.is_present("skip-arity-check"),
   };
   let mut eval_once = cli_matches.is_present("once");
   let assets_watch = cli_matches.value_of("watch-dir");
@@ -156,6 +158,9 @@ fn main() -> Result<(), String> {
   .map_err(|e| e.msg)?;
 
   let task = if cli_options.emit_js {
+    if cli_options.skip_arity_check {
+      codegen::set_code_gen_skip_arity_check(true);
+    }
     run_codegen(&entries, &cli_options.emit_path, false)
   } else if cli_options.emit_ir {
     run_codegen(&entries, &cli_options.emit_path, true)

@@ -20,6 +20,7 @@ use crate::builtins::{is_js_syntax_procs, is_proc_name};
 use crate::calcit::{self, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, MethodKind};
 use crate::calcit::{Calcit, CalcitSyntax, ImportInfo};
 use crate::call_stack::StackKind;
+use crate::codegen::skip_arity_check;
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
 
@@ -1042,7 +1043,9 @@ fn gen_js_func(
     }
   }
 
-  let check_args = if spreading {
+  let check_args = if skip_arity_check() {
+    "".into()
+  } else if spreading {
     snippets::tmpl_args_fewer_than(args_count)
   } else if has_optional {
     snippets::tmpl_args_between(args_count, args_count + optional_count)
