@@ -437,7 +437,8 @@ export let reset_$x_ = (a: CalcitRef, v: CalcitValue): null => {
   }
   let prev = a.value;
   a.value = v;
-  for (let [k, f] of a.listeners) {
+  for (let k in a.listeners) {
+    let f = a.listeners.get(k);
     f(v, prev);
   }
   return null;
@@ -760,7 +761,8 @@ export let _$n_merge = (a: CalcitValue, b: CalcitMap | CalcitSliceMap): CalcitVa
       }
       let pairs = b.pairs();
       for (let idx = 0; idx < pairs.length; idx++) {
-        let [k, v] = pairs[idx];
+        let k = pairs[idx][0];
+        let v = pairs[idx][1];
         let field: CalcitTag;
         if (k instanceof CalcitTag) {
           field = k;
@@ -1372,7 +1374,8 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   if (pair == null) {
     throw new Error(`No class for ${obj?.toString() || JSON.stringify(obj)} to lookup .${p}`);
   }
-  let [klass, tag] = pair;
+  let klass = pair[0];
+  let tag = pair[1];
   let method = klass.getOrNil(p);
   if (method == null) {
     throw new Error(`No method '.${p}' for '${tag}' object '${obj}'.\navailable fields are: ${klass.fields.map((fd: CalcitTag) => fd.value).join(" ")}`);

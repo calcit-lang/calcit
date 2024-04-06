@@ -124,7 +124,8 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
       }
     });
     for (let idx = 0; idx < pairs_buffer.length; idx++) {
-      let [k, v] = pairs_buffer[idx];
+      let k = pairs_buffer[idx][0];
+      let v = pairs_buffer[idx][1];
       buffer.push([to_cirru_edn(k), to_cirru_edn(v)]);
     }
     return buffer;

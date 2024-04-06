@@ -70,7 +70,8 @@ export class CalcitMap {
     let itemsCode = "";
     let pairs = this.pairs();
     for (let idx = 0; idx < pairs.length; idx++) {
-      let [k, v] = pairs[idx];
+      let k = pairs[idx][0];
+      let v = pairs[idx][1];
       if (shorter) {
         let keyPart = isNestedCalcitData(k) ? tipNestedCalcitData(k) : toString(k, true, disableJsDataWarning);
         let valuePart = isNestedCalcitData(v) ? tipNestedCalcitData(v) : toString(v, true, disableJsDataWarning);
@@ -177,7 +178,10 @@ export class CalcitMap {
 
   /** detecthing in custom formatter */
   nestedDataInChildren() {
-    for (let [k, v] of this.pairs()) {
+    let pairs = this.pairs();
+    for (let idx = 0; idx < pairs.length; idx++) {
+      let k = pairs[idx][0];
+      let v = pairs[idx][1];
       if (!isLiteral(k) || !isLiteral(v)) {
         return true;
       }
@@ -267,7 +271,8 @@ export class CalcitSliceMap {
     let itemsCode = "";
     let pairs = this.pairs();
     for (let idx = 0; idx < pairs.length; idx++) {
-      let [k, v] = pairs[idx];
+      let k = pairs[idx][0];
+      let v = pairs[idx][1];
       if (shorter) {
         let keyPart = isNestedCalcitData(k) ? tipNestedCalcitData(k) : toString(k, true, disableJsDataWarning);
         let valuePart = isNestedCalcitData(v) ? tipNestedCalcitData(v) : toString(v, true, disableJsDataWarning);
@@ -381,7 +386,10 @@ export class CalcitSliceMap {
 
   /** detecthing in custom formatter */
   nestedDataInChildren() {
-    for (let [k, v] of this.pairs()) {
+    let pairs = this.pairs();
+    for (let idx = 0; idx < pairs.length; idx++) {
+      let k = pairs[idx][0];
+      let v = pairs[idx][1];
       if (!isLiteral(k) || !isLiteral(v)) {
         return true;
       }

@@ -137,7 +137,10 @@ export let load_console_formatter_$x_ = () => {
           if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
             let preview = "";
             let hasCollection = false;
-            for (let [k, v] of obj.pairs()) {
+            let pairs = obj.pairs();
+            for (let idx = 0; idx < pairs.length; idx++) {
+              let k = pairs[idx][0];
+              let v = pairs[idx][1];
               preview += " ";
               if (isLiteral(k) && isLiteral(v)) {
                 preview += `(${saveString(k)} ${saveString(v)})`;
@@ -306,7 +309,8 @@ export let load_console_formatter_$x_ = () => {
               }
             });
             for (let idx = 0; idx < pairs.length; idx++) {
-              let [k, v] = pairs[idx];
+              let k = pairs[idx][0];
+              let v = pairs[idx][1];
               ret.push(
                 tr(
                   {},
