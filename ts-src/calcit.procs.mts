@@ -437,10 +437,9 @@ export let reset_$x_ = (a: CalcitRef, v: CalcitValue): null => {
   }
   let prev = a.value;
   a.value = v;
-  for (let k in a.listeners) {
-    let f = a.listeners.get(k);
+  a.listeners.forEach((f) => {
     f(v, prev);
-  }
+  });
   return null;
 };
 
@@ -1328,16 +1327,12 @@ export function invoke_method_closure(p: string) {
 function lookup_class(obj: CalcitValue): [CalcitRecord, string] {
   let klass: CalcitRecord;
   let tag: string;
-  if (obj == null) {
-    tag = "&core-nil-class";
-    klass = calcit_builtin_classes.nil;
-  } else if (obj instanceof CalcitTuple) {
-    if (obj.klass instanceof CalcitRecord) {
-      tag = obj.tag.toString();
-      klass = obj.klass;
-    } else {
-      throw new Error("Method invoking expected a record as class");
-    }
+  if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
+    tag = "&core-list-class";
+    klass = calcit_builtin_classes.list;
+  } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
+    tag = "&core-map-class";
+    klass = calcit_builtin_classes.map;
   } else if (obj instanceof CalcitRecord) {
     if (obj.klass instanceof CalcitRecord) {
       tag = obj.name.toString();
@@ -1345,6 +1340,19 @@ function lookup_class(obj: CalcitValue): [CalcitRecord, string] {
     } else {
       throw new Error("Method invoking expected a record as class");
     }
+  } else if (obj instanceof CalcitTuple) {
+    if (obj.klass instanceof CalcitRecord) {
+      tag = obj.tag.toString();
+      klass = obj.klass;
+    } else {
+      throw new Error("Method invoking expected a record as class");
+    }
+  } else if (obj instanceof CalcitSet) {
+    tag = "&core-set-class";
+    klass = calcit_builtin_classes.set;
+  } else if (obj == null) {
+    tag = "&core-nil-class";
+    klass = calcit_builtin_classes.nil;
   } else if (typeof obj === "number") {
     tag = "&core-number-class";
     klass = calcit_builtin_classes.number;
@@ -1354,15 +1362,6 @@ function lookup_class(obj: CalcitValue): [CalcitRecord, string] {
   } else if (typeof obj === "function") {
     tag = "&core-fn-class";
     klass = calcit_builtin_classes.fn;
-  } else if (obj instanceof CalcitSet) {
-    tag = "&core-set-class";
-    klass = calcit_builtin_classes.set;
-  } else if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
-    tag = "&core-list-class";
-    klass = calcit_builtin_classes.list;
-  } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
-    tag = "&core-map-class";
-    klass = calcit_builtin_classes.map;
   } else {
     return null;
   }

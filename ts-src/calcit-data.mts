@@ -518,22 +518,24 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   }
 
   if (tx === "string") {
-    return (x as string) === (y as string);
+    // already checked above
+    return false;
   }
   if (tx === "boolean") {
-    return (x as boolean) === (y as boolean);
+    // already checked above
+    return false;
   }
   if (tx === "number") {
-    return x === y;
+    // already checked above
+    return false;
   }
   if (tx === "function") {
     // comparing functions by reference
     return x === y;
   }
   if (x instanceof CalcitTag) {
-    if (y instanceof CalcitTag) {
-      return x === y;
-    }
+    // comparing tags by reference
+    // already checked above
     return false;
   }
   if (x instanceof CalcitSymbol) {

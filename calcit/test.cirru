@@ -202,7 +202,7 @@
         |test-refs $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
-              add-watch *ref-demo :change $ fn (prev current) (println "|change happened:" prev current)
+              add-watch *ref-demo :change $ fn (current prev) (println "|change happened:" prev current)
               reset! *ref-demo 2
               remove-watch *ref-demo :change
               assert= 2 @*ref-demo
@@ -218,6 +218,15 @@
                   v $ %:: Deref :value 1
                 assert= 2 @v
                 assert= (nth v 1) 1
+
+              let
+                  *b $ atom 0
+                  *c $ atom 0
+                add-watch *b :change $ fn (current prev)
+                  reset! *c current
+                reset! *b 1
+                assert= 1 @*b
+                assert= 1 @*c
         |test-tag $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-tag ()
