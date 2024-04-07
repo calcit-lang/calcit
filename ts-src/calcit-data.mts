@@ -1,6 +1,7 @@
 import { Hash, overwriteHashGenerator, valueHash, mergeValueHash } from "@calcit/ternary-tree";
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { overwriteMapComparator } from "./js-map.mjs";
+import { disableListStructureCheck } from "@calcit/ternary-tree";
 
 import { CalcitRecord, fieldsEqual } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
@@ -662,3 +663,6 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
 overwriteComparator(_$n__$e_);
 overwriteMapComparator(_$n__$e_);
 overwriteSetComparator(_$n__$e_);
+
+/** special trick for disabling ternary tree list check */
+export let disable_list_structure_check_$x_ = disableListStructureCheck;
