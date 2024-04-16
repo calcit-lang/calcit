@@ -107,7 +107,8 @@ export class CalcitList {
     return new CalcitList(ternaryTree.reverse(this.value));
   }
   nestedDataInChildren(): boolean {
-    for (let idx = 0; idx < this.len(); idx++) {
+    let size = this.len();
+    for (let idx = 0; idx < size; idx++) {
       if (!isLiteral(this.get(idx))) {
         return true;
       }
@@ -262,7 +263,8 @@ export class CalcitSliceList {
     return this.turnListMode().reverse();
   }
   nestedDataInChildren(): boolean {
-    for (let idx = 0; idx < this.len(); idx++) {
+    let size = this.len();
+    for (let idx = 0; idx < size; idx++) {
       if (!isLiteral(this.get(idx))) {
         return true;
       }
@@ -292,7 +294,8 @@ export let foldl = function (xs: CalcitValue, acc: CalcitValue, f: CalcitFn): Ca
   }
   if (xs instanceof CalcitSliceList || xs instanceof CalcitList) {
     var result = acc;
-    for (let idx = 0; idx < xs.len(); idx++) {
+    let size = xs.len();
+    for (let idx = 0; idx < size; idx++) {
       let item = xs.get(idx);
       result = f(result, item);
     }
@@ -335,7 +338,8 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
   }
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
     var state = acc;
-    for (let idx = 0; idx < xs.len(); idx++) {
+    let size = xs.len();
+    for (let idx = 0; idx < size; idx++) {
       let item = xs.get(idx);
       let pair = f(state, item);
       if (pair instanceof CalcitTuple) {

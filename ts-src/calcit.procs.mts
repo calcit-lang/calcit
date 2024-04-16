@@ -437,9 +437,9 @@ export let reset_$x_ = (a: CalcitRef, v: CalcitValue): null => {
   }
   let prev = a.value;
   a.value = v;
-  for (let [k, f] of a.listeners) {
+  a.listeners.forEach((f) => {
     f(v, prev);
-  }
+  });
   return null;
 };
 
@@ -760,7 +760,8 @@ export let _$n_merge = (a: CalcitValue, b: CalcitMap | CalcitSliceMap): CalcitVa
       }
       let pairs = b.pairs();
       for (let idx = 0; idx < pairs.length; idx++) {
-        let [k, v] = pairs[idx];
+        let k = pairs[idx][0];
+        let v = pairs[idx][1];
         let field: CalcitTag;
         if (k instanceof CalcitTag) {
           field = k;
@@ -1326,16 +1327,12 @@ export function invoke_method_closure(p: string) {
 function lookup_class(obj: CalcitValue): [CalcitRecord, string] {
   let klass: CalcitRecord;
   let tag: string;
-  if (obj == null) {
-    tag = "&core-nil-class";
-    klass = calcit_builtin_classes.nil;
-  } else if (obj instanceof CalcitTuple) {
-    if (obj.klass instanceof CalcitRecord) {
-      tag = obj.tag.toString();
-      klass = obj.klass;
-    } else {
-      throw new Error("Method invoking expected a record as class");
-    }
+  if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
+    tag = "&core-list-class";
+    klass = calcit_builtin_classes.list;
+  } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
+    tag = "&core-map-class";
+    klass = calcit_builtin_classes.map;
   } else if (obj instanceof CalcitRecord) {
     if (obj.klass instanceof CalcitRecord) {
       tag = obj.name.toString();
@@ -1343,6 +1340,19 @@ function lookup_class(obj: CalcitValue): [CalcitRecord, string] {
     } else {
       throw new Error("Method invoking expected a record as class");
     }
+  } else if (obj instanceof CalcitTuple) {
+    if (obj.klass instanceof CalcitRecord) {
+      tag = obj.tag.toString();
+      klass = obj.klass;
+    } else {
+      throw new Error("Method invoking expected a record as class");
+    }
+  } else if (obj instanceof CalcitSet) {
+    tag = "&core-set-class";
+    klass = calcit_builtin_classes.set;
+  } else if (obj == null) {
+    tag = "&core-nil-class";
+    klass = calcit_builtin_classes.nil;
   } else if (typeof obj === "number") {
     tag = "&core-number-class";
     klass = calcit_builtin_classes.number;
@@ -1352,15 +1362,6 @@ function lookup_class(obj: CalcitValue): [CalcitRecord, string] {
   } else if (typeof obj === "function") {
     tag = "&core-fn-class";
     klass = calcit_builtin_classes.fn;
-  } else if (obj instanceof CalcitSet) {
-    tag = "&core-set-class";
-    klass = calcit_builtin_classes.set;
-  } else if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
-    tag = "&core-list-class";
-    klass = calcit_builtin_classes.list;
-  } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
-    tag = "&core-map-class";
-    klass = calcit_builtin_classes.map;
   } else {
     return null;
   }
@@ -1372,7 +1373,8 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   if (pair == null) {
     throw new Error(`No class for ${obj?.toString() || JSON.stringify(obj)} to lookup .${p}`);
   }
-  let [klass, tag] = pair;
+  let klass = pair[0];
+  let tag = pair[1];
   let method = klass.getOrNil(p);
   if (method == null) {
     throw new Error(`No method '.${p}' for '${tag}' object '${obj}'.\navailable fields are: ${klass.fields.map((fd: CalcitTag) => fd.value).join(" ")}`);

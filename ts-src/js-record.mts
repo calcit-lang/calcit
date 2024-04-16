@@ -188,7 +188,8 @@ export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
     let pairs_buffer: Array<[CalcitTag, CalcitValue]> = [];
     let pairs = data.pairs();
     for (let i = 0; i < pairs.length; i++) {
-      let [k, v] = pairs[i];
+      let k = pairs[i][0];
+      let v = pairs[i][1];
       pairs_buffer.push([castTag(k), v]);
     }
     // mutable sort

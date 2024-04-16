@@ -73,10 +73,10 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     return `|${x}`;
   }
   if (typeof x === "number") {
-    return x.toString();
+    return `${x}`;
   }
   if (typeof x === "boolean") {
-    return x.toString();
+    return `${x}`;
   }
   if (x instanceof CalcitTag) {
     return x.toString();
@@ -85,8 +85,12 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     return x.toString();
   }
   if (x instanceof CalcitList || x instanceof CalcitSliceList) {
-    // TODO can be faster
-    return (["[]"] as CirruEdnFormat[]).concat(x.toArray().map(to_cirru_edn));
+    let ret: CirruEdnFormat[] = ["[]"];
+    let arr = x.toArray();
+    for (let idx = 0; idx < arr.length; idx++) {
+      ret.push(to_cirru_edn(arr[idx]));
+    }
+    return ret;
   }
   if (x instanceof CalcitCirruQuote) {
     return ["quote", x.value];
@@ -120,28 +124,21 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
       }
     });
     for (let idx = 0; idx < pairs_buffer.length; idx++) {
-      let [k, v] = pairs_buffer[idx];
+      let k = pairs_buffer[idx][0];
+      let v = pairs_buffer[idx][1];
       buffer.push([to_cirru_edn(k), to_cirru_edn(v)]);
     }
     return buffer;
   }
   if (x instanceof CalcitRecord) {
-    let buffer: [string, CirruEdnFormat] = ["%{}", x.name.toString()];
+    let buffer: [string, CirruEdnFormat][] = [];
     for (let idx = 0; idx < x.fields.length; idx++) {
       buffer.push([x.fields[idx].toString(), to_cirru_edn(x.values[idx])]);
     }
     // placed literals first
-    buffer.sort((a, b) => {
-      let a1_literal = isLiteral(a[1] as CalcitValue);
-      let b1_literal = isLiteral(b[1] as CalcitValue);
-      if (a1_literal && !b1_literal) {
-        return -1;
-      } else if (!a1_literal && b1_literal) {
-        return 1;
-      } else {
-        return _$n_compare(a[0] as CalcitValue, b[0] as CalcitValue);
-      }
-    });
+    buffer.sort(recordFieldOrder);
+    (buffer as any[]).unshift(x.name.toString());
+    (buffer as any[]).unshift("%{}");
     return buffer;
   }
   if (x instanceof CalcitSet) {
@@ -170,6 +167,18 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
   }
   console.error(x);
   throw new Error("Unexpected data to to-cirru-edn");
+};
+
+let recordFieldOrder = (a: [string, CirruEdnFormat], b: [string, CirruEdnFormat]) => {
+  let a1_literal = isLiteral(a[1] as CalcitValue);
+  let b1_literal = isLiteral(b[1] as CalcitValue);
+  if (a1_literal && !b1_literal) {
+    return -1;
+  } else if (!a1_literal && b1_literal) {
+    return 1;
+  } else {
+    return _$n_compare(a[0] as CalcitValue, b[0] as CalcitValue);
+  }
 };
 
 /** makes sure we got string */
@@ -318,14 +327,13 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
       if (x.length < 2) {
         throw new Error("tuple expects at least 1 value1");
       }
-      let baseClass = new CalcitRecord(newTag("base-class"), [], []);
       return new CalcitTuple(
         extract_cirru_edn(x[1], options),
         x
           .slice(2)
           .filter(notComment)
           .map((x) => extract_cirru_edn(x, options)),
-        baseClass
+        undefined
       );
     }
   }

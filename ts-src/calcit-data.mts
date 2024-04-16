@@ -1,6 +1,7 @@
 import { Hash, overwriteHashGenerator, valueHash, mergeValueHash } from "@calcit/ternary-tree";
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
 import { overwriteMapComparator } from "./js-map.mjs";
+import { disableListStructureCheck } from "@calcit/ternary-tree";
 
 import { CalcitRecord, fieldsEqual } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
@@ -290,7 +291,8 @@ export let hashFunction = (x: CalcitValue): Hash => {
     let pairs = x.pairs();
     pairs.sort((a, b) => _$n_compare(a[0], b[0]));
     for (let idx = 0; idx < pairs.length; idx++) {
-      let [k, v] = pairs[idx];
+      let k = pairs[idx][0];
+      let v = pairs[idx][1];
       base = mergeValueHash(base, hashFunction(k));
       base = mergeValueHash(base, hashFunction(v));
     }
@@ -303,7 +305,8 @@ export let hashFunction = (x: CalcitValue): Hash => {
     let pairs = x.pairs();
     pairs.sort((a, b) => _$n_compare(a[0], b[0]));
     for (let idx = 0; idx < pairs.length; idx++) {
-      let [k, v] = pairs[idx];
+      let k = pairs[idx][0];
+      let v = pairs[idx][1];
       base = mergeValueHash(base, hashFunction(k));
       base = mergeValueHash(base, hashFunction(v));
     }
@@ -456,7 +459,8 @@ export let to_js_data = (x: CalcitValue, addColon: boolean = false): any => {
     let result: Record<string, CalcitValue> = {};
     let pairs = x.pairs();
     for (let idx = 0; idx < pairs.length; idx++) {
-      let [k, v] = pairs[idx];
+      let k = pairs[idx][0];
+      let v = pairs[idx][1];
       var key = to_js_data(k, addColon);
       result[key] = to_js_data(v, addColon);
     }
@@ -515,22 +519,24 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   }
 
   if (tx === "string") {
-    return (x as string) === (y as string);
+    // already checked above
+    return false;
   }
   if (tx === "boolean") {
-    return (x as boolean) === (y as boolean);
+    // already checked above
+    return false;
   }
   if (tx === "number") {
-    return x === y;
+    // already checked above
+    return false;
   }
   if (tx === "function") {
     // comparing functions by reference
     return x === y;
   }
   if (x instanceof CalcitTag) {
-    if (y instanceof CalcitTag) {
-      return x === y;
-    }
+    // comparing tags by reference
+    // already checked above
     return false;
   }
   if (x instanceof CalcitSymbol) {
@@ -569,7 +575,8 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
       }
       let pairs = x.pairs();
       for (let idx = 0; idx < pairs.length; idx++) {
-        let [k, v] = pairs[idx];
+        let k = pairs[idx][0];
+        let v = pairs[idx][1];
         if (!y.contains(k)) {
           return false;
         }
@@ -656,3 +663,6 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
 overwriteComparator(_$n__$e_);
 overwriteMapComparator(_$n__$e_);
 overwriteSetComparator(_$n__$e_);
+
+/** special trick for disabling ternary tree list check */
+export let disable_list_structure_check_$x_ = disableListStructureCheck;

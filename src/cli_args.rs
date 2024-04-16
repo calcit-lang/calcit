@@ -31,6 +31,12 @@ pub fn parse_cli() -> clap::ArgMatches {
         .takes_value(false),
     )
     .arg(
+      clap::Arg::new("skip-arity-check")
+        .help("skip arity check in js codegen")
+        .long("skip-arity-check")
+        .takes_value(false),
+    )
+    .arg(
       clap::Arg::new("eval")
         .help("evaluate a snippet")
         .short('e')
