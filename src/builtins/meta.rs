@@ -59,6 +59,7 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::Local { .. } => Ok(Calcit::tag("local")),
     Calcit::Import { .. } => Ok(Calcit::tag("import")),
     Calcit::Registered(..) => Ok(Calcit::tag("registered")),
+    Calcit::AnyRef(..) => Ok(Calcit::tag("any-ref")),
   }
 }
 

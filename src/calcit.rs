@@ -19,6 +19,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 use std::sync::{Arc, Mutex};
 
+use cirru_edn::EdnAnyRef;
 use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
@@ -96,6 +97,8 @@ pub enum Calcit {
   Method(Arc<str>, MethodKind),
   /// currently only JavaScript calls are handled
   RawCode(RawCodeType, Arc<str>),
+  /// reference to native Rust data, not intended for Calcit usages
+  AnyRef(EdnAnyRef),
 }
 
 #[derive(Debug, Clone)]
@@ -271,6 +274,7 @@ impl fmt::Display for Calcit {
       Calcit::Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
       Calcit::Method(name, method_kind) => f.write_str(&format!("(&{method_kind} {name})")),
       Calcit::RawCode(_, code) => f.write_str(&format!("(&raw-code {code})")),
+      Calcit::AnyRef(r) => f.write_str(&format!("(&any-ref {:?})", r)),
     }
   }
 }
@@ -438,6 +442,9 @@ impl Hash for Calcit {
         "raw-code:".hash(_state);
         code.hash(_state);
       }
+      Calcit::AnyRef(_) => {
+        unreachable!("AnyRef should not be used in hashing")
+      }
     }
   }
 }
@@ -579,6 +586,10 @@ impl Ord for Calcit {
       (_, Calcit::Method(..)) => Greater,
 
       (Calcit::RawCode(_, a), Calcit::RawCode(_, b)) => a.cmp(b),
+      (Calcit::RawCode(..), _) => Less,
+      (_, Calcit::RawCode(..)) => Greater,
+
+      (Calcit::AnyRef(_), Calcit::AnyRef(_)) => unreachable!("AnyRef should not be used in cmp"),
     }
   }
 }

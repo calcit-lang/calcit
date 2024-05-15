@@ -93,5 +93,6 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     Calcit::Fn { .. } => Err(format!("data_to_calcit not implemented for fn: {}", x)),
     Calcit::Method(..) => Ok(x.to_owned()),
     Calcit::RawCode(..) => Ok(x.to_owned()),
+    Calcit::AnyRef(..) => unreachable!("data_to_calcit not implemented for any-ref: {}", x),
   }
 }

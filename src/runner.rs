@@ -31,7 +31,8 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     | Calcit::Macro { .. }
     | Calcit::Fn { .. }
     | Calcit::Syntax(_, _)
-    | Calcit::Method(..) => Ok(expr.to_owned()),
+    | Calcit::Method(..)
+    | Calcit::AnyRef(..) => Ok(expr.to_owned()),
 
     Calcit::Thunk(thunk) => Ok(thunk.evaluated(scope, call_stack)?),
     Calcit::Symbol { sym, info, location, .. } => {
