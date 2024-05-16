@@ -849,8 +849,8 @@ fn gen_if_code(
               if ys.len() < 3 || ys.len() > 4 {
                 return Err(format!("if expected 2~3 nodes, got: {}", Calcit::List(ys.to_owned())));
               }
-              cond_node = ys[1].to_owned();
-              true_node = ys[2].to_owned();
+              ys[1].clone_into(&mut cond_node);
+              ys[2].clone_into(&mut true_node);
               some_false_node = ys.get(3);
               need_else = true;
               continue;

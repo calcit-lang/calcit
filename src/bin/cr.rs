@@ -104,7 +104,7 @@ fn main() -> Result<(), String> {
     if let Some(entry) = cli_matches.value_of("entry") {
       if snapshot.entries.contains_key(entry) {
         println!("running entry: {entry}");
-        snapshot.configs = snapshot.entries[entry].to_owned();
+        snapshot.entries[entry].clone_into(&mut snapshot.configs);
       } else {
         return Err(format!(
           "unknown entry `{}` in `{}`",

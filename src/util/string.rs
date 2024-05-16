@@ -19,7 +19,7 @@ pub fn matches_float(xs: &str) -> bool {
   }
   let mut buffer = xs.to_string();
   if let Some(s) = xs.strip_prefix('-') {
-    buffer = s.to_owned()
+    s.clone_into(&mut buffer)
   }
 
   if buffer.is_empty() {

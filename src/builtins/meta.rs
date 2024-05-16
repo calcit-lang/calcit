@@ -478,7 +478,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           }))
         } else if idx - 1 < extra.len() {
           let mut new_extra = extra.to_owned();
-          new_extra[idx - 1] = xs[2].to_owned();
+          xs[2].clone_into(&mut new_extra[idx - 1]);
           Ok(Calcit::Tuple(CalcitTuple {
             tag: tag.to_owned(),
             extra: new_extra,

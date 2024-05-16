@@ -286,7 +286,7 @@ pub fn macroexpand(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
               let v = runner::evaluate_lines(&info.body.to_vec(), &body_scope, &info.def_ns, call_stack)?;
               match v {
                 Calcit::Recur(rest_code) => {
-                  rest_nodes = (*rest_code).to_owned();
+                  (*rest_code).clone_into(&mut rest_nodes);
                 }
                 _ => return Ok(v),
               }

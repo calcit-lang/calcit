@@ -39,11 +39,11 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       if x == &prev {
         return CalcitErr::err_str(format!("duplicated field for record: {}", x));
       } else {
-        prev = x.to_owned();
+        x.clone_into(&mut prev);
         // checked ok
       }
     } else {
-      prev = x.to_owned()
+      x.clone_into(&mut prev)
     }
   }
   Ok(Calcit::Record(CalcitRecord {
@@ -92,11 +92,11 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       if x == &prev {
         return CalcitErr::err_str(format!("duplicated field for record: {}", x));
       } else {
-        prev = x.to_owned();
+        x.clone_into(&mut prev);
         // checked ok
       }
     } else {
-      prev = x.to_owned()
+      x.clone_into(&mut prev)
     }
   }
   Ok(Calcit::Record(CalcitRecord {
@@ -134,13 +134,13 @@ pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           match &xs[k_idx] {
             Calcit::Tag(s) => match record.index_of(s.ref_str()) {
               Some(pos) => {
-                values[pos] = xs[v_idx].to_owned();
+                xs[v_idx].clone_into(&mut values[pos]);
               }
               None => return CalcitErr::err_str(format!("unexpected field {s} for {def_fields:?}")),
             },
             Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match record.index_of(s) {
               Some(pos) => {
-                values[pos] = xs[v_idx].to_owned();
+                xs[v_idx].clone_into(&mut values[pos]);
               }
               None => return CalcitErr::err_str(format!("unexpected field {s} for {def_fields:?}")),
             },
@@ -349,7 +349,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
         Some(pos) => {
           let mut new_values = (**values).to_owned();
-          new_values[pos] = b.to_owned();
+          b.clone_into(&mut new_values[pos]);
           Ok(Calcit::Record(CalcitRecord {
             name: name.to_owned(),
             fields: fields.to_owned(),
@@ -362,7 +362,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Calcit::Tag(s) => match record.index_of(s.ref_str()) {
         Some(pos) => {
           let mut new_values = (**values).to_owned();
-          new_values[pos] = b.to_owned();
+          b.clone_into(&mut new_values[pos]);
           Ok(Calcit::Record(CalcitRecord {
             name: name.to_owned(),
             fields: fields.to_owned(),

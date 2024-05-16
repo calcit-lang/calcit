@@ -26,7 +26,7 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
       return Ok(());
     }
     let listeners = pair.1.to_owned();
-    pair.0 = v.to_owned();
+    v.clone_into(&mut pair.0);
 
     (listeners, prev)
   };

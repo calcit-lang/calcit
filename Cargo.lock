@@ -62,7 +62,7 @@ checksum = "b4682ae6287fcf752ecaabbfcc7b6f9b72aa33933dc23a554d853aea8eea8635"
 
 [[package]]
 name = "calcit"
-version = "0.8.51-a2"
+version = "0.8.51-a3"
 dependencies = [
  "cirru_edn",
  "cirru_parser",
