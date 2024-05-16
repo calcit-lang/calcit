@@ -274,7 +274,7 @@ impl fmt::Display for Calcit {
       Calcit::Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
       Calcit::Method(name, method_kind) => f.write_str(&format!("(&{method_kind} {name})")),
       Calcit::RawCode(_, code) => f.write_str(&format!("(&raw-code {code})")),
-      Calcit::AnyRef(r) => f.write_str(&format!("(&any-ref {:?})", r)),
+      Calcit::AnyRef(_r) => f.write_str("(&any-ref ...)"),
     }
   }
 }
