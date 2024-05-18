@@ -19,6 +19,22 @@ type EdnFfiFn = fn(
   finish: Arc<dyn FnOnce()>,
 ) -> Result<Edn, String>;
 
+lazy_static::lazy_static! {
+  /// lazily cache dylibs, in case Linux drops memory of libraries
+  static ref DYLIBS: std::sync::Mutex<std::collections::HashMap<String, Arc<libloading::Library>>> = std::sync::Mutex::new(std::collections::HashMap::new());
+}
+
+/// load dylib, cache it
+fn load_dylib(lib_name: &str) -> Arc<libloading::Library> {
+  let mut dylibs = DYLIBS.lock().unwrap();
+  if let Some(lib) = dylibs.get(lib_name) {
+    return lib.to_owned();
+  }
+  let lib = unsafe { libloading::Library::new(lib_name).expect("dylib not found") };
+  dylibs.insert(lib_name.to_owned(), Arc::new(lib));
+  dylibs.get(lib_name).unwrap().to_owned()
+}
+
 const ABI_VERSION: &str = "0.0.8";
 
 pub fn inject_platform_apis() {
@@ -54,18 +70,15 @@ pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
     ys.push(calcit_to_edn(&v)?);
   }
 
-  unsafe {
-    let lib = libloading::Library::new(lib_name).expect("dylib not found");
-
-    let lookup_version: libloading::Symbol<fn() -> String> = lib.get("abi_version".as_bytes()).expect("request for ABI_VERSION");
-    if lookup_version() != ABI_VERSION {
-      return CalcitErr::err_str(format!("ABI versions mismatch: {} {ABI_VERSION}", lookup_version()));
-    }
-
-    let func: libloading::Symbol<EdnFfi> = lib.get(method.as_bytes()).expect("dy function not found");
-    let ret = func(ys.to_owned())?;
-    Ok(edn_to_calcit(&ret, &Calcit::Nil))
+  let lib = load_dylib(&lib_name);
+  let lookup_version: libloading::Symbol<fn() -> String> =
+    unsafe { lib.get("abi_version".as_bytes()).expect("request for ABI_VERSION") };
+  if lookup_version() != ABI_VERSION {
+    return CalcitErr::err_str(format!("ABI versions mismatch: {} {ABI_VERSION}", lookup_version()));
   }
+  let func: libloading::Symbol<EdnFfi> = unsafe { lib.get(method.as_bytes()).expect("dy function not found") };
+  let ret = func(ys.to_owned())?;
+  Ok(edn_to_calcit(&ret, &Calcit::Nil))
 }
 
 pub fn stdout_println(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -125,16 +138,13 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
 
   track::track_task_add();
 
-  let lib = unsafe {
-    let lib_tmp = libloading::Library::new(lib_name).expect("dylib not found");
+  let lib = load_dylib(&lib_name);
 
-    let lookup_version: libloading::Symbol<fn() -> String> = lib_tmp.get("abi_version".as_bytes()).expect("request for ABI_VERSION");
-    if lookup_version() != ABI_VERSION {
-      return CalcitErr::err_str(format!("ABI versions mismatch: {} {ABI_VERSION}", lookup_version()));
-    }
-
-    lib_tmp
-  };
+  let lookup_version: libloading::Symbol<fn() -> String> =
+    unsafe { lib.get("abi_version".as_bytes()).expect("request for ABI_VERSION") };
+  if lookup_version() != ABI_VERSION {
+    return CalcitErr::err_str(format!("ABI versions mismatch: {} {ABI_VERSION}", lookup_version()));
+  }
   let copied_stack_1 = Arc::new(call_stack.to_owned());
 
   let _handle = thread::spawn(move || {
