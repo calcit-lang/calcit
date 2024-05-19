@@ -10,7 +10,7 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes("new-record expected arguments, got:", xs);
   }
   let name_id: EdnTag = match &xs[0] {
-    Calcit::Symbol { sym, .. } => EdnTag::new(sym),
+    Calcit::Symbol { sym, .. } => EdnTag(sym.to_owned()),
     Calcit::Tag(k) => k.to_owned(),
     a => return CalcitErr::err_str(format!("new-record expected a name, got: {a}")),
   };
@@ -21,7 +21,7 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   for x in xs.iter().skip(1) {
     match x {
       Calcit::Symbol { sym, .. } | Calcit::Str(sym) => {
-        fields.push(EdnTag::new(sym));
+        fields.push(EdnTag(sym.to_owned()));
       }
       Calcit::Tag(s) => {
         fields.push(s.to_owned());
@@ -63,7 +63,7 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     b => return CalcitErr::err_str(format!("new-class-record expected a class, got: {b}")),
   };
   let name_id: EdnTag = match &xs[1] {
-    Calcit::Symbol { sym, .. } => EdnTag::new(sym),
+    Calcit::Symbol { sym, .. } => EdnTag(sym.to_owned()),
     Calcit::Tag(k) => k.to_owned(),
     a => return CalcitErr::err_str(format!("new-record expected a name, got: {a}")),
   };
@@ -74,7 +74,7 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   for x in xs.iter().skip(2) {
     match x {
       Calcit::Symbol { sym, .. } | Calcit::Str(sym) => {
-        fields.push(EdnTag::new(sym));
+        fields.push(EdnTag(sym.to_owned()));
       }
       Calcit::Tag(s) => {
         fields.push(s.to_owned());
@@ -215,7 +215,7 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       for (k, v) in ys {
         match k {
           Calcit::Str(s) => {
-            pairs.push((EdnTag::new(s), v.to_owned()));
+            pairs.push((EdnTag(s.to_owned()), v.to_owned()));
           }
           Calcit::Tag(s) => {
             pairs.push((s.to_owned(), v.to_owned()));
@@ -387,7 +387,7 @@ pub fn extend_as(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Record(record)), Some(n), Some(a), Some(new_value)) => match a {
       Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
         Some(_pos) => CalcitErr::err_str(format!("field `{s}` already existed")),
-        None => match record.extend_field(&EdnTag::new(s), n, new_value) {
+        None => match record.extend_field(&EdnTag(s.to_owned()), n, new_value) {
           Ok(new_record) => Ok(Calcit::Record(new_record)),
           Err(e) => Err(CalcitErr::use_str(e)),
         },

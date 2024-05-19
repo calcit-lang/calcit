@@ -125,7 +125,7 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc
       (Edn::tag("def"), format!("{}/{}", s.ns, s.def).into()),
       (Edn::tag("code"), cirru::calcit_to_cirru(&s.code)?.into()),
       (Edn::tag("args"), args.into()),
-      (Edn::tag("kind"), Edn::tag(&s.kind.to_string())),
+      (Edn::tag("kind"), Edn::tag(s.kind.to_string())),
     ]);
 
     stack_list.push(info);
