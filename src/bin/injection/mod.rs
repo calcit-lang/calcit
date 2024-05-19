@@ -35,7 +35,7 @@ fn load_dylib(lib_name: &str) -> Arc<libloading::Library> {
   dylibs.get(lib_name).unwrap().to_owned()
 }
 
-const ABI_VERSION: &str = "0.0.8";
+const ABI_VERSION: &str = "0.0.9";
 
 pub fn inject_platform_apis() {
   builtins::register_import_proc("&call-dylib-edn", call_dylib_edn);
