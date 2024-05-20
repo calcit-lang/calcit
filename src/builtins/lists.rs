@@ -258,7 +258,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
       (Calcit::List(xs), Calcit::Fn { info, .. }) => {
         let mut state = acc.to_owned();
         for x in &**xs {
-          let pair = runner::run_fn(&[state, (*x).to_owned()], info, call_stack)?;
+          let pair = runner::run_fn(&[state.to_owned(), (*x).to_owned()], info, call_stack)?;
           match pair {
             Calcit::Tuple(CalcitTuple { tag: x0, extra, .. }) => match &*x0 {
               Calcit::Bool(b) => {
@@ -270,7 +270,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
                 if *b {
                   return Ok((*x1).to_owned());
                 } else {
-                  state = (x1.to_owned()).to_owned()
+                  x1.clone_into(&mut state)
                 }
               }
               a => {
@@ -295,7 +295,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
       (Calcit::Set(xs), Calcit::Fn { info, .. }) => {
         let mut state = acc.to_owned();
         for x in xs {
-          let pair = runner::run_fn(&[state, x.to_owned()], info, call_stack)?;
+          let pair = runner::run_fn(&[state.to_owned(), x.to_owned()], info, call_stack)?;
           match pair {
             Calcit::Tuple(CalcitTuple { tag: x0, extra, .. }) => match &*x0 {
               Calcit::Bool(b) => {
@@ -307,7 +307,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
                 if *b {
                   return Ok((*x1).to_owned());
                 } else {
-                  state = (*x1).to_owned()
+                  (*x1).clone_into(&mut state)
                 }
               }
               a => {
@@ -333,7 +333,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
         let mut state = acc.to_owned();
         for (k, x) in xs {
           let pair = runner::run_fn(
-            &[state, Calcit::from(CalcitList::from(&[k.to_owned(), x.to_owned()]))],
+            &[state.to_owned(), Calcit::from(CalcitList::from(&[k.to_owned(), x.to_owned()]))],
             info,
             call_stack,
           )?;
@@ -348,7 +348,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
                 if *b {
                   return Ok((*x1).to_owned());
                 } else {
-                  state = (*x1).to_owned()
+                  (*x1).clone_into(&mut state)
                 }
               }
               a => {
@@ -400,7 +400,7 @@ pub fn foldr_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
         let size = xs.len();
         for i in 0..size {
           let x = xs[size - 1 - i].to_owned();
-          let pair = runner::run_fn(&[state, x.to_owned()], info, call_stack)?;
+          let pair = runner::run_fn(&[state.to_owned(), x.to_owned()], info, call_stack)?;
           match pair {
             Calcit::Tuple(CalcitTuple { tag: x0, extra, .. }) => match &*x0 {
               Calcit::Bool(b) => {
@@ -412,7 +412,7 @@ pub fn foldr_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
                 if *b {
                   return Ok((*x1).to_owned());
                 } else {
-                  state = (*x1).to_owned()
+                  (*x1).clone_into(&mut state)
                 }
               }
               a => {

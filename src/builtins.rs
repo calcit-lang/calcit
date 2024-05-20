@@ -46,7 +46,7 @@ pub fn handle_proc(name: CalcitProc, args: &[Calcit], call_stack: &CallStackList
     handle_proc_internal(name, args, call_stack).map_err(|e| {
       if e.stack.is_empty() {
         let mut e2 = e;
-        e2.stack = call_stack.to_owned();
+        call_stack.clone_into(&mut e2.stack);
         e2
       } else {
         e

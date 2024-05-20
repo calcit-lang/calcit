@@ -31,7 +31,8 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     | Calcit::Macro { .. }
     | Calcit::Fn { .. }
     | Calcit::Syntax(_, _)
-    | Calcit::Method(..) => Ok(expr.to_owned()),
+    | Calcit::Method(..)
+    | Calcit::AnyRef(..) => Ok(expr.to_owned()),
 
     Calcit::Thunk(thunk) => Ok(thunk.evaluated(scope, call_stack)?),
     Calcit::Symbol { sym, info, location, .. } => {
@@ -87,7 +88,7 @@ pub fn call_expr(
         builtins::handle_syntax(s, &rest_nodes, scope, file_ns, &next_stack).map_err(|e| {
           if e.stack.is_empty() {
             let mut e2 = e;
-            e2.stack = call_stack.to_owned();
+            call_stack.clone_into(&mut e2.stack);
             e2
           } else {
             e

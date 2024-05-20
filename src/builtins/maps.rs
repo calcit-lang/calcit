@@ -79,11 +79,11 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         for (k, v) in ys {
           match k {
             Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
-              Some(pos) => new_values[pos] = v.to_owned(),
+              Some(pos) => v.clone_into(&mut new_values[pos]),
               None => return CalcitErr::err_str(format!("invalid field `{s}` for {fields:?}")),
             },
             Calcit::Tag(s) => match record.index_of(s.ref_str()) {
-              Some(pos) => new_values[pos] = v.to_owned(),
+              Some(pos) => v.clone_into(&mut new_values[pos]),
               None => return CalcitErr::err_str(format!("invalid field `{s}` for {fields:?}")),
             },
             a => return CalcitErr::err_str(format!("invalid field key: {a}")),

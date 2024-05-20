@@ -19,7 +19,7 @@ pub fn matches_float(xs: &str) -> bool {
   }
   let mut buffer = xs.to_string();
   if let Some(s) = xs.strip_prefix('-') {
-    buffer = s.to_owned()
+    s.clone_into(&mut buffer)
   }
 
   if buffer.is_empty() {
@@ -121,7 +121,7 @@ pub fn extract_ns_def(s: &str) -> Result<(String, String), String> {
 pub fn extract_pkg_from_ns(ns: Arc<str>) -> Option<Arc<str>> {
   let p2: Vec<&str> = ns.split('.').collect();
   if !p2.is_empty() {
-    Some(p2[0].to_owned().into())
+    Some(p2[0].into())
   } else {
     None
   }
