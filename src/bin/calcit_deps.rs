@@ -1,5 +1,5 @@
 //! CLI tool to download packages from github,
-//! packages are defined in `package.cirru` file
+//! packages are defined in `deps.cirru` file
 //!
 //! files are stored in `~/.config/calcit/modules/`.
 
@@ -53,14 +53,14 @@ struct CliArgs {
 }
 
 pub fn main() -> Result<(), String> {
-  // parse package.cirru
+  // parse deps.cirru
 
   let cli_matches = parse_cli();
 
   let options: CliArgs = CliArgs {
     input: cli_matches
       .get_one::<String>("input")
-      .unwrap_or(&"package.cirru".to_string())
+      .unwrap_or(&"deps.cirru".to_string())
       .to_string(),
     ci: cli_matches.get_flag("ci"),
     verbose: cli_matches.get_flag("verbose"),
@@ -78,8 +78,17 @@ pub fn main() -> Result<(), String> {
     download_deps(deps.dependencies, &options)?;
 
     Ok(())
+  } else if Path::new("package.cirru").exists() {
+    // be compatible with old name
+    let content = fs::read_to_string("package.cirru").map_err(|e| e.to_string())?;
+    let parsed = cirru_edn::parse(&content)?;
+    let deps: PackageDeps = parsed.try_into()?;
+
+    download_deps(deps.dependencies, &options)?;
+
+    Ok(())
   } else {
-    eprintln!("Error: no package.cirru found!");
+    eprintln!("Error: no deps.cirru found!");
     std::process::exit(1);
   }
 }
@@ -206,12 +215,7 @@ fn parse_cli() -> clap::ArgMatches {
     .version(CALCIT_VERSION)
     .author("Jon. <jiyinyiyong@gmail.com>")
     .about("Calcit Deps")
-    .arg(
-      clap::Arg::new("input")
-        .help("entry file path")
-        .default_value("package.cirru")
-        .index(1),
-    )
+    .arg(clap::Arg::new("input").help("entry file path").default_value("deps.cirru").index(1))
     .arg(
       clap::Arg::new("verbose")
         .help("verbose mode")

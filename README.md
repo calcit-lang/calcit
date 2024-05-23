@@ -32,7 +32,7 @@ cargo install calcit
 3 binaries are installed:
 
 - `calcit`, the runtime and js compiler
-- `caps`, for downloading dependencies declared in `package.cirru`
+- `caps`, for downloading dependencies declared in `deps.cirru`
 - `bundle_calcit`, bundle code if you don't want to use Calcit Editor
 
 For Ubuntu latest, try binaries from [Releases](https://github.com/calcit-lang/calcit/releases), which are provided for [CI usages](https://github.com/calcit-lang/respo-calcit-workflow/blob/main/.github/workflows/upload.yaml#L28-L37).
@@ -107,7 +107,7 @@ Read more in [Respo Calcit Workflow](https://github.com/calcit-lang/respo-calcit
 
 ### Modules
 
-`package.cirru` declares dependencies that need to download, which correspond to repositories on GitHub. Specify a branch or a tag:
+`deps.cirru` declares dependencies that need to download, which correspond to repositories on GitHub. Specify a branch or a tag:
 
 ```cirru
 {}
