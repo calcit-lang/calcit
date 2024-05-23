@@ -43,16 +43,20 @@ fn main() -> Result<(), String> {
   let cli_matches = cli_args::parse_cli();
   let cli_options = CLIOptions {
     // has default value
-    entry_path: Path::new(cli_matches.value_of("input").expect("input file")).to_owned(),
-    emit_path: cli_matches.value_of("emit-path").unwrap_or("js-out").to_owned(),
-    reload_libs: cli_matches.is_present("reload-libs"),
-    emit_js: cli_matches.is_present("emit-js"),
-    emit_ir: cli_matches.is_present("emit-ir"),
-    disable_stack: cli_matches.is_present("disable-stack"),
-    skip_arity_check: cli_matches.is_present("skip-arity-check"),
+    entry_path: Path::new(cli_matches.get_one::<String>("input").expect("input file")).to_owned(),
+    emit_path: cli_matches
+      .get_one::<String>("emit-path")
+      .unwrap_or(&"js-out".to_owned())
+      .to_owned()
+      .to_owned(),
+    reload_libs: cli_matches.get_flag("reload-libs"),
+    emit_js: cli_matches.get_flag("emit-js"),
+    emit_ir: cli_matches.get_flag("emit-ir"),
+    disable_stack: cli_matches.get_flag("disable-stack"),
+    skip_arity_check: cli_matches.get_flag("skip-arity-check"),
   };
-  let mut eval_once = cli_matches.is_present("once");
-  let assets_watch = cli_matches.value_of("watch-dir");
+  let mut eval_once = cli_matches.get_flag("once");
+  let assets_watch = cli_matches.get_one::<String>("watch-dir");
 
   println!("calcit version: {}", cli_args::CALCIT_VERSION);
 
@@ -72,7 +76,7 @@ fn main() -> Result<(), String> {
 
   let base_dir = cli_options.entry_path.parent().expect("extract parent");
 
-  if let Some(snippet) = cli_matches.value_of("eval") {
+  if let Some(snippet) = cli_matches.get_one::<String>("eval") {
     eval_once = true;
     match snapshot::create_file_from_snippet(snippet) {
       Ok(main_file) => {
@@ -80,7 +84,7 @@ fn main() -> Result<(), String> {
       }
       Err(e) => return Err(e),
     }
-    if let Some(cli_deps) = cli_matches.values_of("dep") {
+    if let Some(cli_deps) = cli_matches.get_many::<String>("dep") {
       for module_path in cli_deps {
         let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
         for (k, v) in &module_data.files {
@@ -101,10 +105,10 @@ fn main() -> Result<(), String> {
     snapshot = snapshot::load_snapshot_data(&data, cli_options.entry_path.to_str().expect("extract path"))?;
 
     // config in entry will overwrite default configs
-    if let Some(entry) = cli_matches.value_of("entry") {
-      if snapshot.entries.contains_key(entry) {
+    if let Some(entry) = cli_matches.get_one::<String>("entry") {
+      if snapshot.entries.contains_key(entry.as_str()) {
         println!("running entry: {entry}");
-        snapshot.entries[entry].clone_into(&mut snapshot.configs);
+        snapshot.entries[entry.as_str()].clone_into(&mut snapshot.configs);
       } else {
         return Err(format!(
           "unknown entry `{}` in `{}`",
@@ -122,13 +126,13 @@ fn main() -> Result<(), String> {
       }
     }
   }
-  let init_fn = cli_matches.value_of("init-fn").unwrap_or(&snapshot.configs.init_fn);
-  let reload_fn = cli_matches.value_of("reload-fn").unwrap_or(&snapshot.configs.reload_fn);
+  let init_fn = cli_matches.get_one("init-fn").unwrap_or(&snapshot.configs.init_fn);
+  let reload_fn = cli_matches.get_one("reload-fn").unwrap_or(&snapshot.configs.reload_fn);
   let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
   let (reload_ns, reload_def) = util::string::extract_ns_def(reload_fn)?;
   let entries: ProgramEntries = ProgramEntries {
-    init_fn: init_fn.into(),
-    reload_fn: reload_fn.into(),
+    init_fn: init_fn.to_owned(),
+    reload_fn: reload_fn.to_owned(),
     init_def: init_def.into(),
     init_ns: init_ns.into(),
     reload_ns: reload_ns.into(),

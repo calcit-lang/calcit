@@ -23,9 +23,9 @@ use cirru_parser::Cirru;
 
 pub fn main() -> io::Result<()> {
   let cli_matches = parse_cli();
-  let verbose = cli_matches.is_present("verbose");
-  let base_dir = Path::new(cli_matches.value_of("src").expect("src"));
-  let out_path = Path::new(cli_matches.value_of("out").expect("out"));
+  let verbose = cli_matches.get_flag("verbose");
+  let base_dir = Path::new(cli_matches.get_one::<String>("src").expect("src"));
+  let out_path = Path::new(cli_matches.get_one::<String>("out").expect("out"));
   let out_file = match out_path.extension() {
     Some(ext) => {
       let ext_str = ext.to_str().expect("ext");
@@ -38,9 +38,9 @@ pub fn main() -> io::Result<()> {
     None => out_path.join("compact.cirru"),
   };
   let inc_file_path = out_path.join(".compact-inc.cirru");
-  let no_watcher = cli_matches.is_present("once");
+  let no_watcher = cli_matches.get_flag("once");
 
-  let package_file = Path::new(cli_matches.value_of("src").expect("src"))
+  let package_file = Path::new(cli_matches.get_one::<String>("src").expect("src"))
     .parent()
     .expect("parent path")
     .join("package.cirru");
@@ -283,7 +283,7 @@ fn parse_cli() -> clap::ArgMatches {
         .default_value("src/")
         .short('s')
         .long("src")
-        .takes_value(true),
+        .num_args(1),
     )
     .arg(
       clap::Arg::new("out")
@@ -291,21 +291,21 @@ fn parse_cli() -> clap::ArgMatches {
         .default_value("./") // TODO a better default value
         .short('o')
         .long("out")
-        .takes_value(true),
+        .num_args(1),
     )
     .arg(
       clap::Arg::new("verbose")
         .help("verbose mode")
         .short('v')
         .long("verbose")
-        .takes_value(false),
+        .num_args(0),
     )
     .arg(
       clap::Arg::new("once")
         .help("run without watcher")
         .short('1')
         .long("once")
-        .takes_value(false),
+        .num_args(0),
     )
     .get_matches()
 }

@@ -58,11 +58,14 @@ pub fn main() -> Result<(), String> {
   let cli_matches = parse_cli();
 
   let options: CliArgs = CliArgs {
-    input: cli_matches.value_of("input").unwrap_or("package.cirru").to_string(),
-    ci: cli_matches.is_present("ci"),
-    verbose: cli_matches.is_present("verbose"),
-    local_debug: cli_matches.is_present("local_debug"),
-    pull_branch: cli_matches.is_present("pull_branch"),
+    input: cli_matches
+      .get_one::<String>("input")
+      .unwrap_or(&"package.cirru".to_string())
+      .to_string(),
+    ci: cli_matches.get_flag("ci"),
+    verbose: cli_matches.get_flag("verbose"),
+    local_debug: cli_matches.get_flag("local_debug"),
+    pull_branch: cli_matches.get_flag("pull_branch"),
   };
 
   // if file exists
@@ -214,25 +217,25 @@ fn parse_cli() -> clap::ArgMatches {
         .help("verbose mode")
         .short('v')
         .long("verbose")
-        .takes_value(false),
+        .num_args(0),
     )
     .arg(
       clap::Arg::new("pull_branch")
         .help("pull branch in the repo")
         .long("pull-branch")
-        .takes_value(false),
+        .num_args(0),
     )
     .arg(
       clap::Arg::new("ci")
         .help("CI mode loads shallow repo via HTTPS")
         .long("ci")
-        .takes_value(false),
+        .num_args(0),
     )
     .arg(
       clap::Arg::new("local_debug")
         .help("Debug mode, clone to test-modules/")
         .long("local-debug")
-        .takes_value(false),
+        .num_args(0),
     )
     .get_matches()
 }
