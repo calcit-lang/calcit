@@ -8,8 +8,8 @@ pub fn git_checkout(dir: &PathBuf, version: &str) -> Result<(), String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    // println!("output: {:?}", output);
-    Err(format!("failed to checkout {} {}", dir.to_str().unwrap(), version))
+    let err = String::from_utf8(output.stderr).expect("stderr");
+    Err(format!("{}\nfailed to checkout {} {}", err.trim(), dir.to_str().unwrap(), version))
   } else {
     Ok(())
   }
@@ -38,8 +38,8 @@ pub fn git_clone(dir: &PathBuf, url: &str, version: &str, shallow: bool) -> Resu
       .map_err(|e| e.to_string())?
   };
   if !output.status.success() {
-    // println!("output: {:?}", output);
-    Err(format!("failed to clone {} {}", url, version))
+    let err = String::from_utf8(output.stderr).expect("stderr");
+    Err(format!("{}\nfailed to clone {} {}", err.trim(), url, version))
   } else {
     Ok(())
   }
@@ -68,8 +68,8 @@ pub fn git_current_head(dir: &PathBuf) -> Result<GitHead, String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    println!("output: {:?}", output);
-    Err(format!("failed to get current head of {}", dir.to_str().unwrap()))
+    let err = String::from_utf8(output.stderr).expect("stderr");
+    Err(format!("{}\nfailed to get current head of {}", err.trim(), dir.to_str().unwrap()))
   } else {
     let mut branch = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
     branch = branch.trim().to_string();
@@ -100,7 +100,8 @@ pub fn git_check_branch_or_tag(dir: &PathBuf, version: &str) -> Result<bool, Str
       .output()
       .map_err(|e| e.to_string())?;
     if !output.status.success() {
-      Ok(false)
+      let err = String::from_utf8(output.stderr).expect("stderr");
+      Err(format!("{}\nfailed to get current head of {}", err.trim(), dir.to_str().unwrap()))
     } else {
       Ok(true)
     }
@@ -118,8 +119,8 @@ pub fn git_fetch(dir: &PathBuf) -> Result<(), String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    // println!("output: {:?}", output);
-    Err(format!("failed to fetch {}", dir.to_str().unwrap()))
+    let err = String::from_utf8(output.stderr).expect("stderr");
+    Err(format!("{}\nfailed to fetch {}", err.trim(), dir.to_str().unwrap()))
   } else {
     Ok(())
   }
@@ -133,8 +134,8 @@ pub fn git_describe_tag(dir: &PathBuf) -> Result<String, String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    // println!("output: {:?}", output);
-    Err(format!("failed to get current tag of {}", dir.to_str().unwrap()))
+    let err = String::from_utf8(output.stderr).expect("stderr");
+    Err(format!("{}\nfailed to get current tag of {}", err.trim(), dir.to_str().unwrap()))
   } else {
     let mut tag = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
     tag = tag.trim().to_string();
@@ -151,8 +152,8 @@ pub fn git_pull(dir: &PathBuf, branch: &str) -> Result<(), String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    // println!("output: {:?}", output);
-    Err(format!("failed to pull {} {}", dir.to_str().unwrap(), branch))
+    let err = String::from_utf8(output.stderr).expect("stderr");
+    Err(format!("{}\nfailed to pull {} {}", err.trim(), dir.to_str().unwrap(), branch))
   } else {
     Ok(())
   }

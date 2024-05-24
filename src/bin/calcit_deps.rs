@@ -121,7 +121,7 @@ fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: &CliArgs) -> Result
     let ret = thread::spawn(move || {
       let ret = handle_path(modules_dir, version, options, org_and_folder);
       if let Err(e) = ret {
-        eprintln!("Thread error: {}", e);
+        err_println(format!("{}\n", e));
       }
     });
     children.push(ret);
@@ -256,7 +256,7 @@ fn err_println(msg: String) {
   if msg.chars().nth(1) == Some(' ') {
     println!("{}", msg.truecolor(255, 80, 80));
   } else {
-    println!("  {}", msg.truecolor(255, 80, 80));
+    println!("  {}", msg.replace('\n', "\n  ").truecolor(255, 80, 80));
   }
 }
 
@@ -266,7 +266,7 @@ fn gray(msg: &str) -> ColoredString {
 
 fn indent4(msg: &str) -> String {
   let ret = msg.lines().map(|line| format!("    {}", line)).collect::<Vec<String>>().join("\n");
-  format!("\n{}\n", ret)
+  format!("\n{}\n", ret.trim())
 }
 
 /// calcit dynamic libs uses a `build.sh` script to build Rust `.so` files
