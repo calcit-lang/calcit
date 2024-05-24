@@ -8,7 +8,7 @@ pub fn git_checkout(dir: &PathBuf, version: &str) -> Result<(), String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
+    let err = String::from_utf8(output.stderr).unwrap_or_else(|_| "Failed to decode stderr".to_string());
     Err(format!("{}\nfailed to checkout {} {}", err.trim(), dir.to_str().unwrap(), version))
   } else {
     Ok(())
