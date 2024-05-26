@@ -126,13 +126,15 @@ fn main() -> Result<(), String> {
       }
     }
   }
-  let init_fn = cli_matches.get_one("init-fn").unwrap_or(&snapshot.configs.init_fn);
-  let reload_fn = cli_matches.get_one("reload-fn").unwrap_or(&snapshot.configs.reload_fn);
+  let config_init = snapshot.configs.init_fn.to_string();
+  let config_reload = snapshot.configs.reload_fn.to_string();
+  let init_fn = cli_matches.get_one::<String>("init-fn").unwrap_or(&config_init);
+  let reload_fn = cli_matches.get_one::<String>("reload-fn").unwrap_or(&config_reload);
   let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
   let (reload_ns, reload_def) = util::string::extract_ns_def(reload_fn)?;
   let entries: ProgramEntries = ProgramEntries {
-    init_fn: init_fn.to_owned(),
-    reload_fn: reload_fn.to_owned(),
+    init_fn: Arc::from(init_fn.as_ref()),
+    reload_fn: Arc::from(reload_fn.as_ref()),
     init_def: init_def.into(),
     init_ns: init_ns.into(),
     reload_ns: reload_ns.into(),
