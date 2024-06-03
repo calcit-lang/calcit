@@ -94,7 +94,7 @@ checksum = "b4682ae6287fcf752ecaabbfcc7b6f9b72aa33933dc23a554d853aea8eea8635"
 
 [[package]]
 name = "calcit"
-version = "0.8.55"
+version = "0.8.56"
 dependencies = [
  "cirru_edn",
  "cirru_parser",
@@ -128,9 +128,9 @@ checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
 name = "cirru_edn"
-version = "0.6.9"
+version = "0.6.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d7e450358f0c7758c1f7cb9c5de5eb719594a2b43d3b3297c44c820bc9b2974"
+checksum = "e3d12eb005cacee402564d56df5f2e2ee66b1c9440f3de3a972fd4aa0ff5a283"
 dependencies = [
  "bincode",
  "cirru_parser",
@@ -140,9 +140,9 @@ dependencies = [
 
 [[package]]
 name = "cirru_parser"
-version = "0.1.30"
+version = "0.1.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb4d1e5aec75dd6de2b96bb60b1e6dd7763eafba7f2ed40e4f2ac7cb904a945b"
+checksum = "320a8dd7792dfd18c39e2b6d06e894028cf2ce0dfb2fcd4964fb730dc37ea150"
 dependencies = [
  "bincode",
 ]
@@ -529,15 +529,15 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "strum"
-version = "0.26.2"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d8cec3501a5194c432b2b7976db6b7d10ec95c253208b45f83f7136aa985e29"
+checksum = "290d54ea6f91c969195bdbcd7442c8c2a2ba87da8bf60a7ee86a235d4bc1e125"
 
 [[package]]
 name = "strum_macros"
-version = "0.26.2"
+version = "0.25.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6cf59daf282c0a494ba14fd21610a0325f9f90ec9d1231dea26bcb1d696c946"
+checksum = "23dc1fa9ac9c169a78ba62f0b841814b7abae11bdd047b9c58f893439e309ea0"
 dependencies = [
  "heck",
  "proc-macro2",
