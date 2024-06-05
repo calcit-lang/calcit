@@ -636,6 +636,7 @@ impl PartialEq for Calcit {
       (Calcit::Fn { id: a, .. }, Calcit::Fn { id: b, .. }) => a == b,
       (Calcit::Syntax(a, _), Calcit::Syntax(b, _)) => a == b,
       (Calcit::Method(a, b), Calcit::Method(c, d)) => a == c && b == d,
+      (Calcit::AnyRef(a), Calcit::AnyRef(b)) => a == b,
       (_, _) => false,
     }
   }

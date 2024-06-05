@@ -1,5 +1,5 @@
 //! CLI tool to download packages from github,
-//! packages are defined in `package.cirru` file
+//! packages are defined in `deps.cirru` file
 //!
 //! files are stored in `~/.config/calcit/modules/`.
 
@@ -53,16 +53,19 @@ struct CliArgs {
 }
 
 pub fn main() -> Result<(), String> {
-  // parse package.cirru
+  // parse deps.cirru
 
   let cli_matches = parse_cli();
 
   let options: CliArgs = CliArgs {
-    input: cli_matches.value_of("input").unwrap_or("package.cirru").to_string(),
-    ci: cli_matches.is_present("ci"),
-    verbose: cli_matches.is_present("verbose"),
-    local_debug: cli_matches.is_present("local_debug"),
-    pull_branch: cli_matches.is_present("pull_branch"),
+    input: cli_matches
+      .get_one::<String>("input")
+      .unwrap_or(&"deps.cirru".to_string())
+      .to_string(),
+    ci: cli_matches.get_flag("ci"),
+    verbose: cli_matches.get_flag("verbose"),
+    local_debug: cli_matches.get_flag("local_debug"),
+    pull_branch: cli_matches.get_flag("pull_branch"),
   };
 
   // if file exists
@@ -75,8 +78,17 @@ pub fn main() -> Result<(), String> {
     download_deps(deps.dependencies, &options)?;
 
     Ok(())
+  } else if Path::new("package.cirru").exists() {
+    // be compatible with old name
+    let content = fs::read_to_string("package.cirru").map_err(|e| e.to_string())?;
+    let parsed = cirru_edn::parse(&content)?;
+    let deps: PackageDeps = parsed.try_into()?;
+
+    download_deps(deps.dependencies, &options)?;
+
+    Ok(())
   } else {
-    eprintln!("Error: no package.cirru found!");
+    eprintln!("Error: no deps.cirru found!");
     std::process::exit(1);
   }
 }
@@ -109,7 +121,7 @@ fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: &CliArgs) -> Result
     let ret = thread::spawn(move || {
       let ret = handle_path(modules_dir, version, options, org_and_folder);
       if let Err(e) = ret {
-        eprintln!("Thread error: {}", e);
+        err_println(format!("{}\n", e));
       }
     });
     children.push(ret);
@@ -203,36 +215,31 @@ fn parse_cli() -> clap::ArgMatches {
     .version(CALCIT_VERSION)
     .author("Jon. <jiyinyiyong@gmail.com>")
     .about("Calcit Deps")
-    .arg(
-      clap::Arg::new("input")
-        .help("entry file path")
-        .default_value("package.cirru")
-        .index(1),
-    )
+    .arg(clap::Arg::new("input").help("entry file path").default_value("deps.cirru").index(1))
     .arg(
       clap::Arg::new("verbose")
         .help("verbose mode")
         .short('v')
         .long("verbose")
-        .takes_value(false),
+        .num_args(0),
     )
     .arg(
       clap::Arg::new("pull_branch")
         .help("pull branch in the repo")
         .long("pull-branch")
-        .takes_value(false),
+        .num_args(0),
     )
     .arg(
       clap::Arg::new("ci")
         .help("CI mode loads shallow repo via HTTPS")
         .long("ci")
-        .takes_value(false),
+        .num_args(0),
     )
     .arg(
       clap::Arg::new("local_debug")
         .help("Debug mode, clone to test-modules/")
         .long("local-debug")
-        .takes_value(false),
+        .num_args(0),
     )
     .get_matches()
 }
@@ -249,7 +256,7 @@ fn err_println(msg: String) {
   if msg.chars().nth(1) == Some(' ') {
     println!("{}", msg.truecolor(255, 80, 80));
   } else {
-    println!("  {}", msg.truecolor(255, 80, 80));
+    println!("  {}", msg.replace('\n', "\n  ").truecolor(255, 80, 80));
   }
 }
 
@@ -259,7 +266,7 @@ fn gray(msg: &str) -> ColoredString {
 
 fn indent4(msg: &str) -> String {
   let ret = msg.lines().map(|line| format!("    {}", line)).collect::<Vec<String>>().join("\n");
-  format!("\n{}\n", ret)
+  format!("\n{}\n", ret.trim())
 }
 
 /// calcit dynamic libs uses a `build.sh` script to build Rust `.so` files

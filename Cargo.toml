@@ -1,6 +1,6 @@
 [package]
 name = "calcit"
-version = "0.8.52"
+version = "0.8.56"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -20,11 +20,11 @@ exclude = [
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cirru_edn = "0.6.9"
+cirru_edn = "0.6.10"
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
-cirru_parser = "0.1.30"
+cirru_parser = "0.1.31"
 # cirru_parser = { path = "/Users/chenyong/repo/cirru/parser.rs" }
-clap = "3.2.25"
+clap = "4.5.4"
 dirs = "5.0.1"
 lazy_static = "1.4.0"
 notify = "6.1.1"
@@ -35,8 +35,8 @@ rpds = "1.1.0"
 im_ternary_tree = "0.0.18"
 # im_ternary_tree = { path = "/Users/chenyong/repo/calcit-lang/ternary-tree.rs" }
 colored = "2.1.0"
-strum = "0.26.2"
-strum_macros = "0.26.2"
+strum = "0.25"
+strum_macros = "0.25"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libloading = "0.8.3"
