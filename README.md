@@ -35,7 +35,7 @@ cargo install calcit
 - `caps`, for downloading dependencies declared in `deps.cirru`
 - `bundle_calcit`, bundle code if you don't want to use Calcit Editor
 
-For Ubuntu latest, try binaries from [Releases](https://github.com/calcit-lang/calcit/releases), which are provided for [CI usages](https://github.com/calcit-lang/respo-calcit-workflow/blob/main/.github/workflows/upload.yaml#L28-L37).
+To use Calcit in GitHub Actions, try [setup-cr](https://github.com/calcit-lang/setup-cr).
 
 ### Usage
 
