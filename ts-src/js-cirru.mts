@@ -216,9 +216,8 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
     if (x.match(/^(-?)\d+(\.\d*$)?/)) {
       return parseFloat(x);
     }
-    // allow things cannot be parsed accepted as raw strings
-    // turned on since Cirru nodes passed from macros uses this
-    return x;
+    // strict behavior as Rust semantics
+    throw new Error("unknown syntax for EDN");
   }
   if (x instanceof Array) {
     if (x.length === 0) {
