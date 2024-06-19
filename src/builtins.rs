@@ -227,6 +227,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     CalcitProc::NewRecord => records::new_record(args),
     CalcitProc::NewClassRecord => records::new_class_record(args),
     CalcitProc::NativeRecord => records::call_record(args),
+    CalcitProc::NativeRecordWith => records::record_with(args),
     CalcitProc::NativeRecordClass => records::get_class(args),
     CalcitProc::NativeRecordWithClass => records::with_class(args),
     CalcitProc::NativeRecordFromMap => records::record_from_map(args),

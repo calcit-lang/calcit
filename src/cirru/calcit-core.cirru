@@ -1843,6 +1843,18 @@
         |' $ %{} :CodeEntry (:doc "|alias for []")
           :code $ quote
             def "'" []
+        |record-with $ %{} :CodeEntry (:doc "|macro to extend existing record with new values in pairs, internally using &record:with which takes flattern items")
+          :code $ quote
+            defmacro record-with (record & pairs)
+              ; "check if args are in pairs"
+              if
+                not $ and (list? pairs)
+                  every? pairs $ fn (xs)
+                    and (list? xs) (&= 2 $ count xs)
+                raise $ str-spaced "|expects pairs in list for record-with, got:" pairs
+              ; "call &record:with"
+              quasiquote $ &record:with ~record $ ~@ $ &list:concat & pairs
+
       :ns $ %{} :CodeEntry (:doc "|built-in function and macros in `calcit.core`")
         :code $ quote
           ns calcit.core $ :require

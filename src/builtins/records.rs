@@ -162,6 +162,59 @@ pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// takes a record and pairs of key value(flatterned), and update the record. raise error if key not existed in the record
+pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let args_size = xs.len();
+  if args_size < 3 {
+    return CalcitErr::err_nodes("&record:with expected at least 3 arguments, got:", xs);
+  }
+  match &xs[0] {
+    Calcit::Record(
+      record @ CalcitRecord {
+        name,
+        fields: def_fields,
+        values: v0,
+        class,
+      },
+    ) => {
+      if (args_size - 1).rem(2) == 0 {
+        let size = (args_size - 1) / 2;
+        let mut values: Vec<Calcit> = (**v0).to_owned();
+
+        for idx in 0..size {
+          let k_idx = idx * 2 + 1;
+          let v_idx = k_idx + 1;
+          match &xs[k_idx] {
+            Calcit::Tag(s) => match record.index_of(s.ref_str()) {
+              Some(pos) => {
+                xs[v_idx].clone_into(&mut values[pos]);
+              }
+              None => return CalcitErr::err_str(format!("unexpected field {s} for {def_fields:?}")),
+            },
+            Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match record.index_of(s) {
+              Some(pos) => {
+                xs[v_idx].clone_into(&mut values[pos]);
+              }
+              None => return CalcitErr::err_str(format!("unexpected field {s} for {def_fields:?}")),
+            },
+            a => return CalcitErr::err_str(format!("expected field in string/tag, got: {a}")),
+          }
+        }
+
+        Ok(Calcit::Record(CalcitRecord {
+          name: name.to_owned(),
+          fields: def_fields.to_owned(),
+          values: Arc::new(values),
+          class: class.to_owned(),
+        }))
+      } else {
+        CalcitErr::err_nodes("&record:with expected pairs, got:", xs)
+      }
+    }
+    a => CalcitErr::err_str(format!("&record:with expected a record as prototype, got: {a}")),
+  }
+}
+
 pub fn get_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size != 1 {

@@ -158,6 +158,28 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
   }
 };
 
+/// update record with new values
+export let _$n_record_$o_with = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => {
+  if (proto instanceof CalcitRecord) {
+    if (xs.length % 2 !== 0) {
+      throw new Error("Expected even number of key/value");
+    }
+    let values = proto.values.slice();
+    for (let i = 0; i < xs.length; i += 2) {
+      let k = castTag(xs[i]);
+      let v = xs[i + 1];
+      let idx = findInFields(proto.fields, k);
+      if (idx < 0) {
+        throw new Error(`Cannot find field ${k} among ${proto.fields}`);
+      }
+      values[idx] = v;
+    }
+    return new CalcitRecord(proto.name, proto.fields, values, proto.klass);
+  } else {
+    throw new Error("Expected prototype to be a record");
+  }
+};
+
 export let _$n_record_$o_get_name = (x: CalcitRecord): CalcitTag => {
   if (x instanceof CalcitRecord) {
     return x.name;

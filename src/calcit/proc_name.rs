@@ -323,6 +323,8 @@ pub enum CalcitProc {
   NewClassRecord,
   #[strum(serialize = "&%{}")]
   NativeRecord,
+  #[strum(serialize = "&record:with")]
+  NativeRecordWith,
   #[strum(serialize = "&record:class")]
   NativeRecordClass,
   #[strum(serialize = "&record:with-class")]

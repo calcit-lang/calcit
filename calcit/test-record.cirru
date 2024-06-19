@@ -20,7 +20,7 @@
             def Lagopus $ new-class-record BirdClass :Lagopus :name
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (do true)
+            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (do true)
         |test-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
@@ -95,6 +95,19 @@
                 -> l1 (.rename |LagopusB) (.show)
                 assert= (&record:class l1)
                   &record:class $ &record:with-class a1 BirdClass
+        |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
+          :code $ quote
+            fn () (log-title "|Testing record-with")
+              let
+                  Person $ new-record :City :name :age :position
+                  p1 $ %{} Person (:name |Chen) (:age 20) (:position :hangzhou)
+                  p2 $ record-with p1 (:age 21) (:position :shanghai)
+                ; println |P2 p2
+                assert= 20 $ get p1 :age
+                assert= 21 $ get p2 :age
+                assert= :hangzhou $ get p1 :position
+                assert= :shanghai $ get p2 :position
+                assert= |Chen $ get p2 :name
         |test-record $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing record")
