@@ -1851,7 +1851,7 @@
                 not $ and (list? pairs)
                   every? pairs $ fn (xs)
                     and (list? xs) (&= 2 $ count xs)
-                raise $ str-spaced "|expects pairs in list for record-with, got:" pairs
+                raise $ str-spaced "|record-with expects a list of pairs (each with exactly two elements), got:" pairs
               ; "call &record:with"
               quasiquote $ &record:with ~record $ ~@ $ &list:concat & pairs
 
