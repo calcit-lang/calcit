@@ -139,6 +139,7 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: CliArgs, org_an
   // split with / into (org,folder)
 
   let folder_path = modules_dir.join(folder);
+  let build_file = folder_path.join("build.sh");
   if folder_path.exists() {
     // println!("module {} exists", folder);
     // check branch
@@ -150,6 +151,13 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: CliArgs, org_an
           dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
           git_pull(&folder_path, &branch)?;
           dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
+
+          // if there's a build.sh file in the folder, run it
+          if build_file.exists() {
+            let build_msg = call_build_script(&folder_path)?;
+            dim_println(format!("ran build script for {}", gray(&org_and_folder)));
+            dim_println(build_msg);
+          }
         }
       }
       return Ok(());
@@ -177,7 +185,6 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: CliArgs, org_an
       }
     }
 
-    let build_file = folder_path.join("build.sh");
     // if there's a build.sh file in the folder, run it
     if build_file.exists() {
       let build_msg = call_build_script(&folder_path)?;
@@ -196,7 +203,6 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: CliArgs, org_an
     dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
 
     if !options.ci {
-      let build_file = folder_path.join("build.sh");
       // if there's a build.sh file in the folder, run it
       if build_file.exists() {
         let build_msg = call_build_script(&folder_path)?;
@@ -265,8 +271,13 @@ fn gray(msg: &str) -> ColoredString {
 }
 
 fn indent4(msg: &str) -> String {
-  let ret = msg.lines().map(|line| format!("    {}", line)).collect::<Vec<String>>().join("\n");
-  format!("\n{}\n", ret.trim())
+  let ret = msg
+    .trim()
+    .lines()
+    .map(|line| format!("    {}", line))
+    .collect::<Vec<String>>()
+    .join("\n");
+  format!("\n{}\n", ret)
 }
 
 /// calcit dynamic libs uses a `build.sh` script to build Rust `.so` files
