@@ -59,7 +59,7 @@ export class CalcitTuple {
       if (i > 0) {
         content += " ";
       }
-      content += toString(args[i], false, disableJsDataWarning);
+      content += toString(args[i], true, disableJsDataWarning);
     }
     if (this.klass instanceof CalcitRecord) {
       return `(%:: ${content} (:class ${this.klass.name.value}))`;

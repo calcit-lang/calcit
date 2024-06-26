@@ -166,6 +166,8 @@
               assert= (str-spaced nil nil |c 12) "|c 12"
               assert= (str-spaced |a nil |c 12 nil) "|a c 12"
               assert= (str 1 2 3) |123
+              assert= "|(:: :a |世界 \"|海 洋\")"
+                str $ :: :a |世界 "|海 洋"
               assert=
                 type-of $ &str 1
                 , :string

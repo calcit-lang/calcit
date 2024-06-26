@@ -94,7 +94,7 @@ checksum = "b4682ae6287fcf752ecaabbfcc7b6f9b72aa33933dc23a554d853aea8eea8635"
 
 [[package]]
 name = "calcit"
-version = "0.8.58"
+version = "0.8.59"
 dependencies = [
  "cirru_edn",
  "cirru_parser",
@@ -128,12 +128,13 @@ checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
 name = "cirru_edn"
-version = "0.6.10"
+version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3d12eb005cacee402564d56df5f2e2ee66b1c9440f3de3a972fd4aa0ff5a283"
+checksum = "452dd17601be10c1007c43db6e39cc53b28d2be3cd4a82b01d3f5ac70b8afc05"
 dependencies = [
  "bincode",
  "cirru_parser",
+ "cjk",
  "hex",
  "lazy_static",
 ]
@@ -145,6 +146,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320a8dd7792dfd18c39e2b6d06e894028cf2ce0dfb2fcd4964fb730dc37ea150"
 dependencies = [
  "bincode",
+]
+
+[[package]]
+name = "cjk"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c5581b1ff873217332789ccc8956c1c68bcf9d693e7e5c6bcc677897fda5257"
+dependencies = [
+ "hex",
+ "lazy_static",
+ "unicode-blocks",
+ "widestring",
 ]
 
 [[package]]
@@ -584,6 +597,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0eee8098afad3fb0c54a9007aab6804558410503ad676d4633f9c2559a00ac0f"
 
 [[package]]
+name = "unicode-blocks"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b12e05d9e06373163a9bb6bb8c263c261b396643a99445fe6b9811fd376581b"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -616,6 +635,12 @@ name = "wasi"
 version = "0.11.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
+
+[[package]]
+name = "widestring"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c168940144dd21fd8046987c16a46a33d5fc84eec29ef9dcddc2ac9e31526b7c"
 
 [[package]]
 name = "winapi"
