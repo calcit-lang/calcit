@@ -121,7 +121,16 @@ impl fmt::Display for Calcit {
         if is_simple_str(s) {
           write!(f, "|{s}")
         } else {
-          write!(f, "\"|{}\"", s.escape_default())
+          // write!(f, "\"|{}\"", s.escape_default())
+          write!(f, "\"|")?;
+          for c in s.chars() {
+            if cirru_edn::is_simple_char(c) {
+              write!(f, "{}", c)?;
+            } else {
+              write!(f, "{}", c.escape_default())?;
+            }
+          }
+          write!(f, "\"")
         }
       } // TODO, escaping choices
       Calcit::Thunk(thunk) => match thunk {
@@ -281,7 +290,7 @@ impl fmt::Display for Calcit {
 
 fn is_simple_str(tok: &str) -> bool {
   for c in tok.chars() {
-    if !matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '?' | '!' | '|') {
+    if !cirru_edn::is_simple_char(c) {
       return false;
     }
   }
