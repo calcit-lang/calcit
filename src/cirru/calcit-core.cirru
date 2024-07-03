@@ -1837,6 +1837,11 @@
         |{} $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro {} (& xs)
+              if
+                not $ every? xs $ fn (pair)
+                  and (list? pair)
+                    &= 2 $ &list:count pair
+                raise $ str "|{} expects pairs of lists with exactly two elements each, got: " xs
               &let
                 ys $ &list:concat & xs
                 quasiquote $ &{} ~@ys
