@@ -42,13 +42,13 @@ To use Calcit in GitHub Actions, try [setup-cr](https://github.com/calcit-lang/s
 Snippets evaling:
 
 ```bash
-cr -e 'range 100'
+cr eval 'range 100'
 ```
 
 multi-lines snippet:
 
 ```bash
-cr -e '
+cr eval '
 
 println "|a demo"
 
@@ -85,8 +85,8 @@ cr compact.cirru --entry server
 It compiles to JavaScript and runs in consistet semantics. However it might require a lot of JavaScript interop.
 
 ```bash
-cr compact.cirru --emit-js # compile to js
-cr compact.cirru --emit-js --emit-path=out/ # compile to js and save in `out/`
+cr compact.cirru js # compile to js
+cr compact.cirru js --emit-path=out/ # compile to js and save in `out/`
 ```
 
 By default, js code is generated to `js-out/`. You will need Vite or Node to run it, from an entry file:
@@ -139,12 +139,12 @@ I use these commands to run local examples:
 cargo run --bin cr -- calcit/test.cirru -1
 
 # run tests in Node.js
-cargo run --bin cr -- calcit/test.cirru --emit-js -1 && yarn try-js
+cargo run --bin cr -- calcit/test.cirru -1 js && yarn try-js
 
 # run snippet
-cargo run --bin cr -- -e 'range 100'
+cargo run --bin cr -- eval 'range 100'
 
-cr compact.cirru --emit-ir # compiles intermediate representation into program-ir.cirru
+cr compact.cirru -1 ir # compiles intermediate representation into program-ir.cirru
 ```
 
 - [Cirru Parser](https://github.com/Cirru/parser.rs) for indentation-based syntax parsing.

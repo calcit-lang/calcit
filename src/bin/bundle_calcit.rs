@@ -8,6 +8,8 @@ use std::{
   sync::Arc,
 };
 
+use argh::FromArgs;
+
 use calcit::snapshot::{ChangesDict, CodeEntry};
 use calcit::snapshot::{FileChangeInfo, FileInSnapShot};
 
@@ -22,10 +24,13 @@ use cirru_edn::{Edn, EdnMapView, EdnRecordView, EdnTag};
 use cirru_parser::Cirru;
 
 pub fn main() -> io::Result<()> {
-  let cli_matches = parse_cli();
-  let verbose = cli_matches.get_flag("verbose");
-  let base_dir = Path::new(cli_matches.get_one::<String>("src").expect("src"));
-  let out_path = Path::new(cli_matches.get_one::<String>("out").expect("out"));
+  let cli_args: TopLevelBundleCalcit = argh::from_env();
+
+  let verbose = cli_args.verbose;
+  let src = cli_args.src.as_deref().unwrap_or("src");
+  let base_dir = Path::new(&src);
+  let out = cli_args.out.as_deref().unwrap_or("./");
+  let out_path = Path::new(&out);
   let out_file = match out_path.extension() {
     Some(ext) => {
       let ext_str = ext.to_str().expect("ext");
@@ -38,12 +43,9 @@ pub fn main() -> io::Result<()> {
     None => out_path.join("compact.cirru"),
   };
   let inc_file_path = out_path.join(".compact-inc.cirru");
-  let no_watcher = cli_matches.get_flag("once");
+  let no_watcher = cli_args.once;
 
-  let package_file = Path::new(cli_matches.get_one::<String>("src").expect("src"))
-    .parent()
-    .expect("parent path")
-    .join("package.cirru");
+  let package_file = base_dir.parent().expect("parent path").join("package.cirru");
 
   perform_compaction(base_dir, &package_file, &out_file, &inc_file_path, verbose)?;
 
@@ -272,42 +274,21 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
 
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn parse_cli() -> clap::ArgMatches {
-  clap::Command::new("Calcit Bundle")
-    .version(CALCIT_VERSION)
-    .author("Jon. <jiyinyiyong@gmail.com>")
-    .about("Calcit Bundler")
-    .arg(
-      clap::Arg::new("src")
-        .help("source folder")
-        .default_value("src/")
-        .short('s')
-        .long("src")
-        .num_args(1),
-    )
-    .arg(
-      clap::Arg::new("out")
-        .help("output folder")
-        .default_value("./") // TODO a better default value
-        .short('o')
-        .long("out")
-        .num_args(1),
-    )
-    .arg(
-      clap::Arg::new("verbose")
-        .help("verbose mode")
-        .short('v')
-        .long("verbose")
-        .num_args(0),
-    )
-    .arg(
-      clap::Arg::new("once")
-        .help("run without watcher")
-        .short('1')
-        .long("once")
-        .num_args(0),
-    )
-    .get_matches()
+#[derive(FromArgs, PartialEq, Debug)]
+/// Top-level command.
+pub struct TopLevelBundleCalcit {
+  /// source folder
+  #[argh(option, short = 's')]
+  pub src: Option<String>,
+  /// output folder
+  #[argh(option, short = 'o')]
+  pub out: Option<String>,
+  /// verbose mode
+  #[argh(switch, short = 'v')]
+  pub verbose: bool,
+  /// run without watcher
+  #[argh(switch, short = '1')]
+  pub once: bool,
 }
 
 // simulate an IO error with String

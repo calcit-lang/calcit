@@ -5,6 +5,8 @@
 
 mod git;
 
+use argh::{self, FromArgs};
+
 use cirru_edn::Edn;
 use colored::*;
 use git::*;
@@ -43,39 +45,19 @@ impl TryFrom<Edn> for PackageDeps {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CliArgs {
-  input: String,
-  ci: bool,
-  verbose: bool,
-  local_debug: bool,
-  pull_branch: bool,
-}
-
 pub fn main() -> Result<(), String> {
   // parse deps.cirru
 
-  let cli_matches = parse_cli();
-
-  let options: CliArgs = CliArgs {
-    input: cli_matches
-      .get_one::<String>("input")
-      .unwrap_or(&"deps.cirru".to_string())
-      .to_string(),
-    ci: cli_matches.get_flag("ci"),
-    verbose: cli_matches.get_flag("verbose"),
-    local_debug: cli_matches.get_flag("local_debug"),
-    pull_branch: cli_matches.get_flag("pull_branch"),
-  };
+  let cli_args: TopLevelCaps = argh::from_env();
 
   // if file exists
 
-  if Path::new(&options.input).exists() {
-    let content = fs::read_to_string(&options.input).map_err(|e| e.to_string())?;
+  if Path::new(&cli_args.input).exists() {
+    let content = fs::read_to_string(&cli_args.input).map_err(|e| e.to_string())?;
     let parsed = cirru_edn::parse(&content)?;
     let deps: PackageDeps = parsed.try_into()?;
 
-    download_deps(deps.dependencies, &options)?;
+    download_deps(deps.dependencies, cli_args)?;
 
     Ok(())
   } else if Path::new("package.cirru").exists() {
@@ -84,16 +66,16 @@ pub fn main() -> Result<(), String> {
     let parsed = cirru_edn::parse(&content)?;
     let deps: PackageDeps = parsed.try_into()?;
 
-    download_deps(deps.dependencies, &options)?;
+    download_deps(deps.dependencies, cli_args)?;
 
     Ok(())
   } else {
-    eprintln!("Error: no deps.cirru found!");
+    eprintln!("Error: no {} found!", cli_args.input);
     std::process::exit(1);
   }
 }
 
-fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: &CliArgs) -> Result<(), String> {
+fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: TopLevelCaps) -> Result<(), String> {
   // ~/.config/calcit/modules/
   let clone_target = if options.local_debug {
     println!("{}", "  [DEBUG] local debug mode, cloning to test-modules/".yellow());
@@ -118,8 +100,9 @@ fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: &CliArgs) -> Result
     let modules_dir = modules_dir.clone();
 
     // TODO too many threads do not make it faster though
+    let options2 = options.clone();
     let ret = thread::spawn(move || {
-      let ret = handle_path(modules_dir, version, options, org_and_folder);
+      let ret = handle_path(modules_dir, version, &options2, org_and_folder);
       if let Err(e) = ret {
         err_println(format!("{}\n", e));
       }
@@ -133,7 +116,7 @@ fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: &CliArgs) -> Result
   Ok(())
 }
 
-fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: CliArgs, org_and_folder: Arc<str>) -> Result<(), String> {
+fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, org_and_folder: Arc<str>) -> Result<(), String> {
   // check if exists
   let (_org, folder) = org_and_folder.split_once('/').ok_or("invalid name")?;
   // split with / into (org,folder)
@@ -216,38 +199,25 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: CliArgs, org_an
 
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn parse_cli() -> clap::ArgMatches {
-  clap::Command::new("Calcit Deps")
-    .version(CALCIT_VERSION)
-    .author("Jon. <jiyinyiyong@gmail.com>")
-    .about("Calcit Deps")
-    .arg(clap::Arg::new("input").help("entry file path").default_value("deps.cirru").index(1))
-    .arg(
-      clap::Arg::new("verbose")
-        .help("verbose mode")
-        .short('v')
-        .long("verbose")
-        .num_args(0),
-    )
-    .arg(
-      clap::Arg::new("pull_branch")
-        .help("pull branch in the repo")
-        .long("pull-branch")
-        .num_args(0),
-    )
-    .arg(
-      clap::Arg::new("ci")
-        .help("CI mode loads shallow repo via HTTPS")
-        .long("ci")
-        .num_args(0),
-    )
-    .arg(
-      clap::Arg::new("local_debug")
-        .help("Debug mode, clone to test-modules/")
-        .long("local-debug")
-        .num_args(0),
-    )
-    .get_matches()
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// Top-level command.
+struct TopLevelCaps {
+  /// verbose mode
+  #[argh(switch, short = 'v')]
+  verbose: bool,
+  /// pull branch in the repo
+  #[argh(switch)]
+  pull_branch: bool,
+  /// CI mode loads shallow repo via HTTPS
+  #[argh(switch)]
+  ci: bool,
+  /// debug mode, clone to test-modules/
+  #[argh(switch)]
+  local_debug: bool,
+
+  /// input file
+  #[argh(positional, default = "\"deps.cirru\".to_owned()")]
+  input: String,
 }
 
 fn dim_println(msg: String) {
