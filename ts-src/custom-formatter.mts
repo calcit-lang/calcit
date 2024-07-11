@@ -22,14 +22,9 @@ let embedObject = (x: CalcitValue) => {
     return null;
   }
   if (typeof x === "string") {
-    return span({ whiteSpace: "pre-line", color: hsl(120, 70, 50), maxWidth: "100vw" }, `|${x}`);
+    return span({ whiteSpace: "pre", color: hsl(120, 70, 50), maxWidth: "100vw" }, `|${x}`);
   }
-  return [
-    "object",
-    {
-      object: x,
-    },
-  ];
+  return ["object", { object: x }];
 };
 
 /** camel case to kabab case */
