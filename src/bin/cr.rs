@@ -11,6 +11,7 @@ mod injection;
 
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
+use calcit::cli_args::{CalcitCommand, ToplevelCalcit};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use dirs::home_dir;
@@ -22,17 +23,6 @@ use calcit::{
   ProgramEntries,
 };
 
-#[derive(Debug, Clone)]
-pub struct CLIOptions {
-  entry_path: PathBuf,
-  emit_path: String,
-  reload_libs: bool,
-  emit_js: bool,
-  emit_ir: bool,
-  disable_stack: bool,
-  skip_arity_check: bool,
-}
-
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
 
@@ -40,23 +30,10 @@ fn main() -> Result<(), String> {
   #[cfg(not(target_arch = "wasm32"))]
   injection::inject_platform_apis();
 
-  let cli_matches = cli_args::parse_cli();
-  let cli_options = CLIOptions {
-    // has default value
-    entry_path: Path::new(cli_matches.get_one::<String>("input").expect("input file")).to_owned(),
-    emit_path: cli_matches
-      .get_one::<String>("emit-path")
-      .unwrap_or(&"js-out".to_owned())
-      .to_owned()
-      .to_owned(),
-    reload_libs: cli_matches.get_flag("reload-libs"),
-    emit_js: cli_matches.get_flag("emit-js"),
-    emit_ir: cli_matches.get_flag("emit-ir"),
-    disable_stack: cli_matches.get_flag("disable-stack"),
-    skip_arity_check: cli_matches.get_flag("skip-arity-check"),
-  };
-  let mut eval_once = cli_matches.get_flag("once");
-  let assets_watch = cli_matches.get_one::<String>("watch-dir");
+  let cli_args: ToplevelCalcit = argh::from_env();
+
+  let mut eval_once = cli_args.once;
+  let assets_watch = cli_args.watch_dir.to_owned();
 
   println!("calcit version: {}", cli_args::CALCIT_VERSION);
 
@@ -69,14 +46,16 @@ fn main() -> Result<(), String> {
     .expect("failed to load $HOME");
   println!("module folder: {}", module_folder.to_str().expect("extract path"));
 
-  if cli_options.disable_stack {
+  if cli_args.disable_stack {
     call_stack::set_using_stack(false);
     println!("stack trace disabled.")
   }
 
-  let base_dir = cli_options.entry_path.parent().expect("extract parent");
+  let input_path = PathBuf::from(&cli_args.input);
+  let base_dir = input_path.parent().expect("extract parent");
 
-  if let Some(snippet) = cli_matches.get_one::<String>("eval") {
+  if let Some(CalcitCommand::Eval(ref command)) = cli_args.subcommand {
+    let snippet = &command.snippet;
     eval_once = true;
     match snapshot::create_file_from_snippet(snippet) {
       Ok(main_file) => {
@@ -84,28 +63,26 @@ fn main() -> Result<(), String> {
       }
       Err(e) => return Err(e),
     }
-    if let Some(cli_deps) = cli_matches.get_many::<String>("dep") {
-      for module_path in cli_deps {
-        let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
-        for (k, v) in &module_data.files {
-          snapshot.files.insert(k.to_owned(), v.to_owned());
-        }
+
+    for module_path in &command.dep {
+      let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
+      for (k, v) in &module_data.files {
+        snapshot.files.insert(k.to_owned(), v.to_owned());
       }
     }
   } else {
-    if !Path::new(&cli_options.entry_path).exists() {
-      return Err("compact.cirru does not exist".to_owned());
+    if !Path::new(&cli_args.input).exists() {
+      return Err(format!("{} does not exist", cli_args.input));
     }
     // load entry file
-    let mut content =
-      fs::read_to_string(&cli_options.entry_path).unwrap_or_else(|_| panic!("expected Cirru snapshot: {:?}", cli_options.entry_path));
+    let mut content = fs::read_to_string(&cli_args.input).unwrap_or_else(|_| panic!("expected Cirru snapshot: {}", cli_args.input));
     strip_shebang(&mut content);
     let data = cirru_edn::parse(&content)?;
     // println!("reading: {}", content);
-    snapshot = snapshot::load_snapshot_data(&data, cli_options.entry_path.to_str().expect("extract path"))?;
+    snapshot = snapshot::load_snapshot_data(&data, &cli_args.input)?;
 
     // config in entry will overwrite default configs
-    if let Some(entry) = cli_matches.get_one::<String>("entry") {
+    if let Some(entry) = cli_args.entry.to_owned() {
       if snapshot.entries.contains_key(entry.as_str()) {
         println!("running entry: {entry}");
         snapshot.entries[entry.as_str()].clone_into(&mut snapshot.configs);
@@ -128,13 +105,13 @@ fn main() -> Result<(), String> {
   }
   let config_init = snapshot.configs.init_fn.to_string();
   let config_reload = snapshot.configs.reload_fn.to_string();
-  let init_fn = cli_matches.get_one::<String>("init-fn").unwrap_or(&config_init);
-  let reload_fn = cli_matches.get_one::<String>("reload-fn").unwrap_or(&config_reload);
+  let init_fn = cli_args.init_fn.as_deref().unwrap_or(&config_init);
+  let reload_fn = cli_args.reload_fn.as_deref().unwrap_or(&config_reload);
   let (init_ns, init_def) = util::string::extract_ns_def(init_fn)?;
   let (reload_ns, reload_def) = util::string::extract_ns_def(reload_fn)?;
   let entries: ProgramEntries = ProgramEntries {
-    init_fn: Arc::from(init_fn.as_ref()),
-    reload_fn: Arc::from(reload_fn.as_ref()),
+    init_fn: Arc::from(init_fn),
+    reload_fn: Arc::from(reload_fn),
     init_def: init_def.into(),
     init_ns: init_ns.into(),
     reload_ns: reload_ns.into(),
@@ -163,13 +140,13 @@ fn main() -> Result<(), String> {
   )
   .map_err(|e| e.msg)?;
 
-  let task = if cli_options.emit_js {
-    if cli_options.skip_arity_check {
+  let task = if let Some(CalcitCommand::EmitJs(_)) = cli_args.subcommand {
+    if cli_args.skip_arity_check {
       codegen::set_code_gen_skip_arity_check(true);
     }
-    run_codegen(&entries, &cli_options.emit_path, false)
-  } else if cli_options.emit_ir {
-    run_codegen(&entries, &cli_options.emit_path, true)
+    run_codegen(&entries, &cli_args.emit_path, false)
+  } else if let Some(CalcitCommand::EmitIr(_)) = cli_args.subcommand {
+    run_codegen(&entries, &cli_args.emit_path, true)
   } else {
     let started_time = Instant::now();
 
@@ -197,16 +174,14 @@ fn main() -> Result<(), String> {
 
   if !eval_once {
     runner::track::track_task_add();
-    let copied_assets = Arc::new(assets_watch.map(|s| s.to_owned()));
-    let copied_settings = Arc::new(cli_options);
-    let copied_entries = Arc::new(entries);
-    std::thread::spawn(move || watch_files(copied_entries, copied_settings, copied_assets));
+    let args = cli_args.clone();
+    std::thread::spawn(move || watch_files(entries, args, assets_watch));
   }
   runner::track::exit_when_cleared();
   Ok(())
 }
 
-pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, assets_watch: Arc<Option<String>>) {
+pub fn watch_files(entries: ProgramEntries, settings: ToplevelCalcit, assets_watch: Option<String>) {
   println!("\nRunning: in watch mode...\n");
   let (tx, rx) = channel();
   let mut debouncer = new_debouncer(Duration::from_millis(200), tx).expect("create watcher");
@@ -216,7 +191,10 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
     .configure(config.with_compare_contents(true))
     .expect("config watcher");
 
-  let inc_path = settings.entry_path.parent().expect("extract parent").join(".compact-inc.cirru");
+  let inc_path = PathBuf::from(&settings.input)
+    .parent()
+    .expect("extract parent")
+    .join(".compact-inc.cirru");
   if !inc_path.exists() {
     if let Err(e) = fs::write(&inc_path, "").map_err(|e| -> String { e.to_string() }) {
       eprintln!("file writing error: {e}");
@@ -256,7 +234,7 @@ pub fn watch_files(entries: Arc<ProgramEntries>, settings: Arc<CLIOptions>, asse
 
 // overwrite previous state
 
-fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions) -> Result<(), String> {
+fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCalcit) -> Result<(), String> {
   println!("\n-------- file change --------\n");
 
   // Steps:
@@ -276,9 +254,9 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &CLIOptions
   builtins::meta::force_reset_gensym_index()?;
   println!("cleared evaled states and reset gensym index.");
 
-  let task = if settings.emit_js {
+  let task = if let Some(CalcitCommand::EmitJs(_)) = settings.subcommand {
     run_codegen(entries, &settings.emit_path, false)
-  } else if settings.emit_ir {
+  } else if let Some(CalcitCommand::EmitIr(_)) = settings.subcommand {
     run_codegen(entries, &settings.emit_path, true)
   } else {
     // run from `reload_fn` after reload

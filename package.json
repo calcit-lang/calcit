@@ -1,6 +1,6 @@
 {
   "name": "@calcit/procs",
-  "version": "0.8.59",
+  "version": "0.9.0-a1",
   "main": "./lib/calcit.procs.mjs",
   "devDependencies": {
     "@types/node": "^20.11.28",
@@ -10,12 +10,12 @@
     "compile": "rm -rfv lib/* && tsc",
     "procs-link": "ln -s ../../ node_modules/@calcit/procs",
     "cp-mac": "cargo build --release && rm -rfv builds/* && node scripts/cp-version.js && scp builds/* rsync-user@calcit-lang.org:/web-assets/repo/calcit-lang/binaries/macos/",
-    "eval": "cargo run --bin cr -- -e",
+    "eval": "cargo run --bin cr -- eval",
     "check-all": "yarn compile && yarn try-rs && yarn try-js && yarn try-ir",
     "try-rs": "cargo run --bin cr -- calcit/test.cirru -1",
-    "try-js-brk": "cargo run --bin cr -- calcit/test.cirru --emit-js -1 && node --inspect-brk js-out/main.mjs",
-    "try-js": "cargo run --bin cr -- calcit/test.cirru --emit-js -1 && node js-out/main.mjs",
-    "try-ir": "cargo run --bin cr -- calcit/test.cirru --emit-ir -1"
+    "try-js-brk": "cargo run --bin cr -- calcit/test.cirru -1 js && node --inspect-brk js-out/main.mjs",
+    "try-js": "cargo run --bin cr -- calcit/test.cirru -1 js && node js-out/main.mjs",
+    "try-ir": "cargo run --bin cr -- calcit/test.cirru -1 js"
   },
   "repository": {
     "type": "git",

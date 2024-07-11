@@ -33,7 +33,7 @@ jobs:
         run: >
           yarn
           && yarn tsc
-          && cargo run --bin cr calcit/test.cirru --emit-js --once
+          && cargo run --bin cr calcit/test.cirru --once js
           && ln -s ../../ node_modules/@calcit/procs
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs
