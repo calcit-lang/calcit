@@ -57,7 +57,11 @@ pub fn main() -> Result<(), String> {
     let parsed = cirru_edn::parse(&content)?;
     let deps: PackageDeps = parsed.try_into()?;
 
-    download_deps(deps.dependencies, cli_args)?;
+    if cli_args.subcommand.is_some() {
+      outdated_tags(deps.dependencies)?;
+    } else {
+      download_deps(deps.dependencies, cli_args)?;
+    }
 
     Ok(())
   } else if Path::new("package.cirru").exists() {
@@ -66,7 +70,11 @@ pub fn main() -> Result<(), String> {
     let parsed = cirru_edn::parse(&content)?;
     let deps: PackageDeps = parsed.try_into()?;
 
-    download_deps(deps.dependencies, cli_args)?;
+    if cli_args.subcommand.is_some() {
+      outdated_tags(deps.dependencies)?;
+    } else {
+      download_deps(deps.dependencies, cli_args)?;
+    }
 
     Ok(())
   } else {
@@ -205,6 +213,11 @@ struct TopLevelCaps {
   /// verbose mode
   #[argh(switch, short = 'v')]
   verbose: bool,
+
+  /// outdated command
+  #[argh(subcommand)]
+  subcommand: Option<SubCommand>,
+
   /// pull branch in the repo
   #[argh(switch)]
   pull_branch: bool,
@@ -219,6 +232,18 @@ struct TopLevelCaps {
   #[argh(positional, default = "\"deps.cirru\".to_owned()")]
   input: String,
 }
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand)]
+enum SubCommand {
+  /// show outdated versions
+  Outdated(OutdatedCaps),
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// show outdated versions
+#[argh(subcommand, name = "outdated")]
+struct OutdatedCaps {}
 
 fn dim_println(msg: String) {
   if msg.chars().nth(1) == Some(' ') {
@@ -265,4 +290,62 @@ fn call_build_script(folder_path: &Path) -> Result<String, String> {
     err_println(indent4(&msg));
     Err(format!("failed to build module {}", folder_path.display()))
   }
+}
+
+/// read packages from deps, find tag(or sha) and committed date,
+/// also git fetch to read latest tag from remote,
+/// then we can compare, get outdated version printed
+fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>) -> Result<(), String> {
+  print_column("package".dimmed(), "expected".dimmed(), "latest".dimmed(), "hint".dimmed());
+  println!();
+  let mut children = vec![];
+
+  for (org_and_folder, version) in deps {
+    let ret = thread::spawn(move || {
+      let ret = show_package_versions(org_and_folder, version);
+      if let Err(e) = ret {
+        err_println(format!("{}\n", e));
+      }
+    });
+    children.push(ret);
+  }
+
+  for child in children {
+    child.join().unwrap();
+  }
+  Ok(())
+}
+
+fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<(), String> {
+  let (_org, folder) = org_and_folder.split_once('/').ok_or("invalid name")?;
+  let folder_path = dirs::home_dir().ok_or("no config dir")?.join(".config/calcit/modules").join(folder);
+  if folder_path.exists() {
+    git_fetch(&folder_path)?;
+    // get timestamp of current head
+    // let head = git_current_head(&folder_path)?;
+    // let head_timestamp = git_timestamp(&folder_path, &head.get_name())?;
+
+    // get latest tag and timestamp
+    let latest_tag = git_latest_tag(&folder_path)?;
+    let latest_timestamp = git_timestamp(&folder_path, &latest_tag)?;
+
+    // get expected tag and timestamp
+    let expected_timestamp = git_timestamp(&folder_path, &version)?;
+
+    let outdated = expected_timestamp < latest_timestamp;
+
+    if outdated {
+      print_column(org_and_folder.yellow(), version.yellow(), latest_tag.yellow(), "Outdated".yellow());
+    } else {
+      print_column(org_and_folder.dimmed(), version.dimmed(), latest_tag.dimmed(), "√".dimmed());
+    }
+  } else {
+    print_column(org_and_folder.red(), version.red(), "not found".red(), "-".red());
+  }
+
+  Ok(())
+}
+
+fn print_column(pkg: ColoredString, expected: ColoredString, latest: ColoredString, hint: ColoredString) {
+  println!("{:<32} {:<12} {:<12} {:<12}", pkg, expected, latest, hint);
 }
