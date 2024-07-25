@@ -283,11 +283,11 @@ fn call_build_script(folder_path: &Path) -> Result<String, String> {
     .output()
     .map_err(|e| e.to_string())?;
   if output.status.success() {
-    let msg = String::from_utf8(output.stdout).unwrap_or("".to_string());
-    Ok(indent4(&msg))
+    let msg = std::str::from_utf8(&output.stdout).unwrap_or("");
+    Ok(indent4(msg))
   } else {
-    let msg = String::from_utf8(output.stderr).unwrap_or("".to_string());
-    err_println(indent4(&msg));
+    let msg = std::str::from_utf8(&output.stderr).unwrap_or("");
+    err_println(indent4(msg));
     Err(format!("failed to build module {}", folder_path.display()))
   }
 }

@@ -8,7 +8,7 @@ pub fn git_checkout(dir: &PathBuf, version: &str) -> Result<(), String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    let err = String::from_utf8(output.stderr).unwrap_or_else(|_| "Failed to decode stderr".to_string());
+    let err = std::str::from_utf8(&output.stderr).unwrap_or("Failed to decode stderr");
     Err(format!("{}\nfailed to checkout {} {}", err.trim(), dir.to_str().unwrap(), version))
   } else {
     Ok(())
@@ -38,7 +38,7 @@ pub fn git_clone(dir: &PathBuf, url: &str, version: &str, shallow: bool) -> Resu
       .map_err(|e| e.to_string())?
   };
   if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
+    let err = std::str::from_utf8(&output.stderr).expect("stderr");
     Err(format!("{}\nfailed to clone {} {}", err.trim(), url, version))
   } else {
     Ok(())
@@ -68,10 +68,10 @@ pub fn git_current_head(dir: &PathBuf) -> Result<GitHead, String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
+    let err = std::str::from_utf8(&output.stderr).expect("stderr");
     Err(format!("{}\nfailed to get current head of {}", err.trim(), dir.to_str().unwrap()))
   } else {
-    let mut branch = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+    let mut branch = std::str::from_utf8(&output.stdout).map_err(|e| e.to_string())?.to_owned();
     branch = branch.trim().to_string();
 
     if branch.is_empty() {
@@ -97,10 +97,10 @@ pub fn git_timestamp(dir: &PathBuf, sha: &str) -> Result<u32, String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
+    let err = std::str::from_utf8(&output.stderr).expect("stderr");
     Err(format!("{}\nfailed to get timestamp of {}", err.trim(), sha))
   } else {
-    let timestamp = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+    let timestamp = std::str::from_utf8(&output.stdout).map_err(|e| e.to_string())?;
     let v = timestamp.trim().parse::<u32>().map_err(|e| e.to_string())?;
     Ok(v)
   }
@@ -120,10 +120,10 @@ pub fn git_latest_tag(dir: &PathBuf) -> Result<String, String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !pre_output.status.success() {
-    let err = String::from_utf8(pre_output.stderr).expect("stderr");
+    let err = std::str::from_utf8(&pre_output.stderr).expect("stderr");
     return Err(format!("{}\nfailed to get latest tag of {}", err.trim(), dir.to_str().unwrap()));
   }
-  let pre_output = String::from_utf8(pre_output.stdout).map_err(|e| e.to_string())?;
+  let pre_output = std::str::from_utf8(&pre_output.stdout).map_err(|e| e.to_string())?;
   let output = std::process::Command::new("git")
     .current_dir(dir)
     .arg("describe")
@@ -132,10 +132,10 @@ pub fn git_latest_tag(dir: &PathBuf) -> Result<String, String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
+    let err = std::str::from_utf8(&output.stderr).expect("stderr");
     Err(format!("{}\nfailed to get latest tag of {}", err.trim(), dir.to_str().unwrap()))
   } else {
-    let mut tag = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+    let mut tag = std::str::from_utf8(&output.stdout).map_err(|e| e.to_string())?.to_owned();
     tag = tag.trim().to_string();
     Ok(tag)
   }
@@ -154,10 +154,10 @@ pub fn git_rev_parse(dir: &PathBuf, ref_name: &str) -> Result<String, String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
+    let err = std::str::from_utf8(&output.stderr).expect("stderr");
     Err(format!("{}\nfailed to get SHA of {}", err.trim(), ref_name))
   } else {
-    let sha = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+    let sha = std::str::from_utf8(&output.stdout).map_err(|e| e.to_string())?;
     Ok(sha.trim().to_string())
   }
 }
@@ -179,7 +179,7 @@ pub fn git_check_branch_or_tag(dir: &PathBuf, version: &str) -> Result<bool, Str
       .output()
       .map_err(|e| e.to_string())?;
     if !output.status.success() {
-      let err = String::from_utf8(output.stderr).expect("stderr");
+      let err = std::str::from_utf8(&output.stderr).expect("stderr");
       Err(format!("{}\nfailed to get current head of {}", err.trim(), dir.to_str().unwrap()))
     } else {
       Ok(true)
@@ -198,7 +198,7 @@ pub fn git_fetch(dir: &PathBuf) -> Result<(), String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
+    let err = std::str::from_utf8(&output.stderr).expect("stderr");
     Err(format!("{}\nfailed to fetch {}", err.trim(), dir.to_str().unwrap()))
   } else {
     Ok(())
@@ -213,10 +213,10 @@ pub fn git_describe_tag(dir: &PathBuf) -> Result<String, String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
+    let err = std::str::from_utf8(&output.stderr).expect("stderr");
     Err(format!("{}\nfailed to get current tag of {}", err.trim(), dir.to_str().unwrap()))
   } else {
-    let mut tag = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+    let mut tag = std::str::from_utf8(&output.stdout).map_err(|e| e.to_string())?.to_owned();
     tag = tag.trim().to_string();
     Ok(tag)
   }
@@ -231,7 +231,7 @@ pub fn git_pull(dir: &PathBuf, branch: &str) -> Result<(), String> {
     .output()
     .map_err(|e| e.to_string())?;
   if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
+    let err = std::str::from_utf8(&output.stderr).expect("stderr");
     Err(format!("{}\nfailed to pull {} {}", err.trim(), dir.to_str().unwrap(), branch))
   } else {
     Ok(())
