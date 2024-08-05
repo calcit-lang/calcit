@@ -131,16 +131,17 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
 
   let folder_path = modules_dir.join(folder);
   let build_file = folder_path.join("build.sh");
+  let git_repo = GitRepo { dir: folder_path.clone() };
   if folder_path.exists() {
     // println!("module {} exists", folder);
     // check branch
-    let current_head = git_current_head(&folder_path)?;
+    let current_head = git_repo.current_head()?;
     if current_head.get_name() == *version {
       dim_println(format!("√ found {} of {}", gray(&version), gray(folder)));
       if let GitHead::Branch(branch) = current_head {
         if options.pull_branch {
           dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-          git_pull(&folder_path, &branch)?;
+          git_repo.pull(&branch)?;
           dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
 
           // if there's a build.sh file in the folder, run it
@@ -157,21 +158,21 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
     // println!("  {}", msg.yellow());
 
     // try if tag or branch exists in git history
-    let has_target = git_check_branch_or_tag(&folder_path, &version)?;
+    let has_target = git_repo.check_branch_or_tag(&version)?;
     if !has_target {
       dim_println(format!("↺ fetching {} at version {}", gray(&org_and_folder), gray(&version)));
-      git_fetch(&folder_path)?;
+      git_repo.fetch()?;
       dim_println(format!("fetched {} at version {}", gray(&org_and_folder), gray(&version)));
       // fetch git repo and checkout target version
     }
-    git_checkout(&folder_path, &version)?;
+    git_repo.checkout(&version)?;
     dim_println(format!("√ checked out {} of {}", gray(&version), gray(&org_and_folder)));
 
-    let current_head = git_current_head(&folder_path)?;
+    let current_head = git_repo.current_head()?;
     if let GitHead::Branch(branch) = current_head {
       if options.pull_branch {
         dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-        git_pull(&folder_path, &branch)?;
+        git_repo.pull(&branch)?;
         dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
       }
     }
@@ -189,7 +190,7 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
       format!("git@github.com:{}.git", org_and_folder)
     };
     dim_println(format!("↺ cloning {} at version {}", gray(&org_and_folder), gray(&version)));
-    git_clone(&modules_dir, &url, &version, options.ci)?;
+    GitRepo::clone_to(&modules_dir, &url, &version, options.ci)?;
     // println!("downloading {} at version {}", url, version);
     dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
 
@@ -319,18 +320,19 @@ fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>) -> Result<(), String> {
 fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<(), String> {
   let (_org, folder) = org_and_folder.split_once('/').ok_or("invalid name")?;
   let folder_path = dirs::home_dir().ok_or("no config dir")?.join(".config/calcit/modules").join(folder);
+  let git_repo = GitRepo { dir: folder_path.clone() };
   if folder_path.exists() {
-    git_fetch(&folder_path)?;
+    git_repo.fetch()?;
     // get timestamp of current head
     // let head = git_current_head(&folder_path)?;
     // let head_timestamp = git_timestamp(&folder_path, &head.get_name())?;
 
     // get latest tag and timestamp
-    let latest_tag = git_latest_tag(&folder_path)?;
-    let latest_timestamp = git_timestamp(&folder_path, &latest_tag)?;
+    let latest_tag = git_repo.latest_tag()?;
+    let latest_timestamp = git_repo.timestamp(&latest_tag)?;
 
     // get expected tag and timestamp
-    let expected_timestamp = git_timestamp(&folder_path, &version)?;
+    let expected_timestamp = git_repo.timestamp(&version)?;
 
     let outdated = expected_timestamp < latest_timestamp;
 
