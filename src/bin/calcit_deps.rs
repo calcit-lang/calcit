@@ -57,7 +57,11 @@ pub fn main() -> Result<(), String> {
     let parsed = cirru_edn::parse(&content)?;
     let deps: PackageDeps = parsed.try_into()?;
 
-    download_deps(deps.dependencies, cli_args)?;
+    if cli_args.subcommand.is_some() {
+      outdated_tags(deps.dependencies)?;
+    } else {
+      download_deps(deps.dependencies, cli_args)?;
+    }
 
     Ok(())
   } else if Path::new("package.cirru").exists() {
@@ -66,7 +70,11 @@ pub fn main() -> Result<(), String> {
     let parsed = cirru_edn::parse(&content)?;
     let deps: PackageDeps = parsed.try_into()?;
 
-    download_deps(deps.dependencies, cli_args)?;
+    if cli_args.subcommand.is_some() {
+      outdated_tags(deps.dependencies)?;
+    } else {
+      download_deps(deps.dependencies, cli_args)?;
+    }
 
     Ok(())
   } else {
@@ -123,16 +131,17 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
 
   let folder_path = modules_dir.join(folder);
   let build_file = folder_path.join("build.sh");
+  let git_repo = GitRepo { dir: folder_path.clone() };
   if folder_path.exists() {
     // println!("module {} exists", folder);
     // check branch
-    let current_head = git_current_head(&folder_path)?;
+    let current_head = git_repo.current_head()?;
     if current_head.get_name() == *version {
       dim_println(format!("√ found {} of {}", gray(&version), gray(folder)));
       if let GitHead::Branch(branch) = current_head {
         if options.pull_branch {
           dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-          git_pull(&folder_path, &branch)?;
+          git_repo.pull(&branch)?;
           dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
 
           // if there's a build.sh file in the folder, run it
@@ -149,21 +158,21 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
     // println!("  {}", msg.yellow());
 
     // try if tag or branch exists in git history
-    let has_target = git_check_branch_or_tag(&folder_path, &version)?;
+    let has_target = git_repo.check_branch_or_tag(&version)?;
     if !has_target {
       dim_println(format!("↺ fetching {} at version {}", gray(&org_and_folder), gray(&version)));
-      git_fetch(&folder_path)?;
+      git_repo.fetch()?;
       dim_println(format!("fetched {} at version {}", gray(&org_and_folder), gray(&version)));
       // fetch git repo and checkout target version
     }
-    git_checkout(&folder_path, &version)?;
+    git_repo.checkout(&version)?;
     dim_println(format!("√ checked out {} of {}", gray(&version), gray(&org_and_folder)));
 
-    let current_head = git_current_head(&folder_path)?;
+    let current_head = git_repo.current_head()?;
     if let GitHead::Branch(branch) = current_head {
       if options.pull_branch {
         dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-        git_pull(&folder_path, &branch)?;
+        git_repo.pull(&branch)?;
         dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
       }
     }
@@ -181,7 +190,7 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
       format!("git@github.com:{}.git", org_and_folder)
     };
     dim_println(format!("↺ cloning {} at version {}", gray(&org_and_folder), gray(&version)));
-    git_clone(&modules_dir, &url, &version, options.ci)?;
+    GitRepo::clone_to(&modules_dir, &url, &version, options.ci)?;
     // println!("downloading {} at version {}", url, version);
     dim_println(format!("downloaded {} at version {}", gray(&org_and_folder), gray(&version)));
 
@@ -205,6 +214,11 @@ struct TopLevelCaps {
   /// verbose mode
   #[argh(switch, short = 'v')]
   verbose: bool,
+
+  /// outdated command
+  #[argh(subcommand)]
+  subcommand: Option<SubCommand>,
+
   /// pull branch in the repo
   #[argh(switch)]
   pull_branch: bool,
@@ -219,6 +233,18 @@ struct TopLevelCaps {
   #[argh(positional, default = "\"deps.cirru\".to_owned()")]
   input: String,
 }
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand)]
+enum SubCommand {
+  /// show outdated versions
+  Outdated(OutdatedCaps),
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// show outdated versions
+#[argh(subcommand, name = "outdated")]
+struct OutdatedCaps {}
 
 fn dim_println(msg: String) {
   if msg.chars().nth(1) == Some(' ') {
@@ -258,11 +284,70 @@ fn call_build_script(folder_path: &Path) -> Result<String, String> {
     .output()
     .map_err(|e| e.to_string())?;
   if output.status.success() {
-    let msg = String::from_utf8(output.stdout).unwrap_or("".to_string());
-    Ok(indent4(&msg))
+    let msg = std::str::from_utf8(&output.stdout).unwrap_or("");
+    Ok(indent4(msg))
   } else {
-    let msg = String::from_utf8(output.stderr).unwrap_or("".to_string());
-    err_println(indent4(&msg));
+    let msg = std::str::from_utf8(&output.stderr).unwrap_or("");
+    err_println(indent4(msg));
     Err(format!("failed to build module {}", folder_path.display()))
   }
+}
+
+/// read packages from deps, find tag(or sha) and committed date,
+/// also git fetch to read latest tag from remote,
+/// then we can compare, get outdated version printed
+fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>) -> Result<(), String> {
+  print_column("package".dimmed(), "expected".dimmed(), "latest".dimmed(), "hint".dimmed());
+  println!();
+  let mut children = vec![];
+
+  for (org_and_folder, version) in deps {
+    let ret = thread::spawn(move || {
+      let ret = show_package_versions(org_and_folder, version);
+      if let Err(e) = ret {
+        err_println(format!("{}\n", e));
+      }
+    });
+    children.push(ret);
+  }
+
+  for child in children {
+    child.join().unwrap();
+  }
+  Ok(())
+}
+
+fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<(), String> {
+  let (_org, folder) = org_and_folder.split_once('/').ok_or("invalid name")?;
+  let folder_path = dirs::home_dir().ok_or("no config dir")?.join(".config/calcit/modules").join(folder);
+  let git_repo = GitRepo { dir: folder_path.clone() };
+  if folder_path.exists() {
+    git_repo.fetch()?;
+    // get timestamp of current head
+    // let head = git_current_head(&folder_path)?;
+    // let head_timestamp = git_timestamp(&folder_path, &head.get_name())?;
+
+    // get latest tag and timestamp
+    let latest_tag = git_repo.latest_tag()?;
+    let latest_timestamp = git_repo.timestamp(&latest_tag)?;
+
+    // get expected tag and timestamp
+    let expected_timestamp = git_repo.timestamp(&version)?;
+
+    let outdated = expected_timestamp < latest_timestamp;
+
+    if outdated {
+      print_column(org_and_folder.yellow(), version.yellow(), latest_tag.yellow(), "Outdated".yellow());
+    } else {
+      print_column(org_and_folder.dimmed(), version.dimmed(), latest_tag.dimmed(), "√".dimmed());
+    }
+  } else {
+    print_column(org_and_folder.red(), version.red(), "not found".red(), "-".red());
+  }
+
+  Ok(())
+}
+
+fn print_column(pkg: ColoredString, expected: ColoredString, latest: ColoredString, hint: ColoredString) {
+  println!("{:<32} {:<12} {:<12} {:<12}", pkg, expected, latest, hint);
 }

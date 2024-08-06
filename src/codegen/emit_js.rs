@@ -661,7 +661,10 @@ fn detect_await(xs: &CalcitList) -> bool {
   for x in xs {
     match x {
       Calcit::List(al) => {
-        if detect_await(al) {
+        if let Some(Calcit::Syntax(CalcitSyntax::Defn, _s)) = al.get(0) {
+          // a nested function has its own scope deciding if it's async
+          return false;
+        } else if detect_await(al) {
           return true;
         }
       }

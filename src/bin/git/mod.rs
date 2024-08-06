@@ -1,46 +1,107 @@
-use std::path::PathBuf;
+use std::{
+  path::{Path, PathBuf},
+  process::Command,
+};
 
-pub fn git_checkout(dir: &PathBuf, version: &str) -> Result<(), String> {
-  let output = std::process::Command::new("git")
-    .current_dir(dir)
-    .arg("checkout")
-    .arg(version)
-    .output()
-    .map_err(|e| e.to_string())?;
-  if !output.status.success() {
-    let err = String::from_utf8(output.stderr).unwrap_or_else(|_| "Failed to decode stderr".to_string());
-    Err(format!("{}\nfailed to checkout {} {}", err.trim(), dir.to_str().unwrap(), version))
-  } else {
-    Ok(())
-  }
+/// abstraction of a local git repository
+pub struct GitRepo {
+  pub dir: PathBuf,
 }
 
-pub fn git_clone(dir: &PathBuf, url: &str, version: &str, shallow: bool) -> Result<(), String> {
-  let output = if shallow {
-    std::process::Command::new("git")
-      .current_dir(dir)
-      .arg("clone")
-      .arg("--branch")
-      .arg(version)
-      .arg("--depth")
-      .arg("1")
-      .arg(url)
-      .output()
-      .map_err(|e| e.to_string())?
-  } else {
-    std::process::Command::new("git")
-      .current_dir(dir)
-      .arg("clone")
-      .arg("--branch")
-      .arg(version)
-      .arg(url)
-      .output()
-      .map_err(|e| e.to_string())?
-  };
-  if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
-    Err(format!("{}\nfailed to clone {} {}", err.trim(), url, version))
-  } else {
+impl GitRepo {
+  fn run_command(&self, args: &[&str]) -> Result<String, String> {
+    let mut command = Command::new("git");
+    command.current_dir(&self.dir).args(args);
+
+    let output = command.output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+      let err = String::from_utf8_lossy(&output.stderr);
+      Err(err.trim().to_string())
+    } else {
+      let stdout = String::from_utf8_lossy(&output.stdout);
+      Ok(stdout.trim().to_string())
+    }
+  }
+
+  pub fn checkout(&self, version: &str) -> Result<(), String> {
+    self.run_command(&["checkout", version]).map(|_a| ())
+  }
+
+  /// clone to directory
+  pub fn clone_to(dir: &Path, url: &str, version: &str, shallow: bool) -> Result<(), String> {
+    let container = GitRepo { dir: dir.to_path_buf() };
+    if shallow {
+      container.run_command(&["clone", "--branch", version, "--depth", "1", url])?;
+    } else {
+      container.run_command(&["clone", "--branch", version, url])?;
+    }
+    Ok(())
+  }
+
+  /// get the current head of the repository
+  pub fn current_head(&self) -> Result<GitHead, String> {
+    let branch = self.run_command(&["branch", "--show-current"])?;
+    if branch.is_empty() {
+      // probably a tag
+      Ok(GitHead::Tag(self.describe_tag()?))
+    } else {
+      Ok(GitHead::Branch(branch))
+    }
+  }
+
+  /// get unix timestamp of a commit
+  /// ```bash
+  /// git show -s --format=%ct <SHA>
+  /// ```
+  pub fn timestamp(&self, sha: &str) -> Result<u32, String> {
+    let timestamp = self.run_command(&["show", "-s", "--format=%ct", sha])?;
+    let v = timestamp.trim().parse::<u32>().map_err(|e| e.to_string())?;
+    Ok(v)
+  }
+
+  /// get latest tag
+  /// ```bash
+  /// git describe --tags $(git rev-list --tags --max-count=1)
+  /// ```
+  /// fails when no tag is found
+  pub fn latest_tag(&self) -> Result<String, String> {
+    let rev_output = self.run_command(&["rev-list", "--tags", "--max-count=1"])?;
+    let tag = self.run_command(&["describe", "--tags", rev_output.trim()])?;
+    Ok(tag.trim().to_string())
+  }
+
+  /// get SHA of a tag or ref
+  /// ```bash
+  /// git rev-parse <REF>
+  /// ```
+  #[allow(dead_code)]
+  pub fn rev_parse(&self, ref_name: &str) -> Result<String, String> {
+    let sha = self.run_command(&["rev-parse", ref_name])?;
+    Ok(sha.trim().to_string())
+  }
+
+  pub fn check_branch_or_tag(&self, version: &str) -> Result<bool, String> {
+    match self.run_command(&["show-ref", "--verify", &format!("refs/tags/{}", version)]) {
+      Ok(_) => Ok(true),
+      Err(_) => {
+        self.run_command(&["show-ref", "--verify", &format!("refs/heads/{}", version)])?;
+        Ok(true)
+      }
+    }
+  }
+
+  pub fn fetch(&self) -> Result<(), String> {
+    self.run_command(&["fetch", "origin", "--tags"])?;
+    Ok(())
+  }
+
+  pub fn describe_tag(&self) -> Result<String, String> {
+    let tag = self.run_command(&["describe", "--tags"])?.trim().to_string();
+    Ok(tag)
+  }
+
+  pub fn pull(&self, branch: &str) -> Result<(), String> {
+    self.run_command(&["pull", "origin", branch])?;
     Ok(())
   }
 }
@@ -57,104 +118,5 @@ impl GitHead {
       GitHead::Branch(s) => s.to_string(),
       GitHead::Tag(s) => s.to_string(),
     }
-  }
-}
-
-pub fn git_current_head(dir: &PathBuf) -> Result<GitHead, String> {
-  let output = std::process::Command::new("git")
-    .current_dir(dir)
-    .arg("branch")
-    .arg("--show-current")
-    .output()
-    .map_err(|e| e.to_string())?;
-  if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
-    Err(format!("{}\nfailed to get current head of {}", err.trim(), dir.to_str().unwrap()))
-  } else {
-    let mut branch = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
-    branch = branch.trim().to_string();
-
-    if branch.is_empty() {
-      // probably a tag
-      Ok(GitHead::Tag(git_describe_tag(dir)?))
-    } else {
-      Ok(GitHead::Branch(branch))
-    }
-  }
-}
-
-pub fn git_check_branch_or_tag(dir: &PathBuf, version: &str) -> Result<bool, String> {
-  let output = std::process::Command::new("git")
-    .current_dir(dir)
-    .arg("show-ref")
-    .arg("--verify")
-    .arg(&format!("refs/tags/{}", version))
-    .output()
-    .map_err(|e| e.to_string())?;
-  if !output.status.success() {
-    let output = std::process::Command::new("git")
-      .current_dir(dir)
-      .arg("show-ref")
-      .arg("--verify")
-      .arg(&format!("refs/heads/{}", version))
-      .output()
-      .map_err(|e| e.to_string())?;
-    if !output.status.success() {
-      let err = String::from_utf8(output.stderr).expect("stderr");
-      Err(format!("{}\nfailed to get current head of {}", err.trim(), dir.to_str().unwrap()))
-    } else {
-      Ok(true)
-    }
-  } else {
-    Ok(true)
-  }
-}
-
-pub fn git_fetch(dir: &PathBuf) -> Result<(), String> {
-  let output = std::process::Command::new("git")
-    .current_dir(dir)
-    .arg("fetch")
-    .arg("origin")
-    .arg("--tags")
-    .output()
-    .map_err(|e| e.to_string())?;
-  if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
-    Err(format!("{}\nfailed to fetch {}", err.trim(), dir.to_str().unwrap()))
-  } else {
-    Ok(())
-  }
-}
-
-pub fn git_describe_tag(dir: &PathBuf) -> Result<String, String> {
-  let output = std::process::Command::new("git")
-    .current_dir(dir)
-    .arg("describe")
-    .arg("--tags")
-    .output()
-    .map_err(|e| e.to_string())?;
-  if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
-    Err(format!("{}\nfailed to get current tag of {}", err.trim(), dir.to_str().unwrap()))
-  } else {
-    let mut tag = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
-    tag = tag.trim().to_string();
-    Ok(tag)
-  }
-}
-
-pub fn git_pull(dir: &PathBuf, branch: &str) -> Result<(), String> {
-  let output = std::process::Command::new("git")
-    .current_dir(dir)
-    .arg("pull")
-    .arg("origin")
-    .arg(branch)
-    .output()
-    .map_err(|e| e.to_string())?;
-  if !output.status.success() {
-    let err = String::from_utf8(output.stderr).expect("stderr");
-    Err(format!("{}\nfailed to pull {} {}", err.trim(), dir.to_str().unwrap(), branch))
-  } else {
-    Ok(())
   }
 }

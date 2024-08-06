@@ -9,7 +9,7 @@
             defn log-title (title) (println) (println title) (println)
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async)
+            defn main! () (log-title "|Testing js") (test-js) (test-let-example) (test-collection) (test-async) (test-async-in-data)
               test-data-gen
               test-regexp
               test-property
@@ -40,6 +40,24 @@
                       a $ js-await $ f1
                     assert= true a
               f2
+        |test-async-in-data $ %{} :CodeEntry
+          :doc "|async fn inside data. if wrong, it will be a syntax error from await outside async"
+          :code $ quote
+            fn ()
+              let
+                  timeout $ fn (ms)
+                    new js/Promise $ fn (resolve reject)
+                      js/setTimeout resolve ms
+                  f 0
+                  f $ let
+                      b $ fn () (hint-fn async)
+                        let
+                            a 1
+                            a $ js-await $ timeout 200
+                          assert= nil a
+                    b
+                js/console.log "|a promise from nested let" f
+
         |test-collection $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing quick collection syntax")

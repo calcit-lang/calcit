@@ -1,6 +1,6 @@
 [package]
 name = "calcit"
-version = "0.9.0"
+version = "0.9.1"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -26,7 +26,7 @@ cirru_parser = "0.1.31"
 # cirru_parser = { path = "/Users/chenyong/repo/cirru/parser.rs" }
 argh = "0.1.12"
 dirs = "5.0.1"
-lazy_static = "1.4.0"
+lazy_static = "1.5.0"
 notify = "6.1.1"
 notify-debouncer-mini = "0.4.1"
 walkdir = "2.5.0"
@@ -39,7 +39,7 @@ strum = "0.25"
 strum_macros = "0.25"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-libloading = "0.8.3"
+libloading = "0.8.5"
 ctrlc = "3.4.4"
 
 [lib]
