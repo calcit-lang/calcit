@@ -16,7 +16,7 @@ impl GitRepo {
     let output = command.output().map_err(|e| e.to_string())?;
     if !output.status.success() {
       let err = String::from_utf8_lossy(&output.stderr);
-      Err(err.trim().to_string())
+      Err(format!("{} from args {:?}", err.trim(), command.get_args()))
     } else {
       let stdout = String::from_utf8_lossy(&output.stdout);
       Ok(stdout.trim().to_string())
