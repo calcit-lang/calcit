@@ -45,7 +45,7 @@ pub fn main() -> io::Result<()> {
   let inc_file_path = out_path.join(".compact-inc.cirru");
   let no_watcher = cli_args.once;
 
-  let package_file = base_dir.parent().expect("parent path").join("package.cirru");
+  let package_file = base_dir.parent().expect("parent path").join("deps.cirru");
 
   perform_compaction(base_dir, &package_file, &out_file, &inc_file_path, verbose)?;
 
