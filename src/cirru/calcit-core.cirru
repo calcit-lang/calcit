@@ -1642,7 +1642,7 @@
                         not $ tuple? ~v#
                         raise $ str "|tag-match expected tuple, got" ~v#
                       &let
-                        ~t# $ &tuple:nth ~value 0
+                        ~t# $ &tuple:nth ~v# 0
                         &tag-match-internal ~v# ~t# $ ~@ body
 
         |tag? $ %{} :CodeEntry (:doc |)
