@@ -194,6 +194,8 @@ export class CalcitSliceMap {
   cachedHash: Hash;
   /** in arrayMode, only flatten values, instead of tree structure */
   chunk: CalcitValue[];
+  /** reference to generated HashMap in tree structure */
+  cachedTreeMapRef?: CalcitMap;
   constructor(value: CalcitValue[]) {
     if (value == null) {
       this.chunk = [];
@@ -203,14 +205,20 @@ export class CalcitSliceMap {
       throw new Error("unknown data for map");
     }
   }
+  /** convert to tree map when needed, also cached in case converted over and over again  */
   turnMap(): CalcitMap {
+    if (this.cachedTreeMapRef != null) {
+      return this.cachedTreeMapRef;
+    }
     var dict: Array<[CalcitValue, CalcitValue]> = [];
     let halfLength = this.chunk.length >> 1;
     for (let idx = 0; idx < halfLength; idx++) {
       dict.push([this.chunk[idx << 1], this.chunk[(idx << 1) + 1]]);
     }
     let value = initTernaryTreeMapFromArray(dict);
-    return new CalcitMap(value);
+    let ret = new CalcitMap(value);
+    this.cachedTreeMapRef = ret;
+    return ret;
   }
   len() {
     return this.chunk.length >> 1;
