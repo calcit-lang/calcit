@@ -123,6 +123,8 @@ export class CalcitSliceList {
   start: number;
   end: number;
   cachedHash: Hash;
+  /** reference to converted list */
+  cachedTreeListRef: CalcitList;
   constructor(value: Array<CalcitValue>) {
     if (value == null) {
       value = []; // dirty, better handled from outside
@@ -134,7 +136,12 @@ export class CalcitSliceList {
     this.end = value.length;
   }
   turnListMode(): CalcitList {
-    return new CalcitList(initTernaryTreeListFromRange(this.value, this.start, this.end));
+    if (this.cachedTreeListRef != null) {
+      return this.cachedTreeListRef;
+    }
+    let ret = new CalcitList(initTernaryTreeListFromRange(this.value, this.start, this.end));
+    this.cachedTreeListRef = ret;
+    return ret;
   }
   len() {
     return this.end - this.start;
