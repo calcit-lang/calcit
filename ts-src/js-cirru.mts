@@ -217,11 +217,11 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
       return parseFloat(x);
     }
     // strict behavior as Rust semantics
-    throw new Error("unknown syntax for EDN");
+    throw new Error(`unknown syntax for EDN: ${x}`);
   }
   if (x instanceof Array) {
     if (x.length === 0) {
-      throw new Error("Cannot be empty");
+      throw new Error("Cannot be empty form");
     }
     if (x[0] === "{}") {
       let result: Array<CalcitValue> = [];
@@ -234,10 +234,10 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
           if (pair.length === 2) {
             result.push(extract_cirru_edn(pair[0], options), extract_cirru_edn(pair[1], options));
           } else {
-            throw new Error(`Expected a pair, got size ${pair.length}`);
+            throw new Error(`Expected a pair, got: ${pair}`);
           }
         } else {
-          throw new Error(`Expected pairs for map, got ${pair}`);
+          throw new Error(`Expected pairs for map, got: ${pair}`);
         }
       });
       return new CalcitSliceMap(result);
@@ -245,7 +245,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
     if (x[0] === "%{}") {
       let name = x[1];
       if (typeof name != "string") {
-        throw new Error("Expected string for record name");
+        throw new Error(`Expected string for record name, got: ${name}`);
       }
       // put to entries first, sort and then...
       let entries: Array<[CalcitTag, CalcitValue]> = [];
@@ -259,13 +259,13 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
             if (typeof pair[0] === "string") {
               entries.push([extractFieldTag(pair[0]), extract_cirru_edn(pair[1], options)]);
             } else {
-              throw new Error("Expected string as field");
+              throw new Error(`Expected string as field, got: ${pair}`);
             }
           } else {
-            throw new Error("Expected pair of size 2");
+            throw new Error(`Expected pair of size 2, got: ${pair}`);
           }
         } else {
-          throw new Error("Expected pairs for reocrd");
+          throw new Error(`Expected pairs for reocrd, got: ${pair}`);
         }
       });
       entries.sort((a, b) => {
@@ -318,13 +318,13 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
     }
     if (x[0] === "quote") {
       if (x.length !== 2) {
-        throw new Error("quote expects 1 argument");
+        throw new Error(`quote expects 1 argument, got: ${x}`);
       }
       return new CalcitCirruQuote(x[1]);
     }
     if (x[0] === "::") {
       if (x.length < 2) {
-        throw new Error("tuple expects at least 1 value1");
+        throw new Error(`tuple expects at least 1 value, got: ${x}`);
       }
       return new CalcitTuple(
         extract_cirru_edn(x[1], options),
@@ -337,7 +337,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
     }
   }
   console.error(x);
-  throw new Error("Unexpected data from cirru-edn");
+  throw new Error(`Unexpected data from EDN: ${x}`);
 };
 
 export let format_cirru_edn = (data: CalcitValue, useInline: boolean = true): string => {
