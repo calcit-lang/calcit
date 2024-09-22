@@ -157,6 +157,8 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
     // let msg = format!("module {} is at version {:?}, but required {}", folder, current_head, version);
     // println!("  {}", msg.yellow());
 
+    // load latest tags
+    git_repo.fetch()?;
     // try if tag or branch exists in git history
     let has_target = git_repo.check_branch_or_tag(&version)?;
     if !has_target {
