@@ -20,6 +20,7 @@ use std::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PackageDeps {
+  calcit_version: Option<String>,
   dependencies: HashMap<Arc<str>, Arc<str>>,
 }
 
@@ -27,8 +28,8 @@ impl TryFrom<Edn> for PackageDeps {
   type Error = String;
 
   fn try_from(value: Edn) -> Result<Self, Self::Error> {
-    let deps = value.view_map()?.get_or_nil("dependencies");
-    let dict = deps.view_map()?.0;
+    let deps_info = value.view_map()?;
+    let dict = deps_info.get_or_nil("dependencies").view_map()?.0;
 
     let mut deps: HashMap<Arc<str>, Arc<str>> = HashMap::new();
     for (k, v) in &dict {
@@ -41,7 +42,15 @@ impl TryFrom<Edn> for PackageDeps {
         }
       }
     }
-    Ok(PackageDeps { dependencies: deps })
+    let expected_version: Option<String> = match deps_info.get_or_nil("calcit-version") {
+      Edn::Str(s) => Some((*s).to_owned()),
+      Edn::Nil => None,
+      v => return Err(format!("invalid calcit-version: {}", v)),
+    };
+    Ok(PackageDeps {
+      calcit_version: expected_version,
+      dependencies: deps,
+    })
   }
 }
 
@@ -56,6 +65,15 @@ pub fn main() -> Result<(), String> {
     let content = fs::read_to_string(&cli_args.input).map_err(|e| e.to_string())?;
     let parsed = cirru_edn::parse(&content)?;
     let deps: PackageDeps = parsed.try_into()?;
+
+    if let Some(version) = &deps.calcit_version {
+      if version != CALCIT_VERSION {
+        eprintln!(
+          "[Warn] calcit version mismatch, deps.cirru expected {}, running {}",
+          CALCIT_VERSION, version
+        );
+      }
+    }
 
     if cli_args.subcommand.is_some() {
       outdated_tags(deps.dependencies)?;
