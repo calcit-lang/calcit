@@ -130,7 +130,7 @@ pub fn write_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(_) => Ok(Calcit::Nil),
       Err(e) => CalcitErr::err_str(format!("write-file failed, {e}")),
     },
-    (Some(a), Some(b)) => CalcitErr::err_str(format!("write-file expected 3 strings, got: {a} {b}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(format!("write-file expected 2 strings, got: {a} {b}")),
     (a, b) => CalcitErr::err_str(format!("write-file expected 2 strings, got: {a:?} {b:?}")),
   }
 }
