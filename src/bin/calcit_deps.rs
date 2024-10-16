@@ -178,7 +178,7 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
     // load latest tags
     git_repo.fetch()?;
     // try if tag or branch exists in git history
-    let has_target = git_repo.check_branch_or_tag(&version)?;
+    let has_target = git_repo.check_branch_or_tag(&version, folder)?;
     if !has_target {
       dim_println(format!("↺ fetching {} at version {}", gray(&org_and_folder), gray(&version)));
       git_repo.fetch()?;
