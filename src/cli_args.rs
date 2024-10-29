@@ -53,12 +53,20 @@ pub enum CalcitCommand {
 /// emit JavaScript rather than interpreting
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "js")]
-pub struct EmitJsCommand {}
+pub struct EmitJsCommand {
+  /// skip watching mode, just run once
+  #[argh(switch, short = '1')]
+  pub once: bool,
+}
 
 /// emit Cirru EDN representation of program to program-ir.cirru
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "ir")]
-pub struct EmitIrCommand {}
+pub struct EmitIrCommand {
+  /// skip watching mode, just run once
+  #[argh(switch, short = '1')]
+  pub once: bool,
+}
 
 /// run program
 #[derive(FromArgs, PartialEq, Debug, Clone)]
