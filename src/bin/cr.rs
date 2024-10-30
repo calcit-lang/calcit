@@ -140,12 +140,20 @@ fn main() -> Result<(), String> {
   )
   .map_err(|e| e.msg)?;
 
-  let task = if let Some(CalcitCommand::EmitJs(_)) = cli_args.subcommand {
+  let task = if let Some(CalcitCommand::EmitJs(js_options)) = &cli_args.subcommand {
+    if js_options.once {
+      // redundant config, during watching mode, emit once
+      eval_once = true;
+    }
     if cli_args.skip_arity_check {
       codegen::set_code_gen_skip_arity_check(true);
     }
     run_codegen(&entries, &cli_args.emit_path, false)
-  } else if let Some(CalcitCommand::EmitIr(_)) = cli_args.subcommand {
+  } else if let Some(CalcitCommand::EmitIr(ir_options)) = &cli_args.subcommand {
+    if ir_options.once {
+      // redundant config, during watching mode, emit once
+      eval_once = true;
+    }
     run_codegen(&entries, &cli_args.emit_path, true)
   } else {
     let started_time = Instant::now();
