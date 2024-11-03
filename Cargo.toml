@@ -1,6 +1,6 @@
 [package]
 name = "calcit"
-version = "0.9.5"
+version = "0.9.6"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -9,12 +9,7 @@ homepage = "http://calcit-lang.org"
 documentation = "https://docs.rs/crate/calcit/"
 repository = "https://github.com/calcit-lang/calcit.rs"
 readme = "README.md"
-exclude = [
-  "lib/*",
-  "calcit/*",
-  "js-out/*",
-  "scripts/*"
-]
+exclude = ["lib/*", "calcit/*", "js-out/*", "scripts/*"]
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -27,8 +22,8 @@ cirru_parser = "0.1.31"
 argh = "0.1.12"
 dirs = "5.0.1"
 lazy_static = "1.5.0"
-notify = "6.1.1"
-notify-debouncer-mini = "0.4.1"
+notify = "7.0.0"
+notify-debouncer-mini = "0.5.0"
 walkdir = "2.5.0"
 hex = "0.4.3"
 rpds = "1.1.0"
@@ -40,7 +35,7 @@ strum_macros = "0.25"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libloading = "0.8.5"
-ctrlc = "3.4.4"
+ctrlc = "3.4.5"
 
 [lib]
 name = "calcit"

@@ -87,9 +87,7 @@ impl GitRepo {
         let ret = self.run_command(&["show-ref", "--verify", &format!("refs/heads/{}", version)]);
         match ret {
           Ok(_) => Ok(true),
-          Err(_) => {
-            return Err(format!("failed to check branch or tag `{}` in `{}`", version, folder));
-          }
+          Err(_) => Err(format!("failed to check branch or tag `{}` in `{}`", version, folder)),
         }
       }
     }
