@@ -86,7 +86,6 @@ dependencies = [
  "dirs",
  "hex",
  "im_ternary_tree",
- "lazy_static",
  "libloading",
  "notify",
  "notify-debouncer-mini",

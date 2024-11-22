@@ -17,17 +17,18 @@ use crate::{
 
 use cirru_parser::{Cirru, CirruWriterOptions};
 
-use std::hash::{Hash, Hasher};
 use std::sync::atomic::AtomicUsize;
 use std::sync::{atomic, Arc};
 use std::{cmp::Ordering, collections::HashMap};
 use std::{collections::hash_map::DefaultHasher, sync::Mutex};
+use std::{
+  hash::{Hash, Hasher},
+  sync::LazyLock,
+};
 
 static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 
-lazy_static! {
-  pub(crate) static ref NS_SYMBOL_DICT: Mutex<HashMap<Arc<str>, usize>> = Mutex::new(HashMap::new());
-}
+pub(crate) static NS_SYMBOL_DICT: LazyLock<Mutex<HashMap<Arc<str>, usize>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {

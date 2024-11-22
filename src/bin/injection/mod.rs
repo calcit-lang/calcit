@@ -1,6 +1,7 @@
 use crate::runner;
 use cirru_edn::Edn;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
 
 use calcit::{
@@ -19,10 +20,8 @@ type EdnFfiFn = fn(
   finish: Arc<dyn FnOnce()>,
 ) -> Result<Edn, String>;
 
-lazy_static::lazy_static! {
-  /// lazily cache dylibs, in case Linux drops memory of libraries
-  static ref DYLIBS: std::sync::Mutex<std::collections::HashMap<String, Arc<libloading::Library>>> = std::sync::Mutex::new(std::collections::HashMap::new());
-}
+/// lazily cache dylibs, in case Linux drops memory of libraries
+static DYLIBS: LazyLock<Mutex<HashMap<String, Arc<libloading::Library>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// load dylib, cache it
 fn load_dylib(lib_name: &str) -> Arc<libloading::Library> {

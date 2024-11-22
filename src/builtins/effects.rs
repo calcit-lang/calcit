@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::process::exit;
+use std::sync::LazyLock;
 use std::sync::RwLock;
 use std::time::Instant;
 
@@ -16,10 +17,8 @@ pub enum CliRunningMode {
   Ir,
 }
 
-lazy_static! {
-  static ref STARTED_INSTANT: RwLock<Instant> = RwLock::new(Instant::now());
-  static ref CLI_RUNNING_MODE: RwLock<CliRunningMode> = RwLock::new(CliRunningMode::Eval);
-}
+static STARTED_INSTANT: LazyLock<RwLock<Instant>> = LazyLock::new(|| RwLock::new(Instant::now()));
+static CLI_RUNNING_MODE: LazyLock<RwLock<CliRunningMode>> = LazyLock::new(|| RwLock::new(CliRunningMode::Eval));
 
 pub fn raise(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let mut s = String::from("");

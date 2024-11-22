@@ -1,11 +1,9 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::program::EntryBook;
 
-lazy_static! {
-  /// names for local variables
-  static ref LOCAL_NAMES: RwLock<EntryBook<()>> = RwLock::new(EntryBook::default());
-}
+/// names for local variables
+static LOCAL_NAMES: LazyLock<RwLock<EntryBook<()>>> = LazyLock::new(|| RwLock::new(EntryBook::default()));
 
 use super::CalcitSymbolInfo;
 

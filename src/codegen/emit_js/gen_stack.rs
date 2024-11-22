@@ -1,11 +1,9 @@
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 use crate::calcit::Calcit;
 use crate::call_stack::{CalcitStack, CallStackList, StackKind};
 
-lazy_static! {
-  static ref CALL_STACK: Mutex<rpds::ListSync<CalcitStack>> = Mutex::new(rpds::List::new_sync());
-}
+static CALL_STACK: LazyLock<Mutex<rpds::ListSync<CalcitStack>>> = LazyLock::new(|| Mutex::new(rpds::List::new_sync()));
 
 pub fn push_call_stack(ns: &str, def: &str, kind: StackKind, code: Calcit, args: &[Calcit]) {
   let mut stack = CALL_STACK.lock().expect("open call stack");

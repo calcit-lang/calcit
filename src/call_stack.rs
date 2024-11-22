@@ -10,9 +10,7 @@ use std::hash::Hash;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-lazy_static! {
-  static ref TRACK_STACK: AtomicBool = AtomicBool::new(true);
-}
+static TRACK_STACK: AtomicBool = AtomicBool::new(true);
 
 /// control global stack usage
 pub fn set_using_stack(b: bool) {

@@ -11,7 +11,7 @@ mod strings;
 pub mod syntax;
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::calcit::{Calcit, CalcitErr, CalcitList, CalcitProc, CalcitScope, CalcitSyntax};
 use crate::call_stack::{using_stack, CallStackList};
@@ -22,9 +22,7 @@ pub(crate) use refs::ValueAndListeners;
 pub type FnType = fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
 pub type SyntaxType = fn(expr: &TernaryTreeList<Calcit>, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
-lazy_static! {
-  pub(crate) static ref IMPORTED_PROCS: RwLock<HashMap<Arc<str>, FnType>> = RwLock::new(HashMap::new());
-}
+pub(crate) static IMPORTED_PROCS: LazyLock<RwLock<HashMap<Arc<str>, FnType>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
 
 pub fn is_proc_name(s: &str) -> bool {
   let builtin = s.parse::<CalcitProc>();

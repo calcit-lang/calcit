@@ -2,6 +2,7 @@ mod entry_book;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::sync::RwLock;
 
 use cirru_parser::Cirru;
@@ -38,12 +39,10 @@ pub enum ImportRule {
 
 pub type ProgramCodeData = HashMap<Arc<str>, ProgramFileData>;
 
-lazy_static! {
-  /// data of program running
-  static ref PROGRAM_EVALED_DATA_STATE: RwLock<ProgramEvaledData> = RwLock::new(EntryBook::default());
-  /// raw code information before program running
-  pub static ref PROGRAM_CODE_DATA: RwLock<ProgramCodeData> = RwLock::new(HashMap::new());
-}
+/// data of program running
+static PROGRAM_EVALED_DATA_STATE: LazyLock<RwLock<ProgramEvaledData>> = LazyLock::new(|| RwLock::new(EntryBook::default()));
+/// raw code information before program running
+pub static PROGRAM_CODE_DATA: LazyLock<RwLock<ProgramCodeData>> = LazyLock::new(|| RwLock::new(HashMap::new()));
 
 fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
   match nodes {
