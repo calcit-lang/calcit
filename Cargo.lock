@@ -86,7 +86,6 @@ dependencies = [
  "dirs",
  "hex",
  "im_ternary_tree",
- "lazy_static",
  "libloading",
  "notify",
  "notify-debouncer-mini",
@@ -110,15 +109,14 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "cirru_edn"
-version = "0.6.11"
+version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "452dd17601be10c1007c43db6e39cc53b28d2be3cd4a82b01d3f5ac70b8afc05"
+checksum = "ec5524d9831b9c47caddf756a4eed85d8b42790f9d66f5cf3fbd2e4fec3dc628"
 dependencies = [
  "bincode",
  "cirru_parser",
  "cjk",
  "hex",
- "lazy_static",
 ]
 
 [[package]]

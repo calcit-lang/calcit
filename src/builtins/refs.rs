@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use cirru_edn::EdnTag;
 
@@ -13,9 +13,7 @@ use crate::{call_stack::CallStackList, runner};
 
 pub(crate) type ValueAndListeners = (Calcit, HashMap<EdnTag, Calcit>);
 
-lazy_static! {
-  static ref REFS_DICT: Mutex<HashMap<Arc<str>, Arc<Mutex<ValueAndListeners>>>> = Mutex::new(HashMap::new());
-}
+static REFS_DICT: LazyLock<Mutex<HashMap<Arc<str>, Arc<Mutex<ValueAndListeners>>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack: &CallStackList) -> Result<(), CalcitErr> {
   let (listeners, prev) = {
