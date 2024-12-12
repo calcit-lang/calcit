@@ -140,11 +140,8 @@ where
   pub fn to_hashmap(&self) -> std::collections::HashMap<Arc<str>, T> {
     let mut res = std::collections::HashMap::with_capacity(self.0.len());
     for piece in &self.0 {
-      match &piece.value {
-        Some(v) => {
-          res.insert(piece.key.to_owned(), v.to_owned());
-        }
-        None => {}
+      if let Some(v) = &piece.value {
+        res.insert(piece.key.to_owned(), v.to_owned());
       }
     }
     res

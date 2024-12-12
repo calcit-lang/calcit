@@ -70,7 +70,7 @@ pub fn main() -> Result<(), String> {
       if version != CALCIT_VERSION {
         eprintln!(
           "[Warn] calcit version mismatch, deps.cirru expected {}, running {}",
-          CALCIT_VERSION, version
+          version, CALCIT_VERSION,
         );
       }
     }
