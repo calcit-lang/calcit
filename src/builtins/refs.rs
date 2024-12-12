@@ -13,7 +13,9 @@ use crate::{call_stack::CallStackList, runner};
 
 pub(crate) type ValueAndListeners = (Calcit, HashMap<EdnTag, Calcit>);
 
-static REFS_DICT: LazyLock<Mutex<HashMap<Arc<str>, Arc<Mutex<ValueAndListeners>>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+type RefListeners = HashMap<Arc<str>, Arc<Mutex<ValueAndListeners>>>;
+
+static REFS_DICT: LazyLock<Mutex<RefListeners>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack: &CallStackList) -> Result<(), CalcitErr> {
   let (listeners, prev) = {
