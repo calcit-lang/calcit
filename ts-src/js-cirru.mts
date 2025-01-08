@@ -6,9 +6,11 @@ import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitRecord } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
-import { CalcitTag, CalcitSymbol, CalcitRecur, CalcitRef, newTag } from "./calcit-data.mjs";
+import { CalcitTag, CalcitSymbol, CalcitRecur, newTag } from "./calcit-data.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitRef } from "./js-ref.mjs";
 import { deepEqual } from "@calcit/ternary-tree/lib/utils.mjs";
+import { atom } from "./js-ref.mjs";
 
 type CirruEdnFormat = string | CirruEdnFormat[];
 
@@ -164,6 +166,9 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     } else {
       throw new Error(`Unsupported tag for EDN: ${x.tag}`);
     }
+  }
+  if (x instanceof CalcitRef) {
+    return ["atom", to_cirru_edn(x.value)];
   }
   console.error(x);
   throw new Error("Unexpected data to to-cirru-edn");
@@ -334,6 +339,12 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
           .map((x) => extract_cirru_edn(x, options)),
         undefined
       );
+    }
+    if (x[0] === "atom") {
+      if (x.length !== 2) {
+        throw new Error(`atom expects 1 argument, got: ${x}`);
+      }
+      return atom(extract_cirru_edn(x[1], options));
     }
   }
   console.error(x);

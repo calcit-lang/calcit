@@ -17,7 +17,7 @@ use crate::calcit::{Calcit, CalcitErr, CalcitList, CalcitProc, CalcitScope, Calc
 use crate::call_stack::{using_stack, CallStackList};
 
 use im_ternary_tree::TernaryTreeList;
-pub(crate) use refs::ValueAndListeners;
+pub(crate) use refs::{quick_build_atom, ValueAndListeners};
 
 pub type FnType = fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
 pub type SyntaxType = fn(expr: &TernaryTreeList<Calcit>, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
