@@ -14,6 +14,7 @@
               test-edn-comment
               inside-eval:
                 test-symbol
+              test-atom
         |test-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-edn ()
@@ -126,6 +127,17 @@
                   code $ quote $ + 1 2
                 assert= code
                   eval $ &data-to-code code
+        |test-atom $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-atom ()
+              log-title "|Testing atom to edn"
+              let
+                  a $ parse-cirru-edn "|atom 1"
+                println "|Check a" a
+                assert= true $ ref? a
+                assert= 1 $ deref a
+                assert= "|atom 1"
+                  trim $ format-cirru-edn a
 
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote

@@ -1,5 +1,6 @@
 import { CalcitValue, isLiteral } from "./js-primes.mjs";
-import { CalcitRef, CalcitSymbol, CalcitTag } from "./calcit-data.mjs";
+import { CalcitSymbol, CalcitTag } from "./calcit-data.mjs";
+import { CalcitRef } from "./js-ref.mjs";
 
 import { CalcitRecord } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";

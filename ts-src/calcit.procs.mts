@@ -7,21 +7,9 @@ import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
 
 import { CalcitValue } from "./js-primes.mjs";
-import {
-  CalcitSymbol,
-  CalcitTag,
-  CalcitRef,
-  CalcitFn,
-  CalcitRecur,
-  newTag,
-  refsRegistry,
-  toString,
-  getStringName,
-  to_js_data,
-  _$n__$e_,
-  hashFunction,
-} from "./calcit-data.mjs";
+import { CalcitSymbol, CalcitTag, CalcitFn, CalcitRecur, newTag, refsRegistry, toString, getStringName, _$n__$e_, hashFunction } from "./calcit-data.mjs";
 
+import { CalcitRef } from "./js-ref.mjs";
 import { fieldsEqual, CalcitRecord } from "./js-record.mjs";
 
 export * from "./calcit-data.mjs";
@@ -148,13 +136,7 @@ export let defatom = (path: string, x: CalcitValue): CalcitValue => {
   return v;
 };
 
-var atomCounter = 0;
-
-export let atom = (x: CalcitValue): CalcitValue => {
-  atomCounter = atomCounter + 1;
-  let v = new CalcitRef(x, `atom-${atomCounter}`);
-  return v;
-};
+export { atom } from "./js-ref.mjs";
 
 export let peekDefatom = (path: string): CalcitRef => {
   return refsRegistry.get(path);

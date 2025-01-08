@@ -117,18 +117,21 @@ static ATOM_ID_GEN: AtomicUsize = AtomicUsize::new(0);
 /// proc
 pub fn atom(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
-    Some(value) => {
-      let atom_idx = ATOM_ID_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-      let path: String = format!("atom-{atom_idx}");
-
-      let path_info: Arc<str> = path.into();
-      // println!("atom {:?}", path_info);
-
-      let pair_value = Arc::new(Mutex::new((value.to_owned(), HashMap::new())));
-      Ok(Calcit::Ref(path_info, pair_value))
-    }
-    _ => CalcitErr::err_str("atom expected 2 nodes"),
+    Some(value) => Ok(quick_build_atom(value.to_owned())),
+    _ => CalcitErr::err_str("atom expected 1 node"),
   }
+}
+
+/// this is a internal helper for `atom`, not exposed to Calcit
+pub fn quick_build_atom(v: Calcit) -> Calcit {
+  let atom_idx = ATOM_ID_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+  let path: String = format!("atom-{atom_idx}");
+
+  let path_info: Arc<str> = path.into();
+  // println!("atom {:?}", path_info);
+
+  let pair_value = Arc::new(Mutex::new((v, HashMap::new())));
+  Calcit::Ref(path_info, pair_value)
 }
 
 /// previously `deref`, but `deref` now turned into a function calling `&atom:deref`
