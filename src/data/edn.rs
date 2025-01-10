@@ -99,6 +99,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       MethodKind::InvokeNativeOptional => Ok(Edn::Symbol(format!(".?!{name}").into())),
     },
     Calcit::AnyRef(r) => Ok(Edn::AnyRef(r.to_owned())),
+    Calcit::Ref(_p, pair) => {
+      let pair = pair.lock().expect("read ref");
+      Ok(Edn::Atom(Box::new(calcit_to_edn(&pair.0)?)))
+    }
     a => Err(format!("not able to generate EDN: {a:?}")), // TODO more types to handle
   }
 }
@@ -183,6 +187,7 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     }
     Edn::Buffer(buf) => Calcit::Buffer(buf.to_owned()),
     Edn::AnyRef(r) => Calcit::AnyRef(r.to_owned()),
+    Edn::Atom(a) => crate::builtins::quick_build_atom(edn_to_calcit(a, options)),
   }
 }
 /// find a record field in options

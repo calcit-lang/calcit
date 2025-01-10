@@ -12,6 +12,7 @@ import { CalcitSet, overwriteSetComparator } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 import { CirruWriterNode } from "@cirru/writer.ts";
+import { CalcitRef } from "./js-ref.mjs";
 
 // we have to inject cache in a dirty way in some cases
 const calcit_dirty_hash_key = "_calcit_cached_hash";
@@ -99,22 +100,6 @@ export let tipNestedCalcitData = (x: CalcitValue): string => {
   }
   return x.toString();
 };
-
-export class CalcitRef {
-  value: CalcitValue;
-  path: string;
-  listeners: Map<CalcitValue, CalcitFn>;
-  cachedHash: Hash;
-  constructor(x: CalcitValue, path: string) {
-    this.value = x;
-    this.path = path;
-    this.listeners = new Map();
-    this.cachedHash = null;
-  }
-  toString(): string {
-    return `(&ref ${this.value.toString()})`;
-  }
-}
 
 export type CalcitFn = (...xs: CalcitValue[]) => CalcitValue;
 

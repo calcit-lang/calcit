@@ -1,4 +1,5 @@
-import { CalcitTag, CalcitSymbol, CalcitRef, CalcitFn, CalcitRecur } from "./calcit-data.mjs";
+import { CalcitTag, CalcitSymbol, CalcitFn, CalcitRecur } from "./calcit-data.mjs";
+import { CalcitRef } from "./js-ref.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitRecord } from "./js-record.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
