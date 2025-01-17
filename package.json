@@ -1,10 +1,10 @@
 {
   "name": "@calcit/procs",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "main": "./lib/calcit.procs.mjs",
   "devDependencies": {
-    "@types/node": "^22.10.5",
-    "typescript": "^5.7.2"
+    "@types/node": "^22.10.7",
+    "typescript": "^5.7.3"
   },
   "scripts": {
     "compile": "rm -rfv lib/* && tsc",

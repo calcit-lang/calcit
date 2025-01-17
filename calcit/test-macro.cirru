@@ -242,6 +242,10 @@
                     -> a (b c) (d e f)
                   quote $ d (b a c) e f
                 assert=
+                  macroexpand $ quote
+                    thread-first a (b c) (d e f)
+                  quote $ -> a (b c) (d e f)
+                assert=
                   macroexpand-all $ quote
                     <- (b c) (d e f) a
                   quote $ b (d a e f) c
@@ -261,6 +265,10 @@
                     ->> a (b c) (d e f)
                   quote $ d e f (b c a)
                 assert=
+                  macroexpand $ quote
+                    thread-last a (b c) (d e f)
+                  quote $ ->> a (b c) (d e f)
+                assert=
                   macroexpand $ quote (->% a)
                   quote a
                 assert=
@@ -270,6 +278,10 @@
                       % a
                       % $ + % 1
                     * % 2
+                assert=
+                  macroexpand $ quote
+                    thread-as a (+ % 1) (* % 2)
+                  quote $ ->% a (+ % 1) (* % 2)
               assert= 35 $ ->% 3 (+ % 4) (* % 5)
               assert= 36 $ ->% 3 (+ % %) (* % %)
               assert= 18 $ %<- (+ % %) (* % %) 3
