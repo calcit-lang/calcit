@@ -491,6 +491,10 @@
                         &list:rest x0
                       , & $ &list:rest xs
                     recur ([] x0 base) & $ &list:rest xs
+        |thread-first $ %{} :CodeEntry (:doc "|a alias for `->`")
+          :code $ quote
+            defmacro thread-first (& xs)
+              quasiquote $ -> ~@xs
         |->% $ %{} :CodeEntry (:doc "|pass value as `%` into several expressions")
           :code $ quote
             defmacro ->% (base & xs)
@@ -501,6 +505,10 @@
                     map (butlast xs)
                       defn %->% (x) ([] '% x)
                 quasiquote $ let ~pairs ~tail
+        |thread-as $ %{} :CodeEntry (:doc "|a alias for `->%`")
+          :code $ quote
+            defmacro thread-as (& xs)
+              quasiquote $ ->% ~@xs
         |->> $ %{} :CodeEntry (:doc "|thread macro passing value at end of each expression")
           :code $ quote
             defmacro ->> (base & xs)
@@ -510,6 +518,10 @@
                   if (list? x0)
                     &call-spread recur (append x0 base) & $ &list:rest xs
                     &call-spread recur ([] x0 base) & $ &list:rest xs
+        |thread-last $ %{} :CodeEntry (:doc "|a alias for `->>`")
+          :code $ quote
+            defmacro thread-last (& xs)
+              quasiquote $ ->> ~@xs
         |/ $ %{} :CodeEntry (:doc |dividing)
           :code $ quote
             defn / (x & ys)

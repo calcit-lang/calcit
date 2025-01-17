@@ -20,7 +20,7 @@ cirru_edn = "0.6.13"
 cirru_parser = "0.1.31"
 # cirru_parser = { path = "/Users/chenyong/repo/cirru/parser.rs" }
 argh = "0.1.13"
-dirs = "5.0.1"
+dirs = "6.0.0"
 notify = "7.0.0"
 notify-debouncer-mini = "0.5.0"
 walkdir = "2.5.0"
