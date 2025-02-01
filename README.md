@@ -43,21 +43,8 @@ Snippets evaling:
 
 ```bash
 cr eval 'range 100'
-```
 
-multi-lines snippet:
-
-```bash
-cr eval '
-
-println "|a demo"
-
-->
-  range 100
-  map $ fn (x)
-    * x x
-
-'
+cr eval 'thread-first 100 range (map $ \ * % %)'
 ```
 
 Run with a [compact.cirru](https://github.com/calcit-lang/lilac/blob/main/compact.cirru):
@@ -65,19 +52,21 @@ Run with a [compact.cirru](https://github.com/calcit-lang/lilac/blob/main/compac
 ```bash
 cr compact.cirru -1 # run only once
 
-cr compact.cirru # watch mode enabled by default
+cr -1 # by default, it picks `compact.cirru`
+
+cr # watch mode enabled by default
 ```
 
 By default Calcit reads `:init-fn` and `:reload-fn` inside `compact.cirru` configs. You may also specify functions,
 
 ```bash
-cr compact.cirru --init-fn='app.main/main!' --reload-fn='app.main/reload!'
+cr --init-fn='app.main/main!' --reload-fn='app.main/reload!'
 ```
 
 and even configure `:entries` in `compact.cirru`:
 
 ```bash
-cr compact.cirru --entry server
+cr --entry server
 ```
 
 ### JavaScript codegen
@@ -85,15 +74,15 @@ cr compact.cirru --entry server
 It compiles to JavaScript and runs in consistet semantics. However it might require a lot of JavaScript interop.
 
 ```bash
-cr compact.cirru js # compile to js
-cr compact.cirru js --emit-path=out/ # compile to js and save in `out/`
+cr js # compile to js, also picks `compact.cirru` by default
+cr js --emit-path=out/ # compile to js and save in `out/`
 ```
 
 By default, js code is generated to `js-out/`. You will need Vite or Node to run it, from an entry file:
 
 ```js
 import { main_$x_, reload_$x_ } from "./js-out/app.main.mjs";
-main_$x_();
+main_$x_(); // which corresponds to `main!` function in calcit
 ```
 
 ### Calcit Editor & Bundler
@@ -111,6 +100,7 @@ Read more in [Respo Calcit Workflow](https://github.com/calcit-lang/respo-calcit
 
 ```cirru
 {}
+  :calcit-version |0.9.8
   :dependencies $ {}
     |calcit-lang/memof |0.0.11
     |calcit-lang/lilac |main
@@ -118,7 +108,9 @@ Read more in [Respo Calcit Workflow](https://github.com/calcit-lang/respo-calcit
 
 Run `caps` to download. Sources are downloaded into `~/.config/calcit/modules/`. If a module contains `build.sh`, it will be executed mostly for compiling Rust dylibs.
 
-To load modules, use `:modules` configuration in `calcit.cirru` and `compact.cirru`:
+`:calcit-version` helps in check version, and provides hints in [CI](https://github.com/calcit-lang/setup-cr) environment.
+
+To load modules, use `:modules` configuration and `compact.cirru`(which normally generated from `calcit.cirru`):
 
 ```cirru
 :configs $ {}
@@ -128,7 +120,7 @@ To load modules, use `:modules` configuration in `calcit.cirru` and `compact.cir
 Paths defined in `:modules` field are just loaded as files from `~/.config/calcit/modules/`,
 i.e. `~/.config/calcit/modules/memof/compact.cirru`.
 
-Modules that ends with `/`s are automatically suffixed `compact.cirru` since it's the default filename.
+Modules that ends with `/`s are automatically suffixed `compact.cirru` since it's the default entry.
 
 ### Development
 
