@@ -58,6 +58,22 @@ pub fn main() -> Result<(), String> {
   // parse deps.cirru
 
   let cli_args: TopLevelCaps = argh::from_env();
+  if let Some(SubCommand::Download(dep_names)) = &cli_args.subcommand {
+    if dep_names.packages.is_empty() {
+      eprintln!("Error: no packages to download!");
+      std::process::exit(1);
+    }
+    let dict: HashMap<Arc<str>, Arc<str>> = dep_names
+      .packages
+      .iter()
+      .map(|s| {
+        let (org_and_folder, version) = s.split_once('@').ok_or("invalid name")?;
+        Ok((org_and_folder.to_owned().into(), version.to_owned().into()))
+      })
+      .collect::<Result<_, String>>()?;
+    download_deps(dict, cli_args)?;
+    return Ok(());
+  }
 
   // if file exists
 
@@ -75,10 +91,16 @@ pub fn main() -> Result<(), String> {
       }
     }
 
-    if cli_args.subcommand.is_some() {
-      outdated_tags(deps.dependencies)?;
-    } else {
-      download_deps(deps.dependencies, cli_args)?;
+    match &cli_args.subcommand {
+      Some(SubCommand::Outdated(_)) => {
+        outdated_tags(deps.dependencies)?;
+      }
+      Some(SubCommand::Download(dep_names)) => {
+        unreachable!("already handled: {:?}", dep_names);
+      }
+      None => {
+        download_deps(deps.dependencies, cli_args)?;
+      }
     }
 
     Ok(())
@@ -259,12 +281,22 @@ struct TopLevelCaps {
 enum SubCommand {
   /// show outdated versions
   Outdated(OutdatedCaps),
+  Download(DownloadCaps),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// show outdated versions
 #[argh(subcommand, name = "outdated")]
 struct OutdatedCaps {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// download named packages with org/repo@branch
+#[argh(subcommand, name = "download")]
+struct DownloadCaps {
+  /// packages to download, in format of `org/repo@branch`
+  #[argh(positional)]
+  packages: Vec<String>,
+}
 
 fn dim_println(msg: String) {
   if msg.chars().nth(1) == Some(' ') {
