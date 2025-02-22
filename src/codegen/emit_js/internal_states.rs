@@ -5,12 +5,13 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
 
+type ProgramCache = HashMap<Arc<str>, HashSet<Arc<str>>>;
+
 // track if it's the first compilation
 static FIRST_COMPILATION: AtomicBool = AtomicBool::new(true);
 
 // caches program data for detecting incremental changes of libs
-static GLOBAL_PREVIOUS_PROGRAM_CACHES: LazyLock<RwLock<HashMap<Arc<str>, HashSet<Arc<str>>>>> =
-  LazyLock::new(|| RwLock::new(HashMap::new()));
+static GLOBAL_PREVIOUS_PROGRAM_CACHES: LazyLock<RwLock<ProgramCache>> = LazyLock::new(|| RwLock::new(HashMap::new()));
 
 pub fn lookup_prev_ns_cache(ns: &str) -> Option<HashSet<Arc<str>>> {
   let previous_program_caches = &GLOBAL_PREVIOUS_PROGRAM_CACHES.read().expect("load cache");
