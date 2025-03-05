@@ -2,7 +2,7 @@
 name = "calcit"
 version = "0.9.8"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
-edition = "2021"
+edition = "2024"
 license = "MIT"
 description = "Interpreter and js codegen for Calcit"
 homepage = "http://calcit-lang.org"

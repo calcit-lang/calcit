@@ -2,7 +2,7 @@ use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitErr, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope,
-    CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, ImportInfo, LocatedWarning, NodeLocation, RawCodeType, GENERATED_DEF,
+    CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -43,10 +43,7 @@ pub fn preprocess_ns_def(
           let resolved_code = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
           let v = if is_fn_or_macro(&resolved_code) {
-            match runner::evaluate_expr(&resolved_code, &CalcitScope::default(), ns, &next_stack) {
-              Ok(ret) => ret,
-              Err(e) => return Err(e),
-            }
+            runner::evaluate_expr(&resolved_code, &CalcitScope::default(), ns, &next_stack)?
           } else {
             Calcit::Thunk(CalcitThunk::Code {
               code: Arc::new(resolved_code),
@@ -832,27 +829,27 @@ pub fn preprocess_core_let(
           format!("invalid pair for &let binding: {a} {b}"),
           call_stack,
           a.get_location().or_else(|| b.get_location()),
-        ))
+        ));
       }
     },
     Some(a @ Calcit::List(_)) => {
       return Err(CalcitErr::use_msg_stack(
         format!("expected binding of a pair, got: {a}"),
         call_stack,
-      ))
+      ));
     }
     Some(a) => {
       return Err(CalcitErr::use_msg_stack_location(
         format!("expected binding of a pair, got: {a}"),
         call_stack,
         a.get_location(),
-      ))
+      ));
     }
     None => {
       return Err(CalcitErr::use_msg_stack(
         "expected binding of a pair, got nothing".to_owned(),
         call_stack,
-      ))
+      ));
     }
   };
   xs.push(binding);

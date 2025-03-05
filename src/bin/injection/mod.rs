@@ -268,7 +268,7 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
 }
 
 /// need to put it here since the crate does not compile for dylib
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn on_ctrl_c(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 1 {
     let cb = Arc::new(xs[0].to_owned());

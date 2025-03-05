@@ -278,14 +278,14 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
                   format!("return value in foldl-shortcut should be a bool, got: {a}"),
                   call_stack,
                   a.get_location(),
-                ))
+                ));
               }
             },
             _ => {
               return Err(CalcitErr::use_msg_stack(
                 format!("return value for foldl-shortcut should be `:: bool acc`, got: {pair}"),
                 call_stack,
-              ))
+              ));
             }
           }
         }
@@ -315,14 +315,14 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
                   format!("return value in foldl-shortcut should be a bool, got: {a}"),
                   call_stack,
                   a.get_location(),
-                ))
+                ));
               }
             },
             _ => {
               return Err(CalcitErr::use_msg_stack(
                 format!("return value for foldl-shortcut should be `:: bool acc`, got: {pair}"),
                 call_stack,
-              ))
+              ));
             }
           }
         }
@@ -356,14 +356,14 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
                   format!("return value in foldl-shortcut should be a bool, got: {a}"),
                   call_stack,
                   a.get_location(),
-                ))
+                ));
               }
             },
             _ => {
               return Err(CalcitErr::use_msg_stack(
                 format!("return value for foldl-shortcut should be `:: bool acc`, got: {pair}"),
                 call_stack,
-              ))
+              ));
             }
           }
         }
@@ -420,14 +420,14 @@ pub fn foldr_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
                   format!("return value in foldr-shortcut should be a bool, got: {a}"),
                   call_stack,
                   a.get_location(),
-                ))
+                ));
               }
             },
             _ => {
               return Err(CalcitErr::use_msg_stack(
                 format!("return value for foldr-shortcut should be `:: bool acc`, got: {pair}"),
                 call_stack,
-              ))
+              ));
             }
           }
         }
@@ -464,8 +464,8 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
           let v = runner::run_fn(&[(*a).to_owned(), (*b).to_owned()], info, call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
-            Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
             Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
+            Ok(Calcit::Number(_)) => Ordering::Equal,
             Ok(a) => {
               eprintln!("expected number from sort comparator, got: {a}");
               panic!("failed to sort")
@@ -491,8 +491,8 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
           let v = builtins::handle_proc(*proc, &[(*a).to_owned(), (*b).to_owned()], call_stack);
           match v {
             Ok(Calcit::Number(x)) if x < 0.0 => Ordering::Less,
-            Ok(Calcit::Number(x)) if x == 0.0 => Ordering::Equal,
             Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
+            Ok(Calcit::Number(_)) => Ordering::Equal,
             Ok(a) => {
               eprintln!("expected number from sort comparator, got: {a}");
               panic!("failed to sort")
