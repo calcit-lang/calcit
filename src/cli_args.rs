@@ -37,6 +37,9 @@ pub struct ToplevelCalcit {
   /// input source file, defaults to "compact.cirru"
   #[argh(positional, default = "String::from(\"compact.cirru\")")]
   pub input: String,
+  /// print version only
+  #[argh(switch)]
+  pub version: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

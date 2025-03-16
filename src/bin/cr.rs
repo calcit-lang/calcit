@@ -26,9 +26,6 @@ use calcit::{
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
 
-  // get dirty functions injected
-  #[cfg(not(target_arch = "wasm32"))]
-  injection::inject_platform_apis();
 
   let cli_args: ToplevelCalcit = argh::from_env();
 
@@ -36,6 +33,13 @@ fn main() -> Result<(), String> {
   let assets_watch = cli_args.watch_dir.to_owned();
 
   println!("calcit version: {}", cli_args::CALCIT_VERSION);
+  if cli_args.version {
+    return Ok(());
+  }
+
+  // get dirty functions injected
+  #[cfg(not(target_arch = "wasm32"))]
+  injection::inject_platform_apis();
 
   let core_snapshot = calcit::load_core_snapshot()?;
 
