@@ -1,4 +1,4 @@
-import pkg from "./package.json" assert { type: "json" };
+import pkg from "./package.json" with { type: "json" };
 
 export const calcit_version = pkg.version;
 export const calcit_package_json = pkg;
