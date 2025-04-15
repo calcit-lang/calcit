@@ -189,12 +189,23 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
   }
 }
 
-fn make_let_with_bind(left: &str, right: &str, body: &str) -> String {
-  format!("(function __bind__({left}){{\n{body} }})({right})")
+fn make_let_with_bind(left: &str, right: &str, body: &str, has_await: bool) -> String {
+  let (await_mark, async_mark) = if has_await {
+    ("await ", "async ")
+  } else {
+    ("", "")
+  };
+  format!("{await_mark}({async_mark}function __bind__({left}){{\n{body} }})({right})")
+
 }
 
-fn make_let_with_wrapper(left: &str, right: &str, body: &str) -> String {
-  format!("(function __let__(){{ \nlet {left} = {right};\n {body} }})()")
+fn make_let_with_wrapper(left: &str, right: &str, body: &str, has_await: bool) -> String {
+  let (await_mark, async_mark) = if has_await {
+    ("await ", "async ")
+  } else {
+    ("", "")
+  };
+  format!("{await_mark}({async_mark}function __let__(){{ \nlet {left} = {right};\n {body} }})()")
 }
 
 fn make_fn_wrapper(body: &str, is_async: bool) -> String {
@@ -762,9 +773,9 @@ fn gen_let_code(
 
               // first variable is using conflicted name
               let ret = if local_defs.contains(sym) {
-                make_let_with_bind(&left, &right, &body_part)
+                make_let_with_bind(&left, &right, &body_part, has_await)
               } else {
-                make_let_with_wrapper(&left, &right, &body_part)
+                make_let_with_wrapper(&left, &right, &body_part, has_await)
               };
               return match base_return_label {
                 Some(label) => Ok(format!("{label}{ret}")),
