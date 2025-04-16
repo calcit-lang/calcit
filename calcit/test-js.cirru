@@ -23,6 +23,7 @@
                 {} $ :a 1
                 wo-js-log $ {} (:a 1)
               w-js-log "|log demo"
+              test-for-await
               do true
         |test-async $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -195,6 +196,18 @@
                 assert= 1 $ js-get a |b
                 js-delete a |b
                 assert= nil $ js-get a |b
+        |test-for-await $ %{} :CodeEntry (:doc "|for await")
+          :code $ quote
+            fn ()
+              hint-fn async
+              let
+                  gen $ &raw-code "|async function* genDemo() { yield 1; yield 2; yield 3; } "
+                  ret $ js-await $ js-for-await (gen)
+                    fn (item)
+                      new js/Promise $ fn (resolve _reject)
+                        js/setTimeout $ fn ()
+                          resolve item
+                assert= 3 ret
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-js.main $ :require (|os :as os) (|assert :as assert)

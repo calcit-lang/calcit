@@ -1255,6 +1255,18 @@ export let js_array = (...xs: CalcitValue[]): CalcitValue[] => {
   return xs;
 };
 
+/** for..await alternative with function */
+export let js_for_await = async (stream: AsyncIterableIterator<CalcitValue>, f: (v: CalcitValue) => Promise<CalcitValue>) => {
+  if (typeof f !== "function") {
+    throw new Error(`Expected function for: ${f}`);
+  }
+  let ret = null;
+  for await (let item of stream) {
+    ret = await f(item);
+  }
+  return ret
+}
+
 export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> => {
   if (xs.length % 2 !== 0) {
     throw new Error("&js-object expects even number of arguments");

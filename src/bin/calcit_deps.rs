@@ -29,6 +29,7 @@ impl TryFrom<Edn> for PackageDeps {
 
   fn try_from(value: Edn) -> Result<Self, Self::Error> {
     let deps_info = value.view_map()?;
+    #[allow(clippy::mutable_key_type)]
     let dict = deps_info.get_or_nil("dependencies").view_map()?.0;
 
     let mut deps: HashMap<Arc<str>, Arc<str>> = HashMap::new();
