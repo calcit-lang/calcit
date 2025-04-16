@@ -100,7 +100,7 @@ Read more in [Respo Calcit Workflow](https://github.com/calcit-lang/respo-calcit
 
 ```cirru
 {}
-  :calcit-version |0.9.10
+  :calcit-version |0.9.11
   :dependencies $ {}
     |calcit-lang/memof |0.0.11
     |calcit-lang/lilac |main

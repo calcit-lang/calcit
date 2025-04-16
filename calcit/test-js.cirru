@@ -24,6 +24,7 @@
                 wo-js-log $ {} (:a 1)
               w-js-log "|log demo"
               test-for-await
+              test-case-async
               do true
         |test-async $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -208,6 +209,21 @@
                         js/setTimeout $ fn ()
                           resolve item
                 assert= 3 ret
+        |test-case-async $ %{} :CodeEntry (:doc "|case async")
+          :code $ quote
+            fn ()
+              hint-fn async
+              let
+                  a $ {} (:a 1)
+                  b $ :a a
+                  ret $ js-await $ case-default b
+                    new js/Promise $ fn (resolve _reject)
+                      js/setTimeout
+                        fn () (resolve |one)
+                        , 100
+                    1 $ new js/Promise $ fn (resolve reject) $ resolve |one
+                    2 $ new js/Promise $ fn (resolve reject) $ resolve |two
+                assert= ret |one
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-js.main $ :require (|os :as os) (|assert :as assert)
