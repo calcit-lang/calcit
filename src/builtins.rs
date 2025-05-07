@@ -305,5 +305,6 @@ pub fn is_js_syntax_procs(s: &str) -> bool {
       | "to-cirru-edn"
       | "to-js-data"
       | "&raw-code"
+      | "js-for-await"
   )
 }

@@ -213,6 +213,7 @@ impl From<&FileChangeInfo> for Edn {
     }
 
     if !data.added_defs.is_empty() {
+      #[allow(clippy::mutable_key_type)]
       let defs: HashMap<Edn, Edn> = data
         .added_defs
         .iter()
