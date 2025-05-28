@@ -15,9 +15,9 @@ exclude = ["lib/*", "calcit/*", "js-out/*", "scripts/*"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cirru_edn = "0.6.13"
+cirru_edn = "0.6.14"
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
-cirru_parser = "0.1.31"
+cirru_parser = "0.1.32"
 # cirru_parser = { path = "/Users/chenyong/repo/cirru/parser.rs" }
 argh = "0.1.13"
 dirs = "6.0.0"
