@@ -190,21 +190,12 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
 }
 
 fn make_let_with_bind(left: &str, right: &str, body: &str, has_await: bool) -> String {
-  let (await_mark, async_mark) = if has_await {
-    ("await ", "async ")
-  } else {
-    ("", "")
-  };
+  let (await_mark, async_mark) = if has_await { ("await ", "async ") } else { ("", "") };
   format!("{await_mark}({async_mark}function __bind__({left}){{\n{body} }})({right})")
-
 }
 
 fn make_let_with_wrapper(left: &str, right: &str, body: &str, has_await: bool) -> String {
-  let (await_mark, async_mark) = if has_await {
-    ("await ", "async ")
-  } else {
-    ("", "")
-  };
+  let (await_mark, async_mark) = if has_await { ("await ", "async ") } else { ("", "") };
   format!("{await_mark}({async_mark}function __let__(){{ \nlet {left} = {right};\n {body} }})()")
 }
 
@@ -527,7 +518,7 @@ fn gen_call_code(
           (_, _) => Err(format!("set! expected 2 nodes, got: {}", body)),
         },
         "&raw-code" => match body.first() {
-          Some(Calcit::Str(s)) => Ok((**s).to_owned()),
+          Some(Calcit::Str(s)) => Ok(format!("{}{}", return_label.unwrap_or(""), s)),
           Some(a) => Err(format!("&raw-code expected a string, got: {a}")),
           None => Err(format!("&raw-code expected 1 node, got: {}", body)),
         },
@@ -1454,11 +1445,7 @@ fn is_cirru_string(s: &str) -> bool {
 
 #[inline(always)]
 fn get_proc_prefix(ns: &str) -> &str {
-  if ns == calcit::CORE_NS {
-    "$calcit_procs."
-  } else {
-    "$calcit."
-  }
+  if ns == calcit::CORE_NS { "$calcit_procs." } else { "$calcit." }
 }
 
 fn cirru_to_js(code: &Cirru) -> Result<String, String> {
