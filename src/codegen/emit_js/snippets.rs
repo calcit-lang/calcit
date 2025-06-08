@@ -43,7 +43,7 @@ pub fn tmpl_args_exact(name: &str, args_count: usize, at_ns: &str) -> String {
   let proc_ns = get_proc_prefix(at_ns);
   format!(
     "
-  if (arguments.length !== {}) throw {}_calcit_args_mismatch('{}', {}, arguments.length);",
+  if (arguments.length !== {}) throw {}_args_throw('{}', {}, arguments.length);",
     args_count, proc_ns, name, args_count
   )
 }
@@ -109,7 +109,7 @@ pub fn tmpl_import_procs(name: String) -> String {
   format!(
     "
 import {{newTag, arrayToList, listToArray, CalcitSliceList, CalcitSymbol, CalcitRecur}} from {};
-import * as $calcit_procs from {};
+import * as $procs from {};
 export * from {};
 ",
     name, name, name,
@@ -119,7 +119,7 @@ export * from {};
 pub fn tmpl_classes_registering() -> String {
   format!(
     "
-$calcit_procs.register_calcit_builtin_classes({{
+$procs.register_calcit_builtin_classes({{
   list: _$n_core_list_class,
   map: _$n_core_map_class,
   number: _$n_core_number_class,
@@ -129,7 +129,7 @@ $calcit_procs.register_calcit_builtin_classes({{
   fn: _$n_core_fn_class,
 }});
 
-let runtimeVersion = $calcit_procs.calcit_version;
+let runtimeVersion = $procs.calcit_version;
 let cli_version = '{}';
 
 if (runtimeVersion !== cli_version) {{

@@ -1,6 +1,6 @@
 {
   "name": "@calcit/procs",
-  "version": "0.9.12",
+  "version": "0.9.13",
   "main": "./lib/calcit.procs.mjs",
   "devDependencies": {
     "@types/node": "^22.15.24",
