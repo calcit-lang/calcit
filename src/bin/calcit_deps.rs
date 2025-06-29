@@ -39,14 +39,14 @@ impl TryFrom<Edn> for PackageDeps {
           deps.insert(k.to_owned(), v.to_owned());
         }
         _ => {
-          return Err(format!("invalid dependency: {} {}", k, v));
+          return Err(format!("invalid dependency: {k} {v}"));
         }
       }
     }
     let expected_version: Option<String> = match deps_info.get_or_nil("calcit-version") {
       Edn::Str(s) => Some((*s).to_owned()),
       Edn::Nil => None,
-      v => return Err(format!("invalid calcit-version: {}", v)),
+      v => return Err(format!("invalid calcit-version: {v}")),
     };
     Ok(PackageDeps {
       calcit_version: expected_version,
@@ -83,13 +83,10 @@ pub fn main() -> Result<(), String> {
     let parsed = cirru_edn::parse(&content)?;
     let deps: PackageDeps = parsed.try_into()?;
 
-    if let Some(version) = &deps.calcit_version {
-      if version != CALCIT_VERSION {
-        eprintln!(
-          "[Warn] calcit version mismatch, deps.cirru expected {}, running {}",
-          version, CALCIT_VERSION,
-        );
-      }
+    if let Some(version) = &deps.calcit_version
+      && version != CALCIT_VERSION
+    {
+      eprintln!("[Warn] calcit version mismatch, deps.cirru expected {version}, running {CALCIT_VERSION}");
     }
 
     match &cli_args.subcommand {
@@ -136,7 +133,7 @@ fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: TopLevelCaps) -> Re
 
   if !modules_dir.exists() {
     fs::create_dir_all(&modules_dir).map_err(|e| e.to_string())?;
-    dim_println(format!("created dir: {:?}", modules_dir));
+    dim_println(format!("created dir: {modules_dir:?}"));
   }
 
   let mut children = vec![];
@@ -153,7 +150,7 @@ fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: TopLevelCaps) -> Re
     let ret = thread::spawn(move || {
       let ret = handle_path(modules_dir, version, &options2, org_and_folder);
       if let Err(e) = ret {
-        err_println(format!("{}\n", e));
+        err_println(format!("{e}\n"));
       }
     });
     children.push(ret);
@@ -177,20 +174,21 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
     // println!("module {} exists", folder);
     // check branch
     let current_head = git_repo.current_head()?;
+
     if current_head.get_name() == *version {
       dim_println(format!("√ found {} of {}", gray(&version), gray(folder)));
-      if let GitHead::Branch(branch) = current_head {
-        if options.pull_branch {
-          dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-          git_repo.pull(&branch)?;
-          dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
+      if let GitHead::Branch(branch) = current_head
+        && options.pull_branch
+      {
+        dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
+        git_repo.pull(&branch)?;
+        dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
 
-          // if there's a build.sh file in the folder, run it
-          if build_file.exists() {
-            let build_msg = call_build_script(&folder_path)?;
-            dim_println(format!("ran build script for {}", gray(&org_and_folder)));
-            dim_println(build_msg);
-          }
+        // if there's a build.sh file in the folder, run it
+        if build_file.exists() {
+          let build_msg = call_build_script(&folder_path)?;
+          dim_println(format!("ran build script for {}", gray(&org_and_folder)));
+          dim_println(build_msg);
         }
       }
       return Ok(());
@@ -212,12 +210,12 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
     dim_println(format!("√ checked out {} of {}", gray(&version), gray(&org_and_folder)));
 
     let current_head = git_repo.current_head()?;
-    if let GitHead::Branch(branch) = current_head {
-      if options.pull_branch {
-        dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-        git_repo.pull(&branch)?;
-        dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
-      }
+    if let GitHead::Branch(branch) = current_head
+      && options.pull_branch
+    {
+      dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
+      git_repo.pull(&branch)?;
+      dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
     }
 
     // if there's a build.sh file in the folder, run it
@@ -228,9 +226,9 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
     }
   } else {
     let url = if options.ci {
-      format!("https://github.com/{}.git", org_and_folder)
+      format!("https://github.com/{org_and_folder}.git")
     } else {
-      format!("git@github.com:{}.git", org_and_folder)
+      format!("git@github.com:{org_and_folder}.git")
     };
     dim_println(format!("↺ cloning {} at version {}", gray(&org_and_folder), gray(&version)));
     GitRepo::clone_to(&modules_dir, &url, &version, options.ci)?;
@@ -323,10 +321,10 @@ fn indent4(msg: &str) -> String {
   let ret = msg
     .trim()
     .lines()
-    .map(|line| format!("    {}", line))
+    .map(|line| format!("    {line}"))
     .collect::<Vec<String>>()
     .join("\n");
-  format!("\n{}\n", ret)
+  format!("\n{ret}\n")
 }
 
 /// calcit dynamic libs uses a `build.sh` script to build Rust `.so` files
@@ -358,7 +356,7 @@ fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>) -> Result<(), String> {
     let ret = thread::spawn(move || {
       let ret = show_package_versions(org_and_folder, version);
       if let Err(e) = ret {
-        err_println(format!("{}\n", e));
+        err_println(format!("{e}\n"));
       }
     });
     children.push(ret);
@@ -402,5 +400,5 @@ fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<
 }
 
 fn print_column(pkg: ColoredString, expected: ColoredString, latest: ColoredString, hint: ColoredString) {
-  println!("{:<32} {:<12} {:<12} {:<12}", pkg, expected, latest, hint);
+  println!("{pkg:<32} {expected:<12} {latest:<12} {hint:<12}");
 }

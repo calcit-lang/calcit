@@ -107,19 +107,19 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
         let mut next_coord: Vec<u8> = (*coord).to_owned();
         next_coord.push(idx as u8); // code not supposed to be fatter than 256 children
 
-        if let Cirru::List(ys) = y {
-          if ys.len() > 1 {
-            if ys[0] == Cirru::leaf(";") {
+        if let Cirru::List(ys) = y
+          && ys.len() > 1
+        {
+          if ys[0] == Cirru::leaf(";") {
+            continue;
+          }
+          if ys[0] == Cirru::leaf("cirru-quote") {
+            // special rule for Cirru code
+            if ys.len() == 2 {
+              zs.push(Calcit::CirruQuote(ys[1].to_owned()));
               continue;
             }
-            if ys[0] == Cirru::leaf("cirru-quote") {
-              // special rule for Cirru code
-              if ys.len() == 2 {
-                zs.push(Calcit::CirruQuote(ys[1].to_owned()));
-                continue;
-              }
-              return Err(format!("expected 1 argument, got: {ys:?}"));
-            }
+            return Err(format!("expected 1 argument, got: {ys:?}"));
           }
         }
 
@@ -189,7 +189,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
       Ok(Cirru::List(ys))
     }
     Calcit::Proc(s) => Ok(Cirru::Leaf(s.as_ref().into())),
-    Calcit::Fn { .. } => Ok(Cirru::Leaf(format!("(fn {})", x).into())), // TODO more details
+    Calcit::Fn { .. } => Ok(Cirru::Leaf(format!("(fn {x})").into())), // TODO more details
     Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.as_ref().into())),
     Calcit::CirruQuote(code) => Ok(code.to_owned()),
     Calcit::Method(name, kind) => match kind {

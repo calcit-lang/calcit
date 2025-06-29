@@ -74,7 +74,7 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
                 (*s.to_owned()).into(),
                 Arc::new(ImportRule::NsReferDef((*ns.to_owned()).into(), (*s.to_owned()).into())),
               )),
-              Cirru::List(_defs) => return Err(format!("invalid refer values, {}", y)),
+              Cirru::List(_defs) => return Err(format!("invalid refer values, {y}")),
             }
           }
           Ok(rules)

@@ -634,7 +634,7 @@ pub fn dissoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(at) => Ok(Calcit::from(xs.dissoc(at)?)),
       Err(e) => CalcitErr::err_str(format!("dissoc expected number, {e}")),
     },
-    (Calcit::List(_xs), a) => CalcitErr::err_str(format!("&list:dissoc expects a number in second argument, got {}", a)),
+    (Calcit::List(_xs), a) => CalcitErr::err_str(format!("&list:dissoc expects a number in second argument, got {a}")),
     (a, ..) => CalcitErr::err_str(format!("list dissoc expected a list, got: {a}")),
   }
 }

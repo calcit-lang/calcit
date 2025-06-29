@@ -277,7 +277,7 @@ pub fn preprocess_expr(
     Calcit::Syntax(..) => Ok(expr.to_owned()),
     Calcit::Import { .. } => Ok(expr.to_owned()),
     _ => {
-      println!("unknown expr: {}", expr);
+      println!("unknown expr: {expr}");
       let mut warnings = check_warnings.borrow_mut();
       let loc = NodeLocation {
         ns: Arc::from(file_ns),
@@ -527,7 +527,7 @@ fn preprocess_list_call(
           Ok(Calcit::from(CalcitList::List(ys)))
         }
       }
-      h => Err(CalcitErr::use_msg_stack(format!("unknown head `{}` in {}", h, xs), call_stack)),
+      h => Err(CalcitErr::use_msg_stack(format!("unknown head `{h}` in {xs}"), call_stack)),
     },
   }
 }
@@ -574,10 +574,7 @@ fn check_fn_marked_args(
           let mut warnings = check_warnings.borrow_mut();
           let loc = NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![]));
           warnings.push(LocatedWarning::new(
-            format!(
-              "[Warn] lack of args in {} `{:?}` with `{}`, at {}/{}",
-              f_name, defined_args, params, file_ns, def_name
-            ),
+            format!("[Warn] lack of args in {f_name} `{defined_args:?}` with `{params}`, at {file_ns}/{def_name}"),
             loc,
           ));
           return;
@@ -587,10 +584,7 @@ fn check_fn_marked_args(
         let mut warnings = check_warnings.borrow_mut();
         let loc = NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![]));
         warnings.push(LocatedWarning::new(
-          format!(
-            "[Warn] too many args for {} `{:?}` with `{}`, at {}/{}",
-            f_name, defined_args, params, file_ns, def_name
-          ),
+          format!("[Warn] too many args for {f_name} `{defined_args:?}` with `{params}`, at {file_ns}/{def_name}"),
           loc,
         ));
         return;
@@ -623,10 +617,7 @@ fn check_fn_args(
         let loc = NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![]));
         let args = CalcitLocal::display_args(defined_args);
         warnings.push(LocatedWarning::new(
-          format!(
-            "[Warn] expected {} args in {} `{}`, got spreading form `{}`, at {}/{}",
-            expected_size, f_name, args, params, file_ns, def_name
-          ),
+          format!("[Warn] expected {expected_size} args in {f_name} `{args}`, got spreading form `{params}`, at {file_ns}/{def_name}"),
           loc,
         ));
       }
@@ -638,10 +629,7 @@ fn check_fn_args(
     let mut warnings = check_warnings.borrow_mut();
     let loc = NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![]));
     warnings.push(LocatedWarning::new(
-      format!(
-        "[Warn] expected {} args in {} `{:?}` with `{}`, at {}/{}",
-        expected_size, f_name, defined_args, params, file_ns, def_name
-      ),
+      format!("[Warn] expected {expected_size} args in {f_name} `{defined_args:?}` with `{params}`, at {file_ns}/{def_name}"),
       loc,
     ));
   }
@@ -782,7 +770,7 @@ fn check_symbol(sym: &str, args: &CalcitList, location: NodeLocation, check_warn
   if is_proc_name(sym) || CalcitSyntax::is_valid(sym) || program::has_def_code(calcit::CORE_NS, sym) {
     let mut warnings = check_warnings.borrow_mut();
     warnings.push(LocatedWarning::new(
-      format!("[Warn] local binding `{}` shadowed `calcit.core/{}`, with {}", sym, sym, args),
+      format!("[Warn] local binding `{sym}` shadowed `calcit.core/{sym}`, with {args}"),
       location,
     ));
   }

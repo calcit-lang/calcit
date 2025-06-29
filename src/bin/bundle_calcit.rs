@@ -216,54 +216,54 @@ fn load_files_to_edn(package_file: &Path, base_dir: &Path, verbose: bool) -> Res
     let entry = dir_entry?;
     let entry_path = entry.path();
 
-    if let Some(ext) = entry_path.extension() {
-      if ext.to_str().expect("ext") == "cirru" {
-        let content = read_file(entry_path)?;
-        let xs = cirru_parser::parse(&content).map_err(io_err)?;
+    if let Some(ext) = entry_path.extension()
+      && ext.to_str().expect("ext") == "cirru"
+    {
+      let content = read_file(entry_path)?;
+      let xs = cirru_parser::parse(&content).map_err(io_err)?;
 
-        let mut file = EdnRecordView::new(EdnTag::new("FileEntry"));
-        let (ns_name, ns_code) = if let Some(Cirru::List(ns_form)) = xs.first() {
-          match (ns_form.first(), ns_form.get(1)) {
-            (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) if &**x0 == "ns" => (x1.to_string(), ns_form),
-            (a, b) => return Err(io_err(format!("in valid ns starts {a:?} {b:?}"))),
-          }
-        } else {
-          return Err(io_err(format!(
-            "first expression of file should be a ns form, got: {:?}",
-            xs.first()
-          )));
-        };
-        file.insert(EdnTag::new("ns"), CodeEntry::from_code(Cirru::List(ns_code.to_owned())).into());
+      let mut file = EdnRecordView::new(EdnTag::new("FileEntry"));
+      let (ns_name, ns_code) = if let Some(Cirru::List(ns_form)) = xs.first() {
+        match (ns_form.first(), ns_form.get(1)) {
+          (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) if &**x0 == "ns" => (x1.to_string(), ns_form),
+          (a, b) => return Err(io_err(format!("in valid ns starts {a:?} {b:?}"))),
+        }
+      } else {
+        return Err(io_err(format!(
+          "first expression of file should be a ns form, got: {:?}",
+          xs.first()
+        )));
+      };
+      file.insert(EdnTag::new("ns"), CodeEntry::from_code(Cirru::List(ns_code.to_owned())).into());
 
-        let mut defs = EdnMapView::default();
-        for line in xs.iter().skip(1) {
-          if let Cirru::List(ys) = line {
-            match (ys.first(), ys.get(1)) {
-              (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
-                let x0 = &**x0;
-                if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" || x0.starts_with("def") {
-                  defs.insert(Edn::str((*x1).to_owned()), CodeEntry::from_code(line.to_owned()).into());
-                } else {
-                  return Err(io_err(format!("invalid def op: {x0}")));
-                }
-              }
-              (a, b) => {
-                return Err(io_err(format!("invalid def code {a:?} {b:?}")));
+      let mut defs = EdnMapView::default();
+      for line in xs.iter().skip(1) {
+        if let Cirru::List(ys) = line {
+          match (ys.first(), ys.get(1)) {
+            (Some(Cirru::Leaf(x0)), Some(Cirru::Leaf(x1))) => {
+              let x0 = &**x0;
+              if x0 == "def" || x0 == "defn" || x0 == "defmacro" || x0 == "defatom" || x0 == "defrecord" || x0.starts_with("def") {
+                defs.insert(Edn::str((*x1).to_owned()), CodeEntry::from_code(line.to_owned()).into());
+              } else {
+                return Err(io_err(format!("invalid def op: {x0}")));
               }
             }
-          } else {
-            return Err(io_err(format!("file line not an expr {line}")));
+            (a, b) => {
+              return Err(io_err(format!("invalid def code {a:?} {b:?}")));
+            }
           }
+        } else {
+          return Err(io_err(format!("file line not an expr {line}")));
         }
-
-        file.insert(EdnTag::new("defs"), defs.into());
-        files.insert(Edn::str(ns_name), file.into());
-
-        if verbose {
-          println!("bundling {}", entry_path.display());
-        }
-        // a.push(entry.path().to_str().expect("extract path").to_string());
       }
+
+      file.insert(EdnTag::new("defs"), defs.into());
+      files.insert(Edn::str(ns_name), file.into());
+
+      if verbose {
+        println!("bundling {}", entry_path.display());
+      }
+      // a.push(entry.path().to_str().expect("extract path").to_string());
     }
   }
 

@@ -311,7 +311,7 @@ pub fn new_class_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         class: Some(Arc::new(record)),
       }))
     } else {
-      CalcitErr::err_str(format!("tuple expected a record as class, got: {}", class))
+      CalcitErr::err_str(format!("tuple expected a record as class, got: {class}"))
     }
   }
 }
@@ -319,7 +319,7 @@ pub fn new_class_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if method_args.is_empty() {
     return Err(CalcitErr::use_msg_stack(
-      format!("expected operand for method invoking: {:?}", method_args),
+      format!("expected operand for method invoking: {method_args:?}"),
       call_stack,
     ));
   }

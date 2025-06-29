@@ -125,7 +125,7 @@ impl fmt::Display for Calcit {
           write!(f, "\"|")?;
           for c in s.chars() {
             if cirru_edn::is_simple_char(c) {
-              write!(f, "{}", c)?;
+              write!(f, "{c}")?;
             } else {
               write!(f, "{}", c.escape_default())?;
             }

@@ -18,7 +18,7 @@ impl Display for CalcitList {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "(&CalcitList")?;
     for x in self {
-      write!(f, " {}", x)?;
+      write!(f, " {x}")?;
     }
     write!(f, ")")
   }

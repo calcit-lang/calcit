@@ -176,7 +176,7 @@ pub fn call_expr(
         }
       } else {
         Err(CalcitErr::use_msg_stack(
-          format!("tag only takes 1 argument, got: {}", rest_nodes),
+          format!("tag only takes 1 argument, got: {rest_nodes}"),
           call_stack,
         ))
       }
@@ -202,7 +202,7 @@ pub fn call_expr(
       }
     }
     a => Err(CalcitErr::use_msg_stack_location(
-      format!("cannot be used as operator: {a:?} in {}", xs),
+      format!("cannot be used as operator: {a:?} in {xs}"),
       call_stack,
       a.get_location(),
     )),
@@ -250,7 +250,7 @@ pub fn evaluate_symbol(
       } else {
         let vars = scope.get_names();
         Err(CalcitErr::use_msg_stack_location(
-          format!("unknown symbol `{sym}` in {}", vars),
+          format!("unknown symbol `{sym}` in {vars}"),
           call_stack,
           Some(NodeLocation::new(
             Arc::from(file_ns),
@@ -487,7 +487,7 @@ pub fn bind_marked_args(
               scope.insert_mut(*idx, Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
-                format!("too few values `{:?}` passed to args `{args:?}`", values),
+                format!("too few values `{values:?}` passed to args `{args:?}`"),
                 call_stack,
               ));
             }
@@ -501,10 +501,7 @@ pub fn bind_marked_args(
     Ok(())
   } else {
     Err(CalcitErr::use_msg_stack(
-      format!(
-        "extra args `{args:?}` not handled while passing values `{:?}` to args `{:?}`",
-        values, args,
-      ),
+      format!("extra args `{args:?}` not handled while passing values `{values:?}` to args `{args:?}`",),
       call_stack,
     ))
   }

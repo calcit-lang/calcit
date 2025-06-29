@@ -206,10 +206,10 @@ pub fn watch_files(entries: ProgramEntries, settings: ToplevelCalcit, assets_wat
     .parent()
     .expect("extract parent")
     .join(".compact-inc.cirru");
-  if !inc_path.exists() {
-    if let Err(e) = fs::write(&inc_path, "").map_err(|e| -> String { e.to_string() }) {
-      eprintln!("file writing error: {e}");
-    };
+  if !inc_path.exists()
+    && let Err(e) = fs::write(&inc_path, "").map_err(|e| -> String { e.to_string() })
+  {
+    eprintln!("file writing error: {e}");
   }
 
   debouncer.watcher().watch(&inc_path, RecursiveMode::NonRecursive).expect("watch");

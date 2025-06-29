@@ -37,7 +37,7 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   for (idx, x) in fields.iter().enumerate() {
     if idx > 0 {
       if x == &prev {
-        return CalcitErr::err_str(format!("duplicated field for record: {}", x));
+        return CalcitErr::err_str(format!("duplicated field for record: {x}"));
       } else {
         x.clone_into(&mut prev);
         // checked ok
@@ -90,7 +90,7 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   for (idx, x) in fields.iter().enumerate() {
     if idx > 0 {
       if x == &prev {
-        return CalcitErr::err_str(format!("duplicated field for record: {}", x));
+        return CalcitErr::err_str(format!("duplicated field for record: {x}"));
       } else {
         x.clone_into(&mut prev);
         // checked ok

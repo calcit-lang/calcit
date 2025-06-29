@@ -5,37 +5,33 @@ pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn tmpl_try(err_var: String, body: String, handler: String, return_code: &str) -> String {
   format!(
     "try {{
-  {}
-}} catch ({}) {{
-  {} ({})({})
+  {body}
+}} catch ({err_var}) {{
+  {return_code} ({handler})({err_var})
 }}",
-    body, err_var, return_code, handler, err_var,
   )
 }
 
 pub fn tmpl_fn_wrapper(body: String) -> String {
   format!(
     "(function __fn__(){{
-  {}
-}})()",
-    body
+  {body}
+}})()"
   )
 }
 
 pub fn tmpl_args_fewer_than(args_count: usize) -> String {
   format!(
     "
-if (arguments.length < {}) throw new Error('too few arguments');",
-    args_count
+if (arguments.length < {args_count}) throw new Error('too few arguments');"
   )
 }
 
 pub fn tmpl_args_between(a: usize, b: usize) -> String {
   format!(
     "
-if (arguments.length < {}) throw new Error('too few arguments');
-if (arguments.length > {}) throw new Error('too many arguments');",
-    a, b
+if (arguments.length < {a}) throw new Error('too few arguments');
+if (arguments.length > {b}) throw new Error('too many arguments');"
   )
 }
 
@@ -43,8 +39,7 @@ pub fn tmpl_args_exact(name: &str, args_count: usize, at_ns: &str) -> String {
   let proc_ns = get_proc_prefix(at_ns);
   format!(
     "
-  if (arguments.length !== {}) throw {}_args_throw('{}', {}, arguments.length);",
-    args_count, proc_ns, name, args_count
+  if (arguments.length !== {args_count}) throw {proc_ns}_args_throw('{name}', {args_count}, arguments.length);"
   )
 }
 
@@ -91,28 +86,17 @@ pub fn tmpl_tail_recursion(
     }}
   }}
 }}
-",
-    name = name,
-    args_code = args_code,
-    check_args = check_args,
-    spreading_code = spreading_code,
-    body = body,
-    var_prefix = var_prefix,
-    ret_var = ret_var,
-    times_var = times_var,
-    check_recur_args = check_recur_args,
-    async_prefix = async_prefix
+"
   )
 }
 
 pub fn tmpl_import_procs(name: String) -> String {
   format!(
     "
-import {{newTag, arrayToList, listToArray, CalcitSliceList, CalcitSymbol, CalcitRecur}} from {};
-import * as $procs from {};
-export * from {};
+import {{newTag, arrayToList, listToArray, CalcitSliceList, CalcitSymbol, CalcitRecur}} from {name};
+import * as $procs from {name};
+export * from {name};
 ",
-    name, name, name,
   )
 }
 
@@ -130,23 +114,21 @@ $procs.register_calcit_builtin_classes({{
 }});
 
 let runtimeVersion = $procs.calcit_version;
-let cli_version = '{}';
+let cli_version = '{CALCIT_VERSION}';
 
 if (runtimeVersion !== cli_version) {{
   console.warn(`[Warning] versions mismatch, CLI using: ${{cli_version}}, runtime using: ${{runtimeVersion}}`)
 }}
-",
-    CALCIT_VERSION
+"
   )
 }
 
 pub fn tmpl_tags_init(arr: &str, prefix: &str) -> String {
   format!(
     "
-{}.forEach(x => {{
-  _tag[x] = {}newTag(x);
+{arr}.forEach(x => {{
+  _tag[x] = {prefix}newTag(x);
 }});
-",
-    arr, prefix
+"
   )
 }
