@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::channel;
 use std::sync::Arc;
+use std::sync::mpsc::channel;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -19,13 +19,12 @@ use notify::RecursiveMode;
 use notify_debouncer_mini::new_debouncer;
 
 use calcit::{
-  builtins, call_stack, cli_args, codegen, codegen::emit_js::gen_stack, codegen::COMPILE_ERRORS_FILE, program, runner, snapshot, util,
-  ProgramEntries,
+  ProgramEntries, builtins, call_stack, cli_args, codegen, codegen::COMPILE_ERRORS_FILE, codegen::emit_js::gen_stack, program, runner,
+  snapshot, util,
 };
 
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
-
 
   let cli_args: ToplevelCalcit = argh::from_env();
 

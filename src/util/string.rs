@@ -120,11 +120,7 @@ pub fn extract_ns_def(s: &str) -> Result<(String, String), String> {
 
 pub fn extract_pkg_from_ns(ns: Arc<str>) -> Option<Arc<str>> {
   let p2: Vec<&str> = ns.split('.').collect();
-  if !p2.is_empty() {
-    Some(p2[0].into())
-  } else {
-    None
-  }
+  if !p2.is_empty() { Some(p2[0].into()) } else { None }
 }
 
 /// strip first shebang line if detected

@@ -14,10 +14,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::calcit::{Calcit, CalcitErr, CalcitList, CalcitProc, CalcitScope, CalcitSyntax};
-use crate::call_stack::{using_stack, CallStackList};
+use crate::call_stack::{CallStackList, using_stack};
 
 use im_ternary_tree::TernaryTreeList;
-pub(crate) use refs::{quick_build_atom, ValueAndListeners};
+pub(crate) use refs::{ValueAndListeners, quick_build_atom};
 
 pub type FnType = fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
 pub type SyntaxType = fn(expr: &TernaryTreeList<Calcit>, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
@@ -26,11 +26,7 @@ pub(crate) static IMPORTED_PROCS: LazyLock<RwLock<HashMap<Arc<str>, FnType>>> = 
 
 pub fn is_proc_name(s: &str) -> bool {
   let builtin = s.parse::<CalcitProc>();
-  if builtin.is_ok() {
-    true
-  } else {
-    is_registered_proc(s)
-  }
+  if builtin.is_ok() { true } else { is_registered_proc(s) }
 }
 
 pub fn is_registered_proc(s: &str) -> bool {

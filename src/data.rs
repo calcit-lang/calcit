@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-  calcit::{CalcitList, CalcitProc, CalcitRecord, CalcitSyntax, CalcitTuple},
   Calcit,
+  calcit::{CalcitList, CalcitProc, CalcitRecord, CalcitSyntax, CalcitTuple},
 };
 
 pub mod cirru;

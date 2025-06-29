@@ -7,7 +7,7 @@ use std::thread;
 use calcit::{
   builtins,
   calcit::{Calcit, CalcitErr},
-  call_stack::{display_stack, CallStackList},
+  call_stack::{CallStackList, display_stack},
   data::edn::{calcit_to_edn, edn_to_calcit},
   runner::track,
 };

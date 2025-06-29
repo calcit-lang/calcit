@@ -6,10 +6,10 @@ use std::vec;
 
 use crate::builtins::{self, IMPORTED_PROCS};
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitErr, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope,
-  CalcitSyntax, MethodKind, NodeLocation, CORE_NS,
+  CORE_NS, Calcit, CalcitArgLabel, CalcitErr, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope,
+  CalcitSyntax, MethodKind, NodeLocation,
 };
-use crate::call_stack::{using_stack, CallStackList, StackKind};
+use crate::call_stack::{CallStackList, StackKind, using_stack};
 use crate::program;
 use crate::util::string::has_ns_part;
 

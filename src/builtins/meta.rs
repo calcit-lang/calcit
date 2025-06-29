@@ -1,8 +1,8 @@
 use crate::{
   builtins,
   calcit::{
-    self, gen_core_id, Calcit, CalcitErr, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo, CalcitSyntax,
-    CalcitTuple, GENERATED_DEF, GEN_NS,
+    self, Calcit, CalcitErr, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo, CalcitSyntax, CalcitTuple, GEN_NS,
+    GENERATED_DEF, gen_core_id,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -18,7 +18,7 @@ use crate::{
 use cirru_parser::{Cirru, CirruWriterOptions};
 
 use std::sync::atomic::AtomicUsize;
-use std::sync::{atomic, Arc};
+use std::sync::{Arc, atomic};
 use std::{cmp::Ordering, collections::HashMap};
 use std::{collections::hash_map::DefaultHasher, sync::Mutex};
 use std::{

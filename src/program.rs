@@ -203,11 +203,7 @@ pub fn load_by_index(ns_idx: u16, ns: &str, def_idx: u16, def: &str) -> Option<C
   let (file, ns_cache) = s2.load(ns_idx);
   if ns == ns_cache {
     let (value, def_cache) = file.load(def_idx);
-    if def == def_cache {
-      Some(value.to_owned())
-    } else {
-      None
-    }
+    if def == def_cache { Some(value.to_owned()) } else { None }
   } else {
     None
   }
