@@ -56,7 +56,7 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
-    return CalcitErr::err_nodes("new-record expected arguments, got:", xs);
+    return CalcitErr::err_nodes("new-class-record expected arguments, got:", xs);
   }
   let class = match &xs[0] {
     Calcit::Record(class) => class.to_owned(),
@@ -65,7 +65,7 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let name_id: EdnTag = match &xs[1] {
     Calcit::Symbol { sym, .. } => EdnTag(sym.to_owned()),
     Calcit::Tag(k) => k.to_owned(),
-    a => return CalcitErr::err_str(format!("new-record expected a name, got: {a}")),
+    a => return CalcitErr::err_str(format!("new-class-record expected a name, got: {a}")),
   };
 
   let mut fields: Vec<EdnTag> = Vec::with_capacity(xs.len());
@@ -79,7 +79,7 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Calcit::Tag(s) => {
         fields.push(s.to_owned());
       }
-      a => return CalcitErr::err_str(format!("new-record fields accepets tag/string, got a {a}")),
+      a => return CalcitErr::err_str(format!("new-class-record fields accepets tag/string, got a {a}")),
     }
     values.push(Calcit::Nil);
   }
