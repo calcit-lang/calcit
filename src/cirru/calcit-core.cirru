@@ -1725,7 +1725,7 @@
               list-match path
                 () $ f data
                 (p0 ps)
-                  assoc data p0 $ update-in (get data p0) ps f
+                  assoc (either data $ {}) p0 $ update-in (get data p0) ps f
         |vals $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn vals (x)

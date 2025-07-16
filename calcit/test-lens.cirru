@@ -50,6 +50,11 @@
                   , inc
                 {} $ :a (:: 'quote 2)
               assert=
+                update-in ({})
+                  [] :a :b
+                  fn (x) 1
+                {} $ :a $ {} $ :b 1
+              assert=
                 dissoc-in
                   {} $ :a
                     {} $ :b
