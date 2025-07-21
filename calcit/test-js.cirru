@@ -189,6 +189,8 @@
                 js/console.log pattern
                 assert= true $ .!test pattern "|12"
                 assert= false $ .!test pattern "|xy"
+                assert= true $ pattern.!test |12
+                assert= false $ pattern.!test |xy
         |test-property $ %{} :CodeEntry (:doc "|try property ops")
           :code $ quote
             fn ()

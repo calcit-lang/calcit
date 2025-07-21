@@ -104,8 +104,9 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
     Cirru::List(ys) => {
       let mut zs: Vec<Calcit> = vec![];
       for (idx, y) in ys.iter().enumerate() {
-        let mut next_coord: Vec<u8> = (*coord).to_owned();
-        next_coord.push(idx as u8); // code not supposed to be fatter than 256 children
+        if idx > 255 {
+          return Err(format!("Cirru code too large, index: {idx}"));
+        }
 
         if let Cirru::List(ys) = y
           && ys.len() > 1
@@ -122,12 +123,74 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
             return Err(format!("expected 1 argument, got: {ys:?}"));
           }
         }
+        let mut next_coord: Vec<u8> = (*coord).to_owned();
+        next_coord.push(idx as u8); // clamp to prevent overflow, code not supposed to be larger than 256 children
+
+        if idx == 0
+          && let Cirru::Leaf(s) = y
+        {
+          // dirty hack to support shorthand of method calling,
+          // this feature is EXPERIMENTAL and might change in future
+          if let Some((obj, method)) = split_leaf_to_method_call(s) {
+            zs.push(method);
+            zs.push(Calcit::Symbol {
+              sym: Arc::from(obj),
+              info: symbol_info.to_owned(),
+              location: Some(next_coord.into()),
+            });
+            continue;
+          }
+        }
 
         zs.push(code_to_calcit(y, ns, def, next_coord)?);
       }
       Ok(Calcit::from(CalcitList::Vector(zs)))
     }
   }
+}
+
+/// split `a.b` into `.b` and `a`, `a.-b` into `.-b` and `a`, `a.!b` into `.!b` and `a`, etc.
+/// some characters available for variables are okey here, for example `-`, `!`, `?`, `*``, etc.
+fn split_leaf_to_method_call(s: &str) -> Option<(String, Calcit)> {
+  if let Some((obj, method)) = s.split_once(".-") {
+    if is_valid_symbol(obj) && is_valid_symbol(method) {
+      return Some((obj.to_owned(), Calcit::Method(method.into(), MethodKind::Access)));
+    }
+  }
+  if let Some((obj, method)) = s.split_once(".!") {
+    if is_valid_symbol(obj) && is_valid_symbol(method) {
+      return Some((obj.to_owned(), Calcit::Method(method.into(), MethodKind::InvokeNative)));
+    }
+  }
+  if let Some((obj, method)) = s.split_once(".") {
+    if is_valid_symbol(obj) && is_valid_symbol(method) {
+      return Some((obj.to_owned(), Calcit::Method(method.into(), MethodKind::Invoke)));
+    }
+  }
+
+  None
+}
+
+fn is_valid_symbol(s: &str) -> bool {
+  // empty space is not valid symbol
+  if s.is_empty() {
+    return false;
+  }
+  // symbol should not start with a digit
+  if s.chars().next().unwrap().is_ascii_digit() {
+    return false;
+  }
+  // every character should be valid, a-z, A-Z, 0-9, -, _, ?, !, *, etc.
+  for c in s.chars() {
+    if c.is_alphabetic() {
+      continue;
+    }
+    if c.is_ascii_digit() || c == '-' || c == '_' || c == '?' || c == '!' || c == '*' {
+      continue;
+    }
+    return false;
+  }
+  true
 }
 
 /// transform Cirru to Calcit data directly
