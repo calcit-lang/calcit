@@ -1,10 +1,6 @@
-use std::char;
 use std::cmp::Ordering;
 
-use im_ternary_tree::TernaryTreeList;
-
-use crate::calcit::CalcitList;
-use crate::calcit::{Calcit, CalcitErr};
+use crate::calcit::{Calcit, CalcitErr, CalcitList};
 use crate::util::number::f64_to_usize;
 
 pub fn binary_str_concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -12,6 +8,12 @@ pub fn binary_str_concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Nil), Some(Calcit::Nil)) => Ok(Calcit::new_str("")),
     (Some(Calcit::Nil), Some(b)) => Ok(Calcit::Str(b.turn_string().into())),
     (Some(a), Some(Calcit::Nil)) => Ok(Calcit::Str(a.turn_string().into())),
+    (Some(Calcit::Str(s1)), Some(Calcit::Str(s2))) => {
+      let mut s = String::with_capacity(s1.len() + s2.len());
+      s.push_str(s1);
+      s.push_str(s2);
+      Ok(Calcit::Str(s.into()))
+    }
     (Some(a), Some(b)) => {
       let mut s = a.turn_string();
       s.push_str(&b.turn_string());
@@ -61,14 +63,12 @@ pub fn turn_string(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn split(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => {
-      let pieces = (**s).split(&**pattern);
-      let mut ys = vec![];
-      for p in pieces {
-        if !p.is_empty() {
-          ys.push(Calcit::Str(p.into()));
-        }
-      }
-      Ok(Calcit::from(ys))
+      let pieces = (**s)
+        .split(&**pattern)
+        .filter(|s| !s.is_empty())
+        .map(|s| Calcit::Str(s.into()))
+        .collect::<Vec<Calcit>>();
+      Ok(Calcit::from(pieces))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(format!("split expected 2 strings, got: {a} {b}")),
     (_, _) => CalcitErr::err_str("split expected 2 arguments, got nothing"),
@@ -114,41 +114,32 @@ pub fn replace(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn split_lines(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Str(s)) => {
-      let lines = s.split('\n');
-      let mut ys = TernaryTreeList::Empty;
-      for line in lines {
-        ys = ys.push_right(Calcit::Str(line.to_owned().into()));
-      }
-      Ok(Calcit::from(CalcitList::List(ys)))
+      let lines = s.lines().map(|line| Calcit::Str(line.to_owned().into())).collect::<Vec<Calcit>>();
+      Ok(Calcit::from(lines))
     }
     Some(a) => CalcitErr::err_str(format!("split-lines expected 1 string, got: {a}")),
     _ => CalcitErr::err_str("split-lines expected 1 argument, got nothing"),
   }
 }
 pub fn str_slice(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(from) => {
-        let to: usize = match xs.get(2) {
-          Some(Calcit::Number(n2)) => match f64_to_usize(*n2) {
-            Ok(idx2) => idx2,
-            Err(e) => return CalcitErr::err_str(format!("&str:slice expected number, got: {e}")),
-          },
-          Some(a) => return CalcitErr::err_str(format!("&str:slice expected number, got: {a}")),
-          None => s.chars().count(),
-        };
-        if from >= to {
-          Ok(Calcit::new_str(""))
-        } else {
-          // turn into vec first to also handle UTF8
-          let s_vec = s.chars().collect::<Vec<_>>();
-          Ok(Calcit::Str(s_vec[from..to].iter().to_owned().collect::<String>().into()))
-        }
+  match (xs.first(), xs.get(1), xs.get(2)) {
+    (Some(Calcit::Str(s)), Some(Calcit::Number(n_from)), n_to) => {
+      let from = f64_to_usize(*n_from)?;
+      let to = match n_to {
+        Some(Calcit::Number(n)) => f64_to_usize(*n)?,
+        Some(a) => return CalcitErr::err_str(format!("&str:slice expected number, got: {a}")),
+        None => s.chars().count(),
+      };
+
+      if from >= to {
+        Ok(Calcit::new_str(""))
+      } else {
+        let s: String = s.chars().skip(from).take(to - from).collect();
+        Ok(Calcit::Str(s.into()))
       }
-      Err(e) => CalcitErr::err_str(e),
-    },
-    (Some(a), Some(b)) => CalcitErr::err_str(format!("&str:slice expected string and number, got: {a} {b}")),
-    (_, _) => CalcitErr::err_nodes("&str:slice expected string and numbers, got:", xs),
+    }
+    (Some(a), Some(b), ..) => CalcitErr::err_str(format!("&str:slice expected string and number, got: {a} {b}")),
+    (_, _, _) => CalcitErr::err_nodes("&str:slice expected string and numbers, got:", xs),
   }
 }
 
@@ -321,18 +312,7 @@ pub fn first(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn rest(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
-    Some(Calcit::Str(s)) => {
-      let mut buffer = String::with_capacity(s.len() - 1);
-      let mut is_first = true;
-      for c in s.chars() {
-        if is_first {
-          is_first = false;
-          continue;
-        }
-        buffer.push(c)
-      }
-      Ok(Calcit::Str(buffer.into()))
-    }
+    Some(Calcit::Str(s)) => Ok(Calcit::Str(s.chars().skip(1).collect::<String>().into())),
     Some(a) => CalcitErr::err_str(format!("str:rest expected a string, got: {a}")),
     None => CalcitErr::err_str("str:rest expected 1 argument, got nothing"),
   }
@@ -347,21 +327,17 @@ pub fn pad_left(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           return CalcitErr::err_str("&str:pad-left expected non-empty pattern");
         }
         if s.len() >= size {
-          Ok(xs[0].to_owned())
-        } else {
-          let mut buffer = String::with_capacity(size);
-          let pad_size = size - s.len();
-          'write: loop {
-            for c in pattern.chars() {
-              buffer.push(c);
-              if buffer.len() >= pad_size {
-                break 'write;
-              }
-            }
-          }
-          buffer.push_str(s);
-          Ok(Calcit::Str(buffer.into()))
+          return Ok(xs[0].to_owned());
         }
+
+        let pad_size = size - s.len();
+        let mut buffer = String::with_capacity(size);
+        // Directly iterate over pattern characters
+        for c in pattern.chars().cycle().take(pad_size) {
+          buffer.push(c);
+        }
+        buffer.push_str(s);
+        Ok(Calcit::Str(buffer.into()))
       }
       (a, b, c) => CalcitErr::err_str(format!("&str:pad-left expected string, number, string, got: {a} {b} {c}")),
     }
@@ -379,20 +355,16 @@ pub fn pad_right(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           return CalcitErr::err_str("&str:pad-right expected non-empty pattern");
         }
         if s.len() >= size {
-          Ok(xs[0].to_owned())
-        } else {
-          let mut buffer = String::with_capacity(size);
-          buffer.push_str(s);
-          'write: loop {
-            for c in pattern.chars() {
-              buffer.push(c);
-              if buffer.len() >= size {
-                break 'write;
-              }
-            }
-          }
-          Ok(Calcit::Str(buffer.into()))
+          return Ok(xs[0].to_owned());
         }
+
+        let mut buffer = String::with_capacity(size);
+        buffer.push_str(s);
+        // Directly iterate over pattern characters
+        for c in pattern.chars().cycle().take(size - s.len()) {
+          buffer.push(c);
+        }
+        Ok(Calcit::Str(buffer.into()))
       }
       (a, b, c) => CalcitErr::err_str(format!("&str:pad-right expected string, number, string, got: {a} {b} {c}")),
     }

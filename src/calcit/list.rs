@@ -352,14 +352,11 @@ impl CalcitList {
   }
 
   pub fn assoc_after(&self, idx: usize, x: Calcit) -> Result<Self, String> {
-    match self {
-      CalcitList::Vector(xs) => {
-        let mut ys = TernaryTreeList::from(xs);
-        ys = ys.assoc_after(idx, x)?;
-        Ok(CalcitList::List(ys))
-      }
-      CalcitList::List(xs) => Ok(CalcitList::List(xs.assoc_after(idx, x)?)),
-    }
+    let base_list = match self {
+      CalcitList::Vector(xs) => TernaryTreeList::from(xs),
+      CalcitList::List(xs) => xs.clone(),
+    };
+    Ok(CalcitList::List(base_list.assoc_after(idx, x)?))
   }
 
   pub fn index_of(&self, x: &Calcit) -> Option<usize> {

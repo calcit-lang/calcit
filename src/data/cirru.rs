@@ -52,37 +52,37 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           Calcit::Syntax(CalcitSyntax::Quote, ns.into()),
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: symbol_info.to_owned(),
-            location: Some(coord),
+            info: Arc::clone(&symbol_info),
+            location: Some(Arc::clone(&coord)),
           },
         ]))),
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into()),
           Calcit::Symbol {
             sym: Arc::from(&s[2..]),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
+            info: Arc::clone(&symbol_info),
+            location: Some(Arc::clone(&coord)),
           },
         ]))),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Syntax(CalcitSyntax::MacroInterpolate, ns.into()),
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
+            info: Arc::clone(&symbol_info),
+            location: Some(Arc::clone(&coord)),
           },
         ]))),
         '@' => Ok(Calcit::from(CalcitList::from(&[
           // `deref` expands to `.deref` or `&atom:deref`
           Calcit::Symbol {
             sym: Arc::from("deref"),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
+            info: Arc::clone(&symbol_info),
+            location: Some(Arc::clone(&coord)),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
+            info: Arc::clone(&symbol_info),
+            location: Some(Arc::clone(&coord)),
           },
         ]))),
         // TODO future work of reader literal expanding
@@ -94,8 +94,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           } else {
             Ok(Calcit::Symbol {
               sym: (**s).into(),
-              info: symbol_info.to_owned(),
-              location: Some(coord.to_owned()),
+              info: Arc::clone(&symbol_info),
+              location: Some(Arc::clone(&coord)),
             })
           }
         }
@@ -135,7 +135,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
             zs.push(method);
             zs.push(Calcit::Symbol {
               sym: Arc::from(obj),
-              info: symbol_info.to_owned(),
+              info: Arc::clone(&symbol_info),
               location: Some(next_coord.into()),
             });
             continue;
@@ -152,19 +152,17 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
 /// split `a.b` into `.b` and `a`, `a.-b` into `.-b` and `a`, `a.!b` into `.!b` and `a`, etc.
 /// some characters available for variables are okey here, for example `-`, `!`, `?`, `*``, etc.
 fn split_leaf_to_method_call(s: &str) -> Option<(String, Calcit)> {
-  if let Some((obj, method)) = s.split_once(".-") {
-    if is_valid_symbol(obj) && is_valid_symbol(method) {
-      return Some((obj.to_owned(), Calcit::Method(method.into(), MethodKind::Access)));
-    }
-  }
-  if let Some((obj, method)) = s.split_once(".!") {
-    if is_valid_symbol(obj) && is_valid_symbol(method) {
-      return Some((obj.to_owned(), Calcit::Method(method.into(), MethodKind::InvokeNative)));
-    }
-  }
-  if let Some((obj, method)) = s.split_once(".") {
-    if is_valid_symbol(obj) && is_valid_symbol(method) {
-      return Some((obj.to_owned(), Calcit::Method(method.into(), MethodKind::Invoke)));
+  let prefixes = [
+    (".-", MethodKind::Access),
+    (".!", MethodKind::InvokeNative),
+    (".", MethodKind::Invoke),
+  ];
+
+  for (prefix, kind) in prefixes.iter() {
+    if let Some((obj, method)) = s.split_once(prefix) {
+      if is_valid_symbol(obj) && is_valid_symbol(method) {
+        return Some((obj.to_owned(), Calcit::Method(method.into(), kind.to_owned())));
+      }
     }
   }
 
@@ -182,13 +180,9 @@ fn is_valid_symbol(s: &str) -> bool {
   }
   // every character should be valid, a-z, A-Z, 0-9, -, _, ?, !, *, etc.
   for c in s.chars() {
-    if c.is_alphabetic() {
-      continue;
+    if !(c.is_alphanumeric() || matches!(c, '-' | '_' | '?' | '!' | '*')) {
+      return false;
     }
-    if c.is_ascii_digit() || c == '-' || c == '_' || c == '?' || c == '!' || c == '*' {
-      continue;
-    }
-    return false;
   }
   true
 }

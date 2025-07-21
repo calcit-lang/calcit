@@ -1,7 +1,7 @@
 
 [package]
 name = "calcit"
-version = "0.9.15"
+version = "0.9.16"
 authors = ["jiyinyiyong <jiyinyiyong@gmail.com>"]
 edition = "2024"
 license = "MIT"
@@ -53,6 +53,6 @@ path = "src/bin/bundle_calcit.rs"
 name = "caps"
 path = "src/bin/calcit_deps.rs"
 
-# [profile.release]
-# debug = true
-# opt-level = 1
+[profile.release]
+lto = true
+opt-level = 3

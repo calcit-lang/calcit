@@ -42,7 +42,8 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       Ok(Calcit::from(ys))
     }
     Calcit::List(xs) => {
-      let mut ys = vec![Calcit::Proc(CalcitProc::List)];
+      let mut ys = Vec::with_capacity(xs.len() + 1);
+      ys.push(Calcit::Proc(CalcitProc::List));
       xs.traverse_result::<String>(&mut |x| {
         ys.push(data_to_calcit(x, ns, at_def)?);
         Ok(())
