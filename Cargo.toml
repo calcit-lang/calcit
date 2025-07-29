@@ -27,7 +27,7 @@ notify-debouncer-mini = "0.6.0"
 walkdir = "2.5.0"
 hex = "0.4.3"
 rpds = "1.1.0"
-im_ternary_tree = "0.0.18"
+im_ternary_tree = "0.0.19"
 # im_ternary_tree = { path = "/Users/chenyong/repo/calcit-lang/ternary-tree.rs" }
 colored = "3.0.0"
 strum = "0.25"
