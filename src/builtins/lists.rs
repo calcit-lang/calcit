@@ -1,6 +1,8 @@
 use core::cmp::Ordering;
 use std::sync::Arc;
 
+use rpds::HashTrieSet;
+
 use crate::calcit::{Calcit, CalcitErr, CalcitList, CalcitTuple};
 use crate::util::number::f64_to_usize;
 
@@ -44,15 +46,12 @@ pub fn slice(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(ys), Calcit::Number(from)) => {
+      let from_idx = f64_to_usize(*from)?;
       let to_idx = match xs.get(2) {
-        Some(Calcit::Number(to)) => {
-          let idx: usize = unsafe { to.to_int_unchecked() };
-          idx
-        }
+        Some(Calcit::Number(to)) => f64_to_usize(*to)?,
         Some(a) => return CalcitErr::err_str(format!("slice expected number index, got: {a}")),
         None => ys.len(),
       };
-      let from_idx: usize = unsafe { from.to_int_unchecked() };
 
       Ok(Calcit::List(Arc::new(ys.slice(from_idx, to_idx)?)))
     }
@@ -112,15 +111,22 @@ pub fn butlast(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  let mut ys = vec![];
+  let mut total_size = 0;
   for x in xs {
     if let Calcit::List(zs) = x {
-      for z in &**zs {
-        ys.push(z.to_owned());
-      }
+      total_size += zs.len();
     } else {
       return CalcitErr::err_str(format!("concat expects list arguments, got: {x}"));
     }
+  }
+
+  let mut ys = Vec::with_capacity(total_size);
+  for x in xs {
+    if let Calcit::List(zs) = x {
+      // Use extend to efficiently append elements from the inner list
+      ys.extend(zs.iter().map(|v| v.to_owned()));
+    }
+    // no need for else, already checked
   }
   Ok(Calcit::List(Arc::new(CalcitList::Vector(ys))))
 }
@@ -184,13 +190,13 @@ pub fn foldl(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, Calcit
     match (&xs[0], &xs[2]) {
       // dirty since only functions being call directly then we become fast
       (Calcit::List(xs), Calcit::Fn { info, .. }) => {
-        for x in &**xs {
+        for x in xs.iter() {
           ret = runner::run_fn(&[ret, (*x).to_owned()], info, call_stack)?;
         }
         Ok(ret)
       }
       (Calcit::List(xs), Calcit::Proc(proc)) => {
-        for x in &**xs {
+        for x in xs.iter() {
           // println!("foldl args, {} {}", ret, x.to_owned());
           ret = builtins::handle_proc(*proc, &[ret, (*x).to_owned()], call_stack)?;
         }
@@ -257,7 +263,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
       // dirty since only functions being call directly then we become fast
       (Calcit::List(xs), Calcit::Fn { info, .. }) => {
         let mut state = acc.to_owned();
-        for x in &**xs {
+        for x in xs.iter() {
           let pair = runner::run_fn(&[state.to_owned(), (*x).to_owned()], info, call_stack)?;
           match pair {
             Calcit::Tuple(CalcitTuple { tag: x0, extra, .. }) => match &*x0 {
@@ -456,10 +462,7 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
     match (&xs[0], &xs[1]) {
       // dirty since only functions being call directly then we become fast
       (Calcit::List(xs), Calcit::Fn { info, .. }) => {
-        let mut xs2: Vec<Calcit> = vec![];
-        xs.traverse(&mut |x| {
-          xs2.push(x.to_owned());
-        });
+        let mut xs2: Vec<Calcit> = xs.to_vec(); // Use existing to_vec()
         xs2.sort_by(|a, b| -> Ordering {
           let v = runner::run_fn(&[(*a).to_owned(), (*b).to_owned()], info, call_stack);
           match v {
@@ -476,17 +479,10 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
             }
           }
         });
-        let mut ys = CalcitList::new_inner();
-        for x in xs2.iter() {
-          ys = ys.push_right(x.to_owned())
-        }
-        Ok(Calcit::List(Arc::new(ys.into())))
+        Ok(Calcit::List(Arc::new(CalcitList::Vector(xs2))))
       }
       (Calcit::List(xs), Calcit::Proc(proc)) => {
-        let mut xs2: Vec<Calcit> = vec![];
-        xs.traverse(&mut |x| {
-          xs2.push(x.to_owned());
-        });
+        let mut xs2: Vec<Calcit> = xs.to_vec(); // Use existing to_vec()
         xs2.sort_by(|a, b| -> Ordering {
           let v = builtins::handle_proc(*proc, &[(*a).to_owned(), (*b).to_owned()], call_stack);
           match v {
@@ -503,11 +499,7 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
             }
           }
         });
-        let mut ys = CalcitList::new_inner();
-        for x in xs2.iter() {
-          ys = ys.push_right(x.to_owned())
-        }
-        Ok(Calcit::List(Arc::new(ys.into())))
+        Ok(Calcit::List(Arc::new(CalcitList::Vector(xs2)))) // Directly create from Vec
       }
       (a, b) => Err(CalcitErr::use_msg_stack_location(
         format!("sort expected list and function, got: {a} {b}"),
@@ -634,7 +626,7 @@ pub fn dissoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(at) => Ok(Calcit::from(xs.dissoc(at)?)),
       Err(e) => CalcitErr::err_str(format!("dissoc expected number, {e}")),
     },
-    (Calcit::List(_xs), a) => CalcitErr::err_str(format!("&list:dissoc expects a number in second argument, got {}", a)),
+    (Calcit::List(_xs), a) => CalcitErr::err_str(format!("&list:dissoc expects a number in second argument, got {a}")),
     (a, ..) => CalcitErr::err_str(format!("list dissoc expected a list, got: {a}")),
   }
 }
@@ -661,9 +653,11 @@ pub fn distinct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::List(ys) => {
+      let mut seen = HashTrieSet::new_sync();
       let mut zs = CalcitList::new_inner();
       ys.traverse(&mut |y| {
-        if zs.index_of(y).is_none() {
+        if !seen.contains(y) {
+          seen.insert_mut(y.to_owned());
           zs = zs.push_right(y.to_owned());
         }
       });

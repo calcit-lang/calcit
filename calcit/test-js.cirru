@@ -25,6 +25,7 @@
               w-js-log "|log demo"
               test-for-await
               test-case-async
+              test-return-raw-code
               do true
         |test-async $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -188,6 +189,8 @@
                 js/console.log pattern
                 assert= true $ .!test pattern "|12"
                 assert= false $ .!test pattern "|xy"
+                assert= true $ pattern.!test |12
+                assert= false $ pattern.!test |xy
         |test-property $ %{} :CodeEntry (:doc "|try property ops")
           :code $ quote
             fn ()
@@ -224,6 +227,15 @@
                     1 $ new js/Promise $ fn (resolve reject) $ resolve |one
                     2 $ new js/Promise $ fn (resolve reject) $ resolve |two
                 assert= ret |one
+        |test-return-raw-code $ %{} :CodeEntry (:doc "|return with &raw-code")
+          :code $ quote
+            fn ()
+              let
+                  a $ js-array 1 2
+                  f $ fn (t)
+                    if t (.-0 a) (&raw-code "|a[1]")
+                assert= (f true) 1
+                assert= (f false) 2
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-js.main $ :require (|os :as os) (|assert :as assert)

@@ -12,7 +12,7 @@ use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::calcit::{
   self, CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax, LocatedWarning,
 };
-use crate::calcit::{gen_core_id, Calcit, CalcitErr, CalcitScope};
+use crate::calcit::{Calcit, CalcitErr, CalcitScope, gen_core_id};
 use crate::call_stack::CallStackList;
 use crate::runner::{self, call_expr, evaluate_expr};
 

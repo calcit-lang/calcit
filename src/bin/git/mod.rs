@@ -81,13 +81,13 @@ impl GitRepo {
   }
 
   pub fn check_branch_or_tag(&self, version: &str, folder: &str) -> Result<bool, String> {
-    match self.run_command(&["show-ref", "--verify", &format!("refs/tags/{}", version)]) {
+    match self.run_command(&["show-ref", "--verify", &format!("refs/tags/{version}")]) {
       Ok(_) => Ok(true),
       Err(_) => {
-        let ret = self.run_command(&["show-ref", "--verify", &format!("refs/heads/{}", version)]);
+        let ret = self.run_command(&["show-ref", "--verify", &format!("refs/heads/{version}")]);
         match ret {
           Ok(_) => Ok(true),
-          Err(_) => Err(format!("failed to check branch or tag `{}` in `{}`", version, folder)),
+          Err(_) => Err(format!("failed to check branch or tag `{version}` in `{folder}`")),
         }
       }
     }

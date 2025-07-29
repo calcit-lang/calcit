@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use cirru_edn::{format, Edn, EdnListView};
+use cirru_edn::{Edn, EdnListView, format};
 
 use crate::calcit::{Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, ImportInfo};
 use crate::program;

@@ -9,7 +9,7 @@
           :code $ quote (defatom *counted 0)
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing list") (test-list) (log-title "|Testing foldl") (test-foldl) (log-title "|Testing every/any") (test-every) (log-title "|Testing groups") (test-groups) (log-title "|Testing apply") (test-apply) (log-title "|Testing join") (test-join) (log-title "|Testing repeat") (test-repeat) (log-title "|Testing sort") (test-sort) (test-alias) (test-doseq) (test-let[]) (test-methods) (test-pair) (test-match) (do true)
+            defn main! () (log-title "|Testing list") (test-list) (log-title "|Testing foldl") (test-foldl) (log-title "|Testing every/any") (test-every) (log-title "|Testing groups") (test-groups) (log-title "|Testing apply") (test-apply) (log-title "|Testing join") (test-join) (log-title "|Testing repeat") (test-repeat) (log-title "|Testing sort") (test-sort) (test-alias) (test-doseq) (test-let[]) (test-methods) (test-methods-shorthand) (test-pair) (test-match) (do true)
         |test-alias $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing alias")
@@ -427,6 +427,13 @@
                 .dissoc ([] :a :b :c) 2
               assert= ([] 1 2 3)
                 distinct $ [] 1 2 3 1 2
+        |test-methods-shorthand $ %{} :CodeEntry (:doc "|test shorthand")
+          :code $ quote
+            fn ()
+              &let
+                xs $ [] 1 2 3 4
+                assert= 1 $ xs.get 0
+                assert= true $ xs.any? $ fn (x) (&> x 3)
         |test-pair $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()

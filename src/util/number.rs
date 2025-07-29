@@ -10,8 +10,12 @@ pub fn is_integer(x: f64) -> bool {
   x.fract().abs() <= f64::EPSILON
 }
 
+fn is_float_integer(f: f64) -> bool {
+  f.fract().abs() <= f64::EPSILON
+}
+
 pub fn f64_to_usize(f: f64) -> Result<usize, String> {
-  if f.fract().abs() <= f64::EPSILON {
+  if is_float_integer(f) {
     if f >= 0.0 {
       Ok(f as usize)
     } else {
@@ -23,7 +27,7 @@ pub fn f64_to_usize(f: f64) -> Result<usize, String> {
 }
 
 pub fn f64_to_i32(f: f64) -> Result<i32, String> {
-  if f.fract().abs() <= f64::EPSILON {
+  if is_float_integer(f) {
     Ok(f as i32)
   } else {
     Err(format!("cannot extract int from float: {f}"))

@@ -7,8 +7,8 @@ use cirru_edn::EdnListView;
 use std::fmt;
 use std::fs;
 use std::hash::Hash;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 static TRACK_STACK: AtomicBool = AtomicBool::new(true);
 

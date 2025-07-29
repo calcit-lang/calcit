@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{call_stack::CallStackList, program, runner::evaluate_expr, Calcit, CalcitErr};
+use crate::{Calcit, CalcitErr, call_stack::CallStackList, program, runner::evaluate_expr};
 
 use super::CalcitScope;
 

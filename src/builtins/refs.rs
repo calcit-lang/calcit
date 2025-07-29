@@ -41,7 +41,7 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
           format!("expected fn to trigger after `reset!`, got: {a}"),
           call_stack,
           a.get_location(),
-        ))
+        ));
       }
     }
   }

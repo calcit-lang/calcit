@@ -7,7 +7,7 @@ use std::thread;
 use calcit::{
   builtins,
   calcit::{Calcit, CalcitErr},
-  call_stack::{display_stack, CallStackList},
+  call_stack::{CallStackList, display_stack},
   data::edn::{calcit_to_edn, edn_to_calcit},
   runner::track,
 };
@@ -51,7 +51,7 @@ pub fn inject_platform_apis() {
 // &call-dylib-edn
 pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
-    return CalcitErr::err_str(format!("&call-dylib-edn expected >2 arguments, got: {:?}", xs));
+    return CalcitErr::err_str(format!("&call-dylib-edn expected >2 arguments, got: {xs:?}"));
   }
   let lib_name: String = if let Calcit::Str(s) = &xs[0] {
     (**s).to_owned()
@@ -108,7 +108,7 @@ pub fn stderr_println(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
 /// currently for HTTP servers
 pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
-    return CalcitErr::err_str(format!("&call-dylib-edn-fn expected >3 arguments, got: {:?}", xs));
+    return CalcitErr::err_str(format!("&call-dylib-edn-fn expected >3 arguments, got: {xs:?}"));
   }
 
   let lib_name: String = if let Calcit::Str(s) = &xs[0] {
@@ -190,7 +190,7 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
 /// used by calcit-paint, where main thread is required
 pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
-    return CalcitErr::err_str(format!("&blocking-dylib-edn-fn expected >3 arguments, got: {:?}", xs));
+    return CalcitErr::err_str(format!("&blocking-dylib-edn-fn expected >3 arguments, got: {xs:?}"));
   }
 
   let lib_name: String = if let Calcit::Str(s) = &xs[0] {
@@ -274,10 +274,10 @@ pub fn on_ctrl_c(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, 
     let cb = Arc::new(xs[0].to_owned());
     let copied_stack = Arc::new(call_stack.to_owned());
     ctrlc::set_handler(move || {
-      if let Calcit::Fn { info, .. } = cb.as_ref() {
-        if let Err(e) = runner::run_fn(&[], info, &copied_stack) {
-          eprintln!("error: {e}");
-        }
+      if let Calcit::Fn { info, .. } = cb.as_ref()
+        && let Err(e) = runner::run_fn(&[], info, &copied_stack)
+      {
+        eprintln!("error: {e}");
       }
     })
     .expect("Error setting Ctrl-C handler");

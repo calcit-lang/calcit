@@ -52,37 +52,37 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           Calcit::Syntax(CalcitSyntax::Quote, ns.into()),
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: symbol_info.to_owned(),
-            location: Some(coord),
+            info: Arc::clone(&symbol_info),
+            location: Some(Arc::clone(&coord)),
           },
         ]))),
         '~' if s.starts_with("~@") && s.chars().count() > 2 => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into()),
           Calcit::Symbol {
             sym: Arc::from(&s[2..]),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
+            info: Arc::clone(&symbol_info),
+            location: Some(Arc::clone(&coord)),
           },
         ]))),
         '~' if s.chars().count() > 1 && !s.starts_with("~@") => Ok(Calcit::from(CalcitList::from(&[
           Calcit::Syntax(CalcitSyntax::MacroInterpolate, ns.into()),
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
+            info: Arc::clone(&symbol_info),
+            location: Some(Arc::clone(&coord)),
           },
         ]))),
         '@' => Ok(Calcit::from(CalcitList::from(&[
           // `deref` expands to `.deref` or `&atom:deref`
           Calcit::Symbol {
             sym: Arc::from("deref"),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
+            info: Arc::clone(&symbol_info),
+            location: Some(Arc::clone(&coord)),
           },
           Calcit::Symbol {
             sym: Arc::from(&s[1..]),
-            info: symbol_info.to_owned(),
-            location: Some(coord.to_owned()),
+            info: Arc::clone(&symbol_info),
+            location: Some(Arc::clone(&coord)),
           },
         ]))),
         // TODO future work of reader literal expanding
@@ -94,8 +94,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
           } else {
             Ok(Calcit::Symbol {
               sym: (**s).into(),
-              info: symbol_info.to_owned(),
-              location: Some(coord.to_owned()),
+              info: Arc::clone(&symbol_info),
+              location: Some(Arc::clone(&coord)),
             })
           }
         }
@@ -104,22 +104,41 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
     Cirru::List(ys) => {
       let mut zs: Vec<Calcit> = vec![];
       for (idx, y) in ys.iter().enumerate() {
-        let mut next_coord: Vec<u8> = (*coord).to_owned();
-        next_coord.push(idx as u8); // code not supposed to be fatter than 256 children
+        if idx > 255 {
+          return Err(format!("Cirru code too large, index: {idx}"));
+        }
 
-        if let Cirru::List(ys) = y {
-          if ys.len() > 1 {
-            if ys[0] == Cirru::leaf(";") {
+        if let Cirru::List(ys) = y
+          && ys.len() > 1
+        {
+          if ys[0] == Cirru::leaf(";") {
+            continue;
+          }
+          if ys[0] == Cirru::leaf("cirru-quote") {
+            // special rule for Cirru code
+            if ys.len() == 2 {
+              zs.push(Calcit::CirruQuote(ys[1].to_owned()));
               continue;
             }
-            if ys[0] == Cirru::leaf("cirru-quote") {
-              // special rule for Cirru code
-              if ys.len() == 2 {
-                zs.push(Calcit::CirruQuote(ys[1].to_owned()));
-                continue;
-              }
-              return Err(format!("expected 1 argument, got: {ys:?}"));
-            }
+            return Err(format!("expected 1 argument, got: {ys:?}"));
+          }
+        }
+        let mut next_coord: Vec<u8> = (*coord).to_owned();
+        next_coord.push(idx as u8); // clamp to prevent overflow, code not supposed to be larger than 256 children
+
+        if idx == 0
+          && let Cirru::Leaf(s) = y
+        {
+          // dirty hack to support shorthand of method calling,
+          // this feature is EXPERIMENTAL and might change in future
+          if let Some((obj, method)) = split_leaf_to_method_call(s) {
+            zs.push(method);
+            zs.push(Calcit::Symbol {
+              sym: Arc::from(obj),
+              info: Arc::clone(&symbol_info),
+              location: Some(next_coord.into()),
+            });
+            continue;
           }
         }
 
@@ -128,6 +147,44 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
       Ok(Calcit::from(CalcitList::Vector(zs)))
     }
   }
+}
+
+/// split `a.b` into `.b` and `a`, `a.-b` into `.-b` and `a`, `a.!b` into `.!b` and `a`, etc.
+/// some characters available for variables are okey here, for example `-`, `!`, `?`, `*``, etc.
+fn split_leaf_to_method_call(s: &str) -> Option<(String, Calcit)> {
+  let prefixes = [
+    (".-", MethodKind::Access),
+    (".!", MethodKind::InvokeNative),
+    (".", MethodKind::Invoke),
+  ];
+
+  for (prefix, kind) in prefixes.iter() {
+    if let Some((obj, method)) = s.split_once(prefix) {
+      if is_valid_symbol(obj) && is_valid_symbol(method) {
+        return Some((obj.to_owned(), Calcit::Method(method.into(), kind.to_owned())));
+      }
+    }
+  }
+
+  None
+}
+
+fn is_valid_symbol(s: &str) -> bool {
+  // empty space is not valid symbol
+  if s.is_empty() {
+    return false;
+  }
+  // symbol should not start with a digit
+  if s.chars().next().unwrap().is_ascii_digit() {
+    return false;
+  }
+  // every character should be valid, a-z, A-Z, 0-9, -, _, ?, !, *, etc.
+  for c in s.chars() {
+    if !(c.is_alphanumeric() || matches!(c, '-' | '_' | '?' | '!' | '*')) {
+      return false;
+    }
+  }
+  true
 }
 
 /// transform Cirru to Calcit data directly
@@ -189,7 +246,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
       Ok(Cirru::List(ys))
     }
     Calcit::Proc(s) => Ok(Cirru::Leaf(s.as_ref().into())),
-    Calcit::Fn { .. } => Ok(Cirru::Leaf(format!("(fn {})", x).into())), // TODO more details
+    Calcit::Fn { .. } => Ok(Cirru::Leaf(format!("(fn {x})").into())), // TODO more details
     Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.as_ref().into())),
     Calcit::CirruQuote(code) => Ok(code.to_owned()),
     Calcit::Method(name, kind) => match kind {

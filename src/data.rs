@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-  calcit::{CalcitList, CalcitProc, CalcitRecord, CalcitSyntax, CalcitTuple},
   Calcit,
+  calcit::{CalcitList, CalcitProc, CalcitRecord, CalcitSyntax, CalcitTuple},
 };
 
 pub mod cirru;
@@ -42,7 +42,8 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       Ok(Calcit::from(ys))
     }
     Calcit::List(xs) => {
-      let mut ys = vec![Calcit::Proc(CalcitProc::List)];
+      let mut ys = Vec::with_capacity(xs.len() + 1);
+      ys.push(Calcit::Proc(CalcitProc::List));
       xs.traverse_result::<String>(&mut |x| {
         ys.push(data_to_calcit(x, ns, at_def)?);
         Ok(())
@@ -85,14 +86,14 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       }
       Ok(Calcit::from(ys))
     }
-    Calcit::Ref(_, _) => Err(format!("data_to_calcit not implemented for ref: {}", x)),
+    Calcit::Ref(_, _) => Err(format!("data_to_calcit not implemented for ref: {x}")),
     Calcit::Thunk(thunk) => Ok(thunk.get_code().to_owned()),
-    Calcit::Buffer(_) => Err(format!("data_to_calcit not implemented for buffer: {}", x)),
-    Calcit::Recur(_xs) => Err(format!("data_to_calcit not implemented for recur: {}", x)),
-    Calcit::Macro { .. } => Err(format!("data_to_calcit not implemented for macro: {}", x)),
-    Calcit::Fn { .. } => Err(format!("data_to_calcit not implemented for fn: {}", x)),
+    Calcit::Buffer(_) => Err(format!("data_to_calcit not implemented for buffer: {x}")),
+    Calcit::Recur(_xs) => Err(format!("data_to_calcit not implemented for recur: {x}")),
+    Calcit::Macro { .. } => Err(format!("data_to_calcit not implemented for macro: {x}")),
+    Calcit::Fn { .. } => Err(format!("data_to_calcit not implemented for fn: {x}")),
     Calcit::Method(..) => Ok(x.to_owned()),
     Calcit::RawCode(..) => Ok(x.to_owned()),
-    Calcit::AnyRef(..) => Err(format!("data_to_calcit not implemented for any-ref: {}", x)),
+    Calcit::AnyRef(..) => Err(format!("data_to_calcit not implemented for any-ref: {x}")),
   }
 }

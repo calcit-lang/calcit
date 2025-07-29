@@ -81,7 +81,7 @@ where
         if &*piece.key == key {
           Ok(())
         } else {
-          Err(format!("index {} is not for key {}", idx, key))
+          Err(format!("index {idx} is not for key {key}"))
         }
       }
       None => Err(format!("index {} is invalid in current book of size {}", idx, self.0.len())),

@@ -13,6 +13,7 @@ use git::*;
 use std::{
   collections::HashMap,
   fs,
+  io::Write,
   path::{Path, PathBuf},
   sync::Arc,
   thread,
@@ -39,14 +40,14 @@ impl TryFrom<Edn> for PackageDeps {
           deps.insert(k.to_owned(), v.to_owned());
         }
         _ => {
-          return Err(format!("invalid dependency: {} {}", k, v));
+          return Err(format!("invalid dependency: {k} {v}"));
         }
       }
     }
     let expected_version: Option<String> = match deps_info.get_or_nil("calcit-version") {
       Edn::Str(s) => Some((*s).to_owned()),
       Edn::Nil => None,
-      v => return Err(format!("invalid calcit-version: {}", v)),
+      v => return Err(format!("invalid calcit-version: {v}")),
     };
     Ok(PackageDeps {
       calcit_version: expected_version,
@@ -83,13 +84,10 @@ pub fn main() -> Result<(), String> {
     let parsed = cirru_edn::parse(&content)?;
     let deps: PackageDeps = parsed.try_into()?;
 
-    if let Some(version) = &deps.calcit_version {
-      if version != CALCIT_VERSION {
-        eprintln!(
-          "[Warn] calcit version mismatch, deps.cirru expected {}, running {}",
-          version, CALCIT_VERSION,
-        );
-      }
+    if let Some(version) = &deps.calcit_version
+      && version != CALCIT_VERSION
+    {
+      eprintln!("[Warn] calcit version mismatch, deps.cirru expected {version}, running {CALCIT_VERSION}");
     }
 
     match &cli_args.subcommand {
@@ -136,7 +134,7 @@ fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: TopLevelCaps) -> Re
 
   if !modules_dir.exists() {
     fs::create_dir_all(&modules_dir).map_err(|e| e.to_string())?;
-    dim_println(format!("created dir: {:?}", modules_dir));
+    dim_println(format!("created dir: {modules_dir:?}"));
   }
 
   let mut children = vec![];
@@ -153,7 +151,7 @@ fn download_deps(deps: HashMap<Arc<str>, Arc<str>>, options: TopLevelCaps) -> Re
     let ret = thread::spawn(move || {
       let ret = handle_path(modules_dir, version, &options2, org_and_folder);
       if let Err(e) = ret {
-        err_println(format!("{}\n", e));
+        err_println(format!("{e}\n"));
       }
     });
     children.push(ret);
@@ -177,20 +175,21 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
     // println!("module {} exists", folder);
     // check branch
     let current_head = git_repo.current_head()?;
+
     if current_head.get_name() == *version {
       dim_println(format!("√ found {} of {}", gray(&version), gray(folder)));
-      if let GitHead::Branch(branch) = current_head {
-        if options.pull_branch {
-          dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-          git_repo.pull(&branch)?;
-          dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
+      if let GitHead::Branch(branch) = current_head
+        && options.pull_branch
+      {
+        dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
+        git_repo.pull(&branch)?;
+        dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
 
-          // if there's a build.sh file in the folder, run it
-          if build_file.exists() {
-            let build_msg = call_build_script(&folder_path)?;
-            dim_println(format!("ran build script for {}", gray(&org_and_folder)));
-            dim_println(build_msg);
-          }
+        // if there's a build.sh file in the folder, run it
+        if build_file.exists() {
+          let build_msg = call_build_script(&folder_path)?;
+          dim_println(format!("ran build script for {}", gray(&org_and_folder)));
+          dim_println(build_msg);
         }
       }
       return Ok(());
@@ -212,12 +211,12 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
     dim_println(format!("√ checked out {} of {}", gray(&version), gray(&org_and_folder)));
 
     let current_head = git_repo.current_head()?;
-    if let GitHead::Branch(branch) = current_head {
-      if options.pull_branch {
-        dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
-        git_repo.pull(&branch)?;
-        dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
-      }
+    if let GitHead::Branch(branch) = current_head
+      && options.pull_branch
+    {
+      dim_println(format!("↺ pulling {} at version {}", gray(&org_and_folder), gray(&version)));
+      git_repo.pull(&branch)?;
+      dim_println(format!("pulled {} at {}", gray(folder), gray(&version)));
     }
 
     // if there's a build.sh file in the folder, run it
@@ -228,9 +227,9 @@ fn handle_path(modules_dir: PathBuf, version: Arc<str>, options: &TopLevelCaps, 
     }
   } else {
     let url = if options.ci {
-      format!("https://github.com/{}.git", org_and_folder)
+      format!("https://github.com/{org_and_folder}.git")
     } else {
-      format!("git@github.com:{}.git", org_and_folder)
+      format!("git@github.com:{org_and_folder}.git")
     };
     dim_println(format!("↺ cloning {} at version {}", gray(&org_and_folder), gray(&version)));
     GitRepo::clone_to(&modules_dir, &url, &version, options.ci)?;
@@ -323,10 +322,10 @@ fn indent4(msg: &str) -> String {
   let ret = msg
     .trim()
     .lines()
-    .map(|line| format!("    {}", line))
+    .map(|line| format!("    {line}"))
     .collect::<Vec<String>>()
     .join("\n");
-  format!("\n{}\n", ret)
+  format!("\n{ret}\n")
 }
 
 /// calcit dynamic libs uses a `build.sh` script to build Rust `.so` files
@@ -352,33 +351,56 @@ fn call_build_script(folder_path: &Path) -> Result<String, String> {
 fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>) -> Result<(), String> {
   print_column("package".dimmed(), "expected".dimmed(), "latest".dimmed(), "hint".dimmed());
   println!();
+
+  let mut outdated_packages = Vec::new();
   let mut children = vec![];
 
   for (org_and_folder, version) in deps {
+    let org_and_folder_clone = org_and_folder.clone();
+    let version_clone = version.clone();
     let ret = thread::spawn(move || {
-      let ret = show_package_versions(org_and_folder, version);
+      let ret = show_package_versions(org_and_folder_clone, version_clone);
       if let Err(e) = ret {
-        err_println(format!("{}\n", e));
+        err_println(format!("{e}\n"));
+        return None;
       }
+      ret.ok()
     });
-    children.push(ret);
+    children.push((org_and_folder, version, ret));
   }
 
-  for child in children {
-    child.join().unwrap();
+  for (org_and_folder, version, child) in children {
+    if let Ok(Some(Some(latest_tag))) = child.join() {
+      if latest_tag != *version {
+        outdated_packages.push((org_and_folder.to_owned(), version.to_owned(), latest_tag));
+      }
+    }
   }
+
+  if !outdated_packages.is_empty() {
+    println!();
+    print!("Found {} outdated package(s). Update deps.cirru? (y/N): ", outdated_packages.len());
+    std::io::stdout().flush().map_err(|e| e.to_string())?;
+
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).map_err(|e| e.to_string())?;
+    let input = input.trim();
+
+    if input.is_empty() || input.to_lowercase() == "y" || input.to_lowercase() == "yes" {
+      update_deps_file(&outdated_packages)?;
+      println!("deps.cirru updated successfully!");
+    }
+  }
+
   Ok(())
 }
 
-fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<(), String> {
+fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<Option<String>, String> {
   let (_org, folder) = org_and_folder.split_once('/').ok_or("invalid name")?;
   let folder_path = dirs::home_dir().ok_or("no config dir")?.join(".config/calcit/modules").join(folder);
   let git_repo = GitRepo { dir: folder_path.clone() };
   if folder_path.exists() {
     git_repo.fetch()?;
-    // get timestamp of current head
-    // let head = git_current_head(&folder_path)?;
-    // let head_timestamp = git_timestamp(&folder_path, &head.get_name())?;
 
     // get latest tag and timestamp
     let latest_tag = git_repo.latest_tag()?;
@@ -391,16 +413,55 @@ fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<
 
     if outdated {
       print_column(org_and_folder.yellow(), version.yellow(), latest_tag.yellow(), "Outdated".yellow());
+      Ok(Some(latest_tag))
     } else {
       print_column(org_and_folder.dimmed(), version.dimmed(), latest_tag.dimmed(), "√".dimmed());
+      Ok(None)
     }
   } else {
     print_column(org_and_folder.red(), version.red(), "not found".red(), "-".red());
+    Ok(None)
+  }
+}
+
+fn update_deps_file(outdated_packages: &[(Arc<str>, Arc<str>, String)]) -> Result<(), String> {
+  let deps_file = "deps.cirru";
+  if !Path::new(deps_file).exists() {
+    return Err("deps.cirru file not found".to_string());
   }
 
+  let content = fs::read_to_string(deps_file).map_err(|e| e.to_string())?;
+  let parsed = cirru_edn::parse(&content)?;
+  let mut deps: PackageDeps = parsed.try_into()?;
+
+  // Update the dependencies in the parsed structure
+  for (org_and_folder, _old_version, new_version) in outdated_packages {
+    deps.dependencies.insert(org_and_folder.clone(), new_version.clone().into());
+  }
+
+  // Convert back to EDN and then to string
+  let mut updated_edn = cirru_edn::Edn::Map(cirru_edn::EdnMapView::default());
+
+  if let cirru_edn::Edn::Map(ref mut map) = updated_edn {
+    // Add calcit-version if it exists
+    if let Some(ref version) = deps.calcit_version {
+      map.insert(cirru_edn::Edn::tag("calcit-version"), cirru_edn::Edn::str(version.as_str()));
+    }
+
+    // Add dependencies
+    let mut deps_map = cirru_edn::EdnMapView::default();
+    for (k, v) in &deps.dependencies {
+      deps_map.insert(cirru_edn::Edn::str(&**k), cirru_edn::Edn::str(&**v));
+    }
+    map.insert(cirru_edn::Edn::tag("dependencies"), cirru_edn::Edn::Map(deps_map));
+  }
+
+  let updated_content = cirru_edn::format(&updated_edn, false)?;
+
+  fs::write(deps_file, updated_content).map_err(|e| e.to_string())?;
   Ok(())
 }
 
 fn print_column(pkg: ColoredString, expected: ColoredString, latest: ColoredString, hint: ColoredString) {
-  println!("{:<32} {:<12} {:<12} {:<12}", pkg, expected, latest, hint);
+  println!("{pkg:<32} {expected:<12} {latest:<12} {hint:<12}");
 }
