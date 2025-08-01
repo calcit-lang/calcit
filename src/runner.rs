@@ -6,8 +6,8 @@ use std::vec;
 
 use crate::builtins::{self, IMPORTED_PROCS};
 use crate::calcit::{
-  CORE_NS, Calcit, CalcitArgLabel, CalcitErr, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope,
-  CalcitSyntax, MethodKind, NodeLocation,
+  CORE_NS, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal,
+  CalcitProc, CalcitScope, CalcitSyntax, MethodKind, NodeLocation,
 };
 use crate::call_stack::{CallStackList, StackKind, using_stack};
 use crate::program;
@@ -42,7 +42,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Calcit::Local(CalcitLocal { idx, .. }) => evaluate_symbol_from_scope(*idx, scope),
     Calcit::Import(CalcitImport { ns, def, coord, .. }) => evaluate_symbol_from_program(def, ns, *coord, call_stack),
     Calcit::List(xs) => match xs.first() {
-      None => Err(CalcitErr::use_msg_stack(format!("cannot evaluate empty expr: {expr}"), call_stack)),
+      None => Err(CalcitErr::use_msg_stack(
+        CalcitErrKind::Arity,
+        format!("cannot evaluate empty expr: {expr}"),
+        call_stack,
+      )),
       Some(x) => {
         // println!("eval expr: {}", expr.lisp_str());
         // println!("eval expr x: {}", x);
@@ -57,9 +61,21 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     },
     Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
     Calcit::RawCode(_, code) => unreachable!("raw code `{}` cannot be called", code),
-    Calcit::Set(_) => Err(CalcitErr::use_msg_stack("unexpected set for expr", call_stack)),
-    Calcit::Map(_) => Err(CalcitErr::use_msg_stack("unexpected map for expr", call_stack)),
-    Calcit::Record { .. } => Err(CalcitErr::use_msg_stack("unexpected record for expr", call_stack)),
+    Calcit::Set(_) => Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Unexpected,
+      "unexpected set for expr",
+      call_stack,
+    )),
+    Calcit::Map(_) => Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Unexpected,
+      "unexpected map for expr",
+      call_stack,
+    )),
+    Calcit::Record { .. } => Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Unexpected,
+      "unexpected record for expr",
+      call_stack,
+    )),
   }
 }
 
@@ -112,7 +128,7 @@ pub fn call_expr(
           builtins::meta::invoke_method(name, &values, call_stack)
         }
       } else {
-        CalcitErr::err_str(format!("unknown method for rust runtime: {kind}"))
+        CalcitErr::err_str(CalcitErrKind::Unexpected, format!("unknown method for rust runtime: {kind}"))
       }
     }
     Calcit::Fn { info, .. } => {
@@ -172,10 +188,15 @@ pub fn call_expr(
             None => Ok(Calcit::Nil),
           }
         } else {
-          Err(CalcitErr::use_msg_stack(format!("expected a hashmap, got: {v}"), call_stack))
+          Err(CalcitErr::use_msg_stack(
+            CalcitErrKind::Type,
+            format!("expected a hashmap, got: {v}"),
+            call_stack,
+          ))
         }
       } else {
         Err(CalcitErr::use_msg_stack(
+          CalcitErrKind::Arity,
           format!("tag only takes 1 argument, got: {rest_nodes}"),
           call_stack,
         ))
@@ -196,12 +217,14 @@ pub fn call_expr(
           f(values, call_stack)
         }
         None => Err(CalcitErr::use_msg_stack(
+          CalcitErrKind::Var,
           format!("cannot evaluate symbol directly: {file_ns}/{alias}"),
           call_stack,
         )),
       }
     }
     a => Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
       format!("cannot be used as operator: {a:?} in {xs}"),
       call_stack,
       a.get_location(),
@@ -224,6 +247,7 @@ pub fn evaluate_symbol(
         Err(e) => Err(e),
       },
       None => Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Var,
         format!("unknown ns target: {ns_part}/{def_part}"),
         call_stack,
         Some(NodeLocation::new(
@@ -250,6 +274,7 @@ pub fn evaluate_symbol(
       } else {
         let vars = scope.get_names();
         Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Var,
           format!("unknown symbol `{sym}` in {vars}"),
           call_stack,
           Some(NodeLocation::new(
@@ -335,7 +360,8 @@ pub fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList)
   }
   if let Some(code) = program::lookup_def_code(ns, sym) {
     let v = evaluate_expr(&code, &CalcitScope::default(), ns, call_stack)?;
-    program::write_evaled_def(ns, sym, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
+    program::write_evaled_def(ns, sym, v.to_owned())
+      .map_err(|e| CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, e, call_stack))?;
     return Ok(Some(v));
   }
   Ok(None)
@@ -462,6 +488,7 @@ pub fn bind_marked_args(
           scope.insert_mut(*idx, Calcit::from(CalcitList::Vector(chunk)));
           if pop_args_idx.0 < args.len() {
             return Err(CalcitErr::use_msg_stack(
+              CalcitErrKind::Arity,
               format!("extra args `{args:?}` after spreading in `{args:?}`",),
               call_stack,
             ));
@@ -469,6 +496,7 @@ pub fn bind_marked_args(
         }
         _ => {
           return Err(CalcitErr::use_msg_stack(
+            CalcitErrKind::Arity,
             format!("invalid control insode spreading mode: {args:?}"),
             call_stack,
           ));
@@ -487,6 +515,7 @@ pub fn bind_marked_args(
               scope.insert_mut(*idx, Calcit::Nil);
             } else {
               return Err(CalcitErr::use_msg_stack(
+                CalcitErrKind::Arity,
                 format!("too few values `{values:?}` passed to args `{args:?}`"),
                 call_stack,
               ));
@@ -501,6 +530,7 @@ pub fn bind_marked_args(
     Ok(())
   } else {
     Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Arity,
       format!("extra args `{args:?}` not handled while passing values `{values:?}` to args `{args:?}`",),
       call_stack,
     ))
@@ -570,6 +600,7 @@ pub fn evaluate_spreaded_args(
               Ok(())
             }
             a => Err(CalcitErr::use_msg_stack(
+              CalcitErrKind::Arity,
               format!("expected list for spreading, got: {a}"),
               call_stack,
             )),
@@ -591,6 +622,7 @@ pub fn evaluate_spreaded_args(
               Ok(())
             }
             a => Err(CalcitErr::use_msg_stack(
+              CalcitErrKind::Arity,
               format!("expected list for spreading, got: {a}"),
               call_stack,
             )),

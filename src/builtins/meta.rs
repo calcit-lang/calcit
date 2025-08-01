@@ -626,7 +626,7 @@ pub fn format_ternary_tree(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn buffer(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
-    return CalcitErr::err_nodes("&buffer expected hex values:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&buffer expected hex values:", xs);
   }
   let mut buf: Vec<u8> = Vec::new();
   for x in xs {
@@ -642,16 +642,16 @@ pub fn buffer(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               if b.len() == 1 {
                 buf.push(b[0])
               } else {
-                return CalcitErr::err_str(format!("hex for buffer might be too large, got: {b:?}"));
+                return CalcitErr::err_str(CalcitErrKind::Type, format!("hex for buffer might be too large, got: {b:?}"));
               }
             }
-            Err(e) => return CalcitErr::err_str(format!("expected length 2 hex string in buffer, got: {y} {e}")),
+            Err(e) => return CalcitErr::err_str(CalcitErrKind::Type, format!("expected length 2 hex string in buffer, got: {y} {e}")),
           }
         } else {
-          return CalcitErr::err_str(format!("expected length 2 hex string in buffer, got: {y}"));
+          return CalcitErr::err_str(CalcitErrKind::Type, format!("expected length 2 hex string in buffer, got: {y}"));
         }
       }
-      _ => return CalcitErr::err_str(format!("expected hex string in buffer, got: {x}")),
+      _ => return CalcitErr::err_str(CalcitErrKind::Type, format!("expected hex string in buffer, got: {x}")),
     }
   }
   Ok(Calcit::Buffer(buf))
@@ -659,7 +659,7 @@ pub fn buffer(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn hash(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes("&hash expected 1 argument, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&hash expected 1 argument, got:", xs);
   }
 
   let mut s = DefaultHasher::new();
@@ -670,7 +670,7 @@ pub fn hash(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 /// extract out calcit internal meta code
 pub fn extract_code_into_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes("&extract-code-into-edn expected 1 argument, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&extract-code-into-edn expected 1 argument, got:", xs);
   }
   Ok(edn_to_calcit(&dump_code(&xs[0]), &Calcit::Nil))
 }
@@ -678,46 +678,46 @@ pub fn extract_code_into_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 /// turns data back into code in generating js
 pub fn data_to_code(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes("&data-to-code expected 1 argument, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&data-to-code expected 1 argument, got:", xs);
   }
 
   match data_to_calcit(&xs[0], GEN_NS, GENERATED_DEF) {
     Ok(v) => Ok(v),
-    Err(e) => CalcitErr::err_str(format!("&data-to-code failed: {e}")),
+    Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("&data-to-code failed: {e}")),
   }
 }
 
 /// util function to read CirruQuote, only used in list
 pub fn cirru_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_nodes("&cirru-nth expected 2 arguments, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&cirru-nth expected 2 arguments, got:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::CirruQuote(code), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => match code {
         Cirru::List(xs) => match xs.get(idx) {
           Some(v) => Ok(Calcit::CirruQuote(v.to_owned())),
-          None => CalcitErr::err_str(format!("&cirru-nth index out of range: {idx}")),
+          None => CalcitErr::err_str(CalcitErrKind::Arity, format!("&cirru-nth index out of range: {idx}")),
         },
-        Cirru::Leaf(xs) => CalcitErr::err_str(format!("&cirru-nth does not work on leaf: {xs}")),
+        Cirru::Leaf(xs) => CalcitErr::err_str(CalcitErrKind::Type, format!("&cirru-nth does not work on leaf: {xs}")),
       },
-      Err(e) => CalcitErr::err_str(format!("nth expect usize, {e}")),
+      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("nth expect usize, {e}")),
     },
-    (Calcit::CirruQuote(_c), x) => CalcitErr::err_str(format!("expected number index, got: {x}")),
-    (x, _y) => CalcitErr::err_str(format!("expected cirru quote, got: {x}")),
+    (Calcit::CirruQuote(_c), x) => CalcitErr::err_str(CalcitErrKind::Type, format!("expected number index, got: {x}")),
+    (x, _y) => CalcitErr::err_str(CalcitErrKind::Type, format!("expected cirru quote, got: {x}")),
   }
 }
 
 pub fn cirru_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes("&cirru-type expected 1 argument, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&cirru-type expected 1 argument, got:", xs);
   }
   match &xs[0] {
     Calcit::CirruQuote(code) => match code {
       Cirru::List(_) => Ok(Calcit::Tag("list".into())),
       Cirru::Leaf(_) => Ok(Calcit::Tag("leaf".into())),
     },
-    a => CalcitErr::err_str(format!("expected cirru quote, got: ${a}")),
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("expected cirru quote, got: ${a}")),
   }
 }
 
