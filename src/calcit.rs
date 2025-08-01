@@ -744,7 +744,33 @@ pub fn gen_core_id() -> Arc<str> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CalcitErrKind {
+  Syntax,
+  Type,
+  Arity,
+  Var,
+  Effect,
+  Unexpected,
+  Unimplemented,
+}
+
+impl fmt::Display for CalcitErrKind {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str(match self {
+      CalcitErrKind::Syntax => "Syntax",
+      CalcitErrKind::Type => "Type",
+      CalcitErrKind::Arity => "Arity",
+      CalcitErrKind::Var => "Var",
+      CalcitErrKind::Effect => "Effect",
+      CalcitErrKind::Unexpected => "Unexpected",
+      CalcitErrKind::Unimplemented => "Unimplemented",
+    })
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalcitErr {
+  pub kind: CalcitErrKind,
   pub msg: String,
   pub warnings: Vec<LocatedWarning>,
   pub location: Option<Arc<NodeLocation>>,
@@ -753,7 +779,13 @@ pub struct CalcitErr {
 
 impl fmt::Display for CalcitErr {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(&self.msg)?;
+    write!(f, "[{} Error] {}", self.kind, self.msg)?;
+    if let Some(location) = &self.location {
+      write!(f, "\n  at {}", location)?;
+    }
+    if !self.stack.is_empty() {
+      write!(f, "\n{:?}", self.stack)?;
+    }
     if !self.warnings.is_empty() {
       f.write_str("\n")?;
       LocatedWarning::print_list(&self.warnings);
@@ -766,6 +798,7 @@ impl From<String> for CalcitErr {
   /// hope this does not add extra costs
   fn from(msg: String) -> Self {
     CalcitErr {
+      kind: CalcitErrKind::Unexpected,
       msg,
       warnings: vec![],
       stack: CallStackList::default(),
@@ -775,16 +808,18 @@ impl From<String> for CalcitErr {
 }
 
 impl CalcitErr {
-  pub fn use_str<T: Into<String>>(msg: T) -> Self {
+  pub fn use_str<T: Into<String>>(kind: CalcitErrKind, msg: T) -> Self {
     CalcitErr {
+      kind,
       msg: msg.into(),
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
     }
   }
-  pub fn err_str<T: Into<String>>(msg: T) -> Result<Calcit, Self> {
+  pub fn err_str<T: Into<String>>(kind: CalcitErrKind, msg: T) -> Result<Calcit, Self> {
     Err(CalcitErr {
+      kind,
       msg: msg.into(),
       warnings: vec![],
       stack: CallStackList::default(),
@@ -792,32 +827,45 @@ impl CalcitErr {
     })
   }
   /// display nodes in error message
-  pub fn err_nodes<T: Into<String>>(msg: T, nodes: &[Calcit]) -> Result<Calcit, Self> {
+  pub fn err_nodes<T: Into<String>>(kind: CalcitErrKind, msg: T, nodes: &[Calcit]) -> Result<Calcit, Self> {
     Err(CalcitErr {
+      kind,
       msg: format!("{} {}", msg.into(), CalcitList::from(nodes)),
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
     })
   }
-  pub fn err_str_location<T: Into<String>>(msg: T, location: Option<Arc<NodeLocation>>) -> Result<Calcit, Self> {
+  pub fn err_str_location<T: Into<String>>(
+    kind: CalcitErrKind,
+    msg: T,
+    location: Option<Arc<NodeLocation>>,
+  ) -> Result<Calcit, Self> {
     Err(CalcitErr {
+      kind,
       msg: msg.into(),
       warnings: vec![],
       stack: CallStackList::default(),
       location,
     })
   }
-  pub fn use_msg_stack<T: Into<String>>(msg: T, stack: &CallStackList) -> Self {
+  pub fn use_msg_stack<T: Into<String>>(kind: CalcitErrKind, msg: T, stack: &CallStackList) -> Self {
     CalcitErr {
+      kind,
       msg: msg.into(),
       warnings: vec![],
       stack: stack.to_owned(),
       location: None,
     }
   }
-  pub fn use_msg_stack_location<T: Into<String>>(msg: T, stack: &CallStackList, location: Option<NodeLocation>) -> Self {
+  pub fn use_msg_stack_location<T: Into<String>>(
+    kind: CalcitErrKind,
+    msg: T,
+    stack: &CallStackList,
+    location: Option<NodeLocation>,
+  ) -> Self {
     CalcitErr {
+      kind,
       msg: msg.into(),
       warnings: vec![],
       stack: stack.to_owned(),
@@ -825,6 +873,7 @@ impl CalcitErr {
     }
   }
 }
+
 
 /// location of node in Snapshot
 #[derive(Debug, Clone, PartialEq, Eq)]
