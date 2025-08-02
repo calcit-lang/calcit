@@ -270,7 +270,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
             throw new Error(`Expected pair of size 2, got: ${pair}`);
           }
         } else {
-          throw new Error(`Expected pairs for reocrd, got: ${pair}`);
+          throw new Error(`Expected pairs for record, got: ${pair}`);
         }
       });
       entries.sort((a, b) => {
