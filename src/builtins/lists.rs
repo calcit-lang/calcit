@@ -16,11 +16,11 @@ pub fn new_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "list count expected a list, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:count expected 1 argument, but received:", xs);
   }
   match &xs[0] {
     Calcit::List(ys) => Ok(Calcit::Number(ys.len() as f64)),
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("list count expected a list, got: {a}")),
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:count expected a list, but received: {a}")),
   }
 }
 
@@ -28,7 +28,7 @@ pub fn nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_str(
       CalcitErrKind::Arity,
-      format!("nth expected 2 argument, got: {}", CalcitList::from(xs)),
+      format!("&list:nth expected 2 arguments, but received: {}", CalcitList::from(xs)),
     );
   }
   match (&xs[0], &xs[1]) {
@@ -37,11 +37,11 @@ pub fn nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Some(v) => Ok((*v).to_owned()),
         None => Ok(Calcit::Nil),
       },
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("nth expect usize, {e}")),
+      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:nth expected a valid index, {e}")),
     },
     (_, _) => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("nth expected a list and an index, got: {}", CalcitList::from(xs)),
+      format!("&list:nth expected a list and an index, but received: {}", CalcitList::from(xs)),
     ),
   }
 }
@@ -50,7 +50,7 @@ pub fn slice(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 && xs.len() != 3 {
     return CalcitErr::err_str(
       CalcitErrKind::Arity,
-      format!("slice expected 2~3 argument, got: {}", CalcitList::from(xs)),
+      format!("&list:slice expected 2 or 3 arguments, but received: {}", CalcitList::from(xs)),
     );
   }
   match (&xs[0], &xs[1]) {
@@ -58,13 +58,13 @@ pub fn slice(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let from_idx = f64_to_usize(*from)?;
       let to_idx = match xs.get(2) {
         Some(Calcit::Number(to)) => f64_to_usize(*to)?,
-        Some(a) => return CalcitErr::err_str(CalcitErrKind::Type, format!("slice expected number index, got: {a}")),
+        Some(a) => return CalcitErr::err_str(CalcitErrKind::Type, format!("&list:slice expected a number for index, but received: {a}")),
         None => ys.len(),
       };
 
       Ok(Calcit::List(Arc::new(ys.slice(from_idx, to_idx)?)))
     }
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("slice expected list and indexes: {a} {b}")),
+    (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:slice expected a list and numbers for indexes, but received: {a} {b}")),
   }
 }
 
@@ -72,26 +72,26 @@ pub fn append(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_str(
       CalcitErrKind::Arity,
-      format!("append expected 2 arguments, got: {}", CalcitList::from(xs)),
+      format!("&list:append expected 2 arguments, but received: {}", CalcitList::from(xs)),
     );
   }
   match &xs[0] {
     Calcit::List(ys) => Ok(Calcit::List(Arc::new(ys.push_right(xs[1].to_owned())))),
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("append expected a list: {a}")),
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:append expected a list, but received: {a}")),
   }
 }
 
 pub fn prepend(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::List(ys)), Some(a)) => Ok(Calcit::List(Arc::new(ys.push_left(a.to_owned())))),
-    (Some(a), _) => CalcitErr::err_str(CalcitErrKind::Type, format!("prepend expected list, got: {a}")),
-    (None, _) => CalcitErr::err_str(CalcitErrKind::Arity, "prepend expected 2 arguments, got nothing"),
+    (Some(a), _) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:prepend expected a list, but received: {a}")),
+    (None, _) => CalcitErr::err_str(CalcitErrKind::Arity, "&list:prepend expected 2 arguments, but received none"),
   }
 }
 
 pub fn rest(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "list:rest expected a list, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:rest expected a list, but received:", xs);
   }
   match &xs[0] {
     Calcit::List(ys) => {
@@ -101,13 +101,13 @@ pub fn rest(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::List(Arc::new(ys.drop_left())))
       }
     }
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("list:rest expected a list, got: {a}")),
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:rest expected a list, but received: {a}")),
   }
 }
 
 pub fn butlast(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "butlast expected a list, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:butlast expected a list, but received:", xs);
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::Nil),
@@ -118,7 +118,7 @@ pub fn butlast(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::List(Arc::new(ys.butlast()?)))
       }
     }
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("butlast expected a list, got: {a}")),
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:butlast expected a list, but received: {a}")),
   }
 }
 
@@ -128,7 +128,7 @@ pub fn concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     if let Calcit::List(zs) = x {
       total_size += zs.len();
     } else {
-      return CalcitErr::err_str(CalcitErrKind::Type, format!("concat expects list arguments, got: {x}"));
+      return CalcitErr::err_str(CalcitErrKind::Type, format!("&list:concat expected list arguments, but received: {x}"));
     }
   }
 
@@ -145,17 +145,17 @@ pub fn concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn range(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() || xs.len() > 3 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "expected 1~3 arguments for range:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:range expected 1 to 3 arguments, but received:", xs);
   }
   let (base, bound) = match (&xs[0], xs.get(1)) {
     (Calcit::Number(bound), None) => (0.0, *bound),
     (Calcit::Number(base), Some(Calcit::Number(bound))) => (*base, *bound),
-    (a, b) => return CalcitErr::err_str(CalcitErrKind::Type, format!("range expected base and bound, but got: {a} {b:?}")),
+    (a, b) => return CalcitErr::err_str(CalcitErrKind::Type, format!("&list:range expected numbers for base and bound, but received: {a} {b:?}")),
   };
 
   let step = match xs.get(2) {
     Some(Calcit::Number(n)) => *n,
-    Some(a) => return CalcitErr::err_str(CalcitErrKind::Type, format!("range expected numbers, but got: {a}")),
+    Some(a) => return CalcitErr::err_str(CalcitErrKind::Type, format!("&list:range expected a number for step, but received: {a}")),
     None => 1.0,
   };
 
@@ -164,7 +164,7 @@ pub fn range(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 
   if step == 0.0 || (bound > base && step < 0.0) || (bound < base && step > 0.0) {
-    return CalcitErr::err_str(CalcitErrKind::Unexpected, "range cannot construct list with step 0");
+    return CalcitErr::err_str(CalcitErrKind::Unexpected, "&list:range cannot construct list with a step of 0 or invalid step direction");
   }
 
   let mut ys = vec![];
@@ -185,12 +185,12 @@ pub fn range(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn reverse(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "butlast expected a list, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:reverse expected a list, but received:", xs);
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::Nil),
     Calcit::List(ys) => Ok(Calcit::from(ys.reverse())),
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("butlast expected a list, got: {a}")),
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:reverse expected a list, but received: {a}")),
   }
 }
 
@@ -253,7 +253,7 @@ pub fn foldl(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, Calcit
 
       (a, b) => Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
-        format!("foldl expected list and function, got: {a} {b}"),
+        format!("&list:foldl expected a list and a function, but received: {a} {b}"),
         call_stack,
         a.get_location().or_else(|| b.get_location()),
       )),
@@ -261,7 +261,7 @@ pub fn foldl(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, Calcit
   } else {
     Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Arity,
-      format!("foldl expected 3 arguments, got: {}", CalcitList::from(xs)),
+      format!("&list:foldl expected 3 arguments, but received: {}", CalcitList::from(xs)),
       call_stack,
     ))
   }
@@ -284,7 +284,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
               Calcit::Bool(b) => {
                 let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Arity,
-                  "foldl-shortcut list expected value in tuple",
+                  "&list:foldl-shortcut expected a value in the tuple",
                   call_stack,
                   x0.get_location(),
                 ))?;
@@ -297,7 +297,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
               a => {
                 return Err(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Type,
-                  format!("return value in foldl-shortcut should be a bool, got: {a}"),
+                  format!("&list:foldl-shortcut return value must be a boolean, but received: {a}"),
                   call_stack,
                   a.get_location(),
                 ));
@@ -306,7 +306,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
             _ => {
               return Err(CalcitErr::use_msg_stack(
                 CalcitErrKind::Type,
-                format!("return value for foldl-shortcut should be `:: bool acc`, got: {pair}"),
+                format!("&list:foldl-shortcut return value must be `:: boolean accumulator`, but received: {pair}"),
                 call_stack,
               ));
             }
@@ -324,20 +324,20 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
               Calcit::Bool(b) => {
                 let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Arity,
-                  "foldl set expected value in tuple",
+                  "&list:foldl-shortcut expected a value in the tuple",
                   call_stack,
                   x0.get_location(),
                 ))?;
                 if *b {
                   return Ok((*x1).to_owned());
                 } else {
-                  (*x1).clone_into(&mut state)
+                  x1.clone_into(&mut state)
                 }
               }
               a => {
                 return Err(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Type,
-                  format!("return value in foldl-shortcut should be a bool, got: {a}"),
+                  format!("&list:foldl-shortcut return value must be a boolean, but received: {a}"),
                   call_stack,
                   a.get_location(),
                 ));
@@ -346,7 +346,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
             _ => {
               return Err(CalcitErr::use_msg_stack(
                 CalcitErrKind::Type,
-                format!("return value for foldl-shortcut should be `:: bool acc`, got: {pair}"),
+                format!("&list:foldl-shortcut return value must be `:: boolean accumulator`, but received: {pair}"),
                 call_stack,
               ));
             }
@@ -368,7 +368,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
               Calcit::Bool(b) => {
                 let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Arity,
-                  "foldl map expected value in tuple",
+                  "&list:foldl-shortcut expected a value in the tuple",
                   call_stack,
                   x0.get_location(),
                 ))?;
@@ -381,7 +381,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
               a => {
                 return Err(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Type,
-                  format!("return value in foldl-shortcut should be a bool, got: {a}"),
+                  format!("&list:foldl-shortcut return value must be a boolean, but received: {a}"),
                   call_stack,
                   a.get_location(),
                 ));
@@ -390,7 +390,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
             _ => {
               return Err(CalcitErr::use_msg_stack(
                 CalcitErrKind::Type,
-                format!("return value for foldl-shortcut should be `:: bool acc`, got: {pair}"),
+                format!("&list:foldl-shortcut return value must be `:: boolean accumulator`, but received: {pair}"),
                 call_stack,
               ));
             }
@@ -401,7 +401,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
 
       (a, b) => Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
-        format!("foldl-shortcut expected list... and fn, got: {a} {b}"),
+        format!("&list:foldl-shortcut expected a list and a function, but received: {a} {b}"),
         call_stack,
         a.get_location().or_else(|| b.get_location()),
       )),
@@ -410,7 +410,7 @@ pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
     Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Arity,
       format!(
-        "foldl-shortcut expected 4 arguments list,state,default,fn, got: {}",
+        "&list:foldl-shortcut expected 4 arguments (list, state, default, fn), but received: {}",
         CalcitList::from(xs)
       ),
       call_stack,
@@ -437,7 +437,7 @@ pub fn foldr_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
               Calcit::Bool(b) => {
                 let x1 = extra.first().ok_or(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Arity,
-                  "foldl shortcut expected value in tuple",
+                  "&list:foldr-shortcut expected a value in the tuple",
                   call_stack,
                   x0.get_location(),
                 ))?;
@@ -450,7 +450,7 @@ pub fn foldr_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
               a => {
                 return Err(CalcitErr::use_msg_stack_location(
                   CalcitErrKind::Type,
-                  format!("return value in foldr-shortcut should be a bool, got: {a}"),
+                  format!("&list:foldr-shortcut return value must be a boolean, but received: {a}"),
                   call_stack,
                   a.get_location(),
                 ));
@@ -459,7 +459,7 @@ pub fn foldr_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
             _ => {
               return Err(CalcitErr::use_msg_stack(
                 CalcitErrKind::Type,
-                format!("return value for foldr-shortcut should be `:: bool acc`, got: {pair}"),
+                format!("&list:foldr-shortcut return value must be `:: boolean accumulator`, but received: {pair}"),
                 call_stack,
               ));
             }
@@ -470,7 +470,7 @@ pub fn foldr_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
 
       (a, b) => Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
-        format!("foldr-shortcut expected list... and fn, got: {a} {b}"),
+        format!("&list:foldr-shortcut expected a list and a function, but received: {a} {b}"),
         call_stack,
         a.get_location().or_else(|| b.get_location()),
       )),
@@ -479,7 +479,7 @@ pub fn foldr_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calci
     Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Arity,
       format!(
-        "foldr-shortcut expected 4 arguments list,state,default,fn, got: {}",
+        "&list:foldr-shortcut expected 4 arguments (list, state, default, fn), but received: {}",
         CalcitList::from(xs)
       ),
       call_stack,
@@ -500,11 +500,11 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
             Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
             Ok(Calcit::Number(_)) => Ordering::Equal,
             Ok(a) => {
-              eprintln!("expected number from sort comparator, got: {a}");
+              eprintln!("&list:sort comparator must return a number, but received: {a}");
               panic!("failed to sort")
             }
             Err(e) => {
-              eprintln!("sort failed, got: {e}");
+              eprintln!("&list:sort failed: {e}");
               panic!("failed to sort")
             }
           }
@@ -520,11 +520,11 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
             Ok(Calcit::Number(x)) if x > 0.0 => Ordering::Greater,
             Ok(Calcit::Number(_)) => Ordering::Equal,
             Ok(a) => {
-              eprintln!("expected number from sort comparator, got: {a}");
+              eprintln!("&list:sort comparator must return a number, but received: {a}");
               panic!("failed to sort")
             }
             Err(e) => {
-              eprintln!("sort failed, got: {e}");
+              eprintln!("&list:sort failed: {e}");
               panic!("failed to sort")
             }
           }
@@ -533,7 +533,7 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
       }
       (a, b) => Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
-        format!("sort expected list and function, got: {a} {b}"),
+        format!("&list:sort expected a list and a function, but received: {a} {b}"),
         call_stack,
         a.get_location().or_else(|| b.get_location()),
       )),
@@ -541,7 +541,7 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
   } else {
     Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Arity,
-      format!("sort expected 2 arguments, got: {}", Calcit::List(Arc::new(xs.into()))),
+      format!("&list:sort expected 2 arguments, but received: {}", Calcit::List(Arc::new(xs.into()))),
       call_stack,
     ))
   }
@@ -549,7 +549,7 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
 
 pub fn first(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_str(CalcitErrKind::Arity, "list:first expected 1 argument");
+    return CalcitErr::err_str(CalcitErrKind::Arity, "&list:first expected 1 argument, but received none");
   }
   match &xs[0] {
     Calcit::List(ys) => {
@@ -559,14 +559,14 @@ pub fn first(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok((ys[0]).to_owned())
       }
     }
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("list:first expected a list, got: {a}")),
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:first expected a list, but received: {a}")),
   }
 }
 
 // real implementation relies of ternary-tree
 pub fn assoc_before(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "invalid arguments to assoc-before:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:assoc-before expected 3 arguments, but received:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -574,15 +574,15 @@ pub fn assoc_before(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         // let ys = insert(zs, idx, xs[2].to_owned());
         Ok(Calcit::List(Arc::new(zs.assoc_before(idx, xs[2].to_owned())?)))
       }
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("assoc-before expect usize, {e}")),
+      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:assoc-before expected a valid index, {e}")),
     },
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("assoc-before expected list and index, got: {a} {b}")),
+    (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:assoc-before expected a list and an index, but received: {a} {b}")),
   }
 }
 
 pub fn assoc_after(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "invalid arguments to assoc-after:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:assoc-after expected 3 arguments, but received:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -590,46 +590,46 @@ pub fn assoc_after(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         // let ys = insert(zs, idx + 1, xs[2].to_owned());
         Ok(Calcit::from(zs.assoc_after(idx, xs[2].to_owned())?))
       }
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("assoc-after expect usize, {e}")),
+      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:assoc-after expected a valid index, {e}")),
     },
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("assoc-after expected list and index, got: {a} {b}")),
+    (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:assoc-after expected a list and an index, but received: {a} {b}")),
   }
 }
 
 pub fn empty_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "list empty? expected a list, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:empty? expected a list, but received:", xs);
   }
   match &xs[0] {
     Calcit::List(ys) => Ok(Calcit::Bool(ys.is_empty())),
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("list empty? expected a list, got: {a}")),
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:empty? expected a list, but received: {a}")),
   }
 }
 
 pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "list contains? expected list and a index, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:contains? expected a list and an index, but received:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(xs), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => Ok(Calcit::Bool(idx < xs.len())),
       Err(_) => Ok(Calcit::Bool(false)),
     },
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("list contains? expected list and iindex, got: {a} {b}")),
+    (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:contains? expected a list and an index, but received: {a} {b}")),
   }
 }
 
 pub fn includes_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::List(xs)), Some(a)) => Ok(Calcit::Bool(xs.index_of(a).is_some())),
-    (Some(a), ..) => CalcitErr::err_str(CalcitErrKind::Type, format!("list `includes?` expected list, list, got: {a}")),
-    (None, ..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "list `includes?` expected 2 arguments, got:", xs),
+    (Some(a), ..) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:includes? expected a list and a value, but received: {a}")),
+    (None, ..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:includes? expected 2 arguments, but received:", xs),
   }
 }
 
 pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "list:assoc expected 3 arguments, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:assoc expected 3 arguments, but received:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(zs), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -645,24 +645,24 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Err(e) => CalcitErr::err_str(CalcitErrKind::Type, e),
     },
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("list:assoc expected list and index, got: {a} {b}")),
+    (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:assoc expected a list and an index, but received: {a} {b}")),
   }
 }
 
 pub fn dissoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:dissoc expects 3 arguments, got:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:dissoc expected 2 arguments, but received:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(xs), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(at) => Ok(Calcit::from(xs.dissoc(at)?)),
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("dissoc expected number, {e}")),
+      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:dissoc expected a valid index, {e}")),
     },
     (Calcit::List(_xs), a) => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("&list:dissoc expects a number in second argument, got {a}"),
+      format!("&list:dissoc expected a number for index, but received: {a}"),
     ),
-    (a, ..) => CalcitErr::err_str(CalcitErrKind::Type, format!("list dissoc expected a list, got: {a}")),
+    (a, ..) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:dissoc expected a list, but received: {a}")),
   }
 }
 
@@ -670,7 +670,7 @@ pub fn list_to_set(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
-      "&list:to-set expected a single argument in list, got:",
+      "&list:to-set expected 1 argument, but received:",
       xs,
     );
   }
@@ -682,7 +682,7 @@ pub fn list_to_set(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       });
       Ok(Calcit::Set(zs))
     }
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:to-set expected a list, got: {a}")),
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:to-set expected a list, but received: {a}")),
   }
 }
 
@@ -690,7 +690,7 @@ pub fn distinct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
-      "&list:distinct expected a single argument in list, got:",
+      "&list:distinct expected 1 argument, but received:",
       xs,
     );
   }
@@ -706,6 +706,6 @@ pub fn distinct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       });
       Ok(Calcit::from(CalcitList::List(zs)))
     }
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:distinct expected a list, got: {a}")),
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:distinct expected a list, but received: {a}")),
   }
 }
