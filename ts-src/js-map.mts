@@ -176,7 +176,7 @@ export class CalcitMap {
     return new CalcitSet(ret);
   }
 
-  /** detecthing in custom formatter */
+  /** detecting in custom formatter */
   nestedDataInChildren() {
     let pairs = this.pairs();
     for (let idx = 0; idx < pairs.length; idx++) {
@@ -392,7 +392,7 @@ export class CalcitSliceMap {
     return new CalcitSet(ret);
   }
 
-  /** detecthing in custom formatter */
+  /** detecting in custom formatter */
   nestedDataInChildren() {
     let pairs = this.pairs();
     for (let idx = 0; idx < pairs.length; idx++) {
