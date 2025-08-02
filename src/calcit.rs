@@ -781,7 +781,7 @@ impl fmt::Display for CalcitErr {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "[{} Error] {}", self.kind, self.msg)?;
     if let Some(location) = &self.location {
-      write!(f, "\n  at {}", location)?;
+      write!(f, "\n  at {location}")?;
     }
     if !self.stack.is_empty() {
       write!(f, "\n{:?}", self.stack)?;
@@ -836,11 +836,7 @@ impl CalcitErr {
       location: None,
     })
   }
-  pub fn err_str_location<T: Into<String>>(
-    kind: CalcitErrKind,
-    msg: T,
-    location: Option<Arc<NodeLocation>>,
-  ) -> Result<Calcit, Self> {
+  pub fn err_str_location<T: Into<String>>(kind: CalcitErrKind, msg: T, location: Option<Arc<NodeLocation>>) -> Result<Calcit, Self> {
     Err(CalcitErr {
       kind,
       msg: msg.into(),
@@ -873,7 +869,6 @@ impl CalcitErr {
     }
   }
 }
-
 
 /// location of node in Snapshot
 #[derive(Debug, Clone, PartialEq, Eq)]
