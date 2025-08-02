@@ -39,7 +39,7 @@ To use Calcit in GitHub Actions, try [setup-cr](https://github.com/calcit-lang/s
 
 ### Usage
 
-Snippets evaling:
+Snippets evaluating:
 
 ```bash
 cr eval 'range 100'

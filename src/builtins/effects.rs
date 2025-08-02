@@ -65,7 +65,7 @@ pub fn calcit_running_mode(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-/// is evaling in Rust, not for js
+/// is evaluating in Rust, not for js
 pub fn is_rust_eval() -> bool {
   let mode = CLI_RUNNING_MODE.read().expect("read mode").to_owned();
   matches!(mode, CliRunningMode::Eval)

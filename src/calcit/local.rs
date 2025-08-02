@@ -9,7 +9,7 @@ use super::CalcitSymbolInfo;
 
 #[derive(Debug, Clone)]
 pub struct CalcitLocal {
-  /** represent local varaible by idx, string value put inside dictionary */
+  /** represent local variable by idx, string value put inside dictionary */
   pub idx: u16,
   pub sym: Arc<str>,
   pub info: Arc<CalcitSymbolInfo>,

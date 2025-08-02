@@ -58,7 +58,7 @@ pub enum Calcit {
   Import(CalcitImport),
   /// registered in runtime
   Registered(Arc<str>),
-  /// sth between string and enum, used a key or weak identifier
+  /// something between string and enum, used a key or weak identifier
   Tag(EdnTag),
   Str(Arc<str>),
   /// to compile to js, global variables are stored in thunks at first, rather than evaluated

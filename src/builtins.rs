@@ -266,7 +266,7 @@ pub fn handle_syntax(
     // "define reference" although it uses a confusing name "atom"
     CalcitSyntax::Defatom => refs::defatom(nodes, scope, file_ns, call_stack),
     CalcitSyntax::Reset => refs::reset_bang(nodes, scope, file_ns, call_stack),
-    // different behavoirs, in Rust interpreter it's nil, in js codegen it's nothing
+    // different behaviors, in Rust interpreter it's nil, in js codegen it's nothing
     CalcitSyntax::HintFn => meta::no_op(),
     CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be used as operator", &nodes.to_vec()),
     CalcitSyntax::ArgOptional => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be used as operator", &nodes.to_vec()),
