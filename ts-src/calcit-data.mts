@@ -595,7 +595,7 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
         let yv = yValues[idx];
         yMap.set(yv, true);
       }
-      
+
       for (let idx = 0; idx < values.length; idx++) {
         let v = values[idx];
         let found = false;

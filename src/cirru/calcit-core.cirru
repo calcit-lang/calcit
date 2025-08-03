@@ -597,11 +597,11 @@
           :code $ quote
             defmacro \ (& xs)
               quasiquote $ defn %\ (? % %2) ~xs
-        |\. $ %{} :CodeEntry (:doc |)
+        |\. $ %{} :CodeEntry (:doc "|this syntax is bared used, deprecating")
           :code $ quote
             defmacro \. (args-alias & xs)
               &let
-                args $ ->% (turn-string args-alias) (split % |.) (map % turn-symbol)
+                args $ ->% (turn-string args-alias) (split % |,) (map % turn-symbol)
                 &let
                   inner-body $ if
                     &= 1 $ &list:count xs

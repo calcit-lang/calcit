@@ -6,8 +6,8 @@ use std::vec;
 
 use crate::builtins::{self, IMPORTED_PROCS};
 use crate::calcit::{
-  CORE_NS, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal,
-  CalcitProc, CalcitScope, CalcitSyntax, MethodKind, NodeLocation,
+  CORE_NS, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
+  CalcitScope, CalcitSyntax, MethodKind, NodeLocation,
 };
 use crate::call_stack::{CallStackList, StackKind, using_stack};
 use crate::program;
@@ -126,6 +126,29 @@ pub fn call_expr(
           builtins::meta::invoke_method(name, &values, &next_stack)
         } else {
           builtins::meta::invoke_method(name, &values, call_stack)
+        }
+      } else if *kind == MethodKind::KeywordAccess {
+        if rest_nodes.len() == 1 {
+          let obj = evaluate_expr(&rest_nodes[0], scope, file_ns, call_stack)?;
+          let tag = evaluate_expr(&Calcit::tag(name), scope, file_ns, call_stack)?;
+          if let Calcit::Map(m) = obj {
+            match m.get(&tag) {
+              Some(value) => Ok(value.to_owned()),
+              None => Ok(Calcit::Nil),
+            }
+          } else {
+            Err(CalcitErr::use_msg_stack(
+              CalcitErrKind::Type,
+              format!("expected a hashmap, got: {obj}"),
+              call_stack,
+            ))
+          }
+        } else {
+          Err(CalcitErr::use_msg_stack(
+            CalcitErrKind::Arity,
+            format!("keyword-accessor takes only 1 argument, {xs}"),
+            call_stack,
+          ))
         }
       } else {
         CalcitErr::err_str(CalcitErrKind::Unexpected, format!("unknown method for rust runtime: {kind}"))
@@ -360,8 +383,7 @@ pub fn eval_symbol_from_program(sym: &str, ns: &str, call_stack: &CallStackList)
   }
   if let Some(code) = program::lookup_def_code(ns, sym) {
     let v = evaluate_expr(&code, &CalcitScope::default(), ns, call_stack)?;
-    program::write_evaled_def(ns, sym, v.to_owned())
-      .map_err(|e| CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, e, call_stack))?;
+    program::write_evaled_def(ns, sym, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, e, call_stack))?;
     return Ok(Some(v));
   }
   Ok(None)

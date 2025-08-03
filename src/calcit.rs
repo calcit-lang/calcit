@@ -783,9 +783,6 @@ impl fmt::Display for CalcitErr {
     if let Some(location) = &self.location {
       write!(f, "\n  at {location}")?;
     }
-    if !self.stack.is_empty() {
-      write!(f, "\n{:?}", self.stack)?;
-    }
     if !self.warnings.is_empty() {
       f.write_str("\n")?;
       LocatedWarning::print_list(&self.warnings);
@@ -951,6 +948,8 @@ pub enum MethodKind {
   InvokeNative,
   /// (.?!f a)
   InvokeNativeOptional,
+  /// (.:k a)
+  KeywordAccess,
   /// (.-p a)
   Access,
   /// (.?-p a)
@@ -963,6 +962,7 @@ impl fmt::Display for MethodKind {
       MethodKind::Invoke => write!(f, "invoke"),
       MethodKind::InvokeNative => write!(f, "invoke-native"),
       MethodKind::InvokeNativeOptional => write!(f, "invoke-native-optional"),
+      MethodKind::KeywordAccess => write!(f, "keyword-access"),
       MethodKind::Access => write!(f, "access"),
       MethodKind::AccessOptional => write!(f, "access-optional"),
     }

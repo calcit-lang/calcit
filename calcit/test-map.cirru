@@ -7,7 +7,7 @@
       :defs $ {}
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map pairs") (test-pairs) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-keys) (test-get) (test-select) (test-methods) (test-diff) (do true)
+            defn main! () (log-title "|Testing maps") (test-maps) (log-title "|Testing map pairs") (test-pairs) (log-title "|Testing map syntax") (test-native-map-syntax) (test-map-comma) (test-keys) (test-get) (test-select) (test-methods) (test-diff) (test-shorthand) (do true)
         |test-diff $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing diff")
@@ -297,6 +297,12 @@
                   {} (:a 1) (:b 2) (:c 3)
                   [] :c :d
                 {} (:a 1) (:b 2)
+        |test-shorthand $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            fn () (log-title "|Testing shorthand")
+              let
+                  dict $ {} (:a 1)
+                assert= 1 dict.:a
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-map.main $ :require
