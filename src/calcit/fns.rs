@@ -20,7 +20,7 @@ pub enum CalcitArgLabel {
 impl Display for CalcitArgLabel {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
     match self {
-      CalcitArgLabel::Idx(s) => write!(f, "{s}"),
+      CalcitArgLabel::Idx(s) => write!(f, "{}", CalcitLocal::read_name(*s)),
       CalcitArgLabel::OptionalMark => write!(f, "?"),
       CalcitArgLabel::RestMark => write!(f, "&"),
     }

@@ -264,7 +264,7 @@ impl fmt::Display for Calcit {
               if need_space {
                 f.write_str(" ")?;
               }
-              f.write_str(&a.to_string())?;
+              f.write_str(&CalcitLocal::read_name(*a))?;
               need_space = true;
             }
           }
