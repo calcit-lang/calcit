@@ -55,7 +55,7 @@ enum PseudoTypeIndex {
 }
 
 let typeAsInt = (x: CalcitValue): number => {
-  // based on order used in Ord traint
+  // based on order used in Ord trait
   if (x == null) return PseudoTypeIndex.nil;
   let t = typeof x;
   if (t === "boolean") return PseudoTypeIndex.bool;

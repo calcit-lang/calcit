@@ -332,7 +332,7 @@ export let foldl = function (xs: CalcitValue, acc: CalcitValue, f: CalcitFn): Ca
     });
     return result;
   }
-  throw new Error("Unknow data for foldl");
+  throw new Error("Unknown data for foldl");
 };
 
 export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: CalcitValue, f: CalcitFn): CalcitValue {
@@ -424,7 +424,7 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     }
     return v0;
   }
-  throw new Error("Unknow data for foldl-shortcut");
+  throw new Error("Unknown data for foldl-shortcut");
 };
 export let foldr_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: CalcitValue, f: CalcitFn): CalcitValue {
   if (arguments.length !== 4) {
@@ -455,5 +455,5 @@ export let foldr_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
     return v0;
   }
 
-  throw new Error("Unknow data for foldr-shortcut, expected only list");
+  throw new Error("Unknown data for foldr-shortcut, expected only list");
 };

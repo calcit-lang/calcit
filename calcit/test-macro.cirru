@@ -196,12 +196,12 @@
                   macroexpand $ quote (\. x x)
                   quasiquote $ defn f_x (x) x
                 assert=
-                  macroexpand $ quote (\. x.y x)
+                  macroexpand $ quote (\. x,y x)
                   quote $ defn f_x (x)
                     defn f_y (y) x
                 assert=
                   macroexpand $ quote
-                    \. x.y (println x y) x
+                    \. x,y (println x y) x
                   quote $ defn f_x (x)
                     defn f_y (y)
                       &let () (println x y) x
@@ -210,11 +210,11 @@
                 \. x x
                 , 2
               assert= 2 $
-                  \. x.y x
+                  \. x,y x
                   , 2
                 , 3
               assert= 2 $
-                  \. x.y (println "|inside lambda alias" x y) x
+                  \. x,y (println "|inside lambda alias" x y) x
                   , 2
                 , 3
         |test-misc $ %{} :CodeEntry (:doc |)

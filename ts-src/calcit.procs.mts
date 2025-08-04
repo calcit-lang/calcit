@@ -696,14 +696,10 @@ export let round_$q_ = (a: number) => {
   return a === Math.round(a);
 };
 export let _$n_str_$o_concat = (a: string, b: string) => {
-  let buffer = "";
-  if (a != null) {
-    buffer += toString(a, false);
-  }
-  if (b != null) {
-    buffer += toString(b, false);
-  }
-  return buffer;
+  // Optimize string concatenation by avoiding unnecessary toString calls
+  const aStr = a != null ? toString(a, false) : "";
+  const bStr = b != null ? toString(b, false) : "";
+  return aStr + bStr;
 };
 export let sort = (xs: CalcitList | CalcitSliceList, f: CalcitFn): CalcitSliceList => {
   if (xs == null) {
@@ -907,7 +903,7 @@ export let parse_float = (x: string): number => {
 export let trim = (x: string, c: string): string => {
   if (c != null) {
     if (c.length !== 1) {
-      throw new Error("Expceted c of a character");
+      throw new Error("Expected c of a character");
     }
     var buffer = x;
     var size = buffer.length;

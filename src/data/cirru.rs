@@ -126,19 +126,30 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
         let mut next_coord: Vec<u8> = (*coord).to_owned();
         next_coord.push(idx as u8); // clamp to prevent overflow, code not supposed to be larger than 256 children
 
-        if idx == 0
-          && let Cirru::Leaf(s) = y
-        {
+        if let Cirru::Leaf(s) = y {
           // dirty hack to support shorthand of method calling,
           // this feature is EXPERIMENTAL and might change in future
           if let Some((obj, method)) = split_leaf_to_method_call(s) {
-            zs.push(method);
-            zs.push(Calcit::Symbol {
-              sym: Arc::from(obj),
-              info: Arc::clone(&symbol_info),
-              location: Some(next_coord.into()),
-            });
-            continue;
+            if idx == 0 {
+              zs.push(method);
+              zs.push(Calcit::Symbol {
+                sym: Arc::from(obj),
+                info: Arc::clone(&symbol_info),
+                location: Some(next_coord.to_owned().into()),
+              });
+              continue;
+            } else {
+              // turn a.-b into (.-b a) , a shorthand
+              zs.push(Calcit::from(CalcitList::from(&[
+                method,
+                Calcit::Symbol {
+                  sym: Arc::from(obj),
+                  info: Arc::clone(&symbol_info),
+                  location: Some(next_coord.to_owned().into()),
+                },
+              ])));
+              continue;
+            }
           }
         }
 
@@ -153,6 +164,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
 /// some characters available for variables are okey here, for example `-`, `!`, `?`, `*``, etc.
 fn split_leaf_to_method_call(s: &str) -> Option<(String, Calcit)> {
   let prefixes = [
+    (".:", MethodKind::KeywordAccess),
     (".-", MethodKind::Access),
     (".!", MethodKind::InvokeNative),
     (".", MethodKind::Invoke),
@@ -253,6 +265,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
       MethodKind::Access => Ok(Cirru::leaf(format!(".-{name}"))),
       MethodKind::InvokeNative => Ok(Cirru::leaf(format!(".!{name}"))),
       MethodKind::Invoke => Ok(Cirru::leaf(format!(".{name}"))),
+      MethodKind::KeywordAccess => Ok(Cirru::leaf(format!(".:{name}"))),
       MethodKind::AccessOptional => Ok(Cirru::leaf(format!(".?-{name}"))),
       MethodKind::InvokeNativeOptional => Ok(Cirru::leaf(format!(".?!{name}"))),
     },
