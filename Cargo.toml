@@ -16,7 +16,7 @@ exclude = ["lib/*", "calcit/*", "js-out/*", "scripts/*"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cirru_edn = "0.6.16"
+cirru_edn = "0.6.18"
 # cirru_edn = { path = "/Users/chenyong/repo/cirru/edn.rs" }
 cirru_parser = "0.1.34"
 # cirru_parser = { path = "/Users/chenyong/repo/cirru/parser.rs" }
@@ -32,6 +32,7 @@ im_ternary_tree = "0.0.19"
 colored = "3.0.0"
 strum = "0.25"
 strum_macros = "0.25"
+serde = { version = "1.0", features = [ "derive" ]}
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libloading = "0.8.6"
