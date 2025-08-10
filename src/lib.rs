@@ -10,7 +10,7 @@ pub mod runner;
 pub mod snapshot;
 pub mod util;
 
-use calcit::LocatedWarning;
+use calcit::{CalcitErrKind, LocatedWarning};
 use call_stack::CallStackList;
 use std::cell::RefCell;
 use std::fs;
@@ -48,13 +48,14 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> 
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
       call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
-      return CalcitErr::err_str(failure.msg);
+      return CalcitErr::err_str(failure.kind, failure.msg);
     }
   }
 
   let warnings = check_warnings.borrow();
   if !warnings.is_empty() {
     return Err(CalcitErr {
+      kind: CalcitErrKind::Unexpected,
       msg: format!("Found {} warnings, runner blocked", warnings.len()),
       warnings: warnings.to_owned(),
       stack: CallStackList::default(),
@@ -62,7 +63,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> 
     });
   }
   match program::lookup_evaled_def(&init_ns, &init_def) {
-    None => CalcitErr::err_str(format!("entry not initialized: {init_ns}/{init_def}")),
+    None => CalcitErr::err_str(CalcitErrKind::Var, format!("entry not initialized: {init_ns}/{init_def}")),
     Some(entry) => match entry {
       Calcit::Fn { info, .. } => {
         let result = runner::run_fn(params, &info, &CallStackList::default());
@@ -74,7 +75,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> 
           }
         }
       }
-      _ => CalcitErr::err_str(format!("expected function entry, got: {entry}")),
+      _ => CalcitErr::err_str(CalcitErrKind::Type, format!("expected function entry, got: {entry}")),
     },
   }
 }

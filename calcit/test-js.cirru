@@ -129,6 +129,7 @@
                   a $ new js/Object
                 set! (.-a a) 2
                 assert= (.-a a) 2
+                assert= a.-a 2
                 set! (.-a-b a) 3
                 assert= (.-a-b a) 3
               ; js/console.log $ range 1000
