@@ -111,11 +111,39 @@ pub fn add_definition(app_state: &super::AppState, req: McpRequest) -> ResponseJ
     }
   };
 
-  let code = match req.parameters.get("code") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
+  let code_cirru = match req.parameters.get("code") {
+    Some(serde_json::Value::String(s)) => {
+      // 处理字符串格式的代码（向后兼容）
+      match cirru_parser::parse(s) {
+        Ok(parsed) => {
+          if parsed.is_empty() {
+            return ResponseJson(serde_json::json!({
+              "error": "Code cannot be empty"
+            }));
+          }
+          parsed[0].clone()
+        }
+        Err(e) => {
+          return ResponseJson(serde_json::json!({
+            "error": format!("Failed to parse code: {e}")
+          }));
+        }
+      }
+    }
+    Some(code_json) => {
+      // 处理数组格式的代码（新格式）
+      match super::cirru_utils::json_to_cirru(code_json) {
+        Ok(cirru) => cirru,
+        Err(e) => {
+          return ResponseJson(serde_json::json!({
+            "error": format!("Failed to convert code from JSON: {e}")
+          }));
+        }
+      }
+    }
+    None => {
       return ResponseJson(serde_json::json!({
-        "error": "code parameter is missing or not a string"
+        "error": "code parameter is missing"
       }));
     }
   };
@@ -148,22 +176,7 @@ pub fn add_definition(app_state: &super::AppState, req: McpRequest) -> ResponseJ
     }));
   }
 
-  // 解析代码为 Cirru
-  let code_cirru = match cirru_parser::parse(&code) {
-    Ok(parsed) => {
-      if parsed.is_empty() {
-        return ResponseJson(serde_json::json!({
-          "error": "Code cannot be empty"
-        }));
-      }
-      parsed[0].clone()
-    }
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Failed to parse code: {e}")
-      }));
-    }
-  };
+  // code_cirru 已经在上面处理完成
 
   // 添加新定义
   let code_entry = CodeEntry { doc, code: code_cirru };
@@ -256,11 +269,39 @@ pub fn update_definition(app_state: &super::AppState, req: McpRequest) -> Respon
     }
   };
 
-  let code = match req.parameters.get("code") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
+  let code_cirru = match req.parameters.get("code") {
+    Some(serde_json::Value::String(s)) => {
+      // 处理字符串格式的代码（向后兼容）
+      match cirru_parser::parse(s) {
+        Ok(parsed) => {
+          if parsed.is_empty() {
+            return ResponseJson(serde_json::json!({
+              "error": "Code cannot be empty"
+            }));
+          }
+          parsed[0].clone()
+        }
+        Err(e) => {
+          return ResponseJson(serde_json::json!({
+            "error": format!("Failed to parse code: {e}")
+          }));
+        }
+      }
+    }
+    Some(code_json) => {
+      // 处理数组格式的代码（新格式）
+      match super::cirru_utils::json_to_cirru(code_json) {
+        Ok(cirru) => cirru,
+        Err(e) => {
+          return ResponseJson(serde_json::json!({
+            "error": format!("Failed to convert code from JSON: {e}")
+          }));
+        }
+      }
+    }
+    None => {
       return ResponseJson(serde_json::json!({
-        "error": "code parameter is missing or not a string"
+        "error": "code parameter is missing"
       }));
     }
   };
@@ -293,22 +334,7 @@ pub fn update_definition(app_state: &super::AppState, req: McpRequest) -> Respon
     }));
   }
 
-  // 解析代码为 Cirru
-  let code_cirru = match cirru_parser::parse(&code) {
-    Ok(parsed) => {
-      if parsed.is_empty() {
-        return ResponseJson(serde_json::json!({
-          "error": "Code cannot be empty"
-        }));
-      }
-      parsed[0].clone()
-    }
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Failed to parse code: {e}")
-      }));
-    }
-  };
+  // code_cirru 已经在上面处理完成
 
   // 更新定义
   let code_entry = CodeEntry { doc, code: code_cirru };
