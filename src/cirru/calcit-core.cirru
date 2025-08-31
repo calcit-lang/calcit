@@ -1,6 +1,6 @@
 
 {} (:package |calcit)
-  :configs $ {} (:init-fn |TODO) (:reload-fn |TODO) (:version |TODO)
+  :configs $ {} (:init-fn |TODO) (:reload-fn |TODO) (:version |0.0.0)
     :modules $ []
   :files $ {}
     |calcit.core $ %{} :FileEntry
