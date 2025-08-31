@@ -1,10 +1,10 @@
 use argh::FromArgs;
 use axum::{
   Router,
-  extract::{Json, State, Request},
+  extract::{Json, Request, State},
+  http::StatusCode,
   response::{Json as ResponseJson, Response},
   routing::{get, post},
-  http::StatusCode,
 };
 use calcit::snapshot;
 use std::collections::HashMap;
@@ -14,6 +14,7 @@ use tower_http::cors::CorsLayer;
 
 // 导入 MCP 模块
 use calcit::mcp::*;
+use calcit::mcp::docs_handlers::{load_api_docs, load_guidebook_docs};
 
 /// MCP server for Calcit
 #[derive(FromArgs)]
@@ -81,20 +82,20 @@ async fn handle_404(req: Request) -> Response {
   let method = req.method().to_string();
   let uri = req.uri().to_string();
   let headers = req.headers().clone();
-  
+
   println!("[404 REQUEST] {method} {uri} - Headers: {headers:?}");
-  
+
   let response_body = serde_json::json!({
     "error": "Not Found",
     "message": format!("The requested endpoint {} {} was not found", method, uri),
     "available_endpoints": [
       "GET /mcp/",
-      "GET /mcp/discover", 
+      "GET /mcp/discover",
       "POST /mcp/execute",
       "POST /mcp_jsonrpc"
     ]
   });
-  
+
   Response::builder()
     .status(StatusCode::NOT_FOUND)
     .header("Content-Type", "application/json")
@@ -142,6 +143,21 @@ async fn main() -> std::io::Result<()> {
 
   println!("Starting MCP server on port {}", args.port);
   println!("Loading file: {}", args.file);
+  
+  // 预加载 API 文档和教程数据
+  println!("Preloading API documentation...");
+  if let Err(e) = load_api_docs() {
+    eprintln!("Warning: Failed to load API docs: {e}");
+  } else {
+    println!("API documentation loaded successfully");
+  }
+  
+  println!("Preloading guidebook...");
+  if let Err(e) = load_guidebook_docs() {
+    eprintln!("Warning: Failed to load guidebook: {e}");
+  } else {
+    println!("Guidebook loaded successfully");
+  }
 
   let app = Router::new()
     .route("/mcp_jsonrpc", post(mcp_jsonrpc)) // Standard MCP JSON-RPC 2.0 endpoint

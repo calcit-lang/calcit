@@ -211,6 +211,12 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     "parse_to_json" => super::cirru_handlers::parse_to_json(app_state, legacy_request),
     "format_from_json" => super::cirru_handlers::format_from_json(app_state, legacy_request),
 
+    // 文档查询工具
+    "query_api_docs" => super::docs_handlers::handle_query_api_docs(app_state, legacy_request),
+    "query_guidebook" => super::docs_handlers::handle_query_guidebook(app_state, legacy_request),
+    "list_api_docs" => super::docs_handlers::handle_list_api_docs(app_state, legacy_request),
+    "list_guidebook_docs" => super::docs_handlers::handle_list_guidebook_docs(app_state, legacy_request),
+
     _ => {
       let error = JsonRpcError::tool_not_found(&params.name);
       return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
@@ -224,8 +230,12 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     }],
     is_error: None,
   };
-  
-  serde_json::to_value(JsonRpcResponse::success(req.id.clone(), serde_json::to_value(tool_call_result).unwrap())).unwrap()
+
+  serde_json::to_value(JsonRpcResponse::success(
+    req.id.clone(),
+    serde_json::to_value(tool_call_result).unwrap(),
+  ))
+  .unwrap()
 }
 
 /// Legacy endpoint for backward compatibility (Axum version)
@@ -284,6 +294,12 @@ pub async fn legacy_execute_axum(data: Arc<AppState>, req: McpRequest) -> Respon
     // Cirru 转换工具
     "parse_to_json" => super::cirru_handlers::parse_to_json(&data, req),
     "format_from_json" => super::cirru_handlers::format_from_json(&data, req),
+
+    // 文档查询工具
+    "query_api_docs" => super::docs_handlers::handle_query_api_docs(&data, req),
+    "query_guidebook" => super::docs_handlers::handle_query_guidebook(&data, req),
+    "list_api_docs" => super::docs_handlers::handle_list_api_docs(&data, req),
+    "list_guidebook_docs" => super::docs_handlers::handle_list_guidebook_docs(&data, req),
 
     _ => {
       println!("[LEGACY ERROR] Unknown tool: {}", req.tool_name);

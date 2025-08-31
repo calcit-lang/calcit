@@ -9,6 +9,7 @@ use std::collections::HashMap;
 pub mod cirru_handlers;
 pub mod cirru_utils;
 pub mod definition_handlers;
+pub mod docs_handlers;
 pub mod jsonrpc;
 pub mod mcp_handlers;
 pub mod module_handlers;
@@ -28,6 +29,7 @@ pub struct AppState {
 pub use cirru_handlers::*;
 pub use cirru_utils::*;
 pub use definition_handlers::*;
+pub use docs_handlers::*;
 pub use jsonrpc::*;
 pub use mcp_handlers::*;
 pub use module_handlers::*;
