@@ -37,6 +37,11 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       }],
     },
     McpTool {
+      name: "list_namespaces".to_string(),
+      description: "List all namespaces in the project".to_string(),
+      parameters: vec![],
+    },
+    McpTool {
       name: "read_namespace".to_string(),
       description: "Read namespace information including imports".to_string(),
       parameters: vec![McpToolParameter {
@@ -233,7 +238,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
     },
     // Cirru 转换工具
     McpTool {
-      name: "parseToJson".to_string(),
+      name: "parse_to_json".to_string(),
       description: "Parse Cirru syntax string to JSON recursive structure".to_string(),
       parameters: vec![McpToolParameter {
         name: "cirru_code".to_string(),
@@ -243,7 +248,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       }],
     },
     McpTool {
-      name: "formatFromJson".to_string(),
+      name: "format_from_json".to_string(),
       description: "Format JSON recursive structure to Cirru syntax string".to_string(),
       parameters: vec![McpToolParameter {
         name: "json_structure".to_string(),

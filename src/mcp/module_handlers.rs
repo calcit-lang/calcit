@@ -1,6 +1,6 @@
 use actix_web::HttpResponse;
-use calcit::snapshot::{self, Snapshot};
-use crate::mcp::tools::McpRequest;
+use crate::snapshot::{self, Snapshot};
+use super::tools::McpRequest;
 
 /// 加载当前模块名称
 fn load_current_module_name(compact_cirru_path: &str) -> Result<String, String> {
@@ -55,7 +55,7 @@ fn load_dependency_module(module_path: &str, base_dir: &std::path::Path) -> Resu
 }
 
 /// 获取依赖模块（带缓存）
-fn get_dependency_module(app_state: &crate::AppState, module_path: &str) -> Result<Snapshot, String> {
+fn get_dependency_module(app_state: &super::AppState, module_path: &str) -> Result<Snapshot, String> {
   // 检查缓存
   {
     let cache = app_state.module_cache.read().unwrap();
@@ -82,7 +82,7 @@ fn get_dependency_module(app_state: &crate::AppState, module_path: &str) -> Resu
 }
 
 /// 列出所有可用的模块
-pub fn list_modules(app_state: &crate::AppState, _req: McpRequest) -> HttpResponse {
+pub fn list_modules(app_state: &super::AppState, _req: McpRequest) -> HttpResponse {
   let current_module = match load_current_module_name(&app_state.compact_cirru_path) {
     Ok(name) => name,
     Err(e) => return HttpResponse::InternalServerError().body(format!("Failed to get current module: {e}")),
@@ -114,7 +114,7 @@ pub fn list_modules(app_state: &crate::AppState, _req: McpRequest) -> HttpRespon
 }
 
 /// 读取指定模块的信息
-pub fn read_module(app_state: &crate::AppState, req: McpRequest) -> HttpResponse {
+pub fn read_module(app_state: &super::AppState, req: McpRequest) -> HttpResponse {
   let module_name = match req.parameters.get("module") {
     Some(serde_json::Value::String(s)) => s.clone(),
     _ => return HttpResponse::BadRequest().body("module parameter is missing or not a string"),
@@ -160,7 +160,7 @@ pub fn read_module(app_state: &crate::AppState, req: McpRequest) -> HttpResponse
 }
 
 /// 添加模块依赖
-pub fn add_module_dependency(app_state: &crate::AppState, req: McpRequest) -> HttpResponse {
+pub fn add_module_dependency(app_state: &super::AppState, req: McpRequest) -> HttpResponse {
   let module_path = match req.parameters.get("module_path") {
     Some(serde_json::Value::String(s)) => s.clone(),
     _ => return HttpResponse::BadRequest().body("module_path parameter is missing or not a string"),
@@ -175,7 +175,7 @@ pub fn add_module_dependency(app_state: &crate::AppState, req: McpRequest) -> Ht
 }
 
 /// 移除模块依赖
-pub fn remove_module_dependency(app_state: &crate::AppState, req: McpRequest) -> HttpResponse {
+pub fn remove_module_dependency(app_state: &super::AppState, req: McpRequest) -> HttpResponse {
   let module_path = match req.parameters.get("module_path") {
     Some(serde_json::Value::String(s)) => s.clone(),
     _ => return HttpResponse::BadRequest().body("module_path parameter is missing or not a string"),
@@ -194,7 +194,7 @@ pub fn remove_module_dependency(app_state: &crate::AppState, req: McpRequest) ->
 }
 
 /// 清空模块缓存
-pub fn clear_module_cache(app_state: &crate::AppState, _req: McpRequest) -> HttpResponse {
+pub fn clear_module_cache(app_state: &super::AppState, _req: McpRequest) -> HttpResponse {
   {
     let mut cache = app_state.module_cache.write().unwrap();
     let count = cache.len();

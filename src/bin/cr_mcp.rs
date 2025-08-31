@@ -4,13 +4,7 @@ use calcit::snapshot;
 use std::collections::HashMap;
 
 // 导入 MCP 模块
-mod mcp;
-use mcp::cirru_handlers::*;
-use mcp::definition_handlers::*;
-use mcp::module_handlers::*;
-use mcp::namespace_handlers::*;
-use mcp::read_handlers::*;
-use mcp::tools::*;
+use calcit::mcp::*;
 
 /// MCP server for Calcit
 #[derive(FromArgs)]
@@ -24,26 +18,54 @@ struct Args {
   port: u16,
 }
 
-#[derive(Clone)]
-struct AppState {
-  compact_cirru_path: String,
-  current_module_name: String,
-  module_cache: std::sync::Arc<std::sync::RwLock<HashMap<String, snapshot::Snapshot>>>,
-}
+// 使用mcp模块中的AppState
+use calcit::mcp::AppState;
 
 #[get("/mcp/discover")]
 async fn discover() -> impl Responder {
+  println!("handling /mcp/discover");
   let tools = get_mcp_tools();
   HttpResponse::Ok().json(serde_json::json!({
     "tools": tools
   }))
 }
 
+#[get("/mcp/")]
+async fn mcp_config(data: web::Data<AppState>) -> impl Responder {
+  println!("handling /mcp/");
+  let config = serde_json::json!({
+    "mcpServers": {
+      "calcit": {
+        "command": "http",
+        "args": {
+          "url": format!("http://localhost:{}", data.port),
+          "headers": {
+            "Content-Type": "application/json"
+          }
+        },
+        "tools": get_mcp_tools()
+      }
+    },
+    "gemini_cli_command": format!("gemini mcp add --transport http calcit http://localhost:{}", data.port),
+    "server_info": {
+      "name": "Calcit MCP Server",
+      "version": "1.0.0",
+      "description": "MCP server for Calcit language code editing and analysis",
+      "current_module": &data.current_module_name,
+      "compact_file": &data.compact_cirru_path
+    }
+  });
+
+  HttpResponse::Ok().json(config)
+}
+
 #[post("/mcp/execute")]
 async fn execute(data: web::Data<AppState>, req: web::Json<McpRequest>) -> impl Responder {
+  println!("handling /mcp/execute with tool: {}", req.tool_name);
   match req.tool_name.as_str() {
     // 读取操作
     "list_definitions" => list_definitions(&data, req.into_inner()),
+    "list_namespaces" => list_namespaces(&data, req.into_inner()),
     "read_namespace" => read_namespace(&data, req.into_inner()),
     "read_definition" => read_definition(&data, req.into_inner()),
 
@@ -65,8 +87,8 @@ async fn execute(data: web::Data<AppState>, req: web::Json<McpRequest>) -> impl 
     "clear_module_cache" => clear_module_cache(&data, req.into_inner()),
 
     // Cirru 转换工具
-    "parseToJson" => parse_to_json(&data, req.into_inner()),
-    "formatFromJson" => format_from_json(&data, req.into_inner()),
+    "parse_to_json" => parse_to_json(&data, req.into_inner()),
+    "format_from_json" => format_from_json(&data, req.into_inner()),
 
     _ => HttpResponse::BadRequest().body(format!("Unknown tool: {}", req.tool_name)),
   }
@@ -106,6 +128,7 @@ async fn main() -> std::io::Result<()> {
   let app_state = AppState {
     compact_cirru_path: args.file.clone(),
     current_module_name,
+    port: args.port,
     module_cache: std::sync::Arc::new(std::sync::RwLock::new(HashMap::new())),
   };
 
@@ -116,6 +139,7 @@ async fn main() -> std::io::Result<()> {
     App::new()
       .app_data(web::Data::new(app_state.clone()))
       .service(discover)
+      .service(mcp_config)
       .service(execute)
   })
   .bind(("127.0.0.1", args.port))?

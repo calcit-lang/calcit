@@ -1,10 +1,10 @@
 use actix_web::HttpResponse;
-use calcit::snapshot::{self, Snapshot, CodeEntry};
-use crate::mcp::tools::McpRequest;
-use crate::mcp::cirru_utils::{validate_cirru_structure, json_to_cirru};
+use crate::snapshot::{self, Snapshot, CodeEntry};
+use super::tools::McpRequest;
+use super::cirru_utils::{validate_cirru_structure, json_to_cirru};
 
 /// 加载快照数据
-fn load_snapshot(app_state: &crate::AppState) -> Result<Snapshot, HttpResponse> {
+fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, HttpResponse> {
   let content = match std::fs::read_to_string(&app_state.compact_cirru_path) {
     Ok(c) => c,
     Err(e) => return Err(HttpResponse::InternalServerError().body(format!("Failed to read compact.cirru: {e}"))),
@@ -24,7 +24,7 @@ fn load_snapshot(app_state: &crate::AppState) -> Result<Snapshot, HttpResponse> 
 }
 
 /// 保存快照数据
-fn save_snapshot(app_state: &crate::AppState, snapshot: &Snapshot) -> Result<(), HttpResponse> {
+fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(), HttpResponse> {
   let compact_cirru_path = &app_state.compact_cirru_path;
 
   // 构建根级别的 Edn 映射
@@ -89,7 +89,7 @@ fn save_snapshot(app_state: &crate::AppState, snapshot: &Snapshot) -> Result<(),
 }
 
 /// 添加新的定义
-pub fn add_definition(app_state: &crate::AppState, req: McpRequest) -> HttpResponse {
+pub fn add_definition(app_state: &super::AppState, req: McpRequest) -> HttpResponse {
   let namespace = match req.parameters.get("namespace") {
     Some(serde_json::Value::String(s)) => s.clone(),
     _ => return HttpResponse::BadRequest().body("namespace parameter is missing or not a string"),
@@ -156,7 +156,7 @@ pub fn add_definition(app_state: &crate::AppState, req: McpRequest) -> HttpRespo
 }
 
 /// 删除定义
-pub fn delete_definition(app_state: &crate::AppState, req: McpRequest) -> HttpResponse {
+pub fn delete_definition(app_state: &super::AppState, req: McpRequest) -> HttpResponse {
   let namespace = match req.parameters.get("namespace") {
     Some(serde_json::Value::String(s)) => s.clone(),
     _ => return HttpResponse::BadRequest().body("namespace parameter is missing or not a string"),
@@ -197,7 +197,7 @@ pub fn delete_definition(app_state: &crate::AppState, req: McpRequest) -> HttpRe
 }
 
 /// 更新定义
-pub fn update_definition(app_state: &crate::AppState, req: McpRequest) -> HttpResponse {
+pub fn update_definition(app_state: &super::AppState, req: McpRequest) -> HttpResponse {
   let namespace = match req.parameters.get("namespace") {
     Some(serde_json::Value::String(s)) => s.clone(),
     _ => return HttpResponse::BadRequest().body("namespace parameter is missing or not a string"),

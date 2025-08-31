@@ -1,10 +1,10 @@
 use actix_web::HttpResponse;
-use calcit::snapshot::{self, Snapshot};
-use crate::mcp::tools::McpRequest;
-use crate::mcp::cirru_utils::cirru_to_json;
+use crate::snapshot::{self, Snapshot};
+use super::tools::McpRequest;
+use super::cirru_utils::cirru_to_json;
 
 /// 加载快照数据
-fn load_snapshot(app_state: &crate::AppState) -> Result<Snapshot, HttpResponse> {
+fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, HttpResponse> {
   let compact_cirru_path = &app_state.compact_cirru_path;
   let content = match std::fs::read_to_string(compact_cirru_path) {
     Ok(c) => c,
@@ -25,7 +25,7 @@ fn load_snapshot(app_state: &crate::AppState) -> Result<Snapshot, HttpResponse> 
 }
 
 /// 列出指定命名空间中的所有定义
-pub fn list_definitions(app_state: &crate::AppState, req: McpRequest) -> HttpResponse {
+pub fn list_definitions(app_state: &super::AppState, req: McpRequest) -> HttpResponse {
   let namespace = match req.parameters.get("namespace") {
     Some(serde_json::Value::String(s)) => s.clone(),
     _ => return HttpResponse::BadRequest().body("namespace parameter is missing or not a string"),
@@ -60,7 +60,7 @@ pub fn list_definitions(app_state: &crate::AppState, req: McpRequest) -> HttpRes
 }
 
 /// 读取指定命名空间的信息
-pub fn read_namespace(app_state: &crate::AppState, req: McpRequest) -> HttpResponse {
+pub fn read_namespace(app_state: &super::AppState, req: McpRequest) -> HttpResponse {
   let namespace = match req.parameters.get("namespace") {
     Some(serde_json::Value::String(s)) => s.clone(),
     _ => return HttpResponse::BadRequest().body("namespace parameter is missing or not a string"),
@@ -81,7 +81,7 @@ pub fn read_namespace(app_state: &crate::AppState, req: McpRequest) -> HttpRespo
 }
 
 /// 读取指定定义的详细信息
-pub fn read_definition(app_state: &crate::AppState, req: McpRequest) -> HttpResponse {
+pub fn read_definition(app_state: &super::AppState, req: McpRequest) -> HttpResponse {
   let namespace = match req.parameters.get("namespace") {
     Some(serde_json::Value::String(s)) => s.clone(),
     _ => return HttpResponse::BadRequest().body("namespace parameter is missing or not a string"),

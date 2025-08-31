@@ -1,9 +1,9 @@
 use actix_web::HttpResponse;
-use crate::mcp::tools::McpRequest;
-use crate::mcp::cirru_utils::{validate_cirru_structure, cirru_to_json};
+use super::tools::McpRequest;
+use super::cirru_utils::{validate_cirru_structure, cirru_to_json};
 
 /// 将 Cirru 代码解析为 JSON 结构
-pub fn parse_to_json(_app_state: &crate::AppState, req: McpRequest) -> HttpResponse {
+pub fn parse_to_json(_app_state: &super::AppState, req: McpRequest) -> HttpResponse {
   let cirru_code = match req.parameters.get("cirru_code") {
     Some(serde_json::Value::String(s)) => s.clone(),
     _ => return HttpResponse::BadRequest().body("cirru_code parameter is missing or not a string"),
@@ -21,7 +21,7 @@ pub fn parse_to_json(_app_state: &crate::AppState, req: McpRequest) -> HttpRespo
 }
 
 /// 将 JSON 结构格式化为 Cirru 字符串
-pub fn format_from_json(_app_state: &crate::AppState, req: McpRequest) -> HttpResponse {
+pub fn format_from_json(_app_state: &super::AppState, req: McpRequest) -> HttpResponse {
   let json_structure = match req.parameters.get("json_structure") {
     Some(structure) => structure.clone(),
     None => return HttpResponse::BadRequest().body("json_structure parameter is missing"),

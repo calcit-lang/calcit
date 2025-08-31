@@ -5,6 +5,7 @@ pub mod calcit;
 pub mod call_stack;
 pub mod cli_args;
 pub mod codegen;
+pub mod mcp;
 pub mod program;
 pub mod runner;
 pub mod snapshot;
