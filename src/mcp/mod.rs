@@ -13,6 +13,8 @@ pub mod definition_handlers;
 pub mod module_handlers;
 pub mod cirru_handlers;
 pub mod cirru_utils;
+pub mod jsonrpc;
+pub mod mcp_handlers;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -23,10 +25,12 @@ pub struct AppState {
 }
 
 // 重新导出主要的结构体和函数
-pub use tools::{McpTool, McpToolParameter, McpRequest, get_mcp_tools};
+pub use tools::{McpTool, McpToolParameter, McpRequest, get_mcp_tools, get_standard_mcp_tools};
 pub use read_handlers::*;
 pub use namespace_handlers::*;
 pub use definition_handlers::*;
 pub use module_handlers::*;
 pub use cirru_handlers::*;
 pub use cirru_utils::*;
+pub use jsonrpc::*;
+pub use mcp_handlers::*;

@@ -21,13 +21,16 @@ struct Args {
 // 使用mcp模块中的AppState
 use calcit::mcp::AppState;
 
+// Standard MCP JSON-RPC 2.0 endpoint
+#[post("/mcp_jsonrpc")]
+async fn mcp_jsonrpc(data: web::Data<AppState>, req: web::Json<calcit::mcp::JsonRpcRequest>) -> impl Responder {
+  calcit::mcp::handle_jsonrpc(data, req).await
+}
+
+// Legacy endpoint for backward compatibility
 #[get("/mcp/discover")]
 async fn discover() -> impl Responder {
-  println!("handling /mcp/discover");
-  let tools = get_mcp_tools();
-  HttpResponse::Ok().json(serde_json::json!({
-    "tools": tools
-  }))
+  calcit::mcp::legacy_discover().await
 }
 
 #[get("/mcp/")]
@@ -59,39 +62,10 @@ async fn mcp_config(data: web::Data<AppState>) -> impl Responder {
   HttpResponse::Ok().json(config)
 }
 
+// Legacy endpoint for backward compatibility
 #[post("/mcp/execute")]
 async fn execute(data: web::Data<AppState>, req: web::Json<McpRequest>) -> impl Responder {
-  println!("handling /mcp/execute with tool: {}", req.tool_name);
-  match req.tool_name.as_str() {
-    // 读取操作
-    "list_definitions" => list_definitions(&data, req.into_inner()),
-    "list_namespaces" => list_namespaces(&data, req.into_inner()),
-    "read_namespace" => read_namespace(&data, req.into_inner()),
-    "read_definition" => read_definition(&data, req.into_inner()),
-
-    // 命名空间操作
-    "add_namespace" => add_namespace(&data, req.into_inner()),
-    "delete_namespace" => delete_namespace(&data, req.into_inner()),
-    "update_namespace_imports" => update_namespace_imports(&data, req.into_inner()),
-
-    // 定义操作
-    "add_definition" => add_definition(&data, req.into_inner()),
-    "delete_definition" => delete_definition(&data, req.into_inner()),
-    "update_definition" => update_definition(&data, req.into_inner()),
-
-    // 模块管理
-    "list_modules" => list_modules(&data, req.into_inner()),
-    "read_module" => read_module(&data, req.into_inner()),
-    "add_module_dependency" => add_module_dependency(&data, req.into_inner()),
-    "remove_module_dependency" => remove_module_dependency(&data, req.into_inner()),
-    "clear_module_cache" => clear_module_cache(&data, req.into_inner()),
-
-    // Cirru 转换工具
-    "parse_to_json" => parse_to_json(&data, req.into_inner()),
-    "format_from_json" => format_from_json(&data, req.into_inner()),
-
-    _ => HttpResponse::BadRequest().body(format!("Unknown tool: {}", req.tool_name)),
-  }
+  calcit::mcp::legacy_execute(data, req).await
 }
 
 #[actix_web::main]
@@ -136,12 +110,13 @@ async fn main() -> std::io::Result<()> {
   println!("Loading file: {}", args.file);
 
   HttpServer::new(move || {
-    App::new()
-      .app_data(web::Data::new(app_state.clone()))
-      .service(discover)
-      .service(mcp_config)
-      .service(execute)
-  })
+      App::new()
+        .app_data(web::Data::new(app_state.clone()))
+        .service(mcp_jsonrpc)  // Standard MCP JSON-RPC 2.0 endpoint
+        .service(discover)     // Legacy endpoint
+        .service(mcp_config)   // Legacy endpoint
+        .service(execute)      // Legacy endpoint
+    })
   .bind(("127.0.0.1", args.port))?
   .run()
   .await

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use super::jsonrpc::Tool;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct McpTool {
@@ -21,6 +22,38 @@ pub struct McpToolParameter {
 pub struct McpRequest {
   pub tool_name: String,
   pub parameters: HashMap<String, serde_json::Value>,
+}
+
+/// Convert legacy McpTool to standard MCP Tool format
+fn mcp_tool_to_standard(mcp_tool: &McpTool) -> Tool {
+  let mut properties = serde_json::Map::new();
+  let mut required = Vec::new();
+  
+  for param in &mcp_tool.parameters {
+    let mut param_schema = serde_json::Map::new();
+    param_schema.insert("type".to_string(), serde_json::Value::String(param.parameter_type.clone()));
+    param_schema.insert("description".to_string(), serde_json::Value::String(param.description.clone()));
+    
+    properties.insert(param.name.clone(), serde_json::Value::Object(param_schema));
+    
+    if !param.optional {
+      required.push(serde_json::Value::String(param.name.clone()));
+    }
+  }
+  
+  let mut input_schema = serde_json::Map::new();
+  input_schema.insert("type".to_string(), serde_json::Value::String("object".to_string()));
+  input_schema.insert("properties".to_string(), serde_json::Value::Object(properties));
+  
+  if !required.is_empty() {
+    input_schema.insert("required".to_string(), serde_json::Value::Array(required));
+  }
+  
+  Tool {
+    name: mcp_tool.name.clone(),
+    description: mcp_tool.description.clone(),
+    input_schema: serde_json::Value::Object(input_schema),
+  }
 }
 
 pub fn get_mcp_tools() -> Vec<McpTool> {
@@ -258,4 +291,9 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       }],
     },
   ]
+}
+
+/// Get tools in standard MCP format
+pub fn get_standard_mcp_tools() -> Vec<Tool> {
+  get_mcp_tools().iter().map(mcp_tool_to_standard).collect()
 }
