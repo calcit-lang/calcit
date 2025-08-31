@@ -5,8 +5,10 @@ use axum::response::Json as ResponseJson;
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// 加载快照数据
-fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
+/// 加载快照数据，包括主文件和所有模块文件
+pub fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
+  use std::path::Path;
+  
   let content = match std::fs::read_to_string(&app_state.compact_cirru_path) {
     Ok(c) => c,
     Err(e) => return Err(format!("Failed to read compact.cirru: {e}")),
@@ -17,10 +19,43 @@ fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
     Err(e) => return Err(format!("Failed to parse compact.cirru as EDN: {e}")),
   };
 
-  match snapshot::load_snapshot_data(&edn_data, &app_state.compact_cirru_path) {
-    Ok(snapshot) => Ok(snapshot),
-    Err(e) => Err(format!("Failed to load snapshot: {e}")),
+  let mut main_snapshot = match snapshot::load_snapshot_data(&edn_data, &app_state.compact_cirru_path) {
+    Ok(snapshot) => snapshot,
+    Err(e) => return Err(format!("Failed to load snapshot: {e}")),
+  };
+
+  // 加载所有模块文件并合并命名空间
+  let base_dir = Path::new(&app_state.compact_cirru_path).parent().unwrap_or(Path::new("."));
+  let home_dir = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+  let module_folder = Path::new(&home_dir).join(".config/calcit/modules"); // 使用标准的 calcit 模块目录
+  
+  println!("Loading modules from main snapshot, found {} modules", main_snapshot.configs.modules.len());
+  
+  for module_path in &main_snapshot.configs.modules {
+    println!("Attempting to load module: {}", module_path);
+    match crate::load_module(module_path, base_dir, &module_folder) {
+      Ok(module_snapshot) => {
+        println!("Successfully loaded module {}, found {} namespaces", module_path, module_snapshot.files.len());
+        // 合并模块的文件到主快照中
+        for (namespace, file_entry) in module_snapshot.files {
+          println!("Adding namespace: {}", namespace);
+          main_snapshot.files.insert(namespace, file_entry);
+        }
+        // 合并模块的 entries
+        for (entry_name, entry_config) in module_snapshot.entries {
+          main_snapshot.entries.insert(entry_name, entry_config);
+        }
+      },
+      Err(e) => {
+        println!("Warning: Failed to load module {}: {}", module_path, e);
+        // 继续加载其他模块，不因为一个模块失败而停止
+      }
+    }
   }
+  
+  println!("Final snapshot has {} namespaces", main_snapshot.files.len());
+
+  Ok(main_snapshot)
 }
 
 /// 保存快照数据

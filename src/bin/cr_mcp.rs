@@ -1,9 +1,10 @@
 use argh::FromArgs;
 use axum::{
   Router,
-  extract::{Json, State},
-  response::Json as ResponseJson,
+  extract::{Json, State, Request},
+  response::{Json as ResponseJson, Response},
   routing::{get, post},
+  http::StatusCode,
 };
 use calcit::snapshot;
 use std::collections::HashMap;
@@ -75,6 +76,32 @@ async fn execute(State(data): State<Arc<AppState>>, Json(req): Json<McpRequest>)
   calcit::mcp::legacy_execute_axum(data, req).await
 }
 
+// 404 handler for logging unmatched requests
+async fn handle_404(req: Request) -> Response {
+  let method = req.method().to_string();
+  let uri = req.uri().to_string();
+  let headers = req.headers().clone();
+  
+  println!("[404 REQUEST] {method} {uri} - Headers: {headers:?}");
+  
+  let response_body = serde_json::json!({
+    "error": "Not Found",
+    "message": format!("The requested endpoint {} {} was not found", method, uri),
+    "available_endpoints": [
+      "GET /mcp/",
+      "GET /mcp/discover", 
+      "POST /mcp/execute",
+      "POST /mcp_jsonrpc"
+    ]
+  });
+  
+  Response::builder()
+    .status(StatusCode::NOT_FOUND)
+    .header("Content-Type", "application/json")
+    .body(response_body.to_string().into())
+    .unwrap()
+}
+
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
   let args: Args = argh::from_env();
@@ -121,6 +148,7 @@ async fn main() -> std::io::Result<()> {
     .route("/mcp/discover", get(discover)) // Legacy endpoint
     .route("/mcp/", get(mcp_config)) // Legacy endpoint
     .route("/mcp/execute", post(execute)) // Legacy endpoint
+    .fallback(handle_404)
     .layer(CorsLayer::permissive())
     .with_state(app_state);
 

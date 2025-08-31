@@ -6,30 +6,8 @@ use serde_json::Value;
 
 /// 加载快照数据
 fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
-  let compact_cirru_path = &app_state.compact_cirru_path;
-  let content = match std::fs::read_to_string(compact_cirru_path) {
-    Ok(c) => c,
-    Err(e) => {
-      eprintln!("Failed to read compact.cirru: {e}");
-      return Err(format!("Failed to read file: {e}"));
-    }
-  };
-
-  let edn_data = match cirru_edn::parse(&content) {
-    Ok(d) => d,
-    Err(e) => {
-      eprintln!("Failed to parse compact.cirru as EDN: {e}");
-      return Err(format!("Failed to parse EDN: {e}"));
-    }
-  };
-
-  match snapshot::load_snapshot_data(&edn_data, compact_cirru_path) {
-    Ok(snapshot) => Ok(snapshot),
-    Err(e) => {
-      eprintln!("Failed to load snapshot: {e}");
-      Err(format!("Failed to load snapshot: {e}"))
-    }
-  }
+  // 使用 namespace_handlers 中的 load_snapshot 函数，它包含模块加载逻辑
+  super::namespace_handlers::load_snapshot(app_state)
 }
 
 pub fn list_definitions(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
@@ -86,6 +64,21 @@ pub fn list_namespaces(app_state: &super::AppState, _req: McpRequest) -> Respons
   }))
 }
 
+pub fn get_package_name(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
+  let snapshot = match load_snapshot(app_state) {
+    Ok(s) => s,
+    Err(e) => {
+      return ResponseJson(serde_json::json!({
+        "error": e
+      }));
+    }
+  };
+
+  ResponseJson(serde_json::json!({
+    "package_name": snapshot.package
+  }))
+}
+
 pub fn read_namespace(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
   let namespace = match req.parameters.get("namespace") {
     Some(serde_json::Value::String(s)) => s.clone(),
@@ -115,14 +108,23 @@ pub fn read_namespace(app_state: &super::AppState, req: McpRequest) -> ResponseJ
     }
   };
 
-  // 转换命名空间数据为 JSON
+  // 转换命名空间数据为 JSON，只返回定义名称、文档和代码前40个字符
   let mut definitions = serde_json::Map::new();
   for (def_name, code_entry) in &file_data.defs {
+    // 将代码转换为字符串并截取前40个字符
+    let code_json = cirru_to_json(&code_entry.code);
+    let code_str = code_json.to_string();
+    let code_preview = if code_str.len() > 40 {
+      format!("{}...", &code_str[..40])
+    } else {
+      code_str
+    };
+    
     definitions.insert(
       def_name.clone(),
       serde_json::json!({
         "doc": code_entry.doc,
-        "code": cirru_to_json(&code_entry.code)
+        "code_preview": code_preview
       }),
     );
   }

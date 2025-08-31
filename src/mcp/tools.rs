@@ -75,6 +75,11 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       parameters: vec![],
     },
     McpTool {
+      name: "get_package_name".to_string(),
+      description: "Get the package name of the current project".to_string(),
+      parameters: vec![],
+    },
+    McpTool {
       name: "read_namespace".to_string(),
       description: "Read namespace information including imports".to_string(),
       parameters: vec![McpToolParameter {
@@ -284,7 +289,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       name: "format_from_json".to_string(),
       description: "Format JSON recursive structure to Cirru syntax string".to_string(),
       parameters: vec![McpToolParameter {
-        name: "json_structure".to_string(),
+        name: "json_data".to_string(),
         parameter_type: "array".to_string(),
         description: "JSON recursive structure (array of strings/arrays) to format".to_string(),
         optional: false,

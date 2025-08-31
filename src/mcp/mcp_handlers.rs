@@ -20,7 +20,7 @@ pub async fn handle_jsonrpc_axum(data: Arc<AppState>, req: JsonRpcRequest) -> Re
     Err(_) => "Failed to serialize request".to_string(),
   };
   println!("[JSON-RPC REQUEST] method={}, id={:?}", req.method, req.id);
-  println!("[JSON-RPC INPUT] {}", req_json);
+  println!("[JSON-RPC INPUT] {req_json}");
 
   let response = match req.method.as_str() {
     "initialize" => handle_initialize_axum(&data, &req),
@@ -38,7 +38,7 @@ pub async fn handle_jsonrpc_axum(data: Arc<AppState>, req: JsonRpcRequest) -> Re
     Ok(json) => json,
     Err(_) => "Failed to serialize response".to_string(),
   };
-  println!("[JSON-RPC OUTPUT] {}", response_json);
+  println!("[JSON-RPC OUTPUT] {response_json}");
 
   ResponseJson(response)
 }
@@ -186,6 +186,7 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     // 读取操作
     "list_definitions" => super::read_handlers::list_definitions(app_state, legacy_request),
     "list_namespaces" => super::read_handlers::list_namespaces(app_state, legacy_request),
+    "get_package_name" => super::read_handlers::get_package_name(app_state, legacy_request),
     "read_namespace" => super::read_handlers::read_namespace(app_state, legacy_request),
     "read_definition" => super::read_handlers::read_definition(app_state, legacy_request),
 
@@ -216,37 +217,50 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     }
   };
 
-  // Convert ResponseJson to text
-  let response_text = match serde_json::to_string_pretty(&handler_result.0) {
-    Ok(text) => text,
-    Err(_) => "Error serializing response".to_string(),
+  // Wrap the result in proper MCP ToolsCallResult format
+  let tool_call_result = ToolsCallResult {
+    content: vec![ToolCallContent::Text {
+      text: serde_json::to_string(&handler_result.0).unwrap_or_else(|_| "null".to_string()),
+    }],
+    is_error: None,
   };
-
-  let result = ToolsCallResult {
-    content: vec![ToolCallContent::Text { text: response_text }],
-    is_error: Some(false),
-  };
-
-  serde_json::to_value(JsonRpcResponse::success(req.id.clone(), serde_json::to_value(result).unwrap())).unwrap()
+  
+  serde_json::to_value(JsonRpcResponse::success(req.id.clone(), serde_json::to_value(tool_call_result).unwrap())).unwrap()
 }
 
 /// Legacy endpoint for backward compatibility (Axum version)
 pub async fn legacy_discover_axum() -> ResponseJson<Value> {
-  println!("handling legacy /mcp/discover");
+  println!("[LEGACY REQUEST] /mcp/discover");
   let tools = super::tools::get_mcp_tools();
-  ResponseJson(serde_json::json!({
+  let response = serde_json::json!({
       "tools": tools
-  }))
+  });
+
+  // 记录响应输出
+  let response_json = match serde_json::to_string_pretty(&response) {
+    Ok(json) => json,
+    Err(_) => "Failed to serialize response".to_string(),
+  };
+  println!("[LEGACY OUTPUT] {response_json}");
+
+  ResponseJson(response)
 }
 
 /// Legacy endpoint for backward compatibility (Axum version)
 pub async fn legacy_execute_axum(data: Arc<AppState>, req: McpRequest) -> ResponseJson<Value> {
-  println!("handling legacy /mcp/execute with tool: {}", req.tool_name);
+  // 记录请求输入
+  let req_json = match serde_json::to_string_pretty(&req) {
+    Ok(json) => json,
+    Err(_) => "Failed to serialize request".to_string(),
+  };
+  println!("[LEGACY REQUEST] /mcp/execute with tool: {}", req.tool_name);
+  println!("[LEGACY INPUT] {req_json}");
 
-  match req.tool_name.as_str() {
+  let response = match req.tool_name.as_str() {
     // 读取操作
     "list_definitions" => super::read_handlers::list_definitions(&data, req),
     "list_namespaces" => super::read_handlers::list_namespaces(&data, req),
+    "get_package_name" => super::read_handlers::get_package_name(&data, req),
     "read_namespace" => super::read_handlers::read_namespace(&data, req),
     "read_definition" => super::read_handlers::read_definition(&data, req),
 
@@ -271,8 +285,20 @@ pub async fn legacy_execute_axum(data: Arc<AppState>, req: McpRequest) -> Respon
     "parse_to_json" => super::cirru_handlers::parse_to_json(&data, req),
     "format_from_json" => super::cirru_handlers::format_from_json(&data, req),
 
-    _ => ResponseJson(serde_json::json!({
-      "error": format!("Unknown tool: {}", req.tool_name)
-    })),
-  }
+    _ => {
+      println!("[LEGACY ERROR] Unknown tool: {}", req.tool_name);
+      ResponseJson(serde_json::json!({
+        "error": format!("Unknown tool: {}", req.tool_name)
+      }))
+    }
+  };
+
+  // 记录响应输出
+  let response_json = match serde_json::to_string_pretty(&response.0) {
+    Ok(json) => json,
+    Err(_) => "Failed to serialize response".to_string(),
+  };
+  println!("[LEGACY OUTPUT] {response_json}");
+
+  response
 }
