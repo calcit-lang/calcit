@@ -25,7 +25,7 @@ pub struct AppState {
   pub module_cache: std::sync::Arc<std::sync::RwLock<HashMap<String, snapshot::Snapshot>>>,
 }
 
-// 重新导出主要的结构体和函数
+// Re-export main structs and functions
 pub use cirru_handlers::*;
 pub use cirru_utils::*;
 pub use definition_handlers::*;

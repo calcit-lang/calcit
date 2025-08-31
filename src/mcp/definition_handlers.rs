@@ -3,7 +3,7 @@ use crate::snapshot::{self, CodeEntry, Snapshot};
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
 
-/// 加载快照数据
+/// Load snapshot data
 fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
   let content = match std::fs::read_to_string(&app_state.compact_cirru_path) {
     Ok(c) => c,
@@ -21,17 +21,17 @@ fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
   }
 }
 
-/// 保存快照数据
+/// Save snapshot data
 fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(), ResponseJson<Value>> {
   let compact_cirru_path = &app_state.compact_cirru_path;
 
-  // 构建根级别的 Edn 映射
+  // Build root-level Edn mapping
   let mut edn_map = cirru_edn::EdnMapView::default();
 
-  // 构建package
+  // Build package
   edn_map.insert_key("package", cirru_edn::Edn::Str(snapshot.package.as_str().into()));
 
-  // 构建configs
+  // Build configs
   let mut configs_map = cirru_edn::EdnMapView::default();
   configs_map.insert_key("init-fn", cirru_edn::Edn::Str(snapshot.configs.init_fn.as_str().into()));
   configs_map.insert_key("reload-fn", cirru_edn::Edn::Str(snapshot.configs.reload_fn.as_str().into()));
@@ -49,7 +49,7 @@ fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(),
   );
   edn_map.insert_key("configs", configs_map.into());
 
-  // 构建entries
+  // Build entries
   let mut entries_map = cirru_edn::EdnMapView::default();
   for (k, v) in &snapshot.entries {
     let mut entry_map = cirru_edn::EdnMapView::default();
@@ -64,7 +64,7 @@ fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(),
   }
   edn_map.insert_key("entries", entries_map.into());
 
-  // 构建files
+  // Build files
   let mut files_map = cirru_edn::EdnMapView::default();
   for (k, v) in &snapshot.files {
     files_map.insert_key(k.as_str(), cirru_edn::Edn::from(v));
@@ -73,7 +73,7 @@ fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(),
 
   let edn_data = cirru_edn::Edn::from(edn_map);
 
-  // 将Edn格式化为Cirru字符串
+  // Format Edn to Cirru string
   let content = match cirru_edn::format(&edn_data, false) {
     Ok(c) => c,
     Err(e) => {
@@ -83,7 +83,7 @@ fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(),
     }
   };
 
-  // 写入文件
+  // Write to file
   match std::fs::write(compact_cirru_path, content) {
     Ok(_) => Ok(()),
     Err(e) => Err(ResponseJson(serde_json::json!({
@@ -113,7 +113,7 @@ pub fn add_definition(app_state: &super::AppState, req: McpRequest) -> ResponseJ
 
   let code_cirru = match req.parameters.get("code") {
     Some(serde_json::Value::String(s)) => {
-      // 处理字符串格式的代码（向后兼容）
+      // Handle string format code (backward compatibility)
       match cirru_parser::parse(s) {
         Ok(parsed) => {
           if parsed.is_empty() {
@@ -131,7 +131,7 @@ pub fn add_definition(app_state: &super::AppState, req: McpRequest) -> ResponseJ
       }
     }
     Some(code_json) => {
-      // 处理数组格式的代码（新格式）
+      // Handle array format code (new format)
       match super::cirru_utils::json_to_cirru(code_json) {
         Ok(cirru) => cirru,
         Err(e) => {
@@ -159,7 +159,7 @@ pub fn add_definition(app_state: &super::AppState, req: McpRequest) -> ResponseJ
     }
   };
 
-  // 检查命名空间是否存在
+  // Check if namespace exists
   let file_data = match snapshot.files.get_mut(&namespace) {
     Some(data) => data,
     None => {
@@ -169,20 +169,20 @@ pub fn add_definition(app_state: &super::AppState, req: McpRequest) -> ResponseJ
     }
   };
 
-  // 检查定义是否已存在
+  // Check if definition already exists
   if file_data.defs.contains_key(&definition) {
     return ResponseJson(serde_json::json!({
       "error": format!("Definition '{definition}' already exists in namespace '{namespace}'")
     }));
   }
 
-  // code_cirru 已经在上面处理完成
+  // code_cirru has been processed above
 
-  // 添加新定义
+  // Add new definition
   let code_entry = CodeEntry { doc, code: code_cirru };
   file_data.defs.insert(definition.clone(), code_entry);
 
-  // 保存快照
+  // Save snapshot
   if let Err(e) = save_snapshot(app_state, &snapshot) {
     return e;
   }
@@ -220,7 +220,7 @@ pub fn delete_definition(app_state: &super::AppState, req: McpRequest) -> Respon
     }
   };
 
-  // 检查命名空间是否存在
+  // Check if namespace exists
   let file_data = match snapshot.files.get_mut(&namespace) {
     Some(data) => data,
     None => {
@@ -230,17 +230,17 @@ pub fn delete_definition(app_state: &super::AppState, req: McpRequest) -> Respon
     }
   };
 
-  // 检查定义是否存在
+  // Check if definition exists
   if !file_data.defs.contains_key(&definition) {
     return ResponseJson(serde_json::json!({
       "error": format!("Definition '{definition}' not found in namespace '{namespace}'")
     }));
   }
 
-  // 删除定义
+  // Delete definition
   file_data.defs.remove(&definition);
 
-  // 保存快照
+  // Save snapshot
   if let Err(e) = save_snapshot(app_state, &snapshot) {
     return e;
   }
@@ -271,7 +271,7 @@ pub fn update_definition(app_state: &super::AppState, req: McpRequest) -> Respon
 
   let code_cirru = match req.parameters.get("code") {
     Some(serde_json::Value::String(s)) => {
-      // 处理字符串格式的代码（向后兼容）
+      // Handle string format code (backward compatibility)
       match cirru_parser::parse(s) {
         Ok(parsed) => {
           if parsed.is_empty() {
@@ -289,7 +289,7 @@ pub fn update_definition(app_state: &super::AppState, req: McpRequest) -> Respon
       }
     }
     Some(code_json) => {
-      // 处理数组格式的代码（新格式）
+      // Handle array format code (new format)
       match super::cirru_utils::json_to_cirru(code_json) {
         Ok(cirru) => cirru,
         Err(e) => {
@@ -317,7 +317,7 @@ pub fn update_definition(app_state: &super::AppState, req: McpRequest) -> Respon
     }
   };
 
-  // 检查命名空间是否存在
+  // Check if namespace exists
   let file_data = match snapshot.files.get_mut(&namespace) {
     Some(data) => data,
     None => {
@@ -327,20 +327,20 @@ pub fn update_definition(app_state: &super::AppState, req: McpRequest) -> Respon
     }
   };
 
-  // 检查定义是否存在
+  // Check if definition exists
   if !file_data.defs.contains_key(&definition) {
     return ResponseJson(serde_json::json!({
       "error": format!("Definition '{definition}' not found in namespace '{namespace}'")
     }));
   }
 
-  // code_cirru 已经在上面处理完成
+  // code_cirru has been processed above
 
-  // 更新定义
+  // Update definition
   let code_entry = CodeEntry { doc, code: code_cirru };
   file_data.defs.insert(definition.clone(), code_entry);
 
-  // 保存快照
+  // Save snapshot
   if let Err(e) = save_snapshot(app_state, &snapshot) {
     return e;
   }

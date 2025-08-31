@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 
-// 导入 MCP 模块
+// Import MCP module
 use calcit::mcp::*;
 use calcit::mcp::docs_handlers::{load_api_docs, load_guidebook_docs};
 
@@ -28,7 +28,7 @@ struct Args {
   port: u16,
 }
 
-// 使用mcp模块中的AppState
+// Use AppState from mcp module
 use calcit::mcp::AppState;
 
 // Standard MCP JSON-RPC 2.0 endpoint
@@ -107,7 +107,7 @@ async fn handle_404(req: Request) -> Response {
 async fn main() -> std::io::Result<()> {
   let args: Args = argh::from_env();
 
-  // 加载当前模块名称
+  // Load current module name
   let current_module_name = {
     let content = match std::fs::read_to_string(&args.file) {
       Ok(c) => c,
@@ -144,7 +144,7 @@ async fn main() -> std::io::Result<()> {
   println!("Starting MCP server on port {}", args.port);
   println!("Loading file: {}", args.file);
   
-  // 预加载 API 文档和教程数据
+  // Preload API documentation and tutorial data
   println!("Preloading API documentation...");
   if let Err(e) = load_api_docs() {
     eprintln!("Warning: Failed to load API docs: {e}");

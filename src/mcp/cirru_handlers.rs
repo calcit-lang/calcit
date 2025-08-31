@@ -3,7 +3,7 @@ use super::tools::McpRequest;
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
 
-/// 将 Cirru 代码解析为 JSON 结构
+/// Parse Cirru code to JSON structure
 pub fn parse_to_json(_app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
   let cirru_code = match req.parameters.get("cirru_code") {
     Some(code) => code.as_str().unwrap_or(""),
@@ -27,7 +27,7 @@ pub fn parse_to_json(_app_state: &super::AppState, req: McpRequest) -> ResponseJ
   }
 }
 
-/// 将 JSON 结构格式化为 Cirru 代码
+/// Format JSON structure to Cirru code
 pub fn format_from_json(_app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
   let json_data = match req.parameters.get("json_data") {
     Some(data) => data,
@@ -38,7 +38,7 @@ pub fn format_from_json(_app_state: &super::AppState, req: McpRequest) -> Respon
     }
   };
 
-  // 将 JSON 转换为 Cirru 结构
+  // Convert JSON to Cirru structure
   let cirru_data = match super::cirru_utils::json_to_cirru(json_data) {
     Ok(cirru) => cirru,
     Err(e) => {
@@ -48,7 +48,7 @@ pub fn format_from_json(_app_state: &super::AppState, req: McpRequest) -> Respon
     }
   };
 
-  // 格式化为 Cirru 字符串
+  // Format to Cirru string
   let cirru_code = match cirru_parser::format(&[cirru_data], cirru_parser::CirruWriterOptions { use_inline: true }) {
     Ok(formatted) => formatted,
     Err(e) => {

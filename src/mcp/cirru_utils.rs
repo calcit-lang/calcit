@@ -1,7 +1,7 @@
 use cirru_parser::Cirru;
 use serde_json::Value as JsonValue;
 
-/// 验证 JSON 值是否符合 Cirru 递归结构
+/// Validate if JSON value conforms to Cirru recursive structure
 pub fn validate_cirru_structure(value: &JsonValue) -> Result<(), String> {
   match value {
     JsonValue::String(_) => Ok(()),
@@ -15,7 +15,7 @@ pub fn validate_cirru_structure(value: &JsonValue) -> Result<(), String> {
   }
 }
 
-/// 将 JSON 值转换为 Cirru 结构
+/// Convert JSON value to Cirru structure
 pub fn json_to_cirru(value: &JsonValue) -> Result<Cirru, String> {
   match value {
     JsonValue::String(s) => Ok(Cirru::Leaf(s.as_str().into())),
@@ -30,7 +30,7 @@ pub fn json_to_cirru(value: &JsonValue) -> Result<Cirru, String> {
   }
 }
 
-/// 将 Cirru 结构转换为 JSON 值
+/// Convert Cirru structure to JSON value
 pub fn cirru_to_json(cirru: &Cirru) -> JsonValue {
   match cirru {
     Cirru::Leaf(s) => JsonValue::String(s.to_string()),

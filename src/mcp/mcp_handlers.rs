@@ -14,7 +14,7 @@ fn get_session() -> Arc<Mutex<McpSession>> {
 
 /// Handle JSON-RPC 2.0 requests (Axum version)
 pub async fn handle_jsonrpc_axum(data: Arc<AppState>, req: JsonRpcRequest) -> ResponseJson<Value> {
-  // 记录请求输入
+  // Log request input
   let req_json = match serde_json::to_string_pretty(&req) {
     Ok(json) => json,
     Err(_) => "Failed to serialize request".to_string(),
@@ -33,7 +33,7 @@ pub async fn handle_jsonrpc_axum(data: Arc<AppState>, req: JsonRpcRequest) -> Re
     }
   };
 
-  // 记录响应输出
+  // Log response output
   let response_json = match serde_json::to_string_pretty(&response) {
     Ok(json) => json,
     Err(_) => "Failed to serialize response".to_string(),
@@ -183,35 +183,35 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
 
   // Call the appropriate handler based on tool name
   let handler_result = match params.name.as_str() {
-    // 读取操作
+    // Read operations
     "list_definitions" => super::read_handlers::list_definitions(app_state, tool_request),
     "list_namespaces" => super::read_handlers::list_namespaces(app_state, tool_request),
     "get_package_name" => super::read_handlers::get_package_name(app_state, tool_request),
     "read_namespace" => super::read_handlers::read_namespace(app_state, tool_request),
     "read_definition" => super::read_handlers::read_definition(app_state, tool_request),
 
-    // 命名空间操作
+    // Namespace operations
     "add_namespace" => super::namespace_handlers::add_namespace(app_state, tool_request),
     "delete_namespace" => super::namespace_handlers::delete_namespace(app_state, tool_request),
     "update_namespace_imports" => super::namespace_handlers::update_namespace_imports(app_state, tool_request),
 
-    // 定义操作
+    // Definition operations
     "add_definition" => super::definition_handlers::add_definition(app_state, tool_request),
     "delete_definition" => super::definition_handlers::delete_definition(app_state, tool_request),
     "update_definition" => super::definition_handlers::update_definition(app_state, tool_request),
 
-    // 模块管理
+    // Module management
     "list_modules" => super::module_handlers::list_modules(app_state, tool_request),
     "get_current_module" => super::module_handlers::get_current_module(app_state, tool_request),
     "switch_module" => super::module_handlers::switch_module(app_state, tool_request),
     "create_module" => super::module_handlers::create_module(app_state, tool_request),
     "delete_module" => super::module_handlers::delete_module(app_state, tool_request),
 
-    // Cirru 转换工具
+    // Cirru conversion tools
     "parse_to_json" => super::cirru_handlers::parse_to_json(app_state, tool_request),
     "format_from_json" => super::cirru_handlers::format_from_json(app_state, tool_request),
 
-    // 文档查询工具
+    // Documentation query tools
     "query_api_docs" => super::docs_handlers::handle_query_api_docs(app_state, tool_request),
     "query_guidebook" => super::docs_handlers::handle_query_guidebook(app_state, tool_request),
     "list_api_docs" => super::docs_handlers::handle_list_api_docs(app_state, tool_request),
@@ -246,7 +246,7 @@ pub async fn discover_axum() -> ResponseJson<Value> {
       "tools": tools
   });
 
-  // 记录响应输出
+  // Log response output
   let response_json = match serde_json::to_string_pretty(&response) {
     Ok(json) => json,
     Err(_) => "Failed to serialize response".to_string(),
@@ -258,7 +258,7 @@ pub async fn discover_axum() -> ResponseJson<Value> {
 
 /// Endpoint for backward compatibility (Axum version)
 pub async fn execute_axum(data: Arc<AppState>, req: McpRequest) -> ResponseJson<Value> {
-  // 记录请求输入
+  // Log request input
   let req_json = match serde_json::to_string_pretty(&req) {
     Ok(json) => json,
     Err(_) => "Failed to serialize request".to_string(),
@@ -267,35 +267,35 @@ pub async fn execute_axum(data: Arc<AppState>, req: McpRequest) -> ResponseJson<
   println!("[INPUT] {req_json}");
 
   let response = match req.tool_name.as_str() {
-    // 读取操作
+    // Read operations
     "list_definitions" => super::read_handlers::list_definitions(&data, req),
     "list_namespaces" => super::read_handlers::list_namespaces(&data, req),
     "get_package_name" => super::read_handlers::get_package_name(&data, req),
     "read_namespace" => super::read_handlers::read_namespace(&data, req),
     "read_definition" => super::read_handlers::read_definition(&data, req),
 
-    // 命名空间操作
+    // Namespace operations
     "add_namespace" => super::namespace_handlers::add_namespace(&data, req),
     "delete_namespace" => super::namespace_handlers::delete_namespace(&data, req),
     "update_namespace_imports" => super::namespace_handlers::update_namespace_imports(&data, req),
 
-    // 定义操作
+    // Definition operations
     "add_definition" => super::definition_handlers::add_definition(&data, req),
     "delete_definition" => super::definition_handlers::delete_definition(&data, req),
     "update_definition" => super::definition_handlers::update_definition(&data, req),
 
-    // 模块管理
+    // Module management
     "list_modules" => super::module_handlers::list_modules(&data, req),
     "get_current_module" => super::module_handlers::get_current_module(&data, req),
     "switch_module" => super::module_handlers::switch_module(&data, req),
     "create_module" => super::module_handlers::create_module(&data, req),
     "delete_module" => super::module_handlers::delete_module(&data, req),
 
-    // Cirru 转换工具
+    // Cirru conversion tools
     "parse_to_json" => super::cirru_handlers::parse_to_json(&data, req),
     "format_from_json" => super::cirru_handlers::format_from_json(&data, req),
 
-    // 文档查询工具
+    // Documentation query tools
     "query_api_docs" => super::docs_handlers::handle_query_api_docs(&data, req),
     "query_guidebook" => super::docs_handlers::handle_query_guidebook(&data, req),
     "list_api_docs" => super::docs_handlers::handle_list_api_docs(&data, req),
@@ -309,7 +309,7 @@ pub async fn execute_axum(data: Arc<AppState>, req: McpRequest) -> ResponseJson<
     }
   };
 
-  // 记录响应输出
+  // Log response output
   let response_json = match serde_json::to_string_pretty(&response.0) {
     Ok(json) => json,
     Err(_) => "Failed to serialize response".to_string(),

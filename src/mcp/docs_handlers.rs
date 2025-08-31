@@ -8,7 +8,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
-///// 全局缓存
+///// Global cache
 static API_DOCS_CACHE: OnceLock<Arc<Mutex<HashMap<String, ApiDoc>>>> = OnceLock::new();
 static GUIDEBOOK_CACHE: OnceLock<Arc<Mutex<HashMap<String, GuideDoc>>>> = OnceLock::new();
 
@@ -27,9 +27,9 @@ pub struct GuideDoc {
   content: String,
 }
 
-/// 加载 API 文档数据
+/// Load API documentation data
 pub fn load_api_docs() -> Result<HashMap<String, ApiDoc>, String> {
-  let home_dir = std::env::var("HOME").map_err(|_| "无法获取 HOME 环境变量")?;
+  let home_dir = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable")?;
   let docs_dir = Path::new(&home_dir).join(".config/calcit/apis-repo/docs");
 
   if !docs_dir.exists() {
@@ -40,8 +40,8 @@ pub fn load_api_docs() -> Result<HashMap<String, ApiDoc>, String> {
 
   let mut api_docs = HashMap::new();
 
-  for entry in fs::read_dir(&docs_dir).map_err(|e| format!("读取目录失败: {e}"))? {
-    let entry = entry.map_err(|e| format!("读取目录项失败: {e}"))?;
+  for entry in fs::read_dir(&docs_dir).map_err(|e| format!("Failed to read directory: {e}"))? {
+    let entry = entry.map_err(|e| format!("Failed to read directory entry: {e}"))?;
     let path = entry.path();
 
     if path.extension().and_then(|s| s.to_str()) == Some("cirru") {
@@ -85,9 +85,9 @@ pub fn load_api_docs() -> Result<HashMap<String, ApiDoc>, String> {
   Ok(api_docs)
 }
 
-/// 加载指南文档数据
+/// Load guidebook documentation data
 pub fn load_guidebook_docs() -> Result<HashMap<String, GuideDoc>, String> {
-  let home_dir = std::env::var("HOME").map_err(|_| "无法获取 HOME 环境变量")?;
+  let home_dir = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable")?;
   let docs_dir = Path::new(&home_dir).join(".config/calcit/guidebook-repo/docs");
 
   if !docs_dir.exists() {
@@ -99,8 +99,8 @@ pub fn load_guidebook_docs() -> Result<HashMap<String, GuideDoc>, String> {
   let mut guide_docs = HashMap::new();
 
   fn visit_dir(dir: &Path, base_dir: &Path, docs: &mut HashMap<String, GuideDoc>) -> Result<(), String> {
-    for entry in fs::read_dir(dir).map_err(|e| format!("读取目录失败: {e}"))? {
-      let entry = entry.map_err(|e| format!("读取目录项失败: {e}"))?;
+    for entry in fs::read_dir(dir).map_err(|e| format!("Failed to read directory: {e}"))? {
+      let entry = entry.map_err(|e| format!("Failed to read directory entry: {e}"))?;
       let path = entry.path();
 
       if path.is_dir() {

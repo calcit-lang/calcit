@@ -61,7 +61,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
     // Calcit Language Tools - Calcit is a functional programming language with Lisp-like syntax using Cirru notation
     // These tools help interact with Calcit projects, which organize code in namespaces containing function/macro definitions
     
-    // 读取操作 - Reading Operations
+    // Reading Operations
     McpTool {
       name: "list_definitions".to_string(),
       description: "List all function and macro definitions in a Calcit namespace. Calcit organizes code in namespaces, where each namespace contains definitions (functions, macros, variables). This tool helps explore the structure of Calcit code by showing what's available in a specific namespace.".to_string(),
@@ -110,7 +110,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
         },
       ],
     },
-    // Namespace级别操作 - Namespace Management Operations
+    // Namespace Management Operations
     McpTool {
       name: "add_namespace".to_string(),
       description: "Create a new namespace in the Calcit project. Namespaces in Calcit are like modules that group related functions together. Each namespace can have its own import rules to access functions from other namespaces.".to_string(),
@@ -157,7 +157,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
         },
       ],
     },
-    // Definition级别操作 - Function/Macro Definition Operations
+    // Function/Macro Definition Operations
     McpTool {
       name: "add_definition".to_string(),
       description: "Create a new function or macro definition in a Calcit namespace. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses). Functions can be pure functions, macros for code generation, or variables holding values.".to_string(),
@@ -236,7 +236,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
         },
       ],
     },
-    // 模块管理操作 - Module Management Operations
+    // Module Management Operations
     McpTool {
       name: "list_modules".to_string(),
       description: "List all available Calcit modules including the current project and its dependencies. Calcit projects can depend on other Calcit modules, similar to how Node.js projects depend on npm packages. This shows the module ecosystem available to the current project.".to_string(),
@@ -277,7 +277,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       description: "Clear the Calcit module cache to force reload of all dependencies. This is useful when dependency modules have been updated and you want to ensure the latest versions are loaded.".to_string(),
       parameters: vec![],
     },
-    // Cirru 转换工具 - Cirru Syntax Conversion Tools
+    // Cirru Syntax Conversion Tools
     McpTool {
       name: "parse_to_json".to_string(),
       description: "Parse Cirru syntax string into JSON structure. Cirru is the syntax format used by Calcit - it's like Lisp but uses indentation and spaces instead of parentheses. This tool converts human-readable Cirru code into a structured format that can be programmatically manipulated.".to_string(),
@@ -299,7 +299,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       }],
     },
     
-    // Calcit 文档和教程工具 - Calcit Documentation and Tutorial Tools
+    // Calcit Documentation and Tutorial Tools
     McpTool {
       name: "query_api_docs".to_string(),
       description: "Query Calcit API documentation from the official API repository. This tool searches through Calcit's built-in functions and macros, allowing you to find APIs by tag (like :syntax, :macro, :function) or by keyword search. The API data includes function names, descriptions, usage examples, and code snippets to help with Calcit development.".to_string(),
