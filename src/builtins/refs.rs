@@ -187,7 +187,10 @@ pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
           )),
         }
       }
-      _ => CalcitErr::err_str(CalcitErrKind::Type, format!("reset! expected a symbol, but received: {:?}", expr[0])),
+      _ => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("reset! expected a symbol, but received: {:?}", expr[0]),
+      ),
     },
     (a, b) => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
@@ -203,7 +206,10 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Tag(k)), Some(f @ Calcit::Fn { .. })) => {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");
       match pair.1.get(k) {
-        Some(_) => CalcitErr::err_str(CalcitErrKind::Unexpected, format!("add-watch failed: listener with key `{k}` already existed")),
+        Some(_) => CalcitErr::err_str(
+          CalcitErrKind::Unexpected,
+          format!("add-watch failed: listener with key `{k}` already existed"),
+        ),
         None => {
           pair.1.insert(k.to_owned(), f.to_owned());
           Ok(Calcit::Nil)
@@ -213,7 +219,9 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Ref(..)), Some(Calcit::Tag(_)), Some(a)) => {
       CalcitErr::err_str(CalcitErrKind::Type, format!("add-watch expected a function, but received: {a}"))
     }
-    (Some(Calcit::Ref(..)), Some(a), Some(_)) => CalcitErr::err_str(CalcitErrKind::Type, format!("add-watch expected a tag, but received: {a}")),
+    (Some(Calcit::Ref(..)), Some(a), Some(_)) => {
+      CalcitErr::err_str(CalcitErrKind::Type, format!("add-watch expected a tag, but received: {a}"))
+    }
     (Some(a), _, _) => CalcitErr::err_str(CalcitErrKind::Type, format!("add-watch expected a ref, but received: {a}")),
     (a, b, c) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -228,14 +236,23 @@ pub fn remove_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");
 
       match pair.1.get(k) {
-        None => CalcitErr::err_str(CalcitErrKind::Unexpected, format!("remove-watch failed: listener with key `{k}` not found")),
+        None => CalcitErr::err_str(
+          CalcitErrKind::Unexpected,
+          format!("remove-watch failed: listener with key `{k}` not found"),
+        ),
         Some(_) => {
           pair.1.remove(k);
           Ok(Calcit::Nil)
         }
       }
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("remove-watch expected a ref and a tag, but received: {a} {b}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("remove-watch expected 2 arguments, but received: {a:?} {b:?}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("remove-watch expected a ref and a tag, but received: {a} {b}"),
+    ),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("remove-watch expected 2 arguments, but received: {a:?} {b:?}"),
+    ),
   }
 }

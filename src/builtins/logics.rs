@@ -1,4 +1,4 @@
-use crate::{calcit::{Calcit, CalcitErr, CalcitErrKind}};
+use crate::calcit::{Calcit, CalcitErr, CalcitErrKind};
 
 pub fn binary_equal(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {

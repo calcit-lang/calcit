@@ -16,7 +16,10 @@ pub fn call_include(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Set(ys))
     }
     (Some(a), _) => CalcitErr::err_str(CalcitErrKind::Type, format!("&include expected a set, but received: {a}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&include expected 2 arguments, but received: {a:?} {b:?}")),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&include expected 2 arguments, but received: {a:?} {b:?}"),
+    ),
   }
 }
 
@@ -28,7 +31,10 @@ pub fn call_exclude(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Set(ys))
     }
     (Some(a), _) => CalcitErr::err_str(CalcitErrKind::Type, format!("&exclude expected a set, but received: {a}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&exclude expected 2 arguments, but received: {a:?} {b:?}")),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&exclude expected 2 arguments, but received: {a:?} {b:?}"),
+    ),
   }
 }
 pub fn call_difference(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -43,7 +49,10 @@ pub fn call_difference(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Set(ys))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&difference expected 2 sets, but received: {a} {b}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&difference expected 2 arguments, but received: {a:?} {b:?}")),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&difference expected 2 arguments, but received: {a:?} {b:?}"),
+    ),
   }
 }
 pub fn call_union(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -56,7 +65,10 @@ pub fn call_union(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Set(c))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&union expected 2 sets, but received: {a} {b}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&union expected 2 arguments, but received: {a:?} {b:?}")),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&union expected 2 arguments, but received: {a:?} {b:?}"),
+    ),
   }
 }
 pub fn call_intersection(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -70,8 +82,14 @@ pub fn call_intersection(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Set(c))
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&set:intersection expected 2 sets, but received: {a} {b}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&set:intersection expected 2 arguments, but received: {a:?} {b:?}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&set:intersection expected 2 sets, but received: {a} {b}"),
+    ),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&set:intersection expected 2 arguments, but received: {a:?} {b:?}"),
+    ),
   }
 }
 

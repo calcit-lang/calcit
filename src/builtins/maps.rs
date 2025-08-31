@@ -83,11 +83,21 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           match k {
             Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
               Some(pos) => v.clone_into(&mut new_values[pos]),
-              None => return CalcitErr::err_str(CalcitErrKind::Type, format!("&map:merge invalid field `{s}` for record: {fields:?}")),
+              None => {
+                return CalcitErr::err_str(
+                  CalcitErrKind::Type,
+                  format!("&map:merge invalid field `{s}` for record: {fields:?}"),
+                );
+              }
             },
             Calcit::Tag(s) => match record.index_of(s.ref_str()) {
               Some(pos) => v.clone_into(&mut new_values[pos]),
-              None => return CalcitErr::err_str(CalcitErrKind::Type, format!("&map:merge invalid field `{s}` for record: {fields:?}")),
+              None => {
+                return CalcitErr::err_str(
+                  CalcitErrKind::Type,
+                  format!("&map:merge invalid field `{s}` for record: {fields:?}"),
+                );
+              }
             },
             a => return CalcitErr::err_str(CalcitErrKind::Type, format!("&map:merge invalid field key, but received: {a}")),
           }
@@ -142,7 +152,10 @@ pub fn call_merge_non_nil(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Map(zs))
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:merge-non-nil expected 2 maps, but received: {a} {b}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&map:merge-non-nil expected 2 maps, but received: {a} {b}"),
+    ),
     (_, _) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:merge-non-nil expected 2 arguments, but received:", xs),
   }
 }
@@ -222,7 +235,11 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Map(base)) => {
       if xs.len() % 2 != 1 {
-        CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:assoc expected an odd number of arguments, but received:", xs)
+        CalcitErr::err_nodes(
+          CalcitErrKind::Arity,
+          "&map:assoc expected an odd number of arguments, but received:",
+          xs,
+        )
       } else {
         let size = (xs.len() - 1) / 2;
         let mut ys = base.to_owned();
@@ -264,7 +281,10 @@ pub fn diff_keys(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Set(ks))
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:diff-keys expected 2 maps, but received: {a} {b}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&map:diff-keys expected 2 maps, but received: {a} {b}"),
+    ),
     (..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:diff-keys expected 2 arguments, but received:", xs),
   }
 }
@@ -280,7 +300,10 @@ pub fn common_keys(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Set(ks))
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:common-keys expected 2 maps, but received: {a} {b}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&map:common-keys expected 2 maps, but received: {a} {b}"),
+    ),
     (..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:common-keys expected 2 arguments, but received:", xs),
   }
 }

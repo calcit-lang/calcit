@@ -19,7 +19,10 @@ pub fn binary_str_concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       s.push_str(&b.turn_string());
       Ok(Calcit::Str(s.into()))
     }
-    (_, _) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&str:concat expected 2 arguments, but received: {}", CalcitList::from(xs))),
+    (_, _) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&str:concat expected 2 arguments, but received: {}", CalcitList::from(xs)),
+    ),
   }
 }
 
@@ -31,11 +34,17 @@ pub fn trim(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let c: char = p.chars().next().expect("first char");
         Ok(Calcit::Str(s.trim_matches(c).to_owned().into()))
       } else {
-        CalcitErr::err_str(CalcitErrKind::Type, format!("trim expected a single character pattern, but received: {p}"))
+        CalcitErr::err_str(
+          CalcitErrKind::Type,
+          format!("trim expected a single character pattern, but received: {p}"),
+        )
       }
     }
     (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("trim expected 2 strings, but received: {a} {b}")),
-    (_, _) => CalcitErr::err_str(CalcitErrKind::Arity, format!("trim expected 1 or 2 arguments, but received: {}", CalcitList::from(xs))),
+    (_, _) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("trim expected 1 or 2 arguments, but received: {}", CalcitList::from(xs)),
+    ),
   }
 }
 
@@ -81,7 +90,10 @@ pub fn format_number(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let size = f64_to_usize(*x)?;
       Ok(Calcit::Str(format!("{n:.size$}").into()))
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&number:format expected 2 numbers, but received: {a} {b}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&number:format expected 2 numbers, but received: {a} {b}"),
+    ),
     (_, _) => CalcitErr::err_str(CalcitErrKind::Arity, "&number:format expected 2 arguments, but received none"),
   }
 }
@@ -102,7 +114,10 @@ pub fn display_number_by(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         ),
       }
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&number:display-by expected 2 numbers, but received: {a} {b}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&number:display-by expected 2 numbers, but received: {a} {b}"),
+    ),
     (_, _) => CalcitErr::err_str(CalcitErrKind::Arity, "&number:display-by expected 2 arguments, but received none"),
   }
 }
@@ -110,7 +125,10 @@ pub fn display_number_by(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn replace(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1), xs.get(2)) {
     (Some(Calcit::Str(s)), Some(Calcit::Str(p)), Some(Calcit::Str(r))) => Ok(Calcit::Str(s.replace(&**p, r).into())),
-    (Some(a), Some(b), Some(c)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&str:replace expected 3 strings, but received: {a} {b} {c}")),
+    (Some(a), Some(b), Some(c)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&str:replace expected 3 strings, but received: {a} {b} {c}"),
+    ),
     (_, _, _) => CalcitErr::err_str(
       CalcitErrKind::Arity,
       format!("&str:replace expected 3 arguments, but received: {}", CalcitList::from(xs)),
@@ -133,7 +151,12 @@ pub fn str_slice(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let from = f64_to_usize(*n_from)?;
       let to = match n_to {
         Some(Calcit::Number(n)) => f64_to_usize(*n)?,
-        Some(a) => return CalcitErr::err_str(CalcitErrKind::Type, format!("&str:slice expected a number for index, but received: {a}")),
+        Some(a) => {
+          return CalcitErr::err_str(
+            CalcitErrKind::Type,
+            format!("&str:slice expected a number for index, but received: {a}"),
+          );
+        }
         None => s.chars().count(),
       };
 
@@ -144,7 +167,10 @@ pub fn str_slice(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Str(s.into()))
       }
     }
-    (Some(a), Some(b), ..) => CalcitErr::err_str(CalcitErrKind::Type, format!("&str:slice expected a string and a number, but received: {a} {b}")),
+    (Some(a), Some(b), ..) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&str:slice expected a string and a number, but received: {a} {b}"),
+    ),
     (_, _, _) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&str:slice expected a string and numbers, but received:", xs),
   }
 }
@@ -159,7 +185,10 @@ pub fn compare_string(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       };
       Ok(Calcit::Number(v as f64))
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&str:compare expected 2 strings, but received: {a}, {b}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&str:compare expected 2 strings, but received: {a}, {b}"),
+    ),
     (_, _) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&str:compare expected 2 strings, but received:", xs),
   }
 }
@@ -171,7 +200,10 @@ pub fn find_index(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Some(idx) => Ok(Calcit::Number(idx as f64)),
       None => Ok(Calcit::Number(-1.0)),
     },
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&str:find-index expected 2 strings, but received: {a} {b}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&str:find-index expected 2 strings, but received: {a} {b}"),
+    ),
     (_, _) => CalcitErr::err_str(CalcitErrKind::Arity, "&str:find-index expected 2 arguments, but received none"),
   }
 }
@@ -180,7 +212,10 @@ pub fn starts_with_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool(s.starts_with(&**pattern))),
     (Some(Calcit::Tag(s)), Some(Calcit::Tag(pattern))) => Ok(Calcit::Bool((*s.ref_str()).starts_with(pattern.ref_str()))),
     (Some(Calcit::Tag(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool((*s.ref_str()).starts_with(&**pattern))),
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("starts-with? expected 2 strings, but received: {a} {b}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("starts-with? expected 2 strings, but received: {a} {b}"),
+    ),
     (_, _) => CalcitErr::err_str(CalcitErrKind::Arity, "starts-with? expected 2 arguments, but received none"),
   }
 }
@@ -200,10 +235,16 @@ pub fn get_char_code(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           None => unreachable!("expected a character"),
         }
       } else {
-        CalcitErr::err_str(CalcitErrKind::Type, format!("get-char-code expected a single character string, but received: {s}"))
+        CalcitErr::err_str(
+          CalcitErrKind::Type,
+          format!("get-char-code expected a single character string, but received: {s}"),
+        )
       }
     }
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("get-char-code expected a character, but received: {a}")),
+    Some(a) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("get-char-code expected a character, but received: {a}"),
+    ),
     _ => CalcitErr::err_str(CalcitErrKind::Arity, "get-char-code expected 1 argument, but received none"),
   }
 }
@@ -275,7 +316,10 @@ pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
       Ok(idx) => Ok(Calcit::Bool(idx < s.chars().count())),
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&str:contains? expected a valid index, but received: {e}")),
+      Err(e) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&str:contains? expected a valid index, but received: {e}"),
+      ),
     },
     (Some(a), ..) => CalcitErr::err_str(CalcitErrKind::Type, format!("&str:contains? expected a string, but received: {a}")),
     (None, ..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&str:contains? expected 2 arguments, but received:", xs),

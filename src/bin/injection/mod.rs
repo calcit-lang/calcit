@@ -51,10 +51,7 @@ pub fn inject_platform_apis() {
 // &call-dylib-edn
 pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
-    return CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      format!("&call-dylib-edn expected >2 arguments, got: {xs:?}"),
-    );
+    return CalcitErr::err_str(CalcitErrKind::Arity, format!("&call-dylib-edn expected >2 arguments, got: {xs:?}"));
   }
   let lib_name: String = if let Calcit::Str(s) = &xs[0] {
     (**s).to_owned()
@@ -65,7 +62,10 @@ pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
   let method: String = if let Calcit::Str(s) = &xs[1] {
     (**s).to_owned()
   } else {
-    return CalcitErr::err_str(CalcitErrKind::Type, format!("&call-dylib-edn expected a method name, got: {}", xs[1]));
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&call-dylib-edn expected a method name, got: {}", xs[1]),
+    );
   };
   let mut ys: Vec<Edn> = Vec::with_capacity(xs.len());
   for v in xs.into_iter().skip(2) {
@@ -319,9 +319,6 @@ pub fn on_ctrl_c(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, 
     .expect("Error setting Ctrl-C handler");
     Ok(Calcit::Nil)
   } else {
-    CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      format!("on-control-c expected a callback function {xs:?}"),
-    )
+    CalcitErr::err_str(CalcitErrKind::Arity, format!("on-control-c expected a callback function {xs:?}"))
   }
 }

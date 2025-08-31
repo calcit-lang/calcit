@@ -2,8 +2,8 @@ use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
-    CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, GENERATED_DEF, ImportInfo, LocatedWarning,
-    NodeLocation, RawCodeType,
+    CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation,
+    RawCodeType,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -155,9 +155,9 @@ pub fn preprocess_expr(
           }))
         } else if CalcitSyntax::is_valid(def) {
           Ok(Calcit::Syntax(
-            def
-              .parse()
-              .map_err(|e: ParseError| CalcitErr::use_msg_stack(CalcitErrKind::Syntax, def.to_string() + " " + &e.to_string(), call_stack))?,
+            def.parse().map_err(|e: ParseError| {
+              CalcitErr::use_msg_stack(CalcitErrKind::Syntax, def.to_string() + " " + &e.to_string(), call_stack)
+            })?,
             def_ns.to_owned(),
           ))
         } else if *def == info.at_def {
@@ -481,9 +481,7 @@ fn preprocess_list_call(
           })?;
           Ok(Calcit::from(ys))
         }
-        CalcitSyntax::ArgSpread => {
-          CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec())
-        }
+        CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec()),
         CalcitSyntax::ArgOptional => {
           CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be preprocessed as operator", &xs.to_vec())
         }

@@ -70,8 +70,14 @@ pub fn rem(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       (Err(a), _) => CalcitErr::err_str(CalcitErrKind::Type, a),
       (_, Err(a)) => CalcitErr::err_str(CalcitErrKind::Type, a),
     },
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:rem expected 2 numbers, but received: {a:?} {b:?}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:rem expected 2 numbers, but received: {a:?} {b:?}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&math:rem expected 2 numbers, but received: {a:?} {b:?}"),
+    ),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&math:rem expected 2 numbers, but received: {a:?} {b:?}"),
+    ),
   }
 }
 
@@ -99,8 +105,14 @@ pub fn cos(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn pow(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(base)), Some(Calcit::Number(step))) => Ok(Calcit::Number(base.powf(*step))),
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:pow expected 2 numbers, but received: {a:?} {b:?}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:pow expected 2 numbers, but received: {a:?} {b:?}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&math:pow expected 2 numbers, but received: {a:?} {b:?}"),
+    ),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&math:pow expected 2 numbers, but received: {a:?} {b:?}"),
+    ),
   }
 }
 pub fn ceil(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -122,11 +134,23 @@ pub fn bit_shr(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value >> step) as f64)),
-      (Err(e), _) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-shr expected an integer for initial value, but received: {e}")),
-      (_, Err(e)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-shr expected an integer for step, but received: {e}")),
+      (Err(e), _) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&math:bit-shr expected an integer for initial value, but received: {e}"),
+      ),
+      (_, Err(e)) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&math:bit-shr expected an integer for step, but received: {e}"),
+      ),
     },
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-shr expected 2 numbers, but received: {a} {b}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:bit-shr expected 2 numbers, but received: {a:?} {b:?}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&math:bit-shr expected 2 numbers, but received: {a} {b}"),
+    ),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&math:bit-shr expected 2 numbers, but received: {a:?} {b:?}"),
+    ),
   }
 }
 
@@ -134,11 +158,23 @@ pub fn bit_shl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value << step) as f64)),
-      (Err(e), _) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-shl expected an integer for initial value, but received: {e}")),
-      (_, Err(e)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-shl expected an integer for step, but received: {e}")),
+      (Err(e), _) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&math:bit-shl expected an integer for initial value, but received: {e}"),
+      ),
+      (_, Err(e)) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&math:bit-shl expected an integer for step, but received: {e}"),
+      ),
     },
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-shl expected 2 numbers, but received: {a} {b}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:bit-shl expected 2 numbers, but received: {a:?} {b:?}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&math:bit-shl expected 2 numbers, but received: {a} {b}"),
+    ),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&math:bit-shl expected 2 numbers, but received: {a:?} {b:?}"),
+    ),
   }
 }
 
@@ -146,11 +182,23 @@ pub fn bit_and(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value & step) as f64)),
-      (Err(e), _) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-and expected an integer for initial value, but received: {e}")),
-      (_, Err(e)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-and expected an integer for step, but received: {e}")),
+      (Err(e), _) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&math:bit-and expected an integer for initial value, but received: {e}"),
+      ),
+      (_, Err(e)) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&math:bit-and expected an integer for step, but received: {e}"),
+      ),
     },
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-and expected 2 numbers, but received: {a} {b}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:bit-and expected 2 numbers, but received: {a:?} {b:?}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&math:bit-and expected 2 numbers, but received: {a} {b}"),
+    ),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&math:bit-and expected 2 numbers, but received: {a:?} {b:?}"),
+    ),
   }
 }
 
@@ -158,11 +206,23 @@ pub fn bit_or(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value | step) as f64)),
-      (Err(e), _) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-or expected an integer for initial value, but received: {e}")),
-      (_, Err(e)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-or expected an integer for step, but received: {e}")),
+      (Err(e), _) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&math:bit-or expected an integer for initial value, but received: {e}"),
+      ),
+      (_, Err(e)) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&math:bit-or expected an integer for step, but received: {e}"),
+      ),
     },
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-or expected 2 numbers, but received: {a} {b}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:bit-or expected 2 numbers, but received: {a:?} {b:?}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&math:bit-or expected 2 numbers, but received: {a} {b}"),
+    ),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&math:bit-or expected 2 numbers, but received: {a:?} {b:?}"),
+    ),
   }
 }
 
@@ -170,11 +230,23 @@ pub fn bit_xor(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value ^ step) as f64)),
-      (Err(e), _) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-xor expected an integer for initial value, but received: {e}")),
-      (_, Err(e)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-xor expected an integer for step, but received: {e}")),
+      (Err(e), _) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&math:bit-xor expected an integer for initial value, but received: {e}"),
+      ),
+      (_, Err(e)) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&math:bit-xor expected an integer for step, but received: {e}"),
+      ),
     },
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-xor expected 2 numbers, but received: {a} {b}")),
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:bit-xor expected 2 numbers, but received: {a:?} {b:?}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&math:bit-xor expected 2 numbers, but received: {a} {b}"),
+    ),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&math:bit-xor expected 2 numbers, but received: {a:?} {b:?}"),
+    ),
   }
 }
 
@@ -182,9 +254,15 @@ pub fn bit_not(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Number(n)) => match f64_to_i32(*n) {
       Ok(value) => Ok(Calcit::Number(!value as f64)),
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-not expected an integer for initial value, but received: {e}")),
+      Err(e) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&math:bit-not expected an integer for initial value, but received: {e}"),
+      ),
     },
     Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-not expected a number, but received: {a}")),
-    a => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:bit-not expected 1 number, but received: {a:?}")),
+    a => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&math:bit-not expected 1 number, but received: {a:?}"),
+    ),
   }
 }

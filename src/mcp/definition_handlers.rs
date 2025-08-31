@@ -1,30 +1,28 @@
-use actix_web::HttpResponse;
-use crate::snapshot::{self, Snapshot, CodeEntry};
 use super::tools::McpRequest;
-use super::cirru_utils::{validate_cirru_structure, json_to_cirru};
+use crate::snapshot::{self, CodeEntry, Snapshot};
+use axum::response::Json as ResponseJson;
+use serde_json::Value;
 
 /// 加载快照数据
-fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, HttpResponse> {
+fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
   let content = match std::fs::read_to_string(&app_state.compact_cirru_path) {
     Ok(c) => c,
-    Err(e) => return Err(HttpResponse::InternalServerError().body(format!("Failed to read compact.cirru: {e}"))),
+    Err(e) => return Err(format!("Failed to read compact.cirru: {e}")),
   };
 
   let edn_data = match cirru_edn::parse(&content) {
     Ok(d) => d,
-    Err(e) => return Err(HttpResponse::InternalServerError().body(format!("Failed to parse compact.cirru as EDN: {e}"))),
+    Err(e) => return Err(format!("Failed to parse compact.cirru as EDN: {e}")),
   };
 
-  let snapshot: Snapshot = match snapshot::load_snapshot_data(&edn_data, &app_state.compact_cirru_path) {
-    Ok(s) => s,
-    Err(e) => return Err(HttpResponse::InternalServerError().body(format!("Failed to load snapshot: {e}"))),
-  };
-
-  Ok(snapshot)
+  match snapshot::load_snapshot_data(&edn_data, &app_state.compact_cirru_path) {
+    Ok(snapshot) => Ok(snapshot),
+    Err(e) => Err(format!("Failed to load snapshot: {e}")),
+  }
 }
 
 /// 保存快照数据
-fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(), HttpResponse> {
+fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(), ResponseJson<Value>> {
   let compact_cirru_path = &app_state.compact_cirru_path;
 
   // 构建根级别的 Edn 映射
@@ -78,109 +76,152 @@ fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(),
   // 将Edn格式化为Cirru字符串
   let content = match cirru_edn::format(&edn_data, false) {
     Ok(c) => c,
-    Err(e) => return Err(HttpResponse::InternalServerError().body(format!("Failed to format snapshot as Cirru: {e}"))),
+    Err(e) => {
+      return Err(ResponseJson(serde_json::json!({
+        "error": format!("Failed to format snapshot as Cirru: {e}")
+      })));
+    }
   };
 
   // 写入文件
   match std::fs::write(compact_cirru_path, content) {
     Ok(_) => Ok(()),
-    Err(e) => Err(HttpResponse::InternalServerError().body(format!("Failed to write compact.cirru: {e}"))),
+    Err(e) => Err(ResponseJson(serde_json::json!({
+      "error": format!("Failed to write compact.cirru: {e}")
+    }))),
   }
 }
 
-/// 添加新的定义
-pub fn add_definition(app_state: &super::AppState, req: McpRequest) -> HttpResponse {
+pub fn add_definition(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
   let namespace = match req.parameters.get("namespace") {
     Some(serde_json::Value::String(s)) => s.clone(),
-    _ => return HttpResponse::BadRequest().body("namespace parameter is missing or not a string"),
+    _ => {
+      return ResponseJson(serde_json::json!({
+        "error": "namespace parameter is missing or not a string"
+      }));
+    }
   };
 
   let definition = match req.parameters.get("definition") {
     Some(serde_json::Value::String(s)) => s.clone(),
-    _ => return HttpResponse::BadRequest().body("definition parameter is missing or not a string"),
+    _ => {
+      return ResponseJson(serde_json::json!({
+        "error": "definition parameter is missing or not a string"
+      }));
+    }
   };
 
   let code = match req.parameters.get("code") {
-    Some(c) => c.clone(),
-    None => return HttpResponse::BadRequest().body("code parameter is missing"),
+    Some(serde_json::Value::String(s)) => s.clone(),
+    _ => {
+      return ResponseJson(serde_json::json!({
+        "error": "code parameter is missing or not a string"
+      }));
+    }
   };
 
-  let doc = req.parameters.get("doc")
-    .and_then(|v| v.as_str())
-    .unwrap_or("")
-    .to_string();
-
-  // 验证 code 是否符合 Cirru 结构
-  if let Err(e) = validate_cirru_structure(&code) {
-    return HttpResponse::BadRequest().body(format!("Invalid code structure: {e}"));
-  }
+  let doc = req.parameters.get("doc").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
   let mut snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
-    Err(e) => return e,
+    Err(e) => {
+      return ResponseJson(serde_json::json!({
+        "error": e
+      }));
+    }
   };
 
   // 检查命名空间是否存在
   let file_data = match snapshot.files.get_mut(&namespace) {
     Some(data) => data,
-    None => return HttpResponse::NotFound().body(format!("Namespace '{namespace}' not found")),
+    None => {
+      return ResponseJson(serde_json::json!({
+        "error": format!("Namespace '{namespace}' not found")
+      }));
+    }
   };
 
   // 检查定义是否已存在
   if file_data.defs.contains_key(&definition) {
-    return HttpResponse::Conflict().body(format!("Definition '{definition}' already exists in namespace '{namespace}'"));
+    return ResponseJson(serde_json::json!({
+      "error": format!("Definition '{definition}' already exists in namespace '{namespace}'")
+    }));
   }
 
-  // 将 JSON 转换为 Cirru
-  let code_cirru = match json_to_cirru(&code) {
-    Ok(c) => c,
-    Err(e) => return HttpResponse::BadRequest().body(format!("Failed to convert code to Cirru: {e}")),
+  // 解析代码为 Cirru
+  let code_cirru = match cirru_parser::parse(&code) {
+    Ok(parsed) => {
+      if parsed.is_empty() {
+        return ResponseJson(serde_json::json!({
+          "error": "Code cannot be empty"
+        }));
+      }
+      parsed[0].clone()
+    }
+    Err(e) => {
+      return ResponseJson(serde_json::json!({
+        "error": format!("Failed to parse code: {e}")
+      }));
+    }
   };
 
-  // 创建新的定义条目
-  let new_entry = CodeEntry {
-    code: code_cirru,
-    doc,
-  };
-
-  file_data.defs.insert(definition.clone(), new_entry);
+  // 添加新定义
+  let code_entry = CodeEntry { doc, code: code_cirru };
+  file_data.defs.insert(definition.clone(), code_entry);
 
   // 保存快照
   if let Err(e) = save_snapshot(app_state, &snapshot) {
     return e;
   }
 
-  HttpResponse::Ok().json(serde_json::json!({
+  ResponseJson(serde_json::json!({
     "message": format!("Definition '{definition}' added to namespace '{namespace}' successfully")
   }))
 }
 
-/// 删除定义
-pub fn delete_definition(app_state: &super::AppState, req: McpRequest) -> HttpResponse {
+pub fn delete_definition(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
   let namespace = match req.parameters.get("namespace") {
     Some(serde_json::Value::String(s)) => s.clone(),
-    _ => return HttpResponse::BadRequest().body("namespace parameter is missing or not a string"),
+    _ => {
+      return ResponseJson(serde_json::json!({
+        "error": "namespace parameter is missing or not a string"
+      }));
+    }
   };
 
   let definition = match req.parameters.get("definition") {
     Some(serde_json::Value::String(s)) => s.clone(),
-    _ => return HttpResponse::BadRequest().body("definition parameter is missing or not a string"),
+    _ => {
+      return ResponseJson(serde_json::json!({
+        "error": "definition parameter is missing or not a string"
+      }));
+    }
   };
 
   let mut snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
-    Err(e) => return e,
+    Err(e) => {
+      return ResponseJson(serde_json::json!({
+        "error": e
+      }));
+    }
   };
 
   // 检查命名空间是否存在
   let file_data = match snapshot.files.get_mut(&namespace) {
     Some(data) => data,
-    None => return HttpResponse::NotFound().body(format!("Namespace '{namespace}' not found")),
+    None => {
+      return ResponseJson(serde_json::json!({
+        "error": format!("Namespace '{namespace}' not found")
+      }));
+    }
   };
 
   // 检查定义是否存在
   if !file_data.defs.contains_key(&definition) {
-    return HttpResponse::NotFound().body(format!("Definition '{definition}' not found in namespace '{namespace}'"));
+    return ResponseJson(serde_json::json!({
+      "error": format!("Definition '{definition}' not found in namespace '{namespace}'")
+    }));
   }
 
   // 删除定义
@@ -191,75 +232,94 @@ pub fn delete_definition(app_state: &super::AppState, req: McpRequest) -> HttpRe
     return e;
   }
 
-  HttpResponse::Ok().json(serde_json::json!({
+  ResponseJson(serde_json::json!({
     "message": format!("Definition '{definition}' deleted from namespace '{namespace}' successfully")
   }))
 }
 
-/// 更新定义
-pub fn update_definition(app_state: &super::AppState, req: McpRequest) -> HttpResponse {
+pub fn update_definition(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
   let namespace = match req.parameters.get("namespace") {
     Some(serde_json::Value::String(s)) => s.clone(),
-    _ => return HttpResponse::BadRequest().body("namespace parameter is missing or not a string"),
+    _ => {
+      return ResponseJson(serde_json::json!({
+        "error": "namespace parameter is missing or not a string"
+      }));
+    }
   };
 
   let definition = match req.parameters.get("definition") {
     Some(serde_json::Value::String(s)) => s.clone(),
-    _ => return HttpResponse::BadRequest().body("definition parameter is missing or not a string"),
+    _ => {
+      return ResponseJson(serde_json::json!({
+        "error": "definition parameter is missing or not a string"
+      }));
+    }
   };
 
-  let code = req.parameters.get("code");
-  let doc = req.parameters.get("doc").and_then(|v| v.as_str());
-
-  // 至少需要提供 code 或 doc 中的一个
-  if code.is_none() && doc.is_none() {
-    return HttpResponse::BadRequest().body("At least one of 'code' or 'doc' parameters must be provided");
-  }
-
-  // 如果提供了 code，验证其结构
-  if let Some(c) = code {
-    if let Err(e) = validate_cirru_structure(c) {
-      return HttpResponse::BadRequest().body(format!("Invalid code structure: {e}"));
+  let code = match req.parameters.get("code") {
+    Some(serde_json::Value::String(s)) => s.clone(),
+    _ => {
+      return ResponseJson(serde_json::json!({
+        "error": "code parameter is missing or not a string"
+      }));
     }
-  }
+  };
+
+  let doc = req.parameters.get("doc").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
   let mut snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
-    Err(e) => return e,
+    Err(e) => {
+      return ResponseJson(serde_json::json!({
+        "error": e
+      }));
+    }
   };
 
   // 检查命名空间是否存在
   let file_data = match snapshot.files.get_mut(&namespace) {
     Some(data) => data,
-    None => return HttpResponse::NotFound().body(format!("Namespace '{namespace}' not found")),
+    None => {
+      return ResponseJson(serde_json::json!({
+        "error": format!("Namespace '{namespace}' not found")
+      }));
+    }
   };
 
   // 检查定义是否存在
-  let def_entry = match file_data.defs.get_mut(&definition) {
-    Some(entry) => entry,
-    None => return HttpResponse::NotFound().body(format!("Definition '{definition}' not found in namespace '{namespace}'"))
+  if !file_data.defs.contains_key(&definition) {
+    return ResponseJson(serde_json::json!({
+      "error": format!("Definition '{definition}' not found in namespace '{namespace}'")
+    }));
+  }
+
+  // 解析代码为 Cirru
+  let code_cirru = match cirru_parser::parse(&code) {
+    Ok(parsed) => {
+      if parsed.is_empty() {
+        return ResponseJson(serde_json::json!({
+          "error": "Code cannot be empty"
+        }));
+      }
+      parsed[0].clone()
+    }
+    Err(e) => {
+      return ResponseJson(serde_json::json!({
+        "error": format!("Failed to parse code: {e}")
+      }));
+    }
   };
 
-  // 更新 code（如果提供）
-  if let Some(c) = code {
-    let code_cirru = match json_to_cirru(c) {
-      Ok(cirru) => cirru,
-      Err(e) => return HttpResponse::BadRequest().body(format!("Failed to convert code to Cirru: {e}")),
-    };
-    def_entry.code = code_cirru;
-  }
-
-  // 更新 doc（如果提供）
-  if let Some(d) = doc {
-    def_entry.doc = d.to_string();
-  }
+  // 更新定义
+  let code_entry = CodeEntry { doc, code: code_cirru };
+  file_data.defs.insert(definition.clone(), code_entry);
 
   // 保存快照
   if let Err(e) = save_snapshot(app_state, &snapshot) {
     return e;
   }
 
-  HttpResponse::Ok().json(serde_json::json!({
-    "message": format!("Definition '{definition}' in namespace '{namespace}' updated successfully")
+  ResponseJson(serde_json::json!({
+    "message": format!("Definition '{definition}' updated in namespace '{namespace}' successfully")
   }))
 }

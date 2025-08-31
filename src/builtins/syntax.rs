@@ -10,8 +10,8 @@ use std::vec;
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::calcit::{
-  self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo,
-  CalcitSyntax, LocatedWarning,
+  self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax,
+  LocatedWarning,
 };
 use crate::calcit::{Calcit, CalcitErr, CalcitScope, gen_core_id};
 use crate::call_stack::CallStackList;
@@ -29,8 +29,14 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
         body: expr.skip(2)?.to_vec(),
       }),
     }),
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("defn expected a symbol and a list of arguments, but received: {a} , {b}")),
-    _ => CalcitErr::err_str(CalcitErrKind::Arity, "defn expected a symbol and a list of arguments, but received insufficient arguments"),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("defn expected a symbol and a list of arguments, but received: {a} , {b}"),
+    ),
+    _ => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      "defn expected a symbol and a list of arguments, but received insufficient arguments",
+    ),
   }
 }
 
@@ -45,10 +51,16 @@ pub fn defmacro(expr: &CalcitList, _scope: &CalcitScope, def_ns: &str) -> Result
         body: Arc::new(expr.skip(2)?.to_vec()),
       }),
     }),
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("defmacro expected a symbol and a list of arguments, but received: {a} {b}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("defmacro expected a symbol and a list of arguments, but received: {a} {b}"),
+    ),
     _ => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("defmacro expected a symbol and a list of arguments, but received: {}", Calcit::from(expr.to_owned())),
+      format!(
+        "defmacro expected a symbol and a list of arguments, but received: {}",
+        Calcit::from(expr.to_owned())
+      ),
     ),
   }
 }
@@ -138,10 +150,18 @@ pub fn quote(expr: &CalcitList, _scope: &CalcitScope, _file_ns: &str) -> Result<
 pub fn syntax_if(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let l = expr.len();
   if l > 3 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "if expected at most 3 arguments, but received:", &expr.to_vec());
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "if expected at most 3 arguments, but received:",
+      &expr.to_vec(),
+    );
   }
   if l < 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "if expected at least 2 arguments, but received:", &expr.to_vec());
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "if expected at least 2 arguments, but received:",
+      &expr.to_vec(),
+    );
   }
   let cond = &expr[0];
   let true_branch = &expr[1];
@@ -208,9 +228,11 @@ pub fn quasiquote(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
           // println!("replace result: {:?}", v);
           Ok(v)
         }
-        SpanResult::Range(xs) => {
-          CalcitErr::err_nodes(CalcitErrKind::Arity, "quasiquote expected single result, but received:", &xs.to_vec())
-        }
+        SpanResult::Range(xs) => CalcitErr::err_nodes(
+          CalcitErrKind::Arity,
+          "quasiquote expected single result, but received:",
+          &xs.to_vec(),
+        ),
       }
     }
   }
@@ -345,12 +367,7 @@ pub fn macroexpand_1(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call
   }
 }
 
-pub fn macroexpand_all(
-  expr: &CalcitList,
-  scope: &CalcitScope,
-  file_ns: &str,
-  call_stack: &CallStackList,
-) -> Result<Calcit, CalcitErr> {
+pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
 

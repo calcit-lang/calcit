@@ -1,8 +1,8 @@
 use crate::{
   builtins,
   calcit::{
-    self, Calcit, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo,
-    CalcitSyntax, CalcitTuple, GEN_NS, GENERATED_DEF, gen_core_id,
+    self, Calcit, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo, CalcitSyntax,
+    CalcitTuple, GEN_NS, GENERATED_DEF, gen_core_id,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -136,7 +136,12 @@ pub fn generate_id(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(size) => Some(size),
       Err(e) => return CalcitErr::err_str(CalcitErrKind::Type, e),
     },
-    Some(a) => return CalcitErr::err_str(CalcitErrKind::Type, format!("generate-id! expected a number for size, but received: {a}")),
+    Some(a) => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("generate-id! expected a number for size, but received: {a}"),
+      );
+    }
     None => None, // nanoid defaults to 21
   };
 
@@ -150,7 +155,10 @@ pub fn generate_id(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Str(gen_core_id()))
     }
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Arity, format!("generate-id! expected a number for size or a string for charset, but received: {a:?} {b:?}")),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("generate-id! expected a number for size or a string for charset, but received: {a:?} {b:?}"),
+    ),
   }
 }
 
@@ -165,7 +173,10 @@ pub fn parse_cirru_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(nodes) => Ok(cirru::cirru_to_calcit(&Cirru::List(nodes))),
       Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("parse-cirru-list failed: {e}")),
     },
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("parse-cirru-list expected a string, but received: {a}")),
+    Some(a) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("parse-cirru-list expected a string, but received: {a}"),
+    ),
     None => CalcitErr::err_str(CalcitErrKind::Arity, "parse-cirru-list expected 1 argument, but received none"),
   }
 }
@@ -191,7 +202,10 @@ pub fn format_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           if let Cirru::List(ys) = v {
             Ok(Calcit::Str(cirru_parser::format(&ys, options)?.into()))
           } else {
-            CalcitErr::err_str(CalcitErrKind::Type, format!("format-cirru expected a list for Cirru formatting, but received: {v}"))
+            CalcitErr::err_str(
+              CalcitErrKind::Type,
+              format!("format-cirru expected a list for Cirru formatting, but received: {v}"),
+            )
           }
         }
         Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("format-cirru failed: {e}")),
@@ -224,15 +238,14 @@ pub fn format_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn cirru_quote_to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes(
-      CalcitErrKind::Arity,
-      "&cirru-quote:to-list expected 1 argument, but received:",
-      xs,
-    );
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&cirru-quote:to-list expected 1 argument, but received:", xs);
   }
   match &xs[0] {
     Calcit::CirruQuote(ys) => Ok(cirru_to_calcit(ys)),
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&cirru-quote:to-list expected a Cirru quote, but received: {a}")),
+    a => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&cirru-quote:to-list expected a Cirru quote, but received: {a}"),
+    ),
   }
 }
 
@@ -321,7 +334,10 @@ pub fn new_class_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         class: Some(Arc::new(record)),
       }))
     } else {
-      CalcitErr::err_str(CalcitErrKind::Type, format!("tuple expected a record as class, but received: {class}"))
+      CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("tuple expected a record as class, but received: {class}"),
+      )
     }
   }
 }
@@ -473,12 +489,18 @@ pub fn tuple_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Ok(extra[m - 1].to_owned())
         } else {
           let size = extra.len() + 1;
-          CalcitErr::err_str(CalcitErrKind::Arity, format!("&tuple:nth index out of range. Tuple has {size} elements, but trying to index with {m}"))
+          CalcitErr::err_str(
+            CalcitErrKind::Arity,
+            format!("&tuple:nth index out of range. Tuple has {size} elements, but trying to index with {m}"),
+          )
         }
       }
       Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&tuple:nth expected a valid index, {e}")),
     },
-    (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("&tuple:nth expected a tuple and an index, but received: {a} {b}")),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&tuple:nth expected a tuple and an index, but received: {a} {b}"),
+    ),
   }
 }
 
@@ -504,7 +526,10 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             class: class.to_owned(),
           }))
         } else {
-          CalcitErr::err_str(CalcitErrKind::Arity, format!("&tuple:assoc index out of range. Tuple only has fields at index 0, 1, but received unknown index: {idx}"))
+          CalcitErr::err_str(
+            CalcitErrKind::Arity,
+            format!("&tuple:assoc index out of range. Tuple only has fields at index 0, 1, but received unknown index: {idx}"),
+          )
         }
       }
       Err(e) => CalcitErr::err_str(CalcitErrKind::Type, e),
@@ -563,10 +588,14 @@ pub fn tuple_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       extra: extra.to_owned(),
       class: Some(Arc::new(record.to_owned())),
     })),
-    (a, Calcit::Record { .. }) => CalcitErr::err_str(CalcitErrKind::Type, format!("&tuple:with-class expected a tuple, but received: {a}")),
-    (Calcit::Tuple { .. }, b) => {
-      CalcitErr::err_str(CalcitErrKind::Type, format!("&tuple:with-class expected a record for the second argument, but received: {b}"))
-    }
+    (a, Calcit::Record { .. }) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&tuple:with-class expected a tuple, but received: {a}"),
+    ),
+    (Calcit::Tuple { .. }, b) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&tuple:with-class expected a record for the second argument, but received: {b}"),
+    ),
     (a, b) => CalcitErr::err_str(
       CalcitErrKind::Type,
       format!("&tuple:with-class expected a tuple and a record, but received: {a} {b}"),
@@ -590,7 +619,11 @@ pub fn async_sleep(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit
   } else if let Calcit::Number(n) = xs[0] {
     n
   } else {
-    return Err(CalcitErr::use_msg_stack(CalcitErrKind::Type, "async-sleep expected a number, but received an invalid type", call_stack));
+    return Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Type,
+      "async-sleep expected a number, but received an invalid type",
+      call_stack,
+    ));
   };
 
   runner::track::track_task_add();
@@ -620,7 +653,10 @@ pub fn format_ternary_tree(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         format!("&format-ternary-tree expected a list, but received a vector: {a}"),
       ),
     },
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&format-ternary-tree expected a list, but received: {a}")),
+    a => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&format-ternary-tree expected a list, but received: {a}"),
+    ),
   }
 }
 
@@ -642,13 +678,24 @@ pub fn buffer(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               if b.len() == 1 {
                 buf.push(b[0])
               } else {
-                return CalcitErr::err_str(CalcitErrKind::Type, format!("&buffer hex for buffer might be too large, but received: {b:?}"));
+                return CalcitErr::err_str(
+                  CalcitErrKind::Type,
+                  format!("&buffer hex for buffer might be too large, but received: {b:?}"),
+                );
               }
             }
-            Err(e) => return CalcitErr::err_str(CalcitErrKind::Type, format!("&buffer expected a length 2 hex string, but received: {y} {e}")),
+            Err(e) => {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!("&buffer expected a length 2 hex string, but received: {y} {e}"),
+              );
+            }
           }
         } else {
-          return CalcitErr::err_str(CalcitErrKind::Type, format!("&buffer expected a length 2 hex string, but received: {y}"));
+          return CalcitErr::err_str(
+            CalcitErrKind::Type,
+            format!("&buffer expected a length 2 hex string, but received: {y}"),
+          );
         }
       }
       _ => return CalcitErr::err_str(CalcitErrKind::Type, format!("&buffer expected a hex string, but received: {x}")),
@@ -670,7 +717,11 @@ pub fn hash(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 /// extract out calcit internal meta code
 pub fn extract_code_into_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&extract-code-into-edn expected 1 argument, but received:", xs);
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "&extract-code-into-edn expected 1 argument, but received:",
+      xs,
+    );
   }
   Ok(edn_to_calcit(&dump_code(&xs[0]), &Calcit::Nil))
 }
@@ -703,7 +754,10 @@ pub fn cirru_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       },
       Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&cirru-nth expected a valid index, {e}")),
     },
-    (Calcit::CirruQuote(_c), x) => CalcitErr::err_str(CalcitErrKind::Type, format!("&cirru-nth expected a number for index, but received: {x}")),
+    (Calcit::CirruQuote(_c), x) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&cirru-nth expected a number for index, but received: {x}"),
+    ),
     (x, _y) => CalcitErr::err_str(CalcitErrKind::Type, format!("&cirru-nth expected a Cirru quote, but received: {x}")),
   }
 }
@@ -717,7 +771,10 @@ pub fn cirru_type(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Cirru::List(_) => Ok(Calcit::Tag("list".into())),
       Cirru::Leaf(_) => Ok(Calcit::Tag("leaf".into())),
     },
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&cirru-type expected a Cirru quote, but received: {a}")),
+    a => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&cirru-type expected a Cirru quote, but received: {a}"),
+    ),
   }
 }
 
