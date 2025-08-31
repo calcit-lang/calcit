@@ -39,9 +39,9 @@ async fn mcp_jsonrpc(
   calcit::mcp::handle_jsonrpc_axum(data, req).await
 }
 
-// Legacy endpoint for backward compatibility
+// Endpoint for backward compatibility
 async fn discover() -> ResponseJson<serde_json::Value> {
-  calcit::mcp::legacy_discover_axum().await
+  calcit::mcp::discover_axum().await
 }
 
 async fn mcp_config(State(data): State<Arc<AppState>>) -> ResponseJson<serde_json::Value> {
@@ -72,9 +72,9 @@ async fn mcp_config(State(data): State<Arc<AppState>>) -> ResponseJson<serde_jso
   ResponseJson(config)
 }
 
-// Legacy endpoint for backward compatibility
+// Endpoint for backward compatibility
 async fn execute(State(data): State<Arc<AppState>>, Json(req): Json<McpRequest>) -> ResponseJson<serde_json::Value> {
-  calcit::mcp::legacy_execute_axum(data, req).await
+  calcit::mcp::execute_axum(data, req).await
 }
 
 // 404 handler for logging unmatched requests

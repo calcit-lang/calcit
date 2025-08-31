@@ -167,8 +167,8 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     }
   };
 
-  // Convert arguments to legacy format
-  let legacy_params = match params.arguments {
+  // Convert arguments to tool format
+  let tool_params = match params.arguments {
     Some(args) => match args.as_object() {
       Some(obj) => obj.clone().into_iter().collect(),
       None => std::collections::HashMap::new(),
@@ -176,46 +176,46 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     None => std::collections::HashMap::new(),
   };
 
-  let legacy_request = McpRequest {
+  let tool_request = McpRequest {
     tool_name: params.name.clone(),
-    parameters: legacy_params,
+    parameters: tool_params,
   };
 
   // Call the appropriate handler based on tool name
   let handler_result = match params.name.as_str() {
     // 读取操作
-    "list_definitions" => super::read_handlers::list_definitions(app_state, legacy_request),
-    "list_namespaces" => super::read_handlers::list_namespaces(app_state, legacy_request),
-    "get_package_name" => super::read_handlers::get_package_name(app_state, legacy_request),
-    "read_namespace" => super::read_handlers::read_namespace(app_state, legacy_request),
-    "read_definition" => super::read_handlers::read_definition(app_state, legacy_request),
+    "list_definitions" => super::read_handlers::list_definitions(app_state, tool_request),
+    "list_namespaces" => super::read_handlers::list_namespaces(app_state, tool_request),
+    "get_package_name" => super::read_handlers::get_package_name(app_state, tool_request),
+    "read_namespace" => super::read_handlers::read_namespace(app_state, tool_request),
+    "read_definition" => super::read_handlers::read_definition(app_state, tool_request),
 
     // 命名空间操作
-    "add_namespace" => super::namespace_handlers::add_namespace(app_state, legacy_request),
-    "delete_namespace" => super::namespace_handlers::delete_namespace(app_state, legacy_request),
-    "update_namespace_imports" => super::namespace_handlers::update_namespace_imports(app_state, legacy_request),
+    "add_namespace" => super::namespace_handlers::add_namespace(app_state, tool_request),
+    "delete_namespace" => super::namespace_handlers::delete_namespace(app_state, tool_request),
+    "update_namespace_imports" => super::namespace_handlers::update_namespace_imports(app_state, tool_request),
 
     // 定义操作
-    "add_definition" => super::definition_handlers::add_definition(app_state, legacy_request),
-    "delete_definition" => super::definition_handlers::delete_definition(app_state, legacy_request),
-    "update_definition" => super::definition_handlers::update_definition(app_state, legacy_request),
+    "add_definition" => super::definition_handlers::add_definition(app_state, tool_request),
+    "delete_definition" => super::definition_handlers::delete_definition(app_state, tool_request),
+    "update_definition" => super::definition_handlers::update_definition(app_state, tool_request),
 
     // 模块管理
-    "list_modules" => super::module_handlers::list_modules(app_state, legacy_request),
-    "get_current_module" => super::module_handlers::get_current_module(app_state, legacy_request),
-    "switch_module" => super::module_handlers::switch_module(app_state, legacy_request),
-    "create_module" => super::module_handlers::create_module(app_state, legacy_request),
-    "delete_module" => super::module_handlers::delete_module(app_state, legacy_request),
+    "list_modules" => super::module_handlers::list_modules(app_state, tool_request),
+    "get_current_module" => super::module_handlers::get_current_module(app_state, tool_request),
+    "switch_module" => super::module_handlers::switch_module(app_state, tool_request),
+    "create_module" => super::module_handlers::create_module(app_state, tool_request),
+    "delete_module" => super::module_handlers::delete_module(app_state, tool_request),
 
     // Cirru 转换工具
-    "parse_to_json" => super::cirru_handlers::parse_to_json(app_state, legacy_request),
-    "format_from_json" => super::cirru_handlers::format_from_json(app_state, legacy_request),
+    "parse_to_json" => super::cirru_handlers::parse_to_json(app_state, tool_request),
+    "format_from_json" => super::cirru_handlers::format_from_json(app_state, tool_request),
 
     // 文档查询工具
-    "query_api_docs" => super::docs_handlers::handle_query_api_docs(app_state, legacy_request),
-    "query_guidebook" => super::docs_handlers::handle_query_guidebook(app_state, legacy_request),
-    "list_api_docs" => super::docs_handlers::handle_list_api_docs(app_state, legacy_request),
-    "list_guidebook_docs" => super::docs_handlers::handle_list_guidebook_docs(app_state, legacy_request),
+    "query_api_docs" => super::docs_handlers::handle_query_api_docs(app_state, tool_request),
+    "query_guidebook" => super::docs_handlers::handle_query_guidebook(app_state, tool_request),
+    "list_api_docs" => super::docs_handlers::handle_list_api_docs(app_state, tool_request),
+    "list_guidebook_docs" => super::docs_handlers::handle_list_guidebook_docs(app_state, tool_request),
 
     _ => {
       let error = JsonRpcError::tool_not_found(&params.name);
@@ -238,9 +238,9 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
   .unwrap()
 }
 
-/// Legacy endpoint for backward compatibility (Axum version)
-pub async fn legacy_discover_axum() -> ResponseJson<Value> {
-  println!("[LEGACY REQUEST] /mcp/discover");
+/// Endpoint for backward compatibility (Axum version)
+pub async fn discover_axum() -> ResponseJson<Value> {
+  println!("[REQUEST] /mcp/discover");
   let tools = super::tools::get_mcp_tools();
   let response = serde_json::json!({
       "tools": tools
@@ -251,20 +251,20 @@ pub async fn legacy_discover_axum() -> ResponseJson<Value> {
     Ok(json) => json,
     Err(_) => "Failed to serialize response".to_string(),
   };
-  println!("[LEGACY OUTPUT] {response_json}");
+  println!("[OUTPUT] {response_json}");
 
   ResponseJson(response)
 }
 
-/// Legacy endpoint for backward compatibility (Axum version)
-pub async fn legacy_execute_axum(data: Arc<AppState>, req: McpRequest) -> ResponseJson<Value> {
+/// Endpoint for backward compatibility (Axum version)
+pub async fn execute_axum(data: Arc<AppState>, req: McpRequest) -> ResponseJson<Value> {
   // 记录请求输入
   let req_json = match serde_json::to_string_pretty(&req) {
     Ok(json) => json,
     Err(_) => "Failed to serialize request".to_string(),
   };
-  println!("[LEGACY REQUEST] /mcp/execute with tool: {}", req.tool_name);
-  println!("[LEGACY INPUT] {req_json}");
+  println!("[REQUEST] /mcp/execute with tool: {}", req.tool_name);
+  println!("[INPUT] {req_json}");
 
   let response = match req.tool_name.as_str() {
     // 读取操作
@@ -302,7 +302,7 @@ pub async fn legacy_execute_axum(data: Arc<AppState>, req: McpRequest) -> Respon
     "list_guidebook_docs" => super::docs_handlers::handle_list_guidebook_docs(&data, req),
 
     _ => {
-      println!("[LEGACY ERROR] Unknown tool: {}", req.tool_name);
+      println!("[ERROR] Unknown tool: {}", req.tool_name);
       ResponseJson(serde_json::json!({
         "error": format!("Unknown tool: {}", req.tool_name)
       }))
@@ -314,7 +314,7 @@ pub async fn legacy_execute_axum(data: Arc<AppState>, req: McpRequest) -> Respon
     Ok(json) => json,
     Err(_) => "Failed to serialize response".to_string(),
   };
-  println!("[LEGACY OUTPUT] {response_json}");
+  println!("[OUTPUT] {response_json}");
 
   response
 }
