@@ -1,8 +1,9 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitArgLabel, CalcitErr, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitScope,
-    CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType,
+    self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
+    CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation,
+    RawCodeType,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -36,7 +37,8 @@ pub fn preprocess_ns_def(
       match program::lookup_def_code(ns, def) {
         Some(code) => {
           // write a nil value first to prevent dead loop
-          program::write_evaled_def(ns, def, Calcit::Nil).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
+          program::write_evaled_def(ns, def, Calcit::Nil)
+            .map_err(|e| CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, e, call_stack))?;
 
           let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
@@ -54,12 +56,14 @@ pub fn preprocess_ns_def(
             })
           };
           // println!("\nwriting value to: {}/{} {:?}", ns, def, v);
-          program::write_evaled_def(ns, def, v.to_owned()).map_err(|e| CalcitErr::use_msg_stack(e, call_stack))?;
+          program::write_evaled_def(ns, def, v.to_owned())
+            .map_err(|e| CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, e, call_stack))?;
 
           Ok(Some(v))
         }
         None if ns.starts_with('|') || ns.starts_with('"') => Ok(None),
         None => Err(CalcitErr::use_msg_stack(
+          CalcitErrKind::Var,
           format!("unknown ns/def in program: {ns}/{def}"),
           call_stack,
         )),
@@ -128,7 +132,11 @@ pub fn preprocess_expr(
 
           Ok(form)
         } else {
-          Err(CalcitErr::use_msg_stack(format!("unknown ns target: {def}"), call_stack))
+          Err(CalcitErr::use_msg_stack(
+            CalcitErrKind::Var,
+            format!("unknown ns target: {def}"),
+            call_stack,
+          ))
         }
       }
       None => {
@@ -147,9 +155,9 @@ pub fn preprocess_expr(
           }))
         } else if CalcitSyntax::is_valid(def) {
           Ok(Calcit::Syntax(
-            def
-              .parse()
-              .map_err(|e: ParseError| CalcitErr::use_msg_stack(def.to_string() + " " + &e.to_string(), call_stack))?,
+            def.parse().map_err(|e: ParseError| {
+              CalcitErr::use_msg_stack(CalcitErrKind::Syntax, def.to_string() + " " + &e.to_string(), call_stack)
+            })?,
             def_ns.to_owned(),
           ))
         } else if *def == info.at_def {
@@ -342,7 +350,7 @@ fn preprocess_list_call(
 
       loop {
         // need to handle recursion
-        // println!("evaling line: {:?}", body);
+        // println!("evaluating line: {:?}", body);
         runner::bind_marked_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
         let code = runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack)?;
         match code {
@@ -400,7 +408,11 @@ fn preprocess_list_call(
           let code = Calcit::from(CalcitList::from(&[get_method, args[0].to_owned(), head.to_owned()]));
           preprocess_expr(&code, scope_defs, file_ns, check_warnings, call_stack)
         } else {
-          Err(CalcitErr::use_msg_stack(format!("{head} expected 1 hashmap to call"), call_stack))
+          Err(CalcitErr::use_msg_stack(
+            CalcitErrKind::Arity,
+            format!("{head} expected 1 hashmap to call"),
+            call_stack,
+          ))
         }
       }
 
@@ -469,12 +481,19 @@ fn preprocess_list_call(
           })?;
           Ok(Calcit::from(ys))
         }
-        CalcitSyntax::ArgSpread => CalcitErr::err_nodes("`&` cannot be preprocessed as operator", &xs.to_vec()),
-        CalcitSyntax::ArgOptional => CalcitErr::err_nodes("`?` cannot be preprocessed as operator", &xs.to_vec()),
-        CalcitSyntax::MacroInterpolate => CalcitErr::err_nodes("`~` cannot be preprocessed as operator", &xs.to_vec()),
-        CalcitSyntax::MacroInterpolateSpread => CalcitErr::err_nodes("`~@` cannot be preprocessed as operator", &xs.to_vec()),
+        CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec()),
+        CalcitSyntax::ArgOptional => {
+          CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be preprocessed as operator", &xs.to_vec())
+        }
+        CalcitSyntax::MacroInterpolate => {
+          CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~` cannot be preprocessed as operator", &xs.to_vec())
+        }
+        CalcitSyntax::MacroInterpolateSpread => {
+          CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~@` cannot be preprocessed as operator", &xs.to_vec())
+        }
       },
       Calcit::Thunk(..) => Err(CalcitErr::use_msg_stack(
+        CalcitErrKind::Unexpected,
         format!("does not know how to preprocess a thunk: {head}"),
         call_stack,
       )),
@@ -507,7 +526,11 @@ fn preprocess_list_call(
           Ok(Calcit::from(CalcitList::List(ys)))
         }
       }
-      h => Err(CalcitErr::use_msg_stack(format!("unknown head `{h}` in {xs}"), call_stack)),
+      h => Err(CalcitErr::use_msg_stack(
+        CalcitErrKind::Unexpected,
+        format!("unknown head `{h}` in {xs}"),
+        call_stack,
+      )),
     },
   }
 }
@@ -715,6 +738,7 @@ pub fn preprocess_defn(
             Ok(())
           }
           _ => Err(CalcitErr::use_msg_stack(
+            CalcitErrKind::Type,
             format!("expected defn args to be symbols, got: {y}"),
             call_stack,
           )),
@@ -736,11 +760,13 @@ pub fn preprocess_defn(
       Ok(Calcit::List(Arc::new(xs.into())))
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Syntax,
       format!("defn/defmacro expected name and args: {a} {b}"),
       call_stack,
       a.get_location().or_else(|| b.get_location()),
     )),
     (a, b) => Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Syntax,
       format!("defn or defmacro expected name and args, got: {a:?} {b:?}",),
       call_stack,
     )),
@@ -796,6 +822,7 @@ pub fn preprocess_core_let(
       }
       (a, b) => {
         return Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Syntax,
           format!("invalid pair for &let binding: {a} {b}"),
           call_stack,
           a.get_location().or_else(|| b.get_location()),
@@ -804,12 +831,14 @@ pub fn preprocess_core_let(
     },
     Some(a @ Calcit::List(_)) => {
       return Err(CalcitErr::use_msg_stack(
+        CalcitErrKind::Syntax,
         format!("expected binding of a pair, got: {a}"),
         call_stack,
       ));
     }
     Some(a) => {
       return Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Syntax,
         format!("expected binding of a pair, got: {a}"),
         call_stack,
         a.get_location(),
@@ -817,6 +846,7 @@ pub fn preprocess_core_let(
     }
     None => {
       return Err(CalcitErr::use_msg_stack(
+        CalcitErrKind::Syntax,
         "expected binding of a pair, got nothing".to_owned(),
         call_stack,
       ));

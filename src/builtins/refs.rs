@@ -8,7 +8,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use cirru_edn::EdnTag;
 
-use crate::calcit::{Calcit, CalcitErr, CalcitImport, CalcitList, CalcitScope};
+use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitScope};
 use crate::{call_stack::CallStackList, runner};
 
 pub(crate) type ValueAndListeners = (Calcit, HashMap<EdnTag, Calcit>);
@@ -38,7 +38,8 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
       }
       a => {
         return Err(CalcitErr::use_msg_stack_location(
-          format!("expected fn to trigger after `reset!`, got: {a}"),
+          CalcitErrKind::Type,
+          format!("modify-ref expected a function to trigger after `reset!`, but received: {a}"),
           call_stack,
           a.get_location(),
         ));
@@ -105,11 +106,16 @@ pub fn defatom(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack
       }
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
-      format!("defatom expected a symbol and an expression: {a} , {b}"),
+      CalcitErrKind::Type,
+      format!("defatom expected a symbol and an expression, but received: {a} , {b}"),
       call_stack,
       a.get_location().or_else(|| b.get_location()),
     )),
-    _ => Err(CalcitErr::use_msg_stack("defatom expected 2 nodes", call_stack)),
+    _ => Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Arity,
+      "defatom expected 2 nodes, but received none",
+      call_stack,
+    )),
   }
 }
 
@@ -120,7 +126,7 @@ static ATOM_ID_GEN: AtomicUsize = AtomicUsize::new(0);
 pub fn atom(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(value) => Ok(quick_build_atom(value.to_owned())),
-    _ => CalcitErr::err_str("atom expected 1 node"),
+    _ => CalcitErr::err_str(CalcitErrKind::Arity, "atom expected 1 node, but received none"),
   }
 }
 
@@ -144,15 +150,15 @@ pub fn atom_deref(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let pair = (**locked_pair).lock().expect("read pair from block");
       Ok(pair.0.to_owned())
     }
-    Some(a) => CalcitErr::err_str(format!("deref expected a ref, got: {a}")),
-    _ => CalcitErr::err_str("deref expected 1 argument, got nothing"),
+    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&atom:deref expected a ref, but received: {a}")),
+    _ => CalcitErr::err_str(CalcitErrKind::Arity, "&atom:deref expected 1 argument, but received none"),
   }
 }
 
 /// need to be syntax since triggering internal functions requires program data
 pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() < 2 {
-    return CalcitErr::err_nodes("reset! excepted 2 arguments, got:", &expr.to_vec());
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "reset! expected 2 arguments, but received:", &expr.to_vec());
   }
   // println!("reset! {:?}", expr[0]);
   let target = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
@@ -174,16 +180,21 @@ pub fn reset_bang(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
             Ok(Calcit::Nil)
           }
           (a, _) => Err(CalcitErr::use_msg_stack_location(
-            format!("reset! expected a ref, got: {a}"),
+            CalcitErrKind::Type,
+            format!("reset! expected a ref, but received: {a}"),
             call_stack,
             a.get_location(),
           )),
         }
       }
-      _ => CalcitErr::err_str(format!("reset! expected a symbol, got: {:?}", expr[0])),
+      _ => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("reset! expected a symbol, but received: {:?}", expr[0]),
+      ),
     },
     (a, b) => Err(CalcitErr::use_msg_stack_location(
-      format!("reset! expected a ref and a value, got: {a} {b}"),
+      CalcitErrKind::Type,
+      format!("reset! expected a ref and a value, but received: {a} {b}"),
       call_stack,
       a.get_location().or_else(|| b.get_location()),
     )),
@@ -195,7 +206,10 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Ref(_path, locked_pair)), Some(Calcit::Tag(k)), Some(f @ Calcit::Fn { .. })) => {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");
       match pair.1.get(k) {
-        Some(_) => CalcitErr::err_str(format!("add-watch failed, listener with key `{k}` existed")),
+        Some(_) => CalcitErr::err_str(
+          CalcitErrKind::Unexpected,
+          format!("add-watch failed: listener with key `{k}` already existed"),
+        ),
         None => {
           pair.1.insert(k.to_owned(), f.to_owned());
           Ok(Calcit::Nil)
@@ -203,11 +217,16 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
     }
     (Some(Calcit::Ref(..)), Some(Calcit::Tag(_)), Some(a)) => {
-      CalcitErr::err_str(format!("add-watch expected fn instead of proc, got: {a}"))
+      CalcitErr::err_str(CalcitErrKind::Type, format!("add-watch expected a function, but received: {a}"))
     }
-    (Some(Calcit::Ref(..)), Some(a), Some(_)) => CalcitErr::err_str(format!("add-watch expected a tag, but got: {a}")),
-    (Some(a), _, _) => CalcitErr::err_str(format!("add-watch expected ref, got: {a}")),
-    (a, b, c) => CalcitErr::err_str(format!("add-watch expected ref, tag, function, got: {a:?} {b:?} {c:?}")),
+    (Some(Calcit::Ref(..)), Some(a), Some(_)) => {
+      CalcitErr::err_str(CalcitErrKind::Type, format!("add-watch expected a tag, but received: {a}"))
+    }
+    (Some(a), _, _) => CalcitErr::err_str(CalcitErrKind::Type, format!("add-watch expected a ref, but received: {a}")),
+    (a, b, c) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("add-watch expected a ref, a tag, and a function, but received: {a:?} {b:?} {c:?}"),
+    ),
   }
 }
 
@@ -217,14 +236,23 @@ pub fn remove_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let mut pair = locked_pair.lock().expect("trying to modify locked pair");
 
       match pair.1.get(k) {
-        None => CalcitErr::err_str(format!("remove-watch failed, listener with key `{k}` missing")),
+        None => CalcitErr::err_str(
+          CalcitErrKind::Unexpected,
+          format!("remove-watch failed: listener with key `{k}` not found"),
+        ),
         Some(_) => {
           pair.1.remove(k);
           Ok(Calcit::Nil)
         }
       }
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(format!("remove-watch expected ref and tag, got: {a} {b}")),
-    (a, b) => CalcitErr::err_str(format!("remove-watch expected 2 arguments, got: {a:?} {b:?}")),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("remove-watch expected a ref and a tag, but received: {a} {b}"),
+    ),
+    (a, b) => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("remove-watch expected 2 arguments, but received: {a:?} {b:?}"),
+    ),
   }
 }

@@ -102,7 +102,7 @@ impl CalcitRecord {
     let new_name_id: EdnTag = match new_tag {
       Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => EdnTag(s.to_owned()),
       Calcit::Tag(s) => s.to_owned(),
-      _ => return Err("expected record name".to_string()),
+      _ => return Err("extend-field expected a record name, but received an invalid type".to_string()),
     };
 
     Ok(CalcitRecord {

@@ -66,11 +66,13 @@ export class CalcitRecord {
     return idx >= 0;
   }
   toString(disableJsDataWarning: boolean = false): string {
-    let ret = "(%{} " + this.name;
+    // Optimize string building using array join instead of concatenation
+    const parts = ["(%{} ", this.name.toString()];
     for (let idx = 0; idx < this.fields.length; idx++) {
-      ret += " (" + this.fields[idx] + " " + toString(this.values[idx], true, disableJsDataWarning) + ")";
+      parts.push(" (", this.fields[idx].toString(), " ", toString(this.values[idx], true, disableJsDataWarning), ")");
     }
-    return ret + ")";
+    parts.push(")");
+    return parts.join("");
   }
   withClass(klass: CalcitValue): CalcitRecord {
     if (klass instanceof CalcitRecord) {

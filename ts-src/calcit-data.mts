@@ -118,35 +118,32 @@ export let getStringName = (x: CalcitValue): string => {
 
 /** returns -1 when not found */
 export function findInFields(xs: Array<CalcitTag>, y: CalcitTag): number {
-  let lower = 0;
-  let upper = xs.length - 1;
+  let low = 0;
+  let high = xs.length - 1;
 
-  while (upper - lower > 1) {
-    let pos = (lower + upper) >> 1;
-    let v = xs[pos];
-    if (y.idx < v.idx) {
-      upper = pos - 1;
-    } else if (y.idx > v.idx) {
-      lower = pos + 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const midVal = xs[mid];
+    if (midVal.idx < y.idx) {
+      low = mid + 1;
+    } else if (midVal.idx > y.idx) {
+      high = mid - 1;
     } else {
-      return pos;
+      return mid;
     }
   }
-
-  if (y === xs[lower]) return lower;
-  if (y === xs[upper]) return upper;
   return -1;
 }
 
-var tagRegistery: Record<string, CalcitTag> = {};
+var tagRegistry: Record<string, CalcitTag> = {};
 
 export let newTag = (content: string) => {
-  let item = tagRegistery[content];
+  let item = tagRegistry[content];
   if (item != null) {
     return item;
   } else {
     let v = new CalcitTag(content);
-    tagRegistery[content] = v;
+    tagRegistry[content] = v;
     return v;
   }
 };
@@ -591,22 +588,30 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
         return false;
       }
       let values = x.values();
+      let yValues = y.values();
+      // Optimize: create a Map for O(1) lookup instead of O(n) iteration
+      let yMap = new Map();
+      for (let idx = 0; idx < yValues.length; idx++) {
+        let yv = yValues[idx];
+        yMap.set(yv, true);
+      }
+
       for (let idx = 0; idx < values.length; idx++) {
         let v = values[idx];
         let found = false;
-        // testing by doing iteration is O(n2), could be slow
-        // but Set::contains does not satisfy here
-        let yValues = y.values();
-        for (let idx = 0; idx < yValues.length; idx++) {
-          let yv = yValues[idx];
-          if (_$n__$e_(v, yv)) {
-            found = true;
-            break;
+        // First try direct lookup for primitive values
+        if (yMap.has(v)) {
+          found = true;
+        } else {
+          // Fallback to deep equality check for complex values
+          for (let yv of yValues) {
+            if (_$n__$e_(v, yv)) {
+              found = true;
+              break;
+            }
           }
         }
-        if (found) {
-          continue;
-        } else {
+        if (!found) {
           return false;
         }
       }

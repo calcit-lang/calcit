@@ -10,7 +10,8 @@ use std::vec;
 use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::calcit::{
-  self, CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax, LocatedWarning,
+  self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax,
+  LocatedWarning,
 };
 use crate::calcit::{Calcit, CalcitErr, CalcitScope, gen_core_id};
 use crate::call_stack::CallStackList;
@@ -28,8 +29,14 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
         body: expr.skip(2)?.to_vec(),
       }),
     }),
-    (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid args type for defn: {a} , {b}")),
-    _ => CalcitErr::err_str("inefficient arguments for defn"),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("defn expected a symbol and a list of arguments, but received: {a} , {b}"),
+    ),
+    _ => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      "defn expected a symbol and a list of arguments, but received insufficient arguments",
+    ),
   }
 }
 
@@ -44,8 +51,17 @@ pub fn defmacro(expr: &CalcitList, _scope: &CalcitScope, def_ns: &str) -> Result
         body: Arc::new(expr.skip(2)?.to_vec()),
       }),
     }),
-    (Some(a), Some(b)) => CalcitErr::err_str(format!("invalid structure for defmacro: {a} {b}")),
-    _ => CalcitErr::err_str(format!("invalid structure for defmacro: {}", Calcit::from(expr.to_owned()))),
+    (Some(a), Some(b)) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("defmacro expected a symbol and a list of arguments, but received: {a} {b}"),
+    ),
+    _ => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!(
+        "defmacro expected a symbol and a list of arguments, but received: {}",
+        Calcit::from(expr.to_owned())
+      ),
+    ),
   }
 }
 
@@ -72,7 +88,7 @@ pub fn get_raw_args(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String> {
         // return Err(format!("Unexpected argument label: {item}"));
         Ok(())
       }
-      _ => Err(format!("raw args unexpected argument: {item}")),
+      _ => Err(format!("get-raw-args unexpected argument: {item}")),
     }
   })?;
   // println!("Making macro args: {:?} from {:?}", xs, args);
@@ -104,7 +120,7 @@ pub fn get_raw_args_fn(args: &CalcitList) -> Result<CalcitFnArgs, String> {
         xs.push(CalcitArgLabel::Idx(idx));
         Ok(())
       }
-      _ => Err(format!("raw args fn unexpected argument: {item:?}")),
+      _ => Err(format!("get-raw-args-fn unexpected argument: {item:?}")),
     }
   })?;
   if has_mark {
@@ -116,7 +132,7 @@ pub fn get_raw_args_fn(args: &CalcitList) -> Result<CalcitFnArgs, String> {
         CalcitArgLabel::Idx(idx) => {
           ys.push(*idx);
         }
-        _ => return Err(format!("Unexpected argument label: {x}")),
+        _ => return Err(format!("get-raw-args-fn unexpected argument: {x}")),
       }
     }
     Ok(CalcitFnArgs::Args(ys))
@@ -127,17 +143,25 @@ pub fn quote(expr: &CalcitList, _scope: &CalcitScope, _file_ns: &str) -> Result<
   if expr.len() == 1 {
     Ok(expr[0].to_owned())
   } else {
-    CalcitErr::err_nodes("unexpected data for quote, got:", &expr.to_vec())
+    CalcitErr::err_nodes(CalcitErrKind::Arity, "quote expected 1 argument, but received:", &expr.to_vec())
   }
 }
 
 pub fn syntax_if(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let l = expr.len();
   if l > 3 {
-    return CalcitErr::err_nodes("too many nodes for if, got:", &expr.to_vec());
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "if expected at most 3 arguments, but received:",
+      &expr.to_vec(),
+    );
   }
   if l < 2 {
-    return CalcitErr::err_nodes("insufficient nodes for if, got:", &expr.to_vec());
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "if expected at least 2 arguments, but received:",
+      &expr.to_vec(),
+    );
   }
   let cond = &expr[0];
   let true_branch = &expr[1];
@@ -157,7 +181,7 @@ pub fn eval(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &
     let v = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
     runner::evaluate_expr(&v, scope, file_ns, call_stack)
   } else {
-    CalcitErr::err_nodes("unexpected data for evaling, got:", &expr.to_vec())
+    CalcitErr::err_nodes(CalcitErrKind::Arity, "eval expected 1 argument, but received:", &expr.to_vec())
   }
 }
 
@@ -178,13 +202,13 @@ pub fn syntax_let(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
           let idx = CalcitLocal::track_sym(s);
           body_scope.insert_mut(idx, value);
         }
-        (a, _) => return CalcitErr::err_str(format!("invalid binding name: {a}")),
+        (a, _) => return CalcitErr::err_str(CalcitErrKind::Type, format!("let invalid binding name: {a}")),
       }
       runner::evaluate_lines(&expr.drop_left().to_vec(), &body_scope, file_ns, call_stack)
     }
-    Some(Calcit::List(xs)) => CalcitErr::err_nodes("invalid length for &let , got:", &xs.to_vec()),
-    Some(_) => CalcitErr::err_str(format!("invalid node for &let: {}", expr.to_owned())),
-    None => CalcitErr::err_str("&let expected a pair or a nil"),
+    Some(Calcit::List(xs)) => CalcitErr::err_nodes(CalcitErrKind::Arity, "let invalid length, but received:", &xs.to_vec()),
+    Some(_) => CalcitErr::err_str(CalcitErrKind::Type, format!("let invalid node, but received: {}", expr.to_owned())),
+    None => CalcitErr::err_str(CalcitErrKind::Arity, "let expected a pair or nil, but received none"),
   }
 }
 
@@ -197,14 +221,18 @@ enum SpanResult {
 
 pub fn quasiquote(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match expr.first() {
-    None => CalcitErr::err_str("quasiquote expected a node"),
+    None => CalcitErr::err_str(CalcitErrKind::Arity, "quasiquote expected a node, but received none"),
     Some(code) => {
       match replace_code(code, scope, file_ns, call_stack)? {
         SpanResult::Single(v) => {
           // println!("replace result: {:?}", v);
           Ok(v)
         }
-        SpanResult::Range(xs) => CalcitErr::err_nodes("expected single result from quasiquote, got:", &xs.to_vec()),
+        SpanResult::Range(xs) => CalcitErr::err_nodes(
+          CalcitErrKind::Arity,
+          "quasiquote expected single result, but received:",
+          &xs.to_vec(),
+        ),
       }
     }
   }
@@ -224,7 +252,10 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &Cal
         let ret = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         match ret {
           Calcit::List(zs) => Ok(SpanResult::Range(zs.to_owned())),
-          _ => Err(CalcitErr::use_str(format!("unknown result from unquote-slice: {ret}"))),
+          _ => Err(CalcitErr::use_str(
+            CalcitErrKind::Type,
+            format!("unquote-slice unknown result, but received: {ret}"),
+          )),
         }
       }
       (_, _) => {
@@ -298,7 +329,11 @@ pub fn macroexpand(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
       a => Ok(a.to_owned()),
     }
   } else {
-    CalcitErr::err_nodes("macroexpand expected excaclty 1 argument, got:", &expr.to_vec())
+    CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "macroexpand expected 1 argument, but received:",
+      &expr.to_vec(),
+    )
   }
 }
 
@@ -324,7 +359,11 @@ pub fn macroexpand_1(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call
       a => Ok(a.to_owned()),
     }
   } else {
-    CalcitErr::err_nodes("macroexpand expected excaclty 1 argument, got:", &expr.to_vec())
+    CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "macroexpand-1 expected 1 argument, but received:",
+      &expr.to_vec(),
+    )
   }
 }
 
@@ -374,14 +413,22 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
       a => Ok(a.to_owned()),
     }
   } else {
-    CalcitErr::err_nodes("macroexpand expected excaclty 1 argument, got:", &expr.to_vec())
+    CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "macroexpand-all expected 1 argument, but received:",
+      &expr.to_vec(),
+    )
   }
 }
 
 /// inserted automatically when `&` syntax is recognized in calling
 pub fn call_spread(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() < 3 {
-    return CalcitErr::err_nodes("call-spread expected at least 3 arguments, got:", &expr.to_vec());
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "call-spread expected at least 3 arguments, but received:",
+      &expr.to_vec(),
+    );
   }
 
   let x = &expr[0];
@@ -407,12 +454,12 @@ pub fn call_try(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stac
         match f {
           Calcit::Fn { info, .. } => runner::run_fn(&[err_data], &info, call_stack),
           Calcit::Proc(proc) => builtins::handle_proc(proc, &[err_data], call_stack),
-          a => CalcitErr::err_str(format!("try expected a function handler, got: {a}")),
+          a => CalcitErr::err_str(CalcitErrKind::Type, format!("try expected a function handler, but received: {a}")),
         }
       }
     }
   } else {
-    CalcitErr::err_nodes("try expected 2 arguments, got:", &expr.to_vec())
+    CalcitErr::err_nodes(CalcitErrKind::Arity, "try expected 2 arguments, but received:", &expr.to_vec())
   }
 }
 
@@ -450,7 +497,7 @@ pub fn gensym(xs: &CalcitList, _scope: &CalcitScope, file_ns: &str, _call_stack:
         chunk.push_str(&n.to_string());
         chunk
       }
-      a => return CalcitErr::err_str(format!("gensym expected a string, but got: {a}")),
+      a => return CalcitErr::err_str(CalcitErrKind::Type, format!("gensym expected a string, but received: {a}")),
     }
   };
   Ok(Calcit::Symbol {

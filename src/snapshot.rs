@@ -1,22 +1,31 @@
-use cirru_edn::{Edn, EdnMapView, EdnRecordView, EdnSetView, EdnTag};
+use cirru_edn::{Edn, EdnMapView, EdnRecordView, EdnSetView, EdnTag, from_edn};
 use cirru_parser::Cirru;
+use serde::{Deserialize, Serialize};
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SnapshotConfigs {
-  pub init_fn: Arc<str>,
-  pub reload_fn: Arc<str>,
-  pub modules: Vec<Arc<str>>,
-  pub version: Arc<str>,
+fn default_version() -> String {
+  "0.0.0".to_owned()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SnapshotConfigs {
+  #[serde(rename = "init-fn")]
+  pub init_fn: String,
+  #[serde(rename = "reload-fn")]
+  pub reload_fn: String,
+  #[serde(default)]
+  pub modules: Vec<String>,
+  #[serde(default = "default_version")]
+  pub version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileInSnapShot {
   pub ns: CodeEntry,
-  pub defs: HashMap<Arc<str>, CodeEntry>,
+  pub defs: HashMap<String, CodeEntry>,
 }
 
 impl From<&FileInSnapShot> for Edn {
@@ -31,11 +40,7 @@ impl From<&FileInSnapShot> for Edn {
 impl TryFrom<Edn> for FileInSnapShot {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
-    let data = data.view_record()?;
-    Ok(FileInSnapShot {
-      ns: data["ns"].to_owned().try_into()?,
-      defs: data["defs"].to_owned().try_into()?,
-    })
+    from_edn(data).map_err(|e| format!("failed to parse FileInSnapShot: {e}"))
   }
 }
 
@@ -45,7 +50,7 @@ impl From<FileInSnapShot> for Edn {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CodeEntry {
   pub doc: String,
   pub code: Cirru,
@@ -54,11 +59,7 @@ pub struct CodeEntry {
 impl TryFrom<Edn> for CodeEntry {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
-    let data = data.view_record()?;
-    Ok(CodeEntry {
-      doc: data["doc"].to_owned().try_into()?,
-      code: data["code"].to_owned().try_into()?,
-    })
+    from_edn(data).map_err(|e| format!("failed to parse CodeEntry: {e}"))
   }
 }
 
@@ -90,31 +91,18 @@ impl CodeEntry {
 }
 
 /// structure of `compact.cirru` file
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
-  pub package: Arc<str>,
+  pub package: String,
   pub configs: SnapshotConfigs,
-  pub entries: HashMap<Arc<str>, SnapshotConfigs>,
-  pub files: HashMap<Arc<str>, FileInSnapShot>,
+  pub entries: HashMap<String, SnapshotConfigs>,
+  pub files: HashMap<String, FileInSnapShot>,
 }
 
 impl TryFrom<Edn> for SnapshotConfigs {
   type Error = String;
   fn try_from(data: Edn) -> Result<SnapshotConfigs, String> {
-    let data = data.view_map()?;
-    let c = SnapshotConfigs {
-      init_fn: data.get_or_nil("init-fn").try_into()?,
-      reload_fn: data.get_or_nil("reload-fn").try_into()?,
-      version: match data.get_or_nil("version") {
-        Edn::Nil => "".into(),
-        x => x.try_into()?,
-      },
-      modules: match data.get_or_nil("modules") {
-        Edn::Nil => vec![],
-        v => v.try_into()?,
-      },
-    };
-    Ok(c)
+    from_edn(data)
   }
 }
 
@@ -122,12 +110,12 @@ impl TryFrom<Edn> for SnapshotConfigs {
 pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
   let data = data.view_map()?;
   let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
-  let mut files: HashMap<Arc<str>, FileInSnapShot> = data.get_or_nil("files").try_into()?;
+  let mut files: HashMap<String, FileInSnapShot> = data.get_or_nil("files").try_into()?;
   let meta_ns = format!("{pkg}.$meta");
-  files.insert(meta_ns.to_owned().into(), gen_meta_ns(&meta_ns, path));
+  files.insert(meta_ns.to_owned(), gen_meta_ns(&meta_ns, path));
   let s = Snapshot {
-    package: pkg,
-    configs: data.get_or_nil("configs").try_into()?,
+    package: pkg.to_string(),
+    configs: from_edn(data.get_or_nil("configs"))?,
     entries: data.get_or_nil("entries").try_into()?,
     files,
   };
@@ -139,7 +127,7 @@ pub fn gen_meta_ns(ns: &str, path: &str) -> FileInSnapShot {
   let parent = path_data.parent().expect("parent path");
   let parent_str = parent.to_str().expect("get path string");
 
-  let def_dict: HashMap<Arc<str>, CodeEntry> = HashMap::from_iter([
+  let def_dict: HashMap<String, CodeEntry> = HashMap::from_iter([
     (
       "calcit-filename".into(),
       CodeEntry::from_code(vec!["def", "calcit-filename", &format!("|{}", path.escape_default())].into()),
@@ -166,7 +154,7 @@ impl Default for Snapshot {
       configs: SnapshotConfigs {
         init_fn: "app.main/main!".into(),
         reload_fn: "app.main/reload!".into(),
-        version: "0.0.0".into(),
+        version: "0.0.0".to_string(),
         modules: vec![],
       },
       entries: HashMap::new(),
@@ -178,7 +166,7 @@ impl Default for Snapshot {
 pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
   match cirru_parser::parse(raw) {
     Ok(lines) => {
-      let mut def_dict: HashMap<Arc<str>, CodeEntry> = HashMap::with_capacity(2);
+      let mut def_dict: HashMap<String, CodeEntry> = HashMap::with_capacity(2);
       let mut func_code = vec![Cirru::leaf("defn"), "main!".into(), Cirru::List(vec![])];
       for line in lines {
         func_code.push(line.to_owned());
@@ -200,9 +188,9 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
 #[derive(Debug, PartialEq, Clone, Eq)]
 pub struct FileChangeInfo {
   pub ns: Option<Cirru>,
-  pub added_defs: HashMap<Arc<str>, Cirru>,
-  pub removed_defs: HashSet<Arc<str>>,
-  pub changed_defs: HashMap<Arc<str>, Cirru>,
+  pub added_defs: HashMap<String, Cirru>,
+  pub removed_defs: HashSet<String>,
+  pub changed_defs: HashMap<String, Cirru>,
 }
 
 impl From<&FileChangeInfo> for Edn {

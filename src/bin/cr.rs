@@ -62,7 +62,7 @@ fn main() -> Result<(), String> {
     eval_once = true;
     match snapshot::create_file_from_snippet(snippet) {
       Ok(main_file) => {
-        snapshot.files.insert(String::from("app.main").into(), main_file);
+        snapshot.files.insert(String::from("app.main"), main_file);
       }
       Err(e) => return Err(e),
     }

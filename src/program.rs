@@ -119,7 +119,7 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
   let mut defs: HashMap<Arc<str>, Calcit> = HashMap::with_capacity(file.defs.len());
   for (def, entry) in &file.defs {
     let at_def = def.to_owned();
-    defs.insert(def.to_owned(), code_to_calcit(&entry.code, &ns, &at_def, vec![])?);
+    defs.insert(def.to_owned().into(), code_to_calcit(&entry.code, &ns, &at_def, vec![])?);
   }
   Ok(ProgramFileData { import_map, defs })
 }
@@ -127,8 +127,8 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
 pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
   let mut xs: ProgramCodeData = HashMap::with_capacity(s.files.len());
   for (ns, file) in &s.files {
-    let file_info = extract_file_data(file, ns.to_owned())?;
-    xs.insert(ns.to_owned(), file_info);
+    let file_info = extract_file_data(file, ns.to_owned().into())?;
+    xs.insert(ns.to_owned().into(), file_info);
   }
   Ok(xs)
 }
@@ -251,13 +251,17 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       file.import_map = extract_import_map(v)?;
     }
     for (def, code) in &info.added_defs {
-      file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def, coord0.to_owned())?);
+      file
+        .defs
+        .insert(def.to_owned().into(), code_to_calcit(code, ns, def, coord0.to_owned())?);
     }
     for def in &info.removed_defs {
-      file.defs.remove(def);
+      file.defs.remove(def.as_str());
     }
     for (def, code) in &info.changed_defs {
-      file.defs.insert(def.to_owned(), code_to_calcit(code, ns, def, coord0.to_owned())?);
+      file
+        .defs
+        .insert(def.to_owned().into(), code_to_calcit(code, ns, def, coord0.to_owned())?);
     }
   }
 
