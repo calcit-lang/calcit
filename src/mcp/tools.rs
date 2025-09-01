@@ -60,7 +60,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
   vec![
     // Calcit Language Tools - Calcit is a functional programming language with Lisp-like syntax using Cirru notation
     // These tools help interact with Calcit projects, which organize code in namespaces containing function/macro definitions
-    
+
     // Reading Operations
     McpTool {
       name: "list_definitions".to_string(),
@@ -298,7 +298,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
         optional: false,
       }],
     },
-    
+
     // Calcit Documentation and Tutorial Tools
     McpTool {
       name: "query_api_docs".to_string(),
@@ -346,7 +346,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       description: "List all available guidebook and tutorial documentation files. This tool provides an overview of all Calcit guidebook files in the repository, showing file names, paths, and brief descriptions to help users navigate and discover available tutorials and guides before querying specific content.".to_string(),
       parameters: vec![],
     },
-    
+
     // Configuration Management Tools
     McpTool {
       name: "read_configs".to_string(),

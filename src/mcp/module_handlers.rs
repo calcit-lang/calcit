@@ -117,7 +117,7 @@ pub fn switch_module(app_state: &super::AppState, req: McpRequest) -> ResponseJs
   }
 
   // In actual implementation, this should update current module state
-    // Currently only verifying module existence
+  // Currently only verifying module existence
   ResponseJson(serde_json::json!({
     "message": format!("Switched to module: {}", module_name),
     "current_module": module_name
@@ -169,7 +169,7 @@ pub fn create_module(app_state: &super::AppState, req: McpRequest) -> ResponseJs
   snapshot.entries.insert(module_name.clone(), new_module_config);
 
   // In actual implementation, this should save snapshot
-    // Currently only simulating creation process
+  // Currently only simulating creation process
   ResponseJson(serde_json::json!({
     "message": format!("Created module: {}", module_name),
     "module": module_name
@@ -214,7 +214,7 @@ pub fn delete_module(app_state: &super::AppState, req: McpRequest) -> ResponseJs
   snapshot.entries.remove(&module_name);
 
   // In actual implementation, this should save snapshot
-    // Currently only simulating deletion process
+  // Currently only simulating deletion process
   ResponseJson(serde_json::json!({
     "message": format!("Deleted module: {}", module_name)
   }))

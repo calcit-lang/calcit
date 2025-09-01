@@ -37,5 +37,5 @@ pub use mcp_handlers::*;
 pub use module_handlers::*;
 pub use namespace_handlers::*;
 // read_handlers functions are imported individually to avoid conflicts
-pub use read_handlers::{list_definitions, read_namespace, read_definition, get_package_name};
+pub use read_handlers::{get_package_name, list_definitions, read_definition, read_namespace};
 pub use tools::{McpRequest, McpTool, McpToolParameter, get_mcp_tools, get_standard_mcp_tools};

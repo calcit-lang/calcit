@@ -8,14 +8,14 @@ use axum::{
 };
 use calcit::snapshot;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::io::{self, Write};
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 
 // Import MCP module
-use calcit::mcp::*;
 use calcit::mcp::docs_handlers::{load_api_docs, load_guidebook_docs};
+use calcit::mcp::*;
 
 /// MCP server for Calcit
 #[derive(FromArgs)]
@@ -113,11 +113,11 @@ async fn main() -> std::io::Result<()> {
     println!("File '{}' does not exist.", args.file);
     print!("Would you like to create an empty compact.cirru file with basic EDN structure? (y/N): ");
     io::stdout().flush().unwrap();
-    
+
     let mut input = String::new();
     io::stdin().read_line(&mut input).unwrap();
     let input = input.trim().to_lowercase();
-    
+
     if input == "y" || input == "yes" {
       let default_content = r#"
 {} (:package |app)
@@ -136,11 +136,11 @@ async fn main() -> std::io::Result<()> {
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote (ns app.main)
 "#;
-      
+
       if let Some(parent) = std::path::Path::new(&args.file).parent() {
         std::fs::create_dir_all(parent)?;
       }
-      
+
       std::fs::write(&args.file, default_content)?;
       println!("Created '{}' with basic EDN structure.", args.file);
     } else {
@@ -185,7 +185,7 @@ async fn main() -> std::io::Result<()> {
 
   println!("Starting MCP server on port {}", args.port);
   println!("Loading file: {}", args.file);
-  
+
   // Preload API documentation and tutorial data
   println!("Preloading API documentation...");
   if let Err(e) = load_api_docs() {
@@ -193,7 +193,7 @@ async fn main() -> std::io::Result<()> {
   } else {
     println!("API documentation loaded successfully");
   }
-  
+
   println!("Preloading guidebook...");
   if let Err(e) = load_guidebook_docs() {
     eprintln!("Warning: Failed to load guidebook: {e}");
