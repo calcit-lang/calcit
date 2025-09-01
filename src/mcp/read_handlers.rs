@@ -47,22 +47,7 @@ pub fn list_definitions(app_state: &super::AppState, req: McpRequest) -> Respons
   }))
 }
 
-pub fn list_namespaces(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
-  let snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
-    }
-  };
-
-  let namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
-
-  ResponseJson(serde_json::json!({
-    "namespaces": namespaces
-  }))
-}
+// list_namespaces function moved to namespace_handlers.rs to avoid duplication
 
 pub fn get_package_name(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
   let snapshot = match load_snapshot(app_state) {

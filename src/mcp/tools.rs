@@ -346,6 +346,37 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       description: "List all available guidebook and tutorial documentation files. This tool provides an overview of all Calcit guidebook files in the repository, showing file names, paths, and brief descriptions to help users navigate and discover available tutorials and guides before querying specific content.".to_string(),
       parameters: vec![],
     },
+    
+    // Configuration Management Tools
+    McpTool {
+      name: "read_configs".to_string(),
+      description: "Read the current project configuration settings. Calcit projects have configuration settings that control initialization functions, reload functions, and version information. This tool returns the complete configuration structure including init-fn, reload-fn, and version.".to_string(),
+      parameters: vec![],
+    },
+    McpTool {
+      name: "update_configs".to_string(),
+      description: "Update multiple configuration settings at once. This tool allows updating any combination of init-fn, reload-fn, and version in a single operation. Only provide the fields you want to update - omitted fields will remain unchanged.".to_string(),
+      parameters: vec![
+        McpToolParameter {
+          name: "init_fn".to_string(),
+          parameter_type: "string".to_string(),
+          description: "New initialization function in 'namespace/function-name' format (optional)".to_string(),
+          optional: true,
+        },
+        McpToolParameter {
+          name: "reload_fn".to_string(),
+          parameter_type: "string".to_string(),
+          description: "New reload function in 'namespace/function-name' format (optional)".to_string(),
+          optional: true,
+        },
+        McpToolParameter {
+          name: "version".to_string(),
+          parameter_type: "string".to_string(),
+          description: "New version string (optional)".to_string(),
+          optional: true,
+        },
+      ],
+    },
   ]
 }
 

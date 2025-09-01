@@ -185,7 +185,7 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
   let handler_result = match params.name.as_str() {
     // Read operations
     "list_definitions" => super::read_handlers::list_definitions(app_state, tool_request),
-    "list_namespaces" => super::read_handlers::list_namespaces(app_state, tool_request),
+    "list_namespaces" => super::namespace_handlers::list_namespaces(app_state, tool_request),
     "get_package_name" => super::read_handlers::get_package_name(app_state, tool_request),
     "read_namespace" => super::read_handlers::read_namespace(app_state, tool_request),
     "read_definition" => super::read_handlers::read_definition(app_state, tool_request),
@@ -216,6 +216,10 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     "query_guidebook" => super::docs_handlers::handle_query_guidebook(app_state, tool_request),
     "list_api_docs" => super::docs_handlers::handle_list_api_docs(app_state, tool_request),
     "list_guidebook_docs" => super::docs_handlers::handle_list_guidebook_docs(app_state, tool_request),
+
+    // Configuration management tools
+    "read_configs" => super::config_handlers::read_configs(app_state, tool_request),
+    "update_configs" => super::config_handlers::update_configs(app_state, tool_request),
 
     _ => {
       let error = JsonRpcError::tool_not_found(&params.name);
@@ -269,7 +273,7 @@ pub async fn execute_axum(data: Arc<AppState>, req: McpRequest) -> ResponseJson<
   let response = match req.tool_name.as_str() {
     // Read operations
     "list_definitions" => super::read_handlers::list_definitions(&data, req),
-    "list_namespaces" => super::read_handlers::list_namespaces(&data, req),
+    "list_namespaces" => super::namespace_handlers::list_namespaces(&data, req),
     "get_package_name" => super::read_handlers::get_package_name(&data, req),
     "read_namespace" => super::read_handlers::read_namespace(&data, req),
     "read_definition" => super::read_handlers::read_definition(&data, req),
