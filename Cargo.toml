@@ -60,7 +60,7 @@ name = "caps"
 path = "src/bin/calcit_deps.rs"
 
 [[bin]]
-name = "cr_mcp"
+name = "cr-mcp"
 path = "src/bin/cr_mcp.rs"
 
 [profile.release]

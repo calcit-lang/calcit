@@ -9,6 +9,7 @@ use axum::{
 use calcit::snapshot;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::io::{self, Write};
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 
@@ -106,6 +107,47 @@ async fn handle_404(req: Request) -> Response {
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
   let args: Args = argh::from_env();
+
+  // Check if compact.cirru file exists
+  if !std::path::Path::new(&args.file).exists() {
+    println!("File '{}' does not exist.", args.file);
+    print!("Would you like to create an empty compact.cirru file with basic EDN structure? (y/N): ");
+    io::stdout().flush().unwrap();
+    
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+    let input = input.trim().to_lowercase();
+    
+    if input == "y" || input == "yes" {
+      let default_content = r#"
+{} (:package |app)
+  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.1)
+    :modules $ []
+  :entries $ {}
+  :files $ {}
+    |app.main $ %{} :FileEntry
+      :defs $ {}
+        |main! $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn main! () $ println "\"Hello from Calcit!"
+        |reload! $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn reload! () $ println "\"Code reloaded!"
+      :ns $ %{} :CodeEntry (:doc |)
+        :code $ quote (ns app.main)
+"#;
+      
+      if let Some(parent) = std::path::Path::new(&args.file).parent() {
+        std::fs::create_dir_all(parent)?;
+      }
+      
+      std::fs::write(&args.file, default_content)?;
+      println!("Created '{}' with basic EDN structure.", args.file);
+    } else {
+      println!("Exiting without creating file.");
+      std::process::exit(1);
+    }
+  }
 
   // Load current module name
   let current_module_name = {
