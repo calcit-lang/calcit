@@ -1,28 +1,12 @@
 use super::tools::McpRequest;
 use crate::mcp::definition_update::{UpdateMode, update_definition_at_coord};
 use crate::mcp::definition_utils::{navigate_to_coord, parse_coord_from_json};
-use crate::snapshot::{self, CodeEntry, Snapshot};
+use crate::snapshot::{CodeEntry, Snapshot};
 use axum::response::Json as ResponseJson;
 use cirru_parser::Cirru;
 use serde_json::Value;
 
-/// Load snapshot data
-fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
-  let content = match std::fs::read_to_string(&app_state.compact_cirru_path) {
-    Ok(c) => c,
-    Err(e) => return Err(format!("Failed to read compact.cirru: {e}")),
-  };
 
-  let edn_data = match cirru_edn::parse(&content) {
-    Ok(d) => d,
-    Err(e) => return Err(format!("Failed to parse compact.cirru as EDN: {e}")),
-  };
-
-  match snapshot::load_snapshot_data(&edn_data, &app_state.compact_cirru_path) {
-    Ok(snapshot) => Ok(snapshot),
-    Err(e) => Err(format!("Failed to load snapshot: {e}")),
-  }
-}
 
 /// Save snapshot data
 // save_snapshot function moved to cirru_utils::save_snapshot_to_file to avoid duplication
@@ -92,7 +76,7 @@ pub fn add_definition(app_state: &super::AppState, req: McpRequest) -> ResponseJ
 
   let doc = req.parameters.get("doc").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
-  let mut snapshot = match load_snapshot(app_state) {
+  let mut snapshot = match super::namespace_handlers::load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
       return ResponseJson(serde_json::json!({
@@ -153,7 +137,7 @@ pub fn delete_definition(app_state: &super::AppState, req: McpRequest) -> Respon
     }
   };
 
-  let mut snapshot = match load_snapshot(app_state) {
+  let mut snapshot = match super::namespace_handlers::load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
       return ResponseJson(serde_json::json!({
@@ -250,7 +234,7 @@ pub fn overwrite_definition(app_state: &super::AppState, req: McpRequest) -> Res
 
   let doc = req.parameters.get("doc").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
-  let mut snapshot = match load_snapshot(app_state) {
+  let mut snapshot = match super::namespace_handlers::load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
       return ResponseJson(serde_json::json!({
@@ -395,7 +379,7 @@ pub fn update_definition_at(app_state: &super::AppState, req: McpRequest) -> Res
     None => None,
   };
 
-  let mut snapshot = match load_snapshot(app_state) {
+  let mut snapshot = match super::namespace_handlers::load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
       return ResponseJson(serde_json::json!({
@@ -488,7 +472,7 @@ pub fn read_definition_at(app_state: &super::AppState, req: McpRequest) -> Respo
     }
   };
 
-  let snapshot = match load_snapshot(app_state) {
+  let snapshot = match super::namespace_handlers::load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
       return ResponseJson(serde_json::json!({

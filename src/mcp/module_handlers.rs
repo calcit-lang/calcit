@@ -25,21 +25,8 @@ fn load_current_module_name(compact_cirru_path: &str) -> Result<String, String> 
 
 /// Load snapshot data
 fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
-  let compact_cirru_path = &app_state.compact_cirru_path;
-  let content = match std::fs::read_to_string(compact_cirru_path) {
-    Ok(c) => c,
-    Err(e) => return Err(format!("Failed to read compact.cirru: {e}")),
-  };
-
-  let edn_data = match cirru_edn::parse(&content) {
-    Ok(d) => d,
-    Err(e) => return Err(format!("Failed to parse compact.cirru as EDN: {e}")),
-  };
-
-  match snapshot::load_snapshot_data(&edn_data, compact_cirru_path) {
-    Ok(snapshot) => Ok(snapshot),
-    Err(e) => Err(format!("Failed to load snapshot: {e}")),
-  }
+  // Use the load_snapshot function from namespace_handlers, which contains module loading logic
+  super::namespace_handlers::load_snapshot(app_state)
 }
 
 pub fn get_current_module(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
