@@ -208,7 +208,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
     },
     McpTool {
       name: "overwrite_definition".to_string(),
-      description: "Completely overwrite an existing function or macro definition in Calcit. This replaces the entire definition with new code and documentation. The code must be provided in Cirru syntax format.".to_string(),
+      description: "Completely overwrite an existing function or macro definition in Calcit. This replaces the entire definition with new code and documentation. The code must be provided in Cirru syntax format. ⚠️ RECOMMENDATION: Avoid using this tool for most cases. Instead, use 'read_definition_at' to explore the code structure first, then use 'update_definition_at' for precise, localized updates.".to_string(),
       parameters: vec![
         McpToolParameter {
           name: "namespace".to_string(),
@@ -238,7 +238,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
     },
     McpTool {
       name: "update_definition_at".to_string(),
-      description: "Update a specific part of a function or macro definition using coordinate-based targeting with various operation modes. Cirru code is a tree structure that can be navigated using coordinate arrays (Vec<Int>). This tool allows precise updates to specific nodes in the code tree with validation.".to_string(),
+      description: "Update a specific part of a function or macro definition using coordinate-based targeting with various operation modes. Cirru code is a tree structure that can be navigated using coordinate arrays (Vec<Int>). This tool allows precise updates to specific nodes in the code tree with validation. 💡 BEST PRACTICE: Always use 'read_definition_at' multiple times first to explore and understand the code structure, then generate correct 'match' and 'coord' parameters for safe updates. Empty coord [] operates on the root node.".to_string(),
       parameters: vec![
         McpToolParameter {
           name: "namespace".to_string(),

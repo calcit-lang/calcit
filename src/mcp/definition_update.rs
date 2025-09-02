@@ -34,8 +34,46 @@ pub fn update_definition_at_coord(
   mode: UpdateMode,
   match_content: Option<&Cirru>,
 ) -> Result<(), String> {
+  // Handle empty coordinate - operate on root node
   if coord.is_empty() {
-    return Err("Coordinate path cannot be empty".to_string());
+    // Verify match content if provided
+    if let Some(expected) = match_content {
+      if cirru_tree != expected {
+        return Err("Content at root does not match expected value".to_string());
+      }
+    }
+
+    // For empty coord, only replace mode makes sense
+    match mode {
+      UpdateMode::Replace => {
+        if let Some(content) = new_content {
+          *cirru_tree = content.clone();
+        } else {
+          return Err("Replace mode requires new content".to_string());
+        }
+      }
+      UpdateMode::Append | UpdateMode::Prepend => {
+        // For append/prepend on root, the root must be a list
+        let root_list = match cirru_tree {
+          Cirru::List(list) => list,
+          _ => return Err("Root node must be a list for append/prepend operations".to_string()),
+        };
+        
+        if let Some(content) = new_content {
+          match mode {
+            UpdateMode::Append => root_list.push(content.clone()),
+            UpdateMode::Prepend => root_list.insert(0, content.clone()),
+            _ => unreachable!(),
+          }
+        } else {
+          return Err("Append/Prepend mode requires new content".to_string());
+        }
+      }
+      _ => {
+        return Err("Only replace, append, and prepend modes are supported for empty coordinates".to_string());
+      }
+    }
+    return Ok(());
   }
 
   // Navigate to the parent of the target node
@@ -242,6 +280,57 @@ mod tests {
 
     // Should fail with wrong match
     let result = update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Replace, Some(&wrong_match));
+    assert!(result.is_err());
+  }
+
+  #[test]
+  fn test_empty_coord_replace() {
+    let mut tree = Cirru::List(vec![Cirru::Leaf("a".into()), Cirru::Leaf("b".into())]);
+    let new_content = Cirru::Leaf("x".into());
+
+    update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Replace, None).unwrap();
+
+    // Check that the tree was replaced with the new content
+    assert_eq!(tree, Cirru::Leaf("x".into()));
+  }
+
+  #[test]
+  fn test_empty_coord_append() {
+    let mut tree = Cirru::List(vec![Cirru::Leaf("a".into()), Cirru::Leaf("b".into())]);
+    let new_content = Cirru::Leaf("c".into());
+
+    update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Append, None).unwrap();
+
+    let result = cirru_parser::format(&[tree], CirruWriterOptions { use_inline: false }).unwrap();
+    assert_eq!(result.trim(), "a b c");
+  }
+
+  #[test]
+  fn test_empty_coord_prepend() {
+    let mut tree = Cirru::List(vec![Cirru::Leaf("a".into()), Cirru::Leaf("b".into())]);
+    let new_content = Cirru::Leaf("x".into());
+
+    update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Prepend, None).unwrap();
+
+    let result = cirru_parser::format(&[tree], CirruWriterOptions { use_inline: false }).unwrap();
+    assert_eq!(result.trim(), "x a b");
+  }
+
+  #[test]
+  fn test_empty_coord_invalid_modes() {
+    let mut tree = Cirru::List(vec![Cirru::Leaf("a".into())]);
+    let new_content = Cirru::Leaf("x".into());
+
+    // Delete mode should fail for empty coord
+    let result = update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Delete, None);
+    assert!(result.is_err());
+
+    // After mode should fail for empty coord
+    let result = update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::After, None);
+    assert!(result.is_err());
+
+    // Before mode should fail for empty coord
+    let result = update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Before, None);
     assert!(result.is_err());
   }
 }
