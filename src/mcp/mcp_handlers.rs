@@ -198,7 +198,9 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     // Definition operations
     "add_definition" => super::definition_handlers::add_definition(app_state, tool_request),
     "delete_definition" => super::definition_handlers::delete_definition(app_state, tool_request),
-    "update_definition" => super::definition_handlers::update_definition(app_state, tool_request),
+    "overwrite_definition" => super::definition_handlers::overwrite_definition(app_state, tool_request),
+    "update_definition_at" => super::definition_handlers::update_definition_at(app_state, tool_request),
+    "read_definition_at" => super::definition_handlers::read_definition_at(app_state, tool_request),
 
     // Module management
     "list_modules" => super::module_handlers::list_modules(app_state, tool_request),
@@ -208,8 +210,8 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     "delete_module" => super::module_handlers::delete_module(app_state, tool_request),
 
     // Cirru conversion tools
-    "parse_to_json" => super::cirru_handlers::parse_to_json(app_state, tool_request),
-    "format_from_json" => super::cirru_handlers::format_from_json(app_state, tool_request),
+    "calcit_parse_cirru_to_json" => super::cirru_handlers::parse_cirru_to_json(app_state, tool_request),
+    "calcit_format_json_to_cirru" => super::cirru_handlers::format_json_to_cirru(app_state, tool_request),
 
     // Documentation query tools
     "query_api_docs" => super::docs_handlers::handle_query_api_docs(app_state, tool_request),
@@ -286,7 +288,9 @@ pub async fn execute_axum(data: Arc<AppState>, req: McpRequest) -> ResponseJson<
     // Definition operations
     "add_definition" => super::definition_handlers::add_definition(&data, req),
     "delete_definition" => super::definition_handlers::delete_definition(&data, req),
-    "update_definition" => super::definition_handlers::update_definition(&data, req),
+    "overwrite_definition" => super::definition_handlers::overwrite_definition(&data, req),
+    "update_definition_at" => super::definition_handlers::update_definition_at(&data, req),
+    "read_definition_at" => super::definition_handlers::read_definition_at(&data, req),
 
     // Module management
     "list_modules" => super::module_handlers::list_modules(&data, req),
@@ -296,8 +300,8 @@ pub async fn execute_axum(data: Arc<AppState>, req: McpRequest) -> ResponseJson<
     "delete_module" => super::module_handlers::delete_module(&data, req),
 
     // Cirru conversion tools
-    "parse_to_json" => super::cirru_handlers::parse_to_json(&data, req),
-    "format_from_json" => super::cirru_handlers::format_from_json(&data, req),
+    "calcit_parse_cirru_to_json" => super::cirru_handlers::parse_cirru_to_json(&data, req),
+    "calcit_format_json_to_cirru" => super::cirru_handlers::format_json_to_cirru(&data, req),
 
     // Documentation query tools
     "query_api_docs" => super::docs_handlers::handle_query_api_docs(&data, req),

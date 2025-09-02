@@ -10,6 +10,8 @@ pub mod cirru_handlers;
 pub mod cirru_utils;
 pub mod config_handlers;
 pub mod definition_handlers;
+pub mod definition_update;
+pub mod definition_utils;
 pub mod docs_handlers;
 pub mod jsonrpc;
 pub mod mcp_handlers;

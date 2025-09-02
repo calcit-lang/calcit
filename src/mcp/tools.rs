@@ -207,8 +207,8 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       ],
     },
     McpTool {
-      name: "update_definition".to_string(),
-      description: "Modify an existing function or macro definition in Calcit. You can update the code implementation, documentation, or both. The code must be provided in Cirru syntax format.".to_string(),
+      name: "overwrite_definition".to_string(),
+      description: "Completely overwrite an existing function or macro definition in Calcit. This replaces the entire definition with new code and documentation. The code must be provided in Cirru syntax format.".to_string(),
       parameters: vec![
         McpToolParameter {
           name: "namespace".to_string(),
@@ -233,6 +233,72 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
           parameter_type: "string".to_string(),
           description: "New documentation string (optional). Leave empty to only update code.".to_string(),
           optional: true,
+        },
+      ],
+    },
+    McpTool {
+      name: "update_definition_at".to_string(),
+      description: "Update a specific part of a function or macro definition using coordinate-based targeting with various operation modes. Cirru code is a tree structure that can be navigated using coordinate arrays (Vec<Int>). This tool allows precise updates to specific nodes in the code tree with validation.".to_string(),
+      parameters: vec![
+        McpToolParameter {
+          name: "namespace".to_string(),
+          parameter_type: "string".to_string(),
+          description: "The namespace containing the definition (e.g., 'app.main')".to_string(),
+          optional: false,
+        },
+        McpToolParameter {
+          name: "definition".to_string(),
+          parameter_type: "string".to_string(),
+          description: "The name of the function or macro to update (e.g., 'fibonacci')".to_string(),
+          optional: false,
+        },
+        McpToolParameter {
+          name: "coord".to_string(),
+          parameter_type: "array".to_string(),
+          description: "Coordinate array (Vec<Int>) specifying the exact location in the code tree to update (e.g., [0, 1, 2] to target the 3rd element of the 2nd element of the 1st element)".to_string(),
+          optional: false,
+        },
+        McpToolParameter {
+          name: "mode".to_string(),
+          parameter_type: "string".to_string(),
+          description: "Operation mode: 'replace' (default), 'after', 'before', 'delete', 'prepend', 'append'. Replace updates the target, after/before insert adjacent to target, delete removes target, prepend/append modify target if it's a list.".to_string(),
+          optional: true,
+        },
+        McpToolParameter {
+          name: "new_value".to_string(),
+          parameter_type: "string".to_string(),
+          description: "The new value to set at the specified coordinate. Can be a string literal or Cirru code. Not required for 'delete' mode.".to_string(),
+          optional: true,
+        },
+        McpToolParameter {
+          name: "match".to_string(),
+          parameter_type: "string".to_string(),
+          description: "Optional validation: string to verify exact match, or array like ['fn', '...'] to verify list starts with 'fn'. If validation fails, returns detailed error with current content.".to_string(),
+          optional: true,
+        },
+      ],
+    },
+    McpTool {
+      name: "read_definition_at".to_string(),
+      description: "Read a specific part of a function or macro definition using coordinate-based targeting. This allows precise querying of specific nodes in the Cirru code tree structure.".to_string(),
+      parameters: vec![
+        McpToolParameter {
+          name: "namespace".to_string(),
+          parameter_type: "string".to_string(),
+          description: "The namespace containing the definition (e.g., 'app.main')".to_string(),
+          optional: false,
+        },
+        McpToolParameter {
+          name: "definition".to_string(),
+          parameter_type: "string".to_string(),
+          description: "The name of the function or macro to read from (e.g., 'fibonacci')".to_string(),
+          optional: false,
+        },
+        McpToolParameter {
+          name: "coord".to_string(),
+          parameter_type: "array".to_string(),
+          description: "Coordinate array (Vec<Int>) specifying the exact location in the code tree to read (e.g., [0, 1, 2] to target the 3rd element of the 2nd element of the 1st element)".to_string(),
+          optional: false,
         },
       ],
     },
@@ -279,7 +345,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
     },
     // Cirru Syntax Conversion Tools
     McpTool {
-      name: "parse_to_json".to_string(),
+      name: "calcit_parse_cirru_to_json".to_string(),
       description: "Parse Cirru syntax string into JSON structure. Cirru is the syntax format used by Calcit - it's like Lisp but uses indentation and spaces instead of parentheses. This tool converts human-readable Cirru code into a structured format that can be programmatically manipulated.".to_string(),
       parameters: vec![McpToolParameter {
         name: "cirru_code".to_string(),
@@ -289,8 +355,8 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       }],
     },
     McpTool {
-      name: "format_from_json".to_string(),
-      description: "Convert JSON structure back to readable Cirru syntax string. This is the reverse of parse_to_json - it takes structured data and formats it as human-readable Cirru code that can be saved to files or displayed to users.".to_string(),
+      name: "calcit_format_json_to_cirru".to_string(),
+      description: "Convert JSON structure back to readable Cirru syntax string. This is the reverse of cirru_to_json - it takes structured data and formats it as human-readable Cirru code that can be saved to files or displayed to users.".to_string(),
       parameters: vec![McpToolParameter {
         name: "json_data".to_string(),
         parameter_type: "array".to_string(),

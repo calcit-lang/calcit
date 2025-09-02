@@ -1,4 +1,5 @@
 use crate::snapshot::Snapshot;
+use cirru_edn::Edn;
 use cirru_parser::Cirru;
 use serde_json::Value as JsonValue;
 use std::path::Path;
@@ -18,29 +19,15 @@ pub fn validate_cirru_structure(value: &JsonValue) -> Result<(), String> {
 }
 
 /// Convert JSON value to Cirru structure
+/// Uses serde for direct conversion since Cirru implements Serialize/Deserialize
 pub fn json_to_cirru(value: &JsonValue) -> Result<Cirru, String> {
-  match value {
-    JsonValue::String(s) => Ok(Cirru::Leaf(s.as_str().into())),
-    JsonValue::Array(arr) => {
-      let mut cirru_list = Vec::new();
-      for item in arr {
-        cirru_list.push(json_to_cirru(item)?);
-      }
-      Ok(Cirru::List(cirru_list))
-    }
-    _ => Err("Invalid JSON structure for Cirru conversion".to_string()),
-  }
+  serde_json::from_value(value.clone()).map_err(|e| format!("Failed to convert JSON to Cirru: {e}"))
 }
 
 /// Convert Cirru structure to JSON value
+/// Uses serde for direct conversion since Cirru implements Serialize/Deserialize
 pub fn cirru_to_json(cirru: &Cirru) -> JsonValue {
-  match cirru {
-    Cirru::Leaf(s) => JsonValue::String(s.to_string()),
-    Cirru::List(list) => {
-      let json_list: Vec<JsonValue> = list.iter().map(cirru_to_json).collect();
-      JsonValue::Array(json_list)
-    }
-  }
+  serde_json::to_value(cirru).unwrap_or(JsonValue::Null)
 }
 
 /// Save snapshot to compact.cirru file
@@ -50,21 +37,21 @@ pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &S
   let mut edn_map = cirru_edn::EdnMapView::default();
 
   // Build package
-  edn_map.insert_key("package", cirru_edn::Edn::Str(snapshot.package.as_str().into()));
+  edn_map.insert_key("package", Edn::Str(snapshot.package.as_str().into()));
 
   // Build configs
   let mut configs_map = cirru_edn::EdnMapView::default();
-  configs_map.insert_key("init-fn", cirru_edn::Edn::Str(snapshot.configs.init_fn.as_str().into()));
-  configs_map.insert_key("reload-fn", cirru_edn::Edn::Str(snapshot.configs.reload_fn.as_str().into()));
-  configs_map.insert_key("version", cirru_edn::Edn::Str(snapshot.configs.version.as_str().into()));
+  configs_map.insert_key("init-fn", Edn::Str(snapshot.configs.init_fn.as_str().into()));
+  configs_map.insert_key("reload-fn", Edn::Str(snapshot.configs.reload_fn.as_str().into()));
+  configs_map.insert_key("version", Edn::Str(snapshot.configs.version.as_str().into()));
   configs_map.insert_key(
     "modules",
-    cirru_edn::Edn::from(
+    Edn::from(
       snapshot
         .configs
         .modules
         .iter()
-        .map(|s| cirru_edn::Edn::Str(s.as_str().into()))
+        .map(|s| Edn::Str(s.as_str().into()))
         .collect::<Vec<_>>(),
     ),
   );
@@ -74,12 +61,12 @@ pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &S
   let mut entries_map = cirru_edn::EdnMapView::default();
   for (k, v) in &snapshot.entries {
     let mut entry_map = cirru_edn::EdnMapView::default();
-    entry_map.insert_key("init-fn", cirru_edn::Edn::Str(v.init_fn.as_str().into()));
-    entry_map.insert_key("reload-fn", cirru_edn::Edn::Str(v.reload_fn.as_str().into()));
-    entry_map.insert_key("version", cirru_edn::Edn::Str(v.version.as_str().into()));
+    entry_map.insert_key("init-fn", Edn::Str(v.init_fn.as_str().into()));
+    entry_map.insert_key("reload-fn", Edn::Str(v.reload_fn.as_str().into()));
+    entry_map.insert_key("version", Edn::Str(v.version.as_str().into()));
     entry_map.insert_key(
       "modules",
-      cirru_edn::Edn::from(v.modules.iter().map(|s| cirru_edn::Edn::Str(s.as_str().into())).collect::<Vec<_>>()),
+      Edn::from(v.modules.iter().map(|s| Edn::Str(s.as_str().into())).collect::<Vec<_>>()),
     );
     entries_map.insert_key(k.as_str(), entry_map.into());
   }
@@ -88,11 +75,11 @@ pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &S
   // Build files
   let mut files_map = cirru_edn::EdnMapView::default();
   for (k, v) in &snapshot.files {
-    files_map.insert_key(k.as_str(), cirru_edn::Edn::from(v));
+    files_map.insert_key(k.as_str(), Edn::from(v));
   }
   edn_map.insert_key("files", files_map.into());
 
-  let edn_data = cirru_edn::Edn::from(edn_map);
+  let edn_data = Edn::from(edn_map);
 
   // Format Edn as Cirru string
   let content = cirru_edn::format(&edn_data, false).map_err(|e| format!("Failed to format snapshot as Cirru: {e}"))?;

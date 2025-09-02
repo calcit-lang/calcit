@@ -4,7 +4,7 @@ use axum::response::Json as ResponseJson;
 use serde_json::Value;
 
 /// Parse Cirru code to JSON structure
-pub fn parse_to_json(_app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
+pub fn parse_cirru_to_json(_app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
   let cirru_code = match req.parameters.get("cirru_code") {
     Some(code) => code.as_str().unwrap_or(""),
     None => {
@@ -28,7 +28,7 @@ pub fn parse_to_json(_app_state: &super::AppState, req: McpRequest) -> ResponseJ
 }
 
 /// Format JSON structure to Cirru code
-pub fn format_from_json(_app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
+pub fn format_json_to_cirru(_app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
   let json_data = match req.parameters.get("json_data") {
     Some(data) => data,
     None => {
