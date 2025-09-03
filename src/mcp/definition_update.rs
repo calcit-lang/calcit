@@ -58,7 +58,7 @@ pub fn update_definition_at_coord(
           Cirru::List(list) => list,
           _ => return Err("Root node must be a list for append/prepend operations".to_string()),
         };
-        
+
         if let Some(content) = new_content {
           match mode {
             UpdateMode::Append => root_list.push(content.clone()),

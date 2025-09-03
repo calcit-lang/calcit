@@ -6,8 +6,6 @@ use axum::response::Json as ResponseJson;
 use cirru_parser::Cirru;
 use serde_json::Value;
 
-
-
 /// Save snapshot data
 // save_snapshot function moved to cirru_utils::save_snapshot_to_file to avoid duplication
 fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(), ResponseJson<Value>> {

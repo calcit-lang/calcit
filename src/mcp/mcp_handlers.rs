@@ -223,6 +223,22 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     "read_configs" => super::config_handlers::read_configs(app_state, tool_request),
     "update_configs" => super::config_handlers::update_configs(app_state, tool_request),
 
+    // Definition documentation tools
+    "read_definition_doc" => super::document_handlers::read_definition_doc(app_state, tool_request),
+    "update_definition_doc" => super::document_handlers::update_definition_doc(app_state, tool_request),
+
+    // Module documentation tools
+    "list_module_docs" => super::document_handlers::list_module_docs(app_state, tool_request),
+    "read_module_doc" => super::document_handlers::read_module_doc(app_state, tool_request),
+    "update_module_doc" => super::document_handlers::update_module_doc(app_state, tool_request),
+    "rename_module_doc" => super::document_handlers::rename_module_doc(app_state, tool_request),
+    "delete_module_doc" => super::document_handlers::delete_module_doc(app_state, tool_request),
+
+    // Dependency documentation tools (read-only)
+    "list_dependency_docs" => super::document_handlers::list_dependency_docs(app_state, tool_request),
+    "read_dependency_definition_doc" => super::document_handlers::read_dependency_definition_doc(app_state, tool_request),
+    "read_dependency_module_doc" => super::document_handlers::read_dependency_module_doc(app_state, tool_request),
+
     _ => {
       let error = JsonRpcError::tool_not_found(&params.name);
       return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
@@ -308,6 +324,22 @@ pub async fn execute_axum(data: Arc<AppState>, req: McpRequest) -> ResponseJson<
     "query_guidebook" => super::docs_handlers::handle_query_guidebook(&data, req),
     "list_api_docs" => super::docs_handlers::handle_list_api_docs(&data, req),
     "list_guidebook_docs" => super::docs_handlers::handle_list_guidebook_docs(&data, req),
+
+    // Definition documentation tools
+    "read_definition_doc" => super::document_handlers::read_definition_doc(&data, req),
+    "update_definition_doc" => super::document_handlers::update_definition_doc(&data, req),
+
+    // Module documentation tools
+    "list_module_docs" => super::document_handlers::list_module_docs(&data, req),
+    "read_module_doc" => super::document_handlers::read_module_doc(&data, req),
+    "update_module_doc" => super::document_handlers::update_module_doc(&data, req),
+    "rename_module_doc" => super::document_handlers::rename_module_doc(&data, req),
+    "delete_module_doc" => super::document_handlers::delete_module_doc(&data, req),
+
+    // Dependency documentation tools (read-only)
+    "list_dependency_docs" => super::document_handlers::list_dependency_docs(&data, req),
+    "read_dependency_definition_doc" => super::document_handlers::read_dependency_definition_doc(&data, req),
+    "read_dependency_module_doc" => super::document_handlers::read_dependency_module_doc(&data, req),
 
     _ => {
       println!("[ERROR] Unknown tool: {}", req.tool_name);
