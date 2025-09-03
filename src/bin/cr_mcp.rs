@@ -4,7 +4,7 @@ use axum::{
   extract::{Json, Request, State},
   http::StatusCode,
   response::{Json as ResponseJson, Response},
-  routing::{get, post},
+  routing::post,
 };
 use calcit::snapshot;
 use std::collections::HashMap;
@@ -15,7 +15,7 @@ use tower_http::cors::CorsLayer;
 
 // Import MCP module
 use calcit::mcp::docs_handlers::{load_api_docs, load_guidebook_docs};
-use calcit::mcp::*;
+use calcit::mcp::{AppState, JsonRpcRequest};
 
 /// MCP server for Calcit
 #[derive(FromArgs)]
@@ -29,53 +29,9 @@ struct Args {
   port: u16,
 }
 
-// Use AppState from mcp module
-use calcit::mcp::AppState;
-
 // Standard MCP JSON-RPC 2.0 endpoint
-async fn mcp_jsonrpc(
-  State(data): State<Arc<AppState>>,
-  Json(req): Json<calcit::mcp::JsonRpcRequest>,
-) -> ResponseJson<serde_json::Value> {
+async fn mcp_jsonrpc(State(data): State<Arc<AppState>>, Json(req): Json<JsonRpcRequest>) -> ResponseJson<serde_json::Value> {
   calcit::mcp::handle_jsonrpc_axum(data, req).await
-}
-
-// Endpoint for backward compatibility
-async fn discover() -> ResponseJson<serde_json::Value> {
-  calcit::mcp::discover_axum().await
-}
-
-async fn mcp_config(State(data): State<Arc<AppState>>) -> ResponseJson<serde_json::Value> {
-  println!("handling /mcp/");
-  let config = serde_json::json!({
-    "mcpServers": {
-      "calcit": {
-        "command": "http",
-        "args": {
-          "url": format!("http://localhost:{}", data.port),
-          "headers": {
-            "Content-Type": "application/json"
-          }
-        },
-        "tools": get_mcp_tools()
-      }
-    },
-    "gemini_cli_command": format!("gemini mcp add --transport http calcit http://localhost:{}", data.port),
-    "server_info": {
-      "name": "Calcit MCP Server",
-      "version": "1.0.0",
-      "description": "MCP server for Calcit language code editing and analysis",
-      "current_module": &data.current_module_name,
-      "compact_file": &data.compact_cirru_path
-    }
-  });
-
-  ResponseJson(config)
-}
-
-// Endpoint for backward compatibility
-async fn execute(State(data): State<Arc<AppState>>, Json(req): Json<McpRequest>) -> ResponseJson<serde_json::Value> {
-  calcit::mcp::execute_axum(data, req).await
 }
 
 // 404 handler for logging unmatched requests
@@ -90,9 +46,6 @@ async fn handle_404(req: Request) -> Response {
     "error": "Not Found",
     "message": format!("The requested endpoint {} {} was not found", method, uri),
     "available_endpoints": [
-      "GET /mcp/",
-      "GET /mcp/discover",
-      "POST /mcp/execute",
       "POST /mcp_jsonrpc"
     ]
   });
@@ -203,9 +156,6 @@ async fn main() -> std::io::Result<()> {
 
   let app = Router::new()
     .route("/mcp_jsonrpc", post(mcp_jsonrpc)) // Standard MCP JSON-RPC 2.0 endpoint
-    .route("/mcp/discover", get(discover)) // Legacy endpoint
-    .route("/mcp/", get(mcp_config)) // Legacy endpoint
-    .route("/mcp/execute", post(execute)) // Legacy endpoint
     .fallback(handle_404)
     .layer(CorsLayer::permissive())
     .with_state(app_state);
