@@ -1,5 +1,5 @@
 use super::cirru_utils::cirru_to_json;
-use super::tools::McpRequest;
+use super::tools::{GetPackageNameRequest, ListDefinitionsRequest, ReadDefinitionRequest, ReadNamespaceRequest};
 use crate::snapshot::Snapshot;
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
@@ -10,15 +10,8 @@ fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
   super::namespace_handlers::load_snapshot(app_state)
 }
 
-pub fn list_definitions(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let namespace = match req.parameters.get("namespace") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "namespace parameter is missing or not a string"
-      }));
-    }
-  };
+pub fn list_definitions(app_state: &super::AppState, request: ListDefinitionsRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
 
   let snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
@@ -49,7 +42,7 @@ pub fn list_definitions(app_state: &super::AppState, req: McpRequest) -> Respons
 
 // list_namespaces function moved to namespace_handlers.rs to avoid duplication
 
-pub fn get_package_name(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
+pub fn get_package_name(app_state: &super::AppState, _request: GetPackageNameRequest) -> ResponseJson<Value> {
   let snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
@@ -64,15 +57,8 @@ pub fn get_package_name(app_state: &super::AppState, _req: McpRequest) -> Respon
   }))
 }
 
-pub fn read_namespace(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let namespace = match req.parameters.get("namespace") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "namespace parameter is missing or not a string"
-      }));
-    }
-  };
+pub fn read_namespace(app_state: &super::AppState, request: ReadNamespaceRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
 
   let snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
@@ -121,24 +107,9 @@ pub fn read_namespace(app_state: &super::AppState, req: McpRequest) -> ResponseJ
   }))
 }
 
-pub fn read_definition(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let namespace = match req.parameters.get("namespace") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "namespace parameter is missing or not a string"
-      }));
-    }
-  };
-
-  let definition = match req.parameters.get("definition") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "definition parameter is missing or not a string"
-      }));
-    }
-  };
+pub fn read_definition(app_state: &super::AppState, request: ReadDefinitionRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
+  let definition = request.definition;
 
   let snapshot = match load_snapshot(app_state) {
     Ok(s) => s,

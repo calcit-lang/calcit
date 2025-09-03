@@ -1,18 +1,11 @@
 use super::cirru_utils::cirru_to_json;
-use super::tools::McpRequest;
+use super::tools::{FormatJsonToCirruRequest, ParseCirruToJsonRequest};
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
 
 /// Parse Cirru code to JSON structure
-pub fn parse_cirru_to_json(_app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let cirru_code = match req.parameters.get("cirru_code") {
-    Some(code) => code.as_str().unwrap_or(""),
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": "cirru_code parameter is missing"
-      }));
-    }
-  };
+pub fn parse_cirru_to_json(_app_state: &super::AppState, request: ParseCirruToJsonRequest) -> ResponseJson<Value> {
+  let cirru_code = &request.cirru_code;
 
   match cirru_parser::parse(cirru_code) {
     Ok(cirru_data) => {
@@ -28,15 +21,8 @@ pub fn parse_cirru_to_json(_app_state: &super::AppState, req: McpRequest) -> Res
 }
 
 /// Format JSON structure to Cirru code
-pub fn format_json_to_cirru(_app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let json_data = match req.parameters.get("json_data") {
-    Some(data) => data,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": "json_data parameter is missing"
-      }));
-    }
-  };
+pub fn format_json_to_cirru(_app_state: &super::AppState, request: FormatJsonToCirruRequest) -> ResponseJson<Value> {
+  let json_data = &request.json_data;
 
   // Convert JSON to Cirru structure
   let cirru_data = match super::cirru_utils::json_to_cirru(json_data) {

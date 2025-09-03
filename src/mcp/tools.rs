@@ -1,6 +1,5 @@
 use super::jsonrpc::Tool;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct McpTool {
@@ -21,7 +20,7 @@ pub struct McpToolParameter {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct McpRequest {
   pub tool_name: String,
-  pub parameters: HashMap<String, serde_json::Value>,
+  pub parameters: serde_json::Value,
 }
 
 /// Convert legacy McpTool to standard MCP Tool format
@@ -611,6 +610,185 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       ],
     },
   ]
+}
+
+// Request structs for read_handlers
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListDefinitionsRequest {
+  pub namespace: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetPackageNameRequest {
+  // No parameters needed
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReadNamespaceRequest {
+  pub namespace: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReadDefinitionRequest {
+  pub namespace: String,
+  pub definition: String,
+}
+
+// Request structs for namespace_handlers
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AddNamespaceRequest {
+  pub namespace: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteNamespaceRequest {
+  pub namespace: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListNamespacesRequest {
+  // No parameters needed
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateNamespaceImportsRequest {
+  pub namespace: String,
+  pub imports: serde_json::Value,
+}
+
+// Request structs for definition_handlers
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AddDefinitionRequest {
+  pub namespace: String,
+  pub definition: String,
+  pub code: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteDefinitionRequest {
+  pub namespace: String,
+  pub definition: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OverwriteDefinitionRequest {
+  pub namespace: String,
+  pub definition: String,
+  pub code: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateDefinitionAtRequest {
+  pub namespace: String,
+  pub definition: String,
+  pub coord: serde_json::Value,
+  pub code: serde_json::Value,
+  pub mode: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReadDefinitionAtRequest {
+  pub namespace: String,
+  pub definition: String,
+  pub coord: serde_json::Value,
+}
+
+// Module management request structs
+#[derive(Debug, Deserialize)]
+pub struct SwitchModuleRequest {
+  pub module: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateModuleRequest {
+  pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteModuleRequest {
+  pub module: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ParseCirruToJsonRequest {
+  pub cirru_code: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FormatJsonToCirruRequest {
+  pub json_data: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct QueryApiDocsRequest {
+  pub query_type: String,
+  pub query_value: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct QueryGuidebookRequest {
+  pub query_type: String,
+  pub query_value: String,
+}
+
+// Config handlers request structs
+#[derive(Debug, Deserialize)]
+pub struct ReadConfigsRequest {
+  // No parameters needed for reading configs
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateConfigsRequest {
+  pub init_fn: Option<String>,
+  pub reload_fn: Option<String>,
+  pub version: Option<String>,
+}
+
+// Dependency document handlers request structs
+#[derive(Debug, Deserialize)]
+pub struct ListDependencyDocsRequest {
+  // No parameters needed for listing dependency docs
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReadDependencyDefinitionDocRequest {
+  pub dependency_name: String,
+  pub namespace: String,
+  pub definition: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadDependencyModuleDocRequest {
+  pub dependency_name: String,
+  pub title: String,
+}
+
+// Docs handlers request structs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListApiDocsRequest {
+  // No parameters needed
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListGuidebookDocsRequest {
+  // No parameters needed
+}
+
+// Module handlers request structs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetCurrentModuleRequest {
+  // No parameters needed
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListModulesRequest {
+  // No parameters needed
+}
+
+// Document handlers request structs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListModuleDocsRequest {
+  // No parameters needed
 }
 
 /// Get tools in standard MCP format

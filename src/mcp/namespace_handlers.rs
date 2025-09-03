@@ -1,5 +1,5 @@
 use super::cirru_utils::{json_to_cirru, validate_cirru_structure};
-use super::tools::McpRequest;
+use super::tools::{AddNamespaceRequest, DeleteNamespaceRequest, ListNamespacesRequest, UpdateNamespaceImportsRequest};
 use crate::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot};
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
@@ -75,15 +75,8 @@ fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(),
   })
 }
 
-pub fn add_namespace(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let namespace = match req.parameters.get("namespace") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "namespace parameter is missing or not a string"
-      }));
-    }
-  };
+pub fn add_namespace(app_state: &super::AppState, request: AddNamespaceRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
 
   let mut snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
@@ -119,15 +112,8 @@ pub fn add_namespace(app_state: &super::AppState, req: McpRequest) -> ResponseJs
   }))
 }
 
-pub fn delete_namespace(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let namespace = match req.parameters.get("namespace") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "namespace parameter is missing or not a string"
-      }));
-    }
-  };
+pub fn delete_namespace(app_state: &super::AppState, request: DeleteNamespaceRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
 
   let mut snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
@@ -158,7 +144,7 @@ pub fn delete_namespace(app_state: &super::AppState, req: McpRequest) -> Respons
   }))
 }
 
-pub fn list_namespaces(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
+pub fn list_namespaces(app_state: &super::AppState, _request: ListNamespacesRequest) -> ResponseJson<Value> {
   let snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
@@ -175,24 +161,9 @@ pub fn list_namespaces(app_state: &super::AppState, _req: McpRequest) -> Respons
   }))
 }
 
-pub fn update_namespace_imports(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let namespace = match req.parameters.get("namespace") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "namespace parameter is missing or not a string"
-      }));
-    }
-  };
-
-  let ns_definition = match req.parameters.get("ns_definition") {
-    Some(def) => def.clone(),
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": "ns_definition parameter is missing"
-      }));
-    }
-  };
+pub fn update_namespace_imports(app_state: &super::AppState, request: UpdateNamespaceImportsRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
+  let ns_definition = request.imports;
 
   // Validate if ns_definition conforms to Cirru structure
   if let Err(e) = validate_cirru_structure(&ns_definition) {

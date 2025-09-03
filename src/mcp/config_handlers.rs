@@ -1,11 +1,11 @@
 use super::AppState;
-use super::tools::McpRequest;
+use super::tools::{ReadConfigsRequest, UpdateConfigsRequest};
 use axum::response::Json as ResponseJson;
 use serde_json::{Value, json};
 use std::fs;
 
 /// Read current project configuration
-pub fn read_configs(app_state: &AppState, _req: McpRequest) -> ResponseJson<Value> {
+pub fn read_configs(app_state: &AppState, _request: ReadConfigsRequest) -> ResponseJson<Value> {
   println!("[CONFIG] Reading project configuration from: {}", app_state.compact_cirru_path);
 
   // Read and parse the compact.cirru file
@@ -54,19 +54,19 @@ pub fn read_configs(app_state: &AppState, _req: McpRequest) -> ResponseJson<Valu
 }
 
 /// Update multiple configuration fields at once
-pub fn update_configs(app_state: &AppState, req: McpRequest) -> ResponseJson<Value> {
+pub fn update_configs(app_state: &AppState, request: UpdateConfigsRequest) -> ResponseJson<Value> {
   println!("[CONFIG] Updating multiple configuration fields");
 
   let mut updates = Vec::new();
 
   // Check which fields to update
-  if let Some(Value::String(init_fn)) = req.parameters.get("init_fn") {
+  if let Some(ref init_fn) = request.init_fn {
     updates.push(format!("init_fn: {init_fn}"));
   }
-  if let Some(Value::String(reload_fn)) = req.parameters.get("reload_fn") {
+  if let Some(ref reload_fn) = request.reload_fn {
     updates.push(format!("reload_fn: {reload_fn}"));
   }
-  if let Some(Value::String(version)) = req.parameters.get("version") {
+  if let Some(ref version) = request.version {
     updates.push(format!("version: {version}"));
   }
 
@@ -79,17 +79,17 @@ pub fn update_configs(app_state: &AppState, req: McpRequest) -> ResponseJson<Val
 
   match update_config_field(app_state, |configs| {
     // Update init_fn if provided
-    if let Some(Value::String(init_fn)) = req.parameters.get("init_fn") {
+    if let Some(ref init_fn) = request.init_fn {
       configs.init_fn = init_fn.clone();
     }
 
     // Update reload_fn if provided
-    if let Some(Value::String(reload_fn)) = req.parameters.get("reload_fn") {
+    if let Some(ref reload_fn) = request.reload_fn {
       configs.reload_fn = reload_fn.clone();
     }
 
     // Update version if provided
-    if let Some(Value::String(version)) = req.parameters.get("version") {
+    if let Some(ref version) = request.version {
       configs.version = version.clone();
     }
   }) {

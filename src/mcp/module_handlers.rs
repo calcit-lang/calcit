@@ -1,4 +1,4 @@
-use super::tools::McpRequest;
+use super::tools::{CreateModuleRequest, DeleteModuleRequest, GetCurrentModuleRequest, ListModulesRequest, SwitchModuleRequest};
 use crate::snapshot::{self, Snapshot};
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
@@ -29,7 +29,7 @@ fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
   super::namespace_handlers::load_snapshot(app_state)
 }
 
-pub fn get_current_module(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
+pub fn get_current_module(app_state: &super::AppState, _request: GetCurrentModuleRequest) -> ResponseJson<Value> {
   match load_current_module_name(&app_state.compact_cirru_path) {
     Ok(module_name) => ResponseJson(serde_json::json!({
       "module": module_name
@@ -40,7 +40,7 @@ pub fn get_current_module(app_state: &super::AppState, _req: McpRequest) -> Resp
   }
 }
 
-pub fn list_modules(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
+pub fn list_modules(app_state: &super::AppState, _request: ListModulesRequest) -> ResponseJson<Value> {
   let snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
@@ -76,15 +76,8 @@ pub fn list_modules(app_state: &super::AppState, _req: McpRequest) -> ResponseJs
   }))
 }
 
-pub fn switch_module(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let module_name = match req.parameters.get("module") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "module parameter is missing or not a string"
-      }));
-    }
-  };
+pub fn switch_module(app_state: &super::AppState, request: SwitchModuleRequest) -> ResponseJson<Value> {
+  let module_name = request.module;
 
   // Load snapshot to verify if module exists
   let snapshot = match load_snapshot(app_state) {
@@ -111,15 +104,8 @@ pub fn switch_module(app_state: &super::AppState, req: McpRequest) -> ResponseJs
   }))
 }
 
-pub fn create_module(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let module_name = match req.parameters.get("name") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "name parameter is missing or not a string"
-      }));
-    }
-  };
+pub fn create_module(app_state: &super::AppState, request: CreateModuleRequest) -> ResponseJson<Value> {
+  let module_name = request.name;
 
   // Validate module name
   if module_name.is_empty() {
@@ -163,15 +149,8 @@ pub fn create_module(app_state: &super::AppState, req: McpRequest) -> ResponseJs
   }))
 }
 
-pub fn delete_module(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let module_name = match req.parameters.get("module") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "module parameter is missing or not a string"
-      }));
-    }
-  };
+pub fn delete_module(app_state: &super::AppState, request: DeleteModuleRequest) -> ResponseJson<Value> {
+  let module_name = request.module;
 
   // Load current snapshot
   let mut snapshot = match load_snapshot(app_state) {

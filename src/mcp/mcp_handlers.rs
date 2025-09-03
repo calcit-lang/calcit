@@ -1,6 +1,18 @@
 use super::AppState;
+use super::document_handlers::{
+  DeleteModuleDocRequest, ReadDefinitionDocRequest, ReadModuleDocRequest, RenameModuleDocRequest, UpdateDefinitionDocRequest,
+  UpdateModuleDocRequest,
+};
 use super::jsonrpc::*;
-use super::tools::{McpRequest, get_standard_mcp_tools};
+use super::tools::{
+  AddDefinitionRequest, AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
+  FormatJsonToCirruRequest, GetCurrentModuleRequest, GetPackageNameRequest, ListApiDocsRequest, ListDefinitionsRequest,
+  ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModuleDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest,
+  OverwriteDefinitionRequest, ParseCirruToJsonRequest, QueryApiDocsRequest, QueryGuidebookRequest, ReadConfigsRequest,
+  ReadDefinitionAtRequest, ReadDefinitionRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest,
+  ReadNamespaceRequest, SwitchModuleRequest, UpdateConfigsRequest, UpdateDefinitionAtRequest, UpdateNamespaceImportsRequest,
+  get_standard_mcp_tools,
+};
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -135,6 +147,20 @@ fn handle_tools_list_axum(_app_state: &AppState, req: &JsonRpcRequest) -> Value 
   serde_json::to_value(JsonRpcResponse::success(req.id.clone(), serde_json::to_value(result).unwrap())).unwrap()
 }
 
+// Helper function to deserialize parameters and handle errors
+fn deserialize_params<T: serde::de::DeserializeOwned>(
+  parameters: serde_json::Value,
+  req_id: Option<serde_json::Value>,
+) -> Result<T, Value> {
+  match serde_json::from_value(parameters) {
+    Ok(request) => Ok(request),
+    Err(_) => {
+      let error = JsonRpcError::invalid_params();
+      Err(serde_json::to_value(JsonRpcResponse::error(req_id, error)).unwrap())
+    }
+  }
+}
+
 /// Handle tools/call request (Axum version)
 async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> Value {
   // Check session state
@@ -168,13 +194,7 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
   };
 
   // Convert arguments to tool format
-  let tool_params = match params.arguments {
-    Some(args) => match args.as_object() {
-      Some(obj) => obj.clone().into_iter().collect(),
-      None => std::collections::HashMap::new(),
-    },
-    None => std::collections::HashMap::new(),
-  };
+  let tool_params = params.arguments.unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
   let tool_request = McpRequest {
     tool_name: params.name.clone(),
@@ -184,60 +204,277 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
   // Call the appropriate handler based on tool name
   let handler_result = match params.name.as_str() {
     // Read operations
-    "list_definitions" => super::read_handlers::list_definitions(app_state, tool_request),
-    "list_namespaces" => super::namespace_handlers::list_namespaces(app_state, tool_request),
-    "get_package_name" => super::read_handlers::get_package_name(app_state, tool_request),
-    "read_namespace" => super::read_handlers::read_namespace(app_state, tool_request),
-    "read_definition" => super::read_handlers::read_definition(app_state, tool_request),
+    "list_definitions" => {
+      let request = match deserialize_params::<ListDefinitionsRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::read_handlers::list_definitions(app_state, request)
+    }
+    "list_namespaces" => {
+      let request = match deserialize_params::<ListNamespacesRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::namespace_handlers::list_namespaces(app_state, request)
+    }
+    "get_package_name" => {
+      let request = match deserialize_params::<GetPackageNameRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::read_handlers::get_package_name(app_state, request)
+    }
+    "read_namespace" => {
+      let request = match deserialize_params::<ReadNamespaceRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::read_handlers::read_namespace(app_state, request)
+    }
+    "read_definition" => {
+      let request = match deserialize_params::<ReadDefinitionRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::read_handlers::read_definition(app_state, request)
+    }
 
     // Namespace operations
-    "add_namespace" => super::namespace_handlers::add_namespace(app_state, tool_request),
-    "delete_namespace" => super::namespace_handlers::delete_namespace(app_state, tool_request),
-    "update_namespace_imports" => super::namespace_handlers::update_namespace_imports(app_state, tool_request),
+    "add_namespace" => {
+      let request = match deserialize_params::<AddNamespaceRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::namespace_handlers::add_namespace(app_state, request)
+    }
+    "delete_namespace" => {
+      let request = match deserialize_params::<DeleteNamespaceRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::namespace_handlers::delete_namespace(app_state, request)
+    }
+    "update_namespace_imports" => {
+      let request = match deserialize_params::<UpdateNamespaceImportsRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::namespace_handlers::update_namespace_imports(app_state, request)
+    }
 
     // Definition operations
-    "add_definition" => super::definition_handlers::add_definition(app_state, tool_request),
-    "delete_definition" => super::definition_handlers::delete_definition(app_state, tool_request),
-    "overwrite_definition" => super::definition_handlers::overwrite_definition(app_state, tool_request),
-    "update_definition_at" => super::definition_handlers::update_definition_at(app_state, tool_request),
-    "read_definition_at" => super::definition_handlers::read_definition_at(app_state, tool_request),
+    "add_definition" => {
+      let request = match deserialize_params::<AddDefinitionRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::definition_handlers::add_definition(app_state, request)
+    }
+    "delete_definition" => {
+      let request = match deserialize_params::<DeleteDefinitionRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::definition_handlers::delete_definition(app_state, request)
+    }
+    "overwrite_definition" => {
+      let request = match deserialize_params::<OverwriteDefinitionRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::definition_handlers::overwrite_definition(app_state, request)
+    }
+    "update_definition_at" => {
+      let request = match deserialize_params::<UpdateDefinitionAtRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::definition_handlers::update_definition_at(app_state, request)
+    }
+    "read_definition_at" => {
+      let request = match deserialize_params::<ReadDefinitionAtRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::definition_handlers::read_definition_at(app_state, request)
+    }
 
     // Module management
-    "list_modules" => super::module_handlers::list_modules(app_state, tool_request),
-    "get_current_module" => super::module_handlers::get_current_module(app_state, tool_request),
-    "switch_module" => super::module_handlers::switch_module(app_state, tool_request),
-    "create_module" => super::module_handlers::create_module(app_state, tool_request),
-    "delete_module" => super::module_handlers::delete_module(app_state, tool_request),
+    "list_modules" => {
+      let request = match deserialize_params::<ListModulesRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::module_handlers::list_modules(app_state, request)
+    }
+    "get_current_module" => {
+      let request = match deserialize_params::<GetCurrentModuleRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::module_handlers::get_current_module(app_state, request)
+    }
+    "switch_module" => {
+      let request = match deserialize_params::<SwitchModuleRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::module_handlers::switch_module(app_state, request)
+    }
+    "create_module" => {
+      let request = match deserialize_params::<CreateModuleRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::module_handlers::create_module(app_state, request)
+    }
+    "delete_module" => {
+      let request = match deserialize_params::<DeleteModuleRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::module_handlers::delete_module(app_state, request)
+    }
 
     // Cirru conversion tools
-    "calcit_parse_cirru_to_json" => super::cirru_handlers::parse_cirru_to_json(app_state, tool_request),
-    "calcit_format_json_to_cirru" => super::cirru_handlers::format_json_to_cirru(app_state, tool_request),
+    "calcit_parse_cirru_to_json" => {
+      let request = match deserialize_params::<ParseCirruToJsonRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::cirru_handlers::parse_cirru_to_json(app_state, request)
+    }
+    "calcit_format_json_to_cirru" => {
+      let request = match deserialize_params::<FormatJsonToCirruRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::cirru_handlers::format_json_to_cirru(app_state, request)
+    }
 
     // Documentation query tools
-    "query_api_docs" => super::docs_handlers::handle_query_api_docs(app_state, tool_request),
-    "query_guidebook" => super::docs_handlers::handle_query_guidebook(app_state, tool_request),
-    "list_api_docs" => super::docs_handlers::handle_list_api_docs(app_state, tool_request),
-    "list_guidebook_docs" => super::docs_handlers::handle_list_guidebook_docs(app_state, tool_request),
+    "query_api_docs" => {
+      let request = match deserialize_params::<QueryApiDocsRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::docs_handlers::handle_query_api_docs(app_state, request)
+    }
+    "query_guidebook" => {
+      let request = match deserialize_params::<QueryGuidebookRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::docs_handlers::handle_query_guidebook(app_state, request)
+    }
+    // Documentation tools
+    "list_api_docs" => {
+      let request = match deserialize_params::<ListApiDocsRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::docs_handlers::handle_list_api_docs(app_state, request)
+    }
+    "list_guidebook_docs" => {
+      let request = match deserialize_params::<ListGuidebookDocsRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::docs_handlers::handle_list_guidebook_docs(app_state, request)
+    }
 
     // Configuration management tools
-    "read_configs" => super::config_handlers::read_configs(app_state, tool_request),
-    "update_configs" => super::config_handlers::update_configs(app_state, tool_request),
+    "read_configs" => {
+      let request = match deserialize_params::<ReadConfigsRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::config_handlers::read_configs(app_state, request)
+    }
+    "update_configs" => {
+      let request = match deserialize_params::<UpdateConfigsRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::config_handlers::update_configs(app_state, request)
+    }
 
     // Definition documentation tools
-    "read_definition_doc" => super::document_handlers::read_definition_doc(app_state, tool_request),
-    "update_definition_doc" => super::document_handlers::update_definition_doc(app_state, tool_request),
+    "read_definition_doc" => match serde_json::from_value::<ReadDefinitionDocRequest>(tool_request.parameters) {
+      Ok(request) => super::document_handlers::read_definition_doc(app_state, request),
+      Err(_) => {
+        let error = JsonRpcError::invalid_params();
+        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
+      }
+    },
+    "update_definition_doc" => match serde_json::from_value::<UpdateDefinitionDocRequest>(tool_request.parameters) {
+      Ok(request) => super::document_handlers::update_definition_doc(app_state, request),
+      Err(_) => {
+        let error = JsonRpcError::invalid_params();
+        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
+      }
+    },
 
     // Module documentation tools
-    "list_module_docs" => super::document_handlers::list_module_docs(app_state, tool_request),
-    "read_module_doc" => super::document_handlers::read_module_doc(app_state, tool_request),
-    "update_module_doc" => super::document_handlers::update_module_doc(app_state, tool_request),
-    "rename_module_doc" => super::document_handlers::rename_module_doc(app_state, tool_request),
-    "delete_module_doc" => super::document_handlers::delete_module_doc(app_state, tool_request),
+    "list_module_docs" => {
+      let request = match deserialize_params::<ListModuleDocsRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::document_handlers::list_module_docs(app_state, request)
+    }
+    "read_module_doc" => match serde_json::from_value::<ReadModuleDocRequest>(tool_request.parameters) {
+      Ok(request) => super::document_handlers::read_module_doc(app_state, request),
+      Err(_) => {
+        let error = JsonRpcError::invalid_params();
+        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
+      }
+    },
+    "update_module_doc" => match serde_json::from_value::<UpdateModuleDocRequest>(tool_request.parameters) {
+      Ok(request) => super::document_handlers::update_module_doc(app_state, request),
+      Err(_) => {
+        let error = JsonRpcError::invalid_params();
+        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
+      }
+    },
+    "rename_module_doc" => match serde_json::from_value::<RenameModuleDocRequest>(tool_request.parameters) {
+      Ok(request) => super::document_handlers::rename_module_doc(app_state, request),
+      Err(_) => {
+        let error = JsonRpcError::invalid_params();
+        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
+      }
+    },
+    "delete_module_doc" => match serde_json::from_value::<DeleteModuleDocRequest>(tool_request.parameters) {
+      Ok(request) => super::document_handlers::delete_module_doc(app_state, request),
+      Err(_) => {
+        let error = JsonRpcError::invalid_params();
+        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
+      }
+    },
 
     // Dependency documentation tools (read-only)
-    "list_dependency_docs" => super::document_handlers::list_dependency_docs(app_state, tool_request),
-    "read_dependency_definition_doc" => super::document_handlers::read_dependency_definition_doc(app_state, tool_request),
-    "read_dependency_module_doc" => super::document_handlers::read_dependency_module_doc(app_state, tool_request),
+    "list_dependency_docs" => {
+      let request = match deserialize_params::<ListDependencyDocsRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::document_handlers::list_dependency_docs(app_state, request)
+    }
+    "read_dependency_definition_doc" => {
+      let request = match deserialize_params::<ReadDependencyDefinitionDocRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::document_handlers::read_dependency_definition_doc(app_state, request)
+    }
+    "read_dependency_module_doc" => {
+      let request = match deserialize_params::<ReadDependencyModuleDocRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      super::document_handlers::read_dependency_module_doc(app_state, request)
+    }
 
     _ => {
       let error = JsonRpcError::tool_not_found(&params.name);

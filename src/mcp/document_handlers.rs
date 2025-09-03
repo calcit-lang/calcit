@@ -1,4 +1,6 @@
-use super::tools::McpRequest;
+use super::tools::{
+  ListDependencyDocsRequest, ListModuleDocsRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest,
+};
 use crate::snapshot::{DocumentEntry, Snapshot};
 use axum::response::Json as ResponseJson;
 use serde::{Deserialize, Serialize};
@@ -12,15 +14,7 @@ pub struct ErrorResponse {
   pub context: Option<String>,
 }
 
-// Helper function to parse request parameters with better error context
-fn parse_request<T: for<'de> Deserialize<'de>>(req: &McpRequest, operation: &str) -> Result<T, ErrorResponse> {
-  let map: serde_json::Map<String, serde_json::Value> = req.parameters.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-
-  serde_json::from_value(serde_json::Value::Object(map)).map_err(|e| ErrorResponse {
-    error: format!("Invalid parameters for {operation}: {e}"),
-    context: Some(format!("Expected parameters: {}", std::any::type_name::<T>())),
-  })
-}
+// parse_request function removed as it's no longer needed with typed requests
 
 // Helper function to create success response
 fn success_response<T: Serialize>(data: T) -> ResponseJson<Value> {
@@ -56,12 +50,7 @@ pub struct DefinitionDocResponse {
 }
 
 /// Read definition documentation for a specific symbol
-pub fn read_definition_doc(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let request = match parse_request::<ReadDefinitionDocRequest>(&req, "read_definition_doc") {
-    Ok(req) => req,
-    Err(err) => return error_response(err),
-  };
-
+pub fn read_definition_doc(app_state: &super::AppState, request: ReadDefinitionDocRequest) -> ResponseJson<Value> {
   let snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
@@ -103,12 +92,7 @@ pub struct UpdateDefinitionDocResponse {
 }
 
 /// Update definition documentation for a specific symbol
-pub fn update_definition_doc(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let request = match parse_request::<UpdateDefinitionDocRequest>(&req, "update_definition_doc") {
-    Ok(req) => req,
-    Err(err) => return error_response(err),
-  };
-
+pub fn update_definition_doc(app_state: &super::AppState, request: UpdateDefinitionDocRequest) -> ResponseJson<Value> {
   let mut snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
@@ -152,7 +136,7 @@ pub struct DependencyDocsListResponse {
 }
 
 /// List all dependency modules
-pub fn list_dependency_docs(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
+pub fn list_dependency_docs(app_state: &super::AppState, _request: ListDependencyDocsRequest) -> ResponseJson<Value> {
   let snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
@@ -167,13 +151,6 @@ pub fn list_dependency_docs(app_state: &super::AppState, _req: McpRequest) -> Re
   success_response(response)
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ReadDependencyDefinitionDocRequest {
-  pub dependency: String,
-  pub namespace: String,
-  pub symbol: String,
-}
-
 #[derive(Debug, Serialize)]
 pub struct DependencyDefinitionDocResponse {
   pub dependency: String,
@@ -184,27 +161,19 @@ pub struct DependencyDefinitionDocResponse {
 }
 
 /// Read definition documentation from a dependency
-pub fn read_dependency_definition_doc(_app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let request = match parse_request::<ReadDependencyDefinitionDocRequest>(&req, "read_dependency_definition_doc") {
-    Ok(req) => req,
-    Err(err) => return error_response(err),
-  };
-
+pub fn read_dependency_definition_doc(
+  _app_state: &super::AppState,
+  request: ReadDependencyDefinitionDocRequest,
+) -> ResponseJson<Value> {
   let response = DependencyDefinitionDocResponse {
-    dependency: request.dependency,
+    dependency: request.dependency_name,
     namespace: request.namespace,
-    symbol: request.symbol,
+    symbol: request.definition,
     doc: "Dependency documentation access not yet implemented".to_string(),
     note: "This is a read-only operation for external dependencies".to_string(),
   };
 
   success_response(response)
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ReadDependencyModuleDocRequest {
-  pub dependency: String,
-  pub title: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -216,14 +185,9 @@ pub struct DependencyModuleDocResponse {
 }
 
 /// Read module documentation from a dependency
-pub fn read_dependency_module_doc(_app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let request = match parse_request::<ReadDependencyModuleDocRequest>(&req, "read_dependency_module_doc") {
-    Ok(req) => req,
-    Err(err) => return error_response(err),
-  };
-
+pub fn read_dependency_module_doc(_app_state: &super::AppState, request: ReadDependencyModuleDocRequest) -> ResponseJson<Value> {
   let response = DependencyModuleDocResponse {
-    dependency: request.dependency,
+    dependency: request.dependency_name,
     title: request.title,
     content: "Dependency module documentation access not yet implemented".to_string(),
     note: "This is a read-only operation for external dependencies".to_string(),
@@ -252,7 +216,7 @@ pub struct ModuleDocsListResponse {
 }
 
 /// List all module document titles in the project
-pub fn list_module_docs(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
+pub fn list_module_docs(app_state: &super::AppState, _request: ListModuleDocsRequest) -> ResponseJson<Value> {
   let snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
@@ -281,12 +245,7 @@ pub struct ModuleDocResponse {
 }
 
 /// Read module documentation by title
-pub fn read_module_doc(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let request = match parse_request::<ReadModuleDocRequest>(&req, "read_module_doc") {
-    Ok(req) => req,
-    Err(err) => return error_response(err),
-  };
-
+pub fn read_module_doc(app_state: &super::AppState, request: ReadModuleDocRequest) -> ResponseJson<Value> {
   let snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
@@ -329,12 +288,7 @@ pub struct UpdateModuleDocResponse {
 }
 
 /// Create or update a document
-pub fn update_module_doc(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let request = match parse_request::<UpdateModuleDocRequest>(&req, "update_module_doc") {
-    Ok(req) => req,
-    Err(err) => return error_response(err),
-  };
-
+pub fn update_module_doc(app_state: &super::AppState, request: UpdateModuleDocRequest) -> ResponseJson<Value> {
   let mut snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
@@ -382,12 +336,7 @@ pub struct RenameModuleDocResponse {
 }
 
 /// Rename a module document
-pub fn rename_module_doc(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let request = match parse_request::<RenameModuleDocRequest>(&req, "rename_module_doc") {
-    Ok(req) => req,
-    Err(err) => return error_response(err),
-  };
-
+pub fn rename_module_doc(app_state: &super::AppState, request: RenameModuleDocRequest) -> ResponseJson<Value> {
   let mut snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
@@ -452,12 +401,7 @@ pub struct DeleteModuleDocResponse {
 }
 
 /// Delete a module document
-pub fn delete_module_doc(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let request = match parse_request::<DeleteModuleDocRequest>(&req, "delete_module_doc") {
-    Ok(req) => req,
-    Err(err) => return error_response(err),
-  };
-
+pub fn delete_module_doc(app_state: &super::AppState, request: DeleteModuleDocRequest) -> ResponseJson<Value> {
   let mut snapshot = match load_snapshot(app_state) {
     Ok(s) => s,
     Err(e) => {
