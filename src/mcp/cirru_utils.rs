@@ -84,14 +84,18 @@ pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &S
   // Build files
   let mut files_map = cirru_edn::EdnMapView::default();
   for (k, v) in &snapshot.files {
-    files_map.insert_key(k.as_str(), Edn::from(v));
+    // Skip $meta namespaces as they are special and should not be serialized to file
+    if k.ends_with(".$meta") {
+      continue;
+    }
+    files_map.insert(Edn::str(k.as_str()), Edn::from(v));
   }
   edn_map.insert_key("files", files_map.into());
 
   let edn_data = Edn::from(edn_map);
 
   // Format Edn as Cirru string
-  let content = cirru_edn::format(&edn_data, false).map_err(|e| format!("Failed to format snapshot as Cirru: {e}"))?;
+  let content = cirru_edn::format(&edn_data, true).map_err(|e| format!("Failed to format snapshot as Cirru: {e}"))?;
 
   // Write to file
   std::fs::write(compact_cirru_path, content).map_err(|e| format!("Failed to write compact.cirru: {e}"))?;

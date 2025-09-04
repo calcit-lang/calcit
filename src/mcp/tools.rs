@@ -270,7 +270,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
           optional: true,
         },
         McpToolParameter {
-          name: "match".to_string(),
+          name: "match_content".to_string(),
           parameter_type: "string".to_string(),
           description: "Optional validation: string to verify exact match, or array like ['fn', '...'] to verify list starts with 'fn'. If validation fails, returns detailed error with current content.".to_string(),
           optional: true,
@@ -682,8 +682,10 @@ pub struct UpdateDefinitionAtRequest {
   pub namespace: String,
   pub definition: String,
   pub coord: serde_json::Value,
-  pub code: serde_json::Value,
-  pub mode: String,
+  pub new_value: Option<serde_json::Value>,
+  pub mode: Option<String>,
+  #[serde(rename = "match")]
+  pub match_content: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]

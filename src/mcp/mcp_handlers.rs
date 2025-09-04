@@ -14,6 +14,7 @@ use super::tools::{
   get_standard_mcp_tools,
 };
 use axum::response::Json as ResponseJson;
+use colored::*;
 use serde_json::Value;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -26,31 +27,68 @@ fn get_session() -> Arc<Mutex<McpSession>> {
 
 /// Handle JSON-RPC 2.0 requests (Axum version)
 pub async fn handle_jsonrpc_axum(data: Arc<AppState>, req: JsonRpcRequest) -> ResponseJson<Value> {
-  // Log request input
-  let req_json = match serde_json::to_string_pretty(&req) {
-    Ok(json) => json,
-    Err(_) => "Failed to serialize request".to_string(),
+  // Extract tool name for tools/call method
+  let tool_name = if req.method == "tools/call" {
+    req
+      .params
+      .as_ref()
+      .and_then(|p| p.get("name"))
+      .and_then(|n| n.as_str())
+      .unwrap_or("unknown")
+  } else {
+    ""
   };
-  println!("[JSON-RPC REQUEST] method={}, id={:?}", req.method, req.id);
-  println!("[JSON-RPC INPUT] {req_json}");
+
+  // Log request with colors
+  if req.method == "tools/call" {
+    println!("{} {}", "🔧 TOOL CALL".blue().bold(), tool_name.yellow().bold());
+  } else {
+    println!("{} {}", "📡 RPC".blue().bold(), req.method.green().bold());
+  }
+
+  // Show simplified request info
+  if let Some(params) = &req.params {
+    if req.method == "tools/call" {
+      if let Some(args) = params.get("arguments") {
+        let args_json = serde_json::to_string_pretty(args).unwrap_or_else(|_| "<invalid>".to_string());
+        println!("{}\n{}", "   Arguments:".dimmed(), args_json.dimmed());
+      }
+    } else {
+      let params_json = serde_json::to_string_pretty(params).unwrap_or_else(|_| "<invalid>".to_string());
+      println!("{}\n{}", "   Params:".dimmed(), params_json.dimmed());
+    }
+  }
 
   let response = match req.method.as_str() {
     "initialize" => handle_initialize_axum(&data, &req),
     "tools/list" => handle_tools_list_axum(&data, &req),
     "tools/call" => handle_tools_call_axum(&data, &req).await,
     _ => {
-      println!("[JSON-RPC ERROR] Unknown method: {}", req.method);
+      println!("{} Unknown method: {}", "❌ ERROR".red().bold(), req.method.red());
       let error = JsonRpcError::method_not_found();
       serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap()
     }
   };
 
-  // Log response output
-  let response_json = match serde_json::to_string_pretty(&response) {
-    Ok(json) => json,
-    Err(_) => "Failed to serialize response".to_string(),
-  };
-  println!("[JSON-RPC OUTPUT] {response_json}");
+  // Log response with colors
+  if response.get("error").is_some() {
+    println!("{}", "❌ RESPONSE ERROR".red().bold());
+    if let Some(error) = response.get("error") {
+      let error_json = serde_json::to_string_pretty(error).unwrap_or_else(|_| "<invalid>".to_string());
+      println!("{}\n{}", "   Error:".dimmed(), error_json.dimmed());
+    }
+  } else {
+    if req.method == "tools/call" {
+      println!("{} {}", "✅ TOOL RESULT".green().bold(), tool_name.yellow().bold());
+    } else {
+      println!("{} {}", "✅ RPC RESULT".green().bold(), req.method.green().bold());
+    }
+    if let Some(result) = response.get("result") {
+      let result_json = serde_json::to_string_pretty(result).unwrap_or_else(|_| "<invalid>".to_string());
+      println!("{}\n{}", "   Result:".dimmed(), result_json.dimmed());
+    }
+  }
+  println!(); // Add blank line for separation
 
   ResponseJson(response)
 }
@@ -152,10 +190,15 @@ fn deserialize_params<T: serde::de::DeserializeOwned>(
   parameters: serde_json::Value,
   req_id: Option<serde_json::Value>,
 ) -> Result<T, Value> {
-  match serde_json::from_value(parameters) {
+  match serde_json::from_value(parameters.clone()) {
     Ok(request) => Ok(request),
     Err(e) => {
-      let error_message = format!("Invalid parameters: {e}");
+      // Provide detailed error information including the actual parameters received
+      let error_message = format!(
+        "Invalid parameters: {}. Received parameters: {}",
+        e,
+        serde_json::to_string_pretty(&parameters).unwrap_or_else(|_| "<unparseable>".to_string())
+      );
       let error = JsonRpcError::new(-32602, error_message);
       Err(serde_json::to_value(JsonRpcResponse::error(req_id, error)).unwrap())
     }

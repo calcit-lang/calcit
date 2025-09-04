@@ -9,8 +9,7 @@ use cirru_parser::Cirru;
 use serde_json::Value;
 
 /// Save snapshot data
-// save_snapshot function moved to cirru_utils::save_snapshot_to_file to avoid duplication
-
+/// save_snapshot function moved to cirru_utils::save_snapshot_to_file to avoid duplication
 pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
   let definition = request.definition;
@@ -198,18 +197,18 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
   };
 
   // Parse update mode (default to replace for backward compatibility)
-  let mode = match request.mode.parse::<UpdateMode>() {
+  let mode = match request.mode.as_deref().unwrap_or("replace").parse::<UpdateMode>() {
     Ok(mode) => mode,
     Err(e) => {
       return ResponseJson(serde_json::json!({
-        "error": e
+        "error": format!("Invalid mode parameter: {}. Valid modes are: replace, after, before, delete, prepend, append", e)
       }));
     }
   };
 
   // Parse new value (optional for delete mode)
-  let new_value_cirru = match &request.code {
-    serde_json::Value::String(s) => {
+  let new_value_cirru = match &request.new_value {
+    Some(serde_json::Value::String(s)) => {
       // Parse new value as Cirru
       match cirru_parser::parse(s) {
         Ok(parsed) => {
@@ -225,21 +224,41 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
         }
       }
     }
-    code_json => {
+    Some(code_json) => {
       // Handle JSON format new_value
       match super::cirru_utils::json_to_cirru(code_json) {
         Ok(cirru) => Some(cirru),
         Err(e) => {
           return ResponseJson(serde_json::json!({
-            "error": format!("Failed to convert code from JSON: {}", e)
+            "error": format!("Failed to convert new_value from JSON: {}", e)
           }));
         }
       }
     }
+    None => {
+      // No new value provided - only valid for delete mode
+      if matches!(mode, UpdateMode::Delete) {
+        None
+      } else {
+        return ResponseJson(serde_json::json!({
+          "error": "new_value parameter is required for all modes except 'delete'"
+        }));
+      }
+    }
   };
 
-  // Parse match content (optional validation) - not available in UpdateDefinitionAtRequest
-  let match_content: Option<Cirru> = None;
+  // Parse match content (optional validation)
+  let match_content: Option<Cirru> = match &request.match_content {
+    Some(match_json) => match super::cirru_utils::json_to_cirru(match_json) {
+      Ok(cirru) => Some(cirru),
+      Err(e) => {
+        return ResponseJson(serde_json::json!({
+          "error": format!("Failed to convert match content from JSON: {}", e)
+        }));
+      }
+    },
+    None => None,
+  };
 
   let result = app_state.state_manager.update_current_module(|snapshot| {
     // Check if namespace exists
