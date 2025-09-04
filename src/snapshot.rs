@@ -124,7 +124,7 @@ impl From<&FileInSnapShot> for Edn {
   fn from(data: &FileInSnapShot) -> Edn {
     Edn::Record(EdnRecordView {
       tag: EdnTag::new("FileEntry"),
-      pairs: vec![("ns".into(), Edn::from(&data.ns)), ("defs".into(), Edn::from(data.defs.to_owned()))], // TODO
+      pairs: vec![("defs".into(), Edn::from(data.defs.to_owned())), ("ns".into(), Edn::from(&data.ns))], // TODO
     })
   }
 }
@@ -138,7 +138,7 @@ impl TryFrom<Edn> for FileInSnapShot {
 
 impl From<FileInSnapShot> for Edn {
   fn from(data: FileInSnapShot) -> Edn {
-    Edn::map_from_iter([("ns".into(), data.ns.into()), ("defs".into(), data.defs.into())])
+    Edn::map_from_iter([("defs".into(), data.defs.into()), ("ns".into(), data.ns.into())])
   }
 }
 
