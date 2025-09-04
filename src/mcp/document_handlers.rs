@@ -51,29 +51,29 @@ pub struct DefinitionDocResponse {
 
 /// Read definition documentation for a specific symbol
 pub fn read_definition_doc(app_state: &super::AppState, request: ReadDefinitionDocRequest) -> ResponseJson<Value> {
-  let snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return error_response(ErrorResponse { error: e, context: None });
+  let result = app_state.state_manager.with_current_module(|snapshot| {
+    // Find the definition in the snapshot
+    if let Some(file_snapshot) = snapshot.files.get(&request.namespace) {
+      if let Some(definition) = file_snapshot.defs.get(&request.symbol) {
+        let response = DefinitionDocResponse {
+          namespace: request.namespace,
+          symbol: request.symbol,
+          doc: definition.doc.clone(),
+        };
+        return success_response(response);
+      }
     }
-  };
 
-  // Find the definition in the snapshot
-  if let Some(file_snapshot) = snapshot.files.get(&request.namespace) {
-    if let Some(definition) = file_snapshot.defs.get(&request.symbol) {
-      let response = DefinitionDocResponse {
-        namespace: request.namespace,
-        symbol: request.symbol,
-        doc: definition.doc.clone(),
-      };
-      return success_response(response);
-    }
+    error_response(ErrorResponse {
+      error: format!("Definition {}/{} not found", request.namespace, request.symbol),
+      context: Some("Check if the namespace and symbol exist in the current snapshot".to_string()),
+    })
+  });
+
+  match result {
+    Ok(response) => response,
+    Err(e) => error_response(ErrorResponse { error: e, context: None }),
   }
-
-  error_response(ErrorResponse {
-    error: format!("Definition {}/{} not found", request.namespace, request.symbol),
-    context: Some("Check if the namespace and symbol exist in the current snapshot".to_string()),
-  })
 }
 
 #[derive(Debug, Deserialize)]
@@ -93,37 +93,33 @@ pub struct UpdateDefinitionDocResponse {
 
 /// Update definition documentation for a specific symbol
 pub fn update_definition_doc(app_state: &super::AppState, request: UpdateDefinitionDocRequest) -> ResponseJson<Value> {
-  let mut snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return error_response(ErrorResponse { error: e, context: None });
-    }
-  };
-
-  // Update the definition documentation
-  if let Some(file_snapshot) = snapshot.files.get_mut(&request.namespace) {
-    if let Some(definition) = file_snapshot.defs.get_mut(&request.symbol) {
-      definition.doc = request.doc.clone();
-
-      // Save the updated snapshot
-      if let Err(e) = save_snapshot(app_state, &snapshot) {
-        return e;
+  let result = app_state.state_manager.update_current_module(|snapshot| {
+    // Update the definition documentation
+    if let Some(file_snapshot) = snapshot.files.get_mut(&request.namespace) {
+      if let Some(definition) = file_snapshot.defs.get_mut(&request.symbol) {
+        definition.doc = request.doc.clone();
+        return Ok(());
       }
+    }
 
+    Err(format!("Definition {}/{} not found", request.namespace, request.symbol))
+  });
+
+  match result {
+    Ok(()) => {
       let response = UpdateDefinitionDocResponse {
         namespace: request.namespace,
         symbol: request.symbol,
         doc: request.doc,
         status: "updated".to_string(),
       };
-      return success_response(response);
+      success_response(response)
     }
+    Err(e) => error_response(ErrorResponse {
+      error: e,
+      context: Some("Ensure the namespace and symbol exist before attempting to update documentation".to_string()),
+    }),
   }
-
-  error_response(ErrorResponse {
-    error: format!("Definition {}/{} not found", request.namespace, request.symbol),
-    context: Some("Ensure the namespace and symbol exist before attempting to update documentation".to_string()),
-  })
 }
 
 // ===== MODULE DOCUMENT HANDLERS =====
@@ -217,20 +213,20 @@ pub struct ModuleDocsListResponse {
 
 /// List all module document titles in the project
 pub fn list_module_docs(app_state: &super::AppState, _request: ListModuleDocsRequest) -> ResponseJson<Value> {
-  let snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return error_response(ErrorResponse { error: e, context: None });
-    }
-  };
+  let result = app_state.state_manager.with_current_module(|snapshot| {
+    let documents: Vec<String> = match &snapshot.docs {
+      Some(docs) => docs.keys().cloned().collect(),
+      None => vec![],
+    };
 
-  let documents: Vec<String> = match &snapshot.docs {
-    Some(docs) => docs.keys().cloned().collect(),
-    None => vec![],
-  };
+    let response = ModuleDocsListResponse { documents };
+    success_response(response)
+  });
 
-  let response = ModuleDocsListResponse { documents };
-  success_response(response)
+  match result {
+    Ok(response) => response,
+    Err(e) => error_response(ErrorResponse { error: e, context: None }),
+  }
 }
 
 #[derive(Debug, Deserialize)]

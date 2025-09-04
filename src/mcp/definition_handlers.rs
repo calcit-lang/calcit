@@ -3,20 +3,13 @@ use super::tools::{
 };
 use crate::mcp::definition_update::{UpdateMode, update_definition_at_coord};
 use crate::mcp::definition_utils::{navigate_to_coord, parse_coord_from_json};
-use crate::snapshot::{CodeEntry, Snapshot};
+use crate::snapshot::CodeEntry;
 use axum::response::Json as ResponseJson;
 use cirru_parser::Cirru;
 use serde_json::Value;
 
 /// Save snapshot data
 // save_snapshot function moved to cirru_utils::save_snapshot_to_file to avoid duplication
-fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(), ResponseJson<Value>> {
-  super::cirru_utils::save_snapshot_to_file(&app_state.compact_cirru_path, snapshot).map_err(|e| {
-    ResponseJson(serde_json::json!({
-      "error": e
-    }))
-  })
-}
 
 pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
@@ -56,41 +49,33 @@ pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest
 
   let doc = "".to_string(); // AddDefinitionRequest doesn't include doc field
 
-  let mut snapshot = match super::namespace_handlers::load_snapshot(app_state) {
-    Ok(s) => s,
+  let result = app_state.state_manager.update_current_module(|snapshot| {
+    // Check if namespace exists
+    let file_data = match snapshot.files.get_mut(&namespace) {
+      Some(data) => data,
+      None => {
+        return Err(format!("Namespace '{namespace}' not found"));
+      }
+    };
+
+    // Check if definition already exists
+    if file_data.defs.contains_key(&definition) {
+      return Err(format!("Definition '{definition}' already exists in namespace '{namespace}'"));
+    }
+
+    // Add new definition
+    let code_entry = CodeEntry { doc, code: code_cirru };
+    file_data.defs.insert(definition.clone(), code_entry);
+    Ok(())
+  });
+
+  match result {
+    Ok(()) => {}
     Err(e) => {
       return ResponseJson(serde_json::json!({
         "error": e
       }));
     }
-  };
-
-  // Check if namespace exists
-  let file_data = match snapshot.files.get_mut(&namespace) {
-    Some(data) => data,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Namespace '{namespace}' not found")
-      }));
-    }
-  };
-
-  // Check if definition already exists
-  if file_data.defs.contains_key(&definition) {
-    return ResponseJson(serde_json::json!({
-      "error": format!("Definition '{definition}' already exists in namespace '{namespace}'")
-    }));
-  }
-
-  // code_cirru has been processed above
-
-  // Add new definition
-  let code_entry = CodeEntry { doc, code: code_cirru };
-  file_data.defs.insert(definition.clone(), code_entry);
-
-  // Save snapshot
-  if let Err(e) = save_snapshot(app_state, &snapshot) {
-    return e;
   }
 
   ResponseJson(serde_json::json!({
@@ -102,43 +87,33 @@ pub fn delete_definition(app_state: &super::AppState, request: DeleteDefinitionR
   let namespace = request.namespace;
   let definition = request.definition;
 
-  let mut snapshot = match super::namespace_handlers::load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
+  let result = app_state.state_manager.update_current_module(|snapshot| {
+    // Check if namespace exists
+    let file_data = match snapshot.files.get_mut(&namespace) {
+      Some(data) => data,
+      None => {
+        return Err(format!("Namespace '{namespace}' not found"));
+      }
+    };
+
+    // Check if definition exists
+    if !file_data.defs.contains_key(&definition) {
+      return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
     }
-  };
 
-  // Check if namespace exists
-  let file_data = match snapshot.files.get_mut(&namespace) {
-    Some(data) => data,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Namespace '{namespace}' not found")
-      }));
-    }
-  };
+    // Delete definition
+    file_data.defs.remove(&definition);
+    Ok(())
+  });
 
-  // Check if definition exists
-  if !file_data.defs.contains_key(&definition) {
-    return ResponseJson(serde_json::json!({
-      "error": format!("Definition '{definition}' not found in namespace '{namespace}'")
-    }));
+  match result {
+    Ok(()) => ResponseJson(serde_json::json!({
+      "message": format!("Definition '{definition}' deleted from namespace '{namespace}' successfully")
+    })),
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
   }
-
-  // Delete definition
-  file_data.defs.remove(&definition);
-
-  // Save snapshot
-  if let Err(e) = save_snapshot(app_state, &snapshot) {
-    return e;
-  }
-
-  ResponseJson(serde_json::json!({
-    "message": format!("Definition '{definition}' deleted from namespace '{namespace}' successfully")
-  }))
 }
 
 pub fn overwrite_definition(app_state: &super::AppState, request: OverwriteDefinitionRequest) -> ResponseJson<Value> {
@@ -179,46 +154,34 @@ pub fn overwrite_definition(app_state: &super::AppState, request: OverwriteDefin
 
   let doc = "".to_string(); // OverwriteDefinitionRequest doesn't include doc field
 
-  let mut snapshot = match super::namespace_handlers::load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
+  let result = app_state.state_manager.update_current_module(|snapshot| {
+    // Check if namespace exists
+    let file_data = match snapshot.files.get_mut(&namespace) {
+      Some(data) => data,
+      None => {
+        return Err(format!("Namespace '{namespace}' not found"));
+      }
+    };
+
+    // Check if definition exists
+    if !file_data.defs.contains_key(&definition) {
+      return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
     }
-  };
 
-  // Check if namespace exists
-  let file_data = match snapshot.files.get_mut(&namespace) {
-    Some(data) => data,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Namespace '{namespace}' not found")
-      }));
-    }
-  };
+    // Update definition
+    let code_entry = CodeEntry { doc, code: code_cirru };
+    file_data.defs.insert(definition.clone(), code_entry);
+    Ok(())
+  });
 
-  // Check if definition exists
-  if !file_data.defs.contains_key(&definition) {
-    return ResponseJson(serde_json::json!({
-      "error": format!("Definition '{definition}' not found in namespace '{namespace}'")
-    }));
+  match result {
+    Ok(()) => ResponseJson(serde_json::json!({
+      "message": format!("Definition '{definition}' updated in namespace '{namespace}' successfully")
+    })),
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
   }
-
-  // code_cirru has been processed above
-
-  // Update definition
-  let code_entry = CodeEntry { doc, code: code_cirru };
-  file_data.defs.insert(definition.clone(), code_entry);
-
-  // Save snapshot
-  if let Err(e) = save_snapshot(app_state, &snapshot) {
-    return e;
-  }
-
-  ResponseJson(serde_json::json!({
-    "message": format!("Definition '{definition}' updated in namespace '{namespace}' successfully")
-  }))
 }
 
 pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefinitionAtRequest) -> ResponseJson<Value> {
@@ -278,56 +241,44 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
   // Parse match content (optional validation) - not available in UpdateDefinitionAtRequest
   let match_content: Option<Cirru> = None;
 
-  let mut snapshot = match super::namespace_handlers::load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
+  let result = app_state.state_manager.update_current_module(|snapshot| {
+    // Check if namespace exists
+    let file_data = match snapshot.files.get_mut(&namespace) {
+      Some(data) => data,
+      None => {
+        return Err(format!("Namespace '{namespace}' not found"));
+      }
+    };
+
+    // Check if definition exists
+    let code_entry = match file_data.defs.get_mut(&definition) {
+      Some(entry) => entry,
+      None => {
+        return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
+      }
+    };
+
+    // Clone the code for the new update logic
+    let mut code = code_entry.code.clone();
+
+    // Perform the update using the new logic
+    if let Err(e) = update_definition_at_coord(&mut code, &coord, new_value_cirru.as_ref(), mode, match_content.as_ref()) {
+      return Err(format!("Failed to update: {e}"));
     }
-  };
 
-  // Check if namespace exists
-  let file_data = match snapshot.files.get_mut(&namespace) {
-    Some(data) => data,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Namespace '{}' not found", namespace)
-      }));
-    }
-  };
+    // Update the code entry with the modified code
+    code_entry.code = code;
+    Ok(())
+  });
 
-  // Check if definition exists
-  let code_entry = match file_data.defs.get_mut(&definition) {
-    Some(entry) => entry,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Definition '{}' not found in namespace '{}'", definition, namespace)
-      }));
-    }
-  };
-
-  // Clone the code for the new update logic
-  let mut code = code_entry.code.clone();
-
-  // Perform the update using the new logic
-  if let Err(e) = update_definition_at_coord(&mut code, &coord, new_value_cirru.as_ref(), mode, match_content.as_ref()) {
-    return ResponseJson(serde_json::json!({
-      "error": format!("Failed to update: {}", e)
-    }));
+  match result {
+    Ok(()) => ResponseJson(serde_json::json!({
+      "message": format!("Definition '{}' updated at coordinate {:?} in namespace '{}' successfully", definition, coord, namespace)
+    })),
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
   }
-
-  // Update the code entry with the modified code
-  code_entry.code = code;
-
-  // Save snapshot
-  if let Err(e) = save_snapshot(app_state, &snapshot) {
-    return e;
-  }
-
-  ResponseJson(serde_json::json!({
-    "message": format!("Definition '{}' updated at coordinate {:?} in namespace '{}' successfully", definition, coord, namespace)
-  }))
 }
 
 pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAtRequest) -> ResponseJson<Value> {
@@ -343,49 +294,43 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
     }
   };
 
-  let snapshot = match super::namespace_handlers::load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
-    }
-  };
+  let result = app_state.state_manager.with_current_module(|snapshot| {
+    // Check if namespace exists
+    let file_data = match snapshot.files.get(&namespace) {
+      Some(data) => data,
+      None => {
+        return Err(format!("Namespace '{namespace}' not found"));
+      }
+    };
 
-  // Check if namespace exists
-  let file_data = match snapshot.files.get(&namespace) {
-    Some(data) => data,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Namespace '{}' not found", namespace)
-      }));
-    }
-  };
+    // Check if definition exists
+    let code_entry = match file_data.defs.get(&definition) {
+      Some(entry) => entry,
+      None => {
+        return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
+      }
+    };
 
-  // Check if definition exists
-  let code_entry = match file_data.defs.get(&definition) {
-    Some(entry) => entry,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Definition '{}' not found in namespace '{}'", definition, namespace)
-      }));
-    }
-  };
+    // Navigate to the target coordinate
+    let target = match navigate_to_coord(&code_entry.code, &coord) {
+      Ok(t) => t,
+      Err(e) => {
+        return Err(format!("Failed to navigate to coordinate {coord:?}: {e}"));
+      }
+    };
 
-  // Navigate to the target coordinate
-  let target = match navigate_to_coord(&code_entry.code, &coord) {
-    Ok(t) => t,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Failed to navigate to coordinate {:?}: {}", coord, e)
-      }));
-    }
-  };
+    Ok(super::cirru_utils::cirru_to_json(target))
+  });
 
-  ResponseJson(serde_json::json!({
-    "namespace": namespace,
-    "definition": definition,
-    "coord": coord,
-    "value": super::cirru_utils::cirru_to_json(target)
-  }))
+  match result {
+    Ok(value) => ResponseJson(serde_json::json!({
+      "namespace": namespace,
+      "definition": definition,
+      "coord": coord,
+      "value": value
+    })),
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
+  }
 }

@@ -115,23 +115,11 @@ fn update_config_field<F>(app_state: &AppState, update_fn: F) -> Result<(), Stri
 where
   F: FnOnce(&mut crate::snapshot::SnapshotConfigs),
 {
-  // Read current file
-  let content = fs::read_to_string(&app_state.compact_cirru_path).map_err(|e| format!("Failed to read file: {e}"))?;
-
-  // Parse EDN
-  let data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse EDN: {e:?}"))?;
-
-  // Load snapshot
-  let mut snapshot =
-    crate::snapshot::load_snapshot_data(&data, &app_state.compact_cirru_path).map_err(|e| format!("Failed to load snapshot: {e}"))?;
-
-  // Apply the update
-  update_fn(&mut snapshot.configs);
-
-  // Save snapshot using existing save logic
-  super::cirru_utils::save_snapshot_to_file(&app_state.compact_cirru_path, &snapshot)?;
-
-  Ok(())
+  app_state.state_manager.update_current_module(|snapshot| {
+    // Apply the update
+    update_fn(&mut snapshot.configs);
+    Ok(())
+  })
 }
 
 // save_snapshot function moved to cirru_utils::save_snapshot_to_file to avoid duplication

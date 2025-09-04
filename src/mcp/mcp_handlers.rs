@@ -154,8 +154,9 @@ fn deserialize_params<T: serde::de::DeserializeOwned>(
 ) -> Result<T, Value> {
   match serde_json::from_value(parameters) {
     Ok(request) => Ok(request),
-    Err(_) => {
-      let error = JsonRpcError::invalid_params();
+    Err(e) => {
+      let error_message = format!("Invalid parameters: {e}");
+      let error = JsonRpcError::new(-32602, error_message);
       Err(serde_json::to_value(JsonRpcResponse::error(req_id, error)).unwrap())
     }
   }
@@ -182,13 +183,15 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
   let params: ToolsCallParams = match req.params.as_ref() {
     Some(params) => match serde_json::from_value(params.clone()) {
       Ok(p) => p,
-      Err(_) => {
-        let error = JsonRpcError::invalid_params();
+      Err(e) => {
+        let error_message = format!("Invalid ToolsCallParams: {e}");
+        let error = JsonRpcError::new(-32602, error_message);
         return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
       }
     },
     None => {
-      let error = JsonRpcError::invalid_params();
+      let error_message = "Missing required parameters".to_string();
+      let error = JsonRpcError::new(-32602, error_message);
       return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
     }
   };
@@ -322,19 +325,19 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       };
       super::module_handlers::switch_module(app_state, request)
     }
-    "create_module" => {
+    "create_config_entry" => {
       let request = match deserialize_params::<CreateModuleRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::module_handlers::create_module(app_state, request)
+      super::module_handlers::create_config_entry(app_state, request)
     }
-    "delete_module" => {
+    "delete_config_entry" => {
       let request = match deserialize_params::<DeleteModuleRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::module_handlers::delete_module(app_state, request)
+      super::module_handlers::delete_config_entry(app_state, request)
     }
 
     // Cirru conversion tools
@@ -403,15 +406,17 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     // Definition documentation tools
     "read_definition_doc" => match serde_json::from_value::<ReadDefinitionDocRequest>(tool_request.parameters) {
       Ok(request) => super::document_handlers::read_definition_doc(app_state, request),
-      Err(_) => {
-        let error = JsonRpcError::invalid_params();
+      Err(e) => {
+        let error_message = format!("Invalid parameters for read_definition_doc: {e}");
+        let error = JsonRpcError::new(-32602, error_message);
         return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
       }
     },
     "update_definition_doc" => match serde_json::from_value::<UpdateDefinitionDocRequest>(tool_request.parameters) {
       Ok(request) => super::document_handlers::update_definition_doc(app_state, request),
-      Err(_) => {
-        let error = JsonRpcError::invalid_params();
+      Err(e) => {
+        let error_message = format!("Invalid parameters for update_definition_doc: {e}");
+        let error = JsonRpcError::new(-32602, error_message);
         return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
       }
     },
@@ -426,29 +431,33 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     }
     "read_module_doc" => match serde_json::from_value::<ReadModuleDocRequest>(tool_request.parameters) {
       Ok(request) => super::document_handlers::read_module_doc(app_state, request),
-      Err(_) => {
-        let error = JsonRpcError::invalid_params();
+      Err(e) => {
+        let error_message = format!("Invalid parameters for read_module_doc: {e}");
+        let error = JsonRpcError::new(-32602, error_message);
         return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
       }
     },
     "update_module_doc" => match serde_json::from_value::<UpdateModuleDocRequest>(tool_request.parameters) {
       Ok(request) => super::document_handlers::update_module_doc(app_state, request),
-      Err(_) => {
-        let error = JsonRpcError::invalid_params();
+      Err(e) => {
+        let error_message = format!("Invalid parameters for update_module_doc: {e}");
+        let error = JsonRpcError::new(-32602, error_message);
         return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
       }
     },
     "rename_module_doc" => match serde_json::from_value::<RenameModuleDocRequest>(tool_request.parameters) {
       Ok(request) => super::document_handlers::rename_module_doc(app_state, request),
-      Err(_) => {
-        let error = JsonRpcError::invalid_params();
+      Err(e) => {
+        let error_message = format!("Invalid parameters for rename_module_doc: {e}");
+        let error = JsonRpcError::new(-32602, error_message);
         return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
       }
     },
     "delete_module_doc" => match serde_json::from_value::<DeleteModuleDocRequest>(tool_request.parameters) {
       Ok(request) => super::document_handlers::delete_module_doc(app_state, request),
-      Err(_) => {
-        let error = JsonRpcError::invalid_params();
+      Err(e) => {
+        let error_message = format!("Invalid parameters for delete_module_doc: {e}");
+        let error = JsonRpcError::new(-32602, error_message);
         return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
       }
     },

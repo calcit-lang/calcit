@@ -134,6 +134,7 @@ async fn main() -> std::io::Result<()> {
     current_module_name,
     port: args.port,
     module_cache: std::sync::Arc::new(std::sync::RwLock::new(HashMap::new())),
+    state_manager: calcit::mcp::StateManager::new(args.file.clone()),
   });
 
   println!("Starting MCP server on port {}", args.port);

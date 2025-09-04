@@ -19,6 +19,7 @@ pub mod mcp_handlers;
 pub mod module_handlers;
 pub mod namespace_handlers;
 pub mod read_handlers;
+pub mod state_manager;
 pub mod tools;
 
 #[derive(Clone)]
@@ -27,6 +28,7 @@ pub struct AppState {
   pub current_module_name: String,
   pub port: u16,
   pub module_cache: std::sync::Arc<std::sync::RwLock<HashMap<String, snapshot::Snapshot>>>,
+  pub state_manager: state_manager::StateManager,
 }
 
 // Re-export main structs and functions
@@ -42,4 +44,5 @@ pub use module_handlers::*;
 pub use namespace_handlers::*;
 // read_handlers functions are imported individually to avoid conflicts
 pub use read_handlers::{get_package_name, list_definitions, read_definition, read_namespace};
+pub use state_manager::StateManager;
 pub use tools::{McpRequest, McpTool, McpToolParameter, get_mcp_tools, get_standard_mcp_tools};
