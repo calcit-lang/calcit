@@ -35,14 +35,14 @@ pub struct DefinitionDocResponse {
 
 #[derive(Debug, Serialize)]
 pub struct ModuleDocResponse {
-  pub dependency_name: String,
+  pub module_namespace: String,
   pub doc_path: String,
   pub content: String,
 }
 
 /// List all available documentation from a dependency module
 pub fn list_dependency_docs(state_manager: &StateManager, request: ListDependencyDocsRequest) -> ResponseJson<Value> {
-  match state_manager.get_dependency_module_with_doc(&request.dependency_name) {
+  match state_manager.get_dependency_module_with_doc(&request.module_namespace) {
     Ok(module_with_doc) => {
       let mut definition_docs = Vec::new();
 
@@ -79,7 +79,7 @@ pub fn list_dependency_docs(state_manager: &StateManager, request: ListDependenc
       }))
     }
     Err(e) => ResponseJson(serde_json::json!({
-      "error": format!("Failed to load dependency module '{}': {}", request.dependency_name, e)
+      "error": format!("Failed to load dependency module '{}': {}", request.module_namespace, e)
     })),
   }
 }
@@ -124,11 +124,11 @@ pub fn read_dependency_definition_doc(
 
 /// Read a module-level document from a dependency module
 pub fn read_dependency_module_doc(state_manager: &StateManager, request: ReadDependencyModuleDocRequest) -> ResponseJson<Value> {
-  match state_manager.get_dependency_module_with_doc(&request.dependency_name) {
+  match state_manager.get_dependency_module_with_doc(&request.module_namespace) {
     Ok(module_with_doc) => {
       if let Some(content) = module_with_doc.docs.get(&request.doc_path) {
         let response = ModuleDocResponse {
-          dependency_name: request.dependency_name,
+          module_namespace: request.module_namespace,
           doc_path: request.doc_path,
           content: content.clone(),
         };
@@ -140,12 +140,12 @@ pub fn read_dependency_module_doc(state_manager: &StateManager, request: ReadDep
         }))
       } else {
         ResponseJson(serde_json::json!({
-          "error": format!("Documentation file '{}' not found in dependency '{}'", request.doc_path, request.dependency_name)
+          "error": format!("Documentation file '{}' not found in module '{}'", request.doc_path, request.module_namespace)
         }))
       }
     }
     Err(e) => ResponseJson(serde_json::json!({
-      "error": format!("Failed to load dependency module '{}': {}", request.dependency_name, e)
+      "error": format!("Failed to load dependency module '{}': {}", request.module_namespace, e)
     })),
   }
 }

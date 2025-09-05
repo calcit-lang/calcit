@@ -12,8 +12,12 @@ use std::sync::{Arc, RwLock};
 /// Module with documentation data
 #[derive(Debug, Clone)]
 pub struct DepModuleWithDoc {
+  /// package name, aka root namespace of that module
   pub package: String,
+  /// module folder name (may differ from package namespace)
+  pub module_folder: String,
   pub snapshot: Snapshot,
+  /// index of files in `docs/`, plus a `README.md` from project root
   pub docs: HashMap<String, String>, // 文件相对路径 -> 文档内容
 }
 
@@ -121,7 +125,7 @@ impl StateManager {
 
   /// Get a dependency module with documentation by namespace
   pub fn get_dependency_module_with_doc(&self, namespace: &str) -> Result<DepModuleWithDoc, String> {
-    // First check cache
+    // First check cache by namespace
     {
       let cache_guard = self
         .dependency_cache
@@ -132,16 +136,34 @@ impl StateManager {
       }
     }
 
-    // Load from file
+    // If not found in cache, we need to find the module by folder name
+    // For now, assume namespace equals folder name (this is a simplification)
+    // In a real implementation, you might want to scan all folders or maintain a mapping
     let module_with_doc = self.load_dependency_from_file(namespace)?;
 
-    // Cache it
+    // Cache it using the real package namespace from the loaded snapshot
     {
       let mut cache_guard = self
         .dependency_cache
         .write()
         .map_err(|e| format!("Failed to write dependency cache lock: {e}"))?;
-      cache_guard.insert(namespace.to_string(), module_with_doc.clone());
+      cache_guard.insert(module_with_doc.package.clone(), module_with_doc.clone());
+    }
+
+    Ok(module_with_doc)
+  }
+
+  /// Load a dependency module by folder name (used for initial loading)
+  pub fn load_dependency_by_folder(&self, folder_name: &str) -> Result<DepModuleWithDoc, String> {
+    let module_with_doc = self.load_dependency_from_file(folder_name)?;
+
+    // Cache it using the real package namespace
+    {
+      let mut cache_guard = self
+        .dependency_cache
+        .write()
+        .map_err(|e| format!("Failed to write dependency cache lock: {e}"))?;
+      cache_guard.insert(module_with_doc.package.clone(), module_with_doc.clone());
     }
 
     Ok(module_with_doc)
@@ -199,29 +221,47 @@ impl StateManager {
   }
 
   /// Load dependency module from file
-  fn load_dependency_from_file(&self, namespace: &str) -> Result<DepModuleWithDoc, String> {
-    // For now, we'll use the same logic as the original load_snapshot
-    // In the future, this could be enhanced to load from module directories
+  fn load_dependency_from_file(&self, module_folder_name: &str) -> Result<DepModuleWithDoc, String> {
+    // Load dependency module from file system using folder name
+    // The folder name may differ from the actual package namespace in the snapshot
     let home_dir = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let module_folder = Path::new(&home_dir).join(".config/calcit/modules");
+    let modules_base_folder = Path::new(&home_dir).join(".config/calcit/modules");
 
-    // Try to find the module file
-    let module_path = module_folder.join(format!("{namespace}/compact.cirru"));
+    // Try to find the module file using folder name
+    let module_path = modules_base_folder.join(format!("{module_folder_name}/compact.cirru"));
 
     if module_path.exists() {
       let snapshot = self.load_snapshot_from_file(&module_path.display().to_string())?;
+      
+      // Get the real package namespace from the snapshot
+      let real_package_namespace = snapshot.package.clone();
 
       // Load documentation files from the docs directory
-      let docs_folder = module_folder.join(format!("{namespace}/docs"));
-      let docs = self.load_docs_from_folder(&docs_folder)?;
+      let docs_folder = modules_base_folder.join(format!("{module_folder_name}/docs"));
+      let mut docs = self.load_docs_from_folder(&docs_folder)?;
+
+      // Load README.md from project root if it exists
+      let readme_path = modules_base_folder.join(format!("{module_folder_name}/README.md"));
+      if readme_path.exists() {
+        match std::fs::read_to_string(&readme_path) {
+          Ok(content) => {
+            docs.insert("README.md".to_string(), content);
+          }
+          Err(e) => {
+            // Log warning but don't fail the entire operation
+            eprintln!("Warning: Failed to read README.md for {module_folder_name}: {e}");
+          }
+        }
+      }
 
       Ok(DepModuleWithDoc {
-        package: namespace.to_string(),
+        package: real_package_namespace,
+        module_folder: module_folder_name.to_string(),
         snapshot,
         docs,
       })
     } else {
-      Err(format!("Dependency module not found: {namespace}"))
+      Err(format!("Dependency module not found: {module_folder_name}"))
     }
   }
 
@@ -343,6 +383,7 @@ mod tests {
 
     let module_with_doc = DepModuleWithDoc {
       package: "test.package".to_string(),
+      module_folder: "test-package".to_string(),
       snapshot: Snapshot::default(),
       docs,
     };

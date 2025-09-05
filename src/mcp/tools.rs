@@ -455,9 +455,9 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       description: "List all available documentation from dependency modules. This provides read-only access to documentation from external modules that this project depends on, including both definition-level docs and module-level docs.".to_string(),
       parameters: vec![
         McpToolParameter {
-          name: "dependency_name".to_string(),
+          name: "module_namespace".to_string(),
           parameter_type: "string".to_string(),
-          description: "The name of the dependency module to query".to_string(),
+          description: "The top-level namespace of the dependency module (e.g., 'calcit.std', 'app.utils')".to_string(),
           optional: false,
         },
       ],
@@ -491,9 +491,9 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       description: "Read a module-level document from a dependency module. This provides read-only access to complex documentation from external modules.".to_string(),
       parameters: vec![
         McpToolParameter {
-          name: "dependency_name".to_string(),
+          name: "module_namespace".to_string(),
           parameter_type: "string".to_string(),
-          description: "The name of the dependency module".to_string(),
+          description: "The top-level namespace of the dependency module (e.g., 'calcit.std', 'app.utils')".to_string(),
           optional: false,
         },
         McpToolParameter {
@@ -645,7 +645,7 @@ pub struct UpdateConfigsRequest {
 // Dependency document handlers request structs
 #[derive(Debug, Deserialize)]
 pub struct ListDependencyDocsRequest {
-  pub dependency_name: String,
+  pub module_namespace: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -657,7 +657,7 @@ pub struct ReadDependencyDefinitionDocRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadDependencyModuleDocRequest {
-  pub dependency_name: String,
+  pub module_namespace: String,
   pub doc_path: String,
 }
 
