@@ -1,13 +1,9 @@
 use super::AppState;
-use super::document_handlers::{
-  DeleteModuleDocRequest, ReadDefinitionDocRequest, ReadModuleDocRequest, RenameModuleDocRequest, UpdateDefinitionDocRequest,
-  UpdateModuleDocRequest,
-};
 use super::jsonrpc::*;
 use super::tools::{
   AddDefinitionRequest, AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
   FormatJsonToCirruRequest, GetCurrentModuleRequest, GetPackageNameRequest, ListApiDocsRequest, ListDefinitionsRequest,
-  ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModuleDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest,
+  ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest,
   OverwriteDefinitionRequest, ParseCirruToJsonRequest, QueryApiDocsRequest, QueryGuidebookRequest, ReadConfigsRequest,
   ReadDefinitionAtRequest, ReadDefinitionRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest,
   ReadNamespaceRequest, SwitchModuleRequest, UpdateConfigsRequest, UpdateDefinitionAtRequest, UpdateNamespaceImportsRequest,
@@ -446,86 +442,27 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       super::config_handlers::update_configs(app_state, request)
     }
 
-    // Definition documentation tools
-    "read_definition_doc" => match serde_json::from_value::<ReadDefinitionDocRequest>(tool_request.parameters) {
-      Ok(request) => super::document_handlers::read_definition_doc(app_state, request),
-      Err(e) => {
-        let error_message = format!("Invalid parameters for read_definition_doc: {e}");
-        let error = JsonRpcError::new(-32602, error_message);
-        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
-      }
-    },
-    "update_definition_doc" => match serde_json::from_value::<UpdateDefinitionDocRequest>(tool_request.parameters) {
-      Ok(request) => super::document_handlers::update_definition_doc(app_state, request),
-      Err(e) => {
-        let error_message = format!("Invalid parameters for update_definition_doc: {e}");
-        let error = JsonRpcError::new(-32602, error_message);
-        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
-      }
-    },
-
-    // Module documentation tools
-    "list_module_docs" => {
-      let request = match deserialize_params::<ListModuleDocsRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      super::document_handlers::list_module_docs(app_state, request)
-    }
-    "read_module_doc" => match serde_json::from_value::<ReadModuleDocRequest>(tool_request.parameters) {
-      Ok(request) => super::document_handlers::read_module_doc(app_state, request),
-      Err(e) => {
-        let error_message = format!("Invalid parameters for read_module_doc: {e}");
-        let error = JsonRpcError::new(-32602, error_message);
-        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
-      }
-    },
-    "update_module_doc" => match serde_json::from_value::<UpdateModuleDocRequest>(tool_request.parameters) {
-      Ok(request) => super::document_handlers::update_module_doc(app_state, request),
-      Err(e) => {
-        let error_message = format!("Invalid parameters for update_module_doc: {e}");
-        let error = JsonRpcError::new(-32602, error_message);
-        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
-      }
-    },
-    "rename_module_doc" => match serde_json::from_value::<RenameModuleDocRequest>(tool_request.parameters) {
-      Ok(request) => super::document_handlers::rename_module_doc(app_state, request),
-      Err(e) => {
-        let error_message = format!("Invalid parameters for rename_module_doc: {e}");
-        let error = JsonRpcError::new(-32602, error_message);
-        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
-      }
-    },
-    "delete_module_doc" => match serde_json::from_value::<DeleteModuleDocRequest>(tool_request.parameters) {
-      Ok(request) => super::document_handlers::delete_module_doc(app_state, request),
-      Err(e) => {
-        let error_message = format!("Invalid parameters for delete_module_doc: {e}");
-        let error = JsonRpcError::new(-32602, error_message);
-        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
-      }
-    },
-
     // Dependency documentation tools (read-only)
     "list_dependency_docs" => {
       let request = match deserialize_params::<ListDependencyDocsRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::document_handlers::list_dependency_docs(app_state, request)
+      super::dependency_doc_handlers::list_dependency_docs(&app_state.state_manager, request)
     }
     "read_dependency_definition_doc" => {
       let request = match deserialize_params::<ReadDependencyDefinitionDocRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::document_handlers::read_dependency_definition_doc(app_state, request)
+      super::dependency_doc_handlers::read_dependency_definition_doc(&app_state.state_manager, request)
     }
     "read_dependency_module_doc" => {
       let request = match deserialize_params::<ReadDependencyModuleDocRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::document_handlers::read_dependency_module_doc(app_state, request)
+      super::dependency_doc_handlers::read_dependency_module_doc(&app_state.state_manager, request)
     }
 
     _ => {

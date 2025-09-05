@@ -39,15 +39,6 @@ pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &S
   // Build package
   edn_map.insert_key("package", Edn::Str(snapshot.package.as_str().into()));
 
-  // Build docs
-  if let Some(docs) = &snapshot.docs {
-    let mut docs_map = cirru_edn::EdnMapView::default();
-    for (key, doc_entry) in docs {
-      docs_map.insert_key(key.as_str(), Edn::from(doc_entry));
-    }
-    edn_map.insert_key("docs", docs_map.into());
-  }
-
   // Build configs
   let mut configs_map = cirru_edn::EdnMapView::default();
   configs_map.insert_key("init-fn", Edn::Str(snapshot.configs.init_fn.as_str().into()));

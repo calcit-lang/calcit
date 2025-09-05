@@ -2,12 +2,20 @@
 //!
 //! This module manages the global state including:
 //! - Current module state (readable and writable)
-//! - Dependency modules cache (HashMap<String, Snapshot> where key is namespace)
+//! - Dependency modules cache (HashMap<String, ModuleWithDoc> where key is namespace)
 
 use crate::snapshot::Snapshot;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
+
+/// Module with documentation data
+#[derive(Debug, Clone)]
+pub struct DepModuleWithDoc {
+  pub package: String,
+  pub snapshot: Snapshot,
+  pub docs: HashMap<String, String>, // 文件相对路径 -> 文档内容
+}
 
 /// Global state manager for the MCP server
 #[derive(Clone)]
@@ -15,7 +23,7 @@ pub struct StateManager {
   /// Current module snapshot (readable and writable)
   current_module: Arc<RwLock<Option<Snapshot>>>,
   /// Dependency modules cache, key is namespace (root namespace of the package)
-  dependency_cache: Arc<RwLock<HashMap<String, Snapshot>>>,
+  dependency_cache: Arc<RwLock<HashMap<String, DepModuleWithDoc>>>,
   /// Path to the current module's compact.cirru file
   compact_cirru_path: String,
 }
@@ -91,13 +99,13 @@ impl StateManager {
         .dependency_cache
         .read()
         .map_err(|e| format!("Failed to read dependency cache lock: {e}"))?;
-      if let Some(snapshot) = cache_guard.get(namespace) {
-        return Ok(snapshot.clone());
+      if let Some(module_with_doc) = cache_guard.get(namespace) {
+        return Ok(module_with_doc.snapshot.clone());
       }
     }
 
     // Load from file
-    let snapshot = self.load_dependency_from_file(namespace)?;
+    let module_with_doc = self.load_dependency_from_file(namespace)?;
 
     // Cache it
     {
@@ -105,10 +113,38 @@ impl StateManager {
         .dependency_cache
         .write()
         .map_err(|e| format!("Failed to write dependency cache lock: {e}"))?;
-      cache_guard.insert(namespace.to_string(), snapshot.clone());
+      cache_guard.insert(namespace.to_string(), module_with_doc.clone());
     }
 
-    Ok(snapshot)
+    Ok(module_with_doc.snapshot)
+  }
+
+  /// Get a dependency module with documentation by namespace
+  pub fn get_dependency_module_with_doc(&self, namespace: &str) -> Result<DepModuleWithDoc, String> {
+    // First check cache
+    {
+      let cache_guard = self
+        .dependency_cache
+        .read()
+        .map_err(|e| format!("Failed to read dependency cache lock: {e}"))?;
+      if let Some(module_with_doc) = cache_guard.get(namespace) {
+        return Ok(module_with_doc.clone());
+      }
+    }
+
+    // Load from file
+    let module_with_doc = self.load_dependency_from_file(namespace)?;
+
+    // Cache it
+    {
+      let mut cache_guard = self
+        .dependency_cache
+        .write()
+        .map_err(|e| format!("Failed to write dependency cache lock: {e}"))?;
+      cache_guard.insert(namespace.to_string(), module_with_doc.clone());
+    }
+
+    Ok(module_with_doc)
   }
 
   /// Clear the dependency cache (useful for development/testing)
@@ -163,7 +199,7 @@ impl StateManager {
   }
 
   /// Load dependency module from file
-  fn load_dependency_from_file(&self, namespace: &str) -> Result<Snapshot, String> {
+  fn load_dependency_from_file(&self, namespace: &str) -> Result<DepModuleWithDoc, String> {
     // For now, we'll use the same logic as the original load_snapshot
     // In the future, this could be enhanced to load from module directories
     let home_dir = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
@@ -173,10 +209,63 @@ impl StateManager {
     let module_path = module_folder.join(format!("{namespace}/compact.cirru"));
 
     if module_path.exists() {
-      self.load_snapshot_from_file(&module_path.display().to_string())
+      let snapshot = self.load_snapshot_from_file(&module_path.display().to_string())?;
+
+      // Load documentation files from the docs directory
+      let docs_folder = module_folder.join(format!("{namespace}/docs"));
+      let docs = self.load_docs_from_folder(&docs_folder)?;
+
+      Ok(DepModuleWithDoc {
+        package: namespace.to_string(),
+        snapshot,
+        docs,
+      })
     } else {
       Err(format!("Dependency module not found: {namespace}"))
     }
+  }
+
+  /// Load documentation files from a directory
+  fn load_docs_from_folder(&self, docs_folder: &Path) -> Result<HashMap<String, String>, String> {
+    let mut docs = HashMap::new();
+
+    if !docs_folder.exists() {
+      return Ok(docs); // Return empty docs if folder doesn't exist
+    }
+
+    fn visit_docs_dir(dir: &Path, base_path: &Path, docs: &mut HashMap<String, String>) -> Result<(), String> {
+      let entries = std::fs::read_dir(dir).map_err(|e| format!("Failed to read docs directory {}: {}", dir.display(), e))?;
+
+      for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+        let path = entry.path();
+
+        if path.is_file() {
+          // Only process text files (md, txt, etc.)
+          if let Some(extension) = path.extension() {
+            if matches!(extension.to_str(), Some("md") | Some("txt") | Some("rst") | Some("adoc")) {
+              let relative_path = path
+                .strip_prefix(base_path)
+                .map_err(|e| format!("Failed to get relative path: {}", e))?
+                .to_string_lossy()
+                .to_string();
+
+              let content = std::fs::read_to_string(&path).map_err(|e| format!("Failed to read doc file {}: {}", path.display(), e))?;
+
+              docs.insert(relative_path, content);
+            }
+          }
+        } else if path.is_dir() {
+          // Recursively visit subdirectories
+          visit_docs_dir(&path, base_path, docs)?;
+        }
+      }
+
+      Ok(())
+    }
+
+    visit_docs_dir(docs_folder, docs_folder, &mut docs)?;
+    Ok(docs)
   }
 
   /// Save snapshot to file
@@ -215,7 +304,6 @@ mod tests {
       },
       entries: HashMap::new(),
       files: HashMap::new(),
-      docs: None,
     };
 
     // Manually set the current module
@@ -245,5 +333,23 @@ mod tests {
 
     // Clear cache should work even when empty
     assert!(manager.clear_dependency_cache().is_ok());
+  }
+
+  #[test]
+  fn test_module_with_doc_structure() {
+    let mut docs = HashMap::new();
+    docs.insert("README.md".to_string(), "# Test Module\nThis is a test".to_string());
+    docs.insert("docs/guide.md".to_string(), "# Guide\nHow to use this module".to_string());
+
+    let module_with_doc = DepModuleWithDoc {
+      package: "test.package".to_string(),
+      snapshot: Snapshot::default(),
+      docs,
+    };
+
+    assert_eq!(module_with_doc.package, "test.package");
+    assert_eq!(module_with_doc.docs.len(), 2);
+    assert!(module_with_doc.docs.contains_key("README.md"));
+    assert!(module_with_doc.docs.contains_key("docs/guide.md"));
   }
 }

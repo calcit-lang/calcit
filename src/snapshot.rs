@@ -23,98 +23,6 @@ pub struct SnapshotConfigs {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DocumentEntry {
-  pub title: String,
-  pub content: String,
-}
-
-impl From<DocumentEntry> for Edn {
-  fn from(data: DocumentEntry) -> Self {
-    Edn::record_from_pairs(
-      "DocumentEntry".into(),
-      &[("title".into(), data.title.into()), ("content".into(), data.content.into())],
-    )
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use std::collections::HashMap;
-
-  #[test]
-  fn test_document_entry_roundtrip() {
-    let original = DocumentEntry {
-      title: "Test Title".to_string(),
-      content: "Test Content\nWith multiple lines\nAnd special chars: !@#$%".to_string(),
-    };
-
-    // Convert to EDN and back
-    let edn: cirru_edn::Edn = original.clone().into();
-    let converted: Result<DocumentEntry, String> = edn.try_into();
-
-    assert!(converted.is_ok());
-    let result = converted.unwrap();
-    assert_eq!(result.title, original.title);
-    assert_eq!(result.content, original.content);
-  }
-
-  #[test]
-  fn test_snapshot_with_docs() {
-    let mut docs = HashMap::new();
-    docs.insert(
-      "guide".to_string(),
-      DocumentEntry {
-        title: "User Guide".to_string(),
-        content: "How to use this application".to_string(),
-      },
-    );
-
-    let snapshot = Snapshot {
-      package: "test-package".to_string(),
-      configs: SnapshotConfigs {
-        init_fn: "app.main/main!".to_string(),
-        reload_fn: "app.main/reload!".to_string(),
-        modules: vec![],
-        version: "0.0.1".to_string(),
-      },
-      entries: Default::default(),
-      files: Default::default(),
-      docs: Some(docs),
-    };
-
-    // Verify that docs field is properly set
-    assert!(snapshot.docs.is_some());
-    let snapshot_docs = snapshot.docs.as_ref().unwrap();
-    assert_eq!(snapshot_docs.len(), 1);
-    assert!(snapshot_docs.contains_key("guide"));
-
-    let guide_doc = &snapshot_docs["guide"];
-    assert_eq!(guide_doc.title, "User Guide");
-    assert_eq!(guide_doc.content, "How to use this application");
-  }
-}
-
-impl From<&DocumentEntry> for Edn {
-  fn from(data: &DocumentEntry) -> Self {
-    Edn::record_from_pairs(
-      "DocumentEntry".into(),
-      &[
-        ("title".into(), data.title.to_owned().into()),
-        ("content".into(), data.content.to_owned().into()),
-      ],
-    )
-  }
-}
-
-impl TryFrom<Edn> for DocumentEntry {
-  type Error = String;
-  fn try_from(data: Edn) -> Result<Self, String> {
-    from_edn(data).map_err(|e| format!("failed to parse DocumentEntry: {e}"))
-  }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileInSnapShot {
   pub ns: CodeEntry,
   pub defs: HashMap<String, CodeEntry>,
@@ -186,7 +94,6 @@ impl CodeEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
   pub package: String,
-  pub docs: Option<HashMap<String, DocumentEntry>>,
   pub configs: SnapshotConfigs,
   pub entries: HashMap<String, SnapshotConfigs>,
   pub files: HashMap<String, FileInSnapShot>,
@@ -206,13 +113,8 @@ pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
   let mut files: HashMap<String, FileInSnapShot> = data.get_or_nil("files").try_into()?;
   let meta_ns = format!("{pkg}.$meta");
   files.insert(meta_ns.to_owned(), gen_meta_ns(&meta_ns, path));
-  let docs: Option<HashMap<String, DocumentEntry>> = match data.get_or_nil("docs") {
-    Edn::Nil => None,
-    docs_edn => Some(docs_edn.try_into()?),
-  };
   let s = Snapshot {
     package: pkg.to_string(),
-    docs,
     configs: from_edn(data.get_or_nil("configs"))?,
     entries: data.get_or_nil("entries").try_into()?,
     files,
@@ -249,7 +151,6 @@ impl Default for Snapshot {
   fn default() -> Snapshot {
     Snapshot {
       package: "app".into(),
-      docs: None,
       configs: SnapshotConfigs {
         init_fn: "app.main/main!".into(),
         reload_fn: "app.main/reload!".into(),

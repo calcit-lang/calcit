@@ -443,117 +443,6 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
       ],
     },
 
-    // Definition Documentation Tools (for CodeEntry.doc field)
-    McpTool {
-      name: "read_definition_doc".to_string(),
-      description: "Read the documentation string of a specific definition. This retrieves the 'doc' field from a CodeEntry, which contains brief documentation for individual functions or definitions.".to_string(),
-      parameters: vec![
-        McpToolParameter {
-          name: "namespace".to_string(),
-          parameter_type: "string".to_string(),
-          description: "The namespace containing the definition".to_string(),
-          optional: false,
-        },
-        McpToolParameter {
-          name: "definition".to_string(),
-          parameter_type: "string".to_string(),
-          description: "The name of the definition".to_string(),
-          optional: false,
-        },
-      ],
-    },
-    McpTool {
-      name: "update_definition_doc".to_string(),
-      description: "Update the documentation string of a specific definition. This modifies the 'doc' field of a CodeEntry to provide or update brief documentation for individual functions or definitions.".to_string(),
-      parameters: vec![
-        McpToolParameter {
-          name: "namespace".to_string(),
-          parameter_type: "string".to_string(),
-          description: "The namespace containing the definition".to_string(),
-          optional: false,
-        },
-        McpToolParameter {
-          name: "definition".to_string(),
-          parameter_type: "string".to_string(),
-          description: "The name of the definition".to_string(),
-          optional: false,
-        },
-        McpToolParameter {
-          name: "doc".to_string(),
-          parameter_type: "string".to_string(),
-          description: "The documentation string for the definition".to_string(),
-          optional: false,
-        },
-      ],
-    },
-
-    // Module Documentation Tools (for Snapshot.docs complex documents)
-    McpTool {
-      name: "list_module_docs".to_string(),
-      description: "List all module-level document titles in the project. This tool provides an overview of all complex project documents stored in the snapshot's docs field, showing their titles to help users navigate and discover available module documentation.".to_string(),
-      parameters: vec![],
-    },
-    McpTool {
-      name: "read_module_doc".to_string(),
-      description: "Read the content of a specific module-level document by its title. This tool retrieves both the title and content of a complex document from the project's module documentation collection.".to_string(),
-      parameters: vec![
-        McpToolParameter {
-          name: "title".to_string(),
-          parameter_type: "string".to_string(),
-          description: "The title of the module document to read".to_string(),
-          optional: false,
-        },
-      ],
-    },
-    McpTool {
-      name: "update_module_doc".to_string(),
-      description: "Create a new module document or update an existing module document's content. This tool allows you to add new module-level documentation or modify existing complex documentation in the project.".to_string(),
-      parameters: vec![
-        McpToolParameter {
-          name: "title".to_string(),
-          parameter_type: "string".to_string(),
-          description: "The title of the module document to create or update".to_string(),
-          optional: false,
-        },
-        McpToolParameter {
-          name: "content".to_string(),
-          parameter_type: "string".to_string(),
-          description: "The content of the module document".to_string(),
-          optional: false,
-        },
-      ],
-    },
-    McpTool {
-      name: "rename_module_doc".to_string(),
-      description: "Rename an existing module document by changing its title. This tool allows you to change the title of a module document while preserving its content.".to_string(),
-      parameters: vec![
-        McpToolParameter {
-          name: "old_title".to_string(),
-          parameter_type: "string".to_string(),
-          description: "The current title of the module document to rename".to_string(),
-          optional: false,
-        },
-        McpToolParameter {
-          name: "new_title".to_string(),
-          parameter_type: "string".to_string(),
-          description: "The new title for the module document".to_string(),
-          optional: false,
-        },
-      ],
-    },
-    McpTool {
-      name: "delete_module_doc".to_string(),
-      description: "Delete a module document from the project. This permanently removes the module document and cannot be undone. Use with caution.".to_string(),
-      parameters: vec![
-        McpToolParameter {
-          name: "title".to_string(),
-          parameter_type: "string".to_string(),
-          description: "The title of the module document to delete".to_string(),
-          optional: false,
-        },
-      ],
-    },
-
     // Dependency Documentation Tools (read-only access to dependency modules)
     McpTool {
       name: "list_dependency_docs".to_string(),
@@ -602,9 +491,9 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
           optional: false,
         },
         McpToolParameter {
-          name: "title".to_string(),
+          name: "doc_path".to_string(),
           parameter_type: "string".to_string(),
-          description: "The title of the module document to read".to_string(),
+          description: "The relative path of the documentation file to read".to_string(),
           optional: false,
         },
       ],
@@ -749,7 +638,7 @@ pub struct UpdateConfigsRequest {
 // Dependency document handlers request structs
 #[derive(Debug, Deserialize)]
 pub struct ListDependencyDocsRequest {
-  // No parameters needed for listing dependency docs
+  pub dependency_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -762,7 +651,7 @@ pub struct ReadDependencyDefinitionDocRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadDependencyModuleDocRequest {
   pub dependency_name: String,
-  pub title: String,
+  pub doc_path: String,
 }
 
 // Docs handlers request structs
@@ -784,12 +673,6 @@ pub struct GetCurrentModuleRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListModulesRequest {
-  // No parameters needed
-}
-
-// Document handlers request structs
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListModuleDocsRequest {
   // No parameters needed
 }
 
