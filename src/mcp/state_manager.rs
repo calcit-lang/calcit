@@ -237,7 +237,7 @@ impl StateManager {
       let entries = std::fs::read_dir(dir).map_err(|e| format!("Failed to read docs directory {}: {}", dir.display(), e))?;
 
       for entry in entries {
-        let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+        let entry = entry.map_err(|e| format!("Failed to read directory entry: {e}"))?;
         let path = entry.path();
 
         if path.is_file() {
@@ -246,7 +246,7 @@ impl StateManager {
             if matches!(extension.to_str(), Some("md") | Some("txt") | Some("rst") | Some("adoc")) {
               let relative_path = path
                 .strip_prefix(base_path)
-                .map_err(|e| format!("Failed to get relative path: {}", e))?
+                .map_err(|e| format!("Failed to get relative path: {e}"))?
                 .to_string_lossy()
                 .to_string();
 

@@ -22,6 +22,15 @@ pub fn add_namespace(app_state: &super::AppState, request: AddNamespaceRequest) 
       return Err(format!("Namespace '{namespace}' already exists"));
     }
 
+    // Check if namespace starts with current package name followed by a dot
+    let package_prefix = format!("{}.", snapshot.package);
+    if !namespace.starts_with(&package_prefix) {
+      return Err(format!(
+        "Namespace '{namespace}' must start with current package name '{}' followed by a dot",
+        snapshot.package
+      ));
+    }
+
     // Create new namespace file
     let new_file = FileInSnapShot {
       ns: CodeEntry::from_code(cirru_parser::Cirru::from(vec!["ns", &namespace])),

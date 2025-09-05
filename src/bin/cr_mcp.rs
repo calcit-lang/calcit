@@ -31,7 +31,7 @@ struct Args {
 
 // Standard MCP JSON-RPC 2.0 endpoint
 async fn mcp_jsonrpc(State(data): State<Arc<AppState>>, Json(req): Json<JsonRpcRequest>) -> ResponseJson<serde_json::Value> {
-  calcit::mcp::handle_jsonrpc_axum(data, req).await
+  calcit::mcp::mcp_handlers::handle_jsonrpc_axum(data, req).await
 }
 
 // 404 handler for logging unmatched requests
@@ -46,7 +46,7 @@ async fn handle_404(req: Request) -> Response {
     "error": "Not Found",
     "message": format!("The requested endpoint {} {} was not found", method, uri),
     "available_endpoints": [
-      "POST /mcp_jsonrpc"
+      "POST /mcp - Standard MCP JSON-RPC 2.0 endpoint"
     ]
   });
 
@@ -156,7 +156,7 @@ async fn main() -> std::io::Result<()> {
   }
 
   let app = Router::new()
-    .route("/mcp_jsonrpc", post(mcp_jsonrpc)) // Standard MCP JSON-RPC 2.0 endpoint
+    .route("/mcp", post(mcp_jsonrpc)) // Standard MCP endpoint
     .fallback(handle_404)
     .layer(CorsLayer::permissive())
     .with_state(app_state);

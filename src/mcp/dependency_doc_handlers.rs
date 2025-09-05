@@ -1,7 +1,5 @@
 use super::state_manager::StateManager;
-use super::tools::{
-  ListDependencyDocsRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest,
-};
+use super::tools::{ListDependencyDocsRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest};
 use axum::response::Json as ResponseJson;
 use serde::Serialize;
 use serde_json::Value;
@@ -43,10 +41,7 @@ pub struct ModuleDocResponse {
 }
 
 /// List all available documentation from a dependency module
-pub fn list_dependency_docs(
-  state_manager: &StateManager,
-  request: ListDependencyDocsRequest,
-) -> ResponseJson<Value> {
+pub fn list_dependency_docs(state_manager: &StateManager, request: ListDependencyDocsRequest) -> ResponseJson<Value> {
   match state_manager.get_dependency_module_with_doc(&request.dependency_name) {
     Ok(module_with_doc) => {
       let mut definition_docs = Vec::new();
@@ -128,10 +123,7 @@ pub fn read_dependency_definition_doc(
 }
 
 /// Read a module-level document from a dependency module
-pub fn read_dependency_module_doc(
-  state_manager: &StateManager,
-  request: ReadDependencyModuleDocRequest,
-) -> ResponseJson<Value> {
+pub fn read_dependency_module_doc(state_manager: &StateManager, request: ReadDependencyModuleDocRequest) -> ResponseJson<Value> {
   match state_manager.get_dependency_module_with_doc(&request.dependency_name) {
     Ok(module_with_doc) => {
       if let Some(content) = module_with_doc.docs.get(&request.doc_path) {
