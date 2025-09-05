@@ -150,8 +150,8 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
         },
         McpToolParameter {
           name: "imports".to_string(),
-          parameter_type: "string".to_string(),
-          description: "New import rules in Cirru format (e.g., rules to import specific functions or entire namespaces)".to_string(),
+          parameter_type: "array".to_string(),
+          description: "Array of import rules. Each element must be an array with: [namespace, import_type, value] where import_type is one of ':refer', ':as', or ':default'. For ':refer', value must be an array of function names. For ':as' and ':default', value must be a string (symbol). Example: [[\"app.lib\", \":as\", \"lib\"], [\"app.lib\", \":refer\", [\"f1\", \"f2\"]], [\"|chalk\", \":default\", \"chalk\"]]".to_string(),
           optional: false,
         },
       ],
@@ -159,7 +159,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
     // Function/Macro Definition Operations
     McpTool {
       name: "add_definition".to_string(),
-      description: "Create a new function or macro definition in a Calcit namespace. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses). The code parameter should be a nested array representing the syntax tree structure. Examples: [\"fn\", [\"n\"], [\"if\", [\"<\", \"n\", \"2\"], \"n\", [\"+\", [\"fib\", [\"-\", \"n\", \"1\"]], [\"fib\", [\"-\", \"n\", \"2\"]]]]] for fibonacci function.".to_string(),
+      description: "Create a new function or macro definition in a Calcit namespace. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses, but stripped outermost pair of parentheses). The code parameter should be a nested array representing the syntax tree structure. Examples: [\"fn\", [\"n\"], [\"if\", [\"<\", \"n\", \"2\"], \"n\", [\"+\", [\"fib\", [\"-\", \"n\", \"1\"]], [\"fib\", [\"-\", \"n\", \"2\"]]]]] for fibonacci function.".to_string(),
       parameters: vec![
         McpToolParameter {
           name: "namespace".to_string(),
@@ -207,7 +207,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
     },
     McpTool {
       name: "overwrite_definition".to_string(),
-      description: "Completely overwrite an existing function or macro definition in Calcit. This replaces the entire definition with new code and documentation. The code parameter should be a nested array representing the syntax tree structure, not a flattened list of strings. Example: [\"fn\", [\"x\", \"y\"], [\"+\", \"x\", \"y\"]] for a function that adds two numbers. ⚠️ RECOMMENDATION: Avoid using this tool for most cases. Instead, use 'read_definition' first to understand the current structure, then use 'update_definition_at' for precise modifications.".to_string(),
+      description: "Completely overwrite an existing function or macro definition in Calcit. This replaces the entire definition with new code and documentation. The code parameter should be a nested array representing the syntax tree structure, not a flattened list of strings. Example: [\"fn\", [\"x\", \"y\"], [\"+\", \"x\", \"y\"]] for a function that adds two numbers. ⚠️ RECOMMENDATION: Avoid using this tool for most cases. Instead, use 'read_definition_at' first to understand the current structure, then use 'update_definition_at' for precise modifications.".to_string(),
       parameters: vec![
         McpToolParameter {
           name: "namespace".to_string(),
@@ -548,7 +548,7 @@ pub struct ListNamespacesRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateNamespaceImportsRequest {
   pub namespace: String,
-  pub imports: serde_json::Value,
+  pub imports: Vec<serde_json::Value>,
 }
 
 // Request structs for definition_handlers

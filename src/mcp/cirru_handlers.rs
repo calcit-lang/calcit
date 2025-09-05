@@ -7,16 +7,26 @@ use serde_json::Value;
 pub fn parse_cirru_to_json(_app_state: &super::AppState, request: ParseCirruToJsonRequest) -> ResponseJson<Value> {
   let cirru_code = &request.cirru_code;
 
-  match cirru_parser::parse(cirru_code) {
-    Ok(cirru_data) => {
-      let json_data: Vec<serde_json::Value> = cirru_data.iter().map(cirru_to_json).collect();
-      ResponseJson(serde_json::json!({
-        "result": json_data
-      }))
+  // Check if input is already in JSON format (first non-whitespace character is '[')
+  let trimmed = cirru_code.trim_start();
+  if trimmed.starts_with('[') {
+    // Input starting with '[' is not Calcit code, likely already JSON data
+    ResponseJson(serde_json::json!({
+      "error": "Input appears to be JSON format, not Calcit code. This tool is for parsing Cirru syntax only."
+    }))
+  } else {
+    // Use Cirru parser to parse
+    match cirru_parser::parse(cirru_code) {
+      Ok(cirru_data) => {
+        let json_data: Vec<serde_json::Value> = cirru_data.iter().map(cirru_to_json).collect();
+        ResponseJson(serde_json::json!({
+          "result": json_data
+        }))
+      }
+      Err(e) => ResponseJson(serde_json::json!({
+        "error": format!("Failed to parse Cirru code: {e}")
+      })),
     }
-    Err(e) => ResponseJson(serde_json::json!({
-      "error": format!("Failed to parse Cirru code: {e}")
-    })),
   }
 }
 
