@@ -15,26 +15,24 @@ pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest
   let definition = request.definition;
 
   let code_cirru = match &request.code {
-    serde_json::Value::String(s) => {
-      // Handle string format code (backward compatibility)
-      match cirru_parser::parse(s) {
-        Ok(parsed) => {
-          if parsed.is_empty() {
-            return ResponseJson(serde_json::json!({
-              "error": "Code cannot be empty"
-            }));
-          }
-          parsed[0].clone()
-        }
-        Err(e) => {
-          return ResponseJson(serde_json::json!({
-            "error": format!("Failed to parse code: {e}")
-          }));
-        }
-      }
+    serde_json::Value::String(_) => {
+      return ResponseJson(serde_json::json!({
+        "error": "String format is not supported. Please use nested array format to represent the syntax tree. Example: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]"
+      }));
     }
     code_json => {
-      // Handle array format code (new format)
+      // Check if it's a stringified array (common mistake)
+      if let serde_json::Value::Array(arr) = code_json {
+        if let Some(serde_json::Value::String(first)) = arr.first() {
+          if first.starts_with('[') {
+            return ResponseJson(serde_json::json!({
+              "error": "Detected stringified array format. Please use actual nested arrays, not strings. Example: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]] instead of \"[fn [x] [* x x]]\""
+            }));
+          }
+        }
+      }
+      
+      // Handle array format code
       match super::cirru_utils::json_to_cirru(code_json) {
         Ok(cirru) => cirru,
         Err(e) => {
@@ -120,26 +118,24 @@ pub fn overwrite_definition(app_state: &super::AppState, request: OverwriteDefin
   let definition = request.definition;
 
   let code_cirru = match &request.code {
-    serde_json::Value::String(s) => {
-      // Handle string format code (backward compatibility)
-      match cirru_parser::parse(s) {
-        Ok(parsed) => {
-          if parsed.is_empty() {
-            return ResponseJson(serde_json::json!({
-              "error": "Code cannot be empty"
-            }));
-          }
-          parsed[0].clone()
-        }
-        Err(e) => {
-          return ResponseJson(serde_json::json!({
-            "error": format!("Failed to parse code: {e}")
-          }));
-        }
-      }
+    serde_json::Value::String(_) => {
+      return ResponseJson(serde_json::json!({
+        "error": "String format is not supported. Please use nested array format to represent the syntax tree. Example: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]"
+      }));
     }
     code_json => {
-      // Handle array format code (new format)
+      // Check if it's a stringified array (common mistake)
+      if let serde_json::Value::Array(arr) = code_json {
+        if let Some(serde_json::Value::String(first)) = arr.first() {
+          if first.starts_with('[') {
+            return ResponseJson(serde_json::json!({
+              "error": "Detected stringified array format. Please use actual nested arrays, not strings. Example: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]] instead of \"[fn [x] [* x x]]\""
+            }));
+          }
+        }
+      }
+      
+      // Handle array format code
       match super::cirru_utils::json_to_cirru(code_json) {
         Ok(cirru) => cirru,
         Err(e) => {
@@ -196,8 +192,8 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
     }
   };
 
-  // Parse update mode (default to replace for backward compatibility)
-  let mode = match request.mode.as_deref().unwrap_or("replace").parse::<UpdateMode>() {
+  // Parse update mode
+  let mode = match request.mode.parse::<UpdateMode>() {
     Ok(mode) => mode,
     Err(e) => {
       return ResponseJson(serde_json::json!({
@@ -206,9 +202,20 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
     }
   };
 
-  // Parse new value (optional for delete mode)
+  // Parse new value (required for all modes except delete)
   let new_value_cirru = match &request.new_value {
-    Some(serde_json::Value::String(s)) => {
+    serde_json::Value::String(s) => {
+      // Validate value_type
+      if request.value_type == "list" {
+        return ResponseJson(serde_json::json!({
+          "error": "Type mismatch: value_type is 'list' but new_value is a string. For list type, use array format like [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]"
+        }));
+      } else if request.value_type != "leaf" {
+        return ResponseJson(serde_json::json!({
+          "error": format!("Invalid value_type '{}'. Valid types are: 'leaf' for strings, 'list' for arrays", request.value_type)
+        }));
+      }
+      
       // Parse new value as Cirru
       match cirru_parser::parse(s) {
         Ok(parsed) => {
@@ -224,7 +231,18 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
         }
       }
     }
-    Some(code_json) => {
+    code_json => {
+      // Validate value_type
+      if request.value_type == "leaf" {
+        return ResponseJson(serde_json::json!({
+          "error": "Type mismatch: value_type is 'leaf' but new_value is an array. For leaf type, use string format like \"my-value\""
+        }));
+      } else if request.value_type != "list" {
+        return ResponseJson(serde_json::json!({
+          "error": format!("Invalid value_type '{}'. Valid types are: 'leaf' for strings, 'list' for arrays", request.value_type)
+        }));
+      }
+      
       // Handle JSON format new_value
       match super::cirru_utils::json_to_cirru(code_json) {
         Ok(cirru) => Some(cirru),
@@ -235,29 +253,23 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
         }
       }
     }
-    None => {
-      // No new value provided - only valid for delete mode
-      if matches!(mode, UpdateMode::Delete) {
-        None
-      } else {
-        return ResponseJson(serde_json::json!({
-          "error": "new_value parameter is required for all modes except 'delete'"
-        }));
-      }
-    }
+  };
+  
+  // For delete mode, new_value should be None
+  let new_value_cirru = if matches!(mode, UpdateMode::Delete) {
+    None
+  } else {
+    new_value_cirru
   };
 
-  // Parse match content (optional validation)
-  let match_content: Option<Cirru> = match &request.match_content {
-    Some(match_json) => match super::cirru_utils::json_to_cirru(match_json) {
-      Ok(cirru) => Some(cirru),
-      Err(e) => {
-        return ResponseJson(serde_json::json!({
-          "error": format!("Failed to convert match content from JSON: {}", e)
-        }));
-      }
-    },
-    None => None,
+  // Parse match content
+  let match_content: Option<Cirru> = match super::cirru_utils::json_to_cirru(&request.match_content) {
+    Ok(cirru) => Some(cirru),
+    Err(e) => {
+      return ResponseJson(serde_json::json!({
+        "error": format!("Failed to convert match content from JSON: {}", e)
+      }));
+    }
   };
 
   let result = app_state.state_manager.update_current_module(|snapshot| {

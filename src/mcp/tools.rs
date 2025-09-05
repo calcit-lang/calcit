@@ -159,7 +159,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
     // Function/Macro Definition Operations
     McpTool {
       name: "add_definition".to_string(),
-      description: "Create a new function or macro definition in a Calcit namespace. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses). Functions can be pure functions, macros for code generation, or variables holding values.".to_string(),
+      description: "Create a new function or macro definition in a Calcit namespace. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses). The code parameter should be a nested array representing the syntax tree structure. Examples: [\"fn\", [\"n\"], [\"if\", [\"<\", \"n\", \"2\"], \"n\", [\"+\", [\"fib\", [\"-\", \"n\", \"1\"]], [\"fib\", [\"-\", \"n\", \"2\"]]]]] for fibonacci function.".to_string(),
       parameters: vec![
         McpToolParameter {
           name: "namespace".to_string(),
@@ -176,7 +176,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
         McpToolParameter {
           name: "code".to_string(),
           parameter_type: "array".to_string(),
-          description: "The function body in Cirru format as nested arrays. Example: ['fn', ['x'], ['+', 'x', '1']] for a function that adds 1 to its argument.".to_string(),
+          description: "The function body in Cirru format as a nested array representing the syntax tree. Use nested arrays for lists and strings for atoms. Example: [\"fn\", [\"x\"], [\"+\", \"x\", \"1\"]] for a function that adds 1 to its argument. DO NOT flatten the structure - each list should be a nested array, not individual string elements.".to_string(),
           optional: false,
         },
         McpToolParameter {
@@ -207,7 +207,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
     },
     McpTool {
       name: "overwrite_definition".to_string(),
-      description: "Completely overwrite an existing function or macro definition in Calcit. This replaces the entire definition with new code and documentation. The code must be provided in Cirru syntax format. ⚠️ RECOMMENDATION: Avoid using this tool for most cases. Instead, use 'read_definition_at' to explore the code structure first, then use 'update_definition_at' for precise, localized updates.".to_string(),
+      description: "Completely overwrite an existing function or macro definition in Calcit. This replaces the entire definition with new code and documentation. The code parameter should be a nested array representing the syntax tree structure, not a flattened list of strings. Example: [\"fn\", [\"x\", \"y\"], [\"+\", \"x\", \"y\"]] for a function that adds two numbers. ⚠️ RECOMMENDATION: Avoid using this tool for most cases. Instead, use 'read_definition' first to understand the current structure, then use 'update_definition_at' for precise modifications.".to_string(),
       parameters: vec![
         McpToolParameter {
           name: "namespace".to_string(),
@@ -224,7 +224,7 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
         McpToolParameter {
           name: "code".to_string(),
           parameter_type: "array".to_string(),
-          description: "New function body in Cirru format as nested arrays (optional). Leave empty to only update documentation.".to_string(),
+          description: "New function body in Cirru format as a nested array representing the syntax tree (optional). Use nested arrays for lists and strings for atoms. Example: [\"fn\", [\"x\"], [\"+\", \"x\", \"1\"]]. DO NOT flatten the structure - each list should be a nested array, not individual string elements. Leave empty to only update documentation.".to_string(),
           optional: true,
         },
         McpToolParameter {
@@ -261,19 +261,25 @@ pub fn get_mcp_tools() -> Vec<McpTool> {
           name: "mode".to_string(),
           parameter_type: "string".to_string(),
           description: "Operation mode: 'replace' (default), 'after', 'before', 'delete', 'prepend', 'append'. Replace updates the target, after/before insert adjacent to target, delete removes target, prepend/append modify target if it's a list.".to_string(),
-          optional: true,
+          optional: false,
         },
         McpToolParameter {
           name: "new_value".to_string(),
           parameter_type: "string".to_string(),
           description: "The new value to set at the specified coordinate. Can be a string literal or Cirru code. Not required for 'delete' mode.".to_string(),
-          optional: true,
+          optional: false,
         },
         McpToolParameter {
-          name: "match_content".to_string(),
+          name: "match".to_string(),
           parameter_type: "string".to_string(),
           description: "Optional validation: string to verify exact match, or array like ['fn', '...'] to verify list starts with 'fn'. If validation fails, returns detailed error with current content.".to_string(),
-          optional: true,
+          optional: false,
+        },
+        McpToolParameter {
+          name: "value_type".to_string(),
+          parameter_type: "string".to_string(),
+          description: "Type specification for new_value: 'leaf' for string values, 'list' for array values. This helps prevent type mismatches and provides better validation. If not specified, type is inferred from new_value format.".to_string(),
+          optional: false,
         },
       ],
     },
@@ -571,10 +577,11 @@ pub struct UpdateDefinitionAtRequest {
   pub namespace: String,
   pub definition: String,
   pub coord: serde_json::Value,
-  pub new_value: Option<serde_json::Value>,
-  pub mode: Option<String>,
+  pub new_value: serde_json::Value,
+  pub mode: String,
   #[serde(rename = "match")]
-  pub match_content: Option<serde_json::Value>,
+  pub match_content: serde_json::Value,
+  pub value_type: String, // "leaf" for string values, "list" for array values
 }
 
 #[derive(Debug, Deserialize)]
