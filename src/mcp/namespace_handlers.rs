@@ -134,7 +134,7 @@ pub fn update_namespace_imports(app_state: &super::AppState, request: UpdateName
             "error": format!("Third element of import item at index {i} with :refer must be an array")
           }));
         }
-      },
+      }
       ":as" | ":default" => {
         // For :as and :default, the third element must be a string (symbol)
         if import_array.len() < 3 {
@@ -147,7 +147,7 @@ pub fn update_namespace_imports(app_state: &super::AppState, request: UpdateName
             "error": format!("Third element of import item at index {i} with {second_element} must be a string (symbol)")
           }));
         }
-      },
+      }
       _ => {
         return ResponseJson(serde_json::json!({
           "error": format!("Second element of import item at index {i} must be one of :refer, :as, or :default, got: {second_element}")

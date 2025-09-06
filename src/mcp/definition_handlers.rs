@@ -31,7 +31,7 @@ pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest
           }
         }
       }
-      
+
       // Handle array format code
       match super::cirru_utils::json_to_cirru(code_json) {
         Ok(cirru) => cirru,
@@ -134,7 +134,7 @@ pub fn overwrite_definition(app_state: &super::AppState, request: OverwriteDefin
           }
         }
       }
-      
+
       // Handle array format code
       match super::cirru_utils::json_to_cirru(code_json) {
         Ok(cirru) => cirru,
@@ -215,7 +215,7 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
           "error": format!("Invalid value_type '{}'. Valid types are: 'leaf' for strings, 'list' for arrays", request.value_type)
         }));
       }
-      
+
       // Parse new value as Cirru
       match cirru_parser::parse(s) {
         Ok(parsed) => {
@@ -242,7 +242,7 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
           "error": format!("Invalid value_type '{}'. Valid types are: 'leaf' for strings, 'list' for arrays", request.value_type)
         }));
       }
-      
+
       // Handle JSON format new_value
       match super::cirru_utils::json_to_cirru(code_json) {
         Ok(cirru) => Some(cirru),
@@ -254,7 +254,7 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
       }
     }
   };
-  
+
   // For delete mode, new_value should be None
   let new_value_cirru = if matches!(mode, UpdateMode::Delete) {
     None

@@ -232,7 +232,7 @@ impl StateManager {
 
     if module_path.exists() {
       let snapshot = self.load_snapshot_from_file(&module_path.display().to_string())?;
-      
+
       // Get the real package namespace from the snapshot
       let real_package_namespace = snapshot.package.clone();
 

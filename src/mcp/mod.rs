@@ -45,4 +45,4 @@ pub use namespace_handlers::*;
 // read_handlers functions are imported individually to avoid conflicts
 pub use read_handlers::{get_package_name, list_definitions, read_definition, read_namespace};
 pub use state_manager::StateManager;
-pub use tools::{McpRequest, McpTool, McpToolParameter, get_mcp_tools, get_standard_mcp_tools};
+pub use tools::{McpRequest, McpToolWithSchema, get_mcp_tools_with_schema, get_standard_mcp_tools};
