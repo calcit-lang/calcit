@@ -18,7 +18,30 @@ pub struct DepModuleWithDoc {
   pub module_folder: String,
   pub snapshot: Snapshot,
   /// index of files in `docs/`, plus a `README.md` from project root
-  pub docs: HashMap<String, String>, // 文件相对路径 -> 文档内容
+  pub docs: Vec<String>, // 文件相对路径列表
+}
+
+impl DepModuleWithDoc {
+  /// 动态读取文档文件内容
+  pub fn read_doc_content(&self, doc_path: &str) -> Result<String, String> {
+    let home_dir = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let modules_base_folder = Path::new(&home_dir).join(".config/calcit/modules");
+
+    let file_path = if doc_path == "README.md" {
+      // README.md 在项目根目录
+      modules_base_folder.join(format!("{}/README.md", self.module_folder))
+    } else {
+      // 其他文档在 docs/ 目录下
+      modules_base_folder.join(format!("{}/docs/{}", self.module_folder, doc_path))
+    };
+
+    std::fs::read_to_string(&file_path).map_err(|e| format!("Failed to read doc file {}: {}", file_path.display(), e))
+  }
+
+  /// 获取所有文档文件路径
+  pub fn get_doc_paths(&self) -> &Vec<String> {
+    &self.docs
+  }
 }
 
 /// Global state manager for the MCP server
@@ -240,18 +263,10 @@ impl StateManager {
       let docs_folder = modules_base_folder.join(format!("{module_folder_name}/docs"));
       let mut docs = self.load_docs_from_folder(&docs_folder)?;
 
-      // Load README.md from project root if it exists
+      // Check if README.md exists in project root
       let readme_path = modules_base_folder.join(format!("{module_folder_name}/README.md"));
       if readme_path.exists() {
-        match std::fs::read_to_string(&readme_path) {
-          Ok(content) => {
-            docs.insert("README.md".to_string(), content);
-          }
-          Err(e) => {
-            // Log warning but don't fail the entire operation
-            eprintln!("Warning: Failed to read README.md for {module_folder_name}: {e}");
-          }
-        }
+        docs.push("README.md".to_string());
       }
 
       Ok(DepModuleWithDoc {
@@ -265,15 +280,15 @@ impl StateManager {
     }
   }
 
-  /// Load documentation files from a directory
-  fn load_docs_from_folder(&self, docs_folder: &Path) -> Result<HashMap<String, String>, String> {
-    let mut docs = HashMap::new();
+  /// Load documentation file paths from a directory
+  fn load_docs_from_folder(&self, docs_folder: &Path) -> Result<Vec<String>, String> {
+    let mut docs = Vec::new();
 
     if !docs_folder.exists() {
       return Ok(docs); // Return empty docs if folder doesn't exist
     }
 
-    fn visit_docs_dir(dir: &Path, base_path: &Path, docs: &mut HashMap<String, String>) -> Result<(), String> {
+    fn visit_docs_dir(dir: &Path, base_path: &Path, docs: &mut Vec<String>) -> Result<(), String> {
       let entries = std::fs::read_dir(dir).map_err(|e| format!("Failed to read docs directory {}: {}", dir.display(), e))?;
 
       for entry in entries {
@@ -290,9 +305,7 @@ impl StateManager {
                 .to_string_lossy()
                 .to_string();
 
-              let content = std::fs::read_to_string(&path).map_err(|e| format!("Failed to read doc file {}: {}", path.display(), e))?;
-
-              docs.insert(relative_path, content);
+              docs.push(relative_path);
             }
           }
         } else if path.is_dir() {
@@ -377,9 +390,7 @@ mod tests {
 
   #[test]
   fn test_module_with_doc_structure() {
-    let mut docs = HashMap::new();
-    docs.insert("README.md".to_string(), "# Test Module\nThis is a test".to_string());
-    docs.insert("docs/guide.md".to_string(), "# Guide\nHow to use this module".to_string());
+    let docs = vec!["README.md".to_string(), "docs/guide.md".to_string()];
 
     let module_with_doc = DepModuleWithDoc {
       package: "test.package".to_string(),
@@ -390,7 +401,7 @@ mod tests {
 
     assert_eq!(module_with_doc.package, "test.package");
     assert_eq!(module_with_doc.docs.len(), 2);
-    assert!(module_with_doc.docs.contains_key("README.md"));
-    assert!(module_with_doc.docs.contains_key("docs/guide.md"));
+    assert!(module_with_doc.docs.contains(&"README.md".to_string()));
+    assert!(module_with_doc.docs.contains(&"docs/guide.md".to_string()));
   }
 }

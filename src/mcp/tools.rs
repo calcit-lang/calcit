@@ -262,8 +262,5 @@ pub struct ListModulesRequest {
 }
 
 pub fn get_standard_mcp_tools() -> Vec<Tool> {
-  get_mcp_tools_with_schema()
-    .iter()
-    .map(|tool| tool.to_standard_tool())
-    .collect()
+  get_mcp_tools_with_schema().iter().map(|tool| tool.to_standard_tool()).collect()
 }

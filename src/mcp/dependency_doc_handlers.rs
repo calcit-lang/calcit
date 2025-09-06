@@ -65,7 +65,7 @@ pub fn list_dependency_docs(state_manager: &StateManager, request: ListDependenc
       }
 
       // Get list of module doc file paths
-      let module_docs: Vec<String> = module_with_doc.docs.keys().cloned().collect();
+      let module_docs: Vec<String> = module_with_doc.docs.clone();
 
       let response = DependencyDocsListResponse {
         definition_docs,
@@ -126,18 +126,25 @@ pub fn read_dependency_definition_doc(
 pub fn read_dependency_module_doc(state_manager: &StateManager, request: ReadDependencyModuleDocRequest) -> ResponseJson<Value> {
   match state_manager.get_dependency_module_with_doc(&request.module_namespace) {
     Ok(module_with_doc) => {
-      if let Some(content) = module_with_doc.docs.get(&request.doc_path) {
-        let response = ModuleDocResponse {
-          module_namespace: request.module_namespace,
-          doc_path: request.doc_path,
-          content: content.clone(),
-        };
+      if module_with_doc.docs.contains(&request.doc_path) {
+        match module_with_doc.read_doc_content(&request.doc_path) {
+          Ok(content) => {
+            let response = ModuleDocResponse {
+              module_namespace: request.module_namespace,
+              doc_path: request.doc_path,
+              content,
+            };
 
-        ResponseJson(serde_json::to_value(response).unwrap_or_else(|e| {
-          serde_json::json!({
-            "error": format!("Failed to serialize response: {}", e)
-          })
-        }))
+            ResponseJson(serde_json::to_value(response).unwrap_or_else(|e| {
+              serde_json::json!({
+                "error": format!("Failed to serialize response: {}", e)
+              })
+            }))
+          }
+          Err(e) => ResponseJson(serde_json::json!({
+            "error": format!("Failed to read documentation file '{}': {}", request.doc_path, e)
+          })),
+        }
       } else {
         ResponseJson(serde_json::json!({
           "error": format!("Documentation file '{}' not found in module '{}'", request.doc_path, request.module_namespace)
