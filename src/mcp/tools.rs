@@ -200,13 +200,13 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
 // Request structures with JsonSchema derive for automatic schema generation
 /// # List Definitions in Namespace
 /// Retrieves all available function and variable definitions in the specified namespace.
-/// 
+///
 /// Example: `{"namespace": "app.core"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ListDefinitionsRequest {
   /// # Namespace Path
   /// The full path of the namespace to query.
-  /// 
+  ///
   /// Example: "app.core" or "lib.util"
   pub namespace: String,
 }
@@ -214,7 +214,7 @@ pub struct ListDefinitionsRequest {
 /// # Get Package Name
 /// Retrieves the name of the current project package.
 /// No parameters required.
-/// 
+///
 /// Example: `{}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GetPackageNameRequest {
@@ -223,31 +223,31 @@ pub struct GetPackageNameRequest {
 
 /// # Read Namespace Information
 /// Retrieves detailed information about the specified namespace, including import declarations and definition list.
-/// 
+///
 /// Example: `{"namespace": "app.core"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ReadNamespaceRequest {
   /// # Namespace Path
   /// The full path of the namespace to read.
-  /// 
+  ///
   /// Example: "app.core" or "lib.util"
   pub namespace: String,
 }
 
 /// # Read Definition Content
 /// Retrieves the complete content of a specific definition in the specified namespace.
-/// 
+///
 /// Example: `{"namespace": "app.core", "definition": "add-numbers"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ReadDefinitionRequest {
   /// # Namespace Path
   /// The full path of the namespace containing the definition.
-  /// 
+  ///
   /// Example: "app.core" or "lib.util"
   pub namespace: String,
   /// # Definition Name
   /// The name of the function or variable to read.
-  /// 
+  ///
   /// Example: "add-numbers" or "config-data"
   pub definition: String,
 }
@@ -255,13 +255,13 @@ pub struct ReadDefinitionRequest {
 /// # Add New Namespace
 /// Creates a new namespace for organizing related function and variable definitions.
 /// Returns an error if the namespace already exists.
-/// 
+///
 /// Example: `{"namespace": "app.new-module"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct AddNamespaceRequest {
   /// # Namespace Path
   /// The full path of the new namespace to create.
-  /// 
+  ///
   /// Example: "app.core" or "lib.util"
   pub namespace: String,
 }
@@ -269,13 +269,13 @@ pub struct AddNamespaceRequest {
 /// # Delete Namespace
 /// Removes the specified namespace and all its definitions.
 /// This operation cannot be undone, use with caution.
-/// 
+///
 /// Example: `{"namespace": "app.unused-module"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct DeleteNamespaceRequest {
   /// # Namespace Path
   /// The full path of the namespace to delete.
-  /// 
+  ///
   /// Example: "app.unused-module"
   pub namespace: String,
 }
@@ -283,7 +283,7 @@ pub struct DeleteNamespaceRequest {
 /// # List All Namespaces
 /// Retrieves a list of all available namespaces in the current project.
 /// No parameters required.
-/// 
+///
 /// Example: `{}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ListNamespacesRequest {
@@ -293,18 +293,18 @@ pub struct ListNamespacesRequest {
 /// # Update Namespace Imports
 /// Updates the list of import declarations for the specified namespace.
 /// This will replace all existing import declarations.
-/// 
+///
 /// Example: `{"namespace": "app.core", "imports": [{"ns": "app.lib", "alias": "lib"}, {"ns": "app.util"}]}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateNamespaceImportsRequest {
   /// # Namespace Path
   /// The full path of the namespace to update imports for.
-  /// 
+  ///
   /// Example: "app.core"
   pub namespace: String,
   /// # Import List
   /// The new list of import declarations, where each element is an import declaration object.
-  /// 
+  ///
   /// Example: [{"ns": "app.lib", "alias": "lib"}, {"ns": "app.util"}]
   pub imports: Vec<serde_json::Value>,
 }
@@ -312,23 +312,23 @@ pub struct UpdateNamespaceImportsRequest {
 /// # Add New Definition
 /// Creates a new function or variable definition in the specified namespace.
 /// Returns an error if the definition already exists.
-/// 
+///
 /// Example: `{"namespace": "app.core", "definition": "add-numbers", "code": ["fn", ["a", "b"], ["+", "a", "b"]]}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct AddDefinitionRequest {
   /// # Namespace Path
   /// The full path of the namespace where the definition will be added.
-  /// 
+  ///
   /// Example: "app.core"
   pub namespace: String,
   /// # Definition Name
   /// The name of the new function or variable.
-  /// 
+  ///
   /// Example: "add-numbers" or "config-data"
   pub definition: String,
   /// # Code Content
   /// The code tree for the definition, represented as a nested array.
-  /// 
+  ///
   /// Example for a function: ["fn", ["a", "b"], ["+", "a", "b"]]
   /// Example for a variable: ["def", "x", "100"]
   pub code: serde_json::Value,
@@ -337,18 +337,18 @@ pub struct AddDefinitionRequest {
 /// # Delete Definition
 /// Removes a function or variable definition from the specified namespace.
 /// This operation cannot be undone, use with caution.
-/// 
+///
 /// Example: `{"namespace": "app.core", "definition": "unused-function"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct DeleteDefinitionRequest {
   /// # Namespace Path
   /// The full path of the namespace containing the definition to delete.
-  /// 
+  ///
   /// Example: "app.core"
   pub namespace: String,
   /// # Definition Name
   /// The name of the function or variable to delete.
-  /// 
+  ///
   /// Example: "unused-function"
   pub definition: String,
 }
@@ -357,23 +357,23 @@ pub struct DeleteDefinitionRequest {
 /// Replaces the entire content of an existing definition with a new code tree.
 /// Note: This operation replaces the entire definition, use with caution.
 /// It is recommended to first use read_definition to view the existing structure before making precise modifications.
-/// 
+///
 /// Example: `{"namespace": "app.core", "definition": "add-numbers", "code": ["fn", ["x", "y"], ["+", "x", "y"]]}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct OverwriteDefinitionRequest {
   /// # Namespace Path
   /// The full path of the namespace containing the definition to overwrite.
-  /// 
+  ///
   /// Example: "app.core"
   pub namespace: String,
   /// # Definition Name
   /// The name of the function or variable to overwrite.
-  /// 
+  ///
   /// Example: "add-numbers"
   pub definition: String,
   /// # New Code
   /// The complete new code tree, represented as a nested array.
-  /// 
+  ///
   /// Example: ["fn", ["x", "y"], ["+", "x", "y"]]
   pub code: serde_json::Value,
 }
@@ -384,44 +384,44 @@ pub struct OverwriteDefinitionRequest {
 /// Coordinates are an array representing the path indices from the root node to the target node.
 /// For example: `[0, 1]` refers to the second child of the first child of the root node.
 /// An empty coordinate `[]` refers to the root node itself.
-/// 
+///
 /// Example: `{"namespace": "app.core", "definition": "add-numbers", "coord": [2, 1], "new_value": "*", "mode": "replace", "match": "+", "value_type": "leaf"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateDefinitionAtRequest {
   /// # Namespace Path
   /// The full path of the namespace containing the definition to update.
-  /// 
+  ///
   /// Example: "app.core"
   pub namespace: String,
   /// # Definition Name
   /// The name of the function or variable to update.
-  /// 
+  ///
   /// Example: "add-numbers"
   pub definition: String,
   /// # Coordinate Position
   /// An array of integers representing the position of the node to update in the code tree.
-  /// 
+  ///
   /// Example: [2, 1] refers to the second element of the third expression
   pub coord: serde_json::Value,
   /// # New Value
   /// The new content to replace with, can be a string or a nested array.
-  /// 
+  ///
   /// Example: "*" or ["*", "a", "b"]
   pub new_value: serde_json::Value,
   /// # Update Mode
   /// Specifies how to apply the update, possible values: "replace", "before", "after".
-  /// 
+  ///
   /// Example: "replace"
   pub mode: String,
   /// # Match Content
   /// Used to verify that the content at the current position matches expectations, increasing update safety.
-  /// 
+  ///
   /// Example: "+" or ["a", "b"]
   #[serde(rename = "match")]
   pub match_content: serde_json::Value,
   /// # Value Type
   /// Specifies the type of the new value, "leaf" for string values, "list" for array values.
-  /// 
+  ///
   /// Example: "leaf" or "list"
   pub value_type: String,
 }
@@ -429,51 +429,51 @@ pub struct UpdateDefinitionAtRequest {
 /// # Read Content at Specific Position in Definition
 /// Precisely locates and reads a specific node in the Cirru code tree using a coordinate system.
 /// Commonly used to check existing structures before updates, or to explore the code tree structure.
-/// 
+///
 /// Example: `{"namespace": "app.core", "definition": "add-numbers", "coord": [2, 1]}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ReadDefinitionAtRequest {
   /// # Namespace Path
   /// The full path of the namespace containing the definition to read.
-  /// 
+  ///
   /// Example: "app.core"
   pub namespace: String,
   /// # Definition Name
   /// The name of the function or variable to read.
-  /// 
+  ///
   /// Example: "add-numbers"
   pub definition: String,
   /// # Coordinate Position
   /// An array of integers representing the position of the node to read in the code tree.
   /// For example: [0, 1] refers to the second element of the first expression.
   /// An empty coordinate [] means reading the entire definition.
-  /// 
+  ///
   /// Example: [2, 1] or []
   pub coord: serde_json::Value,
 }
 
 /// # Switch Active Module
 /// Changes the currently active module in the editor.
-/// 
+///
 /// Example: `{"module": "app"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SwitchModuleRequest {
   /// # Module Name
   /// The name of the module to switch to.
-  /// 
+  ///
   /// Example: "app" or "lib"
   pub module: String,
 }
 
 /// # Create New Module
 /// Creates a new module in the project.
-/// 
+///
 /// Example: `{"name": "new-module"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CreateModuleRequest {
   /// # Module Name
   /// The name for the new module to create.
-  /// 
+  ///
   /// Example: "new-module"
   pub name: String,
 }
@@ -481,98 +481,168 @@ pub struct CreateModuleRequest {
 /// # Delete Module
 /// Removes an existing module from the project.
 /// This operation cannot be undone, use with caution.
-/// 
+///
 /// Example: `{"module": "unused-module"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct DeleteModuleRequest {
   /// # Module Name
   /// The name of the module to delete.
-  /// 
+  ///
   /// Example: "unused-module"
   pub module: String,
 }
 
 /// # Parse Cirru Code to JSON
 /// Converts Cirru syntax code into a JSON representation.
-/// 
+///
 /// Example: `{"cirru_code": "(def a 1)"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ParseCirruToJsonRequest {
   /// # Cirru Code
   /// The Cirru syntax code to be parsed into JSON.
-  /// 
+  ///
   /// Example: "(def a 1)" or "(fn [x y] (+ x y))"
   pub cirru_code: String,
 }
 
 /// # Format JSON to Cirru Code
 /// Converts a JSON representation back into Cirru syntax code.
-/// 
+///
 /// Example: `{"json_data": ["def", "a", "1"]}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct FormatJsonToCirruRequest {
   /// # JSON Data
   /// The JSON representation to be formatted as Cirru code.
-  /// 
+  ///
   /// Example: ["def", "a", "1"] or ["fn", ["x", "y"], ["+", "x", "y"]]
   pub json_data: serde_json::Value,
 }
 
 /// # Query API Documentation
 /// Searches for API documentation based on the specified query type and value.
-/// 
+///
 /// Example: `{"query_type": "function", "query_value": "map"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct QueryApiDocsRequest {
   /// # Query Type
   /// The type of API documentation to search for.
-  /// 
+  ///
   /// Example: "function", "macro", or "namespace"
   pub query_type: String,
   /// # Query Value
   /// The specific value to search for within the specified type.
-  /// 
+  ///
   /// Example: "map" or "filter"
   pub query_value: Option<String>,
 }
 
+/// # Query Guidebook Documentation
+/// Searches for guidebook documentation based on the specified query type and value.
+///
+/// Example: `{"query_type": "tutorial", "query_value": "getting-started"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct QueryGuidebookRequest {
+  /// # Query Type
+  /// The type of guidebook documentation to search for.
+  ///
+  /// Example: "tutorial", "guide", or "example"
   pub query_type: String,
+  /// # Query Value
+  /// The specific value to search for within the specified type.
+  ///
+  /// Example: "getting-started" or "advanced-features"
   pub query_value: String,
 }
 
+/// # Read Project Configurations
+/// Retrieves the current project configuration settings.
+/// No parameters required.
+///
+/// Example: `{}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ReadConfigsRequest {
   // No parameters needed
 }
 
+/// # Update Project Configurations
+/// Updates the project configuration settings with new values.
+///
+/// Example: `{"init_fn": "app.main/main!", "reload_fn": "app.main/reload!", "version": "0.7.3"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateConfigsRequest {
+  /// # Init Function
+  /// The function to call when initializing the application.
+  ///
+  /// Example: "app.main/main!"
   pub init_fn: Option<String>,
+  /// # Reload Function
+  /// The function to call when reloading the application.
+  ///
+  /// Example: "app.main/reload!"
   pub reload_fn: Option<String>,
+  /// # Version
+  /// The version of the project.
+  ///
+  /// Example: "0.7.3"
   pub version: Option<String>,
 }
 
+/// # List Dependency Documentation
+/// Retrieves documentation for dependencies in the specified module namespace.
+///
+/// Example: `{"module_namespace": "app.lib"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ListDependencyDocsRequest {
+  /// # Module Namespace
+  /// The namespace of the module to list dependency documentation for.
+  ///
+  /// Example: "app.lib"
   pub module_namespace: String,
 }
 
+/// # Read Dependency Definition Documentation
+/// Retrieves documentation for a specific definition in a dependency.
+///
+/// Example: `{"dependency_name": "calcit.std", "namespace": "std.string", "definition": "trim"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ReadDependencyDefinitionDocRequest {
+  /// # Dependency Name
+  /// The name of the dependency.
+  ///
+  /// Example: "calcit.std"
   pub dependency_name: String,
+  /// # Namespace
+  /// The namespace containing the definition.
+  ///
+  /// Example: "std.string"
   pub namespace: String,
+  /// # Definition
+  /// The name of the definition to read documentation for.
+  ///
+  /// Example: "trim"
   pub definition: String,
 }
 
+/// # Fetch Calcit Libraries
+/// Retrieves a list of available Calcit libraries.
+/// No parameters required.
+///
+/// Example: `{}`
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FetchCalcitLibrariesRequest {
   // No parameters needed
 }
 
+/// # Parse Cirru EDN to JSON
+/// Converts Cirru EDN syntax into a JSON representation.
+///
+/// Example: `{"cirru_edn": "[] 1 2 3"}`
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ParseCirruEdnToJsonRequest {
+  /// # Cirru EDN
+  /// The Cirru EDN syntax to be parsed into JSON.
+  ///
+  /// Example: "[] 1 2 3" or "{} (:a 1) (:b 2)"
   pub cirru_edn: String,
 }
 

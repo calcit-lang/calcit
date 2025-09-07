@@ -2,12 +2,12 @@ use super::AppState;
 use super::jsonrpc::*;
 use super::tools::{
   AddDefinitionRequest, AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
-  FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GetCurrentModuleRequest, GetPackageNameRequest, ListApiDocsRequest, ListDefinitionsRequest,
-  ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest,
-  OverwriteDefinitionRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryApiDocsRequest, QueryGuidebookRequest, ReadConfigsRequest,
-  ReadDefinitionAtRequest, ReadDefinitionRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest,
-  ReadNamespaceRequest, SwitchModuleRequest, UpdateConfigsRequest, UpdateDefinitionAtRequest, UpdateNamespaceImportsRequest,
-  get_standard_mcp_tools,
+  FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GetCurrentModuleRequest, GetPackageNameRequest, ListApiDocsRequest,
+  ListDefinitionsRequest, ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest,
+  OverwriteDefinitionRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryApiDocsRequest, QueryGuidebookRequest,
+  ReadConfigsRequest, ReadDefinitionAtRequest, ReadDefinitionRequest, ReadDependencyDefinitionDocRequest,
+  ReadDependencyModuleDocRequest, ReadNamespaceRequest, SwitchModuleRequest, UpdateConfigsRequest, UpdateDefinitionAtRequest,
+  UpdateNamespaceImportsRequest, get_standard_mcp_tools,
 };
 use axum::response::Json as ResponseJson;
 use colored::*;
@@ -459,7 +459,7 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       let result = super::library_handlers::handle_parse_cirru_edn_to_json(app_state, request);
       axum::Json(serde_json::to_value(JsonRpcResponse::success(req.id.clone(), result.0)).unwrap())
     }
-    
+
     // Dependency documentation tools (read-only)
     "list_dependency_docs" => {
       let request = match deserialize_params::<ListDependencyDocsRequest>(tool_request.parameters, req.id.clone()) {
@@ -475,7 +475,6 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       };
       super::dependency_doc_handlers::read_dependency_definition_doc(&app_state.state_manager, request)
     }
-    
 
     "read_dependency_module_doc" => {
       let request = match deserialize_params::<ReadDependencyModuleDocRequest>(tool_request.parameters, req.id.clone()) {
