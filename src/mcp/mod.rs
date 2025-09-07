@@ -15,6 +15,7 @@ pub mod definition_utils;
 pub mod dependency_doc_handlers;
 pub mod docs_handlers;
 pub mod jsonrpc;
+pub mod library_handlers;
 pub mod mcp_handlers;
 pub mod module_handlers;
 pub mod namespace_handlers;
