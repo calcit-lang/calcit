@@ -14,6 +14,7 @@ use calcit::call_stack::CallStackList;
 use calcit::cli_args::{CalcitCommand, ToplevelCalcit};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
+use colored::Colorize;
 use dirs::home_dir;
 use notify::RecursiveMode;
 use notify_debouncer_mini::new_debouncer;
@@ -31,7 +32,7 @@ fn main() -> Result<(), String> {
   let mut eval_once = cli_args.once;
   let assets_watch = cli_args.watch_dir.to_owned();
 
-  println!("calcit version: {}", cli_args::CALCIT_VERSION);
+  println!("{}", format!("calcit version: {}", cli_args::CALCIT_VERSION).dimmed());
   if cli_args.version {
     return Ok(());
   }
@@ -47,7 +48,10 @@ fn main() -> Result<(), String> {
   let module_folder = home_dir()
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
     .expect("failed to load $HOME");
-  println!("module folder: {}", module_folder.to_str().expect("extract path"));
+  println!(
+    "{}",
+    format!("module folder: {}", module_folder.to_str().expect("extract path")).dimmed()
+  );
 
   if cli_args.disable_stack {
     call_stack::set_using_stack(false);
@@ -167,7 +171,7 @@ fn main() -> Result<(), String> {
     })?;
 
     let duration = Instant::now().duration_since(started_time);
-    println!("took {}ms: {v}", duration.as_micros() as f64 / 1000.0);
+    println!("{}{}", format!("took {}ms: ", duration.as_micros() as f64 / 1000.0).dimmed(), v);
     Ok(())
   };
 
@@ -291,7 +295,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
       e.msg
     })?;
     let duration = Instant::now().duration_since(started_time);
-    println!("took {}ms: {v}", duration.as_micros() as f64 / 1000.0);
+    println!("{}{}", format!("took {}ms: ", duration.as_micros() as f64 / 1000.0).dimmed(), v);
     Ok(())
   };
 
@@ -383,7 +387,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     }
   }
   let duration = Instant::now().duration_since(started_time);
-  println!("took {}ms", duration.as_micros() as f64 / 1000.0);
+  println!("{}", format!("took {}ms", duration.as_micros() as f64 / 1000.0).dimmed());
   Ok(())
 }
 
