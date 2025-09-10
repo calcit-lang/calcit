@@ -77,7 +77,7 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
     // Function/Macro Definition Operations
     McpToolWithSchema {
       name: "add_definition",
-      description: "Create a new function or macro definition in a Calcit namespace. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses, but stripped outermost pair of parentheses). The code parameter should be a nested array representing the syntax tree structure.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
+      description: "Create a new function or macro definition in a Calcit namespace. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses, but stripped outermost pair of parentheses).\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'code' parameter MUST be a native JSON array, NOT a string\n• Do NOT wrap the array in quotes\n• Do NOT escape quotes inside the array\n\n✅ CORRECT FORMAT:\n{\"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}\n\n❌ WRONG FORMATS:\n{\"code\": \"[fn [x] [* x x]]\"} ← STRING (WRONG)\n{\"code\": \"[\\\"fn\\\", [\\\"x\\\"], [\\\"*\\\", \\\"x\\\", \\\"x\\\"]]\"} ← ESCAPED STRING (WRONG)\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
       schema_generator: || serde_json::to_value(schema_for!(AddDefinitionRequest)).unwrap(),
     },
     McpToolWithSchema {
@@ -87,17 +87,17 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
     },
     McpToolWithSchema {
       name: "overwrite_definition",
-      description: "Completely overwrite an existing function or macro definition in Calcit. This replaces the entire definition with new code and documentation. The code parameter should be a nested array representing the syntax tree structure, not a flattened list of strings. Example: [\"fn\", [\"x\", \"y\"], [\"+\", \"x\", \"y\"]] for a function that adds two numbers. ⚠️ RECOMMENDATION: Avoid using this tool for most cases. Instead, use 'read_definition_at' first to understand the current structure, then use 'update_definition_at' for precise modifications.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
+      description: "Completely overwrite an existing function or macro definition in Calcit. This replaces the entire definition with new code and documentation.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'code' parameter MUST be a native JSON array, NOT a string\n• Do NOT wrap the array in quotes\n• Do NOT escape quotes inside the array\n\n✅ CORRECT FORMAT:\n{\"code\": [\"defcomp\", \"my-comp\", [], [\"div\", {}, \"Hello\"]]}\n\n❌ WRONG FORMATS:\n{\"code\": \"[defcomp my-comp [] [div {} Hello]]\"} ← STRING (WRONG)\n{\"code\": \"[\\\"defcomp\\\", \\\"my-comp\\\"]\"} ← ESCAPED STRING (WRONG)\n\n⚠️ RECOMMENDATION: Avoid using this tool for most cases. Instead, use 'read_definition_at' first to understand the current structure, then use 'update_definition_at' for precise modifications.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
       schema_generator: || serde_json::to_value(schema_for!(OverwriteDefinitionRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "update_definition_at",
-      description: "Update a specific part of a function or macro definition using coordinate-based targeting with various operation modes. Cirru code is a tree structure that can be navigated using coordinate arrays (Vec<Int>). This tool allows precise updates to specific nodes in the code tree with validation. 💡 BEST PRACTICE: Always use 'read_definition_at' multiple times first to explore and understand the code structure, then generate correct 'match' and 'coord' parameters for safe updates. Empty coord [] operates on the root node.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"mode\": \"replace\", \"match\": null, \"value_type\": \"leaf\"}",
+      description: "Update a specific part of a function or macro definition using coordinate-based targeting with various operation modes. Cirru code is a tree structure that can be navigated using coordinate arrays (Vec<Int>). This tool allows precise updates to specific nodes in the code tree with validation.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• Do NOT wrap the array in quotes\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"} ← STRING (WRONG)\n\n💡 BEST PRACTICE: Always use 'read_definition_at' multiple times first to explore and understand the code structure, then generate correct 'match' and 'coord' parameters for safe updates. Empty coord [] operates on the root node.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"mode\": \"replace\", \"match\": null, \"value_type\": \"leaf\"}",
       schema_generator: || serde_json::to_value(schema_for!(UpdateDefinitionAtRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "read_definition_at",
-      description: "Read a specific part of a function or macro definition in Calcit. This allows for examining a particular location in the code tree without retrieving the entire definition.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1]}",
+      description: "Read a specific part of a function or macro definition in Calcit. This allows for examining a particular location in the code tree without retrieving the entire definition.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• Do NOT wrap the array in quotes\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"} ← STRING (WRONG)\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1]}",
       schema_generator: || serde_json::to_value(schema_for!(ReadDefinitionAtRequest)).unwrap(),
     },
     // Module Management
@@ -331,7 +331,20 @@ pub struct AddDefinitionRequest {
   pub definition: String,
   /// # Code Content
   /// The code tree for the definition, represented as a nested array.
-  ///
+  /// 
+  /// 🚨 CRITICAL FORMAT REQUIREMENTS:
+  /// • MUST be a native JSON array, NOT a string
+  /// • Do NOT wrap the array in quotes
+  /// • Do NOT escape quotes inside the array
+  /// 
+  /// ✅ CORRECT FORMATS:
+  /// ["fn", ["a", "b"], ["+", "a", "b"]]
+  /// ["def", "x", "100"]
+  /// 
+  /// ❌ WRONG FORMATS:
+  /// "[fn [a b] [+ a b]]" ← STRING (WRONG)
+  /// "[\"fn\", [\"a\", \"b\"]]" ← ESCAPED STRING (WRONG)
+  /// 
   /// Example for a function: ["fn", ["a", "b"], ["+", "a", "b"]]
   /// Example for a variable: ["def", "x", "100"]
   #[schemars(with = "Vec<serde_json::Value>")]
@@ -377,7 +390,20 @@ pub struct OverwriteDefinitionRequest {
   pub definition: String,
   /// # New Code
   /// The complete new code tree, represented as a nested array.
-  ///
+  /// 
+  /// 🚨 CRITICAL FORMAT REQUIREMENTS:
+  /// • MUST be a native JSON array, NOT a string
+  /// • Do NOT wrap the array in quotes
+  /// • Do NOT escape quotes inside the array
+  /// 
+  /// ✅ CORRECT FORMATS:
+  /// ["defcomp", "my-comp", [], ["div", {}, "Hello"]]
+  /// ["fn", ["x", "y"], ["+", "x", "y"]]
+  /// 
+  /// ❌ WRONG FORMATS:
+  /// "[defcomp my-comp [] [div {} Hello]]" ← STRING (WRONG)
+  /// "[\"defcomp\", \"my-comp\"]" ← ESCAPED STRING (WRONG)
+  /// 
   /// Example: ["fn", ["x", "y"], ["+", "x", "y"]]
   #[schemars(with = "Vec<serde_json::Value>")]
   pub code: serde_json::Value,
@@ -405,6 +431,17 @@ pub struct UpdateDefinitionAtRequest {
   pub definition: String,
   /// # Coordinate Position
   /// An array of integers representing the position of the node to update in the code tree.
+  /// 
+  /// 🚨 CRITICAL FORMAT REQUIREMENTS:
+  /// • MUST be a native JSON array of integers, NOT a string
+  /// • Do NOT wrap the array in quotes
+  /// 
+  /// ✅ CORRECT FORMATS:
+  /// [2, 1] or []
+  /// 
+  /// ❌ WRONG FORMATS:
+  /// "[2, 1]" ← STRING (WRONG)
+  /// "[]" ← STRING (WRONG)
   ///
   /// Example: [2, 1] refers to the second element of the third expression
   #[schemars(with = "Vec<i32>")]
@@ -472,6 +509,17 @@ pub struct ReadDefinitionAtRequest {
   /// An array of integers representing the position of the node to read in the code tree.
   /// For example: [0, 1] refers to the second element of the first expression.
   /// An empty coordinate [] means reading the entire definition.
+  /// 
+  /// 🚨 CRITICAL FORMAT REQUIREMENTS:
+  /// • MUST be a native JSON array of integers, NOT a string
+  /// • Do NOT wrap the array in quotes
+  /// 
+  /// ✅ CORRECT FORMATS:
+  /// [2, 1] or []
+  /// 
+  /// ❌ WRONG FORMATS:
+  /// "[2, 1]" ← STRING (WRONG)
+  /// "[]" ← STRING (WRONG)
   ///
   /// Example: [2, 1] or []
   #[schemars(with = "Vec<i32>")]

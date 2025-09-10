@@ -3,7 +3,7 @@ prompt = """
 用户指定的任务是: {{args}} .
 
 现在开始连接到 Calcit MCP 服务进行 Calcit 程序的编程, 注意使用 Calcit 提供的结构化/原子化的操作进行代码的更新.
-当前目录可能有 `compact.cirru` 这个文件, 但是正常情况应该不需要主动读取甚至修改它.
+当前目录可能有 `compact.cirru` `calcit.cirru` 这两个文件, 但是正常情况应该不需要主动读取. 两个文件都不允许直接修改.
 
 Calcit 程序目前有两个常用命令:
 
@@ -20,7 +20,7 @@ Calcit 程序目前有两个常用命令:
 
 比较容易犯的错误可能是,
 - Calcit 中字符串是通过前缀区分的, `|` 跟 `"` 这两个字符开头表示字符串, 但注意, Calcit 字符串有隐形的双引号包裹, 所以实际对应 `"|"` 和 `"\""`. `|x` 对应 JavaScript 字符串 `"x"`.
-- Calcit 采用一种叫做 Cirru 的缩进语法结构, 可以跟 Array 和 String 递归形成的语法树互相转化, 可以用 `calcit_format_json_to_cirru` 和 `calcit_parse_cirru_to_json` 试验. 或者简单理解成去掉了跨行括号改用缩进的 Lisp 变种.
+- Calcit 采用一种叫做 Cirru 的缩进语法结构,  Cirru 语法可以简单理解成去掉了跨行括号改用缩进的 Lisp 变种. Cirru 语法可以跟 Array 和 String 递归形成的语法树互相转化, 可以用 `calcit_format_json_to_cirru` 和 `calcit_parse_cirru_to_json` 相互转化结构进行试验.
 - Calcit 跟 Clojure 在语义上比较像, 但是 Calcit 语法层面只用圆括号, 不用方括号花括号. 另外也有不少差异可以参阅文档.
 
 目前 Calcit 模块约定每个模块可能存在 `docs/` 目录存放 Markdown 格式的文档, 方便 MCP 查询, 使用 `read_dependency_module_doc` 工具. 模块本身在函数定义上也有文档, 用 `read_dependency_definition_doc` 查阅.
@@ -28,4 +28,53 @@ Calcit 程序目前有两个常用命令:
 生成复杂代码时倾向于 `update_definition_at` 搭配 `read_definition_at` 定位到分支上做局部更新, 简单情况或者兜底场景再用 `overwrite_definition`.
 
 输出日志参考用户的输入的语种, Chinese or English is preferred.
+
+### 补充一些 MCP 修改代码的例子
+
+- `update_definition_at` - 精确更新函数体中的操作符
+
+leaf type:
+
+```json
+{
+  "namespace": "app.core",
+  "definition": "add-numbers",
+  "coord": [2, 0],
+  "mode": "replace",
+  "value_type": "leaf",
+  "match": "a",
+  "new_value": "b",
+}
+```
+
+array type:
+
+```json
+{
+  "namespace": "app.core",
+  "definition": "add-numbers",
+  "coord": [2, 0],
+  "mode": "replace",
+  "match": ["+", "a", "..."],
+  "new_value": ["*", "a", "b", "c"],
+  "value_type": "array"
+}
+```
+
+
+- `overwrite_definition` - 完全重写函数定义
+
+```json
+{
+  "namespace": "app.core",
+  "definition": "add-numbers",
+  "code": [
+    "fn",
+    ["a", "b"],
+    ["*", "a", "b"]
+  ]
+}
+```
+
+
 """
