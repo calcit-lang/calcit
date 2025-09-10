@@ -208,7 +208,7 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
       // Validate value_type
       if request.value_type == "list" {
         return ResponseJson(serde_json::json!({
-          "error": "Type mismatch: value_type is 'list' but new_value is a string. For list type, use array format like [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]"
+          "error": "Type mismatch: value_type is 'list' but new_value is a string. When value_type is 'list', provide new_value as a JSON array (not a string). Example: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]] instead of \"[\\\"fn\\\", [\\\"x\\\"], [\\\"*\\\", \\\"x\\\", \\\"x\\\"]]\""
         }));
       } else if request.value_type != "leaf" {
         return ResponseJson(serde_json::json!({
@@ -235,7 +235,7 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
       // Validate value_type
       if request.value_type == "leaf" {
         return ResponseJson(serde_json::json!({
-          "error": "Type mismatch: value_type is 'leaf' but new_value is an array. For leaf type, use string format like \"my-value\""
+          "error": "Type mismatch: value_type is 'leaf' but new_value is an array. When value_type is 'leaf', provide new_value as a JSON string (not an array). Example: \"my-value\" instead of [\"my-value\"]"
         }));
       } else if request.value_type != "list" {
         return ResponseJson(serde_json::json!({

@@ -117,23 +117,23 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
       schema_generator: || serde_json::to_value(schema_for!(SwitchModuleRequest)).unwrap(),
     },
     McpToolWithSchema {
-      name: "create_module",
+      name: "create_config_entry",
       description: "Create a new module in the Calcit project. This adds a new compilation unit to the project.\n\nExample: {\"name\": \"new-module\"}",
       schema_generator: || serde_json::to_value(schema_for!(CreateModuleRequest)).unwrap(),
     },
     McpToolWithSchema {
-      name: "delete_module",
+      name: "delete_config_entry",
       description: "Delete a module from the Calcit project. This removes a compilation unit from the project. Use with caution as this operation cannot be undone.\n\nExample: {\"module\": \"unused-module\"}",
       schema_generator: || serde_json::to_value(schema_for!(DeleteModuleRequest)).unwrap(),
     },
     // Cirru Syntax Tools
     McpToolWithSchema {
-      name: "parse_cirru_to_json",
+      name: "calcit_parse_cirru_to_json",
       description: "Parse Cirru syntax to JSON. Cirru is the syntax notation used by Calcit, and this tool converts it to a JSON structure for easier processing.\n\nExample: {\"cirru_code\": \"fn (x) (* x x)\"}",
       schema_generator: || serde_json::to_value(schema_for!(ParseCirruToJsonRequest)).unwrap(),
     },
     McpToolWithSchema {
-      name: "format_json_to_cirru",
+      name: "calcit_format_json_to_cirru",
       description: "Format JSON data to Cirru syntax. This is the reverse of parse_cirru_to_json and converts a JSON structure to Cirru notation.\n\nExample: {\"json_data\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
       schema_generator: || serde_json::to_value(schema_for!(FormatJsonToCirruRequest)).unwrap(),
     },
@@ -410,9 +410,16 @@ pub struct UpdateDefinitionAtRequest {
   #[schemars(with = "Vec<i32>")]
   pub coord: serde_json::Value,
   /// # New Value
-  /// The new content to replace with, can be a string or a nested array.
-  ///
-  /// Example: "*" or ["*", "a", "b"]
+  /// The new content to replace with in Cirru format.
+  /// - For leaf values (value_type="leaf"): use a string like "my-value"
+  /// - For list values (value_type="list"): use an array like ["fn", ["x"], ["*", "x", "x"]]
+  /// 
+  /// IMPORTANT: When value_type is "list", provide the data as a JSON array, NOT as a JSON string.
+  /// 
+  /// Examples:
+  /// - Leaf: "*" (string)
+  /// - List: ["*", "a", "b"] (array)
+  /// - Complex: ["fn", ["x"], ["*", "x", "x"]] (nested array)
   #[schemars(schema_with = "new_value_schema")]
   pub new_value: serde_json::Value,
   /// # Update Mode
@@ -422,15 +429,25 @@ pub struct UpdateDefinitionAtRequest {
   pub mode: String,
   /// # Match Content
   /// Used to verify that the content at the current position matches expectations, increasing update safety.
-  ///
-  /// Example: "+" or ["a", "b"]
+  /// Provide the expected content in Cirru format:
+  /// - For leaf values: use a string like "+"
+  /// - For list values: use an array like ["a", "b"]
+  /// 
+  /// Examples:
+  /// - Leaf: "+" (string)
+  /// - List: ["a", "b"] (array)
+  /// - Complex: ["fn", ["x"], ["*", "x", "x"]] (nested array)
   #[serde(rename = "match")]
   #[schemars(schema_with = "match_content_schema")]
   pub match_content: serde_json::Value,
   /// # Value Type
-  /// Specifies the type of the new value, "leaf" for string values, "list" for array values.
-  ///
-  /// Example: "leaf" or "list"
+  /// Specifies the type of the new_value field:
+  /// - "leaf": when new_value is a string (e.g., "my-value")
+  /// - "list": when new_value is an array (e.g., ["fn", ["x"], ["*", "x", "x"]])
+  /// 
+  /// This must match the actual format of your new_value field.
+  /// 
+  /// Examples: "leaf" or "list"
   pub value_type: String,
 }
 
@@ -691,7 +708,7 @@ fn new_value_schema(_generator: &mut SchemarsGenerator) -> Schema {
   Schema::Object(SchemaObject {
     metadata: Some(Box::new(schemars::schema::Metadata {
       title: Some("New Value".to_string()),
-      description: Some("The new content to replace with, can be a string or a nested array.\n\nExample: \"*\" or [\"*\", \"a\", \"b\"]".to_string()),
+      description: Some("The new content to replace with in Cirru format.\n- For leaf values (value_type=\"leaf\"): use a string like \"my-value\"\n- For list values (value_type=\"list\"): use an array like [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]\n\nIMPORTANT: When value_type is \"list\", provide the data as a JSON array, NOT as a JSON string.\n\nExamples:\n- Leaf: \"*\" (string)\n- List: [\"*\", \"a\", \"b\"] (array)\n- Complex: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]] (nested array)".to_string()),
       ..Default::default()
     })),
     subschemas: Some(Box::new(schemars::schema::SubschemaValidation {
@@ -719,7 +736,7 @@ fn match_content_schema(_generator: &mut SchemarsGenerator) -> Schema {
   Schema::Object(SchemaObject {
     metadata: Some(Box::new(schemars::schema::Metadata {
       title: Some("Match Content".to_string()),
-      description: Some("Used to verify that the content at the current position matches expectations, increasing update safety.\n\nExample: \"+\" or [\"a\", \"b\"]".to_string()),
+      description: Some("Used to verify that the content at the current position matches expectations, increasing update safety.\nProvide the expected content in Cirru format:\n- For leaf values: use a string like \"+\"\n- For list values: use an array like [\"a\", \"b\"]\n\nExamples:\n- Leaf: \"+\" (string)\n- List: [\"a\", \"b\"] (array)\n- Complex: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]] (nested array)".to_string()),
       ..Default::default()
     })),
     subschemas: Some(Box::new(schemars::schema::SubschemaValidation {
