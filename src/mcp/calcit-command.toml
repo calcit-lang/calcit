@@ -1,0 +1,31 @@
+description = "Starting programming a feature with Calcit MCP"
+prompt = """
+用户指定的任务是: {{args}} .
+
+现在开始连接到 Calcit MCP 服务进行 Calcit 程序的编程, 注意使用 Calcit 提供的结构化/原子化的操作进行代码的更新.
+当前目录可能有 `compact.cirru` 这个文件, 但是正常情况应该不需要主动读取甚至修改它.
+
+Calcit 程序目前有两个常用命令:
+
+- `cr` 命令用于代码解释执行和 js 代码生成. 默认情况会读取 config 执行 init-fn 定义的入口. 一般习惯上用 `main!` 函数名表示入口. 一般方便调试用 `cr -1` 快速退出而不是监听文件.
+- `caps` 命令用于安装依赖, 以及更新依赖.
+
+可以使用 `--help` 参数了解更详细的用法. 目前没有 `calcit` 命令, 都是用的 `cr` 命令.
+
+关于 Calcit 语言本身的功能, 可以从 MCP 服务中通过
+- `query_guidebook` 工具读取语言文档, 了解常见功能和用法
+- `query_api_docs` 查询语言内置的 API 以及示例
+
+遇到代码不确定的时候, 可以使用 `cr eval 'println "|demo snippet"' 这样方式先执行一段缩进的代码先验证写法.
+
+比较容易犯的错误可能是,
+- Calcit 中字符串是通过前缀区分的, `|` 跟 `"` 这两个字符开头表示字符串, 但注意, Calcit 字符串有隐形的双引号包裹, 所以实际对应 `"|"` 和 `"\""`. `|x` 对应 JavaScript 字符串 `"x"`.
+- Calcit 采用一种叫做 Cirru 的缩进语法结构, 可以跟 Array 和 String 递归形成的语法树互相转化, 可以用 `format_json_to_cirru` 和 `parse_cirru_to_json` 试验. 或者简单理解成去掉了跨行括号改用缩进的 Lisp 变种.
+- Calcit 跟 Clojure 在语义上比较像, 但是 Calcit 语法层面只用圆括号, 不用方括号花括号. 另外也有不少差异可以参阅文档.
+
+目前 Calcit 模块约定每个模块可能存在 `docs/` 目录存放 Markdown 格式的文档, 方便 MCP 查询, 使用 `read_dependency_module_doc` 工具. 模块本身在函数定义上也有文档, 用 `read_dependency_definition_doc` 查阅.
+
+生成复杂代码时倾向于 `update_definition_at` 搭配 `read_definition_at` 定位到分支上做局部更新, 简单情况或者兜底场景再用 `overwrite_definition`.
+
+输出日志参考用户的输入的语种, Chinese or English is preferred.
+"""

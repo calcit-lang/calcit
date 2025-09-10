@@ -1,6 +1,8 @@
 use super::jsonrpc::Tool;
-use schemars::{JsonSchema, schema_for};
+use schemars::{JsonSchema, schema_for, schema::{Schema, SchemaObject, InstanceType}};
+use schemars::r#gen::SchemaGenerator as SchemarsGenerator;
 use serde::{Deserialize, Serialize};
+
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct McpRequest {
@@ -306,6 +308,7 @@ pub struct UpdateNamespaceImportsRequest {
   /// The new list of import declarations, where each element is an import declaration object.
   ///
   /// Example: [{"ns": "app.lib", "alias": "lib"}, {"ns": "app.util"}]
+  #[schemars(with = "Vec<serde_json::Value>")]
   pub imports: Vec<serde_json::Value>,
 }
 
@@ -331,6 +334,7 @@ pub struct AddDefinitionRequest {
   ///
   /// Example for a function: ["fn", ["a", "b"], ["+", "a", "b"]]
   /// Example for a variable: ["def", "x", "100"]
+  #[schemars(with = "Vec<serde_json::Value>")]
   pub code: serde_json::Value,
 }
 
@@ -375,6 +379,7 @@ pub struct OverwriteDefinitionRequest {
   /// The complete new code tree, represented as a nested array.
   ///
   /// Example: ["fn", ["x", "y"], ["+", "x", "y"]]
+  #[schemars(with = "Vec<serde_json::Value>")]
   pub code: serde_json::Value,
 }
 
@@ -402,11 +407,13 @@ pub struct UpdateDefinitionAtRequest {
   /// An array of integers representing the position of the node to update in the code tree.
   ///
   /// Example: [2, 1] refers to the second element of the third expression
+  #[schemars(with = "Vec<i32>")]
   pub coord: serde_json::Value,
   /// # New Value
   /// The new content to replace with, can be a string or a nested array.
   ///
   /// Example: "*" or ["*", "a", "b"]
+  #[schemars(schema_with = "new_value_schema")]
   pub new_value: serde_json::Value,
   /// # Update Mode
   /// Specifies how to apply the update, possible values: "replace", "before", "after".
@@ -418,6 +425,7 @@ pub struct UpdateDefinitionAtRequest {
   ///
   /// Example: "+" or ["a", "b"]
   #[serde(rename = "match")]
+  #[schemars(schema_with = "match_content_schema")]
   pub match_content: serde_json::Value,
   /// # Value Type
   /// Specifies the type of the new value, "leaf" for string values, "list" for array values.
@@ -449,6 +457,7 @@ pub struct ReadDefinitionAtRequest {
   /// An empty coordinate [] means reading the entire definition.
   ///
   /// Example: [2, 1] or []
+  #[schemars(with = "Vec<i32>")]
   pub coord: serde_json::Value,
 }
 
@@ -515,6 +524,7 @@ pub struct FormatJsonToCirruRequest {
   /// The JSON representation to be formatted as Cirru code.
   ///
   /// Example: ["def", "a", "1"] or ["fn", ["x", "y"], ["+", "x", "y"]]
+  #[schemars(with = "Vec<serde_json::Value>")]
   pub json_data: serde_json::Value,
 }
 
@@ -674,4 +684,61 @@ pub struct ListModulesRequest {
 
 pub fn get_standard_mcp_tools() -> Vec<Tool> {
   get_mcp_tools_with_schema().iter().map(|tool| tool.to_standard_tool()).collect()
+}
+
+// Custom schema functions for complex types
+fn new_value_schema(_generator: &mut SchemarsGenerator) -> Schema {
+  Schema::Object(SchemaObject {
+    metadata: Some(Box::new(schemars::schema::Metadata {
+      title: Some("New Value".to_string()),
+      description: Some("The new content to replace with, can be a string or a nested array.\n\nExample: \"*\" or [\"*\", \"a\", \"b\"]".to_string()),
+      ..Default::default()
+    })),
+    subschemas: Some(Box::new(schemars::schema::SubschemaValidation {
+      one_of: Some(vec![
+        Schema::Object(SchemaObject {
+          instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(InstanceType::String))),
+          ..Default::default()
+        }),
+        Schema::Object(SchemaObject {
+          instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(InstanceType::Array))),
+          array: Some(Box::new(schemars::schema::ArrayValidation {
+            items: Some(schemars::schema::SingleOrVec::Single(Box::new(Schema::Bool(true)))),
+            ..Default::default()
+          })),
+          ..Default::default()
+        })
+      ]),
+      ..Default::default()
+    })),
+    ..Default::default()
+  })
+}
+
+fn match_content_schema(_generator: &mut SchemarsGenerator) -> Schema {
+  Schema::Object(SchemaObject {
+    metadata: Some(Box::new(schemars::schema::Metadata {
+      title: Some("Match Content".to_string()),
+      description: Some("Used to verify that the content at the current position matches expectations, increasing update safety.\n\nExample: \"+\" or [\"a\", \"b\"]".to_string()),
+      ..Default::default()
+    })),
+    subschemas: Some(Box::new(schemars::schema::SubschemaValidation {
+      one_of: Some(vec![
+        Schema::Object(SchemaObject {
+          instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(InstanceType::String))),
+          ..Default::default()
+        }),
+        Schema::Object(SchemaObject {
+          instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(InstanceType::Array))),
+          array: Some(Box::new(schemars::schema::ArrayValidation {
+            items: Some(schemars::schema::SingleOrVec::Single(Box::new(Schema::Bool(true)))),
+            ..Default::default()
+          })),
+          ..Default::default()
+        })
+      ]),
+      ..Default::default()
+    })),
+    ..Default::default()
+  })
 }
