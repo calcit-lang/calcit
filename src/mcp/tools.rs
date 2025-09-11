@@ -1,8 +1,11 @@
 use super::jsonrpc::Tool;
-use schemars::{JsonSchema, schema_for, schema::{Schema, SchemaObject, InstanceType}};
 use schemars::r#gen::SchemaGenerator as SchemarsGenerator;
+use schemars::{
+  JsonSchema,
+  schema::{InstanceType, Schema, SchemaObject},
+  schema_for,
+};
 use serde::{Deserialize, Serialize};
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct McpRequest {
@@ -331,20 +334,20 @@ pub struct AddDefinitionRequest {
   pub definition: String,
   /// # Code Content
   /// The code tree for the definition, represented as a nested array.
-  /// 
+  ///
   /// 🚨 CRITICAL FORMAT REQUIREMENTS:
   /// • MUST be a native JSON array, NOT a string
   /// • Do NOT wrap the array in quotes
   /// • Do NOT escape quotes inside the array
-  /// 
+  ///
   /// ✅ CORRECT FORMATS:
   /// ["fn", ["a", "b"], ["+", "a", "b"]]
   /// ["def", "x", "100"]
-  /// 
+  ///
   /// ❌ WRONG FORMATS:
   /// "[fn [a b] [+ a b]]" ← STRING (WRONG)
   /// "[\"fn\", [\"a\", \"b\"]]" ← ESCAPED STRING (WRONG)
-  /// 
+  ///
   /// Example for a function: ["fn", ["a", "b"], ["+", "a", "b"]]
   /// Example for a variable: ["def", "x", "100"]
   #[schemars(with = "Vec<serde_json::Value>")]
@@ -390,20 +393,20 @@ pub struct OverwriteDefinitionRequest {
   pub definition: String,
   /// # New Code
   /// The complete new code tree, represented as a nested array.
-  /// 
+  ///
   /// 🚨 CRITICAL FORMAT REQUIREMENTS:
   /// • MUST be a native JSON array, NOT a string
   /// • Do NOT wrap the array in quotes
   /// • Do NOT escape quotes inside the array
-  /// 
+  ///
   /// ✅ CORRECT FORMATS:
   /// ["defcomp", "my-comp", [], ["div", {}, "Hello"]]
   /// ["fn", ["x", "y"], ["+", "x", "y"]]
-  /// 
+  ///
   /// ❌ WRONG FORMATS:
   /// "[defcomp my-comp [] [div {} Hello]]" ← STRING (WRONG)
   /// "[\"defcomp\", \"my-comp\"]" ← ESCAPED STRING (WRONG)
-  /// 
+  ///
   /// Example: ["fn", ["x", "y"], ["+", "x", "y"]]
   #[schemars(with = "Vec<serde_json::Value>")]
   pub code: serde_json::Value,
@@ -431,14 +434,14 @@ pub struct UpdateDefinitionAtRequest {
   pub definition: String,
   /// # Coordinate Position
   /// An array of integers representing the position of the node to update in the code tree.
-  /// 
+  ///
   /// 🚨 CRITICAL FORMAT REQUIREMENTS:
   /// • MUST be a native JSON array of integers, NOT a string
   /// • Do NOT wrap the array in quotes
-  /// 
+  ///
   /// ✅ CORRECT FORMATS:
   /// [2, 1] or []
-  /// 
+  ///
   /// ❌ WRONG FORMATS:
   /// "[2, 1]" ← STRING (WRONG)
   /// "[]" ← STRING (WRONG)
@@ -450,9 +453,9 @@ pub struct UpdateDefinitionAtRequest {
   /// The new content to replace with in Cirru format.
   /// - For leaf values (value_type="leaf"): use a string like "my-value"
   /// - For list values (value_type="list"): use an array like ["fn", ["x"], ["*", "x", "x"]]
-  /// 
+  ///
   /// IMPORTANT: When value_type is "list", provide the data as a JSON array, NOT as a JSON string.
-  /// 
+  ///
   /// Examples:
   /// - Leaf: "*" (string)
   /// - List: ["*", "a", "b"] (array)
@@ -469,7 +472,7 @@ pub struct UpdateDefinitionAtRequest {
   /// Provide the expected content in Cirru format:
   /// - For leaf values: use a string like "+"
   /// - For list values: use an array like ["a", "b"]
-  /// 
+  ///
   /// Examples:
   /// - Leaf: "+" (string)
   /// - List: ["a", "b"] (array)
@@ -481,9 +484,9 @@ pub struct UpdateDefinitionAtRequest {
   /// Specifies the type of the new_value field:
   /// - "leaf": when new_value is a string (e.g., "my-value")
   /// - "list": when new_value is an array (e.g., ["fn", ["x"], ["*", "x", "x"]])
-  /// 
+  ///
   /// This must match the actual format of your new_value field.
-  /// 
+  ///
   /// Examples: "leaf" or "list"
   pub value_type: String,
 }
@@ -509,14 +512,14 @@ pub struct ReadDefinitionAtRequest {
   /// An array of integers representing the position of the node to read in the code tree.
   /// For example: [0, 1] refers to the second element of the first expression.
   /// An empty coordinate [] means reading the entire definition.
-  /// 
+  ///
   /// 🚨 CRITICAL FORMAT REQUIREMENTS:
   /// • MUST be a native JSON array of integers, NOT a string
   /// • Do NOT wrap the array in quotes
-  /// 
+  ///
   /// ✅ CORRECT FORMATS:
   /// [2, 1] or []
-  /// 
+  ///
   /// ❌ WRONG FORMATS:
   /// "[2, 1]" ← STRING (WRONG)
   /// "[]" ← STRING (WRONG)

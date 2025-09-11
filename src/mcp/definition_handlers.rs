@@ -11,6 +11,8 @@ use serde_json::Value;
 /// Save snapshot data
 /// save_snapshot function moved to cirru_utils::save_snapshot_to_file to avoid duplication
 pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest) -> ResponseJson<Value> {
+  // Note: This function returns ResponseJson<Value> for compatibility with existing handlers
+  // The actual MCP error handling with isError flag is handled at the protocol level
   let namespace = request.namespace;
   let definition = request.definition;
 

@@ -1,4 +1,5 @@
 use super::AppState;
+use super::error_handling::{create_protocol_error, create_tool_execution_error, create_tool_success, error_codes};
 use super::jsonrpc::*;
 use super::tools::{
   AddDefinitionRequest, AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
@@ -23,6 +24,9 @@ fn get_session() -> Arc<Mutex<McpSession>> {
 
 /// Handle JSON-RPC 2.0 requests (Axum version)
 pub async fn handle_jsonrpc_axum(data: Arc<AppState>, req: JsonRpcRequest) -> ResponseJson<Value> {
+  // Check if this is a notification (no id field)
+  let is_notification = req.id.is_none();
+
   // Extract tool name for tools/call method
   let tool_name = if req.method == "tools/call" {
     req
@@ -36,7 +40,9 @@ pub async fn handle_jsonrpc_axum(data: Arc<AppState>, req: JsonRpcRequest) -> Re
   };
 
   // Log request with colors
-  if req.method == "tools/call" {
+  if is_notification {
+    println!("{} {}", "📢 NOTIFICATION".cyan().bold(), req.method.green().bold());
+  } else if req.method == "tools/call" {
     println!("{} {}", "🔧 TOOL CALL".blue().bold(), tool_name.yellow().bold());
   } else {
     println!("{} {}", "📡 RPC".blue().bold(), req.method.green().bold());
@@ -53,6 +59,22 @@ pub async fn handle_jsonrpc_axum(data: Arc<AppState>, req: JsonRpcRequest) -> Re
       let params_json = serde_json::to_string_pretty(params).unwrap_or_else(|_| "<invalid>".to_string());
       println!("{}\n{}", "   Params:".dimmed(), params_json.dimmed());
     }
+  }
+
+  // Handle notifications separately (they don't expect responses)
+  if is_notification {
+    match req.method.as_str() {
+      "notifications/initialized" => {
+        handle_initialized_notification(&req);
+        println!("{}", "✅ NOTIFICATION PROCESSED".green().bold());
+      }
+      _ => {
+        println!("{} Unknown notification: {}", "⚠️ WARNING".yellow().bold(), req.method.yellow());
+      }
+    }
+    println!(); // Add blank line for separation
+    // For notifications, return an empty response (this won't be sent to client)
+    return ResponseJson(serde_json::json!({}));
   }
 
   let response = match req.method.as_str() {
@@ -87,6 +109,12 @@ pub async fn handle_jsonrpc_axum(data: Arc<AppState>, req: JsonRpcRequest) -> Re
   println!(); // Add blank line for separation
 
   ResponseJson(response)
+}
+
+/// Handle notifications/initialized notification
+fn handle_initialized_notification(_req: &JsonRpcRequest) {
+  println!("{} Client initialization complete", "✅ INITIALIZED".green().bold());
+  // Notifications don't require responses according to JSON-RPC 2.0 spec
 }
 
 /// Handle initialize request (Axum version)
@@ -163,14 +191,20 @@ fn handle_tools_list_axum(_app_state: &AppState, req: &JsonRpcRequest) -> Value 
   let session_guard = match session.lock() {
     Ok(guard) => guard,
     Err(_) => {
-      let error = JsonRpcError::internal_error();
-      return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
+      return create_protocol_error(
+        req.id.clone(),
+        error_codes::INTERNAL_ERROR,
+        "Failed to acquire session lock".to_string(),
+      );
     }
   };
 
   if !session_guard.is_initialized() {
-    let error = JsonRpcError::new(-32002, "Session not initialized".to_string());
-    return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
+    return create_protocol_error(
+      req.id.clone(),
+      error_codes::SESSION_NOT_INITIALIZED,
+      "Session not initialized".to_string(),
+    );
   }
   drop(session_guard); // Release the lock
 
@@ -195,10 +229,24 @@ fn deserialize_params<T: serde::de::DeserializeOwned>(
         e,
         serde_json::to_string_pretty(&parameters).unwrap_or_else(|_| "<unparseable>".to_string())
       );
-      let error = JsonRpcError::new(-32602, error_message);
-      Err(serde_json::to_value(JsonRpcResponse::error(req_id, error)).unwrap())
+      Err(create_protocol_error(req_id, error_codes::INVALID_PARAMS, error_message))
     }
   }
+}
+
+/// Check if a tool handler result contains an error and convert it to appropriate MCP response
+fn handle_tool_result(req_id: Option<Value>, handler_result: ResponseJson<Value>) -> Value {
+  let result_value = handler_result.0;
+
+  // Check if the result contains an "error" field (business logic error)
+  if let Some(error_message) = result_value.get("error") {
+    if let Some(error_str) = error_message.as_str() {
+      return create_tool_execution_error(req_id, error_str.to_string());
+    }
+  }
+
+  // Success case
+  create_tool_success(req_id, result_value)
 }
 
 /// Handle tools/call request (Axum version)
@@ -224,14 +272,15 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       Ok(p) => p,
       Err(e) => {
         let error_message = format!("Invalid ToolsCallParams: {e}");
-        let error = JsonRpcError::new(-32602, error_message);
-        return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
+        return create_protocol_error(req.id.clone(), error_codes::INVALID_PARAMS, error_message);
       }
     },
     None => {
-      let error_message = "Missing required parameters".to_string();
-      let error = JsonRpcError::new(-32602, error_message);
-      return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
+      return create_protocol_error(
+        req.id.clone(),
+        error_codes::INVALID_PARAMS,
+        "Missing required parameters".to_string(),
+      );
     }
   };
 
@@ -244,42 +293,47 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
   };
 
   // Call the appropriate handler based on tool name
-  let handler_result = match params.name.as_str() {
+  let _ = match params.name.as_str() {
     // Read operations
     "list_definitions" => {
       let request = match deserialize_params::<ListDefinitionsRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::read_handlers::list_definitions(app_state, request)
+      let result = super::read_handlers::list_definitions(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "list_namespaces" => {
       let request = match deserialize_params::<ListNamespacesRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::namespace_handlers::list_namespaces(app_state, request)
+      let result = super::namespace_handlers::list_namespaces(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "get_package_name" => {
       let request = match deserialize_params::<GetPackageNameRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::read_handlers::get_package_name(app_state, request)
+      let result = super::read_handlers::get_package_name(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "read_namespace" => {
       let request = match deserialize_params::<ReadNamespaceRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::read_handlers::read_namespace(app_state, request)
+      let result = super::read_handlers::read_namespace(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "read_definition" => {
       let request = match deserialize_params::<ReadDefinitionRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::read_handlers::read_definition(app_state, request)
+      let result = super::read_handlers::read_definition(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
 
     // Namespace operations
@@ -288,21 +342,24 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::namespace_handlers::add_namespace(app_state, request)
+      let result = super::namespace_handlers::add_namespace(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "delete_namespace" => {
       let request = match deserialize_params::<DeleteNamespaceRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::namespace_handlers::delete_namespace(app_state, request)
+      let result = super::namespace_handlers::delete_namespace(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "update_namespace_imports" => {
       let request = match deserialize_params::<UpdateNamespaceImportsRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::namespace_handlers::update_namespace_imports(app_state, request)
+      let result = super::namespace_handlers::update_namespace_imports(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
 
     // Definition operations
@@ -311,35 +368,40 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::definition_handlers::add_definition(app_state, request)
+      let result = super::definition_handlers::add_definition(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "delete_definition" => {
       let request = match deserialize_params::<DeleteDefinitionRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::definition_handlers::delete_definition(app_state, request)
+      let result = super::definition_handlers::delete_definition(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "overwrite_definition" => {
       let request = match deserialize_params::<OverwriteDefinitionRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::definition_handlers::overwrite_definition(app_state, request)
+      let result = super::definition_handlers::overwrite_definition(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "update_definition_at" => {
       let request = match deserialize_params::<UpdateDefinitionAtRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::definition_handlers::update_definition_at(app_state, request)
+      let result = super::definition_handlers::update_definition_at(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "read_definition_at" => {
       let request = match deserialize_params::<ReadDefinitionAtRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::definition_handlers::read_definition_at(app_state, request)
+      let result = super::definition_handlers::read_definition_at(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
 
     // Module management
@@ -348,35 +410,40 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::module_handlers::list_modules(app_state, request)
+      let result = super::module_handlers::list_modules(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "get_current_module" => {
       let request = match deserialize_params::<GetCurrentModuleRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::module_handlers::get_current_module(app_state, request)
+      let result = super::module_handlers::get_current_module(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "switch_module" => {
       let request = match deserialize_params::<SwitchModuleRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::module_handlers::switch_module(app_state, request)
+      let result = super::module_handlers::switch_module(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "create_config_entry" => {
       let request = match deserialize_params::<CreateModuleRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::module_handlers::create_config_entry(app_state, request)
+      let result = super::module_handlers::create_config_entry(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "delete_config_entry" => {
       let request = match deserialize_params::<DeleteModuleRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::module_handlers::delete_config_entry(app_state, request)
+      let result = super::module_handlers::delete_config_entry(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
 
     // Cirru conversion tools
@@ -385,14 +452,16 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::cirru_handlers::parse_cirru_to_json(app_state, request)
+      let result = super::cirru_handlers::parse_cirru_to_json(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "calcit_format_json_to_cirru" => {
       let request = match deserialize_params::<FormatJsonToCirruRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::cirru_handlers::format_json_to_cirru(app_state, request)
+      let result = super::cirru_handlers::format_json_to_cirru(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
 
     // Documentation query tools
@@ -401,14 +470,16 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::docs_handlers::handle_query_api_docs(app_state, request)
+      let result = super::docs_handlers::handle_query_api_docs(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "query_guidebook" => {
       let request = match deserialize_params::<QueryGuidebookRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::docs_handlers::handle_query_guidebook(app_state, request)
+      let result = super::docs_handlers::handle_query_guidebook(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     // Documentation tools
     "list_api_docs" => {
@@ -416,14 +487,16 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::docs_handlers::handle_list_api_docs(app_state, request)
+      let result = super::docs_handlers::handle_list_api_docs(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "list_guidebook_docs" => {
       let request = match deserialize_params::<ListGuidebookDocsRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::docs_handlers::handle_list_guidebook_docs(app_state, request)
+      let result = super::docs_handlers::handle_list_guidebook_docs(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
 
     // Configuration management tools
@@ -432,14 +505,16 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::config_handlers::read_configs(app_state, request)
+      let result = super::config_handlers::read_configs(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "update_configs" => {
       let request = match deserialize_params::<UpdateConfigsRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::config_handlers::update_configs(app_state, request)
+      let result = super::config_handlers::update_configs(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
     }
 
     // Library tools
@@ -449,7 +524,7 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Err(error_response) => return error_response,
       };
       let result = super::library_handlers::handle_fetch_calcit_libraries(app_state, request);
-      axum::Json(serde_json::to_value(JsonRpcResponse::success(req.id.clone(), result.0)).unwrap())
+      return handle_tool_result(req.id.clone(), result);
     }
     "parse_cirru_edn_to_json" => {
       let request = match deserialize_params::<ParseCirruEdnToJsonRequest>(tool_request.parameters, req.id.clone()) {
@@ -457,7 +532,7 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Err(error_response) => return error_response,
       };
       let result = super::library_handlers::handle_parse_cirru_edn_to_json(app_state, request);
-      axum::Json(serde_json::to_value(JsonRpcResponse::success(req.id.clone(), result.0)).unwrap())
+      return handle_tool_result(req.id.clone(), result);
     }
 
     // Dependency documentation tools (read-only)
@@ -466,14 +541,16 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::dependency_doc_handlers::list_dependency_docs(&app_state.state_manager, request)
+      let result = super::dependency_doc_handlers::list_dependency_docs(&app_state.state_manager, request);
+      return handle_tool_result(req.id.clone(), result);
     }
     "read_dependency_definition_doc" => {
       let request = match deserialize_params::<ReadDependencyDefinitionDocRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::dependency_doc_handlers::read_dependency_definition_doc(&app_state.state_manager, request)
+      let result = super::dependency_doc_handlers::read_dependency_definition_doc(&app_state.state_manager, request);
+      return handle_tool_result(req.id.clone(), result);
     }
 
     "read_dependency_module_doc" => {
@@ -481,26 +558,16 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      super::dependency_doc_handlers::read_dependency_module_doc(&app_state.state_manager, request)
+      let result = super::dependency_doc_handlers::read_dependency_module_doc(&app_state.state_manager, request);
+      return handle_tool_result(req.id.clone(), result);
     }
 
     _ => {
-      let error = JsonRpcError::tool_not_found(&params.name);
-      return serde_json::to_value(JsonRpcResponse::error(req.id.clone(), error)).unwrap();
+      return create_protocol_error(
+        req.id.clone(),
+        error_codes::TOOL_NOT_FOUND,
+        format!("Unknown tool: {}", params.name),
+      );
     }
   };
-
-  // Wrap the result in proper MCP ToolsCallResult format
-  let tool_call_result = ToolsCallResult {
-    content: vec![ToolCallContent::Text {
-      text: serde_json::to_string(&handler_result.0).unwrap_or_else(|_| "null".to_string()),
-    }],
-    is_error: None,
-  };
-
-  serde_json::to_value(JsonRpcResponse::success(
-    req.id.clone(),
-    serde_json::to_value(tool_call_result).unwrap(),
-  ))
-  .unwrap()
 }
