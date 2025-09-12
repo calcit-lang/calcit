@@ -1,5 +1,5 @@
 use super::tools::{
-  AddDefinitionRequest, DeleteDefinitionRequest, OverwriteDefinitionRequest, ReadDefinitionAtRequest, UpdateDefinitionAtRequest,
+  AddDefinitionRequest, DeleteDefinitionRequest, OverwriteDefinitionRequest, ReadDefinitionAtRequest, UpdateDefinitionAtRequest, UpdateDefinitionAtWithLeafRequest,
 };
 use crate::mcp::definition_update::{UpdateMode, update_definition_at_coord};
 use crate::mcp::definition_utils::{navigate_to_coord, parse_coord_from_json};
@@ -206,47 +206,9 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
 
   // Parse new value (required for all modes except delete)
   let new_value_cirru = match &request.new_value {
-    serde_json::Value::String(s) => {
-      // Validate value_type
-      if request.value_type == "list" {
-        return ResponseJson(serde_json::json!({
-          "error": "Type mismatch: value_type is 'list' but new_value is a string. When value_type is 'list', provide new_value as a JSON array (not a string). Example: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]] instead of \"[\\\"fn\\\", [\\\"x\\\"], [\\\"*\\\", \\\"x\\\", \\\"x\\\"]]\""
-        }));
-      } else if request.value_type != "leaf" {
-        return ResponseJson(serde_json::json!({
-          "error": format!("Invalid value_type '{}'. Valid types are: 'leaf' for strings, 'list' for arrays", request.value_type)
-        }));
-      }
-
-      // Parse new value as Cirru
-      match cirru_parser::parse(s) {
-        Ok(parsed) => {
-          if parsed.is_empty() {
-            Some(Cirru::Leaf(s.clone().into()))
-          } else {
-            Some(parsed[0].clone())
-          }
-        }
-        Err(_) => {
-          // If parsing fails, treat as string literal
-          Some(Cirru::Leaf(s.clone().into()))
-        }
-      }
-    }
-    code_json => {
-      // Validate value_type
-      if request.value_type == "leaf" {
-        return ResponseJson(serde_json::json!({
-          "error": "Type mismatch: value_type is 'leaf' but new_value is an array. When value_type is 'leaf', provide new_value as a JSON string (not an array). Example: \"my-value\" instead of [\"my-value\"]"
-        }));
-      } else if request.value_type != "list" {
-        return ResponseJson(serde_json::json!({
-          "error": format!("Invalid value_type '{}'. Valid types are: 'leaf' for strings, 'list' for arrays", request.value_type)
-        }));
-      }
-
-      // Handle JSON format new_value
-      match super::cirru_utils::json_to_cirru(code_json) {
+    serde_json::Value::Array(_) => {
+      // Handle JSON array format new_value
+      match super::cirru_utils::json_to_cirru(&request.new_value) {
         Ok(cirru) => Some(cirru),
         Err(e) => {
           return ResponseJson(serde_json::json!({
@@ -254,6 +216,11 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
           }));
         }
       }
+    }
+    _ => {
+      return ResponseJson(serde_json::json!({
+        "error": "new_value must be a JSON array. Examples: [\"my-value\"] for single values, [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]] for complex expressions"
+      }));
     }
   };
 
@@ -370,6 +337,75 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
     })),
     Ok(Err(e)) => ResponseJson(serde_json::json!({
       "error": e
+    })),
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
+  }
+}
+
+pub fn update_definition_at_with_leaf(app_state: &super::AppState, request: UpdateDefinitionAtWithLeafRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
+  let definition = request.definition;
+
+  let coord: Vec<usize> = match parse_coord_from_json(&request.coord) {
+    Ok(coord_vec) => coord_vec,
+    Err(e) => {
+      return ResponseJson(serde_json::json!({
+        "error": format!("Invalid coord parameter: {}", e)
+      }));
+    }
+  };
+
+  // Parse update mode
+  let mode = match request.mode.parse::<UpdateMode>() {
+    Ok(mode) => mode,
+    Err(e) => {
+      return ResponseJson(serde_json::json!({
+        "error": format!("Invalid mode parameter: {}. Valid modes are: replace, after, before, delete, prepend, append", e)
+      }));
+    }
+  };
+
+  // Create new value as Cirru leaf
+  let new_value_cirru = Cirru::Leaf(request.new_value.into());
+
+  // Parse match content if provided
+  let match_content_cirru = request.match_content.map(|s| Cirru::Leaf(s.into()));
+
+  let result = app_state.state_manager.update_current_module(|snapshot| {
+    // Check if namespace exists
+    let file_data = match snapshot.files.get_mut(&namespace) {
+      Some(data) => data,
+      None => {
+        return Err(format!("Namespace '{namespace}' not found"));
+      }
+    };
+
+    // Check if definition exists
+    let code_entry = match file_data.defs.get_mut(&definition) {
+      Some(entry) => entry,
+      None => {
+        return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
+      }
+    };
+
+    // Clone the code for the new update logic
+    let mut code = code_entry.code.clone();
+
+    // Perform the update using the new logic
+    if let Err(e) = update_definition_at_coord(&mut code, &coord, Some(&new_value_cirru), mode, match_content_cirru.as_ref()) {
+      return Err(format!("Failed to update: {e}"));
+    }
+
+    // Update the code entry with the modified code
+    code_entry.code = code;
+    Ok(())
+  });
+
+  match result {
+    Ok(()) => ResponseJson(serde_json::json!({
+      "message": format!("Definition '{}' updated at coordinate {:?} in namespace '{}' successfully", definition, coord, namespace)
     })),
     Err(e) => ResponseJson(serde_json::json!({
       "error": e

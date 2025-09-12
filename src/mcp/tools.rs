@@ -90,8 +90,13 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
     },
     McpToolWithSchema {
       name: "update_definition_at",
-      description: "Update a specific part of a function or macro definition using coordinate-based targeting with various operation modes. Cirru code is a tree structure that can be navigated using coordinate arrays (Vec<Int>). This tool allows precise updates to specific nodes in the code tree with validation.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• Do NOT wrap the array in quotes\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"} ← STRING (WRONG)\n\n💡 BEST PRACTICE: Always use 'read_definition_at' multiple times first to explore and understand the code structure, then generate correct 'match' and 'coord' parameters for safe updates. Empty coord [] operates on the root node.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"mode\": \"replace\", \"match\": null, \"value_type\": \"leaf\"}",
+      description: "Update a specific part of a function or macro definition using coordinate-based targeting with various operation modes. Cirru code is a tree structure that can be navigated using coordinate arrays (Vec<Int>). This tool allows precise updates to specific nodes in the code tree with validation.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• Do NOT wrap the array in quotes\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\n💡 BEST PRACTICE: Always use 'read_definition_at' multiple times first to explore and understand the code structure, then generate correct 'match' and 'coord' parameters for safe updates. Empty coord [] operates on the root node.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"mode\": \"replace\", \"match\": null, \"value_type\": \"leaf\"}",
       schema_generator: || serde_json::to_value(schema_for!(UpdateDefinitionAtRequest)).unwrap(),
+    },
+    McpToolWithSchema {
+      name: "update_definition_at_with_leaf",
+      description: "Update a specific part of a function or macro definition with a leaf value (string). This is a simplified version of update_definition_at specifically for replacing leaf nodes, eliminating the need for value_type parameter.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• The 'new_value' parameter MUST be a string (leaf value)\n• Do NOT wrap the coord array in quotes\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\n💡 BEST PRACTICE: Use this tool when you need to replace a leaf node (symbol, string, number) with another leaf value. For complex expressions, use the general 'update_definition_at' tool.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"mode\": \"replace\", \"match\": \"*\"}",
+      schema_generator: || serde_json::to_value(schema_for!(UpdateDefinitionAtWithLeafRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "read_definition_at",
@@ -422,17 +427,15 @@ pub struct UpdateDefinitionAtRequest {
   #[schemars(with = "Vec<i32>")]
   pub coord: serde_json::Value,
   /// # New Value
-  /// The new content to replace with in Cirru format.
-  /// - For leaf values (value_type="leaf"): use a string like "my-value"
-  /// - For list values (value_type="list"): use an array like ["fn", ["x"], ["*", "x", "x"]]
-  ///
-  /// IMPORTANT: When value_type is "list", provide the data as a JSON array, NOT as a JSON string.
+  /// The new content to replace with in Cirru format. Must be provided as a JSON array.
   ///
   /// Examples:
-  /// - Leaf: "*" (string)
+  /// - Simple leaf: ["+"] (single element array)
   /// - List: ["*", "a", "b"] (array)
   /// - Complex: ["fn", ["x"], ["*", "x", "x"]] (nested array)
-  #[schemars(schema_with = "new_value_schema")]
+  ///
+  /// IMPORTANT: Always provide as an array, even for single values.
+  #[schemars(with = "Vec<serde_json::Value>")]
   pub new_value: serde_json::Value,
   /// # Update Mode
   /// Specifies how to apply the update, possible values: "replace", "before", "after".
@@ -452,15 +455,62 @@ pub struct UpdateDefinitionAtRequest {
   #[serde(rename = "match")]
   #[schemars(schema_with = "match_content_schema")]
   pub match_content: serde_json::Value,
-  /// # Value Type
-  /// Specifies the type of the new_value field:
-  /// - "leaf": when new_value is a string (e.g., "my-value")
-  /// - "list": when new_value is an array (e.g., ["fn", ["x"], ["*", "x", "x"]])
+}
+
+/// # Update Definition at Specific Position with Leaf Value
+/// A simplified version of update_definition_at specifically for updating leaf nodes (strings, symbols, numbers).
+/// This eliminates the need for the value_type parameter since it's always "leaf".
+/// Coordinates are an array representing the path indices from the root node to the target node.
+/// For example: `[0, 1]` refers to the second child of the first child of the root node.
+/// An empty coordinate `[]` refers to the root node itself.
+///
+/// Example: `{"namespace": "app.core", "definition": "add-numbers", "coord": [2, 1], "new_value": "*", "mode": "replace", "match": "+"}`
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct UpdateDefinitionAtWithLeafRequest {
+  /// # Namespace Path
+  /// The full path of the namespace containing the definition to update.
   ///
-  /// This must match the actual format of your new_value field.
+  /// Example: "app.core"
+  pub namespace: String,
+  /// # Definition Name
+  /// The name of the function or variable to update.
   ///
-  /// Examples: "leaf" or "list"
-  pub value_type: String,
+  /// Example: "add-numbers"
+  pub definition: String,
+  /// # Coordinate Position
+  /// An array of integers representing the position of the node to update in the code tree.
+  ///
+  /// 🚨 CRITICAL FORMAT REQUIREMENTS:
+  /// • MUST be a native JSON array of integers, NOT a string
+  /// • Do NOT wrap the array in quotes
+  ///
+  /// ✅ CORRECT FORMATS:
+  /// [2, 1] or []
+  ///
+  /// ❌ WRONG FORMATS:
+  /// "[2, 1]" ← STRING (WRONG)
+  /// "[]" ← STRING (WRONG)
+  ///
+  /// Example: [2, 1] refers to the second element of the third expression
+  #[schemars(with = "Vec<i32>")]
+  pub coord: serde_json::Value,
+  /// # New Leaf Value
+  /// The new leaf value to replace with. This must be a string representing a symbol, string literal, or number.
+  ///
+  /// Examples: "+", "my-variable", "42", "hello-world"
+  pub new_value: String,
+  /// # Update Mode
+  /// Specifies how to apply the update, possible values: "replace", "before", "after", "delete".
+  ///
+  /// Example: "replace"
+  pub mode: String,
+  /// # Match Content
+  /// Used to verify that the content at the current position matches expectations, increasing update safety.
+  /// Provide the expected leaf value as a string.
+  ///
+  /// Examples: "+", "old-variable", "123"
+  #[serde(rename = "match")]
+  pub match_content: Option<String>,
 }
 
 /// # Read Content at Specific Position in Definition
@@ -711,35 +761,6 @@ pub struct ListModulesRequest {
 
 pub fn get_standard_mcp_tools() -> Vec<Tool> {
   get_mcp_tools_with_schema().iter().map(|tool| tool.to_standard_tool()).collect()
-}
-
-// Custom schema functions for complex types
-fn new_value_schema(_generator: &mut SchemarsGenerator) -> Schema {
-  Schema::Object(SchemaObject {
-    metadata: Some(Box::new(schemars::schema::Metadata {
-      title: Some("New Value".to_string()),
-      description: Some("The new content to replace with in Cirru format.\n- For leaf values (value_type=\"leaf\"): use a string like \"my-value\"\n- For list values (value_type=\"list\"): use an array like [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]\n\nIMPORTANT: When value_type is \"list\", provide the data as a JSON array, NOT as a JSON string.\n\nExamples:\n- Leaf: \"*\" (string)\n- List: [\"*\", \"a\", \"b\"] (array)\n- Complex: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]] (nested array)".to_string()),
-      ..Default::default()
-    })),
-    subschemas: Some(Box::new(schemars::schema::SubschemaValidation {
-      one_of: Some(vec![
-        Schema::Object(SchemaObject {
-          instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(InstanceType::String))),
-          ..Default::default()
-        }),
-        Schema::Object(SchemaObject {
-          instance_type: Some(schemars::schema::SingleOrVec::Single(Box::new(InstanceType::Array))),
-          array: Some(Box::new(schemars::schema::ArrayValidation {
-            items: Some(schemars::schema::SingleOrVec::Single(Box::new(Schema::Bool(true)))),
-            ..Default::default()
-          })),
-          ..Default::default()
-        })
-      ]),
-      ..Default::default()
-    })),
-    ..Default::default()
-  })
 }
 
 fn match_content_schema(_generator: &mut SchemarsGenerator) -> Schema {

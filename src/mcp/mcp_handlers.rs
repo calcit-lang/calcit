@@ -7,7 +7,7 @@ use super::tools::{
   ListDefinitionsRequest, ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest,
   OverwriteDefinitionRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest,
   ReadConfigsRequest, ReadDefinitionAtRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest,
-  ReadNamespaceRequest, UpdateConfigsRequest, UpdateDefinitionAtRequest, UpdateNamespaceImportsRequest, get_standard_mcp_tools,
+  ReadNamespaceRequest, UpdateConfigsRequest, UpdateDefinitionAtRequest, UpdateDefinitionAtWithLeafRequest, UpdateNamespaceImportsRequest, get_standard_mcp_tools,
 };
 use axum::response::Json as ResponseJson;
 use colored::*;
@@ -383,6 +383,14 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Err(error_response) => return error_response,
       };
       let result = super::definition_handlers::update_definition_at(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
+    }
+    "update_definition_at_with_leaf" => {
+      let request = match deserialize_params::<UpdateDefinitionAtWithLeafRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      let result = super::definition_handlers::update_definition_at_with_leaf(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
     "read_definition_at" => {

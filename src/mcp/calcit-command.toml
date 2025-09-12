@@ -60,21 +60,7 @@ Calcit 程序目前有两个常用命令:
 
 - `update_definition_at` - 精确更新函数体中的操作符
 
-目标位置替换为一个叶子(leaf)节点的例子, match 可能也是一个叶子节点(也可能不是):
-
-```json
-{
-  "namespace": "app.core",
-  "definition": "add-numbers",
-  "coord": [2, 0],
-  "mode": "replace",
-  "match": "a",
-  "value_type": "leaf",
-  "new_value": "b",
-}
-```
-
-目标位置替换为表达式(array)的例子, match 可能也是一个数组节点(也可能不是):
+替换的目标位置要求为表达式(array)的例子, match 可能也是一个数组节点(也可能不是):
 
 ```json
 {
@@ -83,12 +69,30 @@ Calcit 程序目前有两个常用命令:
   "coord": [2, 0],
   "mode": "replace",
   "match": ["+", "a", "..."],
-  "new_value": ["*", "a", "b", "c"],
-  "value_type": "array"
+  "new_value": ["*", "a", "b", "c"]
 }
 ```
 
+注意: new_value 现在必须始终是数组格式，即使是单个值也要用数组包装，如 ["my-value"]。
+
 替换之前建议用 `read_definition_at` 反复查看目标 coord 或者兄弟位置, 从而保证局部修改的准确度.
+
+- `update_definition_at_with_leaf` - 精确更新函数体中的叶子节点(简化版)
+
+专门用于替换叶子节点(符号、字符串、数字)的简化工具，无需指定 value_type 参数:
+
+```json
+{
+  "namespace": "app.core",
+  "definition": "add-numbers",
+  "coord": [2, 0],
+  "mode": "replace",
+  "match": "+",
+  "new_value": "*"
+}
+```
+
+这个工具消除了 value_type 参数的困惑，专门处理叶子节点的替换操作。对于复杂表达式的替换，仍需使用通用的 `update_definition_at` 工具。
 
 - `overwrite_definition`
 
