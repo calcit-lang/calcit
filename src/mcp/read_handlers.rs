@@ -1,6 +1,7 @@
 use super::cirru_utils::cirru_to_json;
 use super::tools::{GetPackageNameRequest, ListDefinitionsRequest, ReadDefinitionRequest, ReadNamespaceRequest};
 use axum::response::Json as ResponseJson;
+use cirru_parser::CirruWriterOptions;
 use serde_json::Value;
 
 pub fn list_definitions(app_state: &super::AppState, request: ListDefinitionsRequest) -> ResponseJson<Value> {
@@ -68,10 +69,10 @@ pub fn read_namespace(app_state: &super::AppState, request: ReadNamespaceRequest
     let mut definitions = serde_json::Map::new();
     for (def_name, code_entry) in &file_data.defs {
       // Convert code to string and truncate to first 40 characters
-      let code_json = cirru_to_json(&code_entry.code);
-      let code_str = code_json.to_string();
+      let code_str = cirru_parser::format(&[code_entry.code.clone()], CirruWriterOptions { use_inline: true })
+        .unwrap_or("(failed to convert code)".to_string());
       let code_preview = if code_str.len() > 40 {
-        format!("{}...", &code_str[..40])
+        format!("{}...(too long)", &code_str[..40])
       } else {
         code_str
       };
