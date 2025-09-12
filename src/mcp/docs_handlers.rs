@@ -1,4 +1,4 @@
-use super::tools::{ListApiDocsRequest, ListGuidebookDocsRequest, QueryApiDocsRequest, QueryGuidebookRequest};
+use super::tools::{ListApiDocsRequest, ListGuidebookDocsRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest};
 use axum::response::Json as ResponseJson;
 use cirru_edn::Edn;
 use serde::{Deserialize, Serialize};
@@ -154,7 +154,7 @@ fn ensure_data_loaded() -> Result<(), String> {
 }
 
 /// Handle API documentation queries
-pub fn handle_query_api_docs(_app_state: &super::AppState, request: QueryApiDocsRequest) -> ResponseJson<Value> {
+pub fn handle_query_calcit_apis(_app_state: &super::AppState, request: QueryCalcitApisRequest) -> ResponseJson<Value> {
   // Ensure data is loaded and get cache
   let api_cache = match ensure_data_loaded() {
     Ok(_) => API_DOCS_CACHE.get().unwrap(),
@@ -282,7 +282,7 @@ pub fn handle_list_guidebook_docs(_app_state: &super::AppState, _request: ListGu
 }
 
 /// Handle guidebook documentation queries
-pub fn handle_query_guidebook(_app_state: &super::AppState, request: QueryGuidebookRequest) -> ResponseJson<Value> {
+pub fn handle_query_calcit_referernce(_app_state: &super::AppState, request: QueryCalcitReferenceRequest) -> ResponseJson<Value> {
   // Ensure data is loaded and get cache
   let guide_cache = match ensure_data_loaded() {
     Ok(_) => GUIDEBOOK_CACHE.get().unwrap(),

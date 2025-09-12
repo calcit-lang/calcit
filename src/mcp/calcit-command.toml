@@ -13,8 +13,8 @@ Calcit 程序目前有两个常用命令:
 可以使用 `--help` 参数了解更详细的用法. 目前没有 `calcit` 命令, 都是用的 `cr` 命令.
 
 关于 Calcit 语言本身的功能, 可以从 MCP 服务中通过
-- `query_guidebook` 工具读取语言文档, 了解常见功能和用法
-- `query_api_docs` 查询语言内置的 API 以及示例
+- `query_calcit_reference` 工具读取语言文档, 了解常见功能和用法
+- `query_calcit_apis` 查询语言内置的 API 以及示例
 
 遇到代码不确定的时候, 可以使用 `cr eval 'println "|demo snippet"' 这样方式先执行一段缩进的代码先验证写法.
 
@@ -30,6 +30,18 @@ Calcit 程序目前有两个常用命令:
 输出日志参考用户的输入的语种, Chinese or English is preferred.
 
 ### 补充一些 MCP 修改代码的例子
+
+简单的直接按照参数填就好. 这几个涉及到代码提交的写法, 注意 code 实际用 JSON Array/String 怎样递归表达.
+
+- `add_definition` - 创建新的函数定义
+
+```json
+{
+  "namespace": "app.core",
+  "definition": "multiply",
+  "code": ["fn", ["x", "y"], ["*", "x", "y"]]
+}
+```
 
 - `update_definition_at` - 精确更新函数体中的操作符
 
@@ -76,5 +88,17 @@ array type:
 }
 ```
 
+- `update_namespace_imports` - 覆盖引用命名空间的定义
+
+```json
+{
+  "namespace": "app.main",
+  "imports": [
+    ["app.lib", ":as", "lib"],
+    ["app.util", ":refer", ["helper", "format-data"]],
+    ["app.config", ":default", "config"]
+  ]
+}
+```
 
 """

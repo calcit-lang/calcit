@@ -1,4 +1,4 @@
-use super::cirru_utils::{json_to_cirru, validate_cirru_structure};
+use super::cirru_utils::json_to_cirru;
 use super::tools::{AddNamespaceRequest, DeleteNamespaceRequest, ListNamespacesRequest, UpdateNamespaceImportsRequest};
 use crate::snapshot::{CodeEntry, FileInSnapShot, Snapshot};
 use axum::response::Json as ResponseJson;
@@ -156,27 +156,23 @@ pub fn update_namespace_imports(app_state: &super::AppState, request: UpdateName
     }
   }
 
-  // Create the complete namespace definition with :require
-  let mut ns_definition_array = vec![serde_json::Value::String(":require".to_string())];
-  ns_definition_array.extend(imports_array);
-  let ns_definition = serde_json::Value::Array(ns_definition_array);
-
-  // Validate if ns_definition conforms to Cirru structure
-  if let Err(e) = validate_cirru_structure(&ns_definition) {
-    return ResponseJson(serde_json::json!({
-      "error": format!("Invalid ns_definition structure: {e}")
-    }));
+  // Convert imports JSON array to Cirru structures
+  let mut imports_cirru = Vec::new();
+  for import_json in imports_array {
+    match json_to_cirru(&import_json) {
+      Ok(cirru) => imports_cirru.push(cirru),
+      Err(e) => {
+        return ResponseJson(serde_json::json!({
+          "error": format!("Failed to convert import to Cirru: {e}")
+        }));
+      }
+    }
   }
 
-  // Convert JSON to Cirru
-  let ns_cirru = match json_to_cirru(&ns_definition) {
-    Ok(c) => c,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Failed to convert ns_definition to Cirru: {e}")
-      }));
-    }
-  };
+  // Create the imports section as Cirru: [:require, ...imports]
+  let mut require_section = vec![cirru_parser::Cirru::leaf(":require")];
+  require_section.extend(imports_cirru);
+  let imports_cirru_list = cirru_parser::Cirru::List(require_section);
 
   let result = app_state.state_manager.update_current_module(|snapshot| {
     // Check if namespace exists
@@ -187,8 +183,28 @@ pub fn update_namespace_imports(app_state: &super::AppState, request: UpdateName
       }
     };
 
+    // Get the current namespace definition as Cirru
+    let current_ns_cirru = &file_data.ns.code;
+    
+    // Ensure the current namespace definition is a list with at least 2 elements
+    let (ns_keyword, ns_name) = match current_ns_cirru {
+      cirru_parser::Cirru::List(list) if list.len() >= 2 => {
+        (&list[0], &list[1])
+      }
+      _ => {
+        return Err(format!("Invalid namespace definition structure for '{namespace}'"));
+      }
+    };
+    
+    // Create the new complete namespace definition: ["ns", "namespace_name", [":require", ...imports]]
+    let complete_ns_cirru = cirru_parser::Cirru::List(vec![
+      ns_keyword.clone(), // "ns"
+      ns_name.clone(),    // namespace name
+      imports_cirru_list  // [":require", ...imports]
+    ]);
+
     // Update namespace definition
-    file_data.ns = CodeEntry::from_code(ns_cirru);
+    file_data.ns = CodeEntry::from_code(complete_ns_cirru);
     Ok(())
   });
 

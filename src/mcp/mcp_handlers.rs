@@ -5,7 +5,7 @@ use super::tools::{
   AddDefinitionRequest, AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
   FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GetCurrentModuleRequest, GetPackageNameRequest, ListApiDocsRequest,
   ListDefinitionsRequest, ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest,
-  OverwriteDefinitionRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryApiDocsRequest, QueryGuidebookRequest,
+  OverwriteDefinitionRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest,
   ReadConfigsRequest, ReadDefinitionAtRequest, ReadDefinitionRequest, ReadDependencyDefinitionDocRequest,
   ReadDependencyModuleDocRequest, ReadNamespaceRequest, SwitchModuleRequest, UpdateConfigsRequest, UpdateDefinitionAtRequest,
   UpdateNamespaceImportsRequest, get_standard_mcp_tools,
@@ -465,20 +465,20 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
     }
 
     // Documentation query tools
-    "query_api_docs" => {
-      let request = match deserialize_params::<QueryApiDocsRequest>(tool_request.parameters, req.id.clone()) {
+    "query_calcit_apis" => {
+      let request = match deserialize_params::<QueryCalcitApisRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      let result = super::docs_handlers::handle_query_api_docs(app_state, request);
+      let result = super::docs_handlers::handle_query_calcit_apis(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
-    "query_guidebook" => {
-      let request = match deserialize_params::<QueryGuidebookRequest>(tool_request.parameters, req.id.clone()) {
+    "query_calcit_reference" => {
+      let request = match deserialize_params::<QueryCalcitReferenceRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      let result = super::docs_handlers::handle_query_guidebook(app_state, request);
+      let result = super::docs_handlers::handle_query_calcit_referernce(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
     // Documentation tools

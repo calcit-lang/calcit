@@ -153,14 +153,14 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
     },
     // Documentation Tools
     McpToolWithSchema {
-      name: "query_api_docs",
+      name: "query_calcit_apis",
       description: "Query the API documentation for Calcit. This provides information about built-in functions, macros, and libraries in the Calcit language.\n\nExample: {\"query\": \"map\"}",
-      schema_generator: || serde_json::to_value(schema_for!(QueryApiDocsRequest)).unwrap(),
+      schema_generator: || serde_json::to_value(schema_for!(QueryCalcitApisRequest)).unwrap(),
     },
     McpToolWithSchema {
-      name: "query_guidebook",
-      description: "Query the guidebook for Calcit. The guidebook contains tutorials, examples, and best practices for using the Calcit language.\n\nExample: {\"query\": \"getting started\"}",
-      schema_generator: || serde_json::to_value(schema_for!(QueryGuidebookRequest)).unwrap(),
+      name: "query_calcit_reference",
+      description: "Query the reference documentation for Calcit. The reference contains tutorials, examples, and best practices for using the Calcit language.\n\nExample: {\"query\": \"getting started\"}",
+      schema_generator: || serde_json::to_value(schema_for!(QueryCalcitReferenceRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "list_api_docs",
@@ -267,7 +267,7 @@ pub struct AddNamespaceRequest {
   /// # Namespace Path
   /// The full path of the new namespace to create.
   ///
-  /// Example: "app.core" or "lib.util"
+  /// Example: "app.core" or "lib.util", should start with package root namespace
   pub namespace: String,
 }
 
@@ -601,7 +601,7 @@ pub struct FormatJsonToCirruRequest {
 ///
 /// Example: `{"query_type": "function", "query_value": "map"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct QueryApiDocsRequest {
+pub struct QueryCalcitApisRequest {
   /// # Query Type
   /// The type of API documentation to search for.
   ///
@@ -619,7 +619,7 @@ pub struct QueryApiDocsRequest {
 ///
 /// Example: `{"query_type": "tutorial", "query_value": "getting-started"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct QueryGuidebookRequest {
+pub struct QueryCalcitReferenceRequest {
   /// # Query Type
   /// The type of guidebook documentation to search for.
   ///
