@@ -1,4 +1,4 @@
-use super::tools::{CreateModuleRequest, DeleteModuleRequest, GetCurrentModuleRequest, ListModulesRequest, SwitchModuleRequest};
+use super::tools::{CreateModuleRequest, DeleteModuleRequest, GetCurrentModuleRequest, ListModulesRequest};
 use crate::snapshot::{self, Snapshot};
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
@@ -64,33 +64,6 @@ pub fn list_modules(app_state: &super::AppState, _request: ListModulesRequest) -
 
   match result {
     Ok(response) => ResponseJson(response),
-    Err(e) => ResponseJson(serde_json::json!({
-      "error": e
-    })),
-  }
-}
-
-pub fn switch_module(app_state: &super::AppState, request: SwitchModuleRequest) -> ResponseJson<Value> {
-  let module_name = request.module;
-
-  // Use state manager to verify if module exists
-  let result = app_state.state_manager.with_current_module(|snapshot| {
-    // Check if module exists (check if it's the current package name or in entries)
-    if module_name != snapshot.package && !snapshot.entries.contains_key(&module_name) {
-      return Err(format!("Module '{module_name}' not found"));
-    }
-    Ok(())
-  });
-
-  match result {
-    Ok(_) => {
-      // In actual implementation, this should update current module state
-      // Currently only verifying module existence
-      ResponseJson(serde_json::json!({
-        "message": format!("Switched to module: {}", module_name),
-        "current_module": module_name
-      }))
-    }
     Err(e) => ResponseJson(serde_json::json!({
       "error": e
     })),

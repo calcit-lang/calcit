@@ -1,10 +1,9 @@
-use super::cirru_utils::cirru_to_json;
-use super::tools::{GetPackageNameRequest, ListDefinitionsRequest, ReadDefinitionRequest, ReadNamespaceRequest};
+use super::tools::{GetPackageNameRequest, ListDefinitionsRequest, ReadNamespaceRequest};
 use axum::response::Json as ResponseJson;
 use cirru_parser::CirruWriterOptions;
 use serde_json::Value;
 
-pub fn list_definitions(app_state: &super::AppState, request: ListDefinitionsRequest) -> ResponseJson<Value> {
+pub fn list_namespace_definitions(app_state: &super::AppState, request: ListDefinitionsRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
 
   let result = app_state.state_manager.with_current_module(|snapshot| {
@@ -90,47 +89,6 @@ pub fn read_namespace(app_state: &super::AppState, request: ReadNamespaceRequest
       "namespace": namespace,
       "definitions": definitions,
       "ns": file_data.ns
-    }))
-  });
-
-  match result {
-    Ok(response) => response,
-    Err(e) => ResponseJson(serde_json::json!({
-      "error": e
-    })),
-  }
-}
-
-pub fn read_definition(app_state: &super::AppState, request: ReadDefinitionRequest) -> ResponseJson<Value> {
-  let namespace = request.namespace;
-  let definition = request.definition;
-
-  let result = app_state.state_manager.with_current_module(|snapshot| {
-    // Check if namespace exists
-    let file_data = match snapshot.files.get(&namespace) {
-      Some(data) => data,
-      None => {
-        return ResponseJson(serde_json::json!({
-          "error": format!("Namespace '{namespace}' not found")
-        }));
-      }
-    };
-
-    // Check if definition exists
-    let code_entry = match file_data.defs.get(&definition) {
-      Some(entry) => entry,
-      None => {
-        return ResponseJson(serde_json::json!({
-          "error": format!("Definition '{definition}' not found in namespace '{namespace}'")
-        }));
-      }
-    };
-
-    ResponseJson(serde_json::json!({
-      "namespace": namespace,
-      "definition": definition,
-      "doc": code_entry.doc,
-      "code": cirru_to_json(&code_entry.code)
     }))
   });
 

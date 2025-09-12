@@ -37,7 +37,7 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
 
     // Reading Operations
     McpToolWithSchema {
-      name: "list_definitions",
+      name: "list_namespace_definitions",
       description: "List all function and macro definitions in a Calcit namespace. Calcit organizes code in namespaces, where each namespace contains definitions (functions, macros, variables). This tool helps explore the structure of Calcit code by showing what's available in a specific namespace.\n\nExample: {\"namespace\": \"app.main\"}",
       schema_generator: || serde_json::to_value(schema_for!(ListDefinitionsRequest)).unwrap(),
     },
@@ -55,11 +55,6 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
       name: "read_namespace",
       description: "Read detailed information about a Calcit namespace, including its import rules and metadata. Calcit namespaces can import functions from other namespaces using import rules, and this tool shows the complete namespace configuration.\n\nExample: {\"namespace\": \"app.main\"}",
       schema_generator: || serde_json::to_value(schema_for!(ReadNamespaceRequest)).unwrap(),
-    },
-    McpToolWithSchema {
-      name: "read_definition",
-      description: "Read the source code and documentation of a specific function or macro definition in Calcit. Calcit uses Cirru syntax (a Lisp-like notation with parentheses) and this tool returns the actual code structure.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"main!\"}",
-      schema_generator: || serde_json::to_value(schema_for!(ReadDefinitionRequest)).unwrap(),
     },
     // Namespace Management Operations
     McpToolWithSchema {
@@ -113,11 +108,6 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
       name: "get_current_module",
       description: "Get the currently active module in the Calcit project. This shows which module is being edited or compiled.\n\nExample: {}",
       schema_generator: || serde_json::to_value(schema_for!(GetCurrentModuleRequest)).unwrap(),
-    },
-    McpToolWithSchema {
-      name: "switch_module",
-      description: "Switch to a different module in the Calcit project. This changes the active module for editing and compilation.\n\nExample: {\"module\": \"app\"}",
-      schema_generator: || serde_json::to_value(schema_for!(SwitchModuleRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "create_config_entry",
@@ -239,24 +229,6 @@ pub struct ReadNamespaceRequest {
   pub namespace: String,
 }
 
-/// # Read Definition Content
-/// Retrieves the complete content of a specific definition in the specified namespace.
-///
-/// Example: `{"namespace": "app.core", "definition": "add-numbers"}`
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct ReadDefinitionRequest {
-  /// # Namespace Path
-  /// The full path of the namespace containing the definition.
-  ///
-  /// Example: "app.core" or "lib.util"
-  pub namespace: String,
-  /// # Definition Name
-  /// The name of the function or variable to read.
-  ///
-  /// Example: "add-numbers" or "config-data"
-  pub definition: String,
-}
-
 /// # Add New Namespace
 /// Creates a new namespace for organizing related function and variable definitions.
 /// Returns an error if the namespace already exists.
@@ -376,7 +348,7 @@ pub struct DeleteDefinitionRequest {
 /// # Completely Overwrite Definition Content
 /// Replaces the entire content of an existing definition with a new code tree.
 /// Note: This operation replaces the entire definition, use with caution.
-/// It is recommended to first use read_definition to view the existing structure before making precise modifications.
+/// It is recommended to first use `read_definition_at`` to view the existing structure before making precise modifications.
 ///
 /// Example: `{"namespace": "app.core", "definition": "add-numbers", "code": ["fn", ["x", "y"], ["+", "x", "y"]]}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -527,19 +499,6 @@ pub struct ReadDefinitionAtRequest {
   /// Example: [2, 1] or []
   #[schemars(with = "Vec<i32>")]
   pub coord: serde_json::Value,
-}
-
-/// # Switch Active Module
-/// Changes the currently active module in the editor.
-///
-/// Example: `{"module": "app"}`
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct SwitchModuleRequest {
-  /// # Module Name
-  /// The name of the module to switch to.
-  ///
-  /// Example: "app" or "lib"
-  pub module: String,
 }
 
 /// # Create New Module

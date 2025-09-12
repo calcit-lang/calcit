@@ -33,7 +33,10 @@ Calcit 程序目前有两个常用命令:
 
 简单的直接按照参数填就好. 这几个涉及到代码提交的写法, 注意 code 实际用 JSON Array/String 怎样递归表达.
 
-- `add_definition` - 创建新的函数定义
+
+- `add_definition`
+
+提交新的函数定义
 
 ```json
 {
@@ -43,9 +46,21 @@ Calcit 程序目前有两个常用命令:
 }
 ```
 
+- `read_definition_at` - 读取函数定义中特定位置的内容
+
+```json
+{
+  "namespace": "app.core",
+  "definition": "add-numbers",
+  "coord": [2, 1]
+}
+```
+
+注意 coord(坐标)是数组, 表示函数定义中的位置, 从 0 开始计数. 空数组表示读取整个定义.
+
 - `update_definition_at` - 精确更新函数体中的操作符
 
-leaf type:
+目标位置替换为一个叶子(leaf)节点的例子, match 可能也是一个叶子节点(也可能不是):
 
 ```json
 {
@@ -53,13 +68,13 @@ leaf type:
   "definition": "add-numbers",
   "coord": [2, 0],
   "mode": "replace",
-  "value_type": "leaf",
   "match": "a",
+  "value_type": "leaf",
   "new_value": "b",
 }
 ```
 
-array type:
+目标位置替换为表达式(array)的例子, match 可能也是一个数组节点(也可能不是):
 
 ```json
 {
@@ -73,8 +88,11 @@ array type:
 }
 ```
 
+替换之前建议用 `read_definition_at` 反复查看目标 coord 或者兄弟位置, 从而保证局部修改的准确度.
 
-- `overwrite_definition` - 完全重写函数定义
+- `overwrite_definition`
+
+完全重写函数定义, 注意这个操作会直接替换整个函数定义, 不会做局部修改. 建议对小的函数/定义使用, 或者兜底使用. 一般建议先确定准确坐标再通过 `update_definition_at` 做局部操作.
 
 ```json
 {
@@ -88,7 +106,9 @@ array type:
 }
 ```
 
-- `update_namespace_imports` - 覆盖引用命名空间的定义
+- `update_namespace_imports`
+
+更新(覆盖式)引用命名空间的定义
 
 ```json
 {

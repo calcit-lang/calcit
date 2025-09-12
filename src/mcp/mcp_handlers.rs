@@ -6,9 +6,8 @@ use super::tools::{
   FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GetCurrentModuleRequest, GetPackageNameRequest, ListApiDocsRequest,
   ListDefinitionsRequest, ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest,
   OverwriteDefinitionRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest,
-  ReadConfigsRequest, ReadDefinitionAtRequest, ReadDefinitionRequest, ReadDependencyDefinitionDocRequest,
-  ReadDependencyModuleDocRequest, ReadNamespaceRequest, SwitchModuleRequest, UpdateConfigsRequest, UpdateDefinitionAtRequest,
-  UpdateNamespaceImportsRequest, get_standard_mcp_tools,
+  ReadConfigsRequest, ReadDefinitionAtRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest,
+  ReadNamespaceRequest, UpdateConfigsRequest, UpdateDefinitionAtRequest, UpdateNamespaceImportsRequest, get_standard_mcp_tools,
 };
 use axum::response::Json as ResponseJson;
 use colored::*;
@@ -295,12 +294,12 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
   // Call the appropriate handler based on tool name
   let _ = match params.name.as_str() {
     // Read operations
-    "list_definitions" => {
+    "list_namespace_definitions" => {
       let request = match deserialize_params::<ListDefinitionsRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      let result = super::read_handlers::list_definitions(app_state, request);
+      let result = super::read_handlers::list_namespace_definitions(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
     "list_namespaces" => {
@@ -327,15 +326,6 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       let result = super::read_handlers::read_namespace(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
-    "read_definition" => {
-      let request = match deserialize_params::<ReadDefinitionRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::read_handlers::read_definition(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-
     // Namespace operations
     "add_namespace" => {
       let request = match deserialize_params::<AddNamespaceRequest>(tool_request.parameters, req.id.clone()) {
@@ -419,14 +409,6 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Err(error_response) => return error_response,
       };
       let result = super::module_handlers::get_current_module(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "switch_module" => {
-      let request = match deserialize_params::<SwitchModuleRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::module_handlers::switch_module(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
     "create_config_entry" => {
