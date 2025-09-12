@@ -18,10 +18,13 @@ pub fn parse_cirru_to_json(_app_state: &super::AppState, request: ParseCirruToJs
     // Use Cirru parser to parse
     match cirru_parser::parse(cirru_code) {
       Ok(cirru_data) => {
-        let json_data: Vec<serde_json::Value> = cirru_data.iter().map(cirru_to_json).collect();
-        ResponseJson(serde_json::json!({
-          "result": json_data
-        }))
+        if cirru_data.len() == 1 {
+          ResponseJson(cirru_to_json(&cirru_data[0]))
+        } else {
+          ResponseJson(serde_json::json!({
+            "result": cirru_data
+          }))
+        }
       }
       Err(e) => ResponseJson(serde_json::json!({
         "error": format!("Failed to parse Cirru code: {e}")

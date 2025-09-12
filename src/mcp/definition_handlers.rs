@@ -1,5 +1,6 @@
 use super::tools::{
-  AddDefinitionRequest, DeleteDefinitionRequest, OverwriteDefinitionRequest, ReadDefinitionAtRequest, UpdateDefinitionAtRequest, UpdateDefinitionAtWithLeafRequest,
+  AddDefinitionRequest, DeleteDefinitionRequest, OverwriteDefinitionRequest, ReadDefinitionAtRequest, UpdateDefinitionAtRequest,
+  UpdateDefinitionAtWithLeafRequest,
 };
 use crate::mcp::definition_update::{UpdateMode, update_definition_at_coord};
 use crate::mcp::definition_utils::{navigate_to_coord, parse_coord_from_json};
@@ -329,11 +330,9 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
 
   match result {
     Ok(Ok((value, expr_length))) => ResponseJson(serde_json::json!({
-      "namespace": namespace,
-      "definition": definition,
-      "coord": coord,
       "value": value,
-      "expr_length": expr_length
+      "expr_length": expr_length,
+      "message": format!("Definition '{}' read at coordinate {:?} in namespace '{}' successfully", definition, coord, namespace)
     })),
     Ok(Err(e)) => ResponseJson(serde_json::json!({
       "error": e
