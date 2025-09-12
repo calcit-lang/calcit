@@ -352,15 +352,24 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
       }
     };
 
-    Ok(super::cirru_utils::cirru_to_json(target))
+    let expr_length = match target {
+      Cirru::Leaf(_) => None,
+      Cirru::List(xs) => Some(xs.len()),
+    };
+
+    Ok((target.clone(), expr_length))
   });
 
   match result {
-    Ok(value) => ResponseJson(serde_json::json!({
+    Ok(Ok((value, expr_length))) => ResponseJson(serde_json::json!({
       "namespace": namespace,
       "definition": definition,
       "coord": coord,
-      "value": value
+      "value": value,
+      "expr_length": expr_length
+    })),
+    Ok(Err(e)) => ResponseJson(serde_json::json!({
+      "error": e
     })),
     Err(e) => ResponseJson(serde_json::json!({
       "error": e
