@@ -15,7 +15,7 @@ use crate::{
   util::number::f64_to_usize,
 };
 
-use cirru_parser::{Cirru, CirruWriterOptions};
+use cirru_parser::Cirru;
 
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, atomic};
@@ -77,7 +77,7 @@ pub fn format_to_lisp(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn format_to_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
-    Some(v) => cirru_parser::format(&[transform_code_to_cirru(v)], CirruWriterOptions { use_inline: false })
+    Some(v) => cirru_parser::format(&[transform_code_to_cirru(v)], false.into())
       .map(|s| Calcit::Str(s.into()))
       .map_err(|e| CalcitErr::use_str(CalcitErrKind::Syntax, e)),
     None => CalcitErr::err_str(CalcitErrKind::Arity, "format-to-cirru expected 1 argument, but received none"),
@@ -195,22 +195,19 @@ pub fn parse_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn format_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
-    Some(a) => {
-      let options = cirru_parser::CirruWriterOptions { use_inline: false };
-      match cirru::calcit_data_to_cirru(a) {
-        Ok(v) => {
-          if let Cirru::List(ys) = v {
-            Ok(Calcit::Str(cirru_parser::format(&ys, options)?.into()))
-          } else {
-            CalcitErr::err_str(
-              CalcitErrKind::Type,
-              format!("format-cirru expected a list for Cirru formatting, but received: {v}"),
-            )
-          }
+    Some(a) => match cirru::calcit_data_to_cirru(a) {
+      Ok(v) => {
+        if let Cirru::List(ys) = v {
+          Ok(Calcit::Str(cirru_parser::format(&ys, false.into())?.into()))
+        } else {
+          CalcitErr::err_str(
+            CalcitErrKind::Type,
+            format!("format-cirru expected a list for Cirru formatting, but received: {v}"),
+          )
         }
-        Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("format-cirru failed: {e}")),
       }
-    }
+      Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("format-cirru failed: {e}")),
+    },
     None => CalcitErr::err_str(CalcitErrKind::Arity, "format-cirru expected 1 argument, but received none"),
   }
 }

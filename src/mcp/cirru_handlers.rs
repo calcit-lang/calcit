@@ -48,7 +48,7 @@ pub fn format_json_to_cirru(_app_state: &super::AppState, request: FormatJsonToC
   };
 
   // Format to Cirru string
-  let cirru_code = match cirru_parser::format(&[cirru_data], cirru_parser::CirruWriterOptions { use_inline: true }) {
+  let cirru_code = match cirru_parser::format(&[cirru_data], true.into()) {
     Ok(formatted) => formatted,
     Err(e) => {
       return ResponseJson(serde_json::json!({

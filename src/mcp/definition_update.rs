@@ -193,7 +193,6 @@ fn navigate_to_coord_mut<'a>(cirru_tree: &'a mut Cirru, coord: &[usize]) -> Resu
 #[cfg(test)]
 mod tests {
   use super::*;
-  use cirru_parser::CirruWriterOptions;
 
   #[test]
   fn test_replace_mode() {
@@ -202,7 +201,7 @@ mod tests {
 
     update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Replace, None).unwrap();
 
-    let result = cirru_parser::format(&[tree], CirruWriterOptions { use_inline: false }).unwrap();
+    let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a x c");
   }
 
@@ -212,7 +211,7 @@ mod tests {
 
     update_definition_at_coord(&mut tree, &[1], None, UpdateMode::Delete, None).unwrap();
 
-    let result = cirru_parser::format(&[tree], cirru_parser::CirruWriterOptions { use_inline: false }).unwrap();
+    let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a c");
   }
 
@@ -223,7 +222,7 @@ mod tests {
 
     update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::After, None).unwrap();
 
-    let result = cirru_parser::format(&[tree], CirruWriterOptions { use_inline: false }).unwrap();
+    let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a b x c");
   }
 
@@ -234,7 +233,7 @@ mod tests {
 
     update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Before, None).unwrap();
 
-    let result = cirru_parser::format(&[tree], CirruWriterOptions { use_inline: false }).unwrap();
+    let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a x b c");
   }
 
@@ -249,7 +248,7 @@ mod tests {
 
     update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Prepend, None).unwrap();
 
-    let result = cirru_parser::format(&[tree], CirruWriterOptions { use_inline: false }).unwrap();
+    let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a (x b c) d");
   }
 
@@ -264,7 +263,7 @@ mod tests {
 
     update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Append, None).unwrap();
 
-    let result = cirru_parser::format(&[tree], CirruWriterOptions { use_inline: false }).unwrap();
+    let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a (b c x) d");
   }
 
@@ -301,7 +300,7 @@ mod tests {
 
     update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Append, None).unwrap();
 
-    let result = cirru_parser::format(&[tree], CirruWriterOptions { use_inline: false }).unwrap();
+    let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a b c");
   }
 
@@ -312,7 +311,7 @@ mod tests {
 
     update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Prepend, None).unwrap();
 
-    let result = cirru_parser::format(&[tree], CirruWriterOptions { use_inline: false }).unwrap();
+    let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "x a b");
   }
 
