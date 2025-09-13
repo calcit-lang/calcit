@@ -178,6 +178,27 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
       description: "Update the configuration settings for the Calcit project. This allows changing settings for initialization, reloading, and versioning.\n\nExample: {\"init_fn\": \"app.main/main!\", \"reload_fn\": \"app.main/reload!\", \"version\": \"0.1.0\"}",
       schema_generator: || serde_json::to_value(schema_for!(UpdateConfigsRequest)).unwrap(),
     },
+    // Calcit Runner Management Tools
+    McpToolWithSchema {
+      name: "start_calcit_runner",
+      description: "Start a Calcit runner in background mode using `cr <filename>` command. This launches the Calcit interpreter in service mode, collecting logs in a queue for later retrieval. Returns startup success/failure status.\n\nExample: {\"filename\": \"main.cirru\"}",
+      schema_generator: || serde_json::to_value(schema_for!(StartCalcitRunnerRequest)).unwrap(),
+    },
+    McpToolWithSchema {
+      name: "grab_calcit_runner_logs",
+      description: "Grab logs from the running Calcit runner and clear the internal log queue. This retrieves accumulated logs and service status information, then empties the queue for fresh log collection.\n\nExample: {}",
+      schema_generator: || serde_json::to_value(schema_for!(GrabCalcitRunnerLogsRequest)).unwrap(),
+    },
+    McpToolWithSchema {
+      name: "stop_calcit_runner",
+      description: "Stop the running Calcit runner and retrieve all remaining logs. This terminates the background service and returns any remaining log content from the queue.\n\nExample: {}",
+      schema_generator: || serde_json::to_value(schema_for!(StopCalcitRunnerRequest)).unwrap(),
+    },
+    McpToolWithSchema {
+      name: "generate_calcit_incremental",
+      description: "Generate incremental file (.compact-inc.cirru) by comparing current source file with the .calcit-runner.cirru copy created when starting the runner. This creates a diff file that can be used by the Calcit runner to apply incremental updates. After generating the incremental file, check the runner logs to verify if the updates were applied successfully.\n\nExample: {\"source_file\": \"compact.cirru\"}",
+      schema_generator: || serde_json::to_value(schema_for!(GenerateCalcitIncrementalRequest)).unwrap(),
+    },
     // Dependency Documentation Tools
     McpToolWithSchema {
       name: "list_dependency_docs",
@@ -757,6 +778,45 @@ pub struct GetCurrentModuleRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ListModulesRequest {
   // No parameters needed
+}
+
+// Calcit Runner Management Tools
+
+/// Start a Calcit runner in background mode using `cr <filename>` command
+/// Example: `{"filename": "main.cirru"}`
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StartCalcitRunnerRequest {
+  /// # Filename
+  /// The Calcit file to run with `cr` command.
+  ///
+  /// Example: "main.cirru" or "test.cirru"
+  pub filename: String,
+}
+
+/// Grab logs from the running Calcit runner and clear the internal log queue
+/// Example: `{}`
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GrabCalcitRunnerLogsRequest {
+  // No parameters needed
+}
+
+/// Stop the running Calcit runner and retrieve all remaining logs
+/// Example: `{}`
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StopCalcitRunnerRequest {
+  // No parameters needed
+}
+
+/// # Generate Calcit Incremental File
+/// Generate incremental file (.compact-inc.cirru) by comparing current compact.cirru with the temporary copy.
+/// This creates a diff file that can be used by the Calcit runner to apply incremental updates.
+/// After generating the incremental file, check the runner logs to verify if the updates were applied successfully.
+///
+/// Example: `{"source_file": "compact.cirru"}`
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GenerateCalcitIncrementalRequest {
+  /// Source file path (optional, defaults to "compact.cirru")
+  pub source_file: Option<String>,
 }
 
 pub fn get_standard_mcp_tools() -> Vec<Tool> {

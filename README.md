@@ -94,6 +94,32 @@ Read more in [Minimal Calcit](https://github.com/calcit-lang/minimal-calcit/blob
 
 Read more in [Respo Calcit Workflow](https://github.com/calcit-lang/respo-calcit-workflow) to learn to create an MVC webpage with [Respo](http://respo-mvc.org/).
 
+### MCP (Model Context Protocol) Support
+
+Calcit provides MCP server functionality for integration with AI assistants and development tools. The MCP server offers tools for:
+
+- **Code Management**: Read, write, and modify Calcit namespaces and definitions
+- **Project Operations**: Manage modules, dependencies, and configurations
+- **Calcit Runner**: Start/stop background runner processes with incremental updates
+- **Documentation**: Query API docs, reference materials, and dependency documentation
+
+#### Incremental File Processing
+
+When using the Calcit Runner through MCP:
+
+1. **Start Runner**: Use `start_calcit_runner` to launch the background process. This automatically:
+   - Creates a `.calcit-tmp/` directory
+   - Copies the current `compact.cirru` as a temporary baseline
+
+2. **Generate Incremental Updates**: After making changes to your code, use `generate_calcit_incremental` to:
+   - Compare current `compact.cirru` with the temporary baseline
+   - Generate a `.compact-inc.cirru` file with only the changes
+   - Apply incremental updates to the running process
+
+3. **Check Results**: After generating the incremental file, always check the runner logs using `grab_calcit_runner_logs` to verify that updates were applied successfully.
+
+This workflow enables efficient hot-reloading during development without restarting the entire application.
+
 ### Modules
 
 `deps.cirru` declares dependencies that need to download, which correspond to repositories on GitHub. Specify a branch or a tag:

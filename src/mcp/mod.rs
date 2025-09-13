@@ -6,6 +6,7 @@
 use crate::snapshot;
 use std::collections::HashMap;
 
+pub mod calcit_runner_handlers;
 pub mod cirru_handlers;
 pub mod cirru_utils;
 pub mod config_handlers;
@@ -34,6 +35,7 @@ pub struct AppState {
 }
 
 // Re-export main structs and functions
+pub use calcit_runner_handlers::*;
 pub use cirru_handlers::*;
 pub use cirru_utils::*;
 pub use config_handlers::*;

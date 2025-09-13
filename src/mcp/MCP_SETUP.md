@@ -72,3 +72,6 @@ Once the server is running and configured in your Gemini CLI, you will have acce
 - `read_dependency_definition_doc` - 读取依赖中特定定义的文档
 - `read_dependency_module_doc` - 读取依赖中特定模块的文档
 - `fetch_calcit_libraries` - 获取可用的 Calcit 库列表
+- `start_calcit_runner` - 启动 Calcit 运行器后台服务，用于调试模式
+- `grab_calcit_runner_logs` - 获取 Calcit 运行器的日志并清空队列
+- `stop_calcit_runner` - 停止 Calcit 运行器服务并获取剩余日志

@@ -185,22 +185,20 @@ pub fn update_namespace_imports(app_state: &super::AppState, request: UpdateName
 
     // Get the current namespace definition as Cirru
     let current_ns_cirru = &file_data.ns.code;
-    
+
     // Ensure the current namespace definition is a list with at least 2 elements
     let (ns_keyword, ns_name) = match current_ns_cirru {
-      cirru_parser::Cirru::List(list) if list.len() >= 2 => {
-        (&list[0], &list[1])
-      }
+      cirru_parser::Cirru::List(list) if list.len() >= 2 => (&list[0], &list[1]),
       _ => {
         return Err(format!("Invalid namespace definition structure for '{namespace}'"));
       }
     };
-    
+
     // Create the new complete namespace definition: ["ns", "namespace_name", [":require", ...imports]]
     let complete_ns_cirru = cirru_parser::Cirru::List(vec![
       ns_keyword.clone(), // "ns"
       ns_name.clone(),    // namespace name
-      imports_cirru_list  // [":require", ...imports]
+      imports_cirru_list, // [":require", ...imports]
     ]);
 
     // Update namespace definition

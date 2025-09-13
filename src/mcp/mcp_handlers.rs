@@ -3,11 +3,12 @@ use super::error_handling::{create_protocol_error, create_tool_execution_error, 
 use super::jsonrpc::*;
 use super::tools::{
   AddDefinitionRequest, AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
-  FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GetCurrentModuleRequest, GetPackageNameRequest, ListApiDocsRequest,
-  ListDefinitionsRequest, ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest,
-  OverwriteDefinitionRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest,
-  ReadConfigsRequest, ReadDefinitionAtRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest,
-  ReadNamespaceRequest, UpdateConfigsRequest, UpdateDefinitionAtRequest, UpdateDefinitionAtWithLeafRequest, UpdateNamespaceImportsRequest, get_standard_mcp_tools,
+  FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GenerateCalcitIncrementalRequest, GetCurrentModuleRequest, GetPackageNameRequest, GrabCalcitRunnerLogsRequest,
+  ListApiDocsRequest, ListDefinitionsRequest, ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModulesRequest,
+  ListNamespacesRequest, McpRequest, OverwriteDefinitionRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest,
+  QueryCalcitApisRequest, QueryCalcitReferenceRequest, ReadConfigsRequest, ReadDefinitionAtRequest, ReadDependencyDefinitionDocRequest,
+  ReadDependencyModuleDocRequest, ReadNamespaceRequest, StartCalcitRunnerRequest, StopCalcitRunnerRequest, UpdateConfigsRequest,
+  UpdateDefinitionAtRequest, UpdateDefinitionAtWithLeafRequest, UpdateNamespaceImportsRequest, get_standard_mcp_tools,
 };
 use axum::response::Json as ResponseJson;
 use colored::*;
@@ -549,6 +550,40 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Err(error_response) => return error_response,
       };
       let result = super::dependency_doc_handlers::read_dependency_module_doc(&app_state.state_manager, request);
+      return handle_tool_result(req.id.clone(), result);
+    }
+
+    // Calcit Runner Management Tools
+    "start_calcit_runner" => {
+      let request = match deserialize_params::<StartCalcitRunnerRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      let result = super::calcit_runner_handlers::start_calcit_runner(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
+    }
+    "grab_calcit_runner_logs" => {
+      let request = match deserialize_params::<GrabCalcitRunnerLogsRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      let result = super::calcit_runner_handlers::grab_calcit_runner_logs(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
+    }
+    "stop_calcit_runner" => {
+      let request = match deserialize_params::<StopCalcitRunnerRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      let result = super::calcit_runner_handlers::stop_calcit_runner(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
+    }
+    "generate_calcit_incremental" => {
+      let request = match deserialize_params::<GenerateCalcitIncrementalRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      let result = super::calcit_runner_handlers::generate_incremental_file(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
 
