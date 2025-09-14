@@ -50,9 +50,8 @@ Once the server is running and configured in your Gemini CLI, you will have acce
 - `add_namespace` - 创建新的命名空间
 - `delete_namespace` - 删除命名空间
 - `update_namespace_imports` - 修改命名空间的导入规则
-- `add_definition` - 创建新的函数或宏定义
+- `upsert_definition` - 创建新的函数或宏定义，或完全覆盖现有定义
 - `delete_definition` - 删除函数或宏定义
-- `overwrite_definition` - 完全覆盖现有的函数或宏定义
 - `operate_definition_at` - 使用坐标精确更新函数定义的特定部分
 - `operate_definition_at_with_leaf` - 使用坐标精确更新函数定义的特定部分
 - `read_definition_at` - 读取函数定义中特定位置的内容

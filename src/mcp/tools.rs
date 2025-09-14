@@ -74,9 +74,9 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
     },
     // Function/Macro Definition Operations
     McpToolWithSchema {
-      name: "add_definition",
-      description: "Create a new function or macro definition in a Calcit namespace. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses, but stripped outermost pair of parentheses).\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'code' parameter MUST be a native JSON array, NOT a string\n• Do NOT wrap the array in quotes\n• Do NOT escape quotes inside the array\n\n✅ CORRECT FORMAT:\n{\"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}\n\n❌ WRONG FORMATS:\n{\"code\": \"[fn [x] [* x x]]\"}← STRING (WRONG)\n{\"code\": \"[\\\"fn\\\", [\\\"x\\\"], [\\\"*\\\", \\\"x\\\", \\\"x\\\"]]\"}← ESCAPED STRING (WRONG)\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
-      schema_generator: || serde_json::to_value(schema_for!(AddDefinitionRequest)).unwrap(),
+      name: "upsert_definition",
+      description: "Create a new function or macro definition in a Calcit namespace, or completely overwrite an existing one. This unified tool combines the functionality of add_definition and overwrite_definition. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses, but stripped outermost pair of parentheses).\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'syntax_tree' parameter MUST be a native JSON array, NOT a string\n• Do NOT wrap the array in quotes\n• Do NOT escape quotes inside the array\n\n✅ CORRECT FORMAT:\n{\"syntax_tree\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}\n\n❌ WRONG FORMATS:\n{\"syntax_tree\": \"[fn [x] [* x x]]\"}← STRING (WRONG)\n{\"syntax_tree\": \"[\\\"fn\\\", [\\\"x\\\"], [\\\"*\\\", \\\"x\\\", \\\"x\\\"]]\"}← ESCAPED STRING (WRONG)\n\n💡 BEHAVIOR:\n• When replacing=false: Creates a new definition (fails if definition already exists)\n• When replacing=true: Overwrites existing definition (fails if definition doesn't exist)\n\n⚠️ RECOMMENDATION: For existing definitions, consider using 'read_definition_at' first to understand the current structure, then use 'operate_definition_at' for precise modifications instead of complete replacement.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"replacing\": false, \"syntax_tree\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
+      schema_generator: || serde_json::to_value(schema_for!(UpsertDefinitionRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "delete_definition",
@@ -84,9 +84,14 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
       schema_generator: || serde_json::to_value(schema_for!(DeleteDefinitionRequest)).unwrap(),
     },
     McpToolWithSchema {
-      name: "overwrite_definition",
-      description: "Completely overwrite an existing function or macro definition in Calcit. This replaces the entire definition with new code and documentation.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'code' parameter MUST be a native JSON array, NOT a string\n• Do NOT wrap the array in quotes\n• Do NOT escape quotes inside the array\n\n✅ CORRECT FORMAT:\n{\"code\": [\"defcomp\", \"my-comp\", [], [\"div\", {}, \"Hello\"]]}\n\n❌ WRONG FORMATS:\n{\"code\": \"[defcomp my-comp [] [div {} Hello]]\"}← STRING (WRONG)\n{\"code\": \"[\\\"defcomp\\\", \\\"my-comp\\\"]\"}← ESCAPED STRING (WRONG)\n\n⚠️ RECOMMENDATION: Avoid using this tool for most cases. Instead, use 'read_definition_at' first to understand the current structure, then use 'operate_definition_at' for precise modifications.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
-      schema_generator: || serde_json::to_value(schema_for!(OverwriteDefinitionRequest)).unwrap(),
+      name: "update_definition_doc",
+      description: "Update the documentation for a specific definition in the current root namespace/package. This tool only works for definitions in the current project, not for dependencies.\n\nExample: {\"namespace\": \"app.core\", \"definition\": \"add-numbers\", \"doc\": \"Adds two numbers together\"}",
+      schema_generator: || serde_json::to_value(schema_for!(UpdateDefinitionDocRequest)).unwrap(),
+    },
+    McpToolWithSchema {
+      name: "update_namespace_doc",
+      description: "Update the documentation for a specific namespace in the current root namespace/package. This tool only works for namespaces in the current project, not for dependencies.\n\nExample: {\"namespace\": \"app.core\", \"doc\": \"Core utilities for the application\"}",
+      schema_generator: || serde_json::to_value(schema_for!(UpdateNamespaceDocRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "operate_definition_at",
@@ -313,44 +318,93 @@ pub struct UpdateNamespaceImportsRequest {
   pub imports: Vec<serde_json::Value>,
 }
 
-/// # Add New Definition
-/// Creates a new function or variable definition in the specified namespace.
-/// Returns an error if the definition already exists.
+/// # Upsert Definition (Add or Update)
+/// Creates a new definition or updates an existing one in the specified namespace.
+/// The `replacing` parameter controls whether to allow overwriting existing definitions.
+/// 
+/// 💡 **Recommendation for Updates**: For incremental modifications to existing definitions,
+/// consider using `operate_definition_at` tool instead, which allows precise updates to specific
+/// parts of the syntax tree without replacing the entire definition.
 ///
-/// Example: `{"namespace": "app.core", "definition": "add-numbers", "code": ["fn", ["a", "b"], ["+", "a", "b"]]}`
+/// Example: `{"namespace": "app.core", "definition": "add-numbers", "syntax_tree": ["fn", ["a", "b"], ["+", "a", "b"]], "replacing": false}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct AddDefinitionRequest {
+pub struct UpsertDefinitionRequest {
   /// # Namespace Path
-  /// The full path of the namespace where the definition will be added.
+  /// The full path of the namespace where the definition will be added or updated.
+  /// This should be a valid namespace identifier following Calcit naming conventions.
+  /// Namespace names typically use dot notation for hierarchical organization.
   ///
-  /// Example: "app.core"
+  /// Examples:
+  /// - "app.core" - Main application logic
+  /// - "app.util" - Utility functions
+  /// - "lib.math" - Mathematical operations library
   pub namespace: String,
+  
   /// # Definition Name
-  /// The name of the new function or variable.
+  /// The name of the function or variable to be created or updated.
+  /// Must be a valid Calcit identifier.
+  /// Function names typically use kebab-case convention.
   ///
-  /// Example: "add-numbers" or "config-data"
+  /// Examples:
+  /// - "add-numbers" - A function that adds numbers
+  /// - "config-data" - A configuration variable
+  /// - "user-profile" - A data structure or function
   pub definition: String,
-  /// # Code Content
-  /// The code tree for the definition, represented as a nested array.
+  
+  /// # Allow Replacing Existing Definition
+  /// Controls whether to allow overwriting an existing definition.
+  /// - `false`: Only create new definitions (fails if definition already exists)
+  /// - `true`: Allow overwriting existing definitions
+  ///
+  /// Examples:
+  /// - `false` - Safe mode, prevents accidental overwrites
+  /// - `true` - Update mode, allows replacing existing definitions
+  pub replacing: bool,
+  
+  /// # Documentation String
+  /// Optional documentation string for the definition.
+  /// This will be stored as metadata and can be used for generating documentation.
+  ///
+  /// Examples:
+  /// - "Adds two numbers together"
+  /// - "Configuration data for the application"
+  /// - "" (empty string for no documentation)
+  #[serde(default)]
+  pub doc: String,
+  
+  /// # Syntax Tree
+  /// The complete syntax tree for the definition, represented as nested JSON arrays.
+  /// This is the core structure that defines the behavior of your function or variable.
   ///
   /// 🚨 CRITICAL FORMAT REQUIREMENTS:
   /// • MUST be a native JSON array, NOT a string
   /// • Do NOT wrap the array in quotes
   /// • Do NOT escape quotes inside the array
+  /// • Each element can be a string (symbol/literal) or another array (sub-expression)
   ///
   /// ✅ CORRECT FORMATS:
-  /// ["fn", ["a", "b"], ["+", "a", "b"]]
-  /// ["def", "x", "100"]
+  /// Function definition: ["fn", ["a", "b"], ["+", "a", "b"]]
+  /// Variable definition: ["def", "x", "100"]
+  /// Component definition: ["defcomp", "button", ["props"], ["div", {}, "Click me"]]
   ///
   /// ❌ WRONG FORMATS:
   /// "[fn [a b] [+ a b]]" ← STRING (WRONG)
   /// "[\"fn\", [\"a\", \"b\"]]" ← ESCAPED STRING (WRONG)
   ///
-  /// Example for a function: ["fn", ["a", "b"], ["+", "a", "b"]]
-  /// Example for a variable: ["def", "x", "100"]
+  /// Structure explanation:
+  /// - First element: definition type ("fn", "def", "defcomp", etc.)
+  /// - Second element: name or parameters
+  /// - Remaining elements: body/implementation
+  ///
+  /// Examples:
+  /// - Function: ["fn", ["x", "y"], ["*", "x", "y"]]
+  /// - Variable: ["def", "pi", "3.14159"]
+  /// - Macro: ["defmacro", "when", ["condition", "&", "body"], ["if", "condition", ["do", "&", "body"]]]
   #[schemars(with = "Vec<serde_json::Value>")]
-  pub code: serde_json::Value,
+  pub syntax_tree: serde_json::Value,
 }
+
+// AddDefinitionRequest removed - use UpsertDefinitionRequest instead
 
 /// # Delete Definition
 /// Removes a function or variable definition from the specified namespace.
@@ -371,44 +425,7 @@ pub struct DeleteDefinitionRequest {
   pub definition: String,
 }
 
-/// # Completely Overwrite Definition Content
-/// Replaces the entire content of an existing definition with a new code tree.
-/// Note: This operation replaces the entire definition, use with caution.
-/// It is recommended to first use `read_definition_at`` to view the existing structure before making precise modifications.
-///
-/// Example: `{"namespace": "app.core", "definition": "add-numbers", "code": ["fn", ["x", "y"], ["+", "x", "y"]]}`
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct OverwriteDefinitionRequest {
-  /// # Namespace Path
-  /// The full path of the namespace containing the definition to overwrite.
-  ///
-  /// Example: "app.core"
-  pub namespace: String,
-  /// # Definition Name
-  /// The name of the function or variable to overwrite.
-  ///
-  /// Example: "add-numbers"
-  pub definition: String,
-  /// # New Code
-  /// The complete new code tree, represented as a nested array.
-  ///
-  /// 🚨 CRITICAL FORMAT REQUIREMENTS:
-  /// • MUST be a native JSON array, NOT a string
-  /// • Do NOT wrap the array in quotes
-  /// • Do NOT escape quotes inside the array
-  ///
-  /// ✅ CORRECT FORMATS:
-  /// ["defcomp", "my-comp", [], ["div", {}, "Hello"]]
-  /// ["fn", ["x", "y"], ["+", "x", "y"]]
-  ///
-  /// ❌ WRONG FORMATS:
-  /// "[defcomp my-comp [] [div {} Hello]]" ← STRING (WRONG)
-  /// "[\"defcomp\", \"my-comp\"]" ← ESCAPED STRING (WRONG)
-  ///
-  /// Example: ["fn", ["x", "y"], ["+", "x", "y"]]
-  #[schemars(with = "Vec<serde_json::Value>")]
-  pub code: serde_json::Value,
-}
+// OverwriteDefinitionRequest removed - use UpsertDefinitionRequest instead
 
 // Request structures for definition operations
 /// # Update Definition at Specific Position
@@ -780,6 +797,51 @@ pub struct GetCurrentModuleRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ListModulesRequest {
   // No parameters needed
+}
+
+/// # Update Definition Documentation
+/// Updates the documentation for a specific definition in the current root namespace/package.
+/// This tool only works for definitions in the current project, not for dependencies.
+///
+/// Example: `{"namespace": "app.core", "definition": "add-numbers", "doc": "Adds two numbers together"}`
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct UpdateDefinitionDocRequest {
+  /// # Namespace Path
+  /// The full path of the namespace containing the definition to update documentation for.
+  /// Must be within the current root namespace/package.
+  ///
+  /// Example: "app.core"
+  pub namespace: String,
+  /// # Definition Name
+  /// The name of the function or variable to update documentation for.
+  ///
+  /// Example: "add-numbers"
+  pub definition: String,
+  /// # Documentation
+  /// The new documentation content for the definition.
+  ///
+  /// Example: "Adds two numbers together"
+  pub doc: String,
+}
+
+/// # Update Namespace Documentation
+/// Updates the documentation for a specific namespace in the current root namespace/package.
+/// This tool only works for namespaces in the current project, not for dependencies.
+///
+/// Example: `{"namespace": "app.core", "doc": "Core utilities for the application"}`
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct UpdateNamespaceDocRequest {
+  /// # Namespace Path
+  /// The full path of the namespace to update documentation for.
+  /// Must be within the current root namespace/package.
+  ///
+  /// Example: "app.core"
+  pub namespace: String,
+  /// # Documentation
+  /// The new documentation content for the namespace.
+  ///
+  /// Example: "Core utilities for the application"
+  pub doc: String,
 }
 
 // Calcit Runner Management Tools

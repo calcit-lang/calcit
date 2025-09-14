@@ -1,5 +1,5 @@
 use super::tools::{
-  AddDefinitionRequest, DeleteDefinitionRequest, OperateDefinitionAtRequest, OverwriteDefinitionRequest, ReadDefinitionAtRequest,
+  DeleteDefinitionRequest, OperateDefinitionAtRequest, ReadDefinitionAtRequest, UpdateDefinitionDocRequest, UpsertDefinitionRequest,
 };
 use super::validation::{validate_definition_name, validate_namespace_name};
 use crate::mcp::definition_update::{UpdateMode, operate_definition_at_coord};
@@ -10,14 +10,15 @@ use axum::response::Json as ResponseJson;
 use cirru_parser::Cirru;
 use serde_json::Value;
 
-/// Save snapshot data
-/// save_snapshot function moved to cirru_utils::save_snapshot_to_file to avoid duplication
-pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest) -> ResponseJson<Value> {
-  // Note: This function returns ResponseJson<Value> for compatibility with existing handlers
-  // The actual MCP error handling with isError flag is handled at the protocol level
-  let namespace = request.namespace;
-  let definition = request.definition;
-
+/// Internal function to handle both add and overwrite operations
+fn upsert_definition(
+  app_state: &super::AppState,
+  namespace: String,
+  definition: String,
+  syntax_tree: serde_json::Value,
+  doc: String,
+  replacing: bool,
+) -> ResponseJson<Value> {
   // Validate namespace name
   if let Err(validation_error) = validate_namespace_name(&namespace) {
     return ResponseJson(serde_json::json!({
@@ -32,7 +33,7 @@ pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest
     }));
   }
 
-  let code_cirru = match &request.code {
+  let code_cirru = match &syntax_tree {
     serde_json::Value::String(_) => {
       return ResponseJson(serde_json::json!({
         "error": "String format is not supported. Please use nested array format to represent the syntax tree. Example: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]"
@@ -62,8 +63,6 @@ pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest
     }
   };
 
-  let doc = "".to_string(); // AddDefinitionRequest doesn't include doc field
-
   let result = app_state.state_manager.update_current_module(|snapshot| {
     // Check if namespace exists
     let file_data = match snapshot.files.get_mut(&namespace) {
@@ -81,34 +80,57 @@ pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest
       }
     };
 
-    // Check if definition already exists
-    if file_data.defs.contains_key(&definition) {
-      let existing_definitions: Vec<String> = file_data.defs.keys().cloned().collect();
-      return Err(format!(
-        "Definition '{definition}' already exists in namespace '{namespace}'.\n\nExisting definitions in this namespace: {}\n\nSuggested fixes:\n• Use a different definition name\n• Use 'overwrite_definition' tool to replace the existing definition\n• Use 'operate_definition_at' tool to modify the existing definition",
-        existing_definitions.join(", ")
-      ));
+    let definition_exists = file_data.defs.contains_key(&definition);
+    
+    // Check existence based on operation type
+    if replacing {
+      // For overwrite, definition must exist
+      if !definition_exists {
+        let existing_definitions: Vec<String> = file_data.defs.keys().cloned().collect();
+        return Err(format!(
+          "Definition '{definition}' not found in namespace '{namespace}'.\n\nExisting definitions in this namespace: {}\n\nSuggested fixes:\n• Check the definition name for typos\n• Use 'upsert_definition' tool with replacing=false to create a new definition\n• Use one of the existing definitions listed above\n• For incremental updates, consider using 'operate_definition_at' tool",
+          if existing_definitions.is_empty() {
+            "(none - add a definition first)".to_string()
+          } else {
+            existing_definitions.join(", ")
+          }
+        ));
+      }
+    } else {
+      // For add, definition must not exist
+      if definition_exists {
+        let existing_definitions: Vec<String> = file_data.defs.keys().cloned().collect();
+        return Err(format!(
+          "Definition '{definition}' already exists in namespace '{namespace}'.\n\nExisting definitions in this namespace: {}\n\nSuggested fixes:\n• Use a different definition name\n• Use 'upsert_definition' tool with replacing=true to replace the existing definition\n• For incremental updates, consider using 'operate_definition_at' tool",
+          existing_definitions.join(", ")
+        ));
+      }
     }
 
-    // Add new definition
+    // Add or update definition
     let code_entry = CodeEntry { doc, code: code_cirru };
     file_data.defs.insert(definition.clone(), code_entry);
     Ok(())
   });
 
   match result {
-    Ok(()) => {}
+    Ok(()) => {
+      let action = if replacing { "updated" } else { "added" };
+      let preposition = if replacing { "in" } else { "to" };
+      ResponseJson(serde_json::json!({
+        "message": format!("Definition '{definition}' {action} {preposition} namespace '{namespace}' successfully")
+      }))
+    }
     Err(e) => {
-      return ResponseJson(serde_json::json!({
+      ResponseJson(serde_json::json!({
         "error": e
-      }));
+      }))
     }
   }
-
-  ResponseJson(serde_json::json!({
-    "message": format!("Definition '{definition}' added to namespace '{namespace}' successfully")
-  }))
 }
+
+/// Save snapshot data
+/// save_snapshot function moved to cirru_utils::save_snapshot_to_file to avoid duplication
 
 pub fn delete_definition(app_state: &super::AppState, request: DeleteDefinitionRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
@@ -173,9 +195,10 @@ pub fn delete_definition(app_state: &super::AppState, request: DeleteDefinitionR
   }
 }
 
-pub fn overwrite_definition(app_state: &super::AppState, request: OverwriteDefinitionRequest) -> ResponseJson<Value> {
+pub fn update_definition_doc(app_state: &super::AppState, request: UpdateDefinitionDocRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
   let definition = request.definition;
+  let doc = request.doc;
 
   // Validate namespace name
   if let Err(validation_error) = validate_namespace_name(&namespace) {
@@ -191,83 +214,69 @@ pub fn overwrite_definition(app_state: &super::AppState, request: OverwriteDefin
     }));
   }
 
-  let code_cirru = match &request.code {
-    serde_json::Value::String(_) => {
-      return ResponseJson(serde_json::json!({
-        "error": "String format is not supported. Please use nested array format to represent the syntax tree. Example: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]"
-      }));
-    }
-    code_json => {
-      // Check if it's a stringified array (common mistake)
-      if let serde_json::Value::Array(arr) = code_json {
-        if let Some(serde_json::Value::String(first)) = arr.first() {
-          if first.starts_with('[') {
-            return ResponseJson(serde_json::json!({
-              "error": "Detected stringified array format. Please use actual nested arrays, not strings. Example: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]] instead of \"[fn [x] [* x x]]\""
-            }));
-          }
-        }
-      }
-
-      // Handle array format code
-      match super::cirru_utils::json_to_cirru(code_json) {
-        Ok(cirru) => cirru,
-        Err(e) => {
-          return ResponseJson(serde_json::json!({
-            "error": format!("Failed to convert code from JSON: {e}")
-          }));
-        }
-      }
-    }
-  };
-
-  let doc = "".to_string(); // OverwriteDefinitionRequest doesn't include doc field
-
+  // Check if this is a dependency namespace (not in current root namespace/package)
   let result = app_state.state_manager.update_current_module(|snapshot| {
-    // Check if namespace exists
+    // Check if namespace exists in current project
     let file_data = match snapshot.files.get_mut(&namespace) {
       Some(data) => data,
       None => {
+        // Check if it might be a dependency namespace
         let available_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+        let error_msg = if namespace.contains('.') && !available_namespaces.iter().any(|ns| ns.starts_with(&namespace.split('.').next().unwrap_or("").to_string())) {
+          format!(
+            "Namespace '{namespace}' appears to be from a dependency module and cannot be modified.\n\nThis tool only works for namespaces in the current root namespace/package.\n\nAvailable namespaces in current project: {}\n\nSuggested fixes:\n• Use a namespace from the current project\n• Dependencies are read-only and cannot be modified",
+            if available_namespaces.is_empty() {
+              "(none - create a namespace first)".to_string()
+            } else {
+              available_namespaces.join(", ")
+            }
+          )
+        } else {
+          format!(
+            "Namespace '{namespace}' not found in current project.\n\nAvailable namespaces: {}\n\nSuggested fixes:\n• Check the namespace name for typos\n• Create the namespace first using 'add_namespace' tool\n• Use one of the existing namespaces listed above",
+            if available_namespaces.is_empty() {
+              "(none - create a namespace first)".to_string()
+            } else {
+              available_namespaces.join(", ")
+            }
+          )
+        };
+        return Err(error_msg);
+      }
+    };
+
+    // Check if definition exists
+    let code_entry = match file_data.defs.get_mut(&definition) {
+      Some(entry) => entry,
+      None => {
+        let existing_definitions: Vec<String> = file_data.defs.keys().cloned().collect();
         return Err(format!(
-          "Namespace '{namespace}' not found.\n\nAvailable namespaces: {}\n\nSuggested fixes:\n• Check the namespace name for typos\n• Create the namespace first using 'add_namespace' tool\n• Use one of the existing namespaces listed above",
-          if available_namespaces.is_empty() {
-            "(none - create a namespace first)".to_string()
+          "Definition '{definition}' not found in namespace '{namespace}'.\n\nExisting definitions in this namespace: {}\n\nSuggested fixes:\n• Check the definition name for typos\n• Use one of the existing definitions listed above\n• Use 'list_namespace_definitions' tool to see all available definitions",
+          if existing_definitions.is_empty() {
+            "(none - add a definition first)".to_string()
           } else {
-            available_namespaces.join(", ")
+            existing_definitions.join(", ")
           }
         ));
       }
     };
 
-    // Check if definition exists
-    if !file_data.defs.contains_key(&definition) {
-      let existing_definitions: Vec<String> = file_data.defs.keys().cloned().collect();
-      return Err(format!(
-        "Definition '{definition}' not found in namespace '{namespace}'.\n\nExisting definitions in this namespace: {}\n\nSuggested fixes:\n• Check the definition name for typos\n• Use 'add_definition' tool to create a new definition\n• Use one of the existing definitions listed above",
-        if existing_definitions.is_empty() {
-          "(none - add a definition first)".to_string()
-        } else {
-          existing_definitions.join(", ")
-        }
-      ));
-    }
-
-    // Update definition
-    let code_entry = CodeEntry { doc, code: code_cirru };
-    file_data.defs.insert(definition.clone(), code_entry);
+    // Update the documentation
+    code_entry.doc = doc.clone();
     Ok(())
   });
 
   match result {
     Ok(()) => ResponseJson(serde_json::json!({
-      "message": format!("Definition '{definition}' updated in namespace '{namespace}' successfully")
+      "message": format!("Documentation for definition '{definition}' in namespace '{namespace}' updated successfully")
     })),
     Err(e) => ResponseJson(serde_json::json!({
       "error": e
     })),
   }
 }
+
+
 
 pub fn operate_definition_at(app_state: &super::AppState, request: OperateDefinitionAtRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
@@ -472,6 +481,17 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
       "error": e
     })),
   }
+}
+
+pub fn upsert_definition_public(app_state: &super::AppState, request: UpsertDefinitionRequest) -> ResponseJson<Value> {
+  upsert_definition(
+    app_state,
+    request.namespace,
+    request.definition,
+    request.syntax_tree,
+    request.doc,
+    request.replacing,
+  )
 }
 
 pub fn operate_definition_at_with_leaf(

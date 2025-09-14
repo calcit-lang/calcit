@@ -4,14 +4,14 @@ use super::AppState;
 use super::error_handling::{create_protocol_error, create_tool_execution_error, create_tool_success, error_codes};
 use super::jsonrpc::*;
 use super::tools::{
-  AddDefinitionRequest, AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
+  AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
   FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GenerateCalcitIncrementalRequest, GetCurrentModuleRequest,
   GetPackageNameRequest, GrabCalcitRunnerLogsRequest, ListApiDocsRequest, ListDefinitionsRequest, ListDependencyDocsRequest,
   ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest, OperateDefinitionAtRequest,
-  OverwriteDefinitionRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest,
+  ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest,
   ReadConfigsRequest, ReadDefinitionAtRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest,
-  ReadNamespaceRequest, StartCalcitRunnerRequest, StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateNamespaceImportsRequest,
-  get_standard_mcp_tools,
+  ReadNamespaceRequest, StartCalcitRunnerRequest, StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateDefinitionDocRequest,
+  UpdateNamespaceDocRequest, UpdateNamespaceImportsRequest, UpsertDefinitionRequest, get_standard_mcp_tools,
 };
 use axum::response::Json as ResponseJson;
 use colored::*;
@@ -441,14 +441,22 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       let result = super::namespace_handlers::update_namespace_imports(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
-
-    // Definition operations
-    "add_definition" => {
-      let request = match deserialize_params::<AddDefinitionRequest>(tool_request.parameters, req.id.clone()) {
+    "update_namespace_doc" => {
+      let request = match deserialize_params::<UpdateNamespaceDocRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      let result = super::definition_handlers::add_definition(app_state, request);
+      let result = super::namespace_handlers::update_namespace_doc(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
+    }
+
+    // Definition operations
+    "upsert_definition" => {
+      let request = match deserialize_params::<UpsertDefinitionRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      let result = super::definition_handlers::upsert_definition_public(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
     "delete_definition" => {
@@ -459,12 +467,12 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       let result = super::definition_handlers::delete_definition(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
-    "overwrite_definition" => {
-      let request = match deserialize_params::<OverwriteDefinitionRequest>(tool_request.parameters, req.id.clone()) {
+    "update_definition_doc" => {
+      let request = match deserialize_params::<UpdateDefinitionDocRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      let result = super::definition_handlers::overwrite_definition(app_state, request);
+      let result = super::definition_handlers::update_definition_doc(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
     "operate_definition_at" => {

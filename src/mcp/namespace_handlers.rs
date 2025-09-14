@@ -1,5 +1,5 @@
 use super::cirru_utils::json_to_cirru;
-use super::tools::{AddNamespaceRequest, DeleteNamespaceRequest, ListNamespacesRequest, UpdateNamespaceImportsRequest};
+use super::tools::{AddNamespaceRequest, DeleteNamespaceRequest, ListNamespacesRequest, UpdateNamespaceDocRequest, UpdateNamespaceImportsRequest};
 use super::validation::validate_namespace_name;
 use crate::snapshot::{CodeEntry, FileInSnapShot, Snapshot};
 use axum::response::Json as ResponseJson;
@@ -71,6 +71,63 @@ pub fn add_namespace(app_state: &super::AppState, request: AddNamespaceRequest) 
   match result {
     Ok(()) => ResponseJson(serde_json::json!({
       "message": format!("Namespace '{namespace}' created successfully")
+    })),
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
+  }
+}
+
+pub fn update_namespace_doc(app_state: &super::AppState, request: UpdateNamespaceDocRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
+  let doc = request.doc;
+
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
+
+  // Check if this is a dependency namespace (not in current root namespace/package)
+  let result = app_state.state_manager.update_current_module(|snapshot| {
+    // Check if namespace exists in current project
+    let file_data = match snapshot.files.get_mut(&namespace) {
+      Some(data) => data,
+      None => {
+        // Check if it might be a dependency namespace
+        let available_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+        let error_msg = if namespace.contains('.') && !available_namespaces.iter().any(|ns| ns.starts_with(&namespace.split('.').next().unwrap_or("").to_string())) {
+          format!(
+            "Namespace '{namespace}' appears to be from a dependency module and cannot be modified.\n\nThis tool only works for namespaces in the current root namespace/package.\n\nAvailable namespaces in current project: {}\n\nSuggested fixes:\n• Use a namespace from the current project\n• Dependencies are read-only and cannot be modified",
+            if available_namespaces.is_empty() {
+              "(none - create a namespace first)".to_string()
+            } else {
+              available_namespaces.join(", ")
+            }
+          )
+        } else {
+          format!(
+            "Namespace '{namespace}' not found in current project.\n\nAvailable namespaces: {}\n\nSuggested fixes:\n• Check the namespace name for typos\n• Create the namespace first using 'add_namespace' tool\n• Use one of the existing namespaces listed above",
+            if available_namespaces.is_empty() {
+              "(none - create a namespace first)".to_string()
+            } else {
+              available_namespaces.join(", ")
+            }
+          )
+        };
+        return Err(error_msg);
+      }
+    };
+
+    // Update the namespace documentation
+    file_data.ns.doc = doc.clone();
+    Ok(())
+  });
+
+  match result {
+    Ok(()) => ResponseJson(serde_json::json!({
+      "message": format!("Documentation for namespace '{namespace}' updated successfully")
     })),
     Err(e) => ResponseJson(serde_json::json!({
       "error": e
