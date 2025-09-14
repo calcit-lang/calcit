@@ -3,12 +3,13 @@ use super::error_handling::{create_protocol_error, create_tool_execution_error, 
 use super::jsonrpc::*;
 use super::tools::{
   AddDefinitionRequest, AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
-  FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GenerateCalcitIncrementalRequest, GetCurrentModuleRequest, GetPackageNameRequest, GrabCalcitRunnerLogsRequest,
-  ListApiDocsRequest, ListDefinitionsRequest, ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModulesRequest,
-  ListNamespacesRequest, McpRequest, OverwriteDefinitionRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest,
-  QueryCalcitApisRequest, QueryCalcitReferenceRequest, ReadConfigsRequest, ReadDefinitionAtRequest, ReadDependencyDefinitionDocRequest,
-  ReadDependencyModuleDocRequest, ReadNamespaceRequest, StartCalcitRunnerRequest, StopCalcitRunnerRequest, UpdateConfigsRequest,
-  UpdateDefinitionAtRequest, UpdateDefinitionAtWithLeafRequest, UpdateNamespaceImportsRequest, get_standard_mcp_tools,
+  FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GenerateCalcitIncrementalRequest, GetCurrentModuleRequest,
+  GetPackageNameRequest, GrabCalcitRunnerLogsRequest, ListApiDocsRequest, ListDefinitionsRequest, ListDependencyDocsRequest,
+  ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest, OverwriteDefinitionRequest,
+  ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest, ReadConfigsRequest,
+  ReadDefinitionAtRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest, ReadNamespaceRequest,
+  StartCalcitRunnerRequest, StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateDefinitionAtRequest,
+  UpdateDefinitionAtWithLeafRequest, UpdateNamespaceImportsRequest, get_standard_mcp_tools,
 };
 use axum::response::Json as ResponseJson;
 use colored::*;
@@ -43,7 +44,7 @@ pub async fn handle_jsonrpc_axum(data: Arc<AppState>, req: JsonRpcRequest) -> Re
   if is_notification {
     println!("{} {}", "📢 NOTIFICATION".cyan().bold(), req.method.green().bold());
   } else if req.method == "tools/call" {
-    println!("{} {}", "🔧 TOOL CALL".blue().bold(), tool_name.yellow().bold());
+    println!("{} {}", "⚡️ TOOL CALL".blue().bold(), tool_name.yellow().bold());
   } else {
     println!("{} {}", "📡 RPC".blue().bold(), req.method.green().bold());
   }
@@ -97,18 +98,54 @@ pub async fn handle_jsonrpc_axum(data: Arc<AppState>, req: JsonRpcRequest) -> Re
     }
   } else {
     if req.method == "tools/call" {
-      println!("{} {}", "✅ TOOL RESULT".green().bold(), tool_name.yellow().bold());
+      println!("{} {}", "√ TOOL RESULT".green().bold(), tool_name.dimmed());
     } else {
-      println!("{} {}", "✅ RPC RESULT".green().bold(), req.method.green().bold());
+      println!("{} {}", "√ RPC RESULT".green().bold(), req.method.dimmed());
     }
     if let Some(result) = response.get("result") {
-      let result_json = serde_json::to_string_pretty(result).unwrap_or_else(|_| "<invalid>".to_string());
-      println!("{}\n{}", "   Result:".dimmed(), result_json.dimmed());
+      // Check if result is a text-only response with standard MCP structure
+      let is_simple_text = is_simple_text_result(result);
+
+      if is_simple_text {
+        // Simple text result - show status and content only
+        let content = result.get("content").unwrap();
+        let content_array = content.as_array().unwrap();
+        let first_item = content_array.first().unwrap();
+        let text = first_item.get("text").unwrap();
+        let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+        let status = if is_error { "Error" } else { "Success" };
+        let text_content = text.as_str().unwrap_or("<invalid text>");
+        println!("{} {}", format!("   {status}:").dimmed(), text_content.dimmed());
+      } else {
+        // Fallback to full JSON display for complex results
+        let result_json = serde_json::to_string_pretty(result).unwrap_or_else(|_| "<invalid>".to_string());
+        println!("{}\n{}", "   Result:".dimmed(), result_json.dimmed());
+      }
     }
   }
   println!(); // Add blank line for separation
 
   ResponseJson(response)
+}
+
+/// Check if the result is a simple text response with standard MCP structure
+fn is_simple_text_result(result: &Value) -> bool {
+  if let Some(content) = result.get("content") {
+    if let Some(content_array) = content.as_array() {
+      if content_array.len() == 1 {
+        if let Some(first_item) = content_array.first() {
+          if let Some(type_val) = first_item.get("type") {
+            if let Some(type_str) = type_val.as_str() {
+              if type_str == "text" {
+                return first_item.get("text").is_some();
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  false
 }
 
 /// Handle notifications/initialized notification

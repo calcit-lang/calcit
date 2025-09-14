@@ -21,7 +21,7 @@ use calcit::mcp::{AppState, JsonRpcRequest};
 #[derive(FromArgs)]
 struct Args {
   /// compact.cirru file path
-  #[argh(option, short = 'f', default = "String::from(\"compact.cirru\")")]
+  #[argh(positional, default = "String::from(\"compact.cirru\")")]
   file: String,
 
   /// port to listen on
