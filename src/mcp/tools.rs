@@ -181,7 +181,7 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
     // Calcit Runner Management Tools
     McpToolWithSchema {
       name: "start_calcit_runner",
-      description: "Start a Calcit runner in background mode using `cr <filename>` command. This launches the Calcit interpreter in service mode, collecting logs in a queue for later retrieval. Returns startup success/failure status.\n\nExample: {\"filename\": \"main.cirru\"}",
+      description: "Start a Calcit runner in background mode using `cr <filepath>` command(or `cr js <filepath>` for compiling to js). This launches the Calcit interpreter in service mode, collecting logs in a queue for later retrieval. Returns startup success/failure status.\n\nExample: {\"filename\": \"main.cirru\"}",
       schema_generator: || serde_json::to_value(schema_for!(StartCalcitRunnerRequest)).unwrap(),
     },
     McpToolWithSchema {
@@ -782,8 +782,16 @@ pub struct ListModulesRequest {
 
 // Calcit Runner Management Tools
 
+// CalcitRunnerMode validation function
+pub fn validate_calcit_runner_mode(mode: &str) -> Result<(), String> {
+  match mode.trim().to_lowercase().as_str() {
+    "" | "run" | "js" => Ok(()),
+    _ => Err(format!("Invalid mode '{mode}'. Only 'run', 'js', or empty string are allowed.")),
+  }
+}
+
 /// Start a Calcit runner in background mode using `cr <filename>` command
-/// Example: `{"filename": "main.cirru"}`
+/// Example: `{"filename": "compact.cirru"}` or `{"filename": "compact.cirru", "mode": "js"}`
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StartCalcitRunnerRequest {
   /// # Filename
@@ -791,6 +799,13 @@ pub struct StartCalcitRunnerRequest {
   ///
   /// Example: "main.cirru" or "test.cirru"
   pub filename: String,
+  /// # Mode
+  /// The mode to run the Calcit runner in. Defaults to "run" if not specified.
+  /// Only accepts "run", "js", or empty string (which defaults to "run").
+  ///
+  /// Example: "run" or "js"
+  #[serde(default)]
+  pub mode: String,
 }
 
 /// Grab logs from the running Calcit runner and clear the internal log queue

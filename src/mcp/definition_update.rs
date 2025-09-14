@@ -39,7 +39,14 @@ pub fn update_definition_at_coord(
     // Verify match content if provided
     if let Some(expected) = match_content {
       if cirru_tree != expected {
-        return Err("Content at root does not match expected value".to_string());
+        return Err(format!(
+          "Content at root does not match expected value.\n\
+           Expected: {:?}\n\
+           Actual: {:?}\n\
+           Coordinate: [] (root)",
+          expected,
+          cirru_tree
+        ));
       }
     }
 
@@ -99,7 +106,19 @@ pub fn update_definition_at_coord(
   // Verify match content if provided
   if let Some(expected) = match_content {
     if &parent_list[target_idx] != expected {
-      return Err("Content at coordinate does not match expected value".to_string());
+      return Err(format!(
+        "Content at coordinate does not match expected value.\n\
+         Expected: {:?}\n\
+         Actual: {:?}\n\
+         Coordinate: {:?}\n\
+         Target index: {}\n\
+         Parent list length: {}",
+        expected,
+        &parent_list[target_idx],
+        coord,
+        target_idx,
+        parent_list.len()
+      ));
     }
   }
 
@@ -167,7 +186,15 @@ fn navigate_to_coord_mut<'a>(cirru_tree: &'a mut Cirru, coord: &[usize]) -> Resu
     match current {
       Cirru::List(list) => {
         if index >= list.len() {
-          return Err(format!("Index {index} out of bounds at coordinate position {i}"));
+          return Err(format!(
+            "Index {index} out of bounds at coordinate position {i}.\n\
+             Full coordinate: {:?}\n\
+             List length at position {i}: {}\n\
+             Available indices: 0..{}",
+            coord,
+            list.len(),
+            list.len().saturating_sub(1)
+          ));
         }
 
         // For the last coordinate, return the node itself
@@ -180,7 +207,16 @@ fn navigate_to_coord_mut<'a>(cirru_tree: &'a mut Cirru, coord: &[usize]) -> Resu
       }
       _ => {
         return Err(format!(
-          "Cannot navigate into non-list at coordinate position {i}: node is not a list"
+          "Cannot navigate into non-list at coordinate position {i}.\n\
+           Full coordinate: {:?}\n\
+           Node type at position {i}: {:?}\n\
+           Expected: List, but found: {}",
+          coord,
+          current,
+          match current {
+            Cirru::Leaf(_) => "Leaf",
+            Cirru::List(_) => "List", // This shouldn't happen in this branch
+          }
         ));
       }
     }

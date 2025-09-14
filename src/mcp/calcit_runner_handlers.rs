@@ -150,14 +150,46 @@ pub fn start_calcit_runner(_app_state: &super::AppState, request: StartCalcitRun
   manager_guard.state = RunnerState::Starting;
 
   let filename = request.filename.clone();
-  manager_guard.add_log(format!("Starting Calcit runner with file: {filename}"), false);
+  let mode = &request.mode;
 
-  // Start the cr command
+  // Validate mode
+  if let Err(err) = super::tools::validate_calcit_runner_mode(mode) {
+    manager_guard.state = RunnerState::Failed(err.clone());
+    manager_guard.add_log(format!("Invalid mode: {err}"), true);
+    return ResponseJson(serde_json::json!({
+      "success": false,
+      "error": err
+    }));
+  }
+
+  manager_guard.add_log(format!("Starting Calcit runner with file: {filename}, mode: {mode}"), false);
+
+  // Start the cr command with appropriate mode
   let mut command = Command::new("cr");
   command
     .arg(runner_file.to_string_lossy().as_ref())
     .stdout(Stdio::piped())
     .stderr(Stdio::piped());
+
+  // Add mode-specific arguments
+  match mode.trim().to_lowercase().as_str() {
+    "" | "run" => {
+      // Default mode, no additional arguments needed
+    }
+    "js" => {
+      command.arg("--emit-js");
+    }
+    _ => {
+      // This should not happen due to validation above, but handle it just in case
+      let err = format!("Unexpected mode: {mode}");
+      manager_guard.state = RunnerState::Failed(err.clone());
+      manager_guard.add_log(err.clone(), true);
+      return ResponseJson(serde_json::json!({
+        "success": false,
+        "error": err
+      }));
+    }
+  }
 
   match command.spawn() {
     Ok(mut child) => {
