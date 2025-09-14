@@ -136,15 +136,21 @@ Calcit 程序目前有两个常用命令:
 
 - `start_calcit_runner`
 
-会对程序做一些处理, 然后后台启动一个程序实例, 并搜集日志. 这里使用 `cr <filepath>` 或者 `cr js <filepath>` 启动, 不会马上退出, 会等待增量文件更新.
+会对程序做一些处理, 然后后台启动一个程序实例, 并搜集日志. 这里使用 `cr <filepath>` 或者 `cr <filepath> js` 启动, 不会马上退出, 会等待增量文件更新.
+
+初次启动后稍等一秒也从日志确认程序是否正常运行.
 
 - `generate_calcit_incremental`
 
 一个功能修改完毕(可能是多次修改以后), 用这个工具生成增量文件. Calcit 监听到变更以后会触发程序的 reload.
 
+开发网页时, 建议少量样式修改就通过 `generate_calcit_incremental` 生成增量文件, 从而触发 js 编译方便快速调试.
+
 - `grab_calcit_runner_logs`
 
 提取日志用于解读. 提取后下次在提取不会包含前一次的地址. 这个主要在 reload 发生产以后使用.
+
+确保修改过后先运行 `generate_calcit_incremental` 然后再查看日志.
 
 - `stop_calcit_runner`
 

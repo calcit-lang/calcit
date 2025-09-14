@@ -181,7 +181,7 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
     // Calcit Runner Management Tools
     McpToolWithSchema {
       name: "start_calcit_runner",
-      description: "Start a Calcit runner in background mode using `cr <filepath>` command(or `cr js <filepath>` for compiling to js). This launches the Calcit interpreter in service mode, collecting logs in a queue for later retrieval. Returns startup success/failure status.\n\nExample: {\"filename\": \"main.cirru\"}",
+      description: "Start a Calcit runner in background mode using `cr <filepath>` command(or `cr <filepath> js` for compiling to js). This launches the Calcit interpreter in service mode, collecting logs in a queue for later retrieval. Returns startup success/failure status.\n\nExample: {\"filename\": \"main.cirru\"}",
       schema_generator: || serde_json::to_value(schema_for!(StartCalcitRunnerRequest)).unwrap(),
     },
     McpToolWithSchema {

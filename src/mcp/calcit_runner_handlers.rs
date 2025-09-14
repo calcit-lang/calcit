@@ -20,10 +20,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-/// Log entry with timestamp
+/// Log entry with simplified time
 #[derive(Debug, Clone)]
 pub struct LogEntry {
-  pub timestamp: SystemTime,
+  pub time: String,
   pub content: String,
   pub is_error: bool,
 }
@@ -68,8 +68,18 @@ impl CalcitRunnerManager {
       println!("\x1b[34m◆ {content}\x1b[0m");
     }
 
+    // Format time as HH:MM:SS.mmm
+    let now = SystemTime::now();
+    let duration = now.duration_since(SystemTime::UNIX_EPOCH).unwrap_or(Duration::from_secs(0));
+    let total_secs = duration.as_secs();
+    let millis = duration.subsec_millis();
+    let hours = (total_secs / 3600) % 24;
+    let minutes = (total_secs / 60) % 60;
+    let seconds = total_secs % 60;
+    let time_str = format!("{:02}:{:02}:{:02}.{:03}", hours, minutes, seconds, millis);
+
     let entry = LogEntry {
-      timestamp: SystemTime::now(),
+      time: time_str,
       content,
       is_error,
     };
@@ -173,9 +183,9 @@ pub fn start_calcit_runner(_app_state: &super::AppState, request: StartCalcitRun
       cmd
     }
     "js" => {
-      // JS mode: cr js <file>
+      // JS mode: cr <file> js
       let mut cmd = Command::new("cr");
-      cmd.arg("js").arg(runner_file.to_string_lossy().as_ref());
+      cmd.arg(runner_file.to_string_lossy().as_ref()).arg("js");
       cmd
     }
     _ => {
@@ -279,17 +289,19 @@ pub fn grab_calcit_runner_logs(_app_state: &super::AppState, _request: GrabCalci
   let log_entries: Vec<serde_json::Value> = logs
     .into_iter()
     .map(|entry| {
-      let timestamp = entry
-        .timestamp
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or(Duration::from_secs(0))
-        .as_secs();
-
-      serde_json::json!({
-          "timestamp": timestamp,
-          "content": entry.content,
-          "is_error": entry.is_error
-      })
+      if entry.is_error {
+        serde_json::json!({
+            "time": entry.time,
+            "content": entry.content,
+            "is_error": entry.is_error
+        })
+      } else {
+        // For stdout logs, don't include is_error field
+        serde_json::json!({
+            "time": entry.time,
+            "content": entry.content
+        })
+      }
     })
     .collect();
 
@@ -349,17 +361,19 @@ pub fn stop_calcit_runner(_app_state: &super::AppState, _request: StopCalcitRunn
   let result_logs: Vec<serde_json::Value> = logs
     .into_iter()
     .map(|entry| {
-      let timestamp = entry
-        .timestamp
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or(Duration::from_secs(0))
-        .as_secs();
-
-      serde_json::json!({
-          "timestamp": timestamp,
-          "content": entry.content,
-          "is_error": entry.is_error
-      })
+      if entry.is_error {
+        serde_json::json!({
+            "time": entry.time,
+            "content": entry.content,
+            "is_error": entry.is_error
+        })
+      } else {
+        // For stdout logs, don't include is_error field
+        serde_json::json!({
+            "time": entry.time,
+            "content": entry.content
+        })
+      }
     })
     .collect();
 
