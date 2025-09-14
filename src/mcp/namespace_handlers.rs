@@ -1,5 +1,6 @@
 use super::cirru_utils::json_to_cirru;
 use super::tools::{AddNamespaceRequest, DeleteNamespaceRequest, ListNamespacesRequest, UpdateNamespaceImportsRequest};
+use super::validation::validate_namespace_name;
 use crate::snapshot::{CodeEntry, FileInSnapShot, Snapshot};
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
@@ -15,6 +16,13 @@ pub fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
 /// save_snapshot function moved to cirru_utils::save_snapshot_to_file to avoid duplication
 pub fn add_namespace(app_state: &super::AppState, request: AddNamespaceRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
+
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
 
   let result = app_state.state_manager.update_current_module(|snapshot| {
     // Check if namespace already exists
@@ -35,7 +43,7 @@ pub fn add_namespace(app_state: &super::AppState, request: AddNamespaceRequest) 
         .take(3)
         .cloned()
         .collect();
-      
+
       return Err(format!(
         "Namespace '{namespace}' must start with current package name '{}' followed by a dot.\n\nCurrent package: {}\nRequired prefix: {}\n\nValid namespace examples: {}\n\nSuggested fixes:\n• Use format: {}.your-namespace-name\n• Check existing namespaces for naming patterns",
         snapshot.package,
@@ -72,6 +80,13 @@ pub fn add_namespace(app_state: &super::AppState, request: AddNamespaceRequest) 
 
 pub fn delete_namespace(app_state: &super::AppState, request: DeleteNamespaceRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
+
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
 
   let result = app_state.state_manager.update_current_module(|snapshot| {
     // Check if namespace exists
@@ -119,6 +134,13 @@ pub fn list_namespaces(app_state: &super::AppState, _request: ListNamespacesRequ
 pub fn update_namespace_imports(app_state: &super::AppState, request: UpdateNamespaceImportsRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
   let imports_array = request.imports;
+
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
 
   // Validate that all elements in the imports array are arrays
   for (i, import_item) in imports_array.iter().enumerate() {

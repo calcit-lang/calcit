@@ -1,6 +1,7 @@
 use super::tools::{
   AddDefinitionRequest, DeleteDefinitionRequest, OperateDefinitionAtRequest, OverwriteDefinitionRequest, ReadDefinitionAtRequest,
 };
+use super::validation::{validate_definition_name, validate_namespace_name};
 use crate::mcp::definition_update::{UpdateMode, operate_definition_at_coord};
 use crate::mcp::definition_utils::{navigate_to_coord, parse_coord_from_json};
 use crate::mcp::tools::OperateDefinitionAtWithLeafRequest;
@@ -16,6 +17,20 @@ pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest
   // The actual MCP error handling with isError flag is handled at the protocol level
   let namespace = request.namespace;
   let definition = request.definition;
+
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
+
+  // Validate definition name
+  if let Err(validation_error) = validate_definition_name(&definition) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
 
   let code_cirru = match &request.code {
     serde_json::Value::String(_) => {
@@ -99,6 +114,20 @@ pub fn delete_definition(app_state: &super::AppState, request: DeleteDefinitionR
   let namespace = request.namespace;
   let definition = request.definition;
 
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
+
+  // Validate definition name
+  if let Err(validation_error) = validate_definition_name(&definition) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
+
   let result = app_state.state_manager.update_current_module(|snapshot| {
     // Check if namespace exists
     let file_data = match snapshot.files.get_mut(&namespace) {
@@ -147,6 +176,20 @@ pub fn delete_definition(app_state: &super::AppState, request: DeleteDefinitionR
 pub fn overwrite_definition(app_state: &super::AppState, request: OverwriteDefinitionRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
   let definition = request.definition;
+
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
+
+  // Validate definition name
+  if let Err(validation_error) = validate_definition_name(&definition) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
 
   let code_cirru = match &request.code {
     serde_json::Value::String(_) => {
@@ -229,6 +272,20 @@ pub fn overwrite_definition(app_state: &super::AppState, request: OverwriteDefin
 pub fn operate_definition_at(app_state: &super::AppState, request: OperateDefinitionAtRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
   let definition = request.definition;
+
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
+
+  // Validate definition name
+  if let Err(validation_error) = validate_definition_name(&definition) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
 
   let coord: Vec<usize> = match parse_coord_from_json(&request.coord) {
     Ok(coord_vec) => coord_vec,
@@ -330,6 +387,20 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
   let namespace = request.namespace;
   let definition = request.definition;
 
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
+
+  // Validate definition name
+  if let Err(validation_error) = validate_definition_name(&definition) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
+
   let coord: Vec<usize> = match parse_coord_from_json(&request.coord) {
     Ok(coord_vec) => coord_vec,
     Err(e) => {
@@ -409,6 +480,20 @@ pub fn operate_definition_at_with_leaf(
 ) -> ResponseJson<Value> {
   let namespace = request.namespace;
   let definition = request.definition;
+
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
+
+  // Validate definition name
+  if let Err(validation_error) = validate_definition_name(&definition) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
 
   let coord: Vec<usize> = match parse_coord_from_json(&request.coord) {
     Ok(coord_vec) => coord_vec,

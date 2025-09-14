@@ -1,9 +1,17 @@
 use super::tools::{GetPackageNameRequest, ListDefinitionsRequest, ReadNamespaceRequest};
+use super::validation::validate_namespace_name;
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
 
 pub fn list_namespace_definitions(app_state: &super::AppState, request: ListDefinitionsRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
+
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
 
   let result = app_state.state_manager.with_current_module(|snapshot| {
     // Check if namespace exists
@@ -52,6 +60,13 @@ pub fn get_package_name(app_state: &super::AppState, _request: GetPackageNameReq
 pub fn read_namespace(app_state: &super::AppState, request: ReadNamespaceRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
 
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
+
   let result = app_state.state_manager.with_current_module(|snapshot| {
     // Check if namespace exists
     let file_data = match snapshot.files.get(&namespace) {
@@ -86,7 +101,7 @@ pub fn read_namespace(app_state: &super::AppState, request: ReadNamespaceRequest
     ResponseJson(serde_json::json!({
       "namespace": namespace,
       "definitions": definitions,
-      "ns": file_data.ns
+      "doc": file_data.ns.doc
     }))
   });
 

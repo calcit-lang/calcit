@@ -5,6 +5,8 @@ prompt = """
 现在开始连接到 Calcit MCP 服务进行 Calcit 程序的编程, 注意使用 Calcit 提供的结构化/原子化的操作进行代码的更新.
 当前目录可能有 `compact.cirru` `calcit.cirru` 这两个文件, 但是正常情况应该不需要主动读取. 两个文件都不允许直接修改.
 
+由于 Calcit 脚本语言的知识不在模型内部, 需要先从 MCP 提供的文档当中做一些了解(`query_calcit_reference`), 以及访问依赖模块的文档(`read_namespace`), 掌握具体的用法.
+
 Calcit 程序目前有两个常用命令:
 
 - `cr` 命令用于代码解释执行和 js 代码生成. 默认情况会读取 config 执行 init-fn 定义的入口. 一般习惯上用 `main!` 函数名表示入口.

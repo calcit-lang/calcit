@@ -24,6 +24,7 @@ pub mod namespace_handlers;
 pub mod read_handlers;
 pub mod state_manager;
 pub mod tools;
+pub mod validation;
 
 #[derive(Clone)]
 pub struct AppState {
