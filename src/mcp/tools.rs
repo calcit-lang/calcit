@@ -43,7 +43,7 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
     },
     McpToolWithSchema {
       name: "list_namespaces",
-      description: "List all namespaces in the Calcit project. Calcit projects are organized into namespaces (similar to modules in other languages). Each namespace typically represents a logical grouping of related functions and can import from other namespaces.\n\nExample: {}",
+      description: "List all namespaces in the Calcit project. Calcit projects are organized into namespaces (similar to modules in other languages). Each namespace typically represents a logical grouping of related functions and can import from other namespaces. Optionally include dependency namespaces from external packages.\n\nExample: {\"include_dependency_namespaces\": false}",
       schema_generator: || serde_json::to_value(schema_for!(ListNamespacesRequest)).unwrap(),
     },
     McpToolWithSchema {
@@ -292,10 +292,12 @@ pub struct DeleteNamespaceRequest {
 /// Retrieves a list of all available namespaces in the current project.
 /// No parameters required.
 ///
-/// Example: `{}`
+/// Example: `{"include_dependency_namespaces": true}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ListNamespacesRequest {
-  // No parameters needed
+  /// Whether to include dependency namespaces in the result
+  #[serde(default)]
+  pub include_dependency_namespaces: bool,
 }
 
 /// # Update Namespace Imports
@@ -321,7 +323,7 @@ pub struct UpdateNamespaceImportsRequest {
 /// # Upsert Definition (Add or Update)
 /// Creates a new definition or updates an existing one in the specified namespace.
 /// The `replacing` parameter controls whether to allow overwriting existing definitions.
-/// 
+///
 /// 💡 **Recommendation for Updates**: For incremental modifications to existing definitions,
 /// consider using `operate_definition_at` tool instead, which allows precise updates to specific
 /// parts of the syntax tree without replacing the entire definition.
@@ -339,7 +341,7 @@ pub struct UpsertDefinitionRequest {
   /// - "app.util" - Utility functions
   /// - "lib.math" - Mathematical operations library
   pub namespace: String,
-  
+
   /// # Definition Name
   /// The name of the function or variable to be created or updated.
   /// Must be a valid Calcit identifier.
@@ -350,7 +352,7 @@ pub struct UpsertDefinitionRequest {
   /// - "config-data" - A configuration variable
   /// - "user-profile" - A data structure or function
   pub definition: String,
-  
+
   /// # Allow Replacing Existing Definition
   /// Controls whether to allow overwriting an existing definition.
   /// - `false`: Only create new definitions (fails if definition already exists)
@@ -360,7 +362,7 @@ pub struct UpsertDefinitionRequest {
   /// - `false` - Safe mode, prevents accidental overwrites
   /// - `true` - Update mode, allows replacing existing definitions
   pub replacing: bool,
-  
+
   /// # Documentation String
   /// Optional documentation string for the definition.
   /// This will be stored as metadata and can be used for generating documentation.
@@ -371,7 +373,7 @@ pub struct UpsertDefinitionRequest {
   /// - "" (empty string for no documentation)
   #[serde(default)]
   pub doc: String,
-  
+
   /// # Syntax Tree
   /// The complete syntax tree for the definition, represented as nested JSON arrays.
   /// This is the core structure that defines the behavior of your function or variable.

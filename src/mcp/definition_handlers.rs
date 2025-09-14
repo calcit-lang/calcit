@@ -81,7 +81,7 @@ fn upsert_definition(
     };
 
     let definition_exists = file_data.defs.contains_key(&definition);
-    
+
     // Check existence based on operation type
     if replacing {
       // For overwrite, definition must exist
@@ -121,16 +121,11 @@ fn upsert_definition(
         "message": format!("Definition '{definition}' {action} {preposition} namespace '{namespace}' successfully")
       }))
     }
-    Err(e) => {
-      ResponseJson(serde_json::json!({
-        "error": e
-      }))
-    }
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
   }
 }
-
-/// Save snapshot data
-/// save_snapshot function moved to cirru_utils::save_snapshot_to_file to avoid duplication
 
 pub fn delete_definition(app_state: &super::AppState, request: DeleteDefinitionRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
@@ -275,8 +270,6 @@ pub fn update_definition_doc(app_state: &super::AppState, request: UpdateDefinit
     })),
   }
 }
-
-
 
 pub fn operate_definition_at(app_state: &super::AppState, request: OperateDefinitionAtRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;

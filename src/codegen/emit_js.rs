@@ -317,7 +317,7 @@ fn gen_call_code(
   let var_prefix = if ns == calcit::CORE_NS { "" } else { "$clt." };
   let proc_prefix = get_proc_prefix(ns);
   if ys.is_empty() {
-    println!("[Warn] Unexpected empty list inside {xs}");
+    eprintln!("[Warn] Unexpected empty list inside {xs}");
     return Ok(String::from("()"));
   }
 
@@ -647,7 +647,7 @@ fn gen_symbol_code(s: &str, def_ns: &str, at_def: &str, xs: &Calcit, passed_defs
     Ok(escape_var(s))
   } else if def_ns == calcit::CORE_NS {
     // local variales inside calcit.core also uses this ns
-    println!("[Warn] detected variable inside core not resolved");
+    eprintln!("[Warn] detected variable inside core not resolved");
     Ok(format!("{var_prefix}{}", escape_var(s)))
   } else if def_ns.is_empty() {
     Err(format!("Unexpected ns at symbol, {xs}"))
@@ -657,10 +657,10 @@ fn gen_symbol_code(s: &str, def_ns: &str, at_def: &str, xs: &Calcit, passed_defs
 
     Ok(escape_var(s))
   } else if def_ns == passed_defs.ns {
-    println!("[Warn] detected unresolved variable `{s}` in {}/{at_def}", passed_defs.ns);
+    eprintln!("[Warn] detected unresolved variable `{s}` in {}/{at_def}", passed_defs.ns);
     Ok(escape_var(s))
   } else {
-    println!("[Warn] Unexpected case, code gen for `{s}` in {}/{at_def}", passed_defs.ns);
+    eprintln!("[Warn] Unexpected case, code gen for `{s}` in {}/{at_def}", passed_defs.ns);
     Ok(format!("{var_prefix}{}", escape_var(s)))
   }
 }
@@ -1341,10 +1341,10 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           // should he handled inside compiler
         }
         Calcit::Bool(_) | Calcit::Number(_) => {
-          println!("[Warn] expected thunk, got macro. skipped `{ns}/{def} {f}`")
+          eprintln!("[Warn] expected thunk, got macro. skipped `{ns}/{def} {f}`")
         }
         _ => {
-          println!("[Warn] expected thunk for js, skipped `{ns}/{def} {f}`")
+          eprintln!("[Warn] expected thunk for js, skipped `{ns}/{def} {f}`")
         }
       }
     }

@@ -192,6 +192,23 @@ impl StateManager {
     Ok(module_with_doc)
   }
 
+  /// Get all dependency namespaces from cached dependencies
+  pub fn get_dependency_namespaces(&self) -> Result<Vec<String>, String> {
+    let cache_guard = self
+      .dependency_cache
+      .read()
+      .map_err(|e| format!("Failed to read dependency cache lock: {e}"))?;
+
+    let mut namespaces = Vec::new();
+    for (_, dep_module) in cache_guard.iter() {
+      for namespace in dep_module.snapshot.files.keys() {
+        namespaces.push(namespace.clone());
+      }
+    }
+
+    Ok(namespaces)
+  }
+
   /// Clear the dependency cache (useful for development/testing)
   pub fn clear_dependency_cache(&self) -> Result<(), String> {
     let mut cache_guard = self

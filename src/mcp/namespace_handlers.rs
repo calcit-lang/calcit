@@ -1,5 +1,7 @@
 use super::cirru_utils::json_to_cirru;
-use super::tools::{AddNamespaceRequest, DeleteNamespaceRequest, ListNamespacesRequest, UpdateNamespaceDocRequest, UpdateNamespaceImportsRequest};
+use super::tools::{
+  AddNamespaceRequest, DeleteNamespaceRequest, ListNamespacesRequest, UpdateNamespaceDocRequest, UpdateNamespaceImportsRequest,
+};
 use super::validation::validate_namespace_name;
 use crate::snapshot::{CodeEntry, FileInSnapShot, Snapshot};
 use axum::response::Json as ResponseJson;
@@ -174,9 +176,23 @@ pub fn delete_namespace(app_state: &super::AppState, request: DeleteNamespaceReq
   }
 }
 
-pub fn list_namespaces(app_state: &super::AppState, _request: ListNamespacesRequest) -> ResponseJson<Value> {
+pub fn list_namespaces(app_state: &super::AppState, request: ListNamespacesRequest) -> ResponseJson<Value> {
   match app_state.state_manager.with_current_module(|snapshot| {
-    let namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+    let mut namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+
+    // If include_dependency_namespaces is true, add dependency namespaces
+    if request.include_dependency_namespaces {
+      // Get dependency namespaces from state manager
+      if let Ok(dep_namespaces) = app_state.state_manager.get_dependency_namespaces() {
+        for namespace in dep_namespaces {
+          if !namespaces.contains(&namespace) {
+            namespaces.push(namespace);
+          }
+        }
+      }
+    }
+
+    namespaces.sort();
     namespaces
   }) {
     Ok(namespaces) => ResponseJson(serde_json::json!({

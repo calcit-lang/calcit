@@ -43,7 +43,7 @@ pub fn cpu_time(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let time = match now.checked_duration_since(started) {
     Some(n) => (n.as_micros() as f64) / 1000.0,
     None => {
-      println!("[Warn] got none CPU time from: {started:?} -> {now:?}");
+      eprintln!("[Warn] got none CPU time from: {started:?} -> {now:?}");
       0.0
     }
   };

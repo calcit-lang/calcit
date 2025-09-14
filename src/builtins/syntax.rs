@@ -197,7 +197,7 @@ pub fn syntax_let(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
           body_scope.insert_mut(*idx, value);
         }
         (Calcit::Symbol { sym: s, .. }, ys) => {
-          println!("[Warn] slow path of {s}, prefer local");
+          eprintln!("[Warn] slow path of {s}, prefer local");
           let value = runner::evaluate_expr(ys, scope, file_ns, call_stack)?;
           let idx = CalcitLocal::track_sym(s);
           body_scope.insert_mut(idx, value);
