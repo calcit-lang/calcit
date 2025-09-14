@@ -76,7 +76,7 @@ impl CalcitRunnerManager {
     let hours = (total_secs / 3600) % 24;
     let minutes = (total_secs / 60) % 60;
     let seconds = total_secs % 60;
-    let time_str = format!("{:02}:{:02}:{:02}.{:03}", hours, minutes, seconds, millis);
+    let time_str = format!("{hours:02}:{minutes:02}:{seconds:02}.{millis:03}");
 
     let entry = LogEntry {
       time: time_str,
@@ -160,7 +160,7 @@ pub fn start_calcit_runner(_app_state: &super::AppState, request: StartCalcitRun
   manager_guard.state = RunnerState::Starting;
 
   let filename = request.filename.clone();
-  let mode = &request.mode;
+  let mode = &request.operation;
 
   // Validate mode
   if let Err(err) = super::tools::validate_calcit_runner_mode(mode) {

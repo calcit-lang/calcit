@@ -1,3 +1,5 @@
+use crate::mcp::tools::OperateDefinitionAtWithLeafRequest;
+
 use super::AppState;
 use super::error_handling::{create_protocol_error, create_tool_execution_error, create_tool_success, error_codes};
 use super::jsonrpc::*;
@@ -5,11 +7,11 @@ use super::tools::{
   AddDefinitionRequest, AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
   FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GenerateCalcitIncrementalRequest, GetCurrentModuleRequest,
   GetPackageNameRequest, GrabCalcitRunnerLogsRequest, ListApiDocsRequest, ListDefinitionsRequest, ListDependencyDocsRequest,
-  ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest, OverwriteDefinitionRequest,
-  ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest, ReadConfigsRequest,
-  ReadDefinitionAtRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest, ReadNamespaceRequest,
-  StartCalcitRunnerRequest, StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateDefinitionAtRequest,
-  UpdateDefinitionAtWithLeafRequest, UpdateNamespaceImportsRequest, get_standard_mcp_tools,
+  ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest, OperateDefinitionAtRequest,
+  OverwriteDefinitionRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest,
+  ReadConfigsRequest, ReadDefinitionAtRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest,
+  ReadNamespaceRequest, StartCalcitRunnerRequest, StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateNamespaceImportsRequest,
+  get_standard_mcp_tools,
 };
 use axum::response::Json as ResponseJson;
 use colored::*;
@@ -263,28 +265,30 @@ fn deserialize_params<T: serde::de::DeserializeOwned>(
       // Provide detailed error information with specific fix suggestions
       let error_details = e.to_string();
       let received_params = serde_json::to_string_pretty(&parameters).unwrap_or_else(|_| "<unparseable>".to_string());
-      
+
       let mut fix_suggestions = Vec::new();
-      
+
       // Analyze common parameter errors and provide specific fixes
       if error_details.contains("missing field") {
         if let Some(field_name) = extract_missing_field(&error_details) {
           fix_suggestions.push(format!("Add the required field '{field_name}' to your parameters"));
         }
       }
-      
+
       if error_details.contains("invalid type") {
         fix_suggestions.push("Check that all parameter types match the expected schema (strings, arrays, objects)".to_string());
       }
-      
+
       if parameters.get("coord").is_some() {
         if let Some(coord_val) = parameters.get("coord") {
           if coord_val.is_string() {
-            fix_suggestions.push("The 'coord' parameter must be a JSON array of integers, not a string. Example: [1, 2] instead of \"[1, 2]\"".to_string());
+            fix_suggestions.push(
+              "The 'coord' parameter must be a JSON array of integers, not a string. Index starts from 0 (zero-based indexing). Example: [1, 2] instead of \"[1, 2]\"".to_string(),
+            );
           }
         }
       }
-      
+
       if parameters.get("code").is_some() {
         if let Some(code_val) = parameters.get("code") {
           if code_val.is_string() {
@@ -292,16 +296,17 @@ fn deserialize_params<T: serde::de::DeserializeOwned>(
           }
         }
       }
-      
+
       let fix_text = if fix_suggestions.is_empty() {
         "Please check the tool documentation for the correct parameter format.".to_string()
       } else {
-        format!("Suggested fixes:\n{}", fix_suggestions.iter().map(|s| format!("• {s}")).collect::<Vec<_>>().join("\n"))
+        format!(
+          "Suggested fixes:\n{}",
+          fix_suggestions.iter().map(|s| format!("• {s}")).collect::<Vec<_>>().join("\n")
+        )
       };
-      
-      let error_message = format!(
-        "Invalid parameters: {error_details}\n\nReceived parameters:\n{received_params}\n\n{fix_text}"
-      );
+
+      let error_message = format!("Invalid parameters: {error_details}\n\nReceived parameters:\n{received_params}\n\n{fix_text}");
       Err(create_protocol_error(req_id, error_codes::INVALID_PARAMS, error_message))
     }
   }
@@ -462,20 +467,20 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       let result = super::definition_handlers::overwrite_definition(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
-    "update_definition_at" => {
-      let request = match deserialize_params::<UpdateDefinitionAtRequest>(tool_request.parameters, req.id.clone()) {
+    "operate_definition_at" => {
+      let request = match deserialize_params::<OperateDefinitionAtRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      let result = super::definition_handlers::update_definition_at(app_state, request);
+      let result = super::definition_handlers::operate_definition_at(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
-    "update_definition_at_with_leaf" => {
-      let request = match deserialize_params::<UpdateDefinitionAtWithLeafRequest>(tool_request.parameters, req.id.clone()) {
+    "operate_definition_at_with_leaf" => {
+      let request = match deserialize_params::<OperateDefinitionAtWithLeafRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      let result = super::definition_handlers::update_definition_at_with_leaf(app_state, request);
+      let result = super::definition_handlers::operate_definition_at_with_leaf(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
     "read_definition_at" => {

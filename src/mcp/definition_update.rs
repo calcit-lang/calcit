@@ -27,7 +27,7 @@ impl FromStr for UpdateMode {
   }
 }
 
-pub fn update_definition_at_coord(
+pub fn operate_definition_at_coord(
   cirru_tree: &mut Cirru,
   coord: &[usize],
   new_content: Option<&Cirru>,
@@ -233,7 +233,7 @@ mod tests {
     let mut tree = Cirru::List(vec![Cirru::Leaf("a".into()), Cirru::Leaf("b".into()), Cirru::Leaf("c".into())]);
     let new_content = Cirru::Leaf("x".into());
 
-    update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Replace, None).unwrap();
+    operate_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Replace, None).unwrap();
 
     let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a x c");
@@ -243,7 +243,7 @@ mod tests {
   fn test_delete_mode() {
     let mut tree = Cirru::List(vec![Cirru::Leaf("a".into()), Cirru::Leaf("b".into()), Cirru::Leaf("c".into())]);
 
-    update_definition_at_coord(&mut tree, &[1], None, UpdateMode::Delete, None).unwrap();
+    operate_definition_at_coord(&mut tree, &[1], None, UpdateMode::Delete, None).unwrap();
 
     let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a c");
@@ -254,7 +254,7 @@ mod tests {
     let mut tree = Cirru::List(vec![Cirru::Leaf("a".into()), Cirru::Leaf("b".into()), Cirru::Leaf("c".into())]);
     let new_content = Cirru::Leaf("x".into());
 
-    update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::After, None).unwrap();
+    operate_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::After, None).unwrap();
 
     let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a b x c");
@@ -265,7 +265,7 @@ mod tests {
     let mut tree = Cirru::List(vec![Cirru::Leaf("a".into()), Cirru::Leaf("b".into()), Cirru::Leaf("c".into())]);
     let new_content = Cirru::Leaf("x".into());
 
-    update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Before, None).unwrap();
+    operate_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Before, None).unwrap();
 
     let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a x b c");
@@ -280,7 +280,7 @@ mod tests {
     ]);
     let new_content = Cirru::Leaf("x".into());
 
-    update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Prepend, None).unwrap();
+    operate_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Prepend, None).unwrap();
 
     let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a (x b c) d");
@@ -295,7 +295,7 @@ mod tests {
     ]);
     let new_content = Cirru::Leaf("x".into());
 
-    update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Append, None).unwrap();
+    operate_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Append, None).unwrap();
 
     let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a (b c x) d");
@@ -309,10 +309,10 @@ mod tests {
     let wrong_match = Cirru::Leaf("z".into());
 
     // Should succeed with correct match
-    update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Replace, Some(&expected_match)).unwrap();
+    operate_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Replace, Some(&expected_match)).unwrap();
 
     // Should fail with wrong match
-    let result = update_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Replace, Some(&wrong_match));
+    let result = operate_definition_at_coord(&mut tree, &[1], Some(&new_content), UpdateMode::Replace, Some(&wrong_match));
     assert!(result.is_err());
   }
 
@@ -321,7 +321,7 @@ mod tests {
     let mut tree = Cirru::List(vec![Cirru::Leaf("a".into()), Cirru::Leaf("b".into())]);
     let new_content = Cirru::Leaf("x".into());
 
-    update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Replace, None).unwrap();
+    operate_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Replace, None).unwrap();
 
     // Check that the tree was replaced with the new content
     assert_eq!(tree, Cirru::Leaf("x".into()));
@@ -332,7 +332,7 @@ mod tests {
     let mut tree = Cirru::List(vec![Cirru::Leaf("a".into()), Cirru::Leaf("b".into())]);
     let new_content = Cirru::Leaf("c".into());
 
-    update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Append, None).unwrap();
+    operate_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Append, None).unwrap();
 
     let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "a b c");
@@ -343,7 +343,7 @@ mod tests {
     let mut tree = Cirru::List(vec![Cirru::Leaf("a".into()), Cirru::Leaf("b".into())]);
     let new_content = Cirru::Leaf("x".into());
 
-    update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Prepend, None).unwrap();
+    operate_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Prepend, None).unwrap();
 
     let result = cirru_parser::format(&[tree], false.into()).unwrap();
     assert_eq!(result.trim(), "x a b");
@@ -355,15 +355,15 @@ mod tests {
     let new_content = Cirru::Leaf("x".into());
 
     // Delete mode should fail for empty coord
-    let result = update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Delete, None);
+    let result = operate_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Delete, None);
     assert!(result.is_err());
 
     // After mode should fail for empty coord
-    let result = update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::After, None);
+    let result = operate_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::After, None);
     assert!(result.is_err());
 
     // Before mode should fail for empty coord
-    let result = update_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Before, None);
+    let result = operate_definition_at_coord(&mut tree, &[], Some(&new_content), UpdateMode::Before, None);
     assert!(result.is_err());
   }
 }

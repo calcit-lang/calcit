@@ -19,19 +19,20 @@ Calcit 程序目前有两个常用命令:
 遇到代码不确定的时候, 可以使用 `cr eval 'println "|demo snippet"' 这样方式先执行一段缩进的代码先验证写法.
 
 比较容易犯的错误可能是,
-- Calcit 中字符串是通过前缀区分的, `|` 跟 `"` 这两个字符开头表示字符串, 但注意, Calcit 字符串有隐形的双引号包裹, 所以实际对应 `"|"` 和 `"\""`. `|x` 对应 JavaScript 字符串 `"x"`.
+- Calcit 中字符串是通过前缀区分的, `|` 跟 `"` 这两个字符开头表示字符串, 但注意, Calcit 字符串有隐形的双引号包裹, 所以实际对应 `"|"` 和 `"\""`. `|x` 对应 JavaScript 字符串 `"x"`. 另外产生 JSON 时候, 字符串注意不要重复包裹.
 - Calcit 采用一种叫做 Cirru 的缩进语法结构,  Cirru 语法可以简单理解成去掉了跨行括号改用缩进的 Lisp 变种. Cirru 语法可以跟 Array 和 String 递归形成的语法树互相转化, 可以用 `calcit_format_json_to_cirru` 和 `calcit_parse_cirru_to_json` 相互转化结构进行试验.
 - Calcit 跟 Clojure 在语义上比较像, 但是 Calcit 语法层面只用圆括号, 不用方括号花括号. 另外也有不少差异可以参阅文档.
 
 目前 Calcit 模块约定每个模块可能存在 `docs/` 目录存放 Markdown 格式的文档, 方便 MCP 查询, 使用 `read_dependency_module_doc` 工具. 模块本身在函数定义上也有文档, 用 `read_dependency_definition_doc` 查阅.
 
-生成复杂代码时倾向于 `update_definition_at` 搭配 `read_definition_at` 定位到分支上做局部更新, 简单情况或者兜底场景再用 `overwrite_definition`.
+生成复杂代码时倾向于 `operate_definition_at` 搭配 `read_definition_at` 定位到分支上做局部更新, 简单情况或者兜底场景再用 `overwrite_definition`.
 
 输出日志参考用户的输入的语种, Chinese or English is preferred.
 
 ### 补充一些 MCP 修改代码的例子
 
-简单的直接按照参数填就好. 这几个涉及到代码提交的写法, 注意 code 实际用 JSON Array/String 怎样递归表达.
+Calcit 这个结构很大程度上是为了结构化编辑语法树设计的, 所以大量使用 JSON(Array/String 形成递归嵌套, Number 等也要表示为 String), 而且这个 JSON 结构跟 Cirru 这套缩进的语法可以相互转化.
+编码过程当中简单的直接按照参数填就好. 这几个涉及到代码提交的写法, 注意 code 实际用 JSON Array/String 怎样递归表达.
 
 
 - `add_definition`
@@ -58,7 +59,7 @@ Calcit 程序目前有两个常用命令:
 
 注意 coord(坐标)是数组, 表示函数定义中的位置, 从 0 开始计数. 空数组表示读取整个定义.
 
-- `update_definition_at` - 精确更新函数体中的操作符
+- `operate_definition_at` - 精确更新函数体中的操作符
 
 替换的目标位置要求为表达式(array)的例子, match 可能也是一个数组节点(也可能不是):
 
@@ -68,18 +69,18 @@ Calcit 程序目前有两个常用命令:
   "definition": "add-numbers",
   "coord": [2, 0],
   "mode": "replace",
-  "match": ["+", "a", "..."],
+  "shallow_check": ["+", "a", "..."],
   "new_value": ["*", "a", "b", "c"]
 }
 ```
 
 注意:
 - `new_value` 现在必须始终是数组格式，即使是单个值也要用数组包装，如 ["my-value"]。
-- `match` 这个冗余参数是用来校验位置避免失误的, 一般只给一到两层的开头, 后面其他都用 `"..."` 省略对比
+- `match` 这个冗余参数是用来校验位置避免失误的, 一般只给开头的一些内容, 后面其他都用 `"..."` 表示工具执行过程中不在需要对比
 
 替换之前建议用 `read_definition_at` 反复查看目标 coord 或者兄弟位置, 从而保证局部修改的准确度.
 
-- `update_definition_at_with_leaf` - 精确更新函数体中的叶子节点(简化版)
+- `operate_definition_at_with_leaf` - 精确更新函数体中的叶子节点(简化版)
 
 专门用于替换叶子节点(符号、字符串、数字)的简化工具，无需指定 value_type 参数:
 
@@ -89,16 +90,16 @@ Calcit 程序目前有两个常用命令:
   "definition": "add-numbers",
   "coord": [2, 0],
   "mode": "replace",
-  "match": "+",
+  "shallow_check": "+",
   "new_value": "*"
 }
 ```
 
-这个工具消除了 value_type 参数的困惑，专门处理叶子节点的替换操作。对于复杂表达式的替换，仍需使用通用的 `update_definition_at` 工具。
+这个工具消除了 value_type 参数的困惑，专门处理叶子节点的替换操作。对于复杂表达式的替换，仍需使用通用的 `operate_definition_at` 工具。
 
 - `overwrite_definition`
 
-完全重写函数定义, 注意这个操作会直接替换整个函数定义, 不会做局部修改. 建议对小的函数/定义使用, 或者兜底使用. 一般建议先确定准确坐标再通过 `update_definition_at` 做局部操作.
+完全重写函数定义, 注意这个操作会直接替换整个函数定义, 不会做局部修改. 建议对小的函数/定义使用, 或者兜底使用. 一般建议先确定准确坐标再通过 `operate_definition_at` 做局部操作.
 
 ```json
 {
@@ -127,9 +128,11 @@ Calcit 程序目前有两个常用命令:
 }
 ```
 
+另外排查问题时可以多沿着 namespace 查看定义, 查看定义上文档, 设置模块当中的命名空间定义和文档等等.
+
 ### 开发调试
 
-特别简单的脚本可以用 `cr -1 <filepath>` 直接执行, 但复杂有状态的程序还是用需要用 MCP 工具打开. 另外如果是编译 JavaScript 那么用 `cr -1 js <filepath>` 可以执行一次编译.
+特别简单的脚本可以用 `cr -1 <filepath>` 直接执行, 但复杂有状态的程序还是用需要用 MCP 工具打开. 另外如果是编译 JavaScript 那么用 `cr -1 <filepath> js` 可以执行一次编译.
 
 调试模式, Calcit snapshot 文件中 config 有两个配置 `init-fn` 和 `reload-fn`, 初次启动时会调用 `init-fn`, 后续每次修改代码会调用 `reload-fn`.
 为了适配这个用法, Calcit 提供了几个 MCP 工具
@@ -154,6 +157,6 @@ Calcit 程序目前有两个常用命令:
 
 - `stop_calcit_runner`
 
-获取剩下的日志, 然后关闭程序实例
+获取剩下的日志, 然后关闭程序实例.
 
 """

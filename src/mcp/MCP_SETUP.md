@@ -53,7 +53,8 @@ Once the server is running and configured in your Gemini CLI, you will have acce
 - `add_definition` - 创建新的函数或宏定义
 - `delete_definition` - 删除函数或宏定义
 - `overwrite_definition` - 完全覆盖现有的函数或宏定义
-- `update_definition_at` - 使用坐标精确更新函数定义的特定部分
+- `operate_definition_at` - 使用坐标精确更新函数定义的特定部分
+- `operate_definition_at_with_leaf` - 使用坐标精确更新函数定义的特定部分
 - `read_definition_at` - 读取函数定义中特定位置的内容
 - `list_modules` - 列出项目中的所有模块
 - `get_current_module` - 获取当前活动的模块

@@ -1,9 +1,9 @@
 use super::tools::{
-  AddDefinitionRequest, DeleteDefinitionRequest, OverwriteDefinitionRequest, ReadDefinitionAtRequest, UpdateDefinitionAtRequest,
-  UpdateDefinitionAtWithLeafRequest,
+  AddDefinitionRequest, DeleteDefinitionRequest, OperateDefinitionAtRequest, OverwriteDefinitionRequest, ReadDefinitionAtRequest,
 };
-use crate::mcp::definition_update::{UpdateMode, update_definition_at_coord};
+use crate::mcp::definition_update::{UpdateMode, operate_definition_at_coord};
 use crate::mcp::definition_utils::{navigate_to_coord, parse_coord_from_json};
+use crate::mcp::tools::OperateDefinitionAtWithLeafRequest;
 use crate::snapshot::CodeEntry;
 use axum::response::Json as ResponseJson;
 use cirru_parser::Cirru;
@@ -70,7 +70,7 @@ pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest
     if file_data.defs.contains_key(&definition) {
       let existing_definitions: Vec<String> = file_data.defs.keys().cloned().collect();
       return Err(format!(
-        "Definition '{definition}' already exists in namespace '{namespace}'.\n\nExisting definitions in this namespace: {}\n\nSuggested fixes:\n• Use a different definition name\n• Use 'overwrite_definition' tool to replace the existing definition\n• Use 'update_definition_at' tool to modify the existing definition",
+        "Definition '{definition}' already exists in namespace '{namespace}'.\n\nExisting definitions in this namespace: {}\n\nSuggested fixes:\n• Use a different definition name\n• Use 'overwrite_definition' tool to replace the existing definition\n• Use 'operate_definition_at' tool to modify the existing definition",
         existing_definitions.join(", ")
       ));
     }
@@ -226,7 +226,7 @@ pub fn overwrite_definition(app_state: &super::AppState, request: OverwriteDefin
   }
 }
 
-pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefinitionAtRequest) -> ResponseJson<Value> {
+pub fn operate_definition_at(app_state: &super::AppState, request: OperateDefinitionAtRequest) -> ResponseJson<Value> {
   let namespace = request.namespace;
   let definition = request.definition;
 
@@ -234,13 +234,13 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
     Ok(coord_vec) => coord_vec,
     Err(e) => {
       return ResponseJson(serde_json::json!({
-        "error": format!("Invalid coord parameter: {}\n\nCoord format requirements:\n• Must be a JSON array of non-negative integers\n• Example: [0] for first element, [1, 2] for third element of second element\n• Use empty array [] for root level\n\nSuggested fixes:\n• Check that all values are non-negative integers\n• Ensure proper JSON array format: [0, 1, 2]\n• Use 'read_definition_at' tool to explore the structure first", e)
+        "error": format!("Invalid coord parameter: {}\n\nCoord format requirements:\n• Must be a JSON array of non-negative integers\n• Index starts from 0 (zero-based indexing)\n• Example: [0] for first element, [1, 2] for third element of second element\n• Use empty array [] for root level\n\nSuggested fixes:\n• Check that all values are non-negative integers\n• Ensure proper JSON array format: [0, 1, 2]\n• Use 'read_definition_at' tool to explore the structure first", e)
       }));
     }
   };
 
   // Parse update mode
-  let mode = match request.mode.parse::<UpdateMode>() {
+  let mode = match request.operation.parse::<UpdateMode>() {
     Ok(mode) => mode,
     Err(e) => {
       return ResponseJson(serde_json::json!({
@@ -277,11 +277,11 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
   };
 
   // Parse match content
-  let match_content: Option<Cirru> = match super::cirru_utils::json_to_cirru(&request.match_content) {
+  let match_content: Option<Cirru> = match super::cirru_utils::json_to_cirru(&request.shallow_check) {
     Ok(cirru) => Some(cirru),
     Err(e) => {
       return ResponseJson(serde_json::json!({
-        "error": format!("Failed to convert match_content from JSON: {}\n\nMatch content format requirements:\n• Must be a valid JSON array representing the expected Cirru syntax at the coord\n• Used for verification before making changes\n• Should exactly match the current content at the specified coordinate\n\nValid examples:\n• Simple value: [\"current-value\"]\n• Function call: [\"current-fn\", \"arg1\", \"arg2\"]\n• Complex expression: [\"if\", [\">\", \"x\", \"0\"], \"positive\", \"negative\"]\n\nSuggested fixes:\n• Use 'read_definition_at' tool to see current content at coord\n• Ensure match_content exactly matches the current structure\n• Check JSON array syntax and nesting", e)
+        "error": format!("Failed to convert shallow_check from JSON: {}\n\nShallow check format requirements:\n• Must be a valid JSON array representing the expected Cirru syntax at the coord\n• Used for verification before making changes\n• Only needs to match the beginning part of the content for verification\n\nValid examples:\n• Simple value: [\"current-value\"]\n• Function call: [\"current-fn\", \"arg1\", \"arg2\"]\n• Partial match: [\"fn\", \"...\"] (beginning part with \"...\" indicating more content)\n\nSuggested fixes:\n• Use 'read_definition_at' tool to see current content at coord\n• Ensure shallow_check matches the beginning of the current structure\n• Check JSON array syntax and nesting", e)
       }));
     }
   };
@@ -307,7 +307,7 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
     let mut code = code_entry.code.clone();
 
     // Perform the update using the new logic
-    if let Err(e) = update_definition_at_coord(&mut code, &coord, new_value_cirru.as_ref(), mode, match_content.as_ref()) {
+    if let Err(e) = operate_definition_at_coord(&mut code, &coord, new_value_cirru.as_ref(), mode, match_content.as_ref()) {
       return Err(format!("Failed to update: {e}"));
     }
 
@@ -334,7 +334,7 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
     Ok(coord_vec) => coord_vec,
     Err(e) => {
       return ResponseJson(serde_json::json!({
-        "error": format!("Invalid coord parameter: {}\n\nCoord format requirements:\n• Must be a JSON array of non-negative integers\n• Example: [0] for first element, [1, 2] for third element of second element\n• Use empty array [] for root level\n\nSuggested fixes:\n• Check that all values are non-negative integers\n• Ensure proper JSON array format: [0, 1, 2]\n• Start with [] to read the entire definition", e)
+        "error": format!("Invalid coord parameter: {}\n\nCoord format requirements:\n• Must be a JSON array of non-negative integers\n• Index starts from 0 (zero-based indexing)\n• Example: [0] for first element, [1, 2] for third element of second element\n• Use empty array [] for root level\n\nSuggested fixes:\n• Check that all values are non-negative integers\n• Ensure proper JSON array format: [0, 1, 2]\n• Start with [] to read the entire definition", e)
       }));
     }
   };
@@ -403,7 +403,10 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
   }
 }
 
-pub fn update_definition_at_with_leaf(app_state: &super::AppState, request: UpdateDefinitionAtWithLeafRequest) -> ResponseJson<Value> {
+pub fn operate_definition_at_with_leaf(
+  app_state: &super::AppState,
+  request: OperateDefinitionAtWithLeafRequest,
+) -> ResponseJson<Value> {
   let namespace = request.namespace;
   let definition = request.definition;
 
@@ -417,7 +420,7 @@ pub fn update_definition_at_with_leaf(app_state: &super::AppState, request: Upda
   };
 
   // Parse update mode
-  let mode = match request.mode.parse::<UpdateMode>() {
+  let mode = match request.operation.parse::<UpdateMode>() {
     Ok(mode) => mode,
     Err(e) => {
       return ResponseJson(serde_json::json!({
@@ -430,7 +433,7 @@ pub fn update_definition_at_with_leaf(app_state: &super::AppState, request: Upda
   let new_value_cirru = Cirru::Leaf(request.new_value.into());
 
   // Parse match content if provided
-  let match_content_cirru = request.match_content.map(|s| Cirru::Leaf(s.into()));
+  let match_content_cirru = request.shallow_check.map(|s| Cirru::Leaf(s.into()));
 
   let result = app_state.state_manager.update_current_module(|snapshot| {
     // Check if namespace exists
@@ -453,7 +456,7 @@ pub fn update_definition_at_with_leaf(app_state: &super::AppState, request: Upda
     let mut code = code_entry.code.clone();
 
     // Perform the update using the new logic
-    if let Err(e) = update_definition_at_coord(&mut code, &coord, Some(&new_value_cirru), mode, match_content_cirru.as_ref()) {
+    if let Err(e) = operate_definition_at_coord(&mut code, &coord, Some(&new_value_cirru), mode, match_content_cirru.as_ref()) {
       return Err(format!("Failed to update: {e}"));
     }
 

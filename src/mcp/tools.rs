@@ -75,7 +75,7 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
     // Function/Macro Definition Operations
     McpToolWithSchema {
       name: "add_definition",
-      description: "Create a new function or macro definition in a Calcit namespace. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses, but stripped outermost pair of parentheses).\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'code' parameter MUST be a native JSON array, NOT a string\n• Do NOT wrap the array in quotes\n• Do NOT escape quotes inside the array\n\n✅ CORRECT FORMAT:\n{\"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}\n\n❌ WRONG FORMATS:\n{\"code\": \"[fn [x] [* x x]]\"} ← STRING (WRONG)\n{\"code\": \"[\\\"fn\\\", [\\\"x\\\"], [\\\"*\\\", \\\"x\\\", \\\"x\\\"]]\"} ← ESCAPED STRING (WRONG)\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
+      description: "Create a new function or macro definition in a Calcit namespace. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses, but stripped outermost pair of parentheses).\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'code' parameter MUST be a native JSON array, NOT a string\n• Do NOT wrap the array in quotes\n• Do NOT escape quotes inside the array\n\n✅ CORRECT FORMAT:\n{\"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}\n\n❌ WRONG FORMATS:\n{\"code\": \"[fn [x] [* x x]]\"}← STRING (WRONG)\n{\"code\": \"[\\\"fn\\\", [\\\"x\\\"], [\\\"*\\\", \\\"x\\\", \\\"x\\\"]]\"}← ESCAPED STRING (WRONG)\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
       schema_generator: || serde_json::to_value(schema_for!(AddDefinitionRequest)).unwrap(),
     },
     McpToolWithSchema {
@@ -85,22 +85,22 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
     },
     McpToolWithSchema {
       name: "overwrite_definition",
-      description: "Completely overwrite an existing function or macro definition in Calcit. This replaces the entire definition with new code and documentation.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'code' parameter MUST be a native JSON array, NOT a string\n• Do NOT wrap the array in quotes\n• Do NOT escape quotes inside the array\n\n✅ CORRECT FORMAT:\n{\"code\": [\"defcomp\", \"my-comp\", [], [\"div\", {}, \"Hello\"]]}\n\n❌ WRONG FORMATS:\n{\"code\": \"[defcomp my-comp [] [div {} Hello]]\"} ← STRING (WRONG)\n{\"code\": \"[\\\"defcomp\\\", \\\"my-comp\\\"]\"} ← ESCAPED STRING (WRONG)\n\n⚠️ RECOMMENDATION: Avoid using this tool for most cases. Instead, use 'read_definition_at' first to understand the current structure, then use 'update_definition_at' for precise modifications.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
+      description: "Completely overwrite an existing function or macro definition in Calcit. This replaces the entire definition with new code and documentation.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'code' parameter MUST be a native JSON array, NOT a string\n• Do NOT wrap the array in quotes\n• Do NOT escape quotes inside the array\n\n✅ CORRECT FORMAT:\n{\"code\": [\"defcomp\", \"my-comp\", [], [\"div\", {}, \"Hello\"]]}\n\n❌ WRONG FORMATS:\n{\"code\": \"[defcomp my-comp [] [div {} Hello]]\"}← STRING (WRONG)\n{\"code\": \"[\\\"defcomp\\\", \\\"my-comp\\\"]\"}← ESCAPED STRING (WRONG)\n\n⚠️ RECOMMENDATION: Avoid using this tool for most cases. Instead, use 'read_definition_at' first to understand the current structure, then use 'operate_definition_at' for precise modifications.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"code\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
       schema_generator: || serde_json::to_value(schema_for!(OverwriteDefinitionRequest)).unwrap(),
     },
     McpToolWithSchema {
-      name: "update_definition_at",
-      description: "Update a specific part of a function or macro definition using coordinate-based targeting with various operation modes. Cirru code is a tree structure that can be navigated using coordinate arrays (Vec<Int>). This tool allows precise updates to specific nodes in the code tree with validation.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• Do NOT wrap the array in quotes\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\n💡 BEST PRACTICE: Always use 'read_definition_at' multiple times first to explore and understand the code structure, then generate correct 'match' and 'coord' parameters for safe updates. Empty coord [] operates on the root node.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"mode\": \"replace\", \"match\": null, \"value_type\": \"leaf\"}",
-      schema_generator: || serde_json::to_value(schema_for!(UpdateDefinitionAtRequest)).unwrap(),
+      name: "operate_definition_at",
+      description: "Update a specific part of a function or macro definition using coordinate-based targeting with various operation modes. Cirru code is a tree structure that can be navigated using coordinate arrays (Vec<Int>). This tool allows precise updates to specific nodes in the code tree with validation.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• Do NOT wrap the array in quotes\n• Index starts from 0 (zero-based indexing)\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\n💡 BEST PRACTICE: Always use 'read_definition_at' multiple times first to explore and understand the code structure, then generate correct 'shallow_check' and 'coord' parameters for safe updates. Empty coord [] operates on the root node.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"operation\": \"replace\", \"shallow_check\": null, \"value_type\": \"leaf\"}",
+      schema_generator: || serde_json::to_value(schema_for!(OperateDefinitionAtRequest)).unwrap(),
     },
     McpToolWithSchema {
-      name: "update_definition_at_with_leaf",
-      description: "Update a specific part of a function or macro definition with a leaf value (string). This is a simplified version of update_definition_at specifically for replacing leaf nodes, eliminating the need for value_type parameter.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• The 'new_value' parameter MUST be a string (leaf value)\n• Do NOT wrap the coord array in quotes\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\n💡 BEST PRACTICE: Use this tool when you need to replace a leaf node (symbol, string, number) with another leaf value. For complex expressions, use the general 'update_definition_at' tool.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"mode\": \"replace\", \"match\": \"*\"}",
-      schema_generator: || serde_json::to_value(schema_for!(UpdateDefinitionAtWithLeafRequest)).unwrap(),
+      name: "operate_definition_at_with_leaf",
+      description: "Update a specific part of a function or macro definition with a leaf value (string). This is a simplified version of operate_definition_at specifically for replacing leaf nodes, eliminating the need for value_type parameter.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• The 'new_value' parameter MUST be a string (leaf value)\n• Do NOT wrap the coord array in quotes\n• Index starts from 0 (zero-based indexing)\n\n✅ CORRECT FORMAT:\n`{\"coord\": [2, 1]}` or `{\"coord\": []}`\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\n💡 BEST PRACTICE: Use this tool when you need to replace a leaf node (symbol, string, number) with another leaf value. For complex expressions, use the general 'operate_definition_at' tool.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"operation\": \"replace\", \"match\": \"*\"}",
+      schema_generator: || serde_json::to_value(schema_for!(OperateDefinitionAtWithLeafRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "read_definition_at",
-      description: "Read a specific part of a function or macro definition in Calcit. This allows for examining a particular location in the code tree without retrieving the entire definition.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• Do NOT wrap the array in quotes\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"} ← STRING (WRONG)\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1]}",
+      description: "Read a specific part of a function or macro definition in Calcit. This allows for examining a particular location in the code tree without retrieving the entire definition.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• Do NOT wrap the array in quotes\n• Index starts from 0 (zero-based indexing)\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1]}",
       schema_generator: || serde_json::to_value(schema_for!(ReadDefinitionAtRequest)).unwrap(),
     },
     // Module Management
@@ -416,10 +416,11 @@ pub struct OverwriteDefinitionRequest {
 /// Coordinates are an array representing the path indices from the root node to the target node.
 /// For example: `[0, 1]` refers to the second child of the first child of the root node.
 /// An empty coordinate `[]` refers to the root node itself.
+/// `Delete` operation is also supported in this request.
 ///
-/// Example: `{"namespace": "app.core", "definition": "add-numbers", "coord": [2, 1], "new_value": "*", "mode": "replace", "match": "+", "value_type": "leaf"}`
+/// Example: `{"namespace": "app.core", "definition": "add-numbers", "coord": [2, 1], "new_value": "*", "mode": "replace", "shallow_check": "+", "value_type": "leaf"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct UpdateDefinitionAtRequest {
+pub struct OperateDefinitionAtRequest {
   /// # Namespace Path
   /// The full path of the namespace containing the definition to update.
   ///
@@ -458,36 +459,37 @@ pub struct UpdateDefinitionAtRequest {
   /// IMPORTANT: Always provide as an array, even for single values.
   #[schemars(with = "Vec<serde_json::Value>")]
   pub new_value: serde_json::Value,
-  /// # Update Mode
-  /// Specifies how to apply the update, possible values: "replace", "before", "after".
+  /// # Update Operation
+  /// Specifies how to apply the update, possible values: "replace", "before", "after", "delete", "prepend", "append".
   ///
   /// Example: "replace"
-  pub mode: String,
-  /// # Match Content
+  pub operation: String,
+  /// # Shallow Check Content
   /// Used to verify that the content at the current position matches expectations, increasing update safety.
+  /// You only need to provide the beginning part of the content for verification, not the complete structure.
   /// Provide the expected content in Cirru format:
   /// - For leaf values: use a string like "+"
-  /// - For list values: use an array like ["a", "b"]
+  /// - For list values: use an array like ["a", "b"] or partial like ["fn", "..."]
   ///
   /// Examples:
   /// - Leaf: "+" (string)
   /// - List: ["a", "b"] (array)
-  /// - Complex: ["fn", ["x"], ["*", "x", "x"]] (nested array)
-  #[serde(rename = "match")]
-  #[schemars(schema_with = "match_content_schema")]
-  pub match_content: serde_json::Value,
+  /// - Partial: ["fn", "..."] (beginning part with "..." indicating more content)
+  #[serde(rename = "shallow_check")]
+  #[schemars(schema_with = "shallow_check_schema")]
+  pub shallow_check: serde_json::Value,
 }
 
 /// # Update Definition at Specific Position with Leaf Value
-/// A simplified version of update_definition_at specifically for updating leaf nodes (strings, symbols, numbers).
+/// A simplified version of operate_definition_at specifically for updating leaf nodes (strings, symbols, numbers).
 /// This eliminates the need for the value_type parameter since it's always "leaf".
 /// Coordinates are an array representing the path indices from the root node to the target node.
 /// For example: `[0, 1]` refers to the second child of the first child of the root node.
 /// An empty coordinate `[]` refers to the root node itself.
 ///
-/// Example: `{"namespace": "app.core", "definition": "add-numbers", "coord": [2, 1], "new_value": "*", "mode": "replace", "match": "+"}`
+/// Example: `{"namespace": "app.core", "definition": "add-numbers", "coord": [2, 1], "new_value": "*", "mode": "replace", "shallow_check": "+"}`
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct UpdateDefinitionAtWithLeafRequest {
+pub struct OperateDefinitionAtWithLeafRequest {
   /// # Namespace Path
   /// The full path of the namespace containing the definition to update.
   ///
@@ -520,18 +522,18 @@ pub struct UpdateDefinitionAtWithLeafRequest {
   ///
   /// Examples: "+", "my-variable", "42", "hello-world"
   pub new_value: String,
-  /// # Update Mode
+  /// # Update Operation
   /// Specifies how to apply the update, possible values: "replace", "before", "after", "delete".
   ///
   /// Example: "replace"
-  pub mode: String,
-  /// # Match Content
+  pub operation: String,
+  /// # Shallow Check Content
   /// Used to verify that the content at the current position matches expectations, increasing update safety.
-  /// Provide the expected leaf value as a string.
+  /// Provide the expected leaf value as a string. You only need to provide the beginning part for verification.
   ///
   /// Examples: "+", "old-variable", "123"
-  #[serde(rename = "match")]
-  pub match_content: Option<String>,
+  #[serde(rename = "shallow_check")]
+  pub shallow_check: Option<String>,
 }
 
 /// # Read Content at Specific Position in Definition
@@ -799,13 +801,13 @@ pub struct StartCalcitRunnerRequest {
   ///
   /// Example: "main.cirru" or "test.cirru"
   pub filename: String,
-  /// # Mode
-  /// The mode to run the Calcit runner in. Defaults to "run" if not specified.
+  /// # Operation
+  /// The operation to run the Calcit runner in. Defaults to "run" if not specified.
   /// Only accepts "run", "js", or empty string (which defaults to "run").
   ///
   /// Example: "run" or "js"
   #[serde(default)]
-  pub mode: String,
+  pub operation: String,
 }
 
 /// Grab logs from the running Calcit runner and clear the internal log queue
@@ -838,11 +840,11 @@ pub fn get_standard_mcp_tools() -> Vec<Tool> {
   get_mcp_tools_with_schema().iter().map(|tool| tool.to_standard_tool()).collect()
 }
 
-fn match_content_schema(_generator: &mut SchemarsGenerator) -> Schema {
+fn shallow_check_schema(_generator: &mut SchemarsGenerator) -> Schema {
   Schema::Object(SchemaObject {
     metadata: Some(Box::new(schemars::schema::Metadata {
-      title: Some("Match Content".to_string()),
-      description: Some("Used to verify that the content at the current position matches expectations, increasing update safety.\nProvide the expected content in Cirru format:\n- For leaf values: use a string like \"+\"\n- For list values: use an array like [\"a\", \"b\"]\n\nExamples:\n- Leaf: \"+\" (string)\n- List: [\"a\", \"b\"] (array)\n- Complex: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]] (nested array)".to_string()),
+        title: Some("Shallow Check Content".to_string()),
+        description: Some("Used to verify that the content at the current position matches expectations, increasing update safety.\nYou only need to provide the beginning part of the content for verification, not the complete structure.\nProvide the expected content in Cirru format:\n- For leaf values: use a string like \"+\"\n- For list values: use an array like [\"a\", \"b\"] or partial like [\"fn\", \"...\"]\n\nExamples:\n- Leaf: \"+\" (string)\n- List: [\"a\", \"b\"] (array)\n- Partial: [\"fn\", \"...\"] (beginning part with \"...\" indicating more content)".to_string()),
       ..Default::default()
     })),
     subschemas: Some(Box::new(schemars::schema::SubschemaValidation {
