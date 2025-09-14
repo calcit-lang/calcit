@@ -7,7 +7,6 @@ use axum::{
   routing::post,
 };
 use calcit::snapshot;
-use std::collections::HashMap;
 use std::io::{self, Write};
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -133,7 +132,6 @@ async fn main() -> std::io::Result<()> {
     compact_cirru_path: args.file.clone(),
     current_module_name,
     port: args.port,
-    module_cache: std::sync::Arc::new(std::sync::RwLock::new(HashMap::new())),
     state_manager: calcit::mcp::StateManager::new(args.file.clone()),
   });
 

@@ -3,9 +3,6 @@
 //! This module provides tools and handlers for interacting with Calcit projects
 //! through the MCP protocol.
 
-use crate::snapshot;
-use std::collections::HashMap;
-
 pub mod calcit_runner_handlers;
 pub mod cirru_handlers;
 pub mod cirru_utils;
@@ -31,7 +28,6 @@ pub struct AppState {
   pub compact_cirru_path: String,
   pub current_module_name: String,
   pub port: u16,
-  pub module_cache: std::sync::Arc<std::sync::RwLock<HashMap<String, snapshot::Snapshot>>>,
   pub state_manager: state_manager::StateManager,
 }
 

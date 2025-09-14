@@ -88,6 +88,92 @@ impl StateManager {
     Ok(())
   }
 
+  /// Ensure all dependency modules are loaded into cache
+  /// This method reads the modules configuration from the current snapshot
+  /// and loads all dependency modules into the dependency_cache
+  pub fn ensure_dependencies_loaded(&self) -> Result<(), String> {
+    // First ensure current module is loaded
+    self.ensure_current_module_loaded()?;
+
+    // Get the modules list from current snapshot
+    let modules = {
+      let current_guard = self
+        .current_module
+        .read()
+        .map_err(|e| format!("Failed to read current module lock: {e}"))?;
+
+      if let Some(ref snapshot) = *current_guard {
+        snapshot.configs.modules.clone()
+      } else {
+        return Err("Current module not loaded".to_string());
+      }
+    };
+
+    // Check if all modules are already loaded to avoid redundant loading
+    {
+      let cache_guard = self
+        .dependency_cache
+        .read()
+        .map_err(|e| format!("Failed to read dependency cache lock: {e}"))?;
+
+      // Extract module folder names from configuration
+      let config_module_folders: std::collections::HashSet<&str> = modules
+        .iter()
+        .map(|path| {
+          if path.ends_with('/') {
+            path.trim_end_matches('/')
+          } else {
+            path.as_str()
+          }
+        })
+        .collect();
+
+      // Get cached module folders
+      let cached_module_folders: std::collections::HashSet<&str> = cache_guard.values().map(|dep| dep.module_folder.as_str()).collect();
+
+      // If all configured modules are already cached, skip loading
+      if !config_module_folders.is_empty() && config_module_folders.is_subset(&cached_module_folders) {
+        println!("[DEPS] All dependency modules already loaded, skipping reload");
+        return Ok(());
+      }
+    }
+
+    // Load each module into dependency cache if not already loaded
+    for module_path in &modules {
+      // Check if module is already in cache
+      let cache_guard = self
+        .dependency_cache
+        .read()
+        .map_err(|e| format!("Failed to read dependency cache lock: {e}"))?;
+
+      // Extract module folder name from path
+      let module_folder = if module_path.ends_with('/') {
+        module_path.trim_end_matches('/')
+      } else {
+        module_path
+      };
+
+      // Check if any cached module has this folder name
+      let already_cached = cache_guard.values().any(|dep| dep.module_folder == module_folder);
+      drop(cache_guard);
+
+      if !already_cached {
+        // Load the dependency module
+        match self.load_dependency_by_folder(module_folder) {
+          Ok(_) => {
+            println!("[DEPS] Loaded dependency module: {module_folder}");
+          }
+          Err(e) => {
+            println!("[DEPS] Warning: Failed to load dependency module '{module_folder}': {e}");
+            // Continue loading other modules even if one fails
+          }
+        }
+      }
+    }
+
+    Ok(())
+  }
+
   /// Get a read-only reference to the current module
   pub fn get_current_module(&self) -> Result<Arc<RwLock<Option<Snapshot>>>, String> {
     self.ensure_current_module_loaded()?;
@@ -193,7 +279,11 @@ impl StateManager {
   }
 
   /// Get all dependency namespaces from cached dependencies
+  /// This method ensures all dependencies are loaded before returning namespaces
   pub fn get_dependency_namespaces(&self) -> Result<Vec<String>, String> {
+    // Ensure all dependencies are loaded first
+    self.ensure_dependencies_loaded()?;
+
     let cache_guard = self
       .dependency_cache
       .read()
@@ -399,10 +489,51 @@ mod tests {
 
   #[test]
   fn test_dependency_cache() {
-    let manager = StateManager::new("/tmp/test.cirru".to_string());
+    let state_manager = StateManager::new("/tmp/test_compact.cirru".to_string());
+    // Test that dependency cache starts empty
+    let cache_guard = state_manager.dependency_cache.read().unwrap();
+    assert!(cache_guard.is_empty(), "Dependency cache should start empty");
+  }
 
-    // Clear cache should work even when empty
-    assert!(manager.clear_dependency_cache().is_ok());
+  #[test]
+  fn test_ensure_dependencies_loaded() {
+    use crate::snapshot::{Snapshot, SnapshotConfigs};
+    use std::collections::HashMap;
+    use std::fs;
+
+    let test_file = "/tmp/test_deps_loaded.cirru";
+    let state_manager = StateManager::new(test_file.to_string());
+
+    // Create a test snapshot with modules configuration
+    let snapshot = Snapshot {
+      package: "test-package".to_string(),
+      configs: SnapshotConfigs {
+        init_fn: "test.init".to_string(),
+        reload_fn: "test.reload".to_string(),
+        version: "0.1.0".to_string(),
+        modules: vec!["test-module".to_string()],
+      },
+      entries: HashMap::new(),
+      files: HashMap::new(),
+    };
+
+    // Manually set the current module
+    {
+      let mut current_guard = state_manager.current_module.write().unwrap();
+      *current_guard = Some(snapshot.clone());
+    }
+
+    // Test ensure_dependencies_loaded method
+    // Note: This will fail to load actual modules since they don't exist,
+    // but it should not panic and should handle errors gracefully
+    let result = state_manager.ensure_dependencies_loaded();
+    assert!(
+      result.is_ok(),
+      "ensure_dependencies_loaded should handle missing modules gracefully"
+    );
+
+    // Clean up
+    let _ = fs::remove_file(test_file);
   }
 
   #[test]
