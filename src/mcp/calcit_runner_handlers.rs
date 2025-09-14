@@ -164,20 +164,19 @@ pub fn start_calcit_runner(_app_state: &super::AppState, request: StartCalcitRun
 
   manager_guard.add_log(format!("Starting Calcit runner with file: {filename}, mode: {mode}"), false);
 
-  // Start the cr command with appropriate mode
-  let mut command = Command::new("cr");
-  command
-    .arg(runner_file.to_string_lossy().as_ref())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
-
-  // Add mode-specific arguments
-  match mode.trim().to_lowercase().as_str() {
+  // Build command based on mode
+  let mut command = match mode.trim().to_lowercase().as_str() {
     "" | "run" => {
-      // Default mode, no additional arguments needed
+      // Default mode: cr <file>
+      let mut cmd = Command::new("cr");
+      cmd.arg(runner_file.to_string_lossy().as_ref());
+      cmd
     }
     "js" => {
-      command.arg("--emit-js");
+      // JS mode: cr js <file>
+      let mut cmd = Command::new("cr");
+      cmd.arg("js").arg(runner_file.to_string_lossy().as_ref());
+      cmd
     }
     _ => {
       // This should not happen due to validation above, but handle it just in case
@@ -189,7 +188,10 @@ pub fn start_calcit_runner(_app_state: &super::AppState, request: StartCalcitRun
         "error": err
       }));
     }
-  }
+  };
+
+  // Set stdio for all commands
+  command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
   match command.spawn() {
     Ok(mut child) => {

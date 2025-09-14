@@ -41,11 +41,9 @@ pub fn update_definition_at_coord(
       if cirru_tree != expected {
         return Err(format!(
           "Content at root does not match expected value.\n\
-           Expected: {:?}\n\
-           Actual: {:?}\n\
-           Coordinate: [] (root)",
-          expected,
-          cirru_tree
+           Expected: {expected:?}\n\
+           Actual: {cirru_tree:?}\n\
+           Coordinate: [] (root)"
         ));
       }
     }

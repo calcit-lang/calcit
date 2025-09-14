@@ -54,13 +54,25 @@ pub fn add_definition(app_state: &super::AppState, request: AddDefinitionRequest
     let file_data = match snapshot.files.get_mut(&namespace) {
       Some(data) => data,
       None => {
-        return Err(format!("Namespace '{namespace}' not found"));
+        let available_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+        return Err(format!(
+          "Namespace '{namespace}' not found.\n\nAvailable namespaces: {}\n\nSuggested fixes:\n• Check the namespace name for typos\n• Create the namespace first using 'add_namespace' tool\n• Use one of the existing namespaces listed above",
+          if available_namespaces.is_empty() {
+            "(none - create a namespace first)".to_string()
+          } else {
+            available_namespaces.join(", ")
+          }
+        ));
       }
     };
 
     // Check if definition already exists
     if file_data.defs.contains_key(&definition) {
-      return Err(format!("Definition '{definition}' already exists in namespace '{namespace}'"));
+      let existing_definitions: Vec<String> = file_data.defs.keys().cloned().collect();
+      return Err(format!(
+        "Definition '{definition}' already exists in namespace '{namespace}'.\n\nExisting definitions in this namespace: {}\n\nSuggested fixes:\n• Use a different definition name\n• Use 'overwrite_definition' tool to replace the existing definition\n• Use 'update_definition_at' tool to modify the existing definition",
+        existing_definitions.join(", ")
+      ));
     }
 
     // Add new definition
@@ -92,13 +104,29 @@ pub fn delete_definition(app_state: &super::AppState, request: DeleteDefinitionR
     let file_data = match snapshot.files.get_mut(&namespace) {
       Some(data) => data,
       None => {
-        return Err(format!("Namespace '{namespace}' not found"));
+        let available_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+        return Err(format!(
+          "Namespace '{namespace}' not found.\n\nAvailable namespaces: {}\n\nSuggested fixes:\n• Check the namespace name for typos\n• Use one of the existing namespaces listed above",
+          if available_namespaces.is_empty() {
+            "(none)".to_string()
+          } else {
+            available_namespaces.join(", ")
+          }
+        ));
       }
     };
 
     // Check if definition exists
     if !file_data.defs.contains_key(&definition) {
-      return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
+      let existing_definitions: Vec<String> = file_data.defs.keys().cloned().collect();
+      return Err(format!(
+        "Definition '{definition}' not found in namespace '{namespace}'.\n\nExisting definitions in this namespace: {}\n\nSuggested fixes:\n• Check the definition name for typos\n• Use one of the existing definitions listed above\n• Use 'list_namespace_definitions' tool to see all available definitions",
+        if existing_definitions.is_empty() {
+          "(none)".to_string()
+        } else {
+          existing_definitions.join(", ")
+        }
+      ));
     }
 
     // Delete definition
@@ -157,13 +185,29 @@ pub fn overwrite_definition(app_state: &super::AppState, request: OverwriteDefin
     let file_data = match snapshot.files.get_mut(&namespace) {
       Some(data) => data,
       None => {
-        return Err(format!("Namespace '{namespace}' not found"));
+        let available_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+        return Err(format!(
+          "Namespace '{namespace}' not found.\n\nAvailable namespaces: {}\n\nSuggested fixes:\n• Check the namespace name for typos\n• Create the namespace first using 'add_namespace' tool\n• Use one of the existing namespaces listed above",
+          if available_namespaces.is_empty() {
+            "(none - create a namespace first)".to_string()
+          } else {
+            available_namespaces.join(", ")
+          }
+        ));
       }
     };
 
     // Check if definition exists
     if !file_data.defs.contains_key(&definition) {
-      return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
+      let existing_definitions: Vec<String> = file_data.defs.keys().cloned().collect();
+      return Err(format!(
+        "Definition '{definition}' not found in namespace '{namespace}'.\n\nExisting definitions in this namespace: {}\n\nSuggested fixes:\n• Check the definition name for typos\n• Use 'add_definition' tool to create a new definition\n• Use one of the existing definitions listed above",
+        if existing_definitions.is_empty() {
+          "(none - add a definition first)".to_string()
+        } else {
+          existing_definitions.join(", ")
+        }
+      ));
     }
 
     // Update definition
@@ -190,7 +234,7 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
     Ok(coord_vec) => coord_vec,
     Err(e) => {
       return ResponseJson(serde_json::json!({
-        "error": format!("Invalid coord parameter: {}", e)
+        "error": format!("Invalid coord parameter: {}\n\nCoord format requirements:\n• Must be a JSON array of non-negative integers\n• Example: [0] for first element, [1, 2] for third element of second element\n• Use empty array [] for root level\n\nSuggested fixes:\n• Check that all values are non-negative integers\n• Ensure proper JSON array format: [0, 1, 2]\n• Use 'read_definition_at' tool to explore the structure first", e)
       }));
     }
   };
@@ -200,7 +244,7 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
     Ok(mode) => mode,
     Err(e) => {
       return ResponseJson(serde_json::json!({
-        "error": format!("Invalid mode parameter: {}. Valid modes are: replace, after, before, delete, prepend, append", e)
+        "error": format!("Invalid mode parameter: {}.\n\nValid modes:\n• 'replace' - Replace the element at coord\n• 'after' - Insert new element after the coord position\n• 'before' - Insert new element before the coord position\n• 'delete' - Remove the element at coord (no new_value needed)\n• 'prepend' - Add new element at the beginning of list at coord\n• 'append' - Add new element at the end of list at coord\n\nSuggested fixes:\n• Use one of the exact mode names listed above\n• Check for typos in the mode parameter", e)
       }));
     }
   };
@@ -213,14 +257,14 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
         Ok(cirru) => Some(cirru),
         Err(e) => {
           return ResponseJson(serde_json::json!({
-            "error": format!("Failed to convert new_value from JSON: {}", e)
+            "error": format!("Failed to convert new_value from JSON: {}\n\nNew value format requirements:\n• Must be a valid JSON array representing Cirru syntax\n• Use nested arrays for complex expressions\n\nValid examples:\n• Simple value: [\"my-value\"]\n• Number: [\"42\"]\n• Function call: [\"fn-name\", \"arg1\", \"arg2\"]\n• Nested expression: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]\n\nSuggested fixes:\n• Check JSON array syntax\n• Ensure proper nesting for complex expressions\n• Use strings for all atomic values", e)
           }));
         }
       }
     }
     _ => {
       return ResponseJson(serde_json::json!({
-        "error": "new_value must be a JSON array. Examples: [\"my-value\"] for single values, [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]] for complex expressions"
+        "error": "new_value must be a JSON array representing Cirru syntax.\n\nFormat requirements:\n• Must be a JSON array, not a string or other type\n• Use nested arrays for complex expressions\n\nValid examples:\n• Simple value: [\"my-value\"]\n• Number: [\"42\"]\n• Function call: [\"fn-name\", \"arg1\", \"arg2\"]\n• Nested expression: [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]\n\nSuggested fixes:\n• Convert string values to JSON arrays: \"value\" → [\"value\"]\n• Use proper JSON array syntax with square brackets"
       }));
     }
   };
@@ -237,7 +281,7 @@ pub fn update_definition_at(app_state: &super::AppState, request: UpdateDefiniti
     Ok(cirru) => Some(cirru),
     Err(e) => {
       return ResponseJson(serde_json::json!({
-        "error": format!("Failed to convert match content from JSON: {}", e)
+        "error": format!("Failed to convert match_content from JSON: {}\n\nMatch content format requirements:\n• Must be a valid JSON array representing the expected Cirru syntax at the coord\n• Used for verification before making changes\n• Should exactly match the current content at the specified coordinate\n\nValid examples:\n• Simple value: [\"current-value\"]\n• Function call: [\"current-fn\", \"arg1\", \"arg2\"]\n• Complex expression: [\"if\", [\">\", \"x\", \"0\"], \"positive\", \"negative\"]\n\nSuggested fixes:\n• Use 'read_definition_at' tool to see current content at coord\n• Ensure match_content exactly matches the current structure\n• Check JSON array syntax and nesting", e)
       }));
     }
   };
@@ -290,7 +334,7 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
     Ok(coord_vec) => coord_vec,
     Err(e) => {
       return ResponseJson(serde_json::json!({
-        "error": format!("Invalid coord parameter: {}", e)
+        "error": format!("Invalid coord parameter: {}\n\nCoord format requirements:\n• Must be a JSON array of non-negative integers\n• Example: [0] for first element, [1, 2] for third element of second element\n• Use empty array [] for root level\n\nSuggested fixes:\n• Check that all values are non-negative integers\n• Ensure proper JSON array format: [0, 1, 2]\n• Start with [] to read the entire definition", e)
       }));
     }
   };
@@ -300,7 +344,15 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
     let file_data = match snapshot.files.get(&namespace) {
       Some(data) => data,
       None => {
-        return Err(format!("Namespace '{namespace}' not found"));
+        let available_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+        return Err(format!(
+          "Namespace '{namespace}' not found.\n\nAvailable namespaces: {}\n\nSuggested fixes:\n• Check the namespace name for typos\n• Use 'list_namespaces' tool to see all available namespaces\n• Use one of the existing namespaces listed above",
+          if available_namespaces.is_empty() {
+            "(none)".to_string()
+          } else {
+            available_namespaces.join(", ")
+          }
+        ));
       }
     };
 
@@ -308,7 +360,15 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
     let code_entry = match file_data.defs.get(&definition) {
       Some(entry) => entry,
       None => {
-        return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
+        let existing_definitions: Vec<String> = file_data.defs.keys().cloned().collect();
+        return Err(format!(
+          "Definition '{definition}' not found in namespace '{namespace}'.\n\nExisting definitions in this namespace: {}\n\nSuggested fixes:\n• Check the definition name for typos\n• Use 'list_namespace_definitions' tool to see all available definitions\n• Use one of the existing definitions listed above",
+          if existing_definitions.is_empty() {
+            "(none)".to_string()
+          } else {
+            existing_definitions.join(", ")
+          }
+        ));
       }
     };
 
@@ -316,7 +376,7 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
     let target = match navigate_to_coord(&code_entry.code, &coord) {
       Ok(t) => t,
       Err(e) => {
-        return Err(format!("Failed to navigate to coordinate {coord:?}: {e}"));
+        return Err(format!("Failed to navigate to coordinate {coord:?}: {e}\n\nNavigation troubleshooting:\n• Coordinate {coord:?} may be out of bounds\n• Use empty array [] to read the entire definition\n• Use shorter coordinates to navigate step by step\n• Check if the target is a list (only lists can have child elements)\n\nSuggested fixes:\n• Start with [] to see the root structure\n• Use coordinates like [0], [1], [2] for top-level elements\n• For nested access, build coordinates incrementally: [0] → [0, 1] → [0, 1, 2]"));
       }
     };
 

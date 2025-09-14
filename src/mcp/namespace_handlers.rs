@@ -19,14 +19,33 @@ pub fn add_namespace(app_state: &super::AppState, request: AddNamespaceRequest) 
   let result = app_state.state_manager.update_current_module(|snapshot| {
     // Check if namespace already exists
     if snapshot.files.contains_key(&namespace) {
-      return Err(format!("Namespace '{namespace}' already exists"));
+      let existing_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+      return Err(format!(
+        "Namespace '{namespace}' already exists.\n\nExisting namespaces: {}\n\nSuggested fixes:\n• Use a different namespace name\n• Use 'delete_namespace' tool to remove the existing namespace first\n• Use 'update_namespace_imports' tool to modify the existing namespace",
+        existing_namespaces.join(", ")
+      ));
     }
 
     // Check if namespace starts with current package name followed by a dot
     let package_prefix = format!("{}.", snapshot.package);
     if !namespace.starts_with(&package_prefix) {
+      let existing_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+      let valid_examples: Vec<String> = existing_namespaces.iter()
+        .filter(|ns| ns.starts_with(&package_prefix))
+        .take(3)
+        .cloned()
+        .collect();
+      
       return Err(format!(
-        "Namespace '{namespace}' must start with current package name '{}' followed by a dot",
+        "Namespace '{namespace}' must start with current package name '{}' followed by a dot.\n\nCurrent package: {}\nRequired prefix: {}\n\nValid namespace examples: {}\n\nSuggested fixes:\n• Use format: {}.your-namespace-name\n• Check existing namespaces for naming patterns",
+        snapshot.package,
+        snapshot.package,
+        package_prefix,
+        if valid_examples.is_empty() {
+          format!("{}.example", snapshot.package)
+        } else {
+          valid_examples.join(", ")
+        },
         snapshot.package
       ));
     }
@@ -57,7 +76,15 @@ pub fn delete_namespace(app_state: &super::AppState, request: DeleteNamespaceReq
   let result = app_state.state_manager.update_current_module(|snapshot| {
     // Check if namespace exists
     if !snapshot.files.contains_key(&namespace) {
-      return Err(format!("Namespace '{namespace}' not found"));
+      let existing_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+      return Err(format!(
+        "Namespace '{namespace}' not found.\n\nExisting namespaces: {}\n\nSuggested fixes:\n• Check the namespace name for typos\n• Use 'list_namespaces' tool to see all available namespaces\n• Use one of the existing namespaces listed above",
+        if existing_namespaces.is_empty() {
+          "(none)".to_string()
+        } else {
+          existing_namespaces.join(", ")
+        }
+      ));
     }
 
     // Delete namespace
