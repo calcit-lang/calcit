@@ -60,7 +60,7 @@ Once the server is running and configured in your Gemini CLI, you will have acce
 - `create_config_entry` - 创建新的模块
 - `delete_config_entry` - 删除模块
 - `calcit_parse_cirru_to_json` - 将 Cirru 语法解析为 JSON
-- `format_json_to_cirru` - 将 JSON 格式化为 Cirru 语法
+- `calcit_format_json_to_cirru` - 将 JSON 格式化为 Cirru 语法
 - `parse_cirru_edn_to_json` - 将 Cirru EDN 格式解析为 JSON
 - `query_calcit_apis` - 查询 Calcit API 文档
 - `query_calcit_reference` - 查询 Calcit 参考文档

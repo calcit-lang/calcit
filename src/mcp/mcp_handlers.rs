@@ -566,7 +566,7 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      let result = super::docs_handlers::handle_query_calcit_referernce(app_state, request);
+      let result = super::docs_handlers::handle_query_calcit_reference(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
     // Documentation tools

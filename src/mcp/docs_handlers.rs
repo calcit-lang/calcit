@@ -282,7 +282,7 @@ pub fn handle_list_guidebook_docs(_app_state: &super::AppState, _request: ListGu
 }
 
 /// Handle guidebook documentation queries
-pub fn handle_query_calcit_referernce(_app_state: &super::AppState, request: QueryCalcitReferenceRequest) -> ResponseJson<Value> {
+pub fn handle_query_calcit_reference(_app_state: &super::AppState, request: QueryCalcitReferenceRequest) -> ResponseJson<Value> {
   // Ensure data is loaded and get cache
   let guide_cache = match ensure_data_loaded() {
     Ok(_) => GUIDEBOOK_CACHE.get().unwrap(),

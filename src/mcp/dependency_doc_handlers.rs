@@ -4,13 +4,6 @@ use axum::response::Json as ResponseJson;
 use serde::Serialize;
 use serde_json::Value;
 
-// Common error response structure
-#[derive(Debug, Serialize)]
-pub struct ErrorResponse {
-  pub error: String,
-  pub context: Option<String>,
-}
-
 // Response structures
 #[derive(Debug, Serialize)]
 pub struct DependencyDocsListResponse {
