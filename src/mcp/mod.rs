@@ -16,6 +16,7 @@ pub mod error_handling;
 pub mod jsonrpc;
 pub mod library_handlers;
 pub mod mcp_handlers;
+pub mod memory_handlers;
 pub mod module_handlers;
 pub mod namespace_handlers;
 pub mod read_handlers;

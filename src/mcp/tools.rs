@@ -225,6 +225,27 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
       description: "Read documentation for a specific definition (function/macro) in any namespace. This tool works for both current project definitions and dependency definitions. It automatically detects whether the namespace belongs to the current project or a dependency module.\n\nExample: {\"namespace\": \"app.core\", \"definition\": \"add-numbers\"}",
       schema_generator: || serde_json::to_value(schema_for!(ReadDefinitionDocRequest)).unwrap(),
     },
+    // Memory Management Tools
+    McpToolWithSchema {
+      name: "list_calcit_work_memory",
+      description: "List all work memory entries with their keys and brief descriptions. This shows all the accumulated knowledge and tips stored by the model during Calcit development work.\n\nExample: {}",
+      schema_generator: || serde_json::to_value(schema_for!(ListCalcitWorkMemoryRequest)).unwrap(),
+    },
+    McpToolWithSchema {
+      name: "read_calcit_work_memory",
+      description: "Read work memory entry by key or search by keywords. This allows retrieving specific knowledge or searching through accumulated tips and solutions.\n\nExample: {\"key\": \"error-handling-tips\"} or {\"keywords\": \"syntax error\"}",
+      schema_generator: || serde_json::to_value(schema_for!(ReadCalcitWorkMemoryRequest)).unwrap(),
+    },
+    McpToolWithSchema {
+      name: "write_calcit_work_memory",
+      description: "Write or update a work memory entry. This allows storing new knowledge, tips, or solutions learned through trial and error to reduce future mistakes.\n\nExample: {\"key\": \"error-handling-tips\", \"content\": \"When encountering syntax errors, check parentheses balance first\"}",
+      schema_generator: || serde_json::to_value(schema_for!(WriteCalcitWorkMemoryRequest)).unwrap(),
+    },
+    McpToolWithSchema {
+      name: "feedback_to_calcit_mcp_server",
+      description: "Provide feedback about MCP server usage and improvement suggestions. This creates a timestamped feedback file to help improve the server's functionality and reduce future issues.\n\nExample: {\"feedback\": \"The error messages could be more specific about which parenthesis is unmatched\"}",
+      schema_generator: || serde_json::to_value(schema_for!(FeedbackToCalcitMcpServerRequest)).unwrap(),
+    },
   ]
 }
 
@@ -911,6 +932,58 @@ pub struct StopCalcitRunnerRequest {
 pub struct GenerateCalcitIncrementalRequest {
   /// Source file path (optional, defaults to "compact.cirru")
   pub source_file: Option<String>,
+}
+
+// Memory Management Tools
+
+/// List all work memory entries with their keys and brief descriptions
+/// Example: `{}`
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListCalcitWorkMemoryRequest {
+  // No parameters needed
+}
+
+/// Read work memory entry by key or search by keywords
+/// Example: `{"key": "error-handling-tips"}` or `{"keywords": "syntax error"}`
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ReadCalcitWorkMemoryRequest {
+  /// # Memory Key
+  /// The specific key to read from memory
+  ///
+  /// Example: "error-handling-tips"
+  pub key: Option<String>,
+  /// # Search Keywords
+  /// Keywords to search for in memory entries
+  ///
+  /// Example: "syntax error"
+  pub keywords: Option<String>,
+}
+
+/// Write or update a work memory entry
+/// Example: `{"key": "error-handling-tips", "content": "When encountering syntax errors, check parentheses balance first"}`
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct WriteCalcitWorkMemoryRequest {
+  /// # Memory Key
+  /// A short, meaningful identifier for this memory entry
+  ///
+  /// Example: "error-handling-tips"
+  pub key: String,
+  /// # Memory Content
+  /// The content to store in this memory entry
+  ///
+  /// Example: "When encountering syntax errors, check parentheses balance first"
+  pub content: String,
+}
+
+/// Provide feedback about MCP server usage and improvement suggestions
+/// Example: `{"feedback": "The error messages could be more specific about which parenthesis is unmatched"}`
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct FeedbackToCalcitMcpServerRequest {
+  /// # Feedback Content
+  /// Detailed feedback about issues encountered and suggestions for improvement
+  ///
+  /// Example: "The error messages could be more specific about which parenthesis is unmatched"
+  pub feedback: String,
 }
 
 pub fn get_standard_mcp_tools() -> Vec<Tool> {

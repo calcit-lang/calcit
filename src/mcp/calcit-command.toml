@@ -171,4 +171,53 @@ Calcit 脚本语言是走小众路线的快速开发工具, 且作为 Lisp 方�
 
 如果有文档缺失或者查找的链路不通, 请明确在日志当中说明, 会有专门的 Agent 收集问题寻找解决方案, 或者由工程师手动补充文档.
 
+### 记忆管理和反馈工具
+
+Calcit MCP 服务提供了记忆管理和反馈功能，帮助保存和检索开发过程中的重要信息：
+
+- `list_calcit_work_memory` - 列出所有保存的记忆条目
+
+```json
+{}
+```
+
+返回所有记忆条目的名称和编码列表。
+
+- `read_calcit_work_memory` - 读取指定的记忆内容
+
+按编码读取：
+```json
+{
+  "memory_id": "mem_001"
+}
+```
+
+按关键词搜索：
+```json
+{
+  "search_keyword": "函数定义"
+}
+```
+
+- `write_calcit_work_memory` - 保存记忆条目
+
+```json
+{
+  "memory_name": "重要的函数实现",
+  "content": "这里记录了关键的函数实现方法和注意事项",
+  "overwrite": false
+}
+```
+
+- `feedback_to_calcit_mcp_server` - 向服务器发送反馈
+
+```json
+{
+  "feedback_content": "发现了一个性能优化的机会",
+  "feedback_type": "suggestion"
+}
+```
+
+记忆文件保存在 `~/.calcit/work_memory/` 目录下，反馈文件保存在 `~/.calcit/feedback/` 目录下。这些工具有助于在开发过程中保存重要的发现、解决方案和改进建议。
+
 """

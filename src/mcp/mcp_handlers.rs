@@ -5,13 +5,14 @@ use super::error_handling::{create_protocol_error, create_tool_execution_error, 
 use super::jsonrpc::*;
 use super::tools::{
   AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
-  FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GenerateCalcitIncrementalRequest, GetCurrentModuleRequest,
-  GetPackageNameRequest, GrabCalcitRunnerLogsRequest, ListApiDocsRequest, ListDefinitionsRequest, ListDependencyDocsRequest,
-  ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest, OperateDefinitionAtRequest,
-  ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest, ReadConfigsRequest,
-  ReadDefinitionAtRequest, ReadDefinitionDocRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest,
-  ReadNamespaceRequest, StartCalcitRunnerRequest, StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateDefinitionDocRequest,
-  UpdateNamespaceDocRequest, UpdateNamespaceImportsRequest, UpsertDefinitionRequest, get_standard_mcp_tools,
+  FeedbackToCalcitMcpServerRequest, FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GenerateCalcitIncrementalRequest,
+  GetCurrentModuleRequest, GetPackageNameRequest, GrabCalcitRunnerLogsRequest, ListApiDocsRequest, ListCalcitWorkMemoryRequest,
+  ListDefinitionsRequest, ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest,
+  OperateDefinitionAtRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest,
+  ReadCalcitWorkMemoryRequest, ReadConfigsRequest, ReadDefinitionAtRequest, ReadDefinitionDocRequest,
+  ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest, ReadNamespaceRequest, StartCalcitRunnerRequest,
+  StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateDefinitionDocRequest, UpdateNamespaceDocRequest, UpdateNamespaceImportsRequest,
+  UpsertDefinitionRequest, WriteCalcitWorkMemoryRequest, get_standard_mcp_tools,
 };
 use axum::response::Json as ResponseJson;
 use colored::*;
@@ -696,6 +697,39 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Err(error_response) => return error_response,
       };
       let result = super::calcit_runner_handlers::generate_incremental_file(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
+    }
+    // Memory Management Tools
+    "list_calcit_work_memory" => {
+      let request = match deserialize_params::<ListCalcitWorkMemoryRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      let result = super::memory_handlers::list_calcit_work_memory(request);
+      return handle_tool_result(req.id.clone(), result);
+    }
+    "read_calcit_work_memory" => {
+      let request = match deserialize_params::<ReadCalcitWorkMemoryRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      let result = super::memory_handlers::read_calcit_work_memory(request);
+      return handle_tool_result(req.id.clone(), result);
+    }
+    "write_calcit_work_memory" => {
+      let request = match deserialize_params::<WriteCalcitWorkMemoryRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      let result = super::memory_handlers::write_calcit_work_memory(request);
+      return handle_tool_result(req.id.clone(), result);
+    }
+    "feedback_to_calcit_mcp_server" => {
+      let request = match deserialize_params::<FeedbackToCalcitMcpServerRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      let result = super::memory_handlers::feedback_to_calcit_mcp_server(request);
       return handle_tool_result(req.id.clone(), result);
     }
 
