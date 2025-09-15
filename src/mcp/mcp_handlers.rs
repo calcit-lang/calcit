@@ -9,9 +9,9 @@ use super::tools::{
   GetPackageNameRequest, GrabCalcitRunnerLogsRequest, ListApiDocsRequest, ListDefinitionsRequest, ListDependencyDocsRequest,
   ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest, OperateDefinitionAtRequest,
   ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest, ReadConfigsRequest,
-  ReadDefinitionAtRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest, ReadNamespaceRequest,
-  StartCalcitRunnerRequest, StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateDefinitionDocRequest, UpdateNamespaceDocRequest,
-  UpdateNamespaceImportsRequest, UpsertDefinitionRequest, get_standard_mcp_tools,
+  ReadDefinitionAtRequest, ReadDefinitionDocRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest,
+  ReadNamespaceRequest, StartCalcitRunnerRequest, StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateDefinitionDocRequest,
+  UpdateNamespaceDocRequest, UpdateNamespaceImportsRequest, UpsertDefinitionRequest, get_standard_mcp_tools,
 };
 use axum::response::Json as ResponseJson;
 use colored::*;
@@ -456,7 +456,14 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Ok(req) => req,
         Err(error_response) => return error_response,
       };
-      let result = super::definition_handlers::upsert_definition_public(app_state, request);
+      let result = super::definition_handlers::upsert_definition(
+        app_state,
+        request.namespace,
+        request.definition,
+        request.syntax_tree,
+        request.doc,
+        request.replacing,
+      );
       return handle_tool_result(req.id.clone(), result);
     }
     "delete_definition" => {
@@ -497,6 +504,14 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Err(error_response) => return error_response,
       };
       let result = super::definition_handlers::read_definition_at(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
+    }
+    "read_definition_doc" => {
+      let request = match deserialize_params::<ReadDefinitionDocRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      let result = super::definition_handlers::read_definition_doc(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
 

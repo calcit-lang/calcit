@@ -220,6 +220,11 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
       description: "Read documentation for a specific module in a dependency. This provides information about a module from a library used by the project.\n\nExample: {\"module_namespace\": \"core.list\", \"doc_path\": \"overview\"}",
       schema_generator: || serde_json::to_value(schema_for!(ReadDependencyModuleDocRequest)).unwrap(),
     },
+    McpToolWithSchema {
+      name: "read_definition_doc",
+      description: "Read documentation for a specific definition (function/macro) in any namespace. This tool works for both current project definitions and dependency definitions. It automatically detects whether the namespace belongs to the current project or a dependency module.\n\nExample: {\"namespace\": \"app.core\", \"definition\": \"add-numbers\"}",
+      schema_generator: || serde_json::to_value(schema_for!(ReadDefinitionDocRequest)).unwrap(),
+    },
   ]
 }
 
@@ -779,6 +784,14 @@ pub struct ParseCirruEdnToJsonRequest {
 pub struct ReadDependencyModuleDocRequest {
   pub module_namespace: String,
   pub doc_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ReadDefinitionDocRequest {
+  /// The namespace containing the definition
+  pub namespace: String,
+  /// The name of the definition (function/macro) to read documentation for
+  pub definition: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
