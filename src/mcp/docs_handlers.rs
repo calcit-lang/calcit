@@ -1,4 +1,4 @@
-use super::tools::McpRequest;
+use super::tools::{ListApiDocsRequest, ListGuidebookDocsRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest};
 use axum::response::Json as ResponseJson;
 use cirru_edn::Edn;
 use serde::{Deserialize, Serialize};
@@ -154,7 +154,7 @@ fn ensure_data_loaded() -> Result<(), String> {
 }
 
 /// Handle API documentation queries
-pub fn handle_query_api_docs(_app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
+pub fn handle_query_calcit_apis(_app_state: &super::AppState, request: QueryCalcitApisRequest) -> ResponseJson<Value> {
   // Ensure data is loaded and get cache
   let api_cache = match ensure_data_loaded() {
     Ok(_) => API_DOCS_CACHE.get().unwrap(),
@@ -167,12 +167,12 @@ pub fn handle_query_api_docs(_app_state: &super::AppState, req: McpRequest) -> R
   let cache = api_cache.lock().unwrap();
   let api_docs = &*cache;
 
-  let query_type = req.parameters.get("query_type").and_then(|v| v.as_str()).unwrap_or("all");
+  let query_type = &request.query_type;
 
-  let results: Vec<ApiDoc> = match query_type {
+  let results: Vec<ApiDoc> = match query_type.as_str() {
     "all" => api_docs.values().cloned().collect(),
     "tag" => {
-      let tag = req.parameters.get("query_value").and_then(|v| v.as_str()).unwrap_or("");
+      let tag = request.query_value.as_deref().unwrap_or("");
       if tag.is_empty() {
         return ResponseJson(serde_json::json!({
           "error": "query_value parameter is required for tag queries"
@@ -185,7 +185,7 @@ pub fn handle_query_api_docs(_app_state: &super::AppState, req: McpRequest) -> R
         .collect()
     }
     "keyword" => {
-      let keyword = req.parameters.get("query_value").and_then(|v| v.as_str()).unwrap_or("");
+      let keyword = request.query_value.as_deref().unwrap_or("");
       if keyword.is_empty() {
         return ResponseJson(serde_json::json!({
           "error": "query_value parameter is required for keyword queries"
@@ -223,7 +223,7 @@ pub fn handle_query_api_docs(_app_state: &super::AppState, req: McpRequest) -> R
 }
 
 /// Handle list_api_docs tool request
-pub fn handle_list_api_docs(_app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
+pub fn handle_list_api_docs(_app_state: &super::AppState, _request: ListApiDocsRequest) -> ResponseJson<Value> {
   if let Err(e) = ensure_data_loaded() {
     return ResponseJson(serde_json::json!({
       "error": e
@@ -246,7 +246,7 @@ pub fn handle_list_api_docs(_app_state: &super::AppState, _req: McpRequest) -> R
 }
 
 /// Handle list_guidebook_docs tool request
-pub fn handle_list_guidebook_docs(_app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
+pub fn handle_list_guidebook_docs(_app_state: &super::AppState, _request: ListGuidebookDocsRequest) -> ResponseJson<Value> {
   if let Err(e) = ensure_data_loaded() {
     return ResponseJson(serde_json::json!({
       "error": e
@@ -282,7 +282,7 @@ pub fn handle_list_guidebook_docs(_app_state: &super::AppState, _req: McpRequest
 }
 
 /// Handle guidebook documentation queries
-pub fn handle_query_guidebook(_app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
+pub fn handle_query_calcit_reference(_app_state: &super::AppState, request: QueryCalcitReferenceRequest) -> ResponseJson<Value> {
   // Ensure data is loaded and get cache
   let guide_cache = match ensure_data_loaded() {
     Ok(_) => GUIDEBOOK_CACHE.get().unwrap(),
@@ -295,12 +295,12 @@ pub fn handle_query_guidebook(_app_state: &super::AppState, req: McpRequest) -> 
   let cache = guide_cache.lock().unwrap();
   let guide_docs = &*cache;
 
-  let query_type = req.parameters.get("query_type").and_then(|v| v.as_str()).unwrap_or("all");
+  let query_type = &request.query_type;
 
-  let results: Vec<GuideDoc> = match query_type {
+  let results: Vec<GuideDoc> = match query_type.as_str() {
     "all" => guide_docs.values().cloned().collect(),
     "filename" => {
-      let filename = req.parameters.get("query_value").and_then(|v| v.as_str()).unwrap_or("");
+      let filename = request.query_value.as_str();
       if filename.is_empty() {
         return ResponseJson(serde_json::json!({
           "error": "query_value parameter is required for filename queries"
@@ -313,7 +313,7 @@ pub fn handle_query_guidebook(_app_state: &super::AppState, req: McpRequest) -> 
         .collect()
     }
     "keyword" => {
-      let keyword = req.parameters.get("query_value").and_then(|v| v.as_str()).unwrap_or("");
+      let keyword = request.query_value.as_str();
       if keyword.is_empty() {
         return ResponseJson(serde_json::json!({
           "error": "query_value parameter is required for keyword queries"

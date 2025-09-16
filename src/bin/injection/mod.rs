@@ -1,5 +1,6 @@
 use crate::runner;
 use cirru_edn::Edn;
+use colored::Colorize;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
@@ -45,7 +46,7 @@ pub fn inject_platform_apis() {
   builtins::register_import_proc("&blocking-dylib-edn-fn", blocking_dylib_edn_fn);
   builtins::register_import_proc("async-sleep", builtins::meta::async_sleep);
   builtins::register_import_proc("on-control-c", on_ctrl_c);
-  println!("registered platform APIs");
+  println!("{}", "registered platform APIs".dimmed());
 }
 
 // &call-dylib-edn

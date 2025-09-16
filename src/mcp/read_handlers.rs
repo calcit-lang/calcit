@@ -1,193 +1,114 @@
-use super::cirru_utils::cirru_to_json;
-use super::tools::McpRequest;
-use crate::snapshot::Snapshot;
+use super::tools::{GetPackageNameRequest, ListDefinitionsRequest, ReadNamespaceRequest};
+use super::validation::validate_namespace_name;
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
 
-/// Load snapshot data
-fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
-  // Use the load_snapshot function from namespace_handlers, which contains module loading logic
-  super::namespace_handlers::load_snapshot(app_state)
-}
+pub fn list_namespace_definitions(app_state: &super::AppState, request: ListDefinitionsRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
 
-pub fn list_definitions(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let namespace = match req.parameters.get("namespace") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "namespace parameter is missing or not a string"
-      }));
-    }
-  };
-
-  let snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
-    }
-  };
-
-  // Check if namespace exists
-  let file_data = match snapshot.files.get(&namespace) {
-    Some(data) => data,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Namespace '{namespace}' not found")
-      }));
-    }
-  };
-
-  let definitions: Vec<String> = file_data.defs.keys().cloned().collect();
-
-  ResponseJson(serde_json::json!({
-    "namespace": namespace,
-    "definitions": definitions
-  }))
-}
-
-pub fn list_namespaces(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
-  let snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
-    }
-  };
-
-  let namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
-
-  ResponseJson(serde_json::json!({
-    "namespaces": namespaces
-  }))
-}
-
-pub fn get_package_name(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
-  let snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
-    }
-  };
-
-  ResponseJson(serde_json::json!({
-    "package_name": snapshot.package
-  }))
-}
-
-pub fn read_namespace(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let namespace = match req.parameters.get("namespace") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "namespace parameter is missing or not a string"
-      }));
-    }
-  };
-
-  let snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
-    }
-  };
-
-  // Check if namespace exists
-  let file_data = match snapshot.files.get(&namespace) {
-    Some(data) => data,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Namespace '{namespace}' not found")
-      }));
-    }
-  };
-
-  // Convert namespace data to JSON, only return definition names, documentation and first 40 characters of code
-  let mut definitions = serde_json::Map::new();
-  for (def_name, code_entry) in &file_data.defs {
-    // Convert code to string and truncate to first 40 characters
-    let code_json = cirru_to_json(&code_entry.code);
-    let code_str = code_json.to_string();
-    let code_preview = if code_str.len() > 40 {
-      format!("{}...", &code_str[..40])
-    } else {
-      code_str
-    };
-
-    definitions.insert(
-      def_name.clone(),
-      serde_json::json!({
-        "doc": code_entry.doc,
-        "code_preview": code_preview
-      }),
-    );
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
   }
 
-  ResponseJson(serde_json::json!({
-    "namespace": namespace,
-    "definitions": definitions,
-    "ns": file_data.ns
-  }))
+  let result = app_state.state_manager.with_current_module(|snapshot| {
+    // Check if namespace exists
+    let file_data = match snapshot.files.get(&namespace) {
+      Some(data) => data,
+      None => {
+        return ResponseJson(serde_json::json!({
+          "error": format!("Namespace '{namespace}' not found")
+        }));
+      }
+    };
+
+    let definitions: Vec<String> = file_data.defs.keys().cloned().collect();
+
+    ResponseJson(serde_json::json!({
+      "namespace": namespace,
+      "definitions": definitions
+    }))
+  });
+
+  match result {
+    Ok(response) => response,
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
+  }
 }
 
-pub fn read_definition(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let namespace = match req.parameters.get("namespace") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "namespace parameter is missing or not a string"
-      }));
-    }
-  };
+// list_namespaces function moved to namespace_handlers.rs to avoid duplication
 
-  let definition = match req.parameters.get("definition") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "definition parameter is missing or not a string"
-      }));
-    }
-  };
+pub fn get_package_name(app_state: &super::AppState, _request: GetPackageNameRequest) -> ResponseJson<Value> {
+  let result = app_state.state_manager.with_current_module(|snapshot| {
+    ResponseJson(serde_json::json!({
+      "package_name": snapshot.package
+    }))
+  });
 
-  let snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
-    }
-  };
+  match result {
+    Ok(response) => response,
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
+  }
+}
 
-  // Check if namespace exists
-  let file_data = match snapshot.files.get(&namespace) {
-    Some(data) => data,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Namespace '{namespace}' not found")
-      }));
-    }
-  };
+pub fn read_namespace(app_state: &super::AppState, request: ReadNamespaceRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
 
-  // Check if definition exists
-  let code_entry = match file_data.defs.get(&definition) {
-    Some(entry) => entry,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Definition '{definition}' not found in namespace '{namespace}'")
-      }));
-    }
-  };
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
+  }
 
-  ResponseJson(serde_json::json!({
-    "namespace": namespace,
-    "definition": definition,
-    "doc": code_entry.doc,
-    "code": cirru_to_json(&code_entry.code)
-  }))
+  let result = app_state.state_manager.with_current_module(|snapshot| {
+    // Check if namespace exists
+    let file_data = match snapshot.files.get(&namespace) {
+      Some(data) => data,
+      None => {
+        return ResponseJson(serde_json::json!({
+          "error": format!("Namespace '{namespace}' not found")
+        }));
+      }
+    };
+
+    // Convert namespace data to JSON, only return definition names, documentation and first 40 characters of code
+    let mut definitions = serde_json::Map::new();
+    for (def_name, code_entry) in &file_data.defs {
+      // Convert code to string and truncate to first 40 characters
+      let code_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or("(failed to convert code)".to_string());
+      let code_preview = if code_str.len() > 40 {
+        format!("{}...(too long)", &code_str[..40])
+      } else {
+        code_str
+      };
+
+      definitions.insert(
+        def_name.clone(),
+        serde_json::json!({
+          "doc": code_entry.doc,
+          "code_preview": code_preview
+        }),
+      );
+    }
+
+    ResponseJson(serde_json::json!({
+      "namespace": namespace,
+      "definitions": definitions,
+      "doc": file_data.ns.doc
+    }))
+  });
+
+  match result {
+    Ok(response) => response,
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
+  }
 }

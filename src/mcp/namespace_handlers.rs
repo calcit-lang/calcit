@@ -1,305 +1,339 @@
-use super::cirru_utils::{json_to_cirru, validate_cirru_structure};
-use super::tools::McpRequest;
-use crate::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot};
+use super::cirru_utils::json_to_cirru;
+use super::tools::{
+  AddNamespaceRequest, DeleteNamespaceRequest, ListNamespacesRequest, UpdateNamespaceDocRequest, UpdateNamespaceImportsRequest,
+};
+use super::validation::validate_namespace_name;
+use crate::snapshot::{CodeEntry, FileInSnapShot, Snapshot};
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
 use std::collections::HashMap;
 
 /// Load snapshot data, including main file and all module files
+/// This function is kept for backward compatibility, but new code should use state_manager
 pub fn load_snapshot(app_state: &super::AppState) -> Result<Snapshot, String> {
-  use std::path::Path;
-
-  let content = match std::fs::read_to_string(&app_state.compact_cirru_path) {
-    Ok(c) => c,
-    Err(e) => return Err(format!("Failed to read compact.cirru: {e}")),
-  };
-
-  let edn_data = match cirru_edn::parse(&content) {
-    Ok(d) => d,
-    Err(e) => return Err(format!("Failed to parse compact.cirru as EDN: {e}")),
-  };
-
-  let mut main_snapshot = match snapshot::load_snapshot_data(&edn_data, &app_state.compact_cirru_path) {
-    Ok(snapshot) => snapshot,
-    Err(e) => return Err(format!("Failed to load snapshot: {e}")),
-  };
-
-  // Load all module files and merge namespaces
-  let base_dir = Path::new(&app_state.compact_cirru_path).parent().unwrap_or(Path::new("."));
-  let home_dir = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-  let module_folder = Path::new(&home_dir).join(".config/calcit/modules"); // Use standard calcit module directory
-
-  println!(
-    "Loading modules from main snapshot, found {} modules",
-    main_snapshot.configs.modules.len()
-  );
-
-  for module_path in &main_snapshot.configs.modules {
-    println!("Attempting to load module: {module_path}");
-    match crate::load_module(module_path, base_dir, &module_folder) {
-      Ok(module_snapshot) => {
-        println!(
-          "Successfully loaded module {}, found {} namespaces",
-          module_path,
-          module_snapshot.files.len()
-        );
-        // Merge module files into main snapshot
-        for (namespace, file_entry) in module_snapshot.files {
-          println!("Adding namespace: {namespace}");
-          main_snapshot.files.insert(namespace, file_entry);
-        }
-        // Merge module entries
-        for (entry_name, entry_config) in module_snapshot.entries {
-          main_snapshot.entries.insert(entry_name, entry_config);
-        }
-      }
-      Err(e) => {
-        println!("Warning: Failed to load module {module_path}: {e}");
-        // Continue loading other modules, don't stop due to one module failure
-      }
-    }
-  }
-
-  println!("Final snapshot has {} namespaces", main_snapshot.files.len());
-
-  Ok(main_snapshot)
+  app_state.state_manager.with_current_module(|snapshot| snapshot.clone())
 }
 
 /// Save snapshot data
-fn save_snapshot(app_state: &super::AppState, snapshot: &Snapshot) -> Result<(), ResponseJson<Value>> {
-  let compact_cirru_path = &app_state.compact_cirru_path;
+/// save_snapshot function moved to cirru_utils::save_snapshot_to_file to avoid duplication
+pub fn add_namespace(app_state: &super::AppState, request: AddNamespaceRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
 
-  // Build root level Edn mapping
-  let mut edn_map = cirru_edn::EdnMapView::default();
-
-  // Build package
-  edn_map.insert_key("package", cirru_edn::Edn::Str(snapshot.package.as_str().into()));
-
-  // Build configs
-  let mut configs_map = cirru_edn::EdnMapView::default();
-  configs_map.insert_key("init-fn", cirru_edn::Edn::Str(snapshot.configs.init_fn.as_str().into()));
-  configs_map.insert_key("reload-fn", cirru_edn::Edn::Str(snapshot.configs.reload_fn.as_str().into()));
-  configs_map.insert_key("version", cirru_edn::Edn::Str(snapshot.configs.version.as_str().into()));
-  configs_map.insert_key(
-    "modules",
-    cirru_edn::Edn::from(
-      snapshot
-        .configs
-        .modules
-        .iter()
-        .map(|s| cirru_edn::Edn::Str(s.as_str().into()))
-        .collect::<Vec<_>>(),
-    ),
-  );
-  edn_map.insert_key("configs", configs_map.into());
-
-  // Build entries
-  let mut entries_map = cirru_edn::EdnMapView::default();
-  for (k, v) in &snapshot.entries {
-    let mut entry_map = cirru_edn::EdnMapView::default();
-    entry_map.insert_key("init-fn", cirru_edn::Edn::Str(v.init_fn.as_str().into()));
-    entry_map.insert_key("reload-fn", cirru_edn::Edn::Str(v.reload_fn.as_str().into()));
-    entry_map.insert_key("version", cirru_edn::Edn::Str(v.version.as_str().into()));
-    entry_map.insert_key(
-      "modules",
-      cirru_edn::Edn::from(v.modules.iter().map(|s| cirru_edn::Edn::Str(s.as_str().into())).collect::<Vec<_>>()),
-    );
-    entries_map.insert_key(k.as_str(), entry_map.into());
-  }
-  edn_map.insert_key("entries", entries_map.into());
-
-  // Build files
-  let mut files_map = cirru_edn::EdnMapView::default();
-  for (k, v) in &snapshot.files {
-    files_map.insert_key(k.as_str(), cirru_edn::Edn::from(v));
-  }
-  edn_map.insert_key("files", files_map.into());
-
-  let edn_data = cirru_edn::Edn::from(edn_map);
-
-  // Format Edn as Cirru string
-  let content = match cirru_edn::format(&edn_data, false) {
-    Ok(c) => c,
-    Err(e) => {
-      return Err(ResponseJson(serde_json::json!({
-        "error": format!("Failed to format snapshot as Cirru: {e}")
-      })));
-    }
-  };
-
-  // Write to file
-  match std::fs::write(compact_cirru_path, content) {
-    Ok(_) => Ok(()),
-    Err(e) => Err(ResponseJson(serde_json::json!({
-      "error": format!("Failed to write compact.cirru: {e}")
-    }))),
-  }
-}
-
-pub fn add_namespace(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let namespace = match req.parameters.get("namespace") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "namespace parameter is missing or not a string"
-      }));
-    }
-  };
-
-  let mut snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
-    }
-  };
-
-  // Check if namespace already exists
-  if snapshot.files.contains_key(&namespace) {
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
     return ResponseJson(serde_json::json!({
-      "error": format!("Namespace '{namespace}' already exists")
+      "error": validation_error
     }));
   }
 
-  // Create new namespace file
-  let new_file = FileInSnapShot {
-    ns: CodeEntry::from_code(cirru_parser::Cirru::from(vec!["ns", &namespace])),
-    defs: HashMap::new(),
-  };
+  let result = app_state.state_manager.update_current_module(|snapshot| {
+    // Check if namespace already exists
+    if snapshot.files.contains_key(&namespace) {
+      let existing_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+      return Err(format!(
+        "Namespace '{namespace}' already exists.\n\nExisting namespaces: {}\n\nSuggested fixes:\n• Use a different namespace name\n• Use 'delete_namespace' tool to remove the existing namespace first\n• Use 'update_namespace_imports' tool to modify the existing namespace",
+        existing_namespaces.join(", ")
+      ));
+    }
 
-  snapshot.files.insert(namespace.clone(), new_file);
+    // Check if namespace starts with current package name followed by a dot
+    let package_prefix = format!("{}.", snapshot.package);
+    if !namespace.starts_with(&package_prefix) {
+      let existing_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+      let valid_examples: Vec<String> = existing_namespaces.iter()
+        .filter(|ns| ns.starts_with(&package_prefix))
+        .take(3)
+        .cloned()
+        .collect();
 
-  // Save snapshot
-  if let Err(e) = save_snapshot(app_state, &snapshot) {
-    return e;
+      return Err(format!(
+        "Namespace '{namespace}' must start with current package name '{}' followed by a dot.\n\nCurrent package: {}\nRequired prefix: {}\n\nValid namespace examples: {}\n\nSuggested fixes:\n• Use format: {}.your-namespace-name\n• Check existing namespaces for naming patterns",
+        snapshot.package,
+        snapshot.package,
+        package_prefix,
+        if valid_examples.is_empty() {
+          format!("{}.example", snapshot.package)
+        } else {
+          valid_examples.join(", ")
+        },
+        snapshot.package
+      ));
+    }
+
+    // Create new namespace file
+    let new_file = FileInSnapShot {
+      ns: CodeEntry::from_code(cirru_parser::Cirru::from(vec!["ns", &namespace])),
+      defs: HashMap::new(),
+    };
+
+    snapshot.files.insert(namespace.clone(), new_file);
+    Ok(())
+  });
+
+  match result {
+    Ok(()) => ResponseJson(serde_json::json!({
+      "message": format!("Namespace '{namespace}' created successfully")
+    })),
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
   }
-
-  ResponseJson(serde_json::json!({
-    "message": format!("Namespace '{namespace}' created successfully")
-  }))
 }
 
-pub fn delete_namespace(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let namespace = match req.parameters.get("namespace") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "namespace parameter is missing or not a string"
-      }));
-    }
-  };
+pub fn update_namespace_doc(app_state: &super::AppState, request: UpdateNamespaceDocRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
+  let doc = request.doc;
 
-  let mut snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
-    }
-  };
-
-  // Check if namespace exists
-  if !snapshot.files.contains_key(&namespace) {
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
     return ResponseJson(serde_json::json!({
-      "error": format!("Namespace '{namespace}' not found")
+      "error": validation_error
     }));
   }
 
-  // Delete namespace
-  snapshot.files.remove(&namespace);
+  // Check if this is a dependency namespace (not in current root namespace/package)
+  let result = app_state.state_manager.update_current_module(|snapshot| {
+    // Check if namespace exists in current project
+    let file_data = match snapshot.files.get_mut(&namespace) {
+      Some(data) => data,
+      None => {
+        // Check if it might be a dependency namespace
+        let available_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+        let error_msg = if namespace.contains('.') && !available_namespaces.iter().any(|ns| ns.starts_with(&namespace.split('.').next().unwrap_or("").to_string())) {
+          format!(
+            "Namespace '{namespace}' appears to be from a dependency module and cannot be modified.\n\nThis tool only works for namespaces in the current root namespace/package.\n\nAvailable namespaces in current project: {}\n\nSuggested fixes:\n• Use a namespace from the current project\n• Dependencies are read-only and cannot be modified",
+            if available_namespaces.is_empty() {
+              "(none - create a namespace first)".to_string()
+            } else {
+              available_namespaces.join(", ")
+            }
+          )
+        } else {
+          format!(
+            "Namespace '{namespace}' not found in current project.\n\nAvailable namespaces: {}\n\nSuggested fixes:\n• Check the namespace name for typos\n• Create the namespace first using 'add_namespace' tool\n• Use one of the existing namespaces listed above",
+            if available_namespaces.is_empty() {
+              "(none - create a namespace first)".to_string()
+            } else {
+              available_namespaces.join(", ")
+            }
+          )
+        };
+        return Err(error_msg);
+      }
+    };
 
-  // Save snapshot
-  if let Err(e) = save_snapshot(app_state, &snapshot) {
-    return e;
+    // Update the namespace documentation
+    file_data.ns.doc = doc.clone();
+    Ok(())
+  });
+
+  match result {
+    Ok(()) => ResponseJson(serde_json::json!({
+      "message": format!("Documentation for namespace '{namespace}' updated successfully")
+    })),
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
   }
-
-  ResponseJson(serde_json::json!({
-    "message": format!("Namespace '{namespace}' deleted successfully")
-  }))
 }
 
-pub fn list_namespaces(app_state: &super::AppState, _req: McpRequest) -> ResponseJson<Value> {
-  let snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
-    }
-  };
+pub fn delete_namespace(app_state: &super::AppState, request: DeleteNamespaceRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
 
-  let namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
-
-  ResponseJson(serde_json::json!({
-    "namespaces": namespaces
-  }))
-}
-
-pub fn update_namespace_imports(app_state: &super::AppState, req: McpRequest) -> ResponseJson<Value> {
-  let namespace = match req.parameters.get("namespace") {
-    Some(serde_json::Value::String(s)) => s.clone(),
-    _ => {
-      return ResponseJson(serde_json::json!({
-        "error": "namespace parameter is missing or not a string"
-      }));
-    }
-  };
-
-  let ns_definition = match req.parameters.get("ns_definition") {
-    Some(def) => def.clone(),
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": "ns_definition parameter is missing"
-      }));
-    }
-  };
-
-  // Validate if ns_definition conforms to Cirru structure
-  if let Err(e) = validate_cirru_structure(&ns_definition) {
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
     return ResponseJson(serde_json::json!({
-      "error": format!("Invalid ns_definition structure: {e}")
+      "error": validation_error
     }));
   }
 
-  let mut snapshot = match load_snapshot(app_state) {
-    Ok(s) => s,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": e
-      }));
+  let result = app_state.state_manager.update_current_module(|snapshot| {
+    // Check if namespace exists
+    if !snapshot.files.contains_key(&namespace) {
+      let existing_namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+      return Err(format!(
+        "Namespace '{namespace}' not found.\n\nExisting namespaces: {}\n\nSuggested fixes:\n• Check the namespace name for typos\n• Use 'list_namespaces' tool to see all available namespaces\n• Use one of the existing namespaces listed above",
+        if existing_namespaces.is_empty() {
+          "(none)".to_string()
+        } else {
+          existing_namespaces.join(", ")
+        }
+      ));
     }
-  };
 
-  // Check if namespace exists
-  let file_data = match snapshot.files.get_mut(&namespace) {
-    Some(data) => data,
-    None => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Namespace '{namespace}' not found")
-      }));
+    // Delete namespace
+    snapshot.files.remove(&namespace);
+    Ok(())
+  });
+
+  match result {
+    Ok(()) => ResponseJson(serde_json::json!({
+      "message": format!("Namespace '{namespace}' deleted successfully")
+    })),
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
+  }
+}
+
+pub fn list_namespaces(app_state: &super::AppState, request: ListNamespacesRequest) -> ResponseJson<Value> {
+  match app_state.state_manager.with_current_module(|snapshot| {
+    let mut namespaces: Vec<String> = snapshot.files.keys().cloned().collect();
+
+    // If include_dependency_namespaces is true, add dependency namespaces
+    if request.include_dependency_namespaces {
+      // Get dependency namespaces from state manager
+      if let Ok(dep_namespaces) = app_state.state_manager.get_dependency_namespaces() {
+        for namespace in dep_namespaces {
+          if !namespaces.contains(&namespace) {
+            namespaces.push(namespace);
+          }
+        }
+      }
     }
-  };
 
-  // Convert JSON to Cirru
-  let ns_cirru = match json_to_cirru(&ns_definition) {
-    Ok(c) => c,
-    Err(e) => {
-      return ResponseJson(serde_json::json!({
-        "error": format!("Failed to convert ns_definition to Cirru: {e}")
-      }));
-    }
-  };
+    namespaces.sort();
+    namespaces
+  }) {
+    Ok(namespaces) => ResponseJson(serde_json::json!({
+      "namespaces": namespaces
+    })),
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
+  }
+}
 
-  // Update namespace definition
-  file_data.ns = CodeEntry::from_code(ns_cirru);
+pub fn update_namespace_imports(app_state: &super::AppState, request: UpdateNamespaceImportsRequest) -> ResponseJson<Value> {
+  let namespace = request.namespace;
+  let imports_array = request.imports;
 
-  // Save snapshot
-  if let Err(e) = save_snapshot(app_state, &snapshot) {
-    return e;
+  // Validate namespace name
+  if let Err(validation_error) = validate_namespace_name(&namespace) {
+    return ResponseJson(serde_json::json!({
+      "error": validation_error
+    }));
   }
 
-  ResponseJson(serde_json::json!({
-    "message": format!("Namespace '{namespace}' imports updated successfully")
-  }))
+  // Validate that all elements in the imports array are arrays
+  for (i, import_item) in imports_array.iter().enumerate() {
+    let import_array = match import_item.as_array() {
+      Some(arr) => arr,
+      None => {
+        return ResponseJson(serde_json::json!({
+          "error": format!("Import item at index {i} is not an array")
+        }));
+      }
+    };
+
+    // Validate that the array has at least 2 elements
+    if import_array.len() < 2 {
+      return ResponseJson(serde_json::json!({
+        "error": format!("Import item at index {i} must have at least 2 elements")
+      }));
+    }
+
+    // Validate that the second element is one of :refer, :as, or :default
+    let second_element = match import_array[1].as_str() {
+      Some(s) => s,
+      None => {
+        return ResponseJson(serde_json::json!({
+          "error": format!("Second element of import item at index {i} must be a string")
+        }));
+      }
+    };
+
+    match second_element {
+      ":refer" => {
+        // For :refer, the third element must be an array
+        if import_array.len() < 3 {
+          return ResponseJson(serde_json::json!({
+            "error": format!("Import item at index {i} with :refer must have a third element")
+          }));
+        }
+        if !import_array[2].is_array() {
+          return ResponseJson(serde_json::json!({
+            "error": format!("Third element of import item at index {i} with :refer must be an array")
+          }));
+        }
+      }
+      ":as" | ":default" => {
+        // For :as and :default, the third element must be a string (symbol)
+        if import_array.len() < 3 {
+          return ResponseJson(serde_json::json!({
+            "error": format!("Import item at index {i} with {second_element} must have a third element")
+          }));
+        }
+        if !import_array[2].is_string() {
+          return ResponseJson(serde_json::json!({
+            "error": format!("Third element of import item at index {i} with {second_element} must be a string (symbol)")
+          }));
+        }
+      }
+      _ => {
+        return ResponseJson(serde_json::json!({
+          "error": format!("Second element of import item at index {i} must be one of :refer, :as, or :default, got: {second_element}")
+        }));
+      }
+    }
+  }
+
+  // Convert imports JSON array to Cirru structures
+  let mut imports_cirru = Vec::new();
+  for import_json in imports_array {
+    match json_to_cirru(&import_json) {
+      Ok(cirru) => imports_cirru.push(cirru),
+      Err(e) => {
+        return ResponseJson(serde_json::json!({
+          "error": format!("Failed to convert import to Cirru: {e}")
+        }));
+      }
+    }
+  }
+
+  // Create the imports section as Cirru: [:require, ...imports]
+  let mut require_section = vec![cirru_parser::Cirru::leaf(":require")];
+  require_section.extend(imports_cirru);
+  let imports_cirru_list = cirru_parser::Cirru::List(require_section);
+
+  let result = app_state.state_manager.update_current_module(|snapshot| {
+    // Check if namespace exists
+    let file_data = match snapshot.files.get_mut(&namespace) {
+      Some(data) => data,
+      None => {
+        return Err(format!("Namespace '{namespace}' not found"));
+      }
+    };
+
+    // Get the current namespace definition as Cirru
+    let current_ns_cirru = &file_data.ns.code;
+
+    // Ensure the current namespace definition is a list with at least 2 elements
+    let (ns_keyword, ns_name) = match current_ns_cirru {
+      cirru_parser::Cirru::List(list) if list.len() >= 2 => (&list[0], &list[1]),
+      _ => {
+        return Err(format!("Invalid namespace definition structure for '{namespace}'"));
+      }
+    };
+
+    // Create the new complete namespace definition: ["ns", "namespace_name", [":require", ...imports]]
+    let complete_ns_cirru = cirru_parser::Cirru::List(vec![
+      ns_keyword.clone(), // "ns"
+      ns_name.clone(),    // namespace name
+      imports_cirru_list, // [":require", ...imports]
+    ]);
+
+    // Update namespace definition
+    file_data.ns = CodeEntry::from_code(complete_ns_cirru);
+    Ok(())
+  });
+
+  match result {
+    Ok(()) => ResponseJson(serde_json::json!({
+      "message": format!("Namespace '{namespace}' imports updated successfully")
+    })),
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": e
+    })),
+  }
 }

@@ -440,20 +440,20 @@ fn update_deps_file(outdated_packages: &[(Arc<str>, Arc<str>, String)]) -> Resul
   }
 
   // Convert back to EDN and then to string
-  let mut updated_edn = cirru_edn::Edn::Map(cirru_edn::EdnMapView::default());
+  let mut updated_edn = Edn::Map(cirru_edn::EdnMapView::default());
 
-  if let cirru_edn::Edn::Map(ref mut map) = updated_edn {
+  if let Edn::Map(ref mut map) = updated_edn {
     // Add calcit-version if it exists
     if let Some(ref version) = deps.calcit_version {
-      map.insert(cirru_edn::Edn::tag("calcit-version"), cirru_edn::Edn::str(version.as_str()));
+      map.insert(Edn::tag("calcit-version"), Edn::str(version.as_str()));
     }
 
     // Add dependencies
     let mut deps_map = cirru_edn::EdnMapView::default();
     for (k, v) in &deps.dependencies {
-      deps_map.insert(cirru_edn::Edn::str(&**k), cirru_edn::Edn::str(&**v));
+      deps_map.insert(Edn::str(&**k), Edn::str(&**v));
     }
-    map.insert(cirru_edn::Edn::tag("dependencies"), cirru_edn::Edn::Map(deps_map));
+    map.insert(Edn::tag("dependencies"), Edn::Map(deps_map));
   }
 
   let updated_content = cirru_edn::format(&updated_edn, false)?;
