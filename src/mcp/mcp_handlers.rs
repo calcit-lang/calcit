@@ -216,7 +216,7 @@ fn handle_initialize_axum(_app_state: &AppState, req: &JsonRpcRequest) -> Value 
     capabilities: server_capabilities,
     server_info: ServerInfo {
       name: "calcit-mcp-server".to_string(),
-      version: "0.9.18".to_string(),
+      version: "0.9.19".to_string(),
     },
   };
 
