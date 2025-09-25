@@ -165,7 +165,7 @@ fn main() -> Result<(), String> {
   } else {
     let started_time = Instant::now();
 
-    let v = calcit::run_program(entries.init_ns.to_owned(), entries.init_def.to_owned(), &[]).map_err(|e| {
+    let v = calcit::run_program_with_docs(entries.init_ns.to_owned(), entries.init_def.to_owned(), &[]).map_err(|e| {
       LocatedWarning::print_list(&e.warnings);
       e.msg
     })?;
@@ -269,6 +269,9 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
   builtins::meta::force_reset_gensym_index()?;
   println!("cleared evaled states and reset gensym index.");
 
+  // Create a minimal snapshot for documentation lookup during incremental updates
+  // In practice, this could be enhanced to maintain documentation state
+
   let task = if let Some(CalcitCommand::EmitJs(_)) = settings.subcommand {
     run_codegen(entries, &settings.emit_path, false)
   } else if let Some(CalcitCommand::EmitIr(_)) = settings.subcommand {
@@ -290,7 +293,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
       let warnings = check_warnings.borrow();
       throw_on_warnings(&warnings)?;
     }
-    let v = calcit::run_program(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), &[]).map_err(|e| {
+    let v = calcit::run_program_with_docs(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), &[]).map_err(|e| {
       LocatedWarning::print_list(&e.warnings);
       e.msg
     })?;
@@ -334,7 +337,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
 
       let _ = fs::write(
         &js_file_path,
@@ -352,7 +355,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
       return Err(failure.msg);
     }
   }
@@ -371,7 +374,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {failure}");
-        call_stack::display_stack(&failure, &gen_stack::get_gen_stack(), None)?;
+        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None)?;
         return Err(failure);
       }
     }
@@ -381,7 +384,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {failure}");
-        call_stack::display_stack(&failure, &gen_stack::get_gen_stack(), None)?;
+        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None)?;
         return Err(failure);
       }
     }

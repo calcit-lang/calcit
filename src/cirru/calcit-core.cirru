@@ -471,7 +471,7 @@
         |* $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn * (x & ys) (reduce ys x &*)
-        |+ $ %{} :CodeEntry (:doc |)
+        |+ $ %{} :CodeEntry (:doc "|Mathematical addition operation\nFunction: Calculates the sum of one or more numbers\nParams: x (number), ys (variadic args, list of numbers)\nReturns: number - sum of all arguments\nNotes: Supports any number of arguments, requires at least one argument")
           :code $ quote
             defn + (x & ys) (reduce ys x &+)
         |- $ %{} :CodeEntry (:doc |)
@@ -1524,7 +1524,7 @@
           :code $ quote
             defn record? (x)
               &= (type-of x) :record
-        |reduce $ %{} :CodeEntry (:doc |)
+        |reduce $ %{} :CodeEntry (:doc "|Collection reduction operation\nFunction: Reduces a collection using a specified function, accumulating elements onto an initial value\nParams: xs (collection), x0 (initial accumulator value), f (reduction function that takes accumulator and current element)\nReturns: any type - final accumulated result\nNotes: The reduction function f should accept two parameters (accumulator, current element) and return a new accumulator value")
           :code $ quote
             defn reduce (xs x0 f) (foldl xs x0 f)
         |ref? $ %{} :CodeEntry (:doc |)

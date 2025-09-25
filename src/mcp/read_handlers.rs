@@ -56,9 +56,10 @@ pub fn list_namespace_definitions(app_state: &super::AppState, request: ListDefi
       let mut available_dep_namespaces = Vec::new();
 
       // Try to get current module namespaces (if available)
-      if let Ok(current_namespaces) = app_state.state_manager.with_current_module(|snapshot| {
-        snapshot.files.keys().cloned().collect::<Vec<String>>()
-      }) {
+      if let Ok(current_namespaces) = app_state
+        .state_manager
+        .with_current_module(|snapshot| snapshot.files.keys().cloned().collect::<Vec<String>>())
+      {
         available_namespaces = current_namespaces;
       }
 
@@ -81,11 +82,9 @@ pub fn list_namespace_definitions(app_state: &super::AppState, request: ListDefi
         }
       }))
     }
-    Err(e) => {
-      ResponseJson(serde_json::json!({
-        "error": format!("Failed to search dependencies: {}", e)
-      }))
-    }
+    Err(e) => ResponseJson(serde_json::json!({
+      "error": format!("Failed to search dependencies: {}", e)
+    })),
   }
 }
 
