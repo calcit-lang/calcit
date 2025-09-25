@@ -13,30 +13,79 @@ pub fn list_namespace_definitions(app_state: &super::AppState, request: ListDefi
     }));
   }
 
-  let result = app_state.state_manager.with_current_module(|snapshot| {
-    // Check if namespace exists
-    let file_data = match snapshot.files.get(&namespace) {
-      Some(data) => data,
-      None => {
-        return ResponseJson(serde_json::json!({
-          "error": format!("Namespace '{namespace}' not found")
-        }));
-      }
-    };
-
-    let definitions: Vec<String> = file_data.defs.keys().cloned().collect();
-
-    ResponseJson(serde_json::json!({
-      "namespace": namespace,
-      "definitions": definitions
-    }))
+  // First try to find in current module
+  let current_module_result = app_state.state_manager.with_current_module(|snapshot| {
+    if let Some(file_data) = snapshot.files.get(&namespace) {
+      let definitions: Vec<String> = file_data.defs.keys().cloned().collect();
+      Some(ResponseJson(serde_json::json!({
+        "namespace": namespace,
+        "definitions": definitions,
+        "source": "current_project"
+      })))
+    } else {
+      None
+    }
   });
 
-  match result {
-    Ok(response) => response,
-    Err(e) => ResponseJson(serde_json::json!({
-      "error": e
-    })),
+  match current_module_result {
+    Ok(Some(response)) => {
+      return response;
+    }
+    Ok(None) => {
+      // Not found in current module, try dependencies
+    }
+    Err(_) => {
+      // If current module fails to load, try dependencies directly
+    }
+  }
+
+  // Try to find in dependency modules
+  match app_state.state_manager.find_namespace_in_dependencies(&namespace) {
+    Ok(Some((package_name, file_data))) => {
+      let definitions: Vec<String> = file_data.defs.keys().cloned().collect();
+      ResponseJson(serde_json::json!({
+        "namespace": namespace,
+        "definitions": definitions,
+        "source": "dependency",
+        "package": package_name
+      }))
+    }
+    Ok(None) => {
+      // Namespace not found anywhere, collect available namespaces for error message
+      let mut available_namespaces = Vec::new();
+      let mut available_dep_namespaces = Vec::new();
+
+      // Try to get current module namespaces (if available)
+      if let Ok(current_namespaces) = app_state.state_manager.with_current_module(|snapshot| {
+        snapshot.files.keys().cloned().collect::<Vec<String>>()
+      }) {
+        available_namespaces = current_namespaces;
+      }
+
+      // Get dependency namespaces
+      if let Ok(dep_namespaces) = app_state.state_manager.get_all_dependency_namespaces() {
+        available_dep_namespaces = dep_namespaces.into_iter().map(|(ns, _pkg)| ns).collect();
+      }
+
+      ResponseJson(serde_json::json!({
+        "error": format!("Namespace '{}' not found", namespace),
+        "context": {
+          "namespace": namespace,
+          "available_namespaces": available_namespaces,
+          "available_dependency_namespaces": available_dep_namespaces,
+          "suggestions": [
+            "Check the namespace name for typos",
+            "Use 'list_namespaces' tool to see all available namespaces",
+            "Use 'list_dependency_namespaces' tool to see available dependency namespaces"
+          ]
+        }
+      }))
+    }
+    Err(e) => {
+      ResponseJson(serde_json::json!({
+        "error": format!("Failed to search dependencies: {}", e)
+      }))
+    }
   }
 }
 
