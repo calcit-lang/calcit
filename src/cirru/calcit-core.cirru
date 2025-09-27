@@ -471,13 +471,23 @@
         |* $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn * (x & ys) (reduce ys x &*)
+          :examples $ []
+            quote $ assert= 24 $ * 2 3 4
+            quote $ assert= 30 $ * 5 6
+            quote $ assert= 1 $ * 1
         |+ $ %{} :CodeEntry (:doc "|Mathematical addition operation\nFunction: Calculates the sum of one or more numbers\nParams: x (number), ys (variadic args, list of numbers)\nReturns: number - sum of all arguments\nNotes: Supports any number of arguments, requires at least one argument")
           :code $ quote
             defn + (x & ys) (reduce ys x &+)
+          :examples $ []
+            quote $ assert= 6 $ + 1 2 3
+            quote $ assert= 15 $ + 5 10
         |- $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn - (x & ys)
               if (&list:empty? ys) (&- 0 x) (reduce ys x &-)
+          :examples $ []
+            quote $ assert= 5 $ - 10 3 2
+            quote $ assert= -5 $ - 5
         |-> $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro -> (base & xs)
@@ -526,6 +536,9 @@
           :code $ quote
             defn / (x & ys)
               if (&list:empty? ys) (&/ 1 x) (reduce ys x &/)
+          :examples $ []
+            quote $ / 12 3 2
+            quote $ / 8
         |/= $ %{} :CodeEntry (:doc "|not equal")
           :code $ quote
             defn /= (a b) (not= a b)
@@ -762,6 +775,8 @@
               list-match args
                 () $ []
                 (a0 as) (.concat a0 & as)
+          :examples $ []
+            quote $ assert= ([] 1 2 3 4 5) $ concat ([] 1 2) ([] 3 4) ([] 5)
         |cond $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro cond (pair & else)
@@ -839,6 +854,9 @@
               if (nil? x) 0 $ if (tuple? x) (&tuple:count x)
                 if (list? x) (&list:count x)
                   if (record? x) (&record:count x) (.count x)
+          :examples $ []
+            quote $ assert= 4 $ count ([] 1 2 3 4)
+            quote $ assert= 5 $ count |hello
         |dec $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn dec (x) (&- x 1)
@@ -985,6 +1003,9 @@
         |filter $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn filter (xs f) (.filter xs f)
+          :examples $ []
+            quote $ assert= ([] 2 4) $ filter ([] 1 2 3 4 5) $ defn %even? (x) (&= 0 (.rem x 2))
+            quote $ assert= ([] |bb |ccc) $ filter ([] |a |bb |ccc) $ defn %long? (s) (&> (&str:count s) 1)
         |filter-not $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn filter-not (xs f)
@@ -1006,6 +1027,9 @@
             defn first (x)
               if (nil? x) nil $ if (tuple? x) (&tuple:nth x 0)
                 if (list? x) (&list:nth x 0) (.first x)
+          :examples $ []
+            quote $ first ([] 1 2 3)
+            quote $ first ([])
         |flipped $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro flipped (f & args)
@@ -1112,6 +1136,9 @@
         |inc $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn inc (x) (&+ x 1)
+          :examples $ []
+            quote $ assert= 6 $ inc 5
+            quote $ assert= 1 $ inc 0
         |include $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn include (base & xs)
@@ -1384,6 +1411,9 @@
                       include acc $ f x
                   if (map? xs) (&map:map xs f)
                     raise $ str-spaced "|expected list or set for map function, got:" xs
+          :examples $ []
+            quote $ assert= ([] 2 3 4) $ map ([] 1 2 3) inc
+            quote $ assert= ([] |1 |2 |3) $ map ([] 1 2 3) str
         |map-indexed $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn map-indexed (xs f)
@@ -1527,6 +1557,8 @@
         |reduce $ %{} :CodeEntry (:doc "|Collection reduction operation\nFunction: Reduces a collection using a specified function, accumulating elements onto an initial value\nParams: xs (collection), x0 (initial accumulator value), f (reduction function that takes accumulator and current element)\nReturns: any type - final accumulated result\nNotes: The reduction function f should accept two parameters (accumulator, current element) and return a new accumulator value")
           :code $ quote
             defn reduce (xs x0 f) (foldl xs x0 f)
+          :examples $ []
+            quote $ assert= 6 $ reduce ([] 1 2 3) 0 +
         |ref? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn ref? (x)

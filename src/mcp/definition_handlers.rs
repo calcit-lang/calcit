@@ -108,7 +108,7 @@ pub fn upsert_definition(
     }
 
     // Add or update definition
-    let code_entry = CodeEntry { doc, code: code_cirru };
+    let code_entry = CodeEntry { doc, examples: vec![], code: code_cirru };
     file_data.defs.insert(definition.clone(), code_entry);
     Ok(())
   });
