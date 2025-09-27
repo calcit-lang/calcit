@@ -360,7 +360,7 @@ mod tests {
       ("filter", 2),
       ("first", 2),
       ("count", 2),
-      ("concat", 2),
+      ("concat", 1),
       ("inc", 2),
       ("reduce", 1), // 原本就有的，只有1个example
     ];

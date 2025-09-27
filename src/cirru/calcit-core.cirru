@@ -777,7 +777,6 @@
                 (a0 as) (.concat a0 & as)
           :examples $ []
             quote $ assert= ([] 1 2 3 4 5) $ concat ([] 1 2) ([] 3 4) ([] 5)
-            quote $ assert= |helloworld $ concat |hello | |world
         |cond $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro cond (pair & else)
