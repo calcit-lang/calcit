@@ -108,11 +108,7 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc
   display_stack_with_docs(failure, stack, location)
 }
 
-pub fn display_stack_with_docs(
-  failure: &str,
-  stack: &CallStackList,
-  location: Option<&Arc<NodeLocation>>,
-) -> Result<(), String> {
+pub fn display_stack_with_docs(failure: &str, stack: &CallStackList, location: Option<&Arc<NodeLocation>>) -> Result<(), String> {
   eprintln!("\nFailure: {failure}");
   eprintln!("\ncall stack:");
 

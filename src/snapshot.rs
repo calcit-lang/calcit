@@ -41,9 +41,7 @@ impl TryFrom<Edn> for FileInSnapShot {
   type Error = String;
   fn try_from(data: Edn) -> Result<Self, String> {
     match data {
-      Edn::Map(_) => {
-        from_edn(data).map_err(|e| format!("failed to parse FileInSnapShot: {e}"))
-      }
+      Edn::Map(_) => from_edn(data).map_err(|e| format!("failed to parse FileInSnapShot: {e}")),
       Edn::Record(record) => {
         let mut ns = None;
         let mut defs = None;
@@ -339,45 +337,45 @@ mod tests {
   #[test]
   fn test_examples_field_parsing() {
     // 读取实际的 calcit-core.cirru 文件
-    let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru")
-      .expect("Failed to read calcit-core.cirru");
-    
+    let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
+
     // 直接解析为 EDN
-    let edn_data = cirru_edn::parse(&core_file_content)
-      .expect("Failed to parse cirru content as EDN");
-    
+    let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
+
     // 解析为 Snapshot
-    let snapshot: Snapshot = load_snapshot_data(&edn_data, "calcit-core.cirru")
-      .expect("Failed to parse snapshot");
-    
+    let snapshot: Snapshot = load_snapshot_data(&edn_data, "calcit-core.cirru").expect("Failed to parse snapshot");
+
     // 验证文件存在
     assert!(snapshot.files.contains_key("calcit.core"));
-    
+
     let core_file = &snapshot.files["calcit.core"];
-    
+
     // 验证我们添加了 examples 的函数
-     let functions_with_examples = vec![
-       ("+", 2),
-       ("-", 2), 
-       ("*", 2),
-       ("/", 2),
-       ("map", 2),
-       ("filter", 2),
-       ("first", 2),
-       ("count", 2),
-       ("concat", 2),
-       ("inc", 2),
-       ("reduce", 1), // 原本就有的，只有1个example
-     ];
-    
+    let functions_with_examples = vec![
+      ("+", 2),
+      ("-", 2),
+      ("*", 3),
+      ("/", 2),
+      ("map", 2),
+      ("filter", 2),
+      ("first", 2),
+      ("count", 2),
+      ("concat", 2),
+      ("inc", 2),
+      ("reduce", 1), // 原本就有的，只有1个example
+    ];
+
     println!("Verifying examples in calcit-core.cirru:");
     for (func_name, expected_count) in functions_with_examples {
       if let Some(func_def) = core_file.defs.get(func_name) {
         println!("  {}: {} examples", func_name, func_def.examples.len());
-        assert_eq!(func_def.examples.len(), expected_count, 
-                   "Function '{}' should have {} examples", func_name, expected_count);
+        assert_eq!(
+          func_def.examples.len(),
+          expected_count,
+          "Function '{func_name}' should have {expected_count} examples"
+        );
       } else {
-        panic!("Function '{}' not found in calcit.core", func_name);
+        panic!("Function '{func_name}' not found in calcit.core");
       }
     }
   }
@@ -389,16 +387,21 @@ mod tests {
       Cirru::List(vec![Cirru::leaf("add"), Cirru::leaf("1"), Cirru::leaf("2")]),
       Cirru::List(vec![Cirru::leaf("add"), Cirru::leaf("10"), Cirru::leaf("20")]),
     ];
-    
+
     let code_entry = CodeEntry {
       doc: "Test function".to_string(),
-      code: Cirru::List(vec![Cirru::leaf("defn"), Cirru::leaf("add"), Cirru::List(vec![Cirru::leaf("a"), Cirru::leaf("b")]), Cirru::List(vec![Cirru::leaf("+"), Cirru::leaf("a"), Cirru::leaf("b")])]),
+      code: Cirru::List(vec![
+        Cirru::leaf("defn"),
+        Cirru::leaf("add"),
+        Cirru::List(vec![Cirru::leaf("a"), Cirru::leaf("b")]),
+        Cirru::List(vec![Cirru::leaf("+"), Cirru::leaf("a"), Cirru::leaf("b")]),
+      ]),
       examples,
     };
-    
+
     // 验证 examples 字段
     assert_eq!(code_entry.examples.len(), 2);
-    
+
     // 验证第一个 example
     if let Cirru::List(list) = &code_entry.examples[0] {
       assert_eq!(list.len(), 3);
@@ -406,13 +409,13 @@ mod tests {
         assert_eq!(&**s, "add");
       }
     }
-    
+
     // 转换为 EDN 再转换回来，验证序列化/反序列化
     let edn: Edn = code_entry.clone().into();
     let parsed_entry: CodeEntry = edn.try_into().expect("Failed to parse CodeEntry from EDN");
-    
+
     assert_eq!(parsed_entry.examples.len(), 2);
-    
+
     // 验证解析后的第一个 example
     if let Cirru::List(list) = &parsed_entry.examples[0] {
       assert_eq!(list.len(), 3);
@@ -420,7 +423,7 @@ mod tests {
         assert_eq!(&**s, "add");
       }
     }
-    
+
     println!("✅ CodeEntry with examples test passed!");
   }
 }
