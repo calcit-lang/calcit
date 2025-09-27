@@ -135,6 +135,15 @@ pub fn display_stack_with_docs(failure: &str, stack: &CallStackList, location: O
       info_map.push((Edn::tag("doc"), doc.into()));
     }
 
+    // Add examples if available from program data
+    if let Some(examples) = crate::program::lookup_def_examples(&s.ns, &s.def) {
+      let mut examples_list = EdnListView::default();
+      for example in examples {
+        examples_list.push(example.into());
+      }
+      info_map.push((Edn::tag("examples"), examples_list.into()));
+    }
+
     let info = Edn::map_from_iter(info_map);
     stack_list.push(info);
   }

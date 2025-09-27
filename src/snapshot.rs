@@ -290,6 +290,7 @@ impl TryFrom<Edn> for FileChangeInfo {
   }
 }
 
+/// TODO: Support for :doc and :examples fields has been added, needs to be handled properly
 #[derive(Debug, PartialEq, Clone, Eq, Default)]
 pub struct ChangesDict {
   pub added: HashMap<Arc<str>, FileInSnapShot>,
