@@ -291,14 +291,17 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       file.defs.remove(def.as_str());
     }
     for (def, code) in &info.changed_defs {
-      let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
-      let entry = ProgramDefEntry {
-        code: calcit_code,
-        doc: Arc::from(""), // No doc info in changes, use empty string
-        examples: vec![], // No examples info in changes, use empty vector
-      };
-      file.defs.insert(def.to_owned().into(), entry);
-    }
+      for (def, code) in &info.changed_defs {
+        let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
+        let (doc, examples) = match file.defs.get(def.as_str()) {
+          Some(existing) => (existing.doc.clone(), existing.examples.clone()),
+          None => (Arc::from(""), Vec::new()),
+        };
+        file.defs.insert(
+          def.to_owned().into(),
+          ProgramDefEntry { code: calcit_code, doc, examples },
+        );
+      }
   }
 
   Ok(())
