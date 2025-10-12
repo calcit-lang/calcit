@@ -128,11 +128,7 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
   for (def, entry) in &file.defs {
     let at_def = def.to_owned();
     let code = code_to_calcit(&entry.code, &ns, &at_def, vec![])?;
-    let doc = if entry.doc.is_empty() {
-      Arc::from("")
-    } else {
-      Arc::from(entry.doc.as_str())
-    };
+    let doc = Arc::from(entry.doc.as_str());
     defs.insert(def.to_owned().into(), ProgramDefEntry { code, doc, examples: entry.examples.clone() });
   }
   Ok(ProgramFileData { import_map, defs })
