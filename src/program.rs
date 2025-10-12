@@ -129,7 +129,14 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
     let at_def = def.to_owned();
     let code = code_to_calcit(&entry.code, &ns, &at_def, vec![])?;
     let doc = Arc::from(entry.doc.as_str());
-    defs.insert(def.to_owned().into(), ProgramDefEntry { code, doc, examples: entry.examples.clone() });
+    defs.insert(
+      def.to_owned().into(),
+      ProgramDefEntry {
+        code,
+        doc,
+        examples: entry.examples.clone(),
+      },
+    );
   }
   Ok(ProgramFileData { import_map, defs })
 }
@@ -174,7 +181,11 @@ pub fn lookup_def_examples(ns: &str, def: &str) -> Option<Vec<Cirru>> {
   let program_code = { PROGRAM_CODE_DATA.read().expect("read program code") };
   let file = program_code.get(ns)?;
   let entry = file.defs.get(def)?;
-  if entry.examples.is_empty() { None } else { Some(entry.examples.clone()) }
+  if entry.examples.is_empty() {
+    None
+  } else {
+    Some(entry.examples.clone())
+  }
 }
 
 pub fn lookup_def_target_in_import(ns: &str, def: &str) -> Option<Arc<str>> {
@@ -283,7 +294,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       let entry = ProgramDefEntry {
         code: calcit_code,
         doc: Arc::from(""), // No doc info in changes, use empty string
-        examples: vec![], // No examples info in changes, use empty vector
+        examples: vec![],   // No examples info in changes, use empty vector
       };
       file.defs.insert(def.to_owned().into(), entry);
     }
@@ -291,17 +302,20 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       file.defs.remove(def.as_str());
     }
     for (def, code) in &info.changed_defs {
-      for (def, code) in &info.changed_defs {
-        let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
-        let (doc, examples) = match file.defs.get(def.as_str()) {
-          Some(existing) => (existing.doc.clone(), existing.examples.clone()),
-          None => (Arc::from(""), Vec::new()),
-        };
-        file.defs.insert(
-          def.to_owned().into(),
-          ProgramDefEntry { code: calcit_code, doc, examples },
-        );
-      }
+      let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
+      let (doc, examples) = match file.defs.get(def.as_str()) {
+        Some(existing) => (existing.doc.clone(), existing.examples.clone()),
+        None => (Arc::from(""), Vec::new()),
+      };
+      file.defs.insert(
+        def.to_owned().into(),
+        ProgramDefEntry {
+          code: calcit_code,
+          doc,
+          examples,
+        },
+      );
+    }
   }
 
   Ok(())
