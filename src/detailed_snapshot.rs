@@ -150,6 +150,7 @@ impl From<DetailedCodeEntry> for CodeEntry {
   fn from(detailed: DetailedCodeEntry) -> Self {
     CodeEntry {
       doc: detailed.doc,
+      examples: vec![],
       code: detailed.code.into(),
     }
   }

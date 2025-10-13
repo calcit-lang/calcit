@@ -105,6 +105,10 @@ pub fn show_stack(stack: &CallStackList) {
 }
 
 pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc<NodeLocation>>) -> Result<(), String> {
+  display_stack_with_docs(failure, stack, location)
+}
+
+pub fn display_stack_with_docs(failure: &str, stack: &CallStackList, location: Option<&Arc<NodeLocation>>) -> Result<(), String> {
   eprintln!("\nFailure: {failure}");
   eprintln!("\ncall stack:");
 
@@ -119,13 +123,28 @@ pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc
     for v in s.args.iter() {
       args.push(edn::calcit_to_edn(v)?);
     }
-    let info = Edn::map_from_iter([
+    let mut info_map = vec![
       (Edn::tag("def"), format!("{}/{}", s.ns, s.def).into()),
       (Edn::tag("code"), cirru::calcit_to_cirru(&s.code)?.into()),
       (Edn::tag("args"), args.into()),
       (Edn::tag("kind"), Edn::tag(s.kind.to_string())),
-    ]);
+    ];
 
+    // Add documentation if available from program data
+    if let Some(doc) = crate::program::lookup_def_doc(&s.ns, &s.def) {
+      info_map.push((Edn::tag("doc"), doc.into()));
+    }
+
+    // Add examples if available from program data
+    if let Some(examples) = crate::program::lookup_def_examples(&s.ns, &s.def) {
+      let mut examples_list = EdnListView::default();
+      for example in examples {
+        examples_list.push(example.into());
+      }
+      info_map.push((Edn::tag("examples"), examples_list.into()));
+    }
+
+    let info = Edn::map_from_iter(info_map);
     stack_list.push(info);
   }
 

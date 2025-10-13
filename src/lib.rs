@@ -42,6 +42,10 @@ pub struct ProgramEntries {
 }
 
 pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  run_program_with_docs(init_ns, init_def, params)
+}
+
+pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let check_warnings = RefCell::new(LocatedWarning::default_list());
 
   // preprocess to init
@@ -49,7 +53,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> 
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
       return CalcitErr::err_str(failure.kind, failure.msg);
     }
   }
@@ -72,7 +76,7 @@ pub fn run_program(init_ns: Arc<str>, init_def: Arc<str>, params: &[Calcit]) -> 
         match result {
           Ok(v) => Ok(v),
           Err(failure) => {
-            call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
+            call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
             Err(failure)
           }
         }

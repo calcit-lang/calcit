@@ -23,6 +23,7 @@ use calcit::{
   ProgramEntries, builtins, call_stack, cli_args, codegen, codegen::COMPILE_ERRORS_FILE, codegen::emit_js::gen_stack, program, runner,
   snapshot, util,
 };
+use cirru_parser::Cirru;
 
 fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
@@ -162,10 +163,13 @@ fn main() -> Result<(), String> {
       eval_once = true;
     }
     run_codegen(&entries, &cli_args.emit_path, true)
+  } else if let Some(CalcitCommand::CheckExamples(check_options)) = &cli_args.subcommand {
+    eval_once = true;
+    run_check_examples(&check_options.ns, &snapshot)
   } else {
     let started_time = Instant::now();
 
-    let v = calcit::run_program(entries.init_ns.to_owned(), entries.init_def.to_owned(), &[]).map_err(|e| {
+    let v = calcit::run_program_with_docs(entries.init_ns.to_owned(), entries.init_def.to_owned(), &[]).map_err(|e| {
       LocatedWarning::print_list(&e.warnings);
       e.msg
     })?;
@@ -269,6 +273,9 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
   builtins::meta::force_reset_gensym_index()?;
   println!("cleared evaled states and reset gensym index.");
 
+  // Create a minimal snapshot for documentation lookup during incremental updates
+  // In practice, this could be enhanced to maintain documentation state
+
   let task = if let Some(CalcitCommand::EmitJs(_)) = settings.subcommand {
     run_codegen(entries, &settings.emit_path, false)
   } else if let Some(CalcitCommand::EmitIr(_)) = settings.subcommand {
@@ -290,7 +297,7 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
       let warnings = check_warnings.borrow();
       throw_on_warnings(&warnings)?;
     }
-    let v = calcit::run_program(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), &[]).map_err(|e| {
+    let v = calcit::run_program_with_docs(entries.reload_ns.to_owned(), entries.reload_def.to_owned(), &[]).map_err(|e| {
       LocatedWarning::print_list(&e.warnings);
       e.msg
     })?;
@@ -334,7 +341,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
 
       let _ = fs::write(
         &js_file_path,
@@ -352,7 +359,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
       return Err(failure.msg);
     }
   }
@@ -371,7 +378,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {failure}");
-        call_stack::display_stack(&failure, &gen_stack::get_gen_stack(), None)?;
+        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None)?;
         return Err(failure);
       }
     }
@@ -381,7 +388,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {failure}");
-        call_stack::display_stack(&failure, &gen_stack::get_gen_stack(), None)?;
+        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None)?;
         return Err(failure);
       }
     }
@@ -421,5 +428,139 @@ fn throw_on_warnings(warnings: &[LocatedWarning]) -> Result<(), String> {
     Err(format!("Found {} warnings in preprocessing, re-run blocked.", warnings.len()))
   } else {
     Ok(())
+  }
+}
+
+fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  println!("Checking examples in namespace: {target_ns}");
+
+  // Find the target namespace
+  let file_data = snapshot
+    .files
+    .get(target_ns)
+    .ok_or_else(|| format!("Namespace '{target_ns}' not found"))?;
+
+  // Collect all functions with examples
+  let mut functions_with_examples = Vec::new();
+  let mut functions_without_examples = Vec::new();
+  let mut total_examples = 0;
+
+  for (def_name, code_entry) in &file_data.defs {
+    if !code_entry.examples.is_empty() {
+      functions_with_examples.push((def_name.clone(), code_entry.examples.len()));
+      total_examples += code_entry.examples.len();
+    } else {
+      functions_without_examples.push(def_name.clone());
+    }
+  }
+
+  if functions_with_examples.is_empty() {
+    println!("No functions with examples found in namespace '{target_ns}'");
+    return Ok(());
+  }
+
+  // Create a synthetic function that runs all examples
+  let mut example_calls = Vec::new();
+
+  for code_entry in file_data.defs.values() {
+    for example in &code_entry.examples {
+      example_calls.push(example.clone());
+    }
+  }
+
+  // Create the check function as a function definition
+  let check_function_code = if example_calls.is_empty() {
+    Cirru::List(vec![
+      Cirru::Leaf(Arc::from("defn")),
+      Cirru::Leaf(Arc::from("&calcit:check-examples")),
+      Cirru::List(vec![]), // empty parameter list
+      Cirru::Leaf(Arc::from("nil")),
+    ])
+  } else {
+    let mut fn_body = vec![Cirru::Leaf(Arc::from("do"))];
+    fn_body.extend(example_calls);
+
+    Cirru::List(vec![
+      Cirru::Leaf(Arc::from("defn")),
+      Cirru::Leaf(Arc::from("&calcit:check-examples")),
+      Cirru::List(vec![]), // empty parameter list
+      Cirru::List(fn_body),
+    ])
+  };
+
+  // Create a temporary snapshot with the check function
+  let mut temp_snapshot = snapshot.clone();
+  let check_fn_name = "&calcit:check-examples".to_string();
+
+  if let Some(file_data) = temp_snapshot.files.get_mut(target_ns) {
+    file_data.defs.insert(
+      check_fn_name.clone(),
+      snapshot::CodeEntry {
+        doc: "Generated function to check all examples in this namespace".to_string(),
+        examples: Vec::new(),
+        code: check_function_code,
+      },
+    );
+  }
+
+  // Update program data
+  {
+    let mut prgm = { program::PROGRAM_CODE_DATA.write().expect("open program data") };
+    *prgm = program::extract_program_data(&temp_snapshot)?;
+  }
+
+  // Run the check function
+  let started_time = Instant::now();
+  println!("Running {total_examples} examples...");
+
+  let result = calcit::run_program_with_docs(Arc::from(target_ns), Arc::from(check_fn_name.as_str()), &[]);
+
+  let duration = Instant::now().duration_since(started_time);
+
+  match result {
+    Ok(value) => {
+      println!("{}{}", format!("took {}ms: ", duration.as_micros() as f64 / 1000.0).dimmed(), value);
+
+      // Print summary
+      println!("\n{}", "=== Examples Check Summary ===".bold());
+      println!("Namespace: {}", target_ns.cyan());
+      println!("Functions with examples: {}", functions_with_examples.len().to_string().green());
+      println!("Total examples run: {}", total_examples.to_string().green());
+      println!(
+        "Functions without examples: {}",
+        functions_without_examples.len().to_string().yellow()
+      );
+
+      if !functions_with_examples.is_empty() {
+        println!("\n{}", "Functions with examples:".bold());
+        for (name, count) in &functions_with_examples {
+          println!("  {} ({} examples)", name.green(), count.to_string().cyan());
+        }
+      }
+
+      if !functions_without_examples.is_empty() {
+        println!("\n{}", "Functions without examples:".bold());
+        let display_count = std::cmp::min(functions_without_examples.len(), 32);
+        let names_to_show: Vec<String> = functions_without_examples
+          .iter()
+          .take(display_count)
+          .map(|name| name.yellow().to_string())
+          .collect();
+
+        let display_text = if functions_without_examples.len() > 32 {
+          format!("  {} ...", names_to_show.join(" "))
+        } else {
+          format!("  {}", names_to_show.join(" "))
+        };
+
+        println!("{display_text}");
+      }
+
+      Ok(())
+    }
+    Err(e) => {
+      LocatedWarning::print_list(&e.warnings);
+      Err(format!("Failed to run examples: {}", e.msg))
+    }
   }
 }

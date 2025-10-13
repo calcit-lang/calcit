@@ -51,6 +51,8 @@ pub enum CalcitCommand {
   EmitIr(EmitIrCommand),
   /// evaluate snippet
   Eval(EvalCommand),
+  /// check examples in namespace
+  CheckExamples(CheckExamplesCommand),
 }
 
 /// emit JavaScript rather than interpreting
@@ -81,4 +83,13 @@ pub struct EvalCommand {
   /// entry file path
   #[argh(option)]
   pub dep: Vec<String>,
+}
+
+/// check examples in namespace
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "check-examples")]
+pub struct CheckExamplesCommand {
+  /// target namespace to check examples
+  #[argh(option)]
+  pub ns: String,
 }

@@ -108,7 +108,7 @@ pub fn upsert_definition(
     }
 
     // Add or update definition
-    let code_entry = CodeEntry { doc, code: code_cirru };
+    let code_entry = CodeEntry { doc, examples: vec![], code: code_cirru };
     file_data.defs.insert(definition.clone(), code_entry);
     Ok(())
   });
@@ -408,7 +408,7 @@ pub fn read_definition_doc(app_state: &super::AppState, request: ReadDefinitionD
   let current_module_result = app_state.state_manager.with_current_module(|snapshot| {
     if let Some(file) = snapshot.files.get(&namespace) {
       if let Some(def_entry) = file.defs.get(&definition) {
-        return Some(def_entry.doc.clone());
+        return Some((def_entry.doc.clone(), def_entry.examples.clone()));
       }
     }
     None
@@ -428,9 +428,10 @@ pub fn read_definition_doc(app_state: &super::AppState, request: ReadDefinitionD
     .unwrap_or((false, Vec::new()));
 
   match current_module_result {
-    Ok(Some(doc)) => {
+    Ok(Some((doc, examples))) => {
       return ResponseJson(serde_json::json!({
         "documentation": doc,
+        "examples": examples,
         "source": "current_project",
         "namespace": namespace,
         "definition": definition
@@ -470,6 +471,7 @@ pub fn read_definition_doc(app_state: &super::AppState, request: ReadDefinitionD
         if let Some(def_entry) = file.defs.get(&definition) {
           ResponseJson(serde_json::json!({
             "documentation": def_entry.doc,
+            "examples": def_entry.examples,
             "source": "dependency",
             "namespace": namespace,
             "definition": definition
