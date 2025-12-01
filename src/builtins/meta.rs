@@ -34,33 +34,35 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "type-of expected 1 argument, but received:", xs);
   }
+  use Calcit::*;
+
   match &xs[0] {
-    Calcit::Nil => Ok(Calcit::tag("nil")),
-    Calcit::Bool(..) => Ok(Calcit::tag("bool")),
-    Calcit::Number(..) => Ok(Calcit::tag("number")),
-    Calcit::Symbol { .. } => Ok(Calcit::tag("symbol")),
-    Calcit::Tag(..) => Ok(Calcit::tag("tag")),
-    Calcit::Str(..) => Ok(Calcit::tag("string")),
-    Calcit::Thunk(..) => Ok(Calcit::tag("thunk")), // internal
-    Calcit::Ref(..) => Ok(Calcit::tag("ref")),
-    Calcit::Tuple { .. } => Ok(Calcit::tag("tuple")),
-    Calcit::Buffer(..) => Ok(Calcit::tag("buffer")),
-    Calcit::CirruQuote(..) => Ok(Calcit::tag("cirru-quote")),
-    Calcit::Recur(..) => Ok(Calcit::tag("recur")),
-    Calcit::List(..) => Ok(Calcit::tag("list")),
-    Calcit::Set(..) => Ok(Calcit::tag("set")),
-    Calcit::Map(..) => Ok(Calcit::tag("map")),
-    Calcit::Record { .. } => Ok(Calcit::tag("record")),
-    Calcit::Proc(..) => Ok(Calcit::tag("fn")), // special kind proc, but also fn
-    Calcit::Macro { .. } => Ok(Calcit::tag("macro")),
-    Calcit::Fn { .. } => Ok(Calcit::tag("fn")),
-    Calcit::Syntax(..) => Ok(Calcit::tag("syntax")),
-    Calcit::Method(..) => Ok(Calcit::tag("method")),
-    Calcit::RawCode(..) => Ok(Calcit::tag("raw-code")),
-    Calcit::Local { .. } => Ok(Calcit::tag("local")),
-    Calcit::Import { .. } => Ok(Calcit::tag("import")),
-    Calcit::Registered(..) => Ok(Calcit::tag("registered")),
-    Calcit::AnyRef(..) => Ok(Calcit::tag("any-ref")),
+    Nil => Ok(Calcit::tag("nil")),
+    Bool(..) => Ok(Calcit::tag("bool")),
+    Number(..) => Ok(Calcit::tag("number")),
+    Symbol { .. } => Ok(Calcit::tag("symbol")),
+    Tag(..) => Ok(Calcit::tag("tag")),
+    Str(..) => Ok(Calcit::tag("string")),
+    Thunk(..) => Ok(Calcit::tag("thunk")), // internal
+    Ref(..) => Ok(Calcit::tag("ref")),
+    Tuple { .. } => Ok(Calcit::tag("tuple")),
+    Buffer(..) => Ok(Calcit::tag("buffer")),
+    CirruQuote(..) => Ok(Calcit::tag("cirru-quote")),
+    Recur(..) => Ok(Calcit::tag("recur")),
+    List(..) => Ok(Calcit::tag("list")),
+    Set(..) => Ok(Calcit::tag("set")),
+    Map(..) => Ok(Calcit::tag("map")),
+    Record { .. } => Ok(Calcit::tag("record")),
+    Proc(..) => Ok(Calcit::tag("fn")), // special kind proc, but also fn
+    Macro { .. } => Ok(Calcit::tag("macro")),
+    Fn { .. } => Ok(Calcit::tag("fn")),
+    Syntax(..) => Ok(Calcit::tag("syntax")),
+    Method(..) => Ok(Calcit::tag("method")),
+    RawCode(..) => Ok(Calcit::tag("raw-code")),
+    Local { .. } => Ok(Calcit::tag("local")),
+    Import { .. } => Ok(Calcit::tag("import")),
+    Registered(..) => Ok(Calcit::tag("registered")),
+    AnyRef(..) => Ok(Calcit::tag("any-ref")),
   }
 }
 
@@ -348,8 +350,9 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
     ));
   }
   let v0 = &method_args[0];
+  use Calcit::*;
   match v0 {
-    Calcit::Tuple(CalcitTuple { class, .. }) => match class {
+    Tuple(CalcitTuple { class, .. }) => match class {
       Some(record) => method_record(record, v0, name, method_args, call_stack),
       None => Err(CalcitErr::use_msg_stack(
         CalcitErrKind::Type,
@@ -357,7 +360,7 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
         call_stack,
       )),
     },
-    Calcit::Record(CalcitRecord { class, .. }) => match class {
+    Record(CalcitRecord { class, .. }) => match class {
       Some(record) => method_record(record, v0, name, method_args, call_stack),
       None => Err(CalcitErr::use_msg_stack(
         CalcitErrKind::Type,
@@ -367,31 +370,31 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
     },
 
     // classed should already be preprocessed
-    Calcit::List(..) => {
+    List(..) => {
       let class = runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
-    Calcit::Map(..) => {
+    Map(..) => {
       let class = runner::evaluate_symbol_from_program("&core-map-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
-    Calcit::Number(..) => {
+    Number(..) => {
       let class = runner::evaluate_symbol_from_program("&core-number-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
-    Calcit::Str(..) => {
+    Str(..) => {
       let class = runner::evaluate_symbol_from_program("&core-string-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
-    Calcit::Set(..) => {
+    Set(..) => {
       let class = &runner::evaluate_symbol_from_program("&core-set-class", calcit::CORE_NS, None, call_stack)?;
       method_call(class, v0, name, method_args, call_stack)
     }
-    Calcit::Nil => {
+    Nil => {
       let class = runner::evaluate_symbol_from_program("&core-nil-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
-    Calcit::Fn { .. } | Calcit::Proc(..) => {
+    Fn { .. } | Calcit::Proc(..) => {
       let class = runner::evaluate_symbol_from_program("&core-fn-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }

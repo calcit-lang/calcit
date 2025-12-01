@@ -8,17 +8,18 @@ use cirru_edn::{Edn, EdnListView, EdnMapView, EdnRecordView, EdnSetView, EdnTag,
 
 // values does not fit are just represented with specical indicates
 pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
+  use Calcit::*;
   match x {
-    Calcit::Nil => Ok(Edn::Nil),
-    Calcit::Bool(b) => Ok(Edn::Bool(*b)),
-    Calcit::Str(s) => Ok(Edn::Str((**s).into())),
-    Calcit::Number(n) => Ok(Edn::Number(*n)),
-    Calcit::Tag(s) => Ok(Edn::Tag(s.to_owned())),
-    Calcit::Symbol { sym, .. } => Ok(Edn::Symbol((**sym).into())),
-    Calcit::Local(CalcitLocal { sym, .. }) => Ok(Edn::Symbol((**sym).into())),
-    Calcit::Import(CalcitImport { def, .. }) => Ok(Edn::Symbol((**def).into())),
-    Calcit::Registered(def) => Ok(Edn::Symbol((**def).into())),
-    Calcit::List(xs) => {
+    Nil => Ok(Edn::Nil),
+    Bool(b) => Ok(Edn::Bool(*b)),
+    Str(s) => Ok(Edn::Str((**s).into())),
+    Number(n) => Ok(Edn::Number(*n)),
+    Tag(s) => Ok(Edn::Tag(s.to_owned())),
+    Symbol { sym, .. } => Ok(Edn::Symbol((**sym).into())),
+    Local(CalcitLocal { sym, .. }) => Ok(Edn::Symbol((**sym).into())),
+    Import(CalcitImport { def, .. }) => Ok(Edn::Symbol((**def).into())),
+    Registered(def) => Ok(Edn::Symbol((**def).into())),
+    List(xs) => {
       let mut ys = EdnListView::default();
       xs.traverse_result::<String>(&mut |x| {
         ys.push(calcit_to_edn(x)?);
@@ -26,39 +27,39 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       })?;
       Ok(ys.into())
     }
-    Calcit::Set(xs) => {
+    Set(xs) => {
       let mut ys = EdnSetView::default();
       for x in xs {
         ys.insert(calcit_to_edn(x)?);
       }
       Ok(ys.into())
     }
-    Calcit::Map(xs) => {
+    Map(xs) => {
       let mut ys = EdnMapView::default();
       for (k, x) in xs {
         ys.insert(calcit_to_edn(k)?, calcit_to_edn(x)?);
       }
       Ok(ys.into())
     }
-    Calcit::Record(CalcitRecord { name, fields, values, .. }) => {
+    Record(CalcitRecord { name, fields, values, .. }) => {
       let mut entries = EdnRecordView::new(name.to_owned());
       for idx in 0..fields.len() {
         entries.insert(fields[idx].to_owned(), calcit_to_edn(&values[idx])?);
       }
       Ok(entries.into())
     }
-    Calcit::Fn { info, .. } => {
+    Fn { info, .. } => {
       let def_ns = &info.def_ns;
       let name = &info.name;
       let args = &info.args;
       eprintln!("[Warn] fn to EDN: {def_ns}/{name} {args:?}");
       Ok(Edn::str(x.to_string()))
     }
-    Calcit::Proc(name) => Ok(Edn::Symbol(name.as_ref().into())),
-    Calcit::Syntax(name, _ns) => Ok(Edn::sym(name.as_ref())),
-    Calcit::Tuple(CalcitTuple { tag, extra, .. }) => {
+    Proc(name) => Ok(Edn::Symbol(name.as_ref().into())),
+    Syntax(name, _ns) => Ok(Edn::sym(name.as_ref())),
+    Tuple(CalcitTuple { tag, extra, .. }) => {
       match &**tag {
-        Calcit::Symbol { sym, .. } => {
+        Symbol { sym, .. } => {
           if &**sym == "quote" {
             let data = extra.first().ok_or(format!("quote expected 1 argument, got: {extra:?}"))?; // TODO more types to handle
             match cirru::calcit_data_to_cirru(data) {
@@ -69,14 +70,14 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             Err(format!("unknown tag for EDN: {sym}")) // TODO more types to handle
           }
         }
-        Calcit::Record(CalcitRecord { name, .. }) => {
+        Record(CalcitRecord { name, .. }) => {
           let mut extra_values = vec![];
           for item in extra {
             extra_values.push(calcit_to_edn(item)?);
           }
           Ok(Edn::tuple(Edn::Tag(name.to_owned()), extra_values))
         }
-        Calcit::Tag(tag) => {
+        Tag(tag) => {
           let mut extra_values = vec![];
           for item in extra {
             extra_values.push(calcit_to_edn(item)?);
@@ -89,9 +90,9 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
         }
       }
     }
-    Calcit::Buffer(buf) => Ok(Edn::Buffer(buf.to_owned())),
-    Calcit::CirruQuote(code) => Ok(Edn::Quote(code.to_owned())),
-    Calcit::Method(name, kind) => match kind {
+    Buffer(buf) => Ok(Edn::Buffer(buf.to_owned())),
+    CirruQuote(code) => Ok(Edn::Quote(code.to_owned())),
+    Method(name, kind) => match kind {
       MethodKind::Access => Ok(Edn::Symbol(format!(".-{name}").into())),
       MethodKind::InvokeNative => Ok(Edn::Symbol(format!(".!{name}").into())),
       MethodKind::Invoke => Ok(Edn::Symbol(format!(".{name}").into())),
@@ -99,8 +100,8 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       MethodKind::AccessOptional => Ok(Edn::Symbol(format!(".?-{name}").into())),
       MethodKind::InvokeNativeOptional => Ok(Edn::Symbol(format!(".?!{name}").into())),
     },
-    Calcit::AnyRef(r) => Ok(Edn::AnyRef(r.to_owned())),
-    Calcit::Ref(_p, pair) => {
+    AnyRef(r) => Ok(Edn::AnyRef(r.to_owned())),
+    Ref(_p, pair) => {
       let pair = pair.lock().expect("read ref");
       Ok(Edn::Atom(Box::new(calcit_to_edn(&pair.0)?)))
     }

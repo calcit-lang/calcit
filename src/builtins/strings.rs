@@ -208,10 +208,11 @@ pub fn find_index(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 pub fn starts_with_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  use Calcit::*;
   match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Str(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool(s.starts_with(&**pattern))),
-    (Some(Calcit::Tag(s)), Some(Calcit::Tag(pattern))) => Ok(Calcit::Bool((*s.ref_str()).starts_with(pattern.ref_str()))),
-    (Some(Calcit::Tag(s)), Some(Calcit::Str(pattern))) => Ok(Calcit::Bool((*s.ref_str()).starts_with(&**pattern))),
+    (Some(Str(s)), Some(Str(pattern))) => Ok(Bool(s.starts_with(&**pattern))),
+    (Some(Tag(s)), Some(Tag(pattern))) => Ok(Bool((*s.ref_str()).starts_with(pattern.ref_str()))),
+    (Some(Tag(s)), Some(Str(pattern))) => Ok(Bool((*s.ref_str()).starts_with(&**pattern))),
     (Some(a), Some(b)) => CalcitErr::err_str(
       CalcitErrKind::Type,
       format!("starts-with? expected 2 strings, but received: {a} {b}"),
