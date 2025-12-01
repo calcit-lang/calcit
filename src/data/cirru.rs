@@ -238,18 +238,19 @@ pub fn calcit_data_to_cirru(xs: &Calcit) -> Result<Cirru, String> {
 
 /// converting data for display in Cirru syntax
 pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
+  use Calcit::*;
   match x {
-    Calcit::Nil => Ok(Cirru::leaf("nil")),
-    Calcit::Bool(true) => Ok(Cirru::leaf("true")),
-    Calcit::Bool(false) => Ok(Cirru::leaf("false")),
-    Calcit::Number(n) => Ok(Cirru::Leaf(n.to_string().into())),
-    Calcit::Str(s) => Ok(Cirru::leaf(format!("|{s}"))),
-    Calcit::Symbol { sym, .. } => Ok(Cirru::Leaf(sym.to_owned())),
-    Calcit::Local(CalcitLocal { sym, .. }) => Ok(Cirru::Leaf(sym.to_owned())),
-    Calcit::Import(CalcitImport { ns, def, .. }) => Ok(Cirru::Leaf((format!("{ns}/{def}")).into())),
-    Calcit::Registered(s) => Ok(Cirru::Leaf(s.as_ref().into())),
-    Calcit::Tag(s) => Ok(Cirru::leaf(format!(":{s}"))),
-    Calcit::List(xs) => {
+    Nil => Ok(Cirru::leaf("nil")),
+    Bool(true) => Ok(Cirru::leaf("true")),
+    Bool(false) => Ok(Cirru::leaf("false")),
+    Number(n) => Ok(Cirru::Leaf(n.to_string().into())),
+    Str(s) => Ok(Cirru::leaf(format!("|{s}"))),
+    Symbol { sym, .. } => Ok(Cirru::Leaf(sym.to_owned())),
+    Local(CalcitLocal { sym, .. }) => Ok(Cirru::Leaf(sym.to_owned())),
+    Import(CalcitImport { ns, def, .. }) => Ok(Cirru::Leaf((format!("{ns}/{def}")).into())),
+    Registered(s) => Ok(Cirru::Leaf(s.as_ref().into())),
+    Tag(s) => Ok(Cirru::leaf(format!(":{s}"))),
+    List(xs) => {
       let mut ys: Vec<Cirru> = Vec::with_capacity(xs.len());
       xs.traverse_result::<String>(&mut |x| {
         ys.push(calcit_to_cirru(x)?);
@@ -257,18 +258,21 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
       })?;
       Ok(Cirru::List(ys))
     }
-    Calcit::Proc(s) => Ok(Cirru::Leaf(s.as_ref().into())),
-    Calcit::Fn { .. } => Ok(Cirru::Leaf(format!("(fn {x})").into())), // TODO more details
-    Calcit::Syntax(s, _ns) => Ok(Cirru::Leaf(s.as_ref().into())),
-    Calcit::CirruQuote(code) => Ok(code.to_owned()),
-    Calcit::Method(name, kind) => match kind {
-      MethodKind::Access => Ok(Cirru::leaf(format!(".-{name}"))),
-      MethodKind::InvokeNative => Ok(Cirru::leaf(format!(".!{name}"))),
-      MethodKind::Invoke => Ok(Cirru::leaf(format!(".{name}"))),
-      MethodKind::KeywordAccess => Ok(Cirru::leaf(format!(".:{name}"))),
-      MethodKind::AccessOptional => Ok(Cirru::leaf(format!(".?-{name}"))),
-      MethodKind::InvokeNativeOptional => Ok(Cirru::leaf(format!(".?!{name}"))),
-    },
+    Proc(s) => Ok(Cirru::Leaf(s.as_ref().into())),
+    Fn { .. } => Ok(Cirru::Leaf(format!("(fn {x})").into())), // TODO more details
+    Syntax(s, _ns) => Ok(Cirru::Leaf(s.as_ref().into())),
+    CirruQuote(code) => Ok(code.to_owned()),
+    Method(name, kind) => {
+      use MethodKind::*;
+      match kind {
+        Access => Ok(Cirru::leaf(format!(".-{name}"))),
+        InvokeNative => Ok(Cirru::leaf(format!(".!{name}"))),
+        Invoke => Ok(Cirru::leaf(format!(".{name}"))),
+        KeywordAccess => Ok(Cirru::leaf(format!(".:{name}"))),
+        AccessOptional => Ok(Cirru::leaf(format!(".?-{name}"))),
+        InvokeNativeOptional => Ok(Cirru::leaf(format!(".?!{name}"))),
+      }
+    }
     _ => Err(format!("unknown data to convert to Cirru: {x}")),
   }
 }

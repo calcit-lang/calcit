@@ -9,39 +9,41 @@ pub mod cirru;
 pub mod edn;
 
 pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, String> {
+  use Calcit::*;
+
   match x {
-    Calcit::Syntax(s, ns) => Ok(Calcit::Syntax(s.to_owned(), ns.to_owned())),
-    Calcit::Proc(p) => Ok(Calcit::Proc(p.to_owned())),
-    Calcit::Bool(b) => Ok(Calcit::Bool(*b)),
-    Calcit::Number(n) => Ok(Calcit::Number(*n)),
-    Calcit::Str(s) => Ok(Calcit::Str(s.to_owned())),
-    Calcit::Tag(k) => Ok(Calcit::Tag(k.to_owned())),
-    Calcit::CirruQuote(_) => Ok(Calcit::from(CalcitList::from(&[
-      Calcit::Syntax(CalcitSyntax::Quote, "quote".into()),
+    Syntax(s, ns) => Ok(Calcit::Syntax(s.to_owned(), ns.to_owned())),
+    Proc(p) => Ok(Calcit::Proc(p.to_owned())),
+    Bool(b) => Ok(Calcit::Bool(*b)),
+    Number(n) => Ok(Calcit::Number(*n)),
+    Str(s) => Ok(Calcit::Str(s.to_owned())),
+    Tag(k) => Ok(Calcit::Tag(k.to_owned())),
+    CirruQuote(_) => Ok(Calcit::from(CalcitList::from(&[
+      Syntax(CalcitSyntax::Quote, "quote".into()),
       x.to_owned(),
     ]))),
-    Calcit::Symbol { .. } => Ok(Calcit::from(CalcitList::from(&[
-      Calcit::Syntax(CalcitSyntax::Quote, "quote".into()),
+    Symbol { .. } => Ok(Calcit::from(CalcitList::from(&[
+      Syntax(CalcitSyntax::Quote, "quote".into()),
       x.to_owned(),
     ]))),
-    Calcit::Local { .. } => Ok(Calcit::from(CalcitList::from(&[
-      Calcit::Syntax(CalcitSyntax::Quote, "quote".into()),
+    Local { .. } => Ok(Calcit::from(CalcitList::from(&[
+      Syntax(CalcitSyntax::Quote, "quote".into()),
       x.to_owned(),
     ]))),
-    Calcit::Import { .. } => Ok(Calcit::from(CalcitList::from(&[
-      Calcit::Syntax(CalcitSyntax::Quote, "quote".into()),
+    Import { .. } => Ok(Calcit::from(CalcitList::from(&[
+      Syntax(CalcitSyntax::Quote, "quote".into()),
       x.to_owned(),
     ]))),
-    Calcit::Registered(s) => Ok(Calcit::Registered(s.to_owned())),
-    Calcit::Nil => Ok(Calcit::Nil),
-    Calcit::Tuple(CalcitTuple { tag: t, extra, .. }) => {
+    Registered(s) => Ok(Calcit::Registered(s.to_owned())),
+    Nil => Ok(Calcit::Nil),
+    Tuple(CalcitTuple { tag: t, extra, .. }) => {
       let mut ys = vec![Calcit::Proc(CalcitProc::NativeTuple), data_to_calcit(t, ns, at_def)?];
       for x in extra {
         ys.push(data_to_calcit(x, ns, at_def)?);
       }
       Ok(Calcit::from(ys))
     }
-    Calcit::List(xs) => {
+    List(xs) => {
       let mut ys = Vec::with_capacity(xs.len() + 1);
       ys.push(Calcit::Proc(CalcitProc::List));
       xs.traverse_result::<String>(&mut |x| {
@@ -50,14 +52,14 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       })?;
       Ok(Calcit::from(ys))
     }
-    Calcit::Set(xs) => {
+    Set(xs) => {
       let mut ys = vec![Calcit::Proc(CalcitProc::Set)];
       for x in xs {
         ys.push(data_to_calcit(x, ns, at_def)?);
       }
       Ok(Calcit::from(ys))
     }
-    Calcit::Map(xs) => {
+    Map(xs) => {
       let mut ys = vec![Calcit::Proc(CalcitProc::NativeMap)];
       for (k, v) in xs {
         ys.push(data_to_calcit(k, ns, at_def)?);
@@ -65,7 +67,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       }
       Ok(Calcit::from(ys))
     }
-    Calcit::Record(CalcitRecord {
+    Record(CalcitRecord {
       name: tag, fields, values, ..
     }) => {
       let mut ys = vec![Calcit::Symbol {
@@ -86,14 +88,14 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       }
       Ok(Calcit::from(ys))
     }
-    Calcit::Ref(_, _) => Err(format!("data_to_calcit not implemented for ref: {x}")),
-    Calcit::Thunk(thunk) => Ok(thunk.get_code().to_owned()),
-    Calcit::Buffer(_) => Err(format!("data_to_calcit not implemented for buffer: {x}")),
-    Calcit::Recur(_xs) => Err(format!("data_to_calcit not implemented for recur: {x}")),
-    Calcit::Macro { .. } => Err(format!("data_to_calcit not implemented for macro: {x}")),
-    Calcit::Fn { .. } => Err(format!("data_to_calcit not implemented for fn: {x}")),
-    Calcit::Method(..) => Ok(x.to_owned()),
-    Calcit::RawCode(..) => Ok(x.to_owned()),
-    Calcit::AnyRef(..) => Err(format!("data_to_calcit not implemented for any-ref: {x}")),
+    Ref(_, _) => Err(format!("data_to_calcit not implemented for ref: {x}")),
+    Thunk(thunk) => Ok(thunk.get_code().to_owned()),
+    Buffer(_) => Err(format!("data_to_calcit not implemented for buffer: {x}")),
+    Recur(_xs) => Err(format!("data_to_calcit not implemented for recur: {x}")),
+    Macro { .. } => Err(format!("data_to_calcit not implemented for macro: {x}")),
+    Fn { .. } => Err(format!("data_to_calcit not implemented for fn: {x}")),
+    Method(..) => Ok(x.to_owned()),
+    RawCode(..) => Ok(x.to_owned()),
+    AnyRef(..) => Err(format!("data_to_calcit not implemented for any-ref: {x}")),
   }
 }

@@ -15,33 +15,34 @@ use crate::util::string::has_ns_part;
 
 pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   // println!("eval code: {}", expr.lisp_str());
+  use Calcit::*;
 
   match expr {
-    Calcit::Nil
-    | Calcit::Bool(_)
-    | Calcit::Number(_)
-    | Calcit::Registered(_)
-    | Calcit::Tag(_)
-    | Calcit::Str(_)
-    | Calcit::Ref(..)
-    | Calcit::Tuple { .. }
-    | Calcit::Buffer(..)
-    | Calcit::CirruQuote(..)
-    | Calcit::Proc(_)
-    | Calcit::Macro { .. }
-    | Calcit::Fn { .. }
-    | Calcit::Syntax(_, _)
-    | Calcit::Method(..)
-    | Calcit::AnyRef(..) => Ok(expr.to_owned()),
+    Nil
+    | Bool(_)
+    | Number(_)
+    | Registered(_)
+    | Tag(_)
+    | Str(_)
+    | Ref(..)
+    | Tuple { .. }
+    | Buffer(..)
+    | CirruQuote(..)
+    | Proc(_)
+    | Macro { .. }
+    | Fn { .. }
+    | Syntax(_, _)
+    | Method(..)
+    | AnyRef(..) => Ok(expr.to_owned()),
 
-    Calcit::Thunk(thunk) => Ok(thunk.evaluated(scope, call_stack)?),
-    Calcit::Symbol { sym, info, location, .. } => {
+    Thunk(thunk) => Ok(thunk.evaluated(scope, call_stack)?),
+    Symbol { sym, info, location, .. } => {
       // println!("[Warn] slow path reading symbol: {}", sym);
       evaluate_symbol(sym, scope, &info.at_ns, &info.at_def, location, call_stack)
     }
-    Calcit::Local(CalcitLocal { idx, .. }) => evaluate_symbol_from_scope(*idx, scope),
-    Calcit::Import(CalcitImport { ns, def, coord, .. }) => evaluate_symbol_from_program(def, ns, *coord, call_stack),
-    Calcit::List(xs) => match xs.first() {
+    Local(CalcitLocal { idx, .. }) => evaluate_symbol_from_scope(*idx, scope),
+    Import(CalcitImport { ns, def, coord, .. }) => evaluate_symbol_from_program(def, ns, *coord, call_stack),
+    List(xs) => match xs.first() {
       None => Err(CalcitErr::use_msg_stack(
         CalcitErrKind::Arity,
         format!("cannot evaluate empty expr: {expr}"),
@@ -59,19 +60,19 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         }
       }
     },
-    Calcit::Recur(_) => unreachable!("recur not expected to be from symbol"),
-    Calcit::RawCode(_, code) => unreachable!("raw code `{}` cannot be called", code),
-    Calcit::Set(_) => Err(CalcitErr::use_msg_stack(
+    Recur(_) => unreachable!("recur not expected to be from symbol"),
+    RawCode(_, code) => unreachable!("raw code `{}` cannot be called", code),
+    Set(_) => Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Unexpected,
       "unexpected set for expr",
       call_stack,
     )),
-    Calcit::Map(_) => Err(CalcitErr::use_msg_stack(
+    Map(_) => Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Unexpected,
       "unexpected map for expr",
       call_stack,
     )),
-    Calcit::Record { .. } => Err(CalcitErr::use_msg_stack(
+    Record { .. } => Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Unexpected,
       "unexpected record for expr",
       call_stack,
