@@ -394,7 +394,7 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
       let class = runner::evaluate_symbol_from_program("&core-nil-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
-    Fn { .. } | Calcit::Proc(..) => {
+    Fn { .. } | Proc(..) => {
       let class = runner::evaluate_symbol_from_program("&core-fn-class", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
