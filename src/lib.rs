@@ -3,6 +3,7 @@ pub mod data;
 pub mod builtins;
 pub mod calcit;
 pub mod call_stack;
+pub mod call_tree;
 pub mod cli_args;
 pub mod codegen;
 pub mod detailed_snapshot;

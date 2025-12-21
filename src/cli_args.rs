@@ -53,6 +53,8 @@ pub enum CalcitCommand {
   Eval(EvalCommand),
   /// check examples in namespace
   CheckExamples(CheckExamplesCommand),
+  /// analyze call tree structure from entry point
+  CallTree(CallTreeCommand),
 }
 
 /// emit JavaScript rather than interpreting
@@ -92,4 +94,28 @@ pub struct CheckExamplesCommand {
   /// target namespace to check examples
   #[argh(option)]
   pub ns: String,
+}
+
+/// analyze call tree structure from entry point
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "call-tree")]
+pub struct CallTreeCommand {
+  /// directly specify root definition to analyze (format: ns/def)
+  #[argh(option)]
+  pub root: Option<String>,
+  /// only show definitions whose namespace starts with this prefix
+  #[argh(option)]
+  pub ns_prefix: Option<String>,
+  /// include core/library calls in the output
+  #[argh(switch)]
+  pub include_core: bool,
+  /// maximum depth to traverse (0 = unlimited)
+  #[argh(option, default = "0")]
+  pub max_depth: usize,
+  /// show unused definitions for the selected entry
+  #[argh(switch)]
+  pub show_unused: bool,
+  /// output format: "text" (default, LLM-friendly) or "json"
+  #[argh(option, default = "String::from(\"text\")")]
+  pub format: String,
 }

@@ -11,7 +11,7 @@ mod injection;
 
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
-use calcit::cli_args::{CalcitCommand, ToplevelCalcit};
+use calcit::cli_args::{CalcitCommand, CallTreeCommand, ToplevelCalcit};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use colored::Colorize;
@@ -166,6 +166,9 @@ fn main() -> Result<(), String> {
   } else if let Some(CalcitCommand::CheckExamples(check_options)) = &cli_args.subcommand {
     eval_once = true;
     run_check_examples(&check_options.ns, &snapshot)
+  } else if let Some(CalcitCommand::CallTree(call_tree_options)) = &cli_args.subcommand {
+    eval_once = true;
+    run_call_tree(&entries, call_tree_options, &snapshot)
   } else {
     let started_time = Instant::now();
 
@@ -563,4 +566,36 @@ fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<
       Err(format!("Failed to run examples: {}", e.msg))
     }
   }
+}
+
+fn run_call_tree(entries: &ProgramEntries, options: &CallTreeCommand, _snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  // Determine entry point: use --root if provided, otherwise use init_fn from config
+  let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
+    util::string::extract_ns_def(def_path)?
+  } else {
+    (entries.init_ns.to_string(), entries.init_def.to_string())
+  };
+
+  println!("{}", format!("Analyzing call tree from: {entry_ns}/{entry_def}").cyan());
+
+  // Analyze call tree
+  let result = calcit::call_tree::analyze_call_tree(
+    &entry_ns,
+    &entry_def,
+    options.include_core,
+    options.max_depth,
+    options.show_unused,
+    None, // TODO: could extract package name from snapshot
+    options.ns_prefix.clone(),
+  )?;
+
+  // Output result
+  if options.format == "json" {
+    let json = calcit::call_tree::format_as_json(&result)?;
+    println!("{json}");
+  } else {
+    println!("{}", calcit::call_tree::format_for_llm(&result));
+  }
+
+  Ok(())
 }
