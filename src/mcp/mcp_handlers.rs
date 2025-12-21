@@ -1,17 +1,17 @@
-use crate::mcp::tools::OperateDefinitionAtWithLeafRequest;
-
 use super::AppState;
 use super::error_handling::{create_protocol_error, create_tool_execution_error, create_tool_success, error_codes};
 use super::jsonrpc::*;
 use super::tools::{
-  AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
   FeedbackToCalcitMcpServerRequest, GenerateCalcitIncrementalRequest, GetCurrentModuleRequest, GetPackageNameRequest,
   GrabCalcitRunnerLogsRequest, ListCalcitWorkMemoryRequest, ListDefinitionsRequest, ListDependencyDocsRequest, ListModulesRequest,
-  ListNamespacesRequest, McpRequest, OperateDefinitionAtRequest, ReadCalcitWorkMemoryRequest, ReadDefinitionAtRequest,
-  ReadDefinitionDocRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest, ReadNamespaceRequest,
-  StartCalcitRunnerRequest, StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateDefinitionDocRequest, UpdateNamespaceDocRequest,
-  UpdateNamespaceImportsRequest, UpsertDefinitionRequest, WriteCalcitWorkMemoryRequest, get_standard_mcp_tools,
+  ListNamespacesRequest, McpRequest, ReadCalcitWorkMemoryRequest, ReadDefinitionAtRequest, ReadDefinitionDocRequest,
+  ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest, ReadNamespaceRequest, StartCalcitRunnerRequest,
+  StopCalcitRunnerRequest, WriteCalcitWorkMemoryRequest, get_standard_mcp_tools,
 };
+// NOTE: Edit-related Request types moved to CLI: `cr edit` subcommands
+// Removed: AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
+// OperateDefinitionAtRequest, OperateDefinitionAtWithLeafRequest, UpdateConfigsRequest, UpdateDefinitionDocRequest,
+// UpdateNamespaceDocRequest, UpdateNamespaceImportsRequest, UpsertDefinitionRequest
 use axum::response::Json as ResponseJson;
 use colored::*;
 use serde_json::Value;
@@ -415,88 +415,9 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       let result = super::read_handlers::read_namespace(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
-    // Namespace operations
-    "add_namespace" => {
-      let request = match deserialize_params::<AddNamespaceRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::namespace_handlers::add_namespace(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "delete_namespace" => {
-      let request = match deserialize_params::<DeleteNamespaceRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::namespace_handlers::delete_namespace(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "update_namespace_imports" => {
-      let request = match deserialize_params::<UpdateNamespaceImportsRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::namespace_handlers::update_namespace_imports(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "update_namespace_doc" => {
-      let request = match deserialize_params::<UpdateNamespaceDocRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::namespace_handlers::update_namespace_doc(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
+    // NOTE: Namespace editing tools moved to CLI: `cr edit add-ns`, `cr edit delete-ns`, `cr edit update-imports`, `cr edit update-ns-doc`
 
-    // Definition operations
-    "upsert_definition" => {
-      let request = match deserialize_params::<UpsertDefinitionRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::definition_handlers::upsert_definition(
-        app_state,
-        request.namespace,
-        request.definition,
-        request.syntax_tree,
-        request.doc,
-        request.replacing,
-      );
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "delete_definition" => {
-      let request = match deserialize_params::<DeleteDefinitionRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::definition_handlers::delete_definition(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "update_definition_doc" => {
-      let request = match deserialize_params::<UpdateDefinitionDocRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::definition_handlers::update_definition_doc(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "operate_definition_at" => {
-      let request = match deserialize_params::<OperateDefinitionAtRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::definition_handlers::operate_definition_at(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "operate_definition_at_with_leaf" => {
-      let request = match deserialize_params::<OperateDefinitionAtWithLeafRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::definition_handlers::operate_definition_at_with_leaf(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
+    // NOTE: Definition editing tools moved to CLI: `cr edit upsert-def`, `cr edit delete-def`, `cr edit operate-at`, `cr edit update-def-doc`
     "read_definition_at" => {
       let request = match deserialize_params::<ReadDefinitionAtRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
@@ -531,36 +452,12 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       let result = super::module_handlers::get_current_module(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
-    "create_config_entry" => {
-      let request = match deserialize_params::<CreateModuleRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::module_handlers::create_config_entry(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "delete_config_entry" => {
-      let request = match deserialize_params::<DeleteModuleRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::module_handlers::delete_config_entry(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
+    // NOTE: Module editing tools moved to CLI: `cr edit add-module`, `cr edit delete-module`
 
     // NOTE: Cirru conversion tools moved to CLI: `cr cirru parse`, `cr cirru format`
     // NOTE: Documentation query tools moved to CLI: `cr docs api`, `cr docs ref`, `cr docs list-api`, `cr docs list-guide`
     // NOTE: read_configs moved to CLI: `cr query configs`
-
-    // Configuration management tools
-    "update_configs" => {
-      let request = match deserialize_params::<UpdateConfigsRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::config_handlers::update_configs(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
+    // NOTE: Configuration editing tools moved to CLI: `cr edit set-config`
 
     // NOTE: fetch_calcit_libraries, parse_cirru_edn_to_json moved to CLI: `cr libs`, `cr cirru parse-edn`
 

@@ -46,6 +46,9 @@ fn main() -> Result<(), String> {
     Some(CalcitCommand::Libs(libs_cmd)) => {
       return cli_handlers::handle_libs_command(libs_cmd);
     }
+    Some(CalcitCommand::Edit(edit_cmd)) => {
+      return cli_handlers::handle_edit_command(edit_cmd, &cli_args.input);
+    }
     _ => {}
   }
 

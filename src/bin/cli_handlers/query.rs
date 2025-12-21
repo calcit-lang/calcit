@@ -1,10 +1,11 @@
 //! Query subcommand handlers
 //!
-//! Handles: cr query ls-ns, ls-defs, read-ns, pkg-name, configs, error, ls-modules
+//! Handles: cr query ls-ns, ls-defs, read-ns, read-def, read-at, pkg-name, configs, error, ls-modules
 
 use calcit::cli_args::{QueryCommand, QuerySubcommand};
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
+use cirru_parser::Cirru;
 use colored::Colorize;
 use std::fs;
 use std::path::Path;
@@ -18,6 +19,8 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
     QuerySubcommand::Configs(_) => handle_configs(input_path),
     QuerySubcommand::Error(_) => handle_error(),
     QuerySubcommand::LsModules(_) => handle_ls_modules(input_path),
+    QuerySubcommand::ReadDef(opts) => handle_read_def(input_path, &opts.namespace, &opts.definition),
+    QuerySubcommand::ReadAt(opts) => handle_read_at(input_path, &opts.namespace, &opts.definition, &opts.path, opts.depth),
   }
 }
 
@@ -186,4 +189,154 @@ fn handle_ls_modules(input_path: &str) -> Result<(), String> {
   }
 
   Ok(())
+}
+
+fn handle_read_def(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path)?;
+
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+
+  // Output as JSON for machine consumption
+  let json = cirru_to_json(&code_entry.code);
+  println!("{}", serde_json::to_string_pretty(&json).unwrap());
+
+  Ok(())
+}
+
+fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &str, max_depth: usize) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path)?;
+
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+
+  // Parse path
+  let indices: Vec<usize> = if path.is_empty() {
+    vec![]
+  } else {
+    path
+      .split(',')
+      .map(|s| s.trim().parse::<usize>())
+      .collect::<Result<Vec<_>, _>>()
+      .map_err(|e| format!("Invalid path format: {e}"))?
+  };
+
+  // Navigate to target
+  let target = navigate_to_path(&code_entry.code, &indices)?;
+
+  // Output info
+  println!("{} {}/{}", "Reading:".bold(), namespace.cyan(), definition.green());
+  println!("{} [{}]", "Path:".bold(), path);
+
+  // Show target type and length if it's a list
+  match &target {
+    Cirru::Leaf(s) => {
+      println!("{} leaf", "Type:".bold());
+      println!("{} {}", "Value:".bold(), s.to_string().yellow());
+    }
+    Cirru::List(items) => {
+      println!("{} list ({} items)", "Type:".bold(), items.len());
+      // Show children summary
+      println!("\n{}", "Children:".bold());
+      for (i, item) in items.iter().enumerate() {
+        let summary = match item {
+          Cirru::Leaf(s) => format!("leaf: {s}"),
+          Cirru::List(sub_items) => format!("list ({} items)", sub_items.len()),
+        };
+        println!("  [{}] {}", i.to_string().dimmed(), summary);
+      }
+    }
+  }
+
+  // Also output JSON for programmatic use (with depth limit)
+  println!("\n{}", "JSON:".bold());
+  let json = cirru_to_json_with_depth(&target, max_depth, 0);
+  println!("{}", serde_json::to_string_pretty(&json).unwrap());
+  if max_depth > 0 {
+    println!("{}", format!("(depth limited to {max_depth})").dimmed());
+  }
+
+  Ok(())
+}
+
+fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, String> {
+  if path.is_empty() {
+    return Ok(code.clone());
+  }
+
+  let mut current = code;
+  for (depth, &idx) in path.iter().enumerate() {
+    match current {
+      Cirru::Leaf(_) => {
+        return Err(format!("Cannot navigate into leaf node at depth {depth}"));
+      }
+      Cirru::List(items) => {
+        if idx >= items.len() {
+          return Err(format!(
+            "Path index {} out of bounds at depth {} (list has {} items)",
+            idx,
+            depth,
+            items.len()
+          ));
+        }
+        current = &items[idx];
+      }
+    }
+  }
+
+  Ok(current.clone())
+}
+
+fn cirru_to_json(cirru: &Cirru) -> serde_json::Value {
+  match cirru {
+    Cirru::Leaf(s) => serde_json::Value::String(s.to_string()),
+    Cirru::List(items) => serde_json::Value::Array(items.iter().map(cirru_to_json).collect()),
+  }
+}
+
+/// Convert Cirru to JSON with depth limit (0 = unlimited)
+pub fn cirru_to_json_with_depth(cirru: &Cirru, max_depth: usize, current_depth: usize) -> serde_json::Value {
+  match cirru {
+    Cirru::Leaf(s) => serde_json::Value::String(s.to_string()),
+    Cirru::List(items) => {
+      if max_depth > 0 && current_depth >= max_depth {
+        // At max depth, show truncated indicator
+        if items.is_empty() {
+          serde_json::Value::Array(vec![])
+        } else {
+          // Show first item (usually the operator) and indicate more items
+          let first = match &items[0] {
+            Cirru::Leaf(s) => serde_json::Value::String(s.to_string()),
+            Cirru::List(_) => serde_json::Value::String("[...]".to_string()),
+          };
+          if items.len() == 1 {
+            serde_json::Value::Array(vec![first])
+          } else {
+            serde_json::Value::Array(vec![first, serde_json::Value::String(format!("...{} more", items.len() - 1))])
+          }
+        }
+      } else {
+        serde_json::Value::Array(
+          items
+            .iter()
+            .map(|item| cirru_to_json_with_depth(item, max_depth, current_depth + 1))
+            .collect(),
+        )
+      }
+    }
+  }
 }

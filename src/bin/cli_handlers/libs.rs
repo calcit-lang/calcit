@@ -116,7 +116,7 @@ fn handle_list_libs() -> Result<(), String> {
 }
 
 fn handle_readme(package: &str) -> Result<(), String> {
-  println!("{}", format!("Fetching README for '{}'...", package).dimmed());
+  println!("{}", format!("Fetching README for '{package}'...").dimmed());
 
   let registry = fetch_registry()?;
 
@@ -125,7 +125,7 @@ fn handle_readme(package: &str) -> Result<(), String> {
     .libraries
     .iter()
     .find(|l| l.package_name == package)
-    .ok_or_else(|| format!("Package '{}' not found in registry", package))?;
+    .ok_or_else(|| format!("Package '{package}' not found in registry"))?;
 
   // Convert GitHub URL to raw README URL
   // https://github.com/calcit-lang/calcit.std -> https://raw.githubusercontent.com/calcit-lang/calcit.std/main/README.md
@@ -151,7 +151,7 @@ fn handle_readme(package: &str) -> Result<(), String> {
   println!();
 
   // Print README content
-  println!("{}", readme_content);
+  println!("{readme_content}");
 
   Ok(())
 }
@@ -159,7 +159,7 @@ fn handle_readme(package: &str) -> Result<(), String> {
 fn github_to_raw_readme(repo_url: &str) -> Result<String, String> {
   // Parse: https://github.com/owner/repo -> https://raw.githubusercontent.com/owner/repo/{branch}/README.md
   if !repo_url.starts_with("https://github.com/") {
-    return Err(format!("Unsupported repository URL format: {}", repo_url));
+    return Err(format!("Unsupported repository URL format: {repo_url}"));
   }
 
   let path = repo_url.trim_start_matches("https://github.com/").trim_end_matches('/');
@@ -180,7 +180,7 @@ fn fetch_readme_content(client: &reqwest::blocking::Client, base_url: &str, bran
 }
 
 fn handle_search(keyword: &str) -> Result<(), String> {
-  println!("{}", format!("Searching for '{}'...", keyword).dimmed());
+  println!("{}", format!("Searching for '{keyword}'...").dimmed());
 
   let registry = fetch_registry()?;
 
@@ -191,16 +191,13 @@ fn handle_search(keyword: &str) -> Result<(), String> {
     .iter()
     .filter(|lib| {
       lib.package_name.to_lowercase().contains(&keyword_lower)
-        || lib
-          .description
-          .as_ref()
-          .map_or(false, |d| d.to_lowercase().contains(&keyword_lower))
+        || lib.description.as_ref().is_some_and(|d| d.to_lowercase().contains(&keyword_lower))
         || lib.category.to_strings().iter().any(|c| c.to_lowercase().contains(&keyword_lower))
     })
     .collect();
 
   if results.is_empty() {
-    println!("\n{}", format!("No libraries found matching '{}'", keyword).yellow());
+    println!("\n{}", format!("No libraries found matching '{keyword}'").yellow());
     return Ok(());
   }
 

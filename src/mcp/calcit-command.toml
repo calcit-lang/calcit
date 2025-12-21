@@ -25,6 +25,11 @@ Calcit 程序使用 `cr` 命令:
 - `cr query ls-ns [--deps]` - 列出项目中所有命名空间 (--deps 包含依赖)
 - `cr query ls-defs <namespace>` - 列出命名空间中的定义
 - `cr query read-ns <namespace>` - 读取命名空间详情(imports, 定义预览)
+- `cr query read-def <namespace> <definition>` - 读取定义的完整语法树 (JSON 格式)
+- `cr query read-at <namespace> <definition> -p <path>` - 读取定义中指定坐标的内容
+  - path: 逗号分隔的索引，如 "2,1,0"，空字符串表示根节点
+  - `-d <depth>` 或 `--depth <depth>`: 限制 JSON 输出深度 (0=无限, 默认0)
+  - 输出包含: 类型(leaf/list)、子节点预览、完整 JSON
 - `cr query pkg-name` - 获取项目包名
 - `cr query configs` - 读取项目配置 (init_fn, reload_fn, version)
 - `cr query error` - 读取 .calcit-error.cirru 错误堆栈文件
@@ -55,6 +60,68 @@ Calcit 程序使用 `cr` 命令:
 - `cr libs search <keyword>` - 按关键词搜索库 (搜索名称、描述、分类)
 - `cr libs readme <package>` - 查看指定库的 README 文档 (从 GitHub 获取)
 - `caps` - 安装/更新依赖
+
+### 代码编辑 (`cr edit`)
+
+直接编辑 compact.cirru 项目代码，支持三种输入方式：
+- `--file <path>` 或 `-f <path>` - 从文件读取 JSON 语法树
+- `--json <string>` 或 `-j <string>` - 内联 JSON 字符串
+- `--stdin` 或 `-s` - 从标准输入读取 JSON
+
+**定义操作:**
+- `cr edit upsert-def <namespace> <definition> -j '<json>'` - 添加或更新定义
+- `cr edit upsert-def <namespace> <definition> -r -j '<json>'` - 强制覆盖已有定义
+- `cr edit delete-def <namespace> <definition>` - 删除定义
+- `cr edit operate-at <namespace> <definition> -p <path> -o <operation> -j '<json>'` - 在指定路径操作
+  - path: 逗号分隔的索引，如 "2,1,0"
+  - operation: "insert-before", "insert-after", "replace", "delete", "insert-child"
+  - `-d <depth>` 或 `--depth <depth>`: 限制结果预览深度 (0=无限, 默认2)
+  - 执行后会输出被修改节点的预览，方便验证修改结果
+
+**⚠️ 重要: 精确编辑的安全流程**
+
+使用 `operate-at` 进行局部修改前，**必须先多次使用 `read-at` 确认坐标**，避免错误覆盖代码：
+
+```bash
+# 步骤1: 先读取整体结构，了解根节点 (用 -d 1 限制深度减少输出)
+cr query read-at app.core my-fn -p "" -d 1
+
+# 步骤2: 逐层深入，确认目标位置
+cr query read-at app.core my-fn -p "2" -d 1      # 查看第3个子节点
+cr query read-at app.core my-fn -p "2,1" -d 1    # 继续深入
+cr query read-at app.core my-fn -p "2,1,0"       # 确认最终目标 (叶子节点不需要限制深度)
+
+# 步骤3: 确认无误后再执行修改 (会自动输出修改后的预览)
+cr edit operate-at app.core my-fn -p "2,1,0" -o replace -j '"new-value"'
+
+# 步骤4: 验证修改结果
+cr query read-at app.core my-fn -p "2,1"
+```
+
+这个流程可以有效防止因坐标错误导致的代码损坏。特别是在复杂嵌套结构中，建议从根节点开始逐层确认。使用 `-d` 限制深度可以减少 token 消耗。
+
+**命名空间操作:**
+- `cr edit add-ns <namespace>` - 添加命名空间（创建最小 ns 声明）
+- `cr edit add-ns <namespace> -j '<ns_json>'` - 添加带自定义 ns 代码的命名空间
+- `cr edit delete-ns <namespace>` - 删除命名空间
+- `cr edit update-imports <namespace> -j '<imports_json>'` - 更新导入规则
+
+**模块和配置:**
+- `cr edit add-module <module-path>` - 添加模块依赖
+- `cr edit delete-module <module-path>` - 删除模块依赖
+- `cr edit set-config <key> <value>` - 设置配置 (key: init-fn, reload-fn, version)
+
+**使用示例:**
+```bash
+# 使用内联 JSON 添加定义
+cr edit upsert-def app.core multiply -j '["defn", "multiply", ["x", "y"], ["*", "x", "y"]]'
+
+# 使用 stdin 管道
+echo '["defn", "hello", [], ["println", "|Hello"]]' | cr edit upsert-def app.core hello -s
+
+# 从文件读取
+cr edit upsert-def app.core complex-fn -f /tmp/code.json
+```
 
 可以使用 `--help` 参数了解更详细的用法. 目前没有 `calcit` 命令, 都是用的 `cr` 命令.
 
@@ -113,6 +180,12 @@ Calcit 这个结构很大程度上是为了结构化编辑语法树设计的, �
 
 注意 coord(坐标)是数组, 表示函数定义中的位置, 从 0 开始计数. 空数组表示读取整个定义.
 
+CLI 等效命令:
+```bash
+cr query read-at app.core add-numbers -p "2,1"
+cr query read-def app.core add-numbers  # 读取完整定义
+```
+
 - `operate_definition_at` - 精确更新函数体中的操作符
 
 替换的目标位置要求为表达式(array)的例子, match 可能也是一个数组节点(也可能不是):
@@ -134,6 +207,23 @@ Calcit 这个结构很大程度上是为了结构化编辑语法树设计的, �
 
 替换之前建议用 `read_definition_at` 反复查看目标 coord 或者兄弟位置, 从而保证局部修改的准确度.
 
+CLI 等效命令 (推荐的安全流程):
+```bash
+# 1. 先读取完整定义了解结构
+cr query read-def app.core add-numbers
+
+# 2. 多次 read-at 确认目标坐标
+cr query read-at app.core add-numbers -p ""      # 根节点
+cr query read-at app.core add-numbers -p "2"     # 第3个子节点
+cr query read-at app.core add-numbers -p "2,0"   # 确认目标位置
+
+# 3. 确认无误后执行替换
+cr edit operate-at app.core add-numbers -p "2,0" -o replace -j '["*", "a", "b", "c"]'
+
+# 4. 验证修改结果
+cr query read-at app.core add-numbers -p "2"
+```
+
 - `operate_definition_at_with_leaf` - 精确更新函数体中的叶子节点(简化版)
 
 专门用于替换叶子节点(符号、字符串、数字)的简化工具，无需指定 value_type 参数:
@@ -150,6 +240,11 @@ Calcit 这个结构很大程度上是为了结构化编辑语法树设计的, �
 ```
 
 这个工具消除了 value_type 参数的困惑，专门处理叶子节点的替换操作。对于复杂表达式的替换，仍需使用通用的 `operate_definition_at` 工具。
+
+CLI 等效命令:
+```bash
+cr edit operate-at app.core add-numbers -p "2,0" -o replace -j '"*"'
+```
 
 注意这里的 `syntax_tree` 写法, 是以递归数组的形式传递的. 对于现有定义的修改, 一般建议先确定准确坐标再通过 `operate_definition_at` 做局部操作, 而不是完全重写整个定义.
 
@@ -213,6 +308,8 @@ Calcit 脚本语言是走小众路线的快速开发工具, 且作为 Lisp 方�
 - `cr query ls-ns` 列出所有命名空间
 - `cr query ls-defs <ns>` 列出命名空间的定义
 - `cr query read-ns <ns>` 读取命名空间详情
+- `cr query read-def <ns> <def>` 读取定义完整语法树 (JSON)
+- `cr query read-at <ns> <def> -p <path>` 读取定义中指定坐标内容
 - `cr query error` 查看最近的错误堆栈
 
 如果有文档缺失或者查找的链路不通, 请明确在日志当中说明, 会有专门的 Agent 收集问题寻找解决方案, 或者由工程师手动补充文档.

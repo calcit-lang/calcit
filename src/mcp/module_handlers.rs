@@ -1,4 +1,4 @@
-use super::tools::{CreateModuleRequest, DeleteModuleRequest, GetCurrentModuleRequest, ListModulesRequest};
+use super::tools::{GetCurrentModuleRequest, ListModulesRequest};
 use crate::snapshot::{self, Snapshot};
 use axum::response::Json as ResponseJson;
 use serde_json::Value;
@@ -70,71 +70,4 @@ pub fn list_modules(app_state: &super::AppState, _request: ListModulesRequest) -
   }
 }
 
-pub fn create_config_entry(app_state: &super::AppState, request: CreateModuleRequest) -> ResponseJson<Value> {
-  let module_name = request.name;
-
-  // Validate module name
-  if module_name.is_empty() {
-    return ResponseJson(serde_json::json!({
-      "error": "Module name cannot be empty"
-    }));
-  }
-
-  // Use state manager to update current module
-  let result = app_state.state_manager.update_current_module(|snapshot| {
-    // Check if module already exists
-    if snapshot.entries.contains_key(&module_name) {
-      return Err(format!("Module '{module_name}' already exists"));
-    }
-
-    // Create new module configuration
-    let new_module_config = crate::snapshot::SnapshotConfigs {
-      init_fn: format!("{module_name}.main/main!"),
-      reload_fn: format!("{module_name}.main/reload!"),
-      version: "0.0.0".to_string(),
-      modules: vec![],
-    };
-
-    snapshot.entries.insert(module_name.clone(), new_module_config);
-    Ok(())
-  });
-
-  match result {
-    Ok(_) => ResponseJson(serde_json::json!({
-      "message": format!("Created module: {}", module_name),
-      "module": module_name
-    })),
-    Err(e) => ResponseJson(serde_json::json!({
-      "error": e
-    })),
-  }
-}
-
-pub fn delete_config_entry(app_state: &super::AppState, request: DeleteModuleRequest) -> ResponseJson<Value> {
-  let module_name = request.module;
-
-  let result = app_state.state_manager.update_current_module(|snapshot| {
-    // Check if module exists
-    if !snapshot.entries.contains_key(&module_name) {
-      return Err(format!("Module '{module_name}' not found"));
-    }
-
-    // Prevent deletion of main module
-    if module_name == snapshot.package {
-      return Err("Cannot delete the main package module".to_string());
-    }
-
-    // Delete module
-    snapshot.entries.remove(&module_name);
-    Ok(())
-  });
-
-  match result {
-    Ok(()) => ResponseJson(serde_json::json!({
-      "message": format!("Deleted module: {}", module_name)
-    })),
-    Err(e) => ResponseJson(serde_json::json!({
-      "error": e
-    })),
-  }
-}
+// NOTE: Module editing functions moved to CLI: `cr edit add-module`, `cr edit delete-module`

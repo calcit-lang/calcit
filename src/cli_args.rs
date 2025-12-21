@@ -63,6 +63,8 @@ pub enum CalcitCommand {
   Cirru(CirruCommand),
   /// fetch available Calcit libraries from registry
   Libs(LibsCommand),
+  /// edit project code (definitions, namespaces, modules, configs)
+  Edit(EditCommand),
 }
 
 /// emit JavaScript rather than interpreting
@@ -157,6 +159,10 @@ pub enum QuerySubcommand {
   Error(QueryErrorCommand),
   /// list modules in the project
   LsModules(QueryLsModulesCommand),
+  /// read a definition's content
+  ReadDef(QueryReadDefCommand),
+  /// read content at specific path in a definition
+  ReadAt(QueryReadAtCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -205,6 +211,36 @@ pub struct QueryErrorCommand {}
 #[argh(subcommand, name = "ls-modules")]
 /// list modules in the project
 pub struct QueryLsModulesCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "read-def")]
+/// read a definition's full syntax tree as JSON
+pub struct QueryReadDefCommand {
+  /// namespace containing the definition
+  #[argh(positional)]
+  pub namespace: String,
+  /// definition name
+  #[argh(positional)]
+  pub definition: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "read-at")]
+/// read content at specific path in a definition (for exploring code tree)
+pub struct QueryReadAtCommand {
+  /// namespace containing the definition
+  #[argh(positional)]
+  pub namespace: String,
+  /// definition name
+  #[argh(positional)]
+  pub definition: String,
+  /// path to the node (comma-separated indices, e.g. "2,1,0", empty for root)
+  #[argh(option, short = 'p', default = "String::new()")]
+  pub path: String,
+  /// max depth for JSON output (0 = unlimited, default 0)
+  #[argh(option, short = 'd', default = "0")]
+  pub depth: usize,
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Docs subcommand - documentation tools
@@ -352,4 +388,219 @@ pub struct LibsSearchCommand {
   /// keyword to search
   #[argh(positional)]
   pub keyword: String,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Edit subcommand - code editing operations
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "edit")]
+/// edit project code (definitions, namespaces, modules, configs)
+pub struct EditCommand {
+  #[argh(subcommand)]
+  pub subcommand: EditSubcommand,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand)]
+pub enum EditSubcommand {
+  /// add or update a definition (upsert)
+  UpsertDef(EditUpsertDefCommand),
+  /// delete a definition
+  DeleteDef(EditDeleteDefCommand),
+  /// update definition documentation
+  UpdateDefDoc(EditUpdateDefDocCommand),
+  /// operate on definition at specific path
+  OperateAt(EditOperateAtCommand),
+  /// add a new namespace
+  AddNs(EditAddNsCommand),
+  /// delete a namespace
+  DeleteNs(EditDeleteNsCommand),
+  /// update namespace imports
+  UpdateImports(EditUpdateImportsCommand),
+  /// update namespace documentation
+  UpdateNsDoc(EditUpdateNsDocCommand),
+  /// create a new module
+  AddModule(EditAddModuleCommand),
+  /// delete a module
+  DeleteModule(EditDeleteModuleCommand),
+  /// update project configs
+  SetConfig(EditSetConfigCommand),
+}
+
+// --- Definition operations ---
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "upsert-def")]
+/// add or update a definition (syntax_tree as JSON)
+pub struct EditUpsertDefCommand {
+  /// namespace containing the definition
+  #[argh(positional)]
+  pub namespace: String,
+  /// definition name
+  #[argh(positional)]
+  pub definition: String,
+  /// read syntax_tree JSON from file
+  #[argh(option, short = 'f')]
+  pub file: Option<String>,
+  /// syntax_tree as inline JSON string
+  #[argh(option, short = 'j')]
+  pub json: Option<String>,
+  /// read syntax_tree JSON from stdin
+  #[argh(switch, short = 's')]
+  pub stdin: bool,
+  /// force replace if definition exists
+  #[argh(switch, short = 'r')]
+  pub replace: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "delete-def")]
+/// delete a definition from namespace
+pub struct EditDeleteDefCommand {
+  /// namespace containing the definition
+  #[argh(positional)]
+  pub namespace: String,
+  /// definition name to delete
+  #[argh(positional)]
+  pub definition: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "update-def-doc")]
+/// update documentation for a definition
+pub struct EditUpdateDefDocCommand {
+  /// namespace containing the definition
+  #[argh(positional)]
+  pub namespace: String,
+  /// definition name
+  #[argh(positional)]
+  pub definition: String,
+  /// documentation text
+  #[argh(positional)]
+  pub doc: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "operate-at")]
+/// operate on definition at specific path (insert/replace/delete node)
+pub struct EditOperateAtCommand {
+  /// namespace containing the definition
+  #[argh(positional)]
+  pub namespace: String,
+  /// definition name
+  #[argh(positional)]
+  pub definition: String,
+  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  #[argh(option, short = 'p')]
+  pub path: String,
+  /// operation: "insert-before", "insert-after", "replace", "delete", "insert-child"
+  #[argh(option, short = 'o')]
+  pub operation: String,
+  /// read syntax_tree JSON from file (for insert/replace operations)
+  #[argh(option, short = 'f')]
+  pub file: Option<String>,
+  /// syntax_tree as inline JSON string
+  #[argh(option, short = 'j')]
+  pub json: Option<String>,
+  /// read syntax_tree JSON from stdin
+  #[argh(switch, short = 's')]
+  pub stdin: bool,
+  /// max depth for result preview (0 = unlimited, default 2)
+  #[argh(option, short = 'd', default = "2")]
+  pub depth: usize,
+}
+
+// --- Namespace operations ---
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "add-ns")]
+/// add a new namespace
+pub struct EditAddNsCommand {
+  /// namespace name to create
+  #[argh(positional)]
+  pub namespace: String,
+  /// read ns syntax_tree JSON from file (optional, creates minimal ns if not provided)
+  #[argh(option, short = 'f')]
+  pub file: Option<String>,
+  /// ns syntax_tree as inline JSON string
+  #[argh(option, short = 'j')]
+  pub json: Option<String>,
+  /// read ns syntax_tree JSON from stdin
+  #[argh(switch, short = 's')]
+  pub stdin: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "delete-ns")]
+/// delete a namespace
+pub struct EditDeleteNsCommand {
+  /// namespace to delete
+  #[argh(positional)]
+  pub namespace: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "update-imports")]
+/// update namespace import rules
+pub struct EditUpdateImportsCommand {
+  /// namespace to update
+  #[argh(positional)]
+  pub namespace: String,
+  /// read imports JSON from file
+  #[argh(option, short = 'f')]
+  pub file: Option<String>,
+  /// imports as inline JSON string
+  #[argh(option, short = 'j')]
+  pub json: Option<String>,
+  /// read imports JSON from stdin
+  #[argh(switch, short = 's')]
+  pub stdin: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "update-ns-doc")]
+/// update documentation for a namespace
+pub struct EditUpdateNsDocCommand {
+  /// namespace to update
+  #[argh(positional)]
+  pub namespace: String,
+  /// documentation text
+  #[argh(positional)]
+  pub doc: String,
+}
+
+// --- Module operations ---
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "add-module")]
+/// create a new module (adds to configs.modules)
+pub struct EditAddModuleCommand {
+  /// module path to add (e.g. "calcit-test/")
+  #[argh(positional)]
+  pub module_path: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "delete-module")]
+/// delete a module from configs
+pub struct EditDeleteModuleCommand {
+  /// module path to delete
+  #[argh(positional)]
+  pub module_path: String,
+}
+
+// --- Config operations ---
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "set-config")]
+/// update project config values
+pub struct EditSetConfigCommand {
+  /// config key: "init-fn", "reload-fn", "version"
+  #[argh(positional)]
+  pub key: String,
+  /// config value
+  #[argh(positional)]
+  pub value: String,
 }

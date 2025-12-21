@@ -5,7 +5,7 @@
 
 pub mod calcit_runner_handlers;
 pub mod cirru_utils;
-pub mod config_handlers;
+// NOTE: config_handlers moved to CLI: `cr edit set-config`
 pub mod definition_handlers;
 pub mod definition_update;
 pub mod definition_utils;
@@ -31,9 +31,8 @@ pub struct AppState {
 
 // Re-export main structs and functions
 pub use calcit_runner_handlers::*;
-// NOTE: cirru_handlers and docs_handlers have been moved to CLI commands
+// NOTE: cirru_handlers, docs_handlers, config_handlers have been moved to CLI commands
 pub use cirru_utils::*;
-pub use config_handlers::*;
 pub use definition_handlers::*;
 pub use dependency_doc_handlers::*;
 pub use jsonrpc::*;
