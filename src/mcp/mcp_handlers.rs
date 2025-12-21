@@ -9,7 +9,7 @@ use super::tools::{
   GetCurrentModuleRequest, GetPackageNameRequest, GrabCalcitRunnerLogsRequest, ListApiDocsRequest, ListCalcitWorkMemoryRequest,
   ListDefinitionsRequest, ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest,
   OperateDefinitionAtRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest,
-  ReadCalcitWorkMemoryRequest, ReadConfigsRequest, ReadDefinitionAtRequest, ReadDefinitionDocRequest,
+  ReadCalcitErrorFileRequest, ReadCalcitWorkMemoryRequest, ReadConfigsRequest, ReadDefinitionAtRequest, ReadDefinitionDocRequest,
   ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest, ReadNamespaceRequest, StartCalcitRunnerRequest,
   StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateDefinitionDocRequest, UpdateNamespaceDocRequest, UpdateNamespaceImportsRequest,
   UpsertDefinitionRequest, WriteCalcitWorkMemoryRequest, get_standard_mcp_tools,
@@ -697,6 +697,14 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
         Err(error_response) => return error_response,
       };
       let result = super::calcit_runner_handlers::generate_incremental_file(app_state, request);
+      return handle_tool_result(req.id.clone(), result);
+    }
+    "read_calcit_error_file" => {
+      let request = match deserialize_params::<ReadCalcitErrorFileRequest>(tool_request.parameters, req.id.clone()) {
+        Ok(req) => req,
+        Err(error_response) => return error_response,
+      };
+      let result = super::calcit_runner_handlers::read_calcit_error_file(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
     // Memory Management Tools

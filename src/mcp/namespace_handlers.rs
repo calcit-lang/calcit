@@ -196,7 +196,15 @@ pub fn list_namespaces(app_state: &super::AppState, request: ListNamespacesReque
     namespaces
   }) {
     Ok(namespaces) => ResponseJson(serde_json::json!({
-      "namespaces": namespaces
+      "namespaces": namespaces,
+      "tips": {
+        "next_steps": [
+          "Use 'list_namespace_definitions' with namespace='<name>' to see all definitions in a namespace",
+          "Use 'read_namespace' with namespace='<name>' to see namespace details including imports",
+          "Use 'add_namespace' to create a new namespace"
+        ],
+        "info": "Namespaces are the primary organizational units in Calcit, similar to modules in other languages"
+      }
     })),
     Err(e) => ResponseJson(serde_json::json!({
       "error": e

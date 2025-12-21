@@ -20,7 +20,15 @@ pub fn list_namespace_definitions(app_state: &super::AppState, request: ListDefi
       Some(ResponseJson(serde_json::json!({
         "namespace": namespace,
         "definitions": definitions,
-        "source": "current_project"
+        "source": "current_project",
+        "tips": {
+          "next_steps": [
+            format!("Use 'read_definition_at' with namespace='{}' and definition='<name>' and coord=[] to read a specific definition's full content", namespace),
+            format!("Use 'upsert_definition' with namespace='{}' to create a new definition", namespace),
+            format!("Use 'read_namespace' with namespace='{}' to see import rules and namespace metadata", namespace)
+          ],
+          "edit_hint": "For modifying existing definitions, first use 'read_definition_at' to understand the structure, then use 'operate_definition_at' for precise edits"
+        }
       })))
     } else {
       None
@@ -47,7 +55,14 @@ pub fn list_namespace_definitions(app_state: &super::AppState, request: ListDefi
         "namespace": namespace,
         "definitions": definitions,
         "source": "dependency",
-        "package": package_name
+        "package": package_name,
+        "tips": {
+          "next_steps": [
+            format!("Use 'read_definition_doc' with namespace='{}' and definition='<name>' to read documentation for a definition", namespace),
+            "Dependency definitions are read-only and cannot be modified"
+          ],
+          "info": "This namespace is from a dependency package"
+        }
       }))
     }
     Ok(None) => {

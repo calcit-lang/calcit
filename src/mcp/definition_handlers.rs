@@ -377,7 +377,15 @@ pub fn operate_definition_at(app_state: &super::AppState, request: OperateDefini
 
   match result {
     Ok(()) => ResponseJson(serde_json::json!({
-      "message": format!("Definition '{}' updated at coordinate {:?} in namespace '{}' successfully", definition, coord, namespace)
+      "message": format!("Definition '{}' updated at coordinate {:?} in namespace '{}' successfully", definition, coord, namespace),
+      "tips": {
+        "next_steps": [
+          format!("Use 'read_definition_at' with namespace='{}', definition='{}', coord=[] to verify the updated definition", namespace, definition),
+          "Use 'generate_calcit_incremental' to apply changes to a running Calcit process",
+          "Use 'grab_calcit_runner_logs' to check if any errors occurred after incremental update"
+        ],
+        "check_error": "If the runner reports errors, use 'read_calcit_error_file' to see detailed stack traces"
+      }
     })),
     Err(e) => ResponseJson(serde_json::json!({
       "error": e
@@ -825,7 +833,22 @@ pub fn read_definition_at(app_state: &super::AppState, request: ReadDefinitionAt
     "value": target,
     "expr_length": expr_length,
     "source": source,
-    "message": format!("Definition '{}' read at coordinate {:?} in namespace '{}' successfully (from {})", definition, coord, namespace, source)
+    "message": format!("Definition '{}' read at coordinate {:?} in namespace '{}' successfully (from {})", definition, coord, namespace, source),
+    "tips": {
+      "next_steps": if source == "current_project" {
+        vec![
+          format!("Use 'operate_definition_at' with namespace='{}', definition='{}', coord={:?} to modify this location", namespace, definition, coord),
+          "Use 'operate_definition_at_with_leaf' for simpler leaf value replacements".to_string(),
+          "Navigate deeper by appending indices to the coord array (e.g., [2, 1] becomes [2, 1, 0])".to_string()
+        ]
+      } else {
+        vec![
+          "This definition is from a dependency and is read-only".to_string(),
+          "Use 'read_definition_doc' to see documentation".to_string()
+        ]
+      },
+      "coord_hint": "Each integer in coord navigates one level deeper into the expression tree (0-indexed)"
+    }
   }))
 }
 
@@ -907,7 +930,15 @@ pub fn operate_definition_at_with_leaf(
 
   match result {
     Ok(()) => ResponseJson(serde_json::json!({
-      "message": format!("Definition '{}' updated at coordinate {:?} in namespace '{}' successfully", definition, coord, namespace)
+      "message": format!("Definition '{}' updated at coordinate {:?} in namespace '{}' successfully", definition, coord, namespace),
+      "tips": {
+        "next_steps": [
+          format!("Use 'read_definition_at' with namespace='{}', definition='{}', coord=[] to verify the updated definition", namespace, definition),
+          "Use 'generate_calcit_incremental' to apply changes to a running Calcit process",
+          "Use 'grab_calcit_runner_logs' to check if any errors occurred after incremental update"
+        ],
+        "check_error": "If the runner reports errors, use 'read_calcit_error_file' to see detailed stack traces"
+      }
     })),
     Err(e) => ResponseJson(serde_json::json!({
       "error": e

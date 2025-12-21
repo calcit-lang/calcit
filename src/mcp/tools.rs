@@ -32,218 +32,246 @@ impl McpToolWithSchema {
 
 pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
   vec![
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔷 PRIMARY TOOLS - Core operations for daily Calcit development
+    // ═══════════════════════════════════════════════════════════════════════════════
     // Calcit Language Tools - Calcit is a functional programming language with Lisp-like syntax using Cirru notation
     // These tools help interact with Calcit projects, which organize code in namespaces containing function/macro definitions
 
-    // Reading Operations
+    // Reading Operations (Primary)
     McpToolWithSchema {
       name: "list_namespace_definitions",
-      description: "List all function and macro definitions in a Calcit namespace. Calcit organizes code in namespaces, where each namespace contains definitions (functions, macros, variables). This tool helps explore the structure of Calcit code by showing what's available in a specific namespace.\n\nExample: {\"namespace\": \"app.main\"}",
+      description: "[PRIMARY] List all function and macro definitions in a Calcit namespace. Calcit organizes code in namespaces, where each namespace contains definitions (functions, macros, variables). This tool helps explore the structure of Calcit code by showing what's available in a specific namespace.\n\nExample: {\"namespace\": \"app.main\"}",
       schema_generator: || serde_json::to_value(schema_for!(ListDefinitionsRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "list_namespaces",
-      description: "List all namespaces in the Calcit project. Calcit projects are organized into namespaces (similar to modules in other languages). Each namespace typically represents a logical grouping of related functions and can import from other namespaces. Optionally include dependency namespaces from external packages.\n\nExample: {\"include_dependency_namespaces\": false}",
+      description: "[PRIMARY] List all namespaces in the Calcit project. Calcit projects are organized into namespaces (similar to modules in other languages). Each namespace typically represents a logical grouping of related functions and can import from other namespaces. Optionally include dependency namespaces from external packages.\n\nExample: {\"include_dependency_namespaces\": false}",
       schema_generator: || serde_json::to_value(schema_for!(ListNamespacesRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "get_package_name",
-      description: "Get the package name of the current Calcit project. Calcit projects have a package name that identifies them, useful for understanding the project structure and dependencies.\n\nExample: {}",
+      description: "[SECONDARY] Get the package name of the current Calcit project. Calcit projects have a package name that identifies them, useful for understanding the project structure and dependencies.\n\nExample: {}",
       schema_generator: || serde_json::to_value(schema_for!(GetPackageNameRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "read_namespace",
-      description: "Read detailed information about a Calcit namespace, including its import rules and metadata. Calcit namespaces can import functions from other namespaces using import rules, and this tool shows the complete namespace configuration.\n\nExample: {\"namespace\": \"app.main\"}",
+      description: "[PRIMARY] Read detailed information about a Calcit namespace, including its import rules and metadata. Calcit namespaces can import functions from other namespaces using import rules, and this tool shows the complete namespace configuration.\n\nExample: {\"namespace\": \"app.main\"}",
       schema_generator: || serde_json::to_value(schema_for!(ReadNamespaceRequest)).unwrap(),
     },
-    // Namespace Management Operations
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔶 SECONDARY TOOLS - Namespace Management Operations (less frequently used)
+    // ═══════════════════════════════════════════════════════════════════════════════
     McpToolWithSchema {
       name: "add_namespace",
-      description: "Create a new namespace in the Calcit project. Namespaces in Calcit are like modules that group related functions together. Each namespace can have its own import rules to access functions from other namespaces.\n\nExample: {\"namespace\": \"app.new-module\"}",
+      description: "[SECONDARY] Create a new namespace in the Calcit project. Namespaces in Calcit are like modules that group related functions together. Each namespace can have its own import rules to access functions from other namespaces.\n\nExample: {\"namespace\": \"app.new-module\"}",
       schema_generator: || serde_json::to_value(schema_for!(AddNamespaceRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "delete_namespace",
-      description: "Remove a namespace from the Calcit project. This will delete all functions and macros defined in that namespace. Use with caution as this operation cannot be undone.\n\nExample: {\"namespace\": \"app.unused-module\"}",
+      description: "[SECONDARY] Remove a namespace from the Calcit project. This will delete all functions and macros defined in that namespace. Use with caution as this operation cannot be undone.\n\nExample: {\"namespace\": \"app.unused-module\"}",
       schema_generator: || serde_json::to_value(schema_for!(DeleteNamespaceRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "update_namespace_imports",
-      description: "Modify the import rules of a Calcit namespace. Import rules determine which functions from other namespaces are available in the current namespace. Calcit uses a flexible import system similar to Clojure.\n\nExample: {\"namespace\": \"app.main\", \"imports\": [[\"app.lib\", \":refer\", [\"add\", \"minus\"]], [\"app.config\", \":as\", \"config\"]]}",
+      description: "[SECONDARY] Modify the import rules of a Calcit namespace. Import rules determine which functions from other namespaces are available in the current namespace. Calcit uses a flexible import system similar to Clojure.\n\nExample: {\"namespace\": \"app.main\", \"imports\": [[\"app.lib\", \":refer\", [\"add\", \"minus\"]], [\"app.config\", \":as\", \"config\"]]}",
       schema_generator: || serde_json::to_value(schema_for!(UpdateNamespaceImportsRequest)).unwrap(),
     },
-    // Function/Macro Definition Operations
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔷 PRIMARY TOOLS - Function/Macro Definition Operations
+    // ═══════════════════════════════════════════════════════════════════════════════
     McpToolWithSchema {
       name: "upsert_definition",
-      description: "Create a new function or macro definition in a Calcit namespace, or completely overwrite an existing one. This unified tool combines the functionality of add_definition and overwrite_definition. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses, but stripped outermost pair of parentheses).\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'syntax_tree' parameter MUST be a native JSON array, NOT a string\n• Do NOT wrap the array in quotes\n• Do NOT escape quotes inside the array\n\n✅ CORRECT FORMAT:\n{\"syntax_tree\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}\n\n❌ WRONG FORMATS:\n{\"syntax_tree\": \"[fn [x] [* x x]]\"}← STRING (WRONG)\n{\"syntax_tree\": \"[\\\"fn\\\", [\\\"x\\\"], [\\\"*\\\", \\\"x\\\", \\\"x\\\"]]\"}← ESCAPED STRING (WRONG)\n\n💡 BEHAVIOR:\n• When replacing=false: Creates a new definition (fails if definition already exists)\n• When replacing=true: Overwrites existing definition (fails if definition doesn't exist)\n\n⚠️ RECOMMENDATION: For existing definitions, consider using 'read_definition_at' first to understand the current structure, then use 'operate_definition_at' for precise modifications instead of complete replacement.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"replacing\": false, \"syntax_tree\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
+      description: "[PRIMARY] Create a new function or macro definition in a Calcit namespace, or completely overwrite an existing one. This unified tool combines the functionality of add_definition and overwrite_definition. Calcit functions are defined using Cirru syntax (Lisp-like with parentheses, but stripped outermost pair of parentheses).\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'syntax_tree' parameter MUST be a native JSON array, NOT a string\n• Do NOT wrap the array in quotes\n• Do NOT escape quotes inside the array\n\n✅ CORRECT FORMAT:\n{\"syntax_tree\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}\n\n❌ WRONG FORMATS:\n{\"syntax_tree\": \"[fn [x] [* x x]]\"}← STRING (WRONG)\n{\"syntax_tree\": \"[\\\"fn\\\", [\\\"x\\\"], [\\\"*\\\", \\\"x\\\", \\\"x\\\"]]\"}← ESCAPED STRING (WRONG)\n\n💡 BEHAVIOR:\n• When replacing=false: Creates a new definition (fails if definition already exists)\n• When replacing=true: Overwrites existing definition (fails if definition doesn't exist)\n\n⚠️ RECOMMENDATION: For existing definitions, consider using 'read_definition_at' first to understand the current structure, then use 'operate_definition_at' for precise modifications instead of complete replacement.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"replacing\": false, \"syntax_tree\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
       schema_generator: || serde_json::to_value(schema_for!(UpsertDefinitionRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "delete_definition",
-      description: "Remove a function or macro definition from a Calcit namespace. This permanently deletes the definition and cannot be undone. Make sure no other code depends on this definition.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"unused-function\"}",
+      description: "[SECONDARY] Remove a function or macro definition from a Calcit namespace. This permanently deletes the definition and cannot be undone. Make sure no other code depends on this definition.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"unused-function\"}",
       schema_generator: || serde_json::to_value(schema_for!(DeleteDefinitionRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "update_definition_doc",
-      description: "Update the documentation for a specific definition in the current root namespace/package. This tool only works for definitions in the current project, not for dependencies.\n\nExample: {\"namespace\": \"app.core\", \"definition\": \"add-numbers\", \"doc\": \"Adds two numbers together\"}",
+      description: "[SECONDARY] Update the documentation for a specific definition in the current root namespace/package. This tool only works for definitions in the current project, not for dependencies.\n\nExample: {\"namespace\": \"app.core\", \"definition\": \"add-numbers\", \"doc\": \"Adds two numbers together\"}",
       schema_generator: || serde_json::to_value(schema_for!(UpdateDefinitionDocRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "update_namespace_doc",
-      description: "Update the documentation for a specific namespace in the current root namespace/package. This tool only works for namespaces in the current project, not for dependencies.\n\nExample: {\"namespace\": \"app.core\", \"doc\": \"Core utilities for the application\"}",
+      description: "[SECONDARY] Update the documentation for a specific namespace in the current root namespace/package. This tool only works for namespaces in the current project, not for dependencies.\n\nExample: {\"namespace\": \"app.core\", \"doc\": \"Core utilities for the application\"}",
       schema_generator: || serde_json::to_value(schema_for!(UpdateNamespaceDocRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "operate_definition_at",
-      description: "Update a specific part of a function or macro definition using coordinate-based targeting with various operation modes. Cirru code is a tree structure that can be navigated using coordinate arrays (Vec<Int>). This tool allows precise updates to specific nodes in the code tree with validation.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• Do NOT wrap the array in quotes\n• Index starts from 0 (zero-based indexing)\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\n💡 BEST PRACTICE: Always use 'read_definition_at' multiple times first to explore and understand the code structure, then generate correct 'shallow_check' and 'coord' parameters for safe updates. Empty coord [] operates on the root node.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"operation\": \"replace\", \"shallow_check\": null, \"value_type\": \"leaf\"}",
+      description: "[PRIMARY] Update a specific part of a function or macro definition using coordinate-based targeting with various operation modes. Cirru code is a tree structure that can be navigated using coordinate arrays (Vec<Int>). This tool allows precise updates to specific nodes in the code tree with validation.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• Do NOT wrap the array in quotes\n• Index starts from 0 (zero-based indexing)\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\n💡 BEST PRACTICE: Always use 'read_definition_at' multiple times first to explore and understand the code structure, then generate correct 'shallow_check' and 'coord' parameters for safe updates. Empty coord [] operates on the root node.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"operation\": \"replace\", \"shallow_check\": null, \"value_type\": \"leaf\"}",
       schema_generator: || serde_json::to_value(schema_for!(OperateDefinitionAtRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "operate_definition_at_with_leaf",
-      description: "Update a specific part of a function or macro definition with a leaf value (string). This is a simplified version of operate_definition_at specifically for replacing leaf nodes, eliminating the need for value_type parameter.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• The 'new_value' parameter MUST be a string (leaf value)\n• Do NOT wrap the coord array in quotes\n• Index starts from 0 (zero-based indexing)\n\n✅ CORRECT FORMAT:\n`{\"coord\": [2, 1]}` or `{\"coord\": []}`\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\n💡 BEST PRACTICE: Use this tool when you need to replace a leaf node (symbol, string, number) with another leaf value. For complex expressions, use the general 'operate_definition_at' tool.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"operation\": \"replace\", \"match\": \"*\"}",
+      description: "[PRIMARY] Update a specific part of a function or macro definition with a leaf value (string). This is a simplified version of operate_definition_at specifically for replacing leaf nodes, eliminating the need for value_type parameter.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• The 'new_value' parameter MUST be a string (leaf value)\n• Do NOT wrap the coord array in quotes\n• Index starts from 0 (zero-based indexing)\n\n✅ CORRECT FORMAT:\n`{\"coord\": [2, 1]}` or `{\"coord\": []}`\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\n💡 BEST PRACTICE: Use this tool when you need to replace a leaf node (symbol, string, number) with another leaf value. For complex expressions, use the general 'operate_definition_at' tool.\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1], \"new_value\": \"+\", \"operation\": \"replace\", \"match\": \"*\"}",
       schema_generator: || serde_json::to_value(schema_for!(OperateDefinitionAtWithLeafRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "read_definition_at",
-      description: "Read a specific part of a function or macro definition in Calcit. This allows for examining a particular location in the code tree without retrieving the entire definition.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• Do NOT wrap the array in quotes\n• Index starts from 0 (zero-based indexing)\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1]}",
+      description: "[PRIMARY] Read a specific part of a function or macro definition in Calcit. This allows for examining a particular location in the code tree without retrieving the entire definition.\n\n🚨 PARAMETER FORMAT REQUIREMENTS:\n• The 'coord' parameter MUST be a native JSON array of integers, NOT a string\n• Do NOT wrap the array in quotes\n• Index starts from 0 (zero-based indexing)\n\n✅ CORRECT FORMAT:\n{\"coord\": [2, 1]} or {\"coord\": []}\n\n❌ WRONG FORMATS:\n{\"coord\": \"[2, 1]\"} ← STRING (WRONG)\n{\"coord\": \"[]\"}← STRING (WRONG)\n\nExample: {\"namespace\": \"app.main\", \"definition\": \"square\", \"coord\": [2, 1]}",
       schema_generator: || serde_json::to_value(schema_for!(ReadDefinitionAtRequest)).unwrap(),
     },
-    // Module Management
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔶 SECONDARY TOOLS - Module Management (advanced, less frequently used)
+    // ═══════════════════════════════════════════════════════════════════════════════
     McpToolWithSchema {
       name: "list_modules",
-      description: "List all modules in the Calcit project. Calcit projects can have multiple modules, each representing a separate compilation unit.\n\nExample: {}",
+      description: "[SECONDARY] List all modules in the Calcit project. Calcit projects can have multiple modules, each representing a separate compilation unit.\n\nExample: {}",
       schema_generator: || serde_json::to_value(schema_for!(ListModulesRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "get_current_module",
-      description: "Get the currently active module in the Calcit project. This shows which module is being edited or compiled.\n\nExample: {}",
+      description: "[SECONDARY] Get the currently active module in the Calcit project. This shows which module is being edited or compiled.\n\nExample: {}",
       schema_generator: || serde_json::to_value(schema_for!(GetCurrentModuleRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "create_config_entry",
-      description: "Create a new module in the Calcit project. This adds a new compilation unit to the project.\n\nExample: {\"name\": \"new-module\"}",
+      description: "[SECONDARY] Create a new module in the Calcit project. This adds a new compilation unit to the project.\n\nExample: {\"name\": \"new-module\"}",
       schema_generator: || serde_json::to_value(schema_for!(CreateModuleRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "delete_config_entry",
-      description: "Delete a module from the Calcit project. This removes a compilation unit from the project. Use with caution as this operation cannot be undone.\n\nExample: {\"module\": \"unused-module\"}",
+      description: "[SECONDARY] Delete a module from the Calcit project. This removes a compilation unit from the project. Use with caution as this operation cannot be undone.\n\nExample: {\"module\": \"unused-module\"}",
       schema_generator: || serde_json::to_value(schema_for!(DeleteModuleRequest)).unwrap(),
     },
-    // Cirru Syntax Tools
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔶 SECONDARY TOOLS - Cirru Syntax Tools (utility functions)
+    // ═══════════════════════════════════════════════════════════════════════════════
     McpToolWithSchema {
       name: "calcit_parse_cirru_to_json",
-      description: "Parse Cirru syntax to JSON. Cirru is the syntax notation used by Calcit, and this tool converts it to a JSON structure for easier processing.\n\nExample: {\"cirru_code\": \"fn (x) (* x x)\"}",
+      description: "[SECONDARY] Parse Cirru syntax to JSON. Cirru is the syntax notation used by Calcit, and this tool converts it to a JSON structure for easier processing.\n\nExample: {\"cirru_code\": \"fn (x) (* x x)\"}",
       schema_generator: || serde_json::to_value(schema_for!(ParseCirruToJsonRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "calcit_format_json_to_cirru",
-      description: "Format JSON data to Cirru syntax. This is the reverse of parse_cirru_to_json and converts a JSON structure to Cirru notation.\n\nExample: {\"json_data\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
+      description: "[SECONDARY] Format JSON data to Cirru syntax. This is the reverse of parse_cirru_to_json and converts a JSON structure to Cirru notation.\n\nExample: {\"json_data\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
       schema_generator: || serde_json::to_value(schema_for!(FormatJsonToCirruRequest)).unwrap(),
     },
-    // Library and Utility Tools
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔶 SECONDARY TOOLS - Library and Utility Tools
+    // ═══════════════════════════════════════════════════════════════════════════════
     McpToolWithSchema {
       name: "fetch_calcit_libraries",
-      description: "Fetch available Calcit libraries from the official registry at https://libs.calcit-lang.org/base.cirru. This helps discover official and community libraries that can be used in Calcit projects.\n\nExample: {}",
+      description: "[SECONDARY] Fetch available Calcit libraries from the official registry at https://libs.calcit-lang.org/base.cirru. This helps discover official and community libraries that can be used in Calcit projects.\n\nExample: {}",
       schema_generator: || serde_json::to_value(schema_for!(FetchCalcitLibrariesRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "parse_cirru_edn_to_json",
-      description: "Parse Cirru EDN format to simplified JSON. Cirru EDN is the data format used by Calcit for configuration and data storage. This tool converts it to standard JSON for easier processing.\n\nExample: {\"cirru_edn\": \"{}\"}",
+      description: "[SECONDARY] Parse Cirru EDN format to simplified JSON. Cirru EDN is the data format used by Calcit for configuration and data storage. This tool converts it to standard JSON for easier processing.\n\nExample: {\"cirru_edn\": \"{}\"}",
       schema_generator: || serde_json::to_value(schema_for!(ParseCirruEdnToJsonRequest)).unwrap(),
     },
-    // Documentation Tools
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔶 SECONDARY TOOLS - Documentation Tools
+    // ═══════════════════════════════════════════════════════════════════════════════
     McpToolWithSchema {
       name: "query_calcit_apis",
-      description: "Query the API documentation for Calcit. This provides information about built-in functions, macros, and libraries in the Calcit language.\n\nExample: {\"query\": \"map\"}",
+      description: "[SECONDARY] Query the API documentation for Calcit. This provides information about built-in functions, macros, and libraries in the Calcit language.\n\nExample: {\"query\": \"map\"}",
       schema_generator: || serde_json::to_value(schema_for!(QueryCalcitApisRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "query_calcit_reference",
-      description: "Query the reference documentation for Calcit. The reference contains tutorials, examples, and best practices for using the Calcit language.\n\nExample: {\"query\": \"getting started\"}",
+      description: "[SECONDARY] Query the reference documentation for Calcit. The reference contains tutorials, examples, and best practices for using the Calcit language.\n\nExample: {\"query\": \"getting started\"}",
       schema_generator: || serde_json::to_value(schema_for!(QueryCalcitReferenceRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "list_api_docs",
-      description: "List all available API documentation topics for Calcit. This shows what documentation is available for reference.\n\nExample: {}",
+      description: "[SECONDARY] List all available API documentation topics for Calcit. This shows what documentation is available for reference.\n\nExample: {}",
       schema_generator: || serde_json::to_value(schema_for!(ListApiDocsRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "list_guidebook_docs",
-      description: "List all available guidebook topics for Calcit. This shows what tutorials and examples are available for learning.\n\nExample: {}",
+      description: "[SECONDARY] List all available guidebook topics for Calcit. This shows what tutorials and examples are available for learning.\n\nExample: {}",
       schema_generator: || serde_json::to_value(schema_for!(ListGuidebookDocsRequest)).unwrap(),
     },
-    // Configuration Management
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔶 SECONDARY TOOLS - Configuration Management
+    // ═══════════════════════════════════════════════════════════════════════════════
     McpToolWithSchema {
       name: "read_configs",
-      description: "Read the configuration settings for the Calcit project. This includes settings for initialization, reloading, and versioning.\n\nExample: {}",
+      description: "[SECONDARY] Read the configuration settings for the Calcit project. This includes settings for initialization, reloading, and versioning.\n\nExample: {}",
       schema_generator: || serde_json::to_value(schema_for!(ReadConfigsRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "update_configs",
-      description: "Update the configuration settings for the Calcit project. This allows changing settings for initialization, reloading, and versioning.\n\nExample: {\"init_fn\": \"app.main/main!\", \"reload_fn\": \"app.main/reload!\", \"version\": \"0.1.0\"}",
+      description: "[SECONDARY] Update the configuration settings for the Calcit project. This allows changing settings for initialization, reloading, and versioning.\n\nExample: {\"init_fn\": \"app.main/main!\", \"reload_fn\": \"app.main/reload!\", \"version\": \"0.1.0\"}",
       schema_generator: || serde_json::to_value(schema_for!(UpdateConfigsRequest)).unwrap(),
     },
-    // Calcit Runner Management Tools
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔷 PRIMARY TOOLS - Calcit Runner Management (essential for running/testing code)
+    // ═══════════════════════════════════════════════════════════════════════════════
     McpToolWithSchema {
       name: "start_calcit_runner",
-      description: "Start a Calcit runner in background mode using `cr <filepath>` command(or `cr <filepath> js` for compiling to js). This launches the Calcit interpreter in service mode, collecting logs in a queue for later retrieval. Returns startup success/failure status.\n\nExample: {\"filename\": \"main.cirru\"}",
+      description: "[PRIMARY] Start a Calcit runner in background mode using `cr <filepath>` command(or `cr <filepath> js` for compiling to js). This launches the Calcit interpreter in service mode, collecting logs in a queue for later retrieval. Returns startup success/failure status.\n\nExample: {\"filename\": \"main.cirru\"}",
       schema_generator: || serde_json::to_value(schema_for!(StartCalcitRunnerRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "grab_calcit_runner_logs",
-      description: "Grab logs from the running Calcit runner and clear the internal log queue. This retrieves accumulated logs and service status information, then empties the queue for fresh log collection.\n\nExample: {}",
+      description: "[PRIMARY] Grab logs from the running Calcit runner and clear the internal log queue. This retrieves accumulated logs and service status information, then empties the queue for fresh log collection.\n\nExample: {}",
       schema_generator: || serde_json::to_value(schema_for!(GrabCalcitRunnerLogsRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "stop_calcit_runner",
-      description: "Stop the running Calcit runner and retrieve all remaining logs. This terminates the background service and returns any remaining log content from the queue.\n\nExample: {}",
+      description: "[PRIMARY] Stop the running Calcit runner and retrieve all remaining logs. This terminates the background service and returns any remaining log content from the queue.\n\nExample: {}",
       schema_generator: || serde_json::to_value(schema_for!(StopCalcitRunnerRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "generate_calcit_incremental",
-      description: "Generate incremental file (.compact-inc.cirru) by comparing current source file with the .calcit-runner.cirru copy created when starting the runner. This creates a diff file that can be used by the Calcit runner to apply incremental updates. After generating the incremental file, check the runner logs to verify if the updates were applied successfully.\n\nExample: {\"source_file\": \"compact.cirru\"}",
+      description: "[PRIMARY] Generate incremental file (.compact-inc.cirru) by comparing current source file with the .calcit-runner.cirru copy created when starting the runner. This creates a diff file that can be used by the Calcit runner to apply incremental updates. After generating the incremental file, check the runner logs to verify if the updates were applied successfully.\n\nExample: {\"source_file\": \"compact.cirru\"}",
       schema_generator: || serde_json::to_value(schema_for!(GenerateCalcitIncrementalRequest)).unwrap(),
     },
-    // Dependency Documentation Tools
+    McpToolWithSchema {
+      name: "read_calcit_error_file",
+      description: "[PRIMARY] Read the .calcit-error.cirru file which contains detailed error stack traces from the last Calcit runtime error. This file is automatically generated when Calcit encounters an error and contains the call stack with source locations. Use this tool after running code to inspect error details.\n\nExample: {}",
+      schema_generator: || serde_json::to_value(schema_for!(ReadCalcitErrorFileRequest)).unwrap(),
+    },
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔶 SECONDARY TOOLS - Dependency Documentation Tools
+    // ═══════════════════════════════════════════════════════════════════════════════
     McpToolWithSchema {
       name: "list_dependency_docs",
-      description: "List documentation for dependencies in a Calcit module. This shows what documentation is available for the libraries used by the project.\n\nExample: {\"module_namespace\": \"app.main\"}",
+      description: "[SECONDARY] List documentation for dependencies in a Calcit module. This shows what documentation is available for the libraries used by the project.\n\nExample: {\"module_namespace\": \"app.main\"}",
       schema_generator: || serde_json::to_value(schema_for!(ListDependencyDocsRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "read_dependency_definition_doc",
-      description: "Read documentation for a specific definition in a dependency. This provides detailed information about a function or macro from a library used by the project.\n\nExample: {\"dependency_name\": \"core\", \"namespace\": \"core.list\", \"definition\": \"map\"}",
+      description: "[SECONDARY] Read documentation for a specific definition in a dependency. This provides detailed information about a function or macro from a library used by the project.\n\nExample: {\"dependency_name\": \"core\", \"namespace\": \"core.list\", \"definition\": \"map\"}",
       schema_generator: || serde_json::to_value(schema_for!(ReadDependencyDefinitionDocRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "read_dependency_module_doc",
-      description: "Read documentation for a specific module in a dependency. This provides information about a module from a library used by the project.\n\nExample: {\"module_namespace\": \"core.list\", \"doc_path\": \"overview\"}",
+      description: "[SECONDARY] Read documentation for a specific module in a dependency. This provides information about a module from a library used by the project.\n\nExample: {\"module_namespace\": \"core.list\", \"doc_path\": \"overview\"}",
       schema_generator: || serde_json::to_value(schema_for!(ReadDependencyModuleDocRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "read_definition_doc",
-      description: "Read documentation for a specific definition (function/macro) in any namespace. This tool works for both current project definitions and dependency definitions. It automatically detects whether the namespace belongs to the current project or a dependency module.\n\nExample: {\"namespace\": \"app.core\", \"definition\": \"add-numbers\"}",
+      description: "[SECONDARY] Read documentation for a specific definition (function/macro) in any namespace. This tool works for both current project definitions and dependency definitions. It automatically detects whether the namespace belongs to the current project or a dependency module.\n\nExample: {\"namespace\": \"app.core\", \"definition\": \"add-numbers\"}",
       schema_generator: || serde_json::to_value(schema_for!(ReadDefinitionDocRequest)).unwrap(),
     },
-    // Memory Management Tools
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔶 SECONDARY TOOLS - Memory Management Tools (optional, for learning)
+    // ═══════════════════════════════════════════════════════════════════════════════
     McpToolWithSchema {
       name: "list_calcit_work_memory",
-      description: "List all work memory entries with their keys and brief descriptions. This shows all the accumulated knowledge and tips stored by the model during Calcit development work.\n\nExample: {}",
+      description: "[SECONDARY] List all work memory entries with their keys and brief descriptions. This shows all the accumulated knowledge and tips stored by the model during Calcit development work.\n\nExample: {}",
       schema_generator: || serde_json::to_value(schema_for!(ListCalcitWorkMemoryRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "read_calcit_work_memory",
-      description: "Read work memory entry by key or search by keywords. This allows retrieving specific knowledge or searching through accumulated tips and solutions.\n\nExample: {\"key\": \"error-handling-tips\"} or {\"keywords\": \"syntax error\"}",
+      description: "[SECONDARY] Read work memory entry by key or search by keywords. This allows retrieving specific knowledge or searching through accumulated tips and solutions.\n\nExample: {\"key\": \"error-handling-tips\"} or {\"keywords\": \"syntax error\"}",
       schema_generator: || serde_json::to_value(schema_for!(ReadCalcitWorkMemoryRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "write_calcit_work_memory",
-      description: "Write or update a work memory entry. This allows storing new knowledge, tips, or solutions learned through trial and error to reduce future mistakes.\n\nExample: {\"key\": \"error-handling-tips\", \"content\": \"When encountering syntax errors, check parentheses balance first\"}",
+      description: "[SECONDARY] Write or update a work memory entry. This allows storing new knowledge, tips, or solutions learned through trial and error to reduce future mistakes.\n\nExample: {\"key\": \"error-handling-tips\", \"content\": \"When encountering syntax errors, check parentheses balance first\"}",
       schema_generator: || serde_json::to_value(schema_for!(WriteCalcitWorkMemoryRequest)).unwrap(),
     },
     McpToolWithSchema {
       name: "feedback_to_calcit_mcp_server",
-      description: "Provide feedback about MCP server usage and improvement suggestions. This creates a timestamped feedback file to help improve the server's functionality and reduce future issues.\n\nExample: {\"feedback\": \"The error messages could be more specific about which parenthesis is unmatched\"}",
+      description: "[SECONDARY] Provide feedback about MCP server usage and improvement suggestions. This creates a timestamped feedback file to help improve the server's functionality and reduce future issues.\n\nExample: {\"feedback\": \"The error messages could be more specific about which parenthesis is unmatched\"}",
       schema_generator: || serde_json::to_value(schema_for!(FeedbackToCalcitMcpServerRequest)).unwrap(),
     },
   ]
@@ -932,6 +960,16 @@ pub struct StopCalcitRunnerRequest {
 pub struct GenerateCalcitIncrementalRequest {
   /// Source file path (optional, defaults to "compact.cirru")
   pub source_file: Option<String>,
+}
+
+/// # Read Calcit Error File
+/// Read the .calcit-error.cirru file which contains detailed error stack traces from the last Calcit runtime error.
+/// This file is automatically generated when Calcit encounters an error and contains the call stack with source locations.
+///
+/// Example: `{}`
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ReadCalcitErrorFileRequest {
+  // No parameters needed
 }
 
 // Memory Management Tools
