@@ -109,8 +109,7 @@ fn json_to_cirru(json_str: &str) -> Result<Cirru, String> {
   match json_value_to_cirru(&json) {
     Ok(c) => Ok(c),
     Err(e) => Err(format!(
-      "{} If your input is Cirru source, try passing it as Cirru (omit --json-input or use --cirru).",
-      e
+      "{e} If your input is Cirru source, try passing it as Cirru (omit --json-input or use --cirru)."
     )),
   }
 }

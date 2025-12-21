@@ -1,6 +1,6 @@
 //! Query subcommand handlers
 //!
-//! Handles: cr query ls-ns, ls-defs, read-ns, read-def, read-at, peek-def, find-symbol, usages, pkg-name, configs, error, ls-modules
+//! Handles: cr query ls-ns, ls-defs, read-ns, read-def, read-at, peek-def, find-symbol, usages, search, pkg-name, configs, error, ls-modules
 
 use calcit::cli_args::{QueryCommand, QuerySubcommand};
 use calcit::snapshot;
@@ -24,6 +24,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
     QuerySubcommand::PeekDef(opts) => handle_peek_def(input_path, &opts.namespace, &opts.definition),
     QuerySubcommand::FindSymbol(opts) => handle_find_symbol(input_path, &opts.symbol, opts.deps),
     QuerySubcommand::Usages(opts) => handle_usages(input_path, &opts.namespace, &opts.definition, opts.deps),
+    QuerySubcommand::Search(opts) => handle_search(input_path, &opts.pattern, opts.deps, opts.limit),
   }
 }
 
@@ -55,10 +56,7 @@ fn handle_ls_ns(input_path: &str, include_deps: bool) -> Result<(), String> {
   }
 
   // LLM guidance
-  println!(
-    "\n{}",
-    "Tip: Use `query ls-defs <namespace>` to list definitions in a namespace.".dimmed()
-  );
+  println!("\n{}", "Tip: Use `query ls-defs <namespace>` to list definitions in a namespace.".dimmed());
 
   Ok(())
 }
@@ -86,10 +84,7 @@ fn handle_ls_defs(input_path: &str, namespace: &str) -> Result<(), String> {
   }
 
   // LLM guidance
-  println!(
-    "\n{}",
-    "Tip: Use `query peek-def <ns> <def>` to see signature, or `query read-def` for full code.".dimmed()
-  );
+  println!("\n{}", "Tip: Use `query peek-def <ns> <def>` to see signature, or `query read-def` for full code.".dimmed());
 
   Ok(())
 }
@@ -237,11 +232,7 @@ fn handle_read_def(input_path: &str, namespace: &str, definition: &str) -> Resul
   println!("{}", serde_json::to_string(&json).unwrap());
 
   // LLM guidance
-  println!(
-    "\n{}",
-    "Tip: Use `edit operate-at -p <path> -o <op>` to modify specific parts. Use `query read-at -p \"0\"` to explore tree structure."
-      .dimmed()
-  );
+  println!("\n{}", "Tip: Use `edit operate-at -p <path> -o <op>` to modify specific parts. Use `query read-at -p \"0\"` to explore tree structure.".dimmed());
 
   Ok(())
 }
@@ -274,13 +265,7 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
   let target = navigate_to_path(&code_entry.code, &indices)?;
 
   // Output info - compact header
-  println!(
-    "{} {}/{}  {}",
-    "At:".bold(),
-    namespace.cyan(),
-    definition.green(),
-    format!("[{path}]").dimmed()
-  );
+  println!("{} {}/{}  {}", "At:".bold(), namespace.cyan(), definition.green(), format!("[{path}]").dimmed());
 
   // Show target type and content
   match &target {
@@ -337,17 +322,11 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
 
   // LLM guidance based on context
   if path.is_empty() {
-    println!(
-      "\n{}",
-      "Tip: Navigate deeper with -p \"0\", -p \"1\", etc. to locate target before editing.".dimmed()
-    );
+    println!("\n{}", "Tip: Navigate deeper with -p \"0\", -p \"1\", etc. to locate target before editing.".dimmed());
   } else {
     println!(
       "\n{}",
-      format!(
-        "Tip: To modify this node, use `edit operate-at <ns> <def> -p \"{path}\" -o replace -j '<json>'`"
-      )
-      .dimmed()
+      format!("Tip: To modify this node, use `edit operate-at <ns> <def> -p \"{path}\" -o replace -j '<json>'`").dimmed()
     );
   }
 
@@ -478,7 +457,8 @@ fn handle_peek_def(input_path: &str, namespace: &str, definition: &str) -> Resul
         // Show first expression in Cirru format (compact inline)
         if items.len() > 3 {
           let first_body = &items[3];
-          let cirru_preview = cirru_parser::format(&[first_body.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
+          let cirru_preview =
+            cirru_parser::format(&[first_body.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
           // Get non-empty first line
           let first_line = cirru_preview.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
           if !first_line.is_empty() {
@@ -513,10 +493,7 @@ fn handle_peek_def(input_path: &str, namespace: &str, definition: &str) -> Resul
   // LLM guidance
   println!(
     "\n{}",
-    format!(
-      "Tip: Use `query read-def {namespace} {definition}` for full code, or `query usages` to find where it's used."
-    )
-    .dimmed()
+    format!("Tip: Use `query read-def {namespace} {definition}` for full code, or `query usages` to find where it's used.").dimmed()
   );
 
   Ok(())
@@ -543,11 +520,7 @@ fn handle_find_symbol(input_path: &str, symbol: &str, include_deps: bool) -> Res
     // Search for references in all definitions
     for (def_name, code_entry) in &file_data.defs {
       if find_symbol_in_cirru(&code_entry.code, symbol, def_name != symbol) {
-        found_references.push((
-          ns_name.clone(),
-          def_name.clone(),
-          get_symbol_context_cirru(&code_entry.code, symbol),
-        ));
+        found_references.push((ns_name.clone(), def_name.clone(), get_symbol_context_cirru(&code_entry.code, symbol)));
       }
     }
   }
@@ -648,19 +621,10 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     }
   }
 
-  println!(
-    "{} {}/{}  ({} usages)",
-    "Usages of:".bold(),
-    target_ns.cyan(),
-    target_def.green(),
-    usages.len()
-  );
+  println!("{} {}/{}  ({} usages)", "Usages of:".bold(), target_ns.cyan(), target_def.green(), usages.len());
 
   if usages.is_empty() {
-    println!(
-      "\n{}",
-      "No usages found. This definition may be unused or only called externally.".yellow()
-    );
+    println!("\n{}", "No usages found. This definition may be unused or only called externally.".yellow());
   } else {
     println!();
     for (ns, def, context) in &usages {
@@ -744,4 +708,110 @@ fn check_ns_imports(ns_code: &Cirru, target_ns: &str, _target_def: &str) -> bool
     Cirru::Leaf(s) => s.as_ref() == target_ns,
     Cirru::List(items) => items.iter().any(|item| check_ns_imports(item, target_ns, _target_def)),
   }
+}
+
+/// Fuzzy search for namespace/definition by pattern
+/// Searches for `<pattern>` in qualified names like `namespace/definition`
+fn handle_search(input_path: &str, pattern: &str, include_deps: bool, limit: usize) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path)?;
+
+  let pattern_lower = pattern.to_lowercase();
+  let mut results: Vec<(String, String, bool)> = Vec::new(); // (namespace, def, is_core)
+
+  // Search in all files
+  for (ns_name, file_data) in &snapshot.files {
+    // Mark core namespaces as "dep" for display
+    let is_core = ns_name.starts_with("calcit.") || ns_name.starts_with("calcit-test.");
+
+    // Skip core namespaces unless deps is requested
+    if !include_deps && is_core {
+      continue;
+    }
+
+    for def_name in file_data.defs.keys() {
+      let qualified = format!("{ns_name}/{def_name}");
+      let qualified_lower = qualified.to_lowercase();
+
+      // Fuzzy match: check if pattern appears in qualified name
+      if fuzzy_match(&qualified_lower, &pattern_lower) {
+        results.push((ns_name.clone(), def_name.clone(), is_core));
+      }
+    }
+  }
+
+  // Sort results by relevance (exact prefix match first, then alphabetically)
+  results.sort_by(|(ns_a, def_a, _), (ns_b, def_b, _)| {
+    let qualified_a = format!("{ns_a}/{def_a}").to_lowercase();
+    let qualified_b = format!("{ns_b}/{def_b}").to_lowercase();
+
+    // Prioritize exact prefix matches
+    let a_prefix = qualified_a.starts_with(&pattern_lower);
+    let b_prefix = qualified_b.starts_with(&pattern_lower);
+
+    match (a_prefix, b_prefix) {
+      (true, false) => std::cmp::Ordering::Less,
+      (false, true) => std::cmp::Ordering::Greater,
+      _ => qualified_a.cmp(&qualified_b),
+    }
+  });
+
+  // Limit results
+  let total = results.len();
+  let displayed: Vec<_> = results.into_iter().take(limit).collect();
+
+  println!("{} {} results for pattern \"{}\"", "Search:".bold(), total, pattern.yellow());
+
+  if displayed.is_empty() {
+    println!("  {}", "No matches found".dimmed());
+    println!(
+      "\n{}",
+      "Tip: Try a broader pattern, or add --deps to include core namespaces.".dimmed()
+    );
+    return Ok(());
+  }
+
+  for (ns, def, is_core) in &displayed {
+    let qualified = format!("{}/{}", ns.cyan(), def.green());
+    if *is_core {
+      println!("  {} {}", qualified, "(core)".dimmed());
+    } else {
+      println!("  {qualified}");
+    }
+  }
+
+  if total > limit {
+    println!("  {} {} more results...", "...".dimmed(), total - limit);
+  }
+
+  println!(
+    "\n{}",
+    "Tip: Use `cr query read-def <ns> <def>` to view definition content.".dimmed()
+  );
+
+  Ok(())
+}
+
+/// Simple fuzzy matching: check if all characters of pattern appear in order in text
+fn fuzzy_match(text: &str, pattern: &str) -> bool {
+  // Support multiple match styles:
+  // 1. Substring match: "map" matches "hash-map"
+  // 2. Character sequence match: "hm" matches "hash-map"
+
+  // First try substring match (fast path)
+  if text.contains(pattern) {
+    return true;
+  }
+
+  // Then try character sequence match
+  let mut text_chars = text.chars().peekable();
+  for pattern_char in pattern.chars() {
+    loop {
+      match text_chars.next() {
+        Some(c) if c == pattern_char => break,
+        Some(_) => continue,
+        None => return false,
+      }
+    }
+  }
+  true
 }

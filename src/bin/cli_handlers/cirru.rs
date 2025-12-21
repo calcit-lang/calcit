@@ -81,7 +81,7 @@ fn handle_parse_edn(edn_str: &str) -> Result<(), String> {
 }
 
 fn handle_show_guide() -> Result<(), String> {
-  println!("{}", CIRRU_SYNTAX_GUIDE);
+  println!("{CIRRU_SYNTAX_GUIDE}");
   Ok(())
 }
 

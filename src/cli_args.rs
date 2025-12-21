@@ -175,6 +175,8 @@ pub enum QuerySubcommand {
   FindSymbol(QueryFindSymbolCommand),
   /// find usages of a definition
   Usages(QueryUsagesCommand),
+  /// fuzzy search definitions by namespace/name pattern
+  Search(QuerySearchCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -291,6 +293,21 @@ pub struct QueryUsagesCommand {
   /// include dependency namespaces in search
   #[argh(switch)]
   pub deps: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "search")]
+/// fuzzy search definitions by namespace/name pattern (e.g. "app/add", "core", "my-fn")
+pub struct QuerySearchCommand {
+  /// search pattern (matches against "namespace/definition" path)
+  #[argh(positional)]
+  pub pattern: String,
+  /// include dependency namespaces in search
+  #[argh(switch)]
+  pub deps: bool,
+  /// maximum number of results (default 20)
+  #[argh(option, short = 'n', default = "20")]
+  pub limit: usize,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
