@@ -1,57 +1,9 @@
 use super::AppState;
-use super::tools::{ReadConfigsRequest, UpdateConfigsRequest};
+use super::tools::UpdateConfigsRequest;
 use axum::response::Json as ResponseJson;
 use serde_json::{Value, json};
-use std::fs;
 
-/// Read current project configuration
-pub fn read_configs(app_state: &AppState, _request: ReadConfigsRequest) -> ResponseJson<Value> {
-  println!("[CONFIG] Reading project configuration from: {}", app_state.compact_cirru_path);
-
-  // Read and parse the compact.cirru file
-  match fs::read_to_string(&app_state.compact_cirru_path) {
-    Ok(content) => match cirru_edn::parse(&content) {
-      Ok(data) => match crate::snapshot::load_snapshot_data(&data, &app_state.compact_cirru_path) {
-        Ok(snapshot) => {
-          let configs = json!({
-            "init_fn": snapshot.configs.init_fn,
-            "reload_fn": snapshot.configs.reload_fn,
-            "version": snapshot.configs.version,
-            "modules": snapshot.configs.modules,
-            "package": snapshot.package
-          });
-
-          println!("[CONFIG] Successfully read configuration: {configs:?}");
-          ResponseJson(json!({
-            "success": true,
-            "data": configs
-          }))
-        }
-        Err(e) => {
-          println!("[CONFIG ERROR] Failed to load snapshot: {e}");
-          ResponseJson(json!({
-            "success": false,
-            "error": format!("Failed to load snapshot: {}", e)
-          }))
-        }
-      },
-      Err(e) => {
-        println!("[CONFIG ERROR] Failed to parse EDN: {e:?}");
-        ResponseJson(json!({
-          "success": false,
-          "error": format!("Failed to parse EDN: {:?}", e)
-        }))
-      }
-    },
-    Err(e) => {
-      println!("[CONFIG ERROR] Failed to read file: {e}");
-      ResponseJson(json!({
-        "success": false,
-        "error": format!("Failed to read file: {}", e)
-      }))
-    }
-  }
-}
+// NOTE: read_configs function has been moved to CLI: `cr query configs`
 
 /// Update multiple configuration fields at once
 pub fn update_configs(app_state: &AppState, request: UpdateConfigsRequest) -> ResponseJson<Value> {

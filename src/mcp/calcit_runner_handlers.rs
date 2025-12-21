@@ -6,10 +6,7 @@
 //! - Collecting and managing logs in a queue
 //! - Stopping processes and retrieving remaining logs
 
-use super::tools::{
-  GenerateCalcitIncrementalRequest, GrabCalcitRunnerLogsRequest, ReadCalcitErrorFileRequest, StartCalcitRunnerRequest,
-  StopCalcitRunnerRequest,
-};
+use super::tools::{GenerateCalcitIncrementalRequest, GrabCalcitRunnerLogsRequest, StartCalcitRunnerRequest, StopCalcitRunnerRequest};
 use crate::snapshot::{ChangesDict, FileChangeInfo, FileInSnapShot};
 use axum::response::Json as ResponseJson;
 use cirru_edn;
@@ -265,7 +262,7 @@ pub fn start_calcit_runner(_app_state: &super::AppState, request: StartCalcitRun
               "Use 'grab_calcit_runner_logs' to check runner output and status",
               "Use 'stop_calcit_runner' when done to terminate the process"
             ],
-            "check_error": "If errors occur, use 'read_calcit_error_file' to see detailed stack traces"
+            "check_error": "If errors occur, run `cr query error` to see detailed stack traces"
           }
       }))
     }
@@ -329,7 +326,7 @@ pub fn grab_calcit_runner_logs(_app_state: &super::AppState, _request: GrabCalci
       "tips": {
         "next_steps": if has_errors {
           vec![
-            "Use 'read_calcit_error_file' to see detailed error stack traces",
+            "Run `cr query error` to see detailed error stack traces",
             "Check the error messages for syntax or runtime issues",
             "Use 'read_definition_at' to inspect problematic definitions"
           ]
@@ -613,64 +610,5 @@ fn find_file_changes(old_file: &FileInSnapShot, new_file: &FileInSnapShot) -> Re
   })
 }
 
-/// Read the .calcit-error.cirru file which contains detailed error stack traces
-pub fn read_calcit_error_file(_app_state: &super::AppState, _request: ReadCalcitErrorFileRequest) -> ResponseJson<Value> {
-  const ERROR_FILE: &str = ".calcit-error.cirru";
-
-  let error_path = std::path::Path::new(ERROR_FILE);
-
-  if !error_path.exists() {
-    return ResponseJson(serde_json::json!({
-      "error": format!("Error file '{}' not found", ERROR_FILE),
-      "message": "No error file exists. This file is only created when Calcit encounters a runtime error.",
-      "tips": {
-        "info": "The .calcit-error.cirru file is automatically generated when Calcit throws an error",
-        "next_steps": [
-          "Run your Calcit code first to trigger any errors",
-          "Use 'start_calcit_runner' to run the code",
-          "Use 'grab_calcit_runner_logs' to see runtime output"
-        ]
-      }
-    }));
-  }
-
-  match fs::read_to_string(error_path) {
-    Ok(content) => {
-      // Try to parse as Cirru to provide structured output
-      match cirru_parser::parse(&content) {
-        Ok(parsed) => ResponseJson(serde_json::json!({
-          "success": true,
-          "file": ERROR_FILE,
-          "raw_content": content,
-          "parsed_content": parsed,
-          "tips": {
-            "next_steps": [
-              "Review the stack trace to identify the error location",
-              "Use 'read_definition_at' to inspect the problematic function",
-              "Use 'operate_definition_at' to fix the code",
-              "Use 'generate_calcit_incremental' to apply fixes to running process"
-            ],
-            "info": "The error file contains the call stack and error message from the last Calcit error"
-          }
-        })),
-        Err(_) => {
-          // If parsing fails, just return raw content
-          ResponseJson(serde_json::json!({
-            "success": true,
-            "file": ERROR_FILE,
-            "raw_content": content,
-            "tips": {
-              "next_steps": [
-                "Review the error content to understand what went wrong",
-                "Use 'read_definition_at' to inspect the problematic code"
-              ]
-            }
-          }))
-        }
-      }
-    }
-    Err(e) => ResponseJson(serde_json::json!({
-      "error": format!("Failed to read error file '{}': {}", ERROR_FILE, e)
-    })),
-  }
-}
+// NOTE: read_calcit_error_file has been moved to CLI command: `cr query error`
+// The function below is kept for internal use by runner handlers

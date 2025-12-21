@@ -5,24 +5,64 @@ prompt = """
 现在开始连接到 Calcit MCP 服务进行 Calcit 程序的编程, 注意使用 Calcit 提供的结构化/原子化的操作进行代码的更新.
 当前目录可能有 `compact.cirru` `calcit.cirru` 这两个文件, 但是正常情况应该不需要主动读取. 两个文件都不允许直接修改.
 
-由于 Calcit 脚本语言的知识不在模型内部, 要求先从 MCP 提供的文档当中了解语言功能(`query_calcit_reference`), 以及访问依赖模块的文档(`read_namespace`)了解框架或者类库, 了解相关的案例再来进行任务.
+由于 Calcit 脚本语言的知识不在模型内部, 要求先从 CLI 提供的文档查询功能了解语言功能, 以及访问依赖模块的文档了解框架或者类库, 了解相关的案例再来进行任务.
 
-Calcit 程序目前有两个常用命令:
+## Calcit CLI 命令
 
-- `cr` 命令用于代码解释执行和 js 代码生成. 默认情况会读取 config 执行 init-fn 定义的入口. 一般习惯上用 `main!` 函数名表示入口.
-- `caps` 命令用于安装依赖, 以及更新依赖.
+Calcit 程序使用 `cr` 命令:
+
+### 主要运行命令
+
+- `cr` 或 `cr compact.cirru` - 代码解释执行, 默认读取 config 执行 init-fn 定义的入口
+- `cr compact.cirru js` - 编译生成 JavaScript 代码
+- `cr -1 <filepath>` - 执行一次然后退出(不进入监听模式)
+- `cr eval '<code>'` - 执行一段 Calcit 代码片段, 用于快速验证写法
+
+### 查询子命令 (`cr query`)
+
+这些命令用于查询项目信息, 无需 MCP 服务:
+
+- `cr query ls-ns [--deps]` - 列出项目中所有命名空间 (--deps 包含依赖)
+- `cr query ls-defs <namespace>` - 列出命名空间中的定义
+- `cr query read-ns <namespace>` - 读取命名空间详情(imports, 定义预览)
+- `cr query pkg-name` - 获取项目包名
+- `cr query configs` - 读取项目配置 (init_fn, reload_fn, version)
+- `cr query error` - 读取 .calcit-error.cirru 错误堆栈文件
+- `cr query ls-modules` - 列出项目模块
+
+### 文档子命令 (`cr docs`)
+
+查询 Calcit 语言文档:
+
+- `cr docs api <keyword>` - 搜索 API 文档 (也可用 -t tag 按标签搜索)
+- `cr docs ref <keyword>` - 搜索教程/指南文档
+- `cr docs list-api` - 列出所有 API 文档主题
+- `cr docs list-guide` - 列出所有教程文档主题
+
+### Cirru 语法工具 (`cr cirru`)
+
+用于 Cirru 语法和 JSON 之间的转换:
+
+- `cr cirru parse '<cirru_code>'` - 解析 Cirru 代码为 JSON
+- `cr cirru format '<json>'` - 格式化 JSON 为 Cirru 代码
+- `cr cirru parse-edn '<edn>'` - 解析 Cirru EDN 为 JSON
+
+### 库管理 (`cr libs`)
+
+查询和了解 Calcit 官方库:
+
+- `cr libs` - 列出所有官方库
+- `cr libs search <keyword>` - 按关键词搜索库 (搜索名称、描述、分类)
+- `cr libs readme <package>` - 查看指定库的 README 文档 (从 GitHub 获取)
+- `caps` - 安装/更新依赖
 
 可以使用 `--help` 参数了解更详细的用法. 目前没有 `calcit` 命令, 都是用的 `cr` 命令.
 
-关于 Calcit 语言本身的功能, 可以从 MCP 服务中通过
-- `query_calcit_reference` 工具读取语言文档, 了解常见功能和用法
-- `query_calcit_apis` 查询语言内置的 API 以及示例
-
-遇到代码不确定的时候, 可以使用 `cr eval 'println "|demo snippet"' 这样方式先执行一段缩进的代码先验证写法.
+## Calcit 语言基础
 
 比较容易犯的错误可能是,
 - Calcit 中字符串是通过前缀区分的, `|` 跟 `"` 这两个字符开头表示字符串, 但注意, Calcit 字符串有隐形的双引号包裹, 所以实际对应 `"|"` 和 `"\""`. `|x` 对应 JavaScript 字符串 `"x"`. 另外产生 JSON 时候, 字符串注意不要重复包裹.
-- Calcit 采用一种叫做 Cirru 的缩进语法结构,  Cirru 语法可以简单理解成去掉了跨行括号改用缩进的 Lisp 变种. Cirru 语法可以跟 Array 和 String 递归形成的语法树互相转化, 可以用 `calcit_format_json_to_cirru` 和 `calcit_parse_cirru_to_json` 相互转化结构进行试验.
+- Calcit 采用一种叫做 Cirru 的缩进语法结构,  Cirru 语法可以简单理解成去掉了跨行括号改用缩进的 Lisp 变种. Cirru 语法可以跟 Array 和 String 递归形成的语法树互相转化, 可以用 `cr cirru parse` 和 `cr cirru format` 相互转化结构进行试验.
 - Calcit 跟 Clojure 在语义上比较像, 但是 Calcit 语法层面只用圆括号, 不用方括号花括号. 另外也有不少差异可以参阅文档.
 
 目前 Calcit 模块约定每个模块可能存在 `docs/` 目录存放 Markdown 格式的文档, 方便 MCP 查询, 使用 `read_dependency_module_doc` 工具. 模块本身在函数定义上也有文档, 用 `read_dependency_definition_doc` 查阅.
@@ -163,11 +203,17 @@ Calcit 这个结构很大程度上是为了结构化编辑语法树设计的, �
 
 Calcit 脚本语言是走小众路线的快速开发工具, 且作为 Lisp 方言过于灵活和自定义, 所以文档支持不是很完善. 出现疑问和不确定的时候使用:
 
-- `query_calcit_reference` 查询 Calcit 分章节教程当中的内容,
-- `query_calcit_apis` 查询 API 文档当中语言核心功能的使用示例,
-- `read_namespace` 查看命名空间当中的说明以及函数定义函数文档,
-- `read_definition_doc` 指定的命名空间下某一个定义的文档,
-- `read_definition_at` 查看语法树.
+- `cr docs ref <keyword>` 查询 Calcit 分章节教程当中的内容,
+- `cr docs api <keyword>` 查询 API 文档当中语言核心功能的使用示例,
+- `read_namespace` MCP 工具查看命名空间当中的说明以及函数定义函数文档,
+- `read_definition_doc` MCP 工具指定的命名空间下某一个定义的文档,
+- `read_definition_at` MCP 工具查看语法树.
+
+或者直接用 CLI 查询项目信息:
+- `cr query ls-ns` 列出所有命名空间
+- `cr query ls-defs <ns>` 列出命名空间的定义
+- `cr query read-ns <ns>` 读取命名空间详情
+- `cr query error` 查看最近的错误堆栈
 
 如果有文档缺失或者查找的链路不通, 请明确在日志当中说明, 会有专门的 Agent 收集问题寻找解决方案, 或者由工程师手动补充文档.
 

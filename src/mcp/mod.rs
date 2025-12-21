@@ -4,17 +4,14 @@
 //! through the MCP protocol.
 
 pub mod calcit_runner_handlers;
-pub mod cirru_handlers;
 pub mod cirru_utils;
 pub mod config_handlers;
 pub mod definition_handlers;
 pub mod definition_update;
 pub mod definition_utils;
 pub mod dependency_doc_handlers;
-pub mod docs_handlers;
 pub mod error_handling;
 pub mod jsonrpc;
-pub mod library_handlers;
 pub mod mcp_handlers;
 pub mod memory_handlers;
 pub mod module_handlers;
@@ -34,12 +31,11 @@ pub struct AppState {
 
 // Re-export main structs and functions
 pub use calcit_runner_handlers::*;
-pub use cirru_handlers::*;
+// NOTE: cirru_handlers and docs_handlers have been moved to CLI commands
 pub use cirru_utils::*;
 pub use config_handlers::*;
 pub use definition_handlers::*;
 pub use dependency_doc_handlers::*;
-pub use docs_handlers::*;
 pub use jsonrpc::*;
 pub use mcp_handlers::*;
 pub use module_handlers::*;

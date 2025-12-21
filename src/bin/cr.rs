@@ -9,6 +9,8 @@ use std::time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 mod injection;
 
+mod cli_handlers;
+
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::{CalcitCommand, CallTreeCommand, ToplevelCalcit};
@@ -29,6 +31,23 @@ fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
 
   let cli_args: ToplevelCalcit = argh::from_env();
+
+  // Handle standalone commands that don't need full program loading
+  match &cli_args.subcommand {
+    Some(CalcitCommand::Query(query_cmd)) => {
+      return cli_handlers::handle_query_command(query_cmd, &cli_args.input);
+    }
+    Some(CalcitCommand::Docs(docs_cmd)) => {
+      return cli_handlers::handle_docs_command(docs_cmd);
+    }
+    Some(CalcitCommand::Cirru(cirru_cmd)) => {
+      return cli_handlers::handle_cirru_command(cirru_cmd);
+    }
+    Some(CalcitCommand::Libs(libs_cmd)) => {
+      return cli_handlers::handle_libs_command(libs_cmd);
+    }
+    _ => {}
+  }
 
   let mut eval_once = cli_args.once;
   let assets_watch = cli_args.watch_dir.to_owned();

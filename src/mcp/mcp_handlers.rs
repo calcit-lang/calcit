@@ -5,14 +5,12 @@ use super::error_handling::{create_protocol_error, create_tool_execution_error, 
 use super::jsonrpc::*;
 use super::tools::{
   AddNamespaceRequest, CreateModuleRequest, DeleteDefinitionRequest, DeleteModuleRequest, DeleteNamespaceRequest,
-  FeedbackToCalcitMcpServerRequest, FetchCalcitLibrariesRequest, FormatJsonToCirruRequest, GenerateCalcitIncrementalRequest,
-  GetCurrentModuleRequest, GetPackageNameRequest, GrabCalcitRunnerLogsRequest, ListApiDocsRequest, ListCalcitWorkMemoryRequest,
-  ListDefinitionsRequest, ListDependencyDocsRequest, ListGuidebookDocsRequest, ListModulesRequest, ListNamespacesRequest, McpRequest,
-  OperateDefinitionAtRequest, ParseCirruEdnToJsonRequest, ParseCirruToJsonRequest, QueryCalcitApisRequest, QueryCalcitReferenceRequest,
-  ReadCalcitErrorFileRequest, ReadCalcitWorkMemoryRequest, ReadConfigsRequest, ReadDefinitionAtRequest, ReadDefinitionDocRequest,
-  ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest, ReadNamespaceRequest, StartCalcitRunnerRequest,
-  StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateDefinitionDocRequest, UpdateNamespaceDocRequest, UpdateNamespaceImportsRequest,
-  UpsertDefinitionRequest, WriteCalcitWorkMemoryRequest, get_standard_mcp_tools,
+  FeedbackToCalcitMcpServerRequest, GenerateCalcitIncrementalRequest, GetCurrentModuleRequest, GetPackageNameRequest,
+  GrabCalcitRunnerLogsRequest, ListCalcitWorkMemoryRequest, ListDefinitionsRequest, ListDependencyDocsRequest, ListModulesRequest,
+  ListNamespacesRequest, McpRequest, OperateDefinitionAtRequest, ReadCalcitWorkMemoryRequest, ReadDefinitionAtRequest,
+  ReadDefinitionDocRequest, ReadDependencyDefinitionDocRequest, ReadDependencyModuleDocRequest, ReadNamespaceRequest,
+  StartCalcitRunnerRequest, StopCalcitRunnerRequest, UpdateConfigsRequest, UpdateDefinitionDocRequest, UpdateNamespaceDocRequest,
+  UpdateNamespaceImportsRequest, UpsertDefinitionRequest, WriteCalcitWorkMemoryRequest, get_standard_mcp_tools,
 };
 use axum::response::Json as ResponseJson;
 use colored::*;
@@ -550,68 +548,11 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       return handle_tool_result(req.id.clone(), result);
     }
 
-    // Cirru conversion tools
-    "calcit_parse_cirru_to_json" => {
-      let request = match deserialize_params::<ParseCirruToJsonRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::cirru_handlers::parse_cirru_to_json(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "calcit_format_json_to_cirru" => {
-      let request = match deserialize_params::<FormatJsonToCirruRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::cirru_handlers::format_json_to_cirru(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-
-    // Documentation query tools
-    "query_calcit_apis" => {
-      let request = match deserialize_params::<QueryCalcitApisRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::docs_handlers::handle_query_calcit_apis(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "query_calcit_reference" => {
-      let request = match deserialize_params::<QueryCalcitReferenceRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::docs_handlers::handle_query_calcit_reference(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    // Documentation tools
-    "list_api_docs" => {
-      let request = match deserialize_params::<ListApiDocsRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::docs_handlers::handle_list_api_docs(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "list_guidebook_docs" => {
-      let request = match deserialize_params::<ListGuidebookDocsRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::docs_handlers::handle_list_guidebook_docs(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
+    // NOTE: Cirru conversion tools moved to CLI: `cr cirru parse`, `cr cirru format`
+    // NOTE: Documentation query tools moved to CLI: `cr docs api`, `cr docs ref`, `cr docs list-api`, `cr docs list-guide`
+    // NOTE: read_configs moved to CLI: `cr query configs`
 
     // Configuration management tools
-    "read_configs" => {
-      let request = match deserialize_params::<ReadConfigsRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::config_handlers::read_configs(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
     "update_configs" => {
       let request = match deserialize_params::<UpdateConfigsRequest>(tool_request.parameters, req.id.clone()) {
         Ok(req) => req,
@@ -621,23 +562,7 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       return handle_tool_result(req.id.clone(), result);
     }
 
-    // Library tools
-    "fetch_calcit_libraries" => {
-      let request = match deserialize_params::<FetchCalcitLibrariesRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::library_handlers::handle_fetch_calcit_libraries(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
-    "parse_cirru_edn_to_json" => {
-      let request = match deserialize_params::<ParseCirruEdnToJsonRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::library_handlers::handle_parse_cirru_edn_to_json(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
+    // NOTE: fetch_calcit_libraries, parse_cirru_edn_to_json moved to CLI: `cr libs`, `cr cirru parse-edn`
 
     // Dependency documentation tools (read-only)
     "list_dependency_docs" => {
@@ -699,14 +624,7 @@ async fn handle_tools_call_axum(app_state: &AppState, req: &JsonRpcRequest) -> V
       let result = super::calcit_runner_handlers::generate_incremental_file(app_state, request);
       return handle_tool_result(req.id.clone(), result);
     }
-    "read_calcit_error_file" => {
-      let request = match deserialize_params::<ReadCalcitErrorFileRequest>(tool_request.parameters, req.id.clone()) {
-        Ok(req) => req,
-        Err(error_response) => return error_response,
-      };
-      let result = super::calcit_runner_handlers::read_calcit_error_file(app_state, request);
-      return handle_tool_result(req.id.clone(), result);
-    }
+    // NOTE: read_calcit_error_file moved to CLI: `cr query error`
     // Memory Management Tools
     "list_calcit_work_memory" => {
       let request = match deserialize_params::<ListCalcitWorkMemoryRequest>(tool_request.parameters, req.id.clone()) {

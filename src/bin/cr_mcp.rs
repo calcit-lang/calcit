@@ -13,7 +13,6 @@ use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 
 // Import MCP module
-use calcit::mcp::docs_handlers::{load_api_docs, load_guidebook_docs};
 use calcit::mcp::{AppState, JsonRpcRequest};
 
 /// MCP server for Calcit
@@ -138,20 +137,9 @@ async fn main() -> std::io::Result<()> {
   println!("Starting MCP server on port {}", args.port);
   println!("Loading file: {}", args.file);
 
-  // Preload API documentation and tutorial data
-  println!("Preloading API documentation...");
-  if let Err(e) = load_api_docs() {
-    eprintln!("Warning: Failed to load API docs: {e}");
-  } else {
-    println!("API documentation loaded successfully");
-  }
-
-  println!("Preloading guidebook...");
-  if let Err(e) = load_guidebook_docs() {
-    eprintln!("Warning: Failed to load guidebook: {e}");
-  } else {
-    println!("Guidebook loaded successfully");
-  }
+  // NOTE: Documentation queries have been moved to CLI commands:
+  // - `cr docs api <keyword>` - query API documentation
+  // - `cr docs ref <keyword>` - query guidebook documentation
 
   let app = Router::new()
     .route("/mcp", post(mcp_jsonrpc)) // Standard MCP endpoint

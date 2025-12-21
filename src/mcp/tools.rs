@@ -139,62 +139,9 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
       schema_generator: || serde_json::to_value(schema_for!(DeleteModuleRequest)).unwrap(),
     },
     // ═══════════════════════════════════════════════════════════════════════════════
-    // 🔶 SECONDARY TOOLS - Cirru Syntax Tools (utility functions)
-    // ═══════════════════════════════════════════════════════════════════════════════
-    McpToolWithSchema {
-      name: "calcit_parse_cirru_to_json",
-      description: "[SECONDARY] Parse Cirru syntax to JSON. Cirru is the syntax notation used by Calcit, and this tool converts it to a JSON structure for easier processing.\n\nExample: {\"cirru_code\": \"fn (x) (* x x)\"}",
-      schema_generator: || serde_json::to_value(schema_for!(ParseCirruToJsonRequest)).unwrap(),
-    },
-    McpToolWithSchema {
-      name: "calcit_format_json_to_cirru",
-      description: "[SECONDARY] Format JSON data to Cirru syntax. This is the reverse of parse_cirru_to_json and converts a JSON structure to Cirru notation.\n\nExample: {\"json_data\": [\"fn\", [\"x\"], [\"*\", \"x\", \"x\"]]}",
-      schema_generator: || serde_json::to_value(schema_for!(FormatJsonToCirruRequest)).unwrap(),
-    },
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 🔶 SECONDARY TOOLS - Library and Utility Tools
-    // ═══════════════════════════════════════════════════════════════════════════════
-    McpToolWithSchema {
-      name: "fetch_calcit_libraries",
-      description: "[SECONDARY] Fetch available Calcit libraries from the official registry at https://libs.calcit-lang.org/base.cirru. This helps discover official and community libraries that can be used in Calcit projects.\n\nExample: {}",
-      schema_generator: || serde_json::to_value(schema_for!(FetchCalcitLibrariesRequest)).unwrap(),
-    },
-    McpToolWithSchema {
-      name: "parse_cirru_edn_to_json",
-      description: "[SECONDARY] Parse Cirru EDN format to simplified JSON. Cirru EDN is the data format used by Calcit for configuration and data storage. This tool converts it to standard JSON for easier processing.\n\nExample: {\"cirru_edn\": \"{}\"}",
-      schema_generator: || serde_json::to_value(schema_for!(ParseCirruEdnToJsonRequest)).unwrap(),
-    },
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // 🔶 SECONDARY TOOLS - Documentation Tools
-    // ═══════════════════════════════════════════════════════════════════════════════
-    McpToolWithSchema {
-      name: "query_calcit_apis",
-      description: "[SECONDARY] Query the API documentation for Calcit. This provides information about built-in functions, macros, and libraries in the Calcit language.\n\nExample: {\"query\": \"map\"}",
-      schema_generator: || serde_json::to_value(schema_for!(QueryCalcitApisRequest)).unwrap(),
-    },
-    McpToolWithSchema {
-      name: "query_calcit_reference",
-      description: "[SECONDARY] Query the reference documentation for Calcit. The reference contains tutorials, examples, and best practices for using the Calcit language.\n\nExample: {\"query\": \"getting started\"}",
-      schema_generator: || serde_json::to_value(schema_for!(QueryCalcitReferenceRequest)).unwrap(),
-    },
-    McpToolWithSchema {
-      name: "list_api_docs",
-      description: "[SECONDARY] List all available API documentation topics for Calcit. This shows what documentation is available for reference.\n\nExample: {}",
-      schema_generator: || serde_json::to_value(schema_for!(ListApiDocsRequest)).unwrap(),
-    },
-    McpToolWithSchema {
-      name: "list_guidebook_docs",
-      description: "[SECONDARY] List all available guidebook topics for Calcit. This shows what tutorials and examples are available for learning.\n\nExample: {}",
-      schema_generator: || serde_json::to_value(schema_for!(ListGuidebookDocsRequest)).unwrap(),
-    },
-    // ═══════════════════════════════════════════════════════════════════════════════
     // 🔶 SECONDARY TOOLS - Configuration Management
     // ═══════════════════════════════════════════════════════════════════════════════
-    McpToolWithSchema {
-      name: "read_configs",
-      description: "[SECONDARY] Read the configuration settings for the Calcit project. This includes settings for initialization, reloading, and versioning.\n\nExample: {}",
-      schema_generator: || serde_json::to_value(schema_for!(ReadConfigsRequest)).unwrap(),
-    },
+    // NOTE: read_configs moved to CLI: `cr query configs`
     McpToolWithSchema {
       name: "update_configs",
       description: "[SECONDARY] Update the configuration settings for the Calcit project. This allows changing settings for initialization, reloading, and versioning.\n\nExample: {\"init_fn\": \"app.main/main!\", \"reload_fn\": \"app.main/reload!\", \"version\": \"0.1.0\"}",
@@ -223,11 +170,7 @@ pub fn get_mcp_tools_with_schema() -> Vec<McpToolWithSchema> {
       description: "[PRIMARY] Generate incremental file (.compact-inc.cirru) by comparing current source file with the .calcit-runner.cirru copy created when starting the runner. This creates a diff file that can be used by the Calcit runner to apply incremental updates. After generating the incremental file, check the runner logs to verify if the updates were applied successfully.\n\nExample: {\"source_file\": \"compact.cirru\"}",
       schema_generator: || serde_json::to_value(schema_for!(GenerateCalcitIncrementalRequest)).unwrap(),
     },
-    McpToolWithSchema {
-      name: "read_calcit_error_file",
-      description: "[PRIMARY] Read the .calcit-error.cirru file which contains detailed error stack traces from the last Calcit runtime error. This file is automatically generated when Calcit encounters an error and contains the call stack with source locations. Use this tool after running code to inspect error details.\n\nExample: {}",
-      schema_generator: || serde_json::to_value(schema_for!(ReadCalcitErrorFileRequest)).unwrap(),
-    },
+    // NOTE: read_calcit_error_file moved to CLI: `cr query error`
     // ═══════════════════════════════════════════════════════════════════════════════
     // 🔶 SECONDARY TOOLS - Dependency Documentation Tools
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -674,78 +617,9 @@ pub struct DeleteModuleRequest {
   pub module: String,
 }
 
-/// # Parse Cirru Code to JSON
-/// Converts Cirru syntax code into a JSON representation.
-///
-/// Example: `{"cirru_code": "(def a 1)"}`
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct ParseCirruToJsonRequest {
-  /// # Cirru Code
-  /// The Cirru syntax code to be parsed into JSON.
-  ///
-  /// Example: "(def a 1)" or "(fn [x y] (+ x y))"
-  pub cirru_code: String,
-}
-
-/// # Format JSON to Cirru Code
-/// Converts a JSON representation back into Cirru syntax code.
-///
-/// Example: `{"json_data": ["def", "a", "1"]}`
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct FormatJsonToCirruRequest {
-  /// # JSON Data
-  /// The JSON representation to be formatted as Cirru code.
-  ///
-  /// Example: ["def", "a", "1"] or ["fn", ["x", "y"], ["+", "x", "y"]]
-  #[schemars(with = "Vec<serde_json::Value>")]
-  pub json_data: serde_json::Value,
-}
-
-/// # Query API Documentation
-/// Searches for API documentation based on the specified query type and value.
-///
-/// Example: `{"query_type": "function", "query_value": "map"}`
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct QueryCalcitApisRequest {
-  /// # Query Type
-  /// The type of API documentation to search for.
-  ///
-  /// Example: "function", "macro", or "namespace"
-  pub query_type: String,
-  /// # Query Value
-  /// The specific value to search for within the specified type.
-  ///
-  /// Example: "map" or "filter"
-  pub query_value: Option<String>,
-}
-
-/// # Query Guidebook Documentation
-/// Searches for guidebook documentation based on the specified query type and value.
-///
-/// Example: `{"query_type": "tutorial", "query_value": "getting-started"}`
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct QueryCalcitReferenceRequest {
-  /// # Query Type
-  /// The type of guidebook documentation to search for.
-  ///
-  /// Example: "tutorial", "guide", or "example"
-  pub query_type: String,
-  /// # Query Value
-  /// The specific value to search for within the specified type.
-  ///
-  /// Example: "getting-started" or "advanced-features"
-  pub query_value: String,
-}
-
-/// # Read Project Configurations
-/// Retrieves the current project configuration settings.
-/// No parameters required.
-///
-/// Example: `{}`
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct ReadConfigsRequest {
-  // No parameters needed
-}
+// NOTE: ParseCirruToJsonRequest, FormatJsonToCirruRequest, QueryCalcitApisRequest,
+// QueryCalcitReferenceRequest, ReadConfigsRequest moved to CLI commands.
+// Use `cr cirru parse`, `cr cirru format`, `cr docs api`, `cr docs ref`, `cr query configs` instead.
 
 /// # Update Project Configurations
 /// Updates the project configuration settings with new values.
@@ -806,28 +680,8 @@ pub struct ReadDependencyDefinitionDocRequest {
   pub definition: String,
 }
 
-/// # Fetch Calcit Libraries
-/// Retrieves a list of available Calcit libraries.
-/// No parameters required.
-///
-/// Example: `{}`
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct FetchCalcitLibrariesRequest {
-  // No parameters needed
-}
-
-/// # Parse Cirru EDN to JSON
-/// Converts Cirru EDN syntax into a JSON representation.
-///
-/// Example: `{"cirru_edn": "[] 1 2 3"}`
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ParseCirruEdnToJsonRequest {
-  /// # Cirru EDN
-  /// The Cirru EDN syntax to be parsed into JSON.
-  ///
-  /// Example: "[] 1 2 3" or "{} (:a 1) (:b 2)"
-  pub cirru_edn: String,
-}
+// NOTE: FetchCalcitLibrariesRequest, ParseCirruEdnToJsonRequest moved to CLI.
+// Use `cr libs` and `cr cirru parse-edn` instead.
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ReadDependencyModuleDocRequest {
@@ -843,15 +697,8 @@ pub struct ReadDefinitionDocRequest {
   pub definition: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ListApiDocsRequest {
-  // No parameters needed
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ListGuidebookDocsRequest {
-  // No parameters needed
-}
+// NOTE: ListApiDocsRequest, ListGuidebookDocsRequest moved to CLI.
+// Use `cr docs list-api` and `cr docs list-guide` instead.
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetCurrentModuleRequest {
@@ -962,15 +809,7 @@ pub struct GenerateCalcitIncrementalRequest {
   pub source_file: Option<String>,
 }
 
-/// # Read Calcit Error File
-/// Read the .calcit-error.cirru file which contains detailed error stack traces from the last Calcit runtime error.
-/// This file is automatically generated when Calcit encounters an error and contains the call stack with source locations.
-///
-/// Example: `{}`
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ReadCalcitErrorFileRequest {
-  // No parameters needed
-}
+// NOTE: ReadCalcitErrorFileRequest moved to CLI: `cr query error`
 
 // Memory Management Tools
 
