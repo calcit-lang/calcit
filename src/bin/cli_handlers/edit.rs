@@ -13,8 +13,7 @@ use calcit::cli_args::{
   EditOperateAtCommand, EditSetConfigCommand, EditSubcommand, EditUpdateDefDocCommand, EditUpdateImportsCommand,
   EditUpdateNsDocCommand, EditUpsertDefCommand,
 };
-use calcit::mcp::cirru_utils::save_snapshot_to_file;
-use calcit::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot};
+use calcit::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
 use colored::Colorize;
 use std::collections::HashMap;
