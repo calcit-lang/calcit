@@ -41,21 +41,21 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
 fn handle_ls_ns(input_path: &str, include_deps: bool) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
-  println!("{}", "Namespaces in project:".bold());
   let mut namespaces: Vec<&String> = snapshot.files.keys().collect();
   namespaces.sort();
 
-  for ns in &namespaces {
-    // Skip core namespaces unless deps is requested
-    if !include_deps && (ns.starts_with("calcit.") || ns.starts_with("calcit-test.")) {
-      continue;
-    }
+  let filtered: Vec<_> = namespaces
+    .iter()
+    .filter(|ns| include_deps || (!ns.starts_with("calcit.") && !ns.starts_with("calcit-test.")))
+    .collect();
+
+  println!("{} ({} namespaces)", "Project namespaces:".bold(), filtered.len());
+  for ns in &filtered {
     println!("  {}", ns.cyan());
   }
 
-  if include_deps {
-    println!("\n{}", "(includes core/dependency namespaces)".dimmed());
-  }
+  // LLM guidance
+  println!("\n{}", "Tip: Use `query ls-defs <namespace>` to list definitions in a namespace.".dimmed());
 
   Ok(())
 }
@@ -68,10 +68,10 @@ fn handle_ls_defs(input_path: &str, namespace: &str) -> Result<(), String> {
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
-  println!("{} {}", "Definitions in".bold(), namespace.cyan());
-
   let mut defs: Vec<&String> = file_data.defs.keys().collect();
   defs.sort();
+
+  println!("{} {} ({} definitions)", "Namespace:".bold(), namespace.cyan(), defs.len());
 
   for def in &defs {
     let entry = &file_data.defs[*def];
@@ -82,7 +82,9 @@ fn handle_ls_defs(input_path: &str, namespace: &str) -> Result<(), String> {
     }
   }
 
-  println!("\n{} {} definitions", "Total:".dimmed(), defs.len());
+  // LLM guidance
+  println!("\n{}", "Tip: Use `query peek-def <ns> <def>` to see signature, or `query read-def` for full code.".dimmed());
+
   Ok(())
 }
 
@@ -106,25 +108,29 @@ fn handle_read_ns(input_path: &str, namespace: &str) -> Result<(), String> {
   println!("{}", ns_str.dimmed());
 
   // Print definitions with preview
-  println!("\n{}", "Definitions:".bold());
   let mut defs: Vec<(&String, &snapshot::CodeEntry)> = file_data.defs.iter().collect();
   defs.sort_by_key(|(name, _)| *name);
 
+  println!("\n{} ({} total)", "Definitions:".bold(), defs.len());
   for (def_name, code_entry) in defs {
     let code_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
-    let code_preview = if code_str.len() > 60 {
-      format!("{}...", &code_str[..60])
+    // Take first non-empty line for preview
+    let first_line = code_str.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+    let preview = if first_line.len() > 70 {
+      format!("{}...", &first_line[..70])
     } else {
-      code_str
+      first_line.to_string()
     };
 
     if !code_entry.doc.is_empty() {
-      println!("  {} - {}", def_name.green(), code_entry.doc.dimmed());
+      println!("  {} - {}  {}", def_name.green(), code_entry.doc.dimmed(), preview.dimmed());
     } else {
-      println!("  {}", def_name.green());
+      println!("  {}  {}", def_name.green(), preview.dimmed());
     }
-    println!("    {}", code_preview.dimmed());
   }
+
+  // LLM guidance
+  println!("\n{}", "Tip: Use `query peek-def <ns> <def>` for signature details.".dimmed());
 
   Ok(())
 }
@@ -207,9 +213,25 @@ fn handle_read_def(input_path: &str, namespace: &str, definition: &str) -> Resul
     .get(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
 
-  // Output as JSON for machine consumption
+  // Output header
+  println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
+
+  if !code_entry.doc.is_empty() {
+    println!("{} {}", "Doc:".bold(), code_entry.doc);
+  }
+
+  // Output as Cirru format (human readable)
+  println!("\n{}", "Cirru:".bold());
+  let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+  println!("{}", cirru_str);
+
+  // Also output compact JSON for edit operations
+  println!("\n{}", "JSON (for edit):".bold());
   let json = cirru_to_json(&code_entry.code);
-  println!("{}", serde_json::to_string_pretty(&json).unwrap());
+  println!("{}", serde_json::to_string(&json).unwrap());
+
+  // LLM guidance
+  println!("\n{}", "Tip: Use `edit operate-at -p <path> -o <op>` to modify specific parts. Use `query read-at -p \"0\"` to explore tree structure.".dimmed());
 
   Ok(())
 }
@@ -241,36 +263,70 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
   // Navigate to target
   let target = navigate_to_path(&code_entry.code, &indices)?;
 
-  // Output info
-  println!("{} {}/{}", "Reading:".bold(), namespace.cyan(), definition.green());
-  println!("{} [{}]", "Path:".bold(), path);
+  // Output info - compact header
+  println!("{} {}/{}  {}", "At:".bold(), namespace.cyan(), definition.green(), format!("[{}]", path).dimmed());
 
-  // Show target type and length if it's a list
+  // Show target type and content
   match &target {
     Cirru::Leaf(s) => {
-      println!("{} leaf", "Type:".bold());
-      println!("{} {}", "Value:".bold(), s.to_string().yellow());
+      println!("{} leaf = {}", "Type:".bold(), s.to_string().yellow());
+      // For leaf, show JSON directly
+      println!("{} \"{}\"", "JSON:".bold(), s);
     }
     Cirru::List(items) => {
       println!("{} list ({} items)", "Type:".bold(), items.len());
-      // Show children summary
+
+      // Show Cirru format preview (depth limited by formatting)
+      let cirru_str = cirru_parser::format(&[target.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
+      let preview_lines: Vec<&str> = cirru_str.lines().take(5).collect();
+      println!("\n{}", "Cirru preview:".bold());
+      for line in &preview_lines {
+        println!("  {}", line);
+      }
+      if cirru_str.lines().count() > 5 {
+        println!("  {}", "...".dimmed());
+      }
+
+      // Show children index for navigation
       println!("\n{}", "Children:".bold());
       for (i, item) in items.iter().enumerate() {
-        let summary = match item {
-          Cirru::Leaf(s) => format!("leaf: {s}"),
-          Cirru::List(sub_items) => format!("list ({} items)", sub_items.len()),
+        let child_path = if path.is_empty() {
+          i.to_string()
+        } else {
+          format!("{},{}", path, i)
         };
-        println!("  [{}] {}", i.to_string().dimmed(), summary);
+        let summary = match item {
+          Cirru::Leaf(s) => {
+            let s_str = s.to_string();
+            if s_str.len() > 30 {
+              format!("\"{}...\"", &s_str[..30])
+            } else {
+              format!("\"{}\"", s_str)
+            }
+          }
+          Cirru::List(sub_items) => format!("({} items)", sub_items.len()),
+        };
+        println!("  [{}] {} -> -p \"{}\"", i, summary, child_path);
+      }
+
+      // Output JSON for programmatic use
+      println!("\n{}", "JSON:".bold());
+      let json = cirru_to_json_with_depth(&target, max_depth, 0);
+      println!("{}", serde_json::to_string(&json).unwrap());
+      if max_depth > 0 {
+        println!("{}", format!("(depth limited to {max_depth})").dimmed());
       }
     }
   }
 
-  // Also output JSON for programmatic use (with depth limit)
-  println!("\n{}", "JSON:".bold());
-  let json = cirru_to_json_with_depth(&target, max_depth, 0);
-  println!("{}", serde_json::to_string_pretty(&json).unwrap());
-  if max_depth > 0 {
-    println!("{}", format!("(depth limited to {max_depth})").dimmed());
+  // LLM guidance based on context
+  if path.is_empty() {
+    println!("\n{}", "Tip: Navigate deeper with -p \"0\", -p \"1\", etc. to locate target before editing.".dimmed());
+  } else {
+    println!(
+      "\n{}",
+      format!("Tip: To modify this node, use `edit operate-at <ns> <def> -p \"{}\" -o replace -j '<json>'`", path).dimmed()
+    );
   }
 
   Ok(())
@@ -397,17 +453,35 @@ fn handle_peek_def(input_path: &str, namespace: &str, definition: &str) -> Resul
         let body_count = items.len() - 3;
         println!("{} {} expression(s)", "Body:".bold(), body_count);
 
-        // Show first expression head for context (depth limited)
+        // Show first expression in Cirru format (compact inline)
         if items.len() > 3 {
           let first_body = &items[3];
-          let preview = cirru_to_json_with_depth(first_body, 1, 0);
-          println!("{} {}", "First expr:".bold(), serde_json::to_string(&preview).unwrap().dimmed());
+          let cirru_preview =
+            cirru_parser::format(&[first_body.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
+          // Get non-empty first line
+          let first_line = cirru_preview.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+          if !first_line.is_empty() {
+            let display = if first_line.len() > 60 {
+              format!("{}...", &first_line[..60])
+            } else {
+              first_line.to_string()
+            };
+            println!("{} {}", "Body start:".bold(), display.dimmed());
+          }
         }
       } else if form_type == "def" && items.len() >= 3 {
-        // For def, show value preview
+        // For def, show value preview in Cirru
         let value = &items[2];
-        let preview = cirru_to_json_with_depth(value, 1, 0);
-        println!("{} {}", "Value:".bold(), serde_json::to_string(&preview).unwrap().dimmed());
+        let cirru_preview = cirru_parser::format(&[value.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
+        let first_line = cirru_preview.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+        if !first_line.is_empty() {
+          let display = if first_line.len() > 60 {
+            format!("{}...", &first_line[..60])
+          } else {
+            first_line.to_string()
+          };
+          println!("{} {}", "Value:".bold(), display.dimmed());
+        }
       }
     }
     _ => {
@@ -415,14 +489,18 @@ fn handle_peek_def(input_path: &str, namespace: &str, definition: &str) -> Resul
     }
   }
 
+  // LLM guidance
+  println!(
+    "\n{}",
+    format!("Tip: Use `query read-def {} {}` for full code, or `query usages` to find where it's used.", namespace, definition).dimmed()
+  );
+
   Ok(())
 }
 
 /// Find symbol across all namespaces
 fn handle_find_symbol(input_path: &str, symbol: &str, include_deps: bool) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
-
-  println!("{} '{}'\n", "Searching for symbol:".bold(), symbol.yellow());
 
   let mut found_definitions: Vec<(String, String)> = vec![];
   let mut found_references: Vec<(String, String, String)> = vec![]; // (ns, def, context)
@@ -441,14 +519,23 @@ fn handle_find_symbol(input_path: &str, symbol: &str, include_deps: bool) -> Res
     // Search for references in all definitions
     for (def_name, code_entry) in &file_data.defs {
       if find_symbol_in_cirru(&code_entry.code, symbol, def_name != symbol) {
-        found_references.push((ns_name.clone(), def_name.clone(), get_symbol_context(&code_entry.code, symbol)));
+        found_references.push((ns_name.clone(), def_name.clone(), get_symbol_context_cirru(&code_entry.code, symbol)));
       }
     }
   }
 
+  // Print summary
+  println!(
+    "{} '{}' - {} definition(s), {} reference(s)\n",
+    "Symbol:".bold(),
+    symbol.yellow(),
+    found_definitions.len(),
+    found_references.len().saturating_sub(found_definitions.len())
+  );
+
   // Print definitions
   if !found_definitions.is_empty() {
-    println!("{}", "Definitions:".bold().green());
+    println!("{}", "Defined in:".bold().green());
     for (ns, def) in &found_definitions {
       println!("  {}/{}", ns.cyan(), def.green());
     }
@@ -464,15 +551,24 @@ fn handle_find_symbol(input_path: &str, symbol: &str, include_deps: bool) -> Res
   if !references.is_empty() {
     println!("{}", "Referenced in:".bold());
     for (ns, def, context) in &references {
-      println!("  {}/{}", ns.cyan(), def);
       if !context.is_empty() {
-        println!("    {}", context.dimmed());
+        println!("  {}/{}  {}", ns.cyan(), def, context.dimmed());
+      } else {
+        println!("  {}/{}", ns.cyan(), def);
       }
     }
   }
 
   if found_definitions.is_empty() && references.is_empty() {
     println!("{}", "No matches found.".yellow());
+    println!("\n{}", "Tip: Try `query ls-ns` to see available namespaces.".dimmed());
+  } else if !found_definitions.is_empty() {
+    // LLM guidance
+    let (first_ns, first_def) = &found_definitions[0];
+    println!(
+      "\n{}",
+      format!("Tip: Use `query peek-def {} {}` to see signature.", first_ns, first_def).dimmed()
+    );
   }
 
   Ok(())
@@ -490,8 +586,6 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     .defs
     .get(target_def)
     .ok_or_else(|| format!("Definition '{target_def}' not found in namespace '{target_ns}'"))?;
-
-  println!("{} {}/{}\n", "Finding usages of:".bold(), target_ns.cyan(), target_def.green());
 
   let mut usages: Vec<(String, String, String)> = vec![]; // (ns, def, context)
 
@@ -520,22 +614,33 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
       };
 
       if found {
-        let context = get_symbol_context(&code_entry.code, target_def);
+        let context = get_symbol_context_cirru(&code_entry.code, target_def);
         usages.push((ns_name.clone(), def_name.clone(), context));
       }
     }
   }
 
+  println!("{} {}/{}  ({} usages)", "Usages of:".bold(), target_ns.cyan(), target_def.green(), usages.len());
+
   if usages.is_empty() {
-    println!("{}", "No usages found.".yellow());
+    println!("\n{}", "No usages found. This definition may be unused or only called externally.".yellow());
   } else {
-    println!("{} {} usage(s):\n", "Found".bold(), usages.len());
+    println!();
     for (ns, def, context) in &usages {
-      println!("  {}/{}", ns.cyan(), def.green());
       if !context.is_empty() {
-        println!("    {}", context.dimmed());
+        println!("  {}/{}  {}", ns.cyan(), def.green(), context.dimmed());
+      } else {
+        println!("  {}/{}", ns.cyan(), def.green());
       }
     }
+  }
+
+  // LLM guidance
+  if !usages.is_empty() {
+    println!(
+      "\n{}",
+      "Tip: Modifying this definition may affect the above locations. Review before refactoring.".dimmed()
+    );
   }
 
   Ok(())
@@ -552,22 +657,46 @@ fn find_symbol_in_cirru(code: &Cirru, symbol: &str, skip_first: bool) -> bool {
   }
 }
 
-// Helper: get context around symbol usage (first expression containing it)
-fn get_symbol_context(code: &Cirru, symbol: &str) -> String {
-  match code {
-    Cirru::Leaf(s) if s.as_ref() == symbol => symbol.to_string(),
-    Cirru::List(items) => {
-      for item in items {
-        if find_symbol_in_cirru(item, symbol, false) {
-          // Found it in this subtree, return a preview
-          let preview = cirru_to_json_with_depth(item, 1, 0);
-          return serde_json::to_string(&preview).unwrap_or_default();
+// Helper: get context around symbol usage in Cirru format (compact)
+// Returns the smallest expression containing the symbol
+fn get_symbol_context_cirru(code: &Cirru, symbol: &str) -> String {
+  fn find_smallest_containing(node: &Cirru, symbol: &str) -> Option<Cirru> {
+    match node {
+      Cirru::Leaf(s) if s.as_ref() == symbol => Some(node.clone()),
+      Cirru::List(items) => {
+        // First, try to find a smaller match in children (skip first which is usually form name)
+        for item in items.iter().skip(1) {
+          if let Some(found) = find_smallest_containing(item, symbol) {
+            // If it's a direct leaf match, return parent expression for context
+            if matches!(found, Cirru::Leaf(_)) {
+              // Return current node as context
+              return Some(node.clone());
+            }
+            return Some(found);
+          }
         }
+        // Check if symbol is in first position
+        if let Some(Cirru::Leaf(s)) = items.first() {
+          if s.as_ref() == symbol {
+            return Some(node.clone());
+          }
+        }
+        None
       }
-      String::new()
+      _ => None,
     }
-    _ => String::new(),
   }
+
+  if let Some(context_node) = find_smallest_containing(code, symbol) {
+    let cirru_str = cirru_parser::format(&[context_node], true.into()).unwrap_or_default();
+    // Get first non-empty line
+    let first_line = cirru_str.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+    if first_line.len() > 50 {
+      return format!("{}...", &first_line[..50]);
+    }
+    return first_line.to_string();
+  }
+  String::new()
 }
 
 // Helper: check if namespace imports the target
