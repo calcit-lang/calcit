@@ -71,11 +71,48 @@ fn read_code_input(file: &Option<String>, json: &Option<String>, stdin: bool) ->
   }
 }
 
+/// Determine input mode and parse raw input string into a `Cirru` node.
+/// - If `inline_json` is Some -> parse that JSON string.
+/// - Else if `json_input` is true -> parse `raw` as JSON.
+/// - Else -> parse `raw` as Cirru text (default).
+fn parse_input_to_cirru(raw: &str, inline_json: &Option<String>, json_input: bool) -> Result<Cirru, String> {
+  // If inline JSON provided, use it (takes precedence)
+  if let Some(j) = inline_json {
+    return json_to_cirru(j);
+  }
+
+  if json_input {
+    return json_to_cirru(raw);
+  }
+
+  // Default: parse as cirru text
+  let parsed = cirru_parser::parse(raw).map_err(|e| {
+    let mut msg = format!("Failed to parse Cirru text: {e}");
+    msg.push_str("\nTips: If your input contains special characters like '|' or '$', ensure the shell does not strip them — wrap input in single quotes or use --file/--stdin.\n");
+    msg.push_str("If you intended to provide JSON, pass --json-input or use -j for inline JSON.");
+    msg
+  })?;
+
+  if parsed.len() == 1 {
+    Ok(parsed.into_iter().next().unwrap())
+  } else {
+    Ok(Cirru::List(parsed))
+  }
+}
+
 /// Parse JSON string to Cirru syntax tree
 fn json_to_cirru(json_str: &str) -> Result<Cirru, String> {
-  let json: serde_json::Value = serde_json::from_str(json_str).map_err(|e| format!("Failed to parse JSON: {e}"))?;
+  let json: serde_json::Value = serde_json::from_str(json_str).map_err(|e| {
+    format!("Failed to parse JSON: {e}. If this is Cirru text, omit --json-input or use --cirru; for inline Cirru prefer --file or --stdin to avoid shell escaping.")
+  })?;
 
-  json_value_to_cirru(&json)
+  match json_value_to_cirru(&json) {
+    Ok(c) => Ok(c),
+    Err(e) => Err(format!(
+      "{} If your input is Cirru source, try passing it as Cirru (omit --json-input or use --cirru).",
+      e
+    )),
+  }
 }
 
 fn json_value_to_cirru(json: &serde_json::Value) -> Result<Cirru, String> {
@@ -88,7 +125,10 @@ fn json_value_to_cirru(json: &serde_json::Value) -> Result<Cirru, String> {
     serde_json::Value::Number(n) => Ok(Cirru::Leaf(Arc::from(n.to_string()))),
     serde_json::Value::Bool(b) => Ok(Cirru::Leaf(Arc::from(b.to_string()))),
     serde_json::Value::Null => Ok(Cirru::Leaf(Arc::from("nil"))),
-    serde_json::Value::Object(_) => Err("JSON objects cannot be converted to Cirru syntax tree".to_string()),
+    serde_json::Value::Object(_) => Err(
+      "JSON objects cannot be converted to Cirru syntax tree. Consider providing an array or string, or use Cirru source format."
+        .to_string(),
+    ),
   }
 }
 
@@ -109,9 +149,9 @@ fn parse_path(path_str: &str) -> Result<Vec<usize>, String> {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 fn handle_upsert_def(opts: &EditUpsertDefCommand, snapshot_file: &str) -> Result<(), String> {
-  let json_str = read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Code input required: use --file, --json, or --stdin")?;
+  let raw = read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Code input required: use --file, --json, or --stdin")?;
 
-  let syntax_tree = json_to_cirru(&json_str)?;
+  let syntax_tree = parse_input_to_cirru(&raw, &opts.json, opts.json_input)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -228,8 +268,19 @@ fn handle_operate_at(opts: &EditOperateAtCommand, snapshot_file: &str) -> Result
     .get_mut(&opts.definition)
     .ok_or_else(|| format!("Definition '{}' not found", opts.definition))?;
 
+  // Prepare parsed new node (if applicable)
+  let new_node_opt: Option<Cirru> = match opts.operation.as_str() {
+    "delete" => None,
+    _ => {
+      let raw = code_input
+        .as_deref()
+        .ok_or("Code input required for this operation: use --file, --json, or --stdin")?;
+      Some(parse_input_to_cirru(raw, &opts.json, opts.json_input)?)
+    }
+  };
+
   // Apply operation at path
-  let new_code = apply_operation_at_path(&code_entry.code, &path, &opts.operation, code_input.as_deref())?;
+  let new_code = apply_operation_at_path(&code_entry.code, &path, &opts.operation, new_node_opt.as_ref())?;
 
   code_entry.code = new_code.clone();
 
@@ -270,13 +321,13 @@ fn handle_operate_at(opts: &EditOperateAtCommand, snapshot_file: &str) -> Result
   Ok(())
 }
 
-fn apply_operation_at_path(code: &Cirru, path: &[usize], operation: &str, new_code_json: Option<&str>) -> Result<Cirru, String> {
+fn apply_operation_at_path(code: &Cirru, path: &[usize], operation: &str, new_node: Option<&Cirru>) -> Result<Cirru, String> {
   if path.is_empty() {
     // Operating on root
     return match operation {
       "replace" => {
-        let json_str = new_code_json.ok_or("Code input required for replace operation")?;
-        json_to_cirru(json_str)
+        let node = new_node.ok_or("Code input required for replace operation")?;
+        Ok(node.clone())
       }
       "delete" => Err("Cannot delete root node".to_string()),
       _ => Err(format!("Operation '{operation}' not supported at root level")),
@@ -284,7 +335,7 @@ fn apply_operation_at_path(code: &Cirru, path: &[usize], operation: &str, new_co
   }
 
   // Navigate to parent and operate on child
-  apply_operation_recursive(code, path, 0, operation, new_code_json)
+  apply_operation_recursive(code, path, 0, operation, new_node)
 }
 
 fn apply_operation_recursive(
@@ -292,7 +343,7 @@ fn apply_operation_recursive(
   path: &[usize],
   depth: usize,
   operation: &str,
-  new_code_json: Option<&str>,
+  new_node: Option<&Cirru>,
 ) -> Result<Cirru, String> {
   match code {
     Cirru::Leaf(_) => Err(format!("Cannot navigate into leaf node at depth {depth}")),
@@ -311,27 +362,23 @@ fn apply_operation_recursive(
             new_items.remove(idx);
           }
           "replace" => {
-            let json_str = new_code_json.ok_or("Code input required for replace operation")?;
-            let new_node = json_to_cirru(json_str)?;
-            new_items[idx] = new_node;
+            let newn = new_node.ok_or("Code input required for replace operation")?;
+            new_items[idx] = newn.clone();
           }
           "insert-before" => {
-            let json_str = new_code_json.ok_or("Code input required for insert-before operation")?;
-            let new_node = json_to_cirru(json_str)?;
-            new_items.insert(idx, new_node);
+            let newn = new_node.ok_or("Code input required for insert-before operation")?;
+            new_items.insert(idx, newn.clone());
           }
           "insert-after" => {
-            let json_str = new_code_json.ok_or("Code input required for insert-after operation")?;
-            let new_node = json_to_cirru(json_str)?;
-            new_items.insert(idx + 1, new_node);
+            let newn = new_node.ok_or("Code input required for insert-after operation")?;
+            new_items.insert(idx + 1, newn.clone());
           }
           "insert-child" => {
             // Insert as first child of the node at idx
-            let json_str = new_code_json.ok_or("Code input required for insert-child operation")?;
-            let new_node = json_to_cirru(json_str)?;
+            let newn = new_node.ok_or("Code input required for insert-child operation")?;
             match &new_items[idx] {
               Cirru::List(children) => {
-                let mut new_children = vec![new_node];
+                let mut new_children = vec![newn.clone()];
                 new_children.extend(children.clone());
                 new_items[idx] = Cirru::List(new_children);
               }
@@ -349,7 +396,7 @@ fn apply_operation_recursive(
       } else {
         // Continue navigating
         let mut new_items = items.clone();
-        new_items[idx] = apply_operation_recursive(&items[idx], path, depth + 1, operation, new_code_json)?;
+        new_items[idx] = apply_operation_recursive(&items[idx], path, depth + 1, operation, new_node)?;
         Ok(Cirru::List(new_items))
       }
     }
@@ -396,8 +443,8 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   }
 
   // Create ns code
-  let ns_code = if let Some(json_str) = read_code_input(&opts.file, &opts.json, opts.stdin)? {
-    json_to_cirru(&json_str)?
+  let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.json, opts.stdin)? {
+    parse_input_to_cirru(&raw, &opts.json, opts.json_input)?
   } else {
     // Default minimal ns declaration: (ns namespace-name)
     Cirru::List(vec![Cirru::Leaf(Arc::from("ns")), Cirru::Leaf(Arc::from(opts.namespace.as_str()))])
@@ -432,8 +479,7 @@ fn handle_delete_ns(opts: &EditDeleteNsCommand, snapshot_file: &str) -> Result<(
 }
 
 fn handle_update_imports(opts: &EditUpdateImportsCommand, snapshot_file: &str) -> Result<(), String> {
-  let json_str =
-    read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Imports input required: use --file, --json, or --stdin")?;
+  let raw = read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Imports input required: use --file, --json, or --stdin")?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -442,8 +488,22 @@ fn handle_update_imports(opts: &EditUpdateImportsCommand, snapshot_file: &str) -
     .get_mut(&opts.namespace)
     .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
 
-  // Parse the imports JSON as array of import rules
-  let imports_json: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse imports JSON: {e}"))?;
+  // Determine input format: JSON (if requested) or Cirru (default)
+  let imports_json: serde_json::Value = if opts.json.is_some() || opts.json_input {
+    serde_json::from_str(&raw)
+      .map_err(|e| format!("Failed to parse imports JSON: {e}. If you meant Cirru input, omit --json-input or pass --cirru."))?
+  } else {
+    // Parse as cirru and convert to JSON value
+    let cirru_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input)?;
+    fn cirru_to_json_value(c: &Cirru) -> serde_json::Value {
+      match c {
+        Cirru::Leaf(s) => serde_json::Value::String(s.to_string()),
+        Cirru::List(items) => serde_json::Value::Array(items.iter().map(cirru_to_json_value).collect()),
+      }
+    }
+
+    cirru_to_json_value(&cirru_node)
+  };
 
   // Build new ns code with imports
   // Format: (ns namespace :require import1 import2 ...)
@@ -460,7 +520,7 @@ fn handle_update_imports(opts: &EditUpdateImportsCommand, snapshot_file: &str) -
       }
     }
   } else {
-    return Err("Imports must be a JSON array".to_string());
+    return Err("Imports must be a JSON/Cirru array (e.g. [(require ...)]).".to_string());
   }
 
   file_data.ns.code = Cirru::List(ns_code_items);

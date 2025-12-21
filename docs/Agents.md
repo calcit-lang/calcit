@@ -79,6 +79,17 @@ Calcit 程序使用 `cr` 命令：
 - `cr cirru parse '<cirru_code>'` - 解析 Cirru 代码为 JSON
 - `cr cirru format '<json>'` - 格式化 JSON 为 Cirru 代码
 - `cr cirru parse-edn '<edn>'` - 解析 Cirru EDN 为 JSON
+- `cr cirru show-guide` - 显示 Cirru 语法指南（帮助 LLM 生成正确的 Cirru 代码）
+
+**⚠️ 重要：生成 Cirru 代码前请先阅读语法指南**
+
+运行 `cr cirru show-guide` 获取完整的 Cirru 语法说明，包括：
+
+- `$` 操作符（单节点展开）
+- `|` 前缀（字符串字面量）
+- `,` 操作符（表达式终止符）
+- `~` 和 `~@`（宏展开）
+- 常见错误和避免方法
 
 ### 库管理 (`cr libs`)
 

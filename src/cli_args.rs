@@ -10,7 +10,7 @@ pub struct ToplevelCalcit {
   /// skip watching mode, just run once
   #[argh(switch, short = '1')]
   pub once: bool,
-  /// check only mode, validate code without execution
+  /// check-only mode: validate without execution or codegen
   #[argh(switch)]
   pub check_only: bool,
   /// disable stack trace for errors
@@ -77,7 +77,7 @@ pub struct EmitJsCommand {
   /// skip watching mode, just run once
   #[argh(switch, short = '1')]
   pub once: bool,
-  /// check only mode, validate code without emitting JS
+  /// check-only mode for JS emit
   #[argh(switch)]
   pub check_only: bool,
 }
@@ -373,6 +373,8 @@ pub enum CirruSubcommand {
   Format(CirruFormatCommand),
   /// parse Cirru EDN to JSON
   ParseEdn(CirruParseEdnCommand),
+  /// show Cirru syntax guide for LLM code generation
+  ShowGuide(CirruShowGuideCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -401,6 +403,11 @@ pub struct CirruParseEdnCommand {
   #[argh(positional)]
   pub edn: String,
 }
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "show-guide")]
+/// show Cirru syntax guide for LLM code generation
+pub struct CirruShowGuideCommand {}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Libs subcommand - library registry
@@ -484,7 +491,7 @@ pub enum EditSubcommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "upsert-def")]
-/// add or update a definition (syntax_tree as JSON)
+/// add or update a definition (syntax_tree input: Cirru by default; use --json-input or -j for JSON)
 pub struct EditUpsertDefCommand {
   /// namespace containing the definition
   #[argh(positional)]
@@ -498,6 +505,12 @@ pub struct EditUpsertDefCommand {
   /// syntax_tree as inline JSON string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
+  /// treat input as cirru text (default if not specified)
+  #[argh(switch, short = 'c', long = "cirru")]
+  pub cirru: bool,
+  /// treat file/stdin input as JSON (must be specified to accept JSON files/stdin)
+  #[argh(switch, short = 'J', long = "json-input")]
+  pub json_input: bool,
   /// read syntax_tree JSON from stdin
   #[argh(switch, short = 's')]
   pub stdin: bool,
@@ -535,7 +548,7 @@ pub struct EditUpdateDefDocCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "operate-at")]
-/// operate on definition at specific path (insert/replace/delete node)
+/// operate on definition at specific path (input: Cirru by default; use --json-input or -j for JSON)
 pub struct EditOperateAtCommand {
   /// namespace containing the definition
   #[argh(positional)]
@@ -558,6 +571,12 @@ pub struct EditOperateAtCommand {
   /// read syntax_tree JSON from stdin
   #[argh(switch, short = 's')]
   pub stdin: bool,
+  /// treat input as cirru text (default if not specified)
+  #[argh(switch, short = 'c', long = "cirru")]
+  pub cirru: bool,
+  /// treat file/stdin input as JSON (must be specified to accept JSON files/stdin)
+  #[argh(switch, short = 'J', long = "json-input")]
+  pub json_input: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
@@ -567,7 +586,7 @@ pub struct EditOperateAtCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "add-ns")]
-/// add a new namespace
+/// add a new namespace (ns syntax_tree input: Cirru by default; use --json-input or -j for JSON)
 pub struct EditAddNsCommand {
   /// namespace name to create
   #[argh(positional)]
@@ -581,6 +600,12 @@ pub struct EditAddNsCommand {
   /// read ns syntax_tree JSON from stdin
   #[argh(switch, short = 's')]
   pub stdin: bool,
+  /// treat input as cirru text (default if not specified)
+  #[argh(switch, short = 'c', long = "cirru")]
+  pub cirru: bool,
+  /// treat file/stdin input as JSON (must be specified to accept JSON files/stdin)
+  #[argh(switch, short = 'J', long = "json-input")]
+  pub json_input: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -594,7 +619,7 @@ pub struct EditDeleteNsCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "update-imports")]
-/// update namespace import rules
+/// update namespace import rules (input: Cirru by default; use --json-input or -j for JSON)
 pub struct EditUpdateImportsCommand {
   /// namespace to update
   #[argh(positional)]
@@ -608,6 +633,12 @@ pub struct EditUpdateImportsCommand {
   /// read imports JSON from stdin
   #[argh(switch, short = 's')]
   pub stdin: bool,
+  /// treat input as cirru text (default if not specified)
+  #[argh(switch, short = 'c', long = "cirru")]
+  pub cirru: bool,
+  /// treat file/stdin input as JSON (must be specified to accept JSON files/stdin)
+  #[argh(switch, short = 'J', long = "json-input")]
+  pub json_input: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
