@@ -97,7 +97,7 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
   }
 }
 
-fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Arc<str>, Arc<ImportRule>>, String> {
+fn extract_import_map(nodes: &Cirru, ns_name: &str) -> Result<HashMap<Arc<str>, Arc<ImportRule>>, String> {
   match nodes {
     Cirru::Leaf(_) => unreachable!("Expected expr for ns"),
     Cirru::List(xs) => match (xs.first(), xs.get(1), xs.get(2)) {
@@ -106,7 +106,7 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Arc<str>, Arc<ImportRule>
         if !xs.is_empty() && xs[0].eq_leaf(":require") {
           let mut ys: HashMap<Arc<str>, Arc<ImportRule>> = HashMap::with_capacity(xs.len());
           for x in xs.iter().skip(1) {
-            let rules = extract_import_rule(x)?;
+            let rules = extract_import_rule(x).map_err(|e| format!("in namespace '{ns_name}': {e}"))?;
             for (target, rule) in rules {
               ys.insert(target, rule);
             }
@@ -117,13 +117,21 @@ fn extract_import_map(nodes: &Cirru) -> Result<HashMap<Arc<str>, Arc<ImportRule>
         }
       }
       _ if xs.len() < 3 => Ok(HashMap::new()),
-      _ => Err(String::from("invalid ns form")),
+      _ => {
+        let preview = cirru_parser::format(&[nodes.clone()], true.into()).unwrap_or_else(|_| format!("{nodes:?}"));
+        let preview_short = if preview.len() > 200 {
+          format!("{}...", &preview[..200])
+        } else {
+          preview
+        };
+        Err(format!("invalid ns form in '{ns_name}':\n{preview_short}"))
+      }
     },
   }
 }
 
 fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<ProgramFileData, String> {
-  let import_map = extract_import_map(&file.ns.code)?;
+  let import_map = extract_import_map(&file.ns.code, &ns)?;
   let mut defs: HashMap<Arc<str>, ProgramDefEntry> = HashMap::with_capacity(file.defs.len());
   for (def, entry) in &file.defs {
     let at_def = def.to_owned();
@@ -287,7 +295,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
     // println!("handling ns: {:?} {}", ns, program_code.contains_key(ns));
     let file = program_code.get_mut(ns).ok_or_else(|| format!("can not load ns: {ns}"))?;
     if let Some(v) = &info.ns {
-      file.import_map = extract_import_map(v)?;
+      file.import_map = extract_import_map(v, ns)?;
     }
     for (def, code) in &info.added_defs {
       let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;

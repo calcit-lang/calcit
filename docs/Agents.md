@@ -65,7 +65,7 @@ Calcit 程序使用 `cr` 命令：
 - `cr query search <pattern> [--deps] [-n <limit>]` - 模糊搜索命名空间/定义
   - pattern：搜索模式，匹配 "namespace/definition" 格式
   - 支持子串匹配和字符序列匹配（如 "hm" 匹配 "hash-map"）
-  - `--deps`：包含核心命名空间（calcit.* 开头）
+  - `--deps`：包含核心命名空间（calcit.\* 开头）
   - `-n <limit>`：限制结果数量（默认 20）
   - 用于快速定位函数/模块，减少精确拼写负担
 
