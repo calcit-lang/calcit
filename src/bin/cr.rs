@@ -170,7 +170,16 @@ fn main() -> Result<(), String> {
   )
   .map_err(|e| e.msg)?;
 
-  let task = if let Some(CalcitCommand::EmitJs(js_options)) = &cli_args.subcommand {
+  // Check-only mode: just preprocess/validate without execution or codegen
+  let check_only = cli_args.check_only || matches!(&cli_args.subcommand, Some(CalcitCommand::EmitJs(js_opts)) if js_opts.check_only);
+
+  if check_only {
+    eval_once = true;
+  }
+
+  let task = if check_only {
+    run_check_only(&entries)
+  } else if let Some(CalcitCommand::EmitJs(js_options)) = &cli_args.subcommand {
     if js_options.once {
       // redundant config, during watching mode, emit once
       eval_once = true;
@@ -337,6 +346,54 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
       eprintln!("\nfailed to reload, {e}")
     }
   }
+
+  Ok(())
+}
+
+/// Check-only mode: preprocess init_fn and reload_fn to validate code without execution
+fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
+  let started_time = Instant::now();
+  let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
+
+  println!("{}", "Check-only mode: validating code...".dimmed());
+
+  // preprocess init_fn
+  match runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
+    Ok(_) => {
+      println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.init_fn).dimmed());
+    }
+    Err(failure) => {
+      eprintln!("\n{} preprocessing init_fn", "✗".red());
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      return Err(failure.msg);
+    }
+  }
+
+  // preprocess reload_fn
+  match runner::preprocess::preprocess_ns_def(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
+    Ok(_) => {
+      println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.reload_fn).dimmed());
+    }
+    Err(failure) => {
+      eprintln!("\n{} preprocessing reload_fn", "✗".red());
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      return Err(failure.msg);
+    }
+  }
+
+  // Report warnings
+  let warnings = check_warnings.borrow();
+  if !warnings.is_empty() {
+    println!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
+    LocatedWarning::print_list(&warnings);
+  }
+
+  let duration = Instant::now().duration_since(started_time);
+  println!(
+    "\n{} {}",
+    "✓ Check passed".green().bold(),
+    format!("({}ms)", duration.as_micros() as f64 / 1000.0).dimmed()
+  );
 
   Ok(())
 }

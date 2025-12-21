@@ -10,6 +10,9 @@ pub struct ToplevelCalcit {
   /// skip watching mode, just run once
   #[argh(switch, short = '1')]
   pub once: bool,
+  /// check only mode, validate code without execution
+  #[argh(switch)]
+  pub check_only: bool,
   /// disable stack trace for errors
   #[argh(switch)]
   pub disable_stack: bool,
@@ -74,6 +77,9 @@ pub struct EmitJsCommand {
   /// skip watching mode, just run once
   #[argh(switch, short = '1')]
   pub once: bool,
+  /// check only mode, validate code without emitting JS
+  #[argh(switch)]
+  pub check_only: bool,
 }
 
 /// emit Cirru EDN representation of program to program-ir.cirru

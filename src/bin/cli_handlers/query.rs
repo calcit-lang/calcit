@@ -55,7 +55,10 @@ fn handle_ls_ns(input_path: &str, include_deps: bool) -> Result<(), String> {
   }
 
   // LLM guidance
-  println!("\n{}", "Tip: Use `query ls-defs <namespace>` to list definitions in a namespace.".dimmed());
+  println!(
+    "\n{}",
+    "Tip: Use `query ls-defs <namespace>` to list definitions in a namespace.".dimmed()
+  );
 
   Ok(())
 }
@@ -83,7 +86,10 @@ fn handle_ls_defs(input_path: &str, namespace: &str) -> Result<(), String> {
   }
 
   // LLM guidance
-  println!("\n{}", "Tip: Use `query peek-def <ns> <def>` to see signature, or `query read-def` for full code.".dimmed());
+  println!(
+    "\n{}",
+    "Tip: Use `query peek-def <ns> <def>` to see signature, or `query read-def` for full code.".dimmed()
+  );
 
   Ok(())
 }
@@ -223,7 +229,7 @@ fn handle_read_def(input_path: &str, namespace: &str, definition: &str) -> Resul
   // Output as Cirru format (human readable)
   println!("\n{}", "Cirru:".bold());
   let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
-  println!("{}", cirru_str);
+  println!("{cirru_str}");
 
   // Also output compact JSON for edit operations
   println!("\n{}", "JSON (for edit):".bold());
@@ -231,7 +237,11 @@ fn handle_read_def(input_path: &str, namespace: &str, definition: &str) -> Resul
   println!("{}", serde_json::to_string(&json).unwrap());
 
   // LLM guidance
-  println!("\n{}", "Tip: Use `edit operate-at -p <path> -o <op>` to modify specific parts. Use `query read-at -p \"0\"` to explore tree structure.".dimmed());
+  println!(
+    "\n{}",
+    "Tip: Use `edit operate-at -p <path> -o <op>` to modify specific parts. Use `query read-at -p \"0\"` to explore tree structure."
+      .dimmed()
+  );
 
   Ok(())
 }
@@ -264,7 +274,13 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
   let target = navigate_to_path(&code_entry.code, &indices)?;
 
   // Output info - compact header
-  println!("{} {}/{}  {}", "At:".bold(), namespace.cyan(), definition.green(), format!("[{}]", path).dimmed());
+  println!(
+    "{} {}/{}  {}",
+    "At:".bold(),
+    namespace.cyan(),
+    definition.green(),
+    format!("[{path}]").dimmed()
+  );
 
   // Show target type and content
   match &target {
@@ -281,7 +297,7 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
       let preview_lines: Vec<&str> = cirru_str.lines().take(5).collect();
       println!("\n{}", "Cirru preview:".bold());
       for line in &preview_lines {
-        println!("  {}", line);
+        println!("  {line}");
       }
       if cirru_str.lines().count() > 5 {
         println!("  {}", "...".dimmed());
@@ -293,7 +309,7 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
         let child_path = if path.is_empty() {
           i.to_string()
         } else {
-          format!("{},{}", path, i)
+          format!("{path},{i}")
         };
         let summary = match item {
           Cirru::Leaf(s) => {
@@ -301,12 +317,12 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
             if s_str.len() > 30 {
               format!("\"{}...\"", &s_str[..30])
             } else {
-              format!("\"{}\"", s_str)
+              format!("\"{s_str}\"")
             }
           }
           Cirru::List(sub_items) => format!("({} items)", sub_items.len()),
         };
-        println!("  [{}] {} -> -p \"{}\"", i, summary, child_path);
+        println!("  [{i}] {summary} -> -p \"{child_path}\"");
       }
 
       // Output JSON for programmatic use
@@ -321,11 +337,17 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
 
   // LLM guidance based on context
   if path.is_empty() {
-    println!("\n{}", "Tip: Navigate deeper with -p \"0\", -p \"1\", etc. to locate target before editing.".dimmed());
+    println!(
+      "\n{}",
+      "Tip: Navigate deeper with -p \"0\", -p \"1\", etc. to locate target before editing.".dimmed()
+    );
   } else {
     println!(
       "\n{}",
-      format!("Tip: To modify this node, use `edit operate-at <ns> <def> -p \"{}\" -o replace -j '<json>'`", path).dimmed()
+      format!(
+        "Tip: To modify this node, use `edit operate-at <ns> <def> -p \"{path}\" -o replace -j '<json>'`"
+      )
+      .dimmed()
     );
   }
 
@@ -456,8 +478,7 @@ fn handle_peek_def(input_path: &str, namespace: &str, definition: &str) -> Resul
         // Show first expression in Cirru format (compact inline)
         if items.len() > 3 {
           let first_body = &items[3];
-          let cirru_preview =
-            cirru_parser::format(&[first_body.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
+          let cirru_preview = cirru_parser::format(&[first_body.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
           // Get non-empty first line
           let first_line = cirru_preview.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
           if !first_line.is_empty() {
@@ -492,7 +513,10 @@ fn handle_peek_def(input_path: &str, namespace: &str, definition: &str) -> Resul
   // LLM guidance
   println!(
     "\n{}",
-    format!("Tip: Use `query read-def {} {}` for full code, or `query usages` to find where it's used.", namespace, definition).dimmed()
+    format!(
+      "Tip: Use `query read-def {namespace} {definition}` for full code, or `query usages` to find where it's used."
+    )
+    .dimmed()
   );
 
   Ok(())
@@ -519,7 +543,11 @@ fn handle_find_symbol(input_path: &str, symbol: &str, include_deps: bool) -> Res
     // Search for references in all definitions
     for (def_name, code_entry) in &file_data.defs {
       if find_symbol_in_cirru(&code_entry.code, symbol, def_name != symbol) {
-        found_references.push((ns_name.clone(), def_name.clone(), get_symbol_context_cirru(&code_entry.code, symbol)));
+        found_references.push((
+          ns_name.clone(),
+          def_name.clone(),
+          get_symbol_context_cirru(&code_entry.code, symbol),
+        ));
       }
     }
   }
@@ -567,7 +595,7 @@ fn handle_find_symbol(input_path: &str, symbol: &str, include_deps: bool) -> Res
     let (first_ns, first_def) = &found_definitions[0];
     println!(
       "\n{}",
-      format!("Tip: Use `query peek-def {} {}` to see signature.", first_ns, first_def).dimmed()
+      format!("Tip: Use `query peek-def {first_ns} {first_def}` to see signature.").dimmed()
     );
   }
 
@@ -620,10 +648,19 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     }
   }
 
-  println!("{} {}/{}  ({} usages)", "Usages of:".bold(), target_ns.cyan(), target_def.green(), usages.len());
+  println!(
+    "{} {}/{}  ({} usages)",
+    "Usages of:".bold(),
+    target_ns.cyan(),
+    target_def.green(),
+    usages.len()
+  );
 
   if usages.is_empty() {
-    println!("\n{}", "No usages found. This definition may be unused or only called externally.".yellow());
+    println!(
+      "\n{}",
+      "No usages found. This definition may be unused or only called externally.".yellow()
+    );
   } else {
     println!();
     for (ns, def, context) in &usages {

@@ -16,6 +16,11 @@ Calcit 程序使用 `cr` 命令:
 - `cr` 或 `cr compact.cirru` - 代码解释执行, 默认读取 config 执行 init-fn 定义的入口
 - `cr compact.cirru js` - 编译生成 JavaScript 代码
 - `cr -1 <filepath>` - 执行一次然后退出(不进入监听模式)
+- `cr --check-only` - 仅检查代码正确性，不执行程序
+  - 对 init_fn 和 reload_fn 进行预处理验证
+  - 输出: 预处理进度、warnings、检查耗时
+  - 用于 CI/CD 或快速验证代码修改
+- `cr js --check-only` - 检查代码正确性，不生成 JavaScript
 - `cr eval '<code>'` - 执行一段 Calcit 代码片段, 用于快速验证写法
 
 ### 查询子命令 (`cr query`)
