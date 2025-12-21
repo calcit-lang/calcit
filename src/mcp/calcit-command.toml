@@ -22,18 +22,32 @@ Calcit 程序使用 `cr` 命令:
 
 这些命令用于查询项目信息, 无需 MCP 服务:
 
+**基础查询:**
 - `cr query ls-ns [--deps]` - 列出项目中所有命名空间 (--deps 包含依赖)
 - `cr query ls-defs <namespace>` - 列出命名空间中的定义
 - `cr query read-ns <namespace>` - 读取命名空间详情(imports, 定义预览)
+- `cr query pkg-name` - 获取项目包名
+- `cr query configs` - 读取项目配置 (init_fn, reload_fn, version)
+- `cr query error` - 读取 .calcit-error.cirru 错误堆栈文件
+- `cr query ls-modules` - 列出项目模块
+
+**渐进式代码探索 (Progressive Disclosure):**
+- `cr query peek-def <namespace> <definition>` - 查看定义签名(参数、文档、表达式数量)，不返回完整实现体
+  - 输出: Form类型、参数列表、Body表达式数量、首个表达式预览
+  - 用于快速了解函数接口，减少 token 消耗
 - `cr query read-def <namespace> <definition>` - 读取定义的完整语法树 (JSON 格式)
 - `cr query read-at <namespace> <definition> -p <path>` - 读取定义中指定坐标的内容
   - path: 逗号分隔的索引，如 "2,1,0"，空字符串表示根节点
   - `-d <depth>` 或 `--depth <depth>`: 限制 JSON 输出深度 (0=无限, 默认0)
   - 输出包含: 类型(leaf/list)、子节点预览、完整 JSON
-- `cr query pkg-name` - 获取项目包名
-- `cr query configs` - 读取项目配置 (init_fn, reload_fn, version)
-- `cr query error` - 读取 .calcit-error.cirru 错误堆栈文件
-- `cr query ls-modules` - 列出项目模块
+
+**符号搜索与引用分析:**
+- `cr query find-symbol <symbol> [--deps]` - 跨命名空间搜索符号
+  - 返回: 定义位置 + 所有引用位置(带上下文预览)
+  - 用于探测符号定义在哪里、避免盲目猜测
+- `cr query usages <namespace> <definition> [--deps]` - 查找定义的所有使用位置
+  - 返回: 引用该定义的所有位置(带上下文预览)
+  - 用于理解代码影响范围，重构前的影响分析
 
 ### 文档子命令 (`cr docs`)
 
@@ -308,8 +322,11 @@ Calcit 脚本语言是走小众路线的快速开发工具, 且作为 Lisp 方�
 - `cr query ls-ns` 列出所有命名空间
 - `cr query ls-defs <ns>` 列出命名空间的定义
 - `cr query read-ns <ns>` 读取命名空间详情
+- `cr query peek-def <ns> <def>` 快速查看定义签名 (渐进式披露 Level 2)
 - `cr query read-def <ns> <def>` 读取定义完整语法树 (JSON)
 - `cr query read-at <ns> <def> -p <path>` 读取定义中指定坐标内容
+- `cr query find-symbol <name>` 跨命名空间搜索符号
+- `cr query usages <ns> <def>` 查找定义的使用位置
 - `cr query error` 查看最近的错误堆栈
 
 如果有文档缺失或者查找的链路不通, 请明确在日志当中说明, 会有专门的 Agent 收集问题寻找解决方案, 或者由工程师手动补充文档.

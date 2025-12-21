@@ -163,6 +163,12 @@ pub enum QuerySubcommand {
   ReadDef(QueryReadDefCommand),
   /// read content at specific path in a definition
   ReadAt(QueryReadAtCommand),
+  /// peek definition signature (name, params, doc) without full body
+  PeekDef(QueryPeekDefCommand),
+  /// find symbol across all namespaces
+  FindSymbol(QueryFindSymbolCommand),
+  /// find usages of a definition
+  Usages(QueryUsagesCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -240,6 +246,45 @@ pub struct QueryReadAtCommand {
   /// max depth for JSON output (0 = unlimited, default 0)
   #[argh(option, short = 'd', default = "0")]
   pub depth: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "peek-def")]
+/// peek definition signature (name, params, doc) without full implementation body
+pub struct QueryPeekDefCommand {
+  /// namespace containing the definition
+  #[argh(positional)]
+  pub namespace: String,
+  /// definition name
+  #[argh(positional)]
+  pub definition: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "find-symbol")]
+/// find symbol across all namespaces (definitions and references)
+pub struct QueryFindSymbolCommand {
+  /// symbol name to search for
+  #[argh(positional)]
+  pub symbol: String,
+  /// include dependency namespaces in search
+  #[argh(switch)]
+  pub deps: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "usages")]
+/// find usages of a definition across the project
+pub struct QueryUsagesCommand {
+  /// namespace containing the definition
+  #[argh(positional)]
+  pub namespace: String,
+  /// definition name to find usages of
+  #[argh(positional)]
+  pub definition: String,
+  /// include dependency namespaces in search
+  #[argh(switch)]
+  pub deps: bool,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
