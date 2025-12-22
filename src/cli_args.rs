@@ -183,9 +183,12 @@ pub enum QuerySubcommand {
 #[argh(subcommand, name = "ls-ns")]
 /// list all namespaces in the project
 pub struct QueryLsNsCommand {
-  /// include dependency namespaces
+  /// include dependency and core namespaces
   #[argh(switch)]
   pub deps: bool,
+  /// filter namespaces by prefix (e.g. "respo.app")
+  #[argh(positional)]
+  pub prefix: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

@@ -20,7 +20,7 @@ fn parse_target(target: &str) -> Result<(&str, &str), String> {
 
 pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), String> {
   match &cmd.subcommand {
-    QuerySubcommand::LsNs(opts) => handle_ls_ns(input_path, opts.deps),
+    QuerySubcommand::LsNs(opts) => handle_ls_ns(input_path, opts.deps, opts.prefix.as_deref()),
     QuerySubcommand::LsDefs(opts) => handle_ls_defs(input_path, &opts.namespace),
     QuerySubcommand::ReadNs(opts) => handle_read_ns(input_path, &opts.namespace),
     QuerySubcommand::PkgName(_) => handle_pkg_name(input_path),
@@ -116,25 +116,80 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
   Ok(snapshot)
 }
 
-fn handle_ls_ns(input_path: &str, include_deps: bool) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+fn handle_ls_ns(input_path: &str, include_deps: bool, prefix: Option<&str>) -> Result<(), String> {
+  // Load snapshot without deps first to identify main package namespaces
+  if !Path::new(input_path).exists() {
+    return Err(format!("{input_path} does not exist"));
+  }
+
+  let mut content = fs::read_to_string(input_path).map_err(|e| format!("Failed to read file: {e}"))?;
+  strip_shebang(&mut content);
+  let data = cirru_edn::parse(&content)?;
+  let main_snapshot = snapshot::load_snapshot_data(&data, input_path)?;
+  let main_package = main_snapshot.package.clone();
+
+  // Now load full snapshot with deps if needed
+  let snapshot = if include_deps {
+    load_snapshot(input_path)?
+  } else {
+    main_snapshot
+  };
 
   let mut namespaces: Vec<&String> = snapshot.files.keys().collect();
   namespaces.sort();
 
+  // Filter by:
+  // 1. If prefix is set, filter by prefix
+  // 2. If --deps is not set, only show namespaces from main package
+  // 3. If --deps is set, show all including deps and core
   let filtered: Vec<_> = namespaces
     .iter()
-    .filter(|ns| include_deps || (!ns.starts_with("calcit.") && !ns.starts_with("calcit-test.")))
+    .filter(|ns| {
+      // Apply prefix filter if set
+      if let Some(p) = prefix {
+        if !ns.starts_with(p) {
+          return false;
+        }
+      }
+      // If deps not included, only show main package namespaces
+      if !include_deps {
+        // Main package namespaces typically start with package name
+        // e.g. package "respo" -> namespaces "respo.*"
+        ns.as_str() == main_package || ns.starts_with(&format!("{}.", main_package))
+      } else {
+        true
+      }
+    })
     .collect();
 
-  println!("{} ({} namespaces)", "Project namespaces:".bold(), filtered.len());
+  if let Some(p) = prefix {
+    println!(
+      "{} ({} namespaces matching \"{}\")",
+      if include_deps { "All namespaces:" } else { "Project namespaces:" }.bold(),
+      filtered.len(),
+      p.yellow()
+    );
+  } else {
+    println!(
+      "{} ({} namespaces)",
+      if include_deps { "All namespaces:" } else { "Project namespaces:" }.bold(),
+      filtered.len()
+    );
+  }
+
   for ns in &filtered {
     println!("  {}", ns.cyan());
   }
 
   // LLM guidance
+  if !include_deps {
+    println!(
+      "\n{}",
+      "Tip: Use `--deps` to include dependency and core namespaces.".dimmed()
+    );
+  }
   println!(
-    "\n{}",
+    "{}",
     "Tip: Use `query ls-defs <namespace>` to list definitions in a namespace.".dimmed()
   );
 
@@ -258,18 +313,34 @@ fn handle_error() -> Result<(), String> {
 }
 
 fn handle_ls_modules(input_path: &str) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+  if !Path::new(input_path).exists() {
+    return Err(format!("{input_path} does not exist"));
+  }
+
+  let mut content = fs::read_to_string(input_path).map_err(|e| format!("Failed to read file: {e}"))?;
+  strip_shebang(&mut content);
+  let data = cirru_edn::parse(&content)?;
+  let snapshot = snapshot::load_snapshot_data(&data, input_path)?;
+
+  let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
+  let module_folder = dirs::home_dir()
+    .map(|buf| buf.as_path().join(".config/calcit/modules/"))
+    .unwrap_or_else(|| Path::new(".").to_owned());
 
   println!("{}", "Modules in project:".bold());
 
   // Print main package
-  println!("  {} (main)", snapshot.package.cyan());
+  println!("  {} {}", snapshot.package.cyan(), "(main)".dimmed());
 
-  // Print config entries (modules)
-  if !snapshot.configs.modules.is_empty() {
-    println!("\n{}", "Dependencies:".bold());
-    for module in &snapshot.configs.modules {
-      println!("  {}", module.cyan());
+  // Print each dependency module with its package name
+  for module_path in &snapshot.configs.modules {
+    match load_module_silent(module_path, base_dir, &module_folder) {
+      Ok(module_snapshot) => {
+        println!("  {} {}", module_snapshot.package.cyan(), format!("({})", module_path).dimmed());
+      }
+      Err(_) => {
+        println!("  {} {}", module_path.yellow(), "(failed)".red());
+      }
     }
   }
 
@@ -280,6 +351,12 @@ fn handle_ls_modules(input_path: &str) -> Result<(), String> {
       println!("  {}", name.cyan());
     }
   }
+
+  // LLM guidance
+  println!(
+    "\n{}",
+    "Tip: Use `query ls-ns` to list all namespaces, or `query ls-defs <namespace>` to list definitions.".dimmed()
+  );
 
   Ok(())
 }
