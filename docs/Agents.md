@@ -35,31 +35,31 @@ Calcit 程序使用 `cr` 命令：
 
 **基础查询：**
 
-- `cr query ls-ns [--deps]` - 列出项目中所有命名空间（--deps 包含依赖）
-- `cr query ls-defs <namespace>` - 列出命名空间中的定义
-- `cr query read-ns <namespace>` - 读取命名空间详情（imports, 定义预览）
-- `cr query pkg-name` - 获取项目包名
-- `cr query configs` - 读取项目配置（init_fn, reload_fn, version）
+- `cr query ns [--deps]` - 列出项目中所有命名空间（--deps 包含依赖）
+- `cr query ns <namespace>` - 读取命名空间详情（imports, 定义预览）
+- `cr query defs <namespace>` - 列出命名空间中的定义
+- `cr query pkg` - 获取项目包名
+- `cr query config` - 读取项目配置（init_fn, reload_fn, version）
 - `cr query error` - 读取 .calcit-error.cirru 错误堆栈文件
-- `cr query ls-modules` - 列出项目模块
+- `cr query modules` - 列出项目模块
 
 **渐进式代码探索（Progressive Disclosure）：**
 
-- `cr query peek-def <namespace/definition>` - 查看定义签名（参数、文档、表达式数量），不返回完整实现体
+- `cr query peek <namespace/definition>` - 查看定义签名（参数、文档、表达式数量），不返回完整实现体
   - 输出：Doc、Form 类型、参数列表、Body 表达式数量、首个表达式预览、Examples 数量
   - 用于快速了解函数接口，减少 token 消耗
-- `cr query read-def <namespace/definition>` - 读取定义的完整语法树（JSON 格式）
+- `cr query def <namespace/definition>` - 读取定义的完整语法树（JSON 格式）
   - 同时显示 Doc 和 Examples 的完整内容
-- `cr query read-examples <namespace/definition>` - 读取定义的示例代码
+- `cr query examples <namespace/definition>` - 读取定义的示例代码
   - 输出：每个 example 的 Cirru 格式和 JSON 格式
-- `cr query read-at <namespace/definition> -p <path>` - 读取定义中指定坐标的内容
+- `cr query at <namespace/definition> -p <path>` - 读取定义中指定坐标的内容
   - path：逗号分隔的索引，如 "2,1,0"，空字符串表示根节点
   - `-d <depth>` 或 `--depth <depth>`：限制 JSON 输出深度（0=无限，默认 0）
   - 输出包含：类型（leaf/list）、子节点预览、完整 JSON
 
 **符号搜索与引用分析：**
 
-- `cr query find-symbol <symbol> [--deps] [-f] [-n <limit>]` - 跨命名空间搜索符号
+- `cr query find <symbol> [--deps] [-f] [-n <limit>]` - 跨命名空间搜索符号
   - 默认精确匹配：返回定义位置 + 所有引用位置（带上下文预览）
   - `-f` / `--fuzzy`：模糊搜索，匹配 "namespace/definition" 格式的路径
   - `-n <limit>`：限制模糊搜索结果数量（默认 20）
@@ -115,17 +115,17 @@ Calcit 程序使用 `cr` 命令：
 
 **定义操作：**
 
-- `cr edit upsert-def <namespace/definition> -j '<json>'` - 添加或更新定义
-- `cr edit upsert-def <namespace/definition> -r -j '<json>'` - 强制覆盖已有定义
-- `cr edit delete-def <namespace/definition>` - 删除定义
-- `cr edit update-def-doc <namespace/definition> '<doc>'` - 更新定义的文档
-- `cr edit set-examples <namespace/definition>` - 设置定义的示例代码
+- `cr edit def <namespace/definition> -j '<json>'` - 添加或更新定义
+- `cr edit def <namespace/definition> -r -j '<json>'` - 强制覆盖已有定义
+- `cr edit rm-def <namespace/definition>` - 删除定义
+- `cr edit doc <namespace/definition> '<doc>'` - 更新定义的文档
+- `cr edit examples <namespace/definition>` - 设置定义的示例代码
   - `-j '<json>'` - 内联 JSON 数组
   - `-f <file>` - 从文件读取（默认 Cirru 格式）
   - `-s` - 从 stdin 读取（默认 Cirru 格式）
   - `-J` - 使用 JSON 格式输入
   - `--clear` - 清空所有示例
-- `cr edit operate-at <namespace/definition> -p <path> -o <operation> -j '<json>'` - 在指定路径操作
+- `cr edit at <namespace/definition> -p <path> -o <operation> -j '<json>'` - 在指定路径操作
   - path：逗号分隔的索引，如 "2,1,0"
   - operation："insert-before", "insert-after", "replace", "delete", "insert-child"
   - `-d <depth>` 或 `--depth <depth>`：限制结果预览深度（0=无限，默认 2）
@@ -133,51 +133,54 @@ Calcit 程序使用 `cr` 命令：
 
 **⚠️ 重要：精确编辑的安全流程**
 
-使用 `operate-at` 进行局部修改前，**必须先多次使用 `read-at` 确认坐标**，避免错误覆盖代码：
+使用 `edit at` 进行局部修改前，**必须先多次使用 `query at` 确认坐标**，避免错误覆盖代码：
 
 ```bash
 # 步骤1: 先读取整体结构，了解根节点 (用 -d 1 限制深度减少输出)
-cr query read-at app.core/my-fn -p "" -d 1
+cr query at app.core/my-fn -p "" -d 1
 
 # 步骤2: 逐层深入，确认目标位置
-cr query read-at app.core/my-fn -p "2" -d 1      # 查看第3个子节点
-cr query read-at app.core/my-fn -p "2,1" -d 1    # 继续深入
-cr query read-at app.core/my-fn -p "2,1,0"       # 确认最终目标
+cr query at app.core/my-fn -p "2" -d 1      # 查看第3个子节点
+cr query at app.core/my-fn -p "2,1" -d 1    # 继续深入
+cr query at app.core/my-fn -p "2,1,0"       # 确认最终目标
 
 # 步骤3: 确认无误后再执行修改
-cr edit operate-at app.core/my-fn -p "2,1,0" -o replace -j '"new-value"'
+cr edit at app.core/my-fn -p "2,1,0" -o replace -j '"new-value"'
 
 # 步骤4: 验证修改结果
-cr query read-at app.core/my-fn -p "2,1"
+cr query at app.core/my-fn -p "2,1"
 ```
 
 **命名空间操作：**
 
 - `cr edit add-ns <namespace>` - 添加命名空间（创建最小 ns 声明）
 - `cr edit add-ns <namespace> -j '<ns_json>'` - 添加带自定义 ns 代码的命名空间
-- `cr edit delete-ns <namespace>` - 删除命名空间
-- `cr edit update-imports <namespace> -j '<imports_json>'` - 更新导入规则
+- `cr edit rm-ns <namespace>` - 删除命名空间
+- `cr edit imports <namespace> -j '<imports_json>'` - 更新导入规则
+- `cr edit require <namespace> -j '<require_rule>'` - 添加单个 require 规则
+- `cr edit rm-require <namespace> <source_ns>` - 移除指定来源的 require 规则
+- `cr edit ns-doc <namespace> '<doc>'` - 更新命名空间文档
 
 **模块和配置：**
 
 - `cr edit add-module <module-path>` - 添加模块依赖
-- `cr edit delete-module <module-path>` - 删除模块依赖
-- `cr edit set-config <key> <value>` - 设置配置（key: init-fn, reload-fn, version）
+- `cr edit rm-module <module-path>` - 删除模块依赖
+- `cr edit config <key> <value>` - 设置配置（key: init-fn, reload-fn, version）
 
 **使用示例：**
 
 ```bash
 # 使用内联 JSON 添加定义
-cr edit upsert-def app.core/multiply -j '["defn", "multiply", ["x", "y"], ["*", "x", "y"]]'
+cr edit def app.core/multiply -j '["defn", "multiply", ["x", "y"], ["*", "x", "y"]]'
 
 # 使用 stdin 管道
-echo '["defn", "hello", [], ["println", "|Hello"]]' | cr edit upsert-def app.core/hello -s -J
+echo '["defn", "hello", [], ["println", "|Hello"]]' | cr edit def app.core/hello -s -J
 
 # 从文件读取（Cirru 格式）
-cr edit upsert-def app.core/complex-fn -f /tmp/code.cirru
+cr edit def app.core/complex-fn -f /tmp/code.cirru
 
 # 从文件读取（JSON 格式）
-cr edit upsert-def app.core/complex-fn -f /tmp/code.json -J
+cr edit def app.core/complex-fn -f /tmp/code.json -J
 ```
 
 可以使用 `--help` 参数了解更详细的用法。
@@ -228,11 +231,11 @@ cr js     # JS 编译模式
 
 - `cr docs ref <keyword>` - 查询 Calcit 教程
 - `cr docs api <keyword>` - 查询 API 文档
-- `cr query read-ns <ns>` - 查看命名空间说明和函数文档
-- `cr query peek-def <ns/def>` - 快速查看定义签名
-- `cr query read-def <ns/def>` - 读取完整语法树
-- `cr query read-examples <ns/def>` - 查看示例代码
-- `cr query find-symbol <name>` - 跨命名空间搜索符号
+- `cr query ns <ns>` - 查看命名空间说明和函数文档
+- `cr query peek <ns/def>` - 快速查看定义签名
+- `cr query def <ns/def>` - 读取完整语法树
+- `cr query examples <ns/def>` - 查看示例代码
+- `cr query find <name>` - 跨命名空间搜索符号
 - `cr query usages <ns/def>` - 查找定义的使用位置
 - `cr query error` - 查看最近的错误堆栈
 
@@ -243,45 +246,45 @@ cr js     # JS 编译模式
 **添加新函数：**
 
 ```bash
-cr edit upsert-def app.core/multiply -j '["defn", "multiply", ["x", "y"], ["*", "x", "y"]]'
+cr edit def app.core/multiply -j '["defn", "multiply", ["x", "y"], ["*", "x", "y"]]'
 ```
 
 **更新文档和示例：**
 
 ```bash
 # 更新文档
-cr edit update-def-doc app.core/multiply '乘法函数，返回两个数的积'
+cr edit doc app.core/multiply '乘法函数，返回两个数的积'
 
 # 设置示例（JSON 数组，每个元素是一个示例表达式）
-cr edit set-examples app.core/multiply -j '[["multiply", "3", "4"]]'
+cr edit examples app.core/multiply -j '[["multiply", "3", "4"]]'
 
 # 从 Cirru 文件设置示例（文件中每行是一个表达式）
-cr edit set-examples app.core/multiply -f examples.cirru
+cr edit examples app.core/multiply -f examples.cirru
 
 # 清空示例
-cr edit set-examples app.core/multiply --clear
+cr edit examples app.core/multiply --clear
 ```
 
 **局部修改（推荐流程）：**
 
 ```bash
 # 1. 读取完整定义
-cr query read-def app.core/add-numbers
+cr query def app.core/add-numbers
 
-# 2. 多次 read-at 确认目标坐标
-cr query read-at app.core/add-numbers -p "" -d 1
-cr query read-at app.core/add-numbers -p "2" -d 1
-cr query read-at app.core/add-numbers -p "2,0"
+# 2. 多次 query at 确认目标坐标
+cr query at app.core/add-numbers -p "" -d 1
+cr query at app.core/add-numbers -p "2" -d 1
+cr query at app.core/add-numbers -p "2,0"
 
 # 3. 执行替换
-cr edit operate-at app.core/add-numbers -p "2,0" -o replace -j '"*"'
+cr edit at app.core/add-numbers -p "2,0" -o replace -j '"*"'
 
 # 4. 验证
-cr query read-at app.core/add-numbers -p "2"
+cr query at app.core/add-numbers -p "2"
 ```
 
 **更新命名空间导入：**
 
 ```bash
-cr edit update-imports app.main -j '[["app.lib", ":as", "lib"], ["app.util", ":refer", ["helper"]]]'
+cr edit imports app.main -j '[["app.lib", ":as", "lib"], ["app.util", ":refer", ["helper"]]]'
 ```

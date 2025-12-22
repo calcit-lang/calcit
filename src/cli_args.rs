@@ -151,73 +151,64 @@ pub struct QueryCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand)]
 pub enum QuerySubcommand {
-  /// list all namespaces in the project
-  LsNs(QueryLsNsCommand),
+  /// list namespaces (or show ns details if namespace provided)
+  Ns(QueryNsCommand),
   /// list definitions in a namespace
-  LsDefs(QueryLsDefsCommand),
-  /// read namespace information
-  ReadNs(QueryReadNsCommand),
-  /// get package name of the project
-  PkgName(QueryPkgNameCommand),
+  Defs(QueryDefsCommand),
+  /// get package name
+  Pkg(QueryPkgCommand),
   /// read project configs
-  Configs(QueryConfigsCommand),
+  Config(QueryConfigCommand),
   /// read .calcit-error.cirru file
   Error(QueryErrorCommand),
   /// list modules in the project
-  LsModules(QueryLsModulesCommand),
-  /// read a definition's content
-  ReadDef(QueryReadDefCommand),
+  Modules(QueryModulesCommand),
+  /// read a definition's full code
+  Def(QueryDefCommand),
   /// read content at specific path in a definition
-  ReadAt(QueryReadAtCommand),
-  /// peek definition signature (name, params, doc) without full body
-  PeekDef(QueryPeekDefCommand),
+  At(QueryAtCommand),
+  /// peek definition signature without full body
+  Peek(QueryPeekCommand),
   /// read examples of a definition
-  ReadExamples(QueryReadExamplesCommand),
-  /// find symbol across all namespaces
-  FindSymbol(QueryFindSymbolCommand),
+  Examples(QueryExamplesCommand),
+  /// find symbol across namespaces
+  Find(QueryFindCommand),
   /// find usages of a definition
   Usages(QueryUsagesCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "ls-ns")]
-/// list all namespaces in the project
-pub struct QueryLsNsCommand {
+#[argh(subcommand, name = "ns")]
+/// list namespaces, or show ns details if namespace provided
+pub struct QueryNsCommand {
+  /// namespace to show details (optional, lists all if omitted)
+  #[argh(positional)]
+  pub namespace: Option<String>,
   /// include dependency and core namespaces
   #[argh(switch)]
   pub deps: bool,
-  /// filter namespaces by prefix (e.g. "respo.app")
-  #[argh(positional)]
-  pub prefix: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "ls-defs")]
+#[argh(subcommand, name = "defs")]
 /// list definitions in a namespace
-pub struct QueryLsDefsCommand {
+pub struct QueryDefsCommand {
   /// namespace to query
   #[argh(positional)]
   pub namespace: String,
 }
 
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "read-ns")]
-/// read namespace information (imports, definitions preview)
-pub struct QueryReadNsCommand {
-  /// namespace to read
-  #[argh(positional)]
-  pub namespace: String,
-}
+// read-ns merged into ns command
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "pkg-name")]
-/// get package name of the project
-pub struct QueryPkgNameCommand {}
+#[argh(subcommand, name = "pkg")]
+/// get package name
+pub struct QueryPkgCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "configs")]
+#[argh(subcommand, name = "config")]
 /// read project configs (init_fn, reload_fn, version)
-pub struct QueryConfigsCommand {}
+pub struct QueryConfigCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "error")]
@@ -225,23 +216,23 @@ pub struct QueryConfigsCommand {}
 pub struct QueryErrorCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "ls-modules")]
+#[argh(subcommand, name = "modules")]
 /// list modules in the project
-pub struct QueryLsModulesCommand {}
+pub struct QueryModulesCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "read-def")]
-/// read a definition's full syntax tree as JSON
-pub struct QueryReadDefCommand {
+#[argh(subcommand, name = "def")]
+/// read a definition's full code
+pub struct QueryDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "read-at")]
-/// read content at specific path in a definition (for exploring code tree)
-pub struct QueryReadAtCommand {
+#[argh(subcommand, name = "at")]
+/// read content at specific path in a definition
+pub struct QueryAtCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
@@ -254,18 +245,18 @@ pub struct QueryReadAtCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "peek-def")]
-/// peek definition signature (name, params, doc) without full implementation body
-pub struct QueryPeekDefCommand {
+#[argh(subcommand, name = "peek")]
+/// peek definition signature without full body
+pub struct QueryPeekCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "read-examples")]
+#[argh(subcommand, name = "examples")]
 /// read examples of a definition
-pub struct QueryReadExamplesCommand {
+pub struct QueryExamplesCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
@@ -273,8 +264,8 @@ pub struct QueryReadExamplesCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "find")]
-/// find symbol across all namespaces (definitions and references); use --fuzzy for pattern matching
-pub struct QueryFindSymbolCommand {
+/// find symbol across namespaces; use --fuzzy for pattern matching
+pub struct QueryFindCommand {
   /// symbol name to search for (exact match by default, pattern if --fuzzy)
   #[argh(positional)]
   pub symbol: String,
@@ -471,42 +462,42 @@ pub struct EditCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand)]
 pub enum EditSubcommand {
-  /// add or update a definition (upsert)
-  UpsertDef(EditUpsertDefCommand),
+  /// add or update a definition
+  Def(EditDefCommand),
   /// delete a definition
-  DeleteDef(EditDeleteDefCommand),
+  RmDef(EditRmDefCommand),
   /// update definition documentation
-  UpdateDefDoc(EditUpdateDefDocCommand),
+  Doc(EditDocCommand),
   /// set definition examples
-  SetExamples(EditSetExamplesCommand),
+  Examples(EditExamplesCommand),
   /// operate on definition at specific path
-  OperateAt(EditOperateAtCommand),
+  At(EditAtCommand),
   /// add a new namespace
   AddNs(EditAddNsCommand),
   /// delete a namespace
-  DeleteNs(EditDeleteNsCommand),
-  /// update namespace imports
-  UpdateImports(EditUpdateImportsCommand),
+  RmNs(EditRmNsCommand),
+  /// update namespace imports (replace all)
+  Imports(EditImportsCommand),
   /// add a require rule to namespace
-  AddRequire(EditAddRequireCommand),
-  /// remove a require rule from namespace by source namespace
-  RemoveRequire(EditRemoveRequireCommand),
+  Require(EditRequireCommand),
+  /// remove a require rule from namespace
+  RmRequire(EditRmRequireCommand),
   /// update namespace documentation
-  UpdateNsDoc(EditUpdateNsDocCommand),
+  NsDoc(EditNsDocCommand),
   /// create a new module
   AddModule(EditAddModuleCommand),
   /// delete a module
-  DeleteModule(EditDeleteModuleCommand),
+  RmModule(EditRmModuleCommand),
   /// update project configs
-  SetConfig(EditSetConfigCommand),
+  Config(EditConfigCommand),
 }
 
 // --- Definition operations ---
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "upsert-def")]
-/// add or update a definition (syntax_tree input: Cirru by default; use --json-input or -j for JSON)
-pub struct EditUpsertDefCommand {
+#[argh(subcommand, name = "def")]
+/// add or update a definition
+pub struct EditDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
@@ -531,18 +522,18 @@ pub struct EditUpsertDefCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "delete-def")]
-/// delete a definition from namespace
-pub struct EditDeleteDefCommand {
+#[argh(subcommand, name = "rm-def")]
+/// delete a definition
+pub struct EditRmDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "update-def-doc")]
-/// update documentation for a definition
-pub struct EditUpdateDefDocCommand {
+#[argh(subcommand, name = "doc")]
+/// update definition documentation
+pub struct EditDocCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
@@ -552,9 +543,9 @@ pub struct EditUpdateDefDocCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "set-examples")]
-/// set examples for a definition (replaces all existing examples)
-pub struct EditSetExamplesCommand {
+#[argh(subcommand, name = "examples")]
+/// set definition examples (replaces all)
+pub struct EditExamplesCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
@@ -579,9 +570,9 @@ pub struct EditSetExamplesCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "operate-at")]
-/// operate on definition at specific path (input: Cirru by default; use --json-input or -j for JSON)
-pub struct EditOperateAtCommand {
+#[argh(subcommand, name = "at")]
+/// operate on definition at specific path
+pub struct EditAtCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
@@ -638,18 +629,18 @@ pub struct EditAddNsCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "delete-ns")]
+#[argh(subcommand, name = "rm-ns")]
 /// delete a namespace
-pub struct EditDeleteNsCommand {
+pub struct EditRmNsCommand {
   /// namespace to delete
   #[argh(positional)]
   pub namespace: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "update-imports")]
-/// update namespace import rules (input: Cirru by default; use --json-input or -j for JSON)
-pub struct EditUpdateImportsCommand {
+#[argh(subcommand, name = "imports")]
+/// update namespace imports (replaces all)
+pub struct EditImportsCommand {
   /// namespace to update
   #[argh(positional)]
   pub namespace: String,
@@ -671,9 +662,9 @@ pub struct EditUpdateImportsCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "add-require")]
-/// add a require rule to namespace (input: Cirru by default; use --json-input or -j for JSON)
-pub struct EditAddRequireCommand {
+#[argh(subcommand, name = "require")]
+/// add a require rule to namespace
+pub struct EditRequireCommand {
   /// namespace to add require rule to
   #[argh(positional)]
   pub namespace: String,
@@ -698,9 +689,9 @@ pub struct EditAddRequireCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "remove-require")]
-/// remove a require rule from namespace by source namespace name
-pub struct EditRemoveRequireCommand {
+#[argh(subcommand, name = "rm-require")]
+/// remove a require rule from namespace
+pub struct EditRmRequireCommand {
   /// namespace to remove require rule from
   #[argh(positional)]
   pub namespace: String,
@@ -710,9 +701,9 @@ pub struct EditRemoveRequireCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "update-ns-doc")]
-/// update documentation for a namespace
-pub struct EditUpdateNsDocCommand {
+#[argh(subcommand, name = "ns-doc")]
+/// update namespace documentation
+pub struct EditNsDocCommand {
   /// namespace to update
   #[argh(positional)]
   pub namespace: String,
@@ -733,9 +724,9 @@ pub struct EditAddModuleCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "delete-module")]
-/// delete a module from configs
-pub struct EditDeleteModuleCommand {
+#[argh(subcommand, name = "rm-module")]
+/// delete a module
+pub struct EditRmModuleCommand {
   /// module path to delete
   #[argh(positional)]
   pub module_path: String,
@@ -744,9 +735,9 @@ pub struct EditDeleteModuleCommand {
 // --- Config operations ---
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "set-config")]
+#[argh(subcommand, name = "config")]
 /// update project config values
-pub struct EditSetConfigCommand {
+pub struct EditConfigCommand {
   /// config key: "init-fn", "reload-fn", "version"
   #[argh(positional)]
   pub key: String,

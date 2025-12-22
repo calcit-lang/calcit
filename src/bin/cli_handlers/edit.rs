@@ -9,9 +9,9 @@
 
 use super::query::cirru_to_json_with_depth;
 use calcit::cli_args::{
-  EditAddModuleCommand, EditAddNsCommand, EditAddRequireCommand, EditCommand, EditDeleteDefCommand, EditDeleteModuleCommand,
-  EditDeleteNsCommand, EditOperateAtCommand, EditRemoveRequireCommand, EditSetConfigCommand, EditSetExamplesCommand,
-  EditSubcommand, EditUpdateDefDocCommand, EditUpdateImportsCommand, EditUpdateNsDocCommand, EditUpsertDefCommand,
+  EditAddModuleCommand, EditAddNsCommand, EditAtCommand, EditCommand, EditConfigCommand, EditDefCommand, EditDocCommand,
+  EditExamplesCommand, EditImportsCommand, EditNsDocCommand, EditRequireCommand, EditRmDefCommand, EditRmModuleCommand,
+  EditRmNsCommand, EditRmRequireCommand, EditSubcommand,
 };
 use calcit::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -30,20 +30,20 @@ fn parse_target(target: &str) -> Result<(&str, &str), String> {
 
 pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
   match &cmd.subcommand {
-    EditSubcommand::UpsertDef(opts) => handle_upsert_def(opts, snapshot_file),
-    EditSubcommand::DeleteDef(opts) => handle_delete_def(opts, snapshot_file),
-    EditSubcommand::UpdateDefDoc(opts) => handle_update_def_doc(opts, snapshot_file),
-    EditSubcommand::SetExamples(opts) => handle_set_examples(opts, snapshot_file),
-    EditSubcommand::OperateAt(opts) => handle_operate_at(opts, snapshot_file),
+    EditSubcommand::Def(opts) => handle_def(opts, snapshot_file),
+    EditSubcommand::RmDef(opts) => handle_rm_def(opts, snapshot_file),
+    EditSubcommand::Doc(opts) => handle_doc(opts, snapshot_file),
+    EditSubcommand::Examples(opts) => handle_examples(opts, snapshot_file),
+    EditSubcommand::At(opts) => handle_at(opts, snapshot_file),
     EditSubcommand::AddNs(opts) => handle_add_ns(opts, snapshot_file),
-    EditSubcommand::DeleteNs(opts) => handle_delete_ns(opts, snapshot_file),
-    EditSubcommand::UpdateImports(opts) => handle_update_imports(opts, snapshot_file),
-    EditSubcommand::AddRequire(opts) => handle_add_require(opts, snapshot_file),
-    EditSubcommand::RemoveRequire(opts) => handle_remove_require(opts, snapshot_file),
-    EditSubcommand::UpdateNsDoc(opts) => handle_update_ns_doc(opts, snapshot_file),
+    EditSubcommand::RmNs(opts) => handle_rm_ns(opts, snapshot_file),
+    EditSubcommand::Imports(opts) => handle_imports(opts, snapshot_file),
+    EditSubcommand::Require(opts) => handle_require(opts, snapshot_file),
+    EditSubcommand::RmRequire(opts) => handle_rm_require(opts, snapshot_file),
+    EditSubcommand::NsDoc(opts) => handle_ns_doc(opts, snapshot_file),
     EditSubcommand::AddModule(opts) => handle_add_module(opts, snapshot_file),
-    EditSubcommand::DeleteModule(opts) => handle_delete_module(opts, snapshot_file),
-    EditSubcommand::SetConfig(opts) => handle_set_config(opts, snapshot_file),
+    EditSubcommand::RmModule(opts) => handle_rm_module(opts, snapshot_file),
+    EditSubcommand::Config(opts) => handle_config(opts, snapshot_file),
   }
 }
 
@@ -170,7 +170,7 @@ fn parse_path(path_str: &str) -> Result<Vec<usize>, String> {
 // Definition operations
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn handle_upsert_def(opts: &EditUpsertDefCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
   let raw = read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Code input required: use --file, --json, or --stdin")?;
@@ -222,7 +222,7 @@ fn handle_upsert_def(opts: &EditUpsertDefCommand, snapshot_file: &str) -> Result
   Ok(())
 }
 
-fn handle_delete_def(opts: &EditDeleteDefCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_rm_def(opts: &EditRmDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
@@ -251,7 +251,7 @@ fn handle_delete_def(opts: &EditDeleteDefCommand, snapshot_file: &str) -> Result
   Ok(())
 }
 
-fn handle_update_def_doc(opts: &EditUpdateDefDocCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
@@ -283,7 +283,7 @@ fn handle_update_def_doc(opts: &EditUpdateDefDocCommand, snapshot_file: &str) ->
   Ok(())
 }
 
-fn handle_set_examples(opts: &EditSetExamplesCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
@@ -351,7 +351,7 @@ fn handle_set_examples(opts: &EditSetExamplesCommand, snapshot_file: &str) -> Re
   Ok(())
 }
 
-fn handle_operate_at(opts: &EditOperateAtCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_at(opts: &EditAtCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
   let path = parse_path(&opts.path)?;
@@ -573,7 +573,7 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   Ok(())
 }
 
-fn handle_delete_ns(opts: &EditDeleteNsCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_rm_ns(opts: &EditRmNsCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
 
   // Check if namespace can be edited
@@ -590,7 +590,7 @@ fn handle_delete_ns(opts: &EditDeleteNsCommand, snapshot_file: &str) -> Result<(
   Ok(())
 }
 
-fn handle_update_imports(opts: &EditUpdateImportsCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), String> {
   let raw = read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Imports input required: use --file, --json, or --stdin")?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
@@ -694,7 +694,7 @@ fn build_ns_code(ns_name: &str, rules: &[Cirru]) -> Cirru {
   Cirru::List(items)
 }
 
-fn handle_add_require(opts: &EditAddRequireCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_require(opts: &EditRequireCommand, snapshot_file: &str) -> Result<(), String> {
   let raw =
     read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Require rule input required: use --file, --json, or --stdin")?;
 
@@ -718,7 +718,9 @@ fn handle_add_require(opts: &EditAddRequireCommand, snapshot_file: &str) -> Resu
   let mut rules = extract_require_rules(&file_data.ns.code);
 
   // Check if rule for this source namespace already exists
-  let existing_idx = rules.iter().position(|r| get_require_source_ns(r).as_deref() == Some(&new_source_ns));
+  let existing_idx = rules
+    .iter()
+    .position(|r| get_require_source_ns(r).as_deref() == Some(&new_source_ns));
 
   if let Some(idx) = existing_idx {
     if opts.overwrite {
@@ -753,7 +755,7 @@ fn handle_add_require(opts: &EditAddRequireCommand, snapshot_file: &str) -> Resu
   Ok(())
 }
 
-fn handle_remove_require(opts: &EditRemoveRequireCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_rm_require(opts: &EditRmRequireCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
 
   // Check if namespace can be edited
@@ -793,7 +795,7 @@ fn handle_remove_require(opts: &EditRemoveRequireCommand, snapshot_file: &str) -
   Ok(())
 }
 
-fn handle_update_ns_doc(opts: &EditUpdateNsDocCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_ns_doc(opts: &EditNsDocCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
 
   // Check if namespace can be edited
@@ -833,7 +835,7 @@ fn handle_add_module(opts: &EditAddModuleCommand, snapshot_file: &str) -> Result
   Ok(())
 }
 
-fn handle_delete_module(opts: &EditDeleteModuleCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_rm_module(opts: &EditRmModuleCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
 
   let original_len = snapshot.configs.modules.len();
@@ -854,7 +856,7 @@ fn handle_delete_module(opts: &EditDeleteModuleCommand, snapshot_file: &str) -> 
 // Config operations
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn handle_set_config(opts: &EditSetConfigCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
 
   match opts.key.as_str() {

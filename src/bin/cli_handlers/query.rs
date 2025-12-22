@@ -1,6 +1,6 @@
 //! Query subcommand handlers
 //!
-//! Handles: cr query ls-ns, ls-defs, read-ns, read-def, read-at, peek-def, find-symbol, usages, pkg-name, configs, error, ls-modules
+//! Handles: cr query ns, defs, def, at, peek, examples, find, usages, pkg, config, error, modules
 
 use calcit::cli_args::{QueryCommand, QuerySubcommand};
 use calcit::load_core_snapshot;
@@ -20,34 +20,33 @@ fn parse_target(target: &str) -> Result<(&str, &str), String> {
 
 pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), String> {
   match &cmd.subcommand {
-    QuerySubcommand::LsNs(opts) => handle_ls_ns(input_path, opts.deps, opts.prefix.as_deref()),
-    QuerySubcommand::LsDefs(opts) => handle_ls_defs(input_path, &opts.namespace),
-    QuerySubcommand::ReadNs(opts) => handle_read_ns(input_path, &opts.namespace),
-    QuerySubcommand::PkgName(_) => handle_pkg_name(input_path),
-    QuerySubcommand::Configs(_) => handle_configs(input_path),
+    QuerySubcommand::Ns(opts) => handle_ns(input_path, opts.namespace.as_deref(), opts.deps),
+    QuerySubcommand::Defs(opts) => handle_defs(input_path, &opts.namespace),
+    QuerySubcommand::Pkg(_) => handle_pkg(input_path),
+    QuerySubcommand::Config(_) => handle_config(input_path),
     QuerySubcommand::Error(_) => handle_error(),
-    QuerySubcommand::LsModules(_) => handle_ls_modules(input_path),
-    QuerySubcommand::ReadDef(opts) => {
+    QuerySubcommand::Modules(_) => handle_modules(input_path),
+    QuerySubcommand::Def(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_read_def(input_path, ns, def)
+      handle_def(input_path, ns, def)
     }
-    QuerySubcommand::ReadAt(opts) => {
+    QuerySubcommand::At(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_read_at(input_path, ns, def, &opts.path, opts.depth)
+      handle_at(input_path, ns, def, &opts.path, opts.depth)
     }
-    QuerySubcommand::PeekDef(opts) => {
+    QuerySubcommand::Peek(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_peek_def(input_path, ns, def)
+      handle_peek(input_path, ns, def)
     }
-    QuerySubcommand::ReadExamples(opts) => {
+    QuerySubcommand::Examples(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_read_examples(input_path, ns, def)
+      handle_examples(input_path, ns, def)
     }
-    QuerySubcommand::FindSymbol(opts) => {
+    QuerySubcommand::Find(opts) => {
       if opts.fuzzy {
         handle_fuzzy_search(input_path, &opts.symbol, opts.deps, opts.limit)
       } else {
-        handle_find_symbol(input_path, &opts.symbol, opts.deps)
+        handle_find(input_path, &opts.symbol, opts.deps)
       }
     }
     QuerySubcommand::Usages(opts) => {
@@ -116,8 +115,14 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
   Ok(snapshot)
 }
 
-fn handle_ls_ns(input_path: &str, include_deps: bool, prefix: Option<&str>) -> Result<(), String> {
-  // Load snapshot without deps first to identify main package namespaces
+/// Handle `query ns` - list namespaces or show ns details
+fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool) -> Result<(), String> {
+  // If namespace is provided, show details (merged read-ns functionality)
+  if let Some(ns_name) = namespace {
+    return handle_ns_details(input_path, ns_name);
+  }
+
+  // Otherwise list all namespaces
   if !Path::new(input_path).exists() {
     return Err(format!("{input_path} does not exist"));
   }
@@ -128,29 +133,15 @@ fn handle_ls_ns(input_path: &str, include_deps: bool, prefix: Option<&str>) -> R
   let main_snapshot = snapshot::load_snapshot_data(&data, input_path)?;
   let main_package = main_snapshot.package.clone();
 
-  // Now load full snapshot with deps if needed
   let snapshot = if include_deps { load_snapshot(input_path)? } else { main_snapshot };
 
   let mut namespaces: Vec<&String> = snapshot.files.keys().collect();
   namespaces.sort();
 
-  // Filter by:
-  // 1. If prefix is set, filter by prefix
-  // 2. If --deps is not set, only show namespaces from main package
-  // 3. If --deps is set, show all including deps and core
   let filtered: Vec<_> = namespaces
     .iter()
     .filter(|ns| {
-      // Apply prefix filter if set
-      if let Some(p) = prefix {
-        if !ns.starts_with(p) {
-          return false;
-        }
-      }
-      // If deps not included, only show main package namespaces
       if !include_deps {
-        // Main package namespaces typically start with package name
-        // e.g. package "respo" -> namespaces "respo.*"
         ns.as_str() == main_package || ns.starts_with(&format!("{main_package}."))
       } else {
         true
@@ -158,38 +149,52 @@ fn handle_ls_ns(input_path: &str, include_deps: bool, prefix: Option<&str>) -> R
     })
     .collect();
 
-  if let Some(p) = prefix {
-    println!(
-      "{} ({} namespaces matching \"{}\")",
-      if include_deps { "All namespaces:" } else { "Project namespaces:" }.bold(),
-      filtered.len(),
-      p.yellow()
-    );
-  } else {
-    println!(
-      "{} ({} namespaces)",
-      if include_deps { "All namespaces:" } else { "Project namespaces:" }.bold(),
-      filtered.len()
-    );
-  }
+  println!(
+    "{} ({} namespaces)",
+    if include_deps { "All namespaces:" } else { "Project namespaces:" }.bold(),
+    filtered.len()
+  );
 
   for ns in &filtered {
     println!("  {}", ns.cyan());
   }
 
-  // LLM guidance
   if !include_deps {
     println!("\n{}", "Tip: Use `--deps` to include dependency and core namespaces.".dimmed());
   }
-  println!(
-    "{}",
-    "Tip: Use `query ls-defs <namespace>` to list definitions in a namespace.".dimmed()
-  );
+  println!("{}", "Tip: Use `query ns <namespace>` to show namespace details.".dimmed());
+  println!("{}", "Tip: Use `query defs <namespace>` to list definitions.".dimmed());
 
   Ok(())
 }
 
-fn handle_ls_defs(input_path: &str, namespace: &str) -> Result<(), String> {
+/// Handle `query ns <namespace>` - show ns details
+fn handle_ns_details(input_path: &str, namespace: &str) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path)?;
+
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  println!("{} {}", "Namespace:".bold(), namespace.cyan());
+
+  if !file_data.ns.doc.is_empty() {
+    println!("{} {}", "Doc:".bold(), file_data.ns.doc);
+  }
+
+  println!("\n{}", "NS declaration:".bold());
+  let ns_str = cirru_parser::format(&[file_data.ns.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+  println!("{}", ns_str.dimmed());
+
+  println!("\n{} {}", "Definitions:".bold(), file_data.defs.len());
+
+  println!("\n{}", format!("Tip: Use `query defs {namespace}` to list definitions.").dimmed());
+
+  Ok(())
+}
+
+fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let file_data = snapshot
@@ -205,7 +210,6 @@ fn handle_ls_defs(input_path: &str, namespace: &str) -> Result<(), String> {
   for def in &defs {
     let entry = &file_data.defs[*def];
     if !entry.doc.is_empty() {
-      // Truncate doc at first newline
       let doc_first_line = entry.doc.lines().next().unwrap_or("");
       let doc_display = if doc_first_line.len() > 50 {
         format!("{}...", &doc_first_line[..50])
@@ -218,53 +222,21 @@ fn handle_ls_defs(input_path: &str, namespace: &str) -> Result<(), String> {
     }
   }
 
-  // LLM guidance
   println!(
     "\n{}",
-    "Tip: Use `query peek-def <ns/def>` to see signature, or `query read-def <ns/def>` for full code.".dimmed()
+    "Tip: Use `query peek <ns/def>` for signature, `query def <ns/def>` for full code.".dimmed()
   );
 
   Ok(())
 }
 
-fn handle_read_ns(input_path: &str, namespace: &str) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
-
-  let file_data = snapshot
-    .files
-    .get(namespace)
-    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
-
-  println!("{} {}", "Namespace:".bold(), namespace.cyan());
-
-  if !file_data.ns.doc.is_empty() {
-    println!("{} {}", "Doc:".bold(), file_data.ns.doc);
-  }
-
-  // Print ns declaration (which includes import rules)
-  println!("\n{}", "NS declaration:".bold());
-  let ns_str = cirru_parser::format(&[file_data.ns.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
-  println!("{}", ns_str.dimmed());
-
-  // Show definition count
-  println!("\n{} {}", "Definitions:".bold(), file_data.defs.len());
-
-  // LLM guidance
-  println!(
-    "\n{}",
-    format!("Tip: Use `query ls-defs {namespace}` to list definitions.").dimmed()
-  );
-
-  Ok(())
-}
-
-fn handle_pkg_name(input_path: &str) -> Result<(), String> {
+fn handle_pkg(input_path: &str) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
   println!("{}", snapshot.package);
   Ok(())
 }
 
-fn handle_configs(input_path: &str) -> Result<(), String> {
+fn handle_config(input_path: &str) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   println!("{}", "Project Configs:".bold());
@@ -296,7 +268,7 @@ fn handle_error() -> Result<(), String> {
   Ok(())
 }
 
-fn handle_ls_modules(input_path: &str) -> Result<(), String> {
+fn handle_modules(input_path: &str) -> Result<(), String> {
   if !Path::new(input_path).exists() {
     return Err(format!("{input_path} does not exist"));
   }
@@ -313,10 +285,8 @@ fn handle_ls_modules(input_path: &str) -> Result<(), String> {
 
   println!("{}", "Modules in project:".bold());
 
-  // Print main package
   println!("  {} {}", snapshot.package.cyan(), "(main)".dimmed());
 
-  // Print each dependency module with its package name
   for module_path in &snapshot.configs.modules {
     match load_module_silent(module_path, base_dir, &module_folder) {
       Ok(module_snapshot) => {
@@ -328,7 +298,6 @@ fn handle_ls_modules(input_path: &str) -> Result<(), String> {
     }
   }
 
-  // Print entries if any
   if !snapshot.entries.is_empty() {
     println!("\n{}", "Entries:".bold());
     for name in snapshot.entries.keys() {
@@ -336,16 +305,15 @@ fn handle_ls_modules(input_path: &str) -> Result<(), String> {
     }
   }
 
-  // LLM guidance
   println!(
     "\n{}",
-    "Tip: Use `query ls-ns` to list all namespaces, or `query ls-defs <namespace>` to list definitions.".dimmed()
+    "Tip: Use `query ns` to list namespaces, `query defs <namespace>` to list definitions.".dimmed()
   );
 
   Ok(())
 }
 
-fn handle_read_def(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
+fn handle_def(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let file_data = snapshot
@@ -358,19 +326,16 @@ fn handle_read_def(input_path: &str, namespace: &str, definition: &str) -> Resul
     .get(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
 
-  // Output header
   println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
 
   if !code_entry.doc.is_empty() {
     println!("{} {}", "Doc:".bold(), code_entry.doc);
   }
 
-  // Output examples if present
   if !code_entry.examples.is_empty() {
     println!("\n{} ({} total)", "Examples:".bold(), code_entry.examples.len());
     for (i, example) in code_entry.examples.iter().enumerate() {
       let example_str = cirru_parser::format(&[example.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
-      // Indent and truncate if too long
       let lines: Vec<&str> = example_str.lines().collect();
       if lines.len() <= 3 {
         println!("  {}:", format!("[{}]", i + 1).dimmed());
@@ -387,26 +352,23 @@ fn handle_read_def(input_path: &str, namespace: &str, definition: &str) -> Resul
     }
   }
 
-  // Output as Cirru format (human readable)
   println!("\n{}", "Cirru:".bold());
   let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
   println!("{cirru_str}");
 
-  // Also output compact JSON for edit operations
   println!("\n{}", "JSON (for edit):".bold());
   let json = cirru_to_json(&code_entry.code);
   println!("{}", serde_json::to_string(&json).unwrap());
 
-  // LLM guidance
   println!(
     "\n{}",
-    format!("Tip: Use `query read-at {namespace}/{definition} -p \"0\"` to explore tree structure for editing.").dimmed()
+    format!("Tip: Use `query at {namespace}/{definition} -p \"0\"` to explore tree for editing.").dimmed()
   );
 
   Ok(())
 }
 
-fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &str, max_depth: usize) -> Result<(), String> {
+fn handle_at(input_path: &str, namespace: &str, definition: &str, path: &str, max_depth: usize) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let file_data = snapshot
@@ -419,7 +381,6 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
     .get(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
 
-  // Parse path
   let indices: Vec<usize> = if path.is_empty() {
     vec![]
   } else {
@@ -430,10 +391,8 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
       .map_err(|e| format!("Invalid path format: {e}"))?
   };
 
-  // Navigate to target
   let target = navigate_to_path(&code_entry.code, &indices)?;
 
-  // Output info - compact header
   println!(
     "{} {}/{}  {}",
     "At:".bold(),
@@ -442,17 +401,14 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
     format!("[{path}]").dimmed()
   );
 
-  // Show target type and content
   match &target {
     Cirru::Leaf(s) => {
       println!("{} leaf = {}", "Type:".bold(), s.to_string().yellow());
-      // For leaf, show JSON directly
       println!("{} \"{}\"", "JSON:".bold(), s);
     }
     Cirru::List(items) => {
       println!("{} list ({} items)", "Type:".bold(), items.len());
 
-      // Show Cirru format preview (depth limited by formatting)
       let cirru_str = cirru_parser::format(&[target.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
       let preview_lines: Vec<&str> = cirru_str.lines().take(5).collect();
       println!("\n{}", "Cirru preview:".bold());
@@ -463,7 +419,6 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
         println!("  {}", "...".dimmed());
       }
 
-      // Show children index for navigation
       println!("\n{}", "Children:".bold());
       for (i, item) in items.iter().enumerate() {
         let child_path = if path.is_empty() { i.to_string() } else { format!("{path},{i}") };
@@ -491,18 +446,17 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
     }
   }
 
-  // LLM guidance based on context
   if path.is_empty() {
     println!(
       "\n{}",
-      "Tip: Navigate deeper with -p \"0\", -p \"1\", etc. to locate target before editing.".dimmed()
+      "Tip: Navigate deeper with -p \"0\", -p \"1\", etc. to locate target.".dimmed()
     );
   } else {
     println!(
       "\n{}",
-      format!("Tip: To modify this node, use `edit operate-at {namespace}/{definition} -p \"{path}\" -o replace '<cirru>'`").dimmed()
+      format!("Tip: To modify, use `edit at {namespace}/{definition} -p \"{path}\" -o replace '<cirru>'`").dimmed()
     );
-    println!("{}", "     Use `-j '<json>'` for JSON input instead of Cirru.".dimmed());
+    println!("{}", "     Use `-j '<json>'` for JSON input.".dimmed());
   }
 
   Ok(())
@@ -549,11 +503,9 @@ pub fn cirru_to_json_with_depth(cirru: &Cirru, max_depth: usize, current_depth: 
     Cirru::Leaf(s) => serde_json::Value::String(s.to_string()),
     Cirru::List(items) => {
       if max_depth > 0 && current_depth >= max_depth {
-        // At max depth, show truncated indicator
         if items.is_empty() {
           serde_json::Value::Array(vec![])
         } else {
-          // Show first item (usually the operator) and indicate more items
           let first = match &items[0] {
             Cirru::Leaf(s) => serde_json::Value::String(s.to_string()),
             Cirru::List(_) => serde_json::Value::String("[...]".to_string()),
@@ -580,8 +532,7 @@ pub fn cirru_to_json_with_depth(cirru: &Cirru, max_depth: usize, current_depth: 
 // Progressive disclosure commands
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Read examples of a definition
-fn handle_read_examples(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
+fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let file_data = snapshot
@@ -600,7 +551,7 @@ fn handle_read_examples(input_path: &str, namespace: &str, definition: &str) -> 
     println!("\n{}", "(no examples)".dimmed());
     println!(
       "\n{}",
-      format!("Tip: Use `edit set-examples {namespace}/{definition}` to add examples.").dimmed()
+      format!("Tip: Use `edit examples {namespace}/{definition}` to add examples.").dimmed()
     );
   } else {
     println!("{} example(s)\n", code_entry.examples.len());
@@ -622,15 +573,15 @@ fn handle_read_examples(input_path: &str, namespace: &str, definition: &str) -> 
 
     println!(
       "{}",
-      format!("Tip: Use `edit set-examples {namespace}/{definition}` to modify examples.").dimmed()
+      format!("Tip: Use `edit examples {namespace}/{definition}` to modify examples.").dimmed()
     );
   }
 
   Ok(())
 }
 
-/// Peek definition - show signature/params/doc without full body (Level 2 disclosure)
-fn handle_peek_def(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
+/// Peek definition - show signature/params/doc without full body
+fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let file_data = snapshot
@@ -718,18 +669,18 @@ fn handle_peek_def(input_path: &str, namespace: &str, definition: &str) -> Resul
   // Always show examples count
   println!("{} {}", "Examples:".bold(), code_entry.examples.len());
 
-  // LLM guidance - show relevant next steps
+  // Tips - show relevant next steps
   println!("\n{}", "Tips:".bold());
-  println!("  {} query read-def {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} query read-examples {}/{}", "-".dimmed(), namespace, definition);
+  println!("  {} query def {}/{}", "-".dimmed(), namespace, definition);
+  println!("  {} query examples {}/{}", "-".dimmed(), namespace, definition);
   println!("  {} query usages {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} edit update-def-doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
+  println!("  {} edit doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
 
   Ok(())
 }
 
 /// Find symbol across all namespaces
-fn handle_find_symbol(input_path: &str, symbol: &str, include_deps: bool) -> Result<(), String> {
+fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let mut found_definitions: Vec<(String, String)> = vec![];
@@ -797,13 +748,12 @@ fn handle_find_symbol(input_path: &str, symbol: &str, include_deps: bool) -> Res
 
   if found_definitions.is_empty() && references.is_empty() {
     println!("{}", "No matches found.".yellow());
-    println!("\n{}", "Tip: Try `query ls-ns` to see available namespaces.".dimmed());
+    println!("\n{}", "Tip: Try `query ns` to see available namespaces.".dimmed());
   } else if !found_definitions.is_empty() {
-    // LLM guidance
     let (first_ns, first_def) = &found_definitions[0];
     println!(
       "\n{}",
-      format!("Tip: Use `query peek-def {first_ns}/{first_def}` to see signature.").dimmed()
+      format!("Tip: Use `query peek {first_ns}/{first_def}` to see signature.").dimmed()
     );
   }
 
@@ -880,12 +830,9 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     }
   }
 
-  // LLM guidance
+  // Tip
   if !usages.is_empty() {
-    println!(
-      "\n{}",
-      "Tip: Modifying this definition may affect the above locations. Review before refactoring.".dimmed()
-    );
+    println!("\n{}", "Tip: Modifying this definition may affect the above locations.".dimmed());
   }
 
   Ok(())
@@ -1027,7 +974,7 @@ fn handle_fuzzy_search(input_path: &str, pattern: &str, include_deps: bool, limi
     println!("  {} {} more results...", "...".dimmed(), total - limit);
   }
 
-  println!("\n{}", "Tip: Use `query read-def <ns/def>` to view definition content.".dimmed());
+  println!("\n{}", "Tip: Use `query def <ns/def>` to view definition content.".dimmed());
 
   Ok(())
 }

@@ -13,11 +13,11 @@ This guide helps LLMs generate correct Cirru syntax for use with `cr edit` comma
 
 ```bash
 # Cirru input (default)
-cr edit upsert-def my.ns my-fn -f code.cirru
+cr edit def my.ns/my-fn -f code.cirru
 
 # JSON input (explicit)
-cr edit upsert-def my.ns my-fn -j '["defn","my-fn",["x"],["&+","x","1"]]'
-cr edit upsert-def my.ns my-fn -f code.json --json-input
+cr edit def my.ns/my-fn -j '["defn","my-fn",["x"],["&+","x","1"]]'
+cr edit def my.ns/my-fn -f code.json --json-input
 ```
 
 ## Cirru Syntax Essentials
@@ -171,17 +171,17 @@ When using `-j` or `--json-input`:
 
 ## Testing Your Code
 
-Always verify with `query read-def`:
+Always verify with `query def`:
 
 ```bash
 # Create definition
-cr edit upsert-def my.ns my-fn -f code.cirru
+cr edit def my.ns/my-fn -f code.cirru
 
 # Verify structure
-cr query read-def my.ns my-fn
+cr query def my.ns/my-fn
 
 # Explore specific path
-cr query read-at my.ns my-fn -p "1,0" -d 3
+cr query at my.ns/my-fn -p "1,0" -d 3
 ```
 
 ## Shell Escaping Tips
