@@ -21,6 +21,16 @@ use std::fs;
 use std::io::{self, Read};
 use std::sync::Arc;
 
+/// Parse "namespace/definition" format into (namespace, definition)
+fn parse_target(target: &str) -> Result<(&str, &str), String> {
+  target.rsplit_once('/').ok_or_else(|| {
+    format!(
+      "Invalid target format: '{}'. Expected 'namespace/definition' (e.g. 'app.core/main')",
+      target
+    )
+  })
+}
+
 pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
   match &cmd.subcommand {
     EditSubcommand::UpsertDef(opts) => handle_upsert_def(opts, snapshot_file),
@@ -148,6 +158,8 @@ fn parse_path(path_str: &str) -> Result<Vec<usize>, String> {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 fn handle_upsert_def(opts: &EditUpsertDefCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+
   let raw = read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Code input required: use --file, --json, or --stdin")?;
 
   let syntax_tree = parse_input_to_cirru(&raw, &opts.json, opts.json_input)?;
@@ -157,22 +169,22 @@ fn handle_upsert_def(opts: &EditUpsertDefCommand, snapshot_file: &str) -> Result
   // Check if namespace exists
   let file_data = snapshot
     .files
-    .get_mut(&opts.namespace)
-    .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{}' not found", namespace))?;
 
   // Check if definition exists
-  let exists = file_data.defs.contains_key(&opts.definition);
+  let exists = file_data.defs.contains_key(definition);
 
   if exists && !opts.replace {
     return Err(format!(
       "Definition '{}' already exists in namespace '{}'. Use --replace to overwrite.",
-      opts.definition, opts.namespace
+      definition, namespace
     ));
   }
 
   // Create or update definition
   let code_entry = CodeEntry::from_code(syntax_tree);
-  file_data.defs.insert(opts.definition.clone(), code_entry);
+  file_data.defs.insert(definition.to_string(), code_entry);
 
   save_snapshot(&snapshot, snapshot_file)?;
 
@@ -180,15 +192,15 @@ fn handle_upsert_def(opts: &EditUpsertDefCommand, snapshot_file: &str) -> Result
     println!(
       "{} Updated definition '{}' in namespace '{}'",
       "✓".green(),
-      opts.definition.cyan(),
-      opts.namespace
+      definition.cyan(),
+      namespace
     );
   } else {
     println!(
       "{} Created definition '{}' in namespace '{}'",
       "✓".green(),
-      opts.definition.cyan(),
-      opts.namespace
+      definition.cyan(),
+      namespace
     );
   }
 
@@ -196,17 +208,19 @@ fn handle_upsert_def(opts: &EditUpsertDefCommand, snapshot_file: &str) -> Result
 }
 
 fn handle_delete_def(opts: &EditDeleteDefCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+
   let mut snapshot = load_snapshot(snapshot_file)?;
 
   let file_data = snapshot
     .files
-    .get_mut(&opts.namespace)
-    .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{}' not found", namespace))?;
 
-  if file_data.defs.remove(&opts.definition).is_none() {
+  if file_data.defs.remove(definition).is_none() {
     return Err(format!(
       "Definition '{}' not found in namespace '{}'",
-      opts.definition, opts.namespace
+      definition, namespace
     ));
   }
 
@@ -215,25 +229,27 @@ fn handle_delete_def(opts: &EditDeleteDefCommand, snapshot_file: &str) -> Result
   println!(
     "{} Deleted definition '{}' from namespace '{}'",
     "✓".green(),
-    opts.definition.cyan(),
-    opts.namespace
+    definition.cyan(),
+    namespace
   );
 
   Ok(())
 }
 
 fn handle_update_def_doc(opts: &EditUpdateDefDocCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+
   let mut snapshot = load_snapshot(snapshot_file)?;
 
   let file_data = snapshot
     .files
-    .get_mut(&opts.namespace)
-    .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{}' not found", namespace))?;
 
   let code_entry = file_data
     .defs
-    .get_mut(&opts.definition)
-    .ok_or_else(|| format!("Definition '{}' not found in namespace '{}'", opts.definition, opts.namespace))?;
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{}' not found in namespace '{}'", definition, namespace))?;
 
   code_entry.doc = opts.doc.clone();
 
@@ -242,14 +258,16 @@ fn handle_update_def_doc(opts: &EditUpdateDefDocCommand, snapshot_file: &str) ->
   println!(
     "{} Updated documentation for '{}' in namespace '{}'",
     "✓".green(),
-    opts.definition.cyan(),
-    opts.namespace
+    definition.cyan(),
+    namespace
   );
 
   Ok(())
 }
 
 fn handle_operate_at(opts: &EditOperateAtCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+
   let path = parse_path(&opts.path)?;
 
   // For delete operation, code input is not required
@@ -259,13 +277,13 @@ fn handle_operate_at(opts: &EditOperateAtCommand, snapshot_file: &str) -> Result
 
   let file_data = snapshot
     .files
-    .get_mut(&opts.namespace)
-    .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{}' not found", namespace))?;
 
   let code_entry = file_data
     .defs
-    .get_mut(&opts.definition)
-    .ok_or_else(|| format!("Definition '{}' not found", opts.definition))?;
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{}' not found", definition))?;
 
   // Prepare parsed new node (if applicable)
   let new_node_opt: Option<Cirru> = match opts.operation.as_str() {
@@ -290,8 +308,8 @@ fn handle_operate_at(opts: &EditOperateAtCommand, snapshot_file: &str) -> Result
     "✓".green(),
     opts.operation.yellow(),
     opts.path,
-    opts.namespace,
-    opts.definition.cyan()
+    namespace,
+    definition.cyan()
   );
 
   // Show preview of result with depth limit

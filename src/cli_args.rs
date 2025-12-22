@@ -230,24 +230,18 @@ pub struct QueryLsModulesCommand {}
 #[argh(subcommand, name = "read-def")]
 /// read a definition's full syntax tree as JSON
 pub struct QueryReadDefCommand {
-  /// namespace containing the definition
+  /// target in format "namespace/definition"
   #[argh(positional)]
-  pub namespace: String,
-  /// definition name
-  #[argh(positional)]
-  pub definition: String,
+  pub target: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "read-at")]
 /// read content at specific path in a definition (for exploring code tree)
 pub struct QueryReadAtCommand {
-  /// namespace containing the definition
+  /// target in format "namespace/definition"
   #[argh(positional)]
-  pub namespace: String,
-  /// definition name
-  #[argh(positional)]
-  pub definition: String,
+  pub target: String,
   /// path to the node (comma-separated indices, e.g. "2,1,0", empty for root)
   #[argh(option, short = 'p', default = "String::new()")]
   pub path: String,
@@ -260,12 +254,9 @@ pub struct QueryReadAtCommand {
 #[argh(subcommand, name = "peek-def")]
 /// peek definition signature (name, params, doc) without full implementation body
 pub struct QueryPeekDefCommand {
-  /// namespace containing the definition
+  /// target in format "namespace/definition"
   #[argh(positional)]
-  pub namespace: String,
-  /// definition name
-  #[argh(positional)]
-  pub definition: String,
+  pub target: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -284,12 +275,9 @@ pub struct QueryFindSymbolCommand {
 #[argh(subcommand, name = "usages")]
 /// find usages of a definition across the project
 pub struct QueryUsagesCommand {
-  /// namespace containing the definition
+  /// target in format "namespace/definition"
   #[argh(positional)]
-  pub namespace: String,
-  /// definition name to find usages of
-  #[argh(positional)]
-  pub definition: String,
+  pub target: String,
   /// include dependency namespaces in search
   #[argh(switch)]
   pub deps: bool,
@@ -510,12 +498,9 @@ pub enum EditSubcommand {
 #[argh(subcommand, name = "upsert-def")]
 /// add or update a definition (syntax_tree input: Cirru by default; use --json-input or -j for JSON)
 pub struct EditUpsertDefCommand {
-  /// namespace containing the definition
+  /// target in format "namespace/definition"
   #[argh(positional)]
-  pub namespace: String,
-  /// definition name
-  #[argh(positional)]
-  pub definition: String,
+  pub target: String,
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
@@ -540,24 +525,18 @@ pub struct EditUpsertDefCommand {
 #[argh(subcommand, name = "delete-def")]
 /// delete a definition from namespace
 pub struct EditDeleteDefCommand {
-  /// namespace containing the definition
+  /// target in format "namespace/definition"
   #[argh(positional)]
-  pub namespace: String,
-  /// definition name to delete
-  #[argh(positional)]
-  pub definition: String,
+  pub target: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "update-def-doc")]
 /// update documentation for a definition
 pub struct EditUpdateDefDocCommand {
-  /// namespace containing the definition
+  /// target in format "namespace/definition"
   #[argh(positional)]
-  pub namespace: String,
-  /// definition name
-  #[argh(positional)]
-  pub definition: String,
+  pub target: String,
   /// documentation text
   #[argh(positional)]
   pub doc: String,
@@ -567,12 +546,9 @@ pub struct EditUpdateDefDocCommand {
 #[argh(subcommand, name = "operate-at")]
 /// operate on definition at specific path (input: Cirru by default; use --json-input or -j for JSON)
 pub struct EditOperateAtCommand {
-  /// namespace containing the definition
+  /// target in format "namespace/definition"
   #[argh(positional)]
-  pub namespace: String,
-  /// definition name
-  #[argh(positional)]
-  pub definition: String,
+  pub target: String,
   /// path to the node (comma-separated indices, e.g. "2,1,0")
   #[argh(option, short = 'p')]
   pub path: String,

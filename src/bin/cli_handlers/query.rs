@@ -10,6 +10,16 @@ use colored::Colorize;
 use std::fs;
 use std::path::Path;
 
+/// Parse "namespace/definition" format into (namespace, definition)
+fn parse_target(target: &str) -> Result<(&str, &str), String> {
+  target.rsplit_once('/').ok_or_else(|| {
+    format!(
+      "Invalid target format: '{}'. Expected 'namespace/definition' (e.g. 'app.core/main')",
+      target
+    )
+  })
+}
+
 pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), String> {
   match &cmd.subcommand {
     QuerySubcommand::LsNs(opts) => handle_ls_ns(input_path, opts.deps),
@@ -19,11 +29,23 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
     QuerySubcommand::Configs(_) => handle_configs(input_path),
     QuerySubcommand::Error(_) => handle_error(),
     QuerySubcommand::LsModules(_) => handle_ls_modules(input_path),
-    QuerySubcommand::ReadDef(opts) => handle_read_def(input_path, &opts.namespace, &opts.definition),
-    QuerySubcommand::ReadAt(opts) => handle_read_at(input_path, &opts.namespace, &opts.definition, &opts.path, opts.depth),
-    QuerySubcommand::PeekDef(opts) => handle_peek_def(input_path, &opts.namespace, &opts.definition),
+    QuerySubcommand::ReadDef(opts) => {
+      let (ns, def) = parse_target(&opts.target)?;
+      handle_read_def(input_path, ns, def)
+    }
+    QuerySubcommand::ReadAt(opts) => {
+      let (ns, def) = parse_target(&opts.target)?;
+      handle_read_at(input_path, ns, def, &opts.path, opts.depth)
+    }
+    QuerySubcommand::PeekDef(opts) => {
+      let (ns, def) = parse_target(&opts.target)?;
+      handle_peek_def(input_path, ns, def)
+    }
     QuerySubcommand::FindSymbol(opts) => handle_find_symbol(input_path, &opts.symbol, opts.deps),
-    QuerySubcommand::Usages(opts) => handle_usages(input_path, &opts.namespace, &opts.definition, opts.deps),
+    QuerySubcommand::Usages(opts) => {
+      let (ns, def) = parse_target(&opts.target)?;
+      handle_usages(input_path, ns, def, opts.deps)
+    }
     QuerySubcommand::Search(opts) => handle_search(input_path, &opts.pattern, opts.deps, opts.limit),
   }
 }

@@ -45,11 +45,11 @@ Calcit 程序使用 `cr` 命令：
 
 **渐进式代码探索（Progressive Disclosure）：**
 
-- `cr query peek-def <namespace> <definition>` - 查看定义签名（参数、文档、表达式数量），不返回完整实现体
+- `cr query peek-def <namespace/definition>` - 查看定义签名（参数、文档、表达式数量），不返回完整实现体
   - 输出：Form 类型、参数列表、Body 表达式数量、首个表达式预览
   - 用于快速了解函数接口，减少 token 消耗
-- `cr query read-def <namespace> <definition>` - 读取定义的完整语法树（JSON 格式）
-- `cr query read-at <namespace> <definition> -p <path>` - 读取定义中指定坐标的内容
+- `cr query read-def <namespace/definition>` - 读取定义的完整语法树（JSON 格式）
+- `cr query read-at <namespace/definition> -p <path>` - 读取定义中指定坐标的内容
   - path：逗号分隔的索引，如 "2,1,0"，空字符串表示根节点
   - `-d <depth>` 或 `--depth <depth>`：限制 JSON 输出深度（0=无限，默认 0）
   - 输出包含：类型（leaf/list）、子节点预览、完整 JSON
@@ -59,7 +59,7 @@ Calcit 程序使用 `cr` 命令：
 - `cr query find-symbol <symbol> [--deps]` - 跨命名空间搜索符号
   - 返回：定义位置 + 所有引用位置（带上下文预览）
   - 用于探测符号定义在哪里、避免盲目猜测
-- `cr query usages <namespace> <definition> [--deps]` - 查找定义的所有使用位置
+- `cr query usages <namespace/definition> [--deps]` - 查找定义的所有使用位置
   - 返回：引用该定义的所有位置（带上下文预览）
   - 用于理解代码影响范围，重构前的影响分析
 - `cr query search <pattern> [--deps] [-n <limit>]` - 模糊搜索命名空间/定义
@@ -110,16 +110,16 @@ Calcit 程序使用 `cr` 命令：
 
 直接编辑 compact.cirru 项目代码，支持三种输入方式：
 
-- `--file <path>` 或 `-f <path>` - 从文件读取 JSON 语法树
+- `--file <path>` 或 `-f <path>` - 从文件读取（默认 Cirru 格式，使用 `-J` 指定 JSON）
 - `--json <string>` 或 `-j <string>` - 内联 JSON 字符串
-- `--stdin` 或 `-s` - 从标准输入读取 JSON
+- `--stdin` 或 `-s` - 从标准输入读取（默认 Cirru 格式，使用 `-J` 指定 JSON）
 
 **定义操作：**
 
-- `cr edit upsert-def <namespace> <definition> -j '<json>'` - 添加或更新定义
-- `cr edit upsert-def <namespace> <definition> -r -j '<json>'` - 强制覆盖已有定义
-- `cr edit delete-def <namespace> <definition>` - 删除定义
-- `cr edit operate-at <namespace> <definition> -p <path> -o <operation> -j '<json>'` - 在指定路径操作
+- `cr edit upsert-def <namespace/definition> -j '<json>'` - 添加或更新定义
+- `cr edit upsert-def <namespace/definition> -r -j '<json>'` - 强制覆盖已有定义
+- `cr edit delete-def <namespace/definition>` - 删除定义
+- `cr edit operate-at <namespace/definition> -p <path> -o <operation> -j '<json>'` - 在指定路径操作
   - path：逗号分隔的索引，如 "2,1,0"
   - operation："insert-before", "insert-after", "replace", "delete", "insert-child"
   - `-d <depth>` 或 `--depth <depth>`：限制结果预览深度（0=无限，默认 2）
@@ -131,18 +131,18 @@ Calcit 程序使用 `cr` 命令：
 
 ```bash
 # 步骤1: 先读取整体结构，了解根节点 (用 -d 1 限制深度减少输出)
-cr query read-at app.core my-fn -p "" -d 1
+cr query read-at app.core/my-fn -p "" -d 1
 
 # 步骤2: 逐层深入，确认目标位置
-cr query read-at app.core my-fn -p "2" -d 1      # 查看第3个子节点
-cr query read-at app.core my-fn -p "2,1" -d 1    # 继续深入
-cr query read-at app.core my-fn -p "2,1,0"       # 确认最终目标
+cr query read-at app.core/my-fn -p "2" -d 1      # 查看第3个子节点
+cr query read-at app.core/my-fn -p "2,1" -d 1    # 继续深入
+cr query read-at app.core/my-fn -p "2,1,0"       # 确认最终目标
 
 # 步骤3: 确认无误后再执行修改
-cr edit operate-at app.core my-fn -p "2,1,0" -o replace -j '"new-value"'
+cr edit operate-at app.core/my-fn -p "2,1,0" -o replace -j '"new-value"'
 
 # 步骤4: 验证修改结果
-cr query read-at app.core my-fn -p "2,1"
+cr query read-at app.core/my-fn -p "2,1"
 ```
 
 **命名空间操作：**
@@ -162,13 +162,16 @@ cr query read-at app.core my-fn -p "2,1"
 
 ```bash
 # 使用内联 JSON 添加定义
-cr edit upsert-def app.core multiply -j '["defn", "multiply", ["x", "y"], ["*", "x", "y"]]'
+cr edit upsert-def app.core/multiply -j '["defn", "multiply", ["x", "y"], ["*", "x", "y"]]'
 
 # 使用 stdin 管道
-echo '["defn", "hello", [], ["println", "|Hello"]]' | cr edit upsert-def app.core hello -s
+echo '["defn", "hello", [], ["println", "|Hello"]]' | cr edit upsert-def app.core/hello -s -J
 
-# 从文件读取
-cr edit upsert-def app.core complex-fn -f /tmp/code.json
+# 从文件读取（Cirru 格式）
+cr edit upsert-def app.core/complex-fn -f /tmp/code.cirru
+
+# 从文件读取（JSON 格式）
+cr edit upsert-def app.core/complex-fn -f /tmp/code.json -J
 ```
 
 可以使用 `--help` 参数了解更详细的用法。
