@@ -7,7 +7,7 @@
 use crate::calcit::Calcit;
 use crate::program::{PROGRAM_CODE_DATA, ProgramCodeData};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Represents a node in the call tree
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,8 +97,8 @@ pub struct CallTreeAnalyzer {
   config: CallTreeConfig,
   /// Track visited definitions to handle circular references
   visited: HashSet<String>,
-  /// Track definitions that have been fully expanded (shown with children)
-  expanded: HashSet<String>,
+  /// Track definitions that have been fully expanded (fqn -> had_children)
+  expanded: HashMap<String, bool>,
   /// All reachable definitions
   reachable: HashSet<String>,
   /// Circular reference count
@@ -112,7 +112,7 @@ impl CallTreeAnalyzer {
     CallTreeAnalyzer {
       config,
       visited: HashSet::new(),
-      expanded: HashSet::new(),
+      expanded: HashMap::new(),
       reachable: HashSet::new(),
       circular_count: 0,
       max_depth: 0,
@@ -192,7 +192,7 @@ impl CallTreeAnalyzer {
     }
 
     // Check if already expanded elsewhere - just mark as seen, don't expand again
-    if self.expanded.contains(&fqn) {
+    if let Some(&had_children) = self.expanded.get(&fqn) {
       return Ok(CallTreeNode {
         ns: ns.to_string(),
         def: def.to_string(),
@@ -200,7 +200,8 @@ impl CallTreeAnalyzer {
         doc: None,
         calls: vec![],
         circular: false,
-        seen: true,
+        // Only mark as seen if the original expansion had children (content was collapsed)
+        seen: had_children,
         source: self.get_source_type(ns),
       });
     }
@@ -259,8 +260,8 @@ impl CallTreeAnalyzer {
     // Unmark from current path (allow revisiting in different branches)
     self.visited.remove(&fqn);
 
-    // Mark as expanded so subsequent occurrences show as "seen"
-    self.expanded.insert(fqn.clone());
+    // Mark as expanded, recording whether it had children
+    self.expanded.insert(fqn.clone(), !calls.is_empty());
 
     Ok(CallTreeNode {
       ns: ns.to_string(),

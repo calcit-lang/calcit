@@ -102,7 +102,7 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
         }
       }
       Err(e) => {
-        eprintln!("Warning: Failed to load module '{}': {}", module_path, e);
+        eprintln!("Warning: Failed to load module '{module_path}': {e}");
       }
     }
   }
@@ -129,11 +129,7 @@ fn handle_ls_ns(input_path: &str, include_deps: bool, prefix: Option<&str>) -> R
   let main_package = main_snapshot.package.clone();
 
   // Now load full snapshot with deps if needed
-  let snapshot = if include_deps {
-    load_snapshot(input_path)?
-  } else {
-    main_snapshot
-  };
+  let snapshot = if include_deps { load_snapshot(input_path)? } else { main_snapshot };
 
   let mut namespaces: Vec<&String> = snapshot.files.keys().collect();
   namespaces.sort();
@@ -155,7 +151,7 @@ fn handle_ls_ns(input_path: &str, include_deps: bool, prefix: Option<&str>) -> R
       if !include_deps {
         // Main package namespaces typically start with package name
         // e.g. package "respo" -> namespaces "respo.*"
-        ns.as_str() == main_package || ns.starts_with(&format!("{}.", main_package))
+        ns.as_str() == main_package || ns.starts_with(&format!("{main_package}."))
       } else {
         true
       }
@@ -183,10 +179,7 @@ fn handle_ls_ns(input_path: &str, include_deps: bool, prefix: Option<&str>) -> R
 
   // LLM guidance
   if !include_deps {
-    println!(
-      "\n{}",
-      "Tip: Use `--deps` to include dependency and core namespaces.".dimmed()
-    );
+    println!("\n{}", "Tip: Use `--deps` to include dependency and core namespaces.".dimmed());
   }
   println!(
     "{}",
@@ -336,7 +329,7 @@ fn handle_ls_modules(input_path: &str) -> Result<(), String> {
   for module_path in &snapshot.configs.modules {
     match load_module_silent(module_path, base_dir, &module_folder) {
       Ok(module_snapshot) => {
-        println!("  {} {}", module_snapshot.package.cyan(), format!("({})", module_path).dimmed());
+        println!("  {} {}", module_snapshot.package.cyan(), format!("({module_path})").dimmed());
       }
       Err(_) => {
         println!("  {} {}", module_path.yellow(), "(failed)".red());
@@ -416,8 +409,7 @@ fn handle_read_def(input_path: &str, namespace: &str, definition: &str) -> Resul
   // LLM guidance
   println!(
     "\n{}",
-    "Tip: Use `edit operate-at -p <path> -o <op>` to modify specific parts. Use `query read-at -p \"0\"` to explore tree structure."
-      .dimmed()
+    format!("Tip: Use `query read-at {namespace}/{definition} -p \"0\"` to explore tree structure for editing.").dimmed()
   );
 
   Ok(())
@@ -517,8 +509,9 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
   } else {
     println!(
       "\n{}",
-      format!("Tip: To modify this node, use `edit operate-at <ns/def> -p \"{path}\" -o replace -j '<json>'`").dimmed()
+      format!("Tip: To modify this node, use `edit operate-at {namespace}/{definition} -p \"{path}\" -o replace '<cirru>'`").dimmed()
     );
+    println!("{}", "     Use `-j '<json>'` for JSON input instead of Cirru.".dimmed());
   }
 
   Ok(())
