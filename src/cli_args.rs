@@ -516,19 +516,19 @@ pub struct EditUpsertDefCommand {
   /// definition name
   #[argh(positional)]
   pub definition: String,
-  /// read syntax_tree JSON from file
+  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
   /// syntax_tree as inline JSON string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
-  /// treat input as cirru text (default if not specified)
+  /// treat input as cirru text (default, explicit for clarity)
   #[argh(switch, short = 'c', long = "cirru")]
   pub cirru: bool,
-  /// treat file/stdin input as JSON (must be specified to accept JSON files/stdin)
+  /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
-  /// read syntax_tree JSON from stdin
+  /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
   /// force replace if definition exists
@@ -579,19 +579,19 @@ pub struct EditOperateAtCommand {
   /// operation: "insert-before", "insert-after", "replace", "delete", "insert-child"
   #[argh(option, short = 'o')]
   pub operation: String,
-  /// read syntax_tree JSON from file (for insert/replace operations)
+  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
   /// syntax_tree as inline JSON string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
-  /// read syntax_tree JSON from stdin
+  /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// treat input as cirru text (default if not specified)
+  /// treat input as cirru text (default, explicit for clarity)
   #[argh(switch, short = 'c', long = "cirru")]
   pub cirru: bool,
-  /// treat file/stdin input as JSON (must be specified to accept JSON files/stdin)
+  /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
   /// max depth for result preview (0 = unlimited, default 2)
@@ -608,19 +608,19 @@ pub struct EditAddNsCommand {
   /// namespace name to create
   #[argh(positional)]
   pub namespace: String,
-  /// read ns syntax_tree JSON from file (optional, creates minimal ns if not provided)
+  /// read ns syntax_tree from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
   /// ns syntax_tree as inline JSON string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
-  /// read ns syntax_tree JSON from stdin
+  /// read ns syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// treat input as cirru text (default if not specified)
+  /// treat input as cirru text (default, explicit for clarity)
   #[argh(switch, short = 'c', long = "cirru")]
   pub cirru: bool,
-  /// treat file/stdin input as JSON (must be specified to accept JSON files/stdin)
+  /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
 }
@@ -641,19 +641,19 @@ pub struct EditUpdateImportsCommand {
   /// namespace to update
   #[argh(positional)]
   pub namespace: String,
-  /// read imports JSON from file
+  /// read imports from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
   /// imports as inline JSON string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
-  /// read imports JSON from stdin
+  /// read imports from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// treat input as cirru text (default if not specified)
+  /// treat input as cirru text (default, explicit for clarity)
   #[argh(switch, short = 'c', long = "cirru")]
   pub cirru: bool,
-  /// treat file/stdin input as JSON (must be specified to accept JSON files/stdin)
+  /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
 }
