@@ -108,13 +108,85 @@ fn parse_input_to_cirru(raw: &str, inline_json: &Option<String>, json_input: boo
     return json_to_cirru(raw);
   }
 
+  // Check for common mistakes before parsing
+  let trimmed = raw.trim();
+
+  // Check for empty input
+  if trimmed.is_empty() {
+    return Err("Input is empty. Please provide Cirru code or use -j for JSON input.".to_string());
+  }
+
+  // Detect JSON input without --json-input flag
+  // JSON arrays look like: ["item", ...] or [ "item", ...]
+  // Cirru [] syntax looks like: [] 1 2 3 or []
+  // Key difference: JSON has ["..." at start, Cirru has [] followed by space or newline
+  if trimmed.starts_with('[') && trimmed.ends_with(']') {
+    // Check if it looks like JSON (starts with [" or [ ")
+    let after_bracket = &trimmed[1..];
+    let is_likely_json = after_bracket.starts_with('"')
+      || after_bracket.starts_with(' ') && after_bracket.trim_start().starts_with('"')
+      || after_bracket.starts_with('\n') && after_bracket.trim_start().starts_with('"');
+
+    // Also check: Cirru [] is followed by space then non-quote content
+    let is_cirru_list = after_bracket.starts_with(']') // empty []
+      || (after_bracket.starts_with(' ') && !after_bracket.trim_start().starts_with('"'));
+
+    if is_likely_json && !is_cirru_list {
+      return Err(
+        "Input appears to be JSON format (starts with '[\"').\n\
+         If you want to use JSON input, add -J or --json-input flag.\n\
+         Example: cr edit def ns/name -s -J < file.json\n\
+         Or use -j for inline JSON: cr edit def ns/name -j '[\"defn\", ...]'\n\
+         Note: Cirru's [] list syntax (e.g. '[] 1 2 3') is different and will be parsed correctly."
+          .to_string(),
+      );
+    }
+  }
+
+  // Detect tabs in input
+  if raw.contains('\t') {
+    return Err(
+      "Input contains tab characters. Cirru requires spaces for indentation.\n\
+       Please replace tabs with 2 spaces.\n\
+       Tip: Use `cat -A file` to check for tabs (shown as ^I)."
+        .to_string(),
+    );
+  }
+
   // Default: parse as cirru text
   let parsed = cirru_parser::parse(raw).map_err(|e| {
-    let mut msg = format!("Failed to parse Cirru text: {e}");
-    msg.push_str("\nTips: If your input contains special characters like '|' or '$', ensure the shell does not strip them — wrap input in single quotes or use --file/--stdin.\n");
-    msg.push_str("If you intended to provide JSON, pass --json-input or use -j for inline JSON.");
+    let err_str = e.to_string();
+    let mut msg = format!("Failed to parse Cirru text: {err_str}");
+
+    // Provide specific hints based on error type
+    if err_str.contains("odd indentation") {
+      msg.push_str("\n\nCirru requires 2-space indentation. Each nesting level must use exactly 2 spaces.");
+      msg.push_str("\nExample:\n  defn my-fn (x)\n    &+ x 1");
+    } else if err_str.contains("unexpected end of file") {
+      msg.push_str("\n\nCheck for unbalanced parentheses or incomplete expressions.");
+    } else {
+      msg.push_str("\n\nTips: If your input contains special characters like '|' or '$', ensure the shell does not strip them — wrap input in single quotes or use --file/--stdin.");
+    }
+
+    msg.push_str("\nIf you intended to provide JSON, pass --json-input or use -j for inline JSON.");
     msg
   })?;
+
+  // Check for empty parse result
+  if parsed.is_empty() {
+    return Err("Input parsed to empty code. Please provide valid Cirru code.".to_string());
+  }
+
+  // Warn if multiple top-level expressions (might indicate indentation issues)
+  if parsed.len() > 1 {
+    eprintln!(
+      "{}",
+      colored::Colorize::yellow(
+        "Warning: Input parsed as multiple expressions. This might indicate indentation issues.\n\
+         Cirru uses 2-space indentation for nesting. Check your whitespace."
+      )
+    );
+  }
 
   if parsed.len() == 1 {
     Ok(parsed.into_iter().next().unwrap())

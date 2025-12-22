@@ -35,10 +35,21 @@ fn json_to_cirru(json: &serde_json::Value) -> Result<cirru_parser::Cirru, String
 }
 
 fn handle_parse(code: &str) -> Result<(), String> {
-  // Check if input looks like JSON
+  // Check if input looks like JSON (but allow Cirru's [] list syntax)
   let trimmed = code.trim_start();
-  if trimmed.starts_with('[') {
-    return Err("Input appears to be JSON format, not Cirru code. This tool is for parsing Cirru syntax only.".to_string());
+  if let Some(after_bracket) = trimmed.strip_prefix('[') {
+    // Cirru [] syntax: "[] 1 2 3" or "[]" - bracket followed by ] or space+non-quote
+    let is_cirru_list =
+      after_bracket.starts_with(']') || (after_bracket.starts_with(' ') && !after_bracket.trim_start().starts_with('"'));
+
+    if !is_cirru_list {
+      return Err(
+        "Input appears to be JSON format (starts with '[\"'), not Cirru code.\n\
+         This tool is for parsing Cirru syntax only.\n\
+         Note: Cirru's [] list syntax (e.g. '[] 1 2 3') is supported."
+          .to_string(),
+      );
+    }
   }
 
   let cirru_data = cirru_parser::parse(code).map_err(|e| format!("Failed to parse Cirru code: {e}"))?;

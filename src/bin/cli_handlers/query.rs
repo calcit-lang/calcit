@@ -452,11 +452,24 @@ fn handle_at(input_path: &str, namespace: &str, definition: &str, path: &str, ma
       "Tip: Navigate deeper with -p \"0\", -p \"1\", etc. to locate target.".dimmed()
     );
   } else {
-    println!(
-      "\n{}",
-      format!("Tip: To modify, use `edit at {namespace}/{definition} -p \"{path}\" -o replace '<cirru>'`").dimmed()
-    );
-    println!("{}", "     Use `-j '<json>'` for JSON input.".dimmed());
+    // Check if target is a leaf to provide appropriate tip
+    let is_leaf = matches!(target, Cirru::Leaf(_));
+    if is_leaf {
+      println!(
+        "\n{}",
+        "Tip: To replace this leaf, use `-j '\"new-value\"'` (JSON string)".to_string().dimmed()
+      );
+      println!(
+        "{}",
+        format!("     Example: `edit at {namespace}/{definition} -p \"{path}\" -o replace -j '\"new-symbol\"'`").dimmed()
+      );
+    } else {
+      println!(
+        "\n{}",
+        format!("Tip: To modify, use `edit at {namespace}/{definition} -p \"{path}\" -o replace '<cirru>'`").dimmed()
+      );
+      println!("{}", "     Use `-j '<json>'` for JSON input.".dimmed());
+    }
   }
 
   Ok(())
