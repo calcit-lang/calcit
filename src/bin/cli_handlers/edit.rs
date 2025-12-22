@@ -10,8 +10,8 @@
 use super::query::cirru_to_json_with_depth;
 use calcit::cli_args::{
   EditAddModuleCommand, EditAddNsCommand, EditCommand, EditDeleteDefCommand, EditDeleteModuleCommand, EditDeleteNsCommand,
-  EditOperateAtCommand, EditSetConfigCommand, EditSetExamplesCommand, EditSubcommand, EditUpdateDefDocCommand, EditUpdateImportsCommand,
-  EditUpdateNsDocCommand, EditUpsertDefCommand,
+  EditOperateAtCommand, EditSetConfigCommand, EditSetExamplesCommand, EditSubcommand, EditUpdateDefDocCommand,
+  EditUpdateImportsCommand, EditUpdateNsDocCommand, EditUpsertDefCommand,
 };
 use calcit::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -23,11 +23,9 @@ use std::sync::Arc;
 
 /// Parse "namespace/definition" format into (namespace, definition)
 fn parse_target(target: &str) -> Result<(&str, &str), String> {
-  target.rsplit_once('/').ok_or_else(|| {
-    format!(
-      "Invalid target format: '{target}'. Expected 'namespace/definition' (e.g. 'app.core/main')"
-    )
-  })
+  target
+    .rsplit_once('/')
+    .ok_or_else(|| format!("Invalid target format: '{target}'. Expected 'namespace/definition' (e.g. 'app.core/main')"))
 }
 
 pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
@@ -217,9 +215,7 @@ fn handle_delete_def(opts: &EditDeleteDefCommand, snapshot_file: &str) -> Result
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
   if file_data.defs.remove(definition).is_none() {
-    return Err(format!(
-      "Definition '{definition}' not found in namespace '{namespace}'"
-    ));
+    return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
   }
 
   save_snapshot(&snapshot, snapshot_file)?;
@@ -302,12 +298,9 @@ fn handle_set_examples(opts: &EditSetExamplesCommand, snapshot_file: &str) -> Re
   // Parse examples - expect an array of Cirru expressions
   let examples: Vec<Cirru> = if opts.json.is_some() || opts.json_input {
     // Parse as JSON array
-    let json_value: serde_json::Value =
-      serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON: {e}"))?;
+    let json_value: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON: {e}"))?;
     match json_value {
-      serde_json::Value::Array(arr) => {
-        arr.iter().map(json_value_to_cirru).collect::<Result<Vec<_>, _>>()?
-      }
+      serde_json::Value::Array(arr) => arr.iter().map(json_value_to_cirru).collect::<Result<Vec<_>, _>>()?,
       _ => return Err("Expected JSON array of examples".to_string()),
     }
   } else {

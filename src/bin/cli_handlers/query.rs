@@ -13,11 +13,9 @@ use std::path::Path;
 
 /// Parse "namespace/definition" format into (namespace, definition)
 fn parse_target(target: &str) -> Result<(&str, &str), String> {
-  target.rsplit_once('/').ok_or_else(|| {
-    format!(
-      "Invalid target format: '{target}'. Expected 'namespace/definition' (e.g. 'app.core/main')"
-    )
-  })
+  target
+    .rsplit_once('/')
+    .ok_or_else(|| format!("Invalid target format: '{target}'. Expected 'namespace/definition' (e.g. 'app.core/main')"))
 }
 
 pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), String> {
@@ -168,7 +166,7 @@ fn handle_ls_defs(input_path: &str, namespace: &str) -> Result<(), String> {
   // LLM guidance
   println!(
     "\n{}",
-    "Tip: Use `query peek-def <ns> <def>` to see signature, or `query read-def` for full code.".dimmed()
+    "Tip: Use `query peek-def <ns/def>` to see signature, or `query read-def <ns/def>` for full code.".dimmed()
   );
 
   Ok(())
@@ -216,7 +214,7 @@ fn handle_read_ns(input_path: &str, namespace: &str) -> Result<(), String> {
   }
 
   // LLM guidance
-  println!("\n{}", "Tip: Use `query peek-def <ns> <def>` for signature details.".dimmed());
+  println!("\n{}", "Tip: Use `query peek-def <ns/def>` for signature details.".dimmed());
 
   Ok(())
 }
@@ -442,7 +440,7 @@ fn handle_read_at(input_path: &str, namespace: &str, definition: &str, path: &st
   } else {
     println!(
       "\n{}",
-      format!("Tip: To modify this node, use `edit operate-at <ns> <def> -p \"{path}\" -o replace -j '<json>'`").dimmed()
+      format!("Tip: To modify this node, use `edit operate-at <ns/def> -p \"{path}\" -o replace -j '<json>'`").dimmed()
     );
   }
 
@@ -662,12 +660,9 @@ fn handle_peek_def(input_path: &str, namespace: &str, definition: &str) -> Resul
   // LLM guidance - show relevant next steps
   println!("\n{}", "Tips:".bold());
   println!("  {} query read-def {}/{}", "-".dimmed(), namespace, definition);
-  if !code_entry.examples.is_empty() {
-    println!("  {} query read-examples {}/{}", "-".dimmed(), namespace, definition);
-  }
+  println!("  {} query read-examples {}/{}", "-".dimmed(), namespace, definition);
   println!("  {} query usages {}/{}", "-".dimmed(), namespace, definition);
   println!("  {} edit update-def-doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
-  println!("  {} edit set-examples {}/{}", "-".dimmed(), namespace, definition);
 
   Ok(())
 }
@@ -745,7 +740,7 @@ fn handle_find_symbol(input_path: &str, symbol: &str, include_deps: bool) -> Res
     let (first_ns, first_def) = &found_definitions[0];
     println!(
       "\n{}",
-      format!("Tip: Use `query peek-def {first_ns} {first_def}` to see signature.").dimmed()
+      format!("Tip: Use `query peek-def {first_ns}/{first_def}` to see signature.").dimmed()
     );
   }
 
@@ -969,10 +964,7 @@ fn handle_fuzzy_search(input_path: &str, pattern: &str, include_deps: bool, limi
     println!("  {} {} more results...", "...".dimmed(), total - limit);
   }
 
-  println!(
-    "\n{}",
-    "Tip: Use `cr query read-def <ns> <def>` to view definition content.".dimmed()
-  );
+  println!("\n{}", "Tip: Use `query read-def <ns/def>` to view definition content.".dimmed());
 
   Ok(())
 }
