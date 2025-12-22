@@ -171,6 +171,8 @@ pub enum QuerySubcommand {
   ReadAt(QueryReadAtCommand),
   /// peek definition signature (name, params, doc) without full body
   PeekDef(QueryPeekDefCommand),
+  /// read examples of a definition
+  ReadExamples(QueryReadExamplesCommand),
   /// find symbol across all namespaces
   FindSymbol(QueryFindSymbolCommand),
   /// find usages of a definition
@@ -252,6 +254,15 @@ pub struct QueryReadAtCommand {
 #[argh(subcommand, name = "peek-def")]
 /// peek definition signature (name, params, doc) without full implementation body
 pub struct QueryPeekDefCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "read-examples")]
+/// read examples of a definition
+pub struct QueryReadExamplesCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
@@ -463,6 +474,8 @@ pub enum EditSubcommand {
   DeleteDef(EditDeleteDefCommand),
   /// update definition documentation
   UpdateDefDoc(EditUpdateDefDocCommand),
+  /// set definition examples
+  SetExamples(EditSetExamplesCommand),
   /// operate on definition at specific path
   OperateAt(EditOperateAtCommand),
   /// add a new namespace
@@ -529,6 +542,33 @@ pub struct EditUpdateDefDocCommand {
   /// documentation text
   #[argh(positional)]
   pub doc: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "set-examples")]
+/// set examples for a definition (replaces all existing examples)
+pub struct EditSetExamplesCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// read examples from file (Cirru format by default, use -J for JSON)
+  #[argh(option, short = 'f')]
+  pub file: Option<String>,
+  /// examples as inline JSON array string
+  #[argh(option, short = 'j')]
+  pub json: Option<String>,
+  /// read examples from stdin (Cirru format by default, use -J for JSON)
+  #[argh(switch, short = 's')]
+  pub stdin: bool,
+  /// treat input as cirru text (default, explicit for clarity)
+  #[argh(switch, short = 'c', long = "cirru")]
+  pub cirru: bool,
+  /// treat file/stdin input as JSON array
+  #[argh(switch, short = 'J', long = "json-input")]
+  pub json_input: bool,
+  /// clear all examples
+  #[argh(switch, long = "clear")]
+  pub clear: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

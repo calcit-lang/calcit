@@ -40,6 +40,10 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       let (ns, def) = parse_target(&opts.target)?;
       handle_peek_def(input_path, ns, def)
     }
+    QuerySubcommand::ReadExamples(opts) => {
+      let (ns, def) = parse_target(&opts.target)?;
+      handle_read_examples(input_path, ns, def)
+    }
     QuerySubcommand::FindSymbol(opts) => {
       if opts.fuzzy {
         handle_fuzzy_search(input_path, &opts.symbol, opts.deps, opts.limit)
@@ -253,6 +257,28 @@ fn handle_read_def(input_path: &str, namespace: &str, definition: &str) -> Resul
     println!("{} {}", "Doc:".bold(), code_entry.doc);
   }
 
+  // Output examples if present
+  if !code_entry.examples.is_empty() {
+    println!("\n{} ({} total)", "Examples:".bold(), code_entry.examples.len());
+    for (i, example) in code_entry.examples.iter().enumerate() {
+      let example_str = cirru_parser::format(&[example.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+      // Indent and truncate if too long
+      let lines: Vec<&str> = example_str.lines().collect();
+      if lines.len() <= 3 {
+        println!("  {}:", format!("[{}]", i + 1).dimmed());
+        for line in &lines {
+          println!("    {line}");
+        }
+      } else {
+        println!("  {}:", format!("[{}]", i + 1).dimmed());
+        for line in lines.iter().take(3) {
+          println!("    {line}");
+        }
+        println!("    {}", "...".dimmed());
+      }
+    }
+  }
+
   // Output as Cirru format (human readable)
   println!("\n{}", "Cirru:".bold());
   let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
@@ -446,6 +472,55 @@ pub fn cirru_to_json_with_depth(cirru: &Cirru, max_depth: usize, current_depth: 
 // Progressive disclosure commands
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/// Read examples of a definition
+fn handle_read_examples(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path)?;
+
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+
+  println!("{} {}/{}", "Examples for:".bold(), namespace.cyan(), definition.green());
+
+  if code_entry.examples.is_empty() {
+    println!("\n{}", "(no examples)".dimmed());
+    println!(
+      "\n{}",
+      format!("Tip: Use `edit set-examples {namespace}/{definition}` to add examples.").dimmed()
+    );
+  } else {
+    println!("{} example(s)\n", code_entry.examples.len());
+
+    for (i, example) in code_entry.examples.iter().enumerate() {
+      println!("{}", format!("[{}]:", i + 1).bold());
+
+      // Show Cirru format
+      let cirru_str = cirru_parser::format(&[example.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
+      for line in cirru_str.lines().filter(|l| !l.trim().is_empty()) {
+        println!("  {line}");
+      }
+
+      // Show JSON format
+      let json = cirru_to_json(example);
+      println!("  {} {}", "JSON:".dimmed(), serde_json::to_string(&json).unwrap().dimmed());
+      println!();
+    }
+
+    println!(
+      "{}",
+      format!("Tip: Use `edit set-examples {namespace}/{definition}` to modify examples.").dimmed()
+    );
+  }
+
+  Ok(())
+}
+
 /// Peek definition - show signature/params/doc without full body (Level 2 disclosure)
 fn handle_peek_def(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
@@ -462,8 +537,10 @@ fn handle_peek_def(input_path: &str, namespace: &str, definition: &str) -> Resul
 
   println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
 
-  // Show doc if present
-  if !code_entry.doc.is_empty() {
+  // Always show doc (even if empty)
+  if code_entry.doc.is_empty() {
+    println!("{} -", "Doc:".bold());
+  } else {
     println!("{} {}", "Doc:".bold(), code_entry.doc);
   }
 
@@ -530,11 +607,18 @@ fn handle_peek_def(input_path: &str, namespace: &str, definition: &str) -> Resul
     }
   }
 
-  // LLM guidance
-  println!(
-    "\n{}",
-    format!("Tip: Use `query read-def {namespace} {definition}` for full code, or `query usages` to find where it's used.").dimmed()
-  );
+  // Always show examples count
+  println!("{} {}", "Examples:".bold(), code_entry.examples.len());
+
+  // LLM guidance - show relevant next steps
+  println!("\n{}", "Tips:".bold());
+  println!("  {} query read-def {}/{}", "-".dimmed(), namespace, definition);
+  if !code_entry.examples.is_empty() {
+    println!("  {} query read-examples {}/{}", "-".dimmed(), namespace, definition);
+  }
+  println!("  {} query usages {}/{}", "-".dimmed(), namespace, definition);
+  println!("  {} edit update-def-doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
+  println!("  {} edit set-examples {}/{}", "-".dimmed(), namespace, definition);
 
   Ok(())
 }

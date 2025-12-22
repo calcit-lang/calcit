@@ -10,7 +10,7 @@
 use super::query::cirru_to_json_with_depth;
 use calcit::cli_args::{
   EditAddModuleCommand, EditAddNsCommand, EditCommand, EditDeleteDefCommand, EditDeleteModuleCommand, EditDeleteNsCommand,
-  EditOperateAtCommand, EditSetConfigCommand, EditSubcommand, EditUpdateDefDocCommand, EditUpdateImportsCommand,
+  EditOperateAtCommand, EditSetConfigCommand, EditSetExamplesCommand, EditSubcommand, EditUpdateDefDocCommand, EditUpdateImportsCommand,
   EditUpdateNsDocCommand, EditUpsertDefCommand,
 };
 use calcit::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot, save_snapshot_to_file};
@@ -35,6 +35,7 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::UpsertDef(opts) => handle_upsert_def(opts, snapshot_file),
     EditSubcommand::DeleteDef(opts) => handle_delete_def(opts, snapshot_file),
     EditSubcommand::UpdateDefDoc(opts) => handle_update_def_doc(opts, snapshot_file),
+    EditSubcommand::SetExamples(opts) => handle_set_examples(opts, snapshot_file),
     EditSubcommand::OperateAt(opts) => handle_operate_at(opts, snapshot_file),
     EditSubcommand::AddNs(opts) => handle_add_ns(opts, snapshot_file),
     EditSubcommand::DeleteNs(opts) => handle_delete_ns(opts, snapshot_file),
@@ -255,6 +256,74 @@ fn handle_update_def_doc(opts: &EditUpdateDefDocCommand, snapshot_file: &str) ->
   println!(
     "{} Updated documentation for '{}' in namespace '{}'",
     "✓".green(),
+    definition.cyan(),
+    namespace
+  );
+
+  Ok(())
+}
+
+fn handle_set_examples(opts: &EditSetExamplesCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+
+  // Handle --clear flag
+  if opts.clear {
+    let old_count = code_entry.examples.len();
+    code_entry.examples.clear();
+    save_snapshot(&snapshot, snapshot_file)?;
+    println!(
+      "{} Cleared {} example(s) for '{}' in namespace '{}'",
+      "✓".green(),
+      old_count,
+      definition.cyan(),
+      namespace
+    );
+    return Ok(());
+  }
+
+  // Read examples input
+  let code_input = read_code_input(&opts.file, &opts.json, opts.stdin)?;
+  let raw = code_input
+    .as_deref()
+    .ok_or("Examples input required: use --file, --json, --stdin, or --clear")?;
+
+  // Parse examples - expect an array of Cirru expressions
+  let examples: Vec<Cirru> = if opts.json.is_some() || opts.json_input {
+    // Parse as JSON array
+    let json_value: serde_json::Value =
+      serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON: {e}"))?;
+    match json_value {
+      serde_json::Value::Array(arr) => {
+        arr.iter().map(json_value_to_cirru).collect::<Result<Vec<_>, _>>()?
+      }
+      _ => return Err("Expected JSON array of examples".to_string()),
+    }
+  } else {
+    // Parse as Cirru text - each top-level expression is an example
+    cirru_parser::parse(raw).map_err(|e| format!("Failed to parse Cirru: {e}"))?
+  };
+
+  let count = examples.len();
+  code_entry.examples = examples;
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Set {} example(s) for '{}' in namespace '{}'",
+    "✓".green(),
+    count,
     definition.cyan(),
     namespace
   );

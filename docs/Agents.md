@@ -46,9 +46,12 @@ Calcit 程序使用 `cr` 命令：
 **渐进式代码探索（Progressive Disclosure）：**
 
 - `cr query peek-def <namespace/definition>` - 查看定义签名（参数、文档、表达式数量），不返回完整实现体
-  - 输出：Form 类型、参数列表、Body 表达式数量、首个表达式预览
+  - 输出：Doc、Form 类型、参数列表、Body 表达式数量、首个表达式预览、Examples 数量
   - 用于快速了解函数接口，减少 token 消耗
 - `cr query read-def <namespace/definition>` - 读取定义的完整语法树（JSON 格式）
+  - 同时显示 Doc 和 Examples 的完整内容
+- `cr query read-examples <namespace/definition>` - 读取定义的示例代码
+  - 输出：每个 example 的 Cirru 格式和 JSON 格式
 - `cr query read-at <namespace/definition> -p <path>` - 读取定义中指定坐标的内容
   - path：逗号分隔的索引，如 "2,1,0"，空字符串表示根节点
   - `-d <depth>` 或 `--depth <depth>`：限制 JSON 输出深度（0=无限，默认 0）
@@ -115,6 +118,13 @@ Calcit 程序使用 `cr` 命令：
 - `cr edit upsert-def <namespace/definition> -j '<json>'` - 添加或更新定义
 - `cr edit upsert-def <namespace/definition> -r -j '<json>'` - 强制覆盖已有定义
 - `cr edit delete-def <namespace/definition>` - 删除定义
+- `cr edit update-def-doc <namespace/definition> '<doc>'` - 更新定义的文档
+- `cr edit set-examples <namespace/definition>` - 设置定义的示例代码
+  - `-j '<json>'` - 内联 JSON 数组
+  - `-f <file>` - 从文件读取（默认 Cirru 格式）
+  - `-s` - 从 stdin 读取（默认 Cirru 格式）
+  - `-J` - 使用 JSON 格式输入
+  - `--clear` - 清空所有示例
 - `cr edit operate-at <namespace/definition> -p <path> -o <operation> -j '<json>'` - 在指定路径操作
   - path：逗号分隔的索引，如 "2,1,0"
   - operation："insert-before", "insert-after", "replace", "delete", "insert-child"
@@ -219,10 +229,11 @@ cr js     # JS 编译模式
 - `cr docs ref <keyword>` - 查询 Calcit 教程
 - `cr docs api <keyword>` - 查询 API 文档
 - `cr query read-ns <ns>` - 查看命名空间说明和函数文档
-- `cr query peek-def <ns> <def>` - 快速查看定义签名
-- `cr query read-def <ns> <def>` - 读取完整语法树
+- `cr query peek-def <ns/def>` - 快速查看定义签名
+- `cr query read-def <ns/def>` - 读取完整语法树
+- `cr query read-examples <ns/def>` - 查看示例代码
 - `cr query find-symbol <name>` - 跨命名空间搜索符号
-- `cr query usages <ns> <def>` - 查找定义的使用位置
+- `cr query usages <ns/def>` - 查找定义的使用位置
 - `cr query error` - 查看最近的错误堆栈
 
 ---
@@ -232,25 +243,41 @@ cr js     # JS 编译模式
 **添加新函数：**
 
 ```bash
-cr edit upsert-def app.core multiply -j '["defn", "multiply", ["x", "y"], ["*", "x", "y"]]'
+cr edit upsert-def app.core/multiply -j '["defn", "multiply", ["x", "y"], ["*", "x", "y"]]'
+```
+
+**更新文档和示例：**
+
+```bash
+# 更新文档
+cr edit update-def-doc app.core/multiply '乘法函数，返回两个数的积'
+
+# 设置示例（JSON 数组，每个元素是一个示例表达式）
+cr edit set-examples app.core/multiply -j '[["multiply", "3", "4"]]'
+
+# 从 Cirru 文件设置示例（文件中每行是一个表达式）
+cr edit set-examples app.core/multiply -f examples.cirru
+
+# 清空示例
+cr edit set-examples app.core/multiply --clear
 ```
 
 **局部修改（推荐流程）：**
 
 ```bash
 # 1. 读取完整定义
-cr query read-def app.core add-numbers
+cr query read-def app.core/add-numbers
 
 # 2. 多次 read-at 确认目标坐标
-cr query read-at app.core add-numbers -p "" -d 1
-cr query read-at app.core add-numbers -p "2" -d 1
-cr query read-at app.core add-numbers -p "2,0"
+cr query read-at app.core/add-numbers -p "" -d 1
+cr query read-at app.core/add-numbers -p "2" -d 1
+cr query read-at app.core/add-numbers -p "2,0"
 
 # 3. 执行替换
-cr edit operate-at app.core add-numbers -p "2,0" -o replace -j '"*"'
+cr edit operate-at app.core/add-numbers -p "2,0" -o replace -j '"*"'
 
 # 4. 验证
-cr query read-at app.core add-numbers -p "2"
+cr query read-at app.core/add-numbers -p "2"
 ```
 
 **更新命名空间导入：**
