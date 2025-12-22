@@ -1,6 +1,6 @@
 
 {} (:package |calcit)
-  :configs $ {} (:init-fn |TODO) (:reload-fn |TODO) (:version |0.0.0)
+  :configs $ {} (:init-fn |calcit.core/println!) (:reload-fn |calcit.core/println!) (:version |0.0.0)
     :modules $ []
   :files $ {}
     |calcit.core $ %{} :FileEntry
@@ -645,15 +645,25 @@
                     ~ $ &list:first xs
                     ~@ $ &list:rest xs
                   , false
-        |any? $ %{} :CodeEntry (:doc |)
+        |any? $ %{} :CodeEntry (:doc "|checks if any element in collection satisfies the predicate function, returns true on first match, short-circuits evaluation")
           :code $ quote
             defn any? (xs f)
               foldl-shortcut xs false false $ defn %any? (acc x)
                 if (f x) (:: true true) (:: false acc)
-        |apply $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= true $ any? ([] 1 2 3 4) even?
+            quote $ assert= false $ any? ([] 1 3 5 7) even?
+            quote $ assert= false $ any? ([]) even?
+            quote $ assert= false $ any? ([] 1 2 3) $ fn (x) (> x 10)
+            quote $ assert= true $ any? ([] 5 15 25) $ fn (x) (> x 10)
+        |apply $ %{} :CodeEntry (:doc "|calls a function with arguments from a list, spreads the list as individual arguments")
           :code $ quote
             defn apply (f args) (f & args)
-        |apply-args $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= 6 $ apply + ([] 1 2 3)
+            quote $ assert= 10 $ apply * ([] 2 5)
+            quote $ assert= |abc $ apply str ([] |a |b |c)
+        |apply-args $ %{} :CodeEntry (:doc "|macro that applies a function to arguments, handles empty argument list specially")
           :code $ quote
             defmacro apply-args (args f)
               if
@@ -661,7 +671,10 @@
                 quasiquote $ ~f
                   ~@ $ &list:rest args
                 quasiquote $ ~f ~@args
-        |assert $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= 6 $ apply-args ([] 1 2 3) +
+            quote $ assert= 15 $ apply-args ([] 5 10) +
+        |assert $ %{} :CodeEntry (:doc "|asserts that an expression is truthy, raises an error with message if not")
           :code $ quote
             defmacro assert (message xs)
               if
@@ -677,7 +690,14 @@
                     eprintln "|Failed assertion:" $ format-to-lisp (quote ~xs)
                     raise $ ~
                       &str:concat (&str:concat message "| ") (format-to-lisp xs)
-        |assert-detect $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert "|x should be positive" (> 1 0)
+            quote $ assert "|list should not be empty" (not (empty? $ [] 1))
+        |even? $ %{} :CodeEntry (:doc "|check if number is even?")
+          :code $ quote
+            defn even? (n)
+              and (number? n) $ &= 0 $ &number:rem n 2
+        |assert-detect $ %{} :CodeEntry (:doc "|asserts that a value satisfies a predicate function, raises error with details if not")
           :code $ quote
             defmacro assert-detect (f code)
               &let
@@ -691,7 +711,11 @@
                         , "| <--------"
                     eprintln "|  value is:" ~v
                     raise "|Not satisfied in assertion!"
-        |assert= $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert-detect number? (+ 1 2)
+            quote $ assert-detect list? ([] 1 2 3)
+            quote $ assert-detect even? (* 2 5)
+        |assert= $ %{} :CodeEntry (:doc "|asserts that two values are equal, raises error showing both values if not")
           :code $ quote
             defmacro assert= (a b)
               &let
@@ -706,7 +730,11 @@
                           eprintln |Right: ~vb
                           eprintln "|      " $ format-to-lisp (quote ~b)
                           raise "|not equal in assertion!"
-        |assoc $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= 4 (+ 2 2)
+            quote $ assert= |hello (str |hel |lo)
+            quote $ assert= ([] 1 2 3) (range 1 4)
+        |assoc $ %{} :CodeEntry (:doc "|associates a key-value pair to a collection, works on maps, lists, tuples, and records")
           :code $ quote
             defn assoc (x & args)
               if (nil? x)
@@ -714,7 +742,11 @@
                 if (tuple? x) (&tuple:assoc x & args)
                   if (list? x) (&list:assoc x & args)
                     if (record? x) (&record:assoc x & args) (.assoc x & args)
-        |assoc-in $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= (&{} :a 1 :b 2) $ assoc (&{} :a 1) :b 2
+            quote $ assert= ([] 10 2 3) $ assoc ([] 1 2 3) 0 10
+            quote $ assert= (&{} :a 1 :b 3) $ assoc (&{} :a 1 :b 2) :b 3
+        |assoc-in $ %{} :CodeEntry (:doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed")
           :code $ quote
             defn assoc-in (data path v)
               list-match path
@@ -725,6 +757,10 @@
                     assoc d p0 $ assoc-in
                       if (contains? d p0) (get d p0) (&{})
                       , ps v
+          :examples $ []
+            quote $ assert= (&{} :a (&{} :b 1)) $ assoc-in (&{}) ([] :a :b) 1
+            quote $ assert= (&{} :a (&{} :b 2)) $ assoc-in (&{} :a (&{} :b 1)) ([] :a :b) 2
+            quote $ assert= (&{} :x (&{} :y (&{} :z 3))) $ assoc-in (&{}) ([] :x :y :z) 3
         |bool? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn bool? (x)
@@ -1907,6 +1943,8 @@
         ; "=== CalcitSyntax Internal Definitions ==="
         |defn $ %{} :CodeEntry (:doc "|internal syntax for defining functions\nSyntax: (defn name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: function definition\nDefines a named function with parameters and body expression")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ defn my-add (p1 p2) (+ p1 p2)
         |defmacro $ %{} :CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
           :code $ quote &runtime-inplementation
         |if $ %{} :CodeEntry (:doc "|internal syntax for conditional expressions\nSyntax: (if condition then-expr else-expr)\nParams: condition (any), then-expr (any), else-expr (any, optional)\nReturns: value of then-expr if condition is truthy, else-expr otherwise\nEvaluates condition and returns appropriate branch")
@@ -1931,8 +1969,12 @@
           :code $ quote &runtime-inplementation
         |defatom $ %{} :CodeEntry (:doc "|internal syntax for defining referenced state\nSyntax: (defatom name initial-value)\nParams: name (symbol), initial-value (any)\nReturns: atom definition\nDefines a mutable reference with initial value")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ ; defatom *my-atom $ {} (:a 1)
         |reset! $ %{} :CodeEntry (:doc "|internal syntax for resetting atom values\nSyntax: (reset! atom new-value)\nParams: atom (atom reference), new-value (any)\nReturns: new value\nSets atom to new value and returns it")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ ; reset! *my-atom $ {} (:a 2)
         |hint-fn $ %{} :CodeEntry (:doc "|internal syntax for function hints (currently only used for async)\nSyntax: (hint-fn hint-type fn-expr)\nParams: hint-type (keyword), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, mainly for async operations")
           :code $ quote &runtime-inplementation
         |&call-spread $ %{} :CodeEntry (:doc "|internal syntax for handling & spreading in function calls\nSyntax: (&call-spread fn args)\nParams: fn (function), args (list with spread)\nReturns: function call result\nHandles argument spreading in function calls")

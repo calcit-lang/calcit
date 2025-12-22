@@ -544,7 +544,20 @@ fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<
   // Create a synthetic function that runs all examples
   let mut example_calls = Vec::new();
 
-  for code_entry in file_data.defs.values() {
+  for (def_name, code_entry) in &file_data.defs {
+    if !code_entry.examples.is_empty() {
+      // Add println before examples: println $ str &newline "|-- run examples for: " def "| --"
+      example_calls.push(Cirru::List(vec![
+        Cirru::Leaf(Arc::from("println")),
+        Cirru::List(vec![
+          Cirru::Leaf(Arc::from("str")),
+          Cirru::Leaf(Arc::from("&newline")),
+          Cirru::Leaf(Arc::from("|-- run examples for: ")),
+          Cirru::Leaf(Arc::from(format!("|{def_name}"))),
+          Cirru::Leaf(Arc::from("| --")),
+        ]),
+      ]));
+    }
     for example in &code_entry.examples {
       example_calls.push(example.clone());
     }
