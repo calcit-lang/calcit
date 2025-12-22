@@ -205,7 +205,14 @@ fn handle_ls_defs(input_path: &str, namespace: &str) -> Result<(), String> {
   for def in &defs {
     let entry = &file_data.defs[*def];
     if !entry.doc.is_empty() {
-      println!("  {} - {}", def.green(), entry.doc.dimmed());
+      // Truncate doc at first newline
+      let doc_first_line = entry.doc.lines().next().unwrap_or("");
+      let doc_display = if doc_first_line.len() > 50 {
+        format!("{}...", &doc_first_line[..50])
+      } else {
+        doc_first_line.to_string()
+      };
+      println!("  {} - {}", def.green(), doc_display.dimmed());
     } else {
       println!("  {}", def.green());
     }
@@ -239,30 +246,14 @@ fn handle_read_ns(input_path: &str, namespace: &str) -> Result<(), String> {
   let ns_str = cirru_parser::format(&[file_data.ns.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
   println!("{}", ns_str.dimmed());
 
-  // Print definitions with preview
-  let mut defs: Vec<(&String, &snapshot::CodeEntry)> = file_data.defs.iter().collect();
-  defs.sort_by_key(|(name, _)| *name);
-
-  println!("\n{} ({} total)", "Definitions:".bold(), defs.len());
-  for (def_name, code_entry) in defs {
-    let code_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
-    // Take first non-empty line for preview
-    let first_line = code_str.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
-    let preview = if first_line.len() > 70 {
-      format!("{}...", &first_line[..70])
-    } else {
-      first_line.to_string()
-    };
-
-    if !code_entry.doc.is_empty() {
-      println!("  {} - {}  {}", def_name.green(), code_entry.doc.dimmed(), preview.dimmed());
-    } else {
-      println!("  {}  {}", def_name.green(), preview.dimmed());
-    }
-  }
+  // Show definition count
+  println!("\n{} {}", "Definitions:".bold(), file_data.defs.len());
 
   // LLM guidance
-  println!("\n{}", "Tip: Use `query peek-def <ns/def>` for signature details.".dimmed());
+  println!(
+    "\n{}",
+    format!("Tip: Use `query ls-defs {namespace}` to list definitions.").dimmed()
+  );
 
   Ok(())
 }
@@ -745,14 +736,16 @@ fn handle_find_symbol(input_path: &str, symbol: &str, include_deps: bool) -> Res
   let mut found_references: Vec<(String, String, String)> = vec![]; // (ns, def, context)
 
   for (ns_name, file_data) in &snapshot.files {
-    // Skip core namespaces unless deps is requested
-    if !include_deps && (ns_name.starts_with("calcit.") || ns_name.starts_with("calcit-test.")) {
-      continue;
-    }
+    let is_core = ns_name.starts_with("calcit.") || ns_name.starts_with("calcit-test.");
 
-    // Check if symbol is defined in this namespace
+    // Always search for definitions in all namespaces (including core)
     if file_data.defs.contains_key(symbol) {
       found_definitions.push((ns_name.clone(), symbol.to_string()));
+    }
+
+    // Search for references only in project namespaces (unless --deps)
+    if !include_deps && is_core {
+      continue;
     }
 
     // Search for references in all definitions

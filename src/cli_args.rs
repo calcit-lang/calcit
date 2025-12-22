@@ -272,7 +272,7 @@ pub struct QueryReadExamplesCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "find-symbol")]
+#[argh(subcommand, name = "find")]
 /// find symbol across all namespaces (definitions and references); use --fuzzy for pattern matching
 pub struct QueryFindSymbolCommand {
   /// symbol name to search for (exact match by default, pattern if --fuzzy)
@@ -487,6 +487,10 @@ pub enum EditSubcommand {
   DeleteNs(EditDeleteNsCommand),
   /// update namespace imports
   UpdateImports(EditUpdateImportsCommand),
+  /// add a require rule to namespace
+  AddRequire(EditAddRequireCommand),
+  /// remove a require rule from namespace by source namespace
+  RemoveRequire(EditRemoveRequireCommand),
   /// update namespace documentation
   UpdateNsDoc(EditUpdateNsDocCommand),
   /// create a new module
@@ -664,6 +668,45 @@ pub struct EditUpdateImportsCommand {
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "add-require")]
+/// add a require rule to namespace (input: Cirru by default; use --json-input or -j for JSON)
+pub struct EditAddRequireCommand {
+  /// namespace to add require rule to
+  #[argh(positional)]
+  pub namespace: String,
+  /// read require rule from file (Cirru format by default, use -J for JSON)
+  #[argh(option, short = 'f')]
+  pub file: Option<String>,
+  /// require rule as inline JSON string
+  #[argh(option, short = 'j')]
+  pub json: Option<String>,
+  /// read require rule from stdin (Cirru format by default, use -J for JSON)
+  #[argh(switch, short = 's')]
+  pub stdin: bool,
+  /// treat input as cirru text (default, explicit for clarity)
+  #[argh(switch, short = 'c', long = "cirru")]
+  pub cirru: bool,
+  /// treat file/stdin input as JSON
+  #[argh(switch, short = 'J', long = "json-input")]
+  pub json_input: bool,
+  /// overwrite existing rule for the same source namespace
+  #[argh(switch, short = 'o', long = "overwrite")]
+  pub overwrite: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "remove-require")]
+/// remove a require rule from namespace by source namespace name
+pub struct EditRemoveRequireCommand {
+  /// namespace to remove require rule from
+  #[argh(positional)]
+  pub namespace: String,
+  /// source namespace to remove (e.g. "calcit.core")
+  #[argh(positional)]
+  pub source_ns: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

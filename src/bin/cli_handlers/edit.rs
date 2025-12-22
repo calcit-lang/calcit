@@ -9,9 +9,9 @@
 
 use super::query::cirru_to_json_with_depth;
 use calcit::cli_args::{
-  EditAddModuleCommand, EditAddNsCommand, EditCommand, EditDeleteDefCommand, EditDeleteModuleCommand, EditDeleteNsCommand,
-  EditOperateAtCommand, EditSetConfigCommand, EditSetExamplesCommand, EditSubcommand, EditUpdateDefDocCommand,
-  EditUpdateImportsCommand, EditUpdateNsDocCommand, EditUpsertDefCommand,
+  EditAddModuleCommand, EditAddNsCommand, EditAddRequireCommand, EditCommand, EditDeleteDefCommand, EditDeleteModuleCommand,
+  EditDeleteNsCommand, EditOperateAtCommand, EditRemoveRequireCommand, EditSetConfigCommand, EditSetExamplesCommand,
+  EditSubcommand, EditUpdateDefDocCommand, EditUpdateImportsCommand, EditUpdateNsDocCommand, EditUpsertDefCommand,
 };
 use calcit::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -38,6 +38,8 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::AddNs(opts) => handle_add_ns(opts, snapshot_file),
     EditSubcommand::DeleteNs(opts) => handle_delete_ns(opts, snapshot_file),
     EditSubcommand::UpdateImports(opts) => handle_update_imports(opts, snapshot_file),
+    EditSubcommand::AddRequire(opts) => handle_add_require(opts, snapshot_file),
+    EditSubcommand::RemoveRequire(opts) => handle_remove_require(opts, snapshot_file),
     EditSubcommand::UpdateNsDoc(opts) => handle_update_ns_doc(opts, snapshot_file),
     EditSubcommand::AddModule(opts) => handle_add_module(opts, snapshot_file),
     EditSubcommand::DeleteModule(opts) => handle_delete_module(opts, snapshot_file),
@@ -76,6 +78,19 @@ fn read_code_input(file: &Option<String>, json: &Option<String>, stdin: bool) ->
     Ok(Some(j.clone()))
   } else {
     Ok(None)
+  }
+}
+
+/// Check if namespace belongs to the current package (can be edited)
+fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<(), String> {
+  let pkg = &snapshot.package;
+  // Namespace must match package name or start with "package."
+  if namespace == pkg || namespace.starts_with(&format!("{pkg}.")) {
+    Ok(())
+  } else {
+    Err(format!(
+      "Cannot modify namespace '{namespace}': only namespaces under package '{pkg}' can be edited.\nThis namespace belongs to a dependency or core library."
+    ))
   }
 }
 
@@ -164,6 +179,9 @@ fn handle_upsert_def(opts: &EditUpsertDefCommand, snapshot_file: &str) -> Result
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
+  // Check if namespace can be edited
+  check_ns_editable(&snapshot, namespace)?;
+
   // Check if namespace exists
   let file_data = snapshot
     .files
@@ -209,6 +227,9 @@ fn handle_delete_def(opts: &EditDeleteDefCommand, snapshot_file: &str) -> Result
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
+  // Check if namespace can be edited
+  check_ns_editable(&snapshot, namespace)?;
+
   let file_data = snapshot
     .files
     .get_mut(namespace)
@@ -234,6 +255,9 @@ fn handle_update_def_doc(opts: &EditUpdateDefDocCommand, snapshot_file: &str) ->
   let (namespace, definition) = parse_target(&opts.target)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
+
+  // Check if namespace can be edited
+  check_ns_editable(&snapshot, namespace)?;
 
   let file_data = snapshot
     .files
@@ -263,6 +287,9 @@ fn handle_set_examples(opts: &EditSetExamplesCommand, snapshot_file: &str) -> Re
   let (namespace, definition) = parse_target(&opts.target)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
+
+  // Check if namespace can be edited
+  check_ns_editable(&snapshot, namespace)?;
 
   let file_data = snapshot
     .files
@@ -333,6 +360,9 @@ fn handle_operate_at(opts: &EditOperateAtCommand, snapshot_file: &str) -> Result
   let code_input = read_code_input(&opts.file, &opts.json, opts.stdin)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
+
+  // Check if namespace can be edited
+  check_ns_editable(&snapshot, namespace)?;
 
   let file_data = snapshot
     .files
@@ -514,6 +544,9 @@ fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, String> {
 fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
 
+  // Check if namespace can be edited (must be under current package)
+  check_ns_editable(&snapshot, &opts.namespace)?;
+
   if snapshot.files.contains_key(&opts.namespace) {
     return Err(format!("Namespace '{}' already exists", opts.namespace));
   }
@@ -543,6 +576,9 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
 fn handle_delete_ns(opts: &EditDeleteNsCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
 
+  // Check if namespace can be edited
+  check_ns_editable(&snapshot, &opts.namespace)?;
+
   if snapshot.files.remove(&opts.namespace).is_none() {
     return Err(format!("Namespace '{}' not found", opts.namespace));
   }
@@ -558,6 +594,9 @@ fn handle_update_imports(opts: &EditUpdateImportsCommand, snapshot_file: &str) -
   let raw = read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Imports input required: use --file, --json, or --stdin")?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
+
+  // Check if namespace can be edited
+  check_ns_editable(&snapshot, &opts.namespace)?;
 
   let file_data = snapshot
     .files
@@ -608,8 +647,157 @@ fn handle_update_imports(opts: &EditUpdateImportsCommand, snapshot_file: &str) -
   Ok(())
 }
 
+/// Extract the source namespace from a require rule
+/// e.g. from `(calcit.core :refer ...)` extract `calcit.core`
+fn get_require_source_ns(rule: &Cirru) -> Option<String> {
+  match rule {
+    Cirru::List(items) if !items.is_empty() => match &items[0] {
+      Cirru::Leaf(s) => Some(s.to_string()),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Extract existing require rules from ns code
+/// Handles structure: ["ns", "namespace", [":require", rule1, rule2, ...]]
+fn extract_require_rules(ns_code: &Cirru) -> Vec<Cirru> {
+  let mut rules = vec![];
+  if let Cirru::List(items) = ns_code {
+    for item in items.iter().skip(2) {
+      // skip "ns" and namespace name
+      if let Cirru::List(inner) = item {
+        if let Some(Cirru::Leaf(first)) = inner.first() {
+          if first.as_ref() == ":require" {
+            // Found [:require rule1 rule2 ...]
+            rules.extend(inner.iter().skip(1).cloned());
+            break;
+          }
+        }
+      }
+    }
+  }
+  rules
+}
+
+/// Build ns code from namespace name and require rules
+/// Produces structure: ["ns", "namespace", [":require", rule1, rule2, ...]]
+fn build_ns_code(ns_name: &str, rules: &[Cirru]) -> Cirru {
+  let mut items = vec![Cirru::Leaf(Arc::from("ns")), Cirru::Leaf(Arc::from(ns_name))];
+
+  if !rules.is_empty() {
+    let mut require_list = vec![Cirru::Leaf(Arc::from(":require"))];
+    require_list.extend(rules.iter().cloned());
+    items.push(Cirru::List(require_list));
+  }
+
+  Cirru::List(items)
+}
+
+fn handle_add_require(opts: &EditAddRequireCommand, snapshot_file: &str) -> Result<(), String> {
+  let raw =
+    read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Require rule input required: use --file, --json, or --stdin")?;
+
+  let new_rule = parse_input_to_cirru(&raw, &opts.json, opts.json_input)?;
+
+  // Validate that the rule has a source namespace
+  let new_source_ns =
+    get_require_source_ns(&new_rule).ok_or("Invalid require rule: first element must be a namespace name (e.g. 'calcit.core')")?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+
+  // Check if namespace can be edited
+  check_ns_editable(&snapshot, &opts.namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(&opts.namespace)
+    .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
+
+  // Extract existing rules
+  let mut rules = extract_require_rules(&file_data.ns.code);
+
+  // Check if rule for this source namespace already exists
+  let existing_idx = rules.iter().position(|r| get_require_source_ns(r).as_deref() == Some(&new_source_ns));
+
+  if let Some(idx) = existing_idx {
+    if opts.overwrite {
+      rules[idx] = new_rule;
+      println!(
+        "{} Replaced require rule for '{}' in namespace '{}'",
+        "✓".green(),
+        new_source_ns.cyan(),
+        opts.namespace
+      );
+    } else {
+      return Err(format!(
+        "Require rule for '{}' already exists in namespace '{}'. Use --overwrite to replace.",
+        new_source_ns, opts.namespace
+      ));
+    }
+  } else {
+    rules.push(new_rule);
+    println!(
+      "{} Added require rule for '{}' in namespace '{}'",
+      "✓".green(),
+      new_source_ns.cyan(),
+      opts.namespace
+    );
+  }
+
+  // Rebuild ns code
+  file_data.ns.code = build_ns_code(&opts.namespace, &rules);
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  Ok(())
+}
+
+fn handle_remove_require(opts: &EditRemoveRequireCommand, snapshot_file: &str) -> Result<(), String> {
+  let mut snapshot = load_snapshot(snapshot_file)?;
+
+  // Check if namespace can be edited
+  check_ns_editable(&snapshot, &opts.namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(&opts.namespace)
+    .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
+
+  // Extract existing rules
+  let mut rules = extract_require_rules(&file_data.ns.code);
+
+  // Find and remove the rule for the specified source namespace
+  let original_len = rules.len();
+  rules.retain(|r| get_require_source_ns(r).as_deref() != Some(&opts.source_ns));
+
+  if rules.len() == original_len {
+    return Err(format!(
+      "No require rule found for '{}' in namespace '{}'",
+      opts.source_ns, opts.namespace
+    ));
+  }
+
+  // Rebuild ns code
+  file_data.ns.code = build_ns_code(&opts.namespace, &rules);
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Removed require rule for '{}' from namespace '{}'",
+    "✓".green(),
+    opts.source_ns.cyan(),
+    opts.namespace
+  );
+
+  Ok(())
+}
+
 fn handle_update_ns_doc(opts: &EditUpdateNsDocCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
+
+  // Check if namespace can be edited
+  check_ns_editable(&snapshot, &opts.namespace)?;
 
   let file_data = snapshot
     .files
