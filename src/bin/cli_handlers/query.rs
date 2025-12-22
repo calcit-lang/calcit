@@ -3,6 +3,7 @@
 //! Handles: cr query ls-ns, ls-defs, read-ns, read-def, read-at, peek-def, find-symbol, usages, pkg-name, configs, error, ls-modules
 
 use calcit::cli_args::{QueryCommand, QuerySubcommand};
+use calcit::load_core_snapshot;
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
 use cirru_parser::Cirru;
@@ -58,6 +59,27 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
   }
 }
 
+/// Load a module silently (without println)
+fn load_module_silent(path: &str, base_dir: &Path, module_folder: &Path) -> Result<snapshot::Snapshot, String> {
+  let mut file_path = String::from(path);
+  if file_path.ends_with('/') {
+    file_path.push_str("compact.cirru");
+  }
+
+  let fullpath = if file_path.starts_with("./") {
+    base_dir.join(&file_path).to_owned()
+  } else if file_path.starts_with('/') {
+    Path::new(&file_path).to_owned()
+  } else {
+    module_folder.join(&file_path).to_owned()
+  };
+
+  let mut content = fs::read_to_string(&fullpath).map_err(|e| format!("Failed to read {}: {}", fullpath.display(), e))?;
+  strip_shebang(&mut content);
+  let data = cirru_edn::parse(&content)?;
+  snapshot::load_snapshot_data(&data, &fullpath.display().to_string())
+}
+
 fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
   if !Path::new(input_path).exists() {
     return Err(format!("{input_path} does not exist"));
@@ -66,7 +88,34 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
   let mut content = fs::read_to_string(input_path).map_err(|e| format!("Failed to read file: {e}"))?;
   strip_shebang(&mut content);
   let data = cirru_edn::parse(&content)?;
-  snapshot::load_snapshot_data(&data, input_path)
+  let mut snapshot = snapshot::load_snapshot_data(&data, input_path)?;
+
+  // Load modules (dependencies) silently
+  let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
+  let module_folder = dirs::home_dir()
+    .map(|buf| buf.as_path().join(".config/calcit/modules/"))
+    .unwrap_or_else(|| Path::new(".").to_owned());
+
+  for module_path in &snapshot.configs.modules.clone() {
+    match load_module_silent(module_path, base_dir, &module_folder) {
+      Ok(module_snapshot) => {
+        for (ns_name, file_data) in module_snapshot.files {
+          snapshot.files.entry(ns_name).or_insert(file_data);
+        }
+      }
+      Err(e) => {
+        eprintln!("Warning: Failed to load module '{}': {}", module_path, e);
+      }
+    }
+  }
+
+  // Merge calcit.core definitions from built-in calcit-core.cirru
+  let core_snapshot = load_core_snapshot()?;
+  for (ns_name, file_data) in core_snapshot.files {
+    snapshot.files.entry(ns_name).or_insert(file_data);
+  }
+
+  Ok(snapshot)
 }
 
 fn handle_ls_ns(input_path: &str, include_deps: bool) -> Result<(), String> {
