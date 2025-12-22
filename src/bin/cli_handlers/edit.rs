@@ -25,8 +25,7 @@ use std::sync::Arc;
 fn parse_target(target: &str) -> Result<(&str, &str), String> {
   target.rsplit_once('/').ok_or_else(|| {
     format!(
-      "Invalid target format: '{}'. Expected 'namespace/definition' (e.g. 'app.core/main')",
-      target
+      "Invalid target format: '{target}'. Expected 'namespace/definition' (e.g. 'app.core/main')"
     )
   })
 }
@@ -170,15 +169,14 @@ fn handle_upsert_def(opts: &EditUpsertDefCommand, snapshot_file: &str) -> Result
   let file_data = snapshot
     .files
     .get_mut(namespace)
-    .ok_or_else(|| format!("Namespace '{}' not found", namespace))?;
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
   // Check if definition exists
   let exists = file_data.defs.contains_key(definition);
 
   if exists && !opts.replace {
     return Err(format!(
-      "Definition '{}' already exists in namespace '{}'. Use --replace to overwrite.",
-      definition, namespace
+      "Definition '{definition}' already exists in namespace '{namespace}'. Use --replace to overwrite."
     ));
   }
 
@@ -215,12 +213,11 @@ fn handle_delete_def(opts: &EditDeleteDefCommand, snapshot_file: &str) -> Result
   let file_data = snapshot
     .files
     .get_mut(namespace)
-    .ok_or_else(|| format!("Namespace '{}' not found", namespace))?;
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
   if file_data.defs.remove(definition).is_none() {
     return Err(format!(
-      "Definition '{}' not found in namespace '{}'",
-      definition, namespace
+      "Definition '{definition}' not found in namespace '{namespace}'"
     ));
   }
 
@@ -244,12 +241,12 @@ fn handle_update_def_doc(opts: &EditUpdateDefDocCommand, snapshot_file: &str) ->
   let file_data = snapshot
     .files
     .get_mut(namespace)
-    .ok_or_else(|| format!("Namespace '{}' not found", namespace))?;
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
   let code_entry = file_data
     .defs
     .get_mut(definition)
-    .ok_or_else(|| format!("Definition '{}' not found in namespace '{}'", definition, namespace))?;
+    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
 
   code_entry.doc = opts.doc.clone();
 
@@ -278,12 +275,12 @@ fn handle_operate_at(opts: &EditOperateAtCommand, snapshot_file: &str) -> Result
   let file_data = snapshot
     .files
     .get_mut(namespace)
-    .ok_or_else(|| format!("Namespace '{}' not found", namespace))?;
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
   let code_entry = file_data
     .defs
     .get_mut(definition)
-    .ok_or_else(|| format!("Definition '{}' not found", definition))?;
+    .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
   // Prepare parsed new node (if applicable)
   let new_node_opt: Option<Cirru> = match opts.operation.as_str() {

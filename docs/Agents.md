@@ -56,18 +56,14 @@ Calcit 程序使用 `cr` 命令：
 
 **符号搜索与引用分析：**
 
-- `cr query find-symbol <symbol> [--deps]` - 跨命名空间搜索符号
-  - 返回：定义位置 + 所有引用位置（带上下文预览）
-  - 用于探测符号定义在哪里、避免盲目猜测
+- `cr query find-symbol <symbol> [--deps] [-f] [-n <limit>]` - 跨命名空间搜索符号
+  - 默认精确匹配：返回定义位置 + 所有引用位置（带上下文预览）
+  - `-f` / `--fuzzy`：模糊搜索，匹配 "namespace/definition" 格式的路径
+  - `-n <limit>`：限制模糊搜索结果数量（默认 20）
+  - `--deps`：包含核心命名空间（calcit.\* 开头）
 - `cr query usages <namespace/definition> [--deps]` - 查找定义的所有使用位置
   - 返回：引用该定义的所有位置（带上下文预览）
   - 用于理解代码影响范围，重构前的影响分析
-- `cr query search <pattern> [--deps] [-n <limit>]` - 模糊搜索命名空间/定义
-  - pattern：搜索模式，匹配 "namespace/definition" 格式
-  - 支持子串匹配和字符序列匹配（如 "hm" 匹配 "hash-map"）
-  - `--deps`：包含核心命名空间（calcit.\* 开头）
-  - `-n <limit>`：限制结果数量（默认 20）
-  - 用于快速定位函数/模块，减少精确拼写负担
 
 ### 文档子命令 (`cr docs`)
 

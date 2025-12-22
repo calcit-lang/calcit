@@ -175,8 +175,6 @@ pub enum QuerySubcommand {
   FindSymbol(QueryFindSymbolCommand),
   /// find usages of a definition
   Usages(QueryUsagesCommand),
-  /// fuzzy search definitions by namespace/name pattern
-  Search(QuerySearchCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -261,14 +259,20 @@ pub struct QueryPeekDefCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "find-symbol")]
-/// find symbol across all namespaces (definitions and references)
+/// find symbol across all namespaces (definitions and references); use --fuzzy for pattern matching
 pub struct QueryFindSymbolCommand {
-  /// symbol name to search for
+  /// symbol name to search for (exact match by default, pattern if --fuzzy)
   #[argh(positional)]
   pub symbol: String,
   /// include dependency namespaces in search
   #[argh(switch)]
   pub deps: bool,
+  /// fuzzy search: match pattern against "namespace/definition" paths
+  #[argh(switch, short = 'f')]
+  pub fuzzy: bool,
+  /// maximum number of results for fuzzy search (default 20)
+  #[argh(option, short = 'n', default = "20")]
+  pub limit: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -281,21 +285,6 @@ pub struct QueryUsagesCommand {
   /// include dependency namespaces in search
   #[argh(switch)]
   pub deps: bool,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "search")]
-/// fuzzy search definitions by namespace/name pattern (e.g. "app/add", "core", "my-fn")
-pub struct QuerySearchCommand {
-  /// search pattern (matches against "namespace/definition" path)
-  #[argh(positional)]
-  pub pattern: String,
-  /// include dependency namespaces in search
-  #[argh(switch)]
-  pub deps: bool,
-  /// maximum number of results (default 20)
-  #[argh(option, short = 'n', default = "20")]
-  pub limit: usize,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

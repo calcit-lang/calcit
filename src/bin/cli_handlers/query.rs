@@ -1,6 +1,6 @@
 //! Query subcommand handlers
 //!
-//! Handles: cr query ls-ns, ls-defs, read-ns, read-def, read-at, peek-def, find-symbol, usages, search, pkg-name, configs, error, ls-modules
+//! Handles: cr query ls-ns, ls-defs, read-ns, read-def, read-at, peek-def, find-symbol, usages, pkg-name, configs, error, ls-modules
 
 use calcit::cli_args::{QueryCommand, QuerySubcommand};
 use calcit::snapshot;
@@ -14,8 +14,7 @@ use std::path::Path;
 fn parse_target(target: &str) -> Result<(&str, &str), String> {
   target.rsplit_once('/').ok_or_else(|| {
     format!(
-      "Invalid target format: '{}'. Expected 'namespace/definition' (e.g. 'app.core/main')",
-      target
+      "Invalid target format: '{target}'. Expected 'namespace/definition' (e.g. 'app.core/main')"
     )
   })
 }
@@ -41,12 +40,17 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       let (ns, def) = parse_target(&opts.target)?;
       handle_peek_def(input_path, ns, def)
     }
-    QuerySubcommand::FindSymbol(opts) => handle_find_symbol(input_path, &opts.symbol, opts.deps),
+    QuerySubcommand::FindSymbol(opts) => {
+      if opts.fuzzy {
+        handle_fuzzy_search(input_path, &opts.symbol, opts.deps, opts.limit)
+      } else {
+        handle_find_symbol(input_path, &opts.symbol, opts.deps)
+      }
+    }
     QuerySubcommand::Usages(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
       handle_usages(input_path, ns, def, opts.deps)
     }
-    QuerySubcommand::Search(opts) => handle_search(input_path, &opts.pattern, opts.deps, opts.limit),
   }
 }
 
@@ -761,7 +765,7 @@ fn check_ns_imports(ns_code: &Cirru, target_ns: &str, _target_def: &str) -> bool
 
 /// Fuzzy search for namespace/definition by pattern
 /// Searches for `<pattern>` in qualified names like `namespace/definition`
-fn handle_search(input_path: &str, pattern: &str, include_deps: bool, limit: usize) -> Result<(), String> {
+fn handle_fuzzy_search(input_path: &str, pattern: &str, include_deps: bool, limit: usize) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let pattern_lower = pattern.to_lowercase();
