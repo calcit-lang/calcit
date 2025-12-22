@@ -4,20 +4,21 @@ on:
 
 name: Publish to crate
 
+permissions:
+  contents: write
+  id-token: write  # Required for OIDC
+
 jobs:
   publish:
     name: Publish to cargo
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write  # Required for OIDC
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: yarn
           registry-url: https://registry.npmjs.org/
 
@@ -58,5 +59,4 @@ jobs:
         run: yarn && yarn tsc
 
       - run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{secrets.npm_token}}
+
