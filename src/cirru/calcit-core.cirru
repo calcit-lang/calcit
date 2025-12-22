@@ -1667,30 +1667,50 @@
           :code $ quote
             defn starts-with? (x y)
               &= 0 $ &str:find-index x y
-        |str $ %{} :CodeEntry (:doc |)
+        |str $ %{} :CodeEntry (:doc "|converts values to string and concatenates them")
           :code $ quote
             defn str (x0 & xs)
               if (&list:empty? xs) (&str x0)
                 &str:concat x0 $ str & xs
-        |str-spaced $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= |hello $ str |hello
+            quote $ assert= |abc $ str |a |b |c
+            quote $ assert= |123 $ str 1 2 3
+            quote $ assert= "|hello world" $ str |hello "| " |world
+        |str-spaced $ %{} :CodeEntry (:doc "|converts values to string and joins them with spaces")
           :code $ quote
             defn str-spaced (& xs) (&str-spaced true & xs)
-        |string? $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= "|a b c" $ str-spaced |a |b |c
+            quote $ assert= "|1 2 3" $ str-spaced 1 2 3
+        |string? $ %{} :CodeEntry (:doc "|checks if value is a string")
           :code $ quote
             defn string? (x)
               &= (type-of x) :string
-        |strip-prefix $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= true $ string? |hello
+            quote $ assert= false $ string? 123
+            quote $ assert= false $ string? :keyword
+        |strip-prefix $ %{} :CodeEntry (:doc "|removes prefix from string if it starts with that prefix, returns original string otherwise")
           :code $ quote
             defn strip-prefix (s piece)
               if (starts-with? s piece)
                 &str:slice s $ &str:count piece
                 , s
-        |strip-suffix $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= "| world" $ strip-prefix "|hello world" |hello
+            quote $ assert= |abc $ strip-prefix "|prefix-abc" "|prefix-"
+            quote $ assert= |hello $ strip-prefix |hello |xyz
+        |strip-suffix $ %{} :CodeEntry (:doc "|removes suffix from string if it ends with that suffix, returns original string otherwise")
           :code $ quote
             defn strip-suffix (s piece)
               if (ends-with? s piece)
                 &str:slice s 0 $ &- (&str:count s) (&str:count piece)
                 , s
+          :examples $ []
+            quote $ assert= |hello $ strip-suffix "|hello world" "| world"
+            quote $ assert= |abc $ strip-suffix "|abc-suffix" |-suffix
+            quote $ assert= |hello $ strip-suffix |hello |xyz
         |deref $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn deref (*a)
