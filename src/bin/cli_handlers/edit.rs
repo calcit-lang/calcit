@@ -63,8 +63,14 @@ fn save_snapshot(snapshot: &Snapshot, snapshot_file: &str) -> Result<(), String>
   save_snapshot_to_file(snapshot_file, snapshot)
 }
 
-/// Read code input from file, json option, or stdin
-fn read_code_input(file: &Option<String>, json: &Option<String>, stdin: bool) -> Result<Option<String>, String> {
+/// Read code input from file, inline code, json option, or stdin.
+/// Exactly one input source should be used.
+fn read_code_input(file: &Option<String>, code: &Option<String>, json: &Option<String>, stdin: bool) -> Result<Option<String>, String> {
+  let sources = (stdin as usize + file.is_some() as usize + code.is_some() as usize + json.is_some() as usize,).0;
+  if sources > 1 {
+    return Err("Multiple input sources provided. Use only one of: --stdin/-s, --file/-f, --code/-e, or --json/-j.".to_string());
+  }
+
   if stdin {
     let mut buffer = String::new();
     io::stdin()
@@ -74,6 +80,8 @@ fn read_code_input(file: &Option<String>, json: &Option<String>, stdin: bool) ->
   } else if let Some(path) = file {
     let content = fs::read_to_string(path).map_err(|e| format!("Failed to read file '{path}': {e}"))?;
     Ok(Some(content.trim().to_string()))
+  } else if let Some(s) = code {
+    Ok(Some(s.trim().to_string()))
   } else if let Some(j) = json {
     Ok(Some(j.clone()))
   } else {
@@ -95,66 +103,145 @@ fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<(), String>
 }
 
 /// Determine input mode and parse raw input string into a `Cirru` node.
-/// - If `inline_json` is Some -> parse that JSON string.
-/// - Else if `json_input` is true -> parse `raw` as JSON.
-/// - Else -> parse `raw` as Cirru text (default).
-fn parse_input_to_cirru(raw: &str, inline_json: &Option<String>, json_input: bool) -> Result<Cirru, String> {
+/// Precedence (highest to lowest):
+/// - `--json <string>` (inline JSON)
+/// - `--json-leaf` (JSON string -> leaf)
+/// - `--json-input` (parse JSON -> Cirru)
+/// - `--cirru-one` (parse one-line Cirru expression)
+/// - Cirru text (default)
+fn parse_input_to_cirru(
+  raw: &str,
+  inline_json: &Option<String>,
+  json_input: bool,
+  cirru_expr_one_liner: bool,
+  json_leaf: bool,
+  auto_json: bool,
+) -> Result<Cirru, String> {
+  // Validate conflicting flags early (keep error messages user-friendly)
+  if json_leaf && (json_input || cirru_expr_one_liner) {
+    return Err("Conflicting input flags: use only one of --json-leaf, --json-input, or --cirru-one.".to_string());
+  }
+  if json_input && cirru_expr_one_liner {
+    return Err("Conflicting input flags: use only one of --json-input or --cirru-one.".to_string());
+  }
+
   // If inline JSON provided, use it (takes precedence)
   if let Some(j) = inline_json {
-    return json_to_cirru(j);
-  }
-
-  if json_input {
-    return json_to_cirru(raw);
-  }
-
-  // Check for common mistakes before parsing
-  let trimmed = raw.trim();
-
-  // Check for empty input
-  if trimmed.is_empty() {
-    return Err("Input is empty. Please provide Cirru code or use -j for JSON input.".to_string());
-  }
-
-  // Detect JSON input without --json-input flag
-  // JSON arrays look like: ["item", ...] or [ "item", ...]
-  // Cirru [] syntax looks like: [] 1 2 3 or []
-  // Key difference: JSON has ["..." at start, Cirru has [] followed by space or newline
-  if trimmed.starts_with('[') && trimmed.ends_with(']') {
-    // Check if it looks like JSON (starts with [" or [ ")
-    let after_bracket = &trimmed[1..];
-    let is_likely_json = after_bracket.starts_with('"')
-      || after_bracket.starts_with(' ') && after_bracket.trim_start().starts_with('"')
-      || after_bracket.starts_with('\n') && after_bracket.trim_start().starts_with('"');
-
-    // Also check: Cirru [] is followed by space then non-quote content
-    let is_cirru_list = after_bracket.starts_with(']') // empty []
-      || (after_bracket.starts_with(' ') && !after_bracket.trim_start().starts_with('"'));
-
-    if is_likely_json && !is_cirru_list {
+    let node = json_to_cirru(j)?;
+    if json_leaf {
+      match node {
+        Cirru::Leaf(_) => Ok(node),
+        _ => Err("--json-leaf expects a JSON string (leaf node), but got a non-leaf JSON value.".to_string()),
+      }
+    } else {
+      Ok(node)
+    }
+  } else if json_leaf {
+    // json-leaf: raw should be a JSON string, e.g. "abc"
+    let json: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON string for --json-leaf: {e}"))?;
+    match json {
+      serde_json::Value::String(s) => Ok(Cirru::Leaf(Arc::from(s.as_str()))),
+      _ => Err("--json-leaf expects a JSON string, e.g. '\"abc\"'.".to_string()),
+    }
+  } else if json_input {
+    json_to_cirru(raw)
+  } else if cirru_expr_one_liner {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+      return Err("Input is empty. Please provide Cirru code or use -j for JSON input.".to_string());
+    }
+    if raw.contains('\t') {
       return Err(
-        "Input appears to be JSON format (starts with '[\"').\n\
-         If you want to use JSON input, add -J or --json-input flag.\n\
-         Example: cr edit def ns/name -s -J < file.json\n\
-         Or use -j for inline JSON: cr edit def ns/name -j '[\"defn\", ...]'\n\
-         Note: Cirru's [] list syntax (e.g. '[] 1 2 3') is different and will be parsed correctly."
+        "Input contains tab characters. Cirru requires spaces for indentation.\n\
+         Please replace tabs with 2 spaces.\n\
+         Tip: Use `cat -A file` to check for tabs (shown as ^I)."
           .to_string(),
       );
     }
-  }
+    cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))
+  } else {
+    // If input comes from inline `--code/-e`, it's typically single-line.
+    // Auto-detect JSON arrays/strings so users don't need `-J` for inline JSON.
+    if auto_json {
+      let trimmed = raw.trim();
+      let looks_like_json_string = trimmed.starts_with('"') && trimmed.ends_with('"');
+      // Heuristic for `-e/--code`:
+      // - If it is a JSON string: starts/ends with quotes -> JSON
+      // - If it is a JSON array: starts with '[' and ends with ']' AND contains at least one '"' -> JSON
+      //   (This avoids ambiguity with Cirru list syntax like `[]` or `[] 1 2 3`.)
+      let looks_like_json_array = trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed.contains('"');
 
-  // Detect tabs in input
-  if raw.contains('\t') {
-    return Err(
-      "Input contains tab characters. Cirru requires spaces for indentation.\n\
+      // If it looks like JSON, treat it as JSON.
+      // Do NOT fall back to Cirru one-liner on JSON parse failure, otherwise invalid JSON
+      // can be silently accepted as a Cirru expression.
+      if looks_like_json_array || looks_like_json_string {
+        return json_to_cirru(trimmed).map_err(|e| format!("Failed to parse JSON from -e/--code: {e}"));
+      }
+
+      // Inline `-e/--code` defaults to Cirru one-liner expr when it's not JSON.
+      if trimmed.is_empty() {
+        return Err("Input is empty. Please provide Cirru code or use -j for JSON input.".to_string());
+      }
+      if raw.contains('\t') {
+        return Err(
+          "Input contains tab characters. Cirru requires spaces for indentation.\n\
+           Please replace tabs with 2 spaces.\n\
+           Tip: Use `cat -A file` to check for tabs (shown as ^I)."
+            .to_string(),
+        );
+      }
+
+      return cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"));
+    }
+
+    // Check for common mistakes before parsing
+    let trimmed = raw.trim();
+
+    // Check for empty input
+    if trimmed.is_empty() {
+      return Err("Input is empty. Please provide Cirru code or use -j for JSON input.".to_string());
+    }
+
+    // Detect JSON input without --json-input flag
+    // JSON arrays look like: ["item", ...] or [ "item", ...]
+    // Cirru [] syntax looks like: [] 1 2 3 or []
+    // Key difference: JSON has ["..." at start, Cirru has [] followed by space or newline
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+      // Check if it looks like JSON (starts with [" or [ ")
+      let after_bracket = &trimmed[1..];
+      let is_likely_json = after_bracket.starts_with('"')
+        || after_bracket.starts_with(' ') && after_bracket.trim_start().starts_with('"')
+        || after_bracket.starts_with('\n') && after_bracket.trim_start().starts_with('"');
+
+      // Also check: Cirru [] is followed by space then non-quote content
+      let is_cirru_list = after_bracket.starts_with(']') // empty []
+      || (after_bracket.starts_with(' ') && !after_bracket.trim_start().starts_with('"'));
+
+      if is_likely_json && !is_cirru_list {
+        return Err(
+          "Input appears to be JSON format (starts with '[\"').\n\
+         If you want to use JSON input, use one of:\n\
+         - inline JSON: cr edit def ns/name -j '[\"defn\", ...]'\n\
+         - inline code: cr edit def ns/name -e '[\"defn\", ...]'\n\
+         - file/stdin JSON: add -J or --json-input (e.g. -f code.json -J, or -s -J).\n\
+         Note: Cirru's [] list syntax (e.g. '[] 1 2 3') is different and will be parsed correctly."
+            .to_string(),
+        );
+      }
+    }
+
+    // Detect tabs in input
+    if raw.contains('\t') {
+      return Err(
+        "Input contains tab characters. Cirru requires spaces for indentation.\n\
        Please replace tabs with 2 spaces.\n\
        Tip: Use `cat -A file` to check for tabs (shown as ^I)."
-        .to_string(),
-    );
-  }
+          .to_string(),
+      );
+    }
 
-  // Default: parse as cirru text
-  let parsed = cirru_parser::parse(raw).map_err(|e| {
+    // Default: parse as cirru text
+    let parsed = cirru_parser::parse(raw).map_err(|e| {
     let err_str = e.to_string();
     let mut msg = format!("Failed to parse Cirru text: {err_str}");
 
@@ -172,26 +259,27 @@ fn parse_input_to_cirru(raw: &str, inline_json: &Option<String>, json_input: boo
     msg
   })?;
 
-  // Check for empty parse result
-  if parsed.is_empty() {
-    return Err("Input parsed to empty code. Please provide valid Cirru code.".to_string());
-  }
+    // Check for empty parse result
+    if parsed.is_empty() {
+      return Err("Input parsed to empty code. Please provide valid Cirru code.".to_string());
+    }
 
-  // Warn if multiple top-level expressions (might indicate indentation issues)
-  if parsed.len() > 1 {
-    eprintln!(
-      "{}",
-      colored::Colorize::yellow(
-        "Warning: Input parsed as multiple expressions. This might indicate indentation issues.\n\
+    // Warn if multiple top-level expressions (might indicate indentation issues)
+    if parsed.len() > 1 {
+      eprintln!(
+        "{}",
+        colored::Colorize::yellow(
+          "Warning: Input parsed as multiple expressions. This might indicate indentation issues.\n\
          Cirru uses 2-space indentation for nesting. Check your whitespace."
-      )
-    );
-  }
+        )
+      );
+    }
 
-  if parsed.len() == 1 {
-    Ok(parsed.into_iter().next().unwrap())
-  } else {
-    Ok(Cirru::List(parsed))
+    if parsed.len() == 1 {
+      Ok(parsed.into_iter().next().unwrap())
+    } else {
+      Ok(Cirru::List(parsed))
+    }
   }
 }
 
@@ -245,9 +333,18 @@ fn parse_path(path_str: &str) -> Result<Vec<usize>, String> {
 fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
-  let raw = read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Code input required: use --file, --json, or --stdin")?;
+  let raw = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?
+    .ok_or("Code input required: use --file, --code, --json, or --stdin")?;
+  let auto_json = opts.code.is_some();
 
-  let syntax_tree = parse_input_to_cirru(&raw, &opts.json, opts.json_input)?;
+  let syntax_tree = parse_input_to_cirru(
+    &raw,
+    &opts.json,
+    opts.json_input,
+    opts.cirru_expr_one_liner,
+    opts.json_leaf,
+    auto_json,
+  )?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -389,13 +486,16 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
   }
 
   // Read examples input
-  let code_input = read_code_input(&opts.file, &opts.json, opts.stdin)?;
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?;
   let raw = code_input
     .as_deref()
-    .ok_or("Examples input required: use --file, --json, --stdin, or --clear")?;
+    .ok_or("Examples input required: use --file, --code, --json, --stdin, or --clear")?;
 
   // Parse examples - expect an array of Cirru expressions
-  let examples: Vec<Cirru> = if opts.json.is_some() || opts.json_input {
+  let examples: Vec<Cirru> = if opts.cirru_expr_one_liner {
+    // One-liner format represents a single example expression
+    vec![cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))?]
+  } else if opts.json.is_some() || opts.json_input {
     // Parse as JSON array
     let json_value: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON: {e}"))?;
     match json_value {
@@ -429,7 +529,8 @@ fn handle_at(opts: &EditAtCommand, snapshot_file: &str) -> Result<(), String> {
   let path = parse_path(&opts.path)?;
 
   // For delete operation, code input is not required
-  let code_input = read_code_input(&opts.file, &opts.json, opts.stdin)?;
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?;
+  let auto_json = opts.code.is_some();
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -452,8 +553,15 @@ fn handle_at(opts: &EditAtCommand, snapshot_file: &str) -> Result<(), String> {
     _ => {
       let raw = code_input
         .as_deref()
-        .ok_or("Code input required for this operation: use --file, --json, or --stdin")?;
-      Some(parse_input_to_cirru(raw, &opts.json, opts.json_input)?)
+        .ok_or("Code input required for this operation: use --file, --code, --json, or --stdin")?;
+      Some(parse_input_to_cirru(
+        raw,
+        &opts.json,
+        opts.json_input,
+        opts.cirru_expr_one_liner,
+        opts.json_leaf,
+        auto_json,
+      )?)
     }
   };
 
@@ -624,8 +732,17 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   }
 
   // Create ns code
-  let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.json, opts.stdin)? {
-    parse_input_to_cirru(&raw, &opts.json, opts.json_input)?
+  let auto_json = opts.code.is_some();
+
+  let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)? {
+    parse_input_to_cirru(
+      &raw,
+      &opts.json,
+      opts.json_input,
+      opts.cirru_expr_one_liner,
+      opts.json_leaf,
+      auto_json,
+    )?
   } else {
     // Default minimal ns declaration: (ns namespace-name)
     Cirru::List(vec![Cirru::Leaf(Arc::from("ns")), Cirru::Leaf(Arc::from(opts.namespace.as_str()))])
@@ -663,7 +780,9 @@ fn handle_rm_ns(opts: &EditRmNsCommand, snapshot_file: &str) -> Result<(), Strin
 }
 
 fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), String> {
-  let raw = read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Imports input required: use --file, --json, or --stdin")?;
+  let raw = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?
+    .ok_or("Imports input required: use --file, --code, --json, or --stdin")?;
+  let auto_json = opts.code.is_some();
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -681,7 +800,14 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
       .map_err(|e| format!("Failed to parse imports JSON: {e}. If you meant Cirru input, omit --json-input or pass --cirru."))?
   } else {
     // Parse as cirru and convert to JSON value
-    let cirru_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input)?;
+    let cirru_node = parse_input_to_cirru(
+      &raw,
+      &opts.json,
+      opts.json_input,
+      opts.cirru_expr_one_liner,
+      opts.json_leaf,
+      auto_json,
+    )?;
     fn cirru_to_json_value(c: &Cirru) -> serde_json::Value {
       match c {
         Cirru::Leaf(s) => serde_json::Value::String(s.to_string()),
@@ -767,10 +893,19 @@ fn build_ns_code(ns_name: &str, rules: &[Cirru]) -> Cirru {
 }
 
 fn handle_require(opts: &EditRequireCommand, snapshot_file: &str) -> Result<(), String> {
-  let raw =
-    read_code_input(&opts.file, &opts.json, opts.stdin)?.ok_or("Require rule input required: use --file, --json, or --stdin")?;
+  let raw = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?
+    .ok_or("Require rule input required: use --file, --code, --json, or --stdin")?;
 
-  let new_rule = parse_input_to_cirru(&raw, &opts.json, opts.json_input)?;
+  let auto_json = opts.code.is_some();
+
+  let new_rule = parse_input_to_cirru(
+    &raw,
+    &opts.json,
+    opts.json_input,
+    opts.cirru_expr_one_liner,
+    opts.json_leaf,
+    auto_json,
+  )?;
 
   // Validate that the rule has a source namespace
   let new_source_ns =

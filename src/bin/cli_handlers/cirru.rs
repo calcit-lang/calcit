@@ -102,9 +102,11 @@ This guide helps LLMs generate correct Cirru syntax for use with `cr edit` comma
 
 ## Input Formats
 
-`cr edit` commands accept two input formats:
-- **Cirru text** (default): Human-readable indented syntax
-- **JSON**: Nested arrays representing the syntax tree
+`cr edit` commands accept these input formats:
+- **cirru** (default): Human-readable indented syntax
+- **json**: Nested arrays representing the syntax tree
+- **cirru-one**: Single-line Cirru expression (uses Cirru one-liner parser)
+- **json-leaf**: A JSON string that becomes a leaf node
 
 ### Quick Examples
 
@@ -114,7 +116,25 @@ cr edit def my.ns/my-fn -f code.cirru
 
 # JSON input (explicit)
 cr edit def my.ns/my-fn -j '["defn","my-fn",["x"],["&+","x","1"]]'
+
+# JSON input (inline via --code, no -J needed)
+cr edit def my.ns/my-fn -e '["defn","my-fn",["x"],["&+","x","1"]]'
+
+# Note: `-e/--code` auto-detects JSON arrays only when the content contains double-quotes,
+# e.g. `-e '["a"]'`. Inputs like `-e '[]'` / `-e '[ ]'` default to Cirru one-liner.
+# If the input looks like JSON but is NOT valid JSON, `cr edit` will error (it will NOT
+# fall back to treating it as a Cirru one-liner expression).
+# If you really want an empty JSON array, use explicit JSON:
+cr edit def my.ns/my-fn -j '[]'
+
+# JSON input from file/stdin: add -J/--json-input
 cr edit def my.ns/my-fn -f code.json --json-input
+
+# Cirru one-liner expression input (default for -e/--code)
+cr edit at my.ns/my-fn -p 3 -o replace --code 'println $ str $ &+ 1 2'
+
+# JSON leaf input (a JSON string)
+cr edit at my.ns/my-fn -p 1 -o replace --json-leaf --code '"my-leaf"'
 ```
 
 ## Cirru Syntax Essentials

@@ -546,15 +546,26 @@ pub struct EditDefCommand {
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
+  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  #[argh(option, short = 'e', long = "code")]
+  pub code: Option<String>,
   /// syntax_tree as inline JSON string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
   /// treat input as cirru text (default, explicit for clarity)
   #[argh(switch, short = 'c', long = "cirru")]
   pub cirru: bool,
+  /// parse input as a single-line Cirru expression (one-liner parser).
+  /// Useful when your input is a single expression (no indentation), e.g.:
+  ///   cr edit def ns/name -O --code 'println $ str $ &+ 1 2'
+  #[argh(switch, short = 'O', long = "cirru-one")]
+  pub cirru_expr_one_liner: bool,
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
+  /// treat file/stdin input as JSON string and convert to a leaf node
+  #[argh(switch, long = "json-leaf")]
+  pub json_leaf: bool,
   /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
@@ -594,6 +605,9 @@ pub struct EditExamplesCommand {
   /// read examples from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
+  /// examples as inline Cirru text (or JSON when used with -J/--json-input)
+  #[argh(option, short = 'e', long = "code")]
+  pub code: Option<String>,
   /// examples as inline JSON array string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
@@ -603,6 +617,10 @@ pub struct EditExamplesCommand {
   /// treat input as cirru text (default, explicit for clarity)
   #[argh(switch, short = 'c', long = "cirru")]
   pub cirru: bool,
+  /// parse input as a single-line Cirru expression (one-liner parser).
+  /// For examples, this represents exactly ONE example expression.
+  #[argh(switch, short = 'O', long = "cirru-one")]
+  pub cirru_expr_one_liner: bool,
   /// treat file/stdin input as JSON array
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
@@ -627,6 +645,9 @@ pub struct EditAtCommand {
   /// read syntax_tree from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
+  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  #[argh(option, short = 'e', long = "code")]
+  pub code: Option<String>,
   /// syntax_tree as inline JSON string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
@@ -636,9 +657,15 @@ pub struct EditAtCommand {
   /// treat input as cirru text (default, explicit for clarity)
   #[argh(switch, short = 'c', long = "cirru")]
   pub cirru: bool,
+  /// parse input as a single-line Cirru expression (one-liner parser)
+  #[argh(switch, short = 'O', long = "cirru-one")]
+  pub cirru_expr_one_liner: bool,
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
+  /// treat file/stdin input as JSON string and convert to a leaf node
+  #[argh(switch, long = "json-leaf")]
+  pub json_leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
@@ -656,6 +683,9 @@ pub struct EditAddNsCommand {
   /// read ns syntax_tree from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
+  /// ns syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  #[argh(option, short = 'e', long = "code")]
+  pub code: Option<String>,
   /// ns syntax_tree as inline JSON string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
@@ -665,9 +695,15 @@ pub struct EditAddNsCommand {
   /// treat input as cirru text (default, explicit for clarity)
   #[argh(switch, short = 'c', long = "cirru")]
   pub cirru: bool,
+  /// parse input as a single-line Cirru expression (one-liner parser)
+  #[argh(switch, short = 'O', long = "cirru-one")]
+  pub cirru_expr_one_liner: bool,
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
+  /// treat file/stdin input as JSON string and convert to a leaf node
+  #[argh(switch, long = "json-leaf")]
+  pub json_leaf: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -689,6 +725,9 @@ pub struct EditImportsCommand {
   /// read imports from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
+  /// imports as inline Cirru text (or JSON when used with -J/--json-input)
+  #[argh(option, short = 'e', long = "code")]
+  pub code: Option<String>,
   /// imports as inline JSON string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
@@ -698,9 +737,15 @@ pub struct EditImportsCommand {
   /// treat input as cirru text (default, explicit for clarity)
   #[argh(switch, short = 'c', long = "cirru")]
   pub cirru: bool,
+  /// parse input as a single-line Cirru expression (one-liner parser)
+  #[argh(switch, short = 'O', long = "cirru-one")]
+  pub cirru_expr_one_liner: bool,
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
+  /// treat file/stdin input as JSON string and convert to a leaf node
+  #[argh(switch, long = "json-leaf")]
+  pub json_leaf: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -713,6 +758,9 @@ pub struct EditRequireCommand {
   /// read require rule from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
+  /// require rule as inline Cirru text (or JSON when used with -J/--json-input)
+  #[argh(option, short = 'e', long = "code")]
+  pub code: Option<String>,
   /// require rule as inline JSON string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
@@ -722,9 +770,15 @@ pub struct EditRequireCommand {
   /// treat input as cirru text (default, explicit for clarity)
   #[argh(switch, short = 'c', long = "cirru")]
   pub cirru: bool,
+  /// parse input as a single-line Cirru expression (one-liner parser)
+  #[argh(switch, short = 'O', long = "cirru-one")]
+  pub cirru_expr_one_liner: bool,
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
+  /// treat file/stdin input as JSON string and convert to a leaf node
+  #[argh(switch, long = "json-leaf")]
+  pub json_leaf: bool,
   /// overwrite existing rule for the same source namespace
   #[argh(switch, short = 'o', long = "overwrite")]
   pub overwrite: bool,

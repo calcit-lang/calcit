@@ -155,6 +155,32 @@ cr analyze call-tree --ns-prefix app.
 - `--json <string>` 或 `-j <string>` - 内联 JSON 字符串
 - `--stdin` 或 `-s` - 从标准输入读取（默认 Cirru 格式，使用 `-J` 指定 JSON）
 
+额外支持“内联代码”参数：
+
+- `--code <text>` 或 `-e <text>`：直接在命令行里传入一段代码。
+  - 默认按 **Cirru 单行表达式（one-liner）** 解析。
+  - 如果输入“看起来像 JSON”（例如 `-e '"abc"'`，或 `-e '["a"]'` 这类 `[...]` 且包含 `"`），则会按 JSON 解析。
+  - ⚠️ 当输入看起来像 JSON 但 JSON 不合法时，会直接报错（不会回退当成 Cirru one-liner）。
+
+对 `--file/--stdin` 输入，还支持以下“格式开关”（与 `-J/--json-input` 类似）：
+
+- `--cirru-one`：把输入解析为**单行 Cirru 表达式**（one-liner parser）。适合在 shell 里写一行表达式（不依赖缩进）。
+- `--json-leaf`：把输入当成 **JSON string**（例如 `"abc"`），并转换为 leaf 节点。
+
+⚠️ 注意：这些开关彼此互斥（一次只用一个）。
+
+**推荐简化规则（命令行更好写）：**
+
+- **JSON（单行）**：优先用 `-j '<json>'` 或 `-e '<json>'`（不需要 `-J`）。
+- **Cirru 单行表达式**：用 `-e '<expr>'`（`-e` 默认按 one-liner 解析；`-O/--cirru-one` 可选）。
+- **Cirru 多行缩进**：用 `-f file.cirru` 或 `-s`（stdin）。
+- `-J/--json-input` 主要用于 **file/stdin** 读入 JSON（如 `-f code.json -J` 或 `-s -J`）。
+
+补充：`-e/--code` 只有在 `[...]` 内部包含 `"` 时才会自动按 JSON 解析（例如 `-e '["a"]'`）。
+像 `-e '[]'` / `-e '[ ]'` 会默认按 Cirru one-liner 处理；如果你需要“空 JSON 数组”，用显式 JSON：`-j '[]'`。
+
+如果你想在命令行里明确“这段就是 JSON”，请用 `-j '<json>'`（`-J` 是给 file/stdin 用的）。
+
 **定义操作：**
 
 - `cr edit def <namespace/definition> -j '<json>'` - 添加或更新定义
@@ -189,6 +215,9 @@ cr query at app.core/my-fn -p "2,1,0"       # 确认最终目标
 # 步骤3: 确认无误后再执行修改
 cr edit at app.core/my-fn -p "2,1,0" -o replace -j '"new-value"'
 
+# 或者：用 --json-leaf（JSON string -> leaf，适合直接传 leaf）
+cr edit at app.core/my-fn -p "2,1,0" -o replace --json-leaf -e '"new-value"'
+
 # 步骤4: 验证修改结果
 cr query at app.core/my-fn -p "2,1"
 ```
@@ -217,6 +246,12 @@ cr edit def app.core/multiply -j '["defn", "multiply", ["x", "y"], ["*", "x", "y
 
 # 使用 stdin 管道
 echo '["defn", "hello", [], ["println", "|Hello"]]' | cr edit def app.core/hello -s -J
+
+# 单行 Cirru 表达式输入（one-liner，不走 stdin/文件；-e 默认 one-liner）
+cr edit def app.core/demo-one -e 'println $ str $ &+ 1 2'
+
+# JSON leaf 输入（leaf 节点，注意外层仍是 JSON string）
+cr edit def app.core/demo-leaf --json-leaf -e '"demo-leaf"'
 
 # 从文件读取（Cirru 格式）
 cr edit def app.core/complex-fn -f /tmp/code.cirru
