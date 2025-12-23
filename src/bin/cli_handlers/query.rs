@@ -719,7 +719,7 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
   let snapshot = load_snapshot(input_path)?;
 
   let mut found_definitions: Vec<(String, String)> = vec![];
-  let mut found_references: Vec<(String, String, String)> = vec![]; // (ns, def, context)
+  let mut found_references: Vec<(String, String, String, Vec<Vec<usize>>)> = vec![]; // (ns, def, context, coords)
 
   for (ns_name, file_data) in &snapshot.files {
     let is_core = ns_name.starts_with("calcit.") || ns_name.starts_with("calcit-test.");
@@ -737,10 +737,12 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
     // Search for references in all definitions
     for (def_name, code_entry) in &file_data.defs {
       if find_symbol_in_cirru(&code_entry.code, symbol, def_name != symbol) {
+        let coords = find_symbol_coords(&code_entry.code, symbol, def_name != symbol);
         found_references.push((
           ns_name.clone(),
           def_name.clone(),
           get_symbol_context_cirru(&code_entry.code, symbol),
+          coords,
         ));
       }
     }
@@ -767,16 +769,29 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
   // Print references (excluding the definition itself)
   let references: Vec<_> = found_references
     .iter()
-    .filter(|(ns, def, _)| !found_definitions.iter().any(|(dns, ddef)| dns == ns && ddef == def))
+    .filter(|(ns, def, _, _)| !found_definitions.iter().any(|(dns, ddef)| dns == ns && ddef == def))
     .collect();
 
   if !references.is_empty() {
     println!("{}", "Referenced in:".bold());
-    for (ns, def, context) in &references {
+    for (ns, def, context, coords) in &references {
+      // Show main line
       if !context.is_empty() {
         println!("  {}/{}  {}", ns.cyan(), def, context.dimmed());
       } else {
         println!("  {}/{}", ns.cyan(), def);
+      }
+      
+      // Show coordinates on one line with "and" separator
+      if !coords.is_empty() {
+        let coords_parts: Vec<String> = coords
+          .iter()
+          .map(|path| {
+            let coord_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+            format!("[{coord_str}]")
+          })
+          .collect();
+        println!("    {}", format!("at {}", coords_parts.join(" and ")).dimmed());
       }
     }
   }
@@ -808,7 +823,7 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     .get(target_def)
     .ok_or_else(|| format!("Definition '{target_def}' not found in namespace '{target_ns}'"))?;
 
-  let mut usages: Vec<(String, String, String)> = vec![]; // (ns, def, context)
+  let mut usages: Vec<(String, String, String, Vec<Vec<usize>>)> = vec![]; // (ns, def, context, coords)
 
   for (ns_name, file_data) in &snapshot.files {
     // Skip core namespaces unless deps is requested
@@ -836,7 +851,14 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
 
       if found {
         let context = get_symbol_context_cirru(&code_entry.code, target_def);
-        usages.push((ns_name.clone(), def_name.clone(), context));
+        // Get all coordinates where the symbol appears
+        let coords = if imports_target || ns_name == target_ns {
+          find_symbol_coords(&code_entry.code, target_def, true)
+        } else {
+          let qualified = format!("{target_ns}/{target_def}");
+          find_symbol_coords(&code_entry.code, &qualified, true)
+        };
+        usages.push((ns_name.clone(), def_name.clone(), context, coords));
       }
     }
   }
@@ -856,11 +878,24 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
     );
   } else {
     println!();
-    for (ns, def, context) in &usages {
+    for (ns, def, context, coords) in &usages {
+      // Show main line
       if !context.is_empty() {
         println!("  {}/{}  {}", ns.cyan(), def.green(), context.dimmed());
       } else {
         println!("  {}/{}", ns.cyan(), def.green());
+      }
+      
+      // Show coordinates on one line with "and" separator
+      if !coords.is_empty() {
+        let coords_parts: Vec<String> = coords
+          .iter()
+          .map(|path| {
+            let coord_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+            format!("[{coord_str}]")
+          })
+          .collect();
+        println!("    {}", format!("at {}", coords_parts.join(" and ")).dimmed());
       }
     }
   }
@@ -871,6 +906,30 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
   }
 
   Ok(())
+}
+
+// Helper: find all coordinates where symbol appears in Cirru tree
+fn find_symbol_coords(code: &Cirru, symbol: &str, skip_first: bool) -> Vec<Vec<usize>> {
+  fn search_recursive(node: &Cirru, symbol: &str, current_path: &[usize], skip_first: bool, results: &mut Vec<Vec<usize>>) {
+    match node {
+      Cirru::Leaf(s) if s.as_ref() == symbol => {
+        results.push(current_path.to_vec());
+      }
+      Cirru::List(items) => {
+        let start = if skip_first { 1 } else { 0 };
+        for (i, item) in items.iter().enumerate().skip(start) {
+          let mut new_path = current_path.to_vec();
+          new_path.push(i);
+          search_recursive(item, symbol, &new_path, false, results);
+        }
+      }
+      _ => {}
+    }
+  }
+
+  let mut results = Vec::new();
+  search_recursive(code, symbol, &[], skip_first, &mut results);
+  results
 }
 
 // Helper: recursively search for symbol in Cirru tree
