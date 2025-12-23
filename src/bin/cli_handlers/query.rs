@@ -245,6 +245,26 @@ fn handle_config(input_path: &str) -> Result<(), String> {
   println!("  {}: {}", "version".cyan(), snapshot.configs.version);
   println!("  {}: {:?}", "modules".cyan(), snapshot.configs.modules);
 
+  if !snapshot.entries.is_empty() {
+    println!("\n{}", "Snapshot Entries:".bold());
+
+    let mut names: Vec<&String> = snapshot.entries.keys().collect();
+    names.sort();
+
+    for name in names {
+      let entry = snapshot
+        .entries
+        .get(name)
+        .ok_or_else(|| format!("Missing entry config for '{name}'"))?;
+
+      println!("  {}", name.cyan());
+      println!("    {}: {}", "init_fn".cyan(), entry.init_fn);
+      println!("    {}: {}", "reload_fn".cyan(), entry.reload_fn);
+      println!("    {}: {}", "version".cyan(), entry.version);
+      println!("    {}: {:?}", "modules".cyan(), entry.modules);
+    }
+  }
+
   Ok(())
 }
 
@@ -457,7 +477,9 @@ fn handle_at(input_path: &str, namespace: &str, definition: &str, path: &str, ma
     if is_leaf {
       println!(
         "\n{}",
-        "Tip: To replace this leaf, use `-j '\"new-value\"'` (JSON string)".to_string().dimmed()
+        "Tip: To replace this leaf, use `-j '\"new-value\"'` (JSON string)"
+          .to_string()
+          .dimmed()
       );
       println!(
         "{}",
