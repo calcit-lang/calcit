@@ -295,7 +295,7 @@ impl CallTreeAnalyzer {
         let program_code = PROGRAM_CODE_DATA.read().ok();
         if let Some(ref code_data) = program_code {
           let mut found = false;
-          
+
           // First check current namespace
           if let Some(file_data) = code_data.get(current_ns) {
             if file_data.defs.contains_key(sym.as_ref()) {
@@ -303,7 +303,7 @@ impl CallTreeAnalyzer {
               found = true;
             }
           }
-          
+
           // Then check import map
           if !found {
             if let Some(file_data) = code_data.get(info.at_ns.as_ref()) {
@@ -326,7 +326,7 @@ impl CallTreeAnalyzer {
               }
             }
           }
-          
+
           // Finally, check if it's implicitly available from calcit.core
           // (unless we're already in calcit.core to avoid double-counting)
           if !found && current_ns != "calcit.core" {
@@ -716,12 +716,7 @@ impl CallCountAnalyzer {
 }
 
 /// Count calls from entry point
-pub fn count_calls(
-  entry_ns: &str,
-  entry_def: &str,
-  include_core: bool,
-  ns_prefix: Option<String>,
-) -> Result<CallCountResult, String> {
+pub fn count_calls(entry_ns: &str, entry_def: &str, include_core: bool, ns_prefix: Option<String>) -> Result<CallCountResult, String> {
   let mut analyzer = CallCountAnalyzer::new(include_core, ns_prefix);
   analyzer.analyze(entry_ns, entry_def)
 }

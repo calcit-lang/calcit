@@ -134,14 +134,8 @@ Calcit 程序使用 `cr` 命令：
 # 分析整个项目的调用树
 cr analyze call-tree
 
-# 统计调用次数，只看项目代码
-cr analyze count-call
-
 # 分析特定入口点
 cr analyze call-tree --root app.main/main!
-
-# 包含核心库，输出 JSON
-cr analyze count-call --include-core --format json
 
 # 只看特定命名空间前缀
 cr analyze call-tree --ns-prefix app.
@@ -165,7 +159,9 @@ cr analyze call-tree --ns-prefix app.
 对 `--file/--stdin` 输入，还支持以下“格式开关”（与 `-J/--json-input` 类似）：
 
 - `--cirru-one`：把输入解析为**单行 Cirru 表达式**（one-liner parser）。适合在 shell 里写一行表达式（不依赖缩进）。
-- `--json-leaf`：把输入当成 **JSON string**（例如 `"abc"`），并转换为 leaf 节点。
+- `--json-leaf`：把输入当成 **leaf 节点**。输入会直接作为 leaf 值，无需 JSON 引号包裹。
+  - 传入符号：`-e 'my-symbol'`
+  - 传入字符串：需要 Cirru 字符串前缀 `|` 或 `"`，例如 `-e '|my string'` 或 `-e '"my string'`
 
 ⚠️ 注意：这些开关彼此互斥（一次只用一个）。
 
@@ -215,8 +211,9 @@ cr query at app.core/my-fn -p "2,1,0"       # 确认最终目标
 # 步骤3: 确认无误后再执行修改
 cr edit at app.core/my-fn -p "2,1,0" -o replace -j '"new-value"'
 
-# 或者：用 --json-leaf（JSON string -> leaf，适合直接传 leaf）
-cr edit at app.core/my-fn -p "2,1,0" -o replace --json-leaf -e '"new-value"'
+# 或者：用 --json-leaf（直接传内容，自动转为 leaf 节点）
+# 注意：字符串需要 | 或 " 前缀（Cirru 语法）
+cr edit at app.core/my-fn -p "2,1,0" -o replace --json-leaf -e '|new-value'
 
 # 步骤4: 验证修改结果
 cr query at app.core/my-fn -p "2,1"
@@ -250,8 +247,11 @@ echo '["defn", "hello", [], ["println", "|Hello"]]' | cr edit def app.core/hello
 # 单行 Cirru 表达式输入（one-liner，不走 stdin/文件；-e 默认 one-liner）
 cr edit def app.core/demo-one -e 'println $ str $ &+ 1 2'
 
-# JSON leaf 输入（leaf 节点，注意外层仍是 JSON string）
-cr edit def app.core/demo-leaf --json-leaf -e '"demo-leaf"'
+# JSON leaf 输入（直接传内容作为 leaf 节点）
+# 传符号：
+cr edit def app.core/demo-leaf --json-leaf -e 'demo-leaf'
+# 传字符串（需要 | 或 " 前缀）：
+cr edit def app.core/demo-str --json-leaf -e '|demo string'
 
 # 从文件读取（Cirru 格式）
 cr edit def app.core/complex-fn -f /tmp/code.cirru

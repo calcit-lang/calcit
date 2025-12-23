@@ -54,9 +54,7 @@ pub enum CalcitCommand {
   EmitIr(EmitIrCommand),
   /// evaluate snippet
   Eval(EvalCommand),
-  /// check examples in namespace
-  CheckExamples(CheckExamplesCommand),
-  /// analyze code structure (call-tree, count-call)
+  /// analyze code structure (call-tree, count-call, check-examples)
   Analyze(AnalyzeCommand),
   /// query project information (namespaces, definitions, configs)
   Query(QueryCommand),
@@ -103,22 +101,13 @@ pub struct EvalCommand {
   pub dep: Vec<String>,
 }
 
-/// check examples in namespace
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "check-examples")]
-pub struct CheckExamplesCommand {
-  /// target namespace to check examples
-  #[argh(option)]
-  pub ns: String,
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // Analyze subcommand - code structure analysis
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure (call-tree, count-call)
+/// analyze code structure (call-tree, count-call, check-examples)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -131,6 +120,17 @@ pub enum AnalyzeSubcommand {
   CallTree(CallTreeCommand),
   /// count call occurrences from entry point
   CountCall(CountCallCommand),
+  /// check examples in namespace
+  CheckExamples(CheckExamplesCommand),
+}
+
+/// check examples in namespace
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "check-examples")]
+pub struct CheckExamplesCommand {
+  /// target namespace to check examples
+  #[argh(option)]
+  pub ns: String,
 }
 
 /// analyze call tree structure from entry point
@@ -563,7 +563,7 @@ pub struct EditDefCommand {
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
-  /// treat file/stdin input as JSON string and convert to a leaf node
+  /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "json-leaf")]
   pub json_leaf: bool,
   /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
@@ -663,7 +663,7 @@ pub struct EditAtCommand {
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
-  /// treat file/stdin input as JSON string and convert to a leaf node
+  /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "json-leaf")]
   pub json_leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
@@ -701,7 +701,7 @@ pub struct EditAddNsCommand {
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
-  /// treat file/stdin input as JSON string and convert to a leaf node
+  /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "json-leaf")]
   pub json_leaf: bool,
 }
@@ -743,7 +743,7 @@ pub struct EditImportsCommand {
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
-  /// treat file/stdin input as JSON string and convert to a leaf node
+  /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "json-leaf")]
   pub json_leaf: bool,
 }
@@ -776,7 +776,7 @@ pub struct EditRequireCommand {
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
-  /// treat file/stdin input as JSON string and convert to a leaf node
+  /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "json-leaf")]
   pub json_leaf: bool,
   /// overwrite existing rule for the same source namespace

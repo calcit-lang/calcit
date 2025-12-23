@@ -194,14 +194,12 @@ fn main() -> Result<(), String> {
       eval_once = true;
     }
     run_codegen(&entries, &cli_args.emit_path, true)
-  } else if let Some(CalcitCommand::CheckExamples(check_options)) = &cli_args.subcommand {
-    eval_once = true;
-    run_check_examples(&check_options.ns, &snapshot)
   } else if let Some(CalcitCommand::Analyze(analyze_cmd)) = &cli_args.subcommand {
     eval_once = true;
     match &analyze_cmd.subcommand {
       AnalyzeSubcommand::CallTree(call_tree_options) => run_call_tree(&entries, call_tree_options, &snapshot),
       AnalyzeSubcommand::CountCall(count_call_options) => run_count_call(&entries, count_call_options),
+      AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
     }
   } else {
     let started_time = Instant::now();

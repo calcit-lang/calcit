@@ -137,12 +137,8 @@ fn parse_input_to_cirru(
       Ok(node)
     }
   } else if json_leaf {
-    // json-leaf: raw should be a JSON string, e.g. "abc"
-    let json: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON string for --json-leaf: {e}"))?;
-    match json {
-      serde_json::Value::String(s) => Ok(Cirru::Leaf(Arc::from(s.as_str()))),
-      _ => Err("--json-leaf expects a JSON string, e.g. '\"abc\"'.".to_string()),
-    }
+    // json-leaf: automatically wrap raw input as a string leaf node
+    Ok(Cirru::Leaf(Arc::from(raw)))
   } else if json_input {
     json_to_cirru(raw)
   } else if cirru_expr_one_liner {
