@@ -294,26 +294,45 @@ impl CallTreeAnalyzer {
         // Check if this symbol refers to a definition in the same namespace
         let program_code = PROGRAM_CODE_DATA.read().ok();
         if let Some(ref code_data) = program_code {
+          let mut found = false;
+          
+          // First check current namespace
           if let Some(file_data) = code_data.get(current_ns) {
             if file_data.defs.contains_key(sym.as_ref()) {
               calls.push((current_ns.to_string(), sym.to_string()));
+              found = true;
             }
           }
-          // Also check if it's imported via the import map
-          if let Some(file_data) = code_data.get(info.at_ns.as_ref()) {
-            if let Some(import_rule) = file_data.import_map.get(sym.as_ref()) {
-              match &**import_rule {
-                crate::program::ImportRule::NsReferDef(ns, def) => {
-                  calls.push((ns.to_string(), def.to_string()));
+          
+          // Then check import map
+          if !found {
+            if let Some(file_data) = code_data.get(info.at_ns.as_ref()) {
+              if let Some(import_rule) = file_data.import_map.get(sym.as_ref()) {
+                match &**import_rule {
+                  crate::program::ImportRule::NsReferDef(ns, def) => {
+                    calls.push((ns.to_string(), def.to_string()));
+                    found = true;
+                  }
+                  crate::program::ImportRule::NsAs(ns) => {
+                    // For :as imports, we'd need more context to know the def
+                    // This is typically handled via Calcit::Import
+                    let _ = ns;
+                  }
+                  crate::program::ImportRule::NsDefault(ns) => {
+                    calls.push((ns.to_string(), "default".to_string()));
+                    found = true;
+                  }
                 }
-                crate::program::ImportRule::NsAs(ns) => {
-                  // For :as imports, we'd need more context to know the def
-                  // This is typically handled via Calcit::Import
-                  let _ = ns;
-                }
-                crate::program::ImportRule::NsDefault(ns) => {
-                  calls.push((ns.to_string(), "default".to_string()));
-                }
+              }
+            }
+          }
+          
+          // Finally, check if it's implicitly available from calcit.core
+          // (unless we're already in calcit.core to avoid double-counting)
+          if !found && current_ns != "calcit.core" {
+            if let Some(core_data) = code_data.get("calcit.core") {
+              if core_data.defs.contains_key(sym.as_ref()) {
+                calls.push(("calcit.core".to_string(), sym.to_string()));
               }
             }
           }
