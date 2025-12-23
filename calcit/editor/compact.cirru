@@ -2,34 +2,42 @@
 {} (:package |app)
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.1)
     :modules $ []
+  :entries $ {}
   :files $ {}
     |app.lib $ %{} :FileEntry
       :defs $ {}
         |f2 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn f2 () $ println "\"f2 in lib"
+          :examples $ []
         |f3 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn f3 (x) (println "\"f3 in lib") (println "\"v:" x)
+          :examples $ []
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote (ns app.lib)
+        :examples $ []
     |app.macro $ %{} :FileEntry
       :defs $ {}
         |add-by-1 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro add-by-1 (x)
               quasiquote $ &+ ~x 1
+          :examples $ []
         |add-by-2 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro add-by-2 (x)
               quasiquote $ &+ 2 (add-by-1 ~x)
+          :examples $ []
         |add-num $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro add-num (a b)
               quasiquote $ &let ()
                 &+ (~ a) (~ b)
+          :examples $ []
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote (ns app.macro)
+        :examples $ []
     |app.main $ %{} :FileEntry
       :defs $ {}
         |add-more $ %{} :CodeEntry (:doc |)
@@ -38,17 +46,21 @@
               if (&< times 1) acc $ recur
                 quasiquote $ &+ (~ x) (~ acc)
                 , x (&- times 1)
+          :examples $ []
         |call-3 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn call-3 (a b c) (println "\"a is:" a) (println "\"b is:" b) (println "\"c is:" c)
+          :examples $ []
         |call-macro $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro call-macro (x0 & xs)
               quasiquote $ &{} :a (~ x0) :b
                 [] $ ~@ xs
+          :examples $ []
         |call-many $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn call-many (x0 & xs) (println "\"many...") (println "\"x0" x0) (println "\"xs" xs)
+          :examples $ []
         |demos $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn demos () (println "\"demo")
@@ -86,32 +98,39 @@
               println "\"call and call" $ add-by-2 10
               ; println $ macroexpand (assert= 1 2)
               test-args
+          :examples $ []
         |f1 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn f1 () $ println "\"calling f1"
+          :examples $ []
         |fib $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn fib (n)
               if (< n 2) 1 $ +
                 fib $ - n 1
                 fib $ - n 2
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (demos) (; fib 10) (try-method) (; show-data)
+          :examples $ []
         |rec-sum $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn rec-sum (acc xs)
               if (empty? xs) acc $ recur
                 &+ acc $ nth xs 0
                 rest xs
+          :examples $ []
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () (println "\"reloaded 2") (; fib 40) (try-method)
+          :examples $ []
         |show-data $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn show-data () (load-console-formatter!)
               js/console.log $ defrecord! :Demo (:a 1)
                 :b $ {} (:a 1)
+          :examples $ []
         |test-args $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-args ()
@@ -120,12 +139,15 @@
               call-many 1 2
               call-many 1 2 3
               println $ macroexpand (call-macro 11 12 13)
+          :examples $ []
         |try-method $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn try-method () $ println
               .count $ range 11
+          :examples $ []
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns app.main $ :require (app.lib :as lib)
             app.lib :refer $ [] f3
             app.macro :refer $ [] add-num add-by-2
+        :examples $ []
