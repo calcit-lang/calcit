@@ -666,31 +666,30 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
         let body_count = items.len() - 3;
         println!("{} {} expression(s)", "Body:".bold(), body_count);
 
-        // Show first expression in Cirru format (compact inline)
+        // Show first expression in Cirru format (one-liner)
         if items.len() > 3 {
           let first_body = &items[3];
-          let cirru_preview = cirru_parser::format(&[first_body.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
-          // Get non-empty first line
-          let first_line = cirru_preview.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
-          if !first_line.is_empty() {
-            let display = if first_line.len() > 60 {
-              format!("{}...", &first_line[..60])
+          let cirru_preview = cirru_parser::format(&[first_body.clone()], false.into()).unwrap_or_else(|_| "(failed)".to_string());
+          let preview = cirru_preview.trim();
+          if !preview.is_empty() {
+            let display = if preview.len() > 60 {
+              format!("{}...", &preview[..60])
             } else {
-              first_line.to_string()
+              preview.to_string()
             };
             println!("{} {}", "Body start:".bold(), display.dimmed());
           }
         }
       } else if form_type == "def" && items.len() >= 3 {
-        // For def, show value preview in Cirru
+        // For def, show value preview in Cirru (one-liner)
         let value = &items[2];
-        let cirru_preview = cirru_parser::format(&[value.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());
-        let first_line = cirru_preview.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
-        if !first_line.is_empty() {
-          let display = if first_line.len() > 60 {
-            format!("{}...", &first_line[..60])
+        let cirru_preview = cirru_parser::format(&[value.clone()], false.into()).unwrap_or_else(|_| "(failed)".to_string());
+        let preview = cirru_preview.trim();
+        if !preview.is_empty() {
+          let display = if preview.len() > 60 {
+            format!("{}...", &preview[..60])
           } else {
-            first_line.to_string()
+            preview.to_string()
           };
           println!("{} {}", "Value:".bold(), display.dimmed());
         }
@@ -781,7 +780,7 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
       } else {
         println!("  {}/{}", ns.cyan(), def);
       }
-      
+
       // Show coordinates on one line with "and" separator
       if !coords.is_empty() {
         let coords_parts: Vec<String> = coords
@@ -885,7 +884,7 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
       } else {
         println!("  {}/{}", ns.cyan(), def.green());
       }
-      
+
       // Show coordinates on one line with "and" separator
       if !coords.is_empty() {
         let coords_parts: Vec<String> = coords
@@ -974,13 +973,12 @@ fn get_symbol_context_cirru(code: &Cirru, symbol: &str) -> String {
   }
 
   if let Some(context_node) = find_smallest_containing(code, symbol) {
-    let cirru_str = cirru_parser::format(&[context_node], true.into()).unwrap_or_default();
-    // Get first non-empty line
-    let first_line = cirru_str.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
-    if first_line.len() > 50 {
-      return format!("{}...", &first_line[..50]);
+    let cirru_str = cirru_parser::format(&[context_node], false.into()).unwrap_or_default();
+    let trimmed = cirru_str.trim();
+    if trimmed.len() > 50 {
+      return format!("{}...", &trimmed[..50]);
     }
-    return first_line.to_string();
+    return trimmed.to_string();
   }
   String::new()
 }

@@ -101,7 +101,7 @@
           :examples $ []
         |f1 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn f1 () $ println "\"calling f1"
+            defn f1 () $ println "|Hello with json-leaf!"
           :examples $ []
         |fib $ %{} :CodeEntry (:doc |)
           :code $ quote
