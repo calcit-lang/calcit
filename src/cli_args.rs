@@ -56,8 +56,8 @@ pub enum CalcitCommand {
   Eval(EvalCommand),
   /// check examples in namespace
   CheckExamples(CheckExamplesCommand),
-  /// analyze call tree structure from entry point
-  CallTree(CallTreeCommand),
+  /// analyze code structure (call-tree, count-call)
+  Analyze(AnalyzeCommand),
   /// query project information (namespaces, definitions, configs)
   Query(QueryCommand),
   /// documentation tools (API docs, guidebook)
@@ -112,6 +112,27 @@ pub struct CheckExamplesCommand {
   pub ns: String,
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Analyze subcommand - code structure analysis
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "analyze")]
+/// analyze code structure (call-tree, count-call)
+pub struct AnalyzeCommand {
+  #[argh(subcommand)]
+  pub subcommand: AnalyzeSubcommand,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand)]
+pub enum AnalyzeSubcommand {
+  /// analyze call tree structure from entry point
+  CallTree(CallTreeCommand),
+  /// count call occurrences from entry point
+  CountCall(CountCallCommand),
+}
+
 /// analyze call tree structure from entry point
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "call-tree")]
@@ -134,6 +155,27 @@ pub struct CallTreeCommand {
   /// output format: "text" (default, LLM-friendly) or "json"
   #[argh(option, default = "String::from(\"text\")")]
   pub format: String,
+}
+
+/// count call occurrences from entry point
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "count-call")]
+pub struct CountCallCommand {
+  /// directly specify root definition to analyze (format: ns/def)
+  #[argh(option)]
+  pub root: Option<String>,
+  /// only show definitions whose namespace starts with this prefix
+  #[argh(option)]
+  pub ns_prefix: Option<String>,
+  /// include core/library calls in the count
+  #[argh(switch)]
+  pub include_core: bool,
+  /// output format: "text" (default) or "json"
+  #[argh(option, default = "String::from(\"text\")")]
+  pub format: String,
+  /// sort by: "count" (default, descending) or "name"
+  #[argh(option, default = "String::from(\"count\")")]
+  pub sort: String,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -13,7 +13,7 @@ mod cli_handlers;
 
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
-use calcit::cli_args::{CalcitCommand, CallTreeCommand, ToplevelCalcit};
+use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallTreeCommand, CountCallCommand, ToplevelCalcit};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use colored::Colorize;
@@ -197,9 +197,12 @@ fn main() -> Result<(), String> {
   } else if let Some(CalcitCommand::CheckExamples(check_options)) = &cli_args.subcommand {
     eval_once = true;
     run_check_examples(&check_options.ns, &snapshot)
-  } else if let Some(CalcitCommand::CallTree(call_tree_options)) = &cli_args.subcommand {
+  } else if let Some(CalcitCommand::Analyze(analyze_cmd)) = &cli_args.subcommand {
     eval_once = true;
-    run_call_tree(&entries, call_tree_options, &snapshot)
+    match &analyze_cmd.subcommand {
+      AnalyzeSubcommand::CallTree(call_tree_options) => run_call_tree(&entries, call_tree_options, &snapshot),
+      AnalyzeSubcommand::CountCall(count_call_options) => run_count_call(&entries, count_call_options),
+    }
   } else {
     let started_time = Instant::now();
 
@@ -687,6 +690,30 @@ fn run_call_tree(entries: &ProgramEntries, options: &CallTreeCommand, _snapshot:
     println!("{json}");
   } else {
     println!("{}", calcit::call_tree::format_for_llm(&result));
+  }
+
+  Ok(())
+}
+
+fn run_count_call(entries: &ProgramEntries, options: &CountCallCommand) -> Result<(), String> {
+  // Determine entry point: use --root if provided, otherwise use init_fn from config
+  let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
+    util::string::extract_ns_def(def_path)?
+  } else {
+    (entries.init_ns.to_string(), entries.init_def.to_string())
+  };
+
+  println!("{}", format!("Counting calls from: {entry_ns}/{entry_def}").cyan());
+
+  // Count calls
+  let result = calcit::call_tree::count_calls(&entry_ns, &entry_def, options.include_core, options.ns_prefix.clone())?;
+
+  // Output result
+  if options.format == "json" {
+    let json = calcit::call_tree::format_count_as_json(&result)?;
+    println!("{json}");
+  } else {
+    println!("{}", calcit::call_tree::format_count_for_display(&result, &options.sort));
   }
 
   Ok(())

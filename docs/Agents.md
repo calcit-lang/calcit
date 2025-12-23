@@ -105,6 +105,48 @@ Calcit 程序使用 `cr` 命令：
 - `cr libs readme <package>` - 查看指定库的 README 文档（从 GitHub 获取）
 - `caps` - 安装/更新依赖
 
+### 代码分析 (`cr analyze`)
+
+分析代码结构和调用关系：
+
+**调用树分析：**
+
+- `cr analyze call-tree` - 分析从入口点开始的调用树结构
+  - `--root <ns/def>` - 指定分析入口（默认使用 init_fn）
+  - `--ns-prefix <prefix>` - 只显示指定命名空间前缀的定义
+  - `--include-core` - 包含 calcit.core 核心库函数
+  - `--max-depth <n>` - 限制遍历深度（0=无限）
+  - `--show-unused` - 显示未使用的定义
+  - `--format text|json` - 输出格式
+
+**调用次数统计：**
+
+- `cr analyze count-call` - 统计每个定义的调用次数
+  - `--root <ns/def>` - 指定分析入口（默认使用 init_fn）
+  - `--ns-prefix <prefix>` - 只显示指定命名空间前缀的定义
+  - `--include-core` - 包含 calcit.core 核心库函数
+  - `--format text|json` - 输出格式
+  - `--sort count|name` - 按调用次数（默认，降序）或名称排序
+
+**使用示例：**
+
+```bash
+# 分析整个项目的调用树
+cr analyze call-tree
+
+# 统计调用次数，只看项目代码
+cr analyze count-call
+
+# 分析特定入口点
+cr analyze call-tree --root app.main/main!
+
+# 包含核心库，输出 JSON
+cr analyze count-call --include-core --format json
+
+# 只看特定命名空间前缀
+cr analyze call-tree --ns-prefix app.
+```
+
 ### 代码编辑 (`cr edit`)
 
 直接编辑 compact.cirru 项目代码，支持三种输入方式：

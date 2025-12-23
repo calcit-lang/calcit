@@ -534,3 +534,206 @@ pub fn analyze_call_tree(
   let mut analyzer = CallTreeAnalyzer::new(config);
   analyzer.analyze(entry_ns, entry_def)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Call count analysis
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Result of call count analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallCountResult {
+  /// The entry point of the analysis
+  pub entry: String,
+  /// Map of definition FQN to call count
+  pub counts: Vec<CallCountEntry>,
+  /// Total unique definitions called
+  pub total_definitions: usize,
+  /// Total call count
+  pub total_calls: usize,
+}
+
+/// A single entry in the call count result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallCountEntry {
+  /// Full qualified name (ns/def)
+  pub fqn: String,
+  /// Namespace
+  pub ns: String,
+  /// Definition name
+  pub def: String,
+  /// Number of times this definition is called
+  pub count: usize,
+  /// Source type: "project", "core", or "external"
+  pub source: String,
+}
+
+/// Call count analyzer
+struct CallCountAnalyzer {
+  /// Whether to include core/library calls
+  include_core: bool,
+  /// Namespace prefix filter
+  ns_prefix: Option<String>,
+  /// Track visited definitions to avoid infinite loops
+  visited: HashSet<String>,
+  /// Count of calls for each definition
+  call_counts: HashMap<String, usize>,
+}
+
+impl CallCountAnalyzer {
+  fn new(include_core: bool, ns_prefix: Option<String>) -> Self {
+    CallCountAnalyzer {
+      include_core,
+      ns_prefix,
+      visited: HashSet::new(),
+      call_counts: HashMap::new(),
+    }
+  }
+
+  fn analyze(&mut self, entry_ns: &str, entry_def: &str) -> Result<CallCountResult, String> {
+    let fqn = format!("{entry_ns}/{entry_def}");
+
+    // Count the entry itself
+    *self.call_counts.entry(fqn.clone()).or_insert(0) += 1;
+
+    // Traverse and count
+    self.traverse(entry_ns, entry_def)?;
+
+    // Build result
+    let mut counts: Vec<CallCountEntry> = self
+      .call_counts
+      .iter()
+      .map(|(fqn, &count)| {
+        let (ns, def) = fqn.split_once('/').unwrap_or(("", fqn));
+        CallCountEntry {
+          fqn: fqn.clone(),
+          ns: ns.to_string(),
+          def: def.to_string(),
+          count,
+          source: self.get_source_type(ns),
+        }
+      })
+      .collect();
+
+    // Sort by count descending by default
+    counts.sort_by(|a, b| b.count.cmp(&a.count));
+
+    let total_calls: usize = counts.iter().map(|e| e.count).sum();
+
+    Ok(CallCountResult {
+      entry: format!("{entry_ns}/{entry_def}"),
+      total_definitions: counts.len(),
+      total_calls,
+      counts,
+    })
+  }
+
+  fn traverse(&mut self, ns: &str, def: &str) -> Result<(), String> {
+    let fqn = format!("{ns}/{def}");
+
+    // Already visited, skip to avoid infinite loop
+    if self.visited.contains(&fqn) {
+      return Ok(());
+    }
+    self.visited.insert(fqn.clone());
+
+    let program_code = PROGRAM_CODE_DATA.read().map_err(|e| format!("Failed to read program code: {e}"))?;
+
+    // Get the definition
+    let code_entry = match program_code.get(ns) {
+      Some(file_data) => file_data.defs.get(def).map(|e| &e.code),
+      None => None,
+    };
+
+    // Extract calls from the code
+    if let Some(code) = code_entry {
+      let call_refs = self.extract_calls(code, ns);
+
+      // Release the lock before recursive calls
+      drop(program_code);
+
+      for (call_ns, call_def) in call_refs {
+        // Filter based on config
+        if !self.include_core && self.is_core_ns(&call_ns) {
+          continue;
+        }
+
+        // Filter by namespace prefix if specified
+        if let Some(ref prefix) = self.ns_prefix {
+          if !call_ns.starts_with(prefix) {
+            continue;
+          }
+        }
+
+        let call_fqn = format!("{call_ns}/{call_def}");
+
+        // Increment call count
+        *self.call_counts.entry(call_fqn).or_insert(0) += 1;
+
+        // Recursively traverse
+        self.traverse(&call_ns, &call_def)?;
+      }
+    }
+
+    Ok(())
+  }
+
+  fn extract_calls(&self, code: &Calcit, current_ns: &str) -> Vec<(String, String)> {
+    let mut calls = vec![];
+    CallTreeAnalyzer::extract_calls_recursive(code, current_ns, &mut calls);
+    calls
+  }
+
+  fn is_core_ns(&self, ns: &str) -> bool {
+    ns.starts_with("calcit.") || ns == "calcit.core"
+  }
+
+  fn get_source_type(&self, ns: &str) -> String {
+    if self.is_core_ns(ns) {
+      "core".to_string()
+    } else {
+      "project".to_string()
+    }
+  }
+}
+
+/// Count calls from entry point
+pub fn count_calls(
+  entry_ns: &str,
+  entry_def: &str,
+  include_core: bool,
+  ns_prefix: Option<String>,
+) -> Result<CallCountResult, String> {
+  let mut analyzer = CallCountAnalyzer::new(include_core, ns_prefix);
+  analyzer.analyze(entry_ns, entry_def)
+}
+
+/// Format call count result for display
+pub fn format_count_for_display(result: &CallCountResult, sort: &str) -> String {
+  let mut output = String::new();
+
+  output.push_str("# Call Count Analysis\n\n");
+  output.push_str(&format!("**Entry Point:** `{}`\n\n", result.entry));
+  output.push_str(&format!("**Total Definitions:** {}\n", result.total_definitions));
+  output.push_str(&format!("**Total Calls:** {}\n\n", result.total_calls));
+
+  output.push_str("## Call Counts\n\n");
+  output.push_str("| Count | Definition | Source |\n");
+  output.push_str("|------:|:-----------|:-------|\n");
+
+  let mut counts = result.counts.clone();
+  match sort {
+    "name" => counts.sort_by(|a, b| a.fqn.cmp(&b.fqn)),
+    _ => counts.sort_by(|a, b| b.count.cmp(&a.count)),
+  }
+
+  for entry in &counts {
+    output.push_str(&format!("| {} | `{}` | {} |\n", entry.count, entry.fqn, entry.source));
+  }
+
+  output
+}
+
+/// Format call count result as JSON
+pub fn format_count_as_json(result: &CallCountResult) -> Result<String, String> {
+  serde_json::to_string_pretty(result).map_err(|e| format!("Failed to serialize to JSON: {e}"))
+}
