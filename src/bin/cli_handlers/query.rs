@@ -646,53 +646,17 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
         Cirru::Leaf(s) => s.to_string(),
         _ => "unknown".to_string(),
       };
-      println!("{} {}", "Form:".bold(), form_type.yellow());
 
-      // For defn/defmacro, extract params
-      if (form_type == "defn" || form_type == "defmacro" || form_type == "defn-") && items.len() >= 3 {
-        // items[1] = name, items[2] = params
-        if let Cirru::List(params) = &items[2] {
-          let param_names: Vec<String> = params
-            .iter()
-            .map(|p| match p {
-              Cirru::Leaf(s) => s.to_string(),
-              Cirru::List(_) => "[...]".to_string(),
-            })
-            .collect();
-          println!("{} ({})", "Params:".bold(), param_names.join(" "));
-        }
-
-        // Show body count (how many expressions in body)
-        let body_count = items.len() - 3;
-        println!("{} {} expression(s)", "Body:".bold(), body_count);
-
-        // Show first expression in Cirru format (one-liner)
-        if items.len() > 3 {
-          let first_body = &items[3];
-          let cirru_preview = cirru_parser::format(&[first_body.clone()], false.into()).unwrap_or_else(|_| "(failed)".to_string());
-          let preview = cirru_preview.trim();
-          if !preview.is_empty() {
-            let display = if preview.len() > 60 {
-              format!("{}...", &preview[..60])
-            } else {
-              preview.to_string()
-            };
-            println!("{} {}", "Body start:".bold(), display.dimmed());
-          }
-        }
-      } else if form_type == "def" && items.len() >= 3 {
-        // For def, show value preview in Cirru (one-liner)
-        let value = &items[2];
-        let cirru_preview = cirru_parser::format(&[value.clone()], false.into()).unwrap_or_else(|_| "(failed)".to_string());
-        let preview = cirru_preview.trim();
-        if !preview.is_empty() {
-          let display = if preview.len() > 60 {
-            format!("{}...", &preview[..60])
-          } else {
-            preview.to_string()
-          };
-          println!("{} {}", "Value:".bold(), display.dimmed());
-        }
+      // For defn/defmacro/def, show as one-liner with truncation
+      if (form_type == "defn" || form_type == "defmacro" || form_type == "defn-" || form_type == "def") && items.len() >= 3 {
+        // Show entire definition as one-liner, truncated to 80 chars
+        let preview = code_entry.code.format_one_liner()?;
+        let display = if preview.len() > 120 {
+          format!("{}...", &preview[..120])
+        } else {
+          preview
+        };
+        println!("{} {}", "Code:".bold(), display.dimmed());
       }
     }
     _ => {
