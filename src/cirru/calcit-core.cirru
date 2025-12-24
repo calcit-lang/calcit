@@ -1071,10 +1071,13 @@
             defmacro flipped (f & args)
               quasiquote $ ~f
                 ~@ $ reverse args
-        |fn $ %{} :CodeEntry (:doc |)
+        |fn $ %{} :CodeEntry (:doc "|macro for anonymous functions\nSyntax: (fn (args...) body...)\nParams: args (parameter list), body (expressions)\nReturns: anonymous function\nCreates an anonymous function, shorter than defn")
           :code $ quote
             defmacro fn (args & body)
               quasiquote $ defn f% ~args ~@body
+          :examples $ []
+            quote $ map ([] 1 2 3) $ fn (x) (* x 2)
+            quote $ filter ([] 1 2 3 4 5) $ fn (n) (> n 2)
         |fn? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn fn? (x)
@@ -1268,7 +1271,7 @@
             defn last (xs)
               if (empty? xs) nil $ nth xs
                 &- (count xs) 1
-        |let $ %{} :CodeEntry (:doc |)
+        |let $ %{} :CodeEntry (:doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially")
           :code $ quote
             defmacro let (pairs & body)
               if
@@ -1286,6 +1289,9 @@
                     let
                       ~ $ &list:rest pairs
                       ~@ body
+          :examples $ []
+            quote $ let ((x 1) (y 2)) (+ x y)
+            quote $ let ((a 10)) (* a a)
         |let-destruct $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro let-destruct (pattern v & body)
@@ -1407,10 +1413,13 @@
                         ~ $ &list:nth pattern1 0
                         ~ $ &list:slice pattern1 1
                       raise "|expected empty and destruction branches"
-        |list? $ %{} :CodeEntry (:doc |)
+        |list? $ %{} :CodeEntry (:doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure")
           :code $ quote
             defn list? (x)
               &= (type-of x) :list
+          :examples $ []
+            quote $ list? ([] 1 2 3)
+            quote $ list? ({})
         |cirru-quote? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn cirru-quote? (x)
@@ -1934,7 +1943,7 @@
                   defn &{,} (x) (not= x ',)
                 quasiquote $ pairs-map
                   section-by ([] ~@xs) 2
-        |{} $ %{} :CodeEntry (:doc |)
+        |{} $ %{} :CodeEntry (:doc "|macro for creating hashmaps\nSyntax: ({} (:key value) ...)\nParams: pairs (key-value pairs)\nReturns: hashmap\nCreates a hashmap from key-value pairs")
           :code $ quote
             defmacro {} (& xs)
               if
@@ -1945,6 +1954,9 @@
               &let
                 ys $ &list:concat & xs
                 quasiquote $ &{} ~@ys
+          :examples $ []
+            quote $ {} (:a 1) (:b 2)
+            quote $ {} (:name |Alice) (:age 30)
         |' $ %{} :CodeEntry (:doc "|alias for []")
           :code $ quote
             def "'" []
@@ -1969,12 +1981,18 @@
           :code $ quote &runtime-inplementation
         |if $ %{} :CodeEntry (:doc "|internal syntax for conditional expressions\nSyntax: (if condition then-expr else-expr)\nParams: condition (any), then-expr (any), else-expr (any, optional)\nReturns: value of then-expr if condition is truthy, else-expr otherwise\nEvaluates condition and returns appropriate branch")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ if (> x 0) |positive |non-positive
+            quote $ if (empty? xs) 0 (count xs)
         |&let $ %{} :CodeEntry (:doc "|internal syntax for local binding (binds only 1 local)\nSyntax: (&let [binding value] body)\nParams: binding (symbol), value (any), body (expression)\nReturns: result of body with binding in scope\nCreates a local binding for a single variable")
           :code $ quote &runtime-inplementation
         |quote $ %{} :CodeEntry (:doc "|internal syntax for turning code into quoted data\nSyntax: (quote expr)\nParams: expr (any code)\nReturns: quoted data structure\nPrevents evaluation and returns code as data")
           :code $ quote &runtime-inplementation
         |quasiquote $ %{} :CodeEntry (:doc "|internal syntax for quasiquote (used inside macros)\nSyntax: (quasiquote expr)\nParams: expr (code with possible unquote)\nReturns: partially quoted structure\nLike quote but allows selective unquoting with ~ and ~@")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ quasiquote $ &+ ~x 1
+            quote $ quasiquote $ [] ~x ~@xs
         |gensym $ %{} :CodeEntry (:doc "|internal syntax for generating unique symbols\nSyntax: (gensym) or (gensym prefix)\nParams: prefix (string, optional)\nReturns: unique symbol\nGenerates a unique symbol for macro hygiene")
           :code $ quote &runtime-inplementation
         |eval $ %{} :CodeEntry (:doc "|internal syntax for evaluating code at runtime\nSyntax: (eval expr)\nParams: expr (quoted code)\nReturns: result of evaluation\nEvaluates quoted code in current environment")
