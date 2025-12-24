@@ -512,6 +512,10 @@ pub enum EditSubcommand {
   Doc(EditDocCommand),
   /// set definition examples
   Examples(EditExamplesCommand),
+  /// add a single example to definition
+  AddExample(EditAddExampleCommand),
+  /// remove an example from definition by index
+  RmExample(EditRmExampleCommand),
   /// operate on definition at specific path
   At(EditAtCommand),
   /// add a new namespace
@@ -627,6 +631,51 @@ pub struct EditExamplesCommand {
   /// clear all examples
   #[argh(switch, long = "clear")]
   pub clear: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "add-example")]
+/// add a single example to definition
+pub struct EditAddExampleCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// position to insert at (default: append to end)
+  #[argh(option, long = "at")]
+  pub at: Option<usize>,
+  /// read example from file (Cirru format by default, use -J for JSON)
+  #[argh(option, short = 'f')]
+  pub file: Option<String>,
+  /// example as inline Cirru text (or JSON when used with -J/--json-input)
+  #[argh(option, short = 'e', long = "code")]
+  pub code: Option<String>,
+  /// example as inline JSON string
+  #[argh(option, short = 'j')]
+  pub json: Option<String>,
+  /// read example from stdin (Cirru format by default, use -J for JSON)
+  #[argh(switch, short = 's')]
+  pub stdin: bool,
+  /// treat input as cirru text (default, explicit for clarity)
+  #[argh(switch, short = 'c', long = "cirru")]
+  pub cirru: bool,
+  /// parse input as a single-line Cirru expression (one-liner parser)
+  #[argh(switch, short = 'O', long = "cirru-one")]
+  pub cirru_expr_one_liner: bool,
+  /// treat file/stdin input as JSON
+  #[argh(switch, short = 'J', long = "json-input")]
+  pub json_input: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "rm-example")]
+/// remove an example from definition by index
+pub struct EditRmExampleCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// index of example to remove (0-based)
+  #[argh(positional)]
+  pub index: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

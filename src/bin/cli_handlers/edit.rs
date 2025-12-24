@@ -9,9 +9,10 @@
 
 use super::query::cirru_to_json_with_depth;
 use calcit::cli_args::{
-  EditAddModuleCommand, EditAddNsCommand, EditAtCommand, EditCommand, EditConfigCommand, EditDefCommand, EditDocCommand,
-  EditExamplesCommand, EditImportsCommand, EditNsDocCommand, EditRequireCommand, EditRmDefCommand, EditRmModuleCommand,
-  EditRmNsCommand, EditRmRequireCommand, EditSubcommand,
+  EditAddExampleCommand, EditAddModuleCommand, EditAddNsCommand, EditAtCommand, EditCommand, EditConfigCommand,
+  EditDefCommand, EditDocCommand, EditExamplesCommand, EditImportsCommand, EditNsDocCommand, EditRequireCommand,
+  EditRmDefCommand, EditRmExampleCommand, EditRmModuleCommand, EditRmNsCommand, EditRmRequireCommand,
+  EditSubcommand,
 };
 use calcit::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -34,6 +35,8 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::RmDef(opts) => handle_rm_def(opts, snapshot_file),
     EditSubcommand::Doc(opts) => handle_doc(opts, snapshot_file),
     EditSubcommand::Examples(opts) => handle_examples(opts, snapshot_file),
+    EditSubcommand::AddExample(opts) => handle_add_example(opts, snapshot_file),
+    EditSubcommand::RmExample(opts) => handle_rm_example(opts, snapshot_file),
     EditSubcommand::At(opts) => handle_at(opts, snapshot_file),
     EditSubcommand::AddNs(opts) => handle_add_ns(opts, snapshot_file),
     EditSubcommand::RmNs(opts) => handle_rm_ns(opts, snapshot_file),
@@ -514,6 +517,120 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
     count,
     definition.cyan(),
     namespace
+  );
+
+  Ok(())
+}
+
+fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+
+  // Check if namespace can be edited
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+
+  // Read example input
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?;
+  let raw = code_input
+    .as_deref()
+    .ok_or("Example input required: use --file, --code, --json, or --stdin")?;
+
+  // Parse example
+  let example: Cirru = if opts.cirru_expr_one_liner {
+    cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))?
+  } else if opts.json.is_some() || opts.json_input {
+    // Parse as JSON
+    let json_value: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON: {e}"))?;
+    json_value_to_cirru(&json_value)?
+  } else {
+    // Parse as Cirru text - expect single expression
+    let parsed = cirru_parser::parse(raw).map_err(|e| format!("Failed to parse Cirru: {e}"))?;
+    if parsed.len() != 1 {
+      return Err(format!("Expected single example expression, got {}", parsed.len()));
+    }
+    parsed.into_iter().next().unwrap()
+  };
+
+  // Insert at specified position or append
+  let position = opts.at.unwrap_or(code_entry.examples.len());
+  if position > code_entry.examples.len() {
+    return Err(format!(
+      "Position {} out of range (max: {})",
+      position,
+      code_entry.examples.len()
+    ));
+  }
+
+  code_entry.examples.insert(position, example);
+
+  let total_count = code_entry.examples.len();
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Added example at position {} for '{}' in namespace '{}' (total: {})",
+    "✓".green(),
+    position,
+    definition.cyan(),
+    namespace,
+    total_count
+  );
+
+  Ok(())
+}
+
+fn handle_rm_example(opts: &EditRmExampleCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+
+  // Check if namespace can be edited
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+
+  // Validate index
+  if opts.index >= code_entry.examples.len() {
+    return Err(format!(
+      "Index {} out of range (max: {})",
+      opts.index,
+      code_entry.examples.len().saturating_sub(1)
+    ));
+  }
+
+  // Remove example
+  code_entry.examples.remove(opts.index);
+
+  let remaining_count = code_entry.examples.len();
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Removed example at index {} from '{}' in namespace '{}' (remaining: {})",
+    "✓".green(),
+    opts.index,
+    definition.cyan(),
+    namespace,
+    remaining_count
   );
 
   Ok(())

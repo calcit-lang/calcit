@@ -183,12 +183,21 @@ cr analyze call-tree --ns-prefix app.
 - `cr edit def <namespace/definition> -r -j '<json>'` - 强制覆盖已有定义
 - `cr edit rm-def <namespace/definition>` - 删除定义
 - `cr edit doc <namespace/definition> '<doc>'` - 更新定义的文档
-- `cr edit examples <namespace/definition>` - 设置定义的示例代码
+- `cr edit examples <namespace/definition>` - 设置定义的示例代码（批量替换所有示例）
   - `-j '<json>'` - 内联 JSON 数组
   - `-f <file>` - 从文件读取（默认 Cirru 格式）
   - `-s` - 从 stdin 读取（默认 Cirru 格式）
   - `-J` - 使用 JSON 格式输入
   - `--clear` - 清空所有示例
+- `cr edit add-example <namespace/definition>` - 添加单个示例
+  - `--at <position>` - 指定插入位置（默认追加到末尾，0-based 索引）
+  - `-j '<json>'` - 内联 JSON
+  - `-e '<code>'` - 内联 Cirru 文本
+  - `-f <file>` - 从文件读取（默认 Cirru 格式）
+  - `-s` - 从 stdin 读取
+  - `-O` - 使用 one-liner 解析器
+  - `-J` - 使用 JSON 格式输入
+- `cr edit rm-example <namespace/definition> <index>` - 删除指定索引的示例（0-based）
 - `cr edit at <namespace/definition> -p <path> -o <operation> -j '<json>'` - 在指定路径操作
   - path：逗号分隔的索引，如 "2,1,0"
   - operation："insert-before", "insert-after", "replace", "delete", "insert-child"
@@ -338,7 +347,16 @@ cr edit examples app.core/multiply -j '[["multiply", "3", "4"]]'
 # 从 Cirru 文件设置示例（文件中每行是一个表达式）
 cr edit examples app.core/multiply -f examples.cirru
 
-# 清空示例
+# 添加单个示例到末尾
+cr edit add-example app.core/multiply -e 'multiply 5 6'
+
+# 在指定位置插入示例（在索引 0 位置插入，成为第一个示例）
+cr edit add-example app.core/multiply --at 0 -e 'multiply 1 2'
+
+# 删除第 2 个示例（索引 1）
+cr edit rm-example app.core/multiply 1
+
+# 清空所有示例
 cr edit examples app.core/multiply --clear
 ```
 
