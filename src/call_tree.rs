@@ -584,6 +584,10 @@ pub struct CallCountEntry {
   pub count: usize,
   /// Source type: "project", "core", or "external"
   pub source: String,
+  /// Whether this definition has documentation
+  pub has_doc: bool,
+  /// Number of examples
+  pub examples_count: usize,
 }
 
 /// Call count analyzer
@@ -618,17 +622,33 @@ impl CallCountAnalyzer {
     self.traverse(entry_ns, entry_def)?;
 
     // Build result
+    let program_code = PROGRAM_CODE_DATA.read().map_err(|e| format!("Failed to read program code: {e}"))?;
+
     let mut counts: Vec<CallCountEntry> = self
       .call_counts
       .iter()
       .map(|(fqn, &count)| {
         let (ns, def) = fqn.split_once('/').unwrap_or(("", fqn));
+
+        // Get doc and examples info
+        let (has_doc, examples_count) = program_code
+          .get(ns)
+          .and_then(|file_data| file_data.defs.get(def))
+          .map(|code_entry| {
+            let has_doc = !code_entry.doc.is_empty();
+            let examples_count = code_entry.examples.len();
+            (has_doc, examples_count)
+          })
+          .unwrap_or((false, 0));
+
         CallCountEntry {
           fqn: fqn.clone(),
           ns: ns.to_string(),
           def: def.to_string(),
           count,
           source: self.get_source_type(ns),
+          has_doc,
+          examples_count,
         }
       })
       .collect();
@@ -731,8 +751,8 @@ pub fn format_count_for_display(result: &CallCountResult, sort: &str) -> String 
   output.push_str(&format!("**Total Calls:** {}\n\n", result.total_calls));
 
   output.push_str("## Call Counts\n\n");
-  output.push_str("| Count | Definition | Source |\n");
-  output.push_str("|------:|:-----------|:-------|\n");
+  output.push_str("| Count | Definition                               | Doc | Examples |\n");
+  output.push_str("|------:|:-----------------------------------------|:---:|:--------:|\n");
 
   let mut counts = result.counts.clone();
   match sort {
@@ -741,7 +761,20 @@ pub fn format_count_for_display(result: &CallCountResult, sort: &str) -> String 
   }
 
   for entry in &counts {
-    output.push_str(&format!("| {} | `{}` | {} |\n", entry.count, entry.fqn, entry.source));
+    let doc_mark = if entry.has_doc { "✓" } else { " " };
+    let examples_str = if entry.examples_count > 0 {
+      format!("{:>8}", entry.examples_count)
+    } else {
+      format!("{:>8}", "")
+    };
+
+    // Format count with at least 2 characters width (right-aligned)
+    let count_str = format!("{:>5}", entry.count);
+
+    // Format definition with at least 20 characters width (left-aligned)
+    let def_str = format!("{:<40}", entry.fqn);
+
+    output.push_str(&format!("| {count_str} | {def_str} | {doc_mark}   | {examples_str} |\n"));
   }
 
   output
