@@ -353,23 +353,7 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str) -> Result<(),
   }
 
   if !code_entry.examples.is_empty() {
-    println!("\n{} ({} total)", "Examples:".bold(), code_entry.examples.len());
-    for (i, example) in code_entry.examples.iter().enumerate() {
-      let example_str = cirru_parser::format(&[example.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
-      let lines: Vec<&str> = example_str.lines().collect();
-      if lines.len() <= 3 {
-        println!("  {}:", format!("[{}]", i + 1).dimmed());
-        for line in &lines {
-          println!("    {line}");
-        }
-      } else {
-        println!("  {}:", format!("[{}]", i + 1).dimmed());
-        for line in lines.iter().take(3) {
-          println!("    {line}");
-        }
-        println!("    {}", "...".dimmed());
-      }
-    }
+    println!("\n{} {}", "Examples:".bold(), code_entry.examples.len());
   }
 
   println!("\n{}", "Cirru:".bold());
@@ -380,10 +364,13 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str) -> Result<(),
   let json = cirru_to_json(&code_entry.code);
   println!("{}", serde_json::to_string(&json).unwrap());
 
-  println!(
-    "\n{}",
-    format!("Tip: Use `query at {namespace}/{definition} -p \"0\"` to explore tree for editing.").dimmed()
-  );
+  let mut tips = vec![format!(
+    "Use `query at {namespace}/{definition} -p \"0\"` to explore tree for editing."
+  )];
+  if !code_entry.examples.is_empty() {
+    tips.push(format!("Use `query examples {namespace}/{definition}` to view examples."));
+  }
+  println!("\n{}", format!("Tip: {}", tips.join(" ")).dimmed());
 
   Ok(())
 }
@@ -592,7 +579,7 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
     println!("{} example(s)\n", code_entry.examples.len());
 
     for (i, example) in code_entry.examples.iter().enumerate() {
-      println!("{}", format!("[{}]:", i + 1).bold());
+      println!("{}", format!("[{i}]:").bold());
 
       // Show Cirru format
       let cirru_str = cirru_parser::format(&[example.clone()], true.into()).unwrap_or_else(|_| "(failed)".to_string());

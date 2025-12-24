@@ -9,10 +9,9 @@
 
 use super::query::cirru_to_json_with_depth;
 use calcit::cli_args::{
-  EditAddExampleCommand, EditAddModuleCommand, EditAddNsCommand, EditAtCommand, EditCommand, EditConfigCommand,
-  EditDefCommand, EditDocCommand, EditExamplesCommand, EditImportsCommand, EditNsDocCommand, EditRequireCommand,
-  EditRmDefCommand, EditRmExampleCommand, EditRmModuleCommand, EditRmNsCommand, EditRmRequireCommand,
-  EditSubcommand,
+  EditAddExampleCommand, EditAddModuleCommand, EditAddNsCommand, EditAtCommand, EditCommand, EditConfigCommand, EditDefCommand,
+  EditDocCommand, EditExamplesCommand, EditImportsCommand, EditNsDocCommand, EditRequireCommand, EditRmDefCommand,
+  EditRmExampleCommand, EditRmModuleCommand, EditRmNsCommand, EditRmRequireCommand, EditSubcommand,
 };
 use calcit::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -565,11 +564,7 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
   // Insert at specified position or append
   let position = opts.at.unwrap_or(code_entry.examples.len());
   if position > code_entry.examples.len() {
-    return Err(format!(
-      "Position {} out of range (max: {})",
-      position,
-      code_entry.examples.len()
-    ));
+    return Err(format!("Position {} out of range (max: {})", position, code_entry.examples.len()));
   }
 
   code_entry.examples.insert(position, example);
