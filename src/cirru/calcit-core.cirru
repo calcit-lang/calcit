@@ -10,14 +10,23 @@
             defmacro %<- (& xs)
               quasiquote $ ->%
                 ~@ $ reverse xs
-        |%{} $ %{} :CodeEntry (:doc "|Create a record by spreading multiple pairs into flat arguments")
+        |%{} $ %{} :CodeEntry (:doc "|Low-level helper for constructing records and attaching metadata\nWraps `&%{` so higher-level macros like `defrecord!` can register methods.")
           :code $ quote
             defmacro %{} (R & xs)
               &let
                 args $ &list:concat & xs
                 quasiquote $ &%{} ~R ~@args
           :examples $ []
-            quote $ assert= (new-record :point (:x 1) (:y 2)) $ %{} (new-record :point) ([] :x 1) ([] :y 2)
+            quote $ let
+                rec $ %{}
+                  new-record :point
+                  [] :x 1
+                  [] :y 2
+              assert= :point $ &tuple:nth rec 0
+            quote $ assert= (new-record :point (:x 1) (:y 2)) $ %{}
+              new-record :point
+              [] :x 1
+              [] :y 2
         |&<= $ %{} :CodeEntry (:doc "|Less than or equal comparison for two values")
           :code $ quote
             defn &<= (a b)
@@ -564,12 +573,15 @@
         |/= $ %{} :CodeEntry (:doc "|not equal")
           :code $ quote
             defn /= (a b) (not= a b)
-        |: $ %{} :CodeEntry (:doc |)
+        |: $ %{} :CodeEntry (:doc "|Macro sugar for tagged tuples\nExpands to `::` while passing the tag through `turn-tag`, so both keywords and bare symbols may be used.")
           :code $ quote
             defmacro : (tag & args)
               quasiquote $ ::
                 ~ $ turn-tag tag
                 ~@ args
+          :examples $ []
+            quote $ assert= (:: :point 1 2) $ : :point 1 2
+            quote $ assert= (:: :name |calcit) $ : |name |calcit
         |;nil $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro ;nil (& _body) nil
@@ -607,7 +619,7 @@
             quote $ assert= true $ = 3 3 3
             quote $ assert= false $ = 1 2
             quote $ assert= true $ = ([] 1 2) ([] 1 2)
-        |> $ %{} :CodeEntry (:doc "|Greater than comparison, supports multiple arguments")
+        |> $ %{} :CodeEntry (:doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument.")
           :code $ quote
             defn > (x & ys)
               if
@@ -617,8 +629,9 @@
           :examples $ []
             quote $ assert= true $ > 5 3
             quote $ assert= false $ > 3 5
-            quote $ assert= true $ > 5 4 3 2
-        |>= $ %{} :CodeEntry (:doc "|Greater than or equal to comparison")
+            quote $ assert= true $ > 8 4 2 1
+            quote $ assert= false $ > 2 2
+        |>= $ %{} :CodeEntry (:doc "|Greater-than-or-equal comparison for one or more numbers")
           :code $ quote
             defn >= (x & ys)
               if
@@ -838,7 +851,7 @@
               &let
                 v $ gensym |v
                 quasiquote $ &let (~v ~item) (&case ~v nil ~@patterns)
-        |case-default $ %{} :CodeEntry (:doc "|Case expression with a default value, matches item against patterns")
+        |case-default $ %{} :CodeEntry (:doc "|Case macro variant with an explicit default branch\nEvaluates the target once, compares it against pattern/result pairs, and falls back to the provided default when no pattern matches.")
           :code $ quote
             defmacro case-default (item default & patterns)
               if (&list:empty? patterns)
@@ -847,9 +860,10 @@
                 v $ gensym |v
                 quasiquote $ &let (~v ~item) (&case ~v ~default ~@patterns)
           :examples $ []
-            quote $ assert= |two $ case-default 2 |unknown (1 |one) (2 |two) (3 |three)
-            quote $ assert= |not-found $ case-default 5 |not-found (1 |one) (2 |two)
-        |concat $ %{} :CodeEntry (:doc "|Concatenate multiple lists into one")
+            quote $ assert= |two $ case-default 2 |none (1 |one) (2 |two)
+            quote $ assert= |none $ case-default 3 |none (1 |one)
+            quote $ assert= |fallback $ case-default 5 |fallback (1 |one) (2 |two) (3 |three)
+        |concat $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn concat (& args)
               list-match args
@@ -892,7 +906,7 @@
           :examples $ []
             quote $ assert= ([] 1 2 3) $ conj ([] 1 2) 3
             quote $ assert= ([] 1 2 3 4) $ conj ([] 1) 2 3 4
-        |contains-in? $ %{} :CodeEntry (:doc |)
+        |contains-in? $ %{} :CodeEntry (:doc "|Checks whether a nested path exists within maps, records, tuples, or lists. Returns true only when every hop succeeds.")
           :code $ quote
             defn contains-in? (xs path)
               list-match path
@@ -919,6 +933,13 @@
                         recur (&tuple:nth xs p0) ps
                         , false
                     true false
+          :examples $ []
+            quote $ assert= true $ contains-in?
+              {} (:profile ({} (:name |calcit)))
+              [] :profile :name
+            quote $ assert= false $ contains-in?
+              {} (:profile ({} (:name |calcit)))
+              [] :profile :missing
         |contains-symbol? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn contains-symbol? (xs y)
@@ -930,7 +951,7 @@
                       (b0 bs)
                         if (contains-symbol? b0 y) true $ recur bs
                 &= xs y
-        |contains? $ %{} :CodeEntry (:doc "|Check if a collection contains a key")
+        |contains? $ %{} :CodeEntry (:doc "|Checks whether a collection contains a key or index at the current level. Supports lists, tuples, maps, and records while treating nil as false.")
           :code $ quote
             defn contains? (x k)
               if (nil? x) false $ if (list? x) (&list:contains? x k)
@@ -940,8 +961,9 @@
                       &< k $ &tuple:count x
                     .contains? x k
           :examples $ []
-            quote $ assert= true $ contains? ({} (:a 1) (:b 2)) :a
-            quote $ assert= false $ contains? ({} (:a 1)) :c
+            quote $ assert= true $ contains? ([] :a :b) 1
+            quote $ assert= true $ contains? ({} (:a 1)) :a
+            quote $ assert= false $ contains? nil :missing
             quote $ assert= true $ contains? (#{} 1 2 3) 2
         |count $ %{} :CodeEntry (:doc "|Counts elements in a collection or string\nNil input returns 0; otherwise delegates to the underlying data structure's counter.")
           :code $ quote
@@ -953,7 +975,7 @@
             quote $ assert= 4 $ count ([] 1 2 3 4)
             quote $ assert= 5 $ count |hello
             quote $ assert= 0 $ count nil
-        |dec $ %{} :CodeEntry (:doc "|Decrement a number by 1")
+        |dec $ %{} :CodeEntry (:doc "|Decrements a number by 1")
           :code $ quote
             defn dec (x) (&- x 1)
           :examples $ []
@@ -1102,7 +1124,7 @@
           :examples $ []
             quote $ assert= true $ every? ([] 2 4 6) $ defn %even (x) (&= 0 (.rem x 2))
             quote $ assert= false $ every? ([] 1 2 3) $ defn %gt1 (x) (&> x 1)
-        |exclude $ %{} :CodeEntry (:doc |)
+        |exclude $ %{} :CodeEntry (:doc "|Removes values from a collection by repeatedly calling `&exclude` for each provided item.")
           :code $ quote
             defn exclude (base & xs)
               reduce xs base $ fn (acc item) (&exclude acc item)
@@ -1120,7 +1142,7 @@
                   quasiquote $ &let ()
                     assert "|expected map value to match" $ map? ~value
                     &field-match-internal ~value ~@body
-        |filter $ %{} :CodeEntry (:doc "|Filter elements from a collection based on a predicate function")
+        |filter $ %{} :CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
           :code $ quote
             defn filter (xs f) (.filter xs f)
           :examples $ []
@@ -1183,7 +1205,7 @@
                 () acc
                 (x0 xss)
                   recur xss (f acc x0) f
-        |foldl-compare $ %{} :CodeEntry (:doc "|Fold left with comparison, returns true if all adjacent pairs satisfy the predicate")
+        |foldl-compare $ %{} :CodeEntry (:doc "|Helper used by comparison operators to ensure a relation holds across an entire list, short-circuiting on the first failure.")
           :code $ quote
             defn foldl-compare (xs acc f)
               if (&list:empty? xs) true $ if
@@ -1448,7 +1470,7 @@
                       let-sugar
                         ~ $ &list:rest pairs
                         ~@ body
-        |let[] $ %{} :CodeEntry (:doc "|Destructure a list into named variables, supports rest parameters with &")
+        |let[] $ %{} :CodeEntry (:doc "|Destructures a sequential value inside `let`, assigning each position to declared names and supporting `&` rest bindings.")
           :code $ quote
             defmacro let[] (vars data & body)
               if
@@ -1485,6 +1507,9 @@
                   quasiquote $ let (~ defs) (~@ body)
                   quasiquote $ &let (~v ~data)
                     let (~ defs) (~@ body)
+          :examples $ []
+            quote $ let[] (x y) ([] 1 2) (+ x y)
+            quote $ let[] (head & tail) ([] 9 8 7) (count tail)
         |let{} $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro let{} (items base & body)
@@ -1549,7 +1574,7 @@
           :code $ quote
             defn cirru-quote? (x)
               &= (type-of x) :cirru-quote
-        |loop $ %{} :CodeEntry (:doc |)
+        |loop $ %{} :CodeEntry (:doc "|Named-let style looping macro. Binds initial values once and uses `recur` to update bindings in a tail-recursive way without stack growth.")
           :code $ quote
             defmacro loop (pairs & body)
               if
@@ -1567,6 +1592,12 @@
                   values $ map pairs last
                 assert "|loop requires symbols in pairs" $ every? args symbol?
                 quasiquote $ apply (defn generated-loop ~args ~@body) ([] ~@values)
+          :examples $ []
+            quote $ assert= 6 $ loop
+              (total 0)
+              (xs ([] 1 2 3))
+              if (empty? xs) total
+                recur (+ total (first xs)) (rest xs)
         |macro? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn macro? (x)
@@ -1622,12 +1653,19 @@
         |max $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn max (xs) (.max xs)
-        |merge $ %{} :CodeEntry (:doc "|Merge multiple maps or records into one, later values override earlier ones")
+        |merge $ %{} :CodeEntry (:doc "|Combines maps left-to-right, with later maps overwriting keys from earlier ones by reducing through `&merge`.")
           :code $ quote
             defn merge (x0 & xs) (reduce xs x0 &merge)
           :examples $ []
-            quote $ assert= ({} (:a 1) (:b 3) (:c 4)) $ merge ({} (:a 1) (:b 2)) ({} (:b 3) (:c 4))
-            quote $ assert= ({} (:x 1) (:y 2) (:z 3)) $ merge ({} (:x 1)) ({} (:y 2)) ({} (:z 3))
+            quote $ assert=
+              {} (:a 2) (:b 1)
+              merge ({} (:a 1)) ({} (:a 2) (:b 1))
+            quote $ assert=
+              {} (:a 1) (:b 2) (:c 3)
+              merge
+                {} (:a 1)
+                {} (:b 2)
+                {} (:c 3)
         |merge-non-nil $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn merge-non-nil (x0 & xs) (reduce xs x0 &merge-non-nil)
@@ -1658,13 +1696,13 @@
               if (nil? x)
                 raise "|expected non nil value"
                 , x
-        |not= $ %{} :CodeEntry (:doc "|Returns true if x and y are not equal")
+        |not= $ %{} :CodeEntry (:doc "|Returns true when its two arguments are not identical according to `=`.")
           :code $ quote
             defn not= (x y)
               not $ &= x y
           :examples $ []
             quote $ assert= true $ not= 1 2
-            quote $ assert= false $ not= 1 1
+            quote $ assert= false $ not= :a :a
             quote $ assert= true $ not= |a |b
         |noted $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1677,7 +1715,7 @@
           :examples $ []
             quote $ assert= 2 $ nth ([] 1 2 3) 1
             quote $ assert= |b $ nth |abc 1
-        |number? $ %{} :CodeEntry (:doc "|Check if a value is a number")
+        |number? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a numeric scalar")
           :code $ quote
             defn number? (x)
               &= (type-of x) :number
@@ -2041,7 +2079,7 @@
             quote $ assert= (:: 0 2 2)
               update (:: 0 1 2) 1 inc
             quote $ assert= ({} (:count 1)) $ update ({} (:count 1)) :missing inc
-        |update-in $ %{} :CodeEntry (:doc "|Update a value in nested data structure at the given path using function f")
+        |update-in $ %{} :CodeEntry (:doc "|Walks a path of keys inside nested maps/lists and applies a function to the value, creating intermediate maps as needed.")
           :code $ quote
             defn update-in (data path f)
               list-match path
@@ -2049,9 +2087,16 @@
                 (p0 ps)
                   assoc (either data $ {}) p0 $ update-in (get data p0) ps f
           :examples $ []
-            quote $ assert= ({} (:a ({} (:b 2)))) $ update-in ({} (:a ({} (:b 1)))) ([] :a :b) inc
-            quote $ assert= ({} (:x 10)) $ update-in ({} (:x 5)) ([] :x) $ fn (v) (&* v 2)
-        |vals $ %{} :CodeEntry (:doc "|Get all values from a map as a list")
+            quote $ assert=
+              {} (:a ({} (:b 2)))
+              update-in ({} (:a ({} (:b 1)))) ([] :a :b) inc
+            quote $ assert=
+              {} (:profile ({} (:visits 1)))
+              update-in {} ([] :profile :visits) (fn (_missing) 1)
+            quote $ assert=
+              {} (:x 10)
+              update-in ({} (:x 5)) ([] :x) $ fn (v) (&* v 2)
+        |vals $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn vals (x)
               map (to-pairs x) last
