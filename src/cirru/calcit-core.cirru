@@ -488,7 +488,7 @@
           :examples $ []
             quote $ assert= 5 $ - 10 3 2
             quote $ assert= -5 $ - 5
-        |-> $ %{} :CodeEntry (:doc |)
+        |-> $ %{} :CodeEntry (:doc "|Thread-first macro\nSyntax: (-> value step1 step2 ...)\nEvaluates the value through each step by inserting it as the first argument and returns the final result.")
           :code $ quote
             defmacro -> (base & xs)
               if (&list:empty? xs) (quasiquote ~base)
@@ -501,6 +501,9 @@
                         &list:rest x0
                       , & $ &list:rest xs
                     recur ([] x0 base) & $ &list:rest xs
+          :examples $ []
+            quote $ assert= 3 $ -> 1 inc inc
+            quote $ assert= 9 $ -> 2 inc (* 3)
         |thread-first $ %{} :CodeEntry (:doc "|a alias for `->`")
           :code $ quote
             defmacro thread-first (& xs)
@@ -631,7 +634,7 @@
                               [] a0
                               , body
                             recur code $ butlast ys
-        |and $ %{} :CodeEntry (:doc |)
+        |and $ %{} :CodeEntry (:doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right.")
           :code $ quote
             defmacro and (item & xs)
               if (&list:empty? xs)
@@ -645,6 +648,9 @@
                     ~ $ &list:first xs
                     ~@ $ &list:rest xs
                   , false
+          :examples $ []
+            quote $ assert= false $ and true false true
+            quote $ assert= |done $ and true |done
         |any? $ %{} :CodeEntry (:doc "|checks if any element in collection satisfies the predicate function, returns true on first match, short-circuits evaluation")
           :code $ quote
             defn any? (xs f)
@@ -832,11 +838,14 @@
                           cond
                             ~ $ &list:nth else 0
                             ~@ $ &list:rest else
-        |conj $ %{} :CodeEntry (:doc |)
+        |conj $ %{} :CodeEntry (:doc "|Appends values to the end of a list, returning a new list\nSupports adding multiple values by chaining additional arguments.")
           :code $ quote
             defn conj (xs y0 & ys)
               if (empty? ys) (append xs y0)
                 recur (append xs y0) & ys
+          :examples $ []
+            quote $ assert= ([] 1 2 3) $ conj ([] 1 2) 3
+            quote $ assert= ([] 1 2 3 4) $ conj ([] 1) 2 3 4
         |contains-in? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn contains-in? (xs path)
@@ -968,12 +977,15 @@
         |distinct $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn distinct (x) (&list:distinct x)
-        |do $ %{} :CodeEntry (:doc |)
+        |do $ %{} :CodeEntry (:doc "|Evaluates expressions sequentially and returns the last result\nUseful for grouping side effects or multiple steps where only the final value matters.")
           :code $ quote
             defmacro do (& body)
               ; println |body: $ format-to-lisp body
               if (empty? body) (raise "|empty do is not okay")
               quasiquote $ &let () (~@ body)
+          :examples $ []
+            quote $ assert= 3 $ do (inc 1) (+ 1 2)
+            quote $ assert= |world $ do (str |hello) (str |world)
         |drop $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn drop (xs n)
@@ -1003,10 +1015,13 @@
           :code $ quote
             defn empty (x)
               if (nil? x) nil $ if (list? x) ([]) (.empty x)
-        |empty? $ %{} :CodeEntry (:doc |)
+        |empty? $ %{} :CodeEntry (:doc "|Checks whether a collection or string is empty\nNil values are considered empty, otherwise delegates to the underlying data structure.")
           :code $ quote
             defn empty? (x)
               if (nil? x) true $ if (list? x) (&list:empty? x) (.empty? x)
+          :examples $ []
+            quote $ assert= true $ empty? ([])
+            quote $ assert= false $ empty? ([] 1)
         |ends-with? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn ends-with? (x y)
@@ -1266,11 +1281,14 @@
                         recur
                           include acc $ &list:first pair
                           nth set-pair 1
-        |last $ %{} :CodeEntry (:doc |)
+        |last $ %{} :CodeEntry (:doc "|Returns the last element of a list-like collection\nReturns nil when the collection is empty.")
           :code $ quote
             defn last (xs)
               if (empty? xs) nil $ nth xs
                 &- (count xs) 1
+          :examples $ []
+            quote $ assert= 3 $ last ([] 1 2 3)
+            quote $ assert= nil $ last ([])
         |let $ %{} :CodeEntry (:doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially")
           :code $ quote
             defmacro let (pairs & body)
@@ -1507,10 +1525,13 @@
           :code $ quote
             defn abs (x)
               if (&< x 0) (&- 0 x) x
-        |nil? $ %{} :CodeEntry (:doc |)
+        |nil? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is nil")
           :code $ quote
             defn nil? (x)
               &= (type-of x) :nil
+          :examples $ []
+            quote $ assert= true $ nil? nil
+            quote $ assert= false $ nil? 0
         |non-nil! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn non-nil! (x)
@@ -1524,11 +1545,14 @@
         |noted $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro noted (_doc v) v
-        |nth $ %{} :CodeEntry (:doc |)
+        |nth $ %{} :CodeEntry (:doc "|Returns the element at index `i` from a list, tuple, or sequential data structure\nRaises if the index is outside the available range.")
           :code $ quote
             defn nth (x i)
               if (tuple? x) (&tuple:nth x i)
                 if (list? x) (&list:nth x i) (.nth x i)
+          :examples $ []
+            quote $ assert= 2 $ nth ([] 1 2 3) 1
+            quote $ assert= |b $ nth |abc 1
         |number? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn number? (x)
@@ -1616,10 +1640,13 @@
                   , n0
                 defn %repeat (acc n)
                   if (&<= n 0) acc $ recur (append acc x) (&- n 1)
-        |rest $ %{} :CodeEntry (:doc |)
+        |rest $ %{} :CodeEntry (:doc "|Returns the collection without its first element\nNil input returns nil; lists delegate to &list:rest.")
           :code $ quote
             defn rest (x)
               if (nil? x) nil $ if (list? x) (&list:rest x) (.rest x)
+          :examples $ []
+            quote $ assert= ([] 2 3) $ rest ([] 1 2 3)
+            quote $ assert= nil $ rest nil
         |reverse $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reverse (x) (&list:reverse x)
@@ -1668,10 +1695,13 @@
                         recur (get x k) ps
                         , false
                       raise $ &str:concat "|Unknown structure for some-in? detection: " x
-        |some? $ %{} :CodeEntry (:doc |)
+        |some? $ %{} :CodeEntry (:doc "|Complement of nil?\nReturns true when the value is not nil.")
           :code $ quote
             defn some? (x)
               not $ nil? x
+          :examples $ []
+            quote $ assert= true $ some? 0
+            quote $ assert= false $ some? nil
         |starts-with? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn starts-with? (x y)
@@ -1979,6 +2009,11 @@
             quote $ defn my-add (p1 p2) (+ p1 p2)
         |defmacro $ %{} :CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ do
+              defmacro identity-macro (x)
+                quasiquote ~x
+              assert= 4 $ identity-macro (+ 2 2)
         |if $ %{} :CodeEntry (:doc "|internal syntax for conditional expressions\nSyntax: (if condition then-expr else-expr)\nParams: condition (any), then-expr (any), else-expr (any, optional)\nReturns: value of then-expr if condition is truthy, else-expr otherwise\nEvaluates condition and returns appropriate branch")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -1986,6 +2021,9 @@
             quote $ if (empty? xs) 0 (count xs)
         |&let $ %{} :CodeEntry (:doc "|internal syntax for local binding (binds only 1 local)\nSyntax: (&let [binding value] body)\nParams: binding (symbol), value (any), body (expression)\nReturns: result of body with binding in scope\nCreates a local binding for a single variable")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ assert= 6 $ &let (x (+ 1 2)) (* x 2)
+            quote $ assert= |done $ &let (label |done) label
         |quote $ %{} :CodeEntry (:doc "|internal syntax for turning code into quoted data\nSyntax: (quote expr)\nParams: expr (any code)\nReturns: quoted data structure\nPrevents evaluation and returns code as data")
           :code $ quote &runtime-inplementation
         |quasiquote $ %{} :CodeEntry (:doc "|internal syntax for quasiquote (used inside macros)\nSyntax: (quasiquote expr)\nParams: expr (code with possible unquote)\nReturns: partially quoted structure\nLike quote but allows selective unquoting with ~ and ~@")
