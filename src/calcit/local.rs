@@ -13,7 +13,7 @@ pub struct CalcitLocal {
   pub idx: u16,
   pub sym: Arc<str>,
   pub info: Arc<CalcitSymbolInfo>,
-  pub location: Option<Arc<Vec<u8>>>,
+  pub location: Option<Arc<Vec<u16>>>,
 }
 
 impl CalcitLocal {
