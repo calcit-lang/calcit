@@ -291,7 +291,7 @@ pub struct TopLevelBundleCalcit {
   pub once: bool,
 }
 
-// simulate an IO error with String
-fn io_err(e: String) -> io::Error {
-  io::Error::new(io::ErrorKind::InvalidData, e)
+// simulate an IO error with String or EdnError
+fn io_err(e: impl std::fmt::Display) -> io::Error {
+  io::Error::new(io::ErrorKind::InvalidData, e.to_string())
 }

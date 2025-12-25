@@ -27,7 +27,10 @@ pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
   // load core libs
   let bytes = include_bytes!("./cirru/calcit-core.cirru");
   let core_content = String::from_utf8_lossy(bytes).to_string();
-  let core_data = cirru_edn::parse(&core_content)?;
+  let core_data = cirru_edn::parse(&core_content).map_err(|e| {
+    eprintln!("\n{e}");
+    "Failed to parse core snapshot".to_string()
+  })?;
   snapshot::load_snapshot_data(&core_data, "calcit-internal://calcit-core.cirru")
 }
 
@@ -104,7 +107,11 @@ pub fn load_module(path: &str, base_dir: &Path, module_folder: &Path) -> Result<
 
   let mut content = fs::read_to_string(&fullpath).unwrap_or_else(|_| panic!("expected Cirru snapshot {fullpath:?}"));
   strip_shebang(&mut content);
-  let data = cirru_edn::parse(&content)?;
+  let data = cirru_edn::parse(&content).map_err(|e| {
+    eprintln!("\nFailed to parse file '{}':", fullpath.display());
+    eprintln!("{e}");
+    format!("Failed to parse file '{}'", fullpath.display())
+  })?;
   // println!("reading: {}", content);
   let snapshot = snapshot::load_snapshot_data(&data, &fullpath.display().to_string())?;
   Ok(snapshot)

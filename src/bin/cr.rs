@@ -107,7 +107,11 @@ fn main() -> Result<(), String> {
     // load entry file
     let mut content = fs::read_to_string(&cli_args.input).unwrap_or_else(|_| panic!("expected Cirru snapshot: {}", cli_args.input));
     strip_shebang(&mut content);
-    let data = cirru_edn::parse(&content)?;
+    let data = cirru_edn::parse(&content).map_err(|e| {
+      eprintln!("\nFailed to parse entry file '{}':", cli_args.input);
+      eprintln!("{e}");
+      format!("Failed to parse entry file '{}'" , cli_args.input)
+    })?;
     // println!("reading: {}", content);
     snapshot = snapshot::load_snapshot_data(&data, &cli_args.input)?;
 
@@ -296,7 +300,11 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
   // 2. clears evaled states, gensym counter
   // 3. rerun program, and catch error
 
-  let data = cirru_edn::parse(content)?;
+  let data = cirru_edn::parse(content).map_err(|e| {
+    eprintln!("\nFailed to parse changes file:");
+    eprintln!("{e}");
+    "Failed to parse changes file".to_string()
+  })?;
   // println!("\ndata: {}", &data);
   let changes: ChangesDict = data.try_into()?;
   // println!("\nchanges: {:?}", changes);

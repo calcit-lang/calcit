@@ -73,7 +73,11 @@ fn load_module_silent(path: &str, base_dir: &Path, module_folder: &Path) -> Resu
 
   let mut content = fs::read_to_string(&fullpath).map_err(|e| format!("Failed to read {}: {}", fullpath.display(), e))?;
   strip_shebang(&mut content);
-  let data = cirru_edn::parse(&content)?;
+  let data = cirru_edn::parse(&content).map_err(|e| {
+    eprintln!("\nFailed to parse file '{}':", fullpath.display());
+    eprintln!("{e}");
+    format!("Failed to parse file '{}'", fullpath.display())
+  })?;
   snapshot::load_snapshot_data(&data, &fullpath.display().to_string())
 }
 
@@ -84,7 +88,11 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
 
   let mut content = fs::read_to_string(input_path).map_err(|e| format!("Failed to read file: {e}"))?;
   strip_shebang(&mut content);
-  let data = cirru_edn::parse(&content)?;
+  let data = cirru_edn::parse(&content).map_err(|e| {
+    eprintln!("\nFailed to parse file '{input_path}':");
+    eprintln!("{e}");
+    format!("Failed to parse file '{input_path}'")
+  })?;
   let mut snapshot = snapshot::load_snapshot_data(&data, input_path)?;
 
   // Load modules (dependencies) silently
@@ -129,7 +137,11 @@ fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool) -> R
 
   let mut content = fs::read_to_string(input_path).map_err(|e| format!("Failed to read file: {e}"))?;
   strip_shebang(&mut content);
-  let data = cirru_edn::parse(&content)?;
+  let data = cirru_edn::parse(&content).map_err(|e| {
+    eprintln!("\nFailed to parse file '{input_path}':");
+    eprintln!("{e}");
+    format!("Failed to parse file '{input_path}'")
+  })?;
   let main_snapshot = snapshot::load_snapshot_data(&data, input_path)?;
   let main_package = main_snapshot.package.clone();
 
@@ -295,7 +307,11 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
 
   let mut content = fs::read_to_string(input_path).map_err(|e| format!("Failed to read file: {e}"))?;
   strip_shebang(&mut content);
-  let data = cirru_edn::parse(&content)?;
+  let data = cirru_edn::parse(&content).map_err(|e| {
+    eprintln!("\nFailed to parse file '{input_path}':");
+    eprintln!("{e}");
+    format!("Failed to parse file '{input_path}'")
+  })?;
   let snapshot = snapshot::load_snapshot_data(&data, input_path)?;
 
   let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));

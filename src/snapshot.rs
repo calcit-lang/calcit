@@ -216,7 +216,11 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
         defs: def_dict,
       })
     }
-    Err(e) => Err(format!("failed to make snapshot: {e}")),
+    Err(e) => {
+      eprintln!("\nFailed to parse code snippet:");
+      eprintln!("{}", e.format_detailed(Some(raw)));
+      Err("Failed to parse code snippet".to_string())
+    }
   }
 }
 

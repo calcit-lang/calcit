@@ -81,7 +81,11 @@ pub fn main() -> Result<(), String> {
 
   if Path::new(&cli_args.input).exists() {
     let content = fs::read_to_string(&cli_args.input).map_err(|e| e.to_string())?;
-    let parsed = cirru_edn::parse(&content)?;
+    let parsed = cirru_edn::parse(&content).map_err(|e| {
+      eprintln!("\nFailed to parse '{}':", cli_args.input);
+      eprintln!("{e}");
+      format!("Failed to parse '{}'" , cli_args.input)
+    })?;
     let deps: PackageDeps = parsed.try_into()?;
 
     if let Some(version) = &deps.calcit_version
@@ -106,7 +110,11 @@ pub fn main() -> Result<(), String> {
   } else if Path::new("package.cirru").exists() {
     // be compatible with old name
     let content = fs::read_to_string("package.cirru").map_err(|e| e.to_string())?;
-    let parsed = cirru_edn::parse(&content)?;
+    let parsed = cirru_edn::parse(&content).map_err(|e| {
+      eprintln!("\nFailed to parse 'package.cirru':");
+      eprintln!("{e}");
+      "Failed to parse 'package.cirru'".to_string()
+    })?;
     let deps: PackageDeps = parsed.try_into()?;
 
     if cli_args.subcommand.is_some() {
@@ -431,7 +439,11 @@ fn update_deps_file(outdated_packages: &[(Arc<str>, Arc<str>, String)]) -> Resul
   }
 
   let content = fs::read_to_string(deps_file).map_err(|e| e.to_string())?;
-  let parsed = cirru_edn::parse(&content)?;
+  let parsed = cirru_edn::parse(&content).map_err(|e| {
+    eprintln!("\nFailed to parse '{deps_file}':");
+    eprintln!("{e}");
+    format!("Failed to parse '{deps_file}'")
+  })?;
   let mut deps: PackageDeps = parsed.try_into()?;
 
   // Update the dependencies in the parsed structure
