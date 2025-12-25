@@ -686,8 +686,8 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
 
     // Search for references in all definitions
     for (def_name, code_entry) in &file_data.defs {
-      if find_symbol_in_cirru(&code_entry.code, symbol, def_name != symbol) {
-        let coords = find_symbol_coords(&code_entry.code, symbol, def_name != symbol);
+      if find_symbol_in_cirru(&code_entry.code, symbol) {
+        let coords = find_symbol_coords(&code_entry.code, symbol);
         found_references.push((
           ns_name.clone(),
           def_name.clone(),
@@ -792,21 +792,21 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
 
       // Search for the symbol (could be qualified or unqualified depending on import)
       let found = if imports_target || ns_name == target_ns {
-        find_symbol_in_cirru(&code_entry.code, target_def, true)
+        find_symbol_in_cirru(&code_entry.code, target_def)
       } else {
         // Check for qualified reference: target_ns/target_def
         let qualified = format!("{target_ns}/{target_def}");
-        find_symbol_in_cirru(&code_entry.code, &qualified, true)
+        find_symbol_in_cirru(&code_entry.code, &qualified)
       };
 
       if found {
         let context = get_symbol_context_cirru(&code_entry.code, target_def);
         // Get all coordinates where the symbol appears
         let coords = if imports_target || ns_name == target_ns {
-          find_symbol_coords(&code_entry.code, target_def, true)
+          find_symbol_coords(&code_entry.code, target_def)
         } else {
           let qualified = format!("{target_ns}/{target_def}");
-          find_symbol_coords(&code_entry.code, &qualified, true)
+          find_symbol_coords(&code_entry.code, &qualified)
         };
         usages.push((ns_name.clone(), def_name.clone(), context, coords));
       }
@@ -859,18 +859,17 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
 }
 
 // Helper: find all coordinates where symbol appears in Cirru tree
-fn find_symbol_coords(code: &Cirru, symbol: &str, skip_first: bool) -> Vec<Vec<usize>> {
-  fn search_recursive(node: &Cirru, symbol: &str, current_path: &[usize], skip_first: bool, results: &mut Vec<Vec<usize>>) {
+fn find_symbol_coords(code: &Cirru, symbol: &str) -> Vec<Vec<usize>> {
+  fn search_recursive(node: &Cirru, symbol: &str, current_path: &[usize], results: &mut Vec<Vec<usize>>) {
     match node {
       Cirru::Leaf(s) if s.as_ref() == symbol => {
         results.push(current_path.to_vec());
       }
       Cirru::List(items) => {
-        let start = if skip_first { 1 } else { 0 };
-        for (i, item) in items.iter().enumerate().skip(start) {
+        for (i, item) in items.iter().enumerate() {
           let mut new_path = current_path.to_vec();
           new_path.push(i);
-          search_recursive(item, symbol, &new_path, false, results);
+          search_recursive(item, symbol, &new_path, results);
         }
       }
       _ => {}
@@ -878,18 +877,15 @@ fn find_symbol_coords(code: &Cirru, symbol: &str, skip_first: bool) -> Vec<Vec<u
   }
 
   let mut results = Vec::new();
-  search_recursive(code, symbol, &[], skip_first, &mut results);
+  search_recursive(code, symbol, &[], &mut results);
   results
 }
 
 // Helper: recursively search for symbol in Cirru tree
-fn find_symbol_in_cirru(code: &Cirru, symbol: &str, skip_first: bool) -> bool {
+fn find_symbol_in_cirru(code: &Cirru, symbol: &str) -> bool {
   match code {
     Cirru::Leaf(s) => s.as_ref() == symbol,
-    Cirru::List(items) => {
-      let start = if skip_first { 1 } else { 0 };
-      items.iter().skip(start).any(|item| find_symbol_in_cirru(item, symbol, false))
-    }
+    Cirru::List(items) => items.iter().any(|item| find_symbol_in_cirru(item, symbol)),
   }
 }
 
@@ -900,21 +896,12 @@ fn get_symbol_context_cirru(code: &Cirru, symbol: &str) -> String {
     match node {
       Cirru::Leaf(s) if s.as_ref() == symbol => Some(node.clone()),
       Cirru::List(items) => {
-        // First, try to find a smaller match in children (skip first which is usually form name)
-        for item in items.iter().skip(1) {
+        for item in items {
           if let Some(found) = find_smallest_containing(item, symbol) {
-            // If it's a direct leaf match, return parent expression for context
             if matches!(found, Cirru::Leaf(_)) {
-              // Return current node as context
               return Some(node.clone());
             }
             return Some(found);
-          }
-        }
-        // Check if symbol is in first position
-        if let Some(Cirru::Leaf(s)) = items.first() {
-          if s.as_ref() == symbol {
-            return Some(node.clone());
           }
         }
         None
