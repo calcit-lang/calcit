@@ -423,12 +423,12 @@ mod tests {
     let functions_with_examples = vec![
       ("+", 2),
       ("-", 2),
-      ("*", 3),
+      ("*", 6),
       ("/", 2),
       ("map", 2),
       ("filter", 2),
-      ("first", 2),
-      ("count", 2),
+      ("first", 3),
+      ("count", 3),
       ("concat", 1),
       ("inc", 2),
       ("reduce", 1), // 原本就有的，只有1个example
