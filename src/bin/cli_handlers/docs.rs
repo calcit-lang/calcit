@@ -140,7 +140,9 @@ fn handle_api(query_type: &str, query_value: Option<&str>) -> Result<(), String>
         .collect()
     }
     _ => {
-      return Err(format!("Invalid query_type '{query_type}'. Valid types are: 'all', 'tag', 'keyword'"));
+      return Err(format!(
+        "Invalid query_type '{query_type}'. Valid types are: 'all', 'tag', 'keyword'"
+      ));
     }
   };
 
@@ -156,7 +158,11 @@ fn handle_api(query_type: &str, query_value: Option<&str>) -> Result<(), String>
     println!("  {}", doc.desc);
     if !doc.tags.is_empty() {
       let tags: Vec<&String> = doc.tags.iter().collect();
-      println!("  {}: {}", "Tags".dimmed(), tags.iter().map(|t| t.yellow().to_string()).collect::<Vec<_>>().join(", "));
+      println!(
+        "  {}: {}",
+        "Tags".dimmed(),
+        tags.iter().map(|t| t.yellow().to_string()).collect::<Vec<_>>().join(", ")
+      );
     }
     if !doc.snippets.is_empty() {
       println!("  {}:", "Examples".dimmed());

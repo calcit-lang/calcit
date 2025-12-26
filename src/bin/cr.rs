@@ -13,7 +13,7 @@ mod cli_handlers;
 
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
-use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallTreeCommand, CountCallCommand, ToplevelCalcit};
+use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallTreeCommand, CountCallsCommand, ToplevelCalcit};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use colored::Colorize;
@@ -110,7 +110,7 @@ fn main() -> Result<(), String> {
     let data = cirru_edn::parse(&content).map_err(|e| {
       eprintln!("\nFailed to parse entry file '{}':", cli_args.input);
       eprintln!("{e}");
-      format!("Failed to parse entry file '{}'" , cli_args.input)
+      format!("Failed to parse entry file '{}'", cli_args.input)
     })?;
     // println!("reading: {}", content);
     snapshot = snapshot::load_snapshot_data(&data, &cli_args.input)?;
@@ -202,7 +202,7 @@ fn main() -> Result<(), String> {
     eval_once = true;
     match &analyze_cmd.subcommand {
       AnalyzeSubcommand::CallTree(call_tree_options) => run_call_tree(&entries, call_tree_options, &snapshot),
-      AnalyzeSubcommand::CountCall(count_call_options) => run_count_call(&entries, count_call_options),
+      AnalyzeSubcommand::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
       AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
     }
   } else {
@@ -701,7 +701,7 @@ fn run_call_tree(entries: &ProgramEntries, options: &CallTreeCommand, _snapshot:
   Ok(())
 }
 
-fn run_count_call(entries: &ProgramEntries, options: &CountCallCommand) -> Result<(), String> {
+fn run_count_calls(entries: &ProgramEntries, options: &CountCallsCommand) -> Result<(), String> {
   // Determine entry point: use --root if provided, otherwise use init_fn from config
   let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
     util::string::extract_ns_def(def_path)?

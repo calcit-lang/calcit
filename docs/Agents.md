@@ -121,7 +121,7 @@ Calcit 程序使用 `cr` 命令：
 
 **调用次数统计：**
 
-- `cr analyze count-call` - 统计每个定义的调用次数
+- `cr analyze count-calls` - 统计每个定义的调用次数
   - `--root <ns/def>` - 指定分析入口（默认使用 init_fn）
   - `--ns-prefix <prefix>` - 只显示指定命名空间前缀的定义
   - `--include-core` - 包含 calcit.core 核心库函数

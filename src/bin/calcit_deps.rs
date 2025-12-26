@@ -84,7 +84,7 @@ pub fn main() -> Result<(), String> {
     let parsed = cirru_edn::parse(&content).map_err(|e| {
       eprintln!("\nFailed to parse '{}':", cli_args.input);
       eprintln!("{e}");
-      format!("Failed to parse '{}'" , cli_args.input)
+      format!("Failed to parse '{}'", cli_args.input)
     })?;
     let deps: PackageDeps = parsed.try_into()?;
 

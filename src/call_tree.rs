@@ -508,8 +508,16 @@ where
   let mut circular = 0usize;
   let mut max_depth = 0usize;
 
-  fn walk<F>(n: &CallTreeNode, depth: usize, visited: &mut HashSet<String>, project: &mut usize, core: &mut usize, circular: &mut usize, max_depth: &mut usize, is_core_ns: &F)
-  where
+  fn walk<F>(
+    n: &CallTreeNode,
+    depth: usize,
+    visited: &mut HashSet<String>,
+    project: &mut usize,
+    core: &mut usize,
+    circular: &mut usize,
+    max_depth: &mut usize,
+    is_core_ns: &F,
+  ) where
     F: Fn(&str) -> bool,
   {
     if depth > *max_depth {
@@ -532,7 +540,16 @@ where
     }
   }
 
-  walk(root, 0, &mut visited, &mut project, &mut core, &mut circular, &mut max_depth, &is_core_ns);
+  walk(
+    root,
+    0,
+    &mut visited,
+    &mut project,
+    &mut core,
+    &mut circular,
+    &mut max_depth,
+    &is_core_ns,
+  );
 
   (visited.len(), project, core, circular, max_depth)
 }
@@ -693,11 +710,7 @@ impl CallCountAnalyzer {
     // Count the entry itself if it matches filters
     let entry_is_core = self.is_core_ns(entry_ns);
     let entry_matches_core = self.include_core || !entry_is_core;
-    let entry_matches_prefix = self
-      .ns_prefix
-      .as_ref()
-      .map(|p| entry_ns.starts_with(p))
-      .unwrap_or(true);
+    let entry_matches_prefix = self.ns_prefix.as_ref().map(|p| entry_ns.starts_with(p)).unwrap_or(true);
     if entry_matches_core && entry_matches_prefix {
       *self.call_counts.entry(fqn.clone()).or_insert(0) += 1;
     }
@@ -777,11 +790,7 @@ impl CallCountAnalyzer {
       for (call_ns, call_def) in call_refs {
         let is_core = self.is_core_ns(&call_ns);
         let matches_core = self.include_core || !is_core;
-        let matches_prefix = self
-          .ns_prefix
-          .as_ref()
-          .map(|p| call_ns.starts_with(p))
-          .unwrap_or(true);
+        let matches_prefix = self.ns_prefix.as_ref().map(|p| call_ns.starts_with(p)).unwrap_or(true);
 
         // Increment count only when it matches filters
         if matches_core && matches_prefix {

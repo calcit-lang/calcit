@@ -54,7 +54,7 @@ pub enum CalcitCommand {
   EmitIr(EmitIrCommand),
   /// evaluate snippet
   Eval(EvalCommand),
-  /// analyze code structure (call-tree, count-call, check-examples)
+  /// analyze code structure (call-tree, count-calls, check-examples)
   Analyze(AnalyzeCommand),
   /// query project information (namespaces, definitions, configs)
   Query(QueryCommand),
@@ -107,7 +107,7 @@ pub struct EvalCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure (call-tree, count-call, check-examples)
+/// analyze code structure (call-tree, count-calls, check-examples)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -119,7 +119,7 @@ pub enum AnalyzeSubcommand {
   /// analyze call tree structure from entry point
   CallTree(CallTreeCommand),
   /// count call occurrences from entry point
-  CountCall(CountCallCommand),
+  CountCalls(CountCallsCommand),
   /// check examples in namespace
   CheckExamples(CheckExamplesCommand),
 }
@@ -159,8 +159,8 @@ pub struct CallTreeCommand {
 
 /// count call occurrences from entry point
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "count-call")]
-pub struct CountCallCommand {
+#[argh(subcommand, name = "count-calls")]
+pub struct CountCallsCommand {
   /// directly specify root definition to analyze (format: ns/def)
   #[argh(option)]
   pub root: Option<String>,
