@@ -1,15 +1,15 @@
-//! Edit subcommand handlers
+//! Edit and Tree subcommand handlers and shared utilities
 //!
 //! Handles: cr edit - code editing operations (definitions, namespaces, modules, configs)
+//! Shared by: cr tree - fine-grained tree operations (replace, insert, delete, swap, wrap)
 //!
 //! Supports code input via:
 //! - `--file <path>` - read from file
 //! - `--json <string>` - inline JSON string
 //! - `--stdin` - read from stdin
 
-use super::query::cirru_to_json_with_depth;
 use calcit::cli_args::{
-  EditAddExampleCommand, EditAddModuleCommand, EditAddNsCommand, EditAtCommand, EditCommand, EditConfigCommand, EditDefCommand,
+  EditAddExampleCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditDefCommand,
   EditDocCommand, EditExamplesCommand, EditImportsCommand, EditNsDocCommand, EditRequireCommand, EditRmDefCommand,
   EditRmExampleCommand, EditRmModuleCommand, EditRmNsCommand, EditRmRequireCommand, EditSubcommand,
 };
@@ -22,14 +22,14 @@ use std::io::{self, Read};
 use std::sync::Arc;
 
 /// Parse "namespace/definition" format into (namespace, definition)
-fn parse_target(target: &str) -> Result<(&str, &str), String> {
+pub(crate) fn parse_target(target: &str) -> Result<(&str, &str), String> {
   target
     .rsplit_once('/')
     .ok_or_else(|| format!("Invalid target format: '{target}'. Expected 'namespace/definition' (e.g. 'app.core/main')"))
 }
 
 /// Process a node by replacing placeholders with references to original node or its branches
-fn process_node_with_references(
+pub(crate) fn process_node_with_references(
   node: &Cirru,
   original_node: Option<&Cirru>,
   refer_original: &Option<String>,
@@ -37,7 +37,7 @@ fn process_node_with_references(
   refer_inner_placeholder: &Option<String>,
 ) -> Result<Cirru, String> {
   let original = original_node.ok_or("Original node required for reference replacement")?;
-  
+
   // Parse inner branch if provided
   let inner_branch_info: Option<(String, Vec<usize>)> = match (refer_inner_branch, refer_inner_placeholder) {
     (Some(path_str), Some(placeholder)) => {
@@ -45,7 +45,7 @@ fn process_node_with_references(
         .split(',')
         .map(|s| s.trim().parse::<usize>())
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Invalid inner branch path '{}': {}", path_str, e))?;
+        .map_err(|e| format!("Invalid inner branch path '{path_str}': {e}"))?;
       Some((placeholder.clone(), path))
     }
     (Some(_), None) => {
@@ -56,7 +56,7 @@ fn process_node_with_references(
     }
     (None, None) => None,
   };
-  
+
   match node {
     Cirru::Leaf(s) => {
       // Check if this leaf matches the refer_original placeholder
@@ -91,7 +91,6 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::Examples(opts) => handle_examples(opts, snapshot_file),
     EditSubcommand::AddExample(opts) => handle_add_example(opts, snapshot_file),
     EditSubcommand::RmExample(opts) => handle_rm_example(opts, snapshot_file),
-    EditSubcommand::At(opts) => handle_at(opts, snapshot_file),
     EditSubcommand::AddNs(opts) => handle_add_ns(opts, snapshot_file),
     EditSubcommand::RmNs(opts) => handle_rm_ns(opts, snapshot_file),
     EditSubcommand::Imports(opts) => handle_imports(opts, snapshot_file),
@@ -108,7 +107,7 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
 // Utility functions
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn load_snapshot(snapshot_file: &str) -> Result<Snapshot, String> {
+pub(crate) fn load_snapshot(snapshot_file: &str) -> Result<Snapshot, String> {
   let content = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
 
   let edn = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse EDN: {e}"))?;
@@ -116,7 +115,7 @@ fn load_snapshot(snapshot_file: &str) -> Result<Snapshot, String> {
   snapshot::load_snapshot_data(&edn, snapshot_file).map_err(|e| format!("Failed to load snapshot: {e}"))
 }
 
-fn save_snapshot(snapshot: &Snapshot, snapshot_file: &str) -> Result<(), String> {
+pub(crate) fn save_snapshot(snapshot: &Snapshot, snapshot_file: &str) -> Result<(), String> {
   save_snapshot_to_file(snapshot_file, snapshot)
 }
 
@@ -147,7 +146,7 @@ fn read_code_input(file: &Option<String>, code: &Option<String>, json: &Option<S
 }
 
 /// Check if namespace belongs to the current package (can be edited)
-fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<(), String> {
+pub(crate) fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<(), String> {
   let pkg = &snapshot.package;
   // Namespace must match package name or start with "package."
   if namespace == pkg || namespace.starts_with(&format!("{pkg}.")) {
@@ -164,22 +163,22 @@ fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<(), String>
 /// - `--json <string>` (inline JSON)
 /// - `--json-leaf` (JSON string -> leaf)
 /// - `--json-input` (parse JSON -> Cirru)
-/// - `--cirru-one` (parse one-line Cirru expression)
-/// - Cirru text (default)
+/// - `--cirru` (parse multi-line Cirru text)
+/// - Cirru one-liner (default)
 fn parse_input_to_cirru(
   raw: &str,
   inline_json: &Option<String>,
   json_input: bool,
-  cirru_expr_one_liner: bool,
+  cirru: bool,
   json_leaf: bool,
   auto_json: bool,
 ) -> Result<Cirru, String> {
   // Validate conflicting flags early (keep error messages user-friendly)
-  if json_leaf && (json_input || cirru_expr_one_liner) {
-    return Err("Conflicting input flags: use only one of --json-leaf, --json-input, or --cirru-one.".to_string());
+  if json_leaf && (json_input || cirru) {
+    return Err("Conflicting input flags: use only one of --json-leaf, --json-input, or --cirru.".to_string());
   }
-  if json_input && cirru_expr_one_liner {
-    return Err("Conflicting input flags: use only one of --json-input or --cirru-one.".to_string());
+  if json_input && cirru {
+    return Err("Conflicting input flags: use only one of --json-input or --cirru.".to_string());
   }
 
   // If inline JSON provided, use it (takes precedence)
@@ -198,7 +197,8 @@ fn parse_input_to_cirru(
     Ok(Cirru::Leaf(Arc::from(raw)))
   } else if json_input {
     json_to_cirru(raw)
-  } else if cirru_expr_one_liner {
+  } else if cirru {
+    // Full multi-line Cirru: expect exactly one top-level expression
     let trimmed = raw.trim();
     if trimmed.is_empty() {
       return Err("Input is empty. Please provide Cirru code or use -j for JSON input.".to_string());
@@ -211,7 +211,12 @@ fn parse_input_to_cirru(
           .to_string(),
       );
     }
-    cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))
+    let nodes = cirru_parser::parse(raw)
+      .map_err(|e| format!("Failed to parse Cirru: {}", e.format_detailed(Some(raw))))?;
+    if nodes.len() != 1 {
+      return Err(format!("Expected single Cirru expression, got {}", nodes.len()));
+    }
+    Ok(nodes[0].clone())
   } else {
     // If input comes from inline `--code/-e`, it's typically single-line.
     // Auto-detect JSON arrays/strings so users don't need `-J` for inline JSON.
@@ -368,7 +373,7 @@ fn json_value_to_cirru(json: &serde_json::Value) -> Result<Cirru, String> {
 }
 
 /// Parse path string like "2,1,0" to Vec<usize>
-fn parse_path(path_str: &str) -> Result<Vec<usize>, String> {
+pub(crate) fn parse_path(path_str: &str) -> Result<Vec<usize>, String> {
   if path_str.is_empty() {
     return Ok(vec![]);
   }
@@ -394,7 +399,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     &raw,
     &opts.json,
     opts.json_input,
-    opts.cirru_expr_one_liner,
+    opts.cirru,
     opts.json_leaf,
     auto_json,
   )?;
@@ -545,7 +550,7 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
     .ok_or("Examples input required: use --file, --code, --json, --stdin, or --clear")?;
 
   // Parse examples - expect an array of Cirru expressions
-  let examples: Vec<Cirru> = if opts.cirru_expr_one_liner {
+  let examples: Vec<Cirru> = if opts.cirru {
     // One-liner format represents a single example expression
     vec![cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))?]
   } else if opts.json.is_some() || opts.json_input {
@@ -601,7 +606,7 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
     .ok_or("Example input required: use --file, --code, --json, or --stdin")?;
 
   // Parse example
-  let example: Cirru = if opts.cirru_expr_one_liner {
+  let example: Cirru = if opts.cirru {
     cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))?
   } else if opts.json.is_some() || opts.json_input {
     // Parse as JSON
@@ -686,125 +691,7 @@ fn handle_rm_example(opts: &EditRmExampleCommand, snapshot_file: &str) -> Result
   Ok(())
 }
 
-fn handle_at(opts: &EditAtCommand, snapshot_file: &str) -> Result<(), String> {
-  let (namespace, definition) = parse_target(&opts.target)?;
-
-  let path = parse_path(&opts.path)?;
-
-  // For delete and swap operations, code input is not required
-  let needs_code = !matches!(opts.operation.as_str(), "delete" | "swap-next-sibling");
-  let code_input = if needs_code {
-    read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?
-  } else {
-    None
-  };
-  let auto_json = opts.code.is_some();
-
-  let mut snapshot = load_snapshot(snapshot_file)?;
-
-  // Check if namespace can be edited
-  check_ns_editable(&snapshot, namespace)?;
-
-  let file_data = snapshot
-    .files
-    .get_mut(namespace)
-    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
-
-  let code_entry = file_data
-    .defs
-    .get_mut(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found"))?;
-
-  // Prepare parsed new node (if applicable)
-  let new_node_opt: Option<Cirru> = match opts.operation.as_str() {
-    "delete" | "swap-next-sibling" => None,
-    _ => {
-      let raw = code_input
-        .as_deref()
-        .ok_or("Code input required for this operation: use --file, --code, --json, or --stdin")?;
-      Some(parse_input_to_cirru(
-        raw,
-        &opts.json,
-        opts.json_input,
-        opts.cirru_expr_one_liner,
-        opts.json_leaf,
-        auto_json,
-      )?)
-    }
-  };
-
-  // Get original node for reference if needed
-  let original_node = if opts.refer_original.is_some() || opts.refer_inner_branch.is_some() {
-    Some(navigate_to_path(&code_entry.code, &path)?)
-  } else {
-    None
-  };
-
-  // Process node with replacements if needed
-  let processed_node_opt = if let Some(ref node) = new_node_opt {
-    if opts.refer_original.is_some() || opts.refer_inner_branch.is_some() {
-      Some(process_node_with_references(
-        node,
-        original_node.as_ref(),
-        &opts.refer_original,
-        &opts.refer_inner_branch,
-        &opts.refer_inner_placeholder,
-      )?)
-    } else {
-      Some(node.clone())
-    }
-  } else {
-    None
-  };
-
-  // Apply operation at path
-  let new_code = apply_operation_at_path(
-    &code_entry.code,
-    &path,
-    &opts.operation,
-    processed_node_opt.as_ref(),
-  )?;
-
-  code_entry.code = new_code.clone();
-
-  save_snapshot(&snapshot, snapshot_file)?;
-
-  println!(
-    "{} Applied '{}' at path [{}] in '{}/{}'",
-    "✓".green(),
-    opts.operation.yellow(),
-    opts.path,
-    namespace,
-    definition.cyan()
-  );
-
-  // Show preview of result with depth limit
-  if opts.depth > 0 || opts.operation != "delete" {
-    // Navigate to the affected area for preview
-    let preview_target = if opts.operation == "delete" {
-      // For delete, show parent
-      if path.is_empty() {
-        new_code.clone()
-      } else {
-        let parent_path = &path[..path.len() - 1];
-        navigate_to_path(&new_code, parent_path).unwrap_or_else(|_| new_code.clone())
-      }
-    } else {
-      // For other operations, show the modified node
-      navigate_to_path(&new_code, &path).unwrap_or_else(|_| new_code.clone())
-    };
-
-    let depth = if opts.depth == 0 { 2 } else { opts.depth };
-    let json = cirru_to_json_with_depth(&preview_target, depth, 0);
-    println!("\n{}", "Preview:".bold());
-    println!("{}", serde_json::to_string_pretty(&json).unwrap());
-    println!("{}", format!("(depth limited to {depth})").dimmed());
-  }
-
-  Ok(())
-}
-
-fn apply_operation_at_path(code: &Cirru, path: &[usize], operation: &str, new_node: Option<&Cirru>) -> Result<Cirru, String> {
+pub(crate) fn apply_operation_at_path(code: &Cirru, path: &[usize], operation: &str, new_node: Option<&Cirru>) -> Result<Cirru, String> {
   if path.is_empty() {
     // Operating on root
     return match operation {
@@ -870,12 +757,33 @@ fn apply_operation_recursive(
               }
             }
           }
+          "append-child" => {
+            // Insert as last child of the node at idx
+            let newn = new_node.ok_or("Code input required for append-child operation")?;
+            match &new_items[idx] {
+              Cirru::List(children) => {
+                let mut new_children = children.clone();
+                new_children.push(newn.clone());
+                new_items[idx] = Cirru::List(new_children);
+              }
+              Cirru::Leaf(_) => {
+                return Err("Cannot append child to leaf node".to_string());
+              }
+            }
+          }
           "swap-next-sibling" => {
             // Swap current node with next sibling
             if idx + 1 >= new_items.len() {
-              return Err(format!("Cannot swap: no next sibling at index {}", idx));
+              return Err(format!("Cannot swap: no next sibling at index {idx}"));
             }
             new_items.swap(idx, idx + 1);
+          }
+          "swap-prev-sibling" => {
+            // Swap current node with previous sibling
+            if idx == 0 {
+              return Err("Cannot swap: no previous sibling at index 0".to_string());
+            }
+            new_items.swap(idx - 1, idx);
           }
           _ => {
             return Err(format!("Unknown operation: {operation}"));
@@ -893,7 +801,7 @@ fn apply_operation_recursive(
   }
 }
 
-fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, String> {
+pub(crate) fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, String> {
   if path.is_empty() {
     return Ok(code.clone());
   }
@@ -943,7 +851,7 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
       &raw,
       &opts.json,
       opts.json_input,
-      opts.cirru_expr_one_liner,
+      opts.cirru,
       opts.json_leaf,
       auto_json,
     )?
@@ -1008,7 +916,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
       &raw,
       &opts.json,
       opts.json_input,
-      opts.cirru_expr_one_liner,
+      opts.cirru,
       opts.json_leaf,
       auto_json,
     )?;
@@ -1106,7 +1014,7 @@ fn handle_require(opts: &EditRequireCommand, snapshot_file: &str) -> Result<(), 
     &raw,
     &opts.json,
     opts.json_input,
-    opts.cirru_expr_one_liner,
+    opts.cirru,
     opts.json_leaf,
     auto_json,
   )?;

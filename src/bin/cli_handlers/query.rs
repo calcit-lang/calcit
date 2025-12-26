@@ -486,12 +486,12 @@ fn handle_at(input_path: &str, namespace: &str, definition: &str, path: &str, ma
       );
       println!(
         "{}",
-        format!("     Example: `edit at {namespace}/{definition} -p \"{path}\" -o replace -j '\"new-symbol\"'`").dimmed()
+        format!("     Example: `tree replace {namespace}/{definition} -p \"{path}\" -j '\"new-symbol\"'`").dimmed()
       );
     } else {
       println!(
         "\n{}",
-        format!("Tip: To modify, use `edit at {namespace}/{definition} -p \"{path}\" -o replace '<cirru>'`").dimmed()
+        format!("Tip: To modify, use `tree replace {namespace}/{definition} -p \"{path}\" '<cirru>'`").dimmed()
       );
       println!("{}", "     Use `-j '<json>'` for JSON input.".dimmed());
     }
@@ -536,7 +536,7 @@ fn cirru_to_json(cirru: &Cirru) -> serde_json::Value {
 }
 
 /// Convert Cirru to JSON with depth limit (0 = unlimited)
-pub fn cirru_to_json_with_depth(cirru: &Cirru, max_depth: usize, current_depth: usize) -> serde_json::Value {
+fn cirru_to_json_with_depth(cirru: &Cirru, max_depth: usize, current_depth: usize) -> serde_json::Value {
   match cirru {
     Cirru::Leaf(s) => serde_json::Value::String(s.to_string()),
     Cirru::List(items) => {

@@ -502,56 +502,49 @@ where
   F: Fn(&str) -> bool,
 {
   use std::collections::HashSet;
-  let mut visited: HashSet<String> = HashSet::new();
-  let mut project = 0usize;
-  let mut core = 0usize;
-  let mut circular = 0usize;
-  let mut max_depth = 0usize;
 
-  fn walk<F>(
-    n: &CallTreeNode,
-    depth: usize,
-    visited: &mut HashSet<String>,
-    project: &mut usize,
-    core: &mut usize,
-    circular: &mut usize,
-    max_depth: &mut usize,
-    is_core_ns: &F,
-  ) where
+  struct WalkState {
+    visited: HashSet<String>,
+    project: usize,
+    core: usize,
+    circular: usize,
+    max_depth: usize,
+  }
+
+  fn walk<F>(n: &CallTreeNode, depth: usize, state: &mut WalkState, is_core_ns: &F)
+  where
     F: Fn(&str) -> bool,
   {
-    if depth > *max_depth {
-      *max_depth = depth;
+    if depth > state.max_depth {
+      state.max_depth = depth;
     }
     if n.circular {
-      *circular += 1;
+      state.circular += 1;
     }
-    if !visited.contains(&n.fqn) {
-      visited.insert(n.fqn.clone());
+    if !state.visited.contains(&n.fqn) {
+      state.visited.insert(n.fqn.clone());
       if is_core_ns(&n.ns) {
-        *core += 1;
+        state.core += 1;
       } else {
-        *project += 1;
+        state.project += 1;
       }
     }
-    for (i, c) in n.calls.iter().enumerate() {
-      let _ = i;
-      walk(c, depth + 1, visited, project, core, circular, max_depth, is_core_ns);
+    for c in &n.calls {
+      walk(c, depth + 1, state, is_core_ns);
     }
   }
 
-  walk(
-    root,
-    0,
-    &mut visited,
-    &mut project,
-    &mut core,
-    &mut circular,
-    &mut max_depth,
-    &is_core_ns,
-  );
+  let mut state = WalkState {
+    visited: HashSet::new(),
+    project: 0,
+    core: 0,
+    circular: 0,
+    max_depth: 0,
+  };
 
-  (visited.len(), project, core, circular, max_depth)
+  walk(root, 0, &mut state, &is_core_ns);
+
+  (state.visited.len(), state.project, state.core, state.circular, state.max_depth)
 }
 
 /// Format the call tree result for LLM consumption
@@ -625,7 +618,7 @@ pub fn format_as_json(result: &CallTreeResult) -> Result<String, String> {
 }
 
 /// Main entry point for call tree analysis
-pub fn analyze_call_tree(
+pub fn analyze_call_graph(
   entry_ns: &str,
   entry_def: &str,
   include_core: bool,

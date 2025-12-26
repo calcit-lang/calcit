@@ -13,7 +13,7 @@ mod cli_handlers;
 
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
-use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallTreeCommand, CountCallsCommand, ToplevelCalcit};
+use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CountCallsCommand, ToplevelCalcit};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use colored::Colorize;
@@ -48,6 +48,9 @@ fn main() -> Result<(), String> {
     }
     Some(CalcitCommand::Edit(edit_cmd)) => {
       return cli_handlers::handle_edit_command(edit_cmd, &cli_args.input);
+    }
+    Some(CalcitCommand::Tree(tree_cmd)) => {
+      return cli_handlers::handle_tree_command(tree_cmd, &cli_args.input);
     }
     _ => {}
   }
@@ -201,7 +204,7 @@ fn main() -> Result<(), String> {
   } else if let Some(CalcitCommand::Analyze(analyze_cmd)) = &cli_args.subcommand {
     eval_once = true;
     match &analyze_cmd.subcommand {
-      AnalyzeSubcommand::CallTree(call_tree_options) => run_call_tree(&entries, call_tree_options, &snapshot),
+      AnalyzeSubcommand::CallGraph(call_graph_options) => run_call_graph(&entries, call_graph_options, &snapshot),
       AnalyzeSubcommand::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
       AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
     }
@@ -669,7 +672,7 @@ fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<
   }
 }
 
-fn run_call_tree(entries: &ProgramEntries, options: &CallTreeCommand, _snapshot: &snapshot::Snapshot) -> Result<(), String> {
+fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapshot: &snapshot::Snapshot) -> Result<(), String> {
   // Determine entry point: use --root if provided, otherwise use init_fn from config
   let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
     util::string::extract_ns_def(def_path)?
@@ -680,7 +683,7 @@ fn run_call_tree(entries: &ProgramEntries, options: &CallTreeCommand, _snapshot:
   println!("{}", format!("Analyzing call tree from: {entry_ns}/{entry_def}").cyan());
 
   // Analyze call tree
-  let result = calcit::call_tree::analyze_call_tree(
+  let result = calcit::call_tree::analyze_call_graph(
     &entry_ns,
     &entry_def,
     options.include_core,
