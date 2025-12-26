@@ -6,7 +6,7 @@ use calcit::cli_args::{CirruCommand, CirruSubcommand};
 
 pub fn handle_cirru_command(cmd: &CirruCommand) -> Result<(), String> {
   match &cmd.subcommand {
-    CirruSubcommand::Parse(opts) => handle_parse(&opts.code),
+    CirruSubcommand::Parse(opts) => handle_parse(&opts.code, opts.expr_one_liner),
     CirruSubcommand::Format(opts) => handle_format(&opts.json),
     CirruSubcommand::ParseEdn(opts) => handle_parse_edn(&opts.edn),
     CirruSubcommand::ShowGuide(_) => handle_show_guide(),
@@ -34,7 +34,28 @@ fn json_to_cirru(json: &serde_json::Value) -> Result<cirru_parser::Cirru, String
   }
 }
 
-fn handle_parse(code: &str) -> Result<(), String> {
+fn handle_parse(code: &str, expr_one_liner: bool) -> Result<(), String> {
+  if expr_one_liner {
+    let trimmed = code.trim();
+    if trimmed.is_empty() {
+      return Err("Input is empty. Provide Cirru code to parse or omit --cirru-one.".to_string());
+    }
+    if code.contains('\t') {
+      return Err(
+        "Input contains tab characters. Cirru requires spaces for indentation.\n\
+         Please replace tabs with 2 spaces."
+          .to_string(),
+      );
+    }
+
+    let cirru_expr =
+      cirru_parser::parse_expr_one_liner(code).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))?;
+    let json_result = cirru_to_json(&cirru_expr);
+    let json_str = serde_json::to_string_pretty(&json_result).map_err(|e| format!("Failed to serialize JSON: {e}"))?;
+    println!("{json_str}");
+    return Ok(());
+  }
+
   // Check if input looks like JSON (but allow Cirru's [] list syntax)
   let trimmed = code.trim_start();
   if let Some(after_bracket) = trimmed.strip_prefix('[') {

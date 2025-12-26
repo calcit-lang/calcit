@@ -425,6 +425,9 @@ pub struct CirruParseCommand {
   /// cirru code to parse
   #[argh(positional)]
   pub code: String,
+  /// parse input as a single-line Cirru expression (one-liner parser)
+  #[argh(switch, short = 'O', long = "cirru-one")]
+  pub expr_one_liner: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
