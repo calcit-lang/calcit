@@ -209,8 +209,6 @@ pub enum QuerySubcommand {
   Modules(QueryModulesCommand),
   /// read a definition's full code
   Def(QueryDefCommand),
-  /// read content at specific path in a definition
-  At(QueryAtCommand),
   /// peek definition signature without full body
   Peek(QueryPeekCommand),
   /// read examples of a definition
@@ -271,21 +269,6 @@ pub struct QueryDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "at")]
-/// read content at specific path in a definition
-pub struct QueryAtCommand {
-  /// target in format "namespace/definition"
-  #[argh(positional)]
-  pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0", empty for root)
-  #[argh(option, short = 'p', default = "String::new()")]
-  pub path: String,
-  /// max depth for JSON output (0 = unlimited, default 0)
-  #[argh(option, short = 'd', default = "0")]
-  pub depth: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

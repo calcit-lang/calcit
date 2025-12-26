@@ -52,10 +52,6 @@ Calcit 程序使用 `cr` 命令：
   - 同时显示 Doc 和 Examples 的完整内容
 - `cr query examples <namespace/definition>` - 读取定义的示例代码
   - 输出：每个 example 的 Cirru 格式和 JSON 格式
-- `cr query at <namespace/definition> -p <path>` - 读取定义中指定坐标的内容
-  - path：逗号分隔的索引，如 "2,1,0"，空字符串表示根节点
-  - `-d <depth>` 或 `--depth <depth>`：限制 JSON 输出深度（0=无限，默认 0）
-  - 输出包含：类型（leaf/list）、子节点预览、完整 JSON
 
 **符号搜索与引用分析：**
 
@@ -201,7 +197,7 @@ cr tree insert-child app.main/main! -p "2" -e "new-item"
 
 **⚠️ 重要：精确定位的安全流程**
 
-使用 `cr tree` 前，建议先用 `cr tree show` 或 `cr query at` 确认路径：
+使用 `cr tree` 前，建议先用 `cr tree show` 确认路径：
 
 ```bash
 # 1. 先查看整体结构
