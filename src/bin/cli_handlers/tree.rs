@@ -4,13 +4,17 @@ use std::fs;
 use std::io::{self, Read};
 use std::sync::Arc;
 
+use super::common::{json_value_to_cirru, parse_path, validate_input_flags, validate_input_sources, ERR_CODE_INPUT_REQUIRED};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
   TreeReplaceCommand, TreeShowCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeWrapCommand,
 };
 
 // Import shared functions from edit module
-use super::edit::{apply_operation_at_path, check_ns_editable, load_snapshot, navigate_to_path, parse_path, parse_target, process_node_with_references, save_snapshot};
+use super::edit::{
+  apply_operation_at_path, check_ns_editable, load_snapshot, navigate_to_path, parse_target, process_node_with_references,
+  save_snapshot,
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helper functions
@@ -18,10 +22,8 @@ use super::edit::{apply_operation_at_path, check_ns_editable, load_snapshot, nav
 
 /// Read code input from file, inline code, or stdin.
 fn read_code_input(file: &Option<String>, code: &Option<String>, stdin: bool) -> Result<Option<String>, String> {
-  let sources = stdin as usize + file.is_some() as usize + code.is_some() as usize;
-  if sources > 1 {
-    return Err("Multiple input sources provided. Use only one of: --stdin/-s, --file/-f, --code/-e.".to_string());
-  }
+  let sources = [stdin, file.is_some(), code.is_some()];
+  validate_input_sources(&sources)?;
 
   if stdin {
     let mut buffer = String::new();
@@ -38,7 +40,6 @@ fn read_code_input(file: &Option<String>, code: &Option<String>, stdin: bool) ->
     Ok(None)
   }
 }
-
 
 /// Main handler for code command
 pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(), String> {
@@ -65,9 +66,7 @@ fn parse_input_to_cirru(
   json_leaf: bool,
 ) -> Result<Cirru, String> {
   // Check for conflicting flags
-  if json_leaf && (json_input || cirru_multiline) {
-    return Err("Conflicting input flags: use only one of --json-leaf, --json-input, or --cirru.".to_string());
-  }
+  validate_input_flags(json_leaf, json_input, cirru_multiline)?;
 
   // If json_leaf is set, wrap input directly as a leaf node
   if json_leaf {
@@ -80,39 +79,22 @@ fn parse_input_to_cirru(
   if use_json {
     // Parse as JSON array
     let json_value: serde_json::Value = serde_json::from_str(input).map_err(|e| format!("Failed to parse JSON: {e}"))?;
-    json_to_cirru(&json_value)
+    json_value_to_cirru(&json_value)
   } else {
     // Parse as Cirru (default: one-liner format, unless --cirru is set)
     // cirru_parser::parse() returns Vec<Cirru>
     // cirru_parser::parse_expr_one_liner() returns Cirru (single expression without wrapper)
     if cirru_multiline {
       // Full parse: expect exactly one top-level expression
-      let nodes = cirru_parser::parse(input)
-        .map_err(|e| format!("Failed to parse Cirru: {}", e.format_detailed(Some(input))))?;
+      let nodes = cirru_parser::parse(input).map_err(|e| format!("Failed to parse Cirru: {}", e.format_detailed(Some(input))))?;
       if nodes.len() != 1 {
         return Err(format!("Expected single Cirru expression, got {}", nodes.len()));
       }
       Ok(nodes[0].clone())
     } else {
       // One-liner: parse single expression directly (default for code input)
-      cirru_parser::parse_expr_one_liner(input)
-        .map_err(|e| format!("Failed to parse Cirru one-liner: {e}"))
+      cirru_parser::parse_expr_one_liner(input).map_err(|e| format!("Failed to parse Cirru one-liner: {e}"))
     }
-  }
-}
-
-/// Convert JSON to Cirru
-fn json_to_cirru(json: &serde_json::Value) -> Result<Cirru, String> {
-  match json {
-    serde_json::Value::String(s) => Ok(Cirru::Leaf(Arc::from(s.as_str()))),
-    serde_json::Value::Number(n) => Ok(Cirru::Leaf(Arc::from(n.to_string()))),
-    serde_json::Value::Bool(b) => Ok(Cirru::Leaf(Arc::from(b.to_string()))),
-    serde_json::Value::Null => Ok(Cirru::Leaf(Arc::from("null"))),
-    serde_json::Value::Array(arr) => {
-      let items: Result<Vec<Cirru>, String> = arr.iter().map(json_to_cirru).collect();
-      Ok(Cirru::List(items?))
-    }
-    serde_json::Value::Object(_) => Err("JSON objects not supported, use arrays".to_string()),
   }
 }
 
@@ -221,7 +203,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String
       println!(
         "{}: To modify, use `{} {} -p \"{}\" '<cirru>'`",
         "Tip".blue().bold(),
-        "code replace".cyan(),
+        "tree replace".cyan(),
         opts.target,
         opts.path
       );
@@ -249,15 +231,9 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   let raw = code_input
     .as_deref()
-    .ok_or("Code input required: use --file, --code, --json, or --stdin")?;
+    .ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(
-    raw,
-    &opts.json,
-    opts.json_input,
-    opts.cirru,
-    opts.json_leaf,
-  )?;
+  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.cirru, opts.json_leaf)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -557,15 +533,9 @@ fn generic_insert_handler<T: InsertOperation>(
 
   let raw = code_input
     .as_deref()
-    .ok_or("Code input required: use --file, --code, --json, or --stdin")?;
+    .ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(
-    raw,
-    opts.json(),
-    opts.json_input(),
-    opts.cirru(),
-    opts.json_leaf(),
-  )?;
+  let new_node = parse_input_to_cirru(raw, opts.json(), opts.json_input(), opts.cirru(), opts.json_leaf())?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;

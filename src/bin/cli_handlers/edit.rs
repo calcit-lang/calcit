@@ -9,9 +9,9 @@
 //! - `--stdin` - read from stdin
 
 use calcit::cli_args::{
-  EditAddExampleCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditDefCommand,
-  EditDocCommand, EditExamplesCommand, EditImportsCommand, EditNsDocCommand, EditRequireCommand, EditRmDefCommand,
-  EditRmExampleCommand, EditRmModuleCommand, EditRmNsCommand, EditRmRequireCommand, EditSubcommand,
+  EditAddExampleCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditDefCommand, EditDocCommand,
+  EditExamplesCommand, EditImportsCommand, EditNsDocCommand, EditRequireCommand, EditRmDefCommand, EditRmExampleCommand,
+  EditRmModuleCommand, EditRmNsCommand, EditRmRequireCommand, EditSubcommand,
 };
 use calcit::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -20,6 +20,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Read};
 use std::sync::Arc;
+
+use super::common::{ERR_CODE_INPUT_REQUIRED, validate_input_flags, validate_input_sources};
 
 /// Parse "namespace/definition" format into (namespace, definition)
 pub(crate) fn parse_target(target: &str) -> Result<(&str, &str), String> {
@@ -122,10 +124,8 @@ pub(crate) fn save_snapshot(snapshot: &Snapshot, snapshot_file: &str) -> Result<
 /// Read code input from file, inline code, json option, or stdin.
 /// Exactly one input source should be used.
 fn read_code_input(file: &Option<String>, code: &Option<String>, json: &Option<String>, stdin: bool) -> Result<Option<String>, String> {
-  let sources = (stdin as usize + file.is_some() as usize + code.is_some() as usize + json.is_some() as usize,).0;
-  if sources > 1 {
-    return Err("Multiple input sources provided. Use only one of: --stdin/-s, --file/-f, --code/-e, or --json/-j.".to_string());
-  }
+  let sources = [stdin, file.is_some(), code.is_some(), json.is_some()];
+  validate_input_sources(&sources)?;
 
   if stdin {
     let mut buffer = String::new();
@@ -174,12 +174,7 @@ fn parse_input_to_cirru(
   auto_json: bool,
 ) -> Result<Cirru, String> {
   // Validate conflicting flags early (keep error messages user-friendly)
-  if json_leaf && (json_input || cirru) {
-    return Err("Conflicting input flags: use only one of --json-leaf, --json-input, or --cirru.".to_string());
-  }
-  if json_input && cirru {
-    return Err("Conflicting input flags: use only one of --json-input or --cirru.".to_string());
-  }
+  validate_input_flags(json_leaf, json_input, cirru)?;
 
   // If inline JSON provided, use it (takes precedence)
   if let Some(j) = inline_json {
@@ -211,8 +206,7 @@ fn parse_input_to_cirru(
           .to_string(),
       );
     }
-    let nodes = cirru_parser::parse(raw)
-      .map_err(|e| format!("Failed to parse Cirru: {}", e.format_detailed(Some(raw))))?;
+    let nodes = cirru_parser::parse(raw).map_err(|e| format!("Failed to parse Cirru: {}", e.format_detailed(Some(raw))))?;
     if nodes.len() != 1 {
       return Err(format!("Expected single Cirru expression, got {}", nodes.len()));
     }
@@ -347,7 +341,7 @@ fn json_to_cirru(json_str: &str) -> Result<Cirru, String> {
     format!("Failed to parse JSON: {e}. If this is Cirru text, omit --json-input or use --cirru; for inline Cirru prefer --file or --stdin to avoid shell escaping.")
   })?;
 
-  match json_value_to_cirru(&json) {
+  match edit_json_value_to_cirru(&json) {
     Ok(c) => Ok(c),
     Err(e) => Err(format!(
       "{e} If your input is Cirru source, try passing it as Cirru (omit --json-input or use --cirru)."
@@ -355,11 +349,11 @@ fn json_to_cirru(json_str: &str) -> Result<Cirru, String> {
   }
 }
 
-fn json_value_to_cirru(json: &serde_json::Value) -> Result<Cirru, String> {
+fn edit_json_value_to_cirru(json: &serde_json::Value) -> Result<Cirru, String> {
   match json {
     serde_json::Value::String(s) => Ok(Cirru::Leaf(Arc::from(s.as_str()))),
     serde_json::Value::Array(arr) => {
-      let items: Result<Vec<Cirru>, String> = arr.iter().map(json_value_to_cirru).collect();
+      let items: Result<Vec<Cirru>, String> = arr.iter().map(edit_json_value_to_cirru).collect();
       Ok(Cirru::List(items?))
     }
     serde_json::Value::Number(n) => Ok(Cirru::Leaf(Arc::from(n.to_string()))),
@@ -372,18 +366,6 @@ fn json_value_to_cirru(json: &serde_json::Value) -> Result<Cirru, String> {
   }
 }
 
-/// Parse path string like "2,1,0" to Vec<usize>
-pub(crate) fn parse_path(path_str: &str) -> Result<Vec<usize>, String> {
-  if path_str.is_empty() {
-    return Ok(vec![]);
-  }
-
-  path_str
-    .split(',')
-    .map(|s| s.trim().parse::<usize>().map_err(|e| format!("Invalid path index '{s}': {e}")))
-    .collect()
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // Definition operations
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -391,18 +373,10 @@ pub(crate) fn parse_path(path_str: &str) -> Result<Vec<usize>, String> {
 fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?
-    .ok_or("Code input required: use --file, --code, --json, or --stdin")?;
+  let raw = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
   let auto_json = opts.code.is_some();
 
-  let syntax_tree = parse_input_to_cirru(
-    &raw,
-    &opts.json,
-    opts.json_input,
-    opts.cirru,
-    opts.json_leaf,
-    auto_json,
-  )?;
+  let syntax_tree = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.cirru, opts.json_leaf, auto_json)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -557,7 +531,7 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
     // Parse as JSON array
     let json_value: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON: {e}"))?;
     match json_value {
-      serde_json::Value::Array(arr) => arr.iter().map(json_value_to_cirru).collect::<Result<Vec<_>, _>>()?,
+      serde_json::Value::Array(arr) => arr.iter().map(edit_json_value_to_cirru).collect::<Result<Vec<_>, _>>()?,
       _ => return Err("Expected JSON array of examples".to_string()),
     }
   } else {
@@ -611,7 +585,7 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
   } else if opts.json.is_some() || opts.json_input {
     // Parse as JSON
     let json_value: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON: {e}"))?;
-    json_value_to_cirru(&json_value)?
+    edit_json_value_to_cirru(&json_value)?
   } else {
     // Parse as Cirru text - expect single expression
     let parsed = cirru_parser::parse(raw).map_err(|e| format!("Failed to parse Cirru: {e}"))?;
@@ -691,7 +665,12 @@ fn handle_rm_example(opts: &EditRmExampleCommand, snapshot_file: &str) -> Result
   Ok(())
 }
 
-pub(crate) fn apply_operation_at_path(code: &Cirru, path: &[usize], operation: &str, new_node: Option<&Cirru>) -> Result<Cirru, String> {
+pub(crate) fn apply_operation_at_path(
+  code: &Cirru,
+  path: &[usize],
+  operation: &str,
+  new_node: Option<&Cirru>,
+) -> Result<Cirru, String> {
   if path.is_empty() {
     // Operating on root
     return match operation {
@@ -847,14 +826,7 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   let auto_json = opts.code.is_some();
 
   let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)? {
-    parse_input_to_cirru(
-      &raw,
-      &opts.json,
-      opts.json_input,
-      opts.cirru,
-      opts.json_leaf,
-      auto_json,
-    )?
+    parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.cirru, opts.json_leaf, auto_json)?
   } else {
     // Default minimal ns declaration: (ns namespace-name)
     Cirru::List(vec![Cirru::Leaf(Arc::from("ns")), Cirru::Leaf(Arc::from(opts.namespace.as_str()))])
@@ -912,14 +884,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
       .map_err(|e| format!("Failed to parse imports JSON: {e}. If you meant Cirru input, omit --json-input or pass --cirru."))?
   } else {
     // Parse as cirru and convert to JSON value
-    let cirru_node = parse_input_to_cirru(
-      &raw,
-      &opts.json,
-      opts.json_input,
-      opts.cirru,
-      opts.json_leaf,
-      auto_json,
-    )?;
+    let cirru_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.cirru, opts.json_leaf, auto_json)?;
     fn cirru_to_json_value(c: &Cirru) -> serde_json::Value {
       match c {
         Cirru::Leaf(s) => serde_json::Value::String(s.to_string()),
@@ -940,7 +905,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
     if !imports.is_empty() {
       ns_code_items.push(Cirru::Leaf(Arc::from(":require")));
       for import in imports {
-        let import_cirru = json_value_to_cirru(&import)?;
+        let import_cirru = edit_json_value_to_cirru(&import)?;
         ns_code_items.push(import_cirru);
       }
     }
@@ -1010,14 +975,7 @@ fn handle_require(opts: &EditRequireCommand, snapshot_file: &str) -> Result<(), 
 
   let auto_json = opts.code.is_some();
 
-  let new_rule = parse_input_to_cirru(
-    &raw,
-    &opts.json,
-    opts.json_input,
-    opts.cirru,
-    opts.json_leaf,
-    auto_json,
-  )?;
+  let new_rule = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.cirru, opts.json_leaf, auto_json)?;
 
   // Validate that the rule has a source namespace
   let new_source_ns =
