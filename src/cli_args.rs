@@ -721,6 +721,15 @@ pub struct EditAtCommand {
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
+  /// placeholder to refer to the original node (e.g., "$$$$")
+  #[argh(option, long = "refer-original")]
+  pub refer_original: Option<String>,
+  /// comma-separated path to inner branch of original node (e.g., "1,2,3")
+  #[argh(option, long = "refer-inner-branch")]
+  pub refer_inner_branch: Option<String>,
+  /// placeholder for inner branch reference (e.g., "####")
+  #[argh(option, long = "refer-inner-placeholder")]
+  pub refer_inner_placeholder: Option<String>,
 }
 
 // --- Namespace operations ---

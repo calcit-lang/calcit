@@ -28,6 +28,61 @@ fn parse_target(target: &str) -> Result<(&str, &str), String> {
     .ok_or_else(|| format!("Invalid target format: '{target}'. Expected 'namespace/definition' (e.g. 'app.core/main')"))
 }
 
+/// Process a node by replacing placeholders with references to original node or its branches
+fn process_node_with_references(
+  node: &Cirru,
+  original_node: Option<&Cirru>,
+  refer_original: &Option<String>,
+  refer_inner_branch: &Option<String>,
+  refer_inner_placeholder: &Option<String>,
+) -> Result<Cirru, String> {
+  let original = original_node.ok_or("Original node required for reference replacement")?;
+  
+  // Parse inner branch if provided
+  let inner_branch_info: Option<(String, Vec<usize>)> = match (refer_inner_branch, refer_inner_placeholder) {
+    (Some(path_str), Some(placeholder)) => {
+      let path: Vec<usize> = path_str
+        .split(',')
+        .map(|s| s.trim().parse::<usize>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Invalid inner branch path '{}': {}", path_str, e))?;
+      Some((placeholder.clone(), path))
+    }
+    (Some(_), None) => {
+      return Err("--refer-inner-branch requires --refer-inner-placeholder".to_string());
+    }
+    (None, Some(_)) => {
+      return Err("--refer-inner-placeholder requires --refer-inner-branch".to_string());
+    }
+    (None, None) => None,
+  };
+  
+  match node {
+    Cirru::Leaf(s) => {
+      // Check if this leaf matches the refer_original placeholder
+      if let Some(placeholder) = refer_original {
+        if s.as_ref() == placeholder {
+          return Ok(original.clone());
+        }
+      }
+      // Check if this leaf matches the refer_inner_branch placeholder
+      if let Some((placeholder, path)) = &inner_branch_info {
+        if s.as_ref() == placeholder {
+          return navigate_to_path(original, path);
+        }
+      }
+      Ok(node.clone())
+    }
+    Cirru::List(items) => {
+      let processed_items: Result<Vec<Cirru>, String> = items
+        .iter()
+        .map(|item| process_node_with_references(item, Some(original), refer_original, refer_inner_branch, refer_inner_placeholder))
+        .collect();
+      Ok(Cirru::List(processed_items?))
+    }
+  }
+}
+
 pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
   match &cmd.subcommand {
     EditSubcommand::Def(opts) => handle_def(opts, snapshot_file),
@@ -636,8 +691,13 @@ fn handle_at(opts: &EditAtCommand, snapshot_file: &str) -> Result<(), String> {
 
   let path = parse_path(&opts.path)?;
 
-  // For delete operation, code input is not required
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?;
+  // For delete and swap operations, code input is not required
+  let needs_code = !matches!(opts.operation.as_str(), "delete" | "swap-next-sibling");
+  let code_input = if needs_code {
+    read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?
+  } else {
+    None
+  };
   let auto_json = opts.code.is_some();
 
   let mut snapshot = load_snapshot(snapshot_file)?;
@@ -657,7 +717,7 @@ fn handle_at(opts: &EditAtCommand, snapshot_file: &str) -> Result<(), String> {
 
   // Prepare parsed new node (if applicable)
   let new_node_opt: Option<Cirru> = match opts.operation.as_str() {
-    "delete" => None,
+    "delete" | "swap-next-sibling" => None,
     _ => {
       let raw = code_input
         .as_deref()
@@ -673,8 +733,37 @@ fn handle_at(opts: &EditAtCommand, snapshot_file: &str) -> Result<(), String> {
     }
   };
 
+  // Get original node for reference if needed
+  let original_node = if opts.refer_original.is_some() || opts.refer_inner_branch.is_some() {
+    Some(navigate_to_path(&code_entry.code, &path)?)
+  } else {
+    None
+  };
+
+  // Process node with replacements if needed
+  let processed_node_opt = if let Some(ref node) = new_node_opt {
+    if opts.refer_original.is_some() || opts.refer_inner_branch.is_some() {
+      Some(process_node_with_references(
+        node,
+        original_node.as_ref(),
+        &opts.refer_original,
+        &opts.refer_inner_branch,
+        &opts.refer_inner_placeholder,
+      )?)
+    } else {
+      Some(node.clone())
+    }
+  } else {
+    None
+  };
+
   // Apply operation at path
-  let new_code = apply_operation_at_path(&code_entry.code, &path, &opts.operation, new_node_opt.as_ref())?;
+  let new_code = apply_operation_at_path(
+    &code_entry.code,
+    &path,
+    &opts.operation,
+    processed_node_opt.as_ref(),
+  )?;
 
   code_entry.code = new_code.clone();
 
@@ -780,6 +869,13 @@ fn apply_operation_recursive(
                 return Err("Cannot insert child into leaf node".to_string());
               }
             }
+          }
+          "swap-next-sibling" => {
+            // Swap current node with next sibling
+            if idx + 1 >= new_items.len() {
+              return Err(format!("Cannot swap: no next sibling at index {}", idx));
+            }
+            new_items.swap(idx, idx + 1);
           }
           _ => {
             return Err(format!("Unknown operation: {operation}"));
