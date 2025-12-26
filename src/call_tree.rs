@@ -123,20 +123,32 @@ impl CallTreeAnalyzer {
   pub fn analyze(&mut self, entry_ns: &str, entry_def: &str) -> Result<CallTreeResult, String> {
     let fqn = format!("{entry_ns}/{entry_def}");
 
-    // Build the call tree
-    let tree = self.build_tree(entry_ns, entry_def, 0)?;
+    // Build the full call tree
+    let mut tree = self.build_tree(entry_ns, entry_def, 0)?;
+
+    // If ns_prefix specified, prune the tree to only include nodes that match the prefix
+    // while keeping the ancestor paths to matching nodes
+    if let Some(ref prefix) = self.config.ns_prefix {
+      tree = prune_tree_by_ns_prefix(tree, prefix);
+    }
 
     // Calculate statistics
     let program_code = PROGRAM_CODE_DATA.read().map_err(|e| format!("Failed to read program code: {e}"))?;
 
-    let (project_defs, core_defs) = self.count_def_types(&program_code);
+    // When filtered, recompute stats from the pruned tree to reflect the display
+    let (reachable_count, project_defs, core_defs, circular_count, max_depth) = if self.config.ns_prefix.is_some() {
+      compute_stats_from_tree(&tree, |ns| self.is_core_ns(ns))
+    } else {
+      let (project_defs, core_defs) = self.count_def_types(&program_code);
+      (self.reachable.len(), project_defs, core_defs, self.circular_count, self.max_depth)
+    };
 
     let stats = CallTreeStats {
-      reachable_count: self.reachable.len(),
-      circular_count: self.circular_count,
+      reachable_count,
+      circular_count,
       project_defs,
       core_defs,
-      max_depth: self.max_depth,
+      max_depth,
     };
 
     // Analyze unused definitions if requested
@@ -241,13 +253,6 @@ impl CallTreeAnalyzer {
         // Skip self-recursion (tail recursion etc.) - not meaningful for external analysis
         if call_ns == ns && call_def == def {
           continue;
-        }
-
-        // Filter by namespace prefix if specified
-        if let Some(ref prefix) = self.config.ns_prefix {
-          if !call_ns.starts_with(prefix) {
-            continue;
-          }
         }
 
         let child_tree = self.build_tree(&call_ns, &call_def, depth + 1)?;
@@ -462,6 +467,76 @@ impl CallTreeAnalyzer {
   }
 }
 
+/// Prune a call tree to only keep nodes whose namespace starts with `prefix`,
+/// while preserving ancestors that lead to matching descendants.
+fn prune_tree_by_ns_prefix(mut node: CallTreeNode, prefix: &str) -> CallTreeNode {
+  // First prune children recursively
+  let children = std::mem::take(&mut node.calls);
+  let pruned_children: Vec<CallTreeNode> = children
+    .into_iter()
+    .map(|child| prune_tree_by_ns_prefix(child, prefix))
+    .filter(|child| tree_contains_ns_prefix(child, prefix))
+    .collect();
+
+  // Replace children with pruned list
+  node.calls = pruned_children;
+
+  node
+}
+
+fn tree_contains_ns_prefix(node: &CallTreeNode, prefix: &str) -> bool {
+  if node.ns.starts_with(prefix) {
+    return true;
+  }
+  for c in &node.calls {
+    if tree_contains_ns_prefix(c, prefix) {
+      return true;
+    }
+  }
+  false
+}
+
+/// Compute stats from a (possibly pruned) call tree.
+fn compute_stats_from_tree<F>(root: &CallTreeNode, is_core_ns: F) -> (usize, usize, usize, usize, usize)
+where
+  F: Fn(&str) -> bool,
+{
+  use std::collections::HashSet;
+  let mut visited: HashSet<String> = HashSet::new();
+  let mut project = 0usize;
+  let mut core = 0usize;
+  let mut circular = 0usize;
+  let mut max_depth = 0usize;
+
+  fn walk<F>(n: &CallTreeNode, depth: usize, visited: &mut HashSet<String>, project: &mut usize, core: &mut usize, circular: &mut usize, max_depth: &mut usize, is_core_ns: &F)
+  where
+    F: Fn(&str) -> bool,
+  {
+    if depth > *max_depth {
+      *max_depth = depth;
+    }
+    if n.circular {
+      *circular += 1;
+    }
+    if !visited.contains(&n.fqn) {
+      visited.insert(n.fqn.clone());
+      if is_core_ns(&n.ns) {
+        *core += 1;
+      } else {
+        *project += 1;
+      }
+    }
+    for (i, c) in n.calls.iter().enumerate() {
+      let _ = i;
+      walk(c, depth + 1, visited, project, core, circular, max_depth, is_core_ns);
+    }
+  }
+
+  walk(root, 0, &mut visited, &mut project, &mut core, &mut circular, &mut max_depth, &is_core_ns);
+
+  (visited.len(), project, core, circular, max_depth)
+}
+
 /// Format the call tree result for LLM consumption
 pub fn format_for_llm(result: &CallTreeResult) -> String {
   let mut output = String::new();
@@ -615,8 +690,17 @@ impl CallCountAnalyzer {
   fn analyze(&mut self, entry_ns: &str, entry_def: &str) -> Result<CallCountResult, String> {
     let fqn = format!("{entry_ns}/{entry_def}");
 
-    // Count the entry itself
-    *self.call_counts.entry(fqn.clone()).or_insert(0) += 1;
+    // Count the entry itself if it matches filters
+    let entry_is_core = self.is_core_ns(entry_ns);
+    let entry_matches_core = self.include_core || !entry_is_core;
+    let entry_matches_prefix = self
+      .ns_prefix
+      .as_ref()
+      .map(|p| entry_ns.starts_with(p))
+      .unwrap_or(true);
+    if entry_matches_core && entry_matches_prefix {
+      *self.call_counts.entry(fqn.clone()).or_insert(0) += 1;
+    }
 
     // Traverse and count
     self.traverse(entry_ns, entry_def)?;
@@ -691,24 +775,21 @@ impl CallCountAnalyzer {
       drop(program_code);
 
       for (call_ns, call_def) in call_refs {
-        // Filter based on config
-        if !self.include_core && self.is_core_ns(&call_ns) {
-          continue;
+        let is_core = self.is_core_ns(&call_ns);
+        let matches_core = self.include_core || !is_core;
+        let matches_prefix = self
+          .ns_prefix
+          .as_ref()
+          .map(|p| call_ns.starts_with(p))
+          .unwrap_or(true);
+
+        // Increment count only when it matches filters
+        if matches_core && matches_prefix {
+          let call_fqn = format!("{call_ns}/{call_def}");
+          *self.call_counts.entry(call_fqn).or_insert(0) += 1;
         }
 
-        // Filter by namespace prefix if specified
-        if let Some(ref prefix) = self.ns_prefix {
-          if !call_ns.starts_with(prefix) {
-            continue;
-          }
-        }
-
-        let call_fqn = format!("{call_ns}/{call_def}");
-
-        // Increment call count
-        *self.call_counts.entry(call_fqn).or_insert(0) += 1;
-
-        // Recursively traverse
+        // Always traverse to discover deeper matching calls
         self.traverse(&call_ns, &call_def)?;
       }
     }
