@@ -444,6 +444,13 @@ impl CallTreeAnalyzer {
         }
       }
 
+      // Skip namespaces that don't match the prefix filter
+      if let Some(ref prefix) = self.config.ns_prefix {
+        if !ns.starts_with(prefix) {
+          continue;
+        }
+      }
+
       for (def, entry) in &file_data.defs {
         let fqn = format!("{ns}/{def}");
         if !self.reachable.contains(&fqn) {

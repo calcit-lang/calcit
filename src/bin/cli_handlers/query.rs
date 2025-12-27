@@ -755,7 +755,7 @@ fn get_symbol_context_cirru(code: &Cirru, symbol: &str) -> String {
   }
 
   if let Some(context_node) = find_smallest_containing(code, symbol) {
-    let cirru_str = cirru_parser::format(&[context_node], false.into()).unwrap_or_default();
+    let cirru_str = context_node.format_one_liner().unwrap_or_default();
     let trimmed = cirru_str.trim();
     if trimmed.len() > 50 {
       return format!("{}...", &trimmed[..50]);
