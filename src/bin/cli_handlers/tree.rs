@@ -152,7 +152,7 @@ fn format_preview(node: &Cirru, max_lines: usize) -> String {
 /// Format a Cirru node for preview display with type annotation for short content
 fn format_preview_with_type(node: &Cirru, max_lines: usize) -> String {
   let base_preview = format_preview(node, max_lines);
-  
+
   // Add type annotation for short content (especially single-element expressions)
   let type_label = match node {
     Cirru::Leaf(_) => " (leaf)".dimmed().to_string(),
@@ -164,7 +164,7 @@ fn format_preview_with_type(node: &Cirru, max_lines: usize) -> String {
       }
     }
   };
-  
+
   if type_label.is_empty() {
     base_preview
   } else {

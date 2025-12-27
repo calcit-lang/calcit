@@ -52,12 +52,15 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       let (ns, def) = parse_target(&opts.target)?;
       handle_usages(input_path, ns, def, opts.deps)
     }
-    QuerySubcommand::Search(opts) => {
-      handle_search_leaf(input_path, &opts.pattern, opts.filter.as_deref(), opts.loose, opts.max_depth)
-    }
-    QuerySubcommand::SearchPattern(opts) => {
-      handle_search_pattern(input_path, &opts.pattern, opts.filter.as_deref(), opts.loose, opts.max_depth, opts.json)
-    }
+    QuerySubcommand::Search(opts) => handle_search_leaf(input_path, &opts.pattern, opts.filter.as_deref(), opts.loose, opts.max_depth),
+    QuerySubcommand::SearchPattern(opts) => handle_search_pattern(
+      input_path,
+      &opts.pattern,
+      opts.filter.as_deref(),
+      opts.loose,
+      opts.max_depth,
+      opts.json,
+    ),
   }
 }
 
@@ -206,7 +209,10 @@ fn handle_ns_details(input_path: &str, namespace: &str) -> Result<(), String> {
 
   println!("\n{} {}", "Definitions:".bold(), file_data.defs.len());
 
-  println!("\n{}", format!("Tip: Use `cr query defs {namespace}` to list definitions.").dimmed());
+  println!(
+    "\n{}",
+    format!("Tip: Use `cr query defs {namespace}` to list definitions.").dimmed()
+  );
 
   Ok(())
 }
@@ -386,7 +392,7 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str) -> Result<(),
   println!("{}", serde_json::to_string(&json).unwrap());
 
   let mut tips = vec![format!(
-    "Use `cr query at {namespace}/{definition} -p \"0\"` to explore tree for editing."
+    "Use `cr tree show {namespace}/{definition} -p \"0\"` to explore tree for editing."
   )];
   if !code_entry.examples.is_empty() {
     tips.push(format!("Use `cr query examples {namespace}/{definition}` to view examples."));
@@ -888,13 +894,7 @@ fn fuzzy_match(text: &str, pattern: &str) -> bool {
 }
 
 /// Search for leaf nodes (strings) in a definition
-fn handle_search_leaf(
-  input_path: &str,
-  pattern: &str,
-  filter: Option<&str>,
-  loose: bool,
-  max_depth: usize,
-) -> Result<(), String> {
+fn handle_search_leaf(input_path: &str, pattern: &str, filter: Option<&str>, loose: bool, max_depth: usize) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   println!("{} Searching for:", "Search:".bold());
@@ -903,7 +903,7 @@ fn handle_search_leaf(
   } else {
     println!("  {} (exact)", pattern.yellow());
   }
-  
+
   if let Some(filter_str) = filter {
     println!("  {} {}", "Filter:".dimmed(), filter_str.cyan());
   } else {
@@ -948,7 +948,7 @@ fn handle_search_leaf(
       }
 
       let results = search_leaf_nodes(&code_entry.code, pattern, loose, max_depth, &[]);
-      
+
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));
       }
@@ -960,14 +960,16 @@ fn handle_search_leaf(
     println!("{}", "No matches found.".yellow());
   } else {
     let total_matches: usize = all_results.iter().map(|(_, _, results)| results.len()).sum();
-    println!("{} {} match(es) found in {} definition(s):\n", 
-             "Results:".bold().green(), 
-             total_matches,
-             all_results.len());
+    println!(
+      "{} {} match(es) found in {} definition(s):\n",
+      "Results:".bold().green(),
+      total_matches,
+      all_results.len()
+    );
 
     for (ns, def_name, results) in &all_results {
       println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
-      
+
       // Load code_entry to print results
       if let Some(file_data) = snapshot.files.get(ns) {
         if let Some(code_entry) = file_data.defs.get(def_name) {
@@ -977,7 +979,7 @@ fn handle_search_leaf(
               println!("    {} {}", "(root)".cyan(), content.dimmed());
             } else {
               let path_str = format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
-              
+
               // Get parent context
               if let Some(parent) = get_parent_node_from_code(&code_entry.code, path) {
                 let parent_oneliner = parent.format_one_liner().unwrap_or_default();
@@ -992,7 +994,7 @@ fn handle_search_leaf(
               }
             }
           }
-          
+
           if results.len() > 5 {
             println!("    {}", format!("... and {} more", results.len() - 5).dimmed());
           }
@@ -1006,7 +1008,7 @@ fn handle_search_leaf(
       "Tip: Use `cr tree show <namespace>/<definition> -p \"<path>\"` to view matched nodes.".dimmed()
     );
   }
-  
+
   Ok(())
 }
 
@@ -1043,7 +1045,7 @@ fn handle_search_pattern(
   } else {
     println!("  {} (exact match)", pattern_display.yellow());
   }
-  
+
   if let Some(filter_str) = filter {
     println!("  {} {}", "Filter:".dimmed(), filter_str.cyan());
   } else {
@@ -1088,7 +1090,7 @@ fn handle_search_pattern(
       }
 
       let results = search_pattern_nodes(&code_entry.code, &pattern_node, loose, max_depth, &[]);
-      
+
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));
       }
@@ -1100,14 +1102,16 @@ fn handle_search_pattern(
     println!("{}", "No matches found.".yellow());
   } else {
     let total_matches: usize = all_results.iter().map(|(_, _, results)| results.len()).sum();
-    println!("{} {} match(es) found in {} definition(s):\n", 
-             "Results:".bold().green(), 
-             total_matches,
-             all_results.len());
+    println!(
+      "{} {} match(es) found in {} definition(s):\n",
+      "Results:".bold().green(),
+      total_matches,
+      all_results.len()
+    );
 
     for (ns, def_name, results) in &all_results {
       println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
-      
+
       // Load code_entry to print results
       if let Some(file_data) = snapshot.files.get(ns) {
         if let Some(code_entry) = file_data.defs.get(def_name) {
@@ -1117,7 +1121,7 @@ fn handle_search_pattern(
               println!("    {} {}", "(root)".cyan(), content.dimmed());
             } else {
               let path_str = format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
-              
+
               // Get parent context
               if let Some(parent) = get_parent_node_from_code(&code_entry.code, path) {
                 let parent_oneliner = parent.format_one_liner().unwrap_or_default();
@@ -1132,7 +1136,7 @@ fn handle_search_pattern(
               }
             }
           }
-          
+
           if results.len() > 5 {
             println!("    {}", format!("... and {} more", results.len() - 5).dimmed());
           }
@@ -1146,7 +1150,7 @@ fn handle_search_pattern(
       "Tip: Use `cr tree show <namespace>/<definition> -p \"<path>\"` to view matched nodes.".dimmed()
     );
   }
-  
+
   Ok(())
 }
 

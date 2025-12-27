@@ -312,7 +312,7 @@ cr edit def my.ns/my-fn -f code.cirru
 cr query def my.ns/my-fn
 
 # Explore specific path
-cr query at my.ns/my-fn -p "1,0" -d 3
+cr tree show my.ns/my-fn -p "1,0" -d 3
 ```
 
 ## Shell Escaping Tips

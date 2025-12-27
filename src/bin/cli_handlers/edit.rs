@@ -9,9 +9,9 @@
 //! - `--stdin` - read from stdin
 
 use calcit::cli_args::{
-  EditAddExampleCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditDefCommand, EditDocCommand,
-  EditExamplesCommand, EditImportsCommand, EditNsDocCommand, EditAddImportCommand, EditRmDefCommand, EditRmExampleCommand,
-  EditRmModuleCommand, EditRmNsCommand, EditRmImportCommand, EditSubcommand,
+  EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditDefCommand,
+  EditDocCommand, EditExamplesCommand, EditImportsCommand, EditNsDocCommand, EditRmDefCommand, EditRmExampleCommand,
+  EditRmImportCommand, EditRmModuleCommand, EditRmNsCommand, EditSubcommand,
 };
 use calcit::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -935,7 +935,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
   // Extract old imports for comparison
   let old_imports = extract_require_list(&file_data.ns.code);
   let _old_import_rules = extract_require_rules(&file_data.ns.code);
-  
+
   file_data.ns.code = Cirru::List(ns_code_items);
 
   // Extract new imports
@@ -946,7 +946,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
 
   // Show what changed
   println!("{} Updated imports for namespace '{}'", "✓".green(), opts.namespace.cyan());
-  
+
   // Show removed imports
   let removed: Vec<_> = old_imports.iter().filter(|old| !new_imports.contains(old)).collect();
   if !removed.is_empty() {
@@ -955,7 +955,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
       println!("    {}", import.dimmed());
     }
   }
-  
+
   // Show added imports
   let added: Vec<_> = new_imports.iter().filter(|new| !old_imports.contains(new)).collect();
   let mut added_namespaces = Vec::new();
@@ -975,18 +975,18 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
       }
     }
   }
-  
+
   // Show unchanged count if there are any
   let unchanged_count = old_imports.iter().filter(|old| new_imports.contains(old)).count();
   if unchanged_count > 0 {
     println!("  {} {} unchanged", "·".dimmed(), format!("{unchanged_count}").dimmed());
   }
-  
+
   // Show detailed tips for newly added imports
   if !added.is_empty() {
     println!();
     println!("{}", "Usage tips for new imports:".dimmed());
-    
+
     // Parse each added import string to provide tips
     for added_str in &added {
       // Parse the import string back to Cirru to analyze it
@@ -1006,7 +1006,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
 /// Extract formatted import list from ns code for comparison
 fn extract_require_list(ns_code: &Cirru) -> Vec<String> {
   let mut imports = Vec::new();
-  
+
   if let Cirru::List(items) = ns_code {
     let mut in_require = false;
     for item in items {
@@ -1024,7 +1024,7 @@ fn extract_require_list(ns_code: &Cirru) -> Vec<String> {
       }
     }
   }
-  
+
   imports
 }
 
@@ -1277,7 +1277,7 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
     let mut import_type = None;
     let mut symbols = Vec::new();
     let mut alias = None;
-    
+
     // Parse the import rule: (namespace :refer [symbols...]) or (namespace :as alias) or (namespace :default symbol)
     let mut i = 1; // Skip the namespace (first element)
     while i < items.len() {
@@ -1323,15 +1323,19 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
       }
       i += 1;
     }
-    
+
     // Print tips based on import type
     println!();
     println!("{}", "Usage tips:".dimmed());
-    
+
     match import_type {
       Some("refer") => {
         if symbols.is_empty() {
-          println!("  {} Use imported symbols directly: {}", "·".dimmed(), "(symbol-name ...)".to_string().cyan());
+          println!(
+            "  {} Use imported symbols directly: {}",
+            "·".dimmed(),
+            "(symbol-name ...)".to_string().cyan()
+          );
         } else {
           println!("  {} Use imported symbols directly:", "·".dimmed());
           for symbol in symbols.iter().take(3) {
@@ -1345,22 +1349,42 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
       Some("as") => {
         if let Some(a) = alias {
           println!("  {} Use with alias: {}", "·".dimmed(), format!("({a}/symbol-name ...)").cyan());
-          println!("  {} List definitions: {}", "·".dimmed(), format!("cr query defs {source_ns}").cyan());
+          println!(
+            "  {} List definitions: {}",
+            "·".dimmed(),
+            format!("cr query defs {source_ns}").cyan()
+          );
         }
       }
       Some("default") => {
         if !symbols.is_empty() {
-          println!("  {} Default import available as: {}", "·".dimmed(), format!("({} ...)", symbols[0]).cyan());
+          println!(
+            "  {} Default import available as: {}",
+            "·".dimmed(),
+            format!("({} ...)", symbols[0]).cyan()
+          );
         }
       }
       None => {
         // Plain import without :refer/:as/:default
-        println!("  {} Use with full namespace: {}", "·".dimmed(), format!("({source_ns}/symbol-name ...)").cyan());
-        println!("  {} List definitions: {}", "·".dimmed(), format!("cr query defs {source_ns}").cyan());
+        println!(
+          "  {} Use with full namespace: {}",
+          "·".dimmed(),
+          format!("({source_ns}/symbol-name ...)").cyan()
+        );
+        println!(
+          "  {} List definitions: {}",
+          "·".dimmed(),
+          format!("cr query defs {source_ns}").cyan()
+        );
       }
       _ => {
         // Unknown import type
-        println!("  {} Use with full namespace: {}", "·".dimmed(), format!("({source_ns}/symbol-name ...)").cyan());
+        println!(
+          "  {} Use with full namespace: {}",
+          "·".dimmed(),
+          format!("({source_ns}/symbol-name ...)").cyan()
+        );
       }
     }
   }
