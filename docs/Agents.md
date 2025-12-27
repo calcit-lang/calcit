@@ -319,8 +319,8 @@ cr tree replace app.core/my-fn -p "2,1,0" -e "new-value"
 - `cr edit add-ns <namespace> -j '<ns_json>'` - 添加带自定义 ns 代码的命名空间
 - `cr edit rm-ns <namespace>` - 删除命名空间
 - `cr edit imports <namespace> -j '<imports_json>'` - 更新导入规则
-- `cr edit require <namespace> -j '<require_rule>'` - 添加单个 require 规则
-- `cr edit rm-require <namespace> <source_ns>` - 移除指定来源的 require 规则
+- `cr edit add-import <namespace> -j '<import_rule>'` - 添加单个 import 规则
+- `cr edit rm-import <namespace> <source_ns>` - 移除指定来源的 import 规则
 - `cr edit ns-doc <namespace> '<doc>'` - 更新命名空间文档
 
 **模块和配置：**

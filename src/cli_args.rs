@@ -553,10 +553,10 @@ pub enum EditSubcommand {
   RmNs(EditRmNsCommand),
   /// update namespace imports (replace all)
   Imports(EditImportsCommand),
-  /// add a require rule to namespace
-  Require(EditRequireCommand),
-  /// remove a require rule from namespace
-  RmRequire(EditRmRequireCommand),
+  /// add a single import rule to namespace
+  AddImport(EditAddImportCommand),
+  /// remove an import rule from namespace
+  RmImport(EditRmImportCommand),
   /// update namespace documentation
   NsDoc(EditNsDocCommand),
   /// create a new module
@@ -772,22 +772,22 @@ pub struct EditImportsCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "require")]
-/// add a require rule to namespace
-pub struct EditRequireCommand {
-  /// namespace to add require rule to
+#[argh(subcommand, name = "add-import")]
+/// add a single import rule to namespace
+pub struct EditAddImportCommand {
+  /// namespace to add import rule to
   #[argh(positional)]
   pub namespace: String,
-  /// read require rule from file (Cirru format by default, use -J for JSON)
+  /// read import rule from file (Cirru format by default, use -J for JSON)
   #[argh(option, short = 'f')]
   pub file: Option<String>,
-  /// require rule as inline Cirru text (or JSON when used with -J/--json-input)
+  /// import rule as inline Cirru text (or JSON when used with -J/--json-input)
   #[argh(option, short = 'e', long = "code")]
   pub code: Option<String>,
-  /// require rule as inline JSON string
+  /// import rule as inline JSON string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
-  /// read require rule from stdin (Cirru format by default, use -J for JSON)
+  /// read import rule from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
   /// parse input as full multi-line Cirru text (use when input has indentation).
@@ -806,10 +806,10 @@ pub struct EditRequireCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "rm-require")]
-/// remove a require rule from namespace
-pub struct EditRmRequireCommand {
-  /// namespace to remove require rule from
+#[argh(subcommand, name = "rm-import")]
+/// remove an import rule from namespace
+pub struct EditRmImportCommand {
+  /// namespace to remove import rule from
   #[argh(positional)]
   pub namespace: String,
   /// source namespace to remove (e.g. "calcit.core")

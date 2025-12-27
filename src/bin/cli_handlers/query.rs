@@ -178,8 +178,8 @@ fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool) -> R
   if !include_deps {
     println!("\n{}", "Tip: Use `--deps` to include dependency and core namespaces.".dimmed());
   }
-  println!("{}", "Tip: Use `query ns <namespace>` to show namespace details.".dimmed());
-  println!("{}", "Tip: Use `query defs <namespace>` to list definitions.".dimmed());
+  println!("{}", "Tip: Use `cr query ns <namespace>` to show namespace details.".dimmed());
+  println!("{}", "Tip: Use `cr query defs <namespace>` to list definitions.".dimmed());
 
   Ok(())
 }
@@ -205,7 +205,7 @@ fn handle_ns_details(input_path: &str, namespace: &str) -> Result<(), String> {
 
   println!("\n{} {}", "Definitions:".bold(), file_data.defs.len());
 
-  println!("\n{}", format!("Tip: Use `query defs {namespace}` to list definitions.").dimmed());
+  println!("\n{}", format!("Tip: Use `cr query defs {namespace}` to list definitions.").dimmed());
 
   Ok(())
 }
@@ -240,7 +240,7 @@ fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
 
   println!(
     "\n{}",
-    "Tip: Use `query peek <ns/def>` for signature, `query def <ns/def>` for full code.".dimmed()
+    "Tip: Use `cr query peek <ns/def>` for signature, `cr query def <ns/def>` for full code.".dimmed()
   );
 
   Ok(())
@@ -347,7 +347,7 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
 
   println!(
     "\n{}",
-    "Tip: Use `query ns` to list namespaces, `query defs <namespace>` to list definitions.".dimmed()
+    "Tip: Use `cr query ns` to list namespaces, `cr query defs <namespace>` to list definitions.".dimmed()
   );
 
   Ok(())
@@ -385,10 +385,10 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str) -> Result<(),
   println!("{}", serde_json::to_string(&json).unwrap());
 
   let mut tips = vec![format!(
-    "Use `query at {namespace}/{definition} -p \"0\"` to explore tree for editing."
+    "Use `cr query at {namespace}/{definition} -p \"0\"` to explore tree for editing."
   )];
   if !code_entry.examples.is_empty() {
-    tips.push(format!("Use `query examples {namespace}/{definition}` to view examples."));
+    tips.push(format!("Use `cr query examples {namespace}/{definition}` to view examples."));
   }
   println!("\n{}", format!("Tip: {}", tips.join(" ")).dimmed());
 
@@ -425,7 +425,7 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
     println!("\n{}", "(no examples)".dimmed());
     println!(
       "\n{}",
-      format!("Tip: Use `edit examples {namespace}/{definition}` to add examples.").dimmed()
+      format!("Tip: Use `cr edit examples {namespace}/{definition}` to add examples.").dimmed()
     );
   } else {
     println!("{} example(s)\n", code_entry.examples.len());
@@ -447,7 +447,7 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
 
     println!(
       "{}",
-      format!("Tip: Use `edit examples {namespace}/{definition}` to modify examples.").dimmed()
+      format!("Tip: Use `cr edit examples {namespace}/{definition}` to modify examples.").dimmed()
     );
   }
 
@@ -600,12 +600,12 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
 
   if found_definitions.is_empty() && references.is_empty() {
     println!("{}", "No matches found.".yellow());
-    println!("\n{}", "Tip: Try `query ns` to see available namespaces.".dimmed());
+    println!("\n{}", "Tip: Try `cr query ns` to see available namespaces.".dimmed());
   } else if !found_definitions.is_empty() {
     let (first_ns, first_def) = &found_definitions[0];
     println!(
       "\n{}",
-      format!("Tip: Use `query peek {first_ns}/{first_def}` to see signature.").dimmed()
+      format!("Tip: Use `cr query peek {first_ns}/{first_def}` to see signature.").dimmed()
     );
   }
 
