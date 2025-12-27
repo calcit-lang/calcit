@@ -325,14 +325,14 @@ pub struct QueryUsagesCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "search")]
-/// search for leaf nodes (strings) in definition
+/// search for leaf nodes (strings) across project or in specific namespace/definition
 pub struct QuerySearchCommand {
-  /// target in format "namespace/definition"
-  #[argh(positional)]
-  pub target: String,
   /// string pattern to search for in leaf nodes
-  #[argh(option, short = 'p')]
+  #[argh(positional)]
   pub pattern: String,
+  /// filter search to specific namespace or namespace/definition (optional)
+  #[argh(option, short = 'f', long = "filter")]
+  pub filter: Option<String>,
   /// loose match: find nodes containing the pattern (not exact match)
   #[argh(switch, short = 'l')]
   pub loose: bool,
@@ -343,14 +343,14 @@ pub struct QuerySearchCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "search-pattern")]
-/// search for structural patterns (Cirru expr or JSON array) in definition
+/// search for structural patterns (Cirru expr or JSON array) across project or in specific namespace/definition
 pub struct QuerySearchPatternCommand {
-  /// target in format "namespace/definition"
+  /// pattern to search for (Cirru one-liner or JSON array with -j)
   #[argh(positional)]
-  pub target: String,
-  /// pattern as Cirru one-liner or JSON array (e.g., "(defn add)" or '["defn","add"]')
-  #[argh(option, short = 'p')]
   pub pattern: String,
+  /// filter search to specific namespace or namespace/definition (optional)
+  #[argh(option, short = 'f', long = "filter")]
+  pub filter: Option<String>,
   /// loose match: find sequences containing the pattern (not exact match)
   #[argh(switch, short = 'l')]
   pub loose: bool,

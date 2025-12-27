@@ -11,6 +11,9 @@ use colored::Colorize;
 use std::fs;
 use std::path::Path;
 
+/// Type alias for search results: (namespace, definition, matches)
+type SearchResults = Vec<(String, String, Vec<(Vec<usize>, Cirru)>)>;
+
 /// Parse "namespace/definition" format into (namespace, definition)
 fn parse_target(target: &str) -> Result<(&str, &str), String> {
   target
@@ -50,12 +53,10 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       handle_usages(input_path, ns, def, opts.deps)
     }
     QuerySubcommand::Search(opts) => {
-      let (ns, def) = parse_target(&opts.target)?;
-      handle_search_leaf(input_path, ns, def, &opts.pattern, opts.loose, opts.max_depth)
+      handle_search_leaf(input_path, &opts.pattern, opts.filter.as_deref(), opts.loose, opts.max_depth)
     }
     QuerySubcommand::SearchPattern(opts) => {
-      let (ns, def) = parse_target(&opts.target)?;
-      handle_search_pattern(input_path, ns, def, &opts.pattern, opts.loose, opts.max_depth, opts.json)
+      handle_search_pattern(input_path, &opts.pattern, opts.filter.as_deref(), opts.loose, opts.max_depth, opts.json)
     }
   }
 }
@@ -889,60 +890,136 @@ fn fuzzy_match(text: &str, pattern: &str) -> bool {
 /// Search for leaf nodes (strings) in a definition
 fn handle_search_leaf(
   input_path: &str,
-  namespace: &str,
-  definition: &str,
   pattern: &str,
+  filter: Option<&str>,
   loose: bool,
   max_depth: usize,
 ) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
-  let file_data = snapshot
-    .files
-    .get(namespace)
-    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
-
-  let code_entry = file_data
-    .defs
-    .get(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
-
-  println!("{} Searching in {}/{}", "Search:".bold(), namespace.cyan(), definition.green());
-
+  println!("{} Searching for:", "Search:".bold());
   if loose {
     println!("  {} (contains)", pattern.yellow());
   } else {
     println!("  {} (exact)", pattern.yellow());
   }
+  
+  if let Some(filter_str) = filter {
+    println!("  {} {}", "Filter:".dimmed(), filter_str.cyan());
+  } else {
+    println!("  {} {}", "Scope:".dimmed(), "entire project".cyan());
+  }
   println!();
 
-  let results = search_leaf_nodes(&code_entry.code, pattern, loose, max_depth, &[]);
+  let mut all_results: SearchResults = Vec::new();
 
-  print_search_results(&results, &code_entry.code, namespace, definition);
+  // Parse filter to determine scope
+  let (filter_ns, filter_def) = if let Some(f) = filter {
+    if f.contains('/') {
+      let parts: Vec<&str> = f.split('/').collect();
+      if parts.len() == 2 {
+        (Some(parts[0]), Some(parts[1]))
+      } else {
+        return Err(format!("Invalid filter format: '{f}'. Use 'namespace' or 'namespace/definition'"));
+      }
+    } else {
+      (Some(f), None)
+    }
+  } else {
+    (None, None)
+  };
+
+  // Search through files
+  for (ns, file_data) in &snapshot.files {
+    // Skip if namespace doesn't match filter
+    if let Some(filter_namespace) = filter_ns {
+      if ns != filter_namespace {
+        continue;
+      }
+    }
+
+    // Search through definitions in this namespace
+    for (def_name, code_entry) in &file_data.defs {
+      // Skip if definition doesn't match filter
+      if let Some(filter_definition) = filter_def {
+        if def_name != filter_definition {
+          continue;
+        }
+      }
+
+      let results = search_leaf_nodes(&code_entry.code, pattern, loose, max_depth, &[]);
+      
+      if !results.is_empty() {
+        all_results.push((ns.clone(), def_name.clone(), results));
+      }
+    }
+  }
+
+  // Print results grouped by namespace/definition
+  if all_results.is_empty() {
+    println!("{}", "No matches found.".yellow());
+  } else {
+    let total_matches: usize = all_results.iter().map(|(_, _, results)| results.len()).sum();
+    println!("{} {} match(es) found in {} definition(s):\n", 
+             "Results:".bold().green(), 
+             total_matches,
+             all_results.len());
+
+    for (ns, def_name, results) in &all_results {
+      println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
+      
+      // Load code_entry to print results
+      if let Some(file_data) = snapshot.files.get(ns) {
+        if let Some(code_entry) = file_data.defs.get(def_name) {
+          for (path, _node) in results.iter().take(5) {
+            if path.is_empty() {
+              let content = code_entry.code.format_one_liner().unwrap_or_default();
+              println!("    {} {}", "(root)".cyan(), content.dimmed());
+            } else {
+              let path_str = format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
+              
+              // Get parent context
+              if let Some(parent) = get_parent_node_from_code(&code_entry.code, path) {
+                let parent_oneliner = parent.format_one_liner().unwrap_or_default();
+                let display_parent = if parent_oneliner.len() > 80 {
+                  format!("{}...", &parent_oneliner[..80])
+                } else {
+                  parent_oneliner
+                };
+                println!("    {} in {}", path_str.cyan(), display_parent.dimmed());
+              } else {
+                println!("    {}", path_str.cyan());
+              }
+            }
+          }
+          
+          if results.len() > 5 {
+            println!("    {}", format!("... and {} more", results.len() - 5).dimmed());
+          }
+        }
+      }
+      println!();
+    }
+
+    println!(
+      "{}",
+      "Tip: Use `cr tree show <namespace>/<definition> -p \"<path>\"` to view matched nodes.".dimmed()
+    );
+  }
+  
   Ok(())
 }
 
-/// Search for structural patterns in a definition
+/// Search for structural patterns across project or in filtered scope
 fn handle_search_pattern(
   input_path: &str,
-  namespace: &str,
-  definition: &str,
   pattern: &str,
+  filter: Option<&str>,
   loose: bool,
   max_depth: usize,
   json: bool,
 ) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
-
-  let file_data = snapshot
-    .files
-    .get(namespace)
-    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
-
-  let code_entry = file_data
-    .defs
-    .get(definition)
-    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
 
   // Parse pattern
   let pattern_node = if json {
@@ -958,7 +1035,7 @@ fn handle_search_pattern(
       .clone()
   };
 
-  println!("{} Searching in {}/{}", "Pattern:".bold(), namespace.cyan(), definition.green());
+  println!("{} Searching for pattern:", "Search:".bold());
 
   let pattern_display = pattern_node.format_one_liner().unwrap_or_default();
   if loose {
@@ -966,11 +1043,110 @@ fn handle_search_pattern(
   } else {
     println!("  {} (exact match)", pattern_display.yellow());
   }
+  
+  if let Some(filter_str) = filter {
+    println!("  {} {}", "Filter:".dimmed(), filter_str.cyan());
+  } else {
+    println!("  {} {}", "Scope:".dimmed(), "entire project".cyan());
+  }
   println!();
 
-  let results = search_pattern_nodes(&code_entry.code, &pattern_node, loose, max_depth, &[]);
+  let mut all_results: SearchResults = Vec::new();
 
-  print_search_results(&results, &code_entry.code, namespace, definition);
+  // Parse filter to determine scope
+  let (filter_ns, filter_def) = if let Some(f) = filter {
+    if f.contains('/') {
+      let parts: Vec<&str> = f.split('/').collect();
+      if parts.len() == 2 {
+        (Some(parts[0]), Some(parts[1]))
+      } else {
+        return Err(format!("Invalid filter format: '{f}'. Use 'namespace' or 'namespace/definition'"));
+      }
+    } else {
+      (Some(f), None)
+    }
+  } else {
+    (None, None)
+  };
+
+  // Search through files
+  for (ns, file_data) in &snapshot.files {
+    // Skip if namespace doesn't match filter
+    if let Some(filter_namespace) = filter_ns {
+      if ns != filter_namespace {
+        continue;
+      }
+    }
+
+    // Search through definitions in this namespace
+    for (def_name, code_entry) in &file_data.defs {
+      // Skip if definition doesn't match filter
+      if let Some(filter_definition) = filter_def {
+        if def_name != filter_definition {
+          continue;
+        }
+      }
+
+      let results = search_pattern_nodes(&code_entry.code, &pattern_node, loose, max_depth, &[]);
+      
+      if !results.is_empty() {
+        all_results.push((ns.clone(), def_name.clone(), results));
+      }
+    }
+  }
+
+  // Print results grouped by namespace/definition
+  if all_results.is_empty() {
+    println!("{}", "No matches found.".yellow());
+  } else {
+    let total_matches: usize = all_results.iter().map(|(_, _, results)| results.len()).sum();
+    println!("{} {} match(es) found in {} definition(s):\n", 
+             "Results:".bold().green(), 
+             total_matches,
+             all_results.len());
+
+    for (ns, def_name, results) in &all_results {
+      println!("{} {}/{} ({} matches)", "●".cyan(), ns.dimmed(), def_name.green(), results.len());
+      
+      // Load code_entry to print results
+      if let Some(file_data) = snapshot.files.get(ns) {
+        if let Some(code_entry) = file_data.defs.get(def_name) {
+          for (path, _node) in results.iter().take(5) {
+            if path.is_empty() {
+              let content = code_entry.code.format_one_liner().unwrap_or_default();
+              println!("    {} {}", "(root)".cyan(), content.dimmed());
+            } else {
+              let path_str = format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
+              
+              // Get parent context
+              if let Some(parent) = get_parent_node_from_code(&code_entry.code, path) {
+                let parent_oneliner = parent.format_one_liner().unwrap_or_default();
+                let display_parent = if parent_oneliner.len() > 80 {
+                  format!("{}...", &parent_oneliner[..80])
+                } else {
+                  parent_oneliner
+                };
+                println!("    {} in {}", path_str.cyan(), display_parent.dimmed());
+              } else {
+                println!("    {}", path_str.cyan());
+              }
+            }
+          }
+          
+          if results.len() > 5 {
+            println!("    {}", format!("... and {} more", results.len() - 5).dimmed());
+          }
+        }
+      }
+      println!();
+    }
+
+    println!(
+      "{}",
+      "Tip: Use `cr tree show <namespace>/<definition> -p \"<path>\"` to view matched nodes.".dimmed()
+    );
+  }
+  
   Ok(())
 }
 
@@ -987,66 +1163,6 @@ fn json_to_cirru(json: &serde_json::Value) -> Result<Cirru, String> {
 }
 
 /// Print search results with parent context
-fn print_search_results(results: &[(Vec<usize>, Cirru)], code: &Cirru, namespace: &str, definition: &str) {
-  if results.is_empty() {
-    println!("{}", "No matches found.".yellow());
-    return;
-  }
-
-  println!("{} {} match(es) found:\n", "Results:".bold().green(), results.len());
-
-  // Helper function to get parent node from code
-  let get_parent_node = |path: &[usize]| -> Option<Cirru> {
-    if path.is_empty() {
-      return None;
-    }
-    let parent_path = &path[..path.len() - 1];
-    if parent_path.is_empty() {
-      return Some(code.clone());
-    }
-
-    let mut current = code;
-    for &idx in parent_path {
-      if let Cirru::List(items) = current {
-        current = items.get(idx)?;
-      } else {
-        return None;
-      }
-    }
-    Some(current.clone())
-  };
-
-  for (path, _node) in results {
-    if path.is_empty() {
-      // Root node - unlikely for leaf matches
-      let content = code.format_one_liner().unwrap_or_default();
-      println!("  {} {}", "(root)".cyan(), content.dimmed());
-    } else {
-      // Show full path
-      let path_str = format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
-
-      // Get parent context
-      if let Some(parent) = get_parent_node(path) {
-        let parent_oneliner = parent.format_one_liner().unwrap_or_default();
-        let display_parent = if parent_oneliner.len() > 80 {
-          format!("{}...", &parent_oneliner[..80])
-        } else {
-          parent_oneliner
-        };
-        println!("  {} in {}", path_str.cyan(), display_parent.dimmed());
-      } else {
-        println!("  {}", path_str.cyan());
-      }
-    }
-  }
-  println!();
-
-  println!(
-    "{}",
-    format!("Tip: Use `tree show {namespace}/{definition} -p \"<path>\"` to view matched nodes.").dimmed()
-  );
-}
-
 /// Search for leaf nodes with exact or loose matching
 fn search_leaf_nodes(node: &Cirru, pattern: &str, loose: bool, max_depth: usize, current_path: &[usize]) -> Vec<(Vec<usize>, Cirru)> {
   let mut results = Vec::new();
@@ -1082,6 +1198,27 @@ fn search_leaf_nodes(node: &Cirru, pattern: &str, loose: bool, max_depth: usize,
   }
 
   results
+}
+
+/// Helper function to get parent node from code given a path
+fn get_parent_node_from_code(code: &Cirru, path: &[usize]) -> Option<Cirru> {
+  if path.is_empty() {
+    return None;
+  }
+  let parent_path = &path[..path.len() - 1];
+  if parent_path.is_empty() {
+    return Some(code.clone());
+  }
+
+  let mut current = code;
+  for &idx in parent_path {
+    if let Cirru::List(items) = current {
+      current = items.get(idx)?;
+    } else {
+      return None;
+    }
+  }
+  Some(current.clone())
 }
 
 /// Search for pattern nodes (structural matching)
