@@ -5,7 +5,7 @@ use cirru_parser::Cirru;
 use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
-pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result<Calcit, String> {
+pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Result<Calcit, String> {
   let symbol_info = Arc::new(crate::calcit::CalcitSymbolInfo {
     at_ns: Arc::from(ns),
     at_def: Arc::from(def),
@@ -104,7 +104,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
     Cirru::List(ys) => {
       let mut zs: Vec<Calcit> = vec![];
       for (idx, y) in ys.iter().enumerate() {
-        if idx > 255 {
+        if idx > 65535 {
           return Err(format!("Cirru code too large, index: {idx}"));
         }
 
@@ -123,8 +123,8 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u8>) -> Result
             return Err(format!("expected 1 argument, got: {ys:?}"));
           }
         }
-        let mut next_coord: Vec<u8> = (*coord).to_owned();
-        next_coord.push(idx as u8); // clamp to prevent overflow, code not supposed to be larger than 256 children
+        let mut next_coord: Vec<u16> = (*coord).to_owned();
+        next_coord.push(idx as u16); // clamp to prevent overflow, code not supposed to be larger than 65536 children
 
         if let Cirru::Leaf(s) = y {
           // dirty hack to support shorthand of method calling,

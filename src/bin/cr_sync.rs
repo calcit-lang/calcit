@@ -258,11 +258,22 @@ fn detailed_code_entry_to_edn(entry: &DetailedCodeEntry) -> Edn {
     pairs: Vec::new(),
   };
 
+  // Add code field (must be first based on Calcit's expectation)
+  record.pairs.push(("code".into(), detailed_cirru_to_edn(&entry.code)));
+
   // Add doc field
   record.pairs.push(("doc".into(), Edn::Str(entry.doc.as_str().into())));
 
-  // Add code field
-  record.pairs.push(("code".into(), detailed_cirru_to_edn(&entry.code)));
+  // Add examples field - convert DetailCirru to simple Cirru first (without metadata)
+  let examples_list: Vec<Edn> = entry
+    .examples
+    .iter()
+    .map(|e| {
+      let simple_cirru: Cirru = e.clone().into();
+      simple_cirru.into()
+    })
+    .collect();
+  record.pairs.push(("examples".into(), Edn::List(examples_list.into())));
 
   Edn::Record(record)
 }
@@ -398,7 +409,12 @@ fn compare_file_definitions(
         let code_changed = compact_cirru != detailed_cirru;
         let doc_changed = compact_entry.doc != detailed_entry.doc;
 
-        if code_changed || doc_changed {
+        // Check if examples changed
+        let compact_examples: Vec<Cirru> = compact_entry.examples.clone();
+        let detailed_examples: Vec<Cirru> = detailed_entry.examples.iter().map(|e| e.clone().into()).collect();
+        let examples_changed = compact_examples != detailed_examples;
+
+        if code_changed || doc_changed || examples_changed {
           let change_type = if code_changed && doc_changed {
             ChangeType::Modified
           } else if code_changed {
@@ -479,6 +495,7 @@ fn apply_add_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_entr
         // Create empty namespace entry
         let empty_ns = DetailedCodeEntry {
           doc: String::new(),
+          examples: vec![],
           code: cirru_parser::Cirru::Leaf("".into()).into(),
         };
 
@@ -522,6 +539,9 @@ fn apply_modify_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_e
         if let Some(existing_def) = file.defs.get_mut(def_name) {
           // Update document part
           existing_def.doc = new_entry.doc.clone();
+
+          // Update examples
+          existing_def.examples = new_entry.examples.iter().map(|e| e.clone().into()).collect();
 
           // If not only document changes, also update code part
           if *change_type != ChangeType::ModifiedDoc {

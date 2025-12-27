@@ -261,7 +261,7 @@ pub fn evaluate_symbol(
   scope: &CalcitScope,
   file_ns: &str,
   at_def: &str,
-  location: &Option<Arc<Vec<u8>>>,
+  location: &Option<Arc<Vec<u16>>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let v = match parse_ns_def(sym) {
