@@ -158,6 +158,21 @@ pub(crate) fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<
   }
 }
 
+/// Check if a Cirru node is a single-element list containing only a string leaf,
+/// which might confuse LLM thinking it's a leaf node when it's actually an expression.
+fn warn_if_single_string_expression(node: &Cirru, input_source: &str) {
+  if let Cirru::List(items) = node {
+    if items.len() == 1 {
+      if let Some(Cirru::Leaf(_)) = items.first() {
+        eprintln!("\n⚠️  Note: Cirru one-liner input '{input_source}' was parsed as an expression (list with one element).");
+        eprintln!("   In Cirru syntax, this creates a list containing one element.");
+        eprintln!("   If you want a leaf node (plain string), use --json-leaf parameter.");
+        eprintln!("   Example: --json-leaf -e '{input_source}' creates a leaf, not an expression.\n");
+      }
+    }
+  }
+}
+
 /// Determine input mode and parse raw input string into a `Cirru` node.
 /// Precedence (highest to lowest):
 /// - `--json <string>` (inline JSON)
@@ -243,7 +258,9 @@ fn parse_input_to_cirru(
         );
       }
 
-      return cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"));
+      let result = cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))?;
+      warn_if_single_string_expression(&result, raw);
+      return Ok(result);
     }
 
     // Check for common mistakes before parsing
@@ -328,7 +345,9 @@ fn parse_input_to_cirru(
     }
 
     if parsed.len() == 1 {
-      Ok(parsed.into_iter().next().unwrap())
+      let result = parsed.into_iter().next().unwrap();
+      warn_if_single_string_expression(&result, raw);
+      Ok(result)
     } else {
       Ok(Cirru::List(parsed))
     }

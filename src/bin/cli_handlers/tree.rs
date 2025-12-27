@@ -20,6 +20,21 @@ use super::edit::{
 // Helper functions
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/// Check if a Cirru node is a single-element list containing only a string leaf,
+/// which might confuse LLM thinking it's a leaf node when it's actually an expression.
+fn warn_if_single_string_expression(node: &Cirru, input_source: &str) {
+  if let Cirru::List(items) = node {
+    if items.len() == 1 {
+      if let Some(Cirru::Leaf(_)) = items.first() {
+        eprintln!("\n⚠️  Note: Cirru one-liner input '{input_source}' was parsed as an expression (list with one element).");
+        eprintln!("   In Cirru syntax, this creates a list containing one element.");
+        eprintln!("   If you want a leaf node (plain string), use --json-leaf parameter.");
+        eprintln!("   Example: --json-leaf -e '{input_source}' creates a leaf, not an expression.\n");
+      }
+    }
+  }
+}
+
 /// Read code input from file, inline code, or stdin.
 fn read_code_input(file: &Option<String>, code: &Option<String>, stdin: bool) -> Result<Option<String>, String> {
   let sources = [stdin, file.is_some(), code.is_some()];
@@ -90,10 +105,14 @@ fn parse_input_to_cirru(
       if nodes.len() != 1 {
         return Err(format!("Expected single Cirru expression, got {}", nodes.len()));
       }
-      Ok(nodes[0].clone())
+      let result = nodes[0].clone();
+      warn_if_single_string_expression(&result, input);
+      Ok(result)
     } else {
       // One-liner: parse single expression directly (default for code input)
-      cirru_parser::parse_expr_one_liner(input).map_err(|e| format!("Failed to parse Cirru one-liner: {e}"))
+      let result = cirru_parser::parse_expr_one_liner(input).map_err(|e| format!("Failed to parse Cirru one-liner: {e}"))?;
+      warn_if_single_string_expression(&result, input);
+      Ok(result)
     }
   }
 }
@@ -128,6 +147,29 @@ fn format_preview(node: &Cirru, max_lines: usize) -> String {
     }
   };
   formatted.trim_end().to_string()
+}
+
+/// Format a Cirru node for preview display with type annotation for short content
+fn format_preview_with_type(node: &Cirru, max_lines: usize) -> String {
+  let base_preview = format_preview(node, max_lines);
+  
+  // Add type annotation for short content (especially single-element expressions)
+  let type_label = match node {
+    Cirru::Leaf(_) => " (leaf)".dimmed().to_string(),
+    Cirru::List(items) => {
+      if items.len() == 1 {
+        " (expr)".dimmed().to_string()
+      } else {
+        String::new()
+      }
+    }
+  };
+  
+  if type_label.is_empty() {
+    base_preview
+  } else {
+    format!("{base_preview}{type_label}")
+  }
 }
 
 // ============================================================================
@@ -282,11 +324,11 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   );
   println!();
   println!("{}:", "From".yellow().bold());
-  println!("{}", format_preview(&old_node, 20));
+  println!("{}", format_preview_with_type(&old_node, 20));
   println!();
   println!("{}:", "To".green().bold());
   let new_node = navigate_to_path(&new_code, &path)?;
-  println!("{}", format_preview(&new_node, 20));
+  println!("{}", format_preview_with_type(&new_node, 20));
 
   Ok(())
 }
@@ -326,7 +368,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   );
   println!();
   println!("{}:", "Deleted node".yellow().bold());
-  println!("{}", format_preview(&old_node, 10));
+  println!("{}", format_preview_with_type(&old_node, 20));
   println!();
   println!("{}:", "Parent after deletion".green().bold());
   let new_parent = if parent_path.is_empty() {
@@ -334,7 +376,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   } else {
     navigate_to_path(&new_code, &parent_path)?
   };
-  println!("{}", format_preview(&new_parent, 20));
+  println!("{}", format_preview_with_type(&new_parent, 20));
 
   Ok(())
 }
@@ -607,10 +649,10 @@ fn generic_insert_handler<T: InsertOperation>(
   );
   println!();
   println!("{}:", "Inserted node".cyan().bold());
-  println!("{}", format_preview(&processed_node, 10));
+  println!("{}", format_preview_with_type(&processed_node, 10));
   println!();
   println!("{}:", "Parent before".yellow().bold());
-  println!("{}", format_preview(&old_parent, 15));
+  println!("{}", format_preview_with_type(&old_parent, 15));
   println!();
   println!("{}:", "Parent after".green().bold());
   let new_parent = if parent_path.is_empty() {
@@ -618,7 +660,7 @@ fn generic_insert_handler<T: InsertOperation>(
   } else {
     navigate_to_path(&new_code, &parent_path)?
   };
-  println!("{}", format_preview(&new_parent, 15));
+  println!("{}", format_preview_with_type(&new_parent, 15));
 
   Ok(())
 }
@@ -671,7 +713,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
   );
   println!();
   println!("{}:", "Parent before swap".yellow().bold());
-  println!("{}", format_preview(&old_parent, 15));
+  println!("{}", format_preview_with_type(&old_parent, 15));
   println!();
   println!("{}:", "Parent after swap".green().bold());
   let new_parent = if parent_path.is_empty() {
@@ -679,7 +721,7 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
   } else {
     navigate_to_path(&new_code, &parent_path)?
   };
-  println!("{}", format_preview(&new_parent, 15));
+  println!("{}", format_preview_with_type(&new_parent, 15));
 
   Ok(())
 }
