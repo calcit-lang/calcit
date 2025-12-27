@@ -49,6 +49,14 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       let (ns, def) = parse_target(&opts.target)?;
       handle_usages(input_path, ns, def, opts.deps)
     }
+    QuerySubcommand::Search(opts) => {
+      let (ns, def) = parse_target(&opts.target)?;
+      handle_search_leaf(input_path, ns, def, &opts.pattern, opts.loose, opts.max_depth)
+    }
+    QuerySubcommand::SearchPattern(opts) => {
+      let (ns, def) = parse_target(&opts.target)?;
+      handle_search_pattern(input_path, ns, def, &opts.pattern, opts.loose, opts.max_depth, opts.json)
+    }
   }
 }
 
@@ -876,4 +884,287 @@ fn fuzzy_match(text: &str, pattern: &str) -> bool {
     }
   }
   true
+}
+
+/// Search for leaf nodes (strings) in a definition
+fn handle_search_leaf(
+  input_path: &str,
+  namespace: &str,
+  definition: &str,
+  pattern: &str,
+  loose: bool,
+  max_depth: usize,
+) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path)?;
+
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+
+  println!("{} Searching in {}/{}", "Search:".bold(), namespace.cyan(), definition.green());
+
+  if loose {
+    println!("  {} (contains)", pattern.yellow());
+  } else {
+    println!("  {} (exact)", pattern.yellow());
+  }
+  println!();
+
+  let results = search_leaf_nodes(&code_entry.code, pattern, loose, max_depth, &[]);
+
+  print_search_results(&results, &code_entry.code, namespace, definition);
+  Ok(())
+}
+
+/// Search for structural patterns in a definition
+fn handle_search_pattern(
+  input_path: &str,
+  namespace: &str,
+  definition: &str,
+  pattern: &str,
+  loose: bool,
+  max_depth: usize,
+  json: bool,
+) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path)?;
+
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+
+  // Parse pattern
+  let pattern_node = if json {
+    // Parse as JSON array
+    let json_val: serde_json::Value = serde_json::from_str(pattern).map_err(|e| format!("Failed to parse JSON pattern: {e}"))?;
+    json_to_cirru(&json_val)?
+  } else {
+    // Parse as Cirru one-liner
+    cirru_parser::parse(pattern)
+      .map_err(|e| format!("Failed to parse Cirru pattern: {e}"))?
+      .first()
+      .ok_or("Pattern is empty")?
+      .clone()
+  };
+
+  println!("{} Searching in {}/{}", "Pattern:".bold(), namespace.cyan(), definition.green());
+
+  let pattern_display = pattern_node.format_one_liner().unwrap_or_default();
+  if loose {
+    println!("  {} (contains sequence)", pattern_display.yellow());
+  } else {
+    println!("  {} (exact match)", pattern_display.yellow());
+  }
+  println!();
+
+  let results = search_pattern_nodes(&code_entry.code, &pattern_node, loose, max_depth, &[]);
+
+  print_search_results(&results, &code_entry.code, namespace, definition);
+  Ok(())
+}
+
+/// Helper function to convert JSON to Cirru
+fn json_to_cirru(json: &serde_json::Value) -> Result<Cirru, String> {
+  match json {
+    serde_json::Value::String(s) => Ok(Cirru::Leaf(s.as_str().into())),
+    serde_json::Value::Array(arr) => {
+      let items: Result<Vec<_>, _> = arr.iter().map(json_to_cirru).collect();
+      Ok(Cirru::List(items?))
+    }
+    _ => Err("Pattern must be a string or array".to_string()),
+  }
+}
+
+/// Print search results with parent context
+fn print_search_results(results: &[(Vec<usize>, Cirru)], code: &Cirru, namespace: &str, definition: &str) {
+  if results.is_empty() {
+    println!("{}", "No matches found.".yellow());
+    return;
+  }
+
+  println!("{} {} match(es) found:\n", "Results:".bold().green(), results.len());
+
+  // Helper function to get parent node from code
+  let get_parent_node = |path: &[usize]| -> Option<Cirru> {
+    if path.is_empty() {
+      return None;
+    }
+    let parent_path = &path[..path.len() - 1];
+    if parent_path.is_empty() {
+      return Some(code.clone());
+    }
+
+    let mut current = code;
+    for &idx in parent_path {
+      if let Cirru::List(items) = current {
+        current = items.get(idx)?;
+      } else {
+        return None;
+      }
+    }
+    Some(current.clone())
+  };
+
+  for (path, _node) in results {
+    if path.is_empty() {
+      // Root node - unlikely for leaf matches
+      let content = code.format_one_liner().unwrap_or_default();
+      println!("  {} {}", "(root)".cyan(), content.dimmed());
+    } else {
+      // Show full path
+      let path_str = format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
+
+      // Get parent context
+      if let Some(parent) = get_parent_node(path) {
+        let parent_oneliner = parent.format_one_liner().unwrap_or_default();
+        let display_parent = if parent_oneliner.len() > 80 {
+          format!("{}...", &parent_oneliner[..80])
+        } else {
+          parent_oneliner
+        };
+        println!("  {} in {}", path_str.cyan(), display_parent.dimmed());
+      } else {
+        println!("  {}", path_str.cyan());
+      }
+    }
+  }
+  println!();
+
+  println!(
+    "{}",
+    format!("Tip: Use `tree show {namespace}/{definition} -p \"<path>\"` to view matched nodes.").dimmed()
+  );
+}
+
+/// Search for leaf nodes with exact or loose matching
+fn search_leaf_nodes(node: &Cirru, pattern: &str, loose: bool, max_depth: usize, current_path: &[usize]) -> Vec<(Vec<usize>, Cirru)> {
+  let mut results = Vec::new();
+
+  // Check depth limit
+  if max_depth > 0 && current_path.len() >= max_depth {
+    return results;
+  }
+
+  // Only match leaf nodes
+  match node {
+    Cirru::Leaf(s) => {
+      let matches = if loose {
+        // Loose: check if leaf contains pattern
+        s.to_lowercase().contains(&pattern.to_lowercase())
+      } else {
+        // Exact: check if leaf equals pattern
+        s.as_ref() == pattern
+      };
+
+      if matches {
+        results.push((current_path.to_vec(), node.clone()));
+      }
+    }
+    Cirru::List(items) => {
+      // Recursively search children
+      for (i, item) in items.iter().enumerate() {
+        let mut new_path = current_path.to_vec();
+        new_path.push(i);
+        results.extend(search_leaf_nodes(item, pattern, loose, max_depth, &new_path));
+      }
+    }
+  }
+
+  results
+}
+
+/// Search for pattern nodes (structural matching)
+fn search_pattern_nodes(
+  node: &Cirru,
+  pattern: &Cirru,
+  loose: bool,
+  max_depth: usize,
+  current_path: &[usize],
+) -> Vec<(Vec<usize>, Cirru)> {
+  let mut results = Vec::new();
+
+  // Check depth limit
+  if max_depth > 0 && current_path.len() >= max_depth {
+    return results;
+  }
+
+  // Check if current node matches pattern
+  let matches = if loose {
+    contains_pattern(node, pattern)
+  } else {
+    matches_exact_structure(node, pattern)
+  };
+
+  if matches {
+    results.push((current_path.to_vec(), node.clone()));
+  }
+
+  // Recursively search children
+  if let Cirru::List(items) = node {
+    for (i, item) in items.iter().enumerate() {
+      let mut new_path = current_path.to_vec();
+      new_path.push(i);
+      results.extend(search_pattern_nodes(item, pattern, loose, max_depth, &new_path));
+    }
+  }
+
+  results
+}
+
+/// Check if node contains pattern as a contiguous subsequence
+fn contains_pattern(node: &Cirru, pattern: &Cirru) -> bool {
+  match (node, pattern) {
+    // Leaf nodes: check string containment
+    (Cirru::Leaf(s), Cirru::Leaf(p)) => s.to_lowercase().contains(&p.as_ref().to_lowercase()),
+
+    // List containing pattern list as subsequence
+    (Cirru::List(items), Cirru::List(pattern_items)) => {
+      if pattern_items.is_empty() {
+        return true;
+      }
+
+      // Check if pattern_items appears as a contiguous subsequence in items
+      if pattern_items.len() > items.len() {
+        return false;
+      }
+
+      for start_idx in 0..=(items.len() - pattern_items.len()) {
+        let mut all_match = true;
+        for (i, pattern_item) in pattern_items.iter().enumerate() {
+          if !matches_exact_structure(&items[start_idx + i], pattern_item) {
+            all_match = false;
+            break;
+          }
+        }
+        if all_match {
+          return true;
+        }
+      }
+      false
+    }
+
+    _ => false,
+  }
+}
+
+/// Check if node exactly matches pattern structure
+fn matches_exact_structure(node: &Cirru, pattern: &Cirru) -> bool {
+  match (node, pattern) {
+    (Cirru::Leaf(s1), Cirru::Leaf(s2)) => s1.as_ref() == s2.as_ref(),
+    (Cirru::List(items1), Cirru::List(items2)) => {
+      items1.len() == items2.len() && items1.iter().zip(items2.iter()).all(|(n1, n2)| matches_exact_structure(n1, n2))
+    }
+    _ => false,
+  }
 }

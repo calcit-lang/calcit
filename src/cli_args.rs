@@ -217,6 +217,10 @@ pub enum QuerySubcommand {
   Find(QueryFindCommand),
   /// find usages of a definition
   Usages(QueryUsagesCommand),
+  /// search for leaf nodes (strings) in definition
+  Search(QuerySearchCommand),
+  /// search for structural patterns (Cirru expr or JSON array) in definition
+  SearchPattern(QuerySearchPatternCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -317,6 +321,45 @@ pub struct QueryUsagesCommand {
   /// include dependency namespaces in search
   #[argh(switch)]
   pub deps: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "search")]
+/// search for leaf nodes (strings) in definition
+pub struct QuerySearchCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// string pattern to search for in leaf nodes
+  #[argh(option, short = 'p')]
+  pub pattern: String,
+  /// loose match: find nodes containing the pattern (not exact match)
+  #[argh(switch, short = 'l')]
+  pub loose: bool,
+  /// maximum search depth (0 = unlimited)
+  #[argh(option, short = 'd', default = "0")]
+  pub max_depth: usize,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "search-pattern")]
+/// search for structural patterns (Cirru expr or JSON array) in definition
+pub struct QuerySearchPatternCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// pattern as Cirru one-liner or JSON array (e.g., "(defn add)" or '["defn","add"]')
+  #[argh(option, short = 'p')]
+  pub pattern: String,
+  /// loose match: find sequences containing the pattern (not exact match)
+  #[argh(switch, short = 'l')]
+  pub loose: bool,
+  /// maximum search depth (0 = unlimited)
+  #[argh(option, short = 'd', default = "0")]
+  pub max_depth: usize,
+  /// treat pattern as JSON array instead of Cirru expr
+  #[argh(switch, short = 'j')]
+  pub json: bool,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

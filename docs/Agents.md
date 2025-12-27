@@ -64,6 +64,33 @@ Calcit 程序使用 `cr` 命令：
   - 返回：引用该定义的所有位置（带上下文预览）
   - 用于理解代码影响范围，重构前的影响分析
 
+**代码模式搜索：**
+
+- `cr query search <namespace/definition> -p <pattern> [-l] [-d <depth>]` - 搜索叶子节点（字符串）
+
+  - 默认：精确匹配字符串（`-p "div"` 只匹配 `"div"`）
+  - `-l` / `--loose`：宽松匹配，包含模式（`-p "di"` 匹配所有包含 "di" 的叶子节点）
+  - `-d <depth>`：限制搜索深度（0 = 无限制）
+  - 返回：匹配节点的完整路径 + 父级上下文预览
+  - 示例：`cr query search app.main/main -p "println" -l`
+
+- `cr query search-pattern <namespace/definition> -p <pattern> [-l] [-j] [-d <depth>]` - 搜索结构模式
+  - 模式格式：Cirru one-liner 或 JSON 数组（使用 `-j` 标志）
+  - 默认：精确结构匹配（整个结构完全相同）
+  - `-l` / `--loose`：宽松匹配，查找包含连续子序列的结构
+    - 例如：`-p '["defn", "add"]' -j -l` 匹配任何包含连续 `["defn", "add"]` 的列表
+  - `-j` / `--json`：将模式解析为 JSON 数组而非 Cirru
+  - 返回：匹配节点的路径 + 父级上下文
+  - 示例：
+    - `cr query search-pattern app.util/add -p "(+ a b)"` - 查找精确表达式
+    - `cr query search-pattern app.main/main -p '["defn"]' -j -l` - 查找所有函数定义
+
+**搜索结果格式：**
+
+- 输出格式：`[路径] in 父级上下文`
+- 路径格式：`[索引1,索引2,...]` 表示从根节点到匹配节点的路径
+- 可配合 `cr tree show <target> -p "<path>"` 查看具体节点内容
+
 ### 文档子命令 (`cr docs`)
 
 查询 Calcit 语言文档：
@@ -381,6 +408,8 @@ cr js     # JS 编译模式
 - `cr query examples <ns/def>` - 查看示例代码
 - `cr query find <name>` - 跨命名空间搜索符号
 - `cr query usages <ns/def>` - 查找定义的使用位置
+- `cr query search <ns/def> -p <pattern>` - 搜索叶子节点
+- `cr query search-pattern <ns/def> -p <pattern>` - 搜索结构模式
 - `cr query error` - 查看最近的错误堆栈
 
 ---
