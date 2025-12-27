@@ -487,23 +487,19 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
   // Extract signature info from the code
   match &code_entry.code {
     Cirru::List(items) if !items.is_empty() => {
-      // Get the form type (defn, defmacro, def, etc.)
-      let form_type = match &items[0] {
-        Cirru::Leaf(s) => s.to_string(),
-        _ => "unknown".to_string(),
+      // Show entire definition as one-liner, truncated to 120 chars
+      let preview = code_entry.code.format_one_liner()?;
+      let display = if preview.len() > 120 {
+        format!("{}...", &preview[..120])
+      } else {
+        preview
       };
-
-      // For defn/defmacro/def, show as one-liner with truncation
-      if (form_type == "defn" || form_type == "defmacro" || form_type == "defn-" || form_type == "def") && items.len() >= 3 {
-        // Show entire definition as one-liner, truncated to 80 chars
-        let preview = code_entry.code.format_one_liner()?;
-        let display = if preview.len() > 120 {
-          format!("{}...", &preview[..120])
-        } else {
-          preview
-        };
-        println!("{} {}", "Code:".bold(), display.dimmed());
-      }
+      println!("{} {}", "Expr:".bold(), display.dimmed());
+    }
+    Cirru::Leaf(_) => {
+      // Single leaf definition
+      let preview = code_entry.code.format_one_liner()?;
+      println!("{} {}", "Leaf:".bold(), preview.dimmed());
     }
     _ => {
       println!("{}", "(empty or invalid definition)".dimmed());
