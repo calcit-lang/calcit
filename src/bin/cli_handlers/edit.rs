@@ -913,13 +913,69 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
     return Err("Imports must be a JSON/Cirru array (e.g. [(require ...)]).".to_string());
   }
 
+  // Extract old imports for comparison
+  let old_imports = extract_require_list(&file_data.ns.code);
+  
   file_data.ns.code = Cirru::List(ns_code_items);
+
+  // Extract new imports
+  let new_imports = extract_require_list(&file_data.ns.code);
 
   save_snapshot(&snapshot, snapshot_file)?;
 
+  // Show what changed
   println!("{} Updated imports for namespace '{}'", "✓".green(), opts.namespace.cyan());
+  
+  // Show removed imports
+  let removed: Vec<_> = old_imports.iter().filter(|old| !new_imports.contains(old)).collect();
+  if !removed.is_empty() {
+    println!("  {} Removed:", "-".red());
+    for import in removed {
+      println!("    {}", import.dimmed());
+    }
+  }
+  
+  // Show added imports
+  let added: Vec<_> = new_imports.iter().filter(|new| !old_imports.contains(new)).collect();
+  if !added.is_empty() {
+    println!("  {} Added:", "+".green());
+    for import in added {
+      println!("    {import}");
+    }
+  }
+  
+  // Show unchanged count if there are any
+  let unchanged_count = old_imports.iter().filter(|old| new_imports.contains(old)).count();
+  if unchanged_count > 0 {
+    println!("  {} {} unchanged", "·".dimmed(), format!("{unchanged_count}").dimmed());
+  }
 
   Ok(())
+}
+
+/// Extract formatted import list from ns code for comparison
+fn extract_require_list(ns_code: &Cirru) -> Vec<String> {
+  let mut imports = Vec::new();
+  
+  if let Cirru::List(items) = ns_code {
+    let mut in_require = false;
+    for item in items {
+      if let Cirru::Leaf(s) = item {
+        if s.as_ref() == ":require" {
+          in_require = true;
+          continue;
+        }
+      }
+      if in_require {
+        // Format each import as one-liner
+        if let Ok(formatted) = item.format_one_liner() {
+          imports.push(formatted);
+        }
+      }
+    }
+  }
+  
+  imports
 }
 
 /// Extract the source namespace from a require rule
