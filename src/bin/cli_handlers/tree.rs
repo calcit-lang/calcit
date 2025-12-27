@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{self, Read};
 use std::sync::Arc;
 
-use super::common::{json_value_to_cirru, parse_path, validate_input_flags, validate_input_sources, ERR_CODE_INPUT_REQUIRED};
+use super::common::{ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_path, validate_input_flags, validate_input_sources};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
   TreeReplaceCommand, TreeShowCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeWrapCommand,
@@ -98,37 +98,36 @@ fn parse_input_to_cirru(
   }
 }
 
-/// Pretty print Cirru node
-fn format_cirru_preview(node: &Cirru, depth: usize, max_depth: usize, indent: usize) -> String {
-  if max_depth > 0 && depth >= max_depth {
-    return "...".to_string();
-  }
-
-  let indent_str = "  ".repeat(indent);
-
-  match node {
-    Cirru::Leaf(s) => format!("{}{:?}", indent_str, s.as_ref()),
-    Cirru::List(items) => {
-      if items.is_empty() {
-        return format!("{indent_str}[]");
-      }
-
-      let mut result = format!("{indent_str}[\n");
-      for (i, item) in items.iter().enumerate() {
-        if max_depth > 0 && depth + 1 >= max_depth && i >= 3 {
-          result.push_str(&format!("{}  ...{} more\n", indent_str, items.len() - i));
-          break;
-        }
-        result.push_str(&format_cirru_preview(item, depth + 1, max_depth, indent + 1));
-        if i < items.len() - 1 {
-          result.push(',');
-        }
-        result.push('\n');
-      }
-      result.push_str(&format!("{indent_str}]"));
-      result
+/// Format a Cirru node for preview display
+fn format_preview(node: &Cirru, max_lines: usize) -> String {
+  let formatted = match node {
+    Cirru::Leaf(s) => {
+      // For leaf nodes, just show the value
+      format!("  {:?}", s.as_ref())
     }
-  }
+    Cirru::List(_) => {
+      // For list nodes, use the Cirru formatter
+      match cirru_parser::format(std::slice::from_ref(node), cirru_parser::CirruWriterOptions { use_inline: false }) {
+        Ok(cirru_str) => {
+          let lines: Vec<&str> = cirru_str.lines().collect();
+          if lines.len() > max_lines {
+            let mut result = String::new();
+            for line in lines.iter().take(max_lines) {
+              result.push_str("  ");
+              result.push_str(line);
+              result.push('\n');
+            }
+            result.push_str(&format!("  {}\n", format!("... ({} more lines)", lines.len() - max_lines).dimmed()));
+            result
+          } else {
+            lines.iter().map(|line| format!("  {line}\n")).collect()
+          }
+        }
+        Err(e) => format!("  {}\n", format!("(failed to format: {e})").red()),
+      }
+    }
+  };
+  formatted.trim_end().to_string()
 }
 
 // ============================================================================
@@ -229,9 +228,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   let code_input = read_code_input(&opts.file, &opts.code, opts.stdin)?;
 
-  let raw = code_input
-    .as_deref()
-    .ok_or(ERR_CODE_INPUT_REQUIRED)?;
+  let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
   let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.cirru, opts.json_leaf)?;
 
@@ -268,6 +265,9 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
     new_node
   };
 
+  // Save original for comparison
+  let old_node = navigate_to_path(&code_entry.code, &path)?;
+
   let new_code = apply_operation_at_path(&code_entry.code, &path, "replace", Some(&processed_node))?;
   code_entry.code = new_code.clone();
 
@@ -281,11 +281,12 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
     definition
   );
   println!();
-  println!("{}:", "Preview".green().bold());
-  println!("{}", format_cirru_preview(&navigate_to_path(&new_code, &path)?, 0, opts.depth, 0));
-  if opts.depth > 0 {
-    println!("{}", format!("(depth limited to {})", opts.depth).dimmed());
-  }
+  println!("{}:", "From".yellow().bold());
+  println!("{}", format_preview(&old_node, 20));
+  println!();
+  println!("{}:", "To".green().bold());
+  let new_node = navigate_to_path(&new_code, &path)?;
+  println!("{}", format_preview(&new_node, 20));
 
   Ok(())
 }
@@ -307,6 +308,10 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
     .get_mut(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
+  // Save original node and parent for comparison
+  let old_node = navigate_to_path(&code_entry.code, &path)?;
+  let parent_path: Vec<usize> = if path.is_empty() { vec![] } else { path[..path.len() - 1].to_vec() };
+
   let new_code = apply_operation_at_path(&code_entry.code, &path, "delete", None)?;
   code_entry.code = new_code.clone();
 
@@ -319,6 +324,17 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
     namespace,
     definition
   );
+  println!();
+  println!("{}:", "Deleted node".yellow().bold());
+  println!("{}", format_preview(&old_node, 10));
+  println!();
+  println!("{}:", "Parent after deletion".green().bold());
+  let new_parent = if parent_path.is_empty() {
+    new_code.clone()
+  } else {
+    navigate_to_path(&new_code, &parent_path)?
+  };
+  println!("{}", format_preview(&new_parent, 20));
 
   Ok(())
 }
@@ -524,16 +540,14 @@ fn generic_insert_handler<T: InsertOperation>(
   operation: &str,
   opts: &T,
   snapshot_file: &str,
-  depth: usize,
+  _depth: usize,
 ) -> Result<(), String> {
   let (namespace, definition) = parse_target(target)?;
   let path = parse_path(path_str)?;
 
   let code_input = read_code_input(opts.file(), opts.code(), opts.stdin())?;
 
-  let raw = code_input
-    .as_deref()
-    .ok_or(ERR_CODE_INPUT_REQUIRED)?;
+  let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
   let new_node = parse_input_to_cirru(raw, opts.json(), opts.json_input(), opts.cirru(), opts.json_leaf())?;
 
@@ -570,6 +584,14 @@ fn generic_insert_handler<T: InsertOperation>(
     new_node
   };
 
+  // Save parent before insertion for comparison
+  let parent_path: Vec<usize> = if path.is_empty() { vec![] } else { path[..path.len() - 1].to_vec() };
+  let old_parent = if parent_path.is_empty() {
+    code_entry.code.clone()
+  } else {
+    navigate_to_path(&code_entry.code, &parent_path)?
+  };
+
   let new_code = apply_operation_at_path(&code_entry.code, &path, operation, Some(&processed_node))?;
   code_entry.code = new_code.clone();
 
@@ -584,11 +606,19 @@ fn generic_insert_handler<T: InsertOperation>(
     definition
   );
   println!();
-  println!("{}:", "Preview".green().bold());
-  println!("{}", format_cirru_preview(&navigate_to_path(&new_code, &path)?, 0, depth, 0));
-  if depth > 0 {
-    println!("{}", format!("(depth limited to {depth})").dimmed());
-  }
+  println!("{}:", "Inserted node".cyan().bold());
+  println!("{}", format_preview(&processed_node, 10));
+  println!();
+  println!("{}:", "Parent before".yellow().bold());
+  println!("{}", format_preview(&old_parent, 15));
+  println!();
+  println!("{}:", "Parent after".green().bold());
+  let new_parent = if parent_path.is_empty() {
+    new_code.clone()
+  } else {
+    navigate_to_path(&new_code, &parent_path)?
+  };
+  println!("{}", format_preview(&new_parent, 15));
 
   Ok(())
 }
@@ -601,7 +631,7 @@ fn handle_swap_prev(opts: &TreeSwapPrevCommand, snapshot_file: &str) -> Result<(
   generic_swap_handler(&opts.target, &opts.path, "swap-prev-sibling", snapshot_file, opts.depth)
 }
 
-fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_file: &str, depth: usize) -> Result<(), String> {
+fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_file: &str, _depth: usize) -> Result<(), String> {
   let (namespace, definition) = parse_target(target)?;
   let path = parse_path(path_str)?;
 
@@ -618,6 +648,14 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
     .get_mut(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
+  // Save parent before swap for comparison
+  let parent_path: Vec<usize> = if path.is_empty() { vec![] } else { path[..path.len() - 1].to_vec() };
+  let old_parent = if parent_path.is_empty() {
+    code_entry.code.clone()
+  } else {
+    navigate_to_path(&code_entry.code, &parent_path)?
+  };
+
   let new_code = apply_operation_at_path(&code_entry.code, &path, operation, None)?;
   code_entry.code = new_code.clone();
 
@@ -632,11 +670,16 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
     definition
   );
   println!();
-  println!("{}:", "Preview".green().bold());
-  println!("{}", format_cirru_preview(&navigate_to_path(&new_code, &path)?, 0, depth, 0));
-  if depth > 0 {
-    println!("{}", format!("(depth limited to {depth})").dimmed());
-  }
+  println!("{}:", "Parent before swap".yellow().bold());
+  println!("{}", format_preview(&old_parent, 15));
+  println!();
+  println!("{}:", "Parent after swap".green().bold());
+  let new_parent = if parent_path.is_empty() {
+    new_code.clone()
+  } else {
+    navigate_to_path(&new_code, &parent_path)?
+  };
+  println!("{}", format_preview(&new_parent, 15));
 
   Ok(())
 }
