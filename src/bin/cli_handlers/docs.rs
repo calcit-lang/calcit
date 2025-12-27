@@ -1,22 +1,12 @@
 //! Docs subcommand handlers
 //!
-//! Handles: cr docs api, ref, list-api, list-guide
+//! Handles: cr docs search, read, list
 
 use calcit::cli_args::{DocsCommand, DocsSubcommand};
-use cirru_edn::Edn;
 use colored::Colorize;
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiDoc {
-  name: String,
-  desc: String,
-  tags: HashSet<String>,
-  snippets: Vec<Edn>,
-}
 
 #[derive(Debug, Clone)]
 pub struct GuideDoc {
@@ -27,26 +17,10 @@ pub struct GuideDoc {
 
 pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
   match &cmd.subcommand {
-    DocsSubcommand::Api(opts) => handle_api(&opts.query_type, opts.query.as_deref()),
-    DocsSubcommand::Ref(opts) => handle_ref(&opts.query_type, opts.query.as_deref()),
-    DocsSubcommand::ListApi(_) => handle_list_api(),
-    DocsSubcommand::ListGuide(_) => handle_list_guide(),
+    DocsSubcommand::Search(opts) => handle_search(&opts.keyword, opts.context, opts.filename.as_deref()),
+    DocsSubcommand::Read(opts) => handle_read(&opts.filename, opts.start, opts.lines),
+    DocsSubcommand::List(_) => handle_list(),
   }
-}
-
-fn get_api_docs_dir() -> Result<std::path::PathBuf, String> {
-  let home_dir = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable")?;
-  let docs_dir = Path::new(&home_dir).join(".config/calcit/apis-repo/docs");
-
-  if !docs_dir.exists() {
-    return Err(format!(
-      "API documentation directory not found: {docs_dir:?}\n\n\
-       To set up API documentation, please run:\n\
-       git clone https://github.com/calcit-lang/apis-repo.git ~/.config/calcit/apis-repo"
-    ));
-  }
-
-  Ok(docs_dir)
 }
 
 fn get_guidebook_dir() -> Result<std::path::PathBuf, String> {
@@ -62,32 +36,6 @@ fn get_guidebook_dir() -> Result<std::path::PathBuf, String> {
   }
 
   Ok(docs_dir)
-}
-
-fn load_api_docs() -> Result<HashMap<String, ApiDoc>, String> {
-  let docs_dir = get_api_docs_dir()?;
-  let mut api_docs = HashMap::new();
-
-  for entry in fs::read_dir(&docs_dir).map_err(|e| format!("Failed to read directory: {e}"))? {
-    let entry = entry.map_err(|e| format!("Failed to read directory entry: {e}"))?;
-    let path = entry.path();
-
-    if path.extension().and_then(|s| s.to_str()) == Some("cirru") {
-      let content = fs::read_to_string(&path).map_err(|e| format!("Failed to read file {path:?}: {e}"))?;
-      let edn_data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse Cirru EDN {path:?}: {e}"))?;
-
-      // Try to parse as Vec
-      if let Ok(vec_data) = cirru_edn::from_edn::<Vec<Edn>>(edn_data) {
-        for item in vec_data {
-          if let Ok(doc) = cirru_edn::from_edn::<ApiDoc>(item) {
-            api_docs.insert(doc.name.clone(), doc);
-          }
-        }
-      }
-    }
-  }
-
-  Ok(api_docs)
 }
 
 fn load_guidebook_docs() -> Result<HashMap<String, GuideDoc>, String> {
@@ -123,127 +71,132 @@ fn load_guidebook_docs() -> Result<HashMap<String, GuideDoc>, String> {
   Ok(guide_docs)
 }
 
-fn handle_api(query_type: &str, query_value: Option<&str>) -> Result<(), String> {
-  let api_docs = load_api_docs()?;
-
-  let results: Vec<&ApiDoc> = match query_type {
-    "all" => api_docs.values().collect(),
-    "tag" => {
-      let tag = query_value.ok_or("query value is required for tag queries")?;
-      api_docs.values().filter(|doc| doc.tags.iter().any(|t| t.contains(tag))).collect()
-    }
-    "keyword" => {
-      let keyword = query_value.ok_or("query value is required for keyword queries")?;
-      api_docs
-        .values()
-        .filter(|doc| doc.name.contains(keyword) || doc.desc.contains(keyword) || doc.tags.iter().any(|t| t.contains(keyword)))
-        .collect()
-    }
-    _ => {
-      return Err(format!(
-        "Invalid query_type '{query_type}'. Valid types are: 'all', 'tag', 'keyword'"
-      ));
-    }
-  };
-
-  if results.is_empty() {
-    println!("{}", "No matching API documentation found.".yellow());
-    return Ok(());
-  }
-
-  println!("{} {} results\n", "Found".bold(), results.len());
-
-  for doc in results {
-    println!("{}", doc.name.cyan().bold());
-    println!("  {}", doc.desc);
-    if !doc.tags.is_empty() {
-      let tags: Vec<&String> = doc.tags.iter().collect();
-      println!(
-        "  {}: {}",
-        "Tags".dimmed(),
-        tags.iter().map(|t| t.yellow().to_string()).collect::<Vec<_>>().join(", ")
-      );
-    }
-    if !doc.snippets.is_empty() {
-      println!("  {}:", "Examples".dimmed());
-      for snippet in &doc.snippets {
-        let snippet_str = cirru_edn::format(snippet, true).unwrap_or_else(|_| "(failed to format)".to_string());
-        println!("    {}", snippet_str.green());
-      }
-    }
-    println!();
-  }
-
-  Ok(())
-}
-
-fn handle_ref(query_type: &str, query_value: Option<&str>) -> Result<(), String> {
+fn handle_search(keyword: &str, context_lines: usize, filename_filter: Option<&str>) -> Result<(), String> {
   let guide_docs = load_guidebook_docs()?;
 
-  let results: Vec<&GuideDoc> = match query_type {
-    "all" => guide_docs.values().collect(),
-    "filename" => {
-      let filename = query_value.ok_or("query value is required for filename queries")?;
-      guide_docs
-        .values()
-        .filter(|doc| doc.filename.contains(filename) || doc.path.contains(filename))
-        .collect()
-    }
-    "keyword" => {
-      let keyword = query_value.ok_or("query value is required for keyword queries")?;
-      guide_docs
-        .values()
-        .filter(|doc| doc.filename.contains(keyword) || doc.path.contains(keyword) || doc.content.contains(keyword))
-        .collect()
-    }
-    _ => {
-      return Err(format!(
-        "Invalid query_type '{query_type}'. Valid types are: 'all', 'filename', 'keyword'"
-      ));
-    }
-  };
+  let mut found_any = false;
 
-  if results.is_empty() {
-    println!("{}", "No matching guidebook documentation found.".yellow());
-    return Ok(());
-  }
+  for doc in guide_docs.values() {
+    // Skip SUMMARY files
+    if doc.filename.to_uppercase().contains("SUMMARY") {
+      continue;
+    }
 
-  println!("{} {} results\n", "Found".bold(), results.len());
+    // Apply filename filter if provided
+    if let Some(filter) = filename_filter {
+      if !doc.filename.contains(filter) {
+        continue;
+      }
+    }
 
-  for doc in results {
+    let lines: Vec<&str> = doc.content.lines().collect();
+    let mut matching_ranges: Vec<(usize, usize)> = Vec::new();
+
+    // Find all matching lines
+    for (line_num, line) in lines.iter().enumerate() {
+      if line.contains(keyword) {
+        let start = line_num.saturating_sub(context_lines);
+        let end = (line_num + context_lines + 1).min(lines.len());
+        matching_ranges.push((start, end));
+      }
+    }
+
+    if matching_ranges.is_empty() {
+      continue;
+    }
+
+    found_any = true;
+
+    // Merge overlapping ranges
+    matching_ranges.sort_by_key(|r| r.0);
+    let mut merged_ranges: Vec<(usize, usize)> = Vec::new();
+    for (start, end) in matching_ranges {
+      if let Some(last) = merged_ranges.last_mut() {
+        if start <= last.1 {
+          last.1 = last.1.max(end);
+          continue;
+        }
+      }
+      merged_ranges.push((start, end));
+    }
+
+    // Display matches
     println!("{} ({})", doc.filename.cyan().bold(), doc.path.dimmed());
     println!("{}", "-".repeat(60).dimmed());
 
-    // Print content, potentially truncated for "all" query
-    if query_type == "all" && doc.content.len() > 500 {
-      println!("{}...\n", &doc.content[..500]);
-    } else {
-      println!("{}\n", doc.content);
+    for (start, end) in merged_ranges {
+      for (idx, line) in lines[start..end].iter().enumerate() {
+        let line_num = start + idx + 1;
+        if line.contains(keyword) {
+          println!("{} {}", format!("{line_num:4}:").yellow(), line);
+        } else {
+          println!("{} {}", format!("{line_num:4}:").dimmed(), line.dimmed());
+        }
+      }
+      println!();
+    }
+  }
+
+  if !found_any {
+    println!("{}", "No matching content found.".yellow());
+  } else {
+    println!(
+      "{}",
+      "Tip: Use -c <num> to show more context lines (e.g., 'cr docs search <keyword> -c 20')".dimmed()
+    );
+    if filename_filter.is_none() {
+      println!(
+        "{}",
+        "     Use -f <filename> to filter by file (e.g., 'cr docs search <keyword> -f syntax.md')".dimmed()
+      );
     }
   }
 
   Ok(())
 }
 
-fn handle_list_api() -> Result<(), String> {
-  let api_docs = load_api_docs()?;
+fn handle_read(filename: &str, start: usize, lines_to_read: usize) -> Result<(), String> {
+  let guide_docs = load_guidebook_docs()?;
 
-  println!("{}", "Available API Documentation:".bold());
+  // Try to find the document by exact filename match or contains
+  let doc = guide_docs
+    .values()
+    .find(|d| d.filename == filename || d.filename.contains(filename))
+    .ok_or_else(|| format!("Document '{filename}' not found. Use 'cr docs list' to see available documents."))?;
 
-  let mut names: Vec<&String> = api_docs.keys().collect();
-  names.sort();
+  let all_lines: Vec<&str> = doc.content.lines().collect();
+  let total_lines = all_lines.len();
+  let end = (start + lines_to_read).min(total_lines);
 
-  for name in &names {
-    println!("  {}", name.cyan());
+  println!("{} ({})", doc.filename.cyan().bold(), doc.path.dimmed());
+  println!("{}", "=".repeat(60).dimmed());
+
+  // Display lines with line numbers
+  for (idx, line) in all_lines[start..end].iter().enumerate() {
+    let line_num = start + idx + 1;
+    println!("{} {}", format!("{line_num:4}:").dimmed(), line);
   }
 
-  println!("\n{} {} topics", "Total:".dimmed(), names.len());
-  println!("{}", "Use 'cr docs api <keyword>' to search for specific APIs".dimmed());
+  // Show tips
+  println!();
+  println!("{}", format!("Lines {}-{} of {} (total {} lines)", start + 1, end, total_lines, total_lines).dimmed());
+  
+  if end < total_lines {
+    let remaining = total_lines - end;
+    println!(
+      "{}",
+      format!("More content available ({remaining} lines remaining). Use -s {end} -n {lines_to_read} to continue reading.").yellow()
+    );
+  } else {
+    println!("{}", "End of document.".green());
+  }
+  
+  println!("{}", "Tip: Use -s <start> -n <lines> to read specific range (e.g., 'cr docs read file.md -s 20 -n 30')".dimmed());
 
   Ok(())
 }
 
-fn handle_list_guide() -> Result<(), String> {
+fn handle_list() -> Result<(), String> {
   let guide_docs = load_guidebook_docs()?;
 
   println!("{}", "Available Guidebook Documentation:".bold());
@@ -262,7 +215,8 @@ fn handle_list_guide() -> Result<(), String> {
   }
 
   println!("\n{} {} topics", "Total:".dimmed(), docs.len());
-  println!("{}", "Use 'cr docs ref <keyword>' to search guidebook content".dimmed());
+  println!("{}", "Use 'cr docs read <filename>' to read a document".dimmed());
+  println!("{}", "    'cr docs search <keyword>' to search content".dimmed());
 
   Ok(())
 }

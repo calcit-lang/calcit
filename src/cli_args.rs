@@ -368,7 +368,7 @@ pub struct QuerySearchPatternCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "docs")]
-/// documentation tools (API docs, guidebook)
+/// documentation tools (guidebook)
 pub struct DocsCommand {
   #[argh(subcommand)]
   pub subcommand: DocsSubcommand,
@@ -377,49 +377,48 @@ pub struct DocsCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand)]
 pub enum DocsSubcommand {
-  /// query API documentation
-  Api(DocsApiCommand),
-  /// query guidebook/reference documentation
-  Ref(DocsRefCommand),
-  /// list all API documentation topics
-  ListApi(DocsListApiCommand),
+  /// search guidebook documentation by keyword
+  Search(DocsSearchCommand),
+  /// read a specific guidebook document
+  Read(DocsReadCommand),
   /// list all guidebook documentation topics
-  ListGuide(DocsListGuideCommand),
+  List(DocsListCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "api")]
-/// query API documentation
-pub struct DocsApiCommand {
-  /// query type: "all", "tag", "keyword"
-  #[argh(option, short = 't', default = "String::from(\"keyword\")")]
-  pub query_type: String,
-  /// query value (tag name or keyword to search)
+#[argh(subcommand, name = "search")]
+/// search guidebook documentation by keyword
+pub struct DocsSearchCommand {
+  /// keyword to search
   #[argh(positional)]
-  pub query: Option<String>,
+  pub keyword: String,
+  /// number of context lines to show before and after match (default: 5)
+  #[argh(option, short = 'c', default = "5")]
+  pub context: usize,
+  /// filter by filename (optional)
+  #[argh(option, short = 'f')]
+  pub filename: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "ref")]
-/// query guidebook/reference documentation
-pub struct DocsRefCommand {
-  /// query type: "all", "filename", "keyword"
-  #[argh(option, short = 't', default = "String::from(\"keyword\")")]
-  pub query_type: String,
-  /// query value (filename or keyword to search)
+#[argh(subcommand, name = "read")]
+/// read a specific guidebook document
+pub struct DocsReadCommand {
+  /// filename to read (e.g., "syntax.md")
   #[argh(positional)]
-  pub query: Option<String>,
+  pub filename: String,
+  /// starting line number (default: 0)
+  #[argh(option, short = 's', default = "0")]
+  pub start: usize,
+  /// number of lines to read (default: 20)
+  #[argh(option, short = 'n', default = "20")]
+  pub lines: usize,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "list-api")]
-/// list all API documentation topics
-pub struct DocsListApiCommand {}
-
-#[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "list-guide")]
+#[argh(subcommand, name = "list")]
 /// list all guidebook documentation topics
-pub struct DocsListGuideCommand {}
+pub struct DocsListCommand {}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Cirru subcommand - syntax tools
