@@ -127,7 +127,7 @@ This guide helps LLMs generate correct Cirru syntax for use with `cr edit` comma
 - **cirru one-liner** (default): Single-line Cirru expression without indentation
 - **cirru** (--cirru/-c): Full multi-line Cirru with indentation
 - **json**: Nested arrays representing the syntax tree
-- **json-leaf**: A JSON string that becomes a leaf node
+- **leaf** (--leaf): Treat inline input as a Cirru leaf (symbols or `|text` string syntax, no JSON quotes required)
 
 ### Quick Examples
 
@@ -154,8 +154,8 @@ cr edit def my.ns/my-fn -f code.json --json-input
 # Cirru one-liner for tree operations (default)
 cr tree replace my.ns/my-fn -p 3 --code 'println $ str $ &+ 1 2'
 
-# JSON leaf input (a JSON string)
-cr tree replace my.ns/my-fn -p 1 --json-leaf --code '"my-leaf"'
+# Leaf input (Cirru string syntax, no JSON quoting)
+cr tree replace my.ns/my-fn -p 1 --leaf -e '|my-leaf'
 ```
 
 ## Cirru Syntax Essentials

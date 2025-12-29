@@ -28,8 +28,8 @@ fn warn_if_single_string_expression(node: &Cirru, input_source: &str) {
       if let Some(Cirru::Leaf(_)) = items.first() {
         eprintln!("\n⚠️  Note: Cirru one-liner input '{input_source}' was parsed as an expression (list with one element).");
         eprintln!("   In Cirru syntax, this creates a list containing one element.");
-        eprintln!("   If you want a leaf node (plain string), use --json-leaf parameter.");
-        eprintln!("   Example: --json-leaf -e '{input_source}' creates a leaf, not an expression.\n");
+        eprintln!("   If you want a leaf node (plain string), use --leaf parameter.");
+        eprintln!("   Example: --leaf -e '{input_source}' creates a leaf, not an expression.\n");
       }
     }
   }
@@ -73,12 +73,12 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
 }
 
 /// Parse input to Cirru node
-fn parse_input_to_cirru(input: &str, json_opt: &Option<String>, json_input: bool, json_leaf: bool) -> Result<Cirru, String> {
+fn parse_input_to_cirru(input: &str, json_opt: &Option<String>, json_input: bool, leaf_input: bool) -> Result<Cirru, String> {
   // Check for conflicting flags (tree commands only support one-liner Cirru now)
-  validate_input_flags(json_leaf, json_input, false)?;
+  validate_input_flags(leaf_input, json_input, false)?;
 
-  // If json_leaf is set, wrap input directly as a leaf node
-  if json_leaf {
+  // If --leaf is set, wrap input directly as a leaf node
+  if leaf_input {
     return Ok(Cirru::Leaf(Arc::from(input)));
   }
 
@@ -252,7 +252,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.json_leaf)?;
+  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -384,7 +384,7 @@ trait InsertOperation {
   fn json(&self) -> &Option<String>;
   fn stdin(&self) -> bool;
   fn json_input(&self) -> bool;
-  fn json_leaf(&self) -> bool;
+  fn leaf(&self) -> bool;
   fn refer_original(&self) -> &Option<String>;
   fn refer_inner_branch(&self) -> &Option<String>;
   fn refer_inner_placeholder(&self) -> &Option<String>;
@@ -406,8 +406,8 @@ impl InsertOperation for TreeInsertBeforeCommand {
   fn json_input(&self) -> bool {
     self.json_input
   }
-  fn json_leaf(&self) -> bool {
-    self.json_leaf
+  fn leaf(&self) -> bool {
+    self.leaf
   }
   fn refer_original(&self) -> &Option<String> {
     &self.refer_original
@@ -436,8 +436,8 @@ impl InsertOperation for TreeInsertAfterCommand {
   fn json_input(&self) -> bool {
     self.json_input
   }
-  fn json_leaf(&self) -> bool {
-    self.json_leaf
+  fn leaf(&self) -> bool {
+    self.leaf
   }
   fn refer_original(&self) -> &Option<String> {
     &self.refer_original
@@ -466,8 +466,8 @@ impl InsertOperation for TreeInsertChildCommand {
   fn json_input(&self) -> bool {
     self.json_input
   }
-  fn json_leaf(&self) -> bool {
-    self.json_leaf
+  fn leaf(&self) -> bool {
+    self.leaf
   }
   fn refer_original(&self) -> &Option<String> {
     &self.refer_original
@@ -496,8 +496,8 @@ impl InsertOperation for TreeAppendChildCommand {
   fn json_input(&self) -> bool {
     self.json_input
   }
-  fn json_leaf(&self) -> bool {
-    self.json_leaf
+  fn leaf(&self) -> bool {
+    self.leaf
   }
   fn refer_original(&self) -> &Option<String> {
     &self.refer_original
@@ -526,8 +526,8 @@ impl InsertOperation for TreeWrapCommand {
   fn json_input(&self) -> bool {
     self.json_input
   }
-  fn json_leaf(&self) -> bool {
-    self.json_leaf
+  fn leaf(&self) -> bool {
+    self.leaf
   }
   fn refer_original(&self) -> &Option<String> {
     &self.refer_original
@@ -555,7 +555,7 @@ fn generic_insert_handler<T: InsertOperation>(
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw, opts.json(), opts.json_input(), opts.json_leaf())?;
+  let new_node = parse_input_to_cirru(raw, opts.json(), opts.json_input(), opts.leaf())?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;

@@ -591,9 +591,9 @@ pub struct EditDefCommand {
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
-  /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "json-leaf")]
-  pub json_leaf: bool,
+  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
   /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
@@ -725,9 +725,9 @@ pub struct EditAddNsCommand {
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
-  /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "json-leaf")]
-  pub json_leaf: bool,
+  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -765,9 +765,9 @@ pub struct EditImportsCommand {
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
-  /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "json-leaf")]
-  pub json_leaf: bool,
+  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -796,9 +796,9 @@ pub struct EditAddImportCommand {
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
-  /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "json-leaf")]
-  pub json_leaf: bool,
+  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
   /// overwrite existing rule for the same source namespace
   #[argh(switch, short = 'o', long = "overwrite")]
   pub overwrite: bool,
@@ -929,9 +929,9 @@ pub struct TreeReplaceCommand {
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
-  /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "json-leaf")]
-  pub json_leaf: bool,
+  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
   /// placeholder to refer to the original node (e.g., "$$$$")
   #[argh(option, long = "refer-original")]
   pub refer_original: Option<String>,
@@ -988,8 +988,8 @@ pub struct TreeInsertBeforeCommand {
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
   /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "json-leaf")]
-  pub json_leaf: bool,
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
   /// placeholder to refer to the original node (e.g., "$$$$")
   #[argh(option, long = "refer-original")]
   pub refer_original: Option<String>,
@@ -1031,8 +1031,8 @@ pub struct TreeInsertAfterCommand {
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
   /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "json-leaf")]
-  pub json_leaf: bool,
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
   /// placeholder to refer to the original node (e.g., "$$$$")
   #[argh(option, long = "refer-original")]
   pub refer_original: Option<String>,
@@ -1074,8 +1074,8 @@ pub struct TreeInsertChildCommand {
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
   /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "json-leaf")]
-  pub json_leaf: bool,
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
   /// placeholder to refer to the original node (e.g., "$$$$")
   #[argh(option, long = "refer-original")]
   pub refer_original: Option<String>,
@@ -1117,8 +1117,8 @@ pub struct TreeAppendChildCommand {
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
   /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "json-leaf")]
-  pub json_leaf: bool,
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
   /// placeholder to refer to the original node (e.g., "$$$$")
   #[argh(option, long = "refer-original")]
   pub refer_original: Option<String>,
@@ -1190,8 +1190,8 @@ pub struct TreeWrapCommand {
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
   /// treat file/stdin input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "json-leaf")]
-  pub json_leaf: bool,
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
   /// placeholder to refer to the original node (e.g., "$$$$")
   #[argh(option, long = "refer-original")]
   pub refer_original: Option<String>,

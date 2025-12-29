@@ -177,12 +177,12 @@ cr analyze call-graph --ns-prefix app.
 - `cr tree replace <namespace/definition> -p <path>` - 替换指定路径的节点
 
   - `-e <code>` - 内联 Cirru 代码（默认单行解析）
-    - Cirru 输入：仅支持单行表达式（one-liner）。若需叶子节点请使用 `--json-leaf`。
+    - Cirru 输入：仅支持单行表达式（one-liner）。若需 leaf 节点可搭配 `--leaf`，直接写符号或 Cirru 字符串（如 `|text`）。
   - `-f <file>` - 从文件读取
   - `-j <json>` - 内联 JSON 字符串
   - `-s` - 从标准输入读取
   - `-J` - JSON 格式输入
-  - `--json-leaf` - 直接作为叶子节点处理
+  - `--leaf` - 直接作为叶子节点处理（Cirru 符号或 `|text` 字符串，无需 JSON 引号）
   - `--refer-original <placeholder>` - 原节点占位符
   - `--refer-inner-branch <path>` - 内部分支引用路径
   - `--refer-inner-placeholder <placeholder>` - 内部分支占位符
@@ -212,8 +212,8 @@ cr query search -f app.comp.container/css-search color -l
 # 指定路径查看节点结构
 cr tree show app.main/main! -p "2,1"
 
-# 替换单个符号（作为 leaf 输入，需 --json-leaf）
-cr tree replace app.main/main! -p "0" --json-leaf -e 'new-value'
+# 替换单个符号（leaf 输入示例，直接 Cirru 语法）
+cr tree replace app.main/main! -p "0" --leaf -e '|new-value'
 
 # 替换表达式（one-liner）
 cr tree replace app.main/main! -p "2" -e "new-fn new-item"
@@ -259,9 +259,9 @@ cr tree replace app.core/my-fn -p "2,1,0" -e "new-value"
 对 `--file/--stdin` 输入，还支持以下“格式开关”（与 `-J/--json-input` 类似）：
 
 - `--cirru-one`：把输入解析为**单行 Cirru 表达式**（one-liner parser）。适合在 shell 里写一行表达式（不依赖缩进）。
-- `--json-leaf`：把输入当成 **leaf 节点**。输入会直接作为 leaf 值，无需 JSON 引号包裹。
+- `--leaf`：把输入当成 **leaf 节点**，直接使用 Cirru 符号或 `|text` 字符串，无需 JSON 引号。
   - 传入符号：`-e 'my-symbol'`
-  - 传入字符串：需要 Cirru 字符串前缀 `|` 或 `"`，例如 `-e '|my string'` 或 `-e '"my string'`
+  - 传入字符串：加 Cirru 字符串前缀 `|` 或 `"`，例如 `-e '|my string'` 或 `-e '"my string'`
 
 ⚠️ 注意：这些开关彼此互斥（一次只用一个）。
 
@@ -344,11 +344,11 @@ echo '["defn", "hello", [], ["println", "|Hello"]]' | cr edit def app.core/hello
 # 单行 Cirru 表达式输入（one-liner，不走 stdin/文件；-e 默认 one-liner）
 cr edit def app.core/demo-one -e 'println $ str $ &+ 1 2'
 
-# JSON leaf 输入（直接传内容作为 leaf 节点）
+# Cirru leaf 输入（直接传内容作为 leaf 节点）
 # 传符号：
-cr edit def app.core/demo-leaf --json-leaf -e 'demo-leaf'
+cr edit def app.core/demo-leaf --leaf -e 'demo-leaf'
 # 传字符串（需要 | 或 " 前缀）：
-cr edit def app.core/demo-str --json-leaf -e '|demo string'
+cr edit def app.core/demo-str --leaf -e '|demo string'
 
 # 从文件读取（Cirru 格式）
 cr edit def app.core/complex-fn -f /tmp/code.cirru

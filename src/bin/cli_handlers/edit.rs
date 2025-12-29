@@ -166,8 +166,8 @@ fn warn_if_single_string_expression(node: &Cirru, input_source: &str) {
       if let Some(Cirru::Leaf(_)) = items.first() {
         eprintln!("\n⚠️  Note: Cirru one-liner input '{input_source}' was parsed as an expression (list with one element).");
         eprintln!("   In Cirru syntax, this creates a list containing one element.");
-        eprintln!("   If you want a leaf node (plain string), use --json-leaf parameter.");
-        eprintln!("   Example: --json-leaf -e '{input_source}' creates a leaf, not an expression.\n");
+        eprintln!("   If you want a leaf node (plain string), use --leaf parameter.");
+        eprintln!("   Example: --leaf -e '{input_source}' creates a leaf, not an expression.\n");
       }
     }
   }
@@ -176,7 +176,7 @@ fn warn_if_single_string_expression(node: &Cirru, input_source: &str) {
 /// Determine input mode and parse raw input string into a `Cirru` node.
 /// Precedence (highest to lowest):
 /// - `--json <string>` (inline JSON)
-/// - `--json-leaf` (JSON string -> leaf)
+/// - `--leaf` (treat raw input as a Cirru leaf)
 /// - `--json-input` (parse JSON -> Cirru)
 /// - `--cirru` (parse multi-line Cirru text)
 /// - Cirru one-liner (default)
@@ -185,25 +185,25 @@ fn parse_input_to_cirru(
   inline_json: &Option<String>,
   json_input: bool,
   cirru: bool,
-  json_leaf: bool,
+  leaf: bool,
   auto_json: bool,
 ) -> Result<Cirru, String> {
   // Validate conflicting flags early (keep error messages user-friendly)
-  validate_input_flags(json_leaf, json_input, cirru)?;
+  validate_input_flags(leaf, json_input, cirru)?;
 
   // If inline JSON provided, use it (takes precedence)
   if let Some(j) = inline_json {
     let node = json_to_cirru(j)?;
-    if json_leaf {
+    if leaf {
       match node {
         Cirru::Leaf(_) => Ok(node),
-        _ => Err("--json-leaf expects a JSON string (leaf node), but got a non-leaf JSON value.".to_string()),
+        _ => Err("--leaf expects a JSON string (leaf node), but got a non-leaf JSON value.".to_string()),
       }
     } else {
       Ok(node)
     }
-  } else if json_leaf {
-    // json-leaf: automatically wrap raw input as a string leaf node
+  } else if leaf {
+    // --leaf: automatically treat raw input as a Cirru leaf node
     Ok(Cirru::Leaf(Arc::from(raw)))
   } else if json_input {
     json_to_cirru(raw)
@@ -395,7 +395,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   let raw = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
   let auto_json = opts.code.is_some();
 
-  let syntax_tree = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.cirru, opts.json_leaf, auto_json)?;
+  let syntax_tree = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.cirru, opts.leaf, auto_json)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
@@ -845,7 +845,7 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   let auto_json = opts.code.is_some();
 
   let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)? {
-    parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.cirru, opts.json_leaf, auto_json)?
+    parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.cirru, opts.leaf, auto_json)?
   } else {
     // Default minimal ns declaration: (ns namespace-name)
     Cirru::List(vec![Cirru::Leaf(Arc::from("ns")), Cirru::Leaf(Arc::from(opts.namespace.as_str()))])
@@ -903,7 +903,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
       .map_err(|e| format!("Failed to parse imports JSON: {e}. If you meant Cirru input, omit --json-input or pass --cirru."))?
   } else {
     // Parse as cirru and convert to JSON value
-    let cirru_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.cirru, opts.json_leaf, auto_json)?;
+    let cirru_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.cirru, opts.leaf, auto_json)?;
     fn cirru_to_json_value(c: &Cirru) -> serde_json::Value {
       match c {
         Cirru::Leaf(s) => serde_json::Value::String(s.to_string()),
@@ -1081,7 +1081,7 @@ fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result
 
   let auto_json = opts.code.is_some();
 
-  let new_rule = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.cirru, opts.json_leaf, auto_json)?;
+  let new_rule = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.cirru, opts.leaf, auto_json)?;
 
   // Validate that the rule has a source namespace
   let new_source_ns =
