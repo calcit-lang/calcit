@@ -410,8 +410,8 @@ pub struct DocsReadCommand {
   /// starting line number (default: 0)
   #[argh(option, short = 's', default = "0")]
   pub start: usize,
-  /// number of lines to read (default: 20)
-  #[argh(option, short = 'n', default = "20")]
+  /// number of lines to read (default: 80)
+  #[argh(option, short = 'n', default = "80")]
   pub lines: usize,
 }
 
