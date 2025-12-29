@@ -699,6 +699,12 @@ fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapsho
     println!("{json}");
   } else {
     println!("{}", calcit::call_tree::format_for_llm(&result));
+
+    // Helpful tips to guide follow-up commands (top 3)
+    println!("\n{}", "Tips".bold());
+    println!("- Focus by namespace: cr analyze call-graph --ns-prefix <ns>");
+    println!("- Quantify hotspots: cr analyze count-calls [--ns-prefix <ns>] [--include-core]");
+    println!("- Explore details: cr query peek <ns/def> | cr query def <ns/def>");
   }
 
   Ok(())

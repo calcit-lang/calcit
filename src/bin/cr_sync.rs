@@ -332,7 +332,16 @@ fn detect_snapshot_changes(compact: &Snapshot, detailed: &DetailedSnapshot) -> V
         compare_file_definitions(file_name, compact_file, detailed_file, &mut changes);
       }
       None => {
-        // File added in compact
+        // File added in compact: add namespace first to preserve require rules
+        changes.push(SnapshotChange {
+          path: ChangePath::NamespaceDefinition {
+            file_name: file_name.clone(),
+          },
+          change_type: ChangeType::Added,
+          new_entry: Some(compact_file.ns.clone()),
+        });
+
+        // Then add all definitions in the new file
         for (def_name, code_entry) in &compact_file.defs {
           changes.push(SnapshotChange {
             path: ChangePath::FunctionDefinition {
