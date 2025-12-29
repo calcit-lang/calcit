@@ -7,9 +7,7 @@ use std::sync::Arc;
 pub const ERR_MULTIPLE_INPUT_SOURCES: &str =
   "Multiple input sources provided. Use only one of: --stdin/-s, --file/-f, --code/-e, or --json/-j.";
 
-pub const ERR_CONFLICTING_INPUT_FLAGS: &str = "Conflicting input flags: use only one of --leaf or --json-input.";
-
-pub const ERR_CONFLICTING_JSON_CIRRU: &str = "Conflicting input flags: use only one of --json-input or Cirru input.";
+pub const ERR_CONFLICTING_INPUT_FLAGS: &str = "Conflicting input flags: --leaf cannot be used with --json-input.";
 
 pub const ERR_CODE_INPUT_REQUIRED: &str = "Code input required: use --file, --code, --json, or --stdin";
 
@@ -52,13 +50,9 @@ pub fn validate_input_sources(sources: &[bool]) -> Result<(), String> {
 }
 
 /// Validate input flag conflicts
-pub fn validate_input_flags(leaf_input: bool, json_input: bool, cirru: bool) -> Result<(), String> {
-  // In tree handlers, `cirru` is always false (one-liner only). In other handlers, it may be used.
-  if leaf_input && (json_input || cirru) {
+pub fn validate_input_flags(leaf_input: bool, json_input: bool) -> Result<(), String> {
+  if leaf_input && json_input {
     return Err(ERR_CONFLICTING_INPUT_FLAGS.to_string());
-  }
-  if json_input && cirru {
-    return Err(ERR_CONFLICTING_JSON_CIRRU.to_string());
   }
   Ok(())
 }

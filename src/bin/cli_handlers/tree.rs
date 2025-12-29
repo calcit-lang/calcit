@@ -75,7 +75,7 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
 /// Parse input to Cirru node
 fn parse_input_to_cirru(input: &str, json_opt: &Option<String>, json_input: bool, leaf_input: bool) -> Result<Cirru, String> {
   // Check for conflicting flags (tree commands only support one-liner Cirru now)
-  validate_input_flags(leaf_input, json_input, false)?;
+  validate_input_flags(leaf_input, json_input)?;
 
   // If --leaf is set, wrap input directly as a leaf node
   if leaf_input {

@@ -584,10 +584,6 @@ pub struct EditDefCommand {
   /// syntax_tree as inline JSON string
   #[argh(option, short = 'j')]
   pub json: Option<String>,
-  /// parse input as full multi-line Cirru text (use when input has indentation).
-  /// By default, input is parsed as a single-line Cirru expression (one-liner).
-  #[argh(switch, short = 'c', long = "cirru")]
-  pub cirru: bool,
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
@@ -642,13 +638,12 @@ pub struct EditExamplesCommand {
   /// read examples from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// parse input as full multi-line Cirru text (use when input has indentation).
-  /// By default, input is parsed as a single-line Cirru expression (one-liner).
-  #[argh(switch, short = 'c', long = "cirru")]
-  pub cirru: bool,
   /// treat file/stdin input as JSON array
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
+  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
   /// clear all examples
   #[argh(switch, long = "clear")]
   pub clear: bool,
@@ -676,13 +671,12 @@ pub struct EditAddExampleCommand {
   /// read example from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// parse input as full multi-line Cirru text (use when input has indentation).
-  /// By default, input is parsed as a single-line Cirru expression (one-liner).
-  #[argh(switch, short = 'c', long = "cirru")]
-  pub cirru: bool,
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
+  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -718,10 +712,6 @@ pub struct EditAddNsCommand {
   /// read ns syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// parse input as full multi-line Cirru text (use when input has indentation).
-  /// By default, input is parsed as a single-line Cirru expression (one-liner).
-  #[argh(switch, short = 'c', long = "cirru")]
-  pub cirru: bool,
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
@@ -758,10 +748,6 @@ pub struct EditImportsCommand {
   /// read imports from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// parse input as full multi-line Cirru text (use when input has indentation).
-  /// By default, input is parsed as a single-line Cirru expression (one-liner).
-  #[argh(switch, short = 'c', long = "cirru")]
-  pub cirru: bool,
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
@@ -789,10 +775,6 @@ pub struct EditAddImportCommand {
   /// read import rule from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// parse input as full multi-line Cirru text (use when input has indentation).
-  /// By default, input is parsed as a single-line Cirru expression (one-liner).
-  #[argh(switch, short = 'c', long = "cirru")]
-  pub cirru: bool,
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
