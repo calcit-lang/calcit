@@ -926,10 +926,6 @@ pub struct TreeReplaceCommand {
   /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// parse input as full multi-line Cirru text (use when input has indentation).
-  /// By default, input is parsed as a single-line Cirru expression (one-liner).
-  #[argh(switch, short = 'c', long = "cirru")]
-  pub cirru: bool,
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
   pub json_input: bool,
@@ -987,10 +983,6 @@ pub struct TreeInsertBeforeCommand {
   /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// parse input as full multi-line Cirru text (use when input has indentation).
-  /// By default, input is parsed as a single-line Cirru expression (one-liner).
-  #[argh(switch, short = 'c', long = "cirru")]
-  pub cirru: bool,
   /// parse input as a single-line Cirru expression (one-liner parser)
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
@@ -1034,10 +1026,6 @@ pub struct TreeInsertAfterCommand {
   /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// parse input as full multi-line Cirru text (use when input has indentation).
-  /// By default, input is parsed as a single-line Cirru expression (one-liner).
-  #[argh(switch, short = 'c', long = "cirru")]
-  pub cirru: bool,
   /// parse input as a single-line Cirru expression (one-liner parser)
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
@@ -1081,10 +1069,6 @@ pub struct TreeInsertChildCommand {
   /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// parse input as full multi-line Cirru text (use when input has indentation).
-  /// By default, input is parsed as a single-line Cirru expression (one-liner).
-  #[argh(switch, short = 'c', long = "cirru")]
-  pub cirru: bool,
   /// parse input as a single-line Cirru expression (one-liner parser)
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
@@ -1128,10 +1112,6 @@ pub struct TreeAppendChildCommand {
   /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// parse input as full multi-line Cirru text (use when input has indentation).
-  /// By default, input is parsed as a single-line Cirru expression (one-liner).
-  #[argh(switch, short = 'c', long = "cirru")]
-  pub cirru: bool,
   /// parse input as a single-line Cirru expression (one-liner parser)
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]
@@ -1205,10 +1185,6 @@ pub struct TreeWrapCommand {
   /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// parse input as full multi-line Cirru text (use when input has indentation).
-  /// By default, input is parsed as a single-line Cirru expression (one-liner).
-  #[argh(switch, short = 'c', long = "cirru")]
-  pub cirru: bool,
   /// parse input as a single-line Cirru expression (one-liner parser)
   /// treat file/stdin input as JSON
   #[argh(switch, short = 'J', long = "json-input")]

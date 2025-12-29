@@ -177,7 +177,7 @@ cr analyze call-graph --ns-prefix app.
 - `cr tree replace <namespace/definition> -p <path>` - 替换指定路径的节点
 
   - `-e <code>` - 内联 Cirru 代码（默认单行解析）
-  - `-c, --cirru` - 解析多行 Cirru 代码（当有缩进时使用）
+    - Cirru 输入：仅支持单行表达式（one-liner）。若需叶子节点请使用 `--json-leaf`。
   - `-f <file>` - 从文件读取
   - `-j <json>` - 内联 JSON 字符串
   - `-s` - 从标准输入读取
@@ -206,20 +206,23 @@ cr analyze call-graph --ns-prefix app.
 **使用示例：**
 
 ```bash
-# 查看节点结构
+# loose 模式快速定位而可能目标叶子节点位置
+cr query search -f app.comp.container/css-search color -l
+
+# 指定路径查看节点结构
 cr tree show app.main/main! -p "2,1"
 
-# 替换单个符号（默认单行解析）
-cr tree replace app.main/main! -p "0" -e "new-function"
+# 替换单个符号（作为 leaf 输入，需 --json-leaf）
+cr tree replace app.main/main! -p "0" --json-leaf -e 'new-value'
 
-# 替换多行代码块（使用 --cirru 标志）
-cr tree replace app.main/main! -p "2" -f /tmp/code.cirru --cirru
+# 替换表达式（one-liner）
+cr tree replace app.main/main! -p "2" -e "new-fn new-item"
 
 # 删除节点
 cr tree delete app.main/main! -p "1,0"
 
-# 插入子节点
-cr tree insert-child app.main/main! -p "2" -e "new-item"
+# 插入子表达式
+cr tree insert-child app.main/main! -p "2" -e "new-fn new-item"
 ```
 
 **⚠️ 重要：精确定位的安全流程**

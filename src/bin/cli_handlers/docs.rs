@@ -179,8 +179,11 @@ fn handle_read(filename: &str, start: usize, lines_to_read: usize) -> Result<(),
 
   // Show tips
   println!();
-  println!("{}", format!("Lines {}-{} of {} (total {} lines)", start + 1, end, total_lines, total_lines).dimmed());
-  
+  println!(
+    "{}",
+    format!("Lines {}-{} of {} (total {} lines)", start + 1, end, total_lines, total_lines).dimmed()
+  );
+
   if end < total_lines {
     let remaining = total_lines - end;
     println!(
@@ -190,8 +193,11 @@ fn handle_read(filename: &str, start: usize, lines_to_read: usize) -> Result<(),
   } else {
     println!("{}", "End of document.".green());
   }
-  
-  println!("{}", "Tip: Use -s <start> -n <lines> to read specific range (e.g., 'cr docs read file.md -s 20 -n 30')".dimmed());
+
+  println!(
+    "{}",
+    "Tip: Use -s <start> -n <lines> to read specific range (e.g., 'cr docs read file.md -s 20 -n 30')".dimmed()
+  );
 
   Ok(())
 }
