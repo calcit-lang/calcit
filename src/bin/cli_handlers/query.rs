@@ -392,12 +392,15 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str) -> Result<(),
   println!("{}", serde_json::to_string(&json).unwrap());
 
   let mut tips = vec![format!(
-    "Use `cr tree show {namespace}/{definition} -p \"0\"` to explore tree for editing."
+    "try `cr query search <leaf> -f '{namespace}/{definition}' -l` to quick find coordination of given leaf node."
   )];
+  tips.push(format!(
+    "use `cr tree show {namespace}/{definition} -p \"0\"` to explore tree for editing."
+  ));
   if !code_entry.examples.is_empty() {
-    tips.push(format!("Use `cr query examples {namespace}/{definition}` to view examples."));
+    tips.push(format!("use `cr query examples {namespace}/{definition}` to view examples."));
   }
-  println!("\n{}", format!("Tip: {}", tips.join(" ")).dimmed());
+  println!("\n{}", format!("Tips: {}", tips.join(" ")).dimmed());
 
   Ok(())
 }
