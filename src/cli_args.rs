@@ -139,7 +139,7 @@ pub struct CheckExamplesCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "call-graph")]
 pub struct CallGraphCommand {
-  /// directly specify root definition to analyze (format: ns/def)
+  /// directly specify root definition to analyze (format: ns/def). If omitted, uses init-fn from config
   #[argh(option)]
   pub root: Option<String>,
   /// only show definitions whose namespace starts with this prefix
@@ -163,7 +163,7 @@ pub struct CallGraphCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "count-calls")]
 pub struct CountCallsCommand {
-  /// directly specify root definition to analyze (format: ns/def)
+  /// directly specify root definition to analyze (format: ns/def). If omitted, uses init-fn from config
   #[argh(option)]
   pub root: Option<String>,
   /// only show definitions whose namespace starts with this prefix
