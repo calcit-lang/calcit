@@ -173,7 +173,11 @@ pub fn parse_cirru_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
       Ok(nodes) => Ok(cirru::cirru_to_calcit(&Cirru::List(nodes))),
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("parse-cirru-list failed: {e}")),
+      Err(e) => {
+        eprintln!("\nparse-cirru-list failed:");
+        eprintln!("{}", e.format_detailed(Some(s)));
+        CalcitErr::err_str(CalcitErrKind::Syntax, "parse-cirru-list failed")
+      }
     },
     Some(a) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -188,7 +192,11 @@ pub fn parse_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Str(s)) => match cirru_parser::parse(s) {
       Ok(nodes) => Ok(Calcit::CirruQuote(Cirru::List(nodes))),
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("parse-cirru failed: {e}")),
+      Err(e) => {
+        eprintln!("\nparse-cirru failed:");
+        eprintln!("{}", e.format_detailed(Some(s)));
+        CalcitErr::err_str(CalcitErrKind::Syntax, "parse-cirru failed")
+      }
     },
     Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("parse-cirru expected a string, but received: {a}")),
     None => CalcitErr::err_str(CalcitErrKind::Arity, "parse-cirru expected 1 argument, but received none"),
@@ -221,7 +229,11 @@ pub fn parse_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Some(options) => Ok(edn::edn_to_calcit(&nodes, options)),
         None => Ok(edn::edn_to_calcit(&nodes, &Calcit::Nil)),
       },
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("parse-cirru-edn failed: {e}")),
+      Err(e) => {
+        eprintln!("\nparse-cirru-edn failed:");
+        eprintln!("{e}");
+        CalcitErr::err_str(CalcitErrKind::Syntax, "parse-cirru-edn failed")
+      }
     },
     Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("parse-cirru-edn expected a string, but received: {a}")),
     None => CalcitErr::err_str(CalcitErrKind::Arity, "parse-cirru-edn expected 1 argument, but received none"),

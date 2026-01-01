@@ -134,6 +134,8 @@ impl TryFrom<Edn> for DetailCirru {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DetailedCodeEntry {
   pub doc: String,
+  #[serde(default)]
+  pub examples: Vec<DetailCirru>,
   pub code: DetailCirru,
 }
 
@@ -141,6 +143,7 @@ impl From<CodeEntry> for DetailedCodeEntry {
   fn from(entry: CodeEntry) -> Self {
     DetailedCodeEntry {
       doc: entry.doc,
+      examples: entry.examples.into_iter().map(|e| e.into()).collect(),
       code: entry.code.into(),
     }
   }
@@ -150,7 +153,7 @@ impl From<DetailedCodeEntry> for CodeEntry {
   fn from(detailed: DetailedCodeEntry) -> Self {
     CodeEntry {
       doc: detailed.doc,
-      examples: vec![],
+      examples: detailed.examples.into_iter().map(|e| e.into()).collect(),
       code: detailed.code.into(),
     }
   }
@@ -162,6 +165,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
     match data {
       Edn::Record(record) => {
         let mut doc = String::new();
+        let mut examples = Vec::new();
         let mut code = None;
 
         for (key, value) in record.pairs.iter() {
@@ -169,6 +173,13 @@ impl TryFrom<Edn> for DetailedCodeEntry {
             "doc" => {
               if let Edn::Str(doc_str) = value {
                 doc = doc_str.to_string();
+              }
+            }
+            "examples" => {
+              if let Edn::List(list) = value {
+                for item in list.iter() {
+                  examples.push(item.to_owned().try_into()?);
+                }
               }
             }
             "code" => {
@@ -179,7 +190,7 @@ impl TryFrom<Edn> for DetailedCodeEntry {
         }
 
         let code = code.ok_or("Missing code field")?;
-        Ok(DetailedCodeEntry { doc, code })
+        Ok(DetailedCodeEntry { doc, examples, code })
       }
       _ => Err("Expected record for DetailedCodeEntry".to_string()),
     }

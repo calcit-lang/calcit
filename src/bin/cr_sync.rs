@@ -8,6 +8,7 @@ use cirru_parser::Cirru;
 use std::fmt::Debug;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(FromArgs)]
 /// Sync changes from compact.cirru to calcit.cirru while preserving metadata
@@ -70,9 +71,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   // Detect changes between the two snapshots
   let changes = detect_snapshot_changes(&compact_snapshot, &detailed_snapshot);
 
-  if changes.is_empty() {
+  // Check if configs or entries changed
+  let configs_changed = has_configs_changed(&compact_snapshot, &detailed_snapshot);
+  let entries_changed = has_entries_changed(&compact_snapshot, &detailed_snapshot);
+
+  if changes.is_empty() && !configs_changed && !entries_changed {
     println!("No changes detected between compact and calcit files.");
     return Ok(());
+  }
+
+  if args.verbose {
+    if configs_changed {
+      println!("Configs changed");
+    }
+    if entries_changed {
+      println!("Entries changed");
+    }
   }
 
   if args.verbose {
@@ -129,11 +143,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   if args.dry_run {
     println!("Dry run mode: would apply {} changes", changes.len());
+    if configs_changed {
+      println!("Would update configs");
+    }
+    if entries_changed {
+      println!("Would update entries");
+    }
     return Ok(());
   }
 
   // Apply changes to detailed snapshot
   apply_snapshot_changes(&mut detailed_snapshot, &changes);
+
+  // Merge configs and entries if changed
+  if configs_changed || entries_changed {
+    merge_configs_and_entries(&mut detailed_snapshot, &compact_snapshot);
+  }
 
   // Convert DetailedSnapshot back to Edn for saving
   let updated_edn = detailed_snapshot_to_edn(&detailed_snapshot);
@@ -258,11 +283,22 @@ fn detailed_code_entry_to_edn(entry: &DetailedCodeEntry) -> Edn {
     pairs: Vec::new(),
   };
 
+  // Add code field (must be first based on Calcit's expectation)
+  record.pairs.push(("code".into(), detailed_cirru_to_edn(&entry.code)));
+
   // Add doc field
   record.pairs.push(("doc".into(), Edn::Str(entry.doc.as_str().into())));
 
-  // Add code field
-  record.pairs.push(("code".into(), detailed_cirru_to_edn(&entry.code)));
+  // Add examples field - convert DetailCirru to simple Cirru first (without metadata)
+  let examples_list: Vec<Edn> = entry
+    .examples
+    .iter()
+    .map(|e| {
+      let simple_cirru: Cirru = e.clone().into();
+      simple_cirru.into()
+    })
+    .collect();
+  record.pairs.push(("examples".into(), Edn::List(examples_list.into())));
 
   Edn::Record(record)
 }
@@ -305,6 +341,171 @@ fn detailed_cirru_to_edn(cirru: &DetailCirru) -> Edn {
   }
 }
 
+/// Merge configs and entries from compact snapshot into detailed snapshot
+fn merge_configs_and_entries(detailed: &mut DetailedSnapshot, compact: &Snapshot) {
+  // Convert SnapshotConfigs to Edn using insert_key for proper keyword handling
+  let mut configs_map = cirru_edn::EdnMapView::default();
+  configs_map.insert_key("init-fn", Edn::Str(compact.configs.init_fn.as_str().into()));
+  configs_map.insert_key("reload-fn", Edn::Str(compact.configs.reload_fn.as_str().into()));
+  configs_map.insert_key("version", Edn::Str(compact.configs.version.as_str().into()));
+  configs_map.insert_key(
+    "modules",
+    Edn::List(
+      compact
+        .configs
+        .modules
+        .iter()
+        .map(|m| Edn::Str(m.as_str().into()))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+  );
+
+  detailed.configs = Edn::from(configs_map);
+
+  // Convert entries HashMap<String, SnapshotConfigs> to Edn
+  let mut entries_map = cirru_edn::EdnMapView::default();
+  for (key, entry_config) in &compact.entries {
+    let mut entry_map = cirru_edn::EdnMapView::default();
+    entry_map.insert_key("init-fn", Edn::Str(entry_config.init_fn.as_str().into()));
+    entry_map.insert_key("reload-fn", Edn::Str(entry_config.reload_fn.as_str().into()));
+    entry_map.insert_key("version", Edn::Str(entry_config.version.as_str().into()));
+    entry_map.insert_key(
+      "modules",
+      Edn::List(
+        entry_config
+          .modules
+          .iter()
+          .map(|m| Edn::Str(m.as_str().into()))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+    );
+    entries_map.insert_key(key.as_str(), Edn::from(entry_map));
+  }
+  detailed.entries = Edn::from(entries_map);
+}
+
+/// Check if configs changed between compact and detailed snapshots
+fn has_configs_changed(compact: &Snapshot, detailed: &DetailedSnapshot) -> bool {
+  // Compare each field
+  let detailed_map = match detailed.configs.view_map() {
+    Ok(m) => m,
+    Err(_) => return true, // If can't parse, assume changed
+  };
+
+  // Check init-fn
+  if let Ok(init_fn) = detailed_map.get_or_nil("init-fn").try_into() {
+    let init_fn: Arc<str> = init_fn;
+    if init_fn.as_ref() != compact.configs.init_fn.as_str() {
+      return true;
+    }
+  } else {
+    return true;
+  }
+
+  // Check reload-fn
+  if let Ok(reload_fn) = detailed_map.get_or_nil("reload-fn").try_into() {
+    let reload_fn: Arc<str> = reload_fn;
+    if reload_fn.as_ref() != compact.configs.reload_fn.as_str() {
+      return true;
+    }
+  } else {
+    return true;
+  }
+
+  // Check version
+  if let Ok(version) = detailed_map.get_or_nil("version").try_into() {
+    let version: Arc<str> = version;
+    if version.as_ref() != compact.configs.version.as_str() {
+      return true;
+    }
+  } else {
+    return true;
+  }
+
+  // Check modules
+  if let Ok(modules_edn) = detailed_map.get_or_nil("modules").view_list() {
+    let detailed_modules: Vec<String> = modules_edn
+      .iter()
+      .filter_map(|e| {
+        let s: Result<Arc<str>, _> = e.to_owned().try_into();
+        s.ok().map(|a| a.to_string())
+      })
+      .collect();
+    if detailed_modules != compact.configs.modules {
+      return true;
+    }
+  } else if !compact.configs.modules.is_empty() {
+    return true;
+  }
+
+  false
+}
+
+/// Check if entries changed between compact and detailed snapshots
+fn has_entries_changed(compact: &Snapshot, detailed: &DetailedSnapshot) -> bool {
+  let detailed_entries_map = match detailed.entries.view_map() {
+    Ok(m) => m,
+    Err(_) => {
+      // If detailed doesn't have a valid map, check if compact has entries
+      return !compact.entries.is_empty();
+    }
+  };
+
+  // Check if keys match - EdnMapView is a tuple struct with a HashMap inside
+  let cirru_edn::EdnMapView(detailed_map) = &detailed_entries_map;
+  let detailed_keys: std::collections::HashSet<String> = detailed_map
+    .keys()
+    .filter_map(|k| {
+      let s: Result<std::sync::Arc<str>, _> = k.to_owned().try_into();
+      s.ok().map(|a| a.to_string())
+    })
+    .collect();
+  let compact_keys: std::collections::HashSet<String> = compact.entries.keys().cloned().collect();
+
+  if detailed_keys != compact_keys {
+    return true;
+  }
+
+  // Compare each entry
+  for (key, compact_entry) in &compact.entries {
+    if let Ok(detailed_entry_edn) = detailed_entries_map.get_or_nil(key.as_str()).view_map() {
+      // Check each field
+      if let Ok(init_fn) = detailed_entry_edn.get_or_nil("init-fn").try_into() {
+        let init_fn: std::sync::Arc<str> = init_fn;
+        if init_fn.as_ref() != compact_entry.init_fn.as_str() {
+          return true;
+        }
+      } else {
+        return true;
+      }
+
+      if let Ok(reload_fn) = detailed_entry_edn.get_or_nil("reload-fn").try_into() {
+        let reload_fn: std::sync::Arc<str> = reload_fn;
+        if reload_fn.as_ref() != compact_entry.reload_fn.as_str() {
+          return true;
+        }
+      } else {
+        return true;
+      }
+
+      if let Ok(version) = detailed_entry_edn.get_or_nil("version").try_into() {
+        let version: std::sync::Arc<str> = version;
+        if version.as_ref() != compact_entry.version.as_str() {
+          return true;
+        }
+      } else {
+        return true;
+      }
+    } else {
+      return true;
+    }
+  }
+
+  false
+}
+
 fn detect_snapshot_changes(compact: &Snapshot, detailed: &DetailedSnapshot) -> Vec<SnapshotChange> {
   let mut changes = Vec::new();
 
@@ -321,7 +522,16 @@ fn detect_snapshot_changes(compact: &Snapshot, detailed: &DetailedSnapshot) -> V
         compare_file_definitions(file_name, compact_file, detailed_file, &mut changes);
       }
       None => {
-        // File added in compact
+        // File added in compact: add namespace first to preserve require rules
+        changes.push(SnapshotChange {
+          path: ChangePath::NamespaceDefinition {
+            file_name: file_name.clone(),
+          },
+          change_type: ChangeType::Added,
+          new_entry: Some(compact_file.ns.clone()),
+        });
+
+        // Then add all definitions in the new file
         for (def_name, code_entry) in &compact_file.defs {
           changes.push(SnapshotChange {
             path: ChangePath::FunctionDefinition {
@@ -398,7 +608,12 @@ fn compare_file_definitions(
         let code_changed = compact_cirru != detailed_cirru;
         let doc_changed = compact_entry.doc != detailed_entry.doc;
 
-        if code_changed || doc_changed {
+        // Check if examples changed
+        let compact_examples: Vec<Cirru> = compact_entry.examples.clone();
+        let detailed_examples: Vec<Cirru> = detailed_entry.examples.iter().map(|e| e.clone().into()).collect();
+        let examples_changed = compact_examples != detailed_examples;
+
+        if code_changed || doc_changed || examples_changed {
           let change_type = if code_changed && doc_changed {
             ChangeType::Modified
           } else if code_changed {
@@ -479,6 +694,7 @@ fn apply_add_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_entr
         // Create empty namespace entry
         let empty_ns = DetailedCodeEntry {
           doc: String::new(),
+          examples: vec![],
           code: cirru_parser::Cirru::Leaf("".into()).into(),
         };
 
@@ -522,6 +738,9 @@ fn apply_modify_change(detailed: &mut DetailedSnapshot, path: &ChangePath, new_e
         if let Some(existing_def) = file.defs.get_mut(def_name) {
           // Update document part
           existing_def.doc = new_entry.doc.clone();
+
+          // Update examples
+          existing_def.examples = new_entry.examples.iter().map(|e| e.clone().into()).collect();
 
           // If not only document changes, also update code part
           if *change_type != ChangeType::ModifiedDoc {
