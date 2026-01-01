@@ -499,15 +499,20 @@ pub enum LibsSubcommand {
   Readme(LibsReadmeCommand),
   /// search libraries by keyword
   Search(LibsSearchCommand),
+  /// scan markdown files in a module directory
+  ScanMd(LibsScanMdCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "readme")]
-/// show README of a library from its GitHub repository
+/// show README of a library from local ~/.config/calcit/modules or GitHub
 pub struct LibsReadmeCommand {
   /// package name to look up
   #[argh(positional)]
   pub package: String,
+  /// optional file path relative to package directory (e.g., "Skills.md")
+  #[argh(option, short = 'f')]
+  pub file: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -517,6 +522,15 @@ pub struct LibsSearchCommand {
   /// keyword to search
   #[argh(positional)]
   pub keyword: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "scan-md")]
+/// scan markdown files in a module directory
+pub struct LibsScanMdCommand {
+  /// module name to scan
+  #[argh(positional)]
+  pub module: String,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -173,7 +173,14 @@ Calcit 程序使用 `cr` 命令：
 
 - `cr libs` - 列出所有官方库
 - `cr libs search <keyword>` - 按关键词搜索库（搜索名称、描述、分类）
-- `cr libs readme <package>` - 查看指定库的 README 文档（从 GitHub 获取）
+- `cr libs readme <package> [-f <file>]` - 查看库的文档
+  - 优先从本地 `~/.config/calcit/modules/<package>` 读取
+  - 本地不存在时从 GitHub 仓库获取
+  - `-f` 参数可指定其他文档文件（如 `-f Skills.md`）
+  - 默认读取 `README.md`
+- `cr libs scan-md <module>` - 扫描本地模块目录下的所有 `.md` 文件
+  - 递归扫描子目录
+  - 显示相对路径列表
 - `caps` - 安装/更新依赖
 
 ### 精细代码树操作 (`cr tree`)
