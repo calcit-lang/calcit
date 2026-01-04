@@ -9,9 +9,11 @@ use std::time::Instant;
 #[cfg(not(target_arch = "wasm32"))]
 mod injection;
 
+mod cli_handlers;
+
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
-use calcit::cli_args::{CalcitCommand, ToplevelCalcit};
+use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CountCallsCommand, ToplevelCalcit};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use colored::Colorize;
@@ -29,6 +31,29 @@ fn main() -> Result<(), String> {
   builtins::effects::init_effects_states();
 
   let cli_args: ToplevelCalcit = argh::from_env();
+
+  // Handle standalone commands that don't need full program loading
+  match &cli_args.subcommand {
+    Some(CalcitCommand::Query(query_cmd)) => {
+      return cli_handlers::handle_query_command(query_cmd, &cli_args.input);
+    }
+    Some(CalcitCommand::Docs(docs_cmd)) => {
+      return cli_handlers::handle_docs_command(docs_cmd);
+    }
+    Some(CalcitCommand::Cirru(cirru_cmd)) => {
+      return cli_handlers::handle_cirru_command(cirru_cmd);
+    }
+    Some(CalcitCommand::Libs(libs_cmd)) => {
+      return cli_handlers::handle_libs_command(libs_cmd);
+    }
+    Some(CalcitCommand::Edit(edit_cmd)) => {
+      return cli_handlers::handle_edit_command(edit_cmd, &cli_args.input);
+    }
+    Some(CalcitCommand::Tree(tree_cmd)) => {
+      return cli_handlers::handle_tree_command(tree_cmd, &cli_args.input);
+    }
+    _ => {}
+  }
 
   let mut eval_once = cli_args.once;
   let assets_watch = cli_args.watch_dir.to_owned();
@@ -85,7 +110,11 @@ fn main() -> Result<(), String> {
     // load entry file
     let mut content = fs::read_to_string(&cli_args.input).unwrap_or_else(|_| panic!("expected Cirru snapshot: {}", cli_args.input));
     strip_shebang(&mut content);
-    let data = cirru_edn::parse(&content)?;
+    let data = cirru_edn::parse(&content).map_err(|e| {
+      eprintln!("\nFailed to parse entry file '{}':", cli_args.input);
+      eprintln!("{e}");
+      format!("Failed to parse entry file '{}'", cli_args.input)
+    })?;
     // println!("reading: {}", content);
     snapshot = snapshot::load_snapshot_data(&data, &cli_args.input)?;
 
@@ -148,7 +177,16 @@ fn main() -> Result<(), String> {
   )
   .map_err(|e| e.msg)?;
 
-  let task = if let Some(CalcitCommand::EmitJs(js_options)) = &cli_args.subcommand {
+  // Check-only mode: just preprocess/validate without execution or codegen
+  let check_only = cli_args.check_only || matches!(&cli_args.subcommand, Some(CalcitCommand::EmitJs(js_opts)) if js_opts.check_only);
+
+  if check_only {
+    eval_once = true;
+  }
+
+  let task = if check_only {
+    run_check_only(&entries)
+  } else if let Some(CalcitCommand::EmitJs(js_options)) = &cli_args.subcommand {
     if js_options.once {
       // redundant config, during watching mode, emit once
       eval_once = true;
@@ -163,9 +201,13 @@ fn main() -> Result<(), String> {
       eval_once = true;
     }
     run_codegen(&entries, &cli_args.emit_path, true)
-  } else if let Some(CalcitCommand::CheckExamples(check_options)) = &cli_args.subcommand {
+  } else if let Some(CalcitCommand::Analyze(analyze_cmd)) = &cli_args.subcommand {
     eval_once = true;
-    run_check_examples(&check_options.ns, &snapshot)
+    match &analyze_cmd.subcommand {
+      AnalyzeSubcommand::CallGraph(call_graph_options) => run_call_graph(&entries, call_graph_options, &snapshot),
+      AnalyzeSubcommand::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
+      AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
+    }
   } else {
     let started_time = Instant::now();
 
@@ -261,7 +303,11 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
   // 2. clears evaled states, gensym counter
   // 3. rerun program, and catch error
 
-  let data = cirru_edn::parse(content)?;
+  let data = cirru_edn::parse(content).map_err(|e| {
+    eprintln!("\nFailed to parse changes file:");
+    eprintln!("{e}");
+    "Failed to parse changes file".to_string()
+  })?;
   // println!("\ndata: {}", &data);
   let changes: ChangesDict = data.try_into()?;
   // println!("\nchanges: {:?}", changes);
@@ -312,6 +358,54 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
       eprintln!("\nfailed to reload, {e}")
     }
   }
+
+  Ok(())
+}
+
+/// Check-only mode: preprocess init_fn and reload_fn to validate code without execution
+fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
+  let started_time = Instant::now();
+  let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
+
+  println!("{}", "Check-only mode: validating code...".dimmed());
+
+  // preprocess init_fn
+  match runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
+    Ok(_) => {
+      println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.init_fn).dimmed());
+    }
+    Err(failure) => {
+      eprintln!("\n{} preprocessing init_fn", "✗".red());
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      return Err(failure.msg);
+    }
+  }
+
+  // preprocess reload_fn
+  match runner::preprocess::preprocess_ns_def(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default()) {
+    Ok(_) => {
+      println!("  {} {}", "✓".green(), format!("{} preprocessed", entries.reload_fn).dimmed());
+    }
+    Err(failure) => {
+      eprintln!("\n{} preprocessing reload_fn", "✗".red());
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      return Err(failure.msg);
+    }
+  }
+
+  // Report warnings
+  let warnings = check_warnings.borrow();
+  if !warnings.is_empty() {
+    println!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
+    LocatedWarning::print_list(&warnings);
+  }
+
+  let duration = Instant::now().duration_since(started_time);
+  println!(
+    "\n{} {}",
+    "✓ Check passed".green().bold(),
+    format!("({}ms)", duration.as_micros() as f64 / 1000.0).dimmed()
+  );
 
   Ok(())
 }
@@ -462,7 +556,20 @@ fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<
   // Create a synthetic function that runs all examples
   let mut example_calls = Vec::new();
 
-  for code_entry in file_data.defs.values() {
+  for (def_name, code_entry) in &file_data.defs {
+    if !code_entry.examples.is_empty() {
+      // Add println before examples: println $ str &newline "|-- run examples for: " def "| --"
+      example_calls.push(Cirru::List(vec![
+        Cirru::Leaf(Arc::from("println")),
+        Cirru::List(vec![
+          Cirru::Leaf(Arc::from("str")),
+          Cirru::Leaf(Arc::from("&newline")),
+          Cirru::Leaf(Arc::from("|-- run examples for: ")),
+          Cirru::Leaf(Arc::from(format!("|{def_name}"))),
+          Cirru::Leaf(Arc::from("| --")),
+        ]),
+      ]));
+    }
     for example in &code_entry.examples {
       example_calls.push(example.clone());
     }
@@ -563,4 +670,66 @@ fn run_check_examples(target_ns: &str, snapshot: &snapshot::Snapshot) -> Result<
       Err(format!("Failed to run examples: {}", e.msg))
     }
   }
+}
+
+fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  // Determine entry point: use --root if provided, otherwise use init_fn from config
+  let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
+    util::string::extract_ns_def(def_path)?
+  } else {
+    (entries.init_ns.to_string(), entries.init_def.to_string())
+  };
+
+  println!("{}", format!("Analyzing call tree from: {entry_ns}/{entry_def}").cyan());
+
+  // Analyze call tree
+  let result = calcit::call_tree::analyze_call_graph(
+    &entry_ns,
+    &entry_def,
+    options.include_core,
+    options.max_depth,
+    options.show_unused,
+    None, // TODO: could extract package name from snapshot
+    options.ns_prefix.clone(),
+  )?;
+
+  // Output result
+  if options.format == "json" {
+    let json = calcit::call_tree::format_as_json(&result)?;
+    println!("{json}");
+  } else {
+    println!("{}", calcit::call_tree::format_for_llm(&result));
+
+    // Helpful tips to guide follow-up commands (top 3)
+    println!("\n{}", "Tips".bold());
+    println!("- Focus by namespace: cr analyze call-graph --ns-prefix <ns>");
+    println!("- Quantify hotspots: cr analyze count-calls [--ns-prefix <ns>] [--include-core]");
+    println!("- Explore details: cr query peek <ns/def> | cr query def <ns/def>");
+  }
+
+  Ok(())
+}
+
+fn run_count_calls(entries: &ProgramEntries, options: &CountCallsCommand) -> Result<(), String> {
+  // Determine entry point: use --root if provided, otherwise use init_fn from config
+  let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
+    util::string::extract_ns_def(def_path)?
+  } else {
+    (entries.init_ns.to_string(), entries.init_def.to_string())
+  };
+
+  println!("{}", format!("Counting calls from: {entry_ns}/{entry_def}").cyan());
+
+  // Count calls
+  let result = calcit::call_tree::count_calls(&entry_ns, &entry_def, options.include_core, options.ns_prefix.clone())?;
+
+  // Output result
+  if options.format == "json" {
+    let json = calcit::call_tree::format_count_as_json(&result)?;
+    println!("{json}");
+  } else {
+    println!("{}", calcit::call_tree::format_count_for_display(&result, &options.sort));
+  }
+
+  Ok(())
 }

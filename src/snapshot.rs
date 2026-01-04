@@ -216,7 +216,11 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
         defs: def_dict,
       })
     }
-    Err(e) => Err(format!("failed to make snapshot: {e}")),
+    Err(e) => {
+      eprintln!("\nFailed to parse code snippet:");
+      eprintln!("{}", e.format_detailed(Some(raw)));
+      Err("Failed to parse code snippet".to_string())
+    }
   }
 }
 
@@ -329,6 +333,70 @@ impl TryFrom<ChangesDict> for Edn {
   }
 }
 
+/// Save snapshot to compact.cirru file
+/// This is a shared utility function used by CLI edit commands
+pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &Snapshot) -> Result<(), String> {
+  // Build root level Edn mapping
+  let mut edn_map = EdnMapView::default();
+
+  // Build package
+  edn_map.insert_key("package", Edn::Str(snapshot.package.as_str().into()));
+
+  // Build configs
+  let mut configs_map = EdnMapView::default();
+  configs_map.insert_key("init-fn", Edn::Str(snapshot.configs.init_fn.as_str().into()));
+  configs_map.insert_key("reload-fn", Edn::Str(snapshot.configs.reload_fn.as_str().into()));
+  configs_map.insert_key("version", Edn::Str(snapshot.configs.version.as_str().into()));
+  configs_map.insert_key(
+    "modules",
+    Edn::from(
+      snapshot
+        .configs
+        .modules
+        .iter()
+        .map(|s| Edn::Str(s.as_str().into()))
+        .collect::<Vec<_>>(),
+    ),
+  );
+  edn_map.insert_key("configs", configs_map.into());
+
+  // Build entries
+  let mut entries_map = EdnMapView::default();
+  for (k, v) in &snapshot.entries {
+    let mut entry_map = EdnMapView::default();
+    entry_map.insert_key("init-fn", Edn::Str(v.init_fn.as_str().into()));
+    entry_map.insert_key("reload-fn", Edn::Str(v.reload_fn.as_str().into()));
+    entry_map.insert_key("version", Edn::Str(v.version.as_str().into()));
+    entry_map.insert_key(
+      "modules",
+      Edn::from(v.modules.iter().map(|s| Edn::Str(s.as_str().into())).collect::<Vec<_>>()),
+    );
+    entries_map.insert_key(k.as_str(), entry_map.into());
+  }
+  edn_map.insert_key("entries", entries_map.into());
+
+  // Build files
+  let mut files_map = EdnMapView::default();
+  for (k, v) in &snapshot.files {
+    // Skip $meta namespaces as they are special and should not be serialized to file
+    if k.ends_with(".$meta") {
+      continue;
+    }
+    files_map.insert(Edn::str(k.as_str()), Edn::from(v));
+  }
+  edn_map.insert_key("files", files_map.into());
+
+  let edn_data = Edn::from(edn_map);
+
+  // Format Edn as Cirru string
+  let content = cirru_edn::format(&edn_data, true).map_err(|e| format!("Failed to format snapshot as Cirru: {e}"))?;
+
+  // Write to file
+  std::fs::write(compact_cirru_path, content).map_err(|e| format!("Failed to write compact.cirru: {e}"))?;
+
+  Ok(())
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -355,12 +423,12 @@ mod tests {
     let functions_with_examples = vec![
       ("+", 2),
       ("-", 2),
-      ("*", 3),
+      ("*", 6),
       ("/", 2),
       ("map", 2),
       ("filter", 2),
-      ("first", 2),
-      ("count", 2),
+      ("first", 3),
+      ("count", 3),
       ("concat", 1),
       ("inc", 2),
       ("reduce", 1), // 原本就有的，只有1个example

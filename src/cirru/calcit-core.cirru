@@ -1,6 +1,6 @@
 
 {} (:package |calcit)
-  :configs $ {} (:init-fn |TODO) (:reload-fn |TODO) (:version |0.0.0)
+  :configs $ {} (:init-fn |calcit.core/println!) (:reload-fn |calcit.core/println!) (:version |0.0.0)
     :modules $ []
   :files $ {}
     |calcit.core $ %{} :FileEntry
@@ -10,20 +10,39 @@
             defmacro %<- (& xs)
               quasiquote $ ->%
                 ~@ $ reverse xs
-        |%{} $ %{} :CodeEntry (:doc |)
+        |%{} $ %{} :CodeEntry (:doc "|Low-level helper for constructing records and attaching metadata\nWraps `&%{` so higher-level macros like `defrecord!` can register methods.")
           :code $ quote
             defmacro %{} (R & xs)
               &let
                 args $ &list:concat & xs
                 quasiquote $ &%{} ~R ~@args
-        |&<= $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ let
+                rec $ %{}
+                  new-record :point
+                  [] :x 1
+                  [] :y 2
+              assert= :point $ &tuple:nth rec 0
+            quote $ assert= (new-record :point (:x 1) (:y 2)) $ %{}
+              new-record :point
+              [] :x 1
+              [] :y 2
+        |&<= $ %{} :CodeEntry (:doc "|Less than or equal comparison for two values")
           :code $ quote
             defn &<= (a b)
               if (&< a b) true $ &= a b
-        |&>= $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= true $ &<= 3 5
+            quote $ assert= true $ &<= 5 5
+            quote $ assert= false $ &<= 5 3
+        |&>= $ %{} :CodeEntry (:doc "|Greater than or equal comparison for two values")
           :code $ quote
             defn &>= (a b)
               if (&> a b) true $ &= a b
+          :examples $ []
+            quote $ assert= true $ &>= 5 3
+            quote $ assert= true $ &>= 5 5
+            quote $ assert= false $ &>= 3 5
         |&case $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro &case (item default pattern & others)
@@ -192,7 +211,7 @@
               :get-char-code get-char-code
               :escape &str:escape
               :mappend &str:concat
-        |&doseq $ %{} :CodeEntry (:doc |)
+        |&doseq $ %{} :CodeEntry (:doc "|Side-effect traversal macro. Iterates over a binding pair, executing the body for each element and returning nil.")
           :code $ quote
             defmacro &doseq (pair & body)
               if
@@ -204,6 +223,12 @@
                   xs0 $ last pair
                 quasiquote $ foldl ~xs0 nil
                   defn doseq-fn% (_acc ~name) ~@body
+          :examples $ []
+            quote $ do
+              defatom *seen ([])
+              &doseq (n ([] 1 2))
+                reset! *seen $ append (deref *seen) n
+              assert= ([] 1 2) $ deref *seen
         |&field-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro &field-match-internal (value & body)
@@ -428,7 +453,7 @@
                 pair $ &set:destruct xs
                 if (nil? pair) nil $ reduce (nth pair 1) (nth pair 0)
                   defn %min (acc x) (&min acc x)
-        |&str-spaced $ %{} :CodeEntry (:doc |)
+        |&str-spaced $ %{} :CodeEntry (:doc "|Internal function for joining strings with spaces, used by str-spaced")
           :code $ quote
             defn &str-spaced (head? x0 & xs)
               if (&list:empty? xs)
@@ -468,10 +493,13 @@
                               , ~branch
                             &tag-match-internal ~value ~t $ ~@ (&list:rest body)
                       if (&= pattern '_) branch $ raise (str-spaced "|unknown supported pattern:" pair)
-        |* $ %{} :CodeEntry (:doc |)
+        |* $ %{} :CodeEntry (:doc "|Multiply numbers together")
           :code $ quote
             defn * (x & ys) (reduce ys x &*)
           :examples $ []
+            quote $ assert= 6 $ * 2 3
+            quote $ assert= 24 $ * 2 3 4
+            quote $ assert= 2 $ * 2
             quote $ assert= 24 $ * 2 3 4
             quote $ assert= 30 $ * 5 6
             quote $ assert= 1 $ * 1
@@ -488,7 +516,7 @@
           :examples $ []
             quote $ assert= 5 $ - 10 3 2
             quote $ assert= -5 $ - 5
-        |-> $ %{} :CodeEntry (:doc |)
+        |-> $ %{} :CodeEntry (:doc "|Thread-first macro\nSyntax: (-> value step1 step2 ...)\nEvaluates the value through each step by inserting it as the first argument and returns the final result.")
           :code $ quote
             defmacro -> (base & xs)
               if (&list:empty? xs) (quasiquote ~base)
@@ -501,6 +529,9 @@
                         &list:rest x0
                       , & $ &list:rest xs
                     recur ([] x0 base) & $ &list:rest xs
+          :examples $ []
+            quote $ assert= 3 $ -> 1 inc inc
+            quote $ assert= 9 $ -> 2 inc (* 3)
         |thread-first $ %{} :CodeEntry (:doc "|a alias for `->`")
           :code $ quote
             defmacro thread-first (& xs)
@@ -542,12 +573,15 @@
         |/= $ %{} :CodeEntry (:doc "|not equal")
           :code $ quote
             defn /= (a b) (not= a b)
-        |: $ %{} :CodeEntry (:doc |)
+        |: $ %{} :CodeEntry (:doc "|Macro sugar for tagged tuples\nExpands to `::` while passing the tag through `turn-tag`, so both keywords and bare symbols may be used.")
           :code $ quote
             defmacro : (tag & args)
               quasiquote $ ::
                 ~ $ turn-tag tag
                 ~@ args
+          :examples $ []
+            quote $ assert= (:: :point 1 2) $ : :point 1 2
+            quote $ assert= (:: :name |calcit) $ : |name |calcit
         |;nil $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro ;nil (& _body) nil
@@ -563,34 +597,51 @@
             defmacro <- (& xs)
               quasiquote $ ->
                 ~@ $ reverse xs
-        |<= $ %{} :CodeEntry (:doc |)
+        |<= $ %{} :CodeEntry (:doc "|Less than or equal comparison, supports multiple arguments")
           :code $ quote
             defn <= (x & ys)
               if
                 &= 1 $ &list:count ys
                 &<= x $ &list:first ys
                 foldl-compare ys x &<=
-        |= $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= true $ <= 3 5
+            quote $ assert= true $ <= 3 3
+            quote $ assert= true $ <= 1 2 3 4
+        |= $ %{} :CodeEntry (:doc "|Equality predicate for one or more values\nReturns true only when every provided argument is equal, short-circuiting on the first mismatch.")
           :code $ quote
             defn = (x & ys)
               if
                 &= 1 $ &list:count ys
                 &= x $ &list:first ys
                 foldl-compare ys x &=
-        |> $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= true $ = 3 3 3
+            quote $ assert= false $ = 1 2
+            quote $ assert= true $ = ([] 1 2) ([] 1 2)
+        |> $ %{} :CodeEntry (:doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument.")
           :code $ quote
             defn > (x & ys)
               if
                 &= 1 $ &list:count ys
                 &> x $ &list:first ys
                 foldl-compare ys x &>
-        |>= $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= true $ > 5 3
+            quote $ assert= false $ > 3 5
+            quote $ assert= true $ > 8 4 2 1
+            quote $ assert= false $ > 2 2
+        |>= $ %{} :CodeEntry (:doc "|Greater-than-or-equal comparison for one or more numbers")
           :code $ quote
             defn >= (x & ys)
               if
                 &= 1 $ &list:count ys
                 &>= x $ &list:first ys
                 foldl-compare ys x &>=
+          :examples $ []
+            quote $ assert= true $ >= 5 3
+            quote $ assert= true $ >= 5 5
+            quote $ assert= false $ >= 3 5
         |[,] $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro [,] (& body)
@@ -631,7 +682,7 @@
                               [] a0
                               , body
                             recur code $ butlast ys
-        |and $ %{} :CodeEntry (:doc |)
+        |and $ %{} :CodeEntry (:doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right.")
           :code $ quote
             defmacro and (item & xs)
               if (&list:empty? xs)
@@ -645,15 +696,28 @@
                     ~ $ &list:first xs
                     ~@ $ &list:rest xs
                   , false
-        |any? $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= false $ and true false true
+            quote $ assert= |done $ and true |done
+        |any? $ %{} :CodeEntry (:doc "|checks if any element in collection satisfies the predicate function, returns true on first match, short-circuits evaluation")
           :code $ quote
             defn any? (xs f)
               foldl-shortcut xs false false $ defn %any? (acc x)
                 if (f x) (:: true true) (:: false acc)
-        |apply $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= true $ any? ([] 1 2 3 4) even?
+            quote $ assert= false $ any? ([] 1 3 5 7) even?
+            quote $ assert= false $ any? ([]) even?
+            quote $ assert= false $ any? ([] 1 2 3) $ fn (x) (> x 10)
+            quote $ assert= true $ any? ([] 5 15 25) $ fn (x) (> x 10)
+        |apply $ %{} :CodeEntry (:doc "|calls a function with arguments from a list, spreads the list as individual arguments")
           :code $ quote
             defn apply (f args) (f & args)
-        |apply-args $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= 6 $ apply + ([] 1 2 3)
+            quote $ assert= 10 $ apply * ([] 2 5)
+            quote $ assert= |abc $ apply str ([] |a |b |c)
+        |apply-args $ %{} :CodeEntry (:doc "|macro that applies a function to arguments, handles empty argument list specially")
           :code $ quote
             defmacro apply-args (args f)
               if
@@ -661,7 +725,10 @@
                 quasiquote $ ~f
                   ~@ $ &list:rest args
                 quasiquote $ ~f ~@args
-        |assert $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= 6 $ apply-args ([] 1 2 3) +
+            quote $ assert= 15 $ apply-args ([] 5 10) +
+        |assert $ %{} :CodeEntry (:doc "|asserts that an expression is truthy, raises an error with message if not")
           :code $ quote
             defmacro assert (message xs)
               if
@@ -677,7 +744,14 @@
                     eprintln "|Failed assertion:" $ format-to-lisp (quote ~xs)
                     raise $ ~
                       &str:concat (&str:concat message "| ") (format-to-lisp xs)
-        |assert-detect $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert "|x should be positive" (> 1 0)
+            quote $ assert "|list should not be empty" (not (empty? $ [] 1))
+        |even? $ %{} :CodeEntry (:doc "|check if number is even?")
+          :code $ quote
+            defn even? (n)
+              and (number? n) $ &= 0 $ &number:rem n 2
+        |assert-detect $ %{} :CodeEntry (:doc "|asserts that a value satisfies a predicate function, raises error with details if not")
           :code $ quote
             defmacro assert-detect (f code)
               &let
@@ -691,7 +765,11 @@
                         , "| <--------"
                     eprintln "|  value is:" ~v
                     raise "|Not satisfied in assertion!"
-        |assert= $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert-detect number? (+ 1 2)
+            quote $ assert-detect list? ([] 1 2 3)
+            quote $ assert-detect even? (* 2 5)
+        |assert= $ %{} :CodeEntry (:doc "|asserts that two values are equal, raises error showing both values if not")
           :code $ quote
             defmacro assert= (a b)
               &let
@@ -706,7 +784,11 @@
                           eprintln |Right: ~vb
                           eprintln "|      " $ format-to-lisp (quote ~b)
                           raise "|not equal in assertion!"
-        |assoc $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= 4 (+ 2 2)
+            quote $ assert= |hello (str |hel |lo)
+            quote $ assert= ([] 1 2 3) (range 1 4)
+        |assoc $ %{} :CodeEntry (:doc "|associates a key-value pair to a collection, works on maps, lists, tuples, and records")
           :code $ quote
             defn assoc (x & args)
               if (nil? x)
@@ -714,7 +796,11 @@
                 if (tuple? x) (&tuple:assoc x & args)
                   if (list? x) (&list:assoc x & args)
                     if (record? x) (&record:assoc x & args) (.assoc x & args)
-        |assoc-in $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= (&{} :a 1 :b 2) $ assoc (&{} :a 1) :b 2
+            quote $ assert= ([] 10 2 3) $ assoc ([] 1 2 3) 0 10
+            quote $ assert= (&{} :a 1 :b 3) $ assoc (&{} :a 1 :b 2) :b 3
+        |assoc-in $ %{} :CodeEntry (:doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed")
           :code $ quote
             defn assoc-in (data path v)
               list-match path
@@ -725,6 +811,10 @@
                     assoc d p0 $ assoc-in
                       if (contains? d p0) (get d p0) (&{})
                       , ps v
+          :examples $ []
+            quote $ assert= (&{} :a (&{} :b 1)) $ assoc-in (&{}) ([] :a :b) 1
+            quote $ assert= (&{} :a (&{} :b 2)) $ assoc-in (&{} :a (&{} :b 1)) ([] :a :b) 2
+            quote $ assert= (&{} :x (&{} :y (&{} :z 3))) $ assoc-in (&{}) ([] :x :y :z) 3
         |bool? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn bool? (x)
@@ -761,14 +851,18 @@
               &let
                 v $ gensym |v
                 quasiquote $ &let (~v ~item) (&case ~v nil ~@patterns)
-        |case-default $ %{} :CodeEntry (:doc |)
+        |case-default $ %{} :CodeEntry (:doc "|Case macro variant with an explicit default branch\nEvaluates the target once, compares it against pattern/result pairs, and falls back to the provided default when no pattern matches.")
           :code $ quote
-            defmacro case (item default & patterns)
+            defmacro case-default (item default & patterns)
               if (&list:empty? patterns)
                 raise $ str-spaced "|Expected patterns for case-default, got empty after:" default
               &let
                 v $ gensym |v
                 quasiquote $ &let (~v ~item) (&case ~v ~default ~@patterns)
+          :examples $ []
+            quote $ assert= |two $ case-default 2 |none (1 |one) (2 |two)
+            quote $ assert= |none $ case-default 3 |none (1 |one)
+            quote $ assert= |fallback $ case-default 5 |fallback (1 |one) (2 |two) (3 |three)
         |concat $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn concat (& args)
@@ -777,7 +871,7 @@
                 (a0 as) (.concat a0 & as)
           :examples $ []
             quote $ assert= ([] 1 2 3 4 5) $ concat ([] 1 2) ([] 3 4) ([] 5)
-        |cond $ %{} :CodeEntry (:doc |)
+        |cond $ %{} :CodeEntry (:doc "|Multi-branch conditional macro. Evaluates condition/result pairs in order and returns the first truthy branch; use `true` as a default guard.")
           :code $ quote
             defmacro cond (pair & else)
               if
@@ -796,12 +890,23 @@
                           cond
                             ~ $ &list:nth else 0
                             ~@ $ &list:rest else
-        |conj $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= :small $ cond
+              (&< 2 1) :nope
+              (&< 2 5) :small
+              true :fallback
+            quote $ assert= :fallback $ cond
+              false :branch
+              true :fallback
+        |conj $ %{} :CodeEntry (:doc "|Appends values to the end of a list, returning a new list\nSupports adding multiple values by chaining additional arguments.")
           :code $ quote
             defn conj (xs y0 & ys)
               if (empty? ys) (append xs y0)
                 recur (append xs y0) & ys
-        |contains-in? $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= ([] 1 2 3) $ conj ([] 1 2) 3
+            quote $ assert= ([] 1 2 3 4) $ conj ([] 1) 2 3 4
+        |contains-in? $ %{} :CodeEntry (:doc "|Checks whether a nested path exists within maps, records, tuples, or lists. Returns true only when every hop succeeds.")
           :code $ quote
             defn contains-in? (xs path)
               list-match path
@@ -828,6 +933,13 @@
                         recur (&tuple:nth xs p0) ps
                         , false
                     true false
+          :examples $ []
+            quote $ assert= true $ contains-in?
+              {} (:profile ({} (:name |calcit)))
+              [] :profile :name
+            quote $ assert= false $ contains-in?
+              {} (:profile ({} (:name |calcit)))
+              [] :profile :missing
         |contains-symbol? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn contains-symbol? (xs y)
@@ -839,7 +951,7 @@
                       (b0 bs)
                         if (contains-symbol? b0 y) true $ recur bs
                 &= xs y
-        |contains? $ %{} :CodeEntry (:doc |)
+        |contains? $ %{} :CodeEntry (:doc "|Checks whether a collection contains a key or index at the current level. Supports lists, tuples, maps, and records while treating nil as false.")
           :code $ quote
             defn contains? (x k)
               if (nil? x) false $ if (list? x) (&list:contains? x k)
@@ -848,7 +960,12 @@
                     and (&>= k 0)
                       &< k $ &tuple:count x
                     .contains? x k
-        |count $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= true $ contains? ([] :a :b) 1
+            quote $ assert= true $ contains? ({} (:a 1)) :a
+            quote $ assert= false $ contains? nil :missing
+            quote $ assert= true $ contains? (#{} 1 2 3) 2
+        |count $ %{} :CodeEntry (:doc "|Counts elements in a collection or string\nNil input returns 0; otherwise delegates to the underlying data structure's counter.")
           :code $ quote
             defn count (x)
               if (nil? x) 0 $ if (tuple? x) (&tuple:count x)
@@ -857,9 +974,14 @@
           :examples $ []
             quote $ assert= 4 $ count ([] 1 2 3 4)
             quote $ assert= 5 $ count |hello
-        |dec $ %{} :CodeEntry (:doc |)
+            quote $ assert= 0 $ count nil
+        |dec $ %{} :CodeEntry (:doc "|Decrements a number by 1")
           :code $ quote
             defn dec (x) (&- x 1)
+          :examples $ []
+            quote $ assert= 4 $ dec 5
+            quote $ assert= -1 $ dec 0
+            quote $ assert= -4 $ dec -3
         |def $ %{} :CodeEntry (:doc "|special macro to expose value to definition")
           :code $ quote
             defmacro def (_name x) x
@@ -911,10 +1033,13 @@
             defn destruct-str (s)
               if (&= s |) (:: :none)
                 :: :some (nth s 0) (&str:slice s 1)
-        |difference $ %{} :CodeEntry (:doc |)
+        |difference $ %{} :CodeEntry (:doc "|Returns the set difference of base and all other sets")
           :code $ quote
             defn difference (base & xs)
               reduce xs base $ fn (acc item) (&difference acc item)
+          :examples $ []
+            quote $ assert= (#{} 1) $ difference (#{} 1 2 3) (#{} 2 3 4)
+            quote $ assert= (#{} 1 2) $ difference (#{} 1 2 3 4) (#{} 3 4 5)
         |dissoc $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn dissoc (x & args)
@@ -932,21 +1057,28 @@
         |distinct $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn distinct (x) (&list:distinct x)
-        |do $ %{} :CodeEntry (:doc |)
+        |do $ %{} :CodeEntry (:doc "|Evaluates expressions sequentially and returns the last result\nUseful for grouping side effects or multiple steps where only the final value matters.")
           :code $ quote
             defmacro do (& body)
               ; println |body: $ format-to-lisp body
               if (empty? body) (raise "|empty do is not okay")
               quasiquote $ &let () (~@ body)
+          :examples $ []
+            quote $ assert= 3 $ do (inc 1) (+ 1 2)
+            quote $ assert= |world $ do (str |hello) (str |world)
         |drop $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn drop (xs n)
               slice xs n $ &list:count xs
-        |each $ %{} :CodeEntry (:doc |)
+        |each $ %{} :CodeEntry (:doc "|Iterate over a collection and apply function f for side effects, returns nil")
           :code $ quote
             defn each (xs f)
               foldl xs nil $ defn %each (_acc x) (f x)
-        |either $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote
+              assert= nil
+                each ([] 1 2 3) $ fn (x) (&+ x 1)
+        |either $ %{} :CodeEntry (:doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value.")
           :code $ quote
             defmacro either (item & xs)
               if (&list:empty? xs) item $ if (list? item)
@@ -963,26 +1095,36 @@
                     ~ $ &list:first xs
                     ~@ $ &list:rest xs
                   ~ item
+          :examples $ []
+            quote $ assert= 42 $ either nil 42 nil
+            quote $ assert= false $ either false true
+            quote $ assert= |backup $ either nil nil |backup
         |empty $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn empty (x)
               if (nil? x) nil $ if (list? x) ([]) (.empty x)
-        |empty? $ %{} :CodeEntry (:doc |)
+        |empty? $ %{} :CodeEntry (:doc "|Checks whether a collection or string is empty\nNil values are considered empty, otherwise delegates to the underlying data structure.")
           :code $ quote
             defn empty? (x)
               if (nil? x) true $ if (list? x) (&list:empty? x) (.empty? x)
+          :examples $ []
+            quote $ assert= true $ empty? ([])
+            quote $ assert= false $ empty? ([] 1)
         |ends-with? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn ends-with? (x y)
               &=
                 &- (&str:count x) (&str:count y)
                 &str:find-index x y
-        |every? $ %{} :CodeEntry (:doc |)
+        |every? $ %{} :CodeEntry (:doc "|Checks whether every element of a collection satisfies a predicate, short-circuiting on the first failure.")
           :code $ quote
             defn every? (xs f)
               foldl-shortcut xs true true $ defn %every? (acc x)
                 if (f x) (:: false acc) (:: true false)
-        |exclude $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= true $ every? ([] 2 4 6) $ defn %even (x) (&= 0 (.rem x 2))
+            quote $ assert= false $ every? ([] 1 2 3) $ defn %gt1 (x) (&> x 1)
+        |exclude $ %{} :CodeEntry (:doc "|Removes values from a collection by repeatedly calling `&exclude` for each provided item.")
           :code $ quote
             defn exclude (base & xs)
               reduce xs base $ fn (acc item) (&exclude acc item)
@@ -1000,7 +1142,7 @@
                   quasiquote $ &let ()
                     assert "|expected map value to match" $ map? ~value
                     &field-match-internal ~value ~@body
-        |filter $ %{} :CodeEntry (:doc |)
+        |filter $ %{} :CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
           :code $ quote
             defn filter (xs f) (.filter xs f)
           :examples $ []
@@ -1011,40 +1153,51 @@
             defn filter-not (xs f)
               .filter xs $ defn %filter-not (x)
                 not $ f x
-        |find $ %{} :CodeEntry (:doc |)
+        |find $ %{} :CodeEntry (:doc "|Find the first element in a collection that satisfies the predicate f")
           :code $ quote
             defn find (xs f)
               foldl-shortcut xs 0 nil $ defn %find (_acc x)
                 if (f x) (:: true x) (:: false nil)
+          :examples $ []
+            quote $ assert= 4 $ find ([] 1 2 3 4 5) $ fn (x) (&> x 3)
+            quote $ assert= nil $ find ([] 1 2 3) $ fn (x) (&> x 10)
         |find-index $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn find-index (xs f)
               foldl-shortcut xs 0 nil $ defn %find-index (idx x)
                 if (f x) (:: true idx)
                   :: false $ &+ 1 idx
-        |first $ %{} :CodeEntry (:doc |)
+        |first $ %{} :CodeEntry (:doc "|Returns the first element of a list, tuple, string, or other sequential structure\nNil inputs return nil, and empty collections also produce nil.")
           :code $ quote
             defn first (x)
               if (nil? x) nil $ if (tuple? x) (&tuple:nth x 0)
                 if (list? x) (&list:nth x 0) (.first x)
           :examples $ []
-            quote $ first ([] 1 2 3)
-            quote $ first ([])
+            quote $ assert= 1 $ first ([] 1 2 3)
+            quote $ assert= |h $ first |hello
+            quote $ assert= nil $ first nil
         |flipped $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro flipped (f & args)
               quasiquote $ ~f
                 ~@ $ reverse args
-        |fn $ %{} :CodeEntry (:doc |)
+        |fn $ %{} :CodeEntry (:doc "|macro for anonymous functions\nSyntax: (fn (args...) body...)\nParams: args (parameter list), body (expressions)\nReturns: anonymous function\nCreates an anonymous function, shorter than defn")
           :code $ quote
             defmacro fn (args & body)
               quasiquote $ defn f% ~args ~@body
-        |fn? $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ map ([] 1 2 3) $ fn (x) (* x 2)
+            quote $ filter ([] 1 2 3 4 5) $ fn (n) (> n 2)
+        |fn? $ %{} :CodeEntry (:doc "|Check if a value is a function")
           :code $ quote
             defn fn? (x)
               if
                 &= (type-of x) :fn
                 , true $ &= (type-of x) :proc
+          :examples $ []
+            quote $ assert= true $ fn? inc
+            quote $ assert= false $ fn? 123
+            quote $ assert= false $ fn? |text
         |foldl' $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn foldl' (xs acc f)
@@ -1052,13 +1205,16 @@
                 () acc
                 (x0 xss)
                   recur xss (f acc x0) f
-        |foldl-compare $ %{} :CodeEntry (:doc |)
+        |foldl-compare $ %{} :CodeEntry (:doc "|Helper used by comparison operators to ensure a relation holds across an entire list, short-circuiting on the first failure.")
           :code $ quote
             defn foldl-compare (xs acc f)
               if (&list:empty? xs) true $ if
                 f acc $ &list:first xs
                 recur (&list:rest xs) (&list:first xs) f
                 , false
+          :examples $ []
+            quote $ assert= true $ foldl-compare ([] 1 2 3 4) 0 &<
+            quote $ assert= false $ foldl-compare ([] 1 3 2 4) 0 &<
         |frequencies $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn frequencies (xs0)
@@ -1075,7 +1231,7 @@
                           update acc x0 $ \ &+ % 1
                           &map:assoc acc x0 1
                         , xss
-        |get $ %{} :CodeEntry (:doc |)
+        |get $ %{} :CodeEntry (:doc "|Reads a value from collections or strings by key or index. Handles maps, lists, tuples, records, and strings; nil bases return nil.")
           :code $ quote
             defn get (base k)
               if (nil? base) nil $ if (string? base) (&str:nth base k)
@@ -1084,7 +1240,11 @@
                     if (tuple? base) (&tuple:nth base k)
                       if (record? base) (&record:get base k)
                         raise $ str-spaced "|Expected map or list for get, got:" base k
-        |get-in $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= 2 $ get ([] 0 2 4) 1
+            quote $ assert= |b $ get |abc 1
+            quote $ assert= nil $ get nil :missing
+        |get-in $ %{} :CodeEntry (:doc "|Get value from nested data structure using a path of keys")
           :code $ quote
             defn get-in (base path)
               if
@@ -1094,7 +1254,11 @@
                 () base
                 (y0 ys)
                   recur (get base y0) ys
-        |group-by $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= 1 $ get-in ({} (:a ({} (:b 1)))) ([] :a :b)
+            quote $ assert= 2 $ get-in ([] ([] 1 2) ([] 3 4)) ([] 0 1)
+            quote $ assert= nil $ get-in ({} (:x |value)) ([] :y)
+        |group-by $ %{} :CodeEntry (:doc "|Group elements by the result of applying function f to each element")
           :code $ quote
             defn group-by (xs0 f)
               apply-args
@@ -1114,7 +1278,7 @@
         |identity $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn identity (x) x
-        |if-let $ %{} :CodeEntry (:doc |)
+        |if-let $ %{} :CodeEntry (:doc "|Conditionally binds the result of an expression to a symbol and executes the matching branch when the value is non-nil.")
           :code $ quote
             defmacro if-let (pair then ? else)
               if
@@ -1129,30 +1293,39 @@
                 quasiquote $ &let
                   ~x $ ~ (nth pair 1)
                   if (some? ~x) ~then ~else
+          :examples $ []
+            quote $ assert= |found $ if-let (v (:: :some |found)) v |missing
+            quote $ assert= |missing $ if-let (v (:: :none)) v |missing
         |if-not $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro if-not (condition true-branch ? false-branch)
               quasiquote $ if ~condition ~false-branch ~true-branch
-        |inc $ %{} :CodeEntry (:doc |)
+        |inc $ %{} :CodeEntry (:doc "|Increments a number by 1")
           :code $ quote
             defn inc (x) (&+ x 1)
           :examples $ []
             quote $ assert= 6 $ inc 5
             quote $ assert= 1 $ inc 0
-        |include $ %{} :CodeEntry (:doc |)
+        |include $ %{} :CodeEntry (:doc "|Add elements to a set, returns a new set with the elements included")
           :code $ quote
             defn include (base & xs)
               reduce xs base $ fn (acc item) (&include acc item)
+          :examples $ []
+            quote $ assert= (#{} 1 2 3 4) $ include (#{} 1 2) 3 4
+            quote $ assert= (#{} 1 2 3) $ include (#{} 1 2) 2 3
         |includes? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn includes? (x k)
               if (nil? x) false $ if (list? x) (&list:includes? x k) (.includes? x k)
-        |index-of $ %{} :CodeEntry (:doc |)
+        |index-of $ %{} :CodeEntry (:doc "|Find the first index of an item in a list, returns nil if not found")
           :code $ quote
             defn index-of (xs item)
               foldl-shortcut xs 0 nil $ defn %index-of (idx x)
                 if (&= item x) (:: true idx)
                   :: false $ &+ 1 idx
+          :examples $ []
+            quote $ assert= 1 $ index-of ([] |a |b |c) |b
+            quote $ assert= nil $ index-of ([] 1 2 3) 5
         |interleave $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn interleave (xs0 ys0)
@@ -1210,7 +1383,7 @@
           :code $ quote
             defn keys (x)
               map (to-pairs x) &list:first
-        |keys-non-nil $ %{} :CodeEntry (:doc |)
+        |keys-non-nil $ %{} :CodeEntry (:doc "|Get keys from a map that have non-nil values")
           :code $ quote
             defn keys-non-nil (x)
               apply-args
@@ -1227,12 +1400,18 @@
                         recur
                           include acc $ &list:first pair
                           nth set-pair 1
-        |last $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= (#{} :a :b) $ keys-non-nil ({} (:a 1) (:b 2) (:c nil))
+            quote $ assert= (#{}) $ keys-non-nil ({} (:a nil) (:b nil))
+        |last $ %{} :CodeEntry (:doc "|Returns the last element of a list-like collection\nReturns nil when the collection is empty.")
           :code $ quote
             defn last (xs)
               if (empty? xs) nil $ nth xs
                 &- (count xs) 1
-        |let $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= 3 $ last ([] 1 2 3)
+            quote $ assert= nil $ last ([])
+        |let $ %{} :CodeEntry (:doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially")
           :code $ quote
             defmacro let (pairs & body)
               if
@@ -1250,6 +1429,9 @@
                     let
                       ~ $ &list:rest pairs
                       ~@ body
+          :examples $ []
+            quote $ let ((x 1) (y 2)) (+ x y)
+            quote $ let ((a 10)) (* a a)
         |let-destruct $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro let-destruct (pattern v & body)
@@ -1288,7 +1470,7 @@
                       let-sugar
                         ~ $ &list:rest pairs
                         ~@ body
-        |let[] $ %{} :CodeEntry (:doc |)
+        |let[] $ %{} :CodeEntry (:doc "|Destructures a sequential value inside `let`, assigning each position to declared names and supporting `&` rest bindings.")
           :code $ quote
             defmacro let[] (vars data & body)
               if
@@ -1325,6 +1507,9 @@
                   quasiquote $ let (~ defs) (~@ body)
                   quasiquote $ &let (~v ~data)
                     let (~ defs) (~@ body)
+          :examples $ []
+            quote $ let[] (x y) ([] 1 2) (+ x y)
+            quote $ let[] (head & tail) ([] 9 8 7) (count tail)
         |let{} $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro let{} (items base & body)
@@ -1340,7 +1525,7 @@
                       defn gen-items% (x)
                         [] x $ [] (turn-tag x) var-result
                     ~@ body
-        |list-match $ %{} :CodeEntry (:doc |)
+        |list-match $ %{} :CodeEntry (:doc "|Two-branch list destructuring macro. Provides separate clauses for the empty list and a head/tail pattern, useful for simple recursion or guards.")
           :code $ quote
             defmacro list-match (xs pattern1 pattern2)
               assert "|patterns in list" $ and (list? pattern1) (list? pattern2)
@@ -1371,15 +1556,25 @@
                         ~ $ &list:nth pattern1 0
                         ~ $ &list:slice pattern1 1
                       raise "|expected empty and destruction branches"
-        |list? $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= :something $ list-match ([] 1)
+              () :empty
+              (a b) :something
+            quote $ assert= 1 $ list-match ([] 1 2 3)
+              () nil
+              (head tail) head
+        |list? $ %{} :CodeEntry (:doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure")
           :code $ quote
             defn list? (x)
               &= (type-of x) :list
+          :examples $ []
+            quote $ list? ([] 1 2 3)
+            quote $ list? ({})
         |cirru-quote? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn cirru-quote? (x)
               &= (type-of x) :cirru-quote
-        |loop $ %{} :CodeEntry (:doc |)
+        |loop $ %{} :CodeEntry (:doc "|Named-let style looping macro. Binds initial values once and uses `recur` to update bindings in a tail-recursive way without stack growth.")
           :code $ quote
             defmacro loop (pairs & body)
               if
@@ -1397,11 +1592,17 @@
                   values $ map pairs last
                 assert "|loop requires symbols in pairs" $ every? args symbol?
                 quasiquote $ apply (defn generated-loop ~args ~@body) ([] ~@values)
+          :examples $ []
+            quote $ assert= 6 $ loop
+              (total 0)
+              (xs ([] 1 2 3))
+              if (empty? xs) total
+                recur (+ total (first xs)) (rest xs)
         |macro? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn macro? (x)
               &= (type-of x) :macro
-        |map $ %{} :CodeEntry (:doc |)
+        |map $ %{} :CodeEntry (:doc "|Collection mapping function. Applies a function to each element of a list, set, or map, returning a structure of the same shape.")
           :code $ quote
             defn map (xs f)
               if (list? xs) (&list:map xs f)
@@ -1414,12 +1615,15 @@
           :examples $ []
             quote $ assert= ([] 2 3 4) $ map ([] 1 2 3) inc
             quote $ assert= ([] |1 |2 |3) $ map ([] 1 2 3) str
-        |map-indexed $ %{} :CodeEntry (:doc |)
+        |map-indexed $ %{} :CodeEntry (:doc "|Map over a collection with index, f takes index and value")
           :code $ quote
             defn map-indexed (xs f)
               foldl xs ([])
                 defn %map-indexed (acc x)
                   append acc $ f (count acc) x
+          :examples $ []
+            quote $ assert= ([] 10 21 32) $ map-indexed ([] 10 20 30) $ fn (i x) (&+ i x)
+            quote $ assert= ([] ([] 0 |a) ([] 1 |b)) $ map-indexed ([] |a |b) $ fn (i x) ([] i x)
         |map-kv $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn map-kv (xs f)
@@ -1435,10 +1639,13 @@
                       if
                         or (nil? result) (tuple? result)
                         , acc $ raise (str-spaced "|map-kv expected list or nil, got:" result)
-        |map? $ %{} :CodeEntry (:doc |)
+        |map? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a map")
           :code $ quote
             defn map? (x)
               &= (type-of x) :map
+          :examples $ []
+            quote $ assert= true $ map? $ {} (:a 1)
+            quote $ assert= false $ map? ([] 1 2)
         |mapcat $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn mapcat (xs f)
@@ -1446,53 +1653,81 @@
         |max $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn max (xs) (.max xs)
-        |merge $ %{} :CodeEntry (:doc |)
+        |merge $ %{} :CodeEntry (:doc "|Combines maps left-to-right, with later maps overwriting keys from earlier ones by reducing through `&merge`.")
           :code $ quote
             defn merge (x0 & xs) (reduce xs x0 &merge)
+          :examples $ []
+            quote $ assert=
+              {} (:a 2) (:b 1)
+              merge ({} (:a 1)) ({} (:a 2) (:b 1))
+            quote $ assert=
+              {} (:a 1) (:b 2) (:c 3)
+              merge
+                {} (:a 1)
+                {} (:b 2)
+                {} (:c 3)
         |merge-non-nil $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn merge-non-nil (x0 & xs) (reduce xs x0 &merge-non-nil)
         |min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn min (xs) (.min xs)
-        |negate $ %{} :CodeEntry (:doc |)
+        |negate $ %{} :CodeEntry (:doc "|Negate a number, returns its opposite")
           :code $ quote
             defn negate (x) (&- 0 x)
+          :examples $ []
+            quote $ assert= -5 $ negate 5
+            quote $ assert= 3 $ negate -3
+            quote $ assert= 0 $ negate 0
         |abs $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn abs (x)
               if (&< x 0) (&- 0 x) x
-        |nil? $ %{} :CodeEntry (:doc |)
+        |nil? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is nil")
           :code $ quote
             defn nil? (x)
               &= (type-of x) :nil
+          :examples $ []
+            quote $ assert= true $ nil? nil
+            quote $ assert= false $ nil? 0
         |non-nil! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn non-nil! (x)
               if (nil? x)
                 raise "|expected non nil value"
                 , x
-        |not= $ %{} :CodeEntry (:doc |)
+        |not= $ %{} :CodeEntry (:doc "|Returns true when its two arguments are not identical according to `=`.")
           :code $ quote
             defn not= (x y)
               not $ &= x y
+          :examples $ []
+            quote $ assert= true $ not= 1 2
+            quote $ assert= false $ not= :a :a
+            quote $ assert= true $ not= |a |b
         |noted $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro noted (_doc v) v
-        |nth $ %{} :CodeEntry (:doc |)
+        |nth $ %{} :CodeEntry (:doc "|Returns the element at index `i` from a list, tuple, or sequential data structure\nRaises if the index is outside the available range.")
           :code $ quote
             defn nth (x i)
               if (tuple? x) (&tuple:nth x i)
                 if (list? x) (&list:nth x i) (.nth x i)
-        |number? $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= 2 $ nth ([] 1 2 3) 1
+            quote $ assert= |b $ nth |abc 1
+        |number? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a numeric scalar")
           :code $ quote
             defn number? (x)
               &= (type-of x) :number
+          :examples $ []
+            quote $ assert= true $ number? 123
+            quote $ assert= true $ number? 3.14
+            quote $ assert= false $ number? |text
         |optionally $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn optionally (s)
               if (nil? s) (:: :none) (:: :some s)
-        |or $ %{} :CodeEntry (:doc |)
+        |or $ %{} :CodeEntry (:doc "|Logical disjunction macro. Skips evaluating later forms once a truthy (non-nil, non-false) value is found, preserving the first truthy result.")
           :code $ quote
             defmacro or (item & xs)
               if (&list:empty? xs) item $ if (list? item)
@@ -1517,6 +1752,10 @@
                       ~ $ &list:first xs
                       ~@ $ &list:rest xs
                     ~ item
+          :examples $ []
+            quote $ assert= |done $ or nil |done false
+            quote $ assert= false $ or false nil
+            quote $ assert= 2 $ or nil 2 3
         |pairs-map $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn pairs-map (xs)
@@ -1550,10 +1789,13 @@
                   quasiquote $ &let ()
                     assert "|expected record to match" $ record? ~value
                     &record-match-internal ~value ~@body
-        |record? $ %{} :CodeEntry (:doc |)
+        |record? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a record created with `new-record` or `defrecord`.")
           :code $ quote
             defn record? (x)
               &= (type-of x) :record
+          :examples $ []
+            quote $ assert= true $ record? (new-record :point (:x 1) (:y 2))
+            quote $ assert= false $ record? ({} (:x 1))
         |reduce $ %{} :CodeEntry (:doc "|Collection reduction operation\nFunction: Reduces a collection using a specified function, accumulating elements onto an initial value\nParams: xs (collection), x0 (initial accumulator value), f (reduction function that takes accumulator and current element)\nReturns: any type - final accumulated result\nNotes: The reduction function f should accept two parameters (accumulator, current element) and return a new accumulator value")
           :code $ quote
             defn reduce (xs x0 f) (foldl xs x0 f)
@@ -1571,13 +1813,19 @@
                   , n0
                 defn %repeat (acc n)
                   if (&<= n 0) acc $ recur (append acc x) (&- n 1)
-        |rest $ %{} :CodeEntry (:doc |)
+        |rest $ %{} :CodeEntry (:doc "|Returns the collection without its first element\nNil input returns nil; lists delegate to &list:rest.")
           :code $ quote
             defn rest (x)
               if (nil? x) nil $ if (list? x) (&list:rest x) (.rest x)
-        |reverse $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= ([] 2 3) $ rest ([] 1 2 3)
+            quote $ assert= nil $ rest nil
+        |reverse $ %{} :CodeEntry (:doc "|Reverse the order of elements in a list")
           :code $ quote
             defn reverse (x) (&list:reverse x)
+          :examples $ []
+            quote $ assert= ([] 3 2 1) $ reverse ([] 1 2 3)
+            quote $ assert= ([]) $ reverse ([])
         |section-by $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn section-by (xs0 n)
@@ -1600,14 +1848,21 @@
               foldl xs (&{})
                 defn %select-keys (acc k)
                   &map:assoc acc k $ &map:get m k
-        |set? $ %{} :CodeEntry (:doc |)
+        |set? $ %{} :CodeEntry (:doc "|Check if a value is a set")
           :code $ quote
             defn set? (x)
               &= (type-of x) :set
-        |slice $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= true $ set? (#{} 1 2 3)
+            quote $ assert= false $ set? ([] 1 2 3)
+            quote $ assert= false $ set? ({} (:a 1))
+        |slice $ %{} :CodeEntry (:doc "|Extract a slice from a collection from index n to m")
           :code $ quote
             defn slice (xs n ? m)
               if (nil? xs) nil $ .slice xs n m
+          :examples $ []
+            quote $ assert= ([] 2 3) $ slice ([] 1 2 3 4) 1 3
+            quote $ assert= ([] 3 4) $ slice ([] 1 2 3 4) 2
         |some-in? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn some-in? (x path)
@@ -1623,56 +1878,100 @@
                         recur (get x k) ps
                         , false
                       raise $ &str:concat "|Unknown structure for some-in? detection: " x
-        |some? $ %{} :CodeEntry (:doc |)
+        |some? $ %{} :CodeEntry (:doc "|Complement of nil?\nReturns true when the value is not nil.")
           :code $ quote
             defn some? (x)
               not $ nil? x
+          :examples $ []
+            quote $ assert= true $ some? 0
+            quote $ assert= false $ some? nil
         |starts-with? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn starts-with? (x y)
               &= 0 $ &str:find-index x y
-        |str $ %{} :CodeEntry (:doc |)
+        |str $ %{} :CodeEntry (:doc "|converts values to string and concatenates them")
           :code $ quote
             defn str (x0 & xs)
               if (&list:empty? xs) (&str x0)
                 &str:concat x0 $ str & xs
-        |str-spaced $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= |hello $ str |hello
+            quote $ assert= |abc $ str |a |b |c
+            quote $ assert= |123 $ str 1 2 3
+            quote $ assert= "|hello world" $ str |hello "| " |world
+        |str-spaced $ %{} :CodeEntry (:doc "|converts values to string and joins them with spaces")
           :code $ quote
             defn str-spaced (& xs) (&str-spaced true & xs)
-        |string? $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= "|a b c" $ str-spaced |a |b |c
+            quote $ assert= "|1 2 3" $ str-spaced 1 2 3
+        |string? $ %{} :CodeEntry (:doc "|checks if value is a string")
           :code $ quote
             defn string? (x)
               &= (type-of x) :string
-        |strip-prefix $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= true $ string? |hello
+            quote $ assert= false $ string? 123
+            quote $ assert= false $ string? :keyword
+        |strip-prefix $ %{} :CodeEntry (:doc "|removes prefix from string if it starts with that prefix, returns original string otherwise")
           :code $ quote
             defn strip-prefix (s piece)
               if (starts-with? s piece)
                 &str:slice s $ &str:count piece
                 , s
-        |strip-suffix $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= "| world" $ strip-prefix "|hello world" |hello
+            quote $ assert= |abc $ strip-prefix "|prefix-abc" "|prefix-"
+            quote $ assert= |hello $ strip-prefix |hello |xyz
+        |strip-suffix $ %{} :CodeEntry (:doc "|removes suffix from string if it ends with that suffix, returns original string otherwise")
           :code $ quote
             defn strip-suffix (s piece)
               if (ends-with? s piece)
                 &str:slice s 0 $ &- (&str:count s) (&str:count piece)
                 , s
-        |deref $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= |hello $ strip-suffix "|hello world" "| world"
+            quote $ assert= |abc $ strip-suffix "|abc-suffix" |-suffix
+            quote $ assert= |hello $ strip-suffix |hello |xyz
+        |deref $ %{} :CodeEntry (:doc "|Reads the current value stored in a reference\nSupports Calcit atoms as well as other host structures that implement deref.")
           :code $ quote
             defn deref (*a)
               if (ref? *a) (&atom:deref *a) (.deref *a)
-        |swap! $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ do
+              defatom *state 1
+              assert= 1 $ deref *state
+            quote $ do
+              defatom *counter 0
+              reset! *counter 5
+              assert= 5 $ deref *counter
+        |swap! $ %{} :CodeEntry (:doc "|Atomically updates a reference by applying a function to its current value and storing the result.")
           :code $ quote
             defmacro swap! (a f & args)
               quasiquote $ reset! ~a
                 ~f (&atom:deref ~a) ~@args
-        |symbol? $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ do
+              defatom *counter 0
+              swap! *counter inc
+              assert= 1 $ deref *counter
+            quote $ do
+              defatom *state 1
+              swap! *state + 2
+              assert= 3 $ deref *state
+        |symbol? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a symbol literal (as opposed to strings, keywords, or other data).")
           :code $ quote
             defn symbol? (x)
               &= (type-of x) :symbol
+          :examples $ []
+            quote $ assert= true $ symbol?
+              quote item
+            quote $ assert= false $ symbol? |text
         |syntax? $ %{} :CodeEntry (:doc "|detecting syntax element")
           :code $ quote
             defn syntax? (x)
               &= (type-of x) :syntax
-        |tag-match $ %{} :CodeEntry (:doc |)
+        |tag-match $ %{} :CodeEntry (:doc "|Pattern matching on tagged tuples, dispatches based on the first element of the tuple")
           :code $ quote
             defmacro tag-match (value & body)
               if (&list:empty? body)
@@ -1688,11 +1987,26 @@
                       &let
                         ~t# $ &tuple:nth ~v# 0
                         &tag-match-internal ~v# ~t# $ ~@ body
+          :examples $ []
+            quote
+              assert= 11
+                tag-match (:: :ok 1)
+                  (:ok v) (&+ v 10)
+                  (:err e) (eprintln e)
+            quote
+              assert= |got:hello
+                tag-match (:: :some |hello)
+                  (:some x) (str x |:got)
+                  (:none) |nothing
 
-        |tag? $ %{} :CodeEntry (:doc |)
+        |tag? $ %{} :CodeEntry (:doc "|Check if a value is a tag (keyword)")
           :code $ quote
             defn tag? (x)
               &= (type-of x) :tag
+          :examples $ []
+            quote $ assert= true $ tag? :keyword
+            quote $ assert= false $ tag? |string
+            quote $ assert= false $ tag? 123
         |tagging-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn tagging-edn (data)
@@ -1703,12 +2017,15 @@
                       if (string? k) (turn-tag k) k
                       tagging-edn v
                   , data
-        |take $ %{} :CodeEntry (:doc |)
+        |take $ %{} :CodeEntry (:doc "|Take the first n elements from a list")
           :code $ quote
             defn take (xs n)
               if
                 >= n $ &list:count xs
                 , xs $ slice xs 0 n
+          :examples $ []
+            quote $ assert= ([] 1 2) $ take ([] 1 2 3 4) 2
+            quote $ assert= ([] 1 2 3) $ take ([] 1 2 3) 5
         |take-last $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn take-last (xs n)
@@ -1717,23 +2034,29 @@
                 , xs $ slice xs
                   - (&list:count xs) n
                   &list:count xs
-        |tuple? $ %{} :CodeEntry (:doc |)
+        |tuple? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a tuple literal created with the `::` form.")
           :code $ quote
             defn tuple? (x)
               &= (type-of x) :tuple
+          :examples $ []
+            quote $ assert= true $ tuple? (:: :a :b)
+            quote $ assert= false $ tuple? ([] :a :b)
         |turn-str $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn turn-str (x) (turn-string x)
-        |union $ %{} :CodeEntry (:doc |)
+        |union $ %{} :CodeEntry (:doc "|Returns the union of all sets")
           :code $ quote
             defn union (base & xs)
               reduce xs base $ fn (acc item) (&union acc item)
+          :examples $ []
+            quote $ assert= (#{} 1 2 3 4) $ union (#{} 1 2) (#{} 3 4)
+            quote $ assert= (#{} 1 2 3) $ union (#{} 1) (#{} 2) (#{} 3)
         |unselect-keys $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn unselect-keys (m xs)
               assert "|expected map for unselecting" $ map? m
               foldl xs m $ defn %unselect-keys (acc k) (&map:dissoc acc k)
-        |update $ %{} :CodeEntry (:doc |)
+        |update $ %{} :CodeEntry (:doc "|Applies a function to the value at a given key or index, returning a collection with the updated slot.")
           :code $ quote
             defn update (x k f)
               if (map? x)
@@ -1751,17 +2074,35 @@
                         assoc x k $ f (&record:get x k)
                         , x
                       raise $ &str:concat "|Cannot update key on item: " (to-lispy-string x)
-        |update-in $ %{} :CodeEntry (:doc |)
+          :examples $ []
+            quote $ assert= ({} (:count 2)) $ update ({} (:count 1)) :count inc
+            quote $ assert= (:: 0 2 2)
+              update (:: 0 1 2) 1 inc
+            quote $ assert= ({} (:count 1)) $ update ({} (:count 1)) :missing inc
+        |update-in $ %{} :CodeEntry (:doc "|Walks a path of keys inside nested maps/lists and applies a function to the value, creating intermediate maps as needed.")
           :code $ quote
             defn update-in (data path f)
               list-match path
                 () $ f data
                 (p0 ps)
                   assoc (either data $ {}) p0 $ update-in (get data p0) ps f
+          :examples $ []
+            quote $ assert=
+              {} (:a ({} (:b 2)))
+              update-in ({} (:a ({} (:b 1)))) ([] :a :b) inc
+            quote $ assert=
+              {} (:profile ({} (:visits 1)))
+              update-in {} ([] :profile :visits) (fn (_missing) 1)
+            quote $ assert=
+              {} (:x 10)
+              update-in ({} (:x 5)) ([] :x) $ fn (v) (&* v 2)
         |vals $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn vals (x)
               map (to-pairs x) last
+          :examples $ []
+            quote $ assert= ([] 1 2) $ vals ({} (:a 1) (:b 2))
+            quote $ assert= ([]) $ vals ({})
         |w-js-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro w-js-log (x)
@@ -1800,7 +2141,7 @@
                       format-to-lisp $ quote ~x
                       , |=> ~x
                     ~ x
-        |when $ %{} :CodeEntry (:doc |)
+        |when $ %{} :CodeEntry (:doc "|Conditional macro that evaluates its body only when the test expression is truthy, returning the last body value.")
           :code $ quote
             defmacro when (condition & body)
               if
@@ -1809,6 +2150,11 @@
                   ~ $ nth body 0
                 quasiquote $ if ~condition
                   &let () ~@body
+          :examples $ []
+            quote $ assert= 4 $ when (&> 3 2)
+              inc 3
+            quote $ assert= nil $ when false
+              inc 1
         |when-let $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro when-let (pair & body)
@@ -1878,7 +2224,7 @@
                   defn &{,} (x) (not= x ',)
                 quasiquote $ pairs-map
                   section-by ([] ~@xs) 2
-        |{} $ %{} :CodeEntry (:doc |)
+        |{} $ %{} :CodeEntry (:doc "|macro for creating hashmaps\nSyntax: ({} (:key value) ...)\nParams: pairs (key-value pairs)\nReturns: hashmap\nCreates a hashmap from key-value pairs")
           :code $ quote
             defmacro {} (& xs)
               if
@@ -1889,6 +2235,9 @@
               &let
                 ys $ &list:concat & xs
                 quasiquote $ &{} ~@ys
+          :examples $ []
+            quote $ {} (:a 1) (:b 2)
+            quote $ {} (:name |Alice) (:age 30)
         |' $ %{} :CodeEntry (:doc "|alias for []")
           :code $ quote
             def "'" []
@@ -1907,16 +2256,32 @@
         ; "=== CalcitSyntax Internal Definitions ==="
         |defn $ %{} :CodeEntry (:doc "|internal syntax for defining functions\nSyntax: (defn name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: function definition\nDefines a named function with parameters and body expression")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ defn my-add (p1 p2) (+ p1 p2)
         |defmacro $ %{} :CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ do
+              defmacro identity-macro (x)
+                quasiquote ~x
+              assert= 4 $ identity-macro (+ 2 2)
         |if $ %{} :CodeEntry (:doc "|internal syntax for conditional expressions\nSyntax: (if condition then-expr else-expr)\nParams: condition (any), then-expr (any), else-expr (any, optional)\nReturns: value of then-expr if condition is truthy, else-expr otherwise\nEvaluates condition and returns appropriate branch")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ if (> x 0) |positive |non-positive
+            quote $ if (empty? xs) 0 (count xs)
         |&let $ %{} :CodeEntry (:doc "|internal syntax for local binding (binds only 1 local)\nSyntax: (&let [binding value] body)\nParams: binding (symbol), value (any), body (expression)\nReturns: result of body with binding in scope\nCreates a local binding for a single variable")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ assert= 6 $ &let (x (+ 1 2)) (* x 2)
+            quote $ assert= |done $ &let (label |done) label
         |quote $ %{} :CodeEntry (:doc "|internal syntax for turning code into quoted data\nSyntax: (quote expr)\nParams: expr (any code)\nReturns: quoted data structure\nPrevents evaluation and returns code as data")
           :code $ quote &runtime-inplementation
         |quasiquote $ %{} :CodeEntry (:doc "|internal syntax for quasiquote (used inside macros)\nSyntax: (quasiquote expr)\nParams: expr (code with possible unquote)\nReturns: partially quoted structure\nLike quote but allows selective unquoting with ~ and ~@")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ quasiquote $ &+ ~x 1
+            quote $ quasiquote $ [] ~x ~@xs
         |gensym $ %{} :CodeEntry (:doc "|internal syntax for generating unique symbols\nSyntax: (gensym) or (gensym prefix)\nParams: prefix (string, optional)\nReturns: unique symbol\nGenerates a unique symbol for macro hygiene")
           :code $ quote &runtime-inplementation
         |eval $ %{} :CodeEntry (:doc "|internal syntax for evaluating code at runtime\nSyntax: (eval expr)\nParams: expr (quoted code)\nReturns: result of evaluation\nEvaluates quoted code in current environment")
@@ -1931,8 +2296,12 @@
           :code $ quote &runtime-inplementation
         |defatom $ %{} :CodeEntry (:doc "|internal syntax for defining referenced state\nSyntax: (defatom name initial-value)\nParams: name (symbol), initial-value (any)\nReturns: atom definition\nDefines a mutable reference with initial value")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ ; defatom *my-atom $ {} (:a 1)
         |reset! $ %{} :CodeEntry (:doc "|internal syntax for resetting atom values\nSyntax: (reset! atom new-value)\nParams: atom (atom reference), new-value (any)\nReturns: new value\nSets atom to new value and returns it")
           :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ ; reset! *my-atom $ {} (:a 2)
         |hint-fn $ %{} :CodeEntry (:doc "|internal syntax for function hints (currently only used for async)\nSyntax: (hint-fn hint-type fn-expr)\nParams: hint-type (keyword), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, mainly for async operations")
           :code $ quote &runtime-inplementation
         |&call-spread $ %{} :CodeEntry (:doc "|internal syntax for handling & spreading in function calls\nSyntax: (&call-spread fn args)\nParams: fn (function), args (list with spread)\nReturns: function call result\nHandles argument spreading in function calls")
