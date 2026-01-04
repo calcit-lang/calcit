@@ -103,24 +103,26 @@ Calcit 程序使用 `cr` 命令：
 
 **代码模式搜索：**
 
-- `cr query search <namespace/definition> -p <pattern> [-l] [-d <depth>]` - 搜索叶子节点（字符串）
+- `cr query search <pattern> [-f <namespace/definition>] [-l] [-d <depth>]` - 搜索叶子节点（字符串）
 
-  - 默认：精确匹配字符串（`-p "div"` 只匹配 `"div"`）
-  - `-l` / `--loose`：宽松匹配，包含模式（`-p "di"` 匹配所有包含 "di" 的叶子节点）
+  - `<pattern>` - 位置参数，要搜索的字符串模式
+  - `-f` / `--filter` - 过滤到特定命名空间或定义（可选）
+  - `-l` / `--loose`：宽松匹配，包含模式（匹配所有包含该模式的叶子节点）
   - `-d <depth>`：限制搜索深度（0 = 无限制）
   - 返回：匹配节点的完整路径 + 父级上下文预览
-  - 示例：`cr query search app.main/main -p "println" -l`
+  - 示例：
+    - `cr query search "println" -f app.main/main -l` - 在 main 函数中搜索包含 "println" 的节点
+    - `cr query search "div"` - 全局精确搜索 "div"
 
-- `cr query search-pattern <namespace/definition> -p <pattern> [-l] [-j] [-d <depth>]` - 搜索结构模式
-  - 模式格式：Cirru one-liner 或 JSON 数组（使用 `-j` 标志）
-  - 默认：精确结构匹配（整个结构完全相同）
+- `cr query search-pattern <pattern> [-f <namespace/definition>] [-l] [-j] [-d <depth>]` - 搜索结构模式
+  - `<pattern>` - 位置参数，Cirru one-liner 或 JSON 数组模式
+  - `-f` / `--filter` - 过滤到特定命名空间或定义（可选）
   - `-l` / `--loose`：宽松匹配，查找包含连续子序列的结构
-    - 例如：`-p '["defn", "add"]' -j -l` 匹配任何包含连续 `["defn", "add"]` 的列表
   - `-j` / `--json`：将模式解析为 JSON 数组而非 Cirru
   - 返回：匹配节点的路径 + 父级上下文
   - 示例：
-    - `cr query search-pattern app.util/add -p "(+ a b)"` - 查找精确表达式
-    - `cr query search-pattern app.main/main -p '["defn"]' -j -l` - 查找所有函数定义
+    - `cr query search-pattern "(+ a b)" -f app.util/add` - 查找精确表达式
+    - `cr query search-pattern '["defn"]' -f app.main/main -j -l` - 查找所有函数定义
 
 **搜索结果格式：**
 
