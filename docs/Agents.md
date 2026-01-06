@@ -187,81 +187,177 @@ Calcit 程序使用 `cr` 命令：
 
 ### 精细代码树操作 (`cr tree`)
 
+⚠️ **关键警告：路径索引动态变化**
+
+删除或插入节点后，同级后续节点的索引会自动改变。**必须从后往前操作**或**每次修改后重新搜索路径**。详见 [常见陷阱 #1](#1-路径索引动态变化问题-)。
+
 提供对 AST 节点的低级精确操作，适用于需要精细控制的场景：
 
 **可用操作：**
 
 - `cr tree show <namespace/definition> -p <path>` - 查看指定路径的节点
 
+  - `-p <path>` - 节点路径，用逗号分隔索引（如 `"3,2,1"`），空字符串 `""` 表示根节点
   - `-d <depth>` - 限制显示深度（0=无限，默认 2）
+  - **输出格式**：Cirru 缩进格式的代码树，`[索引]` 标注每个子节点位置
+  - **使用技巧**：
+    - 先用 `-d 1` 查看顶层结构，再逐层深入
+    - 路径中的索引对应输出中的 `[0]`, `[1]`, `[2]` 等标记
+    - 配合 `cr query search` 快速定位目标节点
 
 - `cr tree replace <namespace/definition> -p <path>` - 替换指定路径的节点
 
-  - `-e <code>` - 内联 Cirru 代码（默认单行解析）
-    - Cirru 输入：仅支持单行表达式（one-liner）。若需 leaf 节点可搭配 `--leaf`，直接写符号或 Cirru 字符串（如 `|text`）。
-  - `-f <file>` - 从文件读取
-  - `-j <json>` - 内联 JSON 字符串
-  - `-s` - 从标准输入读取
-  - `-J` - JSON 格式输入
-  - `--leaf` - 直接作为叶子节点处理（Cirru 符号或 `|text` 字符串，无需 JSON 引号）
-  - `--refer-original <placeholder>` - 原节点占位符
-  - `--refer-inner-branch <path>` - 内部分支引用路径
-  - `--refer-inner-placeholder <placeholder>` - 内部分支占位符
+  - **输入方式**（按推荐优先级）：
+
+    1. `-j '<json>'` - 内联 JSON（**推荐**，精确无歧义）
+       - Leaf 节点：`-j '"symbol"'` 或 `-j '"|string"'`
+       - 表达式：`-j '["fn", ["x"], ["+", "x", "1"]]'`
+    2. `-e '<code>'` - Cirru one-liner（简洁，但单个 token 会变 list）
+       - 表达式：`-e 'fn (x) (+ x 1)'`
+       - ⚠️ 单个 token 如 `-e 'symbol'` 会变成 `["symbol"]`
+    3. `-f <file>` - 从文件读取（默认 Cirru，加 `-J` 读 JSON）
+    4. `-s` - 从 stdin 读取（默认 Cirru，加 `-J` 读 JSON）
+
+  - **特殊参数**：
+
+    - `--leaf` - 配合 `-e`/`-f`/`-s` 将输入视为 leaf 节点
+      - 符号：`--leaf -e 'my-var'`
+      - 字符串：`--leaf -e '|text'`
+    - `--refer-original <name>` - 在新代码中引用原节点（高级用法）
+    - `--refer-inner-branch <path>` - 引用原节点的内部分支
+    - `--refer-inner-placeholder <name>` - 内部分支的占位符名
+
+  - **快速决策**：
+    - 替换表达式 → 用 `-e 'cirru one-liner'`
+    - 替换单个值 → 用 `-j '"value"'`（避免被包装成 list）
 
 - `cr tree delete <namespace/definition> -p <path>` - 删除指定路径的节点
 
+  - `-p <path>` - 要删除的节点路径（完整路径，含最后索引）
+  - ⚠️ **副作用**：删除后，同级后续节点的索引会前移
+  - **示例**：删除 `[3,2,1]` 后，原 `[3,2,2]` 变成 `[3,2,1]`
+
 - `cr tree insert-before <namespace/definition> -p <path>` - 在指定位置前插入节点
+
+  - `-p <path>` - 参考节点的路径（在此节点之前插入）
+  - 输入方式同 `replace`（`-e`, `-j`, `-f`, `-s`）
+  - **结果**：新节点占据当前索引，原节点及后续节点索引 +1
 
 - `cr tree insert-after <namespace/definition> -p <path>` - 在指定位置后插入节点
 
+  - `-p <path>` - 参考节点的路径（在此节点之后插入）
+  - 输入方式同 `replace`
+  - **结果**：新节点占据下一个索引，原节点索引不变
+
 - `cr tree insert-child <namespace/definition> -p <path>` - 插入为第一个子节点
+
+  - `-p <path>` - 父节点的路径
+  - **结果**：新节点成为 `<path>,0`，原有子节点索引全部 +1
 
 - `cr tree append-child <namespace/definition> -p <path>` - 追加为最后一个子节点
 
-- `cr tree swap-next <namespace/definition> -p <path>` - 与下一个兄弟节点交换
+  - `-p <path>` - 父节点的路径
+  - **结果**：新节点成为最后一个子节点，不影响其他节点索引
+  - **推荐**：批量插入时优先用此命令（索引稳定）
 
-- `cr tree swap-prev <namespace/definition> -p <path>` - 与上一个兄弟节点交换
+- `cr tree swap-next <namespace/definition> -p <path>` - 与下一个兄弟节点交换位置
 
-- `cr tree wrap <namespace/definition> -p <path>` - 用新结构包装节点（使用 refer-original 占位符）
+  - `-p <path>` - 当前节点路径
+  - **结果**：当前节点索引 +1，下一个节点索引 -1
+  - **应用场景**：调整参数顺序、移动代码位置
 
-**使用示例：**
+- `cr tree swap-prev <namespace/definition> -p <path>` - 与上一个兄弟节点交换位置
+
+  - `-p <path>` - 当前节点路径
+  - **结果**：当前节点索引 -1，上一个节点索引 +1
+
+- `cr tree wrap <namespace/definition> -p <path>` - 用新结构包装节点
+  - `-p <path>` - 要包装的节点路径
+  - 输入方式同 `replace`，需使用 `--refer-original <name>` 引用原节点
+  - **示例**：将 `x` 包装成 `(+ x 1)`
+    ```bash
+    cr tree wrap app.main/fn -p "2,0" -e '+ $original 1' --refer-original original
+    ```
+
+**实战示例：**
 
 ```bash
-# loose 模式快速定位到可能目标叶子节点位置
-cr query search -f app.comp.container/css-search color -l
+# 场景 1：查看函数结构（渐进式）
+cr tree show app.main/main! -p "" -d 1      # 先看顶层
+cr tree show app.main/main! -p "2" -d 2     # 深入第 3 个子节点
+cr tree show app.main/main! -p "2,1,0"      # 查看具体节点
 
-# 指定路径查看节点结构
-cr tree show app.main/main! -p "2,1"
+# 场景 2：替换符号（推荐用 JSON）
+cr tree replace app.main/add -p "2,0" -j '"*"'      # 将 + 改成 *
+cr tree replace app.main/greet -p "1" -j '"|Hello"' # 字符串 leaf
 
-# 替换单个符号（leaf 输入示例，直接 Cirru 语法）
-cr tree replace app.main/main! -p "0" --leaf -e 'new-item'
-# 注意 Cirru 中字面量也是用前缀的, 比如字符串的前缀可以用 `|`
-cr tree replace app.main/main! -p "0" --leaf -e '|new-str'
+# 场景 3：替换表达式
+cr tree replace app.main/main! -p "2" -e 'println |modified'
 
-# 替换表达式（one-liner）
-cr tree replace app.main/main! -p "2" -e "new-fn new-item"
+# 场景 4：删除节点（注意索引变化）
+cr query search "old-fn" -f app.main/main!  # 找到 [3,2,5]
+cr tree delete app.main/main! -p "3,2,5"
 
-# 删除节点
-cr tree delete app.main/main! -p "1,0"
+# 场景 5：批量追加（安全方法）
+cr tree append-child app.main/init! -p "2" -e 'step-1'
+cr tree append-child app.main/init! -p "2" -e 'step-2'  # 索引稳定
+cr tree append-child app.main/init! -p "2" -e 'step-3'
 
-# 插入子表达式
-cr tree insert-child app.main/main! -p "2" -e "new-fn new-item"
+# 场景 6：包装节点（添加函数调用）
+cr tree wrap app.main/fn -p "3,1" -e 'str $old' --refer-original old
+# 将 x 变成 (str x)
+
+# 场景 7：配合 search 定位后替换
+cr query search ".show" -f app.comp.home/comp-box -l
+# 输出：[3,2,1,3,1,3,2,1,2,0] in .show confirm-plugin ...
+cr tree show app.comp.home/comp-box -p "3,2,1,3,1,3,2,1,2,0"  # 确认
+cr tree replace app.comp.home/comp-box -p "3,2,1,3,1,3,2,1,2,0" -j '".visible"'
 ```
 
-**⚠️ 重要：精确定位的安全流程**
+**⚠️ 安全操作流程（必读）**
 
-使用 `cr tree` 前，建议先用 `cr tree show` 确认路径：
+**单次修改标准流程：**
 
 ```bash
-# 1. 先查看整体结构
-cr tree show app.core/my-fn -p "" -d 1
+# 【步骤 1】模糊搜索快速定位
+cr query search "target" -f app.core/my-fn -l
+# 输出：[3,2,1,5] in target parent-context ...
 
-# 2. 逐层确认目标位置
-cr tree show app.core/my-fn -p "2" -d 2
-cr tree show app.core/my-fn -p "2,1,0"
+# 【步骤 2】逐层确认路径正确（避免操作错误节点）
+cr tree show app.core/my-fn -p "" -d 1        # 查看顶层，确认 [3] 存在
+cr tree show app.core/my-fn -p "3,2" -d 2     # 查看上级，确认 [3,2,1] 存在
+cr tree show app.core/my-fn -p "3,2,1,5"      # 查看目标节点内容
 
-# 3. 执行修改
-cr tree replace app.core/my-fn -p "2,1,0" -e "new-fn new-item"
+# 【步骤 3】执行修改
+cr tree replace app.core/my-fn -p "3,2,1,5" -j '"new-value"'
+
+# 【步骤 4】验证修改结果
+cr tree show app.core/my-fn -p "3,2,1,5"      # 确认内容已更新
+cr --check-only                                # 语法检查
+```
+
+**批量修改策略：**
+
+```bash
+# ❌ 错误示范：连续删除（索引会变化）
+cr tree delete app.main/fn -p "3,2,1"
+cr tree delete app.main/fn -p "3,2,2"  # 错误！路径已失效
+
+# ✅ 正确方法 A：从后往前操作
+cr query search "pattern" -f app.main/fn  # 记录所有路径
+cr tree delete app.main/fn -p "3,2,3"     # 先删除索引大的
+cr tree delete app.main/fn -p "3,2,2"
+cr tree delete app.main/fn -p "3,2,1"     # 最后删除索引小的
+
+# ✅ 正确方法 B：单次操作后立即重新搜索
+cr tree delete app.main/fn -p "3,2,1"
+cr query search "pattern" -f app.main/fn  # 重新获取路径
+cr tree delete app.main/fn -p "<新路径>"
+
+# ✅ 正确方法 C：整体重写定义
+cr query def app.main/fn > fn.json
+# 编辑 fn.json
+cr edit def app.main/fn -f fn.json -J
 ```
 
 ### 代码编辑 (`cr edit`)
@@ -328,6 +424,69 @@ cr tree replace app.core/my-fn -p "2,1,0" -e "new-fn new-item"
 ---
 
 ## Calcit 语言基础
+
+### Cirru 语法核心概念
+
+**与其他 Lisp 的区别：**
+
+- **缩进语法**：用缩进代替括号（类似 Python/YAML），单行用空格分隔
+- **字符串前缀**：`|hello` 或 `"hello"` 表示字符串，`|` 前缀更简洁
+- **无方括号花括号**：只用圆括号概念（体现在 JSON 转换中），Cirru 文本层面无括号
+
+**常见混淆点：**
+
+❌ **错误理解：** Calcit 字符串是 `"x"` → JSON 是 `"\"x\""`  
+✅ **正确理解：** Cirru `|x` → JSON `"x"`，Cirru `"x"` → JSON `"x"`
+
+**示例对照：**
+
+| Cirru 代码       | JSON 等价                        | JavaScript 等价          |
+| ---------------- | -------------------------------- | ------------------------ |
+| `\|hello`        | `"hello"`                        | `"hello"`                |
+| `"world"`        | `"world"`                        | `"world"`                |
+| `\|a b c`        | `"a b c"`                        | `"a b c"`                |
+| `fn (x) (+ x 1)` | `["fn", ["x"], ["+", "x", "1"]]` | `fn(x) { return x + 1 }` |
+
+### 数据结构：Tuple vs Vector
+
+Calcit 特有的两种序列类型：
+
+**Tuple (`::`)** - 不可变、用于模式匹配
+
+```cirru
+; 创建 tuple
+:: :event/type data
+
+; 模式匹配
+tag-match event
+  (:event/click data) (handle-click data)
+  (:event/input text) (handle-input text)
+```
+
+**Vector (`[]`)** - 可变、用于列表操作
+
+```cirru
+; 创建 vector
+[] item1 item2 item3
+
+; DOM 列表
+div {} $ []
+  button {} |Click
+  span {} |Text
+```
+
+**常见错误：**
+
+```cirru
+; ❌ 错误：用 vector 传事件
+send-event! $ [] :clipboard/read text
+; 报错：tag-match expected tuple
+
+; ✅ 正确：用 tuple
+send-event! $ :: :clipboard/read text
+```
+
+### 其他易错点
 
 比较容易犯的错误：
 
@@ -449,4 +608,220 @@ cr edit config init-fn app.main/main!
 
 ```bash
 cr edit imports app.main -j '[["app.lib", ":as", "lib"], ["app.util", ":refer", ["helper"]]]'
+```
+
+---
+
+## ⚠️ 常见陷阱和最佳实践
+
+### 1. 路径索引动态变化问题 ⭐⭐⭐
+
+**核心问题：** 删除或插入节点后，同级后续节点的索引会自动改变，导致之前查询到的路径立即失效。
+
+**典型错误：**
+
+```bash
+# 假设搜索到两个节点：[3,2,1,2] 和 [3,2,1,3]
+cr tree delete app.main/fn -p "3,2,1,2"
+# 此时原来的 [3,2,1,3] 已变成 [3,2,1,2]
+cr tree delete app.main/fn -p "3,2,1,3"  # ❌ 路径已失效，报错！
+```
+
+**解决方案：**
+
+✅ **从后往前操作** - 先操作索引大的节点：
+
+```bash
+# 正确顺序：从后往前删除
+cr tree delete app.main/fn -p "3,2,1,3"
+cr tree delete app.main/fn -p "3,2,1,2"
+cr tree delete app.main/fn -p "3,2,1,1"
+```
+
+✅ **单次操作后立即重新搜索：**
+
+```bash
+cr tree delete app.main/fn -p "3,2,1,2"
+# 立即重新搜索获取更新后的路径
+cr query search "target" -f app.main/fn
+cr tree delete app.main/fn -p "<新路径>"
+```
+
+✅ **批量操作前一次性规划：**
+
+```bash
+# 1. 先收集所有需要修改的路径
+cr query search "old-pattern" -f app.main/fn > paths.txt
+# 2. 手动排序后从后往前执行
+# 3. 或考虑用 cr edit def 整体重写定义
+```
+
+⚠️ **避免：** 基于单次搜索结果连续修改多个节点。
+
+### 2. 输入格式参数使用速查 ⭐⭐⭐
+
+**参数混淆矩阵：**
+
+| 场景             | 错误用法                  | 正确用法                                          | 说明                      |
+| ---------------- | ------------------------- | ------------------------------------------------- | ------------------------- |
+| 表达式（多元素） | `-j '["fn", ["x"], ...]'` | `-e 'fn (x) ...'` 或 `-j '[...]'`                 | Cirru one-liner 更简洁    |
+| Leaf 符号        | `-e 'symbol'`             | `-j '"symbol"'`                                   | Cirru 单词会被包装成 list |
+| Leaf 字符串      | `-e '\|text'`             | `-j '"\|text"'` 或 `echo '"\|text"' \| ... -s -J` | 需要 JSON 引号            |
+| JSON 数组        | `-e '["a"]'`              | `-j '["a"]'`                                      | `-j` 专用于 JSON          |
+| 从文件读 Cirru   | `-f code.json`            | `-f code.cirru`                                   | 默认 Cirru 格式           |
+| 从文件读 JSON    | `-f code.cirru`           | `-f code.json -J`                                 | 需要 `-J` 标志            |
+
+**核心规则：**
+
+1. **表达式（有结构）**：优先用 `-e 'cirru-one-liner'` 或 `-j '[...]'`
+2. **Leaf 节点（单个值）**：统一用 `-j '"value"'` 避免混淆
+3. **复杂结构**：用文件 `-f file.cirru` 或 stdin `-s -J`
+4. **Cirru one-liner 陷阱**：单个 token 会被包装成 list，如 `-e 'x'` → `["x"]`
+
+**实战示例：**
+
+```bash
+# ✅ 替换表达式
+cr tree replace app.main/fn -p "2" -e 'println |hello'
+
+# ✅ 替换 leaf（推荐 JSON）
+cr tree replace app.main/fn -p "2,0" -j '"new-symbol"'
+
+# ✅ 替换字符串 leaf
+cr tree replace app.main/fn -p "2,1" -j '"|new text"'
+
+# ❌ 避免：用 -e 传单个 token（会变成 list）
+cr tree replace app.main/fn -p "2,0" -e 'symbol'  # 结果：["symbol"]
+```
+
+### 3. Cirru 字符串和数据类型 ⭐⭐
+
+**Cirru 字符串前缀：**
+
+| Cirru 写法     | JSON 等价      | 使用场景     |
+| -------------- | -------------- | ------------ |
+| `\|hello`      | `"hello"`      | 推荐，简洁   |
+| `"hello"`      | `"hello"`      | 也可以       |
+| `\|a b c`      | `"a b c"`      | 包含空格     |
+| `\|[tag] text` | `"[tag] text"` | 包含特殊字符 |
+
+**Tuple vs Vector：**
+
+```cirru
+; ✅ Tuple - 用于事件、模式匹配
+:: :clipboard/read text
+
+; ✅ Vector - 用于 DOM 列表
+[] (button) (div)
+
+; ❌ 错误：用 vector 传事件
+send-to-component! $ [] :clipboard/read text
+; 报错：tag-match expected tuple
+
+; ✅ 正确：用 tuple
+send-to-component! $ :: :clipboard/read text
+```
+
+**记忆规则：**
+
+- **`::` (tuple)**: 事件、模式匹配、不可变数据结构
+- **`[]` (vector)**: DOM 元素列表、动态集合
+
+### 4. 搜索结果路径的正确使用 ⭐
+
+**搜索输出格式：**
+
+```bash
+cr query search ".show" -f app.comp.home/comp-box
+# 输出：[3,2,1,3,1,3,2,1,2,0] in .show confirm-plugin d! (fn () ...)
+#       ^^^^^^^^^^^^^^^^^^^^^^ 这是 .show 节点本身的路径
+#                              父级路径是 [3,2,1,3,1,3,2,1,2]
+```
+
+**使用建议：**
+
+- **查看节点**：用返回的完整路径
+  ```bash
+  cr tree show app.comp.home/comp-box -p "3,2,1,3,1,3,2,1,2,0"
+  ```
+- **替换节点**：用父级路径（去掉最后一个索引）
+  ```bash
+  cr tree replace app.comp.home/comp-box -p "3,2,1,3,1,3,2,1,2" -e 'new-expr'
+  ```
+- **插入/删除**：根据操作类型选择路径
+
+  ```bash
+  # 删除节点本身：用完整路径
+  cr tree delete app.comp.home/comp-box -p "3,2,1,3,1,3,2,1,2,0"
+
+  # 在节点后插入：用完整路径
+  cr tree insert-after app.comp.home/comp-box -p "3,2,1,3,1,3,2,1,2,0" -e 'new-item'
+  ```
+
+### 5. 推荐工作流程
+
+**精细代码修改流程：**
+
+```bash
+# 【步骤 1】模糊搜索定位大致位置
+cr query search "target-keyword" -f namespace/definition -l
+
+# 【步骤 2】逐层确认精确路径（多次运行，逐步深入）
+cr tree show namespace/definition -p "" -d 1
+cr tree show namespace/definition -p "3" -d 2
+cr tree show namespace/definition -p "3,2,1" -d 2
+
+# 【步骤 3】执行修改（单次操作）
+cr tree replace namespace/definition -p "3,2,1" -e 'new-code'
+
+# 【步骤 4】验证结果
+cr tree show namespace/definition -p "3,2,1"
+cr --check-only  # 语法检查
+```
+
+**批量修改策略：**
+
+```bash
+# 方案 A：从后往前操作
+# 1. 收集所有路径并排序
+cr query search "pattern" -f app.main/fn
+# 记录：[2,1,3], [2,1,2], [2,1,1]
+
+# 2. 从大到小执行
+cr tree delete app.main/fn -p "2,1,3"
+cr tree delete app.main/fn -p "2,1,2"
+cr tree delete app.main/fn -p "2,1,1"
+
+# 方案 B：整体重写
+cr query def app.main/fn > fn.json
+# 编辑 fn.json
+cr edit def app.main/fn -f fn.json -J
+```
+
+---
+
+## 常见错误排查
+
+| 错误信息                            | 原因                                | 解决方法                                        |
+| ----------------------------------- | ----------------------------------- | ----------------------------------------------- |
+| `Path index X out of bounds`        | 路径已过期，节点被删除或索引改变    | 重新运行 `cr query search` 获取最新路径         |
+| `tag-match expected tuple, got ...` | 传入 vector `[]` 而非 tuple `::`    | 改用 `::` 构造数据结构                          |
+| 字符串被拆分成多个 token            | Cirru 字符串没有用 `\|` 或 `"` 包裹 | 使用 `\|complete string` 或 `"complete string"` |
+| Cirru one-liner 变成 list           | `-e` 单个 token 会被包装成 list     | 用 `-j '"token"'` 传入 leaf 节点                |
+| `unexpected format in expression`   | JSON 格式错误或 Cirru 语法错误      | 用 `cr cirru parse '<code>'` 验证语法           |
+
+**调试技巧：**
+
+```bash
+# 1. 验证 Cirru 语法
+cr cirru parse 'fn (x) (+ x 1)'
+
+# 2. 验证 JSON 格式
+echo '["fn", ["x"], ["+", "x", "1"]]' | jq .
+
+# 3. 检查整体语法
+cr --check-only
+
+# 4. 查看错误堆栈
+cr query error
 ```

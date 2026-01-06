@@ -152,6 +152,34 @@ fn format_preview_with_type(node: &Cirru, max_lines: usize) -> String {
   }
 }
 
+/// Show a side-by-side diff preview of the change
+fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: &[usize]) -> String {
+  let mut output = String::new();
+
+  output.push_str(&format!(
+    "\n{}: {} at path [{}]\n",
+    "Preview".blue().bold(),
+    operation,
+    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+  ));
+  output.push_str(&"─".repeat(60));
+  output.push('\n');
+
+  // Show old and new side by side (simplified version)
+  let old_preview = format_preview_with_type(old_node, 10);
+  let new_preview = format_preview_with_type(new_node, 10);
+
+  output.push_str(&format!("{}:\n", "Before".yellow().bold()));
+  output.push_str(&old_preview);
+  output.push_str("\n\n");
+  output.push_str(&format!("{}:\n", "After".green().bold()));
+  output.push_str(&new_preview);
+  output.push('\n');
+  output.push_str(&"─".repeat(60));
+
+  output
+}
+
 // ============================================================================
 // Command handlers
 // ============================================================================
@@ -175,11 +203,16 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String
   let node = navigate_to_path(&code_entry.code, &path)?;
 
   // Print info
-  println!(
-    "{}: {}  [{}]",
-    "At".green().bold(),
-    format!("{namespace}/{definition}").cyan(),
+  let path_display = if path.is_empty() {
+    "(root)".to_string()
+  } else {
     path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+  };
+  println!(
+    "{}: {}  path: [{}]",
+    "Location".green().bold(),
+    format!("{namespace}/{definition}").cyan(),
+    path_display
   );
 
   let node_type = match &node {
@@ -221,14 +254,22 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String
       }
       println!();
 
+      println!("{}: To modify this node:", "Next steps".blue().bold());
       println!(
-        "{}: To modify, use `{} {} -p \"{}\" '<cirru>'`",
-        "Tip".blue().bold(),
-        "tree replace".cyan(),
+        "  • Replace: {} {} -p \"{}\" {}",
+        "cr tree replace".cyan(),
         opts.target,
-        opts.path
+        opts.path,
+        "-j '<json>'".dimmed()
       );
-      println!("     Use `{}` for JSON input.", "-j '<json>'".to_string().cyan());
+      println!("  • Delete:  {} {} -p \"{}\"", "cr tree delete".cyan(), opts.target, opts.path);
+      println!();
+      println!(
+        "{}: Use {} for precise leaf nodes, {} for expressions",
+        "Tip".blue().bold(),
+        "-j '\"value\"'".yellow(),
+        "-e 'cirru code'".yellow()
+      );
 
       return Ok(());
     }
@@ -290,6 +331,9 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   // Save original for comparison
   let old_node = navigate_to_path(&code_entry.code, &path)?;
 
+  // Show diff preview
+  println!("{}", show_diff_preview(&old_node, &processed_node, "replace", &path));
+
   let new_code = apply_operation_at_path(&code_entry.code, &path, "replace", Some(&processed_node))?;
   code_entry.code = new_code.clone();
 
@@ -309,6 +353,14 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   println!("{}:", "To".green().bold());
   let new_node = navigate_to_path(&new_code, &path)?;
   println!("{}", format_preview_with_type(&new_node, 20));
+  println!();
+  println!(
+    "{}: Verify with {} {} -p \"{}\"",
+    "Verify".blue().bold(),
+    "cr tree show".cyan(),
+    format_args!("{}/{}", namespace, definition),
+    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+  );
 
   Ok(())
 }
@@ -333,6 +385,26 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   // Save original node and parent for comparison
   let old_node = navigate_to_path(&code_entry.code, &path)?;
   let parent_path: Vec<usize> = if path.is_empty() { vec![] } else { path[..path.len() - 1].to_vec() };
+  let old_parent = if parent_path.is_empty() {
+    code_entry.code.clone()
+  } else {
+    navigate_to_path(&code_entry.code, &parent_path)?
+  };
+
+  // Show diff preview with parent context
+  println!(
+    "\n{}: Deleting node at path [{}]",
+    "Preview".blue().bold(),
+    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+  );
+  println!("{}", "─".repeat(60));
+  println!("{}:", "Node to delete".yellow().bold());
+  println!("{}", format_preview_with_type(&old_node, 10));
+  println!();
+  println!("{}:", "Parent context".dimmed());
+  println!("{}", format_preview_with_type(&old_parent, 8));
+  println!("{}", "─".repeat(60));
+  println!();
 
   let new_code = apply_operation_at_path(&code_entry.code, &path, "delete", None)?;
   code_entry.code = new_code.clone();
@@ -357,6 +429,29 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
     navigate_to_path(&new_code, &parent_path)?
   };
   println!("{}", format_preview_with_type(&new_parent, 20));
+  println!();
+
+  // Warn about index changes
+  if !path.is_empty() {
+    let deleted_index = path[path.len() - 1];
+    println!(
+      "{}: Sibling nodes after index {} have shifted down by 1",
+      "⚠️  Index change".yellow().bold(),
+      deleted_index
+    );
+    println!(
+      "   Example: path [{},{}] is now [{},{}]",
+      parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+      deleted_index + 1,
+      parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+      deleted_index
+    );
+    println!(
+      "   {}: Re-run {} to get updated paths",
+      "Tip".blue().bold(),
+      "cr query search".cyan()
+    );
+  }
 
   Ok(())
 }
@@ -598,6 +693,22 @@ fn generic_insert_handler<T: InsertOperation>(
     navigate_to_path(&code_entry.code, &parent_path)?
   };
 
+  // Show diff preview
+  println!(
+    "\n{}: {} at path [{}]",
+    "Preview".blue().bold(),
+    operation,
+    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+  );
+  println!("{}", "─".repeat(60));
+  println!("{}:", "Node to insert".cyan().bold());
+  println!("{}", format_preview_with_type(&processed_node, 8));
+  println!();
+  println!("{}:", "Parent before".dimmed());
+  println!("{}", format_preview_with_type(&old_parent, 8));
+  println!("{}", "─".repeat(60));
+  println!();
+
   let new_code = apply_operation_at_path(&code_entry.code, &path, operation, Some(&processed_node))?;
   code_entry.code = new_code.clone();
 
@@ -625,6 +736,53 @@ fn generic_insert_handler<T: InsertOperation>(
     navigate_to_path(&new_code, &parent_path)?
   };
   println!("{}", format_preview_with_type(&new_parent, 15));
+  println!();
+
+  // Explain index impact based on operation
+  match operation {
+    "insert-before" => {
+      if !path.is_empty() {
+        let insert_index = path[path.len() - 1];
+        println!(
+          "{}: Node inserted at index {}, original node and siblings shifted up by 1",
+          "Index impact".yellow().bold(),
+          insert_index
+        );
+        println!(
+          "   Old path [{},{}] → New path [{},{}]",
+          parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+          insert_index,
+          parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+          insert_index + 1
+        );
+      }
+    }
+    "insert-after" => {
+      if !path.is_empty() {
+        let ref_index = path[path.len() - 1];
+        println!(
+          "{}: Node inserted at index {}, nodes after reference shifted up by 1",
+          "Index impact".yellow().bold(),
+          ref_index + 1
+        );
+      }
+    }
+    "insert-child" => {
+      println!(
+        "{}: Node inserted as first child (index 0), all existing children shifted up by 1",
+        "Index impact".yellow().bold()
+      );
+      println!("   Old child [0] → New child [1], [1] → [2], etc.");
+    }
+    "append-child" => {
+      println!(
+        "{}: Node appended as last child, no index changes to existing nodes",
+        "Index impact".green().bold()
+      );
+      println!("   {}:  Use this for multiple insertions to keep paths stable", "Tip".blue().bold());
+    }
+    _ => {}
+  }
 
   Ok(())
 }
@@ -676,6 +834,40 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
     definition
   );
   println!();
+
+  // Explain what was swapped
+  if !path.is_empty() {
+    let current_index = path[path.len() - 1];
+    let parent_display = if parent_path.is_empty() {
+      "root".to_string()
+    } else {
+      format!("[{}]", parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
+    };
+
+    match operation {
+      "swap-next-sibling" => {
+        println!(
+          "{}: Swapped child [{}] with [{}] under parent {}",
+          "Index change".yellow().bold(),
+          current_index,
+          current_index + 1,
+          parent_display
+        );
+      }
+      "swap-prev-sibling" => {
+        println!(
+          "{}: Swapped child [{}] with [{}] under parent {}",
+          "Index change".yellow().bold(),
+          current_index,
+          current_index - 1,
+          parent_display
+        );
+      }
+      _ => {}
+    }
+    println!();
+  }
+
   println!("{}:", "Parent before swap".yellow().bold());
   println!("{}", format_preview_with_type(&old_parent, 15));
   println!();

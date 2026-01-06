@@ -773,15 +773,23 @@ pub(crate) fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, St
   for (depth, &idx) in path.iter().enumerate() {
     match current {
       Cirru::Leaf(_) => {
-        return Err(format!("Cannot navigate into leaf node at depth {depth}"));
+        let partial_path = path[..depth].iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        return Err(format!(
+          "Cannot navigate into leaf node at depth {depth}\n   Valid path stops at: [{partial_path}]\n   Tip: Use 'cr tree show' to explore the tree structure"
+        ));
       }
       Cirru::List(items) => {
         if idx >= items.len() {
+          let partial_path = path[..depth].iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+          let attempted_path = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
           return Err(format!(
-            "Path index {} out of bounds at depth {} (list has {} items)",
+            "Path index {} out of bounds at depth {} (list has {} items)\n   Attempted path: [{}]\n   Valid path: [{}]\n   Valid index range at this level: 0-{}\n   Tip: Use 'cr tree show' with parent path to see available indices",
             idx,
             depth,
-            items.len()
+            items.len(),
+            attempted_path,
+            partial_path,
+            items.len().saturating_sub(1)
           ));
         }
         current = &items[idx];
