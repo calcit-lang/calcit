@@ -331,6 +331,32 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String
     println!("{}: {}", "Type".green().bold(), "leaf".yellow());
     if let Cirru::Leaf(s) = &node {
       println!("{}: {:?}", "Value".green().bold(), s.as_ref());
+      println!();
+      println!("{}: To modify this leaf:", "Next steps".blue().bold());
+      println!(
+        "  • Replace: {} {} -p \"{}\" --leaf -e '<value>'",
+        "cr tree replace".cyan(),
+        opts.target,
+        opts.path
+      );
+      if !path.is_empty() {
+        // Show parent path for context
+        let parent_path = &path[..path.len() - 1];
+        let parent_path_str = parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        println!(
+          "  • View parent: {} {} -p \"{}\"",
+          "cr tree show".cyan(),
+          opts.target,
+          parent_path_str
+        );
+      }
+      println!();
+      println!(
+        "{}: Use {} for symbols, {} for strings",
+        "Tip".blue().bold(),
+        "-e 'symbol'".yellow(),
+        "-e '|text'".yellow()
+      );
     }
   }
 
@@ -406,13 +432,15 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   let new_node = navigate_to_path(&new_code, &path)?;
   println!("{}", format_preview_with_type(&new_node, 20));
   println!();
+  println!("{}", "Next steps:".blue().bold());
   println!(
-    "{}: Verify with {} {} -p \"{}\"",
-    "Verify".blue().bold(),
+    "  • Verify: {} '{}' -p \"{}\"",
     "cr tree show".cyan(),
     format_args!("{}/{}", namespace, definition),
     path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
   );
+  println!("  • Check errors: {}", "cr query error".cyan());
+  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
 
   Ok(())
 }

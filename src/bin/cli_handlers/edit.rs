@@ -180,6 +180,21 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     definition.cyan(),
     namespace
   );
+  println!();
+  println!("{}", "Next steps:".blue().bold());
+  println!("  • View definition: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
+  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+  println!(
+    "  • Add to imports: {} <target-ns> '{}' --refer '{}'",
+    "cr edit add-import".cyan(),
+    namespace,
+    definition
+  );
+  println!();
+  println!(
+    "{}",
+    format!("Tip: Use single quotes around '{namespace}/{definition}' to avoid shell escaping issues.").dimmed()
+  );
 
   Ok(())
 }

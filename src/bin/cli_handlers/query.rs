@@ -305,16 +305,29 @@ fn handle_error() -> Result<(), String> {
 
   if !Path::new(error_file).exists() {
     println!("{}", "No .calcit-error.cirru file found.".yellow());
+    println!();
+    println!("{}", "Next steps:".blue().bold());
+    println!("  • Start watcher: {} or {}", "cr".cyan(), "cr js".cyan());
+    println!("  • Run syntax check: {}", "cr --check-only".cyan());
     return Ok(());
   }
 
   let content = fs::read_to_string(error_file).map_err(|e| format!("Failed to read error file: {e}"))?;
 
   if content.trim().is_empty() {
-    println!("{}", "Error file is empty (no recent errors).".green());
+    println!("{}", "✓ Error file is empty (no recent errors).".green());
+    println!();
+    println!("{}", "Your code compiled successfully!".dimmed());
   } else {
     println!("{}", "Last error stack trace:".bold().red());
     println!("{content}");
+    println!();
+    println!("{}", "Next steps to fix:".blue().bold());
+    println!("  • Search for error location: {} '<symbol>' -l", "cr query search".cyan());
+    println!("  • View definition: {} '<ns/def>'", "cr query def".cyan());
+    println!("  • Find usages: {} '<ns/def>'", "cr query usages".cyan());
+    println!();
+    println!("{}", "Tip: After fixing, watcher will recompile automatically (~300ms).".dimmed());
   }
 
   Ok(())
@@ -1063,10 +1076,68 @@ fn handle_search_leaf(
       println!();
     }
 
-    println!(
-      "{}",
-      "Tip: Use `cr tree show <namespace>/<definition> -p \"<path>\"` to view matched nodes.".dimmed()
-    );
+    // Enhanced tips based on search context
+    println!("{}", "Next steps:".blue().bold());
+    println!("  • View node: {} '<ns/def>' -p \"<path>\"", "cr tree show".cyan());
+
+    // If single definition with multiple matches, suggest batch rename workflow
+    if all_results.len() == 1 {
+      let (_ns, _def_name, results) = &all_results[0];
+      if results.len() > 1 {
+        println!("  • Batch replace: See tip below for renaming {} occurrences", results.len());
+      }
+    }
+
+    println!();
+
+    // Add batch rename tip for multiple matches in single definition
+    if all_results.len() == 1 && all_results[0].2.len() > 1 {
+      let (ns, def_name, results) = &all_results[0];
+      println!("{}", "Tip for batch rename:".yellow().bold());
+      println!("  Replace from largest index first to avoid path changes:");
+
+      // Show first 3 commands as examples (in reverse order)
+      let mut sorted_results: Vec<_> = results.iter().collect();
+      sorted_results.sort_by(|a, b| b.0.cmp(&a.0));
+
+      for (path, _) in sorted_results.iter().take(3) {
+        let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        println!(
+          "    {} '{}/{}' -p \"{}\" --leaf -e '<new-value>'",
+          "cr tree replace".cyan(),
+          ns,
+          def_name,
+          path_str
+        );
+      }
+
+      if results.len() > 3 {
+        println!("    {}", format!("... ({} more to replace)", results.len() - 3).dimmed());
+      }
+
+      println!();
+      println!("{}", "⚠️  Important: Paths change after each modification!".yellow());
+      println!(
+        "{}",
+        format!(
+          "   Alternative: Re-search after each change: {} '{}' -f '{}/{}' -l",
+          "cr query search".cyan(),
+          pattern,
+          ns,
+          def_name
+        )
+        .dimmed()
+      );
+    }
+
+    // Add quote reminder if pattern contains special characters
+    if pattern.contains('-') || pattern.contains('?') || pattern.contains('!') || pattern.contains('*') {
+      println!();
+      println!(
+        "{}",
+        format!("Tip: Always use single quotes around names with special characters: '{pattern}'").dimmed()
+      );
+    }
   }
 
   Ok(())
