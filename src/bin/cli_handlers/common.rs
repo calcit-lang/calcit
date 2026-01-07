@@ -80,7 +80,12 @@ pub fn validate_input_flags(leaf_input: bool, json_input: bool) -> Result<(), St
 
 /// Read code input from file, inline code, json option, or stdin.
 /// Exactly one input source should be used.
-pub fn read_code_input(file: &Option<String>, code: &Option<String>, json: &Option<String>, stdin: bool) -> Result<Option<String>, String> {
+pub fn read_code_input(
+  file: &Option<String>,
+  code: &Option<String>,
+  json: &Option<String>,
+  stdin: bool,
+) -> Result<Option<String>, String> {
   let sources = [stdin, file.is_some(), code.is_some(), json.is_some()];
   validate_input_sources(&sources)?;
 

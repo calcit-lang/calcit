@@ -6,6 +6,8 @@ use std::collections::hash_set::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
+const SNAPSHOT_ABOUT_MESSAGE: &str = "file is generated - never edit directly; learn cr edit/tree workflows before changing";
+
 fn default_version() -> String {
   "0.0.0".to_owned()
 }
@@ -128,6 +130,7 @@ impl CodeEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
   pub package: String,
+  pub about: Option<String>,
   pub configs: SnapshotConfigs,
   pub entries: HashMap<String, SnapshotConfigs>,
   pub files: HashMap<String, FileInSnapShot>,
@@ -145,10 +148,18 @@ pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
   let data = data.view_map()?;
   let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
   let mut files: HashMap<String, FileInSnapShot> = data.get_or_nil("files").try_into()?;
+  let about = match data.get_or_nil("about") {
+    Edn::Nil => None,
+    value => {
+      let s: Arc<str> = value.try_into()?;
+      Some(s.to_string())
+    }
+  };
   let meta_ns = format!("{pkg}.$meta");
   files.insert(meta_ns.to_owned(), gen_meta_ns(&meta_ns, path));
   let s = Snapshot {
     package: pkg.to_string(),
+    about,
     configs: from_edn(data.get_or_nil("configs"))?,
     entries: data.get_or_nil("entries").try_into()?,
     files,
@@ -186,6 +197,7 @@ impl Default for Snapshot {
   fn default() -> Snapshot {
     Snapshot {
       package: "app".into(),
+      about: Some(SNAPSHOT_ABOUT_MESSAGE.to_string()),
       configs: SnapshotConfigs {
         init_fn: "app.main/main!".into(),
         reload_fn: "app.main/reload!".into(),
@@ -341,6 +353,9 @@ pub fn save_snapshot_to_file<P: AsRef<Path>>(compact_cirru_path: P, snapshot: &S
 
   // Build package
   edn_map.insert_key("package", Edn::Str(snapshot.package.as_str().into()));
+
+  // Insert about message (always enforce canonical hint)
+  edn_map.insert_key("about", Edn::Str(SNAPSHOT_ABOUT_MESSAGE.into()));
 
   // Build configs
   let mut configs_map = EdnMapView::default();
