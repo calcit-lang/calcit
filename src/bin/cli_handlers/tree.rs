@@ -136,7 +136,123 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String
     .get(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
-  let node = navigate_to_path(&code_entry.code, &path)?;
+  // Try to navigate to path, provide enhanced error message on failure
+  let node = match navigate_to_path(&code_entry.code, &path) {
+    Ok(n) => n,
+    Err(original_error) => {
+      // Find the longest valid path
+      let mut valid_depth = 0;
+      let mut current = &code_entry.code;
+
+      for (depth, &idx) in path.iter().enumerate() {
+        match current {
+          Cirru::Leaf(_) => {
+            valid_depth = depth;
+            break;
+          }
+          Cirru::List(items) => {
+            if idx >= items.len() {
+              valid_depth = depth;
+              break;
+            }
+            current = &items[idx];
+            valid_depth = depth + 1;
+          }
+        }
+      }
+
+      // Get the node at the longest valid path
+      let valid_path = &path[..valid_depth];
+      let valid_node = navigate_to_path(&code_entry.code, valid_path).unwrap();
+
+      // Format the valid path display
+      let valid_path_display = if valid_path.is_empty() {
+        "root".to_string()
+      } else {
+        format!("[{}]", valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
+      };
+
+      // Get preview of the valid node
+      let node_preview = match &valid_node {
+        Cirru::Leaf(s) => format!("{:?} (leaf)", s.as_ref()),
+        Cirru::List(items) => {
+          let preview = valid_node.format_one_liner().unwrap_or_else(|_| "<complex>".to_string());
+          let truncated = if preview.len() > 60 {
+            format!("{}...", &preview[..60])
+          } else {
+            preview
+          };
+          format!("{} ({} items)", truncated, items.len())
+        }
+      };
+
+      // Print enhanced error message
+      eprintln!("{}", "Error: Invalid path".red().bold());
+      eprintln!("{original_error}");
+      eprintln!();
+      eprintln!("{} Longest valid path: {}", "→".cyan(), valid_path_display.yellow());
+      eprintln!("{} Node at that path: {}", "→".cyan(), node_preview.dimmed());
+      eprintln!();
+
+      // Show next steps based on node type
+      match &valid_node {
+        Cirru::Leaf(_) => {
+          eprintln!("{} This is a leaf node (cannot navigate deeper)", "Note:".yellow().bold());
+          eprintln!(
+            "{} View it with: {}",
+            "→".cyan(),
+            format!(
+              "cr tree show {} -p \"{}\"",
+              opts.target,
+              valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+            )
+            .cyan()
+          );
+        }
+        Cirru::List(items) => {
+          eprintln!(
+            "{} This node has {} children (indices 0-{})",
+            "Available:".green().bold(),
+            items.len(),
+            items.len().saturating_sub(1)
+          );
+          eprintln!(
+            "{} View it with: {}",
+            "→".cyan(),
+            format!(
+              "cr tree show {} -p \"{}\"",
+              opts.target,
+              valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+            )
+            .cyan()
+          );
+
+          // Show first few children as hints
+          if !items.is_empty() {
+            eprintln!();
+            eprintln!("{} First few children:", "Hint:".blue().bold());
+            for (i, item) in items.iter().enumerate().take(3) {
+              let child_preview = match item {
+                Cirru::Leaf(s) => format!("{:?}", s.as_ref()),
+                Cirru::List(children) => format!("({} items)", children.len()),
+              };
+              let child_path = if valid_path.is_empty() {
+                i.to_string()
+              } else {
+                format!("{},{}", valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","), i)
+              };
+              eprintln!("  [{}] {} {} -p \"{}\"", i, child_preview.yellow(), "->".dimmed(), child_path);
+            }
+            if items.len() > 3 {
+              eprintln!("  {}", format!("... and {} more", items.len() - 3).dimmed());
+            }
+          }
+        }
+      }
+
+      return Err(String::new()); // Empty error since we already printed detailed message
+    }
+  };
 
   // Print info
   let path_display = if path.is_empty() {
