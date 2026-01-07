@@ -11,6 +11,8 @@ use colored::Colorize;
 use std::fs;
 use std::path::Path;
 
+use super::edit::navigate_to_path;
+
 /// Type alias for search results: (namespace, definition, matches)
 type SearchResults = Vec<(String, String, Vec<(Vec<usize>, Cirru)>)>;
 
@@ -52,7 +54,14 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       let (ns, def) = parse_target(&opts.target)?;
       handle_usages(input_path, ns, def, opts.deps)
     }
-    QuerySubcommand::Search(opts) => handle_search_leaf(input_path, &opts.pattern, opts.filter.as_deref(), opts.loose, opts.max_depth),
+    QuerySubcommand::Search(opts) => handle_search_leaf(
+      input_path,
+      &opts.pattern,
+      opts.filter.as_deref(),
+      opts.loose,
+      opts.max_depth,
+      opts.start_path.as_deref(),
+    ),
     QuerySubcommand::SearchPattern(opts) => handle_search_pattern(
       input_path,
       &opts.pattern,
@@ -893,8 +902,27 @@ fn fuzzy_match(text: &str, pattern: &str) -> bool {
 }
 
 /// Search for leaf nodes (strings) in a definition
-fn handle_search_leaf(input_path: &str, pattern: &str, filter: Option<&str>, loose: bool, max_depth: usize) -> Result<(), String> {
+fn handle_search_leaf(
+  input_path: &str,
+  pattern: &str,
+  filter: Option<&str>,
+  loose: bool,
+  max_depth: usize,
+  start_path: Option<&str>,
+) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
+
+  // Parse start_path if provided
+  let parsed_start_path: Option<Vec<usize>> = if let Some(path_str) = start_path {
+    if path_str.is_empty() {
+      Some(vec![])
+    } else {
+      let path: Result<Vec<usize>, _> = path_str.split(',').map(|s| s.trim().parse::<usize>()).collect();
+      Some(path.map_err(|e| format!("Invalid start path '{path_str}': {e}"))?)
+    }
+  } else {
+    None
+  };
 
   println!("{} Searching for:", "Search:".bold());
   if loose {
@@ -907,6 +935,15 @@ fn handle_search_leaf(input_path: &str, pattern: &str, filter: Option<&str>, loo
     println!("  {} {}", "Filter:".dimmed(), filter_str.cyan());
   } else {
     println!("  {} {}", "Scope:".dimmed(), "entire project".cyan());
+  }
+
+  if let Some(ref path) = parsed_start_path {
+    let path_display = if path.is_empty() {
+      "root".to_string()
+    } else {
+      format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
+    };
+    println!("  {} {}", "Start path:".dimmed(), path_display.cyan());
   }
   println!();
 
@@ -946,7 +983,31 @@ fn handle_search_leaf(input_path: &str, pattern: &str, filter: Option<&str>, loo
         }
       }
 
-      let results = search_leaf_nodes(&code_entry.code, pattern, loose, max_depth, &[]);
+      // Navigate to start path if specified
+      let search_root = if let Some(ref start_p) = parsed_start_path {
+        if start_p.is_empty() {
+          code_entry.code.clone()
+        } else {
+          match navigate_to_path(&code_entry.code, start_p) {
+            Ok(node) => node,
+            Err(e) => {
+              eprintln!(
+                "{} Failed to navigate to start path in {}/{}: {}",
+                "Warning:".yellow(),
+                ns,
+                def_name,
+                e
+              );
+              continue;
+            }
+          }
+        }
+      } else {
+        code_entry.code.clone()
+      };
+
+      let base_path = parsed_start_path.as_deref().unwrap_or(&[]);
+      let results = search_leaf_nodes(&search_root, pattern, loose, max_depth, base_path);
 
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));

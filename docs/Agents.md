@@ -103,16 +103,20 @@ Calcit 程序使用 `cr` 命令：
 
 **代码模式搜索：**
 
-- `cr query search <pattern> [-f <namespace/definition>] [-l] [-d <depth>]` - 搜索叶子节点（字符串）
+- `cr query search <pattern> [-f <namespace/definition>] [-l] [-d <depth>] [-p <start-path>]` - 搜索叶子节点（字符串）
 
   - `<pattern>` - 位置参数，要搜索的字符串模式
   - `-f` / `--filter` - 过滤到特定命名空间或定义（可选）
   - `-l` / `--loose`：宽松匹配，包含模式（匹配所有包含该模式的叶子节点）
   - `-d <depth>`：限制搜索深度（0 = 无限制）
+  - `-p` / `--start-path`：从指定路径开始搜索（逗号分隔的索引，如 `"3,2,1"`）
+    - 不指定时从根节点开始搜索整个定义
+    - 指定后只搜索该路径下的子树，适合在大型定义中缩小搜索范围
   - 返回：匹配节点的完整路径 + 父级上下文预览
   - 示例：
     - `cr query search "println" -f app.main/main -l` - 在 main 函数中搜索包含 "println" 的节点
     - `cr query search "div"` - 全局精确搜索 "div"
+    - `cr query search "btn" -f app.main/render -p "3,2" -l` - 从路径 [3,2] 开始搜索包含 "btn" 的节点
 
 - `cr query search-pattern <pattern> [-f <namespace/definition>] [-l] [-j] [-d <depth>]` - 搜索结构模式
   - `<pattern>` - 位置参数，Cirru one-liner 或 JSON 数组模式

@@ -339,6 +339,9 @@ pub struct QuerySearchCommand {
   /// maximum search depth (0 = unlimited)
   #[argh(option, short = 'd', default = "0")]
   pub max_depth: usize,
+  /// start search from specific path (comma-separated indices, e.g. "2,1,0")
+  #[argh(option, short = 'p', long = "start-path")]
+  pub start_path: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
