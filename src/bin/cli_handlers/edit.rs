@@ -160,33 +160,26 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   // Check if definition exists
   let exists = file_data.defs.contains_key(definition);
 
-  if exists && !opts.replace {
+  if exists {
     return Err(format!(
-      "Definition '{definition}' already exists in namespace '{namespace}'. Use --replace to overwrite."
+      "Definition '{definition}' already exists in namespace '{namespace}'.\n\
+       To replace the entire definition, use: cr tree replace {namespace}/{definition} -p \"\" -e '<code>'\n\
+       To modify parts of the definition, use: cr tree replace {namespace}/{definition} -p \"<path>\" -e '<code>'"
     ));
   }
 
-  // Create or update definition
+  // Create definition
   let code_entry = CodeEntry::from_code(syntax_tree);
   file_data.defs.insert(definition.to_string(), code_entry);
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  if exists {
-    println!(
-      "{} Updated definition '{}' in namespace '{}'",
-      "✓".green(),
-      definition.cyan(),
-      namespace
-    );
-  } else {
-    println!(
-      "{} Created definition '{}' in namespace '{}'",
-      "✓".green(),
-      definition.cyan(),
-      namespace
-    );
-  }
+  println!(
+    "{} Created definition '{}' in namespace '{}'",
+    "✓".green(),
+    definition.cyan(),
+    namespace
+  );
 
   Ok(())
 }

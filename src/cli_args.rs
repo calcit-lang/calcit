@@ -586,7 +586,7 @@ pub enum EditSubcommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "def")]
-/// add or update a definition
+/// add a new definition
 pub struct EditDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
@@ -609,9 +609,6 @@ pub struct EditDefCommand {
   /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// force replace if definition exists
-  #[argh(switch, short = 'r')]
-  pub replace: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

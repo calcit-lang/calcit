@@ -405,7 +405,7 @@ cr edit def app.main/fn -f fn.json -J
 
 **定义操作：**
 
-- `cr edit def <namespace/definition>` - 添加或更新定义
+- `cr edit def <namespace/definition>` - 添加新定义（若已存在会报错，需用 `cr tree replace` 修改）
 - `cr edit rm-def <namespace/definition>` - 删除定义
 - `cr edit doc <namespace/definition> '<doc>'` - 更新定义的文档
 - `cr edit examples <namespace/definition>` - 设置定义的示例代码（批量替换）
@@ -654,6 +654,13 @@ cr edit def app.core/multiply -e 'defn multiply (x y) (* x y)'
 cr edit def app.core/multiply -j '["defn", "multiply", ["x", "y"], ["*", "x", "y"]]'
 ```
 
+**替换整个定义：**
+
+```bash
+# 使用 cr tree replace 替换整个定义（-p "" 表示根路径）
+cr tree replace app.core/multiply -p "" -e 'defn multiply (x y z) (* x y z)'
+```
+
 **更新文档和示例：**
 
 ```bash
@@ -670,9 +677,13 @@ cr edit add-example app.core/multiply -e 'multiply 5 6'
 cr edit rm-example app.core/multiply 1
 ```
 
-**局部修改（推荐流程）：**
+**修改定义（推荐流程）：**
 
 ```bash
+# 方案 A：替换整个定义（-p "" 表示根路径）
+cr tree replace app.core/add-numbers -p "" -e 'defn add-numbers (x y) (* x y)'
+
+# 方案 B：局部修改（精确定位后修改特定节点）
 # 1. 读取完整定义
 cr query def app.core/add-numbers
 
@@ -753,7 +764,7 @@ cr tree delete app.main/fn -p "<新路径>"
 # 1. 先收集所有需要修改的路径
 cr query search "old-pattern" -f app.main/fn > paths.txt
 # 2. 手动排序后从后往前执行
-# 3. 或考虑用 cr edit def 整体重写定义
+# 3. 或考虑用 cr tree replace 替换整个定义（-p "" 表示根路径）
 ```
 
 ⚠️ **避免：** 基于单次搜索结果连续修改多个节点。
@@ -893,10 +904,13 @@ cr tree delete app.main/fn -p "2,1,3"
 cr tree delete app.main/fn -p "2,1,2"
 cr tree delete app.main/fn -p "2,1,1"
 
-# 方案 B：整体重写
+# 方案 B：整体重写（推荐使用 cr tree replace）
+cr tree replace app.main/fn -p "" -e '<new-definition>'
+
+# 或者从文件读取
 cr query def app.main/fn > fn.json
 # 编辑 fn.json
-cr edit def app.main/fn -f fn.json -J
+cr tree replace app.main/fn -p "" -f fn.json -J
 ```
 
 ---
