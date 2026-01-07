@@ -578,6 +578,8 @@ pub enum EditSubcommand {
   RmModule(EditRmModuleCommand),
   /// update project configs
   Config(EditConfigCommand),
+  /// describe incremental code changes and export them to .calcit-error.cirru
+  Inc(EditIncCommand),
 }
 
 // --- Definition operations ---
@@ -856,6 +858,30 @@ pub struct EditConfigCommand {
   /// config value
   #[argh(positional)]
   pub value: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "inc")]
+/// record incremental changes (defs and namespaces) for downstream tooling
+pub struct EditIncCommand {
+  /// namespaces whose entire file should be treated as newly added (e.g. "app.new")
+  #[argh(option, long = "added-ns")]
+  pub added_ns: Vec<String>,
+  /// namespaces that should be treated as removed from the project
+  #[argh(option, long = "removed-ns")]
+  pub removed_ns: Vec<String>,
+  /// namespaces whose ns form/imports changed (stores latest ns block)
+  #[argh(option, long = "ns-updated")]
+  pub ns_updated: Vec<String>,
+  /// definitions that were newly added (format: namespace/definition)
+  #[argh(option, long = "added")]
+  pub added: Vec<String>,
+  /// definitions that were deleted (format: namespace/definition)
+  #[argh(option, long = "removed")]
+  pub removed: Vec<String>,
+  /// definitions that were modified (format: namespace/definition)
+  #[argh(option, long = "changed")]
+  pub changed: Vec<String>,
 }
 
 // ========================================================================

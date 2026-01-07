@@ -10,13 +10,13 @@
 
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditDefCommand,
-  EditDocCommand, EditExamplesCommand, EditImportsCommand, EditNsDocCommand, EditRmDefCommand, EditRmExampleCommand,
+  EditDocCommand, EditExamplesCommand, EditImportsCommand, EditIncCommand, EditNsDocCommand, EditRmDefCommand, EditRmExampleCommand,
   EditRmImportCommand, EditRmModuleCommand, EditRmNsCommand, EditSubcommand,
 };
-use calcit::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot, save_snapshot_to_file};
+use calcit::snapshot::{self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
 use colored::Colorize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::sync::Arc;
 
@@ -101,6 +101,7 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::AddModule(opts) => handle_add_module(opts, snapshot_file),
     EditSubcommand::RmModule(opts) => handle_rm_module(opts, snapshot_file),
     EditSubcommand::Config(opts) => handle_config(opts, snapshot_file),
+    EditSubcommand::Inc(opts) => handle_inc(opts, snapshot_file),
   }
 }
 
@@ -1005,6 +1006,140 @@ fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), St
   println!("{} Set config '{}' = '{}'", "✓".green(), opts.key.cyan(), opts.value);
 
   Ok(())
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Incremental change export
+// ═══════════════════════════════════════════════════════════════════════════════
+
+fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> {
+  let inc_file = ".compact-inc.cirru";
+  let error_file = ".calcit-error.cirru";
+
+  // Clear error file at the beginning
+  if let Err(e) = fs::write(error_file, "") {
+    eprintln!("{} Failed to clear {}: {}", "⚠".yellow(), error_file, e);
+  } else {
+    println!("{} Cleared {}", "→".cyan(), error_file);
+  }
+
+  if opts.added.is_empty()
+    && opts.removed.is_empty()
+    && opts.changed.is_empty()
+    && opts.added_ns.is_empty()
+    && opts.removed_ns.is_empty()
+    && opts.ns_updated.is_empty()
+  {
+    return Err("No change hints provided. Use --added/--removed/--changed or namespace flags.".to_string());
+  }
+
+  let snapshot = load_snapshot(snapshot_file)?;
+
+  let mut changes = ChangesDict::default();
+  let mut changed_entries: HashMap<Arc<str>, FileChangeInfo> = HashMap::new();
+
+  for ns in &opts.added_ns {
+    check_ns_editable(&snapshot, ns)?;
+    let file = snapshot
+      .files
+      .get(ns)
+      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save compact.cirru?"))?;
+    changes.added.insert(Arc::from(ns.as_str()), file.clone());
+  }
+
+  for ns in &opts.removed_ns {
+    check_ns_editable(&snapshot, ns)?;
+    changes.removed.insert(Arc::from(ns.as_str()));
+  }
+
+  for ns in &opts.ns_updated {
+    check_ns_editable(&snapshot, ns)?;
+    let file = snapshot
+      .files
+      .get(ns)
+      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save compact.cirru?"))?;
+    let entry = ensure_change_entry(&mut changed_entries, ns);
+    entry.ns = Some(file.ns.code.clone());
+  }
+
+  for target in &opts.added {
+    let (namespace, definition) = parse_target(target)?;
+    check_ns_editable(&snapshot, namespace)?;
+    let file = snapshot
+      .files
+      .get(namespace)
+      .ok_or_else(|| format!("Namespace '{namespace}' not found in snapshot"))?;
+    let code_entry = file
+      .defs
+      .get(definition)
+      .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    let entry = ensure_change_entry(&mut changed_entries, namespace);
+    entry.added_defs.insert(definition.to_string(), code_entry.code.clone());
+  }
+
+  for target in &opts.changed {
+    let (namespace, definition) = parse_target(target)?;
+    check_ns_editable(&snapshot, namespace)?;
+    let file = snapshot
+      .files
+      .get(namespace)
+      .ok_or_else(|| format!("Namespace '{namespace}' not found in snapshot"))?;
+    let code_entry = file
+      .defs
+      .get(definition)
+      .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    let entry = ensure_change_entry(&mut changed_entries, namespace);
+    entry.changed_defs.insert(definition.to_string(), code_entry.code.clone());
+  }
+
+  for target in &opts.removed {
+    let (namespace, definition) = parse_target(target)?;
+    check_ns_editable(&snapshot, namespace)?;
+    let entry = ensure_change_entry(&mut changed_entries, namespace);
+    entry.removed_defs.insert(definition.to_string());
+  }
+
+  if !changed_entries.is_empty() {
+    changes.changed = changed_entries;
+  }
+
+  if changes.added.is_empty() && changes.removed.is_empty() && changes.changed.is_empty() {
+    return Err("No change data collected. Confirm the flags match definitions saved in compact.cirru.".to_string());
+  }
+
+  let namespace_total = changes.added.len() + changes.removed.len() + changes.changed.len();
+
+  let edn_data: cirru_edn::Edn = changes
+    .try_into()
+    .map_err(|e| format!("Failed to serialize change dictionary: {e}"))?;
+  let content = cirru_edn::format(&edn_data, true).map_err(|e| format!("Failed to format change dictionary: {e}"))?;
+
+  fs::write(inc_file, &content).map_err(|e| format!("Failed to write {inc_file}: {e}"))?;
+
+  println!(
+    "{} Wrote incremental changes (namespaces: {}) to {}",
+    "✓".green(),
+    namespace_total,
+    inc_file.cyan()
+  );
+  println!(
+    "{}",
+    "Watcher will process changes. Wait ~300ms then run 'cr query error' to check result."
+      .to_string()
+      .dimmed()
+  );
+
+  Ok(())
+}
+
+fn ensure_change_entry<'a>(changed_entries: &'a mut HashMap<Arc<str>, FileChangeInfo>, namespace: &str) -> &'a mut FileChangeInfo {
+  let key: Arc<str> = Arc::from(namespace.to_string());
+  changed_entries.entry(key).or_insert_with(|| FileChangeInfo {
+    ns: None,
+    added_defs: HashMap::new(),
+    removed_defs: HashSet::new(),
+    changed_defs: HashMap::new(),
+  })
 }
 
 /// Print usage tips based on the import rule type

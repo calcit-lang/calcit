@@ -337,11 +337,11 @@ impl TryFrom<ChangesDict> for Edn {
   type Error = String;
 
   fn try_from(x: ChangesDict) -> Result<Edn, Self::Error> {
-    Ok(Edn::map_from_iter([
-      ("removed".into(), x.removed.into()),
-      ("added".into(), x.added.into()),
-      ("changed".into(), x.changed.into()),
-    ]))
+    let mut map = EdnMapView::default();
+    map.insert_key("added", x.added.into());
+    map.insert_key("changed", x.changed.into());
+    map.insert_key("removed", x.removed.into());
+    Ok(Edn::Map(map))
   }
 }
 
