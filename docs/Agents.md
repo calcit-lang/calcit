@@ -209,27 +209,23 @@ Calcit 程序使用 `cr` 命令：
 
   - **输入方式**（按推荐优先级）：
 
-    1. `-j '<json>'` - 内联 JSON（**推荐**，精确无歧义）
-       - Leaf 节点：`-j '"symbol"'` 或 `-j '"|string"'`
-       - 表达式：`-j '["fn", ["x"], ["+", "x", "1"]]'`
-    2. `-e '<code>'` - Cirru one-liner（简洁，但单个 token 会变 list）
-       - 表达式：`-e 'fn (x) (+ x 1)'`
-       - ⚠️ 单个 token 如 `-e 'symbol'` 会变成 `["symbol"]`
-    3. `-f <file>` - 从文件读取（默认 Cirru，加 `-J` 读 JSON）
-    4. `-s` - 从 stdin 读取（默认 Cirru，加 `-J` 读 JSON）
+  1.  `-e '<expr>'` - **最推荐**。支持 Cirru one-liner，也支持自动识别 JSON (如 `-e '["a"]'`)。
+  2.  `-j '<json>'` - 显式传入内联 JSON 字符串。
+  3.  `-f <file>` - 从文件读取（默认 Cirru，加 `-J` 读 JSON）。
+  4.  `-s` - 从 stdin 读取（默认 Cirru，加 `-J` 读 JSON）。
 
   - **特殊参数**：
 
     - `--leaf` - 配合 `-e`/`-f`/`-s` 将输入视为 leaf 节点
       - 符号：`--leaf -e 'my-var'`
-      - 字符串：`--leaf -e '|text'`
+      - 字符串：`--leaf -e '|text'`（实测最快捷，示例：`cr tree replace respo.app.core/new-fn -p "3,1" --leaf -e '|hello'`）
     - `--refer-original <name>` - 在新代码中引用原节点（高级用法）
     - `--refer-inner-branch <path>` - 引用原节点的内部分支
     - `--refer-inner-placeholder <name>` - 内部分支的占位符名
 
   - **快速决策**：
     - 替换表达式 → 用 `-e 'cirru one-liner'`
-    - 替换单个值 → 用 `-j '"value"'`（避免被包装成 list）
+    - 替换单个值 → 用 `--leaf -e '<symbol 或 |string>'`（避免被包装成 list）
 
 - `cr tree delete <namespace/definition> -p <path>` - 删除指定路径的节点
 
@@ -287,9 +283,9 @@ cr tree show app.main/main! -p "" -d 1      # 先看顶层
 cr tree show app.main/main! -p "2" -d 2     # 深入第 3 个子节点
 cr tree show app.main/main! -p "2,1,0"      # 查看具体节点
 
-# 场景 2：替换符号（推荐用 JSON）
-cr tree replace app.main/add -p "2,0" -j '"*"'      # 将 + 改成 *
-cr tree replace app.main/greet -p "1" -j '"|Hello"' # 字符串 leaf
+# 场景 2：替换符号 / 字符串（推荐用 --leaf）
+cr tree replace app.main/add -p "2,0" --leaf -e '*'      # 将 + 改成 *
+cr tree replace app.main/greet -p "1" --leaf -e '|Hello' # 替换字符串 leaf
 
 # 场景 3：替换表达式
 cr tree replace app.main/main! -p "2" -e 'println |modified'
@@ -311,7 +307,19 @@ cr tree wrap app.main/fn -p "3,1" -e 'str $old' --refer-original old
 cr query search ".show" -f app.comp.home/comp-box -l
 # 输出：[3,2,1,3,1,3,2,1,2,0] in .show confirm-plugin ...
 cr tree show app.comp.home/comp-box -p "3,2,1,3,1,3,2,1,2,0"  # 确认
-cr tree replace app.comp.home/comp-box -p "3,2,1,3,1,3,2,1,2,0" -j '".visible"'
+cr tree replace app.comp.home/comp-box -p "3,2,1,3,1,3,2,1,2,0" --leaf -e '|.visible'
+
+# demos/compact.cirru 实操（验证最新 CLI 输出）
+# 目标：把 `respo.app.core/new-fn` 中的 `|hello` 暂时改成其他文案，再恢复
+cr query search "println" -f respo.app.core/new-fn -l
+# → 找到路径 [3,0] / [3,1]
+cr tree show respo.app.core/new-fn -p "3,1" -d 2
+# → CLI 会显示 Location/Type、JSON、下一步提示
+cr tree replace respo.app.core/new-fn -p "3,1" --leaf -e '|hello from tree demo'
+# → 输出 `Preview: replace ...`、Before/After diff、Verify 提示
+cr tree replace respo.app.core/new-fn -p "3,1" --leaf -e '|hello'
+# → 同样会给出 diff，确保 demos 恢复原状
+# 以上流程适合在 demos/compact.cirru 做沙盒操作，熟悉路径与 diff 提示
 ```
 
 **⚠️ 安全操作流程（必读）**
@@ -329,7 +337,7 @@ cr tree show app.core/my-fn -p "3,2" -d 2     # 查看上级，确认 [3,2,1] �
 cr tree show app.core/my-fn -p "3,2,1,5"      # 查看目标节点内容
 
 # 【步骤 3】执行修改
-cr tree replace app.core/my-fn -p "3,2,1,5" -j '"new-value"'
+cr tree replace app.core/my-fn -p "3,2,1,5" --leaf -e '|new-value'
 
 # 【步骤 4】验证修改结果
 cr tree show app.core/my-fn -p "3,2,1,5"      # 确认内容已更新
@@ -660,23 +668,24 @@ cr query search "old-pattern" -f app.main/fn > paths.txt
 
 ### 2. 输入格式参数使用速查 ⭐⭐⭐
 
-**参数混淆矩阵：**
+**参数混淆矩阵（已全面支持 `-e` 自动识别）：**
 
-| 场景             | 错误用法                  | 正确用法                                          | 说明                      |
-| ---------------- | ------------------------- | ------------------------------------------------- | ------------------------- |
-| 表达式（多元素） | `-j '["fn", ["x"], ...]'` | `-e 'fn (x) ...'` 或 `-j '[...]'`                 | Cirru one-liner 更简洁    |
-| Leaf 符号        | `-e 'symbol'`             | `-j '"symbol"'`                                   | Cirru 单词会被包装成 list |
-| Leaf 字符串      | `-e '\|text'`             | `-j '"\|text"'` 或 `echo '"\|text"' \| ... -s -J` | 需要 JSON 引号            |
-| JSON 数组        | `-e '["a"]'`              | `-j '["a"]'`                                      | `-j` 专用于 JSON          |
-| 从文件读 Cirru   | `-f code.json`            | `-f code.cirru`                                   | 默认 Cirru 格式           |
-| 从文件读 JSON    | `-f code.cirru`           | `-f code.json -J`                                 | 需要 `-J` 标志            |
+| 场景                | 示例用法                               | 解析结果                      | 说明                              |
+| ------------------- | -------------------------------------- | ----------------------------- | --------------------------------- |
+| **表达式 (Cirru)**  | `-e 'defn add (a b) (+ a b)'`          | `["defn", "add", ...]` (List) | 默认按 Cirru one-liner 解析       |
+| **原子符号 (Leaf)** | `--leaf -e 'my-symbol'`                | `"my-symbol"` (Leaf)          | **推荐**，避免被包装成 list       |
+| **字符串 (Leaf)**   | `--leaf -e '\|hello world'`            | `"hello world"` (Leaf)        | 符号前缀 `\|` 表示字符串          |
+| **JSON 数组**       | `-e '["+", "x", "1"]'`                 | `["+", "x", "1"]` (List)      | **自动识别** (含 `[` 且有 `"`)    |
+| **JSON 字符串**     | `-e '"my leaf"'`                       | `"my leaf"` (Leaf)            | **自动识别** (含引用的字符串)     |
+| **内联 JSON**       | `-j '["defn", ...]'`                   | `["defn", ...]` (List)        | 显式按 JSON 解析，忽略 Cirru 规则 |
+| **外部文件**        | `-f code.cirru` (或 `-f code.json -J`) | 根据文件内容解析              | `-J` 用于标记文件内是 JSON        |
 
 **核心规则：**
 
-1. **表达式（有结构）**：优先用 `-e 'cirru-one-liner'` 或 `-j '[...]'`
-2. **Leaf 节点（单个值）**：统一用 `-j '"value"'` 避免混淆
-3. **复杂结构**：用文件 `-f file.cirru` 或 stdin `-s -J`
-4. **Cirru one-liner 陷阱**：单个 token 会被包装成 list，如 `-e 'x'` → `["x"]`
+1. **智能识别模式**：`-e / --code` 现在会自动识别 JSON。如果你传入 `["a"]` 或 `"a"`，它会直接按 JSON 处理，无需再额外加 `-J` 或 `-j`。
+2. **强制 Leaf 模式**：如果你需要确保输入是一个叶子节点（符号或字符串），请在任何地方使用 `--leaf` 开关。它会将原始输入直接作为内容，不经过任何解析。
+3. **显式 JSON 模式**：如果你想明确告诉工具“这段就是 JSON”，优先用 `-j '<json>'`。
+4. **统一性**：`cr tree` 和 `cr edit` 的所有子命令（replace, def, insert 等）现在共享完全相同的输入解析逻辑。
 
 **实战示例：**
 
@@ -684,11 +693,11 @@ cr query search "old-pattern" -f app.main/fn > paths.txt
 # ✅ 替换表达式
 cr tree replace app.main/fn -p "2" -e 'println |hello'
 
-# ✅ 替换 leaf（推荐 JSON）
-cr tree replace app.main/fn -p "2,0" -j '"new-symbol"'
+# ✅ 替换 leaf（推荐 --leaf）
+cr tree replace app.main/fn -p "2,0" --leaf -e 'new-symbol'
 
 # ✅ 替换字符串 leaf
-cr tree replace app.main/fn -p "2,1" -j '"|new text"'
+cr tree replace app.main/fn -p "2,1" --leaf -e '|new text'
 
 # ❌ 避免：用 -e 传单个 token（会变成 list）
 cr tree replace app.main/fn -p "2,0" -e 'symbol'  # 结果：["symbol"]

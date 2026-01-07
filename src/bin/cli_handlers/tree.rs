@@ -1,10 +1,7 @@
 use cirru_parser::Cirru;
 use colored::Colorize;
-use std::fs;
-use std::io::{self, Read};
-use std::sync::Arc;
 
-use super::common::{ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_path, validate_input_flags, validate_input_sources};
+use super::common::{ERR_CODE_INPUT_REQUIRED, cirru_to_json, parse_input_to_cirru, parse_path, read_code_input};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
   TreeReplaceCommand, TreeShowCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeWrapCommand,
@@ -20,42 +17,6 @@ use super::edit::{
 // Helper functions
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Check if a Cirru node is a single-element list containing only a string leaf,
-/// which might confuse LLM thinking it's a leaf node when it's actually an expression.
-fn warn_if_single_string_expression(node: &Cirru, input_source: &str) {
-  if let Cirru::List(items) = node {
-    if items.len() == 1 {
-      if let Some(Cirru::Leaf(_)) = items.first() {
-        eprintln!("\n⚠️  Note: Cirru one-liner input '{input_source}' was parsed as an expression (list with one element).");
-        eprintln!("   In Cirru syntax, this creates a list containing one element.");
-        eprintln!("   If you want a leaf node (plain string), use --leaf parameter.");
-        eprintln!("   Example: --leaf -e '{input_source}' creates a leaf, not an expression.\n");
-      }
-    }
-  }
-}
-
-/// Read code input from file, inline code, or stdin.
-fn read_code_input(file: &Option<String>, code: &Option<String>, stdin: bool) -> Result<Option<String>, String> {
-  let sources = [stdin, file.is_some(), code.is_some()];
-  validate_input_sources(&sources)?;
-
-  if stdin {
-    let mut buffer = String::new();
-    io::stdin()
-      .read_to_string(&mut buffer)
-      .map_err(|e| format!("Failed to read from stdin: {e}"))?;
-    Ok(Some(buffer.trim().to_string()))
-  } else if let Some(path) = file {
-    let content = fs::read_to_string(path).map_err(|e| format!("Failed to read file '{path}': {e}"))?;
-    Ok(Some(content.trim().to_string()))
-  } else if let Some(s) = code {
-    Ok(Some(s.trim().to_string()))
-  } else {
-    Ok(None)
-  }
-}
-
 /// Main handler for code command
 pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(), String> {
   match &cmd.subcommand {
@@ -69,31 +30,6 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
     TreeSubcommand::SwapNext(opts) => handle_swap_next(opts, snapshot_file),
     TreeSubcommand::SwapPrev(opts) => handle_swap_prev(opts, snapshot_file),
     TreeSubcommand::Wrap(opts) => handle_wrap(opts, snapshot_file),
-  }
-}
-
-/// Parse input to Cirru node
-fn parse_input_to_cirru(input: &str, json_opt: &Option<String>, json_input: bool, leaf_input: bool) -> Result<Cirru, String> {
-  // Check for conflicting flags (tree commands only support one-liner Cirru now)
-  validate_input_flags(leaf_input, json_input)?;
-
-  // If --leaf is set, wrap input directly as a leaf node
-  if leaf_input {
-    return Ok(Cirru::Leaf(Arc::from(input)));
-  }
-
-  // Determine if we should parse as JSON (must be explicitly specified)
-  let use_json = json_opt.is_some() || json_input;
-
-  if use_json {
-    // Parse as JSON array
-    let json_value: serde_json::Value = serde_json::from_str(input).map_err(|e| format!("Failed to parse JSON: {e}"))?;
-    json_value_to_cirru(&json_value)
-  } else {
-    // Parse as Cirru one-liner only
-    let result = cirru_parser::parse_expr_one_liner(input).map_err(|e| format!("Failed to parse Cirru one-liner: {e}"))?;
-    warn_if_single_string_expression(&result, input);
-    Ok(result)
   }
 }
 
@@ -289,11 +225,11 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   let (namespace, definition) = parse_target(&opts.target)?;
   let path = parse_path(&opts.path)?;
 
-  let code_input = read_code_input(&opts.file, &opts.code, opts.stdin)?;
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?;
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf)?;
+  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -646,11 +582,11 @@ fn generic_insert_handler<T: InsertOperation>(
   let (namespace, definition) = parse_target(target)?;
   let path = parse_path(path_str)?;
 
-  let code_input = read_code_input(opts.file(), opts.code(), opts.stdin())?;
+  let code_input = read_code_input(opts.file(), opts.code(), opts.json(), opts.stdin())?;
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw, opts.json(), opts.json_input(), opts.leaf())?;
+  let new_node = parse_input_to_cirru(raw, opts.json(), opts.json_input(), opts.leaf(), true)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -884,15 +820,4 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
 
 fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String> {
   generic_insert_handler(&opts.target, &opts.path, "replace", opts, snapshot_file, opts.depth)
-}
-
-// Helper to convert Cirru to JSON string
-fn cirru_to_json(node: &Cirru) -> String {
-  match node {
-    Cirru::Leaf(s) => serde_json::to_string(s.as_ref()).unwrap_or_else(|_| format!("\"{s}\"")),
-    Cirru::List(items) => {
-      let json_items: Vec<String> = items.iter().map(cirru_to_json).collect();
-      format!("[{}]", json_items.join(","))
-    }
-  }
 }
