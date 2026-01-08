@@ -104,11 +104,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       ),
     ]),
     Calcit::Local(CalcitLocal {
-      sym,
-      idx,
-      info,
-      type_info,
-      ..
+      sym, idx, info, type_info, ..
     }) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("local")),
       (Edn::tag("val"), Edn::Str((**sym).into())),

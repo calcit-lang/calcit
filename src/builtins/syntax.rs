@@ -3,7 +3,7 @@
 //! Rust has limits on Closures, callbacks need to be handled specifically
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::vec;
 
@@ -27,6 +27,8 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
         scope: Arc::new(scope.to_owned()),
         args: Arc::new(get_raw_args_fn(xs)?),
         body: expr.skip(2)?.to_vec(),
+        return_type: None,
+        arg_types: vec![],
       }),
     }),
     (Some(a), Some(b)) => CalcitErr::err_str(
@@ -393,7 +395,9 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
                   rest_nodes = (*rest_code).to_vec();
                 }
                 _ => {
-                  let resolved = runner::preprocess::preprocess_expr(&v, &HashSet::new(), file_ns, check_warnings, call_stack)?;
+                  let mut scope_types = HashMap::new();
+                  let resolved =
+                    runner::preprocess::preprocess_expr(&v, &HashSet::new(), &mut scope_types, file_ns, check_warnings, call_stack)?;
                   let warnings = check_warnings.borrow();
                   LocatedWarning::print_list(&warnings);
 
@@ -404,7 +408,15 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
           }
           _ => {
             let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
-            let resolved = runner::preprocess::preprocess_expr(&quoted_code, &HashSet::new(), file_ns, check_warnings, call_stack)?;
+            let mut scope_types = HashMap::new();
+            let resolved = runner::preprocess::preprocess_expr(
+              &quoted_code,
+              &HashSet::new(),
+              &mut scope_types,
+              file_ns,
+              check_warnings,
+              call_stack,
+            )?;
             LocatedWarning::print_list(&check_warnings.borrow());
             Ok(resolved)
           }

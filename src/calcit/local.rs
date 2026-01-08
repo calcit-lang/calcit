@@ -64,7 +64,6 @@ mod tests {
   fn tracks_symbols_and_displays_args() {
     let sym = Arc::from("stage1_local_var");
     let idx = CalcitLocal::track_sym(&sym);
-    assert!(idx <= u16::MAX);
     assert_eq!(CalcitLocal::display_args(&[idx]), format!("({sym})"));
   }
 
@@ -84,7 +83,7 @@ mod tests {
     };
     match local.type_info.as_deref() {
       Some(Calcit::Tag(t)) => assert_eq!(t, &EdnTag::from("sample/type")),
-      other => panic!("unexpected type info: {:?}", other),
+      other => panic!("unexpected type info: {other:?}"),
     }
   }
 }
