@@ -58,6 +58,9 @@ pub enum CalcitSyntax {
   /// spreading interpolate value in macro
   #[strum(serialize = "~@")]
   MacroInterpolateSpread,
+  /// placeholder for upcoming local type annotations
+  #[strum(serialize = "asset-type")]
+  AssetType,
 }
 
 impl CalcitSyntax {
