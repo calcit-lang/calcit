@@ -152,6 +152,7 @@ pub fn preprocess_expr(
               at_def: at_def.to_owned(),
             }),
             location: location.to_owned(),
+            type_info: None,
           }))
         } else if CalcitSyntax::is_valid(def) {
           Ok(Calcit::Syntax(
@@ -481,6 +482,11 @@ fn preprocess_list_call(
           })?;
           Ok(Calcit::from(ys))
         }
+        CalcitSyntax::AssetType => CalcitErr::err_nodes(
+          CalcitErrKind::Unimplemented,
+          "`asset-type` preprocessing will be added in a later stage",
+          &xs.to_vec(),
+        ),
         CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec()),
         CalcitSyntax::ArgOptional => {
           CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be preprocessed as operator", &xs.to_vec())
@@ -729,6 +735,7 @@ pub fn preprocess_defn(
                 at_def: info.at_def.to_owned(),
               }),
               location: arg_location.to_owned(),
+              type_info: None,
             });
             // println!("created local: {:?}", s);
             zs.push(s);
@@ -817,6 +824,7 @@ pub fn preprocess_core_let(
             at_def: info.at_def.to_owned(),
           }),
           location: location.to_owned(),
+          type_info: None,
         });
         Calcit::from(CalcitList::from(&[name, form]))
       }

@@ -103,7 +103,13 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
         },
       ),
     ]),
-    Calcit::Local(CalcitLocal { sym, idx, info, .. }) => Edn::map_from_iter([
+    Calcit::Local(CalcitLocal {
+      sym,
+      idx,
+      info,
+      type_info,
+      ..
+    }) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("local")),
       (Edn::tag("val"), Edn::Str((**sym).into())),
       (Edn::tag("idx"), Edn::Number(*idx as f64)),
@@ -113,6 +119,13 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
           (Edn::tag("at-def"), Edn::Str((*info.at_def).into())),
           (Edn::tag("ns"), Edn::Str((*info.at_ns).into())),
         ]),
+      ),
+      (
+        Edn::tag("type-info"),
+        match type_info {
+          Some(t) => dump_code(t),
+          None => Edn::Nil,
+        },
       ),
     ]),
 
