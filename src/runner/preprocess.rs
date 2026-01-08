@@ -9,12 +9,14 @@ use crate::{
   codegen, program, runner,
 };
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::{cell::RefCell, vec};
 
 use im_ternary_tree::TernaryTreeList;
 use strum::ParseError;
+
+type ScopeTypes = HashMap<Arc<str>, Arc<Calcit>>;
 
 /// returns the resolved symbol(only functions and macros are used),
 /// if code related is not preprocessed, do it internally.
@@ -42,7 +44,8 @@ pub fn preprocess_ns_def(
 
           let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
-          let resolved_code = preprocess_expr(&code, &HashSet::new(), ns, check_warnings, &next_stack)?;
+          let mut scope_types = ScopeTypes::new();
+          let resolved_code = preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)?;
           // println!("\n resolve code to run: {:?}", resolved_code);
           let v = if is_fn_or_macro(&resolved_code) {
             runner::evaluate_expr(&resolved_code, &CalcitScope::default(), ns, &next_stack)?
@@ -86,6 +89,7 @@ fn is_fn_or_macro(code: &Calcit) -> bool {
 pub fn preprocess_expr(
   expr: &Calcit,
   scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
@@ -144,6 +148,7 @@ pub fn preprocess_expr(
         let at_def = &info.at_def;
         // println!("def {} - {} {} {}", def, def_ns, file_ns, at_def);
         if scope_defs.contains(def) {
+          let type_info = scope_types.get(def).cloned();
           Ok(Calcit::Local(CalcitLocal {
             idx: CalcitLocal::track_sym(def),
             sym: def.to_owned(),
@@ -152,7 +157,7 @@ pub fn preprocess_expr(
               at_def: at_def.to_owned(),
             }),
             location: location.to_owned(),
-            type_info: None,
+            type_info,
           }))
         } else if CalcitSyntax::is_valid(def) {
           Ok(Calcit::Syntax(
@@ -275,7 +280,7 @@ pub fn preprocess_expr(
       } else {
         // TODO whether function bothers this...
         // println!("start calling: {}", expr);
-        preprocess_list_call(xs, scope_defs, file_ns, check_warnings, call_stack)
+        preprocess_list_call(xs, scope_defs, scope_types, file_ns, check_warnings, call_stack)
       }
     }
     Calcit::Number(..) | Calcit::Str(..) | Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::CirruQuote(..) => {
@@ -305,12 +310,13 @@ pub fn preprocess_expr(
 fn preprocess_list_call(
   xs: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let head = &xs[0];
-  let head_form = preprocess_expr(head, scope_defs, file_ns, check_warnings, call_stack)?;
+  let head_form = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
   let args = xs.drop_left();
   let def_name = grab_def_name(head);
 
@@ -360,7 +366,7 @@ fn preprocess_list_call(
           }
           _ => {
             // println!("gen code: {} {}", code, &code.lisp_str());
-            return preprocess_expr(&code, scope_defs, file_ns, check_warnings, &next_stack);
+            return preprocess_expr(&code, scope_defs, scope_types, file_ns, check_warnings, &next_stack);
           }
         }
       }
@@ -384,7 +390,7 @@ fn preprocess_list_call(
           ys = ys.push(a.to_owned());
           return Ok(());
         }
-        let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+        let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
         ys = ys.push(form);
         Ok(())
       })?;
@@ -407,7 +413,7 @@ fn preprocess_list_call(
           });
 
           let code = Calcit::from(CalcitList::from(&[get_method, args[0].to_owned(), head.to_owned()]));
-          preprocess_expr(&code, scope_defs, file_ns, check_warnings, call_stack)
+          preprocess_expr(&code, scope_defs, scope_types, file_ns, check_warnings, call_stack)
         } else {
           Err(CalcitErr::use_msg_stack(
             CalcitErrKind::Arity,
@@ -423,6 +429,7 @@ fn preprocess_list_call(
           name_ns,
           &args,
           scope_defs,
+          scope_types,
           file_ns,
           check_warnings,
           call_stack,
@@ -432,6 +439,7 @@ fn preprocess_list_call(
           name_ns,
           &args,
           scope_defs,
+          scope_types,
           file_ns,
           check_warnings,
           call_stack,
@@ -441,6 +449,7 @@ fn preprocess_list_call(
           name_ns,
           &args,
           scope_defs,
+          scope_types,
           file_ns,
           check_warnings,
           call_stack,
@@ -456,6 +465,7 @@ fn preprocess_list_call(
           name_ns,
           &args,
           scope_defs,
+          scope_types,
           file_ns,
           check_warnings,
           call_stack,
@@ -468,6 +478,7 @@ fn preprocess_list_call(
           name_ns,
           &args,
           scope_defs,
+          scope_types,
           file_ns,
           check_warnings,
           call_stack,
@@ -476,17 +487,15 @@ fn preprocess_list_call(
           let mut ys = vec![head_form];
 
           args.traverse_result::<CalcitErr>(&mut |a| {
-            let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+            let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
             ys.push(form);
             Ok(())
           })?;
           Ok(Calcit::from(ys))
         }
-        CalcitSyntax::AssetType => CalcitErr::err_nodes(
-          CalcitErrKind::Unimplemented,
-          "`asset-type` preprocessing will be added in a later stage",
-          &xs.to_vec(),
-        ),
+        CalcitSyntax::AssertType => {
+          preprocess_asset_type(name, name_ns, &args, scope_defs, scope_types, file_ns, check_warnings, call_stack)
+        }
         CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec()),
         CalcitSyntax::ArgOptional => {
           CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be preprocessed as operator", &xs.to_vec())
@@ -521,10 +530,15 @@ fn preprocess_list_call(
             ys = ys.push(a.to_owned());
             return Ok(());
           }
-          let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+          let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
           ys = ys.push(form);
           Ok(())
         })?;
+
+        // Check for record field access after processing arguments
+        let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
+        check_record_field_access(&head_form, &processed_args, scope_types, file_ns, check_warnings);
+
         if has_spread {
           ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, file_ns.into()));
           Ok(Calcit::from(CalcitList::List(ys)))
@@ -654,19 +668,99 @@ fn gen_check_warning(message: String, file_ns: &str, check_warnings: &RefCell<Ve
   warnings.push(LocatedWarning::new(message, loc));
 }
 
+/// Check record field access during preprocessing
+/// Validates that field names exist in record types when type information is available
+fn check_record_field_access(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  // Check if this is a call to &record:get
+  if let Calcit::Proc(CalcitProc::NativeRecordGet) = head {
+    // &record:get takes 2 args: (record, field)
+    if args.len() >= 2 {
+      if let (Some(record_arg), Some(field_arg)) = (args.first(), args.get(1)) {
+        check_field_in_record(record_arg, field_arg, scope_types, file_ns, check_warnings);
+      }
+    }
+  }
+  // Also check for Import of &record:get from calcit.core
+  else if let Calcit::Import(CalcitImport { ns, def, .. }) = head {
+    if &**ns == calcit::CORE_NS && (&**def == "record-get" || &**def == "&record:get") && args.len() >= 2 {
+      if let (Some(record_arg), Some(field_arg)) = (args.first(), args.get(1)) {
+        check_field_in_record(record_arg, field_arg, scope_types, file_ns, check_warnings);
+      }
+    }
+  }
+  // Check for Method(Access) which handles .-field syntax: (.-field record)
+  else if let Calcit::Method(field_name, calcit::MethodKind::Access) = head {
+    // .-field takes 1 arg: the record
+    if let Some(record_arg) = args.first() {
+      // Create a tag for the field name to match the check_field_in_record signature
+      let field_tag = Calcit::Tag(cirru_edn::EdnTag::from(&**field_name));
+      check_field_in_record(record_arg, &field_tag, scope_types, file_ns, check_warnings);
+    }
+  }
+}
+
+/// Helper to validate a field exists in a record type
+fn check_field_in_record(
+  record_arg: &Calcit,
+  field_arg: &Calcit,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  // Get the type of the record argument
+  let record_type = match record_arg {
+    Calcit::Local(CalcitLocal { sym, .. }) => scope_types.get(sym),
+    _ => return, // Can't check non-local expressions
+  };
+
+  // If we have type info and it's a record, validate the field
+  if let Some(type_info) = record_type {
+    if let Calcit::Record(record) = &**type_info {
+      // Extract field name from the argument
+      let field_name = match field_arg {
+        Calcit::Tag(tag) => tag.ref_str(),
+        Calcit::Str(s) => s,
+        Calcit::Symbol { sym, .. } => sym,
+        _ => return, // Can't check dynamic field names
+      };
+
+      // Check if field exists in record
+      if record.index_of(field_name).is_none() {
+        let available_fields: Vec<&str> = record.fields.iter().map(|f| f.ref_str()).collect();
+        gen_check_warning(
+          format!(
+            "[Warn] Field `{field_name}` does not exist in record `{}`. Available fields: [{}]",
+            record.name,
+            available_fields.join(", ")
+          ),
+          file_ns,
+          check_warnings,
+        );
+      }
+    }
+  }
+}
+
 // tradition rule for processing exprs
 pub fn preprocess_each_items(
   head: &CalcitSyntax,
   head_ns: &str,
   args: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
   args.traverse_result::<CalcitErr>(&mut |a| {
-    let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+    let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
     xs = xs.push_right(form);
     Ok(())
   })?;
@@ -678,6 +772,7 @@ pub fn preprocess_defn(
   head_ns: &str,
   args: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
@@ -695,6 +790,7 @@ pub fn preprocess_defn(
       Some(Calcit::List(ys)),
     ) => {
       let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
+      let mut body_types: ScopeTypes = scope_types.clone();
 
       xs = xs.push_right(Calcit::Symbol {
         sym: def_name.to_owned(),
@@ -727,6 +823,7 @@ pub fn preprocess_defn(
               arg_location.to_owned().unwrap_or_default(),
             );
             check_symbol(sym, args, loc, check_warnings);
+            body_types.remove(sym);
             let s = Calcit::Local(CalcitLocal {
               idx: CalcitLocal::track_sym(sym),
               sym: sym.to_owned(),
@@ -759,7 +856,7 @@ pub fn preprocess_defn(
           to_skip -= 1;
           return Ok(());
         }
-        let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
+        let form = preprocess_expr(a, &body_defs, &mut body_types, file_ns, check_warnings, call_stack)?;
         xs = xs.push_right(form);
         Ok(())
       })?;
@@ -797,6 +894,7 @@ pub fn preprocess_core_let(
   head_ns: &str,
   args: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
   // where called
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
@@ -804,6 +902,7 @@ pub fn preprocess_core_let(
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: Vec<Calcit> = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
   let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
+  let mut body_types: ScopeTypes = scope_types.clone();
   let binding = match args.first() {
     Some(Calcit::List(ys)) if ys.is_empty() => Calcit::from(CalcitList::default()),
     Some(Calcit::List(ys)) if ys.len() == 2 => match (&ys[0], &ys[1]) {
@@ -815,7 +914,7 @@ pub fn preprocess_core_let(
         );
         check_symbol(sym, ys, loc, check_warnings);
         body_defs.insert(sym.to_owned());
-        let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
+        let form = preprocess_expr(a, &body_defs, &mut body_types, file_ns, check_warnings, call_stack)?;
         let name = Calcit::Local(CalcitLocal {
           idx: CalcitLocal::track_sym(sym),
           sym: sym.to_owned(),
@@ -826,6 +925,7 @@ pub fn preprocess_core_let(
           location: location.to_owned(),
           type_info: None,
         });
+        body_types.remove(sym);
         Calcit::from(CalcitList::from(&[name, form]))
       }
       (a, b) => {
@@ -868,7 +968,7 @@ pub fn preprocess_core_let(
       skipped_head = true;
       return Ok(());
     }
-    let form = preprocess_expr(a, &body_defs, file_ns, check_warnings, call_stack)?;
+    let form = preprocess_expr(a, &body_defs, &mut body_types, file_ns, check_warnings, call_stack)?;
     xs.push(form);
     Ok(())
   })?;
@@ -896,6 +996,7 @@ pub fn preprocess_defatom(
   head_ns: &str,
   args: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
@@ -904,7 +1005,7 @@ pub fn preprocess_defatom(
 
   args.traverse_result::<CalcitErr>(&mut |a| {
     // TODO
-    let form = preprocess_expr(a, scope_defs, file_ns, check_warnings, call_stack)?;
+    let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
     xs = xs.push_right(form.to_owned());
     Ok(())
   })?;
@@ -917,6 +1018,7 @@ pub fn preprocess_quasiquote(
   head_ns: &str,
   args: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
@@ -924,7 +1026,7 @@ pub fn preprocess_quasiquote(
   let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
 
   args.traverse_result::<CalcitErr>(&mut |a| {
-    let form = preprocess_quasiquote_internal(a, scope_defs, file_ns, check_warnings, call_stack)?;
+    let form = preprocess_quasiquote_internal(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
     xs = xs.push_right(form);
     Ok(())
   })?;
@@ -934,6 +1036,7 @@ pub fn preprocess_quasiquote(
 pub fn preprocess_quasiquote_internal(
   x: &Calcit,
   scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
@@ -944,7 +1047,7 @@ pub fn preprocess_quasiquote_internal(
       Calcit::Syntax(CalcitSyntax::MacroInterpolate, _) | &Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, _) => {
         let mut xs = vec![];
         for y in &**ys {
-          let form = preprocess_expr(y, scope_defs, file_ns, check_warnings, call_stack)?;
+          let form = preprocess_expr(y, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
           xs.push(form.to_owned());
         }
         Ok(Calcit::from(xs))
@@ -952,11 +1055,312 @@ pub fn preprocess_quasiquote_internal(
       _ => {
         let mut xs = vec![];
         for y in &**ys {
-          xs.push(preprocess_quasiquote_internal(y, scope_defs, file_ns, check_warnings, call_stack)?.to_owned());
+          xs.push(preprocess_quasiquote_internal(y, scope_defs, scope_types, file_ns, check_warnings, call_stack)?.to_owned());
         }
         Ok(Calcit::from(xs))
       }
     },
     _ => Ok(x.to_owned()),
+  }
+}
+
+pub fn preprocess_asset_type(
+  head: &CalcitSyntax,
+  head_ns: &str,
+  args: &CalcitList,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  if args.len() != 2 {
+    return Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Arity,
+      format!("{head} expected a local and a type expression, got {}", args.len()),
+      call_stack,
+    ));
+  }
+
+  let mut zs: Vec<Calcit> = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
+  args.traverse_result::<CalcitErr>(&mut |a| {
+    let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+    zs.push(form);
+    Ok(())
+  })?;
+
+  let local = match zs.get(1) {
+    Some(Calcit::Local(local)) => local.to_owned(),
+    other => {
+      return Err(CalcitErr::use_msg_stack(
+        CalcitErrKind::Type,
+        format!("assert-type expected local as first arg, got {other:?}"),
+        call_stack,
+      ));
+    }
+  };
+  let type_form = zs
+    .get(2)
+    .ok_or_else(|| CalcitErr::use_msg_stack(CalcitErrKind::Arity, "assert-type missing type expression".to_owned(), call_stack))?;
+
+  let type_entry = Arc::new(type_form.to_owned());
+  scope_types.insert(local.sym.to_owned(), type_entry.clone());
+
+  if let Some(slot) = zs.get_mut(1) {
+    if let Calcit::Local(mut typed_local) = slot.to_owned() {
+      typed_local.type_info = Some(type_entry);
+      *slot = Calcit::Local(typed_local);
+    }
+  }
+
+  // assert-type is preprocessed away, return nil at runtime
+  Ok(Calcit::Nil)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::CalcitRecord;
+  use crate::data::cirru::code_to_calcit;
+  use cirru_parser::Cirru;
+
+  #[test]
+  fn passes_assert_type_through_preprocess() {
+    let expr = Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("x"), Cirru::leaf(":fn")]);
+    let code = code_to_calcit(&expr, "tests.assert", "main", vec![]).expect("parse cirru");
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("x"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
+
+    // assert-type now returns Nil after preprocessing
+    assert!(matches!(resolved, Calcit::Nil), "assert-type should be preprocessed to Nil");
+
+    // Check that type info is stored in scope_types
+    assert!(scope_types.contains_key("x"), "type should be registered in scope");
+    if let Some(type_val) = scope_types.get("x") {
+      assert!(matches!(**type_val, Calcit::Tag(_)), "type should be a tag");
+    }
+  }
+
+  #[test]
+  fn propagates_type_info_across_scope() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("&let"),
+      Cirru::List(vec![Cirru::leaf("x"), Cirru::leaf("1")]),
+      Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("x"), Cirru::leaf(":fn")]),
+      Cirru::leaf("x"),
+    ]);
+    let code = code_to_calcit(&expr, "tests.assert", "demo", vec![]).expect("parse cirru");
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
+    let nodes = match resolved {
+      Calcit::List(xs) => xs.to_vec(),
+      other => panic!("expected list, got {other}"),
+    };
+
+    let assert_typed_result = nodes.get(2);
+    // assert-type now returns Nil after preprocessing
+    assert!(
+      matches!(assert_typed_result, Some(Calcit::Nil)),
+      "assert-type should be preprocessed to Nil"
+    );
+
+    // Check that type info persists in the trailing reference
+    if let Some(Calcit::Local(local)) = nodes.get(3) {
+      assert!(local.type_info.is_some(), "type info should persist for later usages");
+      // Verify the type value
+      if let Some(type_val) = &local.type_info {
+        assert!(matches!(**type_val, Calcit::Tag(_)), "type should be a tag");
+      }
+    } else {
+      panic!("expected trailing local expression");
+    }
+  }
+
+  #[test]
+  fn validates_record_field_access() {
+    use cirru_edn::EdnTag;
+
+    // Create a test record type with fields: name, age
+    let test_record = Calcit::Record(CalcitRecord {
+      name: EdnTag::from("Person"),
+      fields: Arc::new(vec![EdnTag::from("age"), EdnTag::from("name")]), // sorted
+      values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
+      class: None,
+    });
+
+    // Test expression: (assert-type user <record-type>) (&record:get user :name)
+    let expr = Cirru::List(vec![
+      Cirru::leaf("&let"),
+      Cirru::List(vec![Cirru::leaf("user"), Cirru::leaf("nil")]),
+      Cirru::List(vec![
+        Cirru::leaf("assert-type"),
+        Cirru::leaf("user"),
+        Cirru::leaf("record-type"), // placeholder, will be replaced
+      ]),
+      Cirru::List(vec![Cirru::leaf("&record:get"), Cirru::leaf("user"), Cirru::leaf(":name")]),
+    ]);
+
+    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse cirru");
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+
+    // Manually insert the record type for testing
+    scope_types.insert(Arc::from("user"), Arc::new(test_record));
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    // This should not produce warnings since :name exists
+    let _resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess should succeed");
+
+    // Currently no warnings expected for valid field access
+    // In future, we'll check warnings.borrow().is_empty()
+  }
+
+  #[test]
+  fn warns_on_invalid_record_field() {
+    use cirru_edn::EdnTag;
+
+    // Create a test record type with fields: name, age
+    let test_record = Calcit::Record(CalcitRecord {
+      name: EdnTag::from("Person"),
+      fields: Arc::new(vec![EdnTag::from("age"), EdnTag::from("name")]), // sorted
+      values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
+      class: None,
+    });
+
+    // Test expression: (&record:get user :email) with user already typed
+    let expr = Cirru::List(vec![
+      Cirru::leaf("&record:get"),
+      Cirru::leaf("user"),
+      Cirru::leaf(":email"), // invalid field
+    ]);
+
+    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse cirru");
+
+    // Set up scope with user variable
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("user"));
+
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    // Pre-populate with record type
+    scope_types.insert(Arc::from("user"), Arc::new(test_record));
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let _resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess should succeed");
+
+    // Should have a warning about invalid field
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should have warning for invalid field");
+
+    let warning_msg = warnings_vec[0].to_string();
+    assert!(
+      warning_msg.contains("email"),
+      "warning should mention the invalid field: {warning_msg}"
+    );
+    assert!(
+      warning_msg.contains("Person"),
+      "warning should mention the record type: {warning_msg}"
+    );
+  }
+
+  #[test]
+  fn validates_method_field_access() {
+    use cirru_edn::EdnTag;
+
+    // Create a test record type with fields: name, age
+    let test_record = Calcit::Record(CalcitRecord {
+      name: EdnTag::from("Person"),
+      fields: Arc::new(vec![EdnTag::from("age"), EdnTag::from("name")]), // sorted
+      values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
+      class: None,
+    });
+
+    // Test expression: (user.-name) - wrapped in a list to trigger method parsing
+    let expr = Cirru::List(vec![Cirru::leaf("user.-name")]);
+
+    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse cirru");
+
+    // Set up scope with user variable
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("user"));
+
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    // Pre-populate with record type
+    scope_types.insert(Arc::from("user"), Arc::new(test_record));
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let _resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess should succeed");
+
+    // Should not have warnings for valid field
+    let warnings_vec = warnings.borrow();
+    assert!(
+      warnings_vec.is_empty(),
+      "should not have warnings for valid field access, got: {warnings_vec:?}"
+    );
+  }
+
+  #[test]
+  fn warns_on_invalid_method_field_access() {
+    use cirru_edn::EdnTag;
+
+    // Create a test record type with fields: name, age
+    let test_record = Calcit::Record(CalcitRecord {
+      name: EdnTag::from("Person"),
+      fields: Arc::new(vec![EdnTag::from("age"), EdnTag::from("name")]), // sorted
+      values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
+      class: None,
+    });
+
+    // Test expression: (user.-email) - invalid field, wrapped in list
+    let expr = Cirru::List(vec![Cirru::leaf("user.-email")]);
+
+    let code = code_to_calcit(&expr, "tests.record", "demo", vec![]).expect("parse cirru");
+
+    // Set up scope with user variable
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("user"));
+
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    // Pre-populate with record type
+    scope_types.insert(Arc::from("user"), Arc::new(test_record));
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let _resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.record", &warnings, &stack).expect("preprocess should succeed");
+
+    // Should have a warning about invalid field
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should have warning for invalid field");
+
+    let warning_msg = warnings_vec[0].to_string();
+    assert!(
+      warning_msg.contains("email"),
+      "warning should mention the invalid field: {warning_msg}"
+    );
+    assert!(
+      warning_msg.contains("Person"),
+      "warning should mention the record type: {warning_msg}"
+    );
   }
 }

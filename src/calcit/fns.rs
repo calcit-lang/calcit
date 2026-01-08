@@ -41,6 +41,10 @@ pub struct CalcitFn {
   pub scope: Arc<CalcitScope>,
   pub args: Arc<CalcitFnArgs>,
   pub body: Vec<Calcit>,
+  /// return type declared by hint-fn
+  pub return_type: Option<Arc<Calcit>>,
+  /// argument types declared by assert-type
+  pub arg_types: Vec<Option<Arc<Calcit>>>,
 }
 
 /// Macro variant of Calcit data
