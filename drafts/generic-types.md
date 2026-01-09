@@ -102,6 +102,185 @@ defn add-numbers (a b)
 - `unknown` 类型不触发静态类型检查
 - 保持向后兼容：老代码无需修改即可运行
 
+#### 2.0.7 泛型类型支持
+
+为支持泛型编程，Calcit 使用 **quoted symbol** 表示类型变量，利用现有的 Record 和 Symbol 语法实现零额外语法成本的泛型系统。
+
+##### 基本语法
+
+**类型变量表示**：
+
+- 使用单引号 `'` 加大写字母开头的 symbol 表示类型变量：`'T`, `'U`, `'K`, `'V`
+- 类型变量遵循词法作用域：在同一函数内，相同 symbol 表示同一类型
+- 类型变量不需要显式声明，首次使用即生效
+
+**简单泛型函数**：
+
+```cirru
+; 恒等函数：接受任意类型 T，返回相同类型 T
+defn identity (x)
+  assert-type x 'T
+  hint-fn $ return-type 'T
+  x
+
+; 交换 pair：接受 (A, B)，返回 (B, A)
+defn swap-pair (pair)
+  assert-type pair $ :tuple 'A 'B
+  hint-fn $ return-type $ :tuple 'B 'A
+  :: (nth pair 1) (nth pair 0)
+
+; 列表头部：接受 List<T>，返回 T
+defn head (xs)
+  assert-type xs $ :list 'T
+  hint-fn $ return-type 'T
+  first xs
+```
+
+**泛型函数类型**：
+
+```cirru
+; map 函数：(T -> U) -> List<T> -> List<U>
+defn my-map (f xs)
+  assert-type f $ :fn ('T) 'U
+  assert-type xs $ :list 'T
+  hint-fn $ return-type $ :list 'U
+  map f xs
+
+; filter 函数：(T -> Bool) -> List<T> -> List<T>
+defn my-filter (pred xs)
+  assert-type pred $ :fn ('T) :bool
+  assert-type xs $ :list 'T
+  hint-fn $ return-type $ :list 'T
+  filter pred xs
+
+; fold 函数：(B -> A -> B) -> B -> List<A> -> B
+defn my-fold (f init xs)
+  assert-type f $ :fn ('B 'A) 'B
+  assert-type init 'B
+  assert-type xs $ :list 'A
+  hint-fn $ return-type 'B
+  fold f init xs
+```
+
+**泛型 Record 字段**：
+
+```cirru
+; 定义泛型容器 Record（通过注释说明，实际字段存储具体类型）
+defrecord! Box
+  :value 'T  ; 注释：表示 value 字段可以是任意类型
+
+; 使用时指定具体类型
+defn make-int-box (n)
+  assert-type n :number
+  hint-fn $ return-type $ :Box :number  ; Box<number>
+  %{} Box :value n
+
+defn unbox (box)
+  assert-type box $ :Box 'T
+  hint-fn $ return-type 'T
+  &record:get box :value
+```
+
+##### 类型约束（高级）
+
+对于需要类型约束的场景，可以使用 Record 包装：
+
+```cirru
+; 方案 A: 使用专用 Record 表达约束
+defrecord! GenericType
+  :var 'symbol       ; 类型变量名
+  :constraints []    ; 类型约束列表
+
+defn sort-by (cmp xs)
+  ; cmp: (T, T) -> Bool where T: Ord
+  assert-type cmp $ :fn
+    , $ %{} GenericType :var 'T :constraints $ [] :Ord
+    , $ %{} GenericType :var 'T :constraints $ [] :Ord
+    , :bool
+  assert-type xs $ :list 'T
+  hint-fn $ return-type $ :list 'T
+  ; ... 排序实现
+
+; 方案 B: 简化语法糖（可选）
+defn max-value (a b)
+  assert-type a $ 'T :where :Ord
+  assert-type b 'T
+  hint-fn $ return-type 'T
+  if (&> a b) a b
+```
+
+##### 高阶类型（高级）
+
+Record 可表达高阶类型变量（Kind: _ -> _）：
+
+```cirru
+; fmap: (A -> B) -> F<A> -> F<B>
+defn fmap (f container)
+  assert-type f $ :fn ('A) 'B
+  assert-type container $ %{} HigherType
+    :kind 'F           ; F 是类型构造器
+    :param 'A          ; 应用到类型参数 A
+  hint-fn $ return-type $ %{} HigherType
+    :kind 'F
+    :param 'B
+  ; ... 实现依赖于容器类型
+```
+
+##### 类型统一与检查
+
+**预处理阶段**：
+
+- 维护 `GenericBindings: HashMap<Symbol, Calcit>` 追踪类型变量的具体绑定
+- 首次遇到类型变量时记录为泛型
+- 后续遇到相同变量时进行类型统一检查
+- 不匹配时生成 `LocatedWarning`
+
+**示例 - 类型不一致检测**：
+
+```cirru
+defn bad-usage (x y)
+  assert-type x 'T
+  assert-type y 'T
+  ; 如果调用 (bad-usage 1 "hello")
+  ; 预处理器应警告：T 被绑定为 :number，但 y 传入了 :string
+```
+
+##### 实现阶段规划
+
+**阶段 1：基础泛型变量**
+
+- 识别 quoted symbol 作为类型变量（首字母大写）
+- 在 `TypeContext` 中维护泛型绑定
+- 在同一作用域内检查类型一致性
+
+**阶段 2：泛型类型统一**
+
+- 实现简单的类型统一算法
+- 支持嵌套泛型类型（如 `:list 'T`）
+- 提供清晰的错误信息
+
+**阶段 3：约束与高阶类型**
+
+- 支持类型约束（trait bounds）
+- 支持高阶类型变量
+- 完善泛型推断能力
+
+##### 优势与限制
+
+**✅ 优势**：
+
+1. **零语法成本**：复用现有 Symbol 和 Record，无需引入 `<T>` 或 `forall` 等特殊语法
+2. **渐进式增强**：完全向后兼容，可选择性使用泛型标注
+3. **表达力强**：Record 可表达复杂约束和高阶类型
+4. **一致性好**：与现有类型系统设计理念高度一致
+
+**⚠️ 限制**：
+
+1. **作用域限制**：类型变量目前仅支持函数级作用域
+2. **推断有限**：不支持完整的 Hindley-Milner 类型推断
+3. **约束系统待完善**：trait/typeclass 约束系统需要进一步设计
+4. **错误信息**：泛型统一失败的诊断信息需要优化
+
 ### 2.1 数据结构调整
 
 #### 2.1.1 `CalcitLocal` 扩展
@@ -160,9 +339,139 @@ pub struct FnInfo {
    - 确保类型信息在作用域内正确传播
 
 5. **方法校验**：
+
    - 在 `preprocess_list_call` 中，识别 `get`/`.-field` 等方法调用
    - 如果参数是带有 `Record` 类型的 `Local`，根据 Record 定义校验字段合法性
    - 不匹配时生成 `LocatedWarning`
+
+6. **泛型类型处理**（新增）：
+
+   预处理器需要增强类型表达式解析，支持泛型变量的识别与统一：
+
+   **实现要点**：
+
+   - 扩展 `TypeContext` 增加 `generic_bindings: HashMap<Symbol, Calcit>` 追踪泛型绑定
+   - 识别 quoted symbol（首字母大写）作为泛型变量
+   - 首次遇到泛型变量时标记为 `generic:T`，后续遇到时进行类型统一检查
+   - 支持嵌套泛型类型的递归解析（如 `:list 'T`）
+   - 类型不匹配时生成 `LocatedWarning`
+
+   **Calcit 代码示例**：
+
+   ```cirru
+   ; 示例 1: 基本泛型函数
+   defn identity (x)
+     type-variable 'T
+     assert-type x 'T
+     hint-fn $ return-type 'T
+     , x
+
+   ; 调用示例
+   identity 42        ; T := :number
+   identity "|hello"   ; T := :string
+
+   ; 示例 2: 类型一致性检查
+   defn must-same-type (a b)
+     type-variable 'T
+     assert-type a 'T
+     assert-type b 'T   ; 必须与 a 类型相同
+     hint-fn $ return-type 'T
+     if (&> a b) a b
+
+   must-same-type 1 2     ; ✓ T := :number
+   must-same-type 1 "|hi"  ; ✗ 警告：T 已绑定为 :number，但传入 :string
+
+   ; 示例 3: 泛型列表操作
+   defn first-and-second (xs)
+     type-variable 'T
+     assert-type xs $ :list 'T
+     hint-fn $ return-type $ :tuple 'T 'T
+     :: (first xs) (nth xs 1)
+
+   first-and-second $ [] 1 2 3        ; ✓ T := :number
+   first-and-second $ [] |a |b      ; ✓ T := :string
+
+   ; 示例 4: 高阶函数泛型
+   defn my-map (f xs)
+     type-variable 'T
+     type-variable 'U
+     assert-type f $ :fn ('T) 'U
+     assert-type xs $ :list 'T
+     hint-fn $ return-type $ :list 'U
+     map f xs
+
+   my-map str $ [] 1 2 3              ; T := :number, U := :string
+   my-map &str:blank? $ [] |a |     ; T := :string, U := :bool
+
+   ; 示例 5: 多态容器
+   defn wrap-value (v)
+     type-variable 'T
+     assert-type v 'T
+     hint-fn $ return-type $ :Box 'T
+     %{} Box (:value v)
+
+   defn unwrap-value (box)
+     type-variable 'T
+     assert-type box $ :Box 'T
+     hint-fn $ return-type 'T
+     &record:get box :value
+
+   let box $ wrap-value 100           ; Box<number>
+     unwrap-value box                 ; -> 100 : number
+
+   ; 示例 6: 带约束的泛型（未来扩展）
+   defn sort-list (xs)
+     type-variable 'T
+     assert-type xs $ :list
+       %{} GenericType
+         :var 'T
+         :constraints $ [] :Ord
+     hint-fn $ return-type $ :list 'T
+     sort xs
+
+   ; 示例 7: 复杂泛型函数组合
+   defn pipe-two (f g x)
+     type-variable 'A
+     type-variable 'B
+     assert-type f $ :fn ('A) 'B
+     assert-type g $ :fn ('B) 'C
+     assert-type x 'A
+     hint-fn $ return-type 'C
+     g $ f x
+
+   pipe-two parse-int &str:reverse "|123"  ; A := :string, B := :number, C := :string
+   ```
+
+   **类型统一示例**：
+
+   ```cirru
+   ; 正确：类型一致
+   defn example-ok (a b c)
+     assert-type a 'T
+     assert-type b 'T
+     assert-type c 'T
+     ; 如果调用 (example-ok 1 2 3)，T 统一为 :number
+
+   ; 错误：类型冲突
+   defn example-bad (a b)
+     assert-type a 'T
+     ; ... 一些代码
+     assert-type b 'T
+     ; 如果调用 (example-bad 1 "|hello")
+     ; 预处理器警告：Type mismatch for 'T': expected :number, got :string
+   ```
+
+   **IR 输出示例**：
+
+   ```cirru
+   ; 编译后的 program-ir.cirru 中可见
+   :local $ {} (:idx 0) (:sym |x)
+     :type-info $ :tag "|generic:T"
+
+   :fn $ {}
+     :return-type $ :tag "|generic:T"
+     :arg-types $ [] (:tag "|generic:T")
+   ```
 
 ### 2.3 内置函数与类型提示
 
