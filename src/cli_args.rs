@@ -273,6 +273,9 @@ pub struct QueryDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
+  /// also output JSON format for programmatic consumption
+  #[argh(switch, short = 'j')]
+  pub json: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

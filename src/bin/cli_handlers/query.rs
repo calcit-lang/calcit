@@ -33,7 +33,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
     QuerySubcommand::Modules(_) => handle_modules(input_path),
     QuerySubcommand::Def(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_def(input_path, ns, def)
+      handle_def(input_path, ns, def, opts.json)
     }
     QuerySubcommand::Peek(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
@@ -382,7 +382,7 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
   Ok(())
 }
 
-fn handle_def(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
+fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bool) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let file_data = snapshot
@@ -409,9 +409,11 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str) -> Result<(),
   let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
   println!("{cirru_str}");
 
-  println!("\n{}", "JSON (for edit):".bold());
-  let json = cirru_to_json(&code_entry.code);
-  println!("{}", serde_json::to_string(&json).unwrap());
+  if show_json {
+    println!("\n{}", "JSON:".bold());
+    let json = cirru_to_json(&code_entry.code);
+    println!("{}", serde_json::to_string(&json).unwrap());
+  }
 
   let mut tips = vec![format!(
     "try `cr query search <leaf> -f '{namespace}/{definition}' -l` to quick find coordination of given leaf node."
@@ -421,6 +423,9 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str) -> Result<(),
   ));
   if !code_entry.examples.is_empty() {
     tips.push(format!("use `cr query examples {namespace}/{definition}` to view examples."));
+  }
+  if !show_json {
+    tips.push("add `-j` flag to also output JSON format.".to_string());
   }
   println!("\n{}", format!("Tips: {}", tips.join(" ")).dimmed());
 

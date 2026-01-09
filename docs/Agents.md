@@ -85,8 +85,10 @@ Calcit 程序使用 `cr` 命令：
 - `cr query peek <namespace/definition>` - 查看定义签名（参数、文档、表达式数量），不返回完整实现体
   - 输出：Doc、Form 类型、参数列表、Body 表达式数量、首个表达式预览、Examples 数量
   - 用于快速了解函数接口，减少 token 消耗
-- `cr query def <namespace/definition>` - 读取定义的完整语法树（JSON 格式）
-  - 同时显示 Doc 和 Examples 的完整内容
+- `cr query def <namespace/definition> [-j]` - 读取定义的完整 Cirru 代码
+  - 默认输出：Doc、Examples 数量、Cirru 格式代码
+  - `-j` / `--json`：同时输出 JSON 格式（用于程序化处理）
+  - 推荐：LLM 直接读取 Cirru 格式即可，通常不需要 JSON
 - `cr query examples <namespace/definition>` - 读取定义的示例代码
   - 输出：每个 example 的 Cirru 格式和 JSON 格式
 
