@@ -246,15 +246,17 @@ pub struct FnInfo {
    - ✅ 生成编译时警告提示字段错误
 
 **测试覆盖：**
+
 - `calcit/test-types.cirru` - 包含多种类型标注场景的实际代码测试
 - 单元测试验证类型解析、传播和作用域管理
-- Record 字段验证单元测试（4个）：
+- Record 字段验证单元测试（4 个）：
   - `validates_record_field_access` - `&record:get` 正确字段
   - `warns_on_invalid_record_field` - `&record:get` 错误字段
   - `validates_method_field_access` - `.-field` 正确字段
   - `warns_on_invalid_method_field_access` - `.-field` 错误字段
 
 **Record 字段验证示例：**
+
 ```rust
 // 单元测试中的示例
 let test_record = Calcit::Record(CalcitRecord {
@@ -270,19 +272,21 @@ scope_types.insert(Arc::from("user"), Arc::new(test_record));
 // 两种访问语法都会验证：
 // (&record:get user :email) 会产生警告
 // (user.-email) 也会产生警告：
-// [Warn] Field `email` does not exist in record `Person`. 
+// [Warn] Field `email` does not exist in record `Person`.
 //        Available fields: [age, name]
 ```
 
 **实现细节（2026-01-09）：**
 
 文件修改：
+
 - `src/runner/preprocess.rs`:
   - 扩展 `check_record_field_access()` 函数支持 `Method(Access)` 检查
   - 在预处理 `Proc`/`Import`/`Method` 调用时触发字段验证
   - 新增 4 个单元测试（总计 11 个测试）
 
 工作原理：
+
 1. 用户使用 `assert-type user <record-instance>` 标注变量类型
 2. 类型信息存储在 `scope_types: HashMap<Arc<str>, Arc<Calcit>>`
 3. 预处理到字段访问时（两种语法）：
@@ -294,15 +298,18 @@ scope_types.insert(Arc::from("user"), Arc::new(test_record));
 **下一步计划（阶段 4 剩余工作）：**
 
 1. ~~**支持 `.-field` 方法访问语法的验证**~~ ✅ 已完成
+
    - ✅ 当前支持 `&record:get` 和 `.-field` 两种语法
    - ✅ 完整测试覆盖
 
 2. **基于 Record 字面量的类型推断**
+
    - 当看到 `&%{} (&new-record :Person :name :age) ...` 时自动推断类型
    - 无需显式 `assert-type` 标注
    - 需要在 `preprocess_list_call` 中识别 `&new-record` 调用
 
 3. **Enum 变体验证**
+
    - 检查 `tag-match` 中的变体是否在 `defenum` 声明中
    - 验证变体参数数量匹配
    - 需要实现 Enum 类型的存储和查询
@@ -313,13 +320,15 @@ scope_types.insert(Arc::from("user"), Arc::new(test_record));
    - 需要在函数调用时验证返回类型匹配
 
 **阶段 4 已完成部分：**
+
 - ✅ Record 字段静态验证（`&record:get` 和 `.-field`）
 - ✅ 编译时警告生成
-- ✅ 完整单元测试覆盖（11个测试）
+- ✅ 完整单元测试覆盖（11 个测试）
 
 **实现细节：**
 
 文件修改：
+
 - `src/runner/preprocess.rs`:
   - 添加了 `check_record_field_access()` 函数
   - 添加了 `check_field_in_record()` 辅助函数
@@ -328,6 +337,7 @@ scope_types.insert(Arc::from("user"), Arc::new(test_record));
   - 新增 4 个单元测试验证功能
 
 工作原理：
+
 1. 用户使用 `assert-type user <record-instance>` 标注变量类型
 2. 类型信息存储在 `scope_types: HashMap<Arc<str>, Arc<Calcit>>`
 3. 预处理到 `&record:get user :field` 或 `user.-field` 时：
@@ -337,6 +347,7 @@ scope_types.insert(Arc::from("user"), Arc::new(test_record));
    - 不存在则生成编译时警告
 
 **当前限制：**
+
 - 需要显式使用 `assert-type` 标注，无法自动推断 Record 字面量类型
 - 警告信息在预处理阶段生成，不影响运行时
 - 不支持动态字段名（如变量或表达式计算的字段名）
@@ -562,76 +573,71 @@ tag-match (:: :some |hello)
 - ❌ 缺少类型声明：无法事先定义合法的 variant 集合
 - ❌ 缺少静态校验：拼写错误的 tag 名称不会被发现
 
-### 6.2 `defenum` 增强方案
+### 6.2 用 `defrecord` 表达枚举（变体用属性数组）
 
-在现有基础上添加类型声明：
-
-```cirru
-defenum Result
-  :ok value             ; variant 带一个参数
-  :err message          ; variant 带一个参数
-
-defenum Option
-  :some value           ; variant 带一个参数
-  :none                 ; variant 无参数
-
-defenum Event
-  :click x y            ; variant 带两个参数
-  :keypress code meta   ; variant 带两个参数
-  :message text user timestamp  ; variant 带三个参数
-```
-
-使用示例（保持与现有 `tag-match` 兼容）：
+为减少新语法引入的复杂度，使用已有的 `defrecord` 来表示枚举，每个变体作为一个 `Record` 类型，参数改为属性数组进行约束：
 
 ```cirru
+; 一个定义包含所有变体：每个 field 对应一个 enum 的 tag
+defrecord! Result
+  :ok $ [] V1
+  :err $ [] :string
+
+defrecord! Option
+  :some $ [] V1
+  :none $ []
+
+defrecord! Event
+  :click $ [] :number :number
+  :keypress $ [] :string :bool
+  :message $ [] :string VUser :number
+
+; 使用时用 assert-type 标注，并通过属性数组校验字段
 defn handle-result (result)
-  ; 假设 result 已通过 assert-type 标注为 :Result
+  assert-type result :Result
   tag-match result
-    (:ok v) (println "Success:" v)
-    (:err e) (println "Error:" e)
+    (:ok v) (println |Success: v)
+    (:err e) (println |Error: e)
 ```
 
-**实现要点**：
+说明：上述 `Result` 定义中，`V1` 表示某个具体的 Record 类型（例如用户自定义的 `Record`），而 `:string` 则表示内置的字符串类型标记。
 
-1. **元数据注册**：`defenum` 在全局注册表中记录：
-
-   - Enum 名称（如 `Result`，存储在当前 namespace）
-   - 每个 variant 的名称和参数数量
-   - 参数名称（仅用于文档和错误提示）
-
-2. **预处理器增强**：在 `tag-match` 宏展开后的预处理阶段：
-
-   - 当变量通过 `assert-type` 标注为某个 enum 类型时
-   - 检查 `tag-match` 分支中的 pattern 是否为该 enum 的合法 variant
-   - 检查参数数量是否匹配 defenum 声明
-   - 可选：提示未覆盖的 variant（exhaustiveness check）
-
-3. **向后兼容**：
-
-   - 未标注类型的 tuple 仍可正常使用 `tag-match`，不触发校验
-   - `defenum` 不改变运行时行为，仅提供编译期检查
-   - 继续使用现有的 `CalcitTuple` 数据结构
-
-4. **内省支持**：
-   - `enum-variants :Result` 返回 `[] ([] :ok 1) ([] :err 1)`（variant 及参数数量）
-   - `enum-variants :Event` 返回 `[] ([] :click 2) ([] :keypress 2) ([] :message 3)`
-   - `enum? x` 检查值是否为某个已定义 enum 的实例
-
-### 6.3 与 `assert-type` 的集成
+为了承载这些 enum 元数据，tuple 构造函数新增 `%%::` 形式：
 
 ```cirru
-defn process-data (input)
-  &let (result (fetch-data input))
-    assert-type result :Result  ; 标注类型
-    tag-match result
-      (:ok data) (save-to-db data)
-      (:err msg) (log-error msg)
-      ; 预处理器会警告：如果 Result 有其他 variant 未被处理
+%%:: Action Result :ok payload
 ```
 
-**后续工作**：
+它会把 `Action` 作为 class/trait，同时把 `Result` 作为 sum type。对应实现中，`CalcitTuple` 增加了 `sum_type` 字段，以便方法分派(`class`)和 `tag-match` 校验(`sum_type`)可以同时使用这些信息。
 
-- **阶段 4**：实现 `defenum` 语法解析和元数据注册
-- **阶段 5**：在预处理器中验证 `tag-match` pattern 的合法性
-- **阶段 6**：实现 exhaustiveness check（可选）
-- 补充文档说明 enum 声明和 `tag-match` 的配合使用模式
+**要点**：
+
+- 变体是现有 `Record`，字段由属性数组限定；
+- 通过 `assert-type` 为变量标注为具体变体或联合（如 `|or` 简写联合）；
+- 预处理时利用 `Record` 元数据进行字段存在性校验，避免新增枚举存储结构；
+- 与现有 `record-match`/`&record:get` 检查机制复用，减少实现成本。
+
+## 9. `hint-fn` 返回值标记落地计划（2026-01-09）
+
+**目标**：让 `hint-fn` 中的 `return-type` 标记真正落地到 `CalcitFn.return_type`，并保持对既有 `hint-fn async` 提示的兼容，随后逐步在 `calcit-core` 中补充这些元信息。
+
+### 9.1 实现路径
+
+1. **入口选择**：在 `builtins/syntax::defn` 中扫描函数体（`expr.skip(2)`）里所有 `hint-fn` 语句，统一解析出 `return-type` 提示；`hint-fn async` 继续保留在函数体里，以便现有 JS codegen 检测异步标记。
+2. **数据落地**：一旦捕获到类型表达式，就以 `Arc<Calcit>` 形式写入 `CalcitFn.return_type`。同一个函数出现多次 `return-type` 时以后出现者覆盖之前的值，方便局部覆盖。
+3. **语法支持**：统一为 `hint-fn $ return-type :number` 的写法（必须通过 `$` 包裹参数），内部解析器仅解析该嵌套列表形式，`hint-fn` 的其它用法（如 `hint-fn async`）保持不变。
+4. **单元测试**：在 `builtins/syntax.rs` 增加针对解析器与 `defn` 的测试，覆盖：
+
+- 能识别 `$` 形式的 `return-type`。
+- 忽略只有 `hint-fn async` 的场景。
+
+5. **验证流程**：`cargo test builtins::syntax`（或新增测试名）+ `cargo run --bin cr -- -1 calcit/test-types.cirru ir`，确保 IR 中 `arg-types`/`return-type` 字段包含新的类型信息。
+
+### 9.2 后续计划（实现完成后立即跟进）
+
+1. 在 `calcit/test-types.cirru` 与 `calcit-core.cirru` 中挑选一批核心函数，补写 `hint-fn $ return-type ...` 以展示元数据；
+2. 利用 `rg -n ":type-info" js-out/program-ir.cirru` 快速确认输出里新增的 `return-type`；
+3. 运行 `yarn check-all` 确认核心库在补充标注后仍保持绿色；
+4. 如需暴露返回值信息给其它工具，再按需扩展 IR 消费端或 CLI 输出。
+
+> 备注：`assert-type` → `CalcitFn.arg_types` 的聚合将在后续步骤里处理，本次先把 `hint-fn` 链路打通，便于后面落地更大范围的类型可视化。

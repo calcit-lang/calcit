@@ -537,6 +537,7 @@ fn preprocess_list_call(
 
         // Check for record field access after processing arguments
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
+        validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
         check_record_field_access(&head_form, &processed_args, scope_types, file_ns, check_warnings);
 
         if has_spread {
@@ -744,6 +745,65 @@ fn check_field_in_record(
         );
       }
     }
+  }
+}
+
+fn validate_method_call(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  if let Calcit::Method(method_name, calcit::MethodKind::Invoke) = head {
+    if method_name.as_ref() == "slice" {
+      if let Some(receiver) = args.first() {
+        if let Some(type_name) = resolve_type_tag(receiver, scope_types) {
+          if !matches!(type_name.as_str(), "string" | "list") {
+            return Err(CalcitErr::use_msg_stack(
+              CalcitErrKind::Type,
+              format!(
+                "method `.slice` expected a :string or :list target, but `{}` is annotated as :{type_name} in {file_ns}",
+                describe_receiver(receiver)
+              ),
+              call_stack,
+            ));
+          }
+        }
+      }
+    }
+  }
+  Ok(())
+}
+
+fn resolve_type_tag(target: &Calcit, scope_types: &ScopeTypes) -> Option<String> {
+  match target {
+    Calcit::Local(local) => {
+      if let Some(type_hint) = local.type_info.as_deref() {
+        if let Some(name) = extract_tag_name(type_hint) {
+          return Some(name);
+        }
+      }
+      scope_types.get(&local.sym).and_then(|hint| extract_tag_name(hint.as_ref()))
+    }
+    _ => None,
+  }
+}
+
+fn extract_tag_name(type_value: &Calcit) -> Option<String> {
+  match type_value {
+    Calcit::Tag(tag) => {
+      let label = tag.ref_str();
+      Some(label.trim_start_matches(':').to_owned())
+    }
+    _ => None,
+  }
+}
+
+fn describe_receiver(expr: &Calcit) -> String {
+  match expr {
+    Calcit::Local(local) => local.sym.to_string(),
+    _ => expr.lisp_str(),
   }
 }
 
@@ -1362,5 +1422,29 @@ mod tests {
       warning_msg.contains("Person"),
       "warning should mention the record type: {warning_msg}"
     );
+  }
+
+  #[test]
+  fn rejects_slice_on_number_type() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("&let"),
+      Cirru::List(vec![Cirru::leaf("n"), Cirru::leaf("42")]),
+      Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("n"), Cirru::leaf(":number")]),
+      Cirru::List(vec![Cirru::leaf(".slice"), Cirru::leaf("n"), Cirru::leaf("1"), Cirru::leaf("3")]),
+    ]);
+
+    let code = code_to_calcit(&expr, "tests.slice", "demo", vec![]).expect("parse cirru");
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let result = preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.slice", &warnings, &stack);
+    assert!(result.is_err(), "preprocess should reject mismatched `.slice` receivers");
+    if let Err(err) = result {
+      let msg = format!("{err}");
+      assert!(msg.contains(".slice"), "error should mention the method name: {msg}");
+      assert!(msg.contains(":number"), "error should mention the annotated type: {msg}");
+    }
   }
 }

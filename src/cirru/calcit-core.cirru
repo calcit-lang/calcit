@@ -30,6 +30,7 @@
         |&<= $ %{} :CodeEntry (:doc "|Less than or equal comparison for two values")
           :code $ quote
             defn &<= (a b)
+              hint-fn $ return-type :bool
               if (&< a b) true $ &= a b
           :examples $ []
             quote $ assert= true $ &<= 3 5
@@ -38,6 +39,7 @@
         |&>= $ %{} :CodeEntry (:doc "|Greater than or equal comparison for two values")
           :code $ quote
             defn &>= (a b)
+              hint-fn $ return-type :bool
               if (&> a b) true $ &= a b
           :examples $ []
             quote $ assert= true $ &>= 5 3
@@ -954,6 +956,7 @@
         |contains? $ %{} :CodeEntry (:doc "|Checks whether a collection contains a key or index at the current level. Supports lists, tuples, maps, and records while treating nil as false.")
           :code $ quote
             defn contains? (x k)
+              hint-fn $ return-type :bool
               if (nil? x) false $ if (list? x) (&list:contains? x k)
                 if (record? x) (&record:contains? x k)
                   if (tuple? x)
@@ -968,6 +971,7 @@
         |count $ %{} :CodeEntry (:doc "|Counts elements in a collection or string\nNil input returns 0; otherwise delegates to the underlying data structure's counter.")
           :code $ quote
             defn count (x)
+              hint-fn $ return-type :number
               if (nil? x) 0 $ if (tuple? x) (&tuple:count x)
                 if (list? x) (&list:count x)
                   if (record? x) (&record:count x) (.count x)
@@ -977,7 +981,9 @@
             quote $ assert= 0 $ count nil
         |dec $ %{} :CodeEntry (:doc "|Decrements a number by 1")
           :code $ quote
-            defn dec (x) (&- x 1)
+            defn dec (x)
+              hint-fn $ return-type :number
+              &- x 1
           :examples $ []
             quote $ assert= 4 $ dec 5
             quote $ assert= -1 $ dec 0
@@ -1302,7 +1308,9 @@
               quasiquote $ if ~condition ~false-branch ~true-branch
         |inc $ %{} :CodeEntry (:doc "|Increments a number by 1")
           :code $ quote
-            defn inc (x) (&+ x 1)
+            defn inc (x)
+              hint-fn $ return-type :number
+              &+ x 1
           :examples $ []
             quote $ assert= 6 $ inc 5
             quote $ assert= 1 $ inc 0
@@ -1316,6 +1324,7 @@
         |includes? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn includes? (x k)
+              hint-fn $ return-type :bool
               if (nil? x) false $ if (list? x) (&list:includes? x k) (.includes? x k)
         |index-of $ %{} :CodeEntry (:doc "|Find the first index of an item in a list, returns nil if not found")
           :code $ quote
@@ -1674,7 +1683,9 @@
             defn min (xs) (.min xs)
         |negate $ %{} :CodeEntry (:doc "|Negate a number, returns its opposite")
           :code $ quote
-            defn negate (x) (&- 0 x)
+            defn negate (x)
+              hint-fn $ return-type :number
+              &- 0 x
           :examples $ []
             quote $ assert= -5 $ negate 5
             quote $ assert= 3 $ negate -3
@@ -1682,10 +1693,12 @@
         |abs $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn abs (x)
+              hint-fn $ return-type :number
               if (&< x 0) (&- 0 x) x
         |nil? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is nil")
           :code $ quote
             defn nil? (x)
+              hint-fn $ return-type :bool
               &= (type-of x) :nil
           :examples $ []
             quote $ assert= true $ nil? nil
@@ -1699,6 +1712,7 @@
         |not= $ %{} :CodeEntry (:doc "|Returns true when its two arguments are not identical according to `=`.")
           :code $ quote
             defn not= (x y)
+              hint-fn $ return-type :bool
               not $ &= x y
           :examples $ []
             quote $ assert= true $ not= 1 2
@@ -1718,6 +1732,7 @@
         |number? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a numeric scalar")
           :code $ quote
             defn number? (x)
+              hint-fn $ return-type :bool
               &= (type-of x) :number
           :examples $ []
             quote $ assert= true $ number? 123
@@ -2355,6 +2370,8 @@
         |:: $ %{} :CodeEntry (:doc "|internal function for creating tuples\nSyntax: (:: class & values)\nParams: class (any), values (any, variable number)\nReturns: tuple with class and values\nCreates a tuple with specified class and values")
           :code $ quote &runtime-inplementation
         |%:: $ %{} :CodeEntry (:doc "|internal function for creating class tuples\nSyntax: (%:: class fields)\nParams: class (any), fields (list)\nReturns: class tuple\nCreates a class tuple for defining tuple types with field names")
+          :code $ quote &runtime-inplementation
+        |%%:: $ %{} :CodeEntry (:doc "|internal function for creating class/enum tuples\nSyntax: (%%:: class enum tag & values)\nParams: class (record), enum (record), tag (tag), values (any, variable number)\nReturns: tuple with class and enum metadata\nCreates a tagged tuple that carries both class data for methods and enum metadata for validation")
           :code $ quote &runtime-inplementation
         |&tuple:nth $ %{} :CodeEntry (:doc "|internal function for tuple nth operation\nSyntax: (&tuple:nth tuple index)\nParams: tuple (tuple), index (number)\nReturns: value at index or nil\nGets the value at specified index in tuple, returns nil if out of bounds")
           :code $ quote &runtime-inplementation
