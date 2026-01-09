@@ -927,6 +927,9 @@ pub struct TreeShowCommand {
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
+  /// also output JSON format for programmatic consumption
+  #[argh(switch, short = 'j')]
+  pub json: bool,
 }
 
 /// replace node at specific path

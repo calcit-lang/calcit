@@ -205,7 +205,10 @@ Calcit 程序使用 `cr` 命令：
 
 **主要操作：**
 
-- `cr tree show` - 查看节点（输出包含子节点索引和操作提示）
+- `cr tree show <ns/def> -p "<path>" [-j]` - 查看节点
+  - 默认输出：节点类型、Cirru 预览、子节点索引列表、操作提示
+  - `-j` / `--json`：同时输出 JSON 格式（用于程序化处理）
+  - 推荐：直接查看 Cirru 格式即可，通常不需要 JSON
 - `cr tree replace` - 替换节点
 - `cr tree delete` - 删除节点
 - `cr tree insert-before/after` - 插入相邻节点

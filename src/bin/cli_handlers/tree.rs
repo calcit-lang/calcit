@@ -20,7 +20,7 @@ use super::edit::{
 /// Main handler for code command
 pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(), String> {
   match &cmd.subcommand {
-    TreeSubcommand::Show(opts) => handle_show(opts, snapshot_file),
+    TreeSubcommand::Show(opts) => handle_show(opts, snapshot_file, opts.json),
     TreeSubcommand::Replace(opts) => handle_replace(opts, snapshot_file),
     TreeSubcommand::Delete(opts) => handle_delete(opts, snapshot_file),
     TreeSubcommand::InsertBefore(opts) => handle_insert_before(opts, snapshot_file),
@@ -120,7 +120,7 @@ fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: 
 // Command handlers
 // ============================================================================
 
-fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
   let path = parse_path(&opts.path)?;
 
@@ -299,12 +299,14 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String
         println!();
       }
 
-      println!("{}:", "JSON".green().bold());
-      println!("{}", cirru_to_json(&node));
-      if opts.depth > 0 {
-        println!("{}", format!("(depth limited to {})", opts.depth).dimmed());
+      if show_json {
+        println!("{}:", "JSON".green().bold());
+        println!("{}", cirru_to_json(&node));
+        if opts.depth > 0 {
+          println!("{}", format!("(depth limited to {})", opts.depth).dimmed());
+        }
+        println!();
       }
-      println!();
 
       println!("{}: To modify this node:", "Next steps".blue().bold());
       println!(
@@ -316,12 +318,15 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String
       );
       println!("  • Delete:  {} {} -p \"{}\"", "cr tree delete".cyan(), opts.target, opts.path);
       println!();
-      println!(
-        "{}: Use {} for precise leaf nodes, {} for expressions",
-        "Tip".blue().bold(),
+      let mut tips = vec![format!(
+        "Use {} for precise leaf nodes, {} for expressions",
         "-j '\"value\"'".yellow(),
         "-e 'cirru code'".yellow()
-      );
+      )];
+      if !show_json {
+        tips.push(format!("add {} flag to also output JSON format", "-j".yellow()));
+      }
+      println!("{}: {}", "Tips".blue().bold(), tips.join("; "));
 
       return Ok(());
     }
