@@ -3,6 +3,7 @@ mod list;
 mod local;
 mod proc_name;
 mod record;
+mod sum_type;
 mod symbol;
 mod syntax_name;
 mod thunk;
@@ -29,6 +30,7 @@ pub use list::CalcitList;
 pub use local::CalcitLocal;
 pub use proc_name::CalcitProc;
 pub use record::CalcitRecord;
+pub use sum_type::{CalcitEnum, EnumVariant};
 pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
 pub use syntax_name::CalcitSyntax;
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
@@ -140,29 +142,52 @@ impl fmt::Display for Calcit {
       },
       CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
       Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
-      Tuple(CalcitTuple { tag, extra, class }) => {
-        if let Some(record) = class {
-          f.write_str("(%:: ")?;
+      Tuple(CalcitTuple {
+        tag,
+        extra,
+        class,
+        sum_type,
+      }) => match (class, sum_type) {
+        (Some(class), Some(sum_type)) => {
+          f.write_str("(%%:: ")?;
           f.write_str(&tag.to_string())?;
-
           for item in extra {
             f.write_char(' ')?;
             f.write_str(&item.to_string())?;
           }
-          f.write_str(&format!(" (:class {})", record.name))?;
-          f.write_str(")")
-        } else {
-          f.write_str("(:: ")?;
-          f.write_str(&tag.to_string())?;
-
-          for item in extra {
-            f.write_char(' ')?;
-            f.write_str(&item.to_string())?;
-          }
-
+          f.write_str(&format!(" (:class {}) (:enum {})", class.name, sum_type.name()))?;
           f.write_str(")")
         }
-      }
+        (Some(class), None) => {
+          f.write_str("(%:: ")?;
+          f.write_str(&tag.to_string())?;
+          for item in extra {
+            f.write_char(' ')?;
+            f.write_str(&item.to_string())?;
+          }
+          f.write_str(&format!(" (:class {})", class.name))?;
+          f.write_str(")")
+        }
+        (None, Some(sum_type)) => {
+          f.write_str("(:: ")?;
+          f.write_str(&tag.to_string())?;
+          for item in extra {
+            f.write_char(' ')?;
+            f.write_str(&item.to_string())?;
+          }
+          f.write_str(&format!(" (:enum {})", sum_type.name()))?;
+          f.write_str(")")
+        }
+        (None, None) => {
+          f.write_str("(:: ")?;
+          f.write_str(&tag.to_string())?;
+          for item in extra {
+            f.write_char(' ')?;
+            f.write_str(&item.to_string())?;
+          }
+          f.write_str(")")
+        }
+      },
       Buffer(buf) => {
         f.write_str("(&buffer")?;
         if buf.len() > 8 {

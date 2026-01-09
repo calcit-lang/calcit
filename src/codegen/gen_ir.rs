@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use cirru_edn::{Edn, EdnListView, format};
 
-use crate::calcit::{Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, ImportInfo};
+use crate::calcit::{Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitRecord, CalcitTuple, ImportInfo};
 use crate::program;
 
 #[derive(Debug)]
@@ -116,13 +116,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
           (Edn::tag("ns"), Edn::Str((*info.at_ns).into())),
         ]),
       ),
-      (
-        Edn::tag("type-info"),
-        match type_info {
-          Some(t) => dump_code(t),
-          None => Edn::Nil,
-        },
-      ),
+      (Edn::tag("type-info"), dump_optional_type_annotation(type_info)),
     ]),
 
     Calcit::Import(CalcitImport { ns, def, info, .. }) => Edn::map_from_iter([
@@ -166,15 +160,15 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       (Edn::tag("alias"), Edn::Str((**alias).into())),
     ]),
 
-    Calcit::Fn { info, .. } => {
-      Edn::map_from_iter([
-        (Edn::tag("kind"), Edn::tag("fn")),
-        (Edn::tag("name"), Edn::Str((*info.name).into())),
-        (Edn::tag("ns"), Edn::Str((*info.def_ns).into())),
-        (Edn::tag("args"), dump_fn_args_code(&info.args)), // TODO
-        (Edn::tag("code"), dump_items_code(&info.body)),
-      ])
-    }
+    Calcit::Fn { info, .. } => Edn::map_from_iter([
+      (Edn::tag("kind"), Edn::tag("fn")),
+      (Edn::tag("name"), Edn::Str((*info.name).into())),
+      (Edn::tag("ns"), Edn::Str((*info.def_ns).into())),
+      (Edn::tag("args"), dump_fn_args_code(&info.args)),
+      (Edn::tag("arg-types"), dump_type_list(&info.arg_types)),
+      (Edn::tag("return-type"), dump_optional_type_annotation(&info.return_type)),
+      (Edn::tag("code"), dump_items_code(&info.body)),
+    ]),
     Calcit::Macro { info, .. } => {
       Edn::map_from_iter([
         (Edn::tag("kind"), Edn::tag("macro")),
@@ -201,6 +195,8 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       });
       Edn::from(ys)
     }
+    Calcit::Tuple(tuple) => dump_tuple_code(tuple),
+    Calcit::Record(record) => dump_record_code(record),
     Calcit::Method(method, kind) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("method")),
       (Edn::tag("behavior"), Edn::Str((kind.to_string()).into())),
@@ -248,4 +244,106 @@ fn dump_args_code(xs: &[CalcitArgLabel]) -> Edn {
     ys.push(Edn::sym(&*x.to_string()));
   }
   ys.into()
+}
+
+fn dump_optional_type_annotation(type_info: &Option<Arc<Calcit>>) -> Edn {
+  match type_info {
+    Some(t) => dump_type_annotation(t),
+    None => Edn::Nil,
+  }
+}
+
+fn dump_type_list(xs: &[Option<Arc<Calcit>>]) -> Edn {
+  let mut view = EdnListView::default();
+  for x in xs {
+    view.push(match x {
+      Some(t) => dump_type_annotation(t),
+      None => Edn::Nil,
+    });
+  }
+  view.into()
+}
+
+fn dump_type_annotation(type_info: &Calcit) -> Edn {
+  match type_info {
+    Calcit::Tag(tag) => Edn::map_from_iter([
+      (Edn::tag("kind"), Edn::tag("tag")),
+      (Edn::tag("name"), Edn::Str(tag.ref_str().into())),
+    ]),
+    Calcit::Record(record) => dump_record_type_summary(record),
+    Calcit::Tuple(tuple) => dump_tuple_annotation(tuple),
+    other => dump_code(other),
+  }
+}
+
+fn dump_tuple_code(tuple: &CalcitTuple) -> Edn {
+  let mut entries = tuple_metadata_entries(tuple);
+  let mut values = EdnListView::default();
+  for value in &tuple.extra {
+    values.push(dump_code(value));
+  }
+  entries.push((Edn::tag("values"), values.into()));
+  entries.push((Edn::tag("payload-size"), Edn::Number(tuple.extra.len() as f64)));
+  Edn::map_from_iter(entries)
+}
+
+fn dump_tuple_annotation(tuple: &CalcitTuple) -> Edn {
+  let mut entries = tuple_metadata_entries(tuple);
+  let mut payload = EdnListView::default();
+  for hint in &tuple.extra {
+    payload.push(dump_code(hint));
+  }
+  entries.push((Edn::tag("payload"), payload.into()));
+  entries.push((Edn::tag("payload-size"), Edn::Number(tuple.extra.len() as f64)));
+  Edn::map_from_iter(entries)
+}
+
+fn tuple_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
+  let mut entries = vec![
+    (Edn::tag("kind"), Edn::tag("tuple")),
+    (Edn::tag("tag"), Edn::Str(tuple.tag.to_string().into())),
+  ];
+  if let Some(class) = &tuple.class {
+    entries.push((Edn::tag("class"), Edn::Str(class.name.ref_str().into())));
+  }
+  if let Some(sum_type) = &tuple.sum_type {
+    entries.push((Edn::tag("enum"), Edn::Str(sum_type.name().ref_str().into())));
+  }
+  entries
+}
+
+fn dump_record_code(record: &CalcitRecord) -> Edn {
+  let mut entries = record_metadata(record);
+  let mut fields = EdnListView::default();
+  for (field, value) in record.fields.iter().zip(record.values.iter()) {
+    fields.push(Edn::map_from_iter([
+      (Edn::tag("field"), Edn::Str(field.ref_str().into())),
+      (Edn::tag("value"), dump_code(value)),
+    ]));
+  }
+  entries.push((Edn::tag("fields"), fields.into()));
+  entries.push((Edn::tag("field-count"), Edn::Number(record.fields.len() as f64)));
+  Edn::map_from_iter(entries)
+}
+
+fn dump_record_type_summary(record: &CalcitRecord) -> Edn {
+  let mut entries = record_metadata(record);
+  let mut names = EdnListView::default();
+  for field in record.fields.iter() {
+    names.push(Edn::Str(field.ref_str().into()));
+  }
+  entries.push((Edn::tag("fields"), names.into()));
+  entries.push((Edn::tag("field-count"), Edn::Number(record.fields.len() as f64)));
+  Edn::map_from_iter(entries)
+}
+
+fn record_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
+  let mut entries = vec![
+    (Edn::tag("kind"), Edn::tag("record")),
+    (Edn::tag("name"), Edn::Str(record.name.ref_str().into())),
+  ];
+  if let Some(class) = &record.class {
+    entries.push((Edn::tag("class"), Edn::Str(class.name.ref_str().into())));
+  }
+  entries
 }

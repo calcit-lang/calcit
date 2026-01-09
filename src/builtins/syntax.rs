@@ -19,18 +19,22 @@ use crate::runner::{self, call_expr, evaluate_expr};
 
 pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
   match (expr.first(), expr.get(1)) {
-    (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => Ok(Calcit::Fn {
-      id: gen_core_id(),
-      info: Arc::new(CalcitFn {
-        name: s.to_owned(),
-        def_ns: Arc::from(file_ns),
-        scope: Arc::new(scope.to_owned()),
-        args: Arc::new(get_raw_args_fn(xs)?),
-        body: expr.skip(2)?.to_vec(),
-        return_type: None,
-        arg_types: vec![],
-      }),
-    }),
+    (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => {
+      let body_items = expr.skip(2)?.to_vec();
+      let return_type = detect_return_type_hint(&body_items);
+      Ok(Calcit::Fn {
+        id: gen_core_id(),
+        info: Arc::new(CalcitFn {
+          name: s.to_owned(),
+          def_ns: Arc::from(file_ns),
+          scope: Arc::new(scope.to_owned()),
+          args: Arc::new(get_raw_args_fn(xs)?),
+          body: body_items,
+          return_type,
+          arg_types: vec![],
+        }),
+      })
+    }
     (Some(a), Some(b)) => CalcitErr::err_str(
       CalcitErrKind::Type,
       format!("defn expected a symbol and a list of arguments, but received: {a} , {b}"),
@@ -67,33 +71,160 @@ pub fn defmacro(expr: &CalcitList, _scope: &CalcitScope, def_ns: &str) -> Result
   }
 }
 
+fn detect_return_type_hint(forms: &[Calcit]) -> Option<Arc<Calcit>> {
+  for form in forms {
+    if let Some(hint) = extract_return_type_from_hint(form) {
+      return Some(hint);
+    }
+  }
+  None
+}
+
+fn extract_return_type_from_hint(form: &Calcit) -> Option<Arc<Calcit>> {
+  let list = match form {
+    Calcit::List(xs) => xs,
+    _ => return None,
+  };
+  match list.first() {
+    Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => {}
+    _ => return None,
+  }
+
+  match list.get(1) {
+    Some(Calcit::List(args)) => extract_return_type_from_args(args),
+    _ => None,
+  }
+}
+
+fn extract_return_type_from_args(args: &CalcitList) -> Option<Arc<Calcit>> {
+  let items = args.to_vec();
+  let mut idx = 0;
+  while idx < items.len() {
+    match &items[idx] {
+      Calcit::Symbol { sym, .. } if &**sym == "return-type" => {
+        if let Some(type_expr) = items.get(idx + 1) {
+          return Some(Arc::new(type_expr.to_owned()));
+        }
+      }
+      Calcit::List(inner) => {
+        if let Some(found) = extract_return_type_from_args(inner) {
+          return Some(found);
+        }
+      }
+      _ => {}
+    }
+    idx += 1;
+  }
+  None
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use cirru_edn::EdnTag;
+
+  #[test]
+  fn detects_return_type_from_hint() {
+    let ns = "tests.fn";
+    let ret_sym = make_symbol("return-type", ns, "demo");
+    let type_expr = Calcit::Tag(EdnTag::from("number"));
+    let hint_form = make_hint_form(ns, vec![ret_sym, type_expr.to_owned()]);
+
+    let detected = detect_return_type_hint(&[hint_form]).expect("return type expected");
+    assert!(matches!(detected.as_ref(), Calcit::Tag(_)), "should capture tag type");
+  }
+
+  #[test]
+  fn ignores_flat_return_type_hint() {
+    let ns = "tests.fn";
+    let ret_sym = make_symbol("return-type", ns, "demo");
+    let type_expr = Calcit::Tag(EdnTag::from("number"));
+    let nodes = vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ns)), ret_sym, type_expr];
+    let flat_hint = Calcit::List(Arc::new(CalcitList::Vector(nodes)));
+
+    assert!(detect_return_type_hint(&[flat_hint]).is_none(), "flat form should be ignored");
+  }
+
+  #[test]
+  fn defn_captures_return_type_hint() {
+    let ns = "tests.fn";
+    let scope = CalcitScope::default();
+    let fn_name = make_symbol("add1", ns, "main");
+    let arg_local = make_local("x", ns, "main");
+    let args_list = Calcit::List(Arc::new(CalcitList::Vector(vec![arg_local])));
+    let hint_form = make_hint_form(
+      ns,
+      vec![make_symbol("return-type", ns, "main"), Calcit::Tag(EdnTag::from("number"))],
+    );
+    let body_expr = make_symbol("x", ns, "main");
+
+    let expr = CalcitList::Vector(vec![fn_name, args_list, hint_form, body_expr]);
+
+    let resolved = defn(&expr, &scope, ns).expect("defn should succeed");
+    match resolved {
+      Calcit::Fn { info, .. } => {
+        assert!(info.return_type.is_some(), "return type should be stored");
+        assert!(matches!(info.return_type.as_ref().unwrap().as_ref(), Calcit::Tag(_)));
+      }
+      other => panic!("expected function, got {other}"),
+    }
+  }
+
+  fn make_symbol(name: &str, ns: &str, def: &str) -> Calcit {
+    Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from(ns),
+        at_def: Arc::from(def),
+      }),
+      location: None,
+    }
+  }
+
+  fn make_local(name: &str, ns: &str, def: &str) -> Calcit {
+    Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from(name)),
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from(ns),
+        at_def: Arc::from(def),
+      }),
+      location: None,
+      type_info: None,
+    })
+  }
+
+  fn make_hint_form(ns: &str, args: Vec<Calcit>) -> Calcit {
+    let nodes = vec![
+      Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ns)),
+      Calcit::List(Arc::new(CalcitList::Vector(args))),
+    ];
+    Calcit::List(Arc::new(CalcitList::Vector(nodes)))
+  }
+}
+
 pub fn get_raw_args(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String> {
   let mut xs: Vec<CalcitArgLabel> = vec![];
-  args.traverse_result(&mut |item| {
-    match item {
-      Calcit::Local(CalcitLocal { idx, .. }) => {
-        xs.push(CalcitArgLabel::Idx(*idx));
-        Ok(())
-      }
-      Calcit::Syntax(CalcitSyntax::ArgOptional, _) => {
-        xs.push(CalcitArgLabel::OptionalMark);
-        Ok(())
-      }
-      Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
-        xs.push(CalcitArgLabel::RestMark);
-        Ok(())
-      }
-      Calcit::Symbol { sym, .. } => {
-        let idx = CalcitLocal::track_sym(sym);
-        // during macro processing, we still git symbol
-        xs.push(CalcitArgLabel::Idx(idx));
-        // return Err(format!("Unexpected argument label: {item}"));
-        Ok(())
-      }
-      _ => Err(format!("get-raw-args unexpected argument: {item}")),
+  args.traverse_result(&mut |item| match item {
+    Calcit::Local(CalcitLocal { idx, .. }) => {
+      xs.push(CalcitArgLabel::Idx(*idx));
+      Ok(())
     }
+    Calcit::Syntax(CalcitSyntax::ArgOptional, _) => {
+      xs.push(CalcitArgLabel::OptionalMark);
+      Ok(())
+    }
+    Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
+      xs.push(CalcitArgLabel::RestMark);
+      Ok(())
+    }
+    Calcit::Symbol { sym, .. } => {
+      let idx = CalcitLocal::track_sym(sym);
+      xs.push(CalcitArgLabel::Idx(idx));
+      Ok(())
+    }
+    _ => Err(format!("get-raw-args unexpected argument: {item}")),
   })?;
-  // println!("Making macro args: {:?} from {:?}", xs, args);
   Ok(xs)
 }
 

@@ -44,6 +44,8 @@ pub enum CalcitProc {
   NativeTuple,
   #[strum(serialize = "%::")]
   NativeClassTuple,
+  #[strum(serialize = "%%::")]
+  NativeEnumTuple,
   #[strum(serialize = "&tuple:nth")]
   NativeTupleNth,
   #[strum(serialize = "&tuple:assoc")]

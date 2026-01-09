@@ -129,6 +129,7 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
       tag: Arc::new(edn_to_calcit(tag, options)),
       extra: extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
       class: None,
+      sum_type: None,
     }),
     Edn::List(EdnListView(xs)) => {
       let mut ys: Vec<Calcit> = vec![];

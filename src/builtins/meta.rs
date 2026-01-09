@@ -1,8 +1,8 @@
 use crate::{
   builtins,
   calcit::{
-    self, Calcit, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo, CalcitSyntax,
-    CalcitTuple, GEN_NS, GENERATED_DEF, gen_core_id,
+    self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo,
+    CalcitSyntax, CalcitTuple, GEN_NS, GENERATED_DEF, gen_core_id,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -317,6 +317,7 @@ pub fn new_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       tag: Arc::new(xs[0].to_owned()),
       extra,
       class: None,
+      sum_type: None,
     }))
   }
 }
@@ -343,12 +344,57 @@ pub fn new_class_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         tag: Arc::new(xs[1].to_owned()),
         extra,
         class: Some(Arc::new(record)),
+        sum_type: None,
       }))
     } else {
       CalcitErr::err_str(
         CalcitErrKind::Type,
         format!("tuple expected a record as class, but received: {class}"),
       )
+    }
+  }
+}
+
+pub fn new_enum_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() < 3 {
+    CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("tuple expected at least 3 arguments, but received: {}", CalcitList::from(xs)),
+    )
+  } else {
+    let class_value = xs[0].to_owned();
+    let sum_type_value = xs[1].to_owned();
+    match (class_value, sum_type_value) {
+      (Calcit::Record(class_record), Calcit::Record(enum_record)) => {
+        let enum_proto = match CalcitEnum::from_record(enum_record) {
+          Ok(proto) => proto,
+          Err(msg) => return CalcitErr::err_str(CalcitErrKind::Type, format!("tuple expected a valid enum prototype, but {msg}")),
+        };
+
+        let extra: Vec<Calcit> = if xs.len() == 3 {
+          vec![]
+        } else {
+          let mut ys: Vec<Calcit> = Vec::with_capacity(xs.len() - 3);
+          for item in xs.iter().skip(3) {
+            ys.push(item.to_owned());
+          }
+          ys
+        };
+        Ok(Calcit::Tuple(CalcitTuple {
+          tag: Arc::new(xs[2].to_owned()),
+          extra,
+          class: Some(Arc::new(class_record)),
+          sum_type: Some(Arc::new(enum_proto)),
+        }))
+      }
+      (Calcit::Record(_), other) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("tuple expected a record as enum prototype, but received: {other}"),
+      ),
+      (other, _) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("tuple expected a record as class, but received: {other}"),
+      ),
     }
   }
 }
@@ -521,13 +567,22 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:assoc expected 3 arguments, but received:", xs);
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple(CalcitTuple { tag, extra, class }), Calcit::Number(n)) => match f64_to_usize(*n) {
+    (
+      Calcit::Tuple(CalcitTuple {
+        tag,
+        extra,
+        class,
+        sum_type,
+      }),
+      Calcit::Number(n),
+    ) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx == 0 {
           Ok(Calcit::Tuple(CalcitTuple {
             tag: Arc::new(xs[2].to_owned()),
             extra: extra.to_owned(),
             class: class.to_owned(),
+            sum_type: sum_type.to_owned(),
           }))
         } else if idx - 1 < extra.len() {
           let mut new_extra = extra.to_owned();
@@ -536,6 +591,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             tag: tag.to_owned(),
             extra: new_extra,
             class: class.to_owned(),
+            sum_type: sum_type.to_owned(),
           }))
         } else {
           CalcitErr::err_str(
@@ -595,10 +651,11 @@ pub fn tuple_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:with-class expected 2 arguments, but received:", xs);
   }
   match (&xs[0], &xs[1]) {
-    (Calcit::Tuple(CalcitTuple { tag, extra, .. }), Calcit::Record(record)) => Ok(Calcit::Tuple(CalcitTuple {
+    (Calcit::Tuple(CalcitTuple { tag, extra, sum_type, .. }), Calcit::Record(record)) => Ok(Calcit::Tuple(CalcitTuple {
       tag: tag.to_owned(),
       extra: extra.to_owned(),
       class: Some(Arc::new(record.to_owned())),
+      sum_type: sum_type.to_owned(),
     })),
     (a, Calcit::Record { .. }) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -797,5 +854,46 @@ pub fn is_spreading_mark(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Syntax(CalcitSyntax::ArgSpread, _) => Ok(Calcit::Bool(true)),
     _ => Ok(Calcit::Bool(false)),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use cirru_edn::EdnTag;
+  use std::sync::Arc;
+
+  fn empty_record(name: &str) -> Calcit {
+    Calcit::Record(CalcitRecord {
+      name: EdnTag::new(name),
+      fields: Arc::new(vec![]),
+      values: Arc::new(vec![]),
+      class: None,
+    })
+  }
+
+  #[test]
+  fn builds_enum_tuple_with_metadata() {
+    let args = vec![
+      empty_record("Action"),
+      empty_record("Result"),
+      Calcit::tag("ok"),
+      Calcit::Number(1.0),
+    ];
+
+    let tuple = new_enum_tuple(&args).expect("enum tuple");
+    match tuple {
+      Calcit::Tuple(CalcitTuple {
+        class, sum_type, extra, ..
+      }) => {
+        assert_eq!(extra.len(), 1);
+        assert_eq!(extra[0], Calcit::Number(1.0));
+        let class = class.expect("class metadata");
+        assert_eq!(class.name, EdnTag::new("Action"));
+        let sum_type = sum_type.expect("enum metadata");
+        assert_eq!(sum_type.name(), &EdnTag::new("Result"));
+      }
+      other => panic!("expected tuple, got {other:?}"),
+    }
   }
 }
