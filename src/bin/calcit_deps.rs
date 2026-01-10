@@ -96,7 +96,19 @@ pub fn main() -> Result<(), String> {
 
     match &cli_args.subcommand {
       Some(SubCommand::Outdated(_)) => {
-        outdated_tags(deps.dependencies)?;
+        let updated = outdated_tags(deps.dependencies)?;
+        if updated {
+          // Re-read deps.cirru and download updated dependencies
+          println!("\nDownloading updated dependencies...");
+          let content = fs::read_to_string(&cli_args.input).map_err(|e| e.to_string())?;
+          let parsed = cirru_edn::parse(&content).map_err(|e| {
+            eprintln!("\nFailed to parse '{}':", cli_args.input);
+            eprintln!("{e}");
+            format!("Failed to parse '{}'", cli_args.input)
+          })?;
+          let updated_deps: PackageDeps = parsed.try_into()?;
+          download_deps(updated_deps.dependencies, cli_args)?;
+        }
       }
       Some(SubCommand::Download(dep_names)) => {
         unreachable!("already handled: {:?}", dep_names);
@@ -108,22 +120,10 @@ pub fn main() -> Result<(), String> {
 
     Ok(())
   } else if Path::new("package.cirru").exists() {
-    // be compatible with old name
-    let content = fs::read_to_string("package.cirru").map_err(|e| e.to_string())?;
-    let parsed = cirru_edn::parse(&content).map_err(|e| {
-      eprintln!("\nFailed to parse 'package.cirru':");
-      eprintln!("{e}");
-      "Failed to parse 'package.cirru'".to_string()
-    })?;
-    let deps: PackageDeps = parsed.try_into()?;
-
-    if cli_args.subcommand.is_some() {
-      outdated_tags(deps.dependencies)?;
-    } else {
-      download_deps(deps.dependencies, cli_args)?;
-    }
-
-    Ok(())
+    eprintln!("{}", "Error: 'package.cirru' is deprecated!".red().bold());
+    eprintln!("Please rename it to 'deps.cirru':");
+    eprintln!("  {}", "mv package.cirru deps.cirru".yellow());
+    std::process::exit(1);
   } else {
     eprintln!("Error: no {} found!", cli_args.input);
     std::process::exit(1);
@@ -356,7 +356,8 @@ fn call_build_script(folder_path: &Path) -> Result<String, String> {
 /// read packages from deps, find tag(or sha) and committed date,
 /// also git fetch to read latest tag from remote,
 /// then we can compare, get outdated version printed
-fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>) -> Result<(), String> {
+/// Returns true if deps.cirru was updated
+fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>) -> Result<bool, String> {
   print_column("package".dimmed(), "expected".dimmed(), "latest".dimmed(), "hint".dimmed());
   println!();
 
@@ -397,10 +398,11 @@ fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>) -> Result<(), String> {
     if input.is_empty() || input.to_lowercase() == "y" || input.to_lowercase() == "yes" {
       update_deps_file(&outdated_packages)?;
       println!("deps.cirru updated successfully!");
+      return Ok(true);
     }
   }
 
-  Ok(())
+  Ok(false)
 }
 
 fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<Option<String>, String> {
