@@ -541,10 +541,16 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
 
   // Tips - show relevant next steps
   println!("\n{}", "Tips:".bold());
-  println!("  {} query def {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} query examples {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} query usages {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} edit doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
+  println!("  {} cr query def {}/{}", "-".dimmed(), namespace, definition);
+  println!("  {} cr query examples {}/{}", "-".dimmed(), namespace, definition);
+  println!("  {} cr query usages {}/{}", "-".dimmed(), namespace, definition);
+  println!("  {} cr edit doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
+  println!(
+    "  {} Respo: event handlers go inside {} map; strings need {} prefix",
+    "-".dimmed(),
+    "attributes".green(),
+    "|".magenta()
+  );
 
   Ok(())
 }

@@ -288,13 +288,12 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
             Cirru::Leaf(s) => format!("{:?}", s.as_ref()),
             Cirru::List(children) => format!("({} items)", children.len()),
           };
-          println!(
-            "  [{}] {} {} -p {:?}",
-            i,
-            type_str.yellow(),
-            "->".dimmed(),
+          let child_path = if opts.path.is_empty() {
+            i.to_string()
+          } else {
             format!("{},{}", opts.path, i)
-          );
+          };
+          println!("  [{}] {} {} -p \"{}\"", i, type_str.yellow(), "->".dimmed(), child_path);
         }
         println!();
       }
@@ -314,14 +313,14 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         "cr tree replace".cyan(),
         opts.target,
         opts.path,
-        "-j '<json>'".dimmed()
+        "-e 'cirru one-liner'".dimmed()
       );
       println!("  • Delete:  {} {} -p \"{}\"", "cr tree delete".cyan(), opts.target, opts.path);
       println!();
       let mut tips = vec![format!(
-        "Use {} for precise leaf nodes, {} for expressions",
-        "-j '\"value\"'".yellow(),
-        "-e 'cirru code'".yellow()
+        "Prefer {} to avoid indentation issues; use {} for complex structures",
+        "-e 'one-liner'".yellow(),
+        "-j".yellow()
       )];
       if !show_json {
         tips.push(format!("add {} flag to also output JSON format", "-j".yellow()));

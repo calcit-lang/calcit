@@ -309,13 +309,13 @@ cr tree delete namespace/def -p "3,2,2"
 
 **增量变更导出：**
 
-- `cr edit inc` - 描述增量代码变更并导出到 `.compact-inc.cirru`
-  - `--added "namespace/definition"` - 标记新增的定义
-  - `--changed "namespace/definition"` - 标记修改的定义
-  - `--removed "namespace/definition"` - 标记删除的定义
-  - `--added-ns "namespace"` - 标记新增的命名空间
-  - `--removed-ns "namespace"` - 标记删除的命名空间
-  - `--ns-updated "namespace"` - 标记命名空间导入变更
+- `cr edit inc` - 记录增量代码变更并导出到 `.compact-inc.cirru`，触发 watcher 热更新
+  - `--added <namespace/definition>` - 标记新增的定义
+  - `--changed <namespace/definition>` - 标记修改的定义
+  - `--removed <namespace/definition>` - 标记删除的定义
+  - `--added-ns <namespace>` - 标记新增的命名空间
+  - `--removed-ns <namespace>` - 标记删除的命名空间
+  - `--ns-updated <namespace>` - 标记命名空间导入变更
   - 配合 watcher 使用实现热更新（详见"开发调试"章节）
 
 使用 `--help` 参数了解详细的输入方式和参数选项。
@@ -336,6 +336,17 @@ cr tree delete namespace/def -p "3,2,2"
 
 ❌ **错误理解：** Calcit 字符串是 `"x"` → JSON 是 `"\"x\""`  
 ✅ **正确理解：** Cirru `|x` → JSON `"x"`，Cirru `"x"` → JSON `"x"`
+
+**字符串 vs 符号的关键区分：**
+
+- `|Add` 或 `"Add` → **字符串**（用于显示文本、属性值等, 前缀形式区分字面量类型）
+- `Add` → **符号/变量名**（Calcit 会在作用域中查找）
+- 常见错误：受其他语言习惯影响，忘记加 `|` 前缀导致 `unknown symbol` 错误
+
+**CLI 使用提示：**
+
+- 替换包含空格的字符串：`--leaf -e '|text with spaces'` 或 `-j '"text"'`
+- 避免解析为列表：字符串字面量必须用 `--leaf` 或 `-j` 明确标记
 
 **示例对照：**
 
@@ -407,18 +418,16 @@ Calcit snapshot 文件中 config 有 `init-fn` 和 `reload-fn` 配置：
 **典型开发流程：**
 
 ```bash
-# 1. 检查代码正确性
-cr --check-only
-
-# 2. 执行程序（一次性）
-cr -1
-
-# 3. 编译 JavaScript（一次性）
-cr -1 js
-
-# 4. 进入监听模式开发
+# 1. 启动监听模式（用户自行使用）
 cr        # 解释执行模式
 cr js     # JS 编译模式
+
+# 2. 修改代码后触发增量更新（详见"增量触发更新"章节）
+cr edit inc --changed ns/def
+
+# 3. 一次性执行/编译（用于简单脚本）
+cr -1          # 执行一次
+cr -1 js       # 编译一次
 ```
 
 ### 增量触发更新（推荐）⭐⭐⭐
@@ -436,7 +445,7 @@ cr        # 或 cr js
 cr edit def app.core/my-fn -e 'defn my-fn (x) (+ x 1)'
 
 # 触发增量更新
-cr edit inc --changed "app.core/my-fn"
+cr edit inc --changed app.core/my-fn
 
 # 等待 ~300ms 后查看编译结果
 cr query error
@@ -446,28 +455,28 @@ cr query error
 
 ```bash
 # 新增定义
-cr edit inc --added "namespace/definition"
+cr edit inc --added namespace/definition
 
 # 修改定义
-cr edit inc --changed "namespace/definition"
+cr edit inc --changed namespace/definition
 
 # 删除定义
-cr edit inc --removed "namespace/definition"
+cr edit inc --removed namespace/definition
 
 # 新增命名空间
-cr edit inc --added-ns "namespace"
+cr edit inc --added-ns namespace
 
 # 删除命名空间
-cr edit inc --removed-ns "namespace"
+cr edit inc --removed-ns namespace
 
 # 更新命名空间导入
-cr edit inc --ns-updated "namespace"
+cr edit inc --ns-updated namespace
 
 # 组合使用（批量更新）
 cr edit inc \
-  --changed "app.core/add" \
-  --changed "app.core/multiply" \
-  --removed "app.core/old-fn"
+  --changed app.core/add \
+  --changed app.core/multiply \
+  --removed app.core/old-fn
 ```
 
 **查看编译结果：**
@@ -479,14 +488,15 @@ cr query error  # 命令会显示详细的错误信息或成功状态
 **何时使用全量操作：**
 
 ```bash
-# 大量修改或需要完全刷新时
-cr --check-only    # 快速语法检查
-cr -1              # 重新执行程序
+# 极少数情况：增量更新不符合预期时
 cr -1 js           # 重新编译 JavaScript
+cr -1              # 重新执行程序
 
-# 或重启监听模式
-# Ctrl+C 停止 watcher，然后重新运行：
+# 或重启监听模式（Ctrl+C 停止后重启）
 cr        # 或 cr js
+
+# CI/CD 或脚本验证（不启动 watcher）
+cr --check-only    # 仅语法检查
 ```
 
 **增量更新优势：** 快速反馈、精确控制变更范围、watcher 保持运行状态
@@ -666,11 +676,39 @@ cr tree show 'ns/def' -p "<path>"
 # 3. 执行修改（会显示 diff 和验证命令）
 cr tree replace 'ns/def' -p "<path>" --leaf -e '<value>'
 
-# 4. 验证
+# 4. 增量触发更新（推荐）
+cr edit inc --changed ns/def
+# 等待 ~300ms 后检查
 cr query error
+
+# 5. 如果结果不符合预期，使用全量编译
+cr -1 js  # 或 cr -1（解释执行模式）
 ```
 
 **批量修改提示：** 命令会自动检测多匹配场景，显示从大到小的路径排序和重要警告。
+
+**增量更新优势：** 快速反馈、保持 watcher 运行、精确控制变更范围（详见"增量触发更新"章节）
+
+---
+
+## 💡 Calcit vs Clojure 关键差异
+
+**语法层面：**
+
+- **只用圆括号**：Calcit 的 Cirru 语法不使用方括号 `[]` 和花括号 `{}`，统一用缩进表达结构
+- **函数前缀**：Calcit 用 `&` 区分内置函数（`&+`、`&str`）和用户定义函数
+
+**集合函数参数顺序（易错 ⭐⭐⭐）：**
+
+- **Calcit**: 集合在**第一位** → `map data fn` 或 `-> data (map fn)`
+- **Clojure**: 函数在第一位 → `(map fn data)` 或 `(->> data (map fn))`
+- **症状**：`unknown data for foldl-shortcut` 报错
+- **原因**：误用 `->>` 或参数顺序错误
+
+**其他差异：**
+
+- **宏系统**：Calcit 更简洁，缺少 Clojure 的 reader macro（如 `#()`）
+- **数据类型**：Calcit 的 Tuple (`::`) 和 Vector (`[]`) 有特定用途（见"Cirru 字符串和数据类型"）
 
 ---
 
@@ -683,4 +721,4 @@ cr query error
 | 字符串被拆分                 | 没有用 `\|` 或 `"` 包裹 | 使用 `\|complete string`          |
 | `unexpected format`          | 语法错误                | 用 `cr cirru parse '<code>'` 验证 |
 
-**调试命令：** `cr query error`（会显示详细提示）、`cr --check-only`
+**调试命令：** `cr query error`（会显示详细的错误堆栈和提示）
