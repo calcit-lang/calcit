@@ -127,7 +127,7 @@ Calcit 程序使用 `cr` 命令：
   - `-j` / `--json`：将模式解析为 JSON 数组而非 Cirru
   - 返回：匹配节点的路径 + 父级上下文
   - 示例：
-    - `cr query search-pattern "(+ a b)" -f app.util/add` - 查找精确表达式
+    - `cr query search-pattern "+ a b" -f app.util/add` - 查找精确表达式
     - `cr query search-pattern '["defn"]' -f app.main/main -j -l` - 查找所有函数定义
 
 **搜索结果格式：**
