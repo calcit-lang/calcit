@@ -178,11 +178,21 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
         (Edn::tag("code"), dump_items_code(&info.body)),
       ])
     }
-    Calcit::Proc(name) => Edn::map_from_iter([
-      (Edn::tag("kind"), Edn::tag("proc")),
-      (Edn::tag("name"), Edn::Str(name.to_string().into())),
-      (Edn::tag("builtin"), Edn::Bool(true)),
-    ]),
+    Calcit::Proc(name) => {
+      let mut entries = vec![
+        (Edn::tag("kind"), Edn::tag("proc")),
+        (Edn::tag("name"), Edn::Str(name.to_string().into())),
+        (Edn::tag("builtin"), Edn::Bool(true)),
+      ];
+
+      // Add type signature if available
+      if let Some(type_sig) = name.get_type_signature() {
+        entries.push((Edn::tag("arg-types"), dump_type_list(&type_sig.arg_types)));
+        entries.push((Edn::tag("return-type"), dump_optional_type_annotation(&type_sig.return_type)));
+      }
+
+      Edn::map_from_iter(entries)
+    }
     Calcit::Syntax(name, _ns) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("syntax")),
       (Edn::tag("name"), Edn::Str((name.to_string()).into())),

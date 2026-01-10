@@ -35,8 +35,10 @@ defn f1 (x y)
   - `:bool` - 布尔类型
   - `:nil` - nil 类型
   - `:keyword` - 关键字类型
-  - `:fn` - 函数类型（基础形式）
+  - `:fn` - 函数类型（基础形式，用户定义的函数）
   - `:fn (arg-types...) return-type` - 函数类型（带签名）
+  - `:proc` - Proc 类型（内置函数，由 Rust/JavaScript 实现）
+  - `:proc (arg-types...) return-type` - Proc 类型（带签名）
 
 - **自定义类型**：使用 Record 定义来表示
 
@@ -57,6 +59,13 @@ assert-type <variable> <type-expr>
 
 - `<variable>`：要标注类型的变量名（Symbol）
 - `<type-expr>`：类型表达式，可以是 Tag 或嵌套的列表结构
+- **返回值**：`assert-type` 返回变量本身的值（不做改变），这使得它可以在表达式中内联使用，如 `(assert-type x :number)`
+
+**关键特性**：
+
+- `assert-type a :string` 在 preprocess 阶段将类型信息注入到作用域，并在运行时返回 `a` 的值不变
+- 可以在串联调用（如 `->` 宏）中使用，保持表达式流畅性
+- 返回值保留原始值，使得类型断言透明化
 
 示例：
 
@@ -66,9 +75,24 @@ defn process-user (user)
   get user :name               ; 可以静态检查字段是否存在
 
 defn map-numbers (f xs)
-  assert-type f $ :fn (:number) :number    ; f 是函数类型
+  assert-type f $ :fn (:number) :number    ; f 是函数类型（用户定义）
   assert-type xs $ :list :number            ; xs 是 number 列表
   map f xs
+
+defn use-builtin-proc (p x)
+  assert-type p :proc                       ; p 是内置函数（Proc）
+  assert-type x :number
+  p x
+
+; Proc 类型签名示例：
+defn calculate (a b)
+  assert-type a :number
+  assert-type b :number
+  ; &+ 有内置类型签名: (number, number) -> number
+  let
+      sum $ &+ a b                          ; sum 自动推断为 :number
+    ; floor 有内置类型签名: number -> number
+    floor $ &/ sum 2.0                      ; 结果为 :number
 ```
 
 #### 2.0.4 `hint-fn` 语法
@@ -101,6 +125,235 @@ defn add-numbers (a b)
 - 默认所有未标注的变量 `type_info` 为 `None`，对应 `unknown` 类型
 - `unknown` 类型不触发静态类型检查
 - 保持向后兼容：老代码无需修改即可运行
+
+#### 2.0.7 类型系统定位与范围
+
+**重要说明**：Calcit 的类型系统是一个**轻量级类型检测机制**，专为 Calcit 语言的特定需求设计，具有以下定位：
+
+1. **显式标注，不做推断**：
+
+   - 类型信息通过 `assert-type` 和 `hint-fn` **手动声明**
+   - **不实现类型推断**（Type Inference）：不会自动分析代码推导变量类型
+   - 设计目标是为 preprocess 阶段提供辅助信息，而非构建完整的类型系统
+
+2. **辅助性质，非强制约束**：
+
+   - 主要用于在编译/预处理阶段提供**早期错误检测**（如 Record 字段访问验证）
+   - 类型信息用于优化代码生成和方法调用解析
+   - 不影响运行时行为（除非显式添加运行时检查）
+
+3. **Calcit 语言专属**：
+
+   - 针对 Calcit 的 Record、Tuple、动态方法调用等特性定制
+   - 不追求通用类型系统的完整性（如 Haskell/OCaml 风格）
+   - 优先保证与现有 Calcit 代码的兼容性
+
+4. **Proc (内置函数) 类型检查支持**：
+
+   - Calcit 的内置函数（Proc）现在也支持类型签名
+   - 通过 `CalcitProc::get_type_signature()` 方法提供类型信息
+   - 在预处理阶段自动检查 Proc 调用的参数类型
+   - 当传递类型不匹配的参数时，生成编译期警告
+
+   示例：
+
+   ```cirru
+   defn test-math ()
+     let
+       x 10
+       text |hello
+     assert-type x :number
+     assert-type text :string
+
+     ; 正确：传递 number 类型给 &+
+     &+ x 20  ; ✓ 通过类型检查
+
+     ; 错误：传递 string 类型给 &+（需要 number）
+     &+ text 10  ; ✗ 生成警告: Proc `&+` arg 1 expects type `:number`, but got `:string`
+   ```
+
+5. **渐进式采用**：
+   - 可选功能：无需为所有代码添加类型标注
+   - 新代码可以逐步引入类型标注，老代码继续正常运行
+   - 适用于大型项目的局部重构和增强
+
+**典型使用场景**：
+
+- 为关键函数添加类型标注，捕获常见错误
+- 在复杂的数据处理流程中验证类型正确性
+- 配合 Record 使用，提供静态字段检查
+- 在 -> 等串联语法中保持类型信息流动
+- **Proc 类型签名**：内置函数（如 `&+`、`floor`）已预定义类型签名，可自动参与类型检查
+
+**非目标**：
+
+- 完整的类型推断引擎（不实现 Hindley-Milner 等算法）
+- 覆盖所有 Calcit 表达式的类型验证
+- 与其他静态类型语言的互操作性
+
+#### 2.0.8 Proc 类型签名系统
+
+为增强内置函数的类型安全性，Calcit 为 `CalcitProc`（内置函数）实现了类型签名系统。
+
+**实现机制**：
+
+在 `src/calcit/proc_name.rs` 中定义：
+
+```rust
+pub struct ProcTypeSignature {
+  pub return_type: Option<Arc<Calcit>>,
+  pub arg_types: Vec<Option<Arc<Calcit>>>,
+}
+
+impl CalcitProc {
+  pub fn get_type_signature(&self) -> Option<ProcTypeSignature>;
+  pub fn has_type_signature(&self) -> bool;
+}
+```
+
+**已支持的 Proc**：
+
+**Meta 操作**：
+
+- `type-of` → `any -> keyword`
+- `format-to-lisp`, `format-to-cirru` → `any -> string`
+- `turn-symbol` → `string -> symbol`
+- `turn-tag` → `string -> keyword`
+- `&compare` → `(any, any) -> number`
+- `&get-os` → `() -> keyword`
+- `&hash` → `any -> number`
+
+**数学运算**：
+
+- `&+`, `&-`, `&*`, `&/`, `pow`, `&number:rem` → `(number, number) -> number`
+- `floor`, `ceil`, `round`, `sin`, `cos`, `sqrt`, `&number:fract` → `number -> number`
+- `round?` → `number -> bool`
+- `bit-shl`, `bit-shr`, `bit-and`, `bit-or`, `bit-xor` → `(number, number) -> number`
+- `bit-not` → `number -> number`
+
+**比较和逻辑**：
+
+- `&=`, `&<`, `&>`, `identical?` → `(any, any) -> bool`
+- `not` → `bool -> bool`
+
+**字符串操作**（40+ 个）：
+
+- `&str:concat` → `(string, string) -> string`
+- `trim`, `turn-string` → `any -> string`
+- `&str` → `(...any) -> string` (variadic)
+- `split`, `split-lines` → `string -> list`
+- `starts-with?`, `ends-with?` → `(string, string) -> bool`
+- `get-char-code` → `string -> number`
+- `char-from-code` → `number -> string`
+- `pr-str` → `any -> string`
+- `parse-float` → `string -> number`
+- `blank?` → `string -> bool`
+- `&str:replace` → `(string, string, string) -> string`
+- `&str:slice` → `(string, number, number) -> string`
+- `&str:find-index` → `(string, string) -> number`
+- `&str:escape`, `&str:first`, `&str:nth` → `string -> string`
+- `&str:rest` → `string -> string`
+- `&str:count` → `string -> number`
+- `&str:empty?`, `&str:contains?`, `&str:includes?` → `string -> bool`
+- `&str:pad-left`, `&str:pad-right` → `(string, number, string) -> string`
+
+**列表操作**（25+ 个）：
+
+- `[]` → `(...any) -> list`
+- `append`, `prepend` → `(list, any) -> list`
+- `butlast`, `&list:reverse`, `&list:distinct` → `list -> list`
+- `range` → `number -> list`
+- `sort` → `list -> list`
+- `&list:concat` → `(list, list) -> list`
+- `&list:count` → `list -> number`
+- `&list:empty?`, `&list:contains?`, `&list:includes?` → `list -> bool`
+- `&list:slice` → `(list, number, number) -> list`
+- `&list:nth`, `&list:first` → `list -> any`
+- `&list:rest` → `list -> list`
+- `&list:assoc`, `&list:assoc-before`, `&list:assoc-after` → `(list, number, any) -> list`
+- `&list:dissoc` → `(list, number) -> list`
+- `&list:to-set` → `list -> set`
+
+**Map 操作**（15+ 个）：
+
+- `&{}` → `(...any) -> map`
+- `&merge`, `&merge-non-nil` → `(map, map) -> map`
+- `to-pairs`, `&map:to-list` → `map -> list`
+- `&map:get` → `(map, any) -> any`
+- `&map:dissoc` → `(map, any) -> map`
+- `&map:count` → `map -> number`
+- `&map:empty?`, `&map:contains?`, `&map:includes?` → `map -> bool`
+- `&map:assoc` → `(map, any, any) -> map`
+- `&map:diff-new`, `&map:diff-keys`, `&map:common-keys` → `(map, map) -> set`
+
+**Set 操作**（10+ 个）：
+
+- `#{}` → `(...any) -> set`
+- `&include`, `&exclude` → `(set, any) -> set`
+- `&difference`, `&union`, `&set:intersection` → `(set, set) -> set`
+- `&set:to-list` → `set -> list`
+- `&set:count` → `set -> number`
+- `&set:empty?`, `&set:includes?` → `set -> bool`
+
+**Tuple 操作**：
+
+- `::` → `(...any) -> tuple`
+- `&tuple:nth` → `(tuple, number) -> any`
+- `&tuple:assoc` → `(tuple, number, any) -> tuple`
+- `&tuple:count` → `tuple -> number`
+
+**Record 操作**：
+
+- `&%{}` → `(keyword, ...) -> record`
+- `&record:with`, `&record:assoc` → `(record, any, any) -> record`
+- `&record:get` → `(record, keyword) -> any`
+- `&record:count` → `record -> number`
+- `&record:contains?`, `&record:matches?` → `record -> bool`
+- `&record:to-map` → `record -> map`
+- `&record:from-map` → `(keyword, map) -> record`
+- `&record:get-name` → `record -> keyword`
+
+**I/O 和环境**：
+
+- `read-file` → `string -> string`
+- `write-file` → `(string, string) -> nil`
+- `get-env` → `string -> string`
+- `cpu-time` → `() -> number`
+
+**Refs/Atoms**：
+
+- `atom` → `any -> ref`
+- `&atom:deref` → `ref -> any`
+
+**Cirru 格式**：
+
+- `parse-cirru`, `parse-cirru-edn` → `string -> any`
+- `format-cirru`, `format-cirru-edn` → `any -> string`
+
+**总计**：已为 **150+ 个 Proc** 添加类型签名，覆盖：
+
+- ✅ 所有数学运算
+- ✅ 所有字符串操作
+- ✅ 所有集合操作（List, Map, Set, Tuple, Record）
+- ✅ 所有比较和逻辑运算
+- ✅ I/O 和环境操作
+- ✅ 类型转换和检查
+
+**未包含签名的 Proc**：主要是特殊控制流（`recur`, `raise`）和一些元编程工具，这些通常需要特殊处理。
+
+**使用示例**：
+
+```cirru
+defn calculate (a b)
+  assert-type a :number
+  assert-type b :number
+  ; &+ 有预定义签名 (number, number) -> number
+  let
+      sum $ &+ a b      ; sum 自动推断为 :number
+    floor $ &/ sum 2.0  ; 返回 :number
+```
+
+**扩展方式**：在 `CalcitProc::get_type_signature()` 中添加新的匹配分支即可。
 
 ### 2.1 数据结构调整
 
@@ -167,6 +420,15 @@ pub struct FnInfo {
 ### 2.3 内置函数与类型提示
 
 - **Procs 注册**：在 `src/builtins.rs` 中，需要一种方式为 `CalcitProc` 关联签名信息。
+  - **已实现**：`CalcitProc::get_type_signature()` 方法返回 `Option<ProcTypeSignature>`
+  - `ProcTypeSignature` 包含 `return_type` 和 `arg_types` 字段
+  - 已为常用 Proc 添加类型签名：
+    - 数学运算：`&+`, `&-`, `&*`, `&/` 等 - `(number, number) -> number`
+    - 数学函数：`floor`, `ceil`, `sin`, `cos`, `sqrt` 等 - `number -> number`
+    - 比较运算：`&=`, `&<`, `&>` 等 - `(any, any) -> bool`
+    - 逻辑运算：`not` - `bool -> bool`
+    - 类型检查：`type-of` - `any -> keyword`
+  - 可以逐步扩展更多 Proc 的类型信息
 - **兼容性**：老代码保持 `type_info` 为 `None` (即 `unknown`)，不进行强校验。
 
 ### 2.4 运行时支持

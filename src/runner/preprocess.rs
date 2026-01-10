@@ -18,6 +18,15 @@ use strum::ParseError;
 
 type ScopeTypes = HashMap<Arc<str>, Arc<Calcit>>;
 
+/// Context for preprocessing operations, bundled to avoid too many parameters
+pub struct PreprocessContext<'a> {
+  scope_defs: &'a HashSet<Arc<str>>,
+  scope_types: &'a mut ScopeTypes,
+  file_ns: &'a str,
+  check_warnings: &'a RefCell<Vec<LocatedWarning>>,
+  call_stack: &'a CallStackList,
+}
+
 /// returns the resolved symbol(only functions and macros are used),
 /// if code related is not preprocessed, do it internally.
 pub fn preprocess_ns_def(
@@ -424,65 +433,65 @@ fn preprocess_list_call(
       }
 
       Calcit::Syntax(name, name_ns) => match name {
-        CalcitSyntax::Quasiquote => Ok(preprocess_quasiquote(
-          name,
-          name_ns,
-          &args,
-          scope_defs,
-          scope_types,
-          file_ns,
-          check_warnings,
-          call_stack,
-        )?),
-        CalcitSyntax::Defn | CalcitSyntax::Defmacro => Ok(preprocess_defn(
-          name,
-          name_ns,
-          &args,
-          scope_defs,
-          scope_types,
-          file_ns,
-          check_warnings,
-          call_stack,
-        )?),
-        CalcitSyntax::CoreLet => Ok(preprocess_core_let(
-          name,
-          name_ns,
-          &args,
-          scope_defs,
-          scope_types,
-          file_ns,
-          check_warnings,
-          call_stack,
-        )?),
+        CalcitSyntax::Quasiquote => {
+          let mut ctx = PreprocessContext {
+            scope_defs,
+            scope_types,
+            file_ns,
+            check_warnings,
+            call_stack,
+          };
+          Ok(preprocess_quasiquote(name, name_ns, &args, &mut ctx)?)
+        }
+        CalcitSyntax::Defn | CalcitSyntax::Defmacro => {
+          let mut ctx = PreprocessContext {
+            scope_defs,
+            scope_types,
+            file_ns,
+            check_warnings,
+            call_stack,
+          };
+          Ok(preprocess_defn(name, name_ns, &args, &mut ctx)?)
+        }
+        CalcitSyntax::CoreLet => {
+          let mut ctx = PreprocessContext {
+            scope_defs,
+            scope_types,
+            file_ns,
+            check_warnings,
+            call_stack,
+          };
+          Ok(preprocess_core_let(name, name_ns, &args, &mut ctx)?)
+        }
         CalcitSyntax::If
         | CalcitSyntax::Try
         | CalcitSyntax::Macroexpand
         | CalcitSyntax::MacroexpandAll
         | CalcitSyntax::Macroexpand1
         | CalcitSyntax::Gensym
-        | CalcitSyntax::Reset => Ok(preprocess_each_items(
-          name,
-          name_ns,
-          &args,
-          scope_defs,
-          scope_types,
-          file_ns,
-          check_warnings,
-          call_stack,
-        )?),
+        | CalcitSyntax::Reset => {
+          let mut ctx = PreprocessContext {
+            scope_defs,
+            scope_types,
+            file_ns,
+            check_warnings,
+            call_stack,
+          };
+          Ok(preprocess_each_items(name, name_ns, &args, &mut ctx)?)
+        }
         CalcitSyntax::Quote | CalcitSyntax::Eval | CalcitSyntax::HintFn => {
           Ok(preprocess_quote(name, name_ns, &args, scope_defs, file_ns)?)
         }
-        CalcitSyntax::Defatom => Ok(preprocess_defatom(
-          name,
-          name_ns,
-          &args,
-          scope_defs,
-          scope_types,
-          file_ns,
-          check_warnings,
-          call_stack,
-        )?),
+        CalcitSyntax::Defatom => {
+          let mut ctx = PreprocessContext {
+            scope_defs,
+            scope_types,
+            file_ns,
+            check_warnings,
+            call_stack,
+          };
+          Ok(preprocess_defatom(name, name_ns, &args, &mut ctx)?)
+        }
         CalcitSyntax::CallSpread => {
           let mut ys = vec![head_form];
 
@@ -494,7 +503,14 @@ fn preprocess_list_call(
           Ok(Calcit::from(ys))
         }
         CalcitSyntax::AssertType => {
-          preprocess_asset_type(name, name_ns, &args, scope_defs, scope_types, file_ns, check_warnings, call_stack)
+          let mut ctx = PreprocessContext {
+            scope_defs,
+            scope_types,
+            file_ns,
+            check_warnings,
+            call_stack,
+          };
+          preprocess_asset_type(name, name_ns, &args, &mut ctx)
         }
         CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec()),
         CalcitSyntax::ArgOptional => {
@@ -539,6 +555,11 @@ fn preprocess_list_call(
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
         validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
         check_record_field_access(&head_form, &processed_args, scope_types, file_ns, check_warnings);
+
+        // Check Proc argument types if available
+        if let Calcit::Proc(proc) = &head_form {
+          check_proc_arg_types(proc, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+        }
 
         if has_spread {
           ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, file_ns.into()));
@@ -748,6 +769,110 @@ fn check_field_in_record(
   }
 }
 
+/// Check Proc argument types against type signature
+fn check_proc_arg_types(
+  proc: &CalcitProc,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  // Get type signature for this proc
+  let Some(signature) = proc.get_type_signature() else {
+    return; // No type signature, skip check
+  };
+
+  // Check if we have spreading args
+  for arg in args.iter() {
+    if matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      return; // Can't check with spread args
+    }
+  }
+
+  // Check argument count and types
+  let expected_count = signature.arg_types.len();
+  let actual_count = args.len();
+
+  // Check if signature has variadic marker (&)
+  let has_variadic = signature.arg_types.iter().any(|t| {
+    if let Some(type_val) = t {
+      matches!(**type_val, Calcit::Tag(ref tag) if tag.ref_str() == "&")
+    } else {
+      false
+    }
+  });
+
+  // If not variadic, check exact count
+  if !has_variadic && expected_count != actual_count {
+    gen_check_warning(
+      format!(
+        "[Warn] Proc `{}` expects {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
+        proc.as_ref(),
+        expected_count,
+        actual_count,
+        proc.as_ref(),
+        args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
+      ),
+      file_ns,
+      check_warnings,
+    );
+  }
+
+  // Check argument types until we hit variadic marker or run out of args
+  for (idx, (arg, expected_type_opt)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
+    // Stop checking if we hit the variadic marker
+    if let Some(type_val) = expected_type_opt {
+      if matches!(**type_val, Calcit::Tag(ref tag) if tag.ref_str() == "&") {
+        return; // Stop checking at variadic marker
+      }
+    }
+
+    let Some(expected_type) = expected_type_opt else {
+      continue; // No type constraint for this argument
+    };
+
+    // Try to resolve the actual type of the argument
+    let actual_type_opt = match arg {
+      Calcit::Local(CalcitLocal { sym, .. }) => scope_types.get(sym).cloned(),
+      _ => None, // Can't check non-local expressions yet
+    };
+
+    if let Some(actual_type) = actual_type_opt {
+      // Compare types
+      if !types_match(&actual_type, expected_type) {
+        let expected_str = type_to_string(expected_type);
+        let actual_str = type_to_string(&actual_type);
+        gen_check_warning(
+          format!(
+            "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+            proc.as_ref(),
+            idx + 1
+          ),
+          file_ns,
+          check_warnings,
+        );
+      }
+    }
+  }
+}
+
+/// Helper to check if two types match
+fn types_match(actual: &Calcit, expected: &Calcit) -> bool {
+  match (actual, expected) {
+    (Calcit::Tag(a), Calcit::Tag(e)) => a.ref_str() == e.ref_str(),
+    _ => false, // TODO: handle more complex type matching
+  }
+}
+
+/// Helper to convert type to string for error messages
+fn type_to_string(t: &Calcit) -> String {
+  match t {
+    Calcit::Tag(tag) => format!(":{}", tag.ref_str()),
+    _ => format!("{t}"),
+  }
+}
+
 fn validate_method_call(
   head: &Calcit,
   args: &CalcitList,
@@ -812,15 +937,11 @@ pub fn preprocess_each_items(
   head: &CalcitSyntax,
   head_ns: &str,
   args: &CalcitList,
-  scope_defs: &HashSet<Arc<str>>,
-  scope_types: &mut ScopeTypes,
-  file_ns: &str,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-  call_stack: &CallStackList,
+  ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
   args.traverse_result::<CalcitErr>(&mut |a| {
-    let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+    let form = preprocess_expr(a, ctx.scope_defs, ctx.scope_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
     xs = xs.push_right(form);
     Ok(())
   })?;
@@ -831,11 +952,7 @@ pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
   args: &CalcitList,
-  scope_defs: &HashSet<Arc<str>>,
-  scope_types: &mut ScopeTypes,
-  file_ns: &str,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-  call_stack: &CallStackList,
+  ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
   let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
@@ -849,8 +966,8 @@ pub fn preprocess_defn(
       }),
       Some(Calcit::List(ys)),
     ) => {
-      let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
-      let mut body_types: ScopeTypes = scope_types.clone();
+      let mut body_defs: HashSet<Arc<str>> = ctx.scope_defs.to_owned();
+      let mut body_types: ScopeTypes = ctx.scope_types.clone();
 
       xs = xs.push_right(Calcit::Symbol {
         sym: def_name.to_owned(),
@@ -882,7 +999,7 @@ pub fn preprocess_defn(
               info.at_def.to_owned(),
               arg_location.to_owned().unwrap_or_default(),
             );
-            check_symbol(sym, args, loc, check_warnings);
+            check_symbol(sym, args, loc, ctx.check_warnings);
             body_types.remove(sym);
             let s = Calcit::Local(CalcitLocal {
               idx: CalcitLocal::track_sym(sym),
@@ -904,7 +1021,7 @@ pub fn preprocess_defn(
           _ => Err(CalcitErr::use_msg_stack(
             CalcitErrKind::Type,
             format!("expected defn args to be symbols, got: {y}"),
-            call_stack,
+            ctx.call_stack,
           )),
         }
       })?;
@@ -916,7 +1033,7 @@ pub fn preprocess_defn(
           to_skip -= 1;
           return Ok(());
         }
-        let form = preprocess_expr(a, &body_defs, &mut body_types, file_ns, check_warnings, call_stack)?;
+        let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
         xs = xs.push_right(form);
         Ok(())
       })?;
@@ -926,13 +1043,13 @@ pub fn preprocess_defn(
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Syntax,
       format!("defn/defmacro expected name and args: {a} {b}"),
-      call_stack,
+      ctx.call_stack,
       a.get_location().or_else(|| b.get_location()),
     )),
     (a, b) => Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Syntax,
       format!("defn or defmacro expected name and args, got: {a:?} {b:?}",),
-      call_stack,
+      ctx.call_stack,
     )),
   }
 }
@@ -953,16 +1070,11 @@ pub fn preprocess_core_let(
   // where the symbol was defined
   head_ns: &str,
   args: &CalcitList,
-  scope_defs: &HashSet<Arc<str>>,
-  scope_types: &mut ScopeTypes,
-  // where called
-  file_ns: &str,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-  call_stack: &CallStackList,
+  ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: Vec<Calcit> = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
-  let mut body_defs: HashSet<Arc<str>> = scope_defs.to_owned();
-  let mut body_types: ScopeTypes = scope_types.clone();
+  let mut body_defs: HashSet<Arc<str>> = ctx.scope_defs.to_owned();
+  let mut body_types: ScopeTypes = ctx.scope_types.clone();
   let binding = match args.first() {
     Some(Calcit::List(ys)) if ys.is_empty() => Calcit::from(CalcitList::default()),
     Some(Calcit::List(ys)) if ys.len() == 2 => match (&ys[0], &ys[1]) {
@@ -972,9 +1084,9 @@ pub fn preprocess_core_let(
           info.at_def.to_owned(),
           location.to_owned().unwrap_or_default(),
         );
-        check_symbol(sym, ys, loc, check_warnings);
+        check_symbol(sym, ys, loc, ctx.check_warnings);
         body_defs.insert(sym.to_owned());
-        let form = preprocess_expr(a, &body_defs, &mut body_types, file_ns, check_warnings, call_stack)?;
+        let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
         let name = Calcit::Local(CalcitLocal {
           idx: CalcitLocal::track_sym(sym),
           sym: sym.to_owned(),
@@ -992,7 +1104,7 @@ pub fn preprocess_core_let(
         return Err(CalcitErr::use_msg_stack_location(
           CalcitErrKind::Syntax,
           format!("invalid pair for &let binding: {a} {b}"),
-          call_stack,
+          ctx.call_stack,
           a.get_location().or_else(|| b.get_location()),
         ));
       }
@@ -1001,14 +1113,14 @@ pub fn preprocess_core_let(
       return Err(CalcitErr::use_msg_stack(
         CalcitErrKind::Syntax,
         format!("expected binding of a pair, got: {a}"),
-        call_stack,
+        ctx.call_stack,
       ));
     }
     Some(a) => {
       return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Syntax,
         format!("expected binding of a pair, got: {a}"),
-        call_stack,
+        ctx.call_stack,
         a.get_location(),
       ));
     }
@@ -1016,7 +1128,7 @@ pub fn preprocess_core_let(
       return Err(CalcitErr::use_msg_stack(
         CalcitErrKind::Syntax,
         "expected binding of a pair, got nothing".to_owned(),
-        call_stack,
+        ctx.call_stack,
       ));
     }
   };
@@ -1028,7 +1140,7 @@ pub fn preprocess_core_let(
       skipped_head = true;
       return Ok(());
     }
-    let form = preprocess_expr(a, &body_defs, &mut body_types, file_ns, check_warnings, call_stack)?;
+    let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
     xs.push(form);
     Ok(())
   })?;
@@ -1055,17 +1167,13 @@ pub fn preprocess_defatom(
   head: &CalcitSyntax,
   head_ns: &str,
   args: &CalcitList,
-  scope_defs: &HashSet<Arc<str>>,
-  scope_types: &mut ScopeTypes,
-  file_ns: &str,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-  call_stack: &CallStackList,
+  ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
 
   args.traverse_result::<CalcitErr>(&mut |a| {
     // TODO
-    let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+    let form = preprocess_expr(a, ctx.scope_defs, ctx.scope_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
     xs = xs.push_right(form.to_owned());
     Ok(())
   })?;
@@ -1077,16 +1185,12 @@ pub fn preprocess_quasiquote(
   head: &CalcitSyntax,
   head_ns: &str,
   args: &CalcitList,
-  scope_defs: &HashSet<Arc<str>>,
-  scope_types: &mut ScopeTypes,
-  file_ns: &str,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-  call_stack: &CallStackList,
+  ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
   let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
 
   args.traverse_result::<CalcitErr>(&mut |a| {
-    let form = preprocess_quasiquote_internal(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+    let form = preprocess_quasiquote_internal(a, ctx.scope_defs, ctx.scope_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
     xs = xs.push_right(form);
     Ok(())
   })?;
@@ -1128,23 +1232,19 @@ pub fn preprocess_asset_type(
   head: &CalcitSyntax,
   head_ns: &str,
   args: &CalcitList,
-  scope_defs: &HashSet<Arc<str>>,
-  scope_types: &mut ScopeTypes,
-  file_ns: &str,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-  call_stack: &CallStackList,
+  ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
   if args.len() != 2 {
     return Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Arity,
       format!("{head} expected a local and a type expression, got {}", args.len()),
-      call_stack,
+      ctx.call_stack,
     ));
   }
 
   let mut zs: Vec<Calcit> = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
   args.traverse_result::<CalcitErr>(&mut |a| {
-    let form = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+    let form = preprocess_expr(a, ctx.scope_defs, ctx.scope_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
     zs.push(form);
     Ok(())
   })?;
@@ -1155,16 +1255,20 @@ pub fn preprocess_asset_type(
       return Err(CalcitErr::use_msg_stack(
         CalcitErrKind::Type,
         format!("assert-type expected local as first arg, got {other:?}"),
-        call_stack,
+        ctx.call_stack,
       ));
     }
   };
-  let type_form = zs
-    .get(2)
-    .ok_or_else(|| CalcitErr::use_msg_stack(CalcitErrKind::Arity, "assert-type missing type expression".to_owned(), call_stack))?;
+  let type_form = zs.get(2).ok_or_else(|| {
+    CalcitErr::use_msg_stack(
+      CalcitErrKind::Arity,
+      "assert-type missing type expression".to_owned(),
+      ctx.call_stack,
+    )
+  })?;
 
   let type_entry = Arc::new(type_form.to_owned());
-  scope_types.insert(local.sym.to_owned(), type_entry.clone());
+  ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
 
   if let Some(slot) = zs.get_mut(1) {
     if let Calcit::Local(mut typed_local) = slot.to_owned() {
