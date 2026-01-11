@@ -699,9 +699,13 @@ impl CalcitProc {
         return_type: Some(Arc::new(Calcit::tag("number"))),
         arg_types: vec![Some(Arc::new(Calcit::tag("set")))],
       }),
-      NativeSetEmpty | NativeSetIncludes => Some(ProcTypeSignature {
+      NativeSetEmpty => Some(ProcTypeSignature {
         return_type: Some(Arc::new(Calcit::tag("bool"))),
         arg_types: vec![Some(Arc::new(Calcit::tag("set")))],
+      }),
+      NativeSetIncludes => Some(ProcTypeSignature {
+        return_type: Some(Arc::new(Calcit::tag("bool"))),
+        arg_types: vec![Some(Arc::new(Calcit::tag("set"))), None],
       }),
 
       // === Tuple operations ===
