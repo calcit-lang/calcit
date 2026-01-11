@@ -348,7 +348,7 @@ fn preprocess_list_call(
   // == Tips ==
   // Macro from value: will be called during processing
   // Func from value: for checking arity
-  // Keyword: transforming into tag expression
+  // Tag: transforming into tag expression
   // Syntax: handled directly during preprocessing
   // Thunk: invalid here
 
@@ -919,6 +919,101 @@ fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
   }
 }
 
+/// Infer type from an expression (for &let bindings)
+/// Supports:
+/// - Literals (number, string, bool, nil)
+/// - Proc calls with known return types
+/// - Function calls with return-type annotations
+/// - Nested &let expressions (returns type of final expression)
+/// - Local variables (reads from type_info field)
+fn infer_type_from_expr(expr: &Calcit) -> Option<Arc<Calcit>> {
+  match expr {
+    // Literal types
+    Calcit::Number(_) => Some(Arc::new(Calcit::tag("number"))),
+    Calcit::Str(_) => Some(Arc::new(Calcit::tag("string"))),
+    Calcit::Bool(_) => Some(Arc::new(Calcit::tag("bool"))),
+    Calcit::Nil => Some(Arc::new(Calcit::tag("nil"))),
+
+    // Local variable: read type_info
+    Calcit::Local(local) => local.type_info.clone(),
+
+    // List/vector literal or expressions
+    Calcit::List(xs) if xs.is_empty() => Some(Arc::new(Calcit::tag("list"))),
+
+    // Function call or Proc call or special forms
+    Calcit::List(xs) => {
+      let head = xs.first()?;
+      match head {
+        // &let expression: infer from final expression (last element)
+        Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
+          // &let has format: (&let (binding) body...)
+          // The last element is the return value
+          if xs.len() > 1 {
+            infer_type_from_expr(&xs[xs.len() - 1])
+          } else {
+            None
+          }
+        }
+
+        // Local variable as head (wrapped in list for some reason)
+        // Just extract its type_info
+        Calcit::Local(local) => local.type_info.clone(),
+
+        // Proc call: check if proc has return_type
+        Calcit::Proc(proc) => {
+          if let Some(type_sig) = proc.get_type_signature() {
+            type_sig.return_type.clone()
+          } else {
+            None
+          }
+        }
+
+        // Import: could be a function, try to get its return type
+        Calcit::Import(CalcitImport { ns, def, .. }) => {
+          // Try to lookup the function definition and get its return_type
+          if let Some(code) = program::lookup_def_code(ns, def) {
+            // Code is the AST, might be a defn with return type annotation
+            // Format: (defn name (args) :return-type body) or (defn name (args) body)
+            if let Calcit::List(ref xs) = code {
+              // Check if it's a defn: first element should be Symbol "defn"
+              if let Some(Calcit::Symbol { sym, .. }) = xs.first() {
+                if sym.as_ref() == "defn" {
+                  // Defn format: (defn name (args) [:return-type] body...)
+                  // Return type is the 3rd element (index 3) if it's a tag
+                  if let Some(ret_type) = xs.get(3) {
+                    if matches!(ret_type, Calcit::Tag(_)) {
+                      return Some(Arc::new(ret_type.to_owned()));
+                    }
+                  }
+                }
+              }
+            }
+            // For compiled functions (Calcit::Fn), get return_type from info
+            if let Calcit::Fn { info, .. } = code {
+              return info.return_type.clone();
+            }
+          }
+          None
+        }
+
+        // Symbol: might be a function reference before preprocessing
+        // Try to resolve it and get the return type
+        Calcit::Symbol { sym, info, .. } => {
+          // Try to lookup in program
+          if let Some(Calcit::Fn { info: fn_info, .. }) = program::lookup_def_code(&info.at_ns, sym) {
+            return fn_info.return_type.clone();
+          }
+          None
+        }
+
+        _ => None,
+      }
+    }
+
+    _ => None,
+  }
+}
+
 /// Get the class record from a type value
 /// - If type_value is already a Record, use it directly
 /// - If type_value is a Tag, map to corresponding core class
@@ -1118,6 +1213,10 @@ pub fn preprocess_core_let(
         check_symbol(sym, ys, loc, ctx.check_warnings);
         body_defs.insert(sym.to_owned());
         let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+
+        // Try to infer type from the binding expression
+        let inferred_type = infer_type_from_expr(&form);
+
         let name = Calcit::Local(CalcitLocal {
           idx: CalcitLocal::track_sym(sym),
           sym: sym.to_owned(),
@@ -1126,9 +1225,16 @@ pub fn preprocess_core_let(
             at_def: info.at_def.to_owned(),
           }),
           location: location.to_owned(),
-          type_info: None,
+          type_info: inferred_type.clone(),
         });
-        body_types.remove(sym);
+
+        // Also store in scope_types for later use
+        if let Some(type_hint) = inferred_type {
+          body_types.insert(sym.to_owned(), type_hint);
+        } else {
+          body_types.remove(sym);
+        }
+
         Calcit::from(CalcitList::from(&[name, form]))
       }
       (a, b) => {

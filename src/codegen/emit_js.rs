@@ -179,7 +179,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
         MethodKind::Access => ".-",
         MethodKind::InvokeNative => ".!",
         MethodKind::Invoke => ".",
-        MethodKind::KeywordAccess => ".:",
+        MethodKind::TagAccess => ".:",
         MethodKind::AccessOptional => ".?-",
         MethodKind::InvokeNativeOptional => ".?!",
       };
@@ -605,13 +605,13 @@ fn gen_call_code(
           Err(format!("expected at least 1 object, got: {xs}"))
         }
       }
-      MethodKind::KeywordAccess => {
+      MethodKind::TagAccess => {
         if body.len() == 1 {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
           let tag = format!("_tag[{}]", wrap_js_str(name));
           Ok(format!("{obj}.get({tag})"))
         } else {
-          Err(format!("keyword-accessor takes only 1 argument, {xs}"))
+          Err(format!("tag-accessor takes only 1 argument, {xs}"))
         }
       }
     },

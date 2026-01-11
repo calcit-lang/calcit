@@ -372,7 +372,7 @@ impl CalcitProc {
     match self {
       // === Meta operations ===
       TypeOf => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("keyword"))),
+        return_type: Some(Arc::new(Calcit::tag("tag"))),
         arg_types: vec![None],
       }),
       FormatToLisp | FormatToCirru => Some(ProcTypeSignature {
@@ -384,7 +384,7 @@ impl CalcitProc {
         arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
       }),
       TurnTag => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("keyword"))),
+        return_type: Some(Arc::new(Calcit::tag("tag"))),
         arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
       }),
       NativeCompare => Some(ProcTypeSignature {
@@ -392,7 +392,7 @@ impl CalcitProc {
         arg_types: vec![None, None],
       }),
       NativeGetOs => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("keyword"))),
+        return_type: Some(Arc::new(Calcit::tag("tag"))),
         arg_types: vec![],
       }),
       NativeHash => Some(ProcTypeSignature {
@@ -404,11 +404,11 @@ impl CalcitProc {
         arg_types: vec![],
       }),
       NativeGetCalcitRunningMode => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("keyword"))),
+        return_type: Some(Arc::new(Calcit::tag("tag"))),
         arg_types: vec![],
       }),
       NativeGetCalcitBackend => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("keyword"))),
+        return_type: Some(Arc::new(Calcit::tag("tag"))),
         arg_types: vec![],
       }),
       NativeDisplayStack => Some(ProcTypeSignature {
@@ -416,7 +416,7 @@ impl CalcitProc {
         arg_types: vec![Some(Arc::new(Calcit::tag("&")))],
       }),
       NativeCirruType => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("keyword"))),
+        return_type: Some(Arc::new(Calcit::tag("tag"))),
         arg_types: vec![None],
       }),
 
@@ -745,7 +745,7 @@ impl CalcitProc {
       }),
       NativeRecordGet => Some(ProcTypeSignature {
         return_type: None,
-        arg_types: vec![Some(Arc::new(Calcit::tag("record"))), Some(Arc::new(Calcit::tag("keyword")))],
+        arg_types: vec![Some(Arc::new(Calcit::tag("record"))), Some(Arc::new(Calcit::tag("tag")))],
       }),
       NativeRecordCount => Some(ProcTypeSignature {
         return_type: Some(Arc::new(Calcit::tag("number"))),
@@ -765,15 +765,15 @@ impl CalcitProc {
       }),
       NativeRecordFromMap => Some(ProcTypeSignature {
         return_type: Some(Arc::new(Calcit::tag("record"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("keyword"))), Some(Arc::new(Calcit::tag("map")))],
+        arg_types: vec![Some(Arc::new(Calcit::tag("record"))), Some(Arc::new(Calcit::tag("map")))],
       }),
       NativeRecordGetName => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("keyword"))),
+        return_type: Some(Arc::new(Calcit::tag("tag"))),
         arg_types: vec![Some(Arc::new(Calcit::tag("record")))],
       }),
       NewRecord | NewClassRecord => Some(ProcTypeSignature {
         return_type: Some(Arc::new(Calcit::tag("record"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("keyword"))), Some(Arc::new(Calcit::tag("&")))],
+        arg_types: vec![Some(Arc::new(Calcit::tag("tag"))), Some(Arc::new(Calcit::tag("&")))],
       }),
       NativeRecordClass => Some(ProcTypeSignature {
         return_type: Some(Arc::new(Calcit::tag("record"))),
@@ -787,7 +787,7 @@ impl CalcitProc {
         return_type: Some(Arc::new(Calcit::tag("record"))),
         arg_types: vec![
           Some(Arc::new(Calcit::tag("record"))),
-          Some(Arc::new(Calcit::tag("keyword"))),
+          Some(Arc::new(Calcit::tag("tag"))),
           Some(Arc::new(Calcit::tag("&"))),
         ],
       }),

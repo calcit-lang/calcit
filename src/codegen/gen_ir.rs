@@ -276,10 +276,6 @@ fn dump_type_list(xs: &[Option<Arc<Calcit>>]) -> Edn {
 
 fn dump_type_annotation(type_info: &Calcit) -> Edn {
   match type_info {
-    Calcit::Tag(tag) => Edn::map_from_iter([
-      (Edn::tag("kind"), Edn::tag("tag")),
-      (Edn::tag("name"), Edn::Str(tag.ref_str().into())),
-    ]),
     Calcit::Record(record) => dump_record_type_summary(record),
     Calcit::Tuple(tuple) => dump_tuple_annotation(tuple),
     other => dump_code(other),

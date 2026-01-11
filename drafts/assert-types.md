@@ -34,7 +34,7 @@ defn f1 (x y)
   - `:string` - 字符串类型
   - `:bool` - 布尔类型
   - `:nil` - nil 类型
-  - `:keyword` - 关键字类型
+  - `:tag` - 标签类型
   - `:fn` - 函数类型（基础形式，用户定义的函数）
   - `:fn (arg-types...) return-type` - 函数类型（带签名）
   - `:proc` - Proc 类型（内置函数，由 Rust/JavaScript 实现）
@@ -45,9 +45,10 @@ defn f1 (x y)
   - `:User` - 当前 namespace 中定义的 Record
   - 类型信息通过 `defrecord` 关联的元数据获取
 
-- **复合类型**：
-  - `:list :number` - 元素为 number 的 list
-  - `:map :keyword :string` - key 为 keyword，value 为 string 的 map
+- **复合类型**（仅用于声明，不做推断）：
+  - `:list :number` - 元素为 number 的 list（需手动标注）
+  - `:map :tag :string` - key 为 tag，value 为 string 的 map（需手动标注）
+  - **注意**：Calcit 不会自动推断复合类型的内部元素类型，所有复合类型信息必须通过 `assert-type` 显式声明
 
 #### 2.0.3 `assert-type` 语法
 
@@ -215,12 +216,12 @@ impl CalcitProc {
 
 **Meta 操作**：
 
-- `type-of` → `any -> keyword`
+- `type-of` → `any -> tag`
 - `format-to-lisp`, `format-to-cirru` → `any -> string`
 - `turn-symbol` → `string -> symbol`
-- `turn-tag` → `string -> keyword`
+- `turn-tag` → `string -> tag`
 - `&compare` → `(any, any) -> number`
-- `&get-os` → `() -> keyword`
+- `&get-os` → `() -> tag`
 - `&hash` → `any -> number`
 
 **数学运算**：
@@ -304,14 +305,14 @@ impl CalcitProc {
 
 **Record 操作**：
 
-- `&%{}` → `(keyword, ...) -> record`
+- `&%{}` → `(tag, ...) -> record`
 - `&record:with`, `&record:assoc` → `(record, any, any) -> record`
-- `&record:get` → `(record, keyword) -> any`
+- `&record:get` → `(record, tag) -> any`
 - `&record:count` → `record -> number`
 - `&record:contains?`, `&record:matches?` → `record -> bool`
 - `&record:to-map` → `record -> map`
-- `&record:from-map` → `(keyword, map) -> record`
-- `&record:get-name` → `record -> keyword`
+- `&record:from-map` → `(record, map) -> record`
+- `&record:get-name` → `record -> tag`
 
 **I/O 和环境**：
 
@@ -427,7 +428,7 @@ pub struct FnInfo {
     - 数学函数：`floor`, `ceil`, `sin`, `cos`, `sqrt` 等 - `number -> number`
     - 比较运算：`&=`, `&<`, `&>` 等 - `(any, any) -> bool`
     - 逻辑运算：`not` - `bool -> bool`
-    - 类型检查：`type-of` - `any -> keyword`
+    - 类型检查：`type-of` - `any -> tag`
   - 可以逐步扩展更多 Proc 的类型信息
 - **兼容性**：老代码保持 `type_info` 为 `None` (即 `unknown`)，不进行强校验。
 

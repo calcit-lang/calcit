@@ -981,7 +981,7 @@ pub enum MethodKind {
   /// (.?!f a)
   InvokeNativeOptional,
   /// (.:k a)
-  KeywordAccess,
+  TagAccess,
   /// (.-p a)
   Access,
   /// (.?-p a)
@@ -994,7 +994,7 @@ impl fmt::Display for MethodKind {
       MethodKind::Invoke => write!(f, "invoke"),
       MethodKind::InvokeNative => write!(f, "invoke-native"),
       MethodKind::InvokeNativeOptional => write!(f, "invoke-native-optional"),
-      MethodKind::KeywordAccess => write!(f, "keyword-access"),
+      MethodKind::TagAccess => write!(f, "tag-access"),
       MethodKind::Access => write!(f, "access"),
       MethodKind::AccessOptional => write!(f, "access-optional"),
     }

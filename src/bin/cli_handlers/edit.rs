@@ -1161,8 +1161,8 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
     // Parse the import rule: (namespace :refer [symbols...]) or (namespace :as alias) or (namespace :default symbol)
     let mut i = 1; // Skip the namespace (first element)
     while i < items.len() {
-      if let Cirru::Leaf(keyword) = &items[i] {
-        match keyword.as_ref() {
+      if let Cirru::Leaf(tag) = &items[i] {
+        match tag.as_ref() {
           ":refer" => {
             import_type = Some("refer");
             // Next item should be a list of symbols or a single symbol

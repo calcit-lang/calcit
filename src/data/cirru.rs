@@ -165,7 +165,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
 /// some characters available for variables are okey here, for example `-`, `!`, `?`, `*``, etc.
 fn split_leaf_to_method_call(s: &str) -> Option<(String, Calcit)> {
   let prefixes = [
-    (".:", MethodKind::KeywordAccess),
+    (".:", MethodKind::TagAccess),
     (".-", MethodKind::Access),
     (".!", MethodKind::InvokeNative),
     (".", MethodKind::Invoke),
@@ -269,7 +269,7 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
         Access => Ok(Cirru::leaf(format!(".-{name}"))),
         InvokeNative => Ok(Cirru::leaf(format!(".!{name}"))),
         Invoke => Ok(Cirru::leaf(format!(".{name}"))),
-        KeywordAccess => Ok(Cirru::leaf(format!(".:{name}"))),
+        TagAccess => Ok(Cirru::leaf(format!(".:{name}"))),
         AccessOptional => Ok(Cirru::leaf(format!(".?-{name}"))),
         InvokeNativeOptional => Ok(Cirru::leaf(format!(".?!{name}"))),
       }
