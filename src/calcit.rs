@@ -95,7 +95,7 @@ pub enum Calcit {
   /// name, ns... notice that `ns` is a meta info
   Syntax(CalcitSyntax, Arc<str>),
   /// Method is kind like macro, it's handled during preprocessing, into `&invoke` or `&invoke-native`
-  /// method name, method kind
+  /// method name, method kind (Invoke variant may carry inferred receiver type)
   Method(Arc<str>, MethodKind),
   /// currently only JavaScript calls are handled
   RawCode(RawCodeType, Arc<str>),
@@ -307,7 +307,10 @@ impl fmt::Display for Calcit {
         f.write_str(")")
       }
       Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
-      Method(name, method_kind) => f.write_str(&format!("(&{method_kind} {name})")),
+      Method(name, method_kind) => match method_kind {
+        MethodKind::Invoke(Some(t)) => f.write_str(&format!("(&invoke {name} :type {t})")),
+        _ => f.write_str(&format!("(&{method_kind} {name})")),
+      },
       RawCode(_, code) => f.write_str(&format!("(&raw-code {code})")),
       AnyRef(_r) => f.write_str("(&any-ref ...)"),
     }
@@ -974,8 +977,8 @@ impl LocatedWarning {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MethodKind {
-  /// (.call a)
-  Invoke,
+  /// (.call a) - may carry inferred receiver type for validation
+  Invoke(Option<Arc<Calcit>>),
   /// (.!f a)
   InvokeNative,
   /// (.?!f a)
@@ -991,7 +994,7 @@ pub enum MethodKind {
 impl fmt::Display for MethodKind {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      MethodKind::Invoke => write!(f, "invoke"),
+      MethodKind::Invoke(_) => write!(f, "invoke"),
       MethodKind::InvokeNative => write!(f, "invoke-native"),
       MethodKind::InvokeNativeOptional => write!(f, "invoke-native-optional"),
       MethodKind::TagAccess => write!(f, "tag-access"),

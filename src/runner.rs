@@ -116,7 +116,7 @@ pub fn call_expr(
       }
     }
     Calcit::Method(name, kind) => {
-      if *kind == MethodKind::Invoke {
+      if matches!(kind, MethodKind::Invoke(_)) {
         let values = if spreading {
           evaluate_spreaded_args(rest_nodes, scope, file_ns, call_stack)?
         } else {
@@ -128,7 +128,7 @@ pub fn call_expr(
         } else {
           builtins::meta::invoke_method(name, &values, call_stack)
         }
-      } else if *kind == MethodKind::TagAccess {
+      } else if matches!(kind, MethodKind::TagAccess) {
         if rest_nodes.len() == 1 {
           let obj = evaluate_expr(&rest_nodes[0], scope, file_ns, call_stack)?;
           let tag = evaluate_expr(&Calcit::tag(name), scope, file_ns, call_stack)?;

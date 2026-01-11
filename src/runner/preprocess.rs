@@ -556,8 +556,34 @@ fn preprocess_list_call(
         validate_method_call(&head_form, &processed_args, scope_types, call_stack)?;
         check_record_field_access(&head_form, &processed_args, scope_types, file_ns, check_warnings);
 
+        // Infer type for Method(Invoke) and update the head if type info is available
+        let final_head = if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = &head_form {
+          if let Some(receiver) = processed_args.first() {
+            if let Some(type_value) = resolve_type_value(receiver, scope_types) {
+              // Create a new Method node with inferred type
+              Calcit::Method(method_name.clone(), calcit::MethodKind::Invoke(Some(type_value)))
+            } else {
+              head_form.clone()
+            }
+          } else {
+            head_form.clone()
+          }
+        } else {
+          head_form.clone()
+        };
+
+        // Replace head in ys if type was inferred
+        let needs_update = matches!(&final_head, Calcit::Method(_, calcit::MethodKind::Invoke(Some(_))));
+        if needs_update {
+          // Reconstruct the list with updated head
+          ys = CalcitList::new_inner_from(&[final_head]);
+          for item in processed_args.iter() {
+            ys = ys.push(item.to_owned());
+          }
+        }
+
         // Check Proc argument types if available
-        if let Calcit::Proc(proc) = &head_form {
+        if let Some(Calcit::Proc(proc)) = ys.first() {
           check_proc_arg_types(proc, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         }
 
@@ -879,7 +905,7 @@ fn validate_method_call(
   scope_types: &ScopeTypes,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
-  if let Calcit::Method(method_name, calcit::MethodKind::Invoke) = head {
+  if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = head {
     // General method validation for typed objects
     if let Some(receiver) = args.first() {
       // Get the type information from the receiver

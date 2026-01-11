@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use cirru_edn::{Edn, EdnListView, format};
 
-use crate::calcit::{Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitRecord, CalcitTuple, ImportInfo};
+use crate::calcit::{
+  Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitRecord, CalcitTuple, ImportInfo, MethodKind,
+};
 use crate::program;
 
 #[derive(Debug)]
@@ -207,11 +209,17 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     }
     Calcit::Tuple(tuple) => dump_tuple_code(tuple),
     Calcit::Record(record) => dump_record_code(record),
-    Calcit::Method(method, kind) => Edn::map_from_iter([
-      (Edn::tag("kind"), Edn::tag("method")),
-      (Edn::tag("behavior"), Edn::Str((kind.to_string()).into())),
-      (Edn::tag("method"), Edn::Str(method.to_owned())),
-    ]),
+    Calcit::Method(method, kind) => {
+      let mut entries = vec![
+        (Edn::tag("kind"), Edn::tag("method")),
+        (Edn::tag("behavior"), Edn::Str((kind.to_string()).into())),
+        (Edn::tag("method"), Edn::Str(method.to_owned())),
+      ];
+      if let MethodKind::Invoke(Some(t)) = kind {
+        entries.push((Edn::tag("receiver-type"), dump_type_annotation(t)));
+      }
+      Edn::map_from_iter(entries)
+    }
     Calcit::RawCode(_, code) => Edn::map_from_iter([
       (Edn::tag("kind"), Edn::tag("raw-code")),
       (Edn::tag("code"), Edn::Str(code.to_owned())),

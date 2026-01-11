@@ -178,7 +178,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
       let code = match kind {
         MethodKind::Access => ".-",
         MethodKind::InvokeNative => ".!",
-        MethodKind::Invoke => ".",
+        MethodKind::Invoke(_) => ".",
         MethodKind::TagAccess => ".:",
         MethodKind::AccessOptional => ".?-",
         MethodKind::InvokeNativeOptional => ".?!",
@@ -269,7 +269,7 @@ fn to_js_code(
       }
       Calcit::Method(name, kind) => {
         let proc_prefix = get_proc_prefix(ns);
-        if *kind == MethodKind::Invoke {
+        if matches!(kind, MethodKind::Invoke(_)) {
           Ok(format!("{proc_prefix}invoke_method_closure({})", escape_cirru_str(name)))
         } else {
           Err(format!("Does not expect native method as closure: {kind}"))
@@ -587,7 +587,7 @@ fn gen_call_code(
           Err(format!("invoke-native-optional expected at least 1 object, got: {xs}"))
         }
       }
-      MethodKind::Invoke => {
+      MethodKind::Invoke(_) => {
         let proc_prefix = get_proc_prefix(ns);
         if !body.is_empty() {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;

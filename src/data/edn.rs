@@ -95,7 +95,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Method(name, kind) => match kind {
       MethodKind::Access => Ok(Edn::Symbol(format!(".-{name}").into())),
       MethodKind::InvokeNative => Ok(Edn::Symbol(format!(".!{name}").into())),
-      MethodKind::Invoke => Ok(Edn::Symbol(format!(".{name}").into())),
+      MethodKind::Invoke(_) => Ok(Edn::Symbol(format!(".{name}").into())),
       MethodKind::TagAccess => Ok(Edn::Symbol(format!(".:{name}").into())),
       MethodKind::AccessOptional => Ok(Edn::Symbol(format!(".?-{name}").into())),
       MethodKind::InvokeNativeOptional => Ok(Edn::Symbol(format!(".?!{name}").into())),
