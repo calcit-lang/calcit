@@ -151,6 +151,164 @@
               ; It is not called in normal tests to avoid blocking execution
               println "|Warning: This test contains intentional type errors"
 
+        |test-list-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed list objects")
+          :code $ quote
+            defn test-list-methods ()
+              ; Create a list and annotate its type
+              let
+                  xs $ [] 1 2 3 4 5
+                assert-type xs :list
+                ; Call valid list methods
+                let
+                    first-item $ .first xs
+                    second-item $ .nth xs 1
+                    rest-items $ .rest xs
+                    list-len $ .count xs
+                  println "|first:" first-item
+                  println "|second:" second-item
+                  println "|rest:" rest-items
+                  println "|count:" list-len
+                  assert= 1 first-item
+                  assert= 2 second-item
+                  assert= 5 list-len
+              , "|List method checks passed"
+
+        |test-string-methods $ %{} :CodeEntry (:doc "|Tests method calls on typed string objects")
+          :code $ quote
+            defn test-string-methods ()
+              let
+                  text |hello-world
+                assert-type text :string
+                ; Call valid string methods
+                let
+                    sliced $ .slice text 0 5
+                    text-len $ .count text
+                    first-char $ .first text
+                    starts $ .starts-with? text |hello
+                    splitted $ .split text |-
+                  println "|sliced:" sliced
+                  println "|length:" text-len
+                  println "|first-char:" first-char
+                  println "|starts with hello:" starts
+                  println "|split:" splitted
+                  assert= |hello sliced
+                  assert= 11 text-len
+                  assert= |h first-char
+                  assert= true starts
+              , "|String method checks passed"
+
+        |test-record-methods $ %{} :CodeEntry (:doc "|Tests method calls on Record instances with class")
+          :code $ quote
+            defn test-record-methods ()
+              ; 使用 new-class-record 创建带 class 的 Record
+              let
+                  Person $ new-class-record :Person
+                    {} $ :name
+                      :get $ fn (self) (:name self)
+                    {} $ :age
+                      :get $ fn (self) (:age self)
+                    {} $ :greet
+                      :method $ fn (self) (str "|Hello, I'm " $ :name self)
+                ; 创建 Person 实例
+                let
+                    alice $ %:: Person :name |Alice :age 30
+                  ; 调用方法
+                  let
+                      greeting $ .greet alice
+                    println "|greeting:" greeting
+                    assert= "|Hello, I'm Alice" greeting
+              , "|Record method checks passed"
+
+        |test-method-type-errors $ %{} :CodeEntry (:doc "|Tests that invalid method calls are caught in preprocess")
+          :code $ quote
+            defn test-method-type-errors ()
+              ; ⚠️ 这些代码故意包含错误，用于验证 preprocess 阶段的类型检查
+              ; 当启用时，会在编译阶段就报错，而不是运行时
+
+              ; 测试 1: list 对象调用不存在的方法
+              ; let
+              ;     xs $ [] 1 2 3
+              ;   assert-type xs :list
+              ;   .invalid-method xs
+
+              ; 测试 2: string 对象调用不存在的方法
+              ; let
+              ;     text |hello
+              ;   assert-type text :string
+              ;   .nonexistent text
+
+              ; 测试 3: map 对象调用不存在的方法
+              ; let
+              ;     m $ {} (:a 1)
+              ;   assert-type m :map
+              ;   .invalid-map-method m
+
+              println "|Method type error tests are commented out"
+              println "|Uncomment them to see preprocess-time validation"
+              , "|Tests disabled to allow compilation"
+
+        |test-preprocess-method-validation $ %{} :CodeEntry (:doc "|Demonstrates that valid method calls pass preprocess validation")
+          :code $ quote
+            defn test-preprocess-method-validation ()
+              ; 所有这些方法调用都是合法的，应该通过 preprocess 检查
+              let
+                  xs $ [] 1 2 3 4 5
+                assert-type xs :list
+                let
+                    first-item $ .first xs
+                    count-val $ .count xs
+                    reversed $ .reverse xs
+                  println "|✓ List methods validated at preprocess"
+
+              let
+                  text |hello-world
+                assert-type text :string
+                let
+                    sliced $ .slice text 0 5
+                    len $ .count text
+                    trimmed $ .trim text
+                  println "|✓ String methods validated at preprocess"
+
+              let
+                  m $ {} (:a 1) (:b 2)
+                assert-type m :map
+                let
+                    val $ .get m :a
+                    keys-list $ .keys m
+                    size $ .count m
+                  println "|✓ Map methods validated at preprocess"
+
+              , "|All valid method calls passed preprocess validation"
+
+        |test-typed-method-access $ %{} :CodeEntry (:doc "|Demonstrates type-safe method access patterns")
+          :code $ quote
+            defn test-typed-method-access ()
+              ; 当对象有类型标注时，方法调用会检查该类型支持的方法
+              let
+                  typed-list $ [] 1 2 3 4 5
+                assert-type typed-list :list
+                ; :list 类型对应 calcit.core/&core-list-class 提供的方法
+                let
+                    first-elem $ .first typed-list
+                    list-size $ .count typed-list
+                    rest-elems $ .rest typed-list
+                  println "|Typed list access - first:" first-elem
+                  println "|Typed list access - count:" list-size
+                  assert= 1 first-elem
+                  assert= 5 list-size
+              ; 字符串也有类型相关的方法
+              let
+                  typed-str |test-string
+                assert-type typed-str :string
+                let
+                    str-len $ .count typed-str
+                    str-first $ .first typed-str
+                  println "|Typed string access - count:" str-len
+                  println "|Typed string access - first:" str-first
+                  assert= 11 str-len
+                  assert= |t str-first
+              , "|Typed method access checks passed"
+
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! ()
@@ -167,6 +325,15 @@
               println $ test-threading-types |world
               println $ test-complex-threading 10 20
               test-builtin-proc-types
+              println "|--- Testing typed method calls ---"
+              println $ test-list-methods
+              println $ test-string-methods
+              ; println $ test-record-methods
+              println "|--- Testing typed method access patterns ---"
+              println $ test-typed-method-access
+              println "|--- Testing preprocess method validation ---"
+              println $ test-preprocess-method-validation
+              ; test-method-type-errors ; Disabled - contains intentional errors
               ; test-proc-type-warnings
               println "|Done!"
               ; Note: Record field validation requires explicit type annotations

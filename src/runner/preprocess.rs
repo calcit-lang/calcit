@@ -2,8 +2,8 @@ use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
-    CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation,
-    RawCodeType,
+    CalcitRecord, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, GENERATED_DEF, ImportInfo, LocatedWarning,
+    NodeLocation, RawCodeType,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -553,7 +553,7 @@ fn preprocess_list_call(
 
         // Check for record field access after processing arguments
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
-        validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
+        validate_method_call(&head_form, &processed_args, scope_types, call_stack)?;
         check_record_field_access(&head_form, &processed_args, scope_types, file_ns, check_warnings);
 
         // Check Proc argument types if available
@@ -877,20 +877,23 @@ fn validate_method_call(
   head: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
-  file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
   if let Calcit::Method(method_name, calcit::MethodKind::Invoke) = head {
-    if method_name.as_ref() == "slice" {
-      if let Some(receiver) = args.first() {
-        if let Some(type_name) = resolve_type_tag(receiver, scope_types) {
-          if !matches!(type_name.as_str(), "string" | "list") {
+    // General method validation for typed objects
+    if let Some(receiver) = args.first() {
+      // Get the type information from the receiver
+      if let Some(type_value) = resolve_type_value(receiver, scope_types) {
+        // Get the class record for this type
+        if let Some(class_record) = get_class_record_from_type(&type_value, call_stack) {
+          let method_str = method_name.as_ref();
+          // Check if method exists in the class record's fields
+          if !class_record.fields.iter().any(|field| field.ref_str() == method_str) {
+            let methods_list = class_record.fields.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(" ");
+            let type_desc = describe_type(&type_value);
             return Err(CalcitErr::use_msg_stack(
               CalcitErrKind::Type,
-              format!(
-                "method `.slice` expected a :string or :list target, but `{}` is annotated as :{type_name} in {file_ns}",
-                describe_receiver(receiver)
-              ),
+              format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
               call_stack,
             ));
           }
@@ -901,34 +904,62 @@ fn validate_method_call(
   Ok(())
 }
 
-fn resolve_type_tag(target: &Calcit, scope_types: &ScopeTypes) -> Option<String> {
+/// Resolve the type value from the receiver expression
+fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<Calcit>> {
   match target {
     Calcit::Local(local) => {
-      if let Some(type_hint) = local.type_info.as_deref() {
-        if let Some(name) = extract_tag_name(type_hint) {
-          return Some(name);
-        }
+      // First check if the local has inline type_info
+      if let Some(type_hint) = &local.type_info {
+        return Some(type_hint.clone());
       }
-      scope_types.get(&local.sym).and_then(|hint| extract_tag_name(hint.as_ref()))
+      // Otherwise check scope_types
+      scope_types.get(&local.sym).cloned()
     }
     _ => None,
   }
 }
 
-fn extract_tag_name(type_value: &Calcit) -> Option<String> {
+/// Get the class record from a type value
+/// - If type_value is already a Record, use it directly
+/// - If type_value is a Tag, map to corresponding core class
+/// - Otherwise return None
+fn get_class_record_from_type(type_value: &Calcit, call_stack: &CallStackList) -> Option<Arc<CalcitRecord>> {
   match type_value {
+    // Case 1: Already a Record, use it directly
+    Calcit::Record(record) => Some(Arc::new(record.clone())),
+
+    // Case 2: Tag type, map to core class
     Calcit::Tag(tag) => {
-      let label = tag.ref_str();
-      Some(label.trim_start_matches(':').to_owned())
+      let type_name = tag.ref_str().trim_start_matches(':');
+      let class_symbol = match type_name {
+        "list" => "&core-list-class",
+        "string" => "&core-string-class",
+        "map" => "&core-map-class",
+        "set" => "&core-set-class",
+        "number" => "&core-number-class",
+        "nil" => "&core-nil-class",
+        "fn" => "&core-fn-class",
+        _ => return None, // Unknown tag
+      };
+
+      // Load the class record from the program
+      match runner::evaluate_symbol_from_program(class_symbol, calcit::CORE_NS, None, call_stack) {
+        Ok(Calcit::Record(record)) => Some(Arc::new(record)),
+        _ => None,
+      }
     }
+
+    // Case 3: Other types, no class available
     _ => None,
   }
 }
 
-fn describe_receiver(expr: &Calcit) -> String {
-  match expr {
-    Calcit::Local(local) => local.sym.to_string(),
-    _ => expr.lisp_str(),
+/// Describe the type for error messages
+fn describe_type(type_value: &Calcit) -> String {
+  match type_value {
+    Calcit::Tag(tag) => format!("{} type", tag.ref_str().trim_start_matches(':')),
+    Calcit::Record(record) => format!("record {}", record.name),
+    _ => "unknown type".to_string(),
   }
 }
 
