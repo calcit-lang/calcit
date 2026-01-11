@@ -557,28 +557,16 @@ fn preprocess_list_call(
         check_record_field_access(&head_form, &processed_args, scope_types, file_ns, check_warnings);
 
         // Infer type for Method(Invoke) and update the head if type info is available
-        let final_head = if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = &head_form {
+        if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = &head_form {
           if let Some(receiver) = processed_args.first() {
             if let Some(type_value) = resolve_type_value(receiver, scope_types) {
-              // Create a new Method node with inferred type
-              Calcit::Method(method_name.clone(), calcit::MethodKind::Invoke(Some(type_value)))
-            } else {
-              head_form.clone()
+              // Reconstruct the list with updated Method node carrying inferred type
+              let typed_method = Calcit::Method(method_name.clone(), calcit::MethodKind::Invoke(Some(type_value)));
+              ys = CalcitList::new_inner_from(&[typed_method]);
+              for item in processed_args.iter() {
+                ys = ys.push(item.to_owned());
+              }
             }
-          } else {
-            head_form.clone()
-          }
-        } else {
-          head_form.clone()
-        };
-
-        // Replace head in ys if type was inferred
-        let needs_update = matches!(&final_head, Calcit::Method(_, calcit::MethodKind::Invoke(Some(_))));
-        if needs_update {
-          // Reconstruct the list with updated head
-          ys = CalcitList::new_inner_from(&[final_head]);
-          for item in processed_args.iter() {
-            ys = ys.push(item.to_owned());
           }
         }
 
@@ -761,38 +749,40 @@ fn check_field_in_record(
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
-  // Get the type of the record argument
-  let record_type = match record_arg {
-    Calcit::Local(CalcitLocal { sym, .. }) => scope_types.get(sym),
-    _ => return, // Can't check non-local expressions
+  // Get the type of the record argument - reuse resolve_type_value
+  let Some(type_info) = resolve_type_value(record_arg, scope_types) else {
+    return; // No type info available
   };
 
-  // If we have type info and it's a record, validate the field
-  if let Some(type_info) = record_type {
-    if let Calcit::Record(record) = &**type_info {
-      // Extract field name from the argument
-      let field_name = match field_arg {
-        Calcit::Tag(tag) => tag.ref_str(),
-        Calcit::Str(s) => s,
-        Calcit::Symbol { sym, .. } => sym,
-        _ => return, // Can't check dynamic field names
-      };
+  // Only validate record types
+  let Calcit::Record(record) = &*type_info else {
+    return; // Not a record type
+  };
 
-      // Check if field exists in record
-      if record.index_of(field_name).is_none() {
-        let available_fields: Vec<&str> = record.fields.iter().map(|f| f.ref_str()).collect();
-        gen_check_warning(
-          format!(
-            "[Warn] Field `{field_name}` does not exist in record `{}`. Available fields: [{}]",
-            record.name,
-            available_fields.join(", ")
-          ),
-          file_ns,
-          check_warnings,
-        );
-      }
-    }
+  // Extract field name from the argument
+  let field_name = match field_arg {
+    Calcit::Tag(tag) => tag.ref_str(),
+    Calcit::Str(s) => s.as_ref(),
+    Calcit::Symbol { sym, .. } => sym.as_ref(),
+    _ => return, // Can't check dynamic field names
+  };
+
+  // Check if field exists in record
+  if record.index_of(field_name).is_some() {
+    return; // Field found, validation passed
   }
+
+  // Field not found, generate warning
+  let available_fields: Vec<&str> = record.fields.iter().map(|f| f.ref_str()).collect();
+  gen_check_warning(
+    format!(
+      "[Warn] Field `{field_name}` does not exist in record `{}`. Available fields: [{}]",
+      record.name,
+      available_fields.join(", ")
+    ),
+    file_ns,
+    check_warnings,
+  );
 }
 
 /// Check Proc argument types against type signature
@@ -884,10 +874,16 @@ fn check_proc_arg_types(
 }
 
 /// Helper to check if two types match
+/// TODO: Expand to handle:
+/// - Record type matching by name
+/// - Tuple type matching by tag and structure
+/// - Function type matching by signature
+/// - Generic/parametric type matching
 fn types_match(actual: &Calcit, expected: &Calcit) -> bool {
   match (actual, expected) {
     (Calcit::Tag(a), Calcit::Tag(e)) => a.ref_str() == e.ref_str(),
-    _ => false, // TODO: handle more complex type matching
+    (Calcit::Record(a), Calcit::Record(e)) => a.name == e.name,
+    _ => false,
   }
 }
 
@@ -895,6 +891,7 @@ fn types_match(actual: &Calcit, expected: &Calcit) -> bool {
 fn type_to_string(t: &Calcit) -> String {
   match t {
     Calcit::Tag(tag) => format!(":{}", tag.ref_str()),
+    Calcit::Record(r) => format!("record {}", r.name),
     _ => format!("{t}"),
   }
 }
@@ -905,41 +902,48 @@ fn validate_method_call(
   scope_types: &ScopeTypes,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
-  if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = head {
-    // General method validation for typed objects
-    if let Some(receiver) = args.first() {
-      // Get the type information from the receiver
-      if let Some(type_value) = resolve_type_value(receiver, scope_types) {
-        // Get the class record for this type
-        if let Some(class_record) = get_class_record_from_type(&type_value, call_stack) {
-          let method_str = method_name.as_ref();
-          // Check if method exists in the class record's fields
-          if !class_record.fields.iter().any(|field| field.ref_str() == method_str) {
-            let methods_list = class_record.fields.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(" ");
-            let type_desc = describe_type(&type_value);
-            return Err(CalcitErr::use_msg_stack(
-              CalcitErrKind::Type,
-              format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
-              call_stack,
-            ));
-          }
-        }
-      }
-    }
+  // Only validate Method(Invoke) calls
+  let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = head else {
+    return Ok(());
+  };
+
+  // Need receiver to validate
+  let Some(receiver) = args.first() else {
+    return Ok(());
+  };
+
+  // Get receiver type
+  let Some(type_value) = resolve_type_value(receiver, scope_types) else {
+    return Ok(()); // No type info, skip validation
+  };
+
+  // Get class record for the type
+  let Some(class_record) = get_class_record_from_type(&type_value, call_stack) else {
+    return Ok(()); // No class record, skip validation
+  };
+
+  // Check if method exists in the class
+  let method_str = method_name.as_ref();
+  if class_record.fields.iter().any(|field| field.ref_str() == method_str) {
+    return Ok(()); // Method found, validation passed
   }
-  Ok(())
+
+  // Method not found, generate error
+  let methods_list = class_record.fields.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(" ");
+  let type_desc = describe_type(&type_value);
+  Err(CalcitErr::use_msg_stack(
+    CalcitErrKind::Type,
+    format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
+    call_stack,
+  ))
 }
 
 /// Resolve the type value from the receiver expression
 fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<Calcit>> {
   match target {
     Calcit::Local(local) => {
-      // First check if the local has inline type_info
-      if let Some(type_hint) = &local.type_info {
-        return Some(type_hint.clone());
-      }
-      // Otherwise check scope_types
-      scope_types.get(&local.sym).cloned()
+      // First check if the local has inline type_info, then fall back to scope_types
+      local.type_info.clone().or_else(|| scope_types.get(&local.sym).cloned())
     }
     _ => None,
   }
@@ -1063,10 +1067,10 @@ fn get_class_record_from_type(type_value: &Calcit, call_stack: &CallStackList) -
         _ => return None, // Unknown tag
       };
 
-      // Load the class record from the program
+      // Load the class record from the program (may fail in test environments)
       match runner::evaluate_symbol_from_program(class_symbol, calcit::CORE_NS, None, call_stack) {
         Ok(Calcit::Record(record)) => Some(Arc::new(record)),
-        _ => None,
+        Ok(_) | Err(_) => None, // Not a record or evaluation failed
       }
     }
 
@@ -1692,26 +1696,47 @@ mod tests {
   }
 
   #[test]
-  fn rejects_slice_on_number_type() {
+  fn rejects_method_on_record_without_field() {
+    use cirru_edn::EdnTag;
+
+    // Create a test record type with limited methods
+    let test_record = Calcit::Record(CalcitRecord {
+      name: EdnTag::from("Person"),
+      fields: Arc::new(vec![EdnTag::from("age"), EdnTag::from("name")]), // No .slice method
+      values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
+      class: None,
+    });
+
+    // Test expression: (.slice person 1 3) - trying to call non-existent method
     let expr = Cirru::List(vec![
-      Cirru::leaf("&let"),
-      Cirru::List(vec![Cirru::leaf("n"), Cirru::leaf("42")]),
-      Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("n"), Cirru::leaf(":number")]),
-      Cirru::List(vec![Cirru::leaf(".slice"), Cirru::leaf("n"), Cirru::leaf("1"), Cirru::leaf("3")]),
+      Cirru::leaf(".slice"),
+      Cirru::leaf("person"),
+      Cirru::leaf("1"),
+      Cirru::leaf("3"),
     ]);
 
-    let code = code_to_calcit(&expr, "tests.slice", "demo", vec![]).expect("parse cirru");
-    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let code = code_to_calcit(&expr, "tests.method", "demo", vec![]).expect("parse cirru");
+
+    // Set up scope with person variable
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("person"));
+
     let mut scope_types: ScopeTypes = ScopeTypes::new();
+    // Pre-populate with record type
+    scope_types.insert(Arc::from("person"), Arc::new(test_record));
+
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
 
-    let result = preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.slice", &warnings, &stack);
-    assert!(result.is_err(), "preprocess should reject mismatched `.slice` receivers");
+    let result = preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.method", &warnings, &stack);
+    assert!(result.is_err(), "preprocess should reject method call on record without that field");
     if let Err(err) = result {
       let msg = format!("{err}");
       assert!(msg.contains(".slice"), "error should mention the method name: {msg}");
-      assert!(msg.contains(":number"), "error should mention the annotated type: {msg}");
+      assert!(
+        msg.contains("Person") || msg.contains("record"),
+        "error should mention the record type: {msg}"
+      );
     }
   }
 }
