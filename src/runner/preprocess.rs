@@ -575,6 +575,14 @@ fn preprocess_list_call(
           check_proc_arg_types(proc, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         }
 
+        if !has_spread {
+          if let Some(call_head) = ys.first() {
+            if let Some(optimized_call) = try_inline_method_call(call_head, &processed_args, call_stack, file_ns) {
+              return Ok(optimized_call);
+            }
+          }
+        }
+
         if has_spread {
           ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, file_ns.into()));
           Ok(Calcit::from(CalcitList::List(ys)))
@@ -896,6 +904,68 @@ fn type_to_string(t: &Calcit) -> String {
   }
 }
 
+fn try_inline_method_call(head: &Calcit, args: &CalcitList, call_stack: &CallStackList, file_ns: &str) -> Option<Calcit> {
+  match head {
+    Calcit::Method(method_name, calcit::MethodKind::Invoke(Some(type_value))) => {
+      let type_ref = type_value.as_ref();
+      let class_record = get_class_record_from_type(type_ref, call_stack)?;
+      let method_entry = class_record.get(method_name.as_ref())?;
+
+      if let Some(callable_head) = pick_callable_from_method_entry(method_entry) {
+        return Some(build_inlined_call(callable_head, args));
+      }
+
+      if matches!(method_entry, Calcit::Fn { .. }) {
+        if let Some(record_ref) = build_record_reference(type_ref, file_ns) {
+          let record_get = build_record_get_callable(record_ref, method_name);
+          return Some(build_inlined_call(record_get, args));
+        }
+      }
+
+      None
+    }
+    _ => None,
+  }
+}
+
+fn pick_callable_from_method_entry(entry: &Calcit) -> Option<Calcit> {
+  match entry {
+    Calcit::Import(..) | Calcit::Proc(..) => Some(entry.to_owned()),
+    _ => None,
+  }
+}
+
+fn build_inlined_call(callable_head: Calcit, args: &CalcitList) -> Calcit {
+  let mut call_nodes: Vec<Calcit> = Vec::with_capacity(args.len() + 1);
+  call_nodes.push(callable_head);
+  for item in args.iter() {
+    call_nodes.push(item.to_owned());
+  }
+  Calcit::from(call_nodes)
+}
+
+fn build_record_get_callable(record_ref: Calcit, method_name: &Arc<str>) -> Calcit {
+  let record_proc = Calcit::Proc(CalcitProc::NativeRecordGet);
+  let method_tag = Calcit::Tag(cirru_edn::EdnTag::from(method_name.as_ref()));
+  Calcit::from(vec![record_proc, record_ref, method_tag])
+}
+
+fn build_record_reference(type_value: &Calcit, file_ns: &str) -> Option<Calcit> {
+  match type_value {
+    Calcit::Import(import) => Some(Calcit::Import(import.to_owned())),
+    Calcit::Tag(tag) => {
+      let class_symbol = core_class_symbol_from_tag(tag)?;
+      Some(Calcit::Import(CalcitImport {
+        ns: Arc::from(calcit::CORE_NS),
+        def: Arc::from(class_symbol),
+        info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
+        coord: program::tip_coord(calcit::CORE_NS, class_symbol),
+      }))
+    }
+    _ => None,
+  }
+}
+
 fn validate_method_call(
   head: &Calcit,
   args: &CalcitList,
@@ -1055,26 +1125,35 @@ fn get_class_record_from_type(type_value: &Calcit, call_stack: &CallStackList) -
 
     // Case 2: Tag type, map to core class
     Calcit::Tag(tag) => {
-      let type_name = tag.ref_str().trim_start_matches(':');
-      let class_symbol = match type_name {
-        "list" => "&core-list-class",
-        "string" => "&core-string-class",
-        "map" => "&core-map-class",
-        "set" => "&core-set-class",
-        "number" => "&core-number-class",
-        "nil" => "&core-nil-class",
-        "fn" => "&core-fn-class",
-        _ => return None, // Unknown tag
-      };
+      let class_symbol = core_class_symbol_from_tag(tag)?;
 
-      // Load the class record from the program (may fail in test environments)
       match runner::evaluate_symbol_from_program(class_symbol, calcit::CORE_NS, None, call_stack) {
         Ok(Calcit::Record(record)) => Some(Arc::new(record)),
-        Ok(_) | Err(_) => None, // Not a record or evaluation failed
+        Ok(_) | Err(_) => None,
       }
     }
 
-    // Case 3: Other types, no class available
+    // Case 3: Import pointing to a record definition
+    Calcit::Import(import) => match runner::evaluate_symbol_from_program(&import.def, &import.ns, None, call_stack) {
+      Ok(Calcit::Record(record)) => Some(Arc::new(record)),
+      Ok(_) | Err(_) => None,
+    },
+
+    // Case 4: Other types, no class available
+    _ => None,
+  }
+}
+
+fn core_class_symbol_from_tag(tag: &cirru_edn::EdnTag) -> Option<&'static str> {
+  let type_name = tag.ref_str().trim_start_matches(':');
+  match type_name {
+    "list" => Some("&core-list-class"),
+    "string" => Some("&core-string-class"),
+    "map" => Some("&core-map-class"),
+    "set" => Some("&core-set-class"),
+    "number" => Some("&core-number-class"),
+    "nil" => Some("&core-nil-class"),
+    "fn" => Some("&core-fn-class"),
     _ => None,
   }
 }
@@ -1451,7 +1530,7 @@ pub fn preprocess_asset_type(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::CalcitRecord;
+  use crate::calcit::{CalcitFn, CalcitFnArgs, CalcitRecord, CalcitScope};
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
 
@@ -1598,7 +1677,6 @@ mod tests {
     // Should have a warning about invalid field
     let warnings_vec = warnings.borrow();
     assert!(!warnings_vec.is_empty(), "should have warning for invalid field");
-
     let warning_msg = warnings_vec[0].to_string();
     assert!(
       warning_msg.contains("email"),
@@ -1608,6 +1686,128 @@ mod tests {
       warning_msg.contains("Person"),
       "warning should mention the record type: {warning_msg}"
     );
+  }
+
+  #[test]
+  fn rewrites_method_call_when_class_and_method_are_known() {
+    use cirru_edn::EdnTag;
+
+    let expr = Cirru::List(vec![Cirru::leaf(".greet"), Cirru::leaf("user")]);
+    let code = code_to_calcit(&expr, "tests.method", "demo", vec![]).expect("parse cirru");
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("user"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+
+    let method_import = Calcit::Import(CalcitImport {
+      ns: Arc::from("tests.method.ns"),
+      def: Arc::from("greet"),
+      info: Arc::new(ImportInfo::SameFile { at_def: Arc::from("demo") }),
+      coord: None,
+    });
+
+    let class_record = CalcitRecord {
+      name: EdnTag::from("Greeter"),
+      fields: Arc::new(vec![EdnTag::from("greet")]),
+      values: Arc::new(vec![method_import.clone()]),
+      class: None,
+    };
+    scope_types.insert(Arc::from("user"), Arc::new(Calcit::Record(class_record)));
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.method", &warnings, &stack).expect("preprocess method call");
+
+    let nodes = match resolved {
+      Calcit::List(xs) => xs.to_vec(),
+      other => panic!("expected list form, got {other}"),
+    };
+
+    assert!(
+      matches!(nodes.first(), Some(Calcit::Import(_))),
+      "method head should be rewritten to import"
+    );
+    assert_eq!(nodes.len(), 2, "call should keep receiver argument");
+  }
+
+  #[test]
+  fn rewrites_method_call_with_fn_entry_via_record_get() {
+    use cirru_edn::EdnTag;
+
+    let expr = Cirru::List(vec![Cirru::leaf(".greet"), Cirru::leaf("user")]);
+    let code = code_to_calcit(&expr, "tests.method", "demo", vec![]).expect("parse cirru");
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("user"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+
+    let fn_info = Arc::new(CalcitFn {
+      name: Arc::from("greet"),
+      def_ns: Arc::from("tests.method.ns"),
+      scope: Arc::new(CalcitScope::default()),
+      args: Arc::new(CalcitFnArgs::Args(vec![])),
+      body: vec![],
+      return_type: None,
+      arg_types: vec![],
+    });
+    let method_fn = Calcit::Fn {
+      id: Arc::from("tests.method.ns/greet"),
+      info: fn_info,
+    };
+
+    let class_record = CalcitRecord {
+      name: EdnTag::from("Greeter"),
+      fields: Arc::new(vec![EdnTag::from("greet")]),
+      values: Arc::new(vec![method_fn.clone()]),
+      class: None,
+    };
+
+    let record_ns = "tests.method.class";
+    let record_def = "&test-greeter-class";
+    program::write_evaled_def(record_ns, record_def, Calcit::Record(class_record)).expect("register record class");
+
+    let record_import = Calcit::Import(CalcitImport {
+      ns: Arc::from(record_ns),
+      def: Arc::from(record_def),
+      info: Arc::new(ImportInfo::SameFile { at_def: Arc::from("demo") }),
+      coord: None,
+    });
+    scope_types.insert(Arc::from("user"), Arc::new(record_import));
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.method", &warnings, &stack).expect("preprocess method call");
+
+    let nodes = match resolved {
+      Calcit::List(xs) => xs.to_vec(),
+      other => panic!("expected list form, got {other}"),
+    };
+    assert_eq!(nodes.len(), 2, "call should include head and receiver arg");
+
+    let head_nodes = match nodes.first() {
+      Some(Calcit::List(xs)) => xs.to_vec(),
+      other => panic!("expected fallback head to be a list, got {other:?}"),
+    };
+    assert_eq!(head_nodes.len(), 3, "record-get form should include proc, record ref, and tag");
+    assert!(
+      matches!(head_nodes.first(), Some(Calcit::Proc(CalcitProc::NativeRecordGet))),
+      "head should call &record:get"
+    );
+    match head_nodes.get(1) {
+      Some(Calcit::Import(import)) => {
+        assert_eq!(&*import.ns, record_ns, "record reference should target injected namespace");
+        assert_eq!(&*import.def, record_def, "record reference should target injected definition");
+      }
+      other => panic!("expected record reference import, got {other:?}"),
+    }
+    match head_nodes.get(2) {
+      Some(Calcit::Tag(tag)) => assert_eq!(tag, &EdnTag::from("greet")),
+      other => panic!("expected method tag, got {other:?}"),
+    };
   }
 
   #[test]
