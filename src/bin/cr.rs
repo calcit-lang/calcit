@@ -56,6 +56,7 @@ fn main() -> Result<(), String> {
   }
 
   let mut eval_once = cli_args.once;
+  let is_eval_mode = matches!(&cli_args.subcommand, Some(CalcitCommand::Eval(_)));
   let assets_watch = cli_args.watch_dir.to_owned();
 
   println!("{}", format!("calcit version: {}", cli_args::CALCIT_VERSION).dimmed());
@@ -182,6 +183,10 @@ fn main() -> Result<(), String> {
 
   if check_only {
     eval_once = true;
+  }
+
+  if is_eval_mode && !check_only {
+    run_check_only(&entries)?;
   }
 
   let task = if check_only {
@@ -433,6 +438,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   if !warnings.is_empty() {
     println!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
     LocatedWarning::print_list(&warnings);
+    return Err(format!("Found {} warnings during preprocessing", warnings.len()));
   }
 
   let duration = Instant::now().duration_since(started_time);

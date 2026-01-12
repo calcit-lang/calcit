@@ -2727,7 +2727,7 @@
           :code $ quote &runtime-inplementation
         |&merge $ %{} :CodeEntry (:doc "|internal function for merging maps\nSyntax: (&merge map1 map2 & maps)\nParams: map1 (map), map2 (map), maps (map, variadic)\nReturns: map\nMerges multiple maps, later values override earlier ones")
           :code $ quote &runtime-inplementation
-        |to-pairs $ %{} :CodeEntry (:doc "|internal function for converting to pairs\nSyntax: (to-pairs map)\nParams: map (map)\nReturns: list\nConverts map to list of [key value] pairs")
+        |to-pairs $ %{} :CodeEntry (:doc "|internal function for converting to pairs\nSyntax: (to-pairs map)\nParams: map (map)\nReturns: set\nConverts map to an unordered set of [key value] pairs")
           :code $ quote &runtime-inplementation
         |&merge-non-nil $ %{} :CodeEntry (:doc "|internal function for merging non-nil values\nSyntax: (&merge-non-nil map1 map2 & maps)\nParams: map1 (map), map2 (map), maps (map, variadic)\nReturns: map\nMerges maps, skipping nil values")
           :code $ quote &runtime-inplementation

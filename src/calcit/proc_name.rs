@@ -645,7 +645,11 @@ impl CalcitProc {
         return_type: Some(Arc::new(Calcit::tag("map"))),
         arg_types: vec![Some(Arc::new(Calcit::tag("map"))), Some(Arc::new(Calcit::tag("map")))],
       }),
-      ToPairs | NativeMapToList => Some(ProcTypeSignature {
+      ToPairs => Some(ProcTypeSignature {
+        return_type: Some(Arc::new(Calcit::tag("set"))),
+        arg_types: vec![Some(Arc::new(Calcit::tag("map")))],
+      }),
+      NativeMapToList => Some(ProcTypeSignature {
         return_type: Some(Arc::new(Calcit::tag("list"))),
         arg_types: vec![Some(Arc::new(Calcit::tag("map")))],
       }),

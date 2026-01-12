@@ -1,7 +1,7 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
+    self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
     CalcitRecord, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, GENERATED_DEF, ImportInfo, LocatedWarning,
     NodeLocation, RawCodeType,
   },
@@ -403,6 +403,10 @@ fn preprocess_list_call(
         ys = ys.push(form);
         Ok(())
       })?;
+      if !has_spread {
+        let processed_args = CalcitList::from(ys.drop_left());
+        check_core_fn_arg_types(info.as_ref(), &processed_args, scope_types, file_ns, &def_name, check_warnings);
+      }
       if has_spread {
         ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, info.def_ns.to_owned()));
         Ok(Calcit::from(CalcitList::from(ys)))
@@ -856,13 +860,7 @@ fn check_proc_arg_types(
       continue; // No type constraint for this argument
     };
 
-    // Try to resolve the actual type of the argument
-    let actual_type_opt = match arg {
-      Calcit::Local(CalcitLocal { sym, .. }) => scope_types.get(sym).cloned(),
-      _ => None, // Can't check non-local expressions yet
-    };
-
-    if let Some(actual_type) = actual_type_opt {
+    if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       // Compare types
       if !types_match(&actual_type, expected_type) {
         let expected_str = type_to_string(expected_type);
@@ -871,6 +869,43 @@ fn check_proc_arg_types(
           format!(
             "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
             proc.as_ref(),
+            idx + 1
+          ),
+          file_ns,
+          check_warnings,
+        );
+      }
+    }
+  }
+}
+
+fn check_core_fn_arg_types(
+  fn_info: &CalcitFn,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if fn_info.def_ns.as_ref() != calcit::CORE_NS {
+    return;
+  }
+
+  let needs_number_args = matches!(fn_info.name.as_ref(), "+" | "-" | "*" | "/");
+  if !needs_number_args {
+    return;
+  }
+
+  let expected_type = Calcit::tag("number");
+
+  for (idx, arg) in args.iter().enumerate() {
+    if let Some(actual_type) = resolve_type_value(arg, scope_types) {
+      if !types_match(actual_type.as_ref(), &expected_type) {
+        let actual_str = type_to_string(actual_type.as_ref());
+        gen_check_warning(
+          format!(
+            "[Warn] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+            fn_info.name,
             idx + 1
           ),
           file_ns,
@@ -1015,7 +1050,8 @@ fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
       // First check if the local has inline type_info, then fall back to scope_types
       local.type_info.clone().or_else(|| scope_types.get(&local.sym).cloned())
     }
-    _ => None,
+    Calcit::Symbol { sym, .. } => scope_types.get(sym).cloned().or_else(|| infer_type_from_expr(target)),
+    _ => infer_type_from_expr(target),
   }
 }
 
@@ -1033,6 +1069,7 @@ fn infer_type_from_expr(expr: &Calcit) -> Option<Arc<Calcit>> {
     Calcit::Str(_) => Some(Arc::new(Calcit::tag("string"))),
     Calcit::Bool(_) => Some(Arc::new(Calcit::tag("bool"))),
     Calcit::Nil => Some(Arc::new(Calcit::tag("nil"))),
+    Calcit::Tag(_) => Some(Arc::new(Calcit::tag("tag"))),
 
     // Local variable: read type_info
     Calcit::Local(local) => local.type_info.clone(),
