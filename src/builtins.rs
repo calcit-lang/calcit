@@ -97,6 +97,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     ParseCirru => meta::parse_cirru(args),
     ParseCirruList => meta::parse_cirru_list(args),
     FormatCirru => meta::format_cirru(args),
+    FormatCirruOneLiner => meta::format_cirru_one_liner(args),
     ParseCirruEdn => meta::parse_cirru_edn(args),
     FormatCirruEdn => meta::format_cirru_edn(args),
     NativeCirruQuoteToList => meta::cirru_quote_to_list(args),

@@ -222,6 +222,25 @@ pub fn format_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn format_cirru_one_liner(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  match xs.first() {
+    Some(a) => match cirru::calcit_data_to_cirru(a) {
+      Ok(v) => {
+        // Format the expression directly
+        match cirru_parser::format_expr_one_liner(&v) {
+          Ok(s) => Ok(Calcit::Str(s.into())),
+          Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("format-cirru-one-liner failed: {e}")),
+        }
+      }
+      Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("format-cirru-one-liner failed: {e}")),
+    },
+    None => CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      "format-cirru-one-liner expected 1 argument, but received none",
+    ),
+  }
+}
+
 pub fn parse_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Str(s)) => match cirru_edn::parse(s) {

@@ -82,6 +82,8 @@ pub enum CalcitProc {
   ParseCirruList,
   #[strum(serialize = "format-cirru")]
   FormatCirru,
+  #[strum(serialize = "format-cirru-one-liner")]
+  FormatCirruOneLiner,
   #[strum(serialize = "parse-cirru-edn")]
   ParseCirruEdn,
   #[strum(serialize = "format-cirru-edn")]
@@ -459,7 +461,7 @@ impl CalcitProc {
       // === String operations ===
       NativeStrConcat => Some(ProcTypeSignature {
         return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string"))), Some(Arc::new(Calcit::tag("string")))],
+        arg_types: vec![None, None],
       }),
       Trim => Some(ProcTypeSignature {
         return_type: Some(Arc::new(Calcit::tag("string"))),
@@ -483,7 +485,7 @@ impl CalcitProc {
       }),
       StartsWith | EndsWith => Some(ProcTypeSignature {
         return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string"))), Some(Arc::new(Calcit::tag("string")))],
+        arg_types: vec![None, None],
       }),
       GetCharCode => Some(ProcTypeSignature {
         return_type: Some(Arc::new(Calcit::tag("number"))),
@@ -843,7 +845,7 @@ impl CalcitProc {
         return_type: None,
         arg_types: vec![Some(Arc::new(Calcit::tag("string"))), Some(Arc::new(Calcit::tag("&")))],
       }),
-      FormatCirru | FormatCirruEdn => Some(ProcTypeSignature {
+      FormatCirru | FormatCirruEdn | FormatCirruOneLiner => Some(ProcTypeSignature {
         return_type: Some(Arc::new(Calcit::tag("string"))),
         arg_types: vec![None],
       }),
