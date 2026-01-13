@@ -1477,7 +1477,7 @@
         |keys $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn keys (x)
-              hint-fn $ return-type :list
+              hint-fn $ return-type :set
               map (to-pairs x) &list:first
         |keys-non-nil $ %{} :CodeEntry (:doc "|Get keys from a map that have non-nil values")
           :code $ quote
@@ -2261,7 +2261,7 @@
         |vals $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn vals (x)
-              hint-fn $ return-type :list
+              hint-fn $ return-type :set
               map (to-pairs x) last
           :examples $ []
             quote $ assert= ([] 1 2) $ vals ({} (:a 1) (:b 2))
