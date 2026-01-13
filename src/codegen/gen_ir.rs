@@ -10,6 +10,70 @@ use crate::calcit::{
 };
 use crate::program;
 
+/// Extract type information from a Calcit definition for IR output
+/// Returns Edn representation of the type
+fn extract_import_type_info(ns: &str, def: &str) -> Edn {
+  match program::lookup_evaled_def(ns, def) {
+    Some(Calcit::Fn { info, .. }) => {
+      // For functions: (:: :fn ([] :t1 :t2 ...) :ret)
+      let mut arg_types = EdnListView::default();
+      for opt_t in &info.arg_types {
+        match opt_t {
+          Some(t) => arg_types.push(dump_type_annotation(t)),
+          None => arg_types.push(Edn::Nil),
+        }
+      }
+
+      let return_type = match &info.return_type {
+        Some(t) => dump_type_annotation(t),
+        None => Edn::Nil,
+      };
+
+      Edn::tuple(Edn::tag("fn"), vec![arg_types.into(), return_type])
+    }
+    Some(Calcit::Proc(name)) => {
+      // For proc (builtin functions), extract type signature
+      if let Some(type_sig) = name.get_type_signature() {
+        let mut arg_types = EdnListView::default();
+        for opt_t in &type_sig.arg_types {
+          match opt_t {
+            Some(t) => arg_types.push(dump_type_annotation(t)),
+            None => arg_types.push(Edn::Nil),
+          }
+        }
+
+        let return_type = match &type_sig.return_type {
+          Some(t) => dump_type_annotation(t),
+          None => Edn::Nil,
+        };
+
+        Edn::tuple(Edn::tag("fn"), vec![arg_types.into(), return_type])
+      } else {
+        Edn::Nil
+      }
+    }
+    // For other values, output their type
+    Some(value) => {
+      // Simple type tag based on value kind
+      match value {
+        Calcit::Nil => Edn::tag("nil"),
+        Calcit::Bool(_) => Edn::tag("bool"),
+        Calcit::Number(_) => Edn::tag("number"),
+        Calcit::Str(_) => Edn::tag("string"),
+        Calcit::Tag(_) => Edn::tag("keyword"),
+        Calcit::List(_) => Edn::tag("list"),
+        Calcit::Map(_) => Edn::tag("map"),
+        Calcit::Set(_) => Edn::tag("set"),
+        Calcit::Record { .. } => Edn::tag("record"),
+        Calcit::Tuple { .. } => Edn::tag("tuple"),
+        Calcit::Ref(_, _) => Edn::tag("ref"),
+        _ => Edn::Nil,
+      }
+    }
+    None => Edn::Nil,
+  }
+}
+
 #[derive(Debug)]
 struct IrDataFile {
   defs: HashMap<Arc<str>, Edn>,
@@ -125,6 +189,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       (Edn::tag("kind"), Edn::tag("import")),
       (Edn::tag("ns"), Edn::Str((**ns).into())),
       (Edn::tag("def"), Edn::Str((**def).into())),
+      (Edn::tag("type-hint"), extract_import_type_info(ns, def)),
       (
         Edn::tag("info"),
         match &**info {

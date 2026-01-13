@@ -18,6 +18,9 @@ use strum::ParseError;
 
 type ScopeTypes = HashMap<Arc<str>, Arc<Calcit>>;
 
+/// Extract type information from a Calcit definition
+/// For functions: returns a tuple with :Fn tag containing (return_type, [arg_types...])
+/// For other values: returns the value's type annotation if available
 /// Context for preprocessing operations, bundled to avoid too many parameters
 pub struct PreprocessContext<'a> {
   scope_defs: &'a HashSet<Arc<str>>,
@@ -1107,7 +1110,22 @@ fn infer_type_from_expr(expr: &Calcit) -> Option<Arc<Calcit>> {
 
         // Import: could be a function, try to get its return type
         Calcit::Import(CalcitImport { ns, def, .. }) => {
-          // Try to lookup the function definition and get its return_type
+          // First check evaled definition (for Proc/Fn that have been evaluated)
+          if let Some(evaled) = program::lookup_evaled_def(ns, def) {
+            match evaled {
+              // For compiled functions, get return_type from info
+              Calcit::Fn { info, .. } => return info.return_type.clone(),
+              // For builtin procs, get type signature
+              Calcit::Proc(proc) => {
+                if let Some(type_sig) = proc.get_type_signature() {
+                  return type_sig.return_type.clone();
+                }
+              }
+              _ => {}
+            }
+          }
+
+          // Fallback: check code definition (for not-yet-evaluated definitions)
           if let Some(code) = program::lookup_def_code(ns, def) {
             // Code is the AST, might be a defn with return type annotation
             // Format: (defn name (args) :return-type body) or (defn name (args) body)
@@ -1125,7 +1143,7 @@ fn infer_type_from_expr(expr: &Calcit) -> Option<Arc<Calcit>> {
                 }
               }
             }
-            // For compiled functions (Calcit::Fn), get return_type from info
+            // For compiled functions in code, get return_type from info
             if let Calcit::Fn { info, .. } = code {
               return info.return_type.clone();
             }

@@ -50,7 +50,10 @@ Calcit 程序使用 `cr` 命令：
   - 用于 CI/CD 或快速验证代码修改
 - `cr js -1` - 检查代码正确性，生成 JavaScript(不进入监听模式)
 - `cr js --check-only` - 检查代码正确性，不生成 JavaScript
-- `cr eval '<code>'` - 执行一段 Calcit 代码片段，用于快速验证写法
+- `cr eval '<code>' [--dep <module>...]` - 执行一段 Calcit 代码片段，用于快速验证写法
+  - `--dep` 参数可以加载 `~/.config/calcit/modules/` 中的模块（直接使用模块名）
+  - 示例：`cr eval 'echo 1' --dep calcit.std`
+  - 可多次使用 `--dep` 加载多个模块
 
 ### 查询子命令 (`cr query`)
 
@@ -78,7 +81,7 @@ Calcit 程序使用 `cr` 命令：
 - `cr query pkg` - 获取项目包名
 - `cr query config` - 读取项目配置（init_fn, reload_fn, version）
 - `cr query error` - 读取 .calcit-error.cirru 错误堆栈文件
-- `cr query modules` - 列出项目模块
+- `cr query modules` - 列出项目依赖的模块（来自 compact.cirru 配置）
 
 **渐进式代码探索（Progressive Disclosure）：**
 
@@ -190,6 +193,16 @@ Calcit 程序使用 `cr` 命令：
   - 递归扫描子目录
   - 显示相对路径列表
 - `caps` - 安装/更新依赖
+
+**查看已安装模块：**
+
+```bash
+# 列出 ~/.config/calcit/modules/ 下所有已安装的模块
+ls ~/.config/calcit/modules/
+
+# 查看当前项目配置的模块依赖
+cr query modules
+```
 
 ### 精细代码树操作 (`cr tree`)
 
@@ -395,6 +408,36 @@ send-event! $ [] :clipboard/read text
 ; ✅ 正确：用 tuple
 send-event! $ :: :clipboard/read text
 ```
+
+### 类型标注与检查
+
+Calcit 支持可选的类型标注，用于开发时的类型检查。
+
+#### 函数参数类型 (`assert-type`)
+
+```cirru
+defn calculate-total (items discount)
+  assert-type items :list
+  assert-type discount :number
+  ; let 绑定中的变量会自动推断类型
+  let
+      sum $ foldl items 0 &+
+    * sum $ - 1 discount
+```
+
+#### 函数返回类型 (`hint-fn`)
+
+```cirru
+defn add-numbers (a b)
+  assert-type a :number
+  assert-type b :number
+  hint-fn $ return-type :number
+  &+ a b
+```
+
+**常见类型：** `:number` `:string` `:bool` `:list` `:map` `:set` `:tuple` `:keyword` `:nil`
+
+**验证类型：** `cr --check-only` 或 `cr ir -1` 查看 IR 中的类型信息
 
 ### 其他易错点
 
@@ -688,6 +731,22 @@ cr -1 js  # 或 cr -1（解释执行模式）
 **批量修改提示：** 命令会自动检测多匹配场景，显示从大到小的路径排序和重要警告。
 
 **增量更新优势：** 快速反馈、保持 watcher 运行、精确控制变更范围（详见"增量触发更新"章节）
+
+### 5. Shell 特殊字符转义 ⭐⭐
+
+Calcit 函数名中的 `?`, `->`, `!` 等字符在 bash/zsh 中有特殊含义，需要用单引号包裹：
+
+```bash
+# ❌ 错误
+cr query def app.main/valid?
+cr eval -> x (+ 1) (* 2)
+
+# ✅ 正确
+cr query def 'app.main/valid?'
+cr eval 'thread-first x (+ 1) (* 2)'  # 用 thread-first 代替 ->
+```
+
+**建议：** 命令行中优先使用英文名称（`thread-first` 而非 `->`），更清晰且无需转义。
 
 ---
 
