@@ -11,7 +11,7 @@ use crate::builtins;
 use crate::builtins::meta::NS_SYMBOL_DICT;
 use crate::calcit::{
   self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax,
-  LocatedWarning,
+  CalcitTypeAnnotation, LocatedWarning,
 };
 use crate::calcit::{Calcit, CalcitErr, CalcitScope, gen_core_id};
 use crate::call_stack::CallStackList;
@@ -22,16 +22,18 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
     (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => {
       let body_items = expr.skip(2)?.to_vec();
       let return_type = detect_return_type_hint(&body_items);
+      let parsed_args = get_raw_args_fn(xs)?;
+      let arg_types = parsed_args.empty_arg_types();
       Ok(Calcit::Fn {
         id: gen_core_id(),
         info: Arc::new(CalcitFn {
           name: s.to_owned(),
           def_ns: Arc::from(file_ns),
           scope: Arc::new(scope.to_owned()),
-          args: Arc::new(get_raw_args_fn(xs)?),
+          args: Arc::new(parsed_args),
           body: body_items,
           return_type,
-          arg_types: vec![],
+          arg_types,
         }),
       })
     }
@@ -71,7 +73,7 @@ pub fn defmacro(expr: &CalcitList, _scope: &CalcitScope, def_ns: &str) -> Result
   }
 }
 
-fn detect_return_type_hint(forms: &[Calcit]) -> Option<Arc<Calcit>> {
+fn detect_return_type_hint(forms: &[Calcit]) -> Option<Arc<CalcitTypeAnnotation>> {
   for form in forms {
     if let Some(hint) = extract_return_type_from_hint(form) {
       return Some(hint);
@@ -80,7 +82,7 @@ fn detect_return_type_hint(forms: &[Calcit]) -> Option<Arc<Calcit>> {
   None
 }
 
-fn extract_return_type_from_hint(form: &Calcit) -> Option<Arc<Calcit>> {
+fn extract_return_type_from_hint(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
   let list = match form {
     Calcit::List(xs) => xs,
     _ => return None,
@@ -96,14 +98,14 @@ fn extract_return_type_from_hint(form: &Calcit) -> Option<Arc<Calcit>> {
   }
 }
 
-fn extract_return_type_from_args(args: &CalcitList) -> Option<Arc<Calcit>> {
+fn extract_return_type_from_args(args: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
   let items = args.to_vec();
   let mut idx = 0;
   while idx < items.len() {
     match &items[idx] {
       Calcit::Symbol { sym, .. } if &**sym == "return-type" => {
         if let Some(type_expr) = items.get(idx + 1) {
-          return Some(Arc::new(type_expr.to_owned()));
+          return Some(Arc::new(CalcitTypeAnnotation::from_calcit(type_expr)));
         }
       }
       Calcit::List(inner) => {
@@ -131,7 +133,7 @@ mod tests {
     let hint_form = make_hint_form(ns, vec![ret_sym, type_expr.to_owned()]);
 
     let detected = detect_return_type_hint(&[hint_form]).expect("return type expected");
-    assert!(matches!(detected.as_ref(), Calcit::Tag(_)), "should capture tag type");
+    assert!(matches!(detected.as_ref(), CalcitTypeAnnotation::Tag(_)), "should capture tag type");
   }
 
   #[test]
@@ -164,7 +166,9 @@ mod tests {
     match resolved {
       Calcit::Fn { info, .. } => {
         assert!(info.return_type.is_some(), "return type should be stored");
-        assert!(matches!(info.return_type.as_ref().unwrap().as_ref(), Calcit::Tag(_)));
+        assert!(matches!(info.return_type.as_ref().unwrap().as_ref(), CalcitTypeAnnotation::Tag(_)));
+        assert_eq!(info.arg_types.len(), 1, "single parameter function should track one arg type slot");
+        assert!(info.arg_types.iter().all(|slot| slot.is_none()));
       }
       other => panic!("expected function, got {other}"),
     }

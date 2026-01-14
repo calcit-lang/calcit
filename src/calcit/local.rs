@@ -5,7 +5,7 @@ use crate::program::EntryBook;
 /// names for local variables
 static LOCAL_NAMES: LazyLock<RwLock<EntryBook<()>>> = LazyLock::new(|| RwLock::new(EntryBook::default()));
 
-use super::{Calcit, CalcitSymbolInfo};
+use super::{CalcitSymbolInfo, CalcitTypeAnnotation};
 
 #[derive(Debug, Clone)]
 pub struct CalcitLocal {
@@ -15,7 +15,7 @@ pub struct CalcitLocal {
   pub info: Arc<CalcitSymbolInfo>,
   pub location: Option<Arc<Vec<u16>>>,
   /// optional type annotation gathered during preprocessing
-  pub type_info: Option<Arc<Calcit>>,
+  pub type_info: Option<Arc<CalcitTypeAnnotation>>,
 }
 
 impl CalcitLocal {
@@ -73,7 +73,7 @@ mod tests {
       at_ns: Arc::from("tests.ns"),
       at_def: Arc::from("demo"),
     });
-    let type_hint = Arc::new(Calcit::tag("sample/type"));
+    let type_hint = Arc::new(CalcitTypeAnnotation::from_tag_name("sample/type"));
     let local = CalcitLocal {
       idx: 0,
       sym: Arc::from("typed-var"),
@@ -81,9 +81,11 @@ mod tests {
       location: None,
       type_info: Some(type_hint),
     };
-    match local.type_info.as_deref() {
-      Some(Calcit::Tag(t)) => assert_eq!(t, &EdnTag::from("sample/type")),
-      other => panic!("unexpected type info: {other:?}"),
-    }
+    let stored_tag = local
+      .type_info
+      .as_ref()
+      .and_then(|ann| ann.as_tag())
+      .expect("tag annotation should be stored");
+    assert_eq!(stored_tag, &EdnTag::from("sample/type"));
   }
 }

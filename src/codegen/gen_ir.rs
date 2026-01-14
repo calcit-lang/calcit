@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -6,72 +7,53 @@ use std::sync::Arc;
 use cirru_edn::{Edn, EdnListView, format};
 
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitLocal, CalcitRecord, CalcitTuple, ImportInfo, MethodKind,
+  Calcit, CalcitArgLabel, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitRecord, CalcitTuple,
+  CalcitTypeAnnotation, ImportInfo, MethodKind,
 };
 use crate::program;
+
+thread_local! {
+  static TYPE_INFO_STACK: RefCell<Vec<(Arc<str>, Arc<str>)>> = RefCell::new(vec![]);
+}
 
 /// Extract type information from a Calcit definition for IR output
 /// Returns Edn representation of the type
 fn extract_import_type_info(ns: &str, def: &str) -> Edn {
-  match program::lookup_evaled_def(ns, def) {
-    Some(Calcit::Fn { info, .. }) => {
-      // For functions: (:: :fn ([] :t1 :t2 ...) :ret)
-      let mut arg_types = EdnListView::default();
-      for opt_t in &info.arg_types {
-        match opt_t {
-          Some(t) => arg_types.push(dump_type_annotation(t)),
-          None => arg_types.push(Edn::Nil),
-        }
-      }
-
-      let return_type = match &info.return_type {
-        Some(t) => dump_type_annotation(t),
-        None => Edn::Nil,
-      };
-
-      Edn::tuple(Edn::tag("fn"), vec![arg_types.into(), return_type])
+  let mut should_short_circuit = false;
+  let mut pushed = false;
+  TYPE_INFO_STACK.with(|stack| {
+    let mut stack = stack.borrow_mut();
+    if stack.iter().any(|(ns0, def0)| ns0.as_ref() == ns && def0.as_ref() == def) {
+      should_short_circuit = true;
+    } else {
+      stack.push((Arc::from(ns), Arc::from(def)));
+      pushed = true;
     }
-    Some(Calcit::Proc(name)) => {
-      // For proc (builtin functions), extract type signature
-      if let Some(type_sig) = name.get_type_signature() {
-        let mut arg_types = EdnListView::default();
-        for opt_t in &type_sig.arg_types {
-          match opt_t {
-            Some(t) => arg_types.push(dump_type_annotation(t)),
-            None => arg_types.push(Edn::Nil),
-          }
-        }
+  });
 
-        let return_type = match &type_sig.return_type {
-          Some(t) => dump_type_annotation(t),
-          None => Edn::Nil,
-        };
+  if should_short_circuit {
+    return Edn::Nil;
+  }
 
-        Edn::tuple(Edn::tag("fn"), vec![arg_types.into(), return_type])
-      } else {
-        Edn::Nil
-      }
-    }
-    // For other values, output their type
+  let result = match program::lookup_evaled_def(ns, def) {
     Some(value) => {
-      // Simple type tag based on value kind
-      match value {
-        Calcit::Nil => Edn::tag("nil"),
-        Calcit::Bool(_) => Edn::tag("bool"),
-        Calcit::Number(_) => Edn::tag("number"),
-        Calcit::Str(_) => Edn::tag("string"),
-        Calcit::Tag(_) => Edn::tag("keyword"),
-        Calcit::List(_) => Edn::tag("list"),
-        Calcit::Map(_) => Edn::tag("map"),
-        Calcit::Set(_) => Edn::tag("set"),
-        Calcit::Record { .. } => Edn::tag("record"),
-        Calcit::Tuple { .. } => Edn::tag("tuple"),
-        Calcit::Ref(_, _) => Edn::tag("ref"),
-        _ => Edn::Nil,
+      let annotation = CalcitTypeAnnotation::from_calcit(&value);
+      match annotation {
+        CalcitTypeAnnotation::Dynamic => Edn::Nil,
+        _ => dump_type_annotation(&annotation),
       }
     }
     None => Edn::Nil,
+  };
+
+  if pushed {
+    TYPE_INFO_STACK.with(|stack| {
+      let mut stack = stack.borrow_mut();
+      let _ = stack.pop();
+    });
   }
+
+  result
 }
 
 #[derive(Debug)]
@@ -281,7 +263,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
         (Edn::tag("method"), Edn::Str(method.to_owned())),
       ];
       if let MethodKind::Invoke(Some(t)) = kind {
-        entries.push((Edn::tag("receiver-type"), dump_type_annotation(t)));
+        entries.push((Edn::tag("receiver-type"), dump_type_annotation(t.as_ref())));
       }
       Edn::map_from_iter(entries)
     }
@@ -329,14 +311,14 @@ fn dump_args_code(xs: &[CalcitArgLabel]) -> Edn {
   ys.into()
 }
 
-fn dump_optional_type_annotation(type_info: &Option<Arc<Calcit>>) -> Edn {
+fn dump_optional_type_annotation(type_info: &Option<Arc<CalcitTypeAnnotation>>) -> Edn {
   match type_info {
     Some(t) => dump_type_annotation(t),
     None => Edn::Nil,
   }
 }
 
-fn dump_type_list(xs: &[Option<Arc<Calcit>>]) -> Edn {
+fn dump_type_list(xs: &[Option<Arc<CalcitTypeAnnotation>>]) -> Edn {
   let mut view = EdnListView::default();
   for x in xs {
     view.push(match x {
@@ -347,12 +329,22 @@ fn dump_type_list(xs: &[Option<Arc<Calcit>>]) -> Edn {
   view.into()
 }
 
-fn dump_type_annotation(type_info: &Calcit) -> Edn {
+fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
   match type_info {
-    Calcit::Record(record) => dump_record_type_summary(record),
-    Calcit::Tuple(tuple) => dump_tuple_annotation(tuple),
-    other => dump_code(other),
+    CalcitTypeAnnotation::Record(record) => dump_record_type_summary(record.as_ref()),
+    CalcitTypeAnnotation::Tuple(tuple) => dump_tuple_annotation(tuple.as_ref()),
+    CalcitTypeAnnotation::Tag(tag) => Edn::Tag(tag.to_owned()),
+    CalcitTypeAnnotation::Function(signature) => dump_function_type_annotation(signature.as_ref()),
+    CalcitTypeAnnotation::Custom(value) => dump_code(value.as_ref()),
+    CalcitTypeAnnotation::Dynamic => Edn::Nil,
   }
+}
+
+fn dump_function_type_annotation(signature: &CalcitFnTypeAnnotation) -> Edn {
+  let mut entries = vec![(Edn::tag("type"), Edn::tag("fn"))];
+  entries.push((Edn::tag("args"), dump_type_list(&signature.arg_types)));
+  entries.push((Edn::tag("return"), dump_optional_type_annotation(&signature.return_type)));
+  Edn::map_from_iter(entries)
 }
 
 fn dump_tuple_code(tuple: &CalcitTuple) -> Edn {

@@ -60,7 +60,7 @@ scope_types.insert(Arc::from("user"), Arc::new(test_record));
 | 阶段 2：语法解析         | Cirru→Calcit 过程识别 `assert-type`、`hint-fn` 并保留 AST 注解                | `cr --check-only` 示例                    |
 | 阶段 3：类型传播         | `preprocess_*` 传递 `ScopeTypes` 并在 `Local` 中带上 `type_info`              | demo 函数 + `&inspect-type` helper        |
 | 阶段 4：Record 静态校验  | 校验 `Record` 字段、提供错误定位、覆盖 `&record:get`/`.-field`                | 合法/非法调用示例 + `cr query error` 输出 |
-| 阶段 5：运行时与内置函数 | `&inspect-type` 原语、内置函数签名、`unknown` 回退策略                        | 运行时示例 + 文档/测试                    |
+| 阶段 5：运行时与内置函数 | `&inspect-type` 原语、内置函数签名、`dynamic` 回退策略                        | 运行时示例 + 文档/测试                    |
 
 > 阶段 1~3 已交付；表格保留原路线，方便追踪阶段 4/5 的补完情况。
 

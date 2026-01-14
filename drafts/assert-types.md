@@ -7,7 +7,7 @@
 - 在宏展开后的 IR (Intermediate Representation) 中，为 `Local` 变量关联类型信息。
 - 支持 `assert-type` 和 `hint-fn` 语法进行函数参数、返回值类型标记。
 - 自动利用 `Record` 信息进行方法调用（Method Call）的静态验证。
-- 允许 `unknown` 类型，并提供运行时查看手段。
+- 允许 `dynamic` 类型，并提供运行时查看手段。
 - 为内置函数补充类型提示，保持向后兼容。
 
 ## 2. 技术方案建议
@@ -123,8 +123,8 @@ defn add-numbers (a b)
 
 #### 2.0.6 未标注类型的处理
 
-- 默认所有未标注的变量 `type_info` 为 `None`，对应 `unknown` 类型
-- `unknown` 类型不触发静态类型检查
+- 默认所有未标注的变量 `type_info` 为 `None`，对应 `dynamic` 类型
+- `dynamic` 类型不触发静态类型检查
 - 保持向后兼容：老代码无需修改即可运行
 
 #### 2.0.7 类型系统定位与范围
@@ -388,7 +388,7 @@ pub struct FnInfo {
 
 - `return_type`: 通过 `hint-fn $ return-type :type` 声明
 - `arg_types`: 通过 `assert-type arg :type` 在函数体内收集
-- 默认值为 `None`，表示 `unknown` 类型
+- 默认值为 `None`，表示 `dynamic` 类型
 
 ### 2.2 预处理器增强 (`preprocess.rs`)
 
@@ -430,7 +430,7 @@ pub struct FnInfo {
     - 逻辑运算：`not` - `bool -> bool`
     - 类型检查：`type-of` - `any -> tag`
   - 可以逐步扩展更多 Proc 的类型信息
-- **兼容性**：老代码保持 `type_info` 为 `None` (即 `unknown`)，不进行强校验。
+- **兼容性**：老代码保持 `type_info` 为 `None` (即 `dynamic`)，不进行强校验。
 
 ### 2.4 运行时支持
 

@@ -3,17 +3,21 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use crate::calcit::{Calcit, CalcitRecord};
+use crate::calcit::{Calcit, CalcitRecord, CalcitTypeAnnotation};
 
 #[derive(Debug, Clone)]
 pub struct EnumVariant {
   pub tag: EdnTag,
-  pub payload_types: Arc<Vec<Calcit>>,
+  pub payload_types: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
 }
 
 impl EnumVariant {
   pub fn arity(&self) -> usize {
     self.payload_types.len()
+  }
+
+  pub fn payload_types(&self) -> &[Arc<CalcitTypeAnnotation>] {
+    self.payload_types.as_ref()
   }
 }
 
@@ -87,12 +91,12 @@ impl CalcitEnum {
     Ok((variants, index))
   }
 
-  fn parse_payloads(value: &Calcit, tag: &EdnTag) -> Result<Vec<Calcit>, String> {
+  fn parse_payloads(value: &Calcit, tag: &EdnTag) -> Result<Vec<Arc<CalcitTypeAnnotation>>, String> {
     match value {
       Calcit::List(items) => {
-        let mut payloads: Vec<Calcit> = Vec::with_capacity(items.len());
+        let mut payloads: Vec<Arc<CalcitTypeAnnotation>> = Vec::with_capacity(items.len());
         for item in items.iter() {
-          payloads.push(item.to_owned());
+          payloads.push(Arc::new(CalcitTypeAnnotation::from_calcit(item)));
         }
         Ok(payloads)
       }
@@ -107,7 +111,7 @@ impl CalcitEnum {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::CalcitList;
+  use crate::calcit::{CalcitList, CalcitTypeAnnotation};
 
   fn empty_list() -> Calcit {
     Calcit::List(Arc::new(CalcitList::Vector(vec![])))
@@ -134,6 +138,12 @@ mod tests {
     assert_eq!(enum_proto.name(), &EdnTag::new("Result"));
     let err_variant = enum_proto.find_variant_by_name("err").expect("err variant");
     assert_eq!(err_variant.arity(), 1);
+    match err_variant.payload_types().first().map(|t| t.as_ref()) {
+      Some(CalcitTypeAnnotation::Tag(tag)) => {
+        assert_eq!(tag.ref_str().trim_start_matches(':'), "string");
+      }
+      other => panic!("unexpected payload annotation: {other:?}"),
+    }
     assert_eq!(enum_proto.find_variant_by_name("ok").unwrap().arity(), 0);
   }
 }

@@ -4,7 +4,7 @@ use im_ternary_tree::TernaryTreeList;
 
 use crate::Calcit;
 
-use super::CalcitLocal;
+use super::{CalcitLocal, CalcitTypeAnnotation};
 
 /// structure of a function arguments
 #[derive(Debug, Clone)]
@@ -33,6 +33,21 @@ pub enum CalcitFnArgs {
   Args(Vec<u16>),
 }
 
+impl CalcitFnArgs {
+  /// Counts positional parameters(either indexed locals or symbols) while ignoring markers.
+  pub fn param_len(&self) -> usize {
+    match self {
+      CalcitFnArgs::MarkedArgs(xs) => xs.iter().filter(|label| matches!(label, CalcitArgLabel::Idx(_))).count(),
+      CalcitFnArgs::Args(xs) => xs.len(),
+    }
+  }
+
+  /// Produce a Vec<Option<...>> aligned with current parameter arity for storing type hints.
+  pub fn empty_arg_types(&self) -> Vec<Option<Arc<CalcitTypeAnnotation>>> {
+    vec![None; self.param_len()]
+  }
+}
+
 #[derive(Debug, Clone)]
 pub struct CalcitFn {
   pub name: Arc<str>,
@@ -42,9 +57,35 @@ pub struct CalcitFn {
   pub args: Arc<CalcitFnArgs>,
   pub body: Vec<Calcit>,
   /// return type declared by hint-fn
-  pub return_type: Option<Arc<Calcit>>,
+  pub return_type: Option<Arc<CalcitTypeAnnotation>>,
   /// argument types declared by assert-type
-  pub arg_types: Vec<Option<Arc<Calcit>>>,
+  pub arg_types: Vec<Option<Arc<CalcitTypeAnnotation>>>,
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn counts_plain_args() {
+    let args = CalcitFnArgs::Args(vec![1, 2, 3]);
+    assert_eq!(args.param_len(), 3);
+    assert_eq!(args.empty_arg_types().len(), 3);
+    assert!(args.empty_arg_types().iter().all(|item| item.is_none()));
+  }
+
+  #[test]
+  fn counts_marked_args_only_on_locals() {
+    let args = CalcitFnArgs::MarkedArgs(vec![
+      CalcitArgLabel::Idx(1),
+      CalcitArgLabel::OptionalMark,
+      CalcitArgLabel::Idx(2),
+      CalcitArgLabel::RestMark,
+    ]);
+    assert_eq!(args.param_len(), 2, "only locals should be counted toward arity");
+    assert_eq!(args.empty_arg_types().len(), 2);
+    assert!(args.empty_arg_types().iter().all(|item| item.is_none()));
+  }
 }
 
 /// Macro variant of Calcit data

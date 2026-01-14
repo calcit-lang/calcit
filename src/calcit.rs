@@ -8,6 +8,7 @@ mod symbol;
 mod syntax_name;
 mod thunk;
 mod tuple;
+mod type_annotation;
 
 use core::cmp::Ord;
 use std::cmp::Eq;
@@ -35,6 +36,7 @@ pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
 pub use syntax_name::CalcitSyntax;
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
+pub use type_annotation::{CalcitFnTypeAnnotation, CalcitTypeAnnotation};
 
 use crate::builtins::ValueAndListeners;
 use crate::call_stack::CallStackList;
@@ -308,7 +310,7 @@ impl fmt::Display for Calcit {
       }
       Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
       Method(name, method_kind) => match method_kind {
-        MethodKind::Invoke(Some(t)) => f.write_str(&format!("(&invoke {name} :type {t})")),
+        MethodKind::Invoke(Some(t)) => f.write_str(&format!("(&invoke {name} :type {})", t.as_ref())),
         _ => f.write_str(&format!("(&{method_kind} {name})")),
       },
       RawCode(_, code) => f.write_str(&format!("(&raw-code {code})")),
@@ -978,7 +980,7 @@ impl LocatedWarning {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MethodKind {
   /// (.call a) - may carry inferred receiver type for validation
-  Invoke(Option<Arc<Calcit>>),
+  Invoke(Option<Arc<CalcitTypeAnnotation>>),
   /// (.!f a)
   InvokeNative,
   /// (.?!f a)

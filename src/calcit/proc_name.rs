@@ -353,16 +353,24 @@ pub enum CalcitProc {
   NativeRecordExtendAs,
 }
 
-use crate::Calcit;
+use crate::CalcitTypeAnnotation;
 use std::sync::Arc;
 
 /// Type signature for a Proc (builtin function)
 #[derive(Debug, Clone)]
 pub struct ProcTypeSignature {
   /// return type declared
-  pub return_type: Option<Arc<Calcit>>,
+  pub return_type: Option<Arc<CalcitTypeAnnotation>>,
   /// argument types in order. Use tag("&") to mark variadic args (no checking after this mark)
-  pub arg_types: Vec<Option<Arc<Calcit>>>,
+  pub arg_types: Vec<Option<Arc<CalcitTypeAnnotation>>>,
+}
+
+fn tag_type(name: &str) -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::from_tag_name(name))
+}
+
+fn some_tag(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  Some(tag_type(name))
 }
 
 impl CalcitProc {
@@ -374,264 +382,248 @@ impl CalcitProc {
     match self {
       // === Meta operations ===
       TypeOf => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("tag"))),
+        return_type: some_tag("tag"),
         arg_types: vec![None],
       }),
       FormatToLisp | FormatToCirru => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
+        return_type: some_tag("string"),
         arg_types: vec![None],
       }),
       TurnSymbol => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("symbol"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("symbol"),
+        arg_types: vec![some_tag("string")],
       }),
       TurnTag => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("tag"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("tag"),
+        arg_types: vec![some_tag("string")],
       }),
       NativeCompare => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
+        return_type: some_tag("number"),
         arg_types: vec![None, None],
       }),
       NativeGetOs => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("tag"))),
+        return_type: some_tag("tag"),
         arg_types: vec![],
       }),
       NativeHash => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
+        return_type: some_tag("number"),
         arg_types: vec![None],
       }),
       GenerateId => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
+        return_type: some_tag("string"),
         arg_types: vec![],
       }),
       NativeGetCalcitRunningMode => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("tag"))),
+        return_type: some_tag("tag"),
         arg_types: vec![],
       }),
       NativeGetCalcitBackend => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("tag"))),
+        return_type: some_tag("tag"),
         arg_types: vec![],
       }),
       NativeDisplayStack => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("nil"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("&")],
       }),
       NativeCirruType => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("tag"))),
+        return_type: some_tag("tag"),
         arg_types: vec![None],
       }),
 
       // === Math operations ===
       NativeAdd | NativeMinus | NativeMultiply | NativeDivide | Pow | NativeNumberRem => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("number"))), Some(Arc::new(Calcit::tag("number")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("number"), some_tag("number")],
       }),
       Floor | Ceil | Round | Sin | Cos | Sqrt | NativeNumberFract => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("number")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("number")],
       }),
       IsRound => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("number")))],
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("number")],
       }),
       BitShl | BitShr | BitAnd | BitOr | BitXor => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("number"))), Some(Arc::new(Calcit::tag("number")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("number"), some_tag("number")],
       }),
       BitNot => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("number")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("number")],
       }),
       NativeNumberFormat => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("number")))],
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("number")],
       }),
 
       // === Comparison & Logic ===
       NativeEquals | NativeLessThan | NativeGreaterThan | Identical => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
+        return_type: some_tag("bool"),
         arg_types: vec![None, None],
       }),
       Not => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("bool")))],
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("bool")],
       }),
 
       // === String operations ===
       NativeStrConcat => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
+        return_type: some_tag("string"),
         arg_types: vec![None, None],
       }),
       Trim => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![None, Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("string"),
+        arg_types: vec![None, some_tag("&")],
       }),
       TurnString => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
+        return_type: some_tag("string"),
         arg_types: vec![None],
       }),
       NativeStr => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("&")],
       }),
       Split => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string"))), Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("string"), some_tag("string")],
       }),
       SplitLines => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("string")],
       }),
       StartsWith | EndsWith => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
+        return_type: some_tag("bool"),
         arg_types: vec![None, None],
       }),
       GetCharCode => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("string")],
       }),
       CharFromCode => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("number")))],
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("number")],
       }),
       PrStr => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
+        return_type: some_tag("string"),
         arg_types: vec![None],
       }),
       ParseFloat => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("string")],
       }),
       IsBlank => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("string")],
       }),
       NativeStrCompare => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string"))), Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("string"), some_tag("string")],
       }),
       NativeStrReplace => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![
-          Some(Arc::new(Calcit::tag("string"))),
-          Some(Arc::new(Calcit::tag("string"))),
-          Some(Arc::new(Calcit::tag("string"))),
-        ],
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string"), some_tag("string"), some_tag("string")],
       }),
       NativeStrSlice => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![
-          Some(Arc::new(Calcit::tag("string"))),
-          Some(Arc::new(Calcit::tag("number"))),
-          Some(Arc::new(Calcit::tag("&"))),
-        ],
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string"), some_tag("number"), some_tag("&")],
       }),
       NativeStrFindIndex => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string"))), Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("string"), some_tag("string")],
       }),
       NativeStrEscape => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string")],
       }),
       NativeStrCount => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("string")],
       }),
       NativeStrEmpty | NativeStrContains | NativeStrIncludes => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("string")],
       }),
       NativeStrNth | NativeStrFirst => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string")],
       }),
       NativeStrRest => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string")],
       }),
       NativeStrPadLeft | NativeStrPadRight => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![
-          Some(Arc::new(Calcit::tag("string"))),
-          Some(Arc::new(Calcit::tag("number"))),
-          Some(Arc::new(Calcit::tag("string"))),
-        ],
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string"), some_tag("number"), some_tag("string")],
       }),
 
       // === List operations ===
       List => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("&")],
       }),
       Append | Prepend => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("list"))), None],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list"), None],
       }),
       Butlast | NativeListReverse => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("list")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list")],
       }),
       Range => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("number"))), Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("number"), some_tag("&")],
       }),
       Sort => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("list"))), Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list"), some_tag("&")],
       }),
       NativeListConcat => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("list"))), Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list"), some_tag("&")],
       }),
       NativeListCount => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("list")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("list")],
       }),
       NativeListEmpty => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("list")))],
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("list")],
       }),
       NativeListContains | NativeListIncludes => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("list"))), None],
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("list"), None],
       }),
       NativeListSlice => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![
-          Some(Arc::new(Calcit::tag("list"))),
-          Some(Arc::new(Calcit::tag("number"))),
-          Some(Arc::new(Calcit::tag("&"))),
-        ],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list"), some_tag("number"), some_tag("&")],
       }),
       NativeListNth => Some(ProcTypeSignature {
         return_type: None,
-        arg_types: vec![Some(Arc::new(Calcit::tag("list"))), Some(Arc::new(Calcit::tag("number")))],
+        arg_types: vec![some_tag("list"), some_tag("number")],
       }),
       NativeListFirst => Some(ProcTypeSignature {
         return_type: None,
-        arg_types: vec![Some(Arc::new(Calcit::tag("list")))],
+        arg_types: vec![some_tag("list")],
       }),
       NativeListRest => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("list")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list")],
       }),
       NativeListAssoc | NativeListAssocBefore | NativeListAssocAfter => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("list"))), Some(Arc::new(Calcit::tag("number"))), None],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list"), some_tag("number"), None],
       }),
       NativeListDissoc => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("list"))), Some(Arc::new(Calcit::tag("number")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list"), some_tag("number")],
       }),
       NativeListToSet => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("set"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("list")))],
+        return_type: some_tag("set"),
+        arg_types: vec![some_tag("list")],
       }),
       NativeListDistinct => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("list")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list")],
       }),
       Foldl | FoldlShortcut | FoldrShortcut => Some(ProcTypeSignature {
         return_type: None,
@@ -640,224 +632,220 @@ impl CalcitProc {
 
       // === Map operations ===
       NativeMap => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("map"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("map"),
+        arg_types: vec![some_tag("&")],
       }),
       NativeMerge | NativeMergeNonNil => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("map"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("map"))), Some(Arc::new(Calcit::tag("map")))],
+        return_type: some_tag("map"),
+        arg_types: vec![some_tag("map"), some_tag("map")],
       }),
       ToPairs => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("set"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("map")))],
+        return_type: some_tag("set"),
+        arg_types: vec![some_tag("map")],
       }),
       NativeMapToList => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("map")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("map")],
       }),
       NativeMapGet => Some(ProcTypeSignature {
         return_type: None,
-        arg_types: vec![Some(Arc::new(Calcit::tag("map"))), None],
+        arg_types: vec![some_tag("map"), None],
       }),
       NativeMapDissoc => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("map"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("map"))), None],
+        return_type: some_tag("map"),
+        arg_types: vec![some_tag("map"), None],
       }),
       NativeMapCount => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("map")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("map")],
       }),
       NativeMapEmpty => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("map")))],
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("map")],
       }),
       NativeMapContains | NativeMapIncludes => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("map"))), None],
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("map"), None],
       }),
       NativeMapAssoc => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("map"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("map"))), None, None],
+        return_type: some_tag("map"),
+        arg_types: vec![some_tag("map"), None, None],
       }),
       NativeMapDiffNew | NativeMapDiffKeys | NativeMapCommonKeys => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("set"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("map"))), Some(Arc::new(Calcit::tag("map")))],
+        return_type: some_tag("set"),
+        arg_types: vec![some_tag("map"), some_tag("map")],
       }),
 
       // === Set operations ===
       Set => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("set"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("set"),
+        arg_types: vec![some_tag("&")],
       }),
       NativeInclude | NativeExclude => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("set"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("set"))), None],
+        return_type: some_tag("set"),
+        arg_types: vec![some_tag("set"), None],
       }),
       NativeDifference | NativeUnion | NativeSetIntersection => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("set"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("set"))), Some(Arc::new(Calcit::tag("set")))],
+        return_type: some_tag("set"),
+        arg_types: vec![some_tag("set"), some_tag("set")],
       }),
       NativeSetToList => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("set")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("set")],
       }),
       NativeSetCount => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("set")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("set")],
       }),
       NativeSetEmpty => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("set")))],
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("set")],
       }),
       NativeSetIncludes => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("set"))), None],
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("set"), None],
       }),
 
       // === Tuple operations ===
       NativeTuple => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("tuple"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("tuple"),
+        arg_types: vec![some_tag("&")],
       }),
       NativeTupleNth => Some(ProcTypeSignature {
         return_type: None,
-        arg_types: vec![Some(Arc::new(Calcit::tag("tuple"))), Some(Arc::new(Calcit::tag("number")))],
+        arg_types: vec![some_tag("tuple"), some_tag("number")],
       }),
       NativeTupleAssoc => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("tuple"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("tuple"))), Some(Arc::new(Calcit::tag("number"))), None],
+        return_type: some_tag("tuple"),
+        arg_types: vec![some_tag("tuple"), some_tag("number"), None],
       }),
       NativeTupleCount => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("tuple")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("tuple")],
       }),
       NativeTupleClass => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("record"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("tuple")))],
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("tuple")],
       }),
       NativeTupleParams => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("tuple")))],
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("tuple")],
       }),
 
       // === Record operations ===
       NativeRecord => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("record"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("record"))), Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), some_tag("&")],
       }),
       NativeRecordWith => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("record"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("record"))), None, None, Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), None, None, some_tag("&")],
       }),
       NativeRecordAssoc => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("record"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("record"))), None, None],
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), None, None],
       }),
       NativeRecordGet => Some(ProcTypeSignature {
         return_type: None,
-        arg_types: vec![Some(Arc::new(Calcit::tag("record"))), Some(Arc::new(Calcit::tag("tag")))],
+        arg_types: vec![some_tag("record"), some_tag("tag")],
       }),
       NativeRecordCount => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("record")))],
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("record")],
       }),
       NativeRecordContains => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("record"))), None],
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("record"), None],
       }),
       NativeRecordMatches => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("bool"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("record"))), None],
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("record"), None],
       }),
       NativeRecordToMap => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("map"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("record")))],
+        return_type: some_tag("map"),
+        arg_types: vec![some_tag("record")],
       }),
       NativeRecordFromMap => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("record"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("record"))), Some(Arc::new(Calcit::tag("map")))],
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), some_tag("map")],
       }),
       NativeRecordGetName => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("tag"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("record")))],
+        return_type: some_tag("tag"),
+        arg_types: vec![some_tag("record")],
       }),
       NewRecord | NewClassRecord => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("record"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("tag"))), Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("tag"), some_tag("&")],
       }),
       NativeRecordClass => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("record"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("record")))],
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record")],
       }),
       NativeRecordWithClass => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("record"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("record"))), None],
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), None],
       }),
       NativeRecordExtendAs => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("record"))),
-        arg_types: vec![
-          Some(Arc::new(Calcit::tag("record"))),
-          Some(Arc::new(Calcit::tag("tag"))),
-          Some(Arc::new(Calcit::tag("&"))),
-        ],
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), some_tag("tag"), some_tag("&")],
       }),
 
       // === Refs/Atoms ===
       Atom => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("ref"))),
+        return_type: some_tag("ref"),
         arg_types: vec![None],
       }),
       AtomDeref => Some(ProcTypeSignature {
         return_type: None,
-        arg_types: vec![Some(Arc::new(Calcit::tag("ref")))],
+        arg_types: vec![some_tag("ref")],
       }),
       AddWatch => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("nil"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("ref"))), None, None],
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("ref"), None, None],
       }),
       RemoveWatch => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("nil"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("ref"))), None],
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("ref"), None],
       }),
 
       // === I/O operations ===
       ReadFile => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string")],
       }),
       WriteFile => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("nil"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string"))), Some(Arc::new(Calcit::tag("string")))],
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("string"), some_tag("string")],
       }),
       GetEnv => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("string"))), Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string"), some_tag("&")],
       }),
 
       // === Time ===
       CpuTime => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("number"))),
+        return_type: some_tag("number"),
         arg_types: vec![],
       }),
 
       // === Cirru format ===
       ParseCirru | ParseCirruEdn => Some(ProcTypeSignature {
         return_type: None,
-        arg_types: vec![Some(Arc::new(Calcit::tag("string"))), Some(Arc::new(Calcit::tag("&")))],
+        arg_types: vec![some_tag("string"), some_tag("&")],
       }),
       FormatCirru | FormatCirruEdn | FormatCirruOneLiner => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("string"))),
+        return_type: some_tag("string"),
         arg_types: vec![None],
       }),
       ParseCirruList | NativeCirruQuoteToList => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("list"))),
+        return_type: some_tag("list"),
         arg_types: vec![None],
       }),
 
       // === Buffer ===
       NativeBuffer => Some(ProcTypeSignature {
-        return_type: Some(Arc::new(Calcit::tag("buffer"))),
-        arg_types: vec![Some(Arc::new(Calcit::tag("&")))],
+        return_type: some_tag("buffer"),
+        arg_types: vec![some_tag("&")],
       }),
 
       // === Special forms and control flow ===

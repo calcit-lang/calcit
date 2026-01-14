@@ -1,9 +1,9 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
-    CalcitRecord, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, GENERATED_DEF, ImportInfo, LocatedWarning,
-    NodeLocation, RawCodeType,
+    self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList,
+    CalcitLocal, CalcitProc, CalcitRecord, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo,
+    CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -16,11 +16,15 @@ use std::{cell::RefCell, vec};
 use im_ternary_tree::TernaryTreeList;
 use strum::ParseError;
 
-type ScopeTypes = HashMap<Arc<str>, Arc<Calcit>>;
+type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
+
+fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::from_tag_name(name))
+}
 
 /// Extract type information from a Calcit definition
-/// For functions: returns a tuple with :Fn tag containing (return_type, [arg_types...])
-/// For other values: returns the value's type annotation if available
+/// Functions and procs are converted into `CalcitTypeAnnotation::Function` to retain argument/return hints
+/// Other values fall back to their concrete annotation (tag/record/tuple/custom)
 /// Context for preprocessing operations, bundled to avoid too many parameters
 pub struct PreprocessContext<'a> {
   scope_defs: &'a HashSet<Arc<str>>,
@@ -770,7 +774,7 @@ fn check_field_in_record(
   };
 
   // Only validate record types
-  let Calcit::Record(record) = &*type_info else {
+  let Some(record) = type_info.as_ref().as_record() else {
     return; // Not a record type
   };
 
@@ -828,7 +832,7 @@ fn check_proc_arg_types(
   // Check if signature has variadic marker (&)
   let has_variadic = signature.arg_types.iter().any(|t| {
     if let Some(type_val) = t {
-      matches!(**type_val, Calcit::Tag(ref tag) if tag.ref_str() == "&")
+      matches!(type_val.as_ref(), CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "&")
     } else {
       false
     }
@@ -854,7 +858,7 @@ fn check_proc_arg_types(
   for (idx, (arg, expected_type_opt)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
     // Stop checking if we hit the variadic marker
     if let Some(type_val) = expected_type_opt {
-      if matches!(**type_val, Calcit::Tag(ref tag) if tag.ref_str() == "&") {
+      if matches!(type_val.as_ref(), CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "&") {
         return; // Stop checking at variadic marker
       }
     }
@@ -865,9 +869,9 @@ fn check_proc_arg_types(
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       // Compare types
-      if !types_match(&actual_type, expected_type) {
-        let expected_str = type_to_string(expected_type);
-        let actual_str = type_to_string(&actual_type);
+      if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
+        let expected_str = expected_type.as_ref().to_brief_string();
+        let actual_str = actual_type.as_ref().to_brief_string();
         gen_check_warning(
           format!(
             "[Warn] Proc `{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
@@ -899,12 +903,12 @@ fn check_core_fn_arg_types(
     return;
   }
 
-  let expected_type = Calcit::tag("number");
+  let expected_type = tag_annotation("number");
 
   for (idx, arg) in args.iter().enumerate() {
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
-      if !types_match(actual_type.as_ref(), &expected_type) {
-        let actual_str = type_to_string(actual_type.as_ref());
+      if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
+        let actual_str = actual_type.as_ref().to_brief_string();
         gen_check_warning(
           format!(
             "[Warn] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
@@ -916,29 +920,6 @@ fn check_core_fn_arg_types(
         );
       }
     }
-  }
-}
-
-/// Helper to check if two types match
-/// TODO: Expand to handle:
-/// - Record type matching by name
-/// - Tuple type matching by tag and structure
-/// - Function type matching by signature
-/// - Generic/parametric type matching
-fn types_match(actual: &Calcit, expected: &Calcit) -> bool {
-  match (actual, expected) {
-    (Calcit::Tag(a), Calcit::Tag(e)) => a.ref_str() == e.ref_str(),
-    (Calcit::Record(a), Calcit::Record(e)) => a.name == e.name,
-    _ => false,
-  }
-}
-
-/// Helper to convert type to string for error messages
-fn type_to_string(t: &Calcit) -> String {
-  match t {
-    Calcit::Tag(tag) => format!(":{}", tag.ref_str()),
-    Calcit::Record(r) => format!("record {}", r.name),
-    _ => format!("{t}"),
   }
 }
 
@@ -988,10 +969,22 @@ fn build_record_get_callable(record_ref: Calcit, method_name: &Arc<str>) -> Calc
   Calcit::from(vec![record_proc, record_ref, method_tag])
 }
 
-fn build_record_reference(type_value: &Calcit, file_ns: &str) -> Option<Calcit> {
+fn build_record_reference(type_value: &CalcitTypeAnnotation, file_ns: &str) -> Option<Calcit> {
   match type_value {
-    Calcit::Import(import) => Some(Calcit::Import(import.to_owned())),
-    Calcit::Tag(tag) => {
+    CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
+      Calcit::Import(import) => Some(Calcit::Import(import.to_owned())),
+      Calcit::Tag(tag) => {
+        let class_symbol = core_class_symbol_from_tag(tag)?;
+        Some(Calcit::Import(CalcitImport {
+          ns: Arc::from(calcit::CORE_NS),
+          def: Arc::from(class_symbol),
+          info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
+          coord: program::tip_coord(calcit::CORE_NS, class_symbol),
+        }))
+      }
+      _ => None,
+    },
+    CalcitTypeAnnotation::Tag(tag) => {
       let class_symbol = core_class_symbol_from_tag(tag)?;
       Some(Calcit::Import(CalcitImport {
         ns: Arc::from(calcit::CORE_NS),
@@ -1038,7 +1031,7 @@ fn validate_method_call(
 
   // Method not found, generate error
   let methods_list = class_record.fields.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(" ");
-  let type_desc = describe_type(&type_value);
+  let type_desc = describe_type(type_value.as_ref());
   Err(CalcitErr::use_msg_stack(
     CalcitErrKind::Type,
     format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
@@ -1047,7 +1040,7 @@ fn validate_method_call(
 }
 
 /// Resolve the type value from the receiver expression
-fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<Calcit>> {
+fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   match target {
     Calcit::Local(local) => {
       // First check if the local has inline type_info, then fall back to scope_types
@@ -1065,20 +1058,33 @@ fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
 /// - Function calls with return-type annotations
 /// - Nested &let expressions (returns type of final expression)
 /// - Local variables (reads from type_info field)
-fn infer_type_from_expr(expr: &Calcit) -> Option<Arc<Calcit>> {
+fn infer_type_from_expr(expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
   match expr {
     // Literal types
-    Calcit::Number(_) => Some(Arc::new(Calcit::tag("number"))),
-    Calcit::Str(_) => Some(Arc::new(Calcit::tag("string"))),
-    Calcit::Bool(_) => Some(Arc::new(Calcit::tag("bool"))),
-    Calcit::Nil => Some(Arc::new(Calcit::tag("nil"))),
-    Calcit::Tag(_) => Some(Arc::new(Calcit::tag("tag"))),
+    Calcit::Number(_) => Some(tag_annotation("number")),
+    Calcit::Str(_) => Some(tag_annotation("string")),
+    Calcit::Bool(_) => Some(tag_annotation("bool")),
+    Calcit::Nil => Some(tag_annotation("nil")),
+    Calcit::Tag(_) => Some(tag_annotation("tag")),
+    Calcit::Fn { info, .. } => Some(Arc::new(CalcitTypeAnnotation::from_function_parts(
+      info.arg_types.clone(),
+      info.return_type.clone(),
+    ))),
+    Calcit::Proc(proc) => proc
+      .get_type_signature()
+      .map(|signature| {
+        Arc::new(CalcitTypeAnnotation::from_function_parts(
+          signature.arg_types,
+          signature.return_type,
+        ))
+      })
+      .or_else(|| Some(tag_annotation("fn"))),
 
     // Local variable: read type_info
     Calcit::Local(local) => local.type_info.clone(),
 
     // List/vector literal or expressions
-    Calcit::List(xs) if xs.is_empty() => Some(Arc::new(Calcit::tag("list"))),
+    Calcit::List(xs) if xs.is_empty() => Some(tag_annotation("list")),
 
     // Function call or Proc call or special forms
     Calcit::List(xs) => {
@@ -1137,7 +1143,7 @@ fn infer_type_from_expr(expr: &Calcit) -> Option<Arc<Calcit>> {
                   // Return type is the 3rd element (index 3) if it's a tag
                   if let Some(ret_type) = xs.get(3) {
                     if matches!(ret_type, Calcit::Tag(_)) {
-                      return Some(Arc::new(ret_type.to_owned()));
+                      return Some(Arc::new(CalcitTypeAnnotation::from_calcit(ret_type)));
                     }
                   }
                 }
@@ -1173,30 +1179,29 @@ fn infer_type_from_expr(expr: &Calcit) -> Option<Arc<Calcit>> {
 /// - If type_value is already a Record, use it directly
 /// - If type_value is a Tag, map to corresponding core class
 /// - Otherwise return None
-fn get_class_record_from_type(type_value: &Calcit, call_stack: &CallStackList) -> Option<Arc<CalcitRecord>> {
-  match type_value {
-    // Case 1: Already a Record, use it directly
-    Calcit::Record(record) => Some(Arc::new(record.clone())),
+fn get_class_record_from_type(type_value: &CalcitTypeAnnotation, call_stack: &CallStackList) -> Option<Arc<CalcitRecord>> {
+  if let Some(record) = type_value.as_record() {
+    return Some(Arc::new(record.clone()));
+  }
 
-    // Case 2: Tag type, map to core class
-    Calcit::Tag(tag) => {
-      let class_symbol = core_class_symbol_from_tag(tag)?;
-
-      match runner::evaluate_symbol_from_program(class_symbol, calcit::CORE_NS, None, call_stack) {
-        Ok(Calcit::Record(record)) => Some(Arc::new(record)),
-        Ok(_) | Err(_) => None,
-      }
-    }
-
-    // Case 3: Import pointing to a record definition
-    Calcit::Import(import) => match runner::evaluate_symbol_from_program(&import.def, &import.ns, None, call_stack) {
+  if let Some(tag) = type_value.as_tag() {
+    let class_symbol = core_class_symbol_from_tag(tag)?;
+    return match runner::evaluate_symbol_from_program(class_symbol, calcit::CORE_NS, None, call_stack) {
       Ok(Calcit::Record(record)) => Some(Arc::new(record)),
       Ok(_) | Err(_) => None,
-    },
-
-    // Case 4: Other types, no class available
-    _ => None,
+    };
   }
+
+  if let CalcitTypeAnnotation::Custom(value) = type_value {
+    if let Calcit::Import(import) = value.as_ref() {
+      return match runner::evaluate_symbol_from_program(&import.def, &import.ns, None, call_stack) {
+        Ok(Calcit::Record(record)) => Some(Arc::new(record)),
+        Ok(_) | Err(_) => None,
+      };
+    }
+  }
+
+  None
 }
 
 fn core_class_symbol_from_tag(tag: &cirru_edn::EdnTag) -> Option<&'static str> {
@@ -1214,12 +1219,8 @@ fn core_class_symbol_from_tag(tag: &cirru_edn::EdnTag) -> Option<&'static str> {
 }
 
 /// Describe the type for error messages
-fn describe_type(type_value: &Calcit) -> String {
-  match type_value {
-    Calcit::Tag(tag) => format!("{} type", tag.ref_str().trim_start_matches(':')),
-    Calcit::Record(record) => format!("record {}", record.name),
-    _ => "unknown type".to_string(),
-  }
+fn describe_type(type_value: &CalcitTypeAnnotation) -> String {
+  type_value.describe()
 }
 
 // tradition rule for processing exprs
@@ -1568,7 +1569,7 @@ pub fn preprocess_asset_type(
     )
   })?;
 
-  let type_entry = Arc::new(type_form.to_owned());
+  let type_entry = Arc::new(CalcitTypeAnnotation::from_calcit(type_form));
   ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
 
   if let Some(slot) = zs.get_mut(1) {
@@ -1608,7 +1609,7 @@ mod tests {
     // Check that type info is stored in scope_types
     assert!(scope_types.contains_key("x"), "type should be registered in scope");
     if let Some(type_val) = scope_types.get("x") {
-      assert!(matches!(**type_val, Calcit::Tag(_)), "type should be a tag");
+      assert!(matches!(type_val.as_ref(), CalcitTypeAnnotation::Tag(_)), "type should be a tag");
     }
   }
 
@@ -1645,7 +1646,7 @@ mod tests {
       assert!(local.type_info.is_some(), "type info should persist for later usages");
       // Verify the type value
       if let Some(type_val) = &local.type_info {
-        assert!(matches!(**type_val, Calcit::Tag(_)), "type should be a tag");
+        assert!(matches!(type_val.as_ref(), CalcitTypeAnnotation::Tag(_)), "type should be a tag");
       }
     } else {
       panic!("expected trailing local expression");
@@ -1657,12 +1658,12 @@ mod tests {
     use cirru_edn::EdnTag;
 
     // Create a test record type with fields: name, age
-    let test_record = Calcit::Record(CalcitRecord {
+    let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitRecord {
       name: EdnTag::from("Person"),
       fields: Arc::new(vec![EdnTag::from("age"), EdnTag::from("name")]), // sorted
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
       class: None,
-    });
+    })));
 
     // Test expression: (assert-type user <record-type>) (&record:get user :name)
     let expr = Cirru::List(vec![
@@ -1681,7 +1682,7 @@ mod tests {
     let mut scope_types: ScopeTypes = ScopeTypes::new();
 
     // Manually insert the record type for testing
-    scope_types.insert(Arc::from("user"), Arc::new(test_record));
+    scope_types.insert(Arc::from("user"), test_record.clone());
 
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
@@ -1699,12 +1700,12 @@ mod tests {
     use cirru_edn::EdnTag;
 
     // Create a test record type with fields: name, age
-    let test_record = Calcit::Record(CalcitRecord {
+    let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitRecord {
       name: EdnTag::from("Person"),
       fields: Arc::new(vec![EdnTag::from("age"), EdnTag::from("name")]), // sorted
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
       class: None,
-    });
+    })));
 
     // Test expression: (&record:get user :email) with user already typed
     let expr = Cirru::List(vec![
@@ -1721,7 +1722,7 @@ mod tests {
 
     let mut scope_types: ScopeTypes = ScopeTypes::new();
     // Pre-populate with record type
-    scope_types.insert(Arc::from("user"), Arc::new(test_record));
+    scope_types.insert(Arc::from("user"), test_record.clone());
 
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
@@ -1767,7 +1768,7 @@ mod tests {
       values: Arc::new(vec![method_import.clone()]),
       class: None,
     };
-    scope_types.insert(Arc::from("user"), Arc::new(Calcit::Record(class_record)));
+    scope_types.insert(Arc::from("user"), Arc::new(CalcitTypeAnnotation::Record(Arc::new(class_record))));
 
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
@@ -1798,14 +1799,16 @@ mod tests {
     scope_defs.insert(Arc::from("user"));
     let mut scope_types: ScopeTypes = ScopeTypes::new();
 
+    let fn_args = CalcitFnArgs::Args(vec![]);
+    let arg_types = fn_args.empty_arg_types();
     let fn_info = Arc::new(CalcitFn {
       name: Arc::from("greet"),
       def_ns: Arc::from("tests.method.ns"),
       scope: Arc::new(CalcitScope::default()),
-      args: Arc::new(CalcitFnArgs::Args(vec![])),
+      args: Arc::new(fn_args),
       body: vec![],
       return_type: None,
-      arg_types: vec![],
+      arg_types,
     });
     let method_fn = Calcit::Fn {
       id: Arc::from("tests.method.ns/greet"),
@@ -1829,7 +1832,7 @@ mod tests {
       info: Arc::new(ImportInfo::SameFile { at_def: Arc::from("demo") }),
       coord: None,
     });
-    scope_types.insert(Arc::from("user"), Arc::new(record_import));
+    scope_types.insert(Arc::from("user"), Arc::new(CalcitTypeAnnotation::from_calcit(&record_import)));
 
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
@@ -1870,12 +1873,12 @@ mod tests {
     use cirru_edn::EdnTag;
 
     // Create a test record type with fields: name, age
-    let test_record = Calcit::Record(CalcitRecord {
+    let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitRecord {
       name: EdnTag::from("Person"),
       fields: Arc::new(vec![EdnTag::from("age"), EdnTag::from("name")]), // sorted
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
       class: None,
-    });
+    })));
 
     // Test expression: (user.-name) - wrapped in a list to trigger method parsing
     let expr = Cirru::List(vec![Cirru::leaf("user.-name")]);
@@ -1888,7 +1891,7 @@ mod tests {
 
     let mut scope_types: ScopeTypes = ScopeTypes::new();
     // Pre-populate with record type
-    scope_types.insert(Arc::from("user"), Arc::new(test_record));
+    scope_types.insert(Arc::from("user"), test_record.clone());
 
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
@@ -1909,12 +1912,12 @@ mod tests {
     use cirru_edn::EdnTag;
 
     // Create a test record type with fields: name, age
-    let test_record = Calcit::Record(CalcitRecord {
+    let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitRecord {
       name: EdnTag::from("Person"),
       fields: Arc::new(vec![EdnTag::from("age"), EdnTag::from("name")]), // sorted
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
       class: None,
-    });
+    })));
 
     // Test expression: (user.-email) - invalid field, wrapped in list
     let expr = Cirru::List(vec![Cirru::leaf("user.-email")]);
@@ -1927,7 +1930,7 @@ mod tests {
 
     let mut scope_types: ScopeTypes = ScopeTypes::new();
     // Pre-populate with record type
-    scope_types.insert(Arc::from("user"), Arc::new(test_record));
+    scope_types.insert(Arc::from("user"), test_record.clone());
 
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
@@ -1955,12 +1958,12 @@ mod tests {
     use cirru_edn::EdnTag;
 
     // Create a test record type with limited methods
-    let test_record = Calcit::Record(CalcitRecord {
+    let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitRecord {
       name: EdnTag::from("Person"),
       fields: Arc::new(vec![EdnTag::from("age"), EdnTag::from("name")]), // No .slice method
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
       class: None,
-    });
+    })));
 
     // Test expression: (.slice person 1 3) - trying to call non-existent method
     let expr = Cirru::List(vec![
@@ -1978,7 +1981,7 @@ mod tests {
 
     let mut scope_types: ScopeTypes = ScopeTypes::new();
     // Pre-populate with record type
-    scope_types.insert(Arc::from("person"), Arc::new(test_record));
+    scope_types.insert(Arc::from("person"), test_record.clone());
 
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
