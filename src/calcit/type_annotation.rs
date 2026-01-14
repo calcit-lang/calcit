@@ -14,7 +14,7 @@ use super::{Calcit, CalcitImport, CalcitRecord, CalcitTuple};
 use crate::program;
 
 thread_local! {
-  static IMPORT_RESOLUTION_STACK: RefCell<Vec<(Arc<str>, Arc<str>)>> = RefCell::new(vec![]);
+  static IMPORT_RESOLUTION_STACK: RefCell<Vec<(Arc<str>, Arc<str>)>> = const { RefCell::new(vec![]) };
 }
 
 /// Unified representation of type annotations propagated through preprocessing

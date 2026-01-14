@@ -431,7 +431,11 @@ impl CalcitProc {
       }),
 
       // === Math operations ===
-      NativeAdd | NativeMinus | NativeMultiply | NativeDivide | Pow | NativeNumberRem => Some(ProcTypeSignature {
+      NativeAdd => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![None, None],
+      }),
+      NativeMinus | NativeMultiply | NativeDivide | Pow | NativeNumberRem => Some(ProcTypeSignature {
         return_type: some_tag("number"),
         arg_types: vec![some_tag("number"), some_tag("number")],
       }),

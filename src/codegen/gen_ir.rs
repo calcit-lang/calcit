@@ -13,7 +13,7 @@ use crate::calcit::{
 use crate::program;
 
 thread_local! {
-  static TYPE_INFO_STACK: RefCell<Vec<(Arc<str>, Arc<str>)>> = RefCell::new(vec![]);
+  static TYPE_INFO_STACK: RefCell<Vec<(Arc<str>, Arc<str>)>> = const { RefCell::new(vec![]) };
 }
 
 /// Extract type information from a Calcit definition for IR output

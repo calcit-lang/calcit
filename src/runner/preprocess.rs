@@ -1,9 +1,9 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList,
-    CalcitLocal, CalcitProc, CalcitRecord, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo,
-    CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType,
+    self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
+    CalcitRecord, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, CalcitTypeAnnotation, GENERATED_DEF,
+    ImportInfo, LocatedWarning, NodeLocation, RawCodeType,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -413,6 +413,7 @@ fn preprocess_list_call(
       if !has_spread {
         let processed_args = CalcitList::from(ys.drop_left());
         check_core_fn_arg_types(info.as_ref(), &processed_args, scope_types, file_ns, &def_name, check_warnings);
+        check_user_fn_arg_types(info.as_ref(), &processed_args, scope_types, file_ns, &def_name, check_warnings);
       }
       if has_spread {
         ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, info.def_ns.to_owned()));
@@ -912,6 +913,53 @@ fn check_core_fn_arg_types(
         gen_check_warning(
           format!(
             "[Warn] Function `calcit.core/{}` arg {} expects type `:number`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+            fn_info.name,
+            idx + 1
+          ),
+          file_ns,
+          check_warnings,
+        );
+      }
+    }
+  }
+}
+
+/// Check user-defined function argument types against type annotations
+fn check_user_fn_arg_types(
+  fn_info: &CalcitFn,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  // Skip if no type annotations
+  if fn_info.arg_types.is_empty() || fn_info.arg_types.iter().all(Option::is_none) {
+    return;
+  }
+
+  // Check if we have spreading args
+  for arg in args.iter() {
+    if matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      return; // Can't check with spread args
+    }
+  }
+
+  // Check argument types
+  for (idx, (arg, expected_type_opt)) in args.iter().zip(fn_info.arg_types.iter()).enumerate() {
+    let Some(expected_type) = expected_type_opt else {
+      continue; // No type constraint for this argument
+    };
+
+    if let Some(actual_type) = resolve_type_value(arg, scope_types) {
+      // Compare types
+      if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
+        let expected_str = expected_type.as_ref().to_brief_string();
+        let actual_str = actual_type.as_ref().to_brief_string();
+        gen_check_warning(
+          format!(
+            "[Warn] Function `{}/{}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+            fn_info.def_ns,
             fn_info.name,
             idx + 1
           ),
@@ -1996,5 +2044,79 @@ mod tests {
         "error should mention the record type: {msg}"
       );
     }
+  }
+
+  #[test]
+  fn checks_user_function_arg_types() {
+    // Test the check_user_fn_arg_types function directly
+    let fn_info = CalcitFn {
+      name: Arc::from("demo-fn"),
+      def_ns: Arc::from("tests.user_fn"),
+      scope: Arc::new(CalcitScope::default()),
+      args: Arc::new(CalcitFnArgs::Args(vec![0, 1])), // two args
+      body: vec![Calcit::Nil],
+      arg_types: vec![
+        Some(Arc::new(CalcitTypeAnnotation::from_tag_name("number"))),
+        Some(Arc::new(CalcitTypeAnnotation::from_tag_name("string"))),
+      ],
+      return_type: None,
+    };
+
+    // Create arguments: ("|hello" 42) - reversed types
+    let args = CalcitList::from(
+      &vec![
+        Calcit::Str(Arc::from("hello")), // string
+        Calcit::Number(42.0),            // number
+      ][..],
+    );
+
+    let scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+
+    check_user_fn_arg_types(&fn_info, &args, &scope_types, "tests.user_fn", "demo", &warnings);
+
+    // Should have warnings about type mismatches
+    let warnings_vec = warnings.borrow();
+
+    assert!(
+      warnings_vec.len() >= 2,
+      "should have at least 2 warnings for arg type mismatches, got {} warnings: {:?}",
+      warnings_vec.len(),
+      warnings_vec.iter().map(|w| w.to_string()).collect::<Vec<_>>()
+    );
+
+    // Check first warning (arg 1: expected number, got string)
+    let warning1 = warnings_vec.iter().find(|w| w.to_string().contains("arg 1"));
+    assert!(
+      warning1.is_some(),
+      "should have warning for arg 1, warnings: {:?}",
+      warnings_vec.iter().map(|w| w.to_string()).collect::<Vec<_>>()
+    );
+    let msg1 = warning1.unwrap().to_string();
+    assert!(
+      msg1.contains("number") || msg1.contains(":number"),
+      "warning should mention expected type: {msg1}"
+    );
+    assert!(
+      msg1.contains("string") || msg1.contains(":string"),
+      "warning should mention actual type: {msg1}"
+    );
+
+    // Check second warning (arg 2: expected string, got number)
+    let warning2 = warnings_vec.iter().find(|w| w.to_string().contains("arg 2"));
+    assert!(
+      warning2.is_some(),
+      "should have warning for arg 2, warnings: {:?}",
+      warnings_vec.iter().map(|w| w.to_string()).collect::<Vec<_>>()
+    );
+    let msg2 = warning2.unwrap().to_string();
+    assert!(
+      msg2.contains("string") || msg2.contains(":string"),
+      "warning should mention expected type: {msg2}"
+    );
+    assert!(
+      msg2.contains("number") || msg2.contains(":number"),
+      "warning should mention actual type: {msg2}"
+    );
   }
 }
