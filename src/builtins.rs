@@ -85,6 +85,9 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeTupleClass => meta::tuple_class(args),
     NativeTupleParams => meta::tuple_params(args),
     NativeTupleWithClass => meta::tuple_with_class(args),
+    NativeTupleEnum => meta::tuple_enum(args),
+    NativeTupleEnumHasVariant => meta::tuple_enum_has_variant(args),
+    NativeTupleEnumVariantArity => meta::tuple_enum_variant_arity(args),
     // effects
     NativeDisplayStack => meta::display_stack(args, call_stack),
     Raise => effects::raise(args),

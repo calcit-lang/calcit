@@ -8,11 +8,13 @@ export class CalcitTuple {
   tag: CalcitValue;
   extra: CalcitValue[];
   klass: CalcitRecord;
+  enum: CalcitRecord;
   cachedHash: Hash;
-  constructor(tagName: CalcitValue, extra: CalcitValue[], klass: CalcitRecord) {
+  constructor(tagName: CalcitValue, extra: CalcitValue[], klass: CalcitRecord, enumPrototype: CalcitRecord = null) {
     this.tag = tagName;
     this.extra = extra;
     this.klass = klass;
+    this.enum = enumPrototype;
     this.cachedHash = null;
   }
   get(n: number) {
@@ -26,11 +28,11 @@ export class CalcitTuple {
   }
   assoc(n: number, v: CalcitValue) {
     if (n === 0) {
-      return new CalcitTuple(v, this.extra, this.klass);
+      return new CalcitTuple(v, this.extra, this.klass, this.enum);
     } else if (n - 1 < this.extra.length) {
       let next_extra = this.extra.slice();
       next_extra[n - 1] = v;
-      return new CalcitTuple(this.tag, next_extra, this.klass);
+      return new CalcitTuple(this.tag, next_extra, this.klass, this.enum);
     } else {
       throw new Error(`Tuple only have ${this.extra.length} elements`);
     }

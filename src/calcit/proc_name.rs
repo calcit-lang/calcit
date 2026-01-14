@@ -58,6 +58,12 @@ pub enum CalcitProc {
   NativeTupleParams,
   #[strum(serialize = "&tuple:with-class")]
   NativeTupleWithClass,
+  #[strum(serialize = "&tuple:enum")]
+  NativeTupleEnum,
+  #[strum(serialize = "&tuple:enum-has-variant?")]
+  NativeTupleEnumHasVariant,
+  #[strum(serialize = "&tuple:enum-variant-arity")]
+  NativeTupleEnumVariantArity,
   #[strum(serialize = "&display-stack")]
   NativeDisplayStack,
   #[strum(serialize = "raise")]
@@ -543,9 +549,13 @@ impl CalcitProc {
         return_type: some_tag("number"),
         arg_types: vec![some_tag("string")],
       }),
-      NativeStrEmpty | NativeStrContains | NativeStrIncludes => Some(ProcTypeSignature {
+      NativeStrEmpty => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![some_tag("string")],
+      }),
+      NativeStrContains | NativeStrIncludes => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("string"), some_tag("string")],
       }),
       NativeStrNth | NativeStrFirst => Some(ProcTypeSignature {
         return_type: some_tag("string"),
@@ -865,6 +875,9 @@ impl CalcitProc {
       | NativeClassTuple
       | NativeEnumTuple
       | NativeTupleWithClass
+      | NativeTupleEnum
+      | NativeTupleEnumHasVariant
+      | NativeTupleEnumVariantArity
       | NativeNumberDisplayBy
       | NativeMapDestruct
       | NativeSetDestruct

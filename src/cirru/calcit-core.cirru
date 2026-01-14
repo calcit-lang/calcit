@@ -2130,13 +2130,29 @@
                   t# $ gensym |tag
                   &let
                     v# $ gensym |v
-                    quasiquote $ &let (~v# ~value)
-                      if
-                        not $ tuple? ~v#
-                        raise $ str "|tag-match expected tuple, got" ~v#
+                    &let
+                      enum# $ gensym |enum
                       &let
-                        ~t# $ &tuple:nth ~v# 0
-                        &tag-match-internal ~v# ~t# $ ~@ body
+                        expected# $ gensym |expected
+                        &let
+                          actual# $ gensym |actual
+                          quasiquote $ &let (~v# ~value)
+                            if
+                              not $ tuple? ~v#
+                              raise $ str "|tag-match expected tuple, got" ~v#
+                            &let (~t# $ &tuple:nth ~v# 0)
+                              &let (~enum# $ &tuple:enum ~v#)
+                                if (some? ~enum#)
+                                  &let ()
+                                    if
+                                      not $ &tuple:enum-has-variant? ~enum# ~t#
+                                      raise $ str-spaced "|enum does not have variant" ~t# "|for" ~v#
+                                    &let (~expected# $ &tuple:enum-variant-arity ~enum# ~t#)
+                                      &let (~actual# $ &- (&tuple:count ~v#) 1)
+                                        if
+                                          not= ~expected# ~actual#
+                                          raise $ str-spaced "|enum variant expects" ~expected# "|payload(s), got" ~actual# "|for" ~v#
+                                &tag-match-internal ~v# ~t# $ ~@ body
           :examples $ []
             quote
               assert= 11
@@ -2532,6 +2548,12 @@
         |&tuple:params $ %{} :CodeEntry (:doc "|internal function for getting tuple params\nSyntax: (&tuple:params tuple)\nParams: tuple (tuple)\nReturns: list of parameter values\nReturns the parameter values of the tuple as a list")
           :code $ quote &runtime-inplementation
         |&tuple:with-class $ %{} :CodeEntry (:doc "|internal function for tuple with class operation\nSyntax: (&tuple:with-class tuple new-class)\nParams: tuple (tuple), new-class (any)\nReturns: new tuple with updated class\nReturns new tuple with same values but different class")
+          :code $ quote &runtime-inplementation
+        |&tuple:enum $ %{} :CodeEntry (:doc "|Get the enum prototype from a tuple\nSyntax: (&tuple:enum tuple)\nParams: tuple (tuple)\nReturns: enum prototype (record) or nil if not an enum tuple")
+          :code $ quote &runtime-inplementation
+        |&tuple:enum-has-variant? $ %{} :CodeEntry (:doc "|Check if an enum has a specific variant\nSyntax: (&tuple:enum-has-variant? enum tag)\nParams: enum (record), tag (tag)\nReturns: bool - true if variant exists")
+          :code $ quote &runtime-inplementation
+        |&tuple:enum-variant-arity $ %{} :CodeEntry (:doc "|Get the arity of a variant in an enum\nSyntax: (&tuple:enum-variant-arity enum tag)\nParams: enum (record), tag (tag)\nReturns: number - number of payload fields for the variant")
           :code $ quote &runtime-inplementation
         |&display-stack $ %{} :CodeEntry (:doc "|internal function for displaying call stack\nSyntax: (&display-stack)\nParams: none\nReturns: string representation of call stack\nReturns formatted string showing current call stack for debugging")
           :code $ quote &runtime-inplementation

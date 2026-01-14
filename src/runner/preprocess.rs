@@ -1,9 +1,9 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
-    CalcitRecord, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, CalcitTypeAnnotation, GENERATED_DEF,
-    ImportInfo, LocatedWarning, NodeLocation, RawCodeType,
+    self, Calcit, CalcitArgLabel, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal,
+    CalcitProc, CalcitRecord, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, CalcitTuple,
+    CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -1299,8 +1299,8 @@ fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
       // First check if the local has inline type_info, then fall back to scope_types
       local.type_info.clone().or_else(|| scope_types.get(&local.sym).cloned())
     }
-    Calcit::Symbol { sym, .. } => scope_types.get(sym).cloned().or_else(|| infer_type_from_expr(target)),
-    _ => infer_type_from_expr(target),
+    Calcit::Symbol { sym, .. } => scope_types.get(sym).cloned().or_else(|| infer_type_from_expr(target, scope_types)),
+    _ => infer_type_from_expr(target, scope_types),
   }
 }
 
@@ -1311,7 +1311,7 @@ fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
 /// - Function calls with return-type annotations
 /// - Nested &let expressions (returns type of final expression)
 /// - Local variables (reads from type_info field)
-fn infer_type_from_expr(expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   match expr {
     // Literal types
     Calcit::Number(_) => Some(tag_annotation("number")),
@@ -1348,7 +1348,7 @@ fn infer_type_from_expr(expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
           // &let has format: (&let (binding) body...)
           // The last element is the return value
           if xs.len() > 1 {
-            infer_type_from_expr(&xs[xs.len() - 1])
+            infer_type_from_expr(&xs[xs.len() - 1], scope_types)
           } else {
             None
           }
@@ -1360,6 +1360,11 @@ fn infer_type_from_expr(expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
 
         // Proc call: check if proc has return_type
         Calcit::Proc(proc) => {
+          if matches!(proc, CalcitProc::NativeEnumTuple) {
+            if let Some(tuple_type) = infer_enum_tuple_annotation(xs, scope_types) {
+              return Some(tuple_type);
+            }
+          }
           if let Some(type_sig) = proc.get_type_signature() {
             type_sig.return_type.clone()
           } else {
@@ -1425,6 +1430,44 @@ fn infer_type_from_expr(expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
     }
 
     _ => None,
+  }
+}
+
+fn infer_enum_tuple_annotation(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if xs.len() < 4 {
+    return None;
+  }
+
+  let class_arg = xs.get(1)?;
+  let enum_arg = xs.get(2)?;
+  let tag_arg = xs.get(3);
+
+  let class_record = resolve_record_value(class_arg, scope_types);
+  let enum_record = resolve_record_value(enum_arg, scope_types)?;
+  let enum_proto = CalcitEnum::from_record(enum_record).ok()?;
+
+  let tag_value = tag_arg
+    .map(|arg| arg.to_owned())
+    .unwrap_or_else(|| Calcit::Tag(cirru_edn::EdnTag::from("unknown")));
+
+  let tuple = CalcitTuple {
+    tag: Arc::new(tag_value),
+    extra: vec![],
+    class: class_record.map(Arc::new),
+    sum_type: Some(Arc::new(enum_proto)),
+  };
+
+  Some(Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(tuple))))
+}
+
+fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<CalcitRecord> {
+  match target {
+    Calcit::Record(record) => Some(record.to_owned()),
+    Calcit::Import(CalcitImport { ns, def, .. }) => match program::lookup_evaled_def(ns, def) {
+      Some(Calcit::Record(record)) => Some(record),
+      _ => None,
+    },
+    _ => resolve_type_value(target, scope_types).and_then(|t| t.as_record().map(|r| r.to_owned())),
   }
 }
 
@@ -1647,7 +1690,7 @@ pub fn preprocess_core_let(
         let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
 
         // Try to infer type from the binding expression
-        let inferred_type = infer_type_from_expr(&form);
+        let inferred_type = infer_type_from_expr(&form, &body_types);
 
         let name = Calcit::Local(CalcitLocal {
           idx: CalcitLocal::track_sym(sym),

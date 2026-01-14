@@ -385,10 +385,40 @@ pub fn new_enum_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     let sum_type_value = xs[1].to_owned();
     match (class_value, sum_type_value) {
       (Calcit::Record(class_record), Calcit::Record(enum_record)) => {
-        let enum_proto = match CalcitEnum::from_record(enum_record) {
+        let enum_proto = match CalcitEnum::from_record(enum_record.clone()) {
           Ok(proto) => proto,
-          Err(msg) => return CalcitErr::err_str(CalcitErrKind::Type, format!("tuple expected a valid enum prototype, but {msg}")),
+          Err(msg) => {
+            return CalcitErr::err_str(CalcitErrKind::Type, format!("tuple expected a valid enum prototype, but {msg}"));
+          }
         };
+
+        // Runtime validation: check tag and arity
+        let tag_value = &xs[2];
+        let tag_name = match tag_value {
+          Calcit::Tag(t) => t.ref_str(),
+          other => {
+            return CalcitErr::err_str(CalcitErrKind::Type, format!("tuple expected a tag, but received: {other}"));
+          }
+        };
+
+        match enum_proto.find_variant_by_name(tag_name) {
+          Some(variant) => {
+            let payload_count = xs.len() - 3;
+            let expected_arity = variant.arity();
+            if payload_count != expected_arity {
+              return CalcitErr::err_str(
+                CalcitErrKind::Arity,
+                format!("enum variant `{tag_name}` expects {expected_arity} payload(s), but received: {payload_count}"),
+              );
+            }
+          }
+          None => {
+            return CalcitErr::err_str(
+              CalcitErrKind::Type,
+              format!("enum `{}` does not have variant `{}`", enum_proto.name(), tag_name),
+            );
+          }
+        }
 
         let extra: Vec<Calcit> = if xs.len() == 3 {
           vec![]
@@ -415,6 +445,96 @@ pub fn new_enum_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         format!("tuple expected a record as class, but received: {other}"),
       ),
     }
+  }
+}
+
+/// Get the enum prototype from a tuple
+pub fn tuple_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:enum expected 1 argument, but received:", xs);
+  }
+  match &xs[0] {
+    Calcit::Tuple(t) => match &t.sum_type {
+      Some(enum_proto) => Ok(Calcit::Record(enum_proto.prototype().to_owned())),
+      None => Ok(Calcit::Nil),
+    },
+    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&tuple:enum expected a tuple, but received: {a}")),
+  }
+}
+
+/// Check if an enum has a variant
+pub fn tuple_enum_has_variant(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "&tuple:enum-has-variant? expected 2 arguments, but received:",
+      xs,
+    );
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Record(enum_record), Calcit::Tag(tag)) => {
+      let enum_proto = match CalcitEnum::from_arc(Arc::new(enum_record.to_owned())) {
+        Ok(proto) => proto,
+        Err(msg) => {
+          return CalcitErr::err_str(
+            CalcitErrKind::Type,
+            format!("&tuple:enum-has-variant? expected a valid enum record, but {msg}"),
+          );
+        }
+      };
+      Ok(Calcit::Bool(enum_proto.find_variant(tag).is_some()))
+    }
+    (Calcit::Record(_), other) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&tuple:enum-has-variant? expected a tag as second argument, but received: {other}"),
+    ),
+    (other, _) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&tuple:enum-has-variant? expected a record as first argument, but received: {other}"),
+    ),
+  }
+}
+
+/// Get the arity of a variant in an enum
+pub fn tuple_enum_variant_arity(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "&tuple:enum-variant-arity expected 2 arguments, but received:",
+      xs,
+    );
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Record(enum_record), Calcit::Tag(tag)) => {
+      let enum_proto = match CalcitEnum::from_arc(Arc::new(enum_record.to_owned())) {
+        Ok(proto) => proto,
+        Err(msg) => {
+          return CalcitErr::err_str(
+            CalcitErrKind::Type,
+            format!("&tuple:enum-variant-arity expected a valid enum record, but {msg}"),
+          );
+        }
+      };
+      match enum_proto.find_variant(tag) {
+        Some(variant) => Ok(Calcit::Number(variant.arity() as f64)),
+        None => CalcitErr::err_str(
+          CalcitErrKind::Type,
+          format!(
+            "&tuple:enum-variant-arity: enum `{}` does not have variant `{}`",
+            enum_proto.name(),
+            tag
+          ),
+        ),
+      }
+    }
+    (Calcit::Record(_), other) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&tuple:enum-variant-arity expected a tag as second argument, but received: {other}"),
+    ),
+    (other, _) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&tuple:enum-variant-arity expected a record as first argument, but received: {other}"),
+    ),
   }
 }
 
@@ -893,20 +1013,24 @@ mod tests {
 
   #[test]
   fn builds_enum_tuple_with_metadata() {
-    let args = vec![
-      empty_record("Action"),
-      empty_record("Result"),
-      Calcit::tag("ok"),
-      Calcit::Number(1.0),
-    ];
+    let enum_record = Calcit::Record(CalcitRecord {
+      name: EdnTag::new("Result"),
+      fields: Arc::new(vec![EdnTag::new("ok"), EdnTag::new("err")]),
+      values: Arc::new(vec![
+        Calcit::from(CalcitList::Vector(vec![])),                      // :ok has no payload
+        Calcit::from(CalcitList::Vector(vec![Calcit::tag("string")])), // :err has one :string payload
+      ]),
+      class: None,
+    });
+
+    let args = vec![empty_record("Action"), enum_record, Calcit::tag("ok")];
 
     let tuple = new_enum_tuple(&args).expect("enum tuple");
     match tuple {
       Calcit::Tuple(CalcitTuple {
         class, sum_type, extra, ..
       }) => {
-        assert_eq!(extra.len(), 1);
-        assert_eq!(extra[0], Calcit::Number(1.0));
+        assert_eq!(extra.len(), 0); // :ok has no payload
         let class = class.expect("class metadata");
         assert_eq!(class.name, EdnTag::new("Action"));
         let sum_type = sum_type.expect("enum metadata");
