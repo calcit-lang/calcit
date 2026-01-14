@@ -567,6 +567,7 @@ fn preprocess_list_call(
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
         validate_method_call(&head_form, &processed_args, scope_types, call_stack)?;
         check_record_field_access(&head_form, &processed_args, scope_types, file_ns, check_warnings);
+        check_record_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
 
         // Infer type for Method(Invoke) and update the head if type info is available
         if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = &head_form {
@@ -991,14 +992,14 @@ fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnn
     Calcit::List(xs) => xs,
     _ => return None,
   };
-  
+
   // Check if it's a (hint-fn ...) form - could be Syntax (after eval) or Symbol (during preprocess)
   let is_hint_fn = match list.first() {
     Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => true,
     Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn" => true,
     _ => false,
   };
-  
+
   if !is_hint_fn {
     return None;
   }
@@ -1059,6 +1060,119 @@ fn check_function_return_type(
       file_ns,
       check_warnings,
     );
+  }
+}
+
+/// Check record method call arguments (count and types)
+/// Validates that method calls have correct number and types of arguments
+fn check_record_method_args(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  // Only check Method(Invoke) calls
+  let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = head else {
+    return;
+  };
+
+  // Need receiver to get method info
+  let Some(receiver) = args.first() else {
+    return;
+  };
+
+  // Get receiver type
+  let Some(type_value) = resolve_type_value(receiver, scope_types) else {
+    return; // No type info, skip check
+  };
+
+  // Get class record for the type
+  let Some(class_record) = get_class_record_from_type(&type_value, &CallStackList::default()) else {
+    return; // No class record, skip check
+  };
+
+  // Get method entry from class record
+  let method_str = method_name.as_ref();
+  let Some(method_entry) = class_record.get(method_str) else {
+    return; // Method not found (will be caught by validate_method_call)
+  };
+
+  // Get function info from method entry
+  let fn_info: Option<&CalcitFn> = match method_entry {
+    Calcit::Fn { info, .. } => Some(info.as_ref()),
+    Calcit::Import(_import) => {
+      // Imports will be inlined and checked by check_proc_arg_types later
+      // Skip checking here to avoid duplicate warnings
+      return;
+    }
+    Calcit::Proc(_proc) => {
+      // Procs will be inlined and checked by check_proc_arg_types later
+      // Skip checking here to avoid duplicate warnings
+      return;
+    }
+    _ => None,
+  };
+
+  let Some(fn_info) = fn_info else {
+    return; // Can't get function info, skip check
+  };
+
+  // Method args exclude receiver (first argument in args list)
+  let Ok(method_args) = args.skip(1) else {
+    return;
+  };
+
+  // Check argument count
+  // For method calls like `data .map f`, the receiver is already the first arg
+  // So we need: actual_count + 1 (receiver) = expected_count
+  let expected_count = fn_info.args.as_ref().param_len();
+  let actual_count = method_args.len();
+  let actual_with_receiver = actual_count + 1; // Include receiver in count
+
+  // Check for variadic args (has RestMark)
+  let has_variadic = match fn_info.args.as_ref() {
+    CalcitFnArgs::MarkedArgs(xs) => xs.iter().any(|label| matches!(label, CalcitArgLabel::RestMark)),
+    CalcitFnArgs::Args(_) => false,
+  };
+
+  if !has_variadic && expected_count != actual_with_receiver {
+    gen_check_warning(
+      format!(
+        "[Warn] Method `.{method_name}` expects {expected_count} args (including receiver), got {actual_with_receiver} in call at {file_ns}/{def_name}"
+      ),
+      file_ns,
+      check_warnings,
+    );
+    return;
+  }
+
+  // Check argument types if available
+  // method_args excludes receiver, but arg_types[0] is for receiver
+  // So we need to skip the first type and check remaining args
+  let arg_types_without_receiver = fn_info.arg_types.iter().skip(1);
+
+  for (idx, (arg, expected_type_opt)) in method_args.iter().zip(arg_types_without_receiver).enumerate() {
+    let Some(expected_type) = expected_type_opt else {
+      continue; // No type constraint for this argument
+    };
+
+    if let Some(actual_type) = resolve_type_value(arg, scope_types) {
+      // Compare types
+      if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
+        let expected_str = expected_type.as_ref().to_brief_string();
+        let actual_str = actual_type.as_ref().to_brief_string();
+        gen_check_warning(
+          format!(
+            "[Warn] Method `.{method_name}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+            idx + 2 // +2 because idx is 0-based and we skip receiver (arg 1)
+          ),
+          file_ns,
+          check_warnings,
+        );
+      }
+    }
   }
 }
 
@@ -2278,6 +2392,70 @@ mod tests {
     assert!(
       warning_msg.contains("number") || warning_msg.contains(":number"),
       "warning should mention actual type: {warning_msg}"
+    );
+  }
+
+  #[test]
+  fn checks_record_method_arg_types() {
+    use cirru_edn::EdnTag;
+
+    // Create a method function: defn greet (name: string, age: number) -> ...
+    let method_fn = Arc::new(CalcitFn {
+      name: Arc::from("greet"),
+      def_ns: Arc::from("tests.method"),
+      scope: Arc::new(CalcitScope::default()),
+      args: Arc::new(CalcitFnArgs::Args(vec![1, 2])), // 2 parameters
+      body: vec![Calcit::Nil],
+      return_type: None,
+      arg_types: vec![
+        Some(Arc::new(CalcitTypeAnnotation::Tag(EdnTag::from("string")))),
+        Some(Arc::new(CalcitTypeAnnotation::Tag(EdnTag::from("number")))),
+      ],
+    });
+
+    // Create a record with the method
+    let class_record = CalcitRecord {
+      name: EdnTag::from("Person"),
+      fields: Arc::new(vec![EdnTag::from("greet")]),
+      values: Arc::new(vec![Calcit::Fn {
+        id: Arc::from("tests.method/greet"),
+        info: method_fn.clone(),
+      }]),
+      class: None,
+    };
+
+    // Test expression: (.greet user |hello) - wrong argument type
+    // greet expects (string, number) but we pass (string, string)
+    let expr = Cirru::List(vec![
+      Cirru::leaf(".greet"),
+      Cirru::leaf("user"),
+      Cirru::leaf("|hello"), // Should be number, but got string
+    ]);
+
+    let code = code_to_calcit(&expr, "tests.method", "demo", vec![]).expect("parse cirru");
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("user"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(Arc::from("user"), Arc::new(CalcitTypeAnnotation::Record(Arc::new(class_record))));
+
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let _result = preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.method", &warnings, &stack).expect("preprocess");
+
+    // Should have warning about argument type mismatch
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should have warning for wrong argument type");
+
+    let warning_msg = warnings_vec[0].to_string();
+    assert!(
+      warning_msg.contains("Method") || warning_msg.contains("greet"),
+      "warning should mention method: {warning_msg}"
+    );
+    assert!(
+      warning_msg.contains("number") && warning_msg.contains("string"),
+      "warning should mention type mismatch: {warning_msg}"
     );
   }
 }
