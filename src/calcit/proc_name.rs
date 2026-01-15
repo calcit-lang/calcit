@@ -64,6 +64,8 @@ pub enum CalcitProc {
   NativeTupleEnumHasVariant,
   #[strum(serialize = "&tuple:enum-variant-arity")]
   NativeTupleEnumVariantArity,
+  #[strum(serialize = "&tuple:validate-enum")]
+  NativeTupleValidateEnum,
   #[strum(serialize = "&display-stack")]
   NativeDisplayStack,
   #[strum(serialize = "raise")]
@@ -878,6 +880,7 @@ impl CalcitProc {
       | NativeTupleEnum
       | NativeTupleEnumHasVariant
       | NativeTupleEnumVariantArity
+      | NativeTupleValidateEnum
       | NativeNumberDisplayBy
       | NativeMapDestruct
       | NativeSetDestruct

@@ -2130,29 +2130,13 @@
                   t# $ gensym |tag
                   &let
                     v# $ gensym |v
-                    &let
-                      enum# $ gensym |enum
-                      &let
-                        expected# $ gensym |expected
-                        &let
-                          actual# $ gensym |actual
-                          quasiquote $ &let (~v# ~value)
-                            if
-                              not $ tuple? ~v#
-                              raise $ str "|tag-match expected tuple, got" ~v#
-                            &let (~t# $ &tuple:nth ~v# 0)
-                              &let (~enum# $ &tuple:enum ~v#)
-                                if (some? ~enum#)
-                                  &let ()
-                                    if
-                                      not $ &tuple:enum-has-variant? ~enum# ~t#
-                                      raise $ str-spaced "|enum does not have variant" ~t# "|for" ~v#
-                                    &let (~expected# $ &tuple:enum-variant-arity ~enum# ~t#)
-                                      &let (~actual# $ &- (&tuple:count ~v#) 1)
-                                        if
-                                          not= ~expected# ~actual#
-                                          raise $ str-spaced "|enum variant expects" ~expected# "|payload(s), got" ~actual# "|for" ~v#
-                                &tag-match-internal ~v# ~t# $ ~@ body
+                    quasiquote $ &let (~v# ~value)
+                      if
+                        not $ tuple? ~v#
+                        raise $ str "|tag-match expected tuple, got" ~v#
+                      &let (~t# $ &tuple:nth ~v# 0)
+                        &tuple:validate-enum ~v# ~t#
+                        &tag-match-internal ~v# ~t# $ ~@ body
           :examples $ []
             quote
               assert= 11
@@ -2554,6 +2538,8 @@
         |&tuple:enum-has-variant? $ %{} :CodeEntry (:doc "|Check if an enum has a specific variant\nSyntax: (&tuple:enum-has-variant? enum tag)\nParams: enum (record), tag (tag)\nReturns: bool - true if variant exists")
           :code $ quote &runtime-inplementation
         |&tuple:enum-variant-arity $ %{} :CodeEntry (:doc "|Get the arity of a variant in an enum\nSyntax: (&tuple:enum-variant-arity enum tag)\nParams: enum (record), tag (tag)\nReturns: number - number of payload fields for the variant")
+          :code $ quote &runtime-inplementation
+        |&tuple:validate-enum $ %{} :CodeEntry (:doc "|Validate enum tuple tag/arity if enum metadata exists\nSyntax: (&tuple:validate-enum tuple tag)\nParams: tuple (tuple), tag (tag)\nReturns: nil\nRaises error on invalid tag or arity")
           :code $ quote &runtime-inplementation
         |&display-stack $ %{} :CodeEntry (:doc "|internal function for displaying call stack\nSyntax: (&display-stack)\nParams: none\nReturns: string representation of call stack\nReturns formatted string showing current call stack for debugging")
           :code $ quote &runtime-inplementation

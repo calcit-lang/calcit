@@ -420,15 +420,7 @@ pub fn new_enum_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           }
         }
 
-        let extra: Vec<Calcit> = if xs.len() == 3 {
-          vec![]
-        } else {
-          let mut ys: Vec<Calcit> = Vec::with_capacity(xs.len() - 3);
-          for item in xs.iter().skip(3) {
-            ys.push(item.to_owned());
-          }
-          ys
-        };
+        let extra: Vec<Calcit> = xs.iter().skip(3).cloned().collect();
         Ok(Calcit::Tuple(CalcitTuple {
           tag: Arc::new(xs[2].to_owned()),
           extra,
@@ -462,6 +454,16 @@ pub fn tuple_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+fn parse_enum_record(enum_record: &CalcitRecord, proc_name: &str) -> Result<CalcitEnum, CalcitErr> {
+  match CalcitEnum::from_record(enum_record.to_owned()) {
+    Ok(proto) => Ok(proto),
+    Err(msg) => Err(CalcitErr::use_str(
+      CalcitErrKind::Type,
+      format!("{proc_name} expected a valid enum record, but {msg}"),
+    )),
+  }
+}
+
 /// Check if an enum has a variant
 pub fn tuple_enum_has_variant(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
@@ -473,15 +475,7 @@ pub fn tuple_enum_has_variant(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Record(enum_record), Calcit::Tag(tag)) => {
-      let enum_proto = match CalcitEnum::from_arc(Arc::new(enum_record.to_owned())) {
-        Ok(proto) => proto,
-        Err(msg) => {
-          return CalcitErr::err_str(
-            CalcitErrKind::Type,
-            format!("&tuple:enum-has-variant? expected a valid enum record, but {msg}"),
-          );
-        }
-      };
+      let enum_proto = parse_enum_record(enum_record, "&tuple:enum-has-variant?")?;
       Ok(Calcit::Bool(enum_proto.find_variant(tag).is_some()))
     }
     (Calcit::Record(_), other) => CalcitErr::err_str(
@@ -506,15 +500,7 @@ pub fn tuple_enum_variant_arity(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Record(enum_record), Calcit::Tag(tag)) => {
-      let enum_proto = match CalcitEnum::from_arc(Arc::new(enum_record.to_owned())) {
-        Ok(proto) => proto,
-        Err(msg) => {
-          return CalcitErr::err_str(
-            CalcitErrKind::Type,
-            format!("&tuple:enum-variant-arity expected a valid enum record, but {msg}"),
-          );
-        }
-      };
+      let enum_proto = parse_enum_record(enum_record, "&tuple:enum-variant-arity")?;
       match enum_proto.find_variant(tag) {
         Some(variant) => Ok(Calcit::Number(variant.arity() as f64)),
         None => CalcitErr::err_str(
@@ -534,6 +520,44 @@ pub fn tuple_enum_variant_arity(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (other, _) => CalcitErr::err_str(
       CalcitErrKind::Type,
       format!("&tuple:enum-variant-arity expected a record as first argument, but received: {other}"),
+    ),
+  }
+}
+
+/// Validate enum tuple tag and arity if enum metadata exists
+pub fn tuple_validate_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:validate-enum expected 2 arguments, but received:", xs);
+  }
+  match (&xs[0], &xs[1]) {
+    (Calcit::Tuple(tuple), Calcit::Tag(tag)) => {
+      let tuple_value = Calcit::Tuple(tuple.to_owned());
+      if let Some(enum_proto) = &tuple.sum_type {
+        match enum_proto.find_variant(tag) {
+          Some(variant) => {
+            let expected = variant.arity();
+            let actual = tuple.extra.len();
+            if expected != actual {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!("enum variant expects {expected} payload(s), got {actual} for {tuple_value}"),
+              );
+            }
+          }
+          None => {
+            return CalcitErr::err_str(CalcitErrKind::Type, format!("enum does not have variant {tag} for {tuple_value}"));
+          }
+        }
+      }
+      Ok(Calcit::Nil)
+    }
+    (Calcit::Tuple(_), other) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&tuple:validate-enum expected a tag as second argument, but received: {other}"),
+    ),
+    (other, _) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&tuple:validate-enum expected a tuple as first argument, but received: {other}"),
     ),
   }
 }
