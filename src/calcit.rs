@@ -3,10 +3,12 @@ mod list;
 mod local;
 mod proc_name;
 mod record;
+mod sum_type;
 mod symbol;
 mod syntax_name;
 mod thunk;
 mod tuple;
+mod type_annotation;
 
 use core::cmp::Ord;
 use std::cmp::Eq;
@@ -29,10 +31,12 @@ pub use list::CalcitList;
 pub use local::CalcitLocal;
 pub use proc_name::CalcitProc;
 pub use record::CalcitRecord;
+pub use sum_type::{CalcitEnum, EnumVariant};
 pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
 pub use syntax_name::CalcitSyntax;
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
+pub use type_annotation::{CalcitFnTypeAnnotation, CalcitTypeAnnotation};
 
 use crate::builtins::ValueAndListeners;
 use crate::call_stack::CallStackList;
@@ -93,7 +97,7 @@ pub enum Calcit {
   /// name, ns... notice that `ns` is a meta info
   Syntax(CalcitSyntax, Arc<str>),
   /// Method is kind like macro, it's handled during preprocessing, into `&invoke` or `&invoke-native`
-  /// method name, method kind
+  /// method name, method kind (Invoke variant may carry inferred receiver type)
   Method(Arc<str>, MethodKind),
   /// currently only JavaScript calls are handled
   RawCode(RawCodeType, Arc<str>),
@@ -140,29 +144,52 @@ impl fmt::Display for Calcit {
       },
       CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
       Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
-      Tuple(CalcitTuple { tag, extra, class }) => {
-        if let Some(record) = class {
-          f.write_str("(%:: ")?;
+      Tuple(CalcitTuple {
+        tag,
+        extra,
+        class,
+        sum_type,
+      }) => match (class, sum_type) {
+        (Some(class), Some(sum_type)) => {
+          f.write_str("(%%:: ")?;
           f.write_str(&tag.to_string())?;
-
           for item in extra {
             f.write_char(' ')?;
             f.write_str(&item.to_string())?;
           }
-          f.write_str(&format!(" (:class {})", record.name))?;
-          f.write_str(")")
-        } else {
-          f.write_str("(:: ")?;
-          f.write_str(&tag.to_string())?;
-
-          for item in extra {
-            f.write_char(' ')?;
-            f.write_str(&item.to_string())?;
-          }
-
+          f.write_str(&format!(" (:class {}) (:enum {})", class.name, sum_type.name()))?;
           f.write_str(")")
         }
-      }
+        (Some(class), None) => {
+          f.write_str("(%:: ")?;
+          f.write_str(&tag.to_string())?;
+          for item in extra {
+            f.write_char(' ')?;
+            f.write_str(&item.to_string())?;
+          }
+          f.write_str(&format!(" (:class {})", class.name))?;
+          f.write_str(")")
+        }
+        (None, Some(sum_type)) => {
+          f.write_str("(:: ")?;
+          f.write_str(&tag.to_string())?;
+          for item in extra {
+            f.write_char(' ')?;
+            f.write_str(&item.to_string())?;
+          }
+          f.write_str(&format!(" (:enum {})", sum_type.name()))?;
+          f.write_str(")")
+        }
+        (None, None) => {
+          f.write_str("(:: ")?;
+          f.write_str(&tag.to_string())?;
+          for item in extra {
+            f.write_char(' ')?;
+            f.write_str(&item.to_string())?;
+          }
+          f.write_str(")")
+        }
+      },
       Buffer(buf) => {
         f.write_str("(&buffer")?;
         if buf.len() > 8 {
@@ -282,7 +309,10 @@ impl fmt::Display for Calcit {
         f.write_str(")")
       }
       Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
-      Method(name, method_kind) => f.write_str(&format!("(&{method_kind} {name})")),
+      Method(name, method_kind) => match method_kind {
+        MethodKind::Invoke(Some(t)) => f.write_str(&format!("(&invoke {name} :type {})", t.as_ref())),
+        _ => f.write_str(&format!("(&{method_kind} {name})")),
+      },
       RawCode(_, code) => f.write_str(&format!("(&raw-code {code})")),
       AnyRef(_r) => f.write_str("(&any-ref ...)"),
     }
@@ -949,14 +979,14 @@ impl LocatedWarning {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MethodKind {
-  /// (.call a)
-  Invoke,
+  /// (.call a) - may carry inferred receiver type for validation
+  Invoke(Option<Arc<CalcitTypeAnnotation>>),
   /// (.!f a)
   InvokeNative,
   /// (.?!f a)
   InvokeNativeOptional,
   /// (.:k a)
-  KeywordAccess,
+  TagAccess,
   /// (.-p a)
   Access,
   /// (.?-p a)
@@ -966,10 +996,10 @@ pub enum MethodKind {
 impl fmt::Display for MethodKind {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      MethodKind::Invoke => write!(f, "invoke"),
+      MethodKind::Invoke(_) => write!(f, "invoke"),
       MethodKind::InvokeNative => write!(f, "invoke-native"),
       MethodKind::InvokeNativeOptional => write!(f, "invoke-native-optional"),
-      MethodKind::KeywordAccess => write!(f, "keyword-access"),
+      MethodKind::TagAccess => write!(f, "tag-access"),
       MethodKind::Access => write!(f, "access"),
       MethodKind::AccessOptional => write!(f, "access-optional"),
     }

@@ -56,6 +56,7 @@ fn main() -> Result<(), String> {
   }
 
   let mut eval_once = cli_args.once;
+  let is_eval_mode = matches!(&cli_args.subcommand, Some(CalcitCommand::Eval(_)));
   let assets_watch = cli_args.watch_dir.to_owned();
 
   println!("{}", format!("calcit version: {}", cli_args::CALCIT_VERSION).dimmed());
@@ -184,6 +185,10 @@ fn main() -> Result<(), String> {
     eval_once = true;
   }
 
+  if is_eval_mode && !check_only {
+    run_check_only(&entries)?;
+  }
+
   let task = if check_only {
     run_check_only(&entries)
   } else if let Some(CalcitCommand::EmitJs(js_options)) = &cli_args.subcommand {
@@ -310,9 +315,44 @@ fn recall_program(content: &str, entries: &ProgramEntries, settings: &ToplevelCa
   })?;
   // println!("\ndata: {}", &data);
   let changes: ChangesDict = data.try_into()?;
-  // println!("\nchanges: {:?}", changes);
+
+  // Print change summary
+  println!("{} Incremental changes detected:", "→".cyan());
+  if !changes.added.is_empty() {
+    println!(
+      "  {} Added namespaces: {}",
+      "+".green(),
+      changes.added.keys().map(|k| k.as_ref()).collect::<Vec<_>>().join(", ")
+    );
+  }
+  if !changes.removed.is_empty() {
+    println!(
+      "  {} Removed namespaces: {}",
+      "-".red(),
+      changes.removed.iter().map(|k| k.as_ref()).collect::<Vec<_>>().join(", ")
+    );
+  }
+  if !changes.changed.is_empty() {
+    for (ns, file_changes) in &changes.changed {
+      let mut changes_desc = Vec::new();
+      if file_changes.ns.is_some() {
+        changes_desc.push("ns".to_string());
+      }
+      if !file_changes.added_defs.is_empty() {
+        changes_desc.push(format!("+{} defs", file_changes.added_defs.len()));
+      }
+      if !file_changes.changed_defs.is_empty() {
+        changes_desc.push(format!("~{} defs", file_changes.changed_defs.len()));
+      }
+      if !file_changes.removed_defs.is_empty() {
+        changes_desc.push(format!("-{} defs", file_changes.removed_defs.len()));
+      }
+      println!("  {} {}: {}", "~".yellow(), ns, changes_desc.join(", "));
+    }
+  }
+
   program::apply_code_changes(&changes)?;
-  // println!("\nprogram code: {:?}", new_code);
+  println!("{} Changes applied to program", "✓".green());
 
   // clear data in evaled states
   program::clear_all_program_evaled_defs(entries.init_ns.to_owned(), entries.reload_ns.to_owned(), settings.reload_libs)?;
@@ -398,6 +438,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   if !warnings.is_empty() {
     println!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
     LocatedWarning::print_list(&warnings);
+    return Err(format!("Found {} warnings during preprocessing", warnings.len()));
   }
 
   let duration = Instant::now().duration_since(started_time);

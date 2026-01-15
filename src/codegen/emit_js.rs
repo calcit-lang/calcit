@@ -178,8 +178,8 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
       let code = match kind {
         MethodKind::Access => ".-",
         MethodKind::InvokeNative => ".!",
-        MethodKind::Invoke => ".",
-        MethodKind::KeywordAccess => ".:",
+        MethodKind::Invoke(_) => ".",
+        MethodKind::TagAccess => ".:",
         MethodKind::AccessOptional => ".?-",
         MethodKind::InvokeNativeOptional => ".?!",
       };
@@ -269,7 +269,7 @@ fn to_js_code(
       }
       Calcit::Method(name, kind) => {
         let proc_prefix = get_proc_prefix(ns);
-        if *kind == MethodKind::Invoke {
+        if matches!(kind, MethodKind::Invoke(_)) {
           Ok(format!("{proc_prefix}invoke_method_closure({})", escape_cirru_str(name)))
         } else {
           Err(format!("Does not expect native method as closure: {kind}"))
@@ -412,6 +412,7 @@ fn gen_call_code(
         },
         // for `&call-spread`, just translate as normal call
         CalcitSyntax::CallSpread => gen_call_code(&body, ns, local_defs, xs, file_imports, tags, return_label),
+        CalcitSyntax::AssertType => Err(String::from("assert-type syntax is not supported during JS codegen yet")),
         _ => {
           let args_code = gen_args_code(&body, ns, local_defs, file_imports, tags)?;
           Ok(format!(
@@ -586,7 +587,7 @@ fn gen_call_code(
           Err(format!("invoke-native-optional expected at least 1 object, got: {xs}"))
         }
       }
-      MethodKind::Invoke => {
+      MethodKind::Invoke(_) => {
         let proc_prefix = get_proc_prefix(ns);
         if !body.is_empty() {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
@@ -604,13 +605,13 @@ fn gen_call_code(
           Err(format!("expected at least 1 object, got: {xs}"))
         }
       }
-      MethodKind::KeywordAccess => {
+      MethodKind::TagAccess => {
         if body.len() == 1 {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
           let tag = format!("_tag[{}]", wrap_js_str(name));
           Ok(format!("{obj}.get({tag})"))
         } else {
-          Err(format!("keyword-accessor takes only 1 argument, {xs}"))
+          Err(format!("tag-accessor takes only 1 argument, {xs}"))
         }
       }
     },

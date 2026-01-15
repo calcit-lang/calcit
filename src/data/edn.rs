@@ -95,8 +95,8 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     Method(name, kind) => match kind {
       MethodKind::Access => Ok(Edn::Symbol(format!(".-{name}").into())),
       MethodKind::InvokeNative => Ok(Edn::Symbol(format!(".!{name}").into())),
-      MethodKind::Invoke => Ok(Edn::Symbol(format!(".{name}").into())),
-      MethodKind::KeywordAccess => Ok(Edn::Symbol(format!(".:{name}").into())),
+      MethodKind::Invoke(_) => Ok(Edn::Symbol(format!(".{name}").into())),
+      MethodKind::TagAccess => Ok(Edn::Symbol(format!(".:{name}").into())),
       MethodKind::AccessOptional => Ok(Edn::Symbol(format!(".?-{name}").into())),
       MethodKind::InvokeNativeOptional => Ok(Edn::Symbol(format!(".?!{name}").into())),
     },
@@ -129,6 +129,7 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
       tag: Arc::new(edn_to_calcit(tag, options)),
       extra: extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
       class: None,
+      sum_type: None,
     }),
     Edn::List(EdnListView(xs)) => {
       let mut ys: Vec<Calcit> = vec![];

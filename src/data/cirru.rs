@@ -25,6 +25,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
       "?" => Ok(Calcit::Syntax(CalcitSyntax::ArgOptional, ns.into())),
       "~" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolate, ns.into())),
       "~@" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into())),
+      "assert-type" => Ok(Calcit::Syntax(CalcitSyntax::AssertType, ns.into())),
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
       "::" => Ok(Calcit::Proc(CalcitProc::NativeTuple)),
@@ -40,7 +41,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
           } else if let Some(stripped) = s.strip_prefix(".?!") {
             Ok(Calcit::Method(stripped.into(), MethodKind::InvokeNativeOptional))
           } else {
-            Ok(Calcit::Method(s[1..].to_owned().into(), MethodKind::Invoke))
+            Ok(Calcit::Method(s[1..].to_owned().into(), MethodKind::Invoke(None)))
           }
         }
         '"' | '|' => Ok(Calcit::new_str(&s[1..])),
@@ -164,16 +165,21 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
 /// some characters available for variables are okey here, for example `-`, `!`, `?`, `*``, etc.
 fn split_leaf_to_method_call(s: &str) -> Option<(String, Calcit)> {
   let prefixes = [
-    (".:", MethodKind::KeywordAccess),
+    (".:", MethodKind::TagAccess),
     (".-", MethodKind::Access),
     (".!", MethodKind::InvokeNative),
-    (".", MethodKind::Invoke),
+    (".", MethodKind::Invoke(None)),
   ];
 
   for (prefix, kind) in prefixes.iter() {
     if let Some((obj, method)) = s.split_once(prefix) {
       if is_valid_symbol(obj) && is_valid_symbol(method) {
-        return Some((obj.to_owned(), Calcit::Method(method.into(), kind.to_owned())));
+        let method_kind = if matches!(kind, MethodKind::Invoke(_)) {
+          MethodKind::Invoke(None)
+        } else {
+          kind.to_owned()
+        };
+        return Some((obj.to_owned(), Calcit::Method(method.into(), method_kind)));
       }
     }
   }
@@ -267,12 +273,33 @@ pub fn calcit_to_cirru(x: &Calcit) -> Result<Cirru, String> {
       match kind {
         Access => Ok(Cirru::leaf(format!(".-{name}"))),
         InvokeNative => Ok(Cirru::leaf(format!(".!{name}"))),
-        Invoke => Ok(Cirru::leaf(format!(".{name}"))),
-        KeywordAccess => Ok(Cirru::leaf(format!(".:{name}"))),
+        Invoke(_) => Ok(Cirru::leaf(format!(".{name}"))),
+        TagAccess => Ok(Cirru::leaf(format!(".:{name}"))),
         AccessOptional => Ok(Cirru::leaf(format!(".?-{name}"))),
         InvokeNativeOptional => Ok(Cirru::leaf(format!(".?!{name}"))),
       }
     }
     _ => Err(format!("unknown data to convert to Cirru: {x}")),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn parses_assert_type_list() {
+    let expr = Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("x"), Cirru::leaf(":fn")]);
+
+    let calcit = code_to_calcit(&expr, "tests.ns", "demo", vec![]).expect("parse assert-type");
+    let list_arc = match calcit {
+      Calcit::List(xs) => xs,
+      other => panic!("expected list, got {other}"),
+    };
+    assert_eq!(list_arc.len(), 3);
+    let items = list_arc.to_vec();
+    assert!(matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _))));
+    assert!(matches!(items.get(1), Some(Calcit::Symbol { .. })));
+    assert!(matches!(items.get(2), Some(Calcit::Tag(_))));
   }
 }

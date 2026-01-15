@@ -44,6 +44,8 @@ pub enum CalcitProc {
   NativeTuple,
   #[strum(serialize = "%::")]
   NativeClassTuple,
+  #[strum(serialize = "%%::")]
+  NativeEnumTuple,
   #[strum(serialize = "&tuple:nth")]
   NativeTupleNth,
   #[strum(serialize = "&tuple:assoc")]
@@ -56,6 +58,14 @@ pub enum CalcitProc {
   NativeTupleParams,
   #[strum(serialize = "&tuple:with-class")]
   NativeTupleWithClass,
+  #[strum(serialize = "&tuple:enum")]
+  NativeTupleEnum,
+  #[strum(serialize = "&tuple:enum-has-variant?")]
+  NativeTupleEnumHasVariant,
+  #[strum(serialize = "&tuple:enum-variant-arity")]
+  NativeTupleEnumVariantArity,
+  #[strum(serialize = "&tuple:validate-enum")]
+  NativeTupleValidateEnum,
   #[strum(serialize = "&display-stack")]
   NativeDisplayStack,
   #[strum(serialize = "raise")]
@@ -80,6 +90,8 @@ pub enum CalcitProc {
   ParseCirruList,
   #[strum(serialize = "format-cirru")]
   FormatCirru,
+  #[strum(serialize = "format-cirru-one-liner")]
+  FormatCirruOneLiner,
   #[strum(serialize = "parse-cirru-edn")]
   ParseCirruEdn,
   #[strum(serialize = "format-cirru-edn")]
@@ -347,4 +359,537 @@ pub enum CalcitProc {
   NativeRecordAssoc,
   #[strum(serialize = "&record:extend-as")]
   NativeRecordExtendAs,
+}
+
+use crate::CalcitTypeAnnotation;
+use std::sync::Arc;
+
+/// Type signature for a Proc (builtin function)
+#[derive(Debug, Clone)]
+pub struct ProcTypeSignature {
+  /// return type declared
+  pub return_type: Option<Arc<CalcitTypeAnnotation>>,
+  /// argument types in order. Use tag("&") to mark variadic args (no checking after this mark)
+  pub arg_types: Vec<Option<Arc<CalcitTypeAnnotation>>>,
+}
+
+fn tag_type(name: &str) -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::from_tag_name(name))
+}
+
+fn some_tag(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  Some(tag_type(name))
+}
+
+impl CalcitProc {
+  /// Get the type signature for this proc if available
+  /// Returns None for procs without type annotations
+  pub fn get_type_signature(&self) -> Option<ProcTypeSignature> {
+    use CalcitProc::*;
+
+    match self {
+      // === Meta operations ===
+      TypeOf => Some(ProcTypeSignature {
+        return_type: some_tag("tag"),
+        arg_types: vec![None],
+      }),
+      FormatToLisp | FormatToCirru => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![None],
+      }),
+      TurnSymbol => Some(ProcTypeSignature {
+        return_type: some_tag("symbol"),
+        arg_types: vec![some_tag("string")],
+      }),
+      TurnTag => Some(ProcTypeSignature {
+        return_type: some_tag("tag"),
+        arg_types: vec![some_tag("string")],
+      }),
+      NativeCompare => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![None, None],
+      }),
+      NativeGetOs => Some(ProcTypeSignature {
+        return_type: some_tag("tag"),
+        arg_types: vec![],
+      }),
+      NativeHash => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![None],
+      }),
+      GenerateId => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![],
+      }),
+      NativeGetCalcitRunningMode => Some(ProcTypeSignature {
+        return_type: some_tag("tag"),
+        arg_types: vec![],
+      }),
+      NativeGetCalcitBackend => Some(ProcTypeSignature {
+        return_type: some_tag("tag"),
+        arg_types: vec![],
+      }),
+      NativeDisplayStack => Some(ProcTypeSignature {
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("&")],
+      }),
+      NativeCirruType => Some(ProcTypeSignature {
+        return_type: some_tag("tag"),
+        arg_types: vec![None],
+      }),
+
+      // === Math operations ===
+      NativeAdd => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![None, None],
+      }),
+      NativeMinus | NativeMultiply | NativeDivide | Pow | NativeNumberRem => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("number"), some_tag("number")],
+      }),
+      Floor | Ceil | Round | Sin | Cos | Sqrt | NativeNumberFract => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("number")],
+      }),
+      IsRound => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("number")],
+      }),
+      BitShl | BitShr | BitAnd | BitOr | BitXor => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("number"), some_tag("number")],
+      }),
+      BitNot => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("number")],
+      }),
+      NativeNumberFormat => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("number")],
+      }),
+
+      // === Comparison & Logic ===
+      NativeEquals | NativeLessThan | NativeGreaterThan | Identical => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![None, None],
+      }),
+      Not => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("bool")],
+      }),
+
+      // === String operations ===
+      NativeStrConcat => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![None, None],
+      }),
+      Trim => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![None, some_tag("&")],
+      }),
+      TurnString => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![None],
+      }),
+      NativeStr => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("&")],
+      }),
+      Split => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("string"), some_tag("string")],
+      }),
+      SplitLines => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("string")],
+      }),
+      StartsWith | EndsWith => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![None, None],
+      }),
+      GetCharCode => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("string")],
+      }),
+      CharFromCode => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("number")],
+      }),
+      PrStr => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![None],
+      }),
+      ParseFloat => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("string")],
+      }),
+      IsBlank => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("string")],
+      }),
+      NativeStrCompare => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("string"), some_tag("string")],
+      }),
+      NativeStrReplace => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string"), some_tag("string"), some_tag("string")],
+      }),
+      NativeStrSlice => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string"), some_tag("number"), some_tag("&")],
+      }),
+      NativeStrFindIndex => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("string"), some_tag("string")],
+      }),
+      NativeStrEscape => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string")],
+      }),
+      NativeStrCount => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("string")],
+      }),
+      NativeStrEmpty => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("string")],
+      }),
+      NativeStrContains | NativeStrIncludes => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("string"), some_tag("string")],
+      }),
+      NativeStrNth | NativeStrFirst => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string")],
+      }),
+      NativeStrRest => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string")],
+      }),
+      NativeStrPadLeft | NativeStrPadRight => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string"), some_tag("number"), some_tag("string")],
+      }),
+
+      // === List operations ===
+      List => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("&")],
+      }),
+      Append | Prepend => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list"), None],
+      }),
+      Butlast | NativeListReverse => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list")],
+      }),
+      Range => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("number"), some_tag("&")],
+      }),
+      Sort => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list"), some_tag("&")],
+      }),
+      NativeListConcat => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list"), some_tag("&")],
+      }),
+      NativeListCount => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("list")],
+      }),
+      NativeListEmpty => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("list")],
+      }),
+      NativeListContains | NativeListIncludes => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("list"), None],
+      }),
+      NativeListSlice => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list"), some_tag("number"), some_tag("&")],
+      }),
+      NativeListNth => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![some_tag("list"), some_tag("number")],
+      }),
+      NativeListFirst => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![some_tag("list")],
+      }),
+      NativeListRest => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list")],
+      }),
+      NativeListAssoc | NativeListAssocBefore | NativeListAssocAfter => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list"), some_tag("number"), None],
+      }),
+      NativeListDissoc => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list"), some_tag("number")],
+      }),
+      NativeListToSet => Some(ProcTypeSignature {
+        return_type: some_tag("set"),
+        arg_types: vec![some_tag("list")],
+      }),
+      NativeListDistinct => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("list")],
+      }),
+      Foldl | FoldlShortcut | FoldrShortcut => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![None, None, None],
+      }),
+
+      // === Map operations ===
+      NativeMap => Some(ProcTypeSignature {
+        return_type: some_tag("map"),
+        arg_types: vec![some_tag("&")],
+      }),
+      NativeMerge | NativeMergeNonNil => Some(ProcTypeSignature {
+        return_type: some_tag("map"),
+        arg_types: vec![some_tag("map"), some_tag("map")],
+      }),
+      ToPairs => Some(ProcTypeSignature {
+        return_type: some_tag("set"),
+        arg_types: vec![some_tag("map")],
+      }),
+      NativeMapToList => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("map")],
+      }),
+      NativeMapGet => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![some_tag("map"), None],
+      }),
+      NativeMapDissoc => Some(ProcTypeSignature {
+        return_type: some_tag("map"),
+        arg_types: vec![some_tag("map"), None],
+      }),
+      NativeMapCount => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("map")],
+      }),
+      NativeMapEmpty => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("map")],
+      }),
+      NativeMapContains | NativeMapIncludes => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("map"), None],
+      }),
+      NativeMapAssoc => Some(ProcTypeSignature {
+        return_type: some_tag("map"),
+        arg_types: vec![some_tag("map"), None, None],
+      }),
+      NativeMapDiffNew | NativeMapDiffKeys | NativeMapCommonKeys => Some(ProcTypeSignature {
+        return_type: some_tag("set"),
+        arg_types: vec![some_tag("map"), some_tag("map")],
+      }),
+
+      // === Set operations ===
+      Set => Some(ProcTypeSignature {
+        return_type: some_tag("set"),
+        arg_types: vec![some_tag("&")],
+      }),
+      NativeInclude | NativeExclude => Some(ProcTypeSignature {
+        return_type: some_tag("set"),
+        arg_types: vec![some_tag("set"), None],
+      }),
+      NativeDifference | NativeUnion | NativeSetIntersection => Some(ProcTypeSignature {
+        return_type: some_tag("set"),
+        arg_types: vec![some_tag("set"), some_tag("set")],
+      }),
+      NativeSetToList => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("set")],
+      }),
+      NativeSetCount => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("set")],
+      }),
+      NativeSetEmpty => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("set")],
+      }),
+      NativeSetIncludes => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("set"), None],
+      }),
+
+      // === Tuple operations ===
+      NativeTuple => Some(ProcTypeSignature {
+        return_type: some_tag("tuple"),
+        arg_types: vec![some_tag("&")],
+      }),
+      NativeTupleNth => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![some_tag("tuple"), some_tag("number")],
+      }),
+      NativeTupleAssoc => Some(ProcTypeSignature {
+        return_type: some_tag("tuple"),
+        arg_types: vec![some_tag("tuple"), some_tag("number"), None],
+      }),
+      NativeTupleCount => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("tuple")],
+      }),
+      NativeTupleClass => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("tuple")],
+      }),
+      NativeTupleParams => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![some_tag("tuple")],
+      }),
+
+      // === Record operations ===
+      NativeRecord => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), some_tag("&")],
+      }),
+      NativeRecordWith => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), None, None, some_tag("&")],
+      }),
+      NativeRecordAssoc => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), None, None],
+      }),
+      NativeRecordGet => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![some_tag("record"), some_tag("tag")],
+      }),
+      NativeRecordCount => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("record")],
+      }),
+      NativeRecordContains => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("record"), None],
+      }),
+      NativeRecordMatches => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("record"), None],
+      }),
+      NativeRecordToMap => Some(ProcTypeSignature {
+        return_type: some_tag("map"),
+        arg_types: vec![some_tag("record")],
+      }),
+      NativeRecordFromMap => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), some_tag("map")],
+      }),
+      NativeRecordGetName => Some(ProcTypeSignature {
+        return_type: some_tag("tag"),
+        arg_types: vec![some_tag("record")],
+      }),
+      NewRecord | NewClassRecord => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("tag"), some_tag("&")],
+      }),
+      NativeRecordClass => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record")],
+      }),
+      NativeRecordWithClass => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), None],
+      }),
+      NativeRecordExtendAs => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("record"), some_tag("tag"), some_tag("&")],
+      }),
+
+      // === Refs/Atoms ===
+      Atom => Some(ProcTypeSignature {
+        return_type: some_tag("ref"),
+        arg_types: vec![None],
+      }),
+      AtomDeref => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![some_tag("ref")],
+      }),
+      AddWatch => Some(ProcTypeSignature {
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("ref"), None, None],
+      }),
+      RemoveWatch => Some(ProcTypeSignature {
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("ref"), None],
+      }),
+
+      // === I/O operations ===
+      ReadFile => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string")],
+      }),
+      WriteFile => Some(ProcTypeSignature {
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("string"), some_tag("string")],
+      }),
+      GetEnv => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("string"), some_tag("&")],
+      }),
+
+      // === Time ===
+      CpuTime => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![],
+      }),
+
+      // === Cirru format ===
+      ParseCirru | ParseCirruEdn => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![some_tag("string"), some_tag("&")],
+      }),
+      FormatCirru | FormatCirruEdn | FormatCirruOneLiner => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![None],
+      }),
+      ParseCirruList | NativeCirruQuoteToList => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![None],
+      }),
+
+      // === Buffer ===
+      NativeBuffer => Some(ProcTypeSignature {
+        return_type: some_tag("buffer"),
+        arg_types: vec![some_tag("&")],
+      }),
+
+      // === Special forms and control flow ===
+      // These typically don't have simple type signatures or are handled specially
+      Recur
+      | Raise
+      | Quit
+      | IsSpreadingMark
+      | NativeResetGenSymIndex
+      | NativeExtractCodeIntoEdn
+      | NativeDataToCode
+      | NativeCirruNth
+      | NativeClassTuple
+      | NativeEnumTuple
+      | NativeTupleWithClass
+      | NativeTupleEnum
+      | NativeTupleEnumHasVariant
+      | NativeTupleEnumVariantArity
+      | NativeTupleValidateEnum
+      | NativeNumberDisplayBy
+      | NativeMapDestruct
+      | NativeSetDestruct
+      | NativeFormatTernaryTree => None,
+    }
+  }
+
+  /// Check if this proc has a type signature
+  pub fn has_type_signature(&self) -> bool {
+    self.get_type_signature().is_some()
+  }
 }

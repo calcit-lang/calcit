@@ -1,10 +1,7 @@
 use cirru_parser::Cirru;
 use colored::Colorize;
-use std::fs;
-use std::io::{self, Read};
-use std::sync::Arc;
 
-use super::common::{ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_path, validate_input_flags, validate_input_sources};
+use super::common::{ERR_CODE_INPUT_REQUIRED, cirru_to_json, parse_input_to_cirru, parse_path, read_code_input};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
   TreeReplaceCommand, TreeShowCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeWrapCommand,
@@ -20,46 +17,10 @@ use super::edit::{
 // Helper functions
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Check if a Cirru node is a single-element list containing only a string leaf,
-/// which might confuse LLM thinking it's a leaf node when it's actually an expression.
-fn warn_if_single_string_expression(node: &Cirru, input_source: &str) {
-  if let Cirru::List(items) = node {
-    if items.len() == 1 {
-      if let Some(Cirru::Leaf(_)) = items.first() {
-        eprintln!("\n⚠️  Note: Cirru one-liner input '{input_source}' was parsed as an expression (list with one element).");
-        eprintln!("   In Cirru syntax, this creates a list containing one element.");
-        eprintln!("   If you want a leaf node (plain string), use --leaf parameter.");
-        eprintln!("   Example: --leaf -e '{input_source}' creates a leaf, not an expression.\n");
-      }
-    }
-  }
-}
-
-/// Read code input from file, inline code, or stdin.
-fn read_code_input(file: &Option<String>, code: &Option<String>, stdin: bool) -> Result<Option<String>, String> {
-  let sources = [stdin, file.is_some(), code.is_some()];
-  validate_input_sources(&sources)?;
-
-  if stdin {
-    let mut buffer = String::new();
-    io::stdin()
-      .read_to_string(&mut buffer)
-      .map_err(|e| format!("Failed to read from stdin: {e}"))?;
-    Ok(Some(buffer.trim().to_string()))
-  } else if let Some(path) = file {
-    let content = fs::read_to_string(path).map_err(|e| format!("Failed to read file '{path}': {e}"))?;
-    Ok(Some(content.trim().to_string()))
-  } else if let Some(s) = code {
-    Ok(Some(s.trim().to_string()))
-  } else {
-    Ok(None)
-  }
-}
-
 /// Main handler for code command
 pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(), String> {
   match &cmd.subcommand {
-    TreeSubcommand::Show(opts) => handle_show(opts, snapshot_file),
+    TreeSubcommand::Show(opts) => handle_show(opts, snapshot_file, opts.json),
     TreeSubcommand::Replace(opts) => handle_replace(opts, snapshot_file),
     TreeSubcommand::Delete(opts) => handle_delete(opts, snapshot_file),
     TreeSubcommand::InsertBefore(opts) => handle_insert_before(opts, snapshot_file),
@@ -69,31 +30,6 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
     TreeSubcommand::SwapNext(opts) => handle_swap_next(opts, snapshot_file),
     TreeSubcommand::SwapPrev(opts) => handle_swap_prev(opts, snapshot_file),
     TreeSubcommand::Wrap(opts) => handle_wrap(opts, snapshot_file),
-  }
-}
-
-/// Parse input to Cirru node
-fn parse_input_to_cirru(input: &str, json_opt: &Option<String>, json_input: bool, leaf_input: bool) -> Result<Cirru, String> {
-  // Check for conflicting flags (tree commands only support one-liner Cirru now)
-  validate_input_flags(leaf_input, json_input)?;
-
-  // If --leaf is set, wrap input directly as a leaf node
-  if leaf_input {
-    return Ok(Cirru::Leaf(Arc::from(input)));
-  }
-
-  // Determine if we should parse as JSON (must be explicitly specified)
-  let use_json = json_opt.is_some() || json_input;
-
-  if use_json {
-    // Parse as JSON array
-    let json_value: serde_json::Value = serde_json::from_str(input).map_err(|e| format!("Failed to parse JSON: {e}"))?;
-    json_value_to_cirru(&json_value)
-  } else {
-    // Parse as Cirru one-liner only
-    let result = cirru_parser::parse_expr_one_liner(input).map_err(|e| format!("Failed to parse Cirru one-liner: {e}"))?;
-    warn_if_single_string_expression(&result, input);
-    Ok(result)
   }
 }
 
@@ -152,11 +88,39 @@ fn format_preview_with_type(node: &Cirru, max_lines: usize) -> String {
   }
 }
 
+/// Show a side-by-side diff preview of the change
+fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: &[usize]) -> String {
+  let mut output = String::new();
+
+  output.push_str(&format!(
+    "\n{}: {} at path [{}]\n",
+    "Preview".blue().bold(),
+    operation,
+    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+  ));
+  output.push_str(&"─".repeat(60));
+  output.push('\n');
+
+  // Show old and new side by side (simplified version)
+  let old_preview = format_preview_with_type(old_node, 10);
+  let new_preview = format_preview_with_type(new_node, 10);
+
+  output.push_str(&format!("{}:\n", "Before".yellow().bold()));
+  output.push_str(&old_preview);
+  output.push_str("\n\n");
+  output.push_str(&format!("{}:\n", "After".green().bold()));
+  output.push_str(&new_preview);
+  output.push('\n');
+  output.push_str(&"─".repeat(60));
+
+  output
+}
+
 // ============================================================================
 // Command handlers
 // ============================================================================
 
-fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
   let path = parse_path(&opts.path)?;
 
@@ -172,14 +136,135 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String
     .get(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
-  let node = navigate_to_path(&code_entry.code, &path)?;
+  // Try to navigate to path, provide enhanced error message on failure
+  let node = match navigate_to_path(&code_entry.code, &path) {
+    Ok(n) => n,
+    Err(original_error) => {
+      // Find the longest valid path
+      let mut valid_depth = 0;
+      let mut current = &code_entry.code;
+
+      for (depth, &idx) in path.iter().enumerate() {
+        match current {
+          Cirru::Leaf(_) => {
+            valid_depth = depth;
+            break;
+          }
+          Cirru::List(items) => {
+            if idx >= items.len() {
+              valid_depth = depth;
+              break;
+            }
+            current = &items[idx];
+            valid_depth = depth + 1;
+          }
+        }
+      }
+
+      // Get the node at the longest valid path
+      let valid_path = &path[..valid_depth];
+      let valid_node = navigate_to_path(&code_entry.code, valid_path).unwrap();
+
+      // Format the valid path display
+      let valid_path_display = if valid_path.is_empty() {
+        "root".to_string()
+      } else {
+        format!("[{}]", valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
+      };
+
+      // Get preview of the valid node
+      let node_preview = match &valid_node {
+        Cirru::Leaf(s) => format!("{:?} (leaf)", s.as_ref()),
+        Cirru::List(items) => {
+          let preview = valid_node.format_one_liner().unwrap_or_else(|_| "<complex>".to_string());
+          let truncated = if preview.len() > 60 {
+            format!("{}...", &preview[..60])
+          } else {
+            preview
+          };
+          format!("{} ({} items)", truncated, items.len())
+        }
+      };
+
+      // Print enhanced error message
+      eprintln!("{}", "Error: Invalid path".red().bold());
+      eprintln!("{original_error}");
+      eprintln!();
+      eprintln!("{} Longest valid path: {}", "→".cyan(), valid_path_display.yellow());
+      eprintln!("{} Node at that path: {}", "→".cyan(), node_preview.dimmed());
+      eprintln!();
+
+      // Show next steps based on node type
+      match &valid_node {
+        Cirru::Leaf(_) => {
+          eprintln!("{} This is a leaf node (cannot navigate deeper)", "Note:".yellow().bold());
+          eprintln!(
+            "{} View it with: {}",
+            "→".cyan(),
+            format!(
+              "cr tree show {} -p \"{}\"",
+              opts.target,
+              valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+            )
+            .cyan()
+          );
+        }
+        Cirru::List(items) => {
+          eprintln!(
+            "{} This node has {} children (indices 0-{})",
+            "Available:".green().bold(),
+            items.len(),
+            items.len().saturating_sub(1)
+          );
+          eprintln!(
+            "{} View it with: {}",
+            "→".cyan(),
+            format!(
+              "cr tree show {} -p \"{}\"",
+              opts.target,
+              valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+            )
+            .cyan()
+          );
+
+          // Show first few children as hints
+          if !items.is_empty() {
+            eprintln!();
+            eprintln!("{} First few children:", "Hint:".blue().bold());
+            for (i, item) in items.iter().enumerate().take(3) {
+              let child_preview = match item {
+                Cirru::Leaf(s) => format!("{:?}", s.as_ref()),
+                Cirru::List(children) => format!("({} items)", children.len()),
+              };
+              let child_path = if valid_path.is_empty() {
+                i.to_string()
+              } else {
+                format!("{},{}", valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","), i)
+              };
+              eprintln!("  [{}] {} {} -p \"{}\"", i, child_preview.yellow(), "->".dimmed(), child_path);
+            }
+            if items.len() > 3 {
+              eprintln!("  {}", format!("... and {} more", items.len() - 3).dimmed());
+            }
+          }
+        }
+      }
+
+      return Err(String::new()); // Empty error since we already printed detailed message
+    }
+  };
 
   // Print info
-  println!(
-    "{}: {}  [{}]",
-    "At".green().bold(),
-    format!("{namespace}/{definition}").cyan(),
+  let path_display = if path.is_empty() {
+    "(root)".to_string()
+  } else {
     path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+  };
+  println!(
+    "{}: {}  path: [{}]",
+    "Location".green().bold(),
+    format!("{namespace}/{definition}").cyan(),
+    path_display
   );
 
   let node_type = match &node {
@@ -203,32 +288,44 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String
             Cirru::Leaf(s) => format!("{:?}", s.as_ref()),
             Cirru::List(children) => format!("({} items)", children.len()),
           };
-          println!(
-            "  [{}] {} {} -p {:?}",
-            i,
-            type_str.yellow(),
-            "->".dimmed(),
+          let child_path = if opts.path.is_empty() {
+            i.to_string()
+          } else {
             format!("{},{}", opts.path, i)
-          );
+          };
+          println!("  [{}] {} {} -p \"{}\"", i, type_str.yellow(), "->".dimmed(), child_path);
         }
         println!();
       }
 
-      println!("{}:", "JSON".green().bold());
-      println!("{}", cirru_to_json(&node));
-      if opts.depth > 0 {
-        println!("{}", format!("(depth limited to {})", opts.depth).dimmed());
+      if show_json {
+        println!("{}:", "JSON".green().bold());
+        println!("{}", cirru_to_json(&node));
+        if opts.depth > 0 {
+          println!("{}", format!("(depth limited to {})", opts.depth).dimmed());
+        }
+        println!();
       }
-      println!();
 
+      println!("{}: To modify this node:", "Next steps".blue().bold());
       println!(
-        "{}: To modify, use `{} {} -p \"{}\" '<cirru>'`",
-        "Tip".blue().bold(),
-        "tree replace".cyan(),
+        "  • Replace: {} {} -p \"{}\" {}",
+        "cr tree replace".cyan(),
         opts.target,
-        opts.path
+        opts.path,
+        "-e 'cirru one-liner'".dimmed()
       );
-      println!("     Use `{}` for JSON input.", "-j '<json>'".to_string().cyan());
+      println!("  • Delete:  {} {} -p \"{}\"", "cr tree delete".cyan(), opts.target, opts.path);
+      println!();
+      let mut tips = vec![format!(
+        "Prefer {} to avoid indentation issues; use {} for complex structures",
+        "-e 'one-liner'".yellow(),
+        "-j".yellow()
+      )];
+      if !show_json {
+        tips.push(format!("add {} flag to also output JSON format", "-j".yellow()));
+      }
+      println!("{}: {}", "Tips".blue().bold(), tips.join("; "));
 
       return Ok(());
     }
@@ -238,6 +335,32 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String
     println!("{}: {}", "Type".green().bold(), "leaf".yellow());
     if let Cirru::Leaf(s) = &node {
       println!("{}: {:?}", "Value".green().bold(), s.as_ref());
+      println!();
+      println!("{}: To modify this leaf:", "Next steps".blue().bold());
+      println!(
+        "  • Replace: {} {} -p \"{}\" --leaf -e '<value>'",
+        "cr tree replace".cyan(),
+        opts.target,
+        opts.path
+      );
+      if !path.is_empty() {
+        // Show parent path for context
+        let parent_path = &path[..path.len() - 1];
+        let parent_path_str = parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        println!(
+          "  • View parent: {} {} -p \"{}\"",
+          "cr tree show".cyan(),
+          opts.target,
+          parent_path_str
+        );
+      }
+      println!();
+      println!(
+        "{}: Use {} for symbols, {} for strings",
+        "Tip".blue().bold(),
+        "-e 'symbol'".yellow(),
+        "-e '|text'".yellow()
+      );
     }
   }
 
@@ -248,11 +371,11 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   let (namespace, definition) = parse_target(&opts.target)?;
   let path = parse_path(&opts.path)?;
 
-  let code_input = read_code_input(&opts.file, &opts.code, opts.stdin)?;
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?;
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf)?;
+  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -290,6 +413,9 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   // Save original for comparison
   let old_node = navigate_to_path(&code_entry.code, &path)?;
 
+  // Show diff preview
+  println!("{}", show_diff_preview(&old_node, &processed_node, "replace", &path));
+
   let new_code = apply_operation_at_path(&code_entry.code, &path, "replace", Some(&processed_node))?;
   code_entry.code = new_code.clone();
 
@@ -309,6 +435,16 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   println!("{}:", "To".green().bold());
   let new_node = navigate_to_path(&new_code, &path)?;
   println!("{}", format_preview_with_type(&new_node, 20));
+  println!();
+  println!("{}", "Next steps:".blue().bold());
+  println!(
+    "  • Verify: {} '{}' -p \"{}\"",
+    "cr tree show".cyan(),
+    format_args!("{}/{}", namespace, definition),
+    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+  );
+  println!("  • Check errors: {}", "cr query error".cyan());
+  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
 
   Ok(())
 }
@@ -333,6 +469,26 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   // Save original node and parent for comparison
   let old_node = navigate_to_path(&code_entry.code, &path)?;
   let parent_path: Vec<usize> = if path.is_empty() { vec![] } else { path[..path.len() - 1].to_vec() };
+  let old_parent = if parent_path.is_empty() {
+    code_entry.code.clone()
+  } else {
+    navigate_to_path(&code_entry.code, &parent_path)?
+  };
+
+  // Show diff preview with parent context
+  println!(
+    "\n{}: Deleting node at path [{}]",
+    "Preview".blue().bold(),
+    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+  );
+  println!("{}", "─".repeat(60));
+  println!("{}:", "Node to delete".yellow().bold());
+  println!("{}", format_preview_with_type(&old_node, 10));
+  println!();
+  println!("{}:", "Parent context".dimmed());
+  println!("{}", format_preview_with_type(&old_parent, 8));
+  println!("{}", "─".repeat(60));
+  println!();
 
   let new_code = apply_operation_at_path(&code_entry.code, &path, "delete", None)?;
   code_entry.code = new_code.clone();
@@ -357,6 +513,29 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
     navigate_to_path(&new_code, &parent_path)?
   };
   println!("{}", format_preview_with_type(&new_parent, 20));
+  println!();
+
+  // Warn about index changes
+  if !path.is_empty() {
+    let deleted_index = path[path.len() - 1];
+    println!(
+      "{}: Sibling nodes after index {} have shifted down by 1",
+      "⚠️  Index change".yellow().bold(),
+      deleted_index
+    );
+    println!(
+      "   Example: path [{},{}] is now [{},{}]",
+      parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+      deleted_index + 1,
+      parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+      deleted_index
+    );
+    println!(
+      "   {}: Re-run {} to get updated paths",
+      "Tip".blue().bold(),
+      "cr query search".cyan()
+    );
+  }
 
   Ok(())
 }
@@ -551,11 +730,11 @@ fn generic_insert_handler<T: InsertOperation>(
   let (namespace, definition) = parse_target(target)?;
   let path = parse_path(path_str)?;
 
-  let code_input = read_code_input(opts.file(), opts.code(), opts.stdin())?;
+  let code_input = read_code_input(opts.file(), opts.code(), opts.json(), opts.stdin())?;
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
-  let new_node = parse_input_to_cirru(raw, opts.json(), opts.json_input(), opts.leaf())?;
+  let new_node = parse_input_to_cirru(raw, opts.json(), opts.json_input(), opts.leaf(), true)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -598,6 +777,22 @@ fn generic_insert_handler<T: InsertOperation>(
     navigate_to_path(&code_entry.code, &parent_path)?
   };
 
+  // Show diff preview
+  println!(
+    "\n{}: {} at path [{}]",
+    "Preview".blue().bold(),
+    operation,
+    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+  );
+  println!("{}", "─".repeat(60));
+  println!("{}:", "Node to insert".cyan().bold());
+  println!("{}", format_preview_with_type(&processed_node, 8));
+  println!();
+  println!("{}:", "Parent before".dimmed());
+  println!("{}", format_preview_with_type(&old_parent, 8));
+  println!("{}", "─".repeat(60));
+  println!();
+
   let new_code = apply_operation_at_path(&code_entry.code, &path, operation, Some(&processed_node))?;
   code_entry.code = new_code.clone();
 
@@ -625,6 +820,53 @@ fn generic_insert_handler<T: InsertOperation>(
     navigate_to_path(&new_code, &parent_path)?
   };
   println!("{}", format_preview_with_type(&new_parent, 15));
+  println!();
+
+  // Explain index impact based on operation
+  match operation {
+    "insert-before" => {
+      if !path.is_empty() {
+        let insert_index = path[path.len() - 1];
+        println!(
+          "{}: Node inserted at index {}, original node and siblings shifted up by 1",
+          "Index impact".yellow().bold(),
+          insert_index
+        );
+        println!(
+          "   Old path [{},{}] → New path [{},{}]",
+          parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+          insert_index,
+          parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+          insert_index + 1
+        );
+      }
+    }
+    "insert-after" => {
+      if !path.is_empty() {
+        let ref_index = path[path.len() - 1];
+        println!(
+          "{}: Node inserted at index {}, nodes after reference shifted up by 1",
+          "Index impact".yellow().bold(),
+          ref_index + 1
+        );
+      }
+    }
+    "insert-child" => {
+      println!(
+        "{}: Node inserted as first child (index 0), all existing children shifted up by 1",
+        "Index impact".yellow().bold()
+      );
+      println!("   Old child [0] → New child [1], [1] → [2], etc.");
+    }
+    "append-child" => {
+      println!(
+        "{}: Node appended as last child, no index changes to existing nodes",
+        "Index impact".green().bold()
+      );
+      println!("   {}:  Use this for multiple insertions to keep paths stable", "Tip".blue().bold());
+    }
+    _ => {}
+  }
 
   Ok(())
 }
@@ -676,6 +918,40 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
     definition
   );
   println!();
+
+  // Explain what was swapped
+  if !path.is_empty() {
+    let current_index = path[path.len() - 1];
+    let parent_display = if parent_path.is_empty() {
+      "root".to_string()
+    } else {
+      format!("[{}]", parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
+    };
+
+    match operation {
+      "swap-next-sibling" => {
+        println!(
+          "{}: Swapped child [{}] with [{}] under parent {}",
+          "Index change".yellow().bold(),
+          current_index,
+          current_index + 1,
+          parent_display
+        );
+      }
+      "swap-prev-sibling" => {
+        println!(
+          "{}: Swapped child [{}] with [{}] under parent {}",
+          "Index change".yellow().bold(),
+          current_index,
+          current_index - 1,
+          parent_display
+        );
+      }
+      _ => {}
+    }
+    println!();
+  }
+
   println!("{}:", "Parent before swap".yellow().bold());
   println!("{}", format_preview_with_type(&old_parent, 15));
   println!();
@@ -692,15 +968,4 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
 
 fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String> {
   generic_insert_handler(&opts.target, &opts.path, "replace", opts, snapshot_file, opts.depth)
-}
-
-// Helper to convert Cirru to JSON string
-fn cirru_to_json(node: &Cirru) -> String {
-  match node {
-    Cirru::Leaf(s) => serde_json::to_string(s.as_ref()).unwrap_or_else(|_| format!("\"{s}\"")),
-    Cirru::List(items) => {
-      let json_items: Vec<String> = items.iter().map(cirru_to_json).collect();
-      format!("[{}]", json_items.join(","))
-    }
-  }
 }

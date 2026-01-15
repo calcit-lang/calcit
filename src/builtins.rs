@@ -78,12 +78,17 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     // tuple
     NativeTuple => meta::new_tuple(args), // unstable solution for the name
     NativeClassTuple => meta::new_class_tuple(args),
+    NativeEnumTuple => meta::new_enum_tuple(args),
     NativeTupleNth => meta::tuple_nth(args),
     NativeTupleAssoc => meta::assoc(args),
     NativeTupleCount => meta::tuple_count(args),
     NativeTupleClass => meta::tuple_class(args),
     NativeTupleParams => meta::tuple_params(args),
     NativeTupleWithClass => meta::tuple_with_class(args),
+    NativeTupleEnum => meta::tuple_enum(args),
+    NativeTupleEnumHasVariant => meta::tuple_enum_has_variant(args),
+    NativeTupleEnumVariantArity => meta::tuple_enum_variant_arity(args),
+    NativeTupleValidateEnum => meta::tuple_validate_enum(args),
     // effects
     NativeDisplayStack => meta::display_stack(args, call_stack),
     Raise => effects::raise(args),
@@ -96,6 +101,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     ParseCirru => meta::parse_cirru(args),
     ParseCirruList => meta::parse_cirru_list(args),
     FormatCirru => meta::format_cirru(args),
+    FormatCirruOneLiner => meta::format_cirru_one_liner(args),
     ParseCirruEdn => meta::parse_cirru_edn(args),
     FormatCirruEdn => meta::format_cirru_edn(args),
     NativeCirruQuoteToList => meta::cirru_quote_to_list(args),
@@ -275,6 +281,11 @@ pub fn handle_syntax(
     ArgOptional => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be used as operator", &nodes.to_vec()),
     MacroInterpolate => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~` cannot be used as operator", &nodes.to_vec()),
     MacroInterpolateSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~@` cannot be used as operator", &nodes.to_vec()),
+    AssertType => CalcitErr::err_nodes(
+      CalcitErrKind::Unimplemented,
+      "`assert-type` is not supported at runtime yet",
+      &nodes.to_vec(),
+    ),
   }
 }
 

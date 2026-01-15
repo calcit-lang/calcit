@@ -11,6 +11,8 @@ use colored::Colorize;
 use std::fs;
 use std::path::Path;
 
+use super::edit::navigate_to_path;
+
 /// Type alias for search results: (namespace, definition, matches)
 type SearchResults = Vec<(String, String, Vec<(Vec<usize>, Cirru)>)>;
 
@@ -31,7 +33,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
     QuerySubcommand::Modules(_) => handle_modules(input_path),
     QuerySubcommand::Def(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_def(input_path, ns, def)
+      handle_def(input_path, ns, def, opts.json)
     }
     QuerySubcommand::Peek(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
@@ -52,7 +54,14 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       let (ns, def) = parse_target(&opts.target)?;
       handle_usages(input_path, ns, def, opts.deps)
     }
-    QuerySubcommand::Search(opts) => handle_search_leaf(input_path, &opts.pattern, opts.filter.as_deref(), opts.loose, opts.max_depth),
+    QuerySubcommand::Search(opts) => handle_search_leaf(
+      input_path,
+      &opts.pattern,
+      opts.filter.as_deref(),
+      opts.loose,
+      opts.max_depth,
+      opts.start_path.as_deref(),
+    ),
     QuerySubcommand::SearchPattern(opts) => handle_search_pattern(
       input_path,
       &opts.pattern,
@@ -296,16 +305,29 @@ fn handle_error() -> Result<(), String> {
 
   if !Path::new(error_file).exists() {
     println!("{}", "No .calcit-error.cirru file found.".yellow());
+    println!();
+    println!("{}", "Next steps:".blue().bold());
+    println!("  • Start watcher: {} or {}", "cr".cyan(), "cr js".cyan());
+    println!("  • Run syntax check: {}", "cr --check-only".cyan());
     return Ok(());
   }
 
   let content = fs::read_to_string(error_file).map_err(|e| format!("Failed to read error file: {e}"))?;
 
   if content.trim().is_empty() {
-    println!("{}", "Error file is empty (no recent errors).".green());
+    println!("{}", "✓ Error file is empty (no recent errors).".green());
+    println!();
+    println!("{}", "Your code compiled successfully!".dimmed());
   } else {
     println!("{}", "Last error stack trace:".bold().red());
     println!("{content}");
+    println!();
+    println!("{}", "Next steps to fix:".blue().bold());
+    println!("  • Search for error location: {} '<symbol>' -l", "cr query search".cyan());
+    println!("  • View definition: {} '<ns/def>'", "cr query def".cyan());
+    println!("  • Find usages: {} '<ns/def>'", "cr query usages".cyan());
+    println!();
+    println!("{}", "Tip: After fixing, watcher will recompile automatically (~300ms).".dimmed());
   }
 
   Ok(())
@@ -360,7 +382,7 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
   Ok(())
 }
 
-fn handle_def(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
+fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bool) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
 
   let file_data = snapshot
@@ -387,9 +409,11 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str) -> Result<(),
   let cirru_str = cirru_parser::format(&[code_entry.code.clone()], true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
   println!("{cirru_str}");
 
-  println!("\n{}", "JSON (for edit):".bold());
-  let json = cirru_to_json(&code_entry.code);
-  println!("{}", serde_json::to_string(&json).unwrap());
+  if show_json {
+    println!("\n{}", "JSON:".bold());
+    let json = cirru_to_json(&code_entry.code);
+    println!("{}", serde_json::to_string(&json).unwrap());
+  }
 
   let mut tips = vec![format!(
     "try `cr query search <leaf> -f '{namespace}/{definition}' -l` to quick find coordination of given leaf node."
@@ -399,6 +423,9 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str) -> Result<(),
   ));
   if !code_entry.examples.is_empty() {
     tips.push(format!("use `cr query examples {namespace}/{definition}` to view examples."));
+  }
+  if !show_json {
+    tips.push("add `-j` flag to also output JSON format.".to_string());
   }
   println!("\n{}", format!("Tips: {}", tips.join(" ")).dimmed());
 
@@ -514,10 +541,16 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
 
   // Tips - show relevant next steps
   println!("\n{}", "Tips:".bold());
-  println!("  {} query def {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} query examples {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} query usages {}/{}", "-".dimmed(), namespace, definition);
-  println!("  {} edit doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
+  println!("  {} cr query def {}/{}", "-".dimmed(), namespace, definition);
+  println!("  {} cr query examples {}/{}", "-".dimmed(), namespace, definition);
+  println!("  {} cr query usages {}/{}", "-".dimmed(), namespace, definition);
+  println!("  {} cr edit doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
+  println!(
+    "  {} Respo: event handlers go inside {} map; strings need {} prefix",
+    "-".dimmed(),
+    "attributes".green(),
+    "|".magenta()
+  );
 
   Ok(())
 }
@@ -893,8 +926,27 @@ fn fuzzy_match(text: &str, pattern: &str) -> bool {
 }
 
 /// Search for leaf nodes (strings) in a definition
-fn handle_search_leaf(input_path: &str, pattern: &str, filter: Option<&str>, loose: bool, max_depth: usize) -> Result<(), String> {
+fn handle_search_leaf(
+  input_path: &str,
+  pattern: &str,
+  filter: Option<&str>,
+  loose: bool,
+  max_depth: usize,
+  start_path: Option<&str>,
+) -> Result<(), String> {
   let snapshot = load_snapshot(input_path)?;
+
+  // Parse start_path if provided
+  let parsed_start_path: Option<Vec<usize>> = if let Some(path_str) = start_path {
+    if path_str.is_empty() {
+      Some(vec![])
+    } else {
+      let path: Result<Vec<usize>, _> = path_str.split(',').map(|s| s.trim().parse::<usize>()).collect();
+      Some(path.map_err(|e| format!("Invalid start path '{path_str}': {e}"))?)
+    }
+  } else {
+    None
+  };
 
   println!("{} Searching for:", "Search:".bold());
   if loose {
@@ -907,6 +959,15 @@ fn handle_search_leaf(input_path: &str, pattern: &str, filter: Option<&str>, loo
     println!("  {} {}", "Filter:".dimmed(), filter_str.cyan());
   } else {
     println!("  {} {}", "Scope:".dimmed(), "entire project".cyan());
+  }
+
+  if let Some(ref path) = parsed_start_path {
+    let path_display = if path.is_empty() {
+      "root".to_string()
+    } else {
+      format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","))
+    };
+    println!("  {} {}", "Start path:".dimmed(), path_display.cyan());
   }
   println!();
 
@@ -946,7 +1007,31 @@ fn handle_search_leaf(input_path: &str, pattern: &str, filter: Option<&str>, loo
         }
       }
 
-      let results = search_leaf_nodes(&code_entry.code, pattern, loose, max_depth, &[]);
+      // Navigate to start path if specified
+      let search_root = if let Some(ref start_p) = parsed_start_path {
+        if start_p.is_empty() {
+          code_entry.code.clone()
+        } else {
+          match navigate_to_path(&code_entry.code, start_p) {
+            Ok(node) => node,
+            Err(e) => {
+              eprintln!(
+                "{} Failed to navigate to start path in {}/{}: {}",
+                "Warning:".yellow(),
+                ns,
+                def_name,
+                e
+              );
+              continue;
+            }
+          }
+        }
+      } else {
+        code_entry.code.clone()
+      };
+
+      let base_path = parsed_start_path.as_deref().unwrap_or(&[]);
+      let results = search_leaf_nodes(&search_root, pattern, loose, max_depth, base_path);
 
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));
@@ -1002,10 +1087,68 @@ fn handle_search_leaf(input_path: &str, pattern: &str, filter: Option<&str>, loo
       println!();
     }
 
-    println!(
-      "{}",
-      "Tip: Use `cr tree show <namespace>/<definition> -p \"<path>\"` to view matched nodes.".dimmed()
-    );
+    // Enhanced tips based on search context
+    println!("{}", "Next steps:".blue().bold());
+    println!("  • View node: {} '<ns/def>' -p \"<path>\"", "cr tree show".cyan());
+
+    // If single definition with multiple matches, suggest batch rename workflow
+    if all_results.len() == 1 {
+      let (_ns, _def_name, results) = &all_results[0];
+      if results.len() > 1 {
+        println!("  • Batch replace: See tip below for renaming {} occurrences", results.len());
+      }
+    }
+
+    println!();
+
+    // Add batch rename tip for multiple matches in single definition
+    if all_results.len() == 1 && all_results[0].2.len() > 1 {
+      let (ns, def_name, results) = &all_results[0];
+      println!("{}", "Tip for batch rename:".yellow().bold());
+      println!("  Replace from largest index first to avoid path changes:");
+
+      // Show first 3 commands as examples (in reverse order)
+      let mut sorted_results: Vec<_> = results.iter().collect();
+      sorted_results.sort_by(|a, b| b.0.cmp(&a.0));
+
+      for (path, _) in sorted_results.iter().take(3) {
+        let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        println!(
+          "    {} '{}/{}' -p \"{}\" --leaf -e '<new-value>'",
+          "cr tree replace".cyan(),
+          ns,
+          def_name,
+          path_str
+        );
+      }
+
+      if results.len() > 3 {
+        println!("    {}", format!("... ({} more to replace)", results.len() - 3).dimmed());
+      }
+
+      println!();
+      println!("{}", "⚠️  Important: Paths change after each modification!".yellow());
+      println!(
+        "{}",
+        format!(
+          "   Alternative: Re-search after each change: {} '{}' -f '{}/{}' -l",
+          "cr query search".cyan(),
+          pattern,
+          ns,
+          def_name
+        )
+        .dimmed()
+      );
+    }
+
+    // Add quote reminder if pattern contains special characters
+    if pattern.contains('-') || pattern.contains('?') || pattern.contains('!') || pattern.contains('*') {
+      println!();
+      println!(
+        "{}",
+        format!("Tip: Always use single quotes around names with special characters: '{pattern}'").dimmed()
+      );
+    }
   }
 
   Ok(())

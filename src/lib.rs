@@ -19,7 +19,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-pub use calcit::{Calcit, CalcitErr};
+pub use calcit::{Calcit, CalcitErr, CalcitFnTypeAnnotation, CalcitTypeAnnotation};
 
 use crate::util::string::strip_shebang;
 

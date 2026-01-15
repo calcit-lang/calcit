@@ -1,5 +1,5 @@
 import { overwriteComparator, initTernaryTreeMap } from "@calcit/ternary-tree";
-import { CirruWriterNode, writeCirruCode } from "@cirru/writer.ts";
+import { CirruWriterNode, writeCirruCode, writeCirruOneLiner } from "@cirru/writer.ts";
 
 import { CalcitValue, isLiteral, _$n_compare } from "./js-primes.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
@@ -15,8 +15,8 @@ import { atom } from "./js-ref.mjs";
 type CirruEdnFormat = string | CirruEdnFormat[];
 
 export class CalcitCirruQuote {
-  value: CirruWriterNode;
-  constructor(value: CirruWriterNode) {
+  value: CirruWriterNode[];
+  constructor(value: CirruWriterNode[]) {
     if (value == null) {
       throw new Error("cirru node cannot be null");
     }
@@ -31,7 +31,7 @@ export class CalcitCirruQuote {
   nth(idx: number): CalcitValue {
     if (Array.isArray(this.value)) {
       if (idx < this.value.length) {
-        return new CalcitCirruQuote(this.value[idx]);
+        return new CalcitCirruQuote(this.value[idx] as CirruWriterNode[]);
       } else {
         throw new Error(`nth out of range: ${idx}`);
       }
@@ -64,6 +64,22 @@ export let format_cirru = (data: CalcitCirruQuote | CalcitList, useInline: boole
     }
   }
   return writeCirruCode(chunk, { useInline });
+};
+
+export let format_cirru_one_liner = (data: CalcitCirruQuote | CalcitList): string => {
+  let chunk: CirruWriterNode;
+
+  if (data instanceof CalcitCirruQuote) {
+    chunk = data.value;
+  } else {
+    chunk = toWriterNode(data);
+  }
+
+  if (!Array.isArray(chunk)) {
+    throw new Error("Expected data of list");
+  }
+
+  return writeCirruOneLiner(chunk);
 };
 
 /** better use string version of Cirru EDN in future */
@@ -325,7 +341,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
       if (x.length !== 2) {
         throw new Error(`quote expects 1 argument, got: ${x}`);
       }
-      return new CalcitCirruQuote(x[1]);
+      return new CalcitCirruQuote(x[1] as CirruWriterNode[]);
     }
     if (x[0] === "::") {
       if (x.length < 2) {

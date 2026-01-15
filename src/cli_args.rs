@@ -273,6 +273,9 @@ pub struct QueryDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
+  /// also output JSON format for programmatic consumption
+  #[argh(switch, short = 'j')]
+  pub json: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -339,6 +342,9 @@ pub struct QuerySearchCommand {
   /// maximum search depth (0 = unlimited)
   #[argh(option, short = 'd', default = "0")]
   pub max_depth: usize,
+  /// start search from specific path (comma-separated indices, e.g. "2,1,0")
+  #[argh(option, short = 'p', long = "start-path")]
+  pub start_path: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -578,13 +584,15 @@ pub enum EditSubcommand {
   RmModule(EditRmModuleCommand),
   /// update project configs
   Config(EditConfigCommand),
+  /// describe incremental code changes and export them to .calcit-error.cirru
+  Inc(EditIncCommand),
 }
 
 // --- Definition operations ---
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "def")]
-/// add or update a definition
+/// add a new definition
 pub struct EditDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
@@ -607,9 +615,6 @@ pub struct EditDefCommand {
   /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
-  /// force replace if definition exists
-  #[argh(switch, short = 'r')]
-  pub replace: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -858,6 +863,30 @@ pub struct EditConfigCommand {
   pub value: String,
 }
 
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "inc")]
+/// record incremental changes (defs and namespaces) for downstream tooling
+pub struct EditIncCommand {
+  /// namespaces whose entire file should be treated as newly added (e.g. "app.new")
+  #[argh(option, long = "added-ns")]
+  pub added_ns: Vec<String>,
+  /// namespaces that should be treated as removed from the project
+  #[argh(option, long = "removed-ns")]
+  pub removed_ns: Vec<String>,
+  /// namespaces whose ns form/imports changed (stores latest ns block)
+  #[argh(option, long = "ns-updated")]
+  pub ns_updated: Vec<String>,
+  /// definitions that were newly added (format: namespace/definition)
+  #[argh(option, long = "added")]
+  pub added: Vec<String>,
+  /// definitions that were deleted (format: namespace/definition)
+  #[argh(option, long = "removed")]
+  pub removed: Vec<String>,
+  /// definitions that were modified (format: namespace/definition)
+  #[argh(option, long = "changed")]
+  pub changed: Vec<String>,
+}
+
 // ========================================================================
 // Code command - fine-grained code tree operations
 // ========================================================================
@@ -898,6 +927,9 @@ pub struct TreeShowCommand {
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
+  /// also output JSON format for programmatic consumption
+  #[argh(switch, short = 'j')]
+  pub json: bool,
 }
 
 /// replace node at specific path

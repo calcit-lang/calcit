@@ -300,7 +300,70 @@ export let _$n_tuple_$o_with_class = function (x: CalcitTuple, y: CalcitRecord) 
   if (arguments.length !== 2) throw new Error("&tuple:with-class takes 2 arguments");
   if (!(x instanceof CalcitTuple)) throw new Error("&tuple:with-class expects a tuple");
   if (!(y instanceof CalcitRecord)) throw new Error("&tuple:with-class expects second argument in record");
-  return new CalcitTuple(x.tag, x.extra, y);
+  return new CalcitTuple(x.tag, x.extra, y, x.enumPrototype);
+};
+
+export let _$n_tuple_$o_enum = function (x: CalcitTuple) {
+  if (arguments.length !== 1) throw new Error("&tuple:enum takes 1 argument");
+  if (!(x instanceof CalcitTuple)) throw new Error("&tuple:enum expects a tuple");
+  return x.enumPrototype ?? null;
+};
+
+const assert_enum_tag_args = (procName: string, enumPrototype: CalcitRecord, variantTag: CalcitTag) => {
+  if (!(enumPrototype instanceof CalcitRecord)) {
+    throw new Error(`${procName} expects enum prototype as first argument`);
+  }
+  if (!(variantTag instanceof CalcitTag)) {
+    throw new Error(`${procName} expects tag as second argument`);
+  }
+};
+
+export let _$n_tuple_$o_enum_has_variant = function (enumPrototype: CalcitRecord, variantTag: CalcitTag) {
+  if (arguments.length !== 2) throw new Error("&tuple:enum-has-variant? takes 2 arguments");
+  assert_enum_tag_args("&tuple:enum-has-variant?", enumPrototype, variantTag);
+  return enumPrototype.contains(variantTag);
+};
+
+export let _$n_tuple_$o_enum_variant_arity = function (enumPrototype: CalcitRecord, variantTag: CalcitTag) {
+  if (arguments.length !== 2) throw new Error("&tuple:enum-variant-arity takes 2 arguments");
+  assert_enum_tag_args("&tuple:enum-variant-arity", enumPrototype, variantTag);
+
+  const variant = enumPrototype.getOrNil(variantTag);
+  if (variant === undefined) {
+    throw new Error(`Variant ${variantTag.value} not found in enum ${enumPrototype.name.value}`);
+  }
+
+  if (variant instanceof CalcitSliceList) {
+    return variant.len();
+  }
+  throw new Error("Expected variant to be a list");
+};
+
+export let _$n_tuple_$o_validate_enum = function (tuple: CalcitValue, tag: CalcitValue): CalcitValue {
+  if (arguments.length !== 2) throw new Error("&tuple:validate-enum takes 2 arguments");
+  if (!(tuple instanceof CalcitTuple)) throw new Error("&tuple:validate-enum expects a tuple as first argument");
+  if (tuple.enumPrototype == null) {
+    return null;
+  }
+
+  assert_enum_tag_args("&tuple:validate-enum", tuple.enumPrototype, tag as CalcitTag);
+
+  const tagValue = tag as CalcitTag;
+  const variant = tuple.enumPrototype.getOrNil(tagValue);
+  if (variant === undefined) {
+    throw new Error(`enum does not have variant ${tagValue.value} for ${tuple}`);
+  }
+
+  if (variant instanceof CalcitSliceList) {
+    const expected = variant.len();
+    const actual = tuple.extra.length;
+    if (expected !== actual) {
+      throw new Error(`enum variant expects ${expected} payload(s), got ${actual} for ${tuple}`);
+    }
+    return null;
+  }
+
+  throw new Error("Expected variant to be a list");
 };
 
 export let _$n_record_$o_get = function (xs: CalcitValue, k: CalcitTag) {
@@ -1289,6 +1352,31 @@ export let _$o__$o_ = (tagName: CalcitValue, ...extra: CalcitValue[]): CalcitTup
 
 export let _PCT__$o__$o_ = (klass: CalcitRecord, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
   return new CalcitTuple(tag, extra, klass);
+};
+
+export let _PCT__PCT__$o__$o_ = (klass: CalcitRecord, enumPrototype: CalcitRecord, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
+  // Runtime validation: check if tag exists in enum and arity matches
+  assert_enum_tag_args("%%::", enumPrototype, tag as CalcitTag);
+  const tagValue = tag as CalcitTag;
+
+  const variantDefinition = enumPrototype.getOrNil(tagValue);
+  if (variantDefinition === undefined) {
+    throw new Error(`Enum ${enumPrototype.name.value} does not have variant ${tagValue.value}`);
+  }
+
+  if (variantDefinition instanceof CalcitSliceList) {
+    const expectedArity = variantDefinition.len();
+    const actualArity = extra.length;
+    if (expectedArity !== actualArity) {
+      throw new Error(
+        `Variant ${tagValue.value} expects ${expectedArity} payload(s), but got ${actualArity}`
+      );
+    }
+  } else {
+    throw new Error(`Expected variant definition to be a list, got ${variantDefinition}`);
+  }
+
+  return new CalcitTuple(tag, extra, klass, enumPrototype);
 };
 
 // mutable place for core to register

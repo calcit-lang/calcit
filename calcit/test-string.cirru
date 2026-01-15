@@ -106,6 +106,15 @@
                 trim $ format-to-cirru
                   quote $ defn (a b) (+ a b)
                 , "|defn (a b)\n  + a b"
+              ; test format-cirru-one-liner
+              assert=
+                format-cirru-one-liner
+                  [] |defn ([] |add ([] |a |b)) ([] |+ |a |b)
+                , "|defn (add (a b)) $ + a b"
+              assert=
+                format-cirru-one-liner
+                  [] |+ |1 |2
+                , "|+ 1 2"
         |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-methods () (log-title "|Testing string methods")

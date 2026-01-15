@@ -10,18 +10,17 @@
 
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditDefCommand,
-  EditDocCommand, EditExamplesCommand, EditImportsCommand, EditNsDocCommand, EditRmDefCommand, EditRmExampleCommand,
+  EditDocCommand, EditExamplesCommand, EditImportsCommand, EditIncCommand, EditNsDocCommand, EditRmDefCommand, EditRmExampleCommand,
   EditRmImportCommand, EditRmModuleCommand, EditRmNsCommand, EditSubcommand,
 };
-use calcit::snapshot::{self, CodeEntry, FileInSnapShot, Snapshot, save_snapshot_to_file};
+use calcit::snapshot::{self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
 use colored::Colorize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{self, Read};
 use std::sync::Arc;
 
-use super::common::{ERR_CODE_INPUT_REQUIRED, validate_input_flags, validate_input_sources};
+use super::common::{ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_input_to_cirru, read_code_input};
 
 /// Parse "namespace/definition" format into (namespace, definition)
 pub(crate) fn parse_target(target: &str) -> Result<(&str, &str), String> {
@@ -102,6 +101,7 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::AddModule(opts) => handle_add_module(opts, snapshot_file),
     EditSubcommand::RmModule(opts) => handle_rm_module(opts, snapshot_file),
     EditSubcommand::Config(opts) => handle_config(opts, snapshot_file),
+    EditSubcommand::Inc(opts) => handle_inc(opts, snapshot_file),
   }
 }
 
@@ -121,30 +121,6 @@ pub(crate) fn save_snapshot(snapshot: &Snapshot, snapshot_file: &str) -> Result<
   save_snapshot_to_file(snapshot_file, snapshot)
 }
 
-/// Read code input from file, inline code, json option, or stdin.
-/// Exactly one input source should be used.
-fn read_code_input(file: &Option<String>, code: &Option<String>, json: &Option<String>, stdin: bool) -> Result<Option<String>, String> {
-  let sources = [stdin, file.is_some(), code.is_some(), json.is_some()];
-  validate_input_sources(&sources)?;
-
-  if stdin {
-    let mut buffer = String::new();
-    io::stdin()
-      .read_to_string(&mut buffer)
-      .map_err(|e| format!("Failed to read from stdin: {e}"))?;
-    Ok(Some(buffer.trim().to_string()))
-  } else if let Some(path) = file {
-    let content = fs::read_to_string(path).map_err(|e| format!("Failed to read file '{path}': {e}"))?;
-    Ok(Some(content.trim().to_string()))
-  } else if let Some(s) = code {
-    Ok(Some(s.trim().to_string()))
-  } else if let Some(j) = json {
-    Ok(Some(j.clone()))
-  } else {
-    Ok(None)
-  }
-}
-
 /// Check if namespace belongs to the current package (can be edited)
 pub(crate) fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<(), String> {
   let pkg = &snapshot.package;
@@ -155,212 +131,6 @@ pub(crate) fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<
     Err(format!(
       "Cannot modify namespace '{namespace}': only namespaces under package '{pkg}' can be edited.\nThis namespace belongs to a dependency or core library."
     ))
-  }
-}
-
-/// Check if a Cirru node is a single-element list containing only a string leaf,
-/// which might confuse LLM thinking it's a leaf node when it's actually an expression.
-fn warn_if_single_string_expression(node: &Cirru, input_source: &str) {
-  if let Cirru::List(items) = node {
-    if items.len() == 1 {
-      if let Some(Cirru::Leaf(_)) = items.first() {
-        eprintln!("\n⚠️  Note: Cirru one-liner input '{input_source}' was parsed as an expression (list with one element).");
-        eprintln!("   In Cirru syntax, this creates a list containing one element.");
-        eprintln!("   If you want a leaf node (plain string), use --leaf parameter.");
-        eprintln!("   Example: --leaf -e '{input_source}' creates a leaf, not an expression.\n");
-      }
-    }
-  }
-}
-
-/// Determine input mode and parse raw input string into a `Cirru` node.
-/// Precedence (highest to lowest):
-/// - `--json <string>` (inline JSON)
-/// - `--leaf` (treat raw input as a Cirru leaf)
-/// - `--json-input` (parse JSON -> Cirru)
-/// - Cirru one-liner (default)
-fn parse_input_to_cirru(
-  raw: &str,
-  inline_json: &Option<String>,
-  json_input: bool,
-  leaf: bool,
-  auto_json: bool,
-) -> Result<Cirru, String> {
-  // Validate conflicting flags early (keep error messages user-friendly)
-  validate_input_flags(leaf, json_input)?;
-
-  // If inline JSON provided, use it (takes precedence)
-  if let Some(j) = inline_json {
-    let node = json_to_cirru(j)?;
-    if leaf {
-      match node {
-        Cirru::Leaf(_) => Ok(node),
-        _ => Err("--leaf expects a JSON string (leaf node), but got a non-leaf JSON value.".to_string()),
-      }
-    } else {
-      Ok(node)
-    }
-  } else if leaf {
-    // --leaf: automatically treat raw input as a Cirru leaf node
-    Ok(Cirru::Leaf(Arc::from(raw)))
-  } else if json_input {
-    json_to_cirru(raw)
-  } else {
-    // If input comes from inline `--code/-e`, it's typically single-line.
-    // Auto-detect JSON arrays/strings so users don't need `-J` for inline JSON.
-    if auto_json {
-      let trimmed = raw.trim();
-      let looks_like_json_string = trimmed.starts_with('"') && trimmed.ends_with('"');
-      // Heuristic for `-e/--code`:
-      // - If it is a JSON string: starts/ends with quotes -> JSON
-      // - If it is a JSON array: starts with '[' and ends with ']' AND contains at least one '"' -> JSON
-      //   (This avoids ambiguity with Cirru list syntax like `[]` or `[] 1 2 3`.)
-      let looks_like_json_array = trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed.contains('"');
-
-      // If it looks like JSON, treat it as JSON.
-      // Do NOT fall back to Cirru one-liner on JSON parse failure, otherwise invalid JSON
-      // can be silently accepted as a Cirru expression.
-      if looks_like_json_array || looks_like_json_string {
-        return json_to_cirru(trimmed).map_err(|e| format!("Failed to parse JSON from -e/--code: {e}"));
-      }
-
-      // Inline `-e/--code` defaults to Cirru one-liner expr when it's not JSON.
-      if trimmed.is_empty() {
-        return Err("Input is empty. Please provide Cirru code or use -j for JSON input.".to_string());
-      }
-      if raw.contains('\t') {
-        return Err(
-          "Input contains tab characters. Cirru requires spaces for indentation.\n\
-           Please replace tabs with 2 spaces.\n\
-           Tip: Use `cat -A file` to check for tabs (shown as ^I)."
-            .to_string(),
-        );
-      }
-
-      let result = cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))?;
-      warn_if_single_string_expression(&result, raw);
-      return Ok(result);
-    }
-
-    // Check for common mistakes before parsing
-    let trimmed = raw.trim();
-
-    // Check for empty input
-    if trimmed.is_empty() {
-      return Err("Input is empty. Please provide Cirru code or use -j for JSON input.".to_string());
-    }
-
-    // Detect JSON input without --json-input flag
-    // JSON arrays look like: ["item", ...] or [ "item", ...]
-    // Cirru [] syntax looks like: [] 1 2 3 or []
-    // Key difference: JSON has ["..." at start, Cirru has [] followed by space or newline
-    if trimmed.starts_with('[') && trimmed.ends_with(']') {
-      // Check if it looks like JSON (starts with [" or [ ")
-      let after_bracket = &trimmed[1..];
-      let is_likely_json = after_bracket.starts_with('"')
-        || after_bracket.starts_with(' ') && after_bracket.trim_start().starts_with('"')
-        || after_bracket.starts_with('\n') && after_bracket.trim_start().starts_with('"');
-
-      // Also check: Cirru [] is followed by space then non-quote content
-      let is_cirru_list = after_bracket.starts_with(']') // empty []
-      || (after_bracket.starts_with(' ') && !after_bracket.trim_start().starts_with('"'));
-
-      if is_likely_json && !is_cirru_list {
-        return Err(
-          "Input appears to be JSON format (starts with '[\"').\n\
-         If you want to use JSON input, use one of:\n\
-         - inline JSON: cr edit def ns/name -j '[\"defn\", ...]'\n\
-         - inline code: cr edit def ns/name -e '[\"defn\", ...]'\n\
-         - file/stdin JSON: add -J or --json-input (e.g. -f code.json -J, or -s -J).\n\
-         Note: Cirru's [] list syntax (e.g. '[] 1 2 3') is different and will be parsed correctly."
-            .to_string(),
-        );
-      }
-    }
-
-    // Detect tabs in input
-    if raw.contains('\t') {
-      return Err(
-        "Input contains tab characters. Cirru requires spaces for indentation.\n\
-       Please replace tabs with 2 spaces.\n\
-       Tip: Use `cat -A file` to check for tabs (shown as ^I)."
-          .to_string(),
-      );
-    }
-
-    // Default: parse as cirru text
-    let parsed = cirru_parser::parse(raw).map_err(|e| {
-    let err_str = e.to_string();
-    let mut msg = format!("Failed to parse Cirru text: {err_str}");
-
-    // Provide specific hints based on error type
-    if err_str.contains("odd indentation") {
-      msg.push_str("\n\nCirru requires 2-space indentation. Each nesting level must use exactly 2 spaces.");
-      msg.push_str("\nExample:\n  defn my-fn (x)\n    &+ x 1");
-    } else if err_str.contains("unexpected end of file") {
-      msg.push_str("\n\nCheck for unbalanced parentheses or incomplete expressions.");
-    } else {
-      msg.push_str("\n\nTips: If your input contains special characters like '|' or '$', ensure the shell does not strip them — wrap input in single quotes or use --file/--stdin.");
-    }
-
-    msg.push_str("\nIf you intended to provide JSON, pass --json-input or use -j for inline JSON.");
-    msg
-  })?;
-
-    // Check for empty parse result
-    if parsed.is_empty() {
-      return Err("Input parsed to empty code. Please provide valid Cirru code.".to_string());
-    }
-
-    // Warn if multiple top-level expressions (might indicate indentation issues)
-    if parsed.len() > 1 {
-      eprintln!(
-        "{}",
-        colored::Colorize::yellow(
-          "Warning: Input parsed as multiple expressions. This might indicate indentation issues.\n\
-         Cirru uses 2-space indentation for nesting. Check your whitespace."
-        )
-      );
-    }
-
-    if parsed.len() == 1 {
-      let result = parsed.into_iter().next().unwrap();
-      warn_if_single_string_expression(&result, raw);
-      Ok(result)
-    } else {
-      Ok(Cirru::List(parsed))
-    }
-  }
-}
-
-/// Parse JSON string to Cirru syntax tree
-fn json_to_cirru(json_str: &str) -> Result<Cirru, String> {
-  let json: serde_json::Value = serde_json::from_str(json_str).map_err(|e| {
-    format!("Failed to parse JSON: {e}. If this is Cirru text, omit --json-input or use --cirru; for inline Cirru prefer --file or --stdin to avoid shell escaping.")
-  })?;
-
-  match edit_json_value_to_cirru(&json) {
-    Ok(c) => Ok(c),
-    Err(e) => Err(format!(
-      "{e} If your input is Cirru source, try passing it as Cirru (omit --json-input or use --cirru)."
-    )),
-  }
-}
-
-fn edit_json_value_to_cirru(json: &serde_json::Value) -> Result<Cirru, String> {
-  match json {
-    serde_json::Value::String(s) => Ok(Cirru::Leaf(Arc::from(s.as_str()))),
-    serde_json::Value::Array(arr) => {
-      let items: Result<Vec<Cirru>, String> = arr.iter().map(edit_json_value_to_cirru).collect();
-      Ok(Cirru::List(items?))
-    }
-    serde_json::Value::Number(n) => Ok(Cirru::Leaf(Arc::from(n.to_string()))),
-    serde_json::Value::Bool(b) => Ok(Cirru::Leaf(Arc::from(b.to_string()))),
-    serde_json::Value::Null => Ok(Cirru::Leaf(Arc::from("nil"))),
-    serde_json::Value::Object(_) => Err(
-      "JSON objects cannot be converted to Cirru syntax tree. Consider providing an array or string, or use Cirru source format."
-        .to_string(),
-    ),
   }
 }
 
@@ -390,33 +160,41 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   // Check if definition exists
   let exists = file_data.defs.contains_key(definition);
 
-  if exists && !opts.replace {
+  if exists {
     return Err(format!(
-      "Definition '{definition}' already exists in namespace '{namespace}'. Use --replace to overwrite."
+      "Definition '{definition}' already exists in namespace '{namespace}'.\n\
+       To replace the entire definition, use: cr tree replace {namespace}/{definition} -p \"\" -e '<code>'\n\
+       To modify parts of the definition, use: cr tree replace {namespace}/{definition} -p \"<path>\" -e '<code>'"
     ));
   }
 
-  // Create or update definition
+  // Create definition
   let code_entry = CodeEntry::from_code(syntax_tree);
   file_data.defs.insert(definition.to_string(), code_entry);
 
   save_snapshot(&snapshot, snapshot_file)?;
 
-  if exists {
-    println!(
-      "{} Updated definition '{}' in namespace '{}'",
-      "✓".green(),
-      definition.cyan(),
-      namespace
-    );
-  } else {
-    println!(
-      "{} Created definition '{}' in namespace '{}'",
-      "✓".green(),
-      definition.cyan(),
-      namespace
-    );
-  }
+  println!(
+    "{} Created definition '{}' in namespace '{}'",
+    "✓".green(),
+    definition.cyan(),
+    namespace
+  );
+  println!();
+  println!("{}", "Next steps:".blue().bold());
+  println!("  • View definition: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
+  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+  println!(
+    "  • Add to imports: {} <target-ns> '{}' --refer '{}'",
+    "cr edit add-import".cyan(),
+    namespace,
+    definition
+  );
+  println!();
+  println!(
+    "{}",
+    format!("Tip: Use single quotes around '{namespace}/{definition}' to avoid shell escaping issues.").dimmed()
+  );
 
   Ok(())
 }
@@ -528,7 +306,7 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
     // Parse as JSON array
     let json_value: serde_json::Value = serde_json::from_str(raw).map_err(|e| format!("Failed to parse JSON: {e}"))?;
     match json_value {
-      serde_json::Value::Array(arr) => arr.iter().map(edit_json_value_to_cirru).collect::<Result<Vec<_>, _>>()?,
+      serde_json::Value::Array(arr) => arr.iter().map(json_value_to_cirru).collect::<Result<Vec<_>, _>>()?,
       _ => return Err("Expected JSON array of examples".to_string()),
     }
   } else {
@@ -773,15 +551,23 @@ pub(crate) fn navigate_to_path(code: &Cirru, path: &[usize]) -> Result<Cirru, St
   for (depth, &idx) in path.iter().enumerate() {
     match current {
       Cirru::Leaf(_) => {
-        return Err(format!("Cannot navigate into leaf node at depth {depth}"));
+        let partial_path = path[..depth].iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        return Err(format!(
+          "Cannot navigate into leaf node at depth {depth}\n   Valid path stops at: [{partial_path}]\n   Tip: Use 'cr tree show' to explore the tree structure"
+        ));
       }
       Cirru::List(items) => {
         if idx >= items.len() {
+          let partial_path = path[..depth].iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+          let attempted_path = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
           return Err(format!(
-            "Path index {} out of bounds at depth {} (list has {} items)",
+            "Path index {} out of bounds at depth {} (list has {} items)\n   Attempted path: [{}]\n   Valid path: [{}]\n   Valid index range at this level: 0-{}\n   Tip: Use 'cr tree show' with parent path to see available indices",
             idx,
             depth,
-            items.len()
+            items.len(),
+            attempted_path,
+            partial_path,
+            items.len().saturating_sub(1)
           ));
         }
         current = &items[idx];
@@ -869,13 +655,7 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
   } else {
     // Parse as cirru and convert to JSON value
     let cirru_node = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
-    fn cirru_to_json_value(c: &Cirru) -> serde_json::Value {
-      match c {
-        Cirru::Leaf(s) => serde_json::Value::String(s.to_string()),
-        Cirru::List(items) => serde_json::Value::Array(items.iter().map(cirru_to_json_value).collect()),
-      }
-    }
-
+    use super::common::cirru_to_json_value;
     cirru_to_json_value(&cirru_node)
   };
 
@@ -889,7 +669,8 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
     if !imports.is_empty() {
       ns_code_items.push(Cirru::Leaf(Arc::from(":require")));
       for import in imports {
-        let import_cirru = edit_json_value_to_cirru(&import)?;
+        use super::common::json_value_to_cirru;
+        let import_cirru = json_value_to_cirru(&import)?;
         ns_code_items.push(import_cirru);
       }
     }
@@ -1235,6 +1016,140 @@ fn handle_config(opts: &EditConfigCommand, snapshot_file: &str) -> Result<(), St
   Ok(())
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Incremental change export
+// ═══════════════════════════════════════════════════════════════════════════════
+
+fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> {
+  let inc_file = ".compact-inc.cirru";
+  let error_file = ".calcit-error.cirru";
+
+  // Clear error file at the beginning
+  if let Err(e) = fs::write(error_file, "") {
+    eprintln!("{} Failed to clear {}: {}", "⚠".yellow(), error_file, e);
+  } else {
+    println!("{} Cleared {}", "→".cyan(), error_file);
+  }
+
+  if opts.added.is_empty()
+    && opts.removed.is_empty()
+    && opts.changed.is_empty()
+    && opts.added_ns.is_empty()
+    && opts.removed_ns.is_empty()
+    && opts.ns_updated.is_empty()
+  {
+    return Err("No change hints provided. Use --added/--removed/--changed or namespace flags.".to_string());
+  }
+
+  let snapshot = load_snapshot(snapshot_file)?;
+
+  let mut changes = ChangesDict::default();
+  let mut changed_entries: HashMap<Arc<str>, FileChangeInfo> = HashMap::new();
+
+  for ns in &opts.added_ns {
+    check_ns_editable(&snapshot, ns)?;
+    let file = snapshot
+      .files
+      .get(ns)
+      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save compact.cirru?"))?;
+    changes.added.insert(Arc::from(ns.as_str()), file.clone());
+  }
+
+  for ns in &opts.removed_ns {
+    check_ns_editable(&snapshot, ns)?;
+    changes.removed.insert(Arc::from(ns.as_str()));
+  }
+
+  for ns in &opts.ns_updated {
+    check_ns_editable(&snapshot, ns)?;
+    let file = snapshot
+      .files
+      .get(ns)
+      .ok_or_else(|| format!("Namespace '{ns}' not found in snapshot. Did you save compact.cirru?"))?;
+    let entry = ensure_change_entry(&mut changed_entries, ns);
+    entry.ns = Some(file.ns.code.clone());
+  }
+
+  for target in &opts.added {
+    let (namespace, definition) = parse_target(target)?;
+    check_ns_editable(&snapshot, namespace)?;
+    let file = snapshot
+      .files
+      .get(namespace)
+      .ok_or_else(|| format!("Namespace '{namespace}' not found in snapshot"))?;
+    let code_entry = file
+      .defs
+      .get(definition)
+      .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    let entry = ensure_change_entry(&mut changed_entries, namespace);
+    entry.added_defs.insert(definition.to_string(), code_entry.code.clone());
+  }
+
+  for target in &opts.changed {
+    let (namespace, definition) = parse_target(target)?;
+    check_ns_editable(&snapshot, namespace)?;
+    let file = snapshot
+      .files
+      .get(namespace)
+      .ok_or_else(|| format!("Namespace '{namespace}' not found in snapshot"))?;
+    let code_entry = file
+      .defs
+      .get(definition)
+      .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
+    let entry = ensure_change_entry(&mut changed_entries, namespace);
+    entry.changed_defs.insert(definition.to_string(), code_entry.code.clone());
+  }
+
+  for target in &opts.removed {
+    let (namespace, definition) = parse_target(target)?;
+    check_ns_editable(&snapshot, namespace)?;
+    let entry = ensure_change_entry(&mut changed_entries, namespace);
+    entry.removed_defs.insert(definition.to_string());
+  }
+
+  if !changed_entries.is_empty() {
+    changes.changed = changed_entries;
+  }
+
+  if changes.added.is_empty() && changes.removed.is_empty() && changes.changed.is_empty() {
+    return Err("No change data collected. Confirm the flags match definitions saved in compact.cirru.".to_string());
+  }
+
+  let namespace_total = changes.added.len() + changes.removed.len() + changes.changed.len();
+
+  let edn_data: cirru_edn::Edn = changes
+    .try_into()
+    .map_err(|e| format!("Failed to serialize change dictionary: {e}"))?;
+  let content = cirru_edn::format(&edn_data, true).map_err(|e| format!("Failed to format change dictionary: {e}"))?;
+
+  fs::write(inc_file, &content).map_err(|e| format!("Failed to write {inc_file}: {e}"))?;
+
+  println!(
+    "{} Wrote incremental changes (namespaces: {}) to {}",
+    "✓".green(),
+    namespace_total,
+    inc_file.cyan()
+  );
+  println!(
+    "{}",
+    "Watcher will process changes. Wait ~300ms then run 'cr query error' to check result."
+      .to_string()
+      .dimmed()
+  );
+
+  Ok(())
+}
+
+fn ensure_change_entry<'a>(changed_entries: &'a mut HashMap<Arc<str>, FileChangeInfo>, namespace: &str) -> &'a mut FileChangeInfo {
+  let key: Arc<str> = Arc::from(namespace.to_string());
+  changed_entries.entry(key).or_insert_with(|| FileChangeInfo {
+    ns: None,
+    added_defs: HashMap::new(),
+    removed_defs: HashSet::new(),
+    changed_defs: HashMap::new(),
+  })
+}
+
 /// Print usage tips based on the import rule type
 fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
   // Analyze the import rule to determine its type
@@ -1246,8 +1161,8 @@ fn print_import_usage_tips(rule: &Cirru, source_ns: &str) {
     // Parse the import rule: (namespace :refer [symbols...]) or (namespace :as alias) or (namespace :default symbol)
     let mut i = 1; // Skip the namespace (first element)
     while i < items.len() {
-      if let Cirru::Leaf(keyword) = &items[i] {
-        match keyword.as_ref() {
+      if let Cirru::Leaf(tag) = &items[i] {
+        match tag.as_ref() {
           ":refer" => {
             import_type = Some("refer");
             // Next item should be a list of symbols or a single symbol
