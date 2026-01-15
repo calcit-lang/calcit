@@ -687,7 +687,11 @@ impl CalcitProc {
         return_type: some_tag("map"),
         arg_types: vec![some_tag("map"), None, None],
       }),
-      NativeMapDiffNew | NativeMapDiffKeys | NativeMapCommonKeys => Some(ProcTypeSignature {
+      NativeMapDiffNew => Some(ProcTypeSignature {
+        return_type: some_tag("map"),
+        arg_types: vec![some_tag("map"), some_tag("map")],
+      }),
+      NativeMapDiffKeys | NativeMapCommonKeys => Some(ProcTypeSignature {
         return_type: some_tag("set"),
         arg_types: vec![some_tag("map"), some_tag("map")],
       }),
