@@ -568,6 +568,9 @@ fn preprocess_list_call(
       | Calcit::List(..)
       | Calcit::RawCode(..)
       | Calcit::Symbol { .. } => {
+        // Check if the head (the thing being called) is actually callable
+        check_callable_type(&head_form, scope_types, file_ns, &def_name, check_warnings);
+
         let mut ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
         let mut has_spread = false;
 
@@ -1316,6 +1319,80 @@ fn validate_method_call(
   ))
 }
 
+/// Check if a type annotation represents a callable type (function or method)
+fn is_callable_type(type_ann: &CalcitTypeAnnotation) -> bool {
+  match type_ann {
+    CalcitTypeAnnotation::Function { .. } => true,
+    CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "fn" => true,
+    _ => false,
+  }
+}
+
+/// Check if an expression's inferred type is callable, and warn if not
+fn check_callable_type(
+  expr: &Calcit,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  // Skip check for expressions that are obviously callable at runtime
+  match expr {
+    // These are always callable
+    Calcit::Fn { .. }
+    | Calcit::Proc(..)
+    | Calcit::Import { .. }
+    | Calcit::Registered { .. }
+    | Calcit::Method(_, _)
+    | Calcit::Symbol { .. } => (),
+
+    // For List expressions, check if it's a function call that returns a callable
+    Calcit::List(_) => {
+      if let Some(type_ann) = infer_type_from_expr(expr, scope_types) {
+        if !is_callable_type(&type_ann) {
+          let type_desc = describe_type(&type_ann);
+          gen_check_warning(
+            format!("[Warn] trying to call a non-function value of type {type_desc}. Expression: {expr}, at {file_ns}/{def_name}"),
+            file_ns,
+            check_warnings,
+          );
+        }
+      }
+    }
+
+    // For Local variables, check their type info
+    Calcit::Local(local) => {
+      if let Some(type_ann) = local.type_info.as_ref().or_else(|| scope_types.get(&local.sym)) {
+        if !is_callable_type(type_ann) {
+          let type_desc = describe_type(type_ann);
+          gen_check_warning(
+            format!(
+              "[Warn] trying to call variable `{}` of non-function type {type_desc}, at {file_ns}/{def_name}",
+              local.sym
+            ),
+            file_ns,
+            check_warnings,
+          );
+        }
+      }
+    }
+
+    // Other types are definitely not callable
+    _ => {
+      if let Some(type_ann) = infer_type_from_expr(expr, scope_types) {
+        if !is_callable_type(&type_ann) {
+          let type_desc = describe_type(&type_ann);
+          gen_check_warning(
+            format!("[Warn] trying to call a non-function value of type {type_desc}. Expression: {expr}, at {file_ns}/{def_name}"),
+            file_ns,
+            check_warnings,
+          );
+        }
+      }
+    }
+  }
+}
+
 /// Resolve the type value from the receiver expression
 fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   match target {
@@ -1378,9 +1455,18 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
           }
         }
 
-        // Local variable as head (wrapped in list for some reason)
-        // Just extract its type_info
-        Calcit::Local(local) => local.type_info.clone(),
+        // Local variable as head (function call)
+        // If it's a function type, return its return type
+        Calcit::Local(local) => {
+          if let Some(type_ann) = &local.type_info {
+            match type_ann.as_ref() {
+              CalcitTypeAnnotation::Function(fn_type) => fn_type.return_type.clone(),
+              _ => Some(type_ann.clone()),
+            }
+          } else {
+            None
+          }
+        }
 
         // Proc call: check if proc has return_type
         Calcit::Proc(proc) => {
@@ -1447,6 +1533,24 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
             return fn_info.return_type.clone();
           }
           None
+        }
+
+        // Direct Fn call: return the function's return type
+        Calcit::Fn { info, .. } => info.return_type.clone(),
+
+        // Nested List call: the head is a function call expression
+        // First infer what type the head returns, then if it's a function, get its return type
+        Calcit::List(_) => {
+          if let Some(head_type) = infer_type_from_expr(head, scope_types) {
+            match head_type.as_ref() {
+              CalcitTypeAnnotation::Function(fn_type) => fn_type.return_type.clone(),
+              // If head returns a non-function type, the call will fail at runtime
+              // Return the non-callable type so caller can detect this issue
+              _ => Some(head_type),
+            }
+          } else {
+            None
+          }
         }
 
         _ => None,
