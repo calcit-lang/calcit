@@ -88,6 +88,29 @@ fn format_preview_with_type(node: &Cirru, max_lines: usize) -> String {
   }
 }
 
+/// Find the first leaf (preorder) and format for preview
+fn first_leaf_preview(node: &Cirru) -> Option<String> {
+  match node {
+    Cirru::Leaf(s) => Some(format!("{:?}", s.as_ref())),
+    Cirru::List(items) => items.iter().find_map(first_leaf_preview),
+  }
+}
+
+/// Format a child node for list preview (leaf or list with first leaf)
+fn format_child_preview(node: &Cirru) -> String {
+  match node {
+    Cirru::Leaf(s) => format!("{:?}", s.as_ref()),
+    Cirru::List(items) => {
+      if items.is_empty() {
+        "(empty)".to_string()
+      } else {
+        let head = first_leaf_preview(node).unwrap_or_else(|| "<expr>".to_string());
+        format!("({head} ...)")
+      }
+    }
+  }
+}
+
 /// Show a side-by-side diff preview of the change
 fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: &[usize]) -> String {
   let mut output = String::new();
@@ -232,10 +255,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
             eprintln!();
             eprintln!("{} First few children:", "Hint:".blue().bold());
             for (i, item) in items.iter().enumerate().take(3) {
-              let child_preview = match item {
-                Cirru::Leaf(s) => format!("{:?}", s.as_ref()),
-                Cirru::List(children) => format!("({} items)", children.len()),
-              };
+              let child_preview = format_child_preview(item);
               let child_path = if valid_path.is_empty() {
                 i.to_string()
               } else {
@@ -284,10 +304,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       if !items.is_empty() {
         println!("{}:", "Children".green().bold());
         for (i, item) in items.iter().enumerate() {
-          let type_str = match item {
-            Cirru::Leaf(s) => format!("{:?}", s.as_ref()),
-            Cirru::List(children) => format!("({} items)", children.len()),
-          };
+          let type_str = format_child_preview(item);
           let child_path = if opts.path.is_empty() {
             i.to_string()
           } else {

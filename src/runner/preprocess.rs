@@ -55,8 +55,9 @@ pub fn preprocess_ns_def(
       match program::lookup_def_code(ns, def) {
         Some(code) => {
           // write a nil value first to prevent dead loop
+          let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
           program::write_evaled_def(ns, def, Calcit::Nil)
-            .map_err(|e| CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, e, call_stack))?;
+            .map_err(|e| CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, e, call_stack, Some(loc)))?;
 
           let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
@@ -75,17 +76,27 @@ pub fn preprocess_ns_def(
             })
           };
           // println!("\nwriting value to: {}/{} {:?}", ns, def, v);
-          program::write_evaled_def(ns, def, v.to_owned())
-            .map_err(|e| CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, e, call_stack))?;
+          program::write_evaled_def(ns, def, v.to_owned()).map_err(|e| {
+            CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Unexpected,
+              e,
+              call_stack,
+              Some(NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]))),
+            )
+          })?;
 
           Ok(Some(v))
         }
         None if ns.starts_with('|') || ns.starts_with('"') => Ok(None),
-        None => Err(CalcitErr::use_msg_stack(
-          CalcitErrKind::Var,
-          format!("unknown ns/def in program: {ns}/{def}"),
-          call_stack,
-        )),
+        None => {
+          let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
+          Err(CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Var,
+            format!("unknown ns/def in program: {ns}/{def}"),
+            call_stack,
+            Some(loc),
+          ))
+        }
       }
     }
   }
@@ -152,10 +163,11 @@ pub fn preprocess_expr(
 
           Ok(form)
         } else {
-          Err(CalcitErr::use_msg_stack(
+          Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Var,
             format!("unknown ns target: {def}"),
             call_stack,
+            expr.get_location(),
           ))
         }
       }
@@ -178,7 +190,12 @@ pub fn preprocess_expr(
         } else if CalcitSyntax::is_valid(def) {
           Ok(Calcit::Syntax(
             def.parse().map_err(|e: ParseError| {
-              CalcitErr::use_msg_stack(CalcitErrKind::Syntax, def.to_string() + " " + &e.to_string(), call_stack)
+              CalcitErr::use_msg_stack_location(
+                CalcitErrKind::Syntax,
+                def.to_string() + " " + &e.to_string(),
+                call_stack,
+                expr.get_location(),
+              )
             })?,
             def_ns.to_owned(),
           ))
@@ -436,10 +453,11 @@ fn preprocess_list_call(
           let code = Calcit::from(CalcitList::from(&[get_method, args[0].to_owned(), head.to_owned()]));
           preprocess_expr(&code, scope_defs, scope_types, file_ns, check_warnings, call_stack)
         } else {
-          Err(CalcitErr::use_msg_stack(
+          Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Arity,
             format!("{head} expected 1 hashmap to call"),
             call_stack,
+            head.get_location(),
           ))
         }
       }
@@ -535,10 +553,11 @@ fn preprocess_list_call(
           CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~@` cannot be preprocessed as operator", &xs.to_vec())
         }
       },
-      Calcit::Thunk(..) => Err(CalcitErr::use_msg_stack(
+      Calcit::Thunk(..) => Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Unexpected,
         format!("does not know how to preprocess a thunk: {head}"),
         call_stack,
+        head.get_location(),
       )),
 
       Calcit::Method(_, _)
@@ -603,11 +622,15 @@ fn preprocess_list_call(
           Ok(Calcit::from(CalcitList::List(ys)))
         }
       }
-      h => Err(CalcitErr::use_msg_stack(
-        CalcitErrKind::Unexpected,
-        format!("unknown head `{h}` in {xs}"),
-        call_stack,
-      )),
+      h => {
+        let loc = h.get_location();
+        Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Unexpected,
+          format!("unknown head `{h}` in {xs}"),
+          call_stack,
+          loc,
+        ))
+      }
     },
   }
 }
@@ -1285,10 +1308,11 @@ fn validate_method_call(
   // Method not found, generate error
   let methods_list = class_record.fields.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(" ");
   let type_desc = describe_type(type_value.as_ref());
-  Err(CalcitErr::use_msg_stack(
+  Err(CalcitErr::use_msg_stack_location(
     CalcitErrKind::Type,
     format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
     call_stack,
+    head.get_location(),
   ))
 }
 
@@ -1605,10 +1629,11 @@ pub fn preprocess_defn(
             body_defs.insert(sym.to_owned());
             Ok(())
           }
-          _ => Err(CalcitErr::use_msg_stack(
+          _ => Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Type,
             format!("expected defn args to be symbols, got: {y}"),
             ctx.call_stack,
+            y.get_location(),
           )),
         }
       })?;
@@ -1647,11 +1672,17 @@ pub fn preprocess_defn(
       ctx.call_stack,
       a.get_location().or_else(|| b.get_location()),
     )),
-    (a, b) => Err(CalcitErr::use_msg_stack(
-      CalcitErrKind::Syntax,
-      format!("defn or defmacro expected name and args, got: {a:?} {b:?}",),
-      ctx.call_stack,
-    )),
+    (a, b) => {
+      let loc = a
+        .and_then(|node| node.get_location())
+        .or_else(|| b.and_then(|node| node.get_location()));
+      Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Syntax,
+        format!("defn or defmacro expected name and args, got: {a:?} {b:?}",),
+        ctx.call_stack,
+        loc,
+      ))
+    }
   }
 }
 
@@ -1722,10 +1753,11 @@ pub fn preprocess_core_let(
       }
     },
     Some(a @ Calcit::List(_)) => {
-      return Err(CalcitErr::use_msg_stack(
+      return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Syntax,
         format!("expected binding of a pair, got: {a}"),
         ctx.call_stack,
+        a.get_location(),
       ));
     }
     Some(a) => {
@@ -1847,10 +1879,11 @@ pub fn preprocess_asset_type(
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
   if args.len() != 2 {
-    return Err(CalcitErr::use_msg_stack(
+    return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
       format!("{head} expected a local and a type expression, got {}", args.len()),
       ctx.call_stack,
+      args.first().and_then(|node| node.get_location()),
     ));
   }
 
@@ -1864,18 +1897,20 @@ pub fn preprocess_asset_type(
   let local = match zs.get(1) {
     Some(Calcit::Local(local)) => local.to_owned(),
     other => {
-      return Err(CalcitErr::use_msg_stack(
+      return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
         format!("assert-type expected local as first arg, got {other:?}"),
         ctx.call_stack,
+        other.and_then(|node| node.get_location()),
       ));
     }
   };
   let type_form = zs.get(2).ok_or_else(|| {
-    CalcitErr::use_msg_stack(
+    CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
       "assert-type missing type expression".to_owned(),
       ctx.call_stack,
+      zs.get(1).and_then(|node| node.get_location()),
     )
   })?;
 
