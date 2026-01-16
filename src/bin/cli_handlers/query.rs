@@ -62,7 +62,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       opts.max_depth,
       opts.start_path.as_deref(),
     ),
-    QuerySubcommand::SearchPattern(opts) => handle_search_pattern(
+    QuerySubcommand::SearchExpr(opts) => handle_search_expr(
       input_path,
       &opts.pattern,
       opts.filter.as_deref(),
@@ -1154,8 +1154,8 @@ fn handle_search_leaf(
   Ok(())
 }
 
-/// Search for structural patterns across project or in filtered scope
-fn handle_search_pattern(
+/// Search for structural expressions across project or in filtered scope
+fn handle_search_expr(
   input_path: &str,
   pattern: &str,
   filter: Option<&str>,
@@ -1231,7 +1231,7 @@ fn handle_search_pattern(
         }
       }
 
-      let results = search_pattern_nodes(&code_entry.code, &pattern_node, loose, max_depth, &[]);
+      let results = search_expr_nodes(&code_entry.code, &pattern_node, loose, max_depth, &[]);
 
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));
@@ -1367,14 +1367,8 @@ fn get_parent_node_from_code(code: &Cirru, path: &[usize]) -> Option<Cirru> {
   Some(current.clone())
 }
 
-/// Search for pattern nodes (structural matching)
-fn search_pattern_nodes(
-  node: &Cirru,
-  pattern: &Cirru,
-  loose: bool,
-  max_depth: usize,
-  current_path: &[usize],
-) -> Vec<(Vec<usize>, Cirru)> {
+/// Search for expression nodes (structural matching)
+fn search_expr_nodes(node: &Cirru, pattern: &Cirru, loose: bool, max_depth: usize, current_path: &[usize]) -> Vec<(Vec<usize>, Cirru)> {
   let mut results = Vec::new();
 
   // Check depth limit
@@ -1398,7 +1392,7 @@ fn search_pattern_nodes(
     for (i, item) in items.iter().enumerate() {
       let mut new_path = current_path.to_vec();
       new_path.push(i);
-      results.extend(search_pattern_nodes(item, pattern, loose, max_depth, &new_path));
+      results.extend(search_expr_nodes(item, pattern, loose, max_depth, &new_path));
     }
   }
 

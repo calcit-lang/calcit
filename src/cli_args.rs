@@ -219,8 +219,8 @@ pub enum QuerySubcommand {
   Usages(QueryUsagesCommand),
   /// search for leaf nodes (strings) in definition
   Search(QuerySearchCommand),
-  /// search for structural patterns (Cirru expr or JSON array) in definition
-  SearchPattern(QuerySearchPatternCommand),
+  /// search for structural expressions (Cirru expr or JSON array) in definition
+  SearchExpr(QuerySearchExprCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -348,9 +348,9 @@ pub struct QuerySearchCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "search-pattern")]
-/// search for structural patterns (Cirru expr or JSON array) across project or in specific namespace/definition
-pub struct QuerySearchPatternCommand {
+#[argh(subcommand, name = "search-expr")]
+/// search for structural expressions (Cirru expr or JSON array) across project or in specific namespace/definition
+pub struct QuerySearchExprCommand {
   /// pattern to search for (Cirru one-liner or JSON array with -j)
   #[argh(positional)]
   pub pattern: String,

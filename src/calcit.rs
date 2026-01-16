@@ -932,10 +932,10 @@ impl fmt::Display for NodeLocation {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(
       f,
-      "{}/{} {}",
+      "{}/{} [{}]",
       self.ns,
       self.def,
-      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("-")
+      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
     )
   }
 }

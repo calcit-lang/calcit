@@ -108,30 +108,31 @@ Calcit 程序使用 `cr` 命令：
 
 **代码模式搜索：**
 
-- `cr query search <pattern> [-f <namespace/definition>] [-l] [-d <depth>] [-p <start-path>]` - 搜索叶子节点（字符串）
+- `cr query search <pattern> [-f <filter>] [-l] [-d <max-depth>] [-p <start-path>]` - 搜索叶子节点（字符串）
 
   - `<pattern>` - 位置参数，要搜索的字符串模式
   - `-f` / `--filter` - 过滤到特定命名空间或定义（可选）
   - `-l` / `--loose`：宽松匹配，包含模式（匹配所有包含该模式的叶子节点）
-  - `-d <depth>`：限制搜索深度（0 = 无限制）
+  - `-d <max-depth>`：限制搜索深度（0 = 无限制）
   - `-p` / `--start-path`：从指定路径开始搜索（逗号分隔的索引，如 `"3,2,1"`）
     - 不指定时从根节点开始搜索整个定义
     - 指定后只搜索该路径下的子树，适合在大型定义中缩小搜索范围
   - 返回：匹配节点的完整路径 + 父级上下文预览
   - 示例：
-    - `cr query search "println" -f app.main/main -l` - 在 main 函数中搜索包含 "println" 的节点
-    - `cr query search "div"` - 全局精确搜索 "div"
-    - `cr query search "btn" -f app.main/render -p "3,2" -l` - 从路径 [3,2] 开始搜索包含 "btn" 的节点
+    - `cr query search "println" -f app.main/main! -l` - 在 main 函数中搜索包含 "println" 的节点
 
-- `cr query search-pattern <pattern> [-f <namespace/definition>] [-l] [-j] [-d <depth>]` - 搜索结构模式
+**高级结构搜索：**
+
+- `cr query search-expr <pattern> [-f <filter>] [-l] [-j] [-d <max-depth>]` - 搜索结构表达式
+  - 用于搜索完整的代码结构（List）而非单个符号。
   - `<pattern>` - 位置参数，Cirru one-liner 或 JSON 数组模式
   - `-f` / `--filter` - 过滤到特定命名空间或定义（可选）
-  - `-l` / `--loose`：宽松匹配，查找包含连续子序列的结构
+  - `-l` / `--loose`：宽松匹配，查找包含连续子序列的结构（例如搜索 `(+ a)` 可以匹配 `(+ a b)`）
   - `-j` / `--json`：将模式解析为 JSON 数组而非 Cirru
   - 返回：匹配节点的路径 + 父级上下文
   - 示例：
-    - `cr query search-pattern "+ a b" -f app.util/add` - 查找精确表达式
-    - `cr query search-pattern '["defn"]' -f app.main/main -j -l` - 查找所有函数定义
+    - `cr query search-expr "+ a b" -f app.util/add` - 查找精确表达式
+    - `cr query search-expr '["defn"]' -f app.main/main -j -l` - 查找所有函数定义
 
 **搜索结果格式：**
 
@@ -259,7 +260,32 @@ cr tree delete namespace/def -p "3,2,2"
 - 遇到路径错误时，命令会自动显示最长有效路径和可用子节点
 - 所有修改操作都会显示 Preview 和 Verify 命令
 
-详细参数和示例使用 `cr tree <command> --help` 查看。
+**结构化变更示例：**
+
+这些高级操作允许你在修改时引用原始节点及其内部结构：
+
+- **包裹节点**（使用 `cr tree wrap` 或 `cr tree replace` 的 `--refer-original`）：
+
+  ```bash
+  # 将路径 "3,2" 的节点包裹在 println 中
+  cr tree wrap ns/def -p "3,2" -e 'println $$$$' --refer-original '$$$$'
+  ```
+
+- **重构并复用原子节点**（使用 `--refer-inner-branch`）：
+
+  - 假设原节点是 `(+ 1 2)` (路径 "3,1")，其子节点索引 1 是 `1`，索引 2 是 `2`
+  - 将其重构为 `(* 2 10)`：
+
+  ```bash
+  cr tree replace ns/def -p "3,1" -e '(* #### 10)' --refer-inner-branch "2" --refer-inner-placeholder "####"
+  ```
+
+- **多处重用原始节点**：
+  ```bash
+  # 将节点 x 变为 (+ x x)
+  cr tree replace ns/def -p "2" -e '(+ $ $)' --refer-original '$'
+  ```
+  详细参数和示例使用 `cr tree <command> --help` 查看。
 
 ### 代码编辑 (`cr edit`)
 
@@ -559,8 +585,8 @@ cr --check-only    # 仅语法检查
 - `cr query examples <ns/def>` - 查看示例代码
 - `cr query find <name>` - 跨命名空间搜索符号
 - `cr query usages <ns/def>` - 查找定义的使用位置
-- `cr query search <ns/def> -p <pattern>` - 搜索叶子节点
-- `cr query search-pattern <ns/def> -p <pattern>` - 搜索结构模式
+- `cr query search <pattern> [-f <ns/def>]` - 搜索叶子节点
+- `cr query search-expr <pattern> [-f <ns/def>]` - 搜索结构表达式
 - `cr query error` - 查看最近的错误堆栈
 
 ---
