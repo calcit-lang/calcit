@@ -1,8 +1,8 @@
 use crate::{
   builtins,
   calcit::{
-    self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo,
-    CalcitSyntax, CalcitTuple, GEN_NS, GENERATED_DEF, gen_core_id,
+    self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitRecord,
+    CalcitSymbolInfo, CalcitSyntax, CalcitTuple, GEN_NS, GENERATED_DEF, gen_core_id,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -833,6 +833,137 @@ pub fn tuple_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       format!("&tuple:with-class expected a tuple and a record, but received: {a} {b}"),
     ),
   }
+}
+
+/// Inspect and print class methods information for debugging
+/// Usage: (&inspect-class-methods value "optional note")
+/// Returns the value unchanged while printing class information to stderr
+pub fn inspect_class_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if xs.is_empty() || xs.len() > 2 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "&inspect-class-methods expected 1 or 2 arguments (value, optional note), but received:",
+      xs,
+    );
+  }
+
+  let value = &xs[0];
+  let note = if xs.len() == 2 {
+    match &xs[1] {
+      Calcit::Str(s) => s.as_ref(),
+      _ => "(non-string note)",
+    }
+  } else {
+    ""
+  };
+
+  // Get the class record for this value
+  let class_result: Result<Calcit, CalcitErr> = match value {
+    Calcit::Tuple(CalcitTuple { class: Some(class), .. }) => Ok(Calcit::Record((**class).to_owned())),
+    Calcit::Tuple { .. } => Ok(Calcit::Nil),
+    Calcit::List(..) => runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Map(..) => runner::evaluate_symbol_from_program("&core-map-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Number(..) => runner::evaluate_symbol_from_program("&core-number-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Str(..) => runner::evaluate_symbol_from_program("&core-string-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Set(..) => runner::evaluate_symbol_from_program("&core-set-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Nil => runner::evaluate_symbol_from_program("&core-nil-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol_from_program("&core-fn-class", calcit::CORE_NS, None, call_stack),
+    _ => Ok(Calcit::Nil),
+  };
+
+  // Print class information
+  eprintln!("\n&inspect-class-methods");
+  if !note.is_empty() {
+    eprintln!("Note: {note}");
+  }
+  eprintln!("Value type: {}", type_of(&[value.clone()])?);
+  eprintln!("Value: {value}");
+  eprintln!("Method call syntax: `.method self p1 p2`");
+  eprintln!("  - dot is part of the method name, first arg is the receiver");
+
+  match class_result {
+    Ok(Calcit::Record(record)) => {
+      eprintln!("\nClass: {} ({} methods)", record.name, record.fields.len());
+      eprintln!();
+
+      for (i, field) in record.fields.iter().enumerate() {
+        let method_value = &record.values[i];
+
+        match method_value {
+          Calcit::Fn { info, .. } => {
+            // Extract argument count
+            let arg_count = info.args.param_len();
+
+            // Format arguments
+            let args_str = match info.args.as_ref() {
+              CalcitFnArgs::MarkedArgs(labels) => labels.iter().map(|label| format!("{label}")).collect::<Vec<_>>().join(" "),
+              CalcitFnArgs::Args(indices) => indices.iter().map(|idx| CalcitLocal::read_name(*idx)).collect::<Vec<_>>().join(" "),
+            };
+
+            // Compact output format
+            eprint!("  • .{field} => [fn/{arg_count}");
+            if !args_str.is_empty() {
+              eprint!(" ({args_str})");
+            }
+            eprintln!("]  @{}", info.def_ns);
+
+            // Guidance for more info
+            eprintln!("      → cr query def '{}/{}'", info.def_ns, info.name);
+          }
+          Calcit::Proc(proc_name) => {
+            // Try to get type signature for better hints
+            if let Some(sig) = proc_name.get_type_signature() {
+              let arg_types = sig
+                .arg_types
+                .iter()
+                .map(|t| t.as_ref().map(|ann| ann.to_brief_string()).unwrap_or_else(|| "_".to_string()))
+                .collect::<Vec<_>>()
+                .join(" ");
+              let return_type = sig
+                .return_type
+                .as_ref()
+                .map(|ann| ann.to_brief_string())
+                .unwrap_or_else(|| "_".to_string());
+              eprintln!(
+                "  • .{field} => [proc/{}: {proc_name}]  ({arg_types}) -> {return_type}",
+                sig.arg_types.len()
+              );
+            } else {
+              eprintln!("  • .{field} => [proc: {proc_name}]");
+            }
+          }
+          Calcit::Syntax(syntax_name, _) => {
+            eprintln!("  • .{field} => [syntax: {syntax_name}]");
+          }
+          other => {
+            eprintln!("  • .{field} => {other}");
+          }
+        }
+      }
+
+      // Check for nested class
+      if let Some(parent_class) = &record.class {
+        eprintln!();
+        eprintln!("Parent class: {} ({} methods)", parent_class.name, parent_class.fields.len());
+        eprintln!("  → Inspect with: (&inspect-class-methods (%:: :{}))", parent_class.name);
+      }
+    }
+    Ok(Calcit::Nil) => {
+      eprintln!("\nNo class associated with this value.");
+      eprintln!("  [This value type doesn't have methods]");
+    }
+    Ok(other) => {
+      eprintln!("\nUnexpected class value: {other}");
+    }
+    Err(e) => {
+      eprintln!("\nError retrieving class: {}", e.msg);
+    }
+  }
+
+  eprintln!();
+
+  // Return the original value unchanged
+  Ok(value.clone())
 }
 
 pub fn no_op() -> Result<Calcit, CalcitErr> {

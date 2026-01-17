@@ -10,16 +10,16 @@
 
 ```bash
 # 搜索 → 修改 → 验证
-cr query search "symbol" -f 'ns/def'                      # 1. 定位（输出：[3,2,1] in ...）
-cr tree replace 'ns/def' -p "3,2,1" --leaf -e 'new'     # 2. 修改
-cr tree show 'ns/def' -p "3,2,1"                          # 3. 验证（可选）
+cr query search 'symbol' -f 'ns/def'                      # 1. 定位（输出：[3,2,1] in ...）
+cr tree replace 'ns/def' -p '3,2,1' --leaf -e 'new'     # 2. 修改
+cr tree show 'ns/def' -p '3,2,1'                          # 3. 验证（可选）
 ```
 
 ### 三种搜索方式
 
 ```bash
-cr query search "target" -f 'ns/def'                      # 搜索符号/字符串
-cr query search-expr "fn (x)" -f 'ns/def' -l              # 搜索代码结构
+cr query search 'target' -f 'ns/def'                      # 搜索符号/字符串
+cr query search-expr 'fn (x)' -f 'ns/def' -l              # 搜索代码结构
 cr tree replace-leaf 'ns/def' --pattern 'old' --replacement 'new'  # 批量替换
 ```
 
@@ -146,9 +146,9 @@ Calcit 程序使用 `cr` 命令：
   - `-p <start-path>`：从指定路径开始搜索（如 `"3,2,1"`）
   - 返回：完整路径 + 父级上下文，多个匹配时自动显示批量替换命令
   - 示例：
-    - `cr query search "println" -f app.main/main!` - 精确搜索
-    - `cr query search "comp-" -f app.ui/layout -l` - 模糊搜索（所有 comp- 开头）
-    - `cr query search "task-id" -f app.comp/render` - 返回所有匹配位置并自动排序
+    - `cr query search 'println' -f app.main/main!` - 精确搜索
+    - `cr query search 'comp-' -f app.ui/layout -l` - 模糊搜索（所有 comp- 开头）
+    - `cr query search 'task-id' -f app.comp/render` - 返回所有匹配位置并自动排序
 
 **高级结构搜索（搜索代码结构 ⭐⭐⭐）：**
 
@@ -156,11 +156,18 @@ Calcit 程序使用 `cr` 命令：
   - `-l / --loose`：宽松匹配，查找包含连续子序列的结构
   - `-j / --json`：将模式解析为 JSON 数组
   - 示例：
-    - `cr query search-expr "fn (x)" -f app.main/process -l` - 查找函数定义
-    - `cr query search-expr ">> state task-id"` - 查找状态访问
-    - `cr query search-expr "memof1-call-by" -l` - 查找记忆化调用
+    - `cr query search-expr 'fn (x)' -f app.main/process -l` - 查找函数定义
+    - `cr query search-expr '>> state task-id'` - 查找状态访问
+    - `cr query search-expr 'memof1-call-by' -l` - 查找记忆化调用
 
-**搜索结果格式：** `[索引1,索引2,...] in 父级上下文`，可配合 `cr tree show <ns/def> -p "<path>"` 查看节点。**修改代码时优先用 search 命令，比逐层导航快 10 倍。**
+**搜索结果格式：** `[索引1,索引2,...] in 父级上下文`，可配合 `cr tree show <ns/def> -p '<path>'` 查看节点。**修改代码时优先用 search 命令，比逐层导航快 10 倍。**
+
+### LLM 辅助：动态方法提示
+
+- `&inspect-class-methods` - 打印某个值对应 class 的方法清单（不改变原值）
+  - 用法：`(&inspect-class-methods value |optional note)`
+  - 用途：帮助 LLM 发现动态类型的方法与 proc 签名信息（不是测试/验证用途）
+  - 适合在 pipeline 中插入，快速查看方法、参数、命名空间和 proc 类型信息
 
 ### 文档子命令 (`cr docs`)
 
@@ -239,7 +246,7 @@ cr query modules
 
 **主要操作：**
 
-- `cr tree show <ns/def> -p "<path>" [-j]` - 查看节点
+- `cr tree show <ns/def> -p '<path>' [-j]` - 查看节点
   - 默认输出：节点类型、Cirru 预览、子节点索引列表、操作提示
   - `-j` / `--json`：同时输出 JSON 格式（用于程序化处理）
   - 推荐：直接查看 Cirru 格式即可，通常不需要 JSON
@@ -271,10 +278,10 @@ cr query search "target-symbol" -f namespace/def
 # 输出：[3,2,5,1] in (fn (x) target-symbol ...)
 
 # 2. 直接修改（路径已知）
-cr tree replace namespace/def -p "3,2,5,1" --leaf -e 'new-symbol'
+cr tree replace namespace/def -p '3,2,5,1' --leaf -e 'new-symbol'
 
 # 3. 验证结果（可选）
-cr tree show namespace/def -p "3,2,5,1"
+cr tree show namespace/def -p '3,2,5,1'
 
 
 # ===== 方案 B：批量重命名（多处修改） =====
@@ -285,8 +292,8 @@ cr query search "old-name" -f namespace/def
 # [3,2,5,8] [3,2,5,2] [3,1,0] [2,1]
 
 # 2. 按提示从后往前修改（避免路径变化）
-cr tree replace namespace/def -p "3,2,5,8" --leaf -e 'new-name'
-cr tree replace namespace/def -p "3,2,5,2" --leaf -e 'new-name'
+cr tree replace namespace/def -p '3,2,5,8' --leaf -e 'new-name'
+cr tree replace namespace/def -p '3,2,5,2' --leaf -e 'new-name'
 # ... 继续按序修改
 
 # 或：一次性替换所有匹配项
@@ -300,10 +307,10 @@ cr query search-expr "fn (task)" -f namespace/def -l
 # 输出：[3,2,2,5,2,4,1] in (map $ fn (task) ...)
 
 # 2. 查看完整结构（可选）
-cr tree show namespace/def -p "3,2,2,5,2,4,1"
+cr tree show namespace/def -p '3,2,2,5,2,4,1'
 
 # 3. 修改整个表达式或子节点
-cr tree replace namespace/def -p "3,2,2,5,2,4,1,2" -e 'let ((x 1)) (+ x task)'
+cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 ```
 
 **关键技巧：**
@@ -322,7 +329,7 @@ cr tree replace namespace/def -p "3,2,2,5,2,4,1,2" -e 'let ((x 1)) (+ x task)'
 
   ```bash
   # 将路径 "3,2" 的节点包裹在 println 中
-  cr tree wrap ns/def -p "3,2" -e 'println $$$$' --refer-original '$$$$'
+  cr tree wrap ns/def -p '3,2' -e 'println $$$$' --refer-original '$$$$'
   ```
 
 - **重构并复用原子节点**（使用 `--refer-inner-branch`）：
@@ -330,13 +337,13 @@ cr tree replace namespace/def -p "3,2,2,5,2,4,1,2" -e 'let ((x 1)) (+ x task)'
   - 将其重构为 `(* 2 10)`：
 
   ```bash
-  cr tree replace ns/def -p "3,1" -e '(* #### 10)' --refer-inner-branch "2" --refer-inner-placeholder "####"
+  cr tree replace ns/def -p '3,1' -e '(* #### 10)' --refer-inner-branch '2' --refer-inner-placeholder '####'
   ```
 
 - **多处重用原始节点**：
   ```bash
   # 将节点 x 变为 (+ x x)
-  cr tree replace ns/def -p "2" -e '(+ $ $)' --refer-original '$'
+  cr tree replace ns/def -p '2' -e '(+ $ $)' --refer-original '$'
   ```
   详细参数和示例使用 `cr tree <command> --help` 查看。
 
@@ -657,8 +664,8 @@ cr edit def app.core/multiply -e 'defn multiply (x y) (* x y)'
 # 添加新函数（命令会提示 Next steps）
 cr edit def 'app.core/multiply' -e 'defn multiply (x y) (* x y)'
 
-# 替换整个定义（-p "" 表示根路径）
-cr tree replace 'app.core/multiply' -p "" -e 'defn multiply (x y z) (* x y z)'
+# 替换整个定义（-p '' 表示根路径）
+cr tree replace 'app.core/multiply' -p '' -e 'defn multiply (x y z) (* x y z)'
 
 # 更新文档和示例
 cr edit doc 'app.core/multiply' '乘法函数，返回两个数的积'
@@ -672,10 +679,10 @@ cr edit add-example 'app.core/multiply' -e 'multiply 5 6'
 cr query search '<pattern>' -f 'ns/def' -l
 
 # 2. 查看节点（输出会显示索引和操作提示）
-cr tree show 'ns/def' -p "<path>"
+cr tree show 'ns/def' -p '<path>'
 
 # 3. 执行替换（会显示 diff 和验证命令）
-cr tree replace 'ns/def' -p "<path>" --leaf -e '<value>'
+cr tree replace 'ns/def' -p '<path>' --leaf -e '<value>'
 
 # 4. 检查结果
 cr query error
@@ -815,7 +822,7 @@ Calcit 函数名中的 `?`, `->`, `!` 等字符在 bash/zsh 中有特殊含义�
 ```bash
 # ❌ 错误
 cr query def app.main/valid?
-cr eval -> x (+ 1) (* 2)
+cr eval '-> x (+ 1) (* 2)'
 
 # ✅ 正确
 cr query def 'app.main/valid?'

@@ -68,6 +68,8 @@ pub enum CalcitProc {
   NativeTupleValidateEnum,
   #[strum(serialize = "&display-stack")]
   NativeDisplayStack,
+  #[strum(serialize = "&inspect-class-methods")]
+  NativeInspectClassMethods,
   #[strum(serialize = "raise")]
   Raise,
   #[strum(serialize = "quit!")]
@@ -433,6 +435,7 @@ impl CalcitProc {
         return_type: some_tag("nil"),
         arg_types: vec![some_tag("&")],
       }),
+      NativeInspectClassMethods => None, // variadic: value and optional note
       NativeCirruType => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
         arg_types: vec![None],

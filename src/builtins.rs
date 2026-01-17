@@ -91,6 +91,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeTupleValidateEnum => meta::tuple_validate_enum(args),
     // effects
     NativeDisplayStack => meta::display_stack(args, call_stack),
+    NativeInspectClassMethods => meta::inspect_class_methods(args, call_stack),
     Raise => effects::raise(args),
     Quit => effects::quit(args),
     GetEnv => effects::get_env(args),
