@@ -904,6 +904,7 @@ pub struct TreeCommand {
 pub enum TreeSubcommand {
   Show(TreeShowCommand),
   Replace(TreeReplaceCommand),
+  ReplaceLeaf(TreeReplaceLeafCommand),
   Delete(TreeDeleteCommand),
   InsertBefore(TreeInsertBeforeCommand),
   InsertAfter(TreeInsertAfterCommand),
@@ -969,6 +970,30 @@ pub struct TreeReplaceCommand {
   /// placeholder for inner branch reference (e.g., "####")
   #[argh(option, long = "refer-inner-placeholder")]
   pub refer_inner_placeholder: Option<String>,
+  /// max depth for result preview (0 = unlimited, default 2)
+  #[argh(option, short = 'd', default = "2")]
+  pub depth: usize,
+}
+
+/// find and replace all matching leaf nodes in definition (no path needed)
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "replace-leaf")]
+pub struct TreeReplaceLeafCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// pattern to search for (exact match on leaf nodes)
+  #[argh(option, long = "pattern")]
+  pub pattern: String,
+  /// replacement value for matched leaf nodes (Cirru format, use |text for strings)
+  #[argh(option, long = "replacement")]
+  pub replacement: String,
+  /// treat replacement as a leaf node (default: true)
+  #[argh(switch, long = "no-leaf")]
+  pub no_leaf: bool,
+  /// treat replacement input as JSON
+  #[argh(switch, short = 'J', long = "json-input")]
+  pub json_input: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,

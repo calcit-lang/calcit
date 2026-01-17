@@ -4,7 +4,8 @@ use colored::Colorize;
 use super::common::{ERR_CODE_INPUT_REQUIRED, cirru_to_json, parse_input_to_cirru, parse_path, read_code_input};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
-  TreeReplaceCommand, TreeShowCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeWrapCommand,
+  TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand,
+  TreeWrapCommand,
 };
 
 // Import shared functions from edit module
@@ -22,6 +23,7 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
   match &cmd.subcommand {
     TreeSubcommand::Show(opts) => handle_show(opts, snapshot_file, opts.json),
     TreeSubcommand::Replace(opts) => handle_replace(opts, snapshot_file),
+    TreeSubcommand::ReplaceLeaf(opts) => handle_replace_leaf(opts, snapshot_file),
     TreeSubcommand::Delete(opts) => handle_delete(opts, snapshot_file),
     TreeSubcommand::InsertBefore(opts) => handle_insert_before(opts, snapshot_file),
     TreeSubcommand::InsertAfter(opts) => handle_insert_after(opts, snapshot_file),
@@ -464,6 +466,131 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
 
   Ok(())
+}
+
+fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+
+  // Parse the replacement value (default to leaf node)
+  let is_leaf = !opts.no_leaf;
+  let replacement_node = parse_input_to_cirru(&opts.replacement, &None, opts.json_input, is_leaf, true)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found"))?;
+
+  // Find all leaf nodes that match the pattern
+  let matches = find_all_leaf_matches(&code_entry.code, &opts.pattern, &[]);
+
+  if matches.is_empty() {
+    println!("{}", "No matches found.".yellow());
+    return Ok(());
+  }
+
+  println!(
+    "{} Found {} match(es) for pattern '{}' in '{}/{}':",
+    "Search:".bold(),
+    matches.len(),
+    opts.pattern.yellow(),
+    namespace,
+    definition
+  );
+  println!();
+
+  // Show preview of matches
+  for (i, (path, old_value)) in matches.iter().enumerate().take(5) {
+    let path_str = path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join(",");
+    println!("  {}. Path [{}]: {}", i + 1, path_str.dimmed(), format!("{:?}", old_value).yellow());
+  }
+
+  if matches.len() > 5 {
+    println!("  ... and {} more", matches.len() - 5);
+  }
+  println!();
+
+  // Replace all matches (from end to beginning to maintain path validity)
+  let mut new_code = code_entry.code.clone();
+  let mut replaced_count = 0;
+
+  // Sort paths in reverse order to replace from deepest/rightmost first
+  let mut sorted_matches = matches.clone();
+  sorted_matches.sort_by(|a, b| b.0.cmp(&a.0));
+
+  for (path, _) in sorted_matches {
+    match apply_operation_at_path(&new_code, &path, "replace", Some(&replacement_node)) {
+      Ok(updated_code) => {
+        new_code = updated_code;
+        replaced_count += 1;
+      }
+      Err(e) => {
+        eprintln!(
+          "{} Failed to replace at path [{}]: {}",
+          "Warning:".yellow(),
+          path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+          e
+        );
+      }
+    }
+  }
+
+  // Update the code entry
+  code_entry.code = new_code;
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Replaced {} occurrence(s) in '{}/{}'",
+    "✓".green(),
+    replaced_count,
+    namespace,
+    definition
+  );
+  println!();
+  println!("{}:", "Replacement".green().bold());
+  println!(
+    "  {} → {}",
+    format!("{:?}", opts.pattern).yellow(),
+    format_preview_with_type(&replacement_node, 0)
+  );
+  println!();
+  println!("{}", "Next steps:".blue().bold());
+  println!("  • Verify: {} '{}/{}'", "cr query show".cyan(), namespace, definition);
+  println!("  • Check errors: {}", "cr query error".cyan());
+  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+
+  Ok(())
+}
+
+/// Find all leaf nodes that exactly match the pattern
+fn find_all_leaf_matches(node: &Cirru, pattern: &str, current_path: &[usize]) -> Vec<(Vec<usize>, String)> {
+  let mut results = Vec::new();
+
+  match node {
+    Cirru::Leaf(s) => {
+      // Exact match only
+      if s.as_ref() == pattern {
+        results.push((current_path.to_vec(), s.to_string()));
+      }
+    }
+    Cirru::List(items) => {
+      // Recursively search children
+      for (i, item) in items.iter().enumerate() {
+        let mut new_path = current_path.to_vec();
+        new_path.push(i);
+        results.extend(find_all_leaf_matches(item, pattern, &new_path));
+      }
+    }
+  }
+
+  results
 }
 
 fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), String> {

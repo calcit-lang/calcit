@@ -109,7 +109,6 @@ Calcit 程序使用 `cr` 命令：
 **代码模式搜索：**
 
 - `cr query search <pattern> [-f <filter>] [-l] [-d <max-depth>] [-p <start-path>]` - 搜索叶子节点（字符串）
-
   - `<pattern>` - 位置参数，要搜索的字符串模式
   - `-f` / `--filter` - 过滤到特定命名空间或定义（可选）
   - `-l` / `--loose`：宽松匹配，包含模式（匹配所有包含该模式的叶子节点）
@@ -145,14 +144,12 @@ Calcit 程序使用 `cr` 命令：
 查询 Calcit 语言文档（guidebook）：
 
 - `cr docs search <keyword> [-c <num>] [-f <filename>]` - 按关键词搜索文档内容
-
   - `-c <num>` - 显示匹配行的上下文行数（默认 5）
   - `-f <filename>` - 按文件名过滤搜索结果
   - 输出：匹配行及其上下文，带行号和高亮
   - 示例：`cr docs search "macro" -c 10` 或 `cr docs search "defn" -f macros.md`
 
 - `cr docs read <filename> [-s <start>] [-n <lines>]` - 阅读指定文档
-
   - `-s <start>` - 起始行号（默认 0）
   - `-n <lines>` - 读取行数（默认 80）
   - 输出：文档内容、当前范围、是否有更多内容
@@ -224,6 +221,11 @@ cr query modules
   - `-j` / `--json`：同时输出 JSON 格式（用于程序化处理）
   - 推荐：直接查看 Cirru 格式即可，通常不需要 JSON
 - `cr tree replace` - 替换节点
+- `cr tree replace-leaf` - 查找并替换所有匹配的 leaf 节点（无需指定路径）
+  - `--pattern <pattern>` - 要搜索的模式（精确匹配 leaf 节点）
+  - `--replacement <value>` - 替换值（默认作为 leaf 节点处理）
+  - 自动遍历整个定义，一次性替换所有匹配项
+  - 示例：`cr tree replace-leaf 'ns/def' --pattern 'old-name' --replacement 'new-name'`
 - `cr tree delete` - 删除节点
 - `cr tree insert-before/after` - 插入相邻节点
 - `cr tree insert-child/append-child` - 插入子节点
@@ -251,6 +253,9 @@ cr tree replace namespace/def -p "<path>" --leaf -e '<value>'
 # 4. 批量修改：从后往前或重新搜索
 cr tree delete namespace/def -p "3,2,3"  # 先删大索引
 cr tree delete namespace/def -p "3,2,2"
+
+# 5. 批量替换所有匹配的 leaf 节点（无需路径）
+cr tree replace-leaf namespace/def --pattern 'old' --replacement 'new'
 ```
 
 **关键技巧：**
@@ -272,7 +277,6 @@ cr tree delete namespace/def -p "3,2,2"
   ```
 
 - **重构并复用原子节点**（使用 `--refer-inner-branch`）：
-
   - 假设原节点是 `(+ 1 2)` (路径 "3,1")，其子节点索引 1 是 `1`，索引 2 是 `2`
   - 将其重构为 `(* 2 10)`：
 
