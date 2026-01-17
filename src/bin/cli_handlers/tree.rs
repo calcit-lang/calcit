@@ -509,7 +509,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   // Show preview of matches
   for (i, (path, old_value)) in matches.iter().enumerate().take(5) {
     let path_str = path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join(",");
-    println!("  {}. Path [{}]: {}", i + 1, path_str.dimmed(), format!("{:?}", old_value).yellow());
+    println!("  {}. Path [{}]: {}", i + 1, path_str.dimmed(), format!("{old_value:?}").yellow());
   }
 
   if matches.len() > 5 {

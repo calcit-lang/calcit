@@ -1,5 +1,6 @@
 //! Common utilities shared between CLI handlers
 
+use super::cirru_validator;
 use cirru_parser::Cirru;
 use std::fs;
 use std::io::{self, Read};
@@ -188,6 +189,8 @@ pub fn parse_input_to_cirru(
 
       let result = cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))?;
       warn_if_single_string_expression(&result, raw);
+      // Validate basic Cirru syntax
+      cirru_validator::validate_cirru_syntax(&result)?;
       return Ok(result);
     }
 
@@ -256,10 +259,16 @@ pub fn parse_input_to_cirru(
     if parsed.len() == 1 {
       let result = parsed.into_iter().next().unwrap();
       warn_if_single_string_expression(&result, raw);
+      // Validate basic Cirru syntax
+      cirru_validator::validate_cirru_syntax(&result)?;
       Ok(result)
     } else if parsed.is_empty() {
       Err("Input parsed as an empty Cirru structure.".to_string())
     } else {
+      // Validate basic Cirru syntax for each node
+      for node in &parsed {
+        cirru_validator::validate_cirru_syntax(node)?;
+      }
       Ok(Cirru::List(parsed))
     }
   }

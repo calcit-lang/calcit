@@ -3,6 +3,7 @@
 //! These handlers implement: query, docs, cirru, libs, edit, tree subcommands
 
 mod cirru;
+mod cirru_validator;
 mod common;
 mod docs;
 mod edit;

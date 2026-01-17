@@ -461,6 +461,9 @@ pub struct CirruParseCommand {
   /// parse input as a single-line Cirru expression (one-liner parser, default is multi-line)
   #[argh(switch, short = 'e', long = "expr-one")]
   pub expr_one_liner: bool,
+  /// perform basic syntax validation after parsing (checks keywords, strings, numbers)
+  #[argh(switch, short = 'v', long = "validate")]
+  pub validate: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
