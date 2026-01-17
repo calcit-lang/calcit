@@ -2,6 +2,37 @@
 
 本文档为 AI Agent 提供 Calcit 项目的操作指南。
 
+## 🚀 快速开始（新 LLM 必读）
+
+**核心原则：用命令行工具（不要直接编辑文件），用 search 定位（比逐层导航快 10 倍）**
+
+### 标准流程
+
+```bash
+# 搜索 → 修改 → 验证
+cr query search "symbol" -f 'ns/def'                      # 1. 定位（输出：[3,2,1] in ...）
+cr tree replace 'ns/def' -p "3,2,1" --leaf -e 'new'     # 2. 修改
+cr tree show 'ns/def' -p "3,2,1"                          # 3. 验证（可选）
+```
+
+### 三种搜索方式
+
+```bash
+cr query search "target" -f 'ns/def'                      # 搜索符号/字符串
+cr query search-expr "fn (x)" -f 'ns/def' -l              # 搜索代码结构
+cr tree replace-leaf 'ns/def' --pattern 'old' --replacement 'new'  # 批量替换
+```
+
+### 效率对比
+
+| 操作       | 传统方法                | search 方法         | 效率     |
+| ---------- | ----------------------- | ------------------- | -------- |
+| 定位符号   | 逐层 `tree show` 10+ 步 | `query search` 1 步 | **10倍** |
+| 查找表达式 | 手动遍历代码            | `search-expr` 1 步  | **10倍** |
+| 批量重命名 | 手动找每处              | 自动列出所有位置    | **5倍**  |
+
+---
+
 ## ⚠️ 重要警告：禁止直接修改的文件
 
 以下文件**严格禁止使用文本替换或直接编辑**：
@@ -106,38 +137,30 @@ Calcit 程序使用 `cr` 命令：
   - 返回：引用该定义的所有位置（带上下文预览）
   - 用于理解代码影响范围，重构前的影响分析
 
-**代码模式搜索：**
+**代码模式搜索（快速定位 ⭐⭐⭐）：**
 
-- `cr query search <pattern> [-f <filter>] [-l] [-d <max-depth>] [-p <start-path>]` - 搜索叶子节点（字符串）
-  - `<pattern>` - 位置参数，要搜索的字符串模式
-  - `-f` / `--filter` - 过滤到特定命名空间或定义（可选）
-  - `-l` / `--loose`：宽松匹配，包含模式（匹配所有包含该模式的叶子节点）
-  - `-d <max-depth>`：限制搜索深度（0 = 无限制）
-  - `-p` / `--start-path`：从指定路径开始搜索（逗号分隔的索引，如 `"3,2,1"`）
-    - 不指定时从根节点开始搜索整个定义
-    - 指定后只搜索该路径下的子树，适合在大型定义中缩小搜索范围
-  - 返回：匹配节点的完整路径 + 父级上下文预览
+- `cr query search <pattern> [-f <filter>] [-l]` - 搜索叶子节点（符号/字符串），比逐层导航快 10 倍
+  - `-f <filter>` - 过滤到特定命名空间或定义
+  - `-l / --loose`：宽松匹配，包含模式
+  - `-d <max-depth>`：限制搜索深度
+  - `-p <start-path>`：从指定路径开始搜索（如 `"3,2,1"`）
+  - 返回：完整路径 + 父级上下文，多个匹配时自动显示批量替换命令
   - 示例：
-    - `cr query search "println" -f app.main/main! -l` - 在 main 函数中搜索包含 "println" 的节点
+    - `cr query search "println" -f app.main/main!` - 精确搜索
+    - `cr query search "comp-" -f app.ui/layout -l` - 模糊搜索（所有 comp- 开头）
+    - `cr query search "task-id" -f app.comp/render` - 返回所有匹配位置并自动排序
 
-**高级结构搜索：**
+**高级结构搜索（搜索代码结构 ⭐⭐⭐）：**
 
-- `cr query search-expr <pattern> [-f <filter>] [-l] [-j] [-d <max-depth>]` - 搜索结构表达式
-  - 用于搜索完整的代码结构（List）而非单个符号。
-  - `<pattern>` - 位置参数，Cirru one-liner 或 JSON 数组模式
-  - `-f` / `--filter` - 过滤到特定命名空间或定义（可选）
-  - `-l` / `--loose`：宽松匹配，查找包含连续子序列的结构（例如搜索 `(+ a)` 可以匹配 `(+ a b)`）
-  - `-j` / `--json`：将模式解析为 JSON 数组而非 Cirru
-  - 返回：匹配节点的路径 + 父级上下文
+- `cr query search-expr <pattern> [-f <filter>] [-l] [-j]` - 搜索结构表达式（List）
+  - `-l / --loose`：宽松匹配，查找包含连续子序列的结构
+  - `-j / --json`：将模式解析为 JSON 数组
   - 示例：
-    - `cr query search-expr "+ a b" -f app.util/add` - 查找精确表达式
-    - `cr query search-expr '["defn"]' -f app.main/main -j -l` - 查找所有函数定义
+    - `cr query search-expr "fn (x)" -f app.main/process -l` - 查找函数定义
+    - `cr query search-expr ">> state task-id"` - 查找状态访问
+    - `cr query search-expr "memof1-call-by" -l` - 查找记忆化调用
 
-**搜索结果格式：**
-
-- 输出格式：`[路径] in 父级上下文`
-- 路径格式：`[索引1,索引2,...]` 表示从根节点到匹配节点的路径
-- 可配合 `cr tree show <target> -p "<path>"` 查看具体节点内容
+**搜索结果格式：** `[索引1,索引2,...] in 父级上下文`，可配合 `cr tree show <ns/def> -p "<path>"` 查看节点。**修改代码时优先用 search 命令，比逐层导航快 10 倍。**
 
 ### 文档子命令 (`cr docs`)
 
@@ -238,32 +261,58 @@ cr query modules
 - `--leaf` - 强制作为 leaf 节点（符号或字符串）
 - `-j '<json>'` / `-f <file>` / `-s` (stdin)
 
-**推荐工作流：**
+**推荐工作流（高效定位 ⭐⭐⭐）：**
 
 ```bash
-# 1. 搜索定位
-cr query search "target" -f namespace/def -l
+# ===== 方案 A：单点修改（精确定位） =====
 
-# 2. 确认节点（命令会显示子节点和路径）
-cr tree show namespace/def -p "<path>"
+# 1. 快速定位目标节点（一步到位）
+cr query search "target-symbol" -f namespace/def
+# 输出：[3,2,5,1] in (fn (x) target-symbol ...)
 
-# 3. 执行修改（命令会显示 Before/After 和验证提示）
-cr tree replace namespace/def -p "<path>" --leaf -e '<value>'
+# 2. 直接修改（路径已知）
+cr tree replace namespace/def -p "3,2,5,1" --leaf -e 'new-symbol'
 
-# 4. 批量修改：从后往前或重新搜索
-cr tree delete namespace/def -p "3,2,3"  # 先删大索引
-cr tree delete namespace/def -p "3,2,2"
+# 3. 验证结果（可选）
+cr tree show namespace/def -p "3,2,5,1"
 
-# 5. 批量替换所有匹配的 leaf 节点（无需路径）
-cr tree replace-leaf namespace/def --pattern 'old' --replacement 'new'
+
+# ===== 方案 B：批量重命名（多处修改） =====
+
+# 1. 搜索所有匹配位置
+cr query search "old-name" -f namespace/def
+# 自动显示：4 处匹配，已按路径从大到小排序
+# [3,2,5,8] [3,2,5,2] [3,1,0] [2,1]
+
+# 2. 按提示从后往前修改（避免路径变化）
+cr tree replace namespace/def -p "3,2,5,8" --leaf -e 'new-name'
+cr tree replace namespace/def -p "3,2,5,2" --leaf -e 'new-name'
+# ... 继续按序修改
+
+# 或：一次性替换所有匹配项
+cr tree replace-leaf namespace/def --pattern 'old-name' --replacement 'new-name'
+
+
+# ===== 方案 C：结构搜索（查找表达式） =====
+
+# 1. 搜索包含特定模式的表达式
+cr query search-expr "fn (task)" -f namespace/def -l
+# 输出：[3,2,2,5,2,4,1] in (map $ fn (task) ...)
+
+# 2. 查看完整结构（可选）
+cr tree show namespace/def -p "3,2,2,5,2,4,1"
+
+# 3. 修改整个表达式或子节点
+cr tree replace namespace/def -p "3,2,2,5,2,4,1,2" -e 'let ((x 1)) (+ x task)'
 ```
 
 **关键技巧：**
 
-- 使用 `cr query search` 快速定位路径
-- `cr tree show` 输出会标注每个子节点的索引
-- 遇到路径错误时，命令会自动显示最长有效路径和可用子节点
-- 所有修改操作都会显示 Preview 和 Verify 命令
+- **优先使用 `search` 系列命令**：比逐层导航快 10+ 倍，一步直达目标
+- **路径格式**：`"3,2,1"` 表示第3个子节点 → 第2个子节点 → 第1个子节点
+- **批量修改自动提示**：搜索找到多处时，自动显示路径排序和批量替换命令
+- **路径动态变化**：删除/插入后，同级后续索引会变化，按提示从后往前操作
+- 所有命令都会显示 Next steps 和操作提示
 
 **结构化变更示例：**
 
@@ -737,30 +786,27 @@ send-to-component! $ :: :clipboard/read text
 
 ### 4. 推荐工作流程
 
-**基本流程（命令会显示子节点索引、Next steps、批量重命名提示）：**
+**基本流程（search 快速定位 ⭐⭐⭐）：**
 
 ```bash
-# 1. 搜索定位
-cr query search '<pattern>' -f 'ns/def' -l
+# 1. 快速定位（比逐层导航快10倍）
+cr query search 'target' -f 'ns/def'           # 或 search-expr 'fn (x)' -l 搜索结构
 
-# 2. 查看节点（会显示索引和操作提示）
-cr tree show 'ns/def' -p "<path>"
-
-# 3. 执行修改（会显示 diff 和验证命令）
+# 2. 执行修改（会显示 diff 和验证命令）
 cr tree replace 'ns/def' -p "<path>" --leaf -e '<value>'
 
-# 4. 增量触发更新（推荐）
+# 3. 增量更新（推荐）
 cr edit inc --changed ns/def
 # 等待 ~300ms 后检查
 cr query error
-
-# 5. 如果结果不符合预期，使用全量编译
-cr -1 js  # 或 cr -1（解释执行模式）
 ```
 
-**批量修改提示：** 命令会自动检测多匹配场景，显示从大到小的路径排序和重要警告。
+**新手提示：**
 
-**增量更新优势：** 快速反馈、保持 watcher 运行、精确控制变更范围（详见"增量触发更新"章节）
+- 不知道目标在哪？用 `search` 或 `search-expr` 快速找到所有匹配
+- 想了解代码结构？用 `tree show` 逐层探索
+- 需要批量重命名？搜索后按提示从大到小路径依次修改
+- 不确定修改是否正确？每步后用 `tree show` 验证
 
 ### 5. Shell 特殊字符转义 ⭐⭐
 
