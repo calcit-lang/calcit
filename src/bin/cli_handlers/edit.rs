@@ -163,8 +163,8 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   if exists {
     return Err(format!(
       "Definition '{definition}' already exists in namespace '{namespace}'.\n\
-       To replace the entire definition, use: cr tree replace {namespace}/{definition} -p \"\" -e '<code>'\n\
-       To modify parts of the definition, use: cr tree replace {namespace}/{definition} -p \"<path>\" -e '<code>'"
+       To replace the entire definition, use: cr tree replace {namespace}/{definition} -p '' -e '<code>'\n\
+       To modify parts of the definition, use: cr tree replace {namespace}/{definition} -p '<path>' -e '<code>'"
     ));
   }
 
@@ -195,7 +195,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     "{}",
     format!("Tip: Use single quotes around '{namespace}/{definition}' to avoid shell escaping issues.").dimmed()
   );
-
+  println!("{}", format!("  Example: cr tree show '{namespace}/{definition}'").dimmed());
   Ok(())
 }
 

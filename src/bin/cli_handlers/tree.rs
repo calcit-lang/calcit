@@ -227,7 +227,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
             "{} View it with: {}",
             "→".cyan(),
             format!(
-              "cr tree show {} -p \"{}\"",
+              "cr tree show {} -p '{}'",
               opts.target,
               valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
             )
@@ -245,7 +245,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
             "{} View it with: {}",
             "→".cyan(),
             format!(
-              "cr tree show {} -p \"{}\"",
+              "cr tree show {} -p '{}'",
               opts.target,
               valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
             )
@@ -263,7 +263,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
               } else {
                 format!("{},{}", valid_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","), i)
               };
-              eprintln!("  [{}] {} {} -p \"{}\"", i, child_preview.yellow(), "->".dimmed(), child_path);
+              eprintln!("  [{}] {} {} -p '{}'", i, child_preview.yellow(), "->".dimmed(), child_path);
             }
             if items.len() > 3 {
               eprintln!("  {}", format!("... and {} more", items.len() - 3).dimmed());
@@ -312,7 +312,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           } else {
             format!("{},{}", opts.path, i)
           };
-          println!("  [{}] {} {} -p \"{}\"", i, type_str.yellow(), "->".dimmed(), child_path);
+          println!("  [{}] {} {} -p '{}'", i, type_str.yellow(), "->".dimmed(), child_path);
         }
         println!();
       }
@@ -328,16 +328,16 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
 
       println!("{}: To modify this node:", "Next steps".blue().bold());
       println!(
-        "  • Replace: {} {} -p \"{}\" {}",
+        "  • Replace: {} {} -p '{}' {}",
         "cr tree replace".cyan(),
         opts.target,
         opts.path,
         "-e 'cirru one-liner'".dimmed()
       );
-      println!("  • Delete:  {} {} -p \"{}\"", "cr tree delete".cyan(), opts.target, opts.path);
+      println!("  • Delete:  {} {} -p '{}'", "cr tree delete".cyan(), opts.target, opts.path);
       println!();
       let mut tips = vec![format!(
-        "Prefer {} to avoid indentation issues; use {} for complex structures",
+        "Prefer {} to avoid indentation issues; for messy structures, use {} to inspect JSON format",
         "-e 'one-liner'".yellow(),
         "-j".yellow()
       )];
@@ -357,7 +357,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       println!();
       println!("{}: To modify this leaf:", "Next steps".blue().bold());
       println!(
-        "  • Replace: {} {} -p \"{}\" --leaf -e '<value>'",
+        "  • Replace: {} {} -p '{}' --leaf -e '<value>'",
         "cr tree replace".cyan(),
         opts.target,
         opts.path
@@ -367,7 +367,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         let parent_path = &path[..path.len() - 1];
         let parent_path_str = parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
         println!(
-          "  • View parent: {} {} -p \"{}\"",
+          "  • View parent: {} {} -p '{}'",
           "cr tree show".cyan(),
           opts.target,
           parent_path_str
@@ -457,7 +457,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   println!();
   println!("{}", "Next steps:".blue().bold());
   println!(
-    "  • Verify: {} '{}' -p \"{}\"",
+    "  • Verify: {} '{}' -p '{}'",
     "cr tree show".cyan(),
     format_args!("{}/{}", namespace, definition),
     path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")

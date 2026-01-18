@@ -419,7 +419,7 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
     "try `cr query search <leaf> -f '{namespace}/{definition}' -l` to quick find coordination of given leaf node."
   )];
   tips.push(format!(
-    "use `cr tree show {namespace}/{definition} -p \"0\"` to explore tree for editing."
+    "use `cr tree show {namespace}/{definition} -p '0'` to explore tree for editing."
   ));
   if !code_entry.examples.is_empty() {
     tips.push(format!("use `cr query examples {namespace}/{definition}` to view examples."));
@@ -1089,7 +1089,7 @@ fn handle_search_leaf(
 
     // Enhanced tips based on search context
     println!("{}", "Next steps:".blue().bold());
-    println!("  • View node: {} '<ns/def>' -p \"<path>\"", "cr tree show".cyan());
+    println!("  • View node: {} '<ns/def>' -p '<path>'", "cr tree show".cyan());
 
     // If single definition with multiple matches, suggest batch rename workflow
     if all_results.len() == 1 {
@@ -1114,7 +1114,7 @@ fn handle_search_leaf(
       for (path, _) in sorted_results.iter().take(3) {
         let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
         println!(
-          "    {} '{}/{}' -p \"{}\" --leaf -e '<new-value>'",
+          "    {} '{}/{}' -p '{}' --leaf -e '<new-value>'",
           "cr tree replace".cyan(),
           ns,
           def_name,
@@ -1289,7 +1289,7 @@ fn handle_search_expr(
 
     println!(
       "{}",
-      "Tip: Use `cr tree show <namespace>/<definition> -p \"<path>\"` to view matched nodes.".dimmed()
+      "Tip: Use `cr tree show <namespace>/<definition> -p '<path>'` to view matched nodes.".dimmed()
     );
   }
 

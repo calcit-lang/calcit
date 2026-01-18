@@ -177,7 +177,7 @@ Calcit 程序使用 `cr` 命令：
   - `-c <num>` - 显示匹配行的上下文行数（默认 5）
   - `-f <filename>` - 按文件名过滤搜索结果
   - 输出：匹配行及其上下文，带行号和高亮
-  - 示例：`cr docs search "macro" -c 10` 或 `cr docs search "defn" -f macros.md`
+  - 示例：`cr docs search 'macro' -c 10` 或 `cr docs search 'defn' -f macros.md`
 
 - `cr docs read <filename> [-s <start>] [-n <lines>]` - 阅读指定文档
   - `-s <start>` - 起始行号（默认 0）
@@ -274,7 +274,7 @@ cr query modules
 # ===== 方案 A：单点修改（精确定位） =====
 
 # 1. 快速定位目标节点（一步到位）
-cr query search "target-symbol" -f namespace/def
+cr query search 'target-symbol' -f namespace/def
 # 输出：[3,2,5,1] in (fn (x) target-symbol ...)
 
 # 2. 直接修改（路径已知）
@@ -287,7 +287,7 @@ cr tree show namespace/def -p '3,2,5,1'
 # ===== 方案 B：批量重命名（多处修改） =====
 
 # 1. 搜索所有匹配位置
-cr query search "old-name" -f namespace/def
+cr query search 'old-name' -f namespace/def
 # 自动显示：4 处匹配，已按路径从大到小排序
 # [3,2,5,8] [3,2,5,2] [3,1,0] [2,1]
 
@@ -717,7 +717,7 @@ cr edit imports app.main -j '[["app.lib", ":as", "lib"], ["app.util", ":refer", 
 
 - **从后往前操作**（推荐）：先删大索引，再删小索引
 - **单次操作后重新搜索**：每次修改立即用 `cr query search` 更新路径
-- **整体重写**：用 `cr tree replace -p ""` 替换整个定义
+- **整体重写**：用 `cr tree replace -p ''` 替换整个定义
 
 命令会在路径错误时提示最长有效路径和可用子节点。
 
@@ -746,16 +746,16 @@ cr edit imports app.main -j '[["app.lib", ":as", "lib"], ["app.util", ":refer", 
 
 ```bash
 # ✅ 替换表达式
-cr tree replace app.main/fn -p "2" -e 'println |hello'
+cr tree replace app.main/fn -p '2' -e 'println |hello'
 
 # ✅ 替换 leaf（推荐 --leaf）
-cr tree replace app.main/fn -p "2,0" --leaf -e 'new-symbol'
+cr tree replace app.main/fn -p '2,0' --leaf -e 'new-symbol'
 
 # ✅ 替换字符串 leaf
-cr tree replace app.main/fn -p "2,1" --leaf -e '|new text'
+cr tree replace app.main/fn -p '2,1' --leaf -e '|new text'
 
 # ❌ 避免：用 -e 传单个 token（会变成 list）
-cr tree replace app.main/fn -p "2,0" -e 'symbol'  # 结果：["symbol"]
+cr tree replace app.main/fn -p '2,0' -e 'symbol'  # 结果：["symbol"]
 ```
 
 ### 3. Cirru 字符串和数据类型 ⭐⭐
@@ -800,7 +800,7 @@ send-to-component! $ :: :clipboard/read text
 cr query search 'target' -f 'ns/def'           # 或 search-expr 'fn (x)' -l 搜索结构
 
 # 2. 执行修改（会显示 diff 和验证命令）
-cr tree replace 'ns/def' -p "<path>" --leaf -e '<value>'
+cr tree replace 'ns/def' -p '<path>' --leaf -e '<value>'
 
 # 3. 增量更新（推荐）
 cr edit inc --changed ns/def
