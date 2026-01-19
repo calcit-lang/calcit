@@ -1063,6 +1063,8 @@ fn handle_search_leaf(
               println!("    {} {}", "(root)".cyan(), content.dimmed());
             } else {
               let path_str = format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
+              let breadcrumb = get_breadcrumb_from_code(&code_entry.code, path);
+              println!("    {} {}", path_str.cyan(), breadcrumb.dimmed());
 
               // Get parent context
               if let Some(parent) = get_parent_node_from_code(&code_entry.code, path) {
@@ -1072,9 +1074,7 @@ fn handle_search_leaf(
                 } else {
                   parent_oneliner
                 };
-                println!("    {} in {}", path_str.cyan(), display_parent.dimmed());
-              } else {
-                println!("    {}", path_str.cyan());
+                println!("      {} {}", "in".dimmed(), display_parent.dimmed());
               }
             }
           }
@@ -1089,7 +1089,21 @@ fn handle_search_leaf(
 
     // Enhanced tips based on search context
     println!("{}", "Next steps:".blue().bold());
-    println!("  • View node: {} '<ns/def>' -p '<path>'", "cr tree show".cyan());
+    if all_results.len() == 1 && all_results[0].2.len() == 1 {
+      let (ns, def_name, results) = &all_results[0];
+      let (path, _) = &results[0];
+      let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+      println!("  • View node: {} '{}/{}' -p '{}'", "cr tree show".cyan(), ns, def_name, path_str);
+      println!(
+        "  • Replace: {} '{}/{}' -p '{}' --leaf -e '<new-value>'",
+        "cr tree replace".cyan(),
+        ns,
+        def_name,
+        path_str
+      );
+    } else {
+      println!("  • View node: {} '<ns/def>' -p '<path>'", "cr tree show".cyan());
+    }
 
     // If single definition with multiple matches, suggest batch rename workflow
     if all_results.len() == 1 {
@@ -1258,11 +1272,13 @@ fn handle_search_expr(
       if let Some(file_data) = snapshot.files.get(ns) {
         if let Some(code_entry) = file_data.defs.get(def_name) {
           for (path, _node) in results.iter().take(5) {
+            let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
             if path.is_empty() {
               let content = code_entry.code.format_one_liner().unwrap_or_default();
               println!("    {} {}", "(root)".cyan(), content.dimmed());
             } else {
-              let path_str = format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
+              let breadcrumb = get_breadcrumb_from_code(&code_entry.code, path);
+              println!("    {} path: '{}' context: {}", "•".cyan(), path_str, breadcrumb.dimmed());
 
               // Get parent context
               if let Some(parent) = get_parent_node_from_code(&code_entry.code, path) {
@@ -1272,9 +1288,7 @@ fn handle_search_expr(
                 } else {
                   parent_oneliner
                 };
-                println!("    {} in {}", path_str.cyan(), display_parent.dimmed());
-              } else {
-                println!("    {}", path_str.cyan());
+                println!("      {} {}", "in:".dimmed(), display_parent.dimmed());
               }
             }
           }
@@ -1287,10 +1301,59 @@ fn handle_search_expr(
       println!();
     }
 
-    println!(
-      "{}",
-      "Tip: Use `cr tree show <namespace>/<definition> -p '<path>'` to view matched nodes.".dimmed()
-    );
+    // Enhanced tips based on search context
+    println!("{}", "Next steps:".blue().bold());
+    if all_results.len() == 1 && all_results[0].2.len() == 1 {
+      let (ns, def_name, results) = &all_results[0];
+      let (path, _) = &results[0];
+      let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+      println!("  • View node: {} '{}/{}' -p '{}'", "cr tree show".cyan(), ns, def_name, path_str);
+      println!(
+        "  • Replace: {} '{}/{}' -p '{}' -e '<new-expression>'",
+        "cr tree replace".cyan(),
+        ns,
+        def_name,
+        path_str
+      );
+    } else {
+      println!("  • View node: {} '<ns/def>' -p '<path>'", "cr tree show".cyan());
+    }
+
+    // If single definition with multiple matches, suggest batch replace workflow
+    if all_results.len() == 1 {
+      let (_ns, _def_name, results) = &all_results[0];
+      if results.len() > 1 {
+        println!("  • Batch replace: See tip below for renaming {} occurrences", results.len());
+      }
+    }
+
+    println!();
+
+    // Add batch replace tip for multiple matches in single definition
+    if all_results.len() == 1 && all_results[0].2.len() > 1 {
+      let (ns, def_name, results) = &all_results[0];
+      println!("{}", "Tip for batch replace:".yellow().bold());
+      println!("  Replace from largest index first to avoid path changes:");
+
+      // Show first 3 commands as examples (in reverse order)
+      let mut sorted_results: Vec<_> = results.iter().collect();
+      sorted_results.sort_by(|a, b| b.0.cmp(&a.0));
+
+      for (path, _) in sorted_results.iter().take(3) {
+        let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        println!(
+          "    {} '{}/{}' -p '{}' -e '<new-expression>'",
+          "cr tree replace".cyan(),
+          ns,
+          def_name,
+          path_str
+        );
+      }
+
+      if results.len() > 3 {
+        println!("    {}", format!("... ({} more to replace)", results.len() - 3).dimmed());
+      }
+    }
   }
 
   Ok(())
@@ -1365,6 +1428,44 @@ fn get_parent_node_from_code(code: &Cirru, path: &[usize]) -> Option<Cirru> {
     }
   }
   Some(current.clone())
+}
+
+fn get_breadcrumb_from_code(code: &Cirru, path: &[usize]) -> String {
+  let mut parts = Vec::new();
+  let mut current = code;
+
+  parts.push(preview_cirru_head(current));
+
+  for &idx in path {
+    if let Cirru::List(items) = current {
+      if let Some(next) = items.get(idx) {
+        current = next;
+        parts.push(preview_cirru_head(current));
+      } else {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+
+  parts.join(" → ")
+}
+
+fn preview_cirru_head(node: &Cirru) -> String {
+  match node {
+    Cirru::Leaf(s) => s.to_string(),
+    Cirru::List(items) => {
+      if items.is_empty() {
+        "()".to_string()
+      } else {
+        match &items[0] {
+          Cirru::Leaf(s) => s.to_string(),
+          Cirru::List(_) => "(...)".to_string(),
+        }
+      }
+    }
+  }
 }
 
 /// Search for expression nodes (structural matching)

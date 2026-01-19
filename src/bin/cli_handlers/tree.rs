@@ -123,7 +123,6 @@ fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: 
     operation,
     path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
   ));
-  output.push_str(&"─".repeat(60));
   output.push('\n');
 
   // Show old and new side by side (simplified version)
@@ -136,7 +135,6 @@ fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: 
   output.push_str(&format!("{}:\n", "After".green().bold()));
   output.push_str(&new_preview);
   output.push('\n');
-  output.push_str(&"─".repeat(60));
 
   output
 }
@@ -507,13 +505,13 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   println!();
 
   // Show preview of matches
-  for (i, (path, old_value)) in matches.iter().enumerate().take(5) {
+  for (i, (path, old_value)) in matches.iter().enumerate().take(20) {
     let path_str = path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join(",");
     println!("  {}. Path [{}]: {}", i + 1, path_str.dimmed(), format!("{old_value:?}").yellow());
   }
 
-  if matches.len() > 5 {
-    println!("  ... and {} more", matches.len() - 5);
+  if matches.len() > 20 {
+    println!("  ... and {} more", matches.len() - 20);
   }
   println!();
 
@@ -562,7 +560,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   );
   println!();
   println!("{}", "Next steps:".blue().bold());
-  println!("  • Verify: {} '{}/{}'", "cr query show".cyan(), namespace, definition);
+  println!("  • Verify: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
   println!("  • Check errors: {}", "cr query error".cyan());
   println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
 
@@ -625,13 +623,11 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
     "Preview".blue().bold(),
     path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
   );
-  println!("{}", "─".repeat(60));
   println!("{}:", "Node to delete".yellow().bold());
   println!("{}", format_preview_with_type(&old_node, 10));
   println!();
   println!("{}:", "Parent context".dimmed());
   println!("{}", format_preview_with_type(&old_parent, 8));
-  println!("{}", "─".repeat(60));
   println!();
 
   let new_code = apply_operation_at_path(&code_entry.code, &path, "delete", None)?;
@@ -928,13 +924,11 @@ fn generic_insert_handler<T: InsertOperation>(
     operation,
     path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
   );
-  println!("{}", "─".repeat(60));
   println!("{}:", "Node to insert".cyan().bold());
   println!("{}", format_preview_with_type(&processed_node, 8));
   println!();
   println!("{}:", "Parent before".dimmed());
   println!("{}", format_preview_with_type(&old_parent, 8));
-  println!("{}", "─".repeat(60));
   println!();
 
   let new_code = apply_operation_at_path(&code_entry.code, &path, operation, Some(&processed_node))?;

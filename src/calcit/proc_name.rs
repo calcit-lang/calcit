@@ -562,7 +562,11 @@ impl CalcitProc {
         return_type: some_tag("bool"),
         arg_types: vec![some_tag("string"), some_tag("string")],
       }),
-      NativeStrNth | NativeStrFirst => Some(ProcTypeSignature {
+      NativeStrNth => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![some_tag("string"), some_tag("number")],
+      }),
+      NativeStrFirst => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![some_tag("string")],
       }),
