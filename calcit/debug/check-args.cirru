@@ -10,7 +10,10 @@
             defn f1 (a) (:: :unit)
         |f2 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn f2 (a ? b) (:: :unit)
+            defn f2 (a ? b)
+              assert-type a :number
+              assert-type b $ :: :optional :number
+              (:: :unit)
         |f3 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn f3 (a & b) (:: :unit)

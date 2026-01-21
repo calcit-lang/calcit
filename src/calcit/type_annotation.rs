@@ -10,7 +10,7 @@ use std::thread_local;
 
 use cirru_edn::EdnTag;
 
-use super::{Calcit, CalcitImport, CalcitRecord, CalcitTuple};
+use super::{Calcit, CalcitImport, CalcitProc, CalcitRecord, CalcitTuple};
 use crate::program;
 
 thread_local! {
@@ -24,12 +24,50 @@ pub enum CalcitTypeAnnotation {
   Record(Arc<CalcitRecord>),
   Tuple(Arc<CalcitTuple>),
   Function(Arc<CalcitFnTypeAnnotation>),
-  /// Fallback for shapes that are not yet modeled explicitly
+  /// Fallback for shapes that are not yet modeled explicitly in class Record
   Custom(Arc<Calcit>),
   Dynamic,
+  /// Represents an type that can be nil or the given type
+  Optional(Arc<CalcitTypeAnnotation>),
 }
 
 impl CalcitTypeAnnotation {
+  pub fn parse_type_annotation_form(form: &Calcit) -> Arc<CalcitTypeAnnotation> {
+    let is_optional_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "optional";
+
+    if let Calcit::Tuple(tuple) = form {
+      if let Calcit::Tag(tag) = tuple.tag.as_ref() {
+        if is_optional_tag(tag) {
+          if let Some(inner_form) = tuple.extra.get(0) {
+            let inner = Self::parse_type_annotation_form(inner_form);
+            return Arc::new(CalcitTypeAnnotation::Optional(inner));
+          }
+        }
+      }
+    }
+
+    if let Calcit::List(xs) = form {
+      let is_tuple_constructor = match xs.first() {
+        Some(Calcit::Proc(CalcitProc::NativeTuple)) => true,
+        Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "::" => true,
+        _ => false,
+      };
+
+      if is_tuple_constructor {
+        if let Some(Calcit::Tag(tag)) = xs.get(1) {
+          if is_optional_tag(tag) {
+            if let Some(inner_form) = xs.get(2) {
+              let inner = Self::parse_type_annotation_form(inner_form);
+              return Arc::new(CalcitTypeAnnotation::Optional(inner));
+            }
+          }
+        }
+      }
+    }
+
+    Arc::new(CalcitTypeAnnotation::from_calcit(form))
+  }
+
   /// Render a concise representation used in warnings or logs
   pub fn to_brief_string(&self) -> String {
     match self {
@@ -38,12 +76,19 @@ impl CalcitTypeAnnotation {
       Self::Tuple(_) => "tuple".to_string(),
       Self::Function(signature) => signature.render_signature_brief(),
       Self::Custom(inner) => format!("{inner}"),
+      Self::Optional(inner) => format!("optional {}", inner.to_brief_string()),
       Self::Dynamic => "dynamic".to_string(),
     }
   }
 
   pub fn matches_annotation(&self, expected: &CalcitTypeAnnotation) -> bool {
     match (self, expected) {
+      (_, Self::Optional(expected_inner)) => match self {
+        Self::Optional(actual_inner) => actual_inner.matches_annotation(expected_inner),
+        Self::Tag(tag) if tag.ref_str().trim_start_matches(':') == "nil" => true,
+        _ => self.matches_annotation(expected_inner),
+      },
+      (Self::Optional(_), _) => false,
       (Self::Tag(a), Self::Tag(b)) => a.ref_str() == b.ref_str(),
       (Self::Record(a), Self::Record(b)) => a.name == b.name,
       (Self::Tuple(a), Self::Tuple(b)) => a.as_ref() == b.as_ref(),
@@ -135,6 +180,12 @@ impl CalcitTypeAnnotation {
       Self::Tuple(tuple) => Calcit::Tuple((**tuple).clone()),
       Self::Function(_) => Calcit::Tag(EdnTag::from("fn")),
       Self::Custom(value) => value.as_ref().to_owned(),
+      Self::Optional(inner) => Calcit::Tuple(CalcitTuple {
+        tag: Arc::new(Calcit::Tag(EdnTag::from("optional"))),
+        extra: vec![inner.to_calcit()],
+        class: None,
+        sum_type: None,
+      }),
       Self::Dynamic => Calcit::Nil,
     }
   }
@@ -146,6 +197,7 @@ impl CalcitTypeAnnotation {
         Calcit::Record(record) => Some(record),
         _ => None,
       },
+      Self::Optional(inner) => inner.as_record(),
       _ => None,
     }
   }
@@ -157,6 +209,7 @@ impl CalcitTypeAnnotation {
         Calcit::Tuple(tuple) => Some(tuple),
         _ => None,
       },
+      Self::Optional(inner) => inner.as_tuple(),
       _ => None,
     }
   }
@@ -168,6 +221,7 @@ impl CalcitTypeAnnotation {
         Calcit::Tag(tag) => Some(tag),
         _ => None,
       },
+      Self::Optional(inner) => inner.as_tag(),
       _ => None,
     }
   }
@@ -175,6 +229,7 @@ impl CalcitTypeAnnotation {
   pub fn as_function(&self) -> Option<&CalcitFnTypeAnnotation> {
     match self {
       Self::Function(signature) => Some(signature.as_ref()),
+      Self::Optional(inner) => inner.as_function(),
       _ => None,
     }
   }
@@ -186,6 +241,7 @@ impl CalcitTypeAnnotation {
       Self::Tuple(tuple) => format!("tuple {:?}", tuple.tag),
       Self::Function(signature) => signature.describe(),
       Self::Custom(_) => "custom type".to_string(),
+      Self::Optional(inner) => format!("optional {}", inner.describe()),
       Self::Dynamic => "dynamic type".to_string(),
     }
   }
@@ -197,7 +253,8 @@ impl CalcitTypeAnnotation {
       Self::Tuple(_) => 2,
       Self::Function(_) => 3,
       Self::Custom(_) => 4,
-      Self::Dynamic => 5,
+      Self::Optional(_) => 5,
+      Self::Dynamic => 6,
     }
   }
 }
@@ -237,6 +294,10 @@ impl Hash for CalcitTypeAnnotation {
         "custom".hash(state);
         value.hash(state);
       }
+      Self::Optional(inner) => {
+        "optional".hash(state);
+        inner.hash(state);
+      }
       Self::Dynamic => {
         "dynamic".hash(state);
       }
@@ -274,6 +335,7 @@ impl Ord for CalcitTypeAnnotation {
       }
       (Self::Function(a), Self::Function(b)) => a.arg_types.cmp(&b.arg_types).then_with(|| a.return_type.cmp(&b.return_type)),
       (Self::Custom(a), Self::Custom(b)) => a.cmp(b),
+      (Self::Optional(a), Self::Optional(b)) => a.cmp(b),
       (Self::Dynamic, Self::Dynamic) => Ordering::Equal,
       _ => Ordering::Equal, // other variants already separated by kind order
     }

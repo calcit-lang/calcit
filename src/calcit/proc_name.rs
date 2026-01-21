@@ -383,6 +383,10 @@ fn some_tag(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
   Some(tag_type(name))
 }
 
+fn optional_tag(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
+  Some(Arc::new(CalcitTypeAnnotation::Optional(tag_type(name))))
+}
+
 impl CalcitProc {
   /// Get the type signature for this proc if available
   /// Returns None for procs without type annotations
@@ -435,9 +439,28 @@ impl CalcitProc {
         return_type: some_tag("nil"),
         arg_types: vec![some_tag("&")],
       }),
-      NativeInspectClassMethods => None, // variadic: value and optional note
       NativeCirruType => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
+        arg_types: vec![None],
+      }),
+      NativeResetGenSymIndex => Some(ProcTypeSignature {
+        return_type: some_tag("nil"),
+        arg_types: vec![],
+      }),
+      NativeInspectClassMethods => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![None, optional_tag("string"), some_tag("&")],
+      }),
+      NativeExtractCodeIntoEdn => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![None],
+      }),
+      NativeDataToCode => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![None],
+      }),
+      IsSpreadingMark => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
         arg_types: vec![None],
       }),
 
@@ -470,6 +493,10 @@ impl CalcitProc {
         return_type: some_tag("string"),
         arg_types: vec![some_tag("number")],
       }),
+      NativeNumberDisplayBy => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("number"), some_tag("number")],
+      }),
 
       // === Comparison & Logic ===
       NativeEquals | NativeLessThan | NativeGreaterThan | Identical => Some(ProcTypeSignature {
@@ -478,7 +505,7 @@ impl CalcitProc {
       }),
       Not => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
-        arg_types: vec![some_tag("bool")],
+        arg_types: vec![optional_tag("bool")],
       }),
 
       // === String operations ===
@@ -488,7 +515,7 @@ impl CalcitProc {
       }),
       Trim => Some(ProcTypeSignature {
         return_type: some_tag("string"),
-        arg_types: vec![None, some_tag("&")],
+        arg_types: vec![some_tag("string"), some_tag("&")],
       }),
       TurnString => Some(ProcTypeSignature {
         return_type: some_tag("string"),
@@ -563,11 +590,11 @@ impl CalcitProc {
         arg_types: vec![some_tag("string"), some_tag("string")],
       }),
       NativeStrNth => Some(ProcTypeSignature {
-        return_type: None,
+        return_type: optional_tag("string"),
         arg_types: vec![some_tag("string"), some_tag("number")],
       }),
       NativeStrFirst => Some(ProcTypeSignature {
-        return_type: some_tag("string"),
+        return_type: optional_tag("string"),
         arg_types: vec![some_tag("string")],
       }),
       NativeStrRest => Some(ProcTypeSignature {
@@ -702,6 +729,10 @@ impl CalcitProc {
         return_type: some_tag("set"),
         arg_types: vec![some_tag("map"), some_tag("map")],
       }),
+      NativeMapDestruct => Some(ProcTypeSignature {
+        return_type: optional_tag("list"),
+        arg_types: vec![some_tag("map")],
+      }),
 
       // === Set operations ===
       Set => Some(ProcTypeSignature {
@@ -732,11 +763,23 @@ impl CalcitProc {
         return_type: some_tag("bool"),
         arg_types: vec![some_tag("set"), None],
       }),
+      NativeSetDestruct => Some(ProcTypeSignature {
+        return_type: optional_tag("list"),
+        arg_types: vec![some_tag("set")],
+      }),
 
       // === Tuple operations ===
       NativeTuple => Some(ProcTypeSignature {
         return_type: some_tag("tuple"),
         arg_types: vec![some_tag("&")],
+      }),
+      NativeClassTuple => Some(ProcTypeSignature {
+        return_type: some_tag("tuple"),
+        arg_types: vec![some_tag("record"), some_tag("tag"), some_tag("&")],
+      }),
+      NativeEnumTuple => Some(ProcTypeSignature {
+        return_type: some_tag("tuple"),
+        arg_types: vec![some_tag("record"), some_tag("record"), some_tag("tag"), some_tag("&")],
       }),
       NativeTupleNth => Some(ProcTypeSignature {
         return_type: None,
@@ -751,12 +794,32 @@ impl CalcitProc {
         arg_types: vec![some_tag("tuple")],
       }),
       NativeTupleClass => Some(ProcTypeSignature {
-        return_type: some_tag("record"),
+        return_type: optional_tag("record"),
         arg_types: vec![some_tag("tuple")],
       }),
       NativeTupleParams => Some(ProcTypeSignature {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("tuple")],
+      }),
+      NativeTupleWithClass => Some(ProcTypeSignature {
+        return_type: some_tag("tuple"),
+        arg_types: vec![some_tag("tuple"), some_tag("record")],
+      }),
+      NativeTupleEnum => Some(ProcTypeSignature {
+        return_type: optional_tag("record"),
+        arg_types: vec![some_tag("tuple")],
+      }),
+      NativeTupleEnumHasVariant => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("record"), some_tag("tag")],
+      }),
+      NativeTupleEnumVariantArity => Some(ProcTypeSignature {
+        return_type: some_tag("number"),
+        arg_types: vec![some_tag("record"), some_tag("tag")],
+      }),
+      NativeTupleValidateEnum => Some(ProcTypeSignature {
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("tuple"), some_tag("tag")],
       }),
 
       // === Record operations ===
@@ -844,6 +907,14 @@ impl CalcitProc {
         return_type: some_tag("nil"),
         arg_types: vec![some_tag("string"), some_tag("string")],
       }),
+      Raise => Some(ProcTypeSignature {
+        return_type: None,
+        arg_types: vec![some_tag("&")],
+      }),
+      Quit => Some(ProcTypeSignature {
+        return_type: some_tag("nil"),
+        arg_types: vec![some_tag("number")],
+      }),
       GetEnv => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![some_tag("string"), some_tag("&")],
@@ -868,34 +939,24 @@ impl CalcitProc {
         return_type: some_tag("list"),
         arg_types: vec![None],
       }),
+      NativeCirruNth => Some(ProcTypeSignature {
+        return_type: some_tag("cirru-quote"),
+        arg_types: vec![some_tag("cirru-quote"), some_tag("number")],
+      }),
 
       // === Buffer ===
       NativeBuffer => Some(ProcTypeSignature {
         return_type: some_tag("buffer"),
         arg_types: vec![some_tag("&")],
       }),
+      NativeFormatTernaryTree => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("list")],
+      }),
 
       // === Special forms and control flow ===
       // These typically don't have simple type signatures or are handled specially
-      Recur
-      | Raise
-      | Quit
-      | IsSpreadingMark
-      | NativeResetGenSymIndex
-      | NativeExtractCodeIntoEdn
-      | NativeDataToCode
-      | NativeCirruNth
-      | NativeClassTuple
-      | NativeEnumTuple
-      | NativeTupleWithClass
-      | NativeTupleEnum
-      | NativeTupleEnumHasVariant
-      | NativeTupleEnumVariantArity
-      | NativeTupleValidateEnum
-      | NativeNumberDisplayBy
-      | NativeMapDestruct
-      | NativeSetDestruct
-      | NativeFormatTernaryTree => None,
+      Recur => None,
     }
   }
 

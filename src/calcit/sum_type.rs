@@ -96,7 +96,7 @@ impl CalcitEnum {
       Calcit::List(items) => {
         let mut payloads: Vec<Arc<CalcitTypeAnnotation>> = Vec::with_capacity(items.len());
         for item in items.iter() {
-          payloads.push(Arc::new(CalcitTypeAnnotation::from_calcit(item)));
+          payloads.push(CalcitTypeAnnotation::parse_type_annotation_form(item));
         }
         Ok(payloads)
       }

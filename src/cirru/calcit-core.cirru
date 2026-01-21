@@ -1896,10 +1896,14 @@
         |range-bothway $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn range-bothway (x ? y)
+              assert-type x :number
+              assert-type y $ :: :optional :number
               if (some? y)
-                range
-                  inc $ &- (&+ x x) y
-                  , y
+                do
+                  assert-type y :number
+                  range
+                    inc $ &- (&+ x x) y
+                    , y
                 range
                   inc $ negate x
                   , x
@@ -1995,6 +1999,8 @@
         |slice $ %{} :CodeEntry (:doc "|Extract a slice from a collection from index n to m")
           :code $ quote
             defn slice (xs n ? m)
+              assert-type n :number
+              assert-type m $ :: :optional :number
               if (nil? xs) nil $ .slice xs n m
           :examples $ []
             quote $ assert= ([] 2 3) $ slice ([] 1 2 3 4) 1 3

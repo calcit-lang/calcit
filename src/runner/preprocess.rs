@@ -1038,7 +1038,7 @@ fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnn
     match &items[idx] {
       Calcit::Symbol { sym, .. } if &**sym == "return-type" => {
         if let Some(type_expr) = items.get(idx + 1) {
-          return Some(Arc::new(CalcitTypeAnnotation::from_calcit(type_expr)));
+          return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
         }
       }
       _ => {}
@@ -1324,6 +1324,7 @@ fn is_callable_type(type_ann: &CalcitTypeAnnotation) -> bool {
   match type_ann {
     CalcitTypeAnnotation::Function { .. } => true,
     CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "fn" => true,
+    CalcitTypeAnnotation::Optional(inner) => is_callable_type(inner.as_ref()),
     _ => false,
   }
 }
@@ -1511,7 +1512,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
                   // Return type is the 3rd element (index 3) if it's a tag
                   if let Some(ret_type) = xs.get(3) {
                     if matches!(ret_type, Calcit::Tag(_)) {
-                      return Some(Arc::new(CalcitTypeAnnotation::from_calcit(ret_type)));
+                      return Some(CalcitTypeAnnotation::parse_type_annotation_form(ret_type));
                     }
                   }
                 }
@@ -2018,7 +2019,7 @@ pub fn preprocess_asset_type(
     )
   })?;
 
-  let type_entry = Arc::new(CalcitTypeAnnotation::from_calcit(type_form));
+  let type_entry = CalcitTypeAnnotation::parse_type_annotation_form(type_form);
   ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
 
   if let Some(slot) = zs.get_mut(1) {
@@ -2060,6 +2061,73 @@ mod tests {
     if let Some(type_val) = scope_types.get("x") {
       assert!(matches!(type_val.as_ref(), CalcitTypeAnnotation::Tag(_)), "type should be a tag");
     }
+  }
+
+  #[test]
+  fn parses_optional_type_annotation() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("assert-type"),
+      Cirru::leaf("x"),
+      Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":optional"), Cirru::leaf(":string")]),
+    ]);
+    let code = code_to_calcit(&expr, "tests.assert", "main", vec![]).expect("parse cirru");
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("x"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
+
+    assert!(matches!(resolved, Calcit::Nil), "assert-type should be preprocessed to Nil");
+
+    if let Some(type_val) = scope_types.get("x") {
+      match type_val.as_ref() {
+        CalcitTypeAnnotation::Optional(inner) => {
+          assert!(
+            matches!(inner.as_ref(), CalcitTypeAnnotation::Tag(tag) if tag.ref_str().trim_start_matches(':') == "string"),
+            "optional inner type should be :string"
+          );
+        }
+        other => panic!("expected optional type annotation, got {other:?}"),
+      }
+    }
+  }
+
+  #[test]
+  fn warns_on_optional_type_mismatch() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("&let"),
+      Cirru::List(vec![Cirru::leaf("x"), Cirru::leaf("nil")]),
+      Cirru::List(vec![
+        Cirru::leaf("assert-type"),
+        Cirru::leaf("x"),
+        Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":optional"), Cirru::leaf(":number")]),
+      ]),
+      Cirru::List(vec![Cirru::leaf("&+"), Cirru::leaf("x"), Cirru::leaf("1")]),
+    ]);
+
+    let code = code_to_calcit(&expr, "tests.optional", "demo", vec![]).expect("parse cirru");
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let _resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.optional", &warnings, &stack).expect("preprocess optional");
+
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should warn on optional mismatch");
+    let warning_msg = warnings_vec[0].to_string();
+    assert!(
+      warning_msg.contains("Proc `&+` arg 1 expects type `:number`"),
+      "warning should mention proc arg mismatch: {warning_msg}"
+    );
+    assert!(
+      warning_msg.contains("optional :number"),
+      "warning should mention optional actual type: {warning_msg}"
+    );
   }
 
   #[test]
@@ -2282,7 +2350,7 @@ mod tests {
       info: Arc::new(ImportInfo::SameFile { at_def: Arc::from("demo") }),
       coord: None,
     });
-    scope_types.insert(Arc::from("user"), Arc::new(CalcitTypeAnnotation::from_calcit(&record_import)));
+    scope_types.insert(Arc::from("user"), CalcitTypeAnnotation::parse_type_annotation_form(&record_import));
 
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();

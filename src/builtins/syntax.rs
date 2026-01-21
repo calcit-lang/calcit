@@ -105,7 +105,7 @@ fn extract_return_type_from_args(args: &CalcitList) -> Option<Arc<CalcitTypeAnno
     match &items[idx] {
       Calcit::Symbol { sym, .. } if &**sym == "return-type" => {
         if let Some(type_expr) = items.get(idx + 1) {
-          return Some(Arc::new(CalcitTypeAnnotation::from_calcit(type_expr)));
+          return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
         }
       }
       Calcit::List(inner) => {
