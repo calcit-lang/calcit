@@ -1057,7 +1057,7 @@ fn handle_search_leaf(
       // Load code_entry to print results
       if let Some(file_data) = snapshot.files.get(ns) {
         if let Some(code_entry) = file_data.defs.get(def_name) {
-          for (path, _node) in results.iter().take(5) {
+          for (path, _node) in results.iter().take(20) {
             if path.is_empty() {
               let content = code_entry.code.format_one_liner().unwrap_or_default();
               println!("    {} {}", "(root)".cyan(), content.dimmed());
@@ -1079,7 +1079,7 @@ fn handle_search_leaf(
             }
           }
 
-          if results.len() > 5 {
+          if results.len() > 20 {
             println!("    {}", format!("... and {} more", results.len() - 5).dimmed());
           }
         }
@@ -1121,11 +1121,11 @@ fn handle_search_leaf(
       println!("{}", "Tip for batch rename:".yellow().bold());
       println!("  Replace from largest index first to avoid path changes:");
 
-      // Show first 3 commands as examples (in reverse order)
+      // Show first command as example (in reverse order)
       let mut sorted_results: Vec<_> = results.iter().collect();
       sorted_results.sort_by(|a, b| b.0.cmp(&a.0));
 
-      for (path, _) in sorted_results.iter().take(3) {
+      if let Some((path, _)) = sorted_results.first() {
         let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
         println!(
           "    {} '{}/{}' -p '{}' --leaf -e '<new-value>'",
@@ -1136,8 +1136,8 @@ fn handle_search_leaf(
         );
       }
 
-      if results.len() > 3 {
-        println!("    {}", format!("... ({} more to replace)", results.len() - 3).dimmed());
+      if results.len() > 1 {
+        println!("    {}", format!("... ({} more to replace)", results.len() - 1).dimmed());
       }
 
       println!();
@@ -1197,7 +1197,7 @@ fn handle_search_expr(
 
   let pattern_display = pattern_node.format_one_liner().unwrap_or_default();
   if loose {
-    println!("  {} (contains sequence)", pattern_display.yellow());
+    println!("  {} (prefix match)", pattern_display.yellow());
   } else {
     println!("  {} (exact match)", pattern_display.yellow());
   }
@@ -1271,7 +1271,7 @@ fn handle_search_expr(
       // Load code_entry to print results
       if let Some(file_data) = snapshot.files.get(ns) {
         if let Some(code_entry) = file_data.defs.get(def_name) {
-          for (path, _node) in results.iter().take(5) {
+          for (path, _node) in results.iter().take(20) {
             let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
             if path.is_empty() {
               let content = code_entry.code.format_one_liner().unwrap_or_default();
@@ -1293,7 +1293,7 @@ fn handle_search_expr(
             }
           }
 
-          if results.len() > 5 {
+          if results.len() > 20 {
             println!("    {}", format!("... and {} more", results.len() - 5).dimmed());
           }
         }
@@ -1335,11 +1335,11 @@ fn handle_search_expr(
       println!("{}", "Tip for batch replace:".yellow().bold());
       println!("  Replace from largest index first to avoid path changes:");
 
-      // Show first 3 commands as examples (in reverse order)
+      // Show first command as example (in reverse order)
       let mut sorted_results: Vec<_> = results.iter().collect();
       sorted_results.sort_by(|a, b| b.0.cmp(&a.0));
 
-      for (path, _) in sorted_results.iter().take(3) {
+      if let Some((path, _)) = sorted_results.first() {
         let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
         println!(
           "    {} '{}/{}' -p '{}' -e '<new-expression>'",
@@ -1350,8 +1350,8 @@ fn handle_search_expr(
         );
       }
 
-      if results.len() > 3 {
-        println!("    {}", format!("... ({} more to replace)", results.len() - 3).dimmed());
+      if results.len() > 1 {
+        println!("    {}", format!("... ({} more to replace)", results.len() - 1).dimmed());
       }
     }
   }
@@ -1500,38 +1500,52 @@ fn search_expr_nodes(node: &Cirru, pattern: &Cirru, loose: bool, max_depth: usiz
   results
 }
 
-/// Check if node contains pattern as a contiguous subsequence
+/// Check if node starts with pattern (prefix matching)
+/// In loose mode, pattern must match from the beginning of the list
 fn contains_pattern(node: &Cirru, pattern: &Cirru) -> bool {
   match (node, pattern) {
     // Leaf nodes: check string containment
     (Cirru::Leaf(s), Cirru::Leaf(p)) => s.to_lowercase().contains(&p.as_ref().to_lowercase()),
 
-    // List containing pattern list as subsequence
+    // List: pattern must match from the beginning (prefix match)
     (Cirru::List(items), Cirru::List(pattern_items)) => {
       if pattern_items.is_empty() {
         return true;
       }
 
-      // Check if pattern_items appears as a contiguous subsequence in items
+      // Pattern must not be longer than the actual list
       if pattern_items.len() > items.len() {
         return false;
       }
 
-      for start_idx in 0..=(items.len() - pattern_items.len()) {
-        let mut all_match = true;
-        for (i, pattern_item) in pattern_items.iter().enumerate() {
-          if !matches_exact_structure(&items[start_idx + i], pattern_item) {
-            all_match = false;
-            break;
-          }
-        }
-        if all_match {
-          return true;
+      // Check if pattern matches from the beginning using prefix matching
+      for (i, pattern_item) in pattern_items.iter().enumerate() {
+        if !matches_prefix_structure(&items[i], pattern_item) {
+          return false;
         }
       }
-      false
+      true
     }
 
+    _ => false,
+  }
+}
+
+/// Check if node matches pattern as a prefix (allows node to be longer than pattern)
+fn matches_prefix_structure(node: &Cirru, pattern: &Cirru) -> bool {
+  match (node, pattern) {
+    (Cirru::Leaf(s1), Cirru::Leaf(s2)) => s1.as_ref() == s2.as_ref(),
+    (Cirru::List(items1), Cirru::List(items2)) => {
+      // Pattern must not be longer than node
+      if items2.len() > items1.len() {
+        return false;
+      }
+      // Check if pattern matches the prefix of node
+      items2
+        .iter()
+        .enumerate()
+        .all(|(i, pattern_item)| matches_prefix_structure(&items1[i], pattern_item))
+    }
     _ => false,
   }
 }

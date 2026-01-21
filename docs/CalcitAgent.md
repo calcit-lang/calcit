@@ -153,11 +153,12 @@ Calcit 程序使用 `cr` 命令：
 **高级结构搜索（搜索代码结构 ⭐⭐⭐）：**
 
 - `cr query search-expr <pattern> [-f <filter>] [-l] [-j]` - 搜索结构表达式（List）
-  - `-l / --loose`：宽松匹配，查找包含连续子序列的结构
+  - `-l / --loose`：宽松匹配，从头部开始的前缀匹配（嵌套表达式也支持前缀）
   - `-j / --json`：将模式解析为 JSON 数组
   - 示例：
     - `cr query search-expr 'fn (x)' -f app.main/process -l` - 查找函数定义
-    - `cr query search-expr '>> state task-id'` - 查找状态访问
+    - `cr query search-expr '>> state task-id' -l` - 查找状态访问（匹配 `>> state task-id ...` 或 `>> state`）
+    - `cr query search-expr 'dispatch! (:: :states)' -l` - 匹配 `dispatch! (:: :states data)` 类型的表达式
     - `cr query search-expr 'memof1-call-by' -l` - 查找记忆化调用
 
 **搜索结果格式：** `[索引1,索引2,...] in 父级上下文`，可配合 `cr tree show <ns/def> -p '<path>'` 查看节点。**修改代码时优先用 search 命令，比逐层导航快 10 倍。**
