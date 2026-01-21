@@ -2098,6 +2098,41 @@ mod tests {
   }
 
   #[test]
+  fn warns_on_invalid_optional_arity() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("assert-type"),
+      Cirru::leaf("x"),
+      Cirru::List(vec![
+        Cirru::leaf("::"),
+        Cirru::leaf(":optional"),
+        Cirru::leaf(":string"),
+        Cirru::leaf(":extra"),
+      ]),
+    ]);
+    let code = code_to_calcit(&expr, "tests.assert", "main", vec![]).expect("parse cirru");
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("x"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let _resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
+
+    if let Some(type_val) = scope_types.get("x") {
+      match type_val.as_ref() {
+        CalcitTypeAnnotation::Optional(inner) => {
+          assert!(
+            matches!(inner.as_ref(), CalcitTypeAnnotation::Tag(tag) if tag.ref_str().trim_start_matches(':') == "string"),
+            "should still parse the first argument as inner type even if arity is wrong"
+          );
+        }
+        other => panic!("expected optional type annotation, got {other:?}"),
+      }
+    }
+  }
+
+  #[test]
   fn warns_on_optional_type_mismatch() {
     let expr = Cirru::List(vec![
       Cirru::leaf("&let"),

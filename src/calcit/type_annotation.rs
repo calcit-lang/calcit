@@ -39,6 +39,9 @@ impl CalcitTypeAnnotation {
     if let Calcit::Tuple(tuple) = form {
       if let Calcit::Tag(tag) = tuple.tag.as_ref() {
         if is_optional_tag(tag) {
+          if tuple.extra.len() != 1 {
+            eprintln!("[Warn] :optional expects 1 argument, got {}", tuple.extra.len());
+          }
           if let Some(inner_form) = tuple.extra.first() {
             let inner = Self::parse_type_annotation_form(inner_form);
             return Arc::new(CalcitTypeAnnotation::Optional(inner));
@@ -57,6 +60,9 @@ impl CalcitTypeAnnotation {
       if is_tuple_constructor {
         if let Some(Calcit::Tag(tag)) = xs.get(1) {
           if is_optional_tag(tag) {
+            if xs.len() != 3 {
+              eprintln!("[Warn] :optional expects 1 argument, got {}", xs.len() as i64 - 2);
+            }
             if let Some(inner_form) = xs.get(2) {
               let inner = Self::parse_type_annotation_form(inner_form);
               return Arc::new(CalcitTypeAnnotation::Optional(inner));
