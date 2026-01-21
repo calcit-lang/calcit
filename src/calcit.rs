@@ -310,7 +310,9 @@ impl fmt::Display for Calcit {
       }
       Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
       Method(name, method_kind) => match method_kind {
-        MethodKind::Invoke(Some(t)) => f.write_str(&format!("(&invoke {name} :type {})", t.as_ref())),
+        MethodKind::Invoke(t) if !matches!(**t, CalcitTypeAnnotation::Dynamic) => {
+          f.write_str(&format!("(&invoke {name} :type {})", t.as_ref()))
+        }
         _ => f.write_str(&format!("(&{method_kind} {name})")),
       },
       RawCode(_, code) => f.write_str(&format!("(&raw-code {code})")),
@@ -980,7 +982,7 @@ impl LocatedWarning {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MethodKind {
   /// (.call a) - may carry inferred receiver type for validation
-  Invoke(Option<Arc<CalcitTypeAnnotation>>),
+  Invoke(Arc<CalcitTypeAnnotation>),
   /// (.!f a)
   InvokeNative,
   /// (.?!f a)

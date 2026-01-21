@@ -523,6 +523,24 @@ defn add-numbers (a b)
 
 **常见类型：** `:number` `:string` `:bool` `:list` `:map` `:set` `:tuple` `:keyword` `:nil`
 
+#### 可选类型标注（`:optional`）
+
+用于允许参数或变量为 `nil` 或指定类型。
+
+```cirru
+defn find-name (user)
+  assert-type user :: :optional :record
+  ; user 可能为 nil
+```
+
+也可用于可选参数：
+
+```cirru
+defn take (xs ? n)
+  assert-type n :: :optional :number
+  ; n 为空时走默认逻辑
+```
+
 **验证类型：** `cr --check-only` 或 `cr ir -1` 查看 IR 中的类型信息
 
 ### 其他易错点

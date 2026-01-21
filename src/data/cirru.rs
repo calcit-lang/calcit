@@ -2,7 +2,7 @@ use std::{sync::Arc, vec};
 
 use cirru_parser::Cirru;
 
-use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, MethodKind};
+use crate::calcit::{Calcit, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, MethodKind};
 
 /// code is CirruNode, and this function parse code(rather than data)
 pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Result<Calcit, String> {
@@ -41,7 +41,10 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
           } else if let Some(stripped) = s.strip_prefix(".?!") {
             Ok(Calcit::Method(stripped.into(), MethodKind::InvokeNativeOptional))
           } else {
-            Ok(Calcit::Method(s[1..].to_owned().into(), MethodKind::Invoke(None)))
+            Ok(Calcit::Method(
+              s[1..].to_owned().into(),
+              MethodKind::Invoke(Arc::new(CalcitTypeAnnotation::Dynamic)),
+            ))
           }
         }
         '"' | '|' => Ok(Calcit::new_str(&s[1..])),
@@ -168,14 +171,14 @@ fn split_leaf_to_method_call(s: &str) -> Option<(String, Calcit)> {
     (".:", MethodKind::TagAccess),
     (".-", MethodKind::Access),
     (".!", MethodKind::InvokeNative),
-    (".", MethodKind::Invoke(None)),
+    (".", MethodKind::Invoke(Arc::new(CalcitTypeAnnotation::Dynamic))),
   ];
 
   for (prefix, kind) in prefixes.iter() {
     if let Some((obj, method)) = s.split_once(prefix) {
       if is_valid_symbol(obj) && is_valid_symbol(method) {
         let method_kind = if matches!(kind, MethodKind::Invoke(_)) {
-          MethodKind::Invoke(None)
+          MethodKind::Invoke(Arc::new(CalcitTypeAnnotation::Dynamic))
         } else {
           kind.to_owned()
         };

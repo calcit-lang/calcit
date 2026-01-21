@@ -26,6 +26,7 @@ pub enum CalcitTypeAnnotation {
   Function(Arc<CalcitFnTypeAnnotation>),
   /// Fallback for shapes that are not yet modeled explicitly in class Record
   Custom(Arc<Calcit>),
+  /// No checking at static analaysis time
   Dynamic,
   /// Represents an type that can be nil or the given type
   Optional(Arc<CalcitTypeAnnotation>),
@@ -38,7 +39,7 @@ impl CalcitTypeAnnotation {
     if let Calcit::Tuple(tuple) = form {
       if let Calcit::Tag(tag) = tuple.tag.as_ref() {
         if is_optional_tag(tag) {
-          if let Some(inner_form) = tuple.extra.get(0) {
+          if let Some(inner_form) = tuple.extra.first() {
             let inner = Self::parse_type_annotation_form(inner_form);
             return Arc::new(CalcitTypeAnnotation::Optional(inner));
           }
@@ -83,6 +84,7 @@ impl CalcitTypeAnnotation {
 
   pub fn matches_annotation(&self, expected: &CalcitTypeAnnotation) -> bool {
     match (self, expected) {
+      (_, Self::Dynamic) | (Self::Dynamic, _) => true,
       (_, Self::Optional(expected_inner)) => match self {
         Self::Optional(actual_inner) => actual_inner.matches_annotation(expected_inner),
         Self::Tag(tag) if tag.ref_str().trim_start_matches(':') == "nil" => true,
@@ -94,7 +96,6 @@ impl CalcitTypeAnnotation {
       (Self::Tuple(a), Self::Tuple(b)) => a.as_ref() == b.as_ref(),
       (Self::Function(a), Self::Function(b)) => a.matches_signature(b.as_ref()),
       (Self::Custom(a), Self::Custom(b)) => a.as_ref() == b.as_ref(),
-      (Self::Dynamic, Self::Dynamic) => true,
       _ => false,
     }
   }
@@ -105,7 +106,14 @@ impl CalcitTypeAnnotation {
       Calcit::Bool(_) => Self::from_tag_name("bool"),
       Calcit::Number(_) => Self::from_tag_name("number"),
       Calcit::Str(_) => Self::from_tag_name("string"),
-      Calcit::Tag(tag) => Self::Tag(tag.to_owned()),
+      Calcit::Tag(tag) => {
+        let tag_name = tag.ref_str().trim_start_matches(':');
+        if tag_name == "any" || tag_name == "dynamic" {
+          Self::Dynamic
+        } else {
+          Self::Tag(tag.to_owned())
+        }
+      }
       Calcit::List(_) => Self::from_tag_name("list"),
       Calcit::Map(_) => Self::from_tag_name("map"),
       Calcit::Set(_) => Self::from_tag_name("set"),
@@ -131,10 +139,7 @@ impl CalcitTypeAnnotation {
     Self::Tag(EdnTag::from(name))
   }
 
-  pub fn from_function_parts(
-    arg_types: Vec<Option<Arc<CalcitTypeAnnotation>>>,
-    return_type: Option<Arc<CalcitTypeAnnotation>>,
-  ) -> Self {
+  pub fn from_function_parts(arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: Arc<CalcitTypeAnnotation>) -> Self {
     Self::Function(Arc::new(CalcitFnTypeAnnotation { arg_types, return_type }))
   }
 
@@ -344,8 +349,8 @@ impl Ord for CalcitTypeAnnotation {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CalcitFnTypeAnnotation {
-  pub arg_types: Vec<Option<Arc<CalcitTypeAnnotation>>>,
-  pub return_type: Option<Arc<CalcitTypeAnnotation>>,
+  pub arg_types: Vec<Arc<CalcitTypeAnnotation>>,
+  pub return_type: Arc<CalcitTypeAnnotation>,
 }
 
 impl CalcitFnTypeAnnotation {
@@ -353,46 +358,21 @@ impl CalcitFnTypeAnnotation {
     let args = if self.arg_types.is_empty() {
       "()".to_string()
     } else {
-      let rendered = self
-        .arg_types
-        .iter()
-        .map(|opt| match opt {
-          Some(t) => t.describe(),
-          None => "dynamic".to_string(),
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
+      let rendered = self.arg_types.iter().map(|t| t.describe()).collect::<Vec<_>>().join(", ");
       format!("({rendered})")
     };
-    let return_str = match &self.return_type {
-      Some(t) => t.describe(),
-      None => "dynamic".to_string(),
-    };
-    format!("fn{args} -> {return_str}")
+    format!("fn{args} -> {}", self.return_type.describe())
   }
 
   pub fn render_signature_brief(&self) -> String {
     let args_repr = if self.arg_types.is_empty() {
       "()".to_string()
     } else {
-      let parts = self
-        .arg_types
-        .iter()
-        .map(|opt| match opt {
-          Some(t) => t.to_brief_string(),
-          None => "dynamic".to_string(),
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
+      let parts = self.arg_types.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>().join(", ");
       format!("({parts})")
     };
 
-    let return_repr = match &self.return_type {
-      Some(ret) => ret.to_brief_string(),
-      None => "dynamic".to_string(),
-    };
-
-    format!("fn{args_repr} -> {return_repr}")
+    format!("fn{args_repr} -> {}", self.return_type.to_brief_string())
   }
 
   pub fn matches_signature(&self, other: &CalcitFnTypeAnnotation) -> bool {
@@ -401,21 +381,11 @@ impl CalcitFnTypeAnnotation {
     }
 
     for (lhs, rhs) in self.arg_types.iter().zip(other.arg_types.iter()) {
-      match (lhs, rhs) {
-        (Some(l), Some(r)) => {
-          if !l.matches_annotation(r) {
-            return false;
-          }
-        }
-        (None, None) => {}
-        _ => return false,
+      if !lhs.matches_annotation(rhs) {
+        return false;
       }
     }
 
-    match (&self.return_type, &other.return_type) {
-      (Some(a), Some(b)) => a.matches_annotation(b),
-      (None, None) => true,
-      _ => false,
-    }
+    self.return_type.matches_annotation(other.return_type.as_ref())
   }
 }

@@ -2,7 +2,7 @@ use crate::{
   builtins,
   calcit::{
     self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitRecord,
-    CalcitSymbolInfo, CalcitSyntax, CalcitTuple, GEN_NS, GENERATED_DEF, gen_core_id,
+    CalcitSymbolInfo, CalcitSyntax, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF, gen_core_id,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -916,14 +916,20 @@ pub fn inspect_class_methods(xs: &[Calcit], call_stack: &CallStackList) -> Resul
               let arg_types = sig
                 .arg_types
                 .iter()
-                .map(|t| t.as_ref().map(|ann| ann.to_brief_string()).unwrap_or_else(|| "_".to_string()))
+                .map(|t| {
+                  if matches!(**t, CalcitTypeAnnotation::Dynamic) {
+                    "_".to_string()
+                  } else {
+                    t.to_brief_string()
+                  }
+                })
                 .collect::<Vec<_>>()
                 .join(" ");
-              let return_type = sig
-                .return_type
-                .as_ref()
-                .map(|ann| ann.to_brief_string())
-                .unwrap_or_else(|| "_".to_string());
+              let return_type = if matches!(*sig.return_type, CalcitTypeAnnotation::Dynamic) {
+                "_".to_string()
+              } else {
+                sig.return_type.to_brief_string()
+              };
               eprintln!(
                 "  • .{field} => [proc/{}: {proc_name}]  ({arg_types}) -> {return_type}",
                 sig.arg_types.len()

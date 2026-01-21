@@ -73,13 +73,13 @@ pub fn defmacro(expr: &CalcitList, _scope: &CalcitScope, def_ns: &str) -> Result
   }
 }
 
-fn detect_return_type_hint(forms: &[Calcit]) -> Option<Arc<CalcitTypeAnnotation>> {
+fn detect_return_type_hint(forms: &[Calcit]) -> Arc<CalcitTypeAnnotation> {
   for form in forms {
     if let Some(hint) = extract_return_type_from_hint(form) {
-      return Some(hint);
+      return hint;
     }
   }
-  None
+  Arc::new(CalcitTypeAnnotation::Dynamic)
 }
 
 fn extract_return_type_from_hint(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -132,7 +132,7 @@ mod tests {
     let type_expr = Calcit::Tag(EdnTag::from("number"));
     let hint_form = make_hint_form(ns, vec![ret_sym, type_expr.to_owned()]);
 
-    let detected = detect_return_type_hint(&[hint_form]).expect("return type expected");
+    let detected = detect_return_type_hint(&[hint_form]);
     assert!(matches!(detected.as_ref(), CalcitTypeAnnotation::Tag(_)), "should capture tag type");
   }
 
@@ -144,7 +144,10 @@ mod tests {
     let nodes = vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ns)), ret_sym, type_expr];
     let flat_hint = Calcit::List(Arc::new(CalcitList::Vector(nodes)));
 
-    assert!(detect_return_type_hint(&[flat_hint]).is_none(), "flat form should be ignored");
+    assert!(
+      matches!(*detect_return_type_hint(&[flat_hint]), CalcitTypeAnnotation::Dynamic),
+      "flat form should be ignored"
+    );
   }
 
   #[test]
@@ -165,10 +168,9 @@ mod tests {
     let resolved = defn(&expr, &scope, ns).expect("defn should succeed");
     match resolved {
       Calcit::Fn { info, .. } => {
-        assert!(info.return_type.is_some(), "return type should be stored");
-        assert!(matches!(info.return_type.as_ref().unwrap().as_ref(), CalcitTypeAnnotation::Tag(_)));
+        assert!(matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Tag(_)));
         assert_eq!(info.arg_types.len(), 1, "single parameter function should track one arg type slot");
-        assert!(info.arg_types.iter().all(|slot| slot.is_none()));
+        assert!(info.arg_types.iter().all(|slot| matches!(**slot, CalcitTypeAnnotation::Dynamic)));
       }
       other => panic!("expected function, got {other}"),
     }
@@ -194,7 +196,7 @@ mod tests {
         at_def: Arc::from(def),
       }),
       location: None,
-      type_info: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Dynamic),
     })
   }
 
