@@ -36,7 +36,7 @@ jobs:
 
       - uses: giraffate/clippy-action@v1
         with:
-          reporter: 'github-pr-review'
+          reporter: "github-pr-review"
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: "try js"
@@ -47,3 +47,18 @@ jobs:
           && ln -s ../../ node_modules/@calcit/procs
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs
+
+      - name: Deploy CalcitAgent.md to server
+        id: deploy
+        uses: Pendect/action-rsyncer@v2.0.0
+        env:
+          DEPLOY_KEY: ${{secrets.rsync_private_key}}
+        with:
+          flags: "-avzr --progress"
+          options: ""
+          ssh_options: ""
+          src: "docs/*"
+          dest: "rsync-user@tiye.me:/web-assets/repo/${{ github.repository }}/docs"
+
+      - name: Display status from deploy
+        run: echo "${{ steps.deploy.outputs.status }}"
