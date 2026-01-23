@@ -387,6 +387,10 @@ fn optional_tag(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Optional(tag_type(name)))
 }
 
+fn optional_dynamic() -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::Optional(dynamic_tag()))
+}
+
 fn dynamic_tag() -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Dynamic)
 }
@@ -453,7 +457,7 @@ impl CalcitProc {
       }),
       NativeInspectClassMethods => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), optional_tag("string"), some_tag("&")],
+        arg_types: vec![some_tag("list"), optional_tag("string")],
       }),
       NativeExtractCodeIntoEdn => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
@@ -495,7 +499,7 @@ impl CalcitProc {
       }),
       NativeNumberFormat => Some(ProcTypeSignature {
         return_type: some_tag("string"),
-        arg_types: vec![some_tag("number")],
+        arg_types: vec![some_tag("number"), some_tag("number")],
       }),
       NativeNumberDisplayBy => Some(ProcTypeSignature {
         return_type: some_tag("string"),
@@ -519,7 +523,7 @@ impl CalcitProc {
       }),
       Trim => Some(ProcTypeSignature {
         return_type: some_tag("string"),
-        arg_types: vec![some_tag("string"), some_tag("&")],
+        arg_types: vec![some_tag("string"), optional_tag("string")],
       }),
       TurnString => Some(ProcTypeSignature {
         return_type: some_tag("string"),
@@ -571,7 +575,7 @@ impl CalcitProc {
       }),
       NativeStrSlice => Some(ProcTypeSignature {
         return_type: some_tag("string"),
-        arg_types: vec![some_tag("string"), some_tag("number"), some_tag("&")],
+        arg_types: vec![some_tag("string"), some_tag("number"), optional_tag("number")],
       }),
       NativeStrFindIndex => Some(ProcTypeSignature {
         return_type: some_tag("number"),
@@ -625,15 +629,15 @@ impl CalcitProc {
       }),
       Range => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![some_tag("number"), some_tag("&")],
+        arg_types: vec![some_tag("number"), optional_tag("number"), optional_tag("number")],
       }),
       Sort => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![some_tag("list"), some_tag("&")],
+        arg_types: vec![some_tag("list"), dynamic_tag()],
       }),
       NativeListConcat => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![some_tag("list"), some_tag("&")],
+        arg_types: vec![some_tag("&")],
       }),
       NativeListCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
@@ -649,7 +653,7 @@ impl CalcitProc {
       }),
       NativeListSlice => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![some_tag("list"), some_tag("number"), some_tag("&")],
+        arg_types: vec![some_tag("list"), some_tag("number"), optional_tag("number")],
       }),
       NativeListNth => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
@@ -775,7 +779,7 @@ impl CalcitProc {
       // === Tuple operations ===
       NativeTuple => Some(ProcTypeSignature {
         return_type: some_tag("tuple"),
-        arg_types: vec![some_tag("&")],
+        arg_types: vec![dynamic_tag(), some_tag("&")],
       }),
       NativeClassTuple => Some(ProcTypeSignature {
         return_type: some_tag("tuple"),
@@ -881,7 +885,7 @@ impl CalcitProc {
       }),
       NativeRecordExtendAs => Some(ProcTypeSignature {
         return_type: some_tag("record"),
-        arg_types: vec![some_tag("record"), some_tag("tag"), some_tag("&")],
+        arg_types: vec![some_tag("record"), some_tag("tag"), some_tag("tag"), dynamic_tag()],
       }),
 
       // === Refs/Atoms ===
@@ -921,7 +925,7 @@ impl CalcitProc {
       }),
       GetEnv => Some(ProcTypeSignature {
         return_type: some_tag("string"),
-        arg_types: vec![some_tag("string"), some_tag("&")],
+        arg_types: vec![some_tag("string"), optional_dynamic()],
       }),
 
       // === Time ===
@@ -931,11 +935,19 @@ impl CalcitProc {
       }),
 
       // === Cirru format ===
-      ParseCirru | ParseCirruEdn => Some(ProcTypeSignature {
+      ParseCirru => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
-        arg_types: vec![some_tag("string"), some_tag("&")],
+        arg_types: vec![some_tag("string")],
       }),
-      FormatCirru | FormatCirruEdn | FormatCirruOneLiner => Some(ProcTypeSignature {
+      ParseCirruEdn => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![some_tag("string"), optional_dynamic()],
+      }),
+      FormatCirru | FormatCirruEdn => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![dynamic_tag(), optional_tag("bool")],
+      }),
+      FormatCirruOneLiner => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![dynamic_tag()],
       }),

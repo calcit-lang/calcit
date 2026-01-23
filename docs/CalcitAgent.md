@@ -166,7 +166,7 @@ Calcit 程序使用 `cr` 命令：
 ### LLM 辅助：动态方法提示
 
 - `&inspect-class-methods` - 打印某个值对应 class 的方法清单（不改变原值）
-  - 用法：`(&inspect-class-methods value |optional note)`
+  - 用法：`(&inspect-class-methods value "|optional note")`
   - 用途：帮助 LLM 发现动态类型的方法与 proc 签名信息（不是测试/验证用途）
   - 适合在 pipeline 中插入，快速查看方法、参数、命名空间和 proc 类型信息
 

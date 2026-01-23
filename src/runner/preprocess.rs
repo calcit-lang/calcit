@@ -857,22 +857,55 @@ fn check_proc_arg_types(
   }
 
   // Check argument count and types
-  let expected_count = signature.arg_types.len();
+  let mut min_count = 0;
+  let mut max_count = 0;
+  let mut has_variadic = false;
+
+  for t in &signature.arg_types {
+    match t.as_ref() {
+      CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "&" => {
+        has_variadic = true;
+        break;
+      }
+      CalcitTypeAnnotation::Optional(_) => {
+        max_count += 1;
+      }
+      _ => {
+        min_count += 1;
+        max_count += 1;
+      }
+    }
+  }
+
   let actual_count = args.len();
 
-  // Check if signature has variadic marker (&)
-  let has_variadic = signature
-    .arg_types
-    .iter()
-    .any(|t| matches!(t.as_ref(), CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "&"));
-
-  // If not variadic, check exact count
-  if !has_variadic && expected_count != actual_count {
+  // If not variadic, check count range
+  if !has_variadic {
+    if actual_count < min_count || actual_count > max_count {
+      let expected_str = if min_count == max_count {
+        format!("{}", min_count)
+      } else {
+        format!("{}~{}", min_count, max_count)
+      };
+      gen_check_warning(
+        format!(
+          "[Warn] Proc `{}` expects {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
+          proc.as_ref(),
+          expected_str,
+          actual_count,
+          proc.as_ref(),
+          args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
+        ),
+        file_ns,
+        check_warnings,
+      );
+    }
+  } else if actual_count < min_count {
     gen_check_warning(
       format!(
-        "[Warn] Proc `{}` expects {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
+        "[Warn] Proc `{}` expects at least {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
         proc.as_ref(),
-        expected_count,
+        min_count,
         actual_count,
         proc.as_ref(),
         args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
@@ -889,14 +922,19 @@ fn check_proc_arg_types(
       return; // Stop checking at variadic marker
     }
 
-    if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
+    let base_type = match expected_type.as_ref() {
+      CalcitTypeAnnotation::Optional(inner) => inner,
+      _ => expected_type,
+    };
+
+    if matches!(base_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue; // No type constraint for this argument
     }
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       // Compare types
-      if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
-        let expected_str = expected_type.as_ref().to_brief_string();
+      if !actual_type.as_ref().matches_annotation(base_type.as_ref()) {
+        let expected_str = base_type.as_ref().to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
         gen_check_warning(
           format!(
