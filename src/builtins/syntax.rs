@@ -23,7 +23,13 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
       let body_items = expr.skip(2)?.to_vec();
       let return_type = detect_return_type_hint(&body_items);
       let parsed_args = get_raw_args_fn(xs)?;
-      let arg_types = parsed_args.empty_arg_types();
+      let param_symbols = match collect_param_symbols(xs) {
+        Ok(params) => params,
+        Err(err) => {
+          return CalcitErr::err_str(CalcitErrKind::Type, format!("defn args parse error: {err}"));
+        }
+      };
+      let arg_types = detect_arg_type_hints(&body_items, &param_symbols);
       Ok(Calcit::Fn {
         id: gen_core_id(),
         info: Arc::new(CalcitFn {
@@ -80,6 +86,27 @@ fn detect_return_type_hint(forms: &[Calcit]) -> Arc<CalcitTypeAnnotation> {
     }
   }
   Arc::new(CalcitTypeAnnotation::Dynamic)
+}
+
+fn detect_arg_type_hints(forms: &[Calcit], params: &[Arc<str>]) -> Vec<Arc<CalcitTypeAnnotation>> {
+  CalcitTypeAnnotation::collect_arg_type_hints_from_body(forms, params)
+}
+
+fn collect_param_symbols(args: &CalcitList) -> Result<Vec<Arc<str>>, String> {
+  let mut params: Vec<Arc<str>> = vec![];
+  args.traverse_result(&mut |item| match item {
+    Calcit::Local(CalcitLocal { sym, .. }) => {
+      params.push(sym.to_owned());
+      Ok(())
+    }
+    Calcit::Symbol { sym, .. } => {
+      params.push(sym.to_owned());
+      Ok(())
+    }
+    Calcit::Syntax(CalcitSyntax::ArgSpread, _) | Calcit::Syntax(CalcitSyntax::ArgOptional, _) => Ok(()),
+    _ => Err(format!("collect-param-symbols unexpected argument: {item:?}")),
+  })?;
+  Ok(params)
 }
 
 fn extract_return_type_from_hint(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {

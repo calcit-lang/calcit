@@ -518,7 +518,11 @@ impl CalcitProc {
       }),
 
       // === Comparison & Logic ===
-      NativeEquals | NativeLessThan | NativeGreaterThan | Identical => Some(ProcTypeSignature {
+      NativeLessThan | NativeGreaterThan => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("number"), some_tag("number")],
+      }),
+      NativeEquals | Identical => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![dynamic_tag(), dynamic_tag()],
       }),

@@ -192,9 +192,9 @@
               assert= -1 $ &str:compare |a |b
               assert= 1 $ &str:compare |b |a
               assert= 0 $ &str:compare |a |a
-              assert-detect identity $ < |a |b
-              assert-detect identity $ < |aa |ab
-              assert-detect not $ > |aa |ab
+              assert= -1 $ &compare |a |b
+              assert= 1 $ &compare |b |a
+              assert= 0 $ &compare |a |a
         |test-trim $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()

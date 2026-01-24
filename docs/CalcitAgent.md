@@ -544,6 +544,17 @@ defn take (xs ? n)
 
 **验证类型：** `cr --check-only` 或 `cr ir -1` 查看 IR 中的类型信息
 
+#### Variadic 参数类型（简要）
+
+仅在少量场景使用。变长参数用 `&`，类型写在对应的 `assert-type` 上：
+
+```cirru
+defn sum (x & ys)
+  assert-type x :number
+  assert-type ys $ :: :& :number
+  reduce ys x &+
+```
+
 ### 其他易错点
 
 比较容易犯的错误：

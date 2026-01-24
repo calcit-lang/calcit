@@ -10,7 +10,7 @@ use std::thread_local;
 
 use cirru_edn::EdnTag;
 
-use super::{Calcit, CalcitImport, CalcitProc, CalcitRecord, CalcitTuple};
+use super::{Calcit, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitSyntax, CalcitTuple};
 use crate::program;
 
 thread_local! {
@@ -26,6 +26,8 @@ pub enum CalcitTypeAnnotation {
   Function(Arc<CalcitFnTypeAnnotation>),
   /// Hashset type
   Set,
+  /// Variadic parameter type constraint (for & args)
+  Variadic(Arc<CalcitTypeAnnotation>),
   /// Fallback for shapes that are not yet modeled explicitly in class Record
   Custom(Arc<Calcit>),
   /// No checking at static analaysis time
@@ -35,6 +37,86 @@ pub enum CalcitTypeAnnotation {
 }
 
 impl CalcitTypeAnnotation {
+  /// Collect arg type hints for function parameters by scanning `assert-type` in body forms.
+  ///
+  /// This is intentionally different from return-type handling: return-type uses `hint-fn`, while
+  /// arg types are sourced from `assert-type` inside function bodies. If no `assert-type` is found,
+  /// the parameter stays `dynamic` and no checking occurs.
+  pub fn collect_arg_type_hints_from_body(body_items: &[Calcit], params: &[Arc<str>]) -> Vec<Arc<CalcitTypeAnnotation>> {
+    let dynamic = Arc::new(CalcitTypeAnnotation::Dynamic);
+    let mut arg_types = vec![dynamic.clone(); params.len()];
+    if params.is_empty() {
+      return arg_types;
+    }
+
+    let mut param_index: std::collections::HashMap<Arc<str>, usize> = std::collections::HashMap::with_capacity(params.len());
+    for (idx, sym) in params.iter().enumerate() {
+      param_index.entry(sym.to_owned()).or_insert(idx);
+    }
+
+    for form in body_items {
+      Self::scan_body_for_arg_types(form, &param_index, &mut arg_types);
+    }
+
+    let has_variadic = arg_types.iter().any(|ty| matches!(ty.as_ref(), CalcitTypeAnnotation::Variadic(_)));
+    if has_variadic { arg_types } else { vec![dynamic; params.len()] }
+  }
+
+  /// Walk a form tree to find `(assert-type <param> <type>)` and map it to the param index.
+  ///
+  /// Unlike `parse_type_annotation_form`, this inspects raw body forms and ignores nested defn/defmacro.
+  fn scan_body_for_arg_types(
+    form: &Calcit,
+    param_index: &std::collections::HashMap<Arc<str>, usize>,
+    arg_types: &mut [Arc<CalcitTypeAnnotation>],
+  ) {
+    let list = match form {
+      Calcit::List(xs) => xs,
+      _ => return,
+    };
+
+    if let Some((target, type_expr)) = Self::extract_assert_type_args(list) {
+      let sym = match target {
+        Calcit::Symbol { sym, .. } => sym.to_owned(),
+        Calcit::Local(local) => local.sym.to_owned(),
+        _ => return,
+      };
+
+      if let Some(&idx) = param_index.get(&sym) {
+        arg_types[idx] = CalcitTypeAnnotation::parse_type_annotation_form(type_expr);
+      }
+      return;
+    }
+
+    let head_is_nested_defn = matches!(
+      list.first(),
+      Some(Calcit::Syntax(CalcitSyntax::Defn, _)) | Some(Calcit::Syntax(CalcitSyntax::Defmacro, _))
+    );
+    if head_is_nested_defn {
+      return;
+    }
+
+    for item in list.iter() {
+      Self::scan_body_for_arg_types(item, param_index, arg_types);
+    }
+  }
+
+  /// Extract `(assert-type target type-expr)` from a list.
+  ///
+  /// This differs from `preprocess_asset_type`: here we only read the raw AST to discover hints
+  /// for function parameters, without mutating scopes or locals.
+  fn extract_assert_type_args(list: &CalcitList) -> Option<(&Calcit, &Calcit)> {
+    match list.first() {
+      Some(Calcit::Syntax(CalcitSyntax::AssertType, _)) => {}
+      Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "assert-type" => {}
+      _ => return None,
+    }
+
+    let target = list.get(1)?;
+    let type_expr = list.get(2)?;
+    Some((target, type_expr))
+  }
+
   pub fn parse_type_annotation_form(form: &Calcit) -> Arc<CalcitTypeAnnotation> {
     let is_optional_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "optional";
 
@@ -60,6 +142,17 @@ impl CalcitTypeAnnotation {
       };
 
       if is_tuple_constructor {
+        // Check for variadic type: (:: :& :type)
+        if xs.len() == 3 {
+          if let (Some(Calcit::Tag(marker)), Some(inner_form)) = (xs.get(1), xs.get(2)) {
+            if marker.ref_str().trim_start_matches(':') == "&" {
+              let inner = Self::parse_type_annotation_form(inner_form);
+              return Arc::new(CalcitTypeAnnotation::Variadic(inner));
+            }
+          }
+        }
+
+        // Check for optional: (:: :optional :type)
         if let Some(Calcit::Tag(tag)) = xs.get(1) {
           if is_optional_tag(tag) {
             if xs.len() != 3 {
@@ -85,6 +178,7 @@ impl CalcitTypeAnnotation {
       Self::Tuple(_) => "tuple".to_string(),
       Self::Function(signature) => signature.render_signature_brief(),
       Self::Set => "set".to_string(),
+      Self::Variadic(inner) => format!("variadic {}", inner.to_brief_string()),
       Self::Custom(inner) => format!("{inner}"),
       Self::Optional(inner) => format!("optional {}", inner.to_brief_string()),
       Self::Dynamic => "dynamic".to_string(),
@@ -105,6 +199,7 @@ impl CalcitTypeAnnotation {
       (Self::Tuple(a), Self::Tuple(b)) => a.as_ref() == b.as_ref(),
       (Self::Function(a), Self::Function(b)) => a.matches_signature(b.as_ref()),
       (Self::Set, Self::Set) => true,
+      (Self::Variadic(a), Self::Variadic(b)) => a.matches_annotation(b),
       (Self::Custom(a), Self::Custom(b)) => a.as_ref() == b.as_ref(),
       _ => false,
     }
@@ -130,7 +225,20 @@ impl CalcitTypeAnnotation {
       Calcit::Map(_) => Self::from_tag_name("map"),
       Calcit::Set(_) => Self::Set,
       Calcit::Record(record) => Self::Record(Arc::new(record.to_owned())),
-      Calcit::Tuple(tuple) => Self::Tuple(Arc::new(tuple.to_owned())),
+      Calcit::Tuple(tuple) => {
+        // Check for special tuple patterns
+        if let Calcit::Tag(tag) = tuple.tag.as_ref() {
+          let tag_name = tag.ref_str().trim_start_matches(':');
+          if tag_name == "&" && tuple.extra.len() == 1 {
+            // Variadic type: (& :type)
+            return Self::Variadic(Arc::new(Self::from_calcit(&tuple.extra[0])));
+          } else if tag_name == "optional" && tuple.extra.len() == 1 {
+            // Optional type: (optional :type)
+            return Self::Optional(Arc::new(Self::from_calcit(&tuple.extra[0])));
+          }
+        }
+        Self::Tuple(Arc::new(tuple.to_owned()))
+      }
       Calcit::Fn { info, .. } => Self::from_function_parts(info.arg_types.clone(), info.return_type.clone()),
       Calcit::Import(import) => Self::from_import(import).unwrap_or(Self::Dynamic),
       Calcit::Proc(proc) => {
@@ -198,6 +306,12 @@ impl CalcitTypeAnnotation {
       Self::Tuple(tuple) => Calcit::Tuple((**tuple).clone()),
       Self::Function(_) => Calcit::Tag(EdnTag::from("fn")),
       Self::Set => Calcit::Tag(EdnTag::from("set")),
+      Self::Variadic(inner) => Calcit::Tuple(CalcitTuple {
+        tag: Arc::new(Calcit::Tag(EdnTag::from("&"))),
+        extra: vec![inner.to_calcit()],
+        class: None,
+        sum_type: None,
+      }),
       Self::Custom(value) => value.as_ref().to_owned(),
       Self::Optional(inner) => Calcit::Tuple(CalcitTuple {
         tag: Arc::new(Calcit::Tag(EdnTag::from("optional"))),
@@ -260,6 +374,7 @@ impl CalcitTypeAnnotation {
       Self::Tuple(tuple) => format!("tuple {:?}", tuple.tag),
       Self::Function(signature) => signature.describe(),
       Self::Set => "set type".to_string(),
+      Self::Variadic(inner) => format!("variadic {}", inner.describe()),
       Self::Custom(_) => "custom type".to_string(),
       Self::Optional(inner) => format!("optional {}", inner.describe()),
       Self::Dynamic => "dynamic type".to_string(),
@@ -273,9 +388,10 @@ impl CalcitTypeAnnotation {
       Self::Tuple(_) => 2,
       Self::Function(_) => 3,
       Self::Set => 4,
-      Self::Custom(_) => 5,
-      Self::Optional(_) => 6,
-      Self::Dynamic => 7,
+      Self::Variadic(_) => 5,
+      Self::Custom(_) => 6,
+      Self::Optional(_) => 7,
+      Self::Dynamic => 8,
     }
   }
 }
@@ -313,6 +429,10 @@ impl Hash for CalcitTypeAnnotation {
       }
       Self::Set => {
         "set".hash(state);
+      }
+      Self::Variadic(inner) => {
+        "variadic".hash(state);
+        inner.hash(state);
       }
       Self::Custom(value) => {
         "custom".hash(state);
@@ -359,6 +479,7 @@ impl Ord for CalcitTypeAnnotation {
       }
       (Self::Function(a), Self::Function(b)) => a.arg_types.cmp(&b.arg_types).then_with(|| a.return_type.cmp(&b.return_type)),
       (Self::Set, Self::Set) => Ordering::Equal,
+      (Self::Variadic(a), Self::Variadic(b)) => a.cmp(b),
       (Self::Custom(a), Self::Custom(b)) => a.cmp(b),
       (Self::Optional(a), Self::Optional(b)) => a.cmp(b),
       (Self::Dynamic, Self::Dynamic) => Ordering::Equal,

@@ -31,6 +31,9 @@
           :code $ quote
             defn &<= (a b)
               hint-fn $ return-type :bool
+              assert-type a :number
+              assert-type b :number
+              assert "|expects numbers for &<=" $ if (number? a) (number? b)
               if (&< a b) true $ &= a b
           :examples $ []
             quote $ assert= true $ &<= 3 5
@@ -40,6 +43,9 @@
           :code $ quote
             defn &>= (a b)
               hint-fn $ return-type :bool
+              assert-type a :number
+              assert-type b :number
+              assert "|expects numbers for &>=" $ if (number? a) (number? b)
               if (&> a b) true $ &= a b
           :examples $ []
             quote $ assert= true $ &>= 5 3
@@ -421,13 +427,11 @@
           :code $ quote
             defn &max (a b)
               assert "|expects numbers for &max" $ if (number? a) (number? b)
-                if (string? a) (string? b) false
               if (&> a b) a b
         |&min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &min (a b)
               assert "|expects numbers for &min" $ if (number? a) (number? b)
-                if (string? a) (string? b) false
               if (&< a b) a b
         |&record-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -525,6 +529,7 @@
             defn * (x & ys)
               hint-fn $ return-type :number
               assert-type x :number
+              assert-type ys $ :: :& :number
               reduce ys x &*
           :examples $ []
             quote $ assert= 6 $ * 2 3
@@ -536,6 +541,8 @@
         |+ $ %{} :CodeEntry (:doc "|Mathematical addition operation\nFunction: Calculates the sum of one or more numbers\nParams: x (number), ys (variadic args, list of numbers)\nReturns: number - sum of all arguments\nNotes: Supports any number of arguments, requires at least one argument")
           :code $ quote
             defn + (x & ys)
+              assert-type x :number
+              assert-type ys $ :: :& :number
               reduce ys x &+
           :examples $ []
             quote $ assert= 6 $ + 1 2 3
@@ -545,6 +552,7 @@
             defn - (x & ys)
               hint-fn $ return-type :number
               assert-type x :number
+              assert-type ys $ :: :& :number
               if (&list:empty? ys) (&- 0 x) (reduce ys x &-)
           :examples $ []
             quote $ assert= 5 $ - 10 3 2
@@ -601,6 +609,7 @@
             defn / (x & ys)
               hint-fn $ return-type :number
               assert-type x :number
+              assert-type ys $ :: :& :number
               if (&list:empty? ys) (&/ 1 x) (reduce ys x &/)
           :examples $ []
             quote $ / 12 3 2
@@ -625,6 +634,7 @@
             defn < (x & ys)
               hint-fn $ return-type :bool
               assert-type x :number
+              assert-type ys $ :: :& :number
               if
                 &= 1 $ &list:count ys
                 &< x $ &list:first ys
@@ -639,6 +649,7 @@
             defn <= (x & ys)
               hint-fn $ return-type :bool
               assert-type x :number
+              assert-type ys $ :: :& :number
               if
                 &= 1 $ &list:count ys
                 &<= x $ &list:first ys
@@ -664,6 +675,7 @@
             defn > (x & ys)
               hint-fn $ return-type :bool
               assert-type x :number
+              assert-type ys $ :: :& :number
               if
                 &= 1 $ &list:count ys
                 &> x $ &list:first ys
@@ -678,6 +690,7 @@
             defn >= (x & ys)
               hint-fn $ return-type :bool
               assert-type x :number
+              assert-type ys $ :: :& :number
               if
                 &= 1 $ &list:count ys
                 &>= x $ &list:first ys
@@ -1100,6 +1113,7 @@
             defn difference (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
+              assert-type xs $ :: :& :set
               reduce xs base $ fn (acc item) (&difference acc item)
           :examples $ []
             quote $ assert= (#{} 1) $ difference (#{} 1 2 3) (#{} 2 3 4)
@@ -1205,6 +1219,7 @@
             defn exclude (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
+              assert-type xs $ :: :& :set
               reduce xs base $ fn (acc item) (&exclude acc item)
         |field-match $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1398,6 +1413,7 @@
             defn include (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
+              assert-type xs $ :: :& :set
               reduce xs base $ fn (acc item) (&include acc item)
           :examples $ []
             quote $ assert= (#{} 1 2 3 4) $ include (#{} 1 2) 3 4
@@ -1438,6 +1454,7 @@
             defn intersection (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
+              assert-type xs $ :: :& :set
               reduce xs base $ fn (acc item) (&set:intersection acc item)
         |join $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -2216,6 +2233,7 @@
             defn union (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
+              assert-type xs $ :: :& :set
               reduce xs base $ fn (acc item) (&union acc item)
           :examples $ []
             quote $ assert= (#{} 1 2 3 4) $ union (#{} 1 2) (#{} 3 4)

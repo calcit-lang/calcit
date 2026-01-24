@@ -19,7 +19,18 @@ pub fn binary_equal(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn binary_less(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() == 2 {
-    Ok(Calcit::Bool(xs[0] < xs[1]))
+    match (&xs[0], &xs[1]) {
+      (Calcit::Number(a), Calcit::Number(b)) => Ok(Calcit::Bool(a < b)),
+      _ => {
+        let msg = format!(
+          "&< expects numbers, but received: {} and {}",
+          crate::builtins::meta::type_of(&[xs[0].clone()])?.lisp_str(),
+          crate::builtins::meta::type_of(&[xs[1].clone()])?.lisp_str()
+        );
+        let hint = String::from("💡 Usage: `&< number1 number2`\n  Compares if first number is less than second\n  Example: `&< 3 5` => true");
+        CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+      }
+    }
   } else {
     let hint = String::from("💡 Usage: `&< value1 value2`\n  Compares if first value is less than second\n  Example: `&< 3 5` => true");
     CalcitErr::err_nodes_with_hint(
@@ -33,7 +44,19 @@ pub fn binary_less(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn binary_greater(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() == 2 {
-    Ok(Calcit::Bool(xs[0] > xs[1]))
+    match (&xs[0], &xs[1]) {
+      (Calcit::Number(a), Calcit::Number(b)) => Ok(Calcit::Bool(a > b)),
+      _ => {
+        let msg = format!(
+          "&> expects numbers, but received: {} and {}",
+          crate::builtins::meta::type_of(&[xs[0].clone()])?.lisp_str(),
+          crate::builtins::meta::type_of(&[xs[1].clone()])?.lisp_str()
+        );
+        let hint =
+          String::from("💡 Usage: `&> number1 number2`\n  Compares if first number is greater than second\n  Example: `&> 5 3` => true");
+        CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+      }
+    }
   } else {
     let hint =
       String::from("💡 Usage: `&> value1 value2`\n  Compares if first value is greater than second\n  Example: `&> 5 3` => true");

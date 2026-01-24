@@ -962,6 +962,15 @@ fn check_core_fn_arg_types(
     return;
   }
 
+  if !fn_info.arg_types.is_empty()
+    && fn_info
+      .arg_types
+      .iter()
+      .any(|t| !matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic))
+  {
+    return;
+  }
+
   let needs_number_args = matches!(fn_info.name.as_ref(), "+" | "-" | "*" | "/");
   if !needs_number_args {
     return;
@@ -1012,6 +1021,31 @@ fn check_user_fn_arg_types(
   for (idx, (arg, expected_type)) in args.iter().zip(fn_info.arg_types.iter()).enumerate() {
     if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
       continue; // No type constraint for this argument
+    }
+
+    // Check for variadic argument type
+    if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
+      // This is a variadic parameter - check all remaining arguments
+      for (rest_idx, rest_arg) in args.iter().skip(idx).enumerate() {
+        if let Some(actual_type) = resolve_type_value(rest_arg, scope_types) {
+          if !actual_type.as_ref().matches_annotation(inner_type.as_ref()) {
+            let expected_str = inner_type.as_ref().to_brief_string();
+            let actual_str = actual_type.as_ref().to_brief_string();
+            gen_check_warning(
+              format!(
+                "[Warn] Function `{}/{}` variadic arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+                fn_info.def_ns,
+                fn_info.name,
+                idx + rest_idx + 1
+              ),
+              file_ns,
+              check_warnings,
+            );
+          }
+        }
+      }
+      // Done checking variadic args
+      return;
     }
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
@@ -1443,13 +1477,30 @@ fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
     Calcit::Local(local) => {
       // First check if the local has inline type_info, then fall back to scope_types
       if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
-        scope_types.get(&local.sym).cloned()
+        let scoped = scope_types.get(&local.sym).cloned();
+        scoped.map(normalize_variadic_as_list)
       } else {
-        Some(local.type_info.clone())
+        Some(normalize_variadic_as_list(local.type_info.clone()))
       }
     }
-    Calcit::Symbol { sym, .. } => scope_types.get(sym).cloned().or_else(|| infer_type_from_expr(target, scope_types)),
+    Calcit::Symbol { sym, .. } => scope_types
+      .get(sym)
+      .cloned()
+      .map(normalize_variadic_as_list)
+      .or_else(|| infer_type_from_expr(target, scope_types)),
     _ => infer_type_from_expr(target, scope_types),
+  }
+}
+
+/// Treat variadic locals as list values when resolving expression types.
+///
+/// This is distinct from `collect_arg_type_hints_from_body`: that function extracts parameter
+/// annotations, while this function only normalizes the inferred type for internal list operations
+/// like `&list:count` and `&list:first`.
+fn normalize_variadic_as_list(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  match value.as_ref() {
+    CalcitTypeAnnotation::Variadic(_) => tag_annotation("list"),
+    _ => value,
   }
 }
 
@@ -1728,6 +1779,7 @@ pub fn preprocess_defn(
     ) => {
       let mut body_defs: HashSet<Arc<str>> = ctx.scope_defs.to_owned();
       let mut body_types: ScopeTypes = ctx.scope_types.clone();
+      let mut param_symbols: Vec<Arc<str>> = vec![];
 
       xs = xs.push_right(Calcit::Symbol {
         sym: def_name.to_owned(),
@@ -1754,6 +1806,7 @@ pub fn preprocess_defn(
             location: arg_location,
             ..
           } => {
+            param_symbols.push(sym.to_owned());
             let loc = NodeLocation::new(
               info.at_ns.to_owned(),
               info.at_def.to_owned(),
