@@ -396,6 +396,13 @@ fn dynamic_tag() -> Arc<CalcitTypeAnnotation> {
 }
 
 impl CalcitProc {
+  /// Get the namespace and definition name for this proc.
+  /// All built-in procs are defined in calcit.core namespace.
+  /// Returns (namespace, definition_name)
+  pub fn get_ns_def(&self) -> (&'static str, &str) {
+    ("calcit.core", self.as_ref())
+  }
+
   /// Get the type signature for this proc if available
   /// Returns None for procs without type annotations
   pub fn get_type_signature(&self) -> Option<ProcTypeSignature> {

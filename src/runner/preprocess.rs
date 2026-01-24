@@ -883,9 +883,9 @@ fn check_proc_arg_types(
   if !has_variadic {
     if actual_count < min_count || actual_count > max_count {
       let expected_str = if min_count == max_count {
-        format!("{}", min_count)
+        format!("{min_count}")
       } else {
-        format!("{}~{}", min_count, max_count)
+        format!("{min_count}~{max_count}")
       };
       gen_check_warning(
         format!(

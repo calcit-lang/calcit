@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitRecord, CalcitTuple};
+use crate::builtins::meta::type_of;
+use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitProc, CalcitRecord, CalcitTuple, format_proc_examples_hint};
 
 pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
@@ -12,7 +13,14 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let name_id: EdnTag = match &xs[0] {
     Calcit::Symbol { sym, .. } => EdnTag(sym.to_owned()),
     Calcit::Tag(k) => k.to_owned(),
-    a => return CalcitErr::err_str(CalcitErrKind::Type, format!("new-record expected a name, but received: {a}")),
+    a => {
+      let msg = format!(
+        "new-record requires a name (symbol or tag), but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NewRecord).unwrap_or_default();
+      return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+    }
   };
 
   let mut fields: Vec<EdnTag> = Vec::with_capacity(xs.len());
@@ -27,10 +35,12 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         fields.push(s.to_owned());
       }
       a => {
-        return CalcitErr::err_str(
-          CalcitErrKind::Type,
-          format!("new-record fields accepts tag/string, but received: {a}"),
+        let msg = format!(
+          "new-record fields require tag/string, but received: {}",
+          type_of(&[a.to_owned()])?.lisp_str()
         );
+        let hint = format_proc_examples_hint(&CalcitProc::NewRecord).unwrap_or_default();
+        return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
       }
     }
     values.push(Calcit::Nil);
@@ -65,12 +75,26 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   let class = match &xs[0] {
     Calcit::Record(class) => class.to_owned(),
-    b => return CalcitErr::err_str(CalcitErrKind::Type, format!("new-class-record expected a class, but received: {b}")),
+    b => {
+      let msg = format!(
+        "new-class-record requires a class (record), but received: {}",
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NewClassRecord).unwrap_or_default();
+      return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+    }
   };
   let name_id: EdnTag = match &xs[1] {
     Calcit::Symbol { sym, .. } => EdnTag(sym.to_owned()),
     Calcit::Tag(k) => k.to_owned(),
-    a => return CalcitErr::err_str(CalcitErrKind::Type, format!("new-class-record expected a name, but received: {a}")),
+    a => {
+      let msg = format!(
+        "new-class-record requires a name (symbol or tag), but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NewClassRecord).unwrap_or_default();
+      return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+    }
   };
 
   let mut fields: Vec<EdnTag> = Vec::with_capacity(xs.len());
@@ -85,10 +109,12 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         fields.push(s.to_owned());
       }
       a => {
-        return CalcitErr::err_str(
-          CalcitErrKind::Type,
-          format!("new-class-record fields accepts tag/string, but received: {a}"),
+        let msg = format!(
+          "new-class-record fields require tag/string, but received: {}",
+          type_of(&[a.to_owned()])?.lisp_str()
         );
+        let hint = format_proc_examples_hint(&CalcitProc::NewClassRecord).unwrap_or_default();
+        return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
       }
     }
     values.push(Calcit::Nil);
@@ -172,10 +198,12 @@ pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               }
             },
             a => {
-              return CalcitErr::err_str(
-                CalcitErrKind::Type,
-                format!("&%{{}} expected field in string/tag, but received: {a}"),
+              let msg = format!(
+                "&%{{}} requires field in string/tag, but received: {}",
+                type_of(&[a.to_owned()])?.lisp_str()
               );
+              let hint = format_proc_examples_hint(&CalcitProc::NewRecord).unwrap_or_default();
+              return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
             }
           }
         }
@@ -190,10 +218,14 @@ pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         CalcitErr::err_nodes(CalcitErrKind::Arity, "&%{{}} expected pairs, but received:", xs)
       }
     }
-    a => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&%{{}} expected a record as prototype, but received: {a}"),
-    ),
+    a => {
+      let msg = format!(
+        "&%{{}} requires a record as prototype, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NewRecord).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -248,10 +280,12 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               }
             },
             a => {
-              return CalcitErr::err_str(
-                CalcitErrKind::Type,
-                format!("&record:with expected field in string/tag, but received: {a}"),
+              let msg = format!(
+                "&record:with requires field in string/tag, but received: {}",
+                type_of(&[a.to_owned()])?.lisp_str()
               );
+              let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWith).unwrap_or_default();
+              return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
             }
           }
         }
@@ -266,10 +300,14 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:with expected pairs, but received:", xs)
       }
     }
-    a => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&record:with expected a record as prototype, but received: {a}"),
-    ),
+    a => {
+      let msg = format!(
+        "&record:with requires a record as prototype, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWith).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -293,10 +331,14 @@ pub fn get_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       ),
       Some(c) => Ok(Calcit::Record((**c).to_owned())),
     },
-    a => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&record:class expected a record as prototype, but received: {a}"),
-    ),
+    a => {
+      let msg = format!(
+        "&record:class requires a record as prototype, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordClass).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -324,14 +366,22 @@ pub fn with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       values: v0.to_owned(),
       class: Some(Arc::new(class.to_owned())),
     })),
-    (Calcit::Record { .. }, b) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&record:with-class expected a record as class, but received: {b}"),
-    ),
-    (a, _b) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&record:with-class expected a record, but received: {a}"),
-    ),
+    (Calcit::Record { .. }, b) => {
+      let msg = format!(
+        "&record:with-class requires a record as class, but received: {}",
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWithClass).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    (a, _b) => {
+      let msg = format!(
+        "&record:with-class requires a record, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWithClass).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -346,7 +396,14 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         let key = match k {
           Calcit::Str(s) => s.to_owned(),
           Calcit::Tag(s) => s.ref_str().to_owned().into(),
-          a => return CalcitErr::err_str(CalcitErrKind::Type, format!("&record:from-map unknown field: {a}")),
+          a => {
+            let msg = format!(
+              "&record:from-map requires field in string/tag, but received: {}",
+              type_of(&[a.to_owned()])?.lisp_str()
+            );
+            let hint = format_proc_examples_hint(&CalcitProc::NativeRecordFromMap).unwrap_or_default();
+            return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+          }
         };
         match record.index_of(&key) {
           Some(idx) => new_values[idx] = v.to_owned(),
@@ -366,10 +423,15 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         class: record.class.to_owned(),
       }))
     }
-    (a, b) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&record:from-map expected a record and a map, but received: {a} {b}"),
-    ),
+    (a, b) => {
+      let msg = format!(
+        "&record:from-map requires a record and a map, but received: {} and {}",
+        type_of(&[a.to_owned()])?.lisp_str(),
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordFromMap).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -379,10 +441,14 @@ pub fn get_record_name(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Record(CalcitRecord { name, .. }) => Ok(Calcit::Tag(name.to_owned())),
-    a => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&record:get-name expected a record, but received: {a}"),
-    ),
+    a => {
+      let msg = format!(
+        "&record:get-name requires a record, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGetName).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 pub fn turn_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -397,7 +463,14 @@ pub fn turn_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Map(ys))
     }
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&record:to-map expected a record, but received: {a}")),
+    a => {
+      let msg = format!(
+        "&record:to-map requires a record, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordToMap).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 pub fn matches(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -417,10 +490,15 @@ pub fn matches(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         ..
       }),
     ) => Ok(Calcit::Bool(left == right && left_fields == right_fields)),
-    (a, b) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&record:matches? expected 2 records, but received: {a} {b}"),
-    ),
+    (a, b) => {
+      let msg = format!(
+        "&record:matches? requires 2 records, but received: {} and {}",
+        type_of(&[a.to_owned()])?.lisp_str(),
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordMatches).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -430,7 +508,14 @@ pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Record(CalcitRecord { fields, .. }) => Ok(Calcit::Number(fields.len() as f64)),
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&record:count expected a record, but received: {a}")),
+    a => {
+      let msg = format!(
+        "&record:count requires a record, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordCount).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -439,15 +524,23 @@ pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Record(record)), Some(a)) => match a {
       Calcit::Str(k) | Calcit::Symbol { sym: k, .. } => Ok(Calcit::Bool(record.index_of(k).is_some())),
       Calcit::Tag(k) => Ok(Calcit::Bool(record.index_of(k.ref_str()).is_some())),
-      a => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&record:contains? expected a field in string/tag, but received: {a}"),
-      ),
+      a => {
+        let msg = format!(
+          "&record:contains? requires a field in string/tag, but received: {}",
+          type_of(&[a.to_owned()])?.lisp_str()
+        );
+        let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
+        CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+      }
     },
-    (Some(a), ..) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&record:contains? expected a record, but received: {a}"),
-    ),
+    (Some(a), ..) => {
+      let msg = format!(
+        "&record:contains? requires a record, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     (None, ..) => CalcitErr::err_str(
       CalcitErrKind::Arity,
       format!("&record:contains? expected 2 arguments, but received: {xs:?}"),
@@ -466,12 +559,23 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Some(idx) => Ok(values[idx].to_owned()),
         None => Ok(Calcit::Nil),
       },
-      a => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&record:get expected a field in string/tag, but received: {a}"),
-      ),
+      a => {
+        let msg = format!(
+          "&record:get requires a field in string/tag, but received: {}",
+          type_of(&[a.to_owned()])?.lisp_str()
+        );
+        let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+        CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+      }
     },
-    (Some(a), ..) => CalcitErr::err_str(CalcitErrKind::Type, format!("&record:get expected a record, but received: {a}")),
+    (Some(a), ..) => {
+      let msg = format!(
+        "&record:get requires a record, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     (None, ..) => CalcitErr::err_str(
       CalcitErrKind::Arity,
       format!("&record:get expected 2 arguments, but received: {xs:?}"),
@@ -525,12 +629,24 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           format!("&record:assoc invalid field `{s}` for record: {fields:?}"),
         ),
       },
-      a => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&record:assoc invalid field `{a}` for record: {fields:?}"),
-      ),
+      a => {
+        let msg = format!(
+          "&record:assoc requires a field in string/tag, but received: {} for record: {:?}",
+          type_of(&[a.to_owned()])?.lisp_str(),
+          fields
+        );
+        let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
+        CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+      }
     },
-    (Some(a), ..) => CalcitErr::err_str(CalcitErrKind::Type, format!("&record:assoc expected a record, but received: {a}")),
+    (Some(a), ..) => {
+      let msg = format!(
+        "&record:assoc requires a record, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     (None, ..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:assoc expected 3 arguments, but received:", xs),
   }
 }
@@ -555,15 +671,24 @@ pub fn extend_as(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Err(e) => Err(CalcitErr::use_str(CalcitErrKind::Unexpected, e)),
         },
       },
-      a => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&record:extend-as invalid field `{a}` for record: {:?}", record.fields),
-      ),
+      a => {
+        let msg = format!(
+          "&record:extend-as requires a field in string/tag, but received: {} for record: {:?}",
+          type_of(&[a.to_owned()])?.lisp_str(),
+          record.fields
+        );
+        let hint = format_proc_examples_hint(&CalcitProc::NativeRecordExtendAs).unwrap_or_default();
+        CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+      }
     },
-    (Some(a), ..) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&record:extend-as expected a record, but received: {a}"),
-    ),
+    (Some(a), ..) => {
+      let msg = format!(
+        "&record:extend-as requires a record, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordExtendAs).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     (None, ..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:extend-as expected 4 arguments, but received:", xs),
   }
 }

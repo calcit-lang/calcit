@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::vec;
 
 use crate::builtins;
-use crate::builtins::meta::NS_SYMBOL_DICT;
+use crate::builtins::meta::{NS_SYMBOL_DICT, type_of};
 use crate::calcit::{
   self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax,
   CalcitTypeAnnotation, LocatedWarning,
@@ -603,7 +603,13 @@ pub fn call_try(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stac
         match f {
           Calcit::Fn { info, .. } => runner::run_fn(&[err_data], &info, call_stack),
           Calcit::Proc(proc) => builtins::handle_proc(proc, &[err_data], call_stack),
-          a => CalcitErr::err_str(CalcitErrKind::Type, format!("try expected a function handler, but received: {a}")),
+          a => {
+            let msg = format!(
+              "try requires a function handler, but received: {}",
+              type_of(&[a.to_owned()])?.lisp_str()
+            );
+            CalcitErr::err_str(CalcitErrKind::Type, msg)
+          }
         }
       }
     }
@@ -646,7 +652,13 @@ pub fn gensym(xs: &CalcitList, _scope: &CalcitScope, file_ns: &str, _call_stack:
         chunk.push_str(&n.to_string());
         chunk
       }
-      a => return CalcitErr::err_str(CalcitErrKind::Type, format!("gensym expected a string, but received: {a}")),
+      a => {
+        let msg = format!(
+          "gensym requires a string/symbol/tag, but received: {}",
+          type_of(&[a.to_owned()])?.lisp_str()
+        );
+        return CalcitErr::err_str(CalcitErrKind::Type, msg);
+      }
     }
   };
   Ok(Calcit::Symbol {

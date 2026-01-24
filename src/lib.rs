@@ -69,6 +69,7 @@ pub fn run_program_with_docs(init_ns: Arc<str>, init_def: Arc<str>, params: &[Ca
       warnings: warnings.to_owned(),
       stack: CallStackList::default(),
       location: None,
+      hint: None,
     });
   }
   match program::lookup_evaled_def(&init_ns, &init_def) {

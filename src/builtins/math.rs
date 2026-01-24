@@ -1,12 +1,22 @@
-use crate::calcit::{Calcit, CalcitErr, CalcitErrKind};
+use crate::builtins::meta::type_of;
+use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitProc, format_proc_examples_hint};
 
 use crate::util::number::{f64_to_i32, is_integer};
 
 pub fn binary_add(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a + b)),
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&+ expected 2 numbers, but received: {a} {b}")),
-    (_, _) if xs.len() != 2 => CalcitErr::err_str(CalcitErrKind::Arity, "&+ expected 2 arguments, but received none"),
+    (Some(a), Some(b)) => {
+      let type_a = crate::builtins::meta::type_of(&[a.clone()])?.lisp_str();
+      let type_b = crate::builtins::meta::type_of(&[b.clone()])?.lisp_str();
+      let msg = format!("&+ requires 2 numbers, but received: ({type_a}, {type_b})");
+      let hint = String::from("💡 Usage: `&+ number1 number2`\n  Example: `&+ 3 5` => 8");
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    (_, _) if xs.len() != 2 => {
+      let hint = String::from("💡 Usage: `&+ number1 number2`\n  Adds two numbers together");
+      CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&+ requires exactly 2 numbers, but received:", xs, hint)
+    }
     _ => CalcitErr::err_str(CalcitErrKind::Arity, "&+ received invalid arguments"),
   }
 }
@@ -14,8 +24,17 @@ pub fn binary_add(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn binary_minus(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a - b)),
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&- expected 2 numbers, but received: {a} {b}")),
-    (_, _) if xs.len() != 2 => CalcitErr::err_str(CalcitErrKind::Arity, "&- expected 2 arguments, but received none"),
+    (Some(a), Some(b)) => {
+      let type_a = crate::builtins::meta::type_of(&[a.clone()])?.lisp_str();
+      let type_b = crate::builtins::meta::type_of(&[b.clone()])?.lisp_str();
+      let msg = format!("&- requires 2 numbers, but received: ({type_a}, {type_b})");
+      let hint = String::from("💡 Usage: `&- number1 number2`\n  Example: `&- 5 3` => 2");
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    (_, _) if xs.len() != 2 => {
+      let hint = String::from("💡 Usage: `&- number1 number2`\n  Subtracts second number from first");
+      CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&- requires exactly 2 numbers, but received:", xs, hint)
+    }
     _ => CalcitErr::err_str(CalcitErrKind::Arity, "&- received invalid arguments"),
   }
 }
@@ -23,8 +42,17 @@ pub fn binary_minus(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn binary_multiply(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a * b)),
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&* expected 2 numbers, but received: {a} {b}")),
-    (_, _) if xs.len() != 2 => CalcitErr::err_str(CalcitErrKind::Arity, "&* expected 2 arguments, but received none"),
+    (Some(a), Some(b)) => {
+      let type_a = crate::builtins::meta::type_of(&[a.clone()])?.lisp_str();
+      let type_b = crate::builtins::meta::type_of(&[b.clone()])?.lisp_str();
+      let msg = format!("&* requires 2 numbers, but received: ({type_a}, {type_b})");
+      let hint = String::from("💡 Usage: `&* number1 number2`\n  Example: `&* 3 4` => 12");
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    (_, _) if xs.len() != 2 => {
+      let hint = String::from("💡 Usage: `&* number1 number2`\n  Multiplies two numbers");
+      CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&* requires exactly 2 numbers, but received:", xs, hint)
+    }
     _ => CalcitErr::err_str(CalcitErrKind::Arity, "&* received invalid arguments"),
   }
 }
@@ -32,8 +60,18 @@ pub fn binary_multiply(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn binary_divide(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a / b)),
-    (Some(a), Some(b)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&/ expected 2 numbers, but received: {a} {b}")),
-    (_, _) if xs.len() != 2 => CalcitErr::err_str(CalcitErrKind::Arity, "&/ expected 2 arguments, but received none"),
+    (Some(a), Some(b)) => {
+      let type_a = crate::builtins::meta::type_of(&[a.clone()])?.lisp_str();
+      let type_b = crate::builtins::meta::type_of(&[b.clone()])?.lisp_str();
+      let msg = format!("&/ requires 2 numbers, but received: ({type_a}, {type_b})");
+      let hint =
+        String::from("💡 Usage: `&/ number1 number2`\n  Example: `&/ 10 2` => 5\n  Warning: Division by zero returns infinity");
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    (_, _) if xs.len() != 2 => {
+      let hint = String::from("💡 Usage: `&/ number1 number2`\n  Divides first number by second");
+      CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&/ requires exactly 2 numbers, but received:", xs, hint)
+    }
     _ => CalcitErr::err_str(CalcitErrKind::Arity, "&/ received invalid arguments"),
   }
 }
@@ -41,7 +79,14 @@ pub fn binary_divide(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn round_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Number(n)) => Ok(Calcit::Bool(is_integer(*n))),
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:round? expected a number, but received: {a}")),
+    Some(a) => {
+      let msg = format!(
+        "&math:round? requires a number, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::IsRound).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     a => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:round? expected 1 number, but received: {a:?}")),
   }
 }
@@ -49,7 +94,14 @@ pub fn round_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn floor(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n.floor())),
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:floor expected a number, but received: {a}")),
+    Some(a) => {
+      let msg = format!(
+        "&math:floor requires a number, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::Floor).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     a => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:floor expected 1 number, but received: {a:?}")),
   }
 }
@@ -58,7 +110,14 @@ pub fn floor(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn fractional(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n - n.floor())),
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:fract expected a number, but received: {a}")),
+    Some(a) => {
+      let msg = format!(
+        "&math:fract requires a number, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeNumberFract).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     a => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:fract expected 1 number, but received: {a:?}")),
   }
 }
@@ -84,21 +143,42 @@ pub fn rem(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn round(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n.round())),
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:round expected a number, but received: {a}")),
+    Some(a) => {
+      let msg = format!(
+        "&math:round requires a number, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::Round).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     a => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:round expected 1 number, but received: {a:?}")),
   }
 }
 pub fn sin(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n.sin())),
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:sin expected a number, but received: {a}")),
+    Some(a) => {
+      let msg = format!(
+        "&math:sin requires a number, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::Sin).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     a => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:sin expected 1 number, but received: {a:?}")),
   }
 }
 pub fn cos(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n.cos())),
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:cos expected a number, but received: {a}")),
+    Some(a) => {
+      let msg = format!(
+        "&math:cos requires a number, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::Cos).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     a => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:cos expected 1 number, but received: {a:?}")),
   }
 }
@@ -118,14 +198,28 @@ pub fn pow(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn ceil(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n.ceil())),
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:ceil expected a number, but received: {a}")),
+    Some(a) => {
+      let msg = format!(
+        "&math:ceil requires a number, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::Ceil).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     a => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:ceil expected 1 number, but received: {a:?}")),
   }
 }
 pub fn sqrt(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Number(n)) => Ok(Calcit::Number(n.sqrt())),
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:sqrt expected a number, but received: {a}")),
+    Some(a) => {
+      let msg = format!(
+        "&math:sqrt requires a number, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::Sqrt).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     a => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:sqrt expected 1 number, but received: {a:?}")),
   }
 }
@@ -259,7 +353,14 @@ pub fn bit_not(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         format!("&math:bit-not expected an integer for initial value, but received: {e}"),
       ),
     },
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-not expected a number, but received: {a}")),
+    Some(a) => {
+      let msg = format!(
+        "&math:bit-not requires a number, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::BitNot).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     a => CalcitErr::err_str(
       CalcitErrKind::Arity,
       format!("&math:bit-not expected 1 number, but received: {a:?}"),

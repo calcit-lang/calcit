@@ -16,20 +16,39 @@ pub fn new_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:count expected 1 argument, but received:", xs);
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "&list:count requires exactly 1 argument (a list), but received:",
+      xs,
+    );
   }
   match &xs[0] {
     Calcit::List(ys) => Ok(Calcit::Number(ys.len() as f64)),
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:count expected a list, but received: {a}")),
+    a => {
+      let msg = format!(
+        "&list:count requires a list as argument, but received a value of type: {}",
+        crate::builtins::meta::type_of(&[a.clone()])?.lisp_str()
+      );
+      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::NativeListCount).unwrap_or_else(|| {
+        String::from(
+          "💡 Hint: Use `count` function which works on multiple types including lists, or ensure you're passing a list to &list:count",
+        )
+      });
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
 pub fn nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      format!("&list:nth expected 2 arguments, but received: {}", CalcitList::from(xs)),
+    let msg = format!(
+      "&list:nth requires exactly 2 arguments (list and index), but received {} arguments",
+      xs.len()
     );
+    let hint = String::from(
+      "💡 Correct usage: `&list:nth ([] 1 2 3) 0` => 1\n  First argument: a list\n  Second argument: numeric index (0-based)",
+    );
+    return CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, msg, xs, hint);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(ys), Calcit::Number(n)) => match f64_to_usize(*n) {
@@ -37,12 +56,21 @@ pub fn nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Some(v) => Ok((*v).to_owned()),
         None => Ok(Calcit::Nil),
       },
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:nth expected a valid index, {e}")),
+      Err(e) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&list:nth requires a valid non-negative integer index, {e}"),
+      ),
     },
-    (_, _) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&list:nth expected a list and an index, but received: {}", CalcitList::from(xs)),
-    ),
+    (_, _) => {
+      let msg = format!(
+        "&list:nth requires (list, number) but received: ({}, {})",
+        crate::builtins::meta::type_of(&[xs[0].clone()])?.lisp_str(),
+        crate::builtins::meta::type_of(&[xs[1].clone()])?.lisp_str()
+      );
+      let hint =
+        String::from("💡 Correct usage: `&list:nth ([] 1 2 3) 0` => 1\n  Or use higher-level `nth` which works on multiple types");
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -99,7 +127,13 @@ pub fn prepend(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn rest(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:rest expected a list, but received:", xs);
+    let hint = String::from("💡 Usage: `&list:rest ([] 1 2 3)` => ([] 2 3)\n  Returns all elements except the first one");
+    return CalcitErr::err_nodes_with_hint(
+      CalcitErrKind::Arity,
+      "&list:rest requires exactly 1 argument (a list), but received:",
+      xs,
+      hint,
+    );
   }
   match &xs[0] {
     Calcit::List(ys) => {
@@ -109,7 +143,16 @@ pub fn rest(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::List(Arc::new(ys.drop_left())))
       }
     }
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:rest expected a list, but received: {a}")),
+    a => {
+      let msg = format!(
+        "&list:rest requires a list as argument, but received: {}",
+        crate::builtins::meta::type_of(&[a.clone()])?.lisp_str()
+      );
+      let hint = String::from(
+        "💡 Hint: Use the higher-level `rest` function which works on multiple types,\n  or ensure you're passing a list to &list:rest",
+      );
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
