@@ -339,6 +339,7 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
     CalcitTypeAnnotation::Tuple(tuple) => dump_tuple_annotation(tuple.as_ref()),
     CalcitTypeAnnotation::Tag(tag) => Edn::Tag(tag.to_owned()),
     CalcitTypeAnnotation::Function(signature) => dump_function_type_annotation(signature.as_ref()),
+    CalcitTypeAnnotation::Set => Edn::tag("set"),
     CalcitTypeAnnotation::Custom(value) => dump_code(value.as_ref()),
     CalcitTypeAnnotation::Optional(inner) => {
       let mut entries = vec![(Edn::tag("type"), Edn::tag("optional"))];

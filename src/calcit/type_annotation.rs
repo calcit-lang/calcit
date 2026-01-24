@@ -24,6 +24,8 @@ pub enum CalcitTypeAnnotation {
   Record(Arc<CalcitRecord>),
   Tuple(Arc<CalcitTuple>),
   Function(Arc<CalcitFnTypeAnnotation>),
+  /// Hashset type
+  Set,
   /// Fallback for shapes that are not yet modeled explicitly in class Record
   Custom(Arc<Calcit>),
   /// No checking at static analaysis time
@@ -82,6 +84,7 @@ impl CalcitTypeAnnotation {
       Self::Record(record) => format!("record {}", record.name),
       Self::Tuple(_) => "tuple".to_string(),
       Self::Function(signature) => signature.render_signature_brief(),
+      Self::Set => "set".to_string(),
       Self::Custom(inner) => format!("{inner}"),
       Self::Optional(inner) => format!("optional {}", inner.to_brief_string()),
       Self::Dynamic => "dynamic".to_string(),
@@ -101,6 +104,7 @@ impl CalcitTypeAnnotation {
       (Self::Record(a), Self::Record(b)) => a.name == b.name,
       (Self::Tuple(a), Self::Tuple(b)) => a.as_ref() == b.as_ref(),
       (Self::Function(a), Self::Function(b)) => a.matches_signature(b.as_ref()),
+      (Self::Set, Self::Set) => true,
       (Self::Custom(a), Self::Custom(b)) => a.as_ref() == b.as_ref(),
       _ => false,
     }
@@ -116,13 +120,15 @@ impl CalcitTypeAnnotation {
         let tag_name = tag.ref_str().trim_start_matches(':');
         if tag_name == "any" || tag_name == "dynamic" {
           Self::Dynamic
+        } else if tag_name == "set" {
+          Self::Set
         } else {
           Self::Tag(tag.to_owned())
         }
       }
       Calcit::List(_) => Self::from_tag_name("list"),
       Calcit::Map(_) => Self::from_tag_name("map"),
-      Calcit::Set(_) => Self::from_tag_name("set"),
+      Calcit::Set(_) => Self::Set,
       Calcit::Record(record) => Self::Record(Arc::new(record.to_owned())),
       Calcit::Tuple(tuple) => Self::Tuple(Arc::new(tuple.to_owned())),
       Calcit::Fn { info, .. } => Self::from_function_parts(info.arg_types.clone(), info.return_type.clone()),
@@ -135,6 +141,7 @@ impl CalcitTypeAnnotation {
         }
       }
       Calcit::Ref(_, _) => Self::from_tag_name("ref"),
+      Calcit::Symbol { .. } => Self::from_tag_name("symbol"),
       Calcit::Buffer(_) => Self::from_tag_name("buffer"),
       Calcit::CirruQuote(_) => Self::from_tag_name("cirru-quote"),
       other => Self::Custom(Arc::new(other.to_owned())),
@@ -190,6 +197,7 @@ impl CalcitTypeAnnotation {
       Self::Record(record) => Calcit::Record((**record).clone()),
       Self::Tuple(tuple) => Calcit::Tuple((**tuple).clone()),
       Self::Function(_) => Calcit::Tag(EdnTag::from("fn")),
+      Self::Set => Calcit::Tag(EdnTag::from("set")),
       Self::Custom(value) => value.as_ref().to_owned(),
       Self::Optional(inner) => Calcit::Tuple(CalcitTuple {
         tag: Arc::new(Calcit::Tag(EdnTag::from("optional"))),
@@ -251,6 +259,7 @@ impl CalcitTypeAnnotation {
       Self::Record(record) => format!("record {}", record.name),
       Self::Tuple(tuple) => format!("tuple {:?}", tuple.tag),
       Self::Function(signature) => signature.describe(),
+      Self::Set => "set type".to_string(),
       Self::Custom(_) => "custom type".to_string(),
       Self::Optional(inner) => format!("optional {}", inner.describe()),
       Self::Dynamic => "dynamic type".to_string(),
@@ -263,9 +272,10 @@ impl CalcitTypeAnnotation {
       Self::Record(_) => 1,
       Self::Tuple(_) => 2,
       Self::Function(_) => 3,
-      Self::Custom(_) => 4,
-      Self::Optional(_) => 5,
-      Self::Dynamic => 6,
+      Self::Set => 4,
+      Self::Custom(_) => 5,
+      Self::Optional(_) => 6,
+      Self::Dynamic => 7,
     }
   }
 }
@@ -300,6 +310,9 @@ impl Hash for CalcitTypeAnnotation {
         "function".hash(state);
         signature.arg_types.hash(state);
         signature.return_type.hash(state);
+      }
+      Self::Set => {
+        "set".hash(state);
       }
       Self::Custom(value) => {
         "custom".hash(state);
@@ -345,6 +358,7 @@ impl Ord for CalcitTypeAnnotation {
         a.tag.cmp(&b.tag).then_with(|| a.extra.cmp(&b.extra))
       }
       (Self::Function(a), Self::Function(b)) => a.arg_types.cmp(&b.arg_types).then_with(|| a.return_type.cmp(&b.return_type)),
+      (Self::Set, Self::Set) => Ordering::Equal,
       (Self::Custom(a), Self::Custom(b)) => a.cmp(b),
       (Self::Optional(a), Self::Optional(b)) => a.cmp(b),
       (Self::Dynamic, Self::Dynamic) => Ordering::Equal,

@@ -383,6 +383,10 @@ fn some_tag(name: &str) -> Arc<CalcitTypeAnnotation> {
   tag_type(name)
 }
 
+fn some_set() -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::Set)
+}
+
 fn optional_tag(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Optional(tag_type(name)))
 }
@@ -683,7 +687,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("list"), some_tag("number")],
       }),
       NativeListToSet => Some(ProcTypeSignature {
-        return_type: some_tag("set"),
+        return_type: some_set(),
         arg_types: vec![some_tag("list")],
       }),
       NativeListDistinct => Some(ProcTypeSignature {
@@ -705,7 +709,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("map"), some_tag("map")],
       }),
       ToPairs => Some(ProcTypeSignature {
-        return_type: some_tag("set"),
+        return_type: some_set(),
         arg_types: vec![some_tag("map")],
       }),
       NativeMapToList => Some(ProcTypeSignature {
@@ -741,7 +745,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("map"), some_tag("map")],
       }),
       NativeMapDiffKeys | NativeMapCommonKeys => Some(ProcTypeSignature {
-        return_type: some_tag("set"),
+        return_type: some_set(),
         arg_types: vec![some_tag("map"), some_tag("map")],
       }),
       NativeMapDestruct => Some(ProcTypeSignature {
@@ -751,36 +755,36 @@ impl CalcitProc {
 
       // === Set operations ===
       Set => Some(ProcTypeSignature {
-        return_type: some_tag("set"),
+        return_type: some_set(),
         arg_types: vec![some_tag("&")],
       }),
       NativeInclude | NativeExclude => Some(ProcTypeSignature {
-        return_type: some_tag("set"),
-        arg_types: vec![some_tag("set"), dynamic_tag()],
+        return_type: some_set(),
+        arg_types: vec![some_set(), dynamic_tag()],
       }),
       NativeDifference | NativeUnion | NativeSetIntersection => Some(ProcTypeSignature {
-        return_type: some_tag("set"),
-        arg_types: vec![some_tag("set"), some_tag("set")],
+        return_type: some_set(),
+        arg_types: vec![some_set(), some_set()],
       }),
       NativeSetToList => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![some_tag("set")],
+        arg_types: vec![some_set()],
       }),
       NativeSetCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
-        arg_types: vec![some_tag("set")],
+        arg_types: vec![some_set()],
       }),
       NativeSetEmpty => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
-        arg_types: vec![some_tag("set")],
+        arg_types: vec![some_set()],
       }),
       NativeSetIncludes => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
-        arg_types: vec![some_tag("set"), dynamic_tag()],
+        arg_types: vec![some_set(), dynamic_tag()],
       }),
       NativeSetDestruct => Some(ProcTypeSignature {
         return_type: optional_tag("list"),
-        arg_types: vec![some_tag("set")],
+        arg_types: vec![some_set()],
       }),
 
       // === Tuple operations ===

@@ -920,7 +920,10 @@
               hint-fn $ return-type :list
               list-match args
                 () $ []
-                (a0 as) (.concat a0 & as)
+                (a0 as)
+                  do
+                    assert-type a0 :list
+                    .concat a0 & as
           :examples $ []
             quote $ assert= ([] 1 2 3 4 5) $ concat ([] 1 2) ([] 3 4) ([] 5)
         |cond $ %{} :CodeEntry (:doc "|Multi-branch conditional macro. Evaluates condition/result pairs in order and returns the first truthy branch; use `true` as a default guard.")

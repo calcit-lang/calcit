@@ -917,9 +917,9 @@ fn check_proc_arg_types(
 
   // Check argument types until we hit variadic marker or run out of args
   for (idx, (arg, expected_type)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
-    // Stop checking if we hit the variadic marker
+    // Skip variadic marker (&) - no checking after this point
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "&") {
-      return; // Stop checking at variadic marker
+      break;
     }
 
     let base_type = match expected_type.as_ref() {
