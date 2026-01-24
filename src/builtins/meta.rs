@@ -992,6 +992,8 @@ pub fn inspect_class_methods(xs: &[Calcit], call_stack: &CallStackList) -> Resul
   let class_result: Result<Calcit, CalcitErr> = match value {
     Calcit::Tuple(CalcitTuple { class: Some(class), .. }) => Ok(Calcit::Record((**class).to_owned())),
     Calcit::Tuple { .. } => Ok(Calcit::Nil),
+    Calcit::Record(CalcitRecord { class: Some(class), .. }) => Ok(Calcit::Record((**class).to_owned())),
+    Calcit::Record { .. } => Ok(Calcit::Nil),
     Calcit::List(..) => runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, None, call_stack),
     Calcit::Map(..) => runner::evaluate_symbol_from_program("&core-map-class", calcit::CORE_NS, None, call_stack),
     Calcit::Number(..) => runner::evaluate_symbol_from_program("&core-number-class", calcit::CORE_NS, None, call_stack),

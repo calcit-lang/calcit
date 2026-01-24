@@ -1395,7 +1395,7 @@ fn validate_method_call(
 /// Check if a type annotation represents a callable type (function or method)
 fn is_callable_type(type_ann: &CalcitTypeAnnotation) -> bool {
   match type_ann {
-    CalcitTypeAnnotation::Function { .. } => true,
+    CalcitTypeAnnotation::Function(_) => true,
     CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "fn" => true,
     CalcitTypeAnnotation::Optional(inner) => is_callable_type(inner.as_ref()),
     CalcitTypeAnnotation::Dynamic => true,

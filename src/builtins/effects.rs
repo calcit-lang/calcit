@@ -172,7 +172,7 @@ pub fn write_file(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
       );
       let hint = format_proc_examples_hint(&CalcitProc::WriteFile).unwrap_or_default();
-      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+      CalcitErr::err_str_with_hint(CalcitErrKind::Arity, msg, hint)
     }
   }
 }

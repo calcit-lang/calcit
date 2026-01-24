@@ -533,7 +533,16 @@ pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }
     },
-    (Some(a), ..) => {
+    (Some(_), None) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&record:contains? expected 2 arguments, but received:",
+        xs,
+        hint,
+      )
+    }
+    (Some(a), Some(_)) => {
       let msg = format!(
         "&record:contains? requires a record, but received: {}",
         type_of(&[a.to_owned()])?.lisp_str()
@@ -541,10 +550,15 @@ pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
-    (None, ..) => CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      format!("&record:contains? expected 2 arguments, but received: {xs:?}"),
-    ),
+    (None, ..) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordContains).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&record:contains? expected 2 arguments, but received:",
+        xs,
+        hint,
+      )
+    }
   }
 }
 
@@ -568,7 +582,16 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }
     },
-    (Some(a), ..) => {
+    (Some(_), None) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&record:get expected 2 arguments, but received:",
+        xs,
+        hint,
+      )
+    }
+    (Some(a), Some(_)) => {
       let msg = format!(
         "&record:get requires a record, but received: {}",
         type_of(&[a.to_owned()])?.lisp_str()
@@ -576,10 +599,15 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
-    (None, ..) => CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      format!("&record:get expected 2 arguments, but received: {xs:?}"),
-    ),
+    (None, ..) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&record:get expected 2 arguments, but received:",
+        xs,
+        hint,
+      )
+    }
   }
 }
 
@@ -639,7 +667,16 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }
     },
-    (Some(a), ..) => {
+    (Some(_), None, _) | (Some(_), Some(_), None) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&record:assoc expected 3 arguments, but received:",
+        xs,
+        hint,
+      )
+    }
+    (Some(a), Some(_), Some(_)) => {
       let msg = format!(
         "&record:assoc requires a record, but received: {}",
         type_of(&[a.to_owned()])?.lisp_str()
@@ -647,7 +684,15 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
-    (None, ..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:assoc expected 3 arguments, but received:", xs),
+    (None, ..) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&record:assoc expected 3 arguments, but received:",
+        xs,
+        hint,
+      )
+    }
   }
 }
 

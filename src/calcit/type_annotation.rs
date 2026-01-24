@@ -58,8 +58,7 @@ impl CalcitTypeAnnotation {
       Self::scan_body_for_arg_types(form, &param_index, &mut arg_types);
     }
 
-    let has_variadic = arg_types.iter().any(|ty| matches!(ty.as_ref(), CalcitTypeAnnotation::Variadic(_)));
-    if has_variadic { arg_types } else { vec![dynamic; params.len()] }
+    arg_types
   }
 
   /// Walk a form tree to find `(assert-type <param> <type>)` and map it to the param index.
@@ -393,6 +392,40 @@ impl CalcitTypeAnnotation {
       Self::Optional(_) => 7,
       Self::Dynamic => 8,
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::CalcitSymbolInfo;
+
+  fn symbol(name: &str) -> Calcit {
+    Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests"),
+        at_def: Arc::from("collect_arg_type_hints"),
+      }),
+      location: None,
+    }
+  }
+
+  #[test]
+  fn collect_arg_type_hints_keeps_non_variadic() {
+    let body_items = vec![Calcit::List(Arc::new(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::AssertType, Arc::from("tests")),
+      symbol("a"),
+      Calcit::Tag(EdnTag::from("number")),
+    ])))];
+
+    let params = vec![Arc::from("a")];
+    let arg_types = CalcitTypeAnnotation::collect_arg_type_hints_from_body(&body_items, &params);
+
+    assert!(matches!(
+      arg_types[0].as_ref(),
+      CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "number"
+    ));
   }
 }
 

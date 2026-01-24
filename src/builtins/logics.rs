@@ -32,7 +32,7 @@ pub fn binary_less(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
     }
   } else {
-    let hint = String::from("💡 Usage: `&< value1 value2`\n  Compares if first value is less than second\n  Example: `&< 3 5` => true");
+    let hint = String::from("💡 Usage: `&< number1 number2`\n  Compares if first number is less than second\n  Example: `&< 3 5` => true");
     CalcitErr::err_nodes_with_hint(
       CalcitErrKind::Arity,
       "&< requires exactly 2 arguments to compare, but received:",

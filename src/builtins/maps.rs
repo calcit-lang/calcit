@@ -58,7 +58,16 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         None => Ok(Calcit::Nil),
       }
     }
-    (Some(a), ..) => {
+    (Some(_), None) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapGet).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&map:get requires 2 arguments (map and key), but received:",
+        xs,
+        hint,
+      )
+    }
+    (Some(a), Some(_)) => {
       let msg = format!("&map:get requires a map, but received: {}", type_of(&[a.to_owned()])?.lisp_str());
       let hint = format_proc_examples_hint(&CalcitProc::NativeMapGet).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -269,7 +278,16 @@ pub fn empty_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains_key(a))),
-    (Some(a), ..) => {
+    (Some(_), None) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapContains).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&map:contains? requires 2 arguments (map and key), but received:",
+        xs,
+        hint,
+      )
+    }
+    (Some(a), Some(_)) => {
       let msg = format!(
         "&map:contains? requires a map, but received: {}",
         type_of(&[a.to_owned()])?.lisp_str()

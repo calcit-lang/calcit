@@ -1080,7 +1080,7 @@ fn handle_search_leaf(
           }
 
           if results.len() > 20 {
-            println!("    {}", format!("... and {} more", results.len() - 5).dimmed());
+            println!("    {}", format!("... and {} more", results.len() - 20).dimmed());
           }
         }
       }
@@ -1294,7 +1294,7 @@ fn handle_search_expr(
           }
 
           if results.len() > 20 {
-            println!("    {}", format!("... and {} more", results.len() - 5).dimmed());
+            println!("    {}", format!("... and {} more", results.len() - 20).dimmed());
           }
         }
       }

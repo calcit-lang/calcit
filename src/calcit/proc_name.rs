@@ -468,7 +468,7 @@ impl CalcitProc {
       }),
       NativeInspectClassMethods => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
-        arg_types: vec![some_tag("list"), optional_tag("string")],
+        arg_types: vec![dynamic_tag(), optional_tag("string")],
       }),
       NativeExtractCodeIntoEdn => Some(ProcTypeSignature {
         return_type: dynamic_tag(),

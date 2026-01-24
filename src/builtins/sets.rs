@@ -16,7 +16,15 @@ pub fn call_include(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       ys.insert_mut(a.to_owned());
       Ok(Calcit::Set(ys))
     }
-    (Some(a), _) => {
+    (Some(_), None) => {
+      let msg = format!(
+        "&include requires 2 arguments, but received: {} arguments",
+        if xs.is_empty() { 0 } else { 1 }
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeInclude).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Arity, msg, hint)
+    }
+    (Some(a), Some(_)) => {
       let msg = format!("&include requires a set, but received: {}", type_of(&[a.to_owned()])?.lisp_str());
       let hint = format_proc_examples_hint(&CalcitProc::NativeInclude).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -39,7 +47,15 @@ pub fn call_exclude(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       ys.remove_mut(a);
       Ok(Calcit::Set(ys))
     }
-    (Some(a), _) => {
+    (Some(_), None) => {
+      let msg = format!(
+        "&exclude expected 2 arguments, but received: {} arguments",
+        if xs.is_empty() { 0 } else { 1 }
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeExclude).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Arity, msg, hint)
+    }
+    (Some(a), Some(_)) => {
       let msg = format!("&exclude requires a set, but received: {}", type_of(&[a.to_owned()])?.lisp_str());
       let hint = format_proc_examples_hint(&CalcitProc::NativeExclude).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
@@ -176,7 +192,16 @@ pub fn empty_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn includes_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Set(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
-    (Some(a), ..) => {
+    (Some(_), None) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeSetIncludes).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&set:includes? expected 2 arguments, but received:",
+        xs,
+        hint,
+      )
+    }
+    (Some(a), Some(_)) => {
       let msg = format!(
         "&set:includes? requires a set, but received: {}",
         type_of(&[a.to_owned()])?.lisp_str()
