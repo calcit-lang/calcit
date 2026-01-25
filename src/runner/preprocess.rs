@@ -903,7 +903,7 @@ fn check_proc_arg_types(
   // Check argument types until we hit variadic marker or run out of args
   for (idx, (arg, expected_type)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
     // Skip variadic marker (&) - no checking after this point
-    if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "&") {
+    if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Variadic(_)) {
       break;
     }
 
@@ -1709,7 +1709,6 @@ fn core_class_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation) -> 
     CalcitTypeAnnotation::Number => Some("&core-number-class"),
     CalcitTypeAnnotation::Nil => Some("&core-nil-class"),
     CalcitTypeAnnotation::Fn | CalcitTypeAnnotation::Function(_) => Some("&core-fn-class"),
-    CalcitTypeAnnotation::Tag(tag) => core_class_symbol_from_tag(tag),
     CalcitTypeAnnotation::Optional(inner) => core_class_symbol_from_type_annotation(inner.as_ref()),
     _ => None,
   }

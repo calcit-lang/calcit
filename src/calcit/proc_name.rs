@@ -371,7 +371,7 @@ use std::sync::Arc;
 pub struct ProcTypeSignature {
   /// return type declared
   pub return_type: Arc<CalcitTypeAnnotation>,
-  /// argument types in order. Use tag("&") to mark variadic args (no checking after this mark)
+  /// argument types in order. Use Variadic to mark variadic args (no checking after this mark)
   pub arg_types: Vec<Arc<CalcitTypeAnnotation>>,
 }
 
@@ -389,10 +389,6 @@ impl ProcTypeSignature {
 
     for t in &self.arg_types {
       match t.as_ref() {
-        CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "&" => {
-          has_variadic = true;
-          break;
-        }
         CalcitTypeAnnotation::Variadic(_) => {
           has_variadic = true;
           break;
@@ -436,6 +432,10 @@ fn optional_dynamic() -> Arc<CalcitTypeAnnotation> {
 
 fn dynamic_tag() -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Dynamic)
+}
+
+fn variadic_dynamic() -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::Variadic(dynamic_tag()))
 }
 
 impl CalcitProc {
@@ -495,7 +495,7 @@ impl CalcitProc {
       }),
       NativeDisplayStack => Some(ProcTypeSignature {
         return_type: some_tag("nil"),
-        arg_types: vec![some_tag("&")],
+        arg_types: vec![variadic_dynamic()],
       }),
       NativeCirruType => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
@@ -585,7 +585,7 @@ impl CalcitProc {
       }),
       NativeStr => Some(ProcTypeSignature {
         return_type: some_tag("string"),
-        arg_types: vec![some_tag("&")],
+        arg_types: vec![variadic_dynamic()],
       }),
       Split => Some(ProcTypeSignature {
         return_type: some_tag("list"),
@@ -671,7 +671,7 @@ impl CalcitProc {
       // === List operations ===
       List => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![some_tag("&")],
+        arg_types: vec![variadic_dynamic()],
       }),
       Append | Prepend => Some(ProcTypeSignature {
         return_type: some_tag("list"),
@@ -691,7 +691,7 @@ impl CalcitProc {
       }),
       NativeListConcat => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![some_tag("&")],
+        arg_types: vec![variadic_dynamic()],
       }),
       NativeListCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
@@ -749,7 +749,7 @@ impl CalcitProc {
       // === Map operations ===
       NativeMap => Some(ProcTypeSignature {
         return_type: some_tag("map"),
-        arg_types: vec![some_tag("&")],
+        arg_types: vec![variadic_dynamic()],
       }),
       NativeMerge | NativeMergeNonNil => Some(ProcTypeSignature {
         return_type: some_tag("map"),
@@ -769,7 +769,7 @@ impl CalcitProc {
       }),
       NativeMapDissoc => Some(ProcTypeSignature {
         return_type: some_tag("map"),
-        arg_types: vec![some_tag("map"), dynamic_tag(), some_tag("&")],
+        arg_types: vec![some_tag("map"), dynamic_tag(), variadic_dynamic()],
       }),
       NativeMapCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
@@ -785,7 +785,7 @@ impl CalcitProc {
       }),
       NativeMapAssoc => Some(ProcTypeSignature {
         return_type: some_tag("map"),
-        arg_types: vec![some_tag("map"), dynamic_tag(), dynamic_tag(), some_tag("&")],
+        arg_types: vec![some_tag("map"), dynamic_tag(), dynamic_tag(), variadic_dynamic()],
       }),
       NativeMapDiffNew => Some(ProcTypeSignature {
         return_type: some_tag("map"),
@@ -803,7 +803,7 @@ impl CalcitProc {
       // === Set operations ===
       Set => Some(ProcTypeSignature {
         return_type: some_set(),
-        arg_types: vec![some_tag("&")],
+        arg_types: vec![variadic_dynamic()],
       }),
       NativeInclude | NativeExclude => Some(ProcTypeSignature {
         return_type: some_set(),
@@ -837,15 +837,15 @@ impl CalcitProc {
       // === Tuple operations ===
       NativeTuple => Some(ProcTypeSignature {
         return_type: some_tag("tuple"),
-        arg_types: vec![dynamic_tag(), some_tag("&")],
+        arg_types: vec![dynamic_tag(), variadic_dynamic()],
       }),
       NativeClassTuple => Some(ProcTypeSignature {
         return_type: some_tag("tuple"),
-        arg_types: vec![some_tag("record"), some_tag("tag"), some_tag("&")],
+        arg_types: vec![some_tag("record"), some_tag("tag"), variadic_dynamic()],
       }),
       NativeEnumTuple => Some(ProcTypeSignature {
         return_type: some_tag("tuple"),
-        arg_types: vec![some_tag("record"), some_tag("record"), some_tag("tag"), some_tag("&")],
+        arg_types: vec![some_tag("record"), some_tag("record"), some_tag("tag"), variadic_dynamic()],
       }),
       NativeTupleNth => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
@@ -891,11 +891,11 @@ impl CalcitProc {
       // === Record operations ===
       NativeRecord => Some(ProcTypeSignature {
         return_type: some_tag("record"),
-        arg_types: vec![some_tag("record"), some_tag("&")],
+        arg_types: vec![some_tag("record"), variadic_dynamic()],
       }),
       NativeRecordWith => Some(ProcTypeSignature {
         return_type: some_tag("record"),
-        arg_types: vec![some_tag("record"), dynamic_tag(), dynamic_tag(), some_tag("&")],
+        arg_types: vec![some_tag("record"), dynamic_tag(), dynamic_tag(), variadic_dynamic()],
       }),
       NativeRecordAssoc => Some(ProcTypeSignature {
         return_type: some_tag("record"),
@@ -931,7 +931,7 @@ impl CalcitProc {
       }),
       NewRecord | NewClassRecord => Some(ProcTypeSignature {
         return_type: some_tag("record"),
-        arg_types: vec![some_tag("tag"), some_tag("&")],
+        arg_types: vec![some_tag("tag"), variadic_dynamic()],
       }),
       NativeRecordClass => Some(ProcTypeSignature {
         return_type: some_tag("record"),
@@ -975,7 +975,7 @@ impl CalcitProc {
       }),
       Raise => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
-        arg_types: vec![some_tag("&")],
+        arg_types: vec![variadic_dynamic()],
       }),
       Quit => Some(ProcTypeSignature {
         return_type: some_tag("nil"),
@@ -1021,7 +1021,7 @@ impl CalcitProc {
       // === Buffer ===
       NativeBuffer => Some(ProcTypeSignature {
         return_type: some_tag("buffer"),
-        arg_types: vec![some_tag("&")],
+        arg_types: vec![variadic_dynamic()],
       }),
       NativeFormatTernaryTree => Some(ProcTypeSignature {
         return_type: some_tag("string"),

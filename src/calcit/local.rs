@@ -58,7 +58,6 @@ impl CalcitLocal {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use cirru_edn::EdnTag;
 
   #[test]
   fn tracks_symbols_and_displays_args() {
@@ -81,7 +80,6 @@ mod tests {
       location: None,
       type_info: type_hint,
     };
-    let stored_tag = local.type_info.as_tag().expect("tag annotation should be stored");
-    assert_eq!(stored_tag, &EdnTag::from("sample/type"));
+    assert!(matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Tag));
   }
 }

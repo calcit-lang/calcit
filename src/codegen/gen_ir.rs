@@ -340,7 +340,7 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
     CalcitTypeAnnotation::Number => Edn::tag("number"),
     CalcitTypeAnnotation::String => Edn::tag("string"),
     CalcitTypeAnnotation::Symbol => Edn::tag("symbol"),
-    CalcitTypeAnnotation::TagType => Edn::tag("tag"),
+    CalcitTypeAnnotation::Tag => Edn::tag("tag"),
     CalcitTypeAnnotation::List => Edn::tag("list"),
     CalcitTypeAnnotation::Map => Edn::tag("map"),
     CalcitTypeAnnotation::Fn => Edn::tag("fn"),
@@ -349,7 +349,6 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
     CalcitTypeAnnotation::CirruQuote => Edn::tag("cirru-quote"),
     CalcitTypeAnnotation::Record(record) => dump_record_type_summary(record.as_ref()),
     CalcitTypeAnnotation::Tuple(tuple) => dump_tuple_annotation(tuple.as_ref()),
-    CalcitTypeAnnotation::Tag(tag) => Edn::Tag(tag.to_owned()),
     CalcitTypeAnnotation::Function(signature) => dump_function_type_annotation(signature.as_ref()),
     CalcitTypeAnnotation::Set => Edn::tag("set"),
     CalcitTypeAnnotation::Variadic(inner) => {

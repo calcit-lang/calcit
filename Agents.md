@@ -13,6 +13,24 @@
 - **一致性**：复用现有模式，保持日志和错误信息风格统一。
 - **测试覆盖**：新功能必须补齐正常路径与异常分支的测试用例。
 
+### cr eval 基础与常见踩坑
+
+- **用途定位**：`cr eval` 适合快速验证语义/类型提示与宏展开，不等同于完整项目运行。
+- **顶层无需额外括号**：Cirru 语法本身就不需要“最外层括号”，顶层可以直接是表达式。可用 `cr cirru parse-oneliner` 观察解析结果。
+  - ✅ `cargo run --bin cr -- demos/compact.cirru eval 'range 3'`
+  - ✅ `cargo run --bin cr -- demos/compact.cirru eval 'let ((x 1)) (+ x 2)'`
+  - ❌ `cargo run --bin cr -- demos/compact.cirru eval '(range 3)'`（多一层括号会改变调用语义）
+- **`let` 绑定语法**：必须用成对列表，形如 `((name value))`。
+  - ✅ `let ((x 1)) x`
+  - ❌ `let (x 1) x`（会触发“expects pairs in list for let”）
+- **告警会使 eval 失败**：有类型告警时，`cr eval` 会以错误退出（这是预期行为，便于阻断不安全用法）。
+  - 例：`cargo run --bin cr -- demos/compact.cirru eval '&list:nth 1 0'` 会提示 `:list` vs `:number` 的类型告警。
+- **assert-type 仅做检查**：`assert-type` 在预处理阶段生效，不会改变运行值。
+  - 例：`cargo run --bin cr -- demos/compact.cirru eval 'let ((x 1)) (assert-type x :list) x'` 依然返回 `1`，并在检查阶段报告类型不匹配。
+- **常用排错方式**：遇到报错先看 `.calcit-error.cirru`，它会提供更完整的栈信息。
+- **查示例用法**：可用 `cr query examples <namespace/definition>` 查目标定义的示例。
+  - 例：`cargo run --bin cr -- demos/compact.cirru query examples calcit.core/let`
+
 ## 核心设计约定
 
 ### 类型系统 (CalcitTypeAnnotation)
