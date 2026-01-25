@@ -24,6 +24,18 @@ pub type SyntaxType = fn(expr: &TernaryTreeList<Calcit>, scope: &CalcitScope, fi
 
 pub(crate) static IMPORTED_PROCS: LazyLock<RwLock<HashMap<Arc<str>, FnType>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
 
+pub(crate) fn err_arity<T: Into<String>>(msg: T, xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  CalcitErr::err_nodes(CalcitErrKind::Arity, msg, xs)
+}
+
+pub(crate) fn err_arity_with_hint<T: Into<String>, H: Into<String>>(msg: T, xs: &[Calcit], hint: H) -> Result<Calcit, CalcitErr> {
+  CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, msg, xs, hint)
+}
+
+pub(crate) fn err_type_with_hint<T: Into<String>, H: Into<String>>(msg: T, hint: H) -> Result<Calcit, CalcitErr> {
+  CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+}
+
 pub fn is_proc_name(s: &str) -> bool {
   let builtin = s.parse::<CalcitProc>();
   if builtin.is_ok() { true } else { is_registered_proc(s) }
@@ -34,8 +46,47 @@ pub fn is_registered_proc(s: &str) -> bool {
   ps.contains_key(s)
 }
 
+fn check_proc_arity(name: CalcitProc, args: &[Calcit]) -> Result<(), CalcitErr> {
+  let Some(signature) = name.get_type_signature() else {
+    return Ok(());
+  };
+
+  let arity = signature.arity();
+  let actual_count = args.len();
+  if let Some(max_count) = arity.max {
+    if actual_count < arity.min || actual_count > max_count {
+      let expected_str = if arity.min == max_count {
+        format!("{}", arity.min)
+      } else {
+        format!("{}~{}", arity.min, max_count)
+      };
+      let hint = crate::calcit::format_proc_examples_hint(&name).unwrap_or_default();
+      return CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        format!("Proc `{name}` expects {expected_str} args, but received:"),
+        args,
+        hint,
+      )
+      .map(|_| ());
+    }
+  } else if actual_count < arity.min {
+    let hint = crate::calcit::format_proc_examples_hint(&name).unwrap_or_default();
+    return CalcitErr::err_nodes_with_hint(
+      CalcitErrKind::Arity,
+      format!("Proc `{name}` expects at least {} args, but received:", arity.min),
+      args,
+      hint,
+    )
+    .map(|_| ());
+  }
+
+  Ok(())
+}
+
 /// make sure that stack information attached in errors from procs
 pub fn handle_proc(name: CalcitProc, args: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  check_proc_arity(name, args)?;
+
   if using_stack() {
     handle_proc_internal(name, args, call_stack).map_err(|e| {
       if e.stack.is_empty() {

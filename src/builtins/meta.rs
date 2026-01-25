@@ -31,10 +31,6 @@ static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 pub(crate) static NS_SYMBOL_DICT: LazyLock<Mutex<HashMap<Arc<str>, usize>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 1 {
-    let hint = format_proc_examples_hint(&CalcitProc::TypeOf).unwrap_or_default();
-    return CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "type-of requires exactly 1 argument, but received:", xs, hint);
-  }
   use Calcit::*;
 
   match &xs[0] {
@@ -74,14 +70,7 @@ pub fn recur(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn format_to_lisp(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(v) => Ok(Calcit::Str(v.lisp_str().into())),
-    None => {
-      let hint = format_proc_examples_hint(&CalcitProc::FormatToLisp).unwrap_or_default();
-      CalcitErr::err_str_with_hint(
-        CalcitErrKind::Arity,
-        "format-to-lisp requires 1 argument, but received none".to_string(),
-        hint,
-      )
-    }
+    None => crate::builtins::err_arity("format-to-lisp requires 1 argument, but received:", xs),
   }
 }
 
@@ -90,14 +79,7 @@ pub fn format_to_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(v) => cirru_parser::format(&[transform_code_to_cirru(v)], false.into())
       .map(|s| Calcit::Str(s.into()))
       .map_err(|e| CalcitErr::use_str(CalcitErrKind::Syntax, e)),
-    None => {
-      let hint = format_proc_examples_hint(&CalcitProc::FormatToCirru).unwrap_or_default();
-      CalcitErr::err_str_with_hint(
-        CalcitErrKind::Arity,
-        "format-to-cirru requires 1 argument, but received none".to_string(),
-        hint,
-      )
-    }
+    None => crate::builtins::err_arity("format-to-cirru requires 1 argument, but received:", xs),
   }
 }
 
@@ -772,13 +754,13 @@ fn method_record(
 }
 
 pub fn native_compare(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&compare expected 2 values, but received:", xs);
-  }
-  match xs[0].cmp(&xs[1]) {
-    Ordering::Less => Ok(Calcit::Number(-1.0)),
-    Ordering::Greater => Ok(Calcit::Number(1.0)),
-    Ordering::Equal => Ok(Calcit::Number(0.0)),
+  match (xs.first(), xs.get(1)) {
+    (Some(a), Some(b)) => match a.cmp(b) {
+      Ordering::Less => Ok(Calcit::Number(-1.0)),
+      Ordering::Greater => Ok(Calcit::Number(1.0)),
+      Ordering::Equal => Ok(Calcit::Number(0.0)),
+    },
+    _ => crate::builtins::err_arity("&compare requires 2 arguments, but received:", xs),
   }
 }
 

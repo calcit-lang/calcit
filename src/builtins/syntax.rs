@@ -160,7 +160,10 @@ mod tests {
     let hint_form = make_hint_form(ns, vec![ret_sym, type_expr.to_owned()]);
 
     let detected = detect_return_type_hint(&[hint_form]);
-    assert!(matches!(detected.as_ref(), CalcitTypeAnnotation::Tag(_)), "should capture tag type");
+    assert!(
+      matches!(detected.as_ref(), CalcitTypeAnnotation::Number),
+      "should capture number type"
+    );
   }
 
   #[test]
@@ -195,7 +198,7 @@ mod tests {
     let resolved = defn(&expr, &scope, ns).expect("defn should succeed");
     match resolved {
       Calcit::Fn { info, .. } => {
-        assert!(matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Tag(_)));
+        assert!(matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Number));
         assert_eq!(info.arg_types.len(), 1, "single parameter function should track one arg type slot");
         assert!(info.arg_types.iter().all(|slot| matches!(**slot, CalcitTypeAnnotation::Dynamic)));
       }

@@ -857,25 +857,10 @@ fn check_proc_arg_types(
   }
 
   // Check argument count and types
-  let mut min_count = 0;
-  let mut max_count = 0;
-  let mut has_variadic = false;
-
-  for t in &signature.arg_types {
-    match t.as_ref() {
-      CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "&" => {
-        has_variadic = true;
-        break;
-      }
-      CalcitTypeAnnotation::Optional(_) => {
-        max_count += 1;
-      }
-      _ => {
-        min_count += 1;
-        max_count += 1;
-      }
-    }
-  }
+  let arity = signature.arity();
+  let min_count = arity.min;
+  let max_count = arity.max.unwrap_or(usize::MAX);
+  let has_variadic = arity.max.is_none();
 
   let actual_count = args.len();
 
@@ -1325,27 +1310,10 @@ fn build_record_reference(type_value: &CalcitTypeAnnotation, file_ns: &str) -> O
   match type_value {
     CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
       Calcit::Import(import) => Some(Calcit::Import(import.to_owned())),
-      Calcit::Tag(tag) => {
-        let class_symbol = core_class_symbol_from_tag(tag)?;
-        Some(Calcit::Import(CalcitImport {
-          ns: Arc::from(calcit::CORE_NS),
-          def: Arc::from(class_symbol),
-          info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
-          coord: program::tip_coord(calcit::CORE_NS, class_symbol),
-        }))
-      }
+      Calcit::Tag(tag) => build_core_class_import(core_class_symbol_from_tag(tag)?, file_ns),
       _ => None,
     },
-    CalcitTypeAnnotation::Tag(tag) => {
-      let class_symbol = core_class_symbol_from_tag(tag)?;
-      Some(Calcit::Import(CalcitImport {
-        ns: Arc::from(calcit::CORE_NS),
-        def: Arc::from(class_symbol),
-        info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
-        coord: program::tip_coord(calcit::CORE_NS, class_symbol),
-      }))
-    }
-    _ => None,
+    _ => build_core_class_import(core_class_symbol_from_type_annotation(type_value)?, file_ns),
   }
 }
 
@@ -1396,7 +1364,7 @@ fn validate_method_call(
 fn is_callable_type(type_ann: &CalcitTypeAnnotation) -> bool {
   match type_ann {
     CalcitTypeAnnotation::Function(_) => true,
-    CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "fn" => true,
+    CalcitTypeAnnotation::Fn => true,
     CalcitTypeAnnotation::Optional(inner) => is_callable_type(inner.as_ref()),
     CalcitTypeAnnotation::Dynamic => true,
     _ => false,
@@ -1704,8 +1672,7 @@ fn get_class_record_from_type(type_value: &CalcitTypeAnnotation, call_stack: &Ca
     return Some(Arc::new(record.clone()));
   }
 
-  if let Some(tag) = type_value.as_tag() {
-    let class_symbol = core_class_symbol_from_tag(tag)?;
+  if let Some(class_symbol) = core_class_symbol_from_type_annotation(type_value) {
     return match runner::evaluate_symbol_from_program(class_symbol, calcit::CORE_NS, None, call_stack) {
       Ok(Calcit::Record(record)) => Some(Arc::new(record)),
       Ok(_) | Err(_) => None,
@@ -1722,6 +1689,30 @@ fn get_class_record_from_type(type_value: &CalcitTypeAnnotation, call_stack: &Ca
   }
 
   None
+}
+
+fn build_core_class_import(class_symbol: &'static str, file_ns: &str) -> Option<Calcit> {
+  Some(Calcit::Import(CalcitImport {
+    ns: Arc::from(calcit::CORE_NS),
+    def: Arc::from(class_symbol),
+    info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
+    coord: program::tip_coord(calcit::CORE_NS, class_symbol),
+  }))
+}
+
+fn core_class_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation) -> Option<&'static str> {
+  match type_value {
+    CalcitTypeAnnotation::List => Some("&core-list-class"),
+    CalcitTypeAnnotation::String => Some("&core-string-class"),
+    CalcitTypeAnnotation::Map => Some("&core-map-class"),
+    CalcitTypeAnnotation::Set => Some("&core-set-class"),
+    CalcitTypeAnnotation::Number => Some("&core-number-class"),
+    CalcitTypeAnnotation::Nil => Some("&core-nil-class"),
+    CalcitTypeAnnotation::Fn | CalcitTypeAnnotation::Function(_) => Some("&core-fn-class"),
+    CalcitTypeAnnotation::Tag(tag) => core_class_symbol_from_tag(tag),
+    CalcitTypeAnnotation::Optional(inner) => core_class_symbol_from_type_annotation(inner.as_ref()),
+    _ => None,
+  }
 }
 
 fn core_class_symbol_from_tag(tag: &cirru_edn::EdnTag) -> Option<&'static str> {
@@ -2152,7 +2143,7 @@ mod tests {
     // Check that type info is stored in scope_types
     assert!(scope_types.contains_key("x"), "type should be registered in scope");
     if let Some(type_val) = scope_types.get("x") {
-      assert!(matches!(type_val.as_ref(), CalcitTypeAnnotation::Tag(_)), "type should be a tag");
+      assert!(matches!(type_val.as_ref(), CalcitTypeAnnotation::Fn), "type should be fn");
     }
   }
 
@@ -2179,7 +2170,7 @@ mod tests {
       match type_val.as_ref() {
         CalcitTypeAnnotation::Optional(inner) => {
           assert!(
-            matches!(inner.as_ref(), CalcitTypeAnnotation::Tag(tag) if tag.ref_str().trim_start_matches(':') == "string"),
+            matches!(inner.as_ref(), CalcitTypeAnnotation::String),
             "optional inner type should be :string"
           );
         }
@@ -2214,7 +2205,7 @@ mod tests {
       match type_val.as_ref() {
         CalcitTypeAnnotation::Optional(inner) => {
           assert!(
-            matches!(inner.as_ref(), CalcitTypeAnnotation::Tag(tag) if tag.ref_str().trim_start_matches(':') == "string"),
+            matches!(inner.as_ref(), CalcitTypeAnnotation::String),
             "should still parse the first argument as inner type even if arity is wrong"
           );
         }
@@ -2293,10 +2284,7 @@ mod tests {
         "type info should persist for later usages"
       );
       // Verify the type value
-      assert!(
-        matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Tag(_)),
-        "type should be a tag"
-      );
+      assert!(matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Fn), "type should be fn");
     } else {
       panic!("expected trailing local expression");
     }
@@ -2789,10 +2777,7 @@ mod tests {
       args: Arc::new(CalcitFnArgs::Args(vec![1, 2])), // 2 parameters
       body: vec![Calcit::Nil],
       return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
-      arg_types: vec![
-        Arc::new(CalcitTypeAnnotation::Tag(EdnTag::from("string"))),
-        Arc::new(CalcitTypeAnnotation::Tag(EdnTag::from("number"))),
-      ],
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::Number)],
     });
 
     // Create a record with the method

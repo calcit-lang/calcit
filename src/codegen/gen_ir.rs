@@ -335,6 +335,18 @@ fn dump_type_list(xs: &[Arc<CalcitTypeAnnotation>]) -> Edn {
 
 fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
   match type_info {
+    CalcitTypeAnnotation::Nil => Edn::tag("nil"),
+    CalcitTypeAnnotation::Bool => Edn::tag("bool"),
+    CalcitTypeAnnotation::Number => Edn::tag("number"),
+    CalcitTypeAnnotation::String => Edn::tag("string"),
+    CalcitTypeAnnotation::Symbol => Edn::tag("symbol"),
+    CalcitTypeAnnotation::TagType => Edn::tag("tag"),
+    CalcitTypeAnnotation::List => Edn::tag("list"),
+    CalcitTypeAnnotation::Map => Edn::tag("map"),
+    CalcitTypeAnnotation::Fn => Edn::tag("fn"),
+    CalcitTypeAnnotation::Ref => Edn::tag("ref"),
+    CalcitTypeAnnotation::Buffer => Edn::tag("buffer"),
+    CalcitTypeAnnotation::CirruQuote => Edn::tag("cirru-quote"),
     CalcitTypeAnnotation::Record(record) => dump_record_type_summary(record.as_ref()),
     CalcitTypeAnnotation::Tuple(tuple) => dump_tuple_annotation(tuple.as_ref()),
     CalcitTypeAnnotation::Tag(tag) => Edn::Tag(tag.to_owned()),

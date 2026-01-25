@@ -20,12 +20,25 @@ thread_local! {
 /// Unified representation of type annotations propagated through preprocessing
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalcitTypeAnnotation {
+  Nil,
+  Bool,
+  Number,
+  String,
+  Symbol,
+  TagType,
+  List,
+  Map,
   Tag(EdnTag),
   Record(Arc<CalcitRecord>),
   Tuple(Arc<CalcitTuple>),
+  /// function type without a known signature
+  Fn,
   Function(Arc<CalcitFnTypeAnnotation>),
   /// Hashset type
   Set,
+  Ref,
+  Buffer,
+  CirruQuote,
   /// Variadic parameter type constraint (for & args)
   Variadic(Arc<CalcitTypeAnnotation>),
   /// Fallback for shapes that are not yet modeled explicitly in class Record
@@ -37,6 +50,44 @@ pub enum CalcitTypeAnnotation {
 }
 
 impl CalcitTypeAnnotation {
+  fn builtin_type_from_tag_name(name: &str) -> Option<Self> {
+    match name {
+      "nil" => Some(Self::Nil),
+      "bool" => Some(Self::Bool),
+      "number" => Some(Self::Number),
+      "string" => Some(Self::String),
+      "symbol" => Some(Self::Symbol),
+      "tag" => Some(Self::TagType),
+      "list" => Some(Self::List),
+      "map" => Some(Self::Map),
+      "set" => Some(Self::Set),
+      "fn" => Some(Self::Fn),
+      "ref" => Some(Self::Ref),
+      "buffer" => Some(Self::Buffer),
+      "cirru-quote" => Some(Self::CirruQuote),
+      _ => None,
+    }
+  }
+
+  fn builtin_tag_name(&self) -> Option<&'static str> {
+    match self {
+      Self::Nil => Some("nil"),
+      Self::Bool => Some("bool"),
+      Self::Number => Some("number"),
+      Self::String => Some("string"),
+      Self::Symbol => Some("symbol"),
+      Self::TagType => Some("tag"),
+      Self::List => Some("list"),
+      Self::Map => Some("map"),
+      Self::Fn => Some("fn"),
+      Self::Set => Some("set"),
+      Self::Ref => Some("ref"),
+      Self::Buffer => Some("buffer"),
+      Self::CirruQuote => Some("cirru-quote"),
+      _ => None,
+    }
+  }
+
   /// Collect arg type hints for function parameters by scanning `assert-type` in body forms.
   ///
   /// This is intentionally different from return-type handling: return-type uses `hint-fn`, while
@@ -171,16 +222,20 @@ impl CalcitTypeAnnotation {
 
   /// Render a concise representation used in warnings or logs
   pub fn to_brief_string(&self) -> String {
+    if let Some(tag) = self.builtin_tag_name() {
+      return format!(":{tag}");
+    }
+
     match self {
       Self::Tag(tag) => format!(":{}", tag.ref_str()),
       Self::Record(record) => format!("record {}", record.name),
       Self::Tuple(_) => "tuple".to_string(),
       Self::Function(signature) => signature.render_signature_brief(),
-      Self::Set => "set".to_string(),
       Self::Variadic(inner) => format!("variadic {}", inner.to_brief_string()),
       Self::Custom(inner) => format!("{inner}"),
       Self::Optional(inner) => format!("optional {}", inner.to_brief_string()),
       Self::Dynamic => "dynamic".to_string(),
+      _ => "unknown".to_string(),
     }
   }
 
@@ -189,10 +244,23 @@ impl CalcitTypeAnnotation {
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
       (_, Self::Optional(expected_inner)) => match self {
         Self::Optional(actual_inner) => actual_inner.matches_annotation(expected_inner),
+        Self::Nil => true,
         Self::Tag(tag) if tag.ref_str().trim_start_matches(':') == "nil" => true,
         _ => self.matches_annotation(expected_inner),
       },
       (Self::Optional(_), _) => false,
+      (Self::Nil, Self::Nil)
+      | (Self::Bool, Self::Bool)
+      | (Self::Number, Self::Number)
+      | (Self::String, Self::String)
+      | (Self::Symbol, Self::Symbol)
+      | (Self::TagType, Self::TagType)
+      | (Self::List, Self::List)
+      | (Self::Map, Self::Map)
+      | (Self::Fn, Self::Fn)
+      | (Self::Ref, Self::Ref)
+      | (Self::Buffer, Self::Buffer)
+      | (Self::CirruQuote, Self::CirruQuote) => true,
       (Self::Tag(a), Self::Tag(b)) => a.ref_str() == b.ref_str(),
       (Self::Record(a), Self::Record(b)) => a.name == b.name,
       (Self::Tuple(a), Self::Tuple(b)) => a.as_ref() == b.as_ref(),
@@ -206,22 +274,22 @@ impl CalcitTypeAnnotation {
 
   pub fn from_calcit(value: &Calcit) -> Self {
     match value {
-      Calcit::Nil => Self::from_tag_name("nil"),
-      Calcit::Bool(_) => Self::from_tag_name("bool"),
-      Calcit::Number(_) => Self::from_tag_name("number"),
-      Calcit::Str(_) => Self::from_tag_name("string"),
+      Calcit::Nil => Self::Nil,
+      Calcit::Bool(_) => Self::Bool,
+      Calcit::Number(_) => Self::Number,
+      Calcit::Str(_) => Self::String,
       Calcit::Tag(tag) => {
         let tag_name = tag.ref_str().trim_start_matches(':');
         if tag_name == "any" || tag_name == "dynamic" {
           Self::Dynamic
-        } else if tag_name == "set" {
-          Self::Set
+        } else if let Some(builtin) = Self::builtin_type_from_tag_name(tag_name) {
+          builtin
         } else {
           Self::Tag(tag.to_owned())
         }
       }
-      Calcit::List(_) => Self::from_tag_name("list"),
-      Calcit::Map(_) => Self::from_tag_name("map"),
+      Calcit::List(_) => Self::List,
+      Calcit::Map(_) => Self::Map,
       Calcit::Set(_) => Self::Set,
       Calcit::Record(record) => Self::Record(Arc::new(record.to_owned())),
       Calcit::Tuple(tuple) => {
@@ -247,16 +315,21 @@ impl CalcitTypeAnnotation {
           Self::Dynamic
         }
       }
-      Calcit::Ref(_, _) => Self::from_tag_name("ref"),
-      Calcit::Symbol { .. } => Self::from_tag_name("symbol"),
-      Calcit::Buffer(_) => Self::from_tag_name("buffer"),
-      Calcit::CirruQuote(_) => Self::from_tag_name("cirru-quote"),
+      Calcit::Ref(_, _) => Self::Ref,
+      Calcit::Symbol { .. } => Self::Symbol,
+      Calcit::Buffer(_) => Self::Buffer,
+      Calcit::CirruQuote(_) => Self::CirruQuote,
       other => Self::Custom(Arc::new(other.to_owned())),
     }
   }
 
   pub fn from_tag_name(name: &str) -> Self {
-    Self::Tag(EdnTag::from(name))
+    let tag_name = name.trim_start_matches(':');
+    if tag_name == "any" || tag_name == "dynamic" {
+      Self::Dynamic
+    } else {
+      Self::builtin_type_from_tag_name(tag_name).unwrap_or_else(|| Self::Tag(EdnTag::from(tag_name)))
+    }
   }
 
   pub fn from_function_parts(arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: Arc<CalcitTypeAnnotation>) -> Self {
@@ -299,12 +372,15 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn to_calcit(&self) -> Calcit {
+    if let Some(tag) = self.builtin_tag_name() {
+      return Calcit::Tag(EdnTag::from(tag));
+    }
+
     match self {
       Self::Tag(tag) => Calcit::Tag(tag.to_owned()),
       Self::Record(record) => Calcit::Record((**record).clone()),
       Self::Tuple(tuple) => Calcit::Tuple((**tuple).clone()),
       Self::Function(_) => Calcit::Tag(EdnTag::from("fn")),
-      Self::Set => Calcit::Tag(EdnTag::from("set")),
       Self::Variadic(inner) => Calcit::Tuple(CalcitTuple {
         tag: Arc::new(Calcit::Tag(EdnTag::from("&"))),
         extra: vec![inner.to_calcit()],
@@ -319,6 +395,7 @@ impl CalcitTypeAnnotation {
         sum_type: None,
       }),
       Self::Dynamic => Calcit::Nil,
+      _ => Calcit::Nil,
     }
   }
 
@@ -367,30 +444,46 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn describe(&self) -> String {
+    if let Some(tag) = self.builtin_tag_name() {
+      return format!("{tag} type");
+    }
+
     match self {
       Self::Tag(tag) => format!("{} type", tag.ref_str().trim_start_matches(':')),
       Self::Record(record) => format!("record {}", record.name),
       Self::Tuple(tuple) => format!("tuple {:?}", tuple.tag),
       Self::Function(signature) => signature.describe(),
-      Self::Set => "set type".to_string(),
       Self::Variadic(inner) => format!("variadic {}", inner.describe()),
       Self::Custom(_) => "custom type".to_string(),
       Self::Optional(inner) => format!("optional {}", inner.describe()),
       Self::Dynamic => "dynamic type".to_string(),
+      _ => "unknown type".to_string(),
     }
   }
 
   fn variant_order(&self) -> u8 {
     match self {
-      Self::Tag(_) => 0,
-      Self::Record(_) => 1,
-      Self::Tuple(_) => 2,
-      Self::Function(_) => 3,
-      Self::Set => 4,
-      Self::Variadic(_) => 5,
-      Self::Custom(_) => 6,
-      Self::Optional(_) => 7,
-      Self::Dynamic => 8,
+      Self::Nil => 0,
+      Self::Bool => 1,
+      Self::Number => 2,
+      Self::String => 3,
+      Self::Symbol => 4,
+      Self::TagType => 5,
+      Self::List => 6,
+      Self::Map => 7,
+      Self::Fn => 8,
+      Self::Ref => 9,
+      Self::Buffer => 10,
+      Self::CirruQuote => 11,
+      Self::Tag(_) => 12,
+      Self::Record(_) => 13,
+      Self::Tuple(_) => 14,
+      Self::Function(_) => 15,
+      Self::Set => 16,
+      Self::Variadic(_) => 17,
+      Self::Custom(_) => 18,
+      Self::Optional(_) => 19,
+      Self::Dynamic => 20,
     }
   }
 }
@@ -422,10 +515,7 @@ mod tests {
     let params = vec![Arc::from("a")];
     let arg_types = CalcitTypeAnnotation::collect_arg_type_hints_from_body(&body_items, &params);
 
-    assert!(matches!(
-      arg_types[0].as_ref(),
-      CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "number"
-    ));
+    assert!(matches!(arg_types[0].as_ref(), CalcitTypeAnnotation::Number));
   }
 }
 
@@ -437,6 +527,11 @@ impl fmt::Display for CalcitTypeAnnotation {
 
 impl Hash for CalcitTypeAnnotation {
   fn hash<H: Hasher>(&self, state: &mut H) {
+    if let Some(tag) = self.builtin_tag_name() {
+      tag.hash(state);
+      return;
+    }
+
     match self {
       Self::Tag(tag) => {
         "tag".hash(state);
@@ -478,6 +573,9 @@ impl Hash for CalcitTypeAnnotation {
       Self::Dynamic => {
         "dynamic".hash(state);
       }
+      _ => {
+        "unknown".hash(state);
+      }
     }
   }
 }
@@ -496,6 +594,18 @@ impl Ord for CalcitTypeAnnotation {
     }
 
     match (self, other) {
+      (Self::Nil, Self::Nil)
+      | (Self::Bool, Self::Bool)
+      | (Self::Number, Self::Number)
+      | (Self::String, Self::String)
+      | (Self::Symbol, Self::Symbol)
+      | (Self::TagType, Self::TagType)
+      | (Self::List, Self::List)
+      | (Self::Map, Self::Map)
+      | (Self::Fn, Self::Fn)
+      | (Self::Ref, Self::Ref)
+      | (Self::Buffer, Self::Buffer)
+      | (Self::CirruQuote, Self::CirruQuote) => Ordering::Equal,
       (Self::Tag(a), Self::Tag(b)) => a.cmp(b),
       (Self::Record(a), Self::Record(b)) => {
         let a = a.as_ref();

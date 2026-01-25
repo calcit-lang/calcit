@@ -7,12 +7,7 @@ pub fn binary_equal(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let hint = String::from(
         "💡 Usage: `&= value1 value2`\n  Compares two values for equality\n  Works on any types (numbers, strings, lists, etc.)",
       );
-      CalcitErr::err_nodes_with_hint(
-        CalcitErrKind::Arity,
-        "&= requires exactly 2 arguments to compare, but received:",
-        xs,
-        hint,
-      )
+      crate::builtins::err_arity_with_hint("&= requires exactly 2 arguments to compare, but received:", xs, hint)
     }
   }
 }
@@ -27,18 +22,15 @@ pub fn binary_less(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           crate::builtins::meta::type_of(&[xs[0].clone()])?.lisp_str(),
           crate::builtins::meta::type_of(&[xs[1].clone()])?.lisp_str()
         );
-        let hint = String::from("💡 Usage: `&< number1 number2`\n  Compares if first number is less than second\n  Example: `&< 3 5` => true");
+        let hint =
+          String::from("💡 Usage: `&< number1 number2`\n  Compares if first number is less than second\n  Example: `&< 3 5` => true");
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }
     }
   } else {
-    let hint = String::from("💡 Usage: `&< number1 number2`\n  Compares if first number is less than second\n  Example: `&< 3 5` => true");
-    CalcitErr::err_nodes_with_hint(
-      CalcitErrKind::Arity,
-      "&< requires exactly 2 arguments to compare, but received:",
-      xs,
-      hint,
-    )
+    let hint =
+      String::from("💡 Usage: `&< number1 number2`\n  Compares if first number is less than second\n  Example: `&< 3 5` => true");
+    crate::builtins::err_arity_with_hint("&< requires exactly 2 arguments to compare, but received:", xs, hint)
   }
 }
 
@@ -52,20 +44,16 @@ pub fn binary_greater(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           crate::builtins::meta::type_of(&[xs[0].clone()])?.lisp_str(),
           crate::builtins::meta::type_of(&[xs[1].clone()])?.lisp_str()
         );
-        let hint =
-          String::from("💡 Usage: `&> number1 number2`\n  Compares if first number is greater than second\n  Example: `&> 5 3` => true");
+        let hint = String::from(
+          "💡 Usage: `&> number1 number2`\n  Compares if first number is greater than second\n  Example: `&> 5 3` => true",
+        );
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }
     }
   } else {
     let hint =
       String::from("💡 Usage: `&> value1 value2`\n  Compares if first value is greater than second\n  Example: `&> 5 3` => true");
-    CalcitErr::err_nodes_with_hint(
-      CalcitErrKind::Arity,
-      "&> requires exactly 2 arguments to compare, but received:",
-      xs,
-      hint,
-    )
+    crate::builtins::err_arity_with_hint("&> requires exactly 2 arguments to compare, but received:", xs, hint)
   }
 }
 
@@ -73,12 +61,7 @@ pub fn not(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     let hint =
       String::from("💡 Usage: `not boolean-value`\n  Negates a boolean value\n  Examples: `not true` => false, `not nil` => true");
-    return CalcitErr::err_nodes_with_hint(
-      CalcitErrKind::Arity,
-      "not requires exactly 1 argument (a boolean or nil), but received:",
-      xs,
-      hint,
-    );
+    return crate::builtins::err_arity_with_hint("not requires exactly 1 argument (a boolean or nil), but received:", xs, hint);
   }
   match &xs[0] {
     Calcit::Nil => Ok(Calcit::Bool(true)),
@@ -90,7 +73,7 @@ pub fn not(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       );
       let hint =
         String::from("💡 Hint: Pass a boolean value (true/false) or nil to not\n  Examples: `not true` => false, `not nil` => true");
-      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+      crate::builtins::err_type_with_hint(msg, hint)
     }
   }
 }

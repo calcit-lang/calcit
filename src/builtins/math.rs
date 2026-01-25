@@ -4,10 +4,6 @@ use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitProc, format_proc_ex
 use crate::util::number::{f64_to_i32, is_integer};
 
 pub fn binary_add(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    let hint = String::from("💡 Usage: `&+ number1 number2`\n  Adds two numbers together");
-    return CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&+ requires exactly 2 numbers, but received:", xs, hint);
-  }
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a + b)),
     (Some(a), Some(b)) => {
@@ -17,15 +13,11 @@ pub fn binary_add(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let hint = String::from("💡 Usage: `&+ number1 number2`\n  Example: `&+ 3 5` => 8");
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
-    _ => CalcitErr::err_str(CalcitErrKind::Arity, "&+ received invalid arguments"),
+    _ => crate::builtins::err_arity("&+ requires 2 arguments, but received:", xs),
   }
 }
 
 pub fn binary_minus(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    let hint = String::from("💡 Usage: `&- number1 number2`\n  Subtracts second number from first");
-    return CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&- requires exactly 2 numbers, but received:", xs, hint);
-  }
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a - b)),
     (Some(a), Some(b)) => {
@@ -35,15 +27,11 @@ pub fn binary_minus(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let hint = String::from("💡 Usage: `&- number1 number2`\n  Example: `&- 5 3` => 2");
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
-    _ => CalcitErr::err_str(CalcitErrKind::Arity, "&- received invalid arguments"),
+    _ => crate::builtins::err_arity("&- requires 2 arguments, but received:", xs),
   }
 }
 
 pub fn binary_multiply(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    let hint = String::from("💡 Usage: `&* number1 number2`\n  Multiplies two numbers");
-    return CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&* requires exactly 2 numbers, but received:", xs, hint);
-  }
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a * b)),
     (Some(a), Some(b)) => {
@@ -53,15 +41,11 @@ pub fn binary_multiply(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let hint = String::from("💡 Usage: `&* number1 number2`\n  Example: `&* 3 4` => 12");
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
-    _ => CalcitErr::err_str(CalcitErrKind::Arity, "&* received invalid arguments"),
+    _ => crate::builtins::err_arity("&* requires 2 arguments, but received:", xs),
   }
 }
 
 pub fn binary_divide(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    let hint = String::from("💡 Usage: `&/ number1 number2`\n  Divides first number by second");
-    return CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&/ requires exactly 2 numbers, but received:", xs, hint);
-  }
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(a)), Some(Calcit::Number(b))) => Ok(Calcit::Number(a / b)),
     (Some(a), Some(b)) => {
@@ -72,7 +56,7 @@ pub fn binary_divide(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         String::from("💡 Usage: `&/ number1 number2`\n  Example: `&/ 10 2` => 5\n  Warning: Division by zero returns infinity");
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
-    _ => CalcitErr::err_str(CalcitErrKind::Arity, "&/ received invalid arguments"),
+    _ => crate::builtins::err_arity("&/ requires 2 arguments, but received:", xs),
   }
 }
 

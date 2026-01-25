@@ -375,6 +375,45 @@ pub struct ProcTypeSignature {
   pub arg_types: Vec<Arc<CalcitTypeAnnotation>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProcArity {
+  pub min: usize,
+  pub max: Option<usize>,
+}
+
+impl ProcTypeSignature {
+  pub fn arity(&self) -> ProcArity {
+    let mut min = 0;
+    let mut max = 0;
+    let mut has_variadic = false;
+
+    for t in &self.arg_types {
+      match t.as_ref() {
+        CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "&" => {
+          has_variadic = true;
+          break;
+        }
+        CalcitTypeAnnotation::Variadic(_) => {
+          has_variadic = true;
+          break;
+        }
+        CalcitTypeAnnotation::Optional(_) => {
+          max += 1;
+        }
+        _ => {
+          min += 1;
+          max += 1;
+        }
+      }
+    }
+
+    ProcArity {
+      min,
+      max: if has_variadic { None } else { Some(max) },
+    }
+  }
+}
+
 fn tag_type(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::from_tag_name(name))
 }
@@ -444,7 +483,7 @@ impl CalcitProc {
       }),
       GenerateId => Some(ProcTypeSignature {
         return_type: some_tag("string"),
-        arg_types: vec![],
+        arg_types: vec![optional_tag("number"), optional_tag("string")],
       }),
       NativeGetCalcitRunningMode => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
@@ -698,9 +737,13 @@ impl CalcitProc {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("list")],
       }),
-      Foldl | FoldlShortcut | FoldrShortcut => Some(ProcTypeSignature {
+      Foldl => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag()],
+      }),
+      FoldlShortcut | FoldrShortcut => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag(), dynamic_tag()],
       }),
 
       // === Map operations ===
@@ -726,7 +769,7 @@ impl CalcitProc {
       }),
       NativeMapDissoc => Some(ProcTypeSignature {
         return_type: some_tag("map"),
-        arg_types: vec![some_tag("map"), dynamic_tag()],
+        arg_types: vec![some_tag("map"), dynamic_tag(), some_tag("&")],
       }),
       NativeMapCount => Some(ProcTypeSignature {
         return_type: some_tag("number"),
@@ -742,7 +785,7 @@ impl CalcitProc {
       }),
       NativeMapAssoc => Some(ProcTypeSignature {
         return_type: some_tag("map"),
-        arg_types: vec![some_tag("map"), dynamic_tag(), dynamic_tag()],
+        arg_types: vec![some_tag("map"), dynamic_tag(), dynamic_tag(), some_tag("&")],
       }),
       NativeMapDiffNew => Some(ProcTypeSignature {
         return_type: some_tag("map"),
