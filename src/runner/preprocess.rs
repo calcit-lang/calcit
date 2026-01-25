@@ -34,6 +34,18 @@ pub struct PreprocessContext<'a> {
   call_stack: &'a CallStackList,
 }
 
+impl<'a> PreprocessContext<'a> {
+  fn new(
+    scope_defs: &'a HashSet<Arc<str>>,
+    scope_types: &'a mut ScopeTypes,
+    file_ns: &'a str,
+    check_warnings: &'a RefCell<Vec<LocatedWarning>>,
+    call_stack: &'a CallStackList,
+  ) -> Self {
+    Self { scope_defs, scope_types, file_ns, check_warnings, call_stack }
+  }
+}
+
 /// returns the resolved symbol(only functions and macros are used),
 /// if code related is not preprocessed, do it internally.
 pub fn preprocess_ns_def(
@@ -298,11 +310,11 @@ pub fn preprocess_expr(
                 for def in scope_defs {
                   names.push(def.to_owned());
                 }
-                let mut warnings = check_warnings.borrow_mut();
-                warnings.push(LocatedWarning::new(
+                gen_check_warning_with_location(
                   format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" ")),
                   NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
-                ));
+                  check_warnings,
+                );
                 Ok(expr.to_owned())
               }
             }
@@ -328,16 +340,11 @@ pub fn preprocess_expr(
     Calcit::Import { .. } => Ok(expr.to_owned()),
     _ => {
       println!("unknown expr: {expr}");
-      let mut warnings = check_warnings.borrow_mut();
-      let loc = NodeLocation {
-        ns: Arc::from(file_ns),
-        def: GENERATED_DEF.into(),
-        coord: Arc::from(vec![]),
-      };
-      warnings.push(LocatedWarning::new(
+      gen_check_warning(
         format!("[Warn] unexpected data during preprocess: {expr:?}"),
-        loc,
-      ));
+        file_ns,
+        check_warnings,
+      );
       Ok(expr.to_owned())
     }
   }
@@ -467,33 +474,15 @@ fn preprocess_list_call(
 
       Calcit::Syntax(name, name_ns) => match name {
         CalcitSyntax::Quasiquote => {
-          let mut ctx = PreprocessContext {
-            scope_defs,
-            scope_types,
-            file_ns,
-            check_warnings,
-            call_stack,
-          };
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_quasiquote(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::Defn | CalcitSyntax::Defmacro => {
-          let mut ctx = PreprocessContext {
-            scope_defs,
-            scope_types,
-            file_ns,
-            check_warnings,
-            call_stack,
-          };
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_defn(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::CoreLet => {
-          let mut ctx = PreprocessContext {
-            scope_defs,
-            scope_types,
-            file_ns,
-            check_warnings,
-            call_stack,
-          };
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_core_let(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::If
@@ -503,26 +492,14 @@ fn preprocess_list_call(
         | CalcitSyntax::Macroexpand1
         | CalcitSyntax::Gensym
         | CalcitSyntax::Reset => {
-          let mut ctx = PreprocessContext {
-            scope_defs,
-            scope_types,
-            file_ns,
-            check_warnings,
-            call_stack,
-          };
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_each_items(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::Quote | CalcitSyntax::Eval | CalcitSyntax::HintFn => {
           Ok(preprocess_quote(name, name_ns, &args, scope_defs, file_ns)?)
         }
         CalcitSyntax::Defatom => {
-          let mut ctx = PreprocessContext {
-            scope_defs,
-            scope_types,
-            file_ns,
-            check_warnings,
-            call_stack,
-          };
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_defatom(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::CallSpread => {
@@ -536,13 +513,7 @@ fn preprocess_list_call(
           Ok(Calcit::from(ys))
         }
         CalcitSyntax::AssertType => {
-          let mut ctx = PreprocessContext {
-            scope_defs,
-            scope_types,
-            file_ns,
-            check_warnings,
-            call_stack,
-          };
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_asset_type(name, name_ns, &args, &mut ctx)
         }
         CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec()),
@@ -749,9 +720,13 @@ fn grab_def_name(x: &Calcit) -> Arc<str> {
 }
 
 fn gen_check_warning(message: String, file_ns: &str, check_warnings: &RefCell<Vec<LocatedWarning>>) {
-  let mut warnings = check_warnings.borrow_mut();
   let loc = NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![]));
-  warnings.push(LocatedWarning::new(message, loc));
+  gen_check_warning_with_location(message, loc, check_warnings);
+}
+
+fn gen_check_warning_with_location(message: String, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
+  let mut warnings = check_warnings.borrow_mut();
+  warnings.push(LocatedWarning::new(message, location));
 }
 
 /// Check record field access during preprocessing
@@ -1310,7 +1285,6 @@ fn build_record_reference(type_value: &CalcitTypeAnnotation, file_ns: &str) -> O
   match type_value {
     CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
       Calcit::Import(import) => Some(Calcit::Import(import.to_owned())),
-      Calcit::Tag(tag) => build_core_class_import(core_class_symbol_from_tag(tag)?, file_ns),
       _ => None,
     },
     _ => build_core_class_import(core_class_symbol_from_type_annotation(type_value)?, file_ns),
@@ -1714,20 +1688,6 @@ fn core_class_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation) -> 
   }
 }
 
-fn core_class_symbol_from_tag(tag: &cirru_edn::EdnTag) -> Option<&'static str> {
-  let type_name = tag.ref_str().trim_start_matches(':');
-  match type_name {
-    "list" => Some("&core-list-class"),
-    "string" => Some("&core-string-class"),
-    "map" => Some("&core-map-class"),
-    "set" => Some("&core-set-class"),
-    "number" => Some("&core-number-class"),
-    "nil" => Some("&core-nil-class"),
-    "fn" => Some("&core-fn-class"),
-    _ => None,
-  }
-}
-
 /// Describe the type for error messages
 fn describe_type(type_value: &CalcitTypeAnnotation) -> String {
   type_value.describe()
@@ -1881,11 +1841,11 @@ pub fn preprocess_defn(
 // warn if this symbol is used
 fn check_symbol(sym: &str, args: &CalcitList, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
   if is_proc_name(sym) || CalcitSyntax::is_valid(sym) || program::has_def_code(calcit::CORE_NS, sym) {
-    let mut warnings = check_warnings.borrow_mut();
-    warnings.push(LocatedWarning::new(
+    gen_check_warning_with_location(
       format!("[Warn] local binding `{sym}` shadowed `calcit.core/{sym}`, with {args}"),
       location,
-    ));
+      check_warnings,
+    );
   }
 }
 
