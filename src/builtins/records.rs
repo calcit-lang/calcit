@@ -584,12 +584,7 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     },
     (Some(_), None) => {
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
-      CalcitErr::err_nodes_with_hint(
-        CalcitErrKind::Arity,
-        "&record:get expected 2 arguments, but received:",
-        xs,
-        hint,
-      )
+      CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&record:get expected 2 arguments, but received:", xs, hint)
     }
     (Some(a), Some(_)) => {
       let msg = format!(
@@ -601,12 +596,7 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     (None, ..) => {
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordGet).unwrap_or_default();
-      CalcitErr::err_nodes_with_hint(
-        CalcitErrKind::Arity,
-        "&record:get expected 2 arguments, but received:",
-        xs,
-        hint,
-      )
+      CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&record:get expected 2 arguments, but received:", xs, hint)
     }
   }
 }
@@ -669,12 +659,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     },
     (Some(_), None, _) | (Some(_), Some(_), None) => {
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
-      CalcitErr::err_nodes_with_hint(
-        CalcitErrKind::Arity,
-        "&record:assoc expected 3 arguments, but received:",
-        xs,
-        hint,
-      )
+      CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&record:assoc expected 3 arguments, but received:", xs, hint)
     }
     (Some(a), Some(_), Some(_)) => {
       let msg = format!(
@@ -686,12 +671,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     (None, ..) => {
       let hint = format_proc_examples_hint(&CalcitProc::NativeRecordAssoc).unwrap_or_default();
-      CalcitErr::err_nodes_with_hint(
-        CalcitErrKind::Arity,
-        "&record:assoc expected 3 arguments, but received:",
-        xs,
-        hint,
-      )
+      CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&record:assoc expected 3 arguments, but received:", xs, hint)
     }
   }
 }

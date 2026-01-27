@@ -2,6 +2,7 @@ use cirru_parser::Cirru;
 use colored::Colorize;
 
 use super::common::{ERR_CODE_INPUT_REQUIRED, cirru_to_json, parse_input_to_cirru, parse_path, read_code_input};
+use super::tips::{Tips, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
   TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand,
@@ -334,15 +335,9 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
       );
       println!("  • Delete:  {} {} -p '{}'", "cr tree delete".cyan(), opts.target, opts.path);
       println!();
-      let mut tips = vec![format!(
-        "Prefer {} to avoid indentation issues; for messy structures, use {} to inspect JSON format",
-        "-e 'one-liner'".yellow(),
-        "-j".yellow()
-      )];
-      if !show_json {
-        tips.push(format!("add {} flag to also output JSON format", "-j".yellow()));
-      }
-      println!("{}: {}", "Tips".blue().bold(), tips.join("; "));
+      let mut tips = Tips::new();
+      tips.append(tip_prefer_oneliner_json(show_json));
+      tips.print();
 
       return Ok(());
     }
@@ -432,13 +427,11 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   // Show diff preview
   println!("{}", show_diff_preview(&old_node, &processed_node, "replace", &path));
-  // Warn when editing root path
-  if path.is_empty() {
-    println!(
-      "{}: Editing root path; prefer local updates to avoid unintended changes",
-      "Tip".blue().bold()
-    );
-    println!();
+  // Tips: root-edit guidance
+  if let Some(t) = tip_root_edit(path.is_empty()) {
+    let mut tips = Tips::new();
+    tips.add(t);
+    tips.print();
   }
 
   let new_code = apply_operation_at_path(&code_entry.code, &path, "replace", Some(&processed_node))?;
@@ -637,14 +630,10 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   println!("{}:", "Parent context".dimmed());
   println!("{}", format_preview_with_type(&old_parent, 8));
   println!();
-
-  // Warn when editing root path
-  if path.is_empty() {
-    println!(
-      "{}: Editing root path; prefer local updates to avoid unintended changes",
-      "Tip".blue().bold()
-    );
-    println!();
+  if let Some(t) = tip_root_edit(path.is_empty()) {
+    let mut tips = Tips::new();
+    tips.add(t);
+    tips.print();
   }
 
   let new_code = apply_operation_at_path(&code_entry.code, &path, "delete", None)?;
@@ -947,14 +936,10 @@ fn generic_insert_handler<T: InsertOperation>(
   println!("{}:", "Parent before".dimmed());
   println!("{}", format_preview_with_type(&old_parent, 8));
   println!();
-
-  // Warn when editing root path
-  if path.is_empty() {
-    println!(
-      "{}: Editing root path; prefer local updates to avoid unintended changes",
-      "Tip".blue().bold()
-    );
-    println!();
+  if let Some(t) = tip_root_edit(path.is_empty()) {
+    let mut tips = Tips::new();
+    tips.add(t);
+    tips.print();
   }
 
   let new_code = apply_operation_at_path(&code_entry.code, &path, operation, Some(&processed_node))?;
@@ -1119,13 +1104,10 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
   println!("{}:", "Parent before swap".yellow().bold());
   println!("{}", format_preview_with_type(&old_parent, 15));
   println!();
-  // Warn when editing root path
-  if path.is_empty() {
-    println!(
-      "{}: Editing root path; prefer local updates to avoid unintended changes",
-      "Tip".blue().bold()
-    );
-    println!();
+  if let Some(t) = tip_root_edit(path.is_empty()) {
+    let mut tips = Tips::new();
+    tips.add(t);
+    tips.print();
   }
   println!("{}:", "Parent after swap".green().bold());
   let new_parent = if parent_path.is_empty() {

@@ -42,7 +42,13 @@ impl<'a> PreprocessContext<'a> {
     check_warnings: &'a RefCell<Vec<LocatedWarning>>,
     call_stack: &'a CallStackList,
   ) -> Self {
-    Self { scope_defs, scope_types, file_ns, check_warnings, call_stack }
+    Self {
+      scope_defs,
+      scope_types,
+      file_ns,
+      check_warnings,
+      call_stack,
+    }
   }
 }
 

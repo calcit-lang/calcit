@@ -194,12 +194,7 @@ pub fn includes_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Set(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains(a))),
     (Some(_), None) => {
       let hint = format_proc_examples_hint(&CalcitProc::NativeSetIncludes).unwrap_or_default();
-      CalcitErr::err_nodes_with_hint(
-        CalcitErrKind::Arity,
-        "&set:includes? expected 2 arguments, but received:",
-        xs,
-        hint,
-      )
+      CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&set:includes? expected 2 arguments, but received:", xs, hint)
     }
     (Some(a), Some(_)) => {
       let msg = format!(

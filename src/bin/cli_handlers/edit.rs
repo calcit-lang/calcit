@@ -21,6 +21,7 @@ use std::fs;
 use std::sync::Arc;
 
 use super::common::{ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_input_to_cirru, read_code_input};
+use super::tips::Tips;
 
 /// Parse "namespace/definition" format into (namespace, definition)
 pub(crate) fn parse_target(target: &str) -> Result<(&str, &str), String> {
@@ -191,11 +192,12 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     definition
   );
   println!();
-  println!(
-    "{}",
-    format!("Tip: Use single quotes around '{namespace}/{definition}' to avoid shell escaping issues.").dimmed()
-  );
-  println!("{}", format!("  Example: cr tree show '{namespace}/{definition}'").dimmed());
+  let mut tips = Tips::new();
+  tips.add(format!(
+    "Use single quotes around '{namespace}/{definition}' to avoid shell escaping issues."
+  ));
+  tips.add(format!("Example: cr tree show '{namespace}/{definition}'"));
+  tips.print();
   Ok(())
 }
 
