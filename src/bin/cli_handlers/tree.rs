@@ -432,6 +432,14 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 
   // Show diff preview
   println!("{}", show_diff_preview(&old_node, &processed_node, "replace", &path));
+  // Warn when editing root path
+  if path.is_empty() {
+    println!(
+      "{}: Editing root path; prefer local updates to avoid unintended changes",
+      "Tip".blue().bold()
+    );
+    println!();
+  }
 
   let new_code = apply_operation_at_path(&code_entry.code, &path, "replace", Some(&processed_node))?;
   code_entry.code = new_code.clone();
@@ -629,6 +637,15 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   println!("{}:", "Parent context".dimmed());
   println!("{}", format_preview_with_type(&old_parent, 8));
   println!();
+
+  // Warn when editing root path
+  if path.is_empty() {
+    println!(
+      "{}: Editing root path; prefer local updates to avoid unintended changes",
+      "Tip".blue().bold()
+    );
+    println!();
+  }
 
   let new_code = apply_operation_at_path(&code_entry.code, &path, "delete", None)?;
   code_entry.code = new_code.clone();
@@ -931,6 +948,15 @@ fn generic_insert_handler<T: InsertOperation>(
   println!("{}", format_preview_with_type(&old_parent, 8));
   println!();
 
+  // Warn when editing root path
+  if path.is_empty() {
+    println!(
+      "{}: Editing root path; prefer local updates to avoid unintended changes",
+      "Tip".blue().bold()
+    );
+    println!();
+  }
+
   let new_code = apply_operation_at_path(&code_entry.code, &path, operation, Some(&processed_node))?;
   code_entry.code = new_code.clone();
 
@@ -1093,6 +1119,14 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
   println!("{}:", "Parent before swap".yellow().bold());
   println!("{}", format_preview_with_type(&old_parent, 15));
   println!();
+  // Warn when editing root path
+  if path.is_empty() {
+    println!(
+      "{}: Editing root path; prefer local updates to avoid unintended changes",
+      "Tip".blue().bold()
+    );
+    println!();
+  }
   println!("{}:", "Parent after swap".green().bold());
   let new_parent = if parent_path.is_empty() {
     new_code.clone()
