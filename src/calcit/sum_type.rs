@@ -96,7 +96,7 @@ impl CalcitEnum {
       Calcit::List(items) => {
         let mut payloads: Vec<Arc<CalcitTypeAnnotation>> = Vec::with_capacity(items.len());
         for item in items.iter() {
-          payloads.push(Arc::new(CalcitTypeAnnotation::from_calcit(item)));
+          payloads.push(CalcitTypeAnnotation::parse_type_annotation_form(item));
         }
         Ok(payloads)
       }
@@ -139,9 +139,7 @@ mod tests {
     let err_variant = enum_proto.find_variant_by_name("err").expect("err variant");
     assert_eq!(err_variant.arity(), 1);
     match err_variant.payload_types().first().map(|t| t.as_ref()) {
-      Some(CalcitTypeAnnotation::Tag(tag)) => {
-        assert_eq!(tag.ref_str().trim_start_matches(':'), "string");
-      }
+      Some(CalcitTypeAnnotation::String) => {}
       other => panic!("unexpected payload annotation: {other:?}"),
     }
     assert_eq!(enum_proto.find_variant_by_name("ok").unwrap().arity(), 0);

@@ -43,10 +43,11 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     Local(CalcitLocal { idx, .. }) => evaluate_symbol_from_scope(*idx, scope),
     Import(CalcitImport { ns, def, coord, .. }) => evaluate_symbol_from_program(def, ns, *coord, call_stack),
     List(xs) => match xs.first() {
-      None => Err(CalcitErr::use_msg_stack(
+      None => Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Arity,
         format!("cannot evaluate empty expr: {expr}"),
         call_stack,
+        expr.get_location(),
       )),
       Some(x) => {
         // println!("eval expr: {}", expr.lisp_str());
@@ -62,20 +63,23 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     },
     Recur(_) => unreachable!("recur not expected to be from symbol"),
     RawCode(_, code) => unreachable!("raw code `{}` cannot be called", code),
-    Set(_) => Err(CalcitErr::use_msg_stack(
+    Set(_) => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Unexpected,
       "unexpected set for expr",
       call_stack,
+      expr.get_location(),
     )),
-    Map(_) => Err(CalcitErr::use_msg_stack(
+    Map(_) => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Unexpected,
       "unexpected map for expr",
       call_stack,
+      expr.get_location(),
     )),
-    Record { .. } => Err(CalcitErr::use_msg_stack(
+    Record { .. } => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Unexpected,
       "unexpected record for expr",
       call_stack,
+      expr.get_location(),
     )),
   }
 }
@@ -138,17 +142,19 @@ pub fn call_expr(
               None => Ok(Calcit::Nil),
             }
           } else {
-            Err(CalcitErr::use_msg_stack(
+            Err(CalcitErr::use_msg_stack_location(
               CalcitErrKind::Type,
               format!("expected a hashmap, got: {obj}"),
               call_stack,
+              obj.get_location(),
             ))
           }
         } else {
-          Err(CalcitErr::use_msg_stack(
+          Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Arity,
             format!("tag-accessor takes only 1 argument, {xs}"),
             call_stack,
+            xs.first().and_then(|node| node.get_location()),
           ))
         }
       } else {
@@ -212,17 +218,19 @@ pub fn call_expr(
             None => Ok(Calcit::Nil),
           }
         } else {
-          Err(CalcitErr::use_msg_stack(
+          Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Type,
             format!("expected a hashmap, got: {v}"),
             call_stack,
+            v.get_location(),
           ))
         }
       } else {
-        Err(CalcitErr::use_msg_stack(
+        Err(CalcitErr::use_msg_stack_location(
           CalcitErrKind::Arity,
           format!("tag only takes 1 argument, got: {rest_nodes}"),
           call_stack,
+          xs.first().and_then(|node| node.get_location()),
         ))
       }
     }
@@ -240,10 +248,11 @@ pub fn call_expr(
           // also println slows down code a bit. could't figure out, didn't read asm either
           f(values, call_stack)
         }
-        None => Err(CalcitErr::use_msg_stack(
+        None => Err(CalcitErr::use_msg_stack_location(
           CalcitErrKind::Var,
           format!("cannot evaluate symbol directly: {file_ns}/{alias}"),
           call_stack,
+          xs.first().and_then(|node| node.get_location()),
         )),
       }
     }
@@ -622,10 +631,11 @@ pub fn evaluate_spreaded_args(
               spreading = false;
               Ok(())
             }
-            a => Err(CalcitErr::use_msg_stack(
+            a => Err(CalcitErr::use_msg_stack_location(
               CalcitErrKind::Arity,
               format!("expected list for spreading, got: {a}"),
               call_stack,
+              a.get_location(),
             )),
           }
         } else {
@@ -644,10 +654,11 @@ pub fn evaluate_spreaded_args(
               spreading = false;
               Ok(())
             }
-            a => Err(CalcitErr::use_msg_stack(
+            a => Err(CalcitErr::use_msg_stack_location(
               CalcitErrKind::Arity,
               format!("expected list for spreading, got: {a}"),
               call_stack,
+              a.get_location(),
             )),
           }
         } else {

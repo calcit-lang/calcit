@@ -31,6 +31,9 @@
           :code $ quote
             defn &<= (a b)
               hint-fn $ return-type :bool
+              assert-type a :number
+              assert-type b :number
+              assert "|expects numbers for &<=" $ if (number? a) (number? b)
               if (&< a b) true $ &= a b
           :examples $ []
             quote $ assert= true $ &<= 3 5
@@ -40,6 +43,9 @@
           :code $ quote
             defn &>= (a b)
               hint-fn $ return-type :bool
+              assert-type a :number
+              assert-type b :number
+              assert "|expects numbers for &>=" $ if (number? a) (number? b)
               if (&> a b) true $ &= a b
           :examples $ []
             quote $ assert= true $ &>= 5 3
@@ -421,13 +427,11 @@
           :code $ quote
             defn &max (a b)
               assert "|expects numbers for &max" $ if (number? a) (number? b)
-                if (string? a) (string? b) false
               if (&> a b) a b
         |&min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &min (a b)
               assert "|expects numbers for &min" $ if (number? a) (number? b)
-                if (string? a) (string? b) false
               if (&< a b) a b
         |&record-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -525,6 +529,7 @@
             defn * (x & ys)
               hint-fn $ return-type :number
               assert-type x :number
+              assert-type ys $ :: :& :number
               reduce ys x &*
           :examples $ []
             quote $ assert= 6 $ * 2 3
@@ -536,6 +541,8 @@
         |+ $ %{} :CodeEntry (:doc "|Mathematical addition operation\nFunction: Calculates the sum of one or more numbers\nParams: x (number), ys (variadic args, list of numbers)\nReturns: number - sum of all arguments\nNotes: Supports any number of arguments, requires at least one argument")
           :code $ quote
             defn + (x & ys)
+              assert-type x :number
+              assert-type ys $ :: :& :number
               reduce ys x &+
           :examples $ []
             quote $ assert= 6 $ + 1 2 3
@@ -545,6 +552,7 @@
             defn - (x & ys)
               hint-fn $ return-type :number
               assert-type x :number
+              assert-type ys $ :: :& :number
               if (&list:empty? ys) (&- 0 x) (reduce ys x &-)
           :examples $ []
             quote $ assert= 5 $ - 10 3 2
@@ -601,6 +609,7 @@
             defn / (x & ys)
               hint-fn $ return-type :number
               assert-type x :number
+              assert-type ys $ :: :& :number
               if (&list:empty? ys) (&/ 1 x) (reduce ys x &/)
           :examples $ []
             quote $ / 12 3 2
@@ -625,6 +634,7 @@
             defn < (x & ys)
               hint-fn $ return-type :bool
               assert-type x :number
+              assert-type ys $ :: :& :number
               if
                 &= 1 $ &list:count ys
                 &< x $ &list:first ys
@@ -639,6 +649,7 @@
             defn <= (x & ys)
               hint-fn $ return-type :bool
               assert-type x :number
+              assert-type ys $ :: :& :number
               if
                 &= 1 $ &list:count ys
                 &<= x $ &list:first ys
@@ -664,6 +675,7 @@
             defn > (x & ys)
               hint-fn $ return-type :bool
               assert-type x :number
+              assert-type ys $ :: :& :number
               if
                 &= 1 $ &list:count ys
                 &> x $ &list:first ys
@@ -678,6 +690,7 @@
             defn >= (x & ys)
               hint-fn $ return-type :bool
               assert-type x :number
+              assert-type ys $ :: :& :number
               if
                 &= 1 $ &list:count ys
                 &>= x $ &list:first ys
@@ -920,7 +933,10 @@
               hint-fn $ return-type :list
               list-match args
                 () $ []
-                (a0 as) (.concat a0 & as)
+                (a0 as)
+                  do
+                    assert-type a0 :list
+                    .concat a0 & as
           :examples $ []
             quote $ assert= ([] 1 2 3 4 5) $ concat ([] 1 2) ([] 3 4) ([] 5)
         |cond $ %{} :CodeEntry (:doc "|Multi-branch conditional macro. Evaluates condition/result pairs in order and returns the first truthy branch; use `true` as a default guard.")
@@ -1097,6 +1113,7 @@
             defn difference (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
+              assert-type xs $ :: :& :set
               reduce xs base $ fn (acc item) (&difference acc item)
           :examples $ []
             quote $ assert= (#{} 1) $ difference (#{} 1 2 3) (#{} 2 3 4)
@@ -1202,6 +1219,7 @@
             defn exclude (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
+              assert-type xs $ :: :& :set
               reduce xs base $ fn (acc item) (&exclude acc item)
         |field-match $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1395,6 +1413,7 @@
             defn include (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
+              assert-type xs $ :: :& :set
               reduce xs base $ fn (acc item) (&include acc item)
           :examples $ []
             quote $ assert= (#{} 1 2 3 4) $ include (#{} 1 2) 3 4
@@ -1435,6 +1454,7 @@
             defn intersection (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
+              assert-type xs $ :: :& :set
               reduce xs base $ fn (acc item) (&set:intersection acc item)
         |join $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1896,10 +1916,14 @@
         |range-bothway $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn range-bothway (x ? y)
+              assert-type x :number
+              assert-type y $ :: :optional :number
               if (some? y)
-                range
-                  inc $ &- (&+ x x) y
-                  , y
+                do
+                  assert-type y :number
+                  range
+                    inc $ &- (&+ x x) y
+                    , y
                 range
                   inc $ negate x
                   , x
@@ -1995,6 +2019,8 @@
         |slice $ %{} :CodeEntry (:doc "|Extract a slice from a collection from index n to m")
           :code $ quote
             defn slice (xs n ? m)
+              assert-type n :number
+              assert-type m $ :: :optional :number
               if (nil? xs) nil $ .slice xs n m
           :examples $ []
             quote $ assert= ([] 2 3) $ slice ([] 1 2 3 4) 1 3
@@ -2207,6 +2233,7 @@
             defn union (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
+              assert-type xs $ :: :& :set
               reduce xs base $ fn (acc item) (&union acc item)
           :examples $ []
             quote $ assert= (#{} 1 2 3 4) $ union (#{} 1 2) (#{} 3 4)

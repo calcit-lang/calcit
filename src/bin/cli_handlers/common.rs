@@ -1,5 +1,6 @@
 //! Common utilities shared between CLI handlers
 
+use super::cirru_validator;
 use cirru_parser::Cirru;
 use std::fs;
 use std::io::{self, Read};
@@ -122,6 +123,19 @@ pub fn warn_if_single_string_expression(node: &Cirru, input_source: &str) {
   }
 }
 
+/// Warn when a Cirru one-liner input is wrapped by parentheses and emit a JSON validation payload
+fn warn_if_wrapped_by_parentheses(raw: &str, node: &Cirru) {
+  let t = raw.trim();
+  if t.starts_with('(') && t.ends_with(')') {
+    eprintln!("\n⚠️  Warning: One-liner input appears wrapped by top-level parentheses.");
+    eprintln!("   Cirru typically avoids wrapping the entire top-level expression with '()'.");
+    eprintln!("   This extra layer changes call semantics. Prefer removing the outer parentheses.\n");
+    eprintln!("   JSON echo:");
+    eprintln!("{}", cirru_to_json(node));
+    eprintln!();
+  }
+}
+
 /// Determine input mode and parse raw input string into a `Cirru` node.
 /// Precedence (highest to lowest):
 /// - `--json <string>` (inline JSON)
@@ -187,7 +201,10 @@ pub fn parse_input_to_cirru(
       }
 
       let result = cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))?;
+      warn_if_wrapped_by_parentheses(raw, &result);
       warn_if_single_string_expression(&result, raw);
+      // Validate basic Cirru syntax
+      cirru_validator::validate_cirru_syntax(&result)?;
       return Ok(result);
     }
 
@@ -256,10 +273,16 @@ pub fn parse_input_to_cirru(
     if parsed.len() == 1 {
       let result = parsed.into_iter().next().unwrap();
       warn_if_single_string_expression(&result, raw);
+      // Validate basic Cirru syntax
+      cirru_validator::validate_cirru_syntax(&result)?;
       Ok(result)
     } else if parsed.is_empty() {
       Err("Input parsed as an empty Cirru structure.".to_string())
     } else {
+      // Validate basic Cirru syntax for each node
+      for node in &parsed {
+        cirru_validator::validate_cirru_syntax(node)?;
+      }
       Ok(Cirru::List(parsed))
     }
   }

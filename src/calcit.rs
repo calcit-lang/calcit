@@ -310,7 +310,9 @@ impl fmt::Display for Calcit {
       }
       Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
       Method(name, method_kind) => match method_kind {
-        MethodKind::Invoke(Some(t)) => f.write_str(&format!("(&invoke {name} :type {})", t.as_ref())),
+        MethodKind::Invoke(t) if !matches!(**t, CalcitTypeAnnotation::Dynamic) => {
+          f.write_str(&format!("(&invoke {name} :type {})", t.as_ref()))
+        }
         _ => f.write_str(&format!("(&{method_kind} {name})")),
       },
       RawCode(_, code) => f.write_str(&format!("(&raw-code {code})")),
@@ -812,6 +814,8 @@ pub struct CalcitErr {
   pub warnings: Vec<LocatedWarning>,
   pub location: Option<Arc<NodeLocation>>,
   pub stack: CallStackList,
+  /// Additional hint for error, such as usage examples
+  pub hint: Option<String>,
 }
 
 impl fmt::Display for CalcitErr {
@@ -823,6 +827,9 @@ impl fmt::Display for CalcitErr {
     if !self.warnings.is_empty() {
       f.write_str("\n")?;
       LocatedWarning::print_list(&self.warnings);
+    }
+    if let Some(hint) = &self.hint {
+      write!(f, "\n\n{hint}")?;
     }
     Ok(())
   }
@@ -837,6 +844,7 @@ impl From<String> for CalcitErr {
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
+      hint: None,
     }
   }
 }
@@ -849,6 +857,7 @@ impl CalcitErr {
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
+      hint: None,
     }
   }
   pub fn err_str<T: Into<String>>(kind: CalcitErrKind, msg: T) -> Result<Calcit, Self> {
@@ -858,6 +867,7 @@ impl CalcitErr {
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
+      hint: None,
     })
   }
   /// display nodes in error message
@@ -868,6 +878,7 @@ impl CalcitErr {
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
+      hint: None,
     })
   }
   pub fn err_str_location<T: Into<String>>(kind: CalcitErrKind, msg: T, location: Option<Arc<NodeLocation>>) -> Result<Calcit, Self> {
@@ -877,6 +888,7 @@ impl CalcitErr {
       warnings: vec![],
       stack: CallStackList::default(),
       location,
+      hint: None,
     })
   }
   pub fn use_msg_stack<T: Into<String>>(kind: CalcitErrKind, msg: T, stack: &CallStackList) -> Self {
@@ -886,6 +898,7 @@ impl CalcitErr {
       warnings: vec![],
       stack: stack.to_owned(),
       location: None,
+      hint: None,
     }
   }
   pub fn use_msg_stack_location<T: Into<String>>(
@@ -900,7 +913,37 @@ impl CalcitErr {
       warnings: vec![],
       stack: stack.to_owned(),
       location: location.map(Arc::new),
+      hint: None,
     }
+  }
+
+  /// Create error with hint (for examples and usage guidance)
+  pub fn err_str_with_hint<T: Into<String>, H: Into<String>>(kind: CalcitErrKind, msg: T, hint: H) -> Result<Calcit, Self> {
+    Err(CalcitErr {
+      kind,
+      msg: msg.into(),
+      warnings: vec![],
+      stack: CallStackList::default(),
+      location: None,
+      hint: Some(hint.into()),
+    })
+  }
+
+  /// Create error with hint and nodes display
+  pub fn err_nodes_with_hint<T: Into<String>, H: Into<String>>(
+    kind: CalcitErrKind,
+    msg: T,
+    nodes: &[Calcit],
+    hint: H,
+  ) -> Result<Calcit, Self> {
+    Err(CalcitErr {
+      kind,
+      msg: format!("{} {}", msg.into(), CalcitList::from(nodes)),
+      warnings: vec![],
+      stack: CallStackList::default(),
+      location: None,
+      hint: Some(hint.into()),
+    })
   }
 }
 
@@ -932,10 +975,10 @@ impl fmt::Display for NodeLocation {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(
       f,
-      "{}/{} {}",
+      "{}/{} [{}]",
       self.ns,
       self.def,
-      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("-")
+      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
     )
   }
 }
@@ -980,7 +1023,7 @@ impl LocatedWarning {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MethodKind {
   /// (.call a) - may carry inferred receiver type for validation
-  Invoke(Option<Arc<CalcitTypeAnnotation>>),
+  Invoke(Arc<CalcitTypeAnnotation>),
   /// (.!f a)
   InvokeNative,
   /// (.?!f a)
@@ -1004,4 +1047,37 @@ impl fmt::Display for MethodKind {
       MethodKind::AccessOptional => write!(f, "access-optional"),
     }
   }
+}
+
+/// Format examples hint from program data for error messages
+/// Returns a formatted string with examples if available, or None
+pub fn format_examples_hint(ns: &str, def: &str) -> Option<String> {
+  use crate::program;
+
+  let examples = program::lookup_def_examples(ns, def)?;
+  if examples.is_empty() {
+    return None;
+  }
+
+  let mut hint = String::from("💡 Usage examples:\n");
+  for (i, example) in examples.iter().enumerate() {
+    // Format each example with cirru-parser
+    if let Ok(formatted) = cirru_parser::format(&[example.clone()], true.into()) {
+      hint.push_str(&format!("\n  Example {}:\n", i + 1));
+      // Indent each line of the example
+      for line in formatted.lines() {
+        hint.push_str("    ");
+        hint.push_str(line);
+        hint.push('\n');
+      }
+    }
+  }
+
+  Some(hint)
+}
+
+/// Helper to format examples hint specifically for a proc
+pub fn format_proc_examples_hint(proc: &CalcitProc) -> Option<String> {
+  let (ns, def) = proc.get_ns_def();
+  format_examples_hint(ns, def)
 }

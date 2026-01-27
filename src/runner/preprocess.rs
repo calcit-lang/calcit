@@ -34,6 +34,24 @@ pub struct PreprocessContext<'a> {
   call_stack: &'a CallStackList,
 }
 
+impl<'a> PreprocessContext<'a> {
+  fn new(
+    scope_defs: &'a HashSet<Arc<str>>,
+    scope_types: &'a mut ScopeTypes,
+    file_ns: &'a str,
+    check_warnings: &'a RefCell<Vec<LocatedWarning>>,
+    call_stack: &'a CallStackList,
+  ) -> Self {
+    Self {
+      scope_defs,
+      scope_types,
+      file_ns,
+      check_warnings,
+      call_stack,
+    }
+  }
+}
+
 /// returns the resolved symbol(only functions and macros are used),
 /// if code related is not preprocessed, do it internally.
 pub fn preprocess_ns_def(
@@ -55,8 +73,9 @@ pub fn preprocess_ns_def(
       match program::lookup_def_code(ns, def) {
         Some(code) => {
           // write a nil value first to prevent dead loop
+          let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
           program::write_evaled_def(ns, def, Calcit::Nil)
-            .map_err(|e| CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, e, call_stack))?;
+            .map_err(|e| CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, e, call_stack, Some(loc)))?;
 
           let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
@@ -75,17 +94,27 @@ pub fn preprocess_ns_def(
             })
           };
           // println!("\nwriting value to: {}/{} {:?}", ns, def, v);
-          program::write_evaled_def(ns, def, v.to_owned())
-            .map_err(|e| CalcitErr::use_msg_stack(CalcitErrKind::Unexpected, e, call_stack))?;
+          program::write_evaled_def(ns, def, v.to_owned()).map_err(|e| {
+            CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Unexpected,
+              e,
+              call_stack,
+              Some(NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]))),
+            )
+          })?;
 
           Ok(Some(v))
         }
         None if ns.starts_with('|') || ns.starts_with('"') => Ok(None),
-        None => Err(CalcitErr::use_msg_stack(
-          CalcitErrKind::Var,
-          format!("unknown ns/def in program: {ns}/{def}"),
-          call_stack,
-        )),
+        None => {
+          let loc = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::from(vec![]));
+          Err(CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Var,
+            format!("unknown ns/def in program: {ns}/{def}"),
+            call_stack,
+            Some(loc),
+          ))
+        }
       }
     }
   }
@@ -152,10 +181,11 @@ pub fn preprocess_expr(
 
           Ok(form)
         } else {
-          Err(CalcitErr::use_msg_stack(
+          Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Var,
             format!("unknown ns target: {def}"),
             call_stack,
+            expr.get_location(),
           ))
         }
       }
@@ -164,7 +194,10 @@ pub fn preprocess_expr(
         let at_def = &info.at_def;
         // println!("def {} - {} {} {}", def, def_ns, file_ns, at_def);
         if scope_defs.contains(def) {
-          let type_info = scope_types.get(def).cloned();
+          let type_info = scope_types
+            .get(def)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::Dynamic));
           Ok(Calcit::Local(CalcitLocal {
             idx: CalcitLocal::track_sym(def),
             sym: def.to_owned(),
@@ -178,7 +211,12 @@ pub fn preprocess_expr(
         } else if CalcitSyntax::is_valid(def) {
           Ok(Calcit::Syntax(
             def.parse().map_err(|e: ParseError| {
-              CalcitErr::use_msg_stack(CalcitErrKind::Syntax, def.to_string() + " " + &e.to_string(), call_stack)
+              CalcitErr::use_msg_stack_location(
+                CalcitErrKind::Syntax,
+                def.to_string() + " " + &e.to_string(),
+                call_stack,
+                expr.get_location(),
+              )
             })?,
             def_ns.to_owned(),
           ))
@@ -278,11 +316,11 @@ pub fn preprocess_expr(
                 for def in scope_defs {
                   names.push(def.to_owned());
                 }
-                let mut warnings = check_warnings.borrow_mut();
-                warnings.push(LocatedWarning::new(
+                gen_check_warning_with_location(
                   format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" ")),
                   NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
-                ));
+                  check_warnings,
+                );
                 Ok(expr.to_owned())
               }
             }
@@ -308,16 +346,11 @@ pub fn preprocess_expr(
     Calcit::Import { .. } => Ok(expr.to_owned()),
     _ => {
       println!("unknown expr: {expr}");
-      let mut warnings = check_warnings.borrow_mut();
-      let loc = NodeLocation {
-        ns: Arc::from(file_ns),
-        def: GENERATED_DEF.into(),
-        coord: Arc::from(vec![]),
-      };
-      warnings.push(LocatedWarning::new(
+      gen_check_warning(
         format!("[Warn] unexpected data during preprocess: {expr:?}"),
-        loc,
-      ));
+        file_ns,
+        check_warnings,
+      );
       Ok(expr.to_owned())
     }
   }
@@ -436,43 +469,26 @@ fn preprocess_list_call(
           let code = Calcit::from(CalcitList::from(&[get_method, args[0].to_owned(), head.to_owned()]));
           preprocess_expr(&code, scope_defs, scope_types, file_ns, check_warnings, call_stack)
         } else {
-          Err(CalcitErr::use_msg_stack(
+          Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Arity,
             format!("{head} expected 1 hashmap to call"),
             call_stack,
+            head.get_location(),
           ))
         }
       }
 
       Calcit::Syntax(name, name_ns) => match name {
         CalcitSyntax::Quasiquote => {
-          let mut ctx = PreprocessContext {
-            scope_defs,
-            scope_types,
-            file_ns,
-            check_warnings,
-            call_stack,
-          };
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_quasiquote(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::Defn | CalcitSyntax::Defmacro => {
-          let mut ctx = PreprocessContext {
-            scope_defs,
-            scope_types,
-            file_ns,
-            check_warnings,
-            call_stack,
-          };
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_defn(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::CoreLet => {
-          let mut ctx = PreprocessContext {
-            scope_defs,
-            scope_types,
-            file_ns,
-            check_warnings,
-            call_stack,
-          };
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_core_let(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::If
@@ -482,26 +498,14 @@ fn preprocess_list_call(
         | CalcitSyntax::Macroexpand1
         | CalcitSyntax::Gensym
         | CalcitSyntax::Reset => {
-          let mut ctx = PreprocessContext {
-            scope_defs,
-            scope_types,
-            file_ns,
-            check_warnings,
-            call_stack,
-          };
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_each_items(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::Quote | CalcitSyntax::Eval | CalcitSyntax::HintFn => {
           Ok(preprocess_quote(name, name_ns, &args, scope_defs, file_ns)?)
         }
         CalcitSyntax::Defatom => {
-          let mut ctx = PreprocessContext {
-            scope_defs,
-            scope_types,
-            file_ns,
-            check_warnings,
-            call_stack,
-          };
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_defatom(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::CallSpread => {
@@ -515,13 +519,7 @@ fn preprocess_list_call(
           Ok(Calcit::from(ys))
         }
         CalcitSyntax::AssertType => {
-          let mut ctx = PreprocessContext {
-            scope_defs,
-            scope_types,
-            file_ns,
-            check_warnings,
-            call_stack,
-          };
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_asset_type(name, name_ns, &args, &mut ctx)
         }
         CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec()),
@@ -535,10 +533,11 @@ fn preprocess_list_call(
           CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~@` cannot be preprocessed as operator", &xs.to_vec())
         }
       },
-      Calcit::Thunk(..) => Err(CalcitErr::use_msg_stack(
+      Calcit::Thunk(..) => Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Unexpected,
         format!("does not know how to preprocess a thunk: {head}"),
         call_stack,
+        head.get_location(),
       )),
 
       Calcit::Method(_, _)
@@ -549,6 +548,9 @@ fn preprocess_list_call(
       | Calcit::List(..)
       | Calcit::RawCode(..)
       | Calcit::Symbol { .. } => {
+        // Check if the head (the thing being called) is actually callable
+        check_callable_type(&head_form, scope_types, file_ns, &def_name, check_warnings);
+
         let mut ys = CalcitList::new_inner_from(&[head_form.to_owned()]);
         let mut has_spread = false;
 
@@ -574,7 +576,7 @@ fn preprocess_list_call(
           if let Some(receiver) = processed_args.first() {
             if let Some(type_value) = resolve_type_value(receiver, scope_types) {
               // Reconstruct the list with updated Method node carrying inferred type
-              let typed_method = Calcit::Method(method_name.clone(), calcit::MethodKind::Invoke(Some(type_value)));
+              let typed_method = Calcit::Method(method_name.clone(), calcit::MethodKind::Invoke(type_value));
               ys = CalcitList::new_inner_from(&[typed_method]);
               for item in processed_args.iter() {
                 ys = ys.push(item.to_owned());
@@ -603,11 +605,15 @@ fn preprocess_list_call(
           Ok(Calcit::from(CalcitList::List(ys)))
         }
       }
-      h => Err(CalcitErr::use_msg_stack(
-        CalcitErrKind::Unexpected,
-        format!("unknown head `{h}` in {xs}"),
-        call_stack,
-      )),
+      h => {
+        let loc = h.get_location();
+        Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Unexpected,
+          format!("unknown head `{h}` in {xs}"),
+          call_stack,
+          loc,
+        ))
+      }
     },
   }
 }
@@ -720,9 +726,13 @@ fn grab_def_name(x: &Calcit) -> Arc<str> {
 }
 
 fn gen_check_warning(message: String, file_ns: &str, check_warnings: &RefCell<Vec<LocatedWarning>>) {
-  let mut warnings = check_warnings.borrow_mut();
   let loc = NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![]));
-  warnings.push(LocatedWarning::new(message, loc));
+  gen_check_warning_with_location(message, loc, check_warnings);
+}
+
+fn gen_check_warning_with_location(message: String, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
+  let mut warnings = check_warnings.borrow_mut();
+  warnings.push(LocatedWarning::new(message, location));
 }
 
 /// Check record field access during preprocessing
@@ -828,25 +838,40 @@ fn check_proc_arg_types(
   }
 
   // Check argument count and types
-  let expected_count = signature.arg_types.len();
+  let arity = signature.arity();
+  let min_count = arity.min;
+  let max_count = arity.max.unwrap_or(usize::MAX);
+  let has_variadic = arity.max.is_none();
+
   let actual_count = args.len();
 
-  // Check if signature has variadic marker (&)
-  let has_variadic = signature.arg_types.iter().any(|t| {
-    if let Some(type_val) = t {
-      matches!(type_val.as_ref(), CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "&")
-    } else {
-      false
+  // If not variadic, check count range
+  if !has_variadic {
+    if actual_count < min_count || actual_count > max_count {
+      let expected_str = if min_count == max_count {
+        format!("{min_count}")
+      } else {
+        format!("{min_count}~{max_count}")
+      };
+      gen_check_warning(
+        format!(
+          "[Warn] Proc `{}` expects {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
+          proc.as_ref(),
+          expected_str,
+          actual_count,
+          proc.as_ref(),
+          args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
+        ),
+        file_ns,
+        check_warnings,
+      );
     }
-  });
-
-  // If not variadic, check exact count
-  if !has_variadic && expected_count != actual_count {
+  } else if actual_count < min_count {
     gen_check_warning(
       format!(
-        "[Warn] Proc `{}` expects {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
+        "[Warn] Proc `{}` expects at least {} args, got {} in call `({} {})`, at {file_ns}/{def_name}",
         proc.as_ref(),
-        expected_count,
+        min_count,
         actual_count,
         proc.as_ref(),
         args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
@@ -857,22 +882,25 @@ fn check_proc_arg_types(
   }
 
   // Check argument types until we hit variadic marker or run out of args
-  for (idx, (arg, expected_type_opt)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
-    // Stop checking if we hit the variadic marker
-    if let Some(type_val) = expected_type_opt {
-      if matches!(type_val.as_ref(), CalcitTypeAnnotation::Tag(tag) if tag.ref_str() == "&") {
-        return; // Stop checking at variadic marker
-      }
+  for (idx, (arg, expected_type)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
+    // Skip variadic marker (&) - no checking after this point
+    if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Variadic(_)) {
+      break;
     }
 
-    let Some(expected_type) = expected_type_opt else {
-      continue; // No type constraint for this argument
+    let base_type = match expected_type.as_ref() {
+      CalcitTypeAnnotation::Optional(inner) => inner,
+      _ => expected_type,
     };
+
+    if matches!(base_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      continue; // No type constraint for this argument
+    }
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       // Compare types
-      if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
-        let expected_str = expected_type.as_ref().to_brief_string();
+      if !actual_type.as_ref().matches_annotation(base_type.as_ref()) {
+        let expected_str = base_type.as_ref().to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
         gen_check_warning(
           format!(
@@ -897,6 +925,15 @@ fn check_core_fn_arg_types(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   if fn_info.def_ns.as_ref() != calcit::CORE_NS {
+    return;
+  }
+
+  if !fn_info.arg_types.is_empty()
+    && fn_info
+      .arg_types
+      .iter()
+      .any(|t| !matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic))
+  {
     return;
   }
 
@@ -935,7 +972,7 @@ fn check_user_fn_arg_types(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   // Skip if no type annotations
-  if fn_info.arg_types.is_empty() || fn_info.arg_types.iter().all(Option::is_none) {
+  if fn_info.arg_types.is_empty() || fn_info.arg_types.iter().all(|t| matches!(**t, CalcitTypeAnnotation::Dynamic)) {
     return;
   }
 
@@ -947,10 +984,35 @@ fn check_user_fn_arg_types(
   }
 
   // Check argument types
-  for (idx, (arg, expected_type_opt)) in args.iter().zip(fn_info.arg_types.iter()).enumerate() {
-    let Some(expected_type) = expected_type_opt else {
+  for (idx, (arg, expected_type)) in args.iter().zip(fn_info.arg_types.iter()).enumerate() {
+    if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
       continue; // No type constraint for this argument
-    };
+    }
+
+    // Check for variadic argument type
+    if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
+      // This is a variadic parameter - check all remaining arguments
+      for (rest_idx, rest_arg) in args.iter().skip(idx).enumerate() {
+        if let Some(actual_type) = resolve_type_value(rest_arg, scope_types) {
+          if !actual_type.as_ref().matches_annotation(inner_type.as_ref()) {
+            let expected_str = inner_type.as_ref().to_brief_string();
+            let actual_str = actual_type.as_ref().to_brief_string();
+            gen_check_warning(
+              format!(
+                "[Warn] Function `{}/{}` variadic arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+                fn_info.def_ns,
+                fn_info.name,
+                idx + rest_idx + 1
+              ),
+              file_ns,
+              check_warnings,
+            );
+          }
+        }
+      }
+      // Done checking variadic args
+      return;
+    }
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       // Compare types
@@ -974,16 +1036,16 @@ fn check_user_fn_arg_types(
 
 /// Extract return type hint from defn args
 /// Looks for (hint-fn return-type <type>) pattern
-fn detect_return_type_hint_from_args(args: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
+fn detect_return_type_hint_from_args(args: &CalcitList) -> Arc<CalcitTypeAnnotation> {
   // Skip name (index 0) and arg list (index 1), start from body (index 2+)
   for i in 2..args.len() {
     if let Some(form) = args.get(i) {
       if let Some(hint) = extract_return_type_from_hint_form(form) {
-        return Some(hint);
+        return hint;
       }
     }
   }
-  None
+  Arc::new(CalcitTypeAnnotation::Dynamic)
 }
 
 /// Extract return-type from a single (hint-fn ...) form
@@ -1012,7 +1074,7 @@ fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnn
     match &items[idx] {
       Calcit::Symbol { sym, .. } if &**sym == "return-type" => {
         if let Some(type_expr) = items.get(idx + 1) {
-          return Some(Arc::new(CalcitTypeAnnotation::from_calcit(type_expr)));
+          return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
         }
       }
       _ => {}
@@ -1026,16 +1088,16 @@ fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnn
 /// Validates the last expression in function body against the declared return type
 fn check_function_return_type(
   fn_body: &[Calcit],
-  declared_return_type: &Option<Arc<CalcitTypeAnnotation>>,
+  declared_return_type: &Arc<CalcitTypeAnnotation>,
   scope_types: &ScopeTypes,
   file_ns: &str,
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   // If no return type is declared, skip check
-  let Some(expected_type) = declared_return_type else {
+  if matches!(**declared_return_type, CalcitTypeAnnotation::Dynamic) {
     return;
-  };
+  }
 
   // If function body is empty, can't infer return type
   if fn_body.is_empty() {
@@ -1052,8 +1114,8 @@ fn check_function_return_type(
   };
 
   // Compare actual type with expected type
-  if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
-    let expected_str = expected_type.as_ref().to_brief_string();
+  if !actual_type.as_ref().matches_annotation(declared_return_type.as_ref()) {
+    let expected_str = declared_return_type.as_ref().to_brief_string();
     let actual_str = actual_type.as_ref().to_brief_string();
     gen_check_warning(
       format!("[Warn] Function `{file_ns}/{def_name}` declares return type `{expected_str}`, but body returns `{actual_str}`"),
@@ -1153,10 +1215,10 @@ fn check_record_method_args(
   // So we need to skip the first type and check remaining args
   let arg_types_without_receiver = fn_info.arg_types.iter().skip(1);
 
-  for (idx, (arg, expected_type_opt)) in method_args.iter().zip(arg_types_without_receiver).enumerate() {
-    let Some(expected_type) = expected_type_opt else {
+  for (idx, (arg, expected_type)) in method_args.iter().zip(arg_types_without_receiver).enumerate() {
+    if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
       continue; // No type constraint for this argument
-    };
+    }
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       // Compare types
@@ -1178,7 +1240,10 @@ fn check_record_method_args(
 
 fn try_inline_method_call(head: &Calcit, args: &CalcitList, call_stack: &CallStackList, file_ns: &str) -> Option<Calcit> {
   match head {
-    Calcit::Method(method_name, calcit::MethodKind::Invoke(Some(type_value))) => {
+    Calcit::Method(method_name, calcit::MethodKind::Invoke(type_value)) => {
+      if matches!(**type_value, CalcitTypeAnnotation::Dynamic) {
+        return None;
+      }
       let type_ref = type_value.as_ref();
       let class_record = get_class_record_from_type(type_ref, call_stack)?;
       let method_entry = class_record.get(method_name.as_ref())?;
@@ -1226,27 +1291,9 @@ fn build_record_reference(type_value: &CalcitTypeAnnotation, file_ns: &str) -> O
   match type_value {
     CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
       Calcit::Import(import) => Some(Calcit::Import(import.to_owned())),
-      Calcit::Tag(tag) => {
-        let class_symbol = core_class_symbol_from_tag(tag)?;
-        Some(Calcit::Import(CalcitImport {
-          ns: Arc::from(calcit::CORE_NS),
-          def: Arc::from(class_symbol),
-          info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
-          coord: program::tip_coord(calcit::CORE_NS, class_symbol),
-        }))
-      }
       _ => None,
     },
-    CalcitTypeAnnotation::Tag(tag) => {
-      let class_symbol = core_class_symbol_from_tag(tag)?;
-      Some(Calcit::Import(CalcitImport {
-        ns: Arc::from(calcit::CORE_NS),
-        def: Arc::from(class_symbol),
-        info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
-        coord: program::tip_coord(calcit::CORE_NS, class_symbol),
-      }))
-    }
-    _ => None,
+    _ => build_core_class_import(core_class_symbol_from_type_annotation(type_value)?, file_ns),
   }
 }
 
@@ -1285,11 +1332,91 @@ fn validate_method_call(
   // Method not found, generate error
   let methods_list = class_record.fields.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(" ");
   let type_desc = describe_type(type_value.as_ref());
-  Err(CalcitErr::use_msg_stack(
+  Err(CalcitErr::use_msg_stack_location(
     CalcitErrKind::Type,
     format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
     call_stack,
+    head.get_location(),
   ))
+}
+
+/// Check if a type annotation represents a callable type (function or method)
+fn is_callable_type(type_ann: &CalcitTypeAnnotation) -> bool {
+  match type_ann {
+    CalcitTypeAnnotation::Function(_) => true,
+    CalcitTypeAnnotation::Fn => true,
+    CalcitTypeAnnotation::Optional(inner) => is_callable_type(inner.as_ref()),
+    CalcitTypeAnnotation::Dynamic => true,
+    _ => false,
+  }
+}
+
+/// Check if an expression's inferred type is callable, and warn if not
+fn check_callable_type(
+  expr: &Calcit,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  // Skip check for expressions that are obviously callable at runtime
+  match expr {
+    // These are always callable
+    Calcit::Fn { .. }
+    | Calcit::Proc(..)
+    | Calcit::Import { .. }
+    | Calcit::Registered { .. }
+    | Calcit::Method(_, _)
+    | Calcit::Symbol { .. } => (),
+
+    // For List expressions, check if it's a function call that returns a callable
+    Calcit::List(_) => {
+      if let Some(type_ann) = infer_type_from_expr(expr, scope_types) {
+        if !is_callable_type(&type_ann) {
+          let type_desc = describe_type(&type_ann);
+          gen_check_warning(
+            format!("[Warn] trying to call a non-function value of type {type_desc}. Expression: {expr}, at {file_ns}/{def_name}"),
+            file_ns,
+            check_warnings,
+          );
+        }
+      }
+    }
+
+    // For Local variables, check their type info
+    Calcit::Local(local) => {
+      let type_ann = if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
+        scope_types.get(&local.sym).map(|t| t.as_ref()).unwrap_or(&*local.type_info)
+      } else {
+        &*local.type_info
+      };
+      if !is_callable_type(type_ann) {
+        let type_desc = describe_type(type_ann);
+        gen_check_warning(
+          format!(
+            "[Warn] trying to call variable `{}` of non-function type {type_desc}, at {file_ns}/{def_name}",
+            local.sym
+          ),
+          file_ns,
+          check_warnings,
+        );
+      }
+    }
+
+    // Other types are definitely not callable
+    _ => {
+      if let Some(type_ann) = infer_type_from_expr(expr, scope_types) {
+        if !is_callable_type(&type_ann) {
+          let type_desc = describe_type(&type_ann);
+          gen_check_warning(
+            format!("[Warn] trying to call a non-function value of type {type_desc}. Expression: {expr}, at {file_ns}/{def_name}"),
+            file_ns,
+            check_warnings,
+          );
+        }
+      }
+    }
+  }
 }
 
 /// Resolve the type value from the receiver expression
@@ -1297,10 +1424,31 @@ fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
   match target {
     Calcit::Local(local) => {
       // First check if the local has inline type_info, then fall back to scope_types
-      local.type_info.clone().or_else(|| scope_types.get(&local.sym).cloned())
+      if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
+        let scoped = scope_types.get(&local.sym).cloned();
+        scoped.map(normalize_variadic_as_list)
+      } else {
+        Some(normalize_variadic_as_list(local.type_info.clone()))
+      }
     }
-    Calcit::Symbol { sym, .. } => scope_types.get(sym).cloned().or_else(|| infer_type_from_expr(target, scope_types)),
+    Calcit::Symbol { sym, .. } => scope_types
+      .get(sym)
+      .cloned()
+      .map(normalize_variadic_as_list)
+      .or_else(|| infer_type_from_expr(target, scope_types)),
     _ => infer_type_from_expr(target, scope_types),
+  }
+}
+
+/// Treat variadic locals as list values when resolving expression types.
+///
+/// This is distinct from `collect_arg_type_hints_from_body`: that function extracts parameter
+/// annotations, while this function only normalizes the inferred type for internal list operations
+/// like `&list:count` and `&list:first`.
+fn normalize_variadic_as_list(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  match value.as_ref() {
+    CalcitTypeAnnotation::Variadic(_) => tag_annotation("list"),
+    _ => value,
   }
 }
 
@@ -1334,7 +1482,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
       .or_else(|| Some(tag_annotation("fn"))),
 
     // Local variable: read type_info
-    Calcit::Local(local) => local.type_info.clone(),
+    Calcit::Local(local) => Some(local.type_info.clone()),
 
     // List/vector literal or expressions
     Calcit::List(xs) if xs.is_empty() => Some(tag_annotation("list")),
@@ -1354,9 +1502,15 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
           }
         }
 
-        // Local variable as head (wrapped in list for some reason)
-        // Just extract its type_info
-        Calcit::Local(local) => local.type_info.clone(),
+        // Local variable as head (function call)
+        // If it's a function type, return its return type
+        Calcit::Local(local) => {
+          let type_ann = &local.type_info;
+          match type_ann.as_ref() {
+            CalcitTypeAnnotation::Function(fn_type) => Some(fn_type.return_type.clone()),
+            _ => Some(type_ann.clone()),
+          }
+        }
 
         // Proc call: check if proc has return_type
         Calcit::Proc(proc) => {
@@ -1366,7 +1520,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
             }
           }
           if let Some(type_sig) = proc.get_type_signature() {
-            type_sig.return_type.clone()
+            Some(type_sig.return_type.clone())
           } else {
             None
           }
@@ -1378,11 +1532,11 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
           if let Some(evaled) = program::lookup_evaled_def(ns, def) {
             match evaled {
               // For compiled functions, get return_type from info
-              Calcit::Fn { info, .. } => return info.return_type.clone(),
+              Calcit::Fn { info, .. } => return Some(info.return_type.clone()),
               // For builtin procs, get type signature
               Calcit::Proc(proc) => {
                 if let Some(type_sig) = proc.get_type_signature() {
-                  return type_sig.return_type.clone();
+                  return Some(type_sig.return_type.clone());
                 }
               }
               _ => {}
@@ -1401,7 +1555,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
                   // Return type is the 3rd element (index 3) if it's a tag
                   if let Some(ret_type) = xs.get(3) {
                     if matches!(ret_type, Calcit::Tag(_)) {
-                      return Some(Arc::new(CalcitTypeAnnotation::from_calcit(ret_type)));
+                      return Some(CalcitTypeAnnotation::parse_type_annotation_form(ret_type));
                     }
                   }
                 }
@@ -1409,7 +1563,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
             }
             // For compiled functions in code, get return_type from info
             if let Calcit::Fn { info, .. } = code {
-              return info.return_type.clone();
+              return Some(info.return_type.clone());
             }
           }
           None
@@ -1420,9 +1574,27 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
         Calcit::Symbol { sym, info, .. } => {
           // Try to lookup in program
           if let Some(Calcit::Fn { info: fn_info, .. }) = program::lookup_def_code(&info.at_ns, sym) {
-            return fn_info.return_type.clone();
+            return Some(fn_info.return_type.clone());
           }
           None
+        }
+
+        // Direct Fn call: return the function's return type
+        Calcit::Fn { info, .. } => Some(info.return_type.clone()),
+
+        // Nested List call: the head is a function call expression
+        // First infer what type the head returns, then if it's a function, get its return type
+        Calcit::List(_) => {
+          if let Some(head_type) = infer_type_from_expr(head, scope_types) {
+            match head_type.as_ref() {
+              CalcitTypeAnnotation::Function(fn_type) => Some(fn_type.return_type.clone()),
+              // If head returns a non-function type, the call will fail at runtime
+              // Return the non-callable type so caller can detect this issue
+              _ => Some(head_type),
+            }
+          } else {
+            None
+          }
         }
 
         _ => None,
@@ -1480,8 +1652,7 @@ fn get_class_record_from_type(type_value: &CalcitTypeAnnotation, call_stack: &Ca
     return Some(Arc::new(record.clone()));
   }
 
-  if let Some(tag) = type_value.as_tag() {
-    let class_symbol = core_class_symbol_from_tag(tag)?;
+  if let Some(class_symbol) = core_class_symbol_from_type_annotation(type_value) {
     return match runner::evaluate_symbol_from_program(class_symbol, calcit::CORE_NS, None, call_stack) {
       Ok(Calcit::Record(record)) => Some(Arc::new(record)),
       Ok(_) | Err(_) => None,
@@ -1500,16 +1671,25 @@ fn get_class_record_from_type(type_value: &CalcitTypeAnnotation, call_stack: &Ca
   None
 }
 
-fn core_class_symbol_from_tag(tag: &cirru_edn::EdnTag) -> Option<&'static str> {
-  let type_name = tag.ref_str().trim_start_matches(':');
-  match type_name {
-    "list" => Some("&core-list-class"),
-    "string" => Some("&core-string-class"),
-    "map" => Some("&core-map-class"),
-    "set" => Some("&core-set-class"),
-    "number" => Some("&core-number-class"),
-    "nil" => Some("&core-nil-class"),
-    "fn" => Some("&core-fn-class"),
+fn build_core_class_import(class_symbol: &'static str, file_ns: &str) -> Option<Calcit> {
+  Some(Calcit::Import(CalcitImport {
+    ns: Arc::from(calcit::CORE_NS),
+    def: Arc::from(class_symbol),
+    info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
+    coord: program::tip_coord(calcit::CORE_NS, class_symbol),
+  }))
+}
+
+fn core_class_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation) -> Option<&'static str> {
+  match type_value {
+    CalcitTypeAnnotation::List => Some("&core-list-class"),
+    CalcitTypeAnnotation::String => Some("&core-string-class"),
+    CalcitTypeAnnotation::Map => Some("&core-map-class"),
+    CalcitTypeAnnotation::Set => Some("&core-set-class"),
+    CalcitTypeAnnotation::Number => Some("&core-number-class"),
+    CalcitTypeAnnotation::Nil => Some("&core-nil-class"),
+    CalcitTypeAnnotation::Fn | CalcitTypeAnnotation::Function(_) => Some("&core-fn-class"),
+    CalcitTypeAnnotation::Optional(inner) => core_class_symbol_from_type_annotation(inner.as_ref()),
     _ => None,
   }
 }
@@ -1555,6 +1735,7 @@ pub fn preprocess_defn(
     ) => {
       let mut body_defs: HashSet<Arc<str>> = ctx.scope_defs.to_owned();
       let mut body_types: ScopeTypes = ctx.scope_types.clone();
+      let mut param_symbols: Vec<Arc<str>> = vec![];
 
       xs = xs.push_right(Calcit::Symbol {
         sym: def_name.to_owned(),
@@ -1581,6 +1762,7 @@ pub fn preprocess_defn(
             location: arg_location,
             ..
           } => {
+            param_symbols.push(sym.to_owned());
             let loc = NodeLocation::new(
               info.at_ns.to_owned(),
               info.at_def.to_owned(),
@@ -1596,7 +1778,7 @@ pub fn preprocess_defn(
                 at_def: info.at_def.to_owned(),
               }),
               location: arg_location.to_owned(),
-              type_info: None,
+              type_info: Arc::new(CalcitTypeAnnotation::Dynamic),
             });
             // println!("created local: {:?}", s);
             zs.push(s);
@@ -1605,10 +1787,11 @@ pub fn preprocess_defn(
             body_defs.insert(sym.to_owned());
             Ok(())
           }
-          _ => Err(CalcitErr::use_msg_stack(
+          _ => Err(CalcitErr::use_msg_stack_location(
             CalcitErrKind::Type,
             format!("expected defn args to be symbols, got: {y}"),
             ctx.call_stack,
+            y.get_location(),
           )),
         }
       })?;
@@ -1647,22 +1830,28 @@ pub fn preprocess_defn(
       ctx.call_stack,
       a.get_location().or_else(|| b.get_location()),
     )),
-    (a, b) => Err(CalcitErr::use_msg_stack(
-      CalcitErrKind::Syntax,
-      format!("defn or defmacro expected name and args, got: {a:?} {b:?}",),
-      ctx.call_stack,
-    )),
+    (a, b) => {
+      let loc = a
+        .and_then(|node| node.get_location())
+        .or_else(|| b.and_then(|node| node.get_location()));
+      Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Syntax,
+        format!("defn or defmacro expected name and args, got: {a:?} {b:?}",),
+        ctx.call_stack,
+        loc,
+      ))
+    }
   }
 }
 
 // warn if this symbol is used
 fn check_symbol(sym: &str, args: &CalcitList, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
   if is_proc_name(sym) || CalcitSyntax::is_valid(sym) || program::has_def_code(calcit::CORE_NS, sym) {
-    let mut warnings = check_warnings.borrow_mut();
-    warnings.push(LocatedWarning::new(
+    gen_check_warning_with_location(
       format!("[Warn] local binding `{sym}` shadowed `calcit.core/{sym}`, with {args}"),
       location,
-    ));
+      check_warnings,
+    );
   }
 }
 
@@ -1690,7 +1879,7 @@ pub fn preprocess_core_let(
         let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
 
         // Try to infer type from the binding expression
-        let inferred_type = infer_type_from_expr(&form, &body_types);
+        let inferred_type = infer_type_from_expr(&form, &body_types).unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::Dynamic));
 
         let name = Calcit::Local(CalcitLocal {
           idx: CalcitLocal::track_sym(sym),
@@ -1704,11 +1893,7 @@ pub fn preprocess_core_let(
         });
 
         // Also store in scope_types for later use
-        if let Some(type_hint) = inferred_type {
-          body_types.insert(sym.to_owned(), type_hint);
-        } else {
-          body_types.remove(sym);
-        }
+        body_types.insert(sym.to_owned(), inferred_type);
 
         Calcit::from(CalcitList::from(&[name, form]))
       }
@@ -1722,10 +1907,11 @@ pub fn preprocess_core_let(
       }
     },
     Some(a @ Calcit::List(_)) => {
-      return Err(CalcitErr::use_msg_stack(
+      return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Syntax,
         format!("expected binding of a pair, got: {a}"),
         ctx.call_stack,
+        a.get_location(),
       ));
     }
     Some(a) => {
@@ -1847,10 +2033,11 @@ pub fn preprocess_asset_type(
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
   if args.len() != 2 {
-    return Err(CalcitErr::use_msg_stack(
+    return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
       format!("{head} expected a local and a type expression, got {}", args.len()),
       ctx.call_stack,
+      args.first().and_then(|node| node.get_location()),
     ));
   }
 
@@ -1864,27 +2051,29 @@ pub fn preprocess_asset_type(
   let local = match zs.get(1) {
     Some(Calcit::Local(local)) => local.to_owned(),
     other => {
-      return Err(CalcitErr::use_msg_stack(
+      return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
         format!("assert-type expected local as first arg, got {other:?}"),
         ctx.call_stack,
+        other.and_then(|node| node.get_location()),
       ));
     }
   };
   let type_form = zs.get(2).ok_or_else(|| {
-    CalcitErr::use_msg_stack(
+    CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
       "assert-type missing type expression".to_owned(),
       ctx.call_stack,
+      zs.get(1).and_then(|node| node.get_location()),
     )
   })?;
 
-  let type_entry = Arc::new(CalcitTypeAnnotation::from_calcit(type_form));
+  let type_entry = CalcitTypeAnnotation::parse_type_annotation_form(type_form);
   ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
 
   if let Some(slot) = zs.get_mut(1) {
     if let Calcit::Local(mut typed_local) = slot.to_owned() {
-      typed_local.type_info = Some(type_entry);
+      typed_local.type_info = type_entry;
       *slot = Calcit::Local(typed_local);
     }
   }
@@ -1919,8 +2108,110 @@ mod tests {
     // Check that type info is stored in scope_types
     assert!(scope_types.contains_key("x"), "type should be registered in scope");
     if let Some(type_val) = scope_types.get("x") {
-      assert!(matches!(type_val.as_ref(), CalcitTypeAnnotation::Tag(_)), "type should be a tag");
+      assert!(matches!(type_val.as_ref(), CalcitTypeAnnotation::Fn), "type should be fn");
     }
+  }
+
+  #[test]
+  fn parses_optional_type_annotation() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("assert-type"),
+      Cirru::leaf("x"),
+      Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":optional"), Cirru::leaf(":string")]),
+    ]);
+    let code = code_to_calcit(&expr, "tests.assert", "main", vec![]).expect("parse cirru");
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("x"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
+
+    assert!(matches!(resolved, Calcit::Nil), "assert-type should be preprocessed to Nil");
+
+    if let Some(type_val) = scope_types.get("x") {
+      match type_val.as_ref() {
+        CalcitTypeAnnotation::Optional(inner) => {
+          assert!(
+            matches!(inner.as_ref(), CalcitTypeAnnotation::String),
+            "optional inner type should be :string"
+          );
+        }
+        other => panic!("expected optional type annotation, got {other:?}"),
+      }
+    }
+  }
+
+  #[test]
+  fn warns_on_invalid_optional_arity() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("assert-type"),
+      Cirru::leaf("x"),
+      Cirru::List(vec![
+        Cirru::leaf("::"),
+        Cirru::leaf(":optional"),
+        Cirru::leaf(":string"),
+        Cirru::leaf(":extra"),
+      ]),
+    ]);
+    let code = code_to_calcit(&expr, "tests.assert", "main", vec![]).expect("parse cirru");
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("x"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let _resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack).expect("preprocess assert-type");
+
+    if let Some(type_val) = scope_types.get("x") {
+      match type_val.as_ref() {
+        CalcitTypeAnnotation::Optional(inner) => {
+          assert!(
+            matches!(inner.as_ref(), CalcitTypeAnnotation::String),
+            "should still parse the first argument as inner type even if arity is wrong"
+          );
+        }
+        other => panic!("expected optional type annotation, got {other:?}"),
+      }
+    }
+  }
+
+  #[test]
+  fn warns_on_optional_type_mismatch() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("&let"),
+      Cirru::List(vec![Cirru::leaf("x"), Cirru::leaf("nil")]),
+      Cirru::List(vec![
+        Cirru::leaf("assert-type"),
+        Cirru::leaf("x"),
+        Cirru::List(vec![Cirru::leaf("::"), Cirru::leaf(":optional"), Cirru::leaf(":number")]),
+      ]),
+      Cirru::List(vec![Cirru::leaf("&+"), Cirru::leaf("x"), Cirru::leaf("1")]),
+    ]);
+
+    let code = code_to_calcit(&expr, "tests.optional", "demo", vec![]).expect("parse cirru");
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let _resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.optional", &warnings, &stack).expect("preprocess optional");
+
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should warn on optional mismatch");
+    let warning_msg = warnings_vec[0].to_string();
+    assert!(
+      warning_msg.contains("Proc `&+` arg 1 expects type `:number`"),
+      "warning should mention proc arg mismatch: {warning_msg}"
+    );
+    assert!(
+      warning_msg.contains("optional :number"),
+      "warning should mention optional actual type: {warning_msg}"
+    );
   }
 
   #[test]
@@ -1953,11 +2244,12 @@ mod tests {
 
     // Check that type info persists in the trailing reference
     if let Some(Calcit::Local(local)) = nodes.get(3) {
-      assert!(local.type_info.is_some(), "type info should persist for later usages");
+      assert!(
+        !matches!(*local.type_info, CalcitTypeAnnotation::Dynamic),
+        "type info should persist for later usages"
+      );
       // Verify the type value
-      if let Some(type_val) = &local.type_info {
-        assert!(matches!(type_val.as_ref(), CalcitTypeAnnotation::Tag(_)), "type should be a tag");
-      }
+      assert!(matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Fn), "type should be fn");
     } else {
       panic!("expected trailing local expression");
     }
@@ -2118,7 +2410,7 @@ mod tests {
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(fn_args),
       body: vec![],
-      return_type: None,
+      return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
       arg_types,
     });
     let method_fn = Calcit::Fn {
@@ -2143,7 +2435,7 @@ mod tests {
       info: Arc::new(ImportInfo::SameFile { at_def: Arc::from("demo") }),
       coord: None,
     });
-    scope_types.insert(Arc::from("user"), Arc::new(CalcitTypeAnnotation::from_calcit(&record_import)));
+    scope_types.insert(Arc::from("user"), CalcitTypeAnnotation::parse_type_annotation_form(&record_import));
 
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
@@ -2319,10 +2611,10 @@ mod tests {
       args: Arc::new(CalcitFnArgs::Args(vec![0, 1])), // two args
       body: vec![Calcit::Nil],
       arg_types: vec![
-        Some(Arc::new(CalcitTypeAnnotation::from_tag_name("number"))),
-        Some(Arc::new(CalcitTypeAnnotation::from_tag_name("string"))),
+        Arc::new(CalcitTypeAnnotation::from_tag_name("number")),
+        Arc::new(CalcitTypeAnnotation::from_tag_name("string")),
       ],
-      return_type: None,
+      return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
     };
 
     // Create arguments: ("|hello" 42) - reversed types
@@ -2449,11 +2741,8 @@ mod tests {
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(CalcitFnArgs::Args(vec![1, 2])), // 2 parameters
       body: vec![Calcit::Nil],
-      return_type: None,
-      arg_types: vec![
-        Some(Arc::new(CalcitTypeAnnotation::Tag(EdnTag::from("string")))),
-        Some(Arc::new(CalcitTypeAnnotation::Tag(EdnTag::from("number")))),
-      ],
+      return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::Number)],
     });
 
     // Create a record with the method

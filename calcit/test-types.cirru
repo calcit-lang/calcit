@@ -34,6 +34,18 @@
               hint-fn $ return-type :number
               p x y
 
+        |typed-only $ %{} :CodeEntry (:doc "|Used to verify arg type hints are collected")
+          :code $ quote
+            defn typed-only (a)
+              assert-type a :number
+              &+ 1 0
+
+        |test-arg-type-hints $ %{} :CodeEntry (:doc "|Trigger type warning for non-variadic arg hints")
+          :code $ quote
+            defn test-arg-type-hints ()
+              typed-only |oops
+              println "|arg type hints check executed"
+
         |show-type-info $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn show-type-info (x)
@@ -324,6 +336,7 @@
               println $ chained-return-type 3 4
               println $ test-threading-types |world
               println $ test-complex-threading 10 20
+              test-arg-type-hints
               test-builtin-proc-types
               println "|--- Testing typed method calls ---"
               println $ test-list-methods
