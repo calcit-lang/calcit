@@ -95,17 +95,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
         Ok(Calcit::Map(zs))
       }
-      (
-        Calcit::Record(
-          record @ CalcitRecord {
-            name,
-            fields,
-            values,
-            class,
-          },
-        ),
-        Calcit::Map(ys),
-      ) => {
+      (Calcit::Record(record @ CalcitRecord { struct_ref, values, class }), Calcit::Map(ys)) => {
         let mut new_values = (**values).to_owned();
         for (k, v) in ys {
           match k {
@@ -114,7 +104,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               None => {
                 return CalcitErr::err_str(
                   CalcitErrKind::Type,
-                  format!("&map:merge invalid field `{s}` for record: {fields:?}"),
+                  format!("&map:merge invalid field `{s}` for record: {:?}", struct_ref.fields),
                 );
               }
             },
@@ -123,7 +113,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               None => {
                 return CalcitErr::err_str(
                   CalcitErrKind::Type,
-                  format!("&map:merge invalid field `{s}` for record: {fields:?}"),
+                  format!("&map:merge invalid field `{s}` for record: {:?}", struct_ref.fields),
                 );
               }
             },
@@ -131,8 +121,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           }
         }
         Ok(Calcit::Record(CalcitRecord {
-          name: name.to_owned(),
-          fields: fields.to_owned(),
+          struct_ref: record.struct_ref.to_owned(),
           values: Arc::new(new_values),
           class: class.to_owned(),
         }))
@@ -156,10 +145,10 @@ pub fn to_pairs(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Set(zs))
     }
-    Some(Calcit::Record(CalcitRecord { fields, values, .. })) => {
+    Some(Calcit::Record(CalcitRecord { struct_ref, values, .. })) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
-      for idx in 0..fields.len() {
-        let chunk = vec![Calcit::Tag(fields[idx].to_owned()), values[idx].to_owned()];
+      for idx in 0..struct_ref.fields.len() {
+        let chunk = vec![Calcit::Tag(struct_ref.fields[idx].to_owned()), values[idx].to_owned()];
         zs.insert_mut(Calcit::from(chunk));
       }
       Ok(Calcit::Set(zs))

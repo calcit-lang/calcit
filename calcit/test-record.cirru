@@ -99,7 +99,7 @@
           :code $ quote
             fn () (log-title "|Testing record-with")
               let
-                  Person $ new-record :City :name :age :position
+                  Person $ new-record :Person :name :age :position
                   p1 $ %{} Person (:name |Chen) (:age 20) (:position :hangzhou)
                   p2 $ record-with p1 (:age 21) (:position :shanghai)
                 ; println |P2 p2

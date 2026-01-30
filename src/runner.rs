@@ -31,6 +31,8 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     | Proc(_)
     | Macro { .. }
     | Fn { .. }
+    | Struct { .. }
+    | Enum { .. }
     | Syntax(_, _)
     | Method(..)
     | AnyRef(..) => Ok(expr.to_owned()),

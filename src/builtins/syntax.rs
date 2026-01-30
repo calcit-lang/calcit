@@ -9,6 +9,7 @@ use std::vec;
 
 use crate::builtins;
 use crate::builtins::meta::{NS_SYMBOL_DICT, type_of};
+
 use crate::calcit::{
   self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitList, CalcitLocal, CalcitMacro, CalcitSymbolInfo, CalcitSyntax,
   CalcitTypeAnnotation, LocatedWarning,

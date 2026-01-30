@@ -81,6 +81,15 @@
               :apply $ defn &fn:apply (f g)
                 defn %*fn:apply (x)
                   g x $ f x
+        |with-class $ %{} :CodeEntry (:doc "|Assign class metadata by value kind\nSyntax: (with-class value klass)\nParams: value (record/tuple/struct/enum), klass (record)\nReturns: value with updated class metadata\nDispatches to &record:with-class, &tuple:with-class, &struct:with-class, &enum:with-class")
+          :code $ quote
+            defn with-class (x klass)
+              assert "|with-class expects a record as class" $ record? klass
+              if (struct? x) (&struct:with-class x klass)
+                if (enum? x) (&enum:with-class x klass)
+                  if (record? x) (&record:with-class x klass)
+                    if (tuple? x) (&tuple:with-class x klass)
+                      raise $ str-spaced "|with-class expects record/tuple/struct/enum, got:" (type-of x)
         |&core-list-class $ %{} :CodeEntry (:doc |)
           :code $ quote
             defrecord! &core-list-class (:any? any?) (:add append) (:append append) (:assoc &list:assoc) (:assoc-after &list:assoc-after) (:assoc-before &list:assoc-before) (:bind mapcat) (:butlast butlast) (:concat &list:concat) (:contains? &list:contains?) (:includes? &list:includes?) (:count &list:count) (:drop drop) (:each each)
@@ -1085,6 +1094,60 @@
                   ~ $ turn-tag name
                   ~@ $ map pairs &list:first
                 , ~@pairs
+        |defstruct $ %{} :CodeEntry (:doc "|macro for defining record structs\nSyntax: (defstruct Name :field :type ...)\nParams: Name (symbol/tag), field pairs (tag + type)\nReturns: struct definition value\nExpands to &struct::new")
+          :code $ quote
+            defmacro defstruct (name & pairs)
+              assert "|defstruct expects name as tag/symbol" $ or (tag? name) (symbol? name)
+              assert "|defstruct expects pairs in list" $ and (list? pairs) (every? pairs list?)
+              assert "|defstruct expects (field type) pairs" $ every? pairs
+                fn (pair)
+                  &let
+                    items $ if
+                      &= [] $ &list:first pair
+                      &list:rest pair
+                      , pair
+                    &= 2 $ count items
+              &let
+                normalized $ map pairs
+                  fn (pair)
+                    &let
+                      items $ if
+                        &= [] $ &list:first pair
+                        &list:rest pair
+                        , pair
+                      quasiquote $ [] ~@items
+                quasiquote $ &struct::new
+                  ~ $ turn-tag name
+                  ~@ normalized
+          :examples $ []
+            quote $ defstruct Person (:name :string) (:age :number)
+        |defenum $ %{} :CodeEntry (:doc "|macro for defining enums\nSyntax: (defenum Name :variant type... ...)\nParams: Name (symbol/tag), variants (tag + payload types)\nReturns: enum prototype value\nExpands to &enum::new")
+          :code $ quote
+            defmacro defenum (name & variants)
+              assert "|defenum expects name as tag/symbol" $ or (tag? name) (symbol? name)
+              assert "|defenum expects variants in list" $ and (list? variants) (every? variants list?)
+              assert "|defenum expects (variant & payloads)" $ every? variants
+                fn (variant)
+                  &let
+                    items $ if
+                      &= [] $ &list:first variant
+                      &list:rest variant
+                      , variant
+                    &>= (count items) 1
+              &let
+                normalized $ map variants
+                  fn (variant)
+                    &let
+                      items $ if
+                        &= [] $ &list:first variant
+                        &list:rest variant
+                        , variant
+                      quasiquote $ [] ~@items
+                quasiquote $ &enum::new
+                  ~ $ turn-tag name
+                  ~@ normalized
+          :examples $ []
+            quote $ defenum Result (:ok :number) (:err :string)
         |destruct-list $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn destruct-list (xs)
@@ -2544,9 +2607,9 @@
           :code $ quote &runtime-inplementation
         |:: $ %{} :CodeEntry (:doc "|internal function for creating tuples\nSyntax: (:: class & values)\nParams: class (any), values (any, variable number)\nReturns: tuple with class and values\nCreates a tuple with specified class and values")
           :code $ quote &runtime-inplementation
-        |%:: $ %{} :CodeEntry (:doc "|internal function for creating class tuples\nSyntax: (%:: class fields)\nParams: class (any), fields (list)\nReturns: class tuple\nCreates a class tuple for defining tuple types with field names")
+        |%:: $ %{} :CodeEntry (:doc "|internal function for creating enum tuples\nSyntax: (%:: enum tag & values)\nParams: enum (record/enum), tag (tag), values (any, variable number)\nReturns: tuple with enum metadata\nCreates a tagged tuple that carries enum metadata for validation (use &tuple:with-class to attach class)")
           :code $ quote &runtime-inplementation
-        |%%:: $ %{} :CodeEntry (:doc "|internal function for creating class/enum tuples\nSyntax: (%%:: class enum tag & values)\nParams: class (record), enum (record), tag (tag), values (any, variable number)\nReturns: tuple with class and enum metadata\nCreates a tagged tuple that carries both class data for methods and enum metadata for validation")
+        |%%:: $ %{} :CodeEntry (:doc "|DEPRECATED: use %:: instead\nSyntax: (%%:: class enum tag & values)\nParams: class (record), enum (record/enum), tag (tag), values (any, variable number)\nReturns: tuple with class and enum metadata\nCreates a tagged tuple that carries both class data for methods and enum metadata for validation")
           :code $ quote &runtime-inplementation
         |&tuple:nth $ %{} :CodeEntry (:doc "|internal function for tuple nth operation\nSyntax: (&tuple:nth tuple index)\nParams: tuple (tuple), index (number)\nReturns: value at index or nil\nGets the value at specified index in tuple, returns nil if out of bounds")
           :code $ quote &runtime-inplementation
@@ -2560,11 +2623,23 @@
           :code $ quote &runtime-inplementation
         |&tuple:with-class $ %{} :CodeEntry (:doc "|internal function for tuple with class operation\nSyntax: (&tuple:with-class tuple new-class)\nParams: tuple (tuple), new-class (any)\nReturns: new tuple with updated class\nReturns new tuple with same values but different class")
           :code $ quote &runtime-inplementation
-        |&tuple:enum $ %{} :CodeEntry (:doc "|Get the enum prototype from a tuple\nSyntax: (&tuple:enum tuple)\nParams: tuple (tuple)\nReturns: enum prototype (record) or nil if not an enum tuple")
+        |&struct::new $ %{} :CodeEntry (:doc "|internal function for creating struct definitions\nSyntax: (&struct::new name (field type) ...)\nParams: name (tag), field pairs (list)\nReturns: struct definition value\nCreates a struct definition with fields and type annotations")
           :code $ quote &runtime-inplementation
-        |&tuple:enum-has-variant? $ %{} :CodeEntry (:doc "|Check if an enum has a specific variant\nSyntax: (&tuple:enum-has-variant? enum tag)\nParams: enum (record), tag (tag)\nReturns: bool - true if variant exists")
+          :examples $ []
+            quote $ &struct::new :Person ([] :name :string) ([] :age :number)
+        |&enum::new $ %{} :CodeEntry (:doc "|internal function for creating enum definitions\nSyntax: (&enum::new name (variant type...) ...)\nParams: name (tag), variant entries (list)\nReturns: enum prototype value\nCreates enum variants and payload type annotations")
           :code $ quote &runtime-inplementation
-        |&tuple:enum-variant-arity $ %{} :CodeEntry (:doc "|Get the arity of a variant in an enum\nSyntax: (&tuple:enum-variant-arity enum tag)\nParams: enum (record), tag (tag)\nReturns: number - number of payload fields for the variant")
+          :examples $ []
+            quote $ &enum::new :Result ([] :ok :number) ([] :err :string)
+        |&struct:with-class $ %{} :CodeEntry (:doc "|internal function for struct with class operation\nSyntax: (&struct:with-class struct class)\nParams: struct (struct), class (record)\nReturns: struct with class metadata\nAttaches class info to a struct definition")
+          :code $ quote &runtime-inplementation
+        |&enum:with-class $ %{} :CodeEntry (:doc "|internal function for enum with class operation\nSyntax: (&enum:with-class enum class)\nParams: enum (enum), class (record)\nReturns: enum value with class metadata\nAttaches class info to an enum prototype")
+          :code $ quote &runtime-inplementation
+        |&tuple:enum $ %{} :CodeEntry (:doc "|Get the enum prototype from a tuple\nSyntax: (&tuple:enum tuple)\nParams: tuple (tuple)\nReturns: enum value or nil if not an enum tuple")
+          :code $ quote &runtime-inplementation
+        |&tuple:enum-has-variant? $ %{} :CodeEntry (:doc "|Check if an enum has a specific variant\nSyntax: (&tuple:enum-has-variant? enum tag)\nParams: enum (enum), tag (tag)\nReturns: bool - true if variant exists")
+          :code $ quote &runtime-inplementation
+        |&tuple:enum-variant-arity $ %{} :CodeEntry (:doc "|Get the arity of a variant in an enum\nSyntax: (&tuple:enum-variant-arity enum tag)\nParams: enum (enum), tag (tag)\nReturns: number - number of payload fields for the variant")
           :code $ quote &runtime-inplementation
         |&tuple:validate-enum $ %{} :CodeEntry (:doc "|Validate enum tuple tag/arity if enum metadata exists\nSyntax: (&tuple:validate-enum tuple tag)\nParams: tuple (tuple), tag (tag)\nReturns: nil\nRaises error on invalid tag or arity")
           :code $ quote &runtime-inplementation

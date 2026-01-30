@@ -3,14 +3,15 @@ import { Hash } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes.mjs";
 import { _$n__$e_, newTag, toString } from "./calcit-data.mjs";
 import { CalcitRecord } from "./js-record.mjs";
+import { CalcitEnum } from "./js-enum.mjs";
 
 export class CalcitTuple {
   tag: CalcitValue;
   extra: CalcitValue[];
   klass: CalcitRecord;
-  enumPrototype: CalcitRecord;
+  enumPrototype: CalcitRecord | CalcitEnum;
   cachedHash: Hash;
-  constructor(tagName: CalcitValue, extra: CalcitValue[], klass: CalcitRecord, enumPrototype: CalcitRecord = null) {
+  constructor(tagName: CalcitValue, extra: CalcitValue[], klass: CalcitRecord, enumPrototype: CalcitRecord | CalcitEnum = null) {
     this.tag = tagName;
     this.extra = extra;
     this.klass = klass;
@@ -63,10 +64,18 @@ export class CalcitTuple {
       }
       content += toString(args[i], true, disableJsDataWarning);
     }
-    if (this.klass instanceof CalcitRecord) {
-      return `(%:: ${content} (:class ${this.klass.name.value}))`;
-    } else {
-      return `(:: ${content})`;
+    const hasEnum = this.enumPrototype != null;
+    const enumName = hasEnum ? (this.enumPrototype instanceof CalcitEnum ? this.enumPrototype.prototype.name.value : this.enumPrototype.name.value) : null;
+
+    if (this.klass instanceof CalcitRecord && hasEnum) {
+      return `(%:: ${content} (:class ${this.klass.name.value}) (:enum ${enumName}))`;
     }
+    if (hasEnum) {
+      return `(%:: ${content} (:enum ${enumName}))`;
+    }
+    if (this.klass instanceof CalcitRecord) {
+      return `(:: ${content} (:class ${this.klass.name.value}))`;
+    }
+    return `(:: ${content})`;
   }
 }

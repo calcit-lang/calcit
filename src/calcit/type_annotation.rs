@@ -169,6 +169,10 @@ impl CalcitTypeAnnotation {
   pub fn parse_type_annotation_form(form: &Calcit) -> Arc<CalcitTypeAnnotation> {
     let is_optional_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "optional";
 
+    if matches!(form, Calcit::Nil) {
+      return Arc::new(CalcitTypeAnnotation::Dynamic);
+    }
+
     if let Calcit::Tuple(tuple) = form {
       if let Calcit::Tag(tag) = tuple.tag.as_ref() {
         if is_optional_tag(tag) {
@@ -226,7 +230,7 @@ impl CalcitTypeAnnotation {
     }
 
     match self {
-      Self::Record(record) => format!("record {}", record.name),
+      Self::Record(record) => format!("record {}", record.name()),
       Self::Tuple(_) => "tuple".to_string(),
       Self::Function(signature) => signature.render_signature_brief(),
       Self::Variadic(inner) => format!("variadic {}", inner.to_brief_string()),
@@ -258,7 +262,7 @@ impl CalcitTypeAnnotation {
       | (Self::Ref, Self::Ref)
       | (Self::Buffer, Self::Buffer)
       | (Self::CirruQuote, Self::CirruQuote) => true,
-      (Self::Record(a), Self::Record(b)) => a.name == b.name,
+      (Self::Record(a), Self::Record(b)) => a.name() == b.name(),
       (Self::Tuple(a), Self::Tuple(b)) => a.as_ref() == b.as_ref(),
       (Self::Function(a), Self::Function(b)) => a.matches_signature(b.as_ref()),
       (Self::Set, Self::Set) => true,
@@ -288,6 +292,15 @@ impl CalcitTypeAnnotation {
       Calcit::Map(_) => Self::Map,
       Calcit::Set(_) => Self::Set,
       Calcit::Record(record) => Self::Record(Arc::new(record.to_owned())),
+      Calcit::Enum(enum_def) => Self::Record(Arc::new(enum_def.prototype().to_owned())),
+      Calcit::Struct(struct_def) => {
+        let values = vec![Calcit::Nil; struct_def.fields.len()];
+        Self::Record(Arc::new(CalcitRecord {
+          struct_ref: Arc::new(struct_def.to_owned()),
+          values: Arc::new(values),
+          class: None,
+        }))
+      }
       Calcit::Tuple(tuple) => {
         // Check for special tuple patterns
         if let Calcit::Tag(tag) = tuple.tag.as_ref() {
@@ -432,7 +445,7 @@ impl CalcitTypeAnnotation {
     }
 
     match self {
-      Self::Record(record) => format!("record {}", record.name),
+      Self::Record(record) => format!("record {}", record.name()),
       Self::Tuple(tuple) => format!("tuple {:?}", tuple.tag),
       Self::Function(signature) => signature.describe(),
       Self::Variadic(inner) => format!("variadic {}", inner.describe()),
@@ -517,8 +530,8 @@ impl Hash for CalcitTypeAnnotation {
       Self::Record(record) => {
         "record".hash(state);
         let record = record.as_ref();
-        record.name.hash(state);
-        record.fields.hash(state);
+        record.struct_ref.name.hash(state);
+        record.struct_ref.fields.hash(state);
         record.values.hash(state);
       }
       Self::Tuple(tuple) => {
@@ -586,9 +599,10 @@ impl Ord for CalcitTypeAnnotation {
       (Self::Record(a), Self::Record(b)) => {
         let a = a.as_ref();
         let b = b.as_ref();
-        a.name
-          .cmp(&b.name)
-          .then_with(|| a.fields.cmp(&b.fields))
+        a.struct_ref
+          .name
+          .cmp(&b.struct_ref.name)
+          .then_with(|| a.struct_ref.fields.cmp(&b.struct_ref.fields))
           .then_with(|| a.values.cmp(&b.values))
       }
       (Self::Tuple(a), Self::Tuple(b)) => {

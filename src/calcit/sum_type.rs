@@ -25,6 +25,8 @@ impl EnumVariant {
 pub struct CalcitEnum {
   prototype: Arc<CalcitRecord>,
   variants: Arc<Vec<EnumVariant>>,
+  class: Option<Arc<CalcitRecord>>,
+  /// Precomputed index for O(1) lookup by tag name; avoids linear scans on frequent queries.
   variant_index: Arc<HashMap<String, usize>>,
 }
 
@@ -35,19 +37,29 @@ impl CalcitEnum {
 
   pub fn from_arc(record: Arc<CalcitRecord>) -> Result<Self, String> {
     let (variants, variant_index) = Self::collect_variants(&record)?;
+    let class = record.class.clone();
     Ok(Self {
       prototype: record,
       variants: Arc::new(variants),
+      class,
       variant_index: Arc::new(variant_index),
     })
   }
 
   pub fn name(&self) -> &EdnTag {
-    &self.prototype.name
+    self.prototype.name()
   }
 
   pub fn prototype(&self) -> &CalcitRecord {
     &self.prototype
+  }
+
+  pub fn class(&self) -> Option<&Arc<CalcitRecord>> {
+    self.class.as_ref()
+  }
+
+  pub fn set_class(&mut self, class: Option<Arc<CalcitRecord>>) {
+    self.class = class;
   }
 
   pub fn variants(&self) -> &[EnumVariant] {
@@ -63,21 +75,21 @@ impl CalcitEnum {
   }
 
   fn collect_variants(record: &CalcitRecord) -> Result<(Vec<EnumVariant>, HashMap<String, usize>), String> {
-    let mut variants: Vec<EnumVariant> = Vec::with_capacity(record.fields.len());
-    let mut index: HashMap<String, usize> = HashMap::with_capacity(record.fields.len());
+    let mut variants: Vec<EnumVariant> = Vec::with_capacity(record.fields().len());
+    let mut index: HashMap<String, usize> = HashMap::with_capacity(record.fields().len());
 
-    for (idx, tag) in record.fields.iter().enumerate() {
+    for (idx, tag) in record.fields().iter().enumerate() {
       let payloads = Self::parse_payloads(
         record
           .values
           .get(idx)
-          .ok_or_else(|| format!("enum `{}` is missing payload description for variant `{}`", record.name, tag))?,
+          .ok_or_else(|| format!("enum `{}` is missing payload description for variant `{}`", record.name(), tag))?,
         tag,
       )?;
 
       let key = tag.ref_str().to_owned();
       if index.contains_key(&key) {
-        return Err(format!("duplicated enum variant `{}` in `{}`", tag, record.name));
+        return Err(format!("duplicated enum variant `{}` in `{}`", tag, record.name()));
       }
 
       let variant = EnumVariant {
@@ -111,7 +123,7 @@ impl CalcitEnum {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitList, CalcitTypeAnnotation};
+  use crate::calcit::{CalcitList, CalcitStruct, CalcitTypeAnnotation};
 
   fn empty_list() -> Calcit {
     Calcit::List(Arc::new(CalcitList::Vector(vec![])))
@@ -123,8 +135,10 @@ mod tests {
 
   fn sample_enum_record() -> CalcitRecord {
     CalcitRecord {
-      name: EdnTag::new("Result"),
-      fields: Arc::new(vec![EdnTag::new("err"), EdnTag::new("ok")]),
+      struct_ref: Arc::new(CalcitStruct::from_fields(
+        EdnTag::new("Result"),
+        vec![EdnTag::new("err"), EdnTag::new("ok")],
+      )),
       values: Arc::new(vec![list_from(vec![Calcit::tag("string")]), empty_list()]),
       class: None,
     }

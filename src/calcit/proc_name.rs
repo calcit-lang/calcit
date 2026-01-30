@@ -42,10 +42,12 @@ pub enum CalcitProc {
   NativeCirruNth,
   #[strum(serialize = "::")]
   NativeTuple,
-  #[strum(serialize = "%::")]
+  #[strum(serialize = "%::class")]
   NativeClassTuple,
   #[strum(serialize = "%%::")]
   NativeEnumTuple,
+  #[strum(serialize = "%::")]
+  NativeEnumTupleNew,
   #[strum(serialize = "&tuple:nth")]
   NativeTupleNth,
   #[strum(serialize = "&tuple:assoc")]
@@ -60,6 +62,14 @@ pub enum CalcitProc {
   NativeTupleWithClass,
   #[strum(serialize = "&tuple:enum")]
   NativeTupleEnum,
+  #[strum(serialize = "&struct::new")]
+  NativeStructNew,
+  #[strum(serialize = "&enum::new")]
+  NativeEnumNew,
+  #[strum(serialize = "&struct:with-class")]
+  NativeStructWithClass,
+  #[strum(serialize = "&enum:with-class")]
+  NativeEnumWithClass,
   #[strum(serialize = "&tuple:enum-has-variant?")]
   NativeTupleEnumHasVariant,
   #[strum(serialize = "&tuple:enum-variant-arity")]
@@ -847,6 +857,10 @@ impl CalcitProc {
         return_type: some_tag("tuple"),
         arg_types: vec![some_tag("record"), some_tag("record"), some_tag("tag"), variadic_dynamic()],
       }),
+      NativeEnumTupleNew => Some(ProcTypeSignature {
+        return_type: some_tag("tuple"),
+        arg_types: vec![dynamic_tag(), some_tag("tag"), variadic_dynamic()],
+      }),
       NativeTupleNth => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![some_tag("tuple"), some_tag("number")],
@@ -872,8 +886,24 @@ impl CalcitProc {
         arg_types: vec![some_tag("tuple"), some_tag("record")],
       }),
       NativeTupleEnum => Some(ProcTypeSignature {
-        return_type: optional_tag("record"),
+        return_type: optional_tag("enum"),
         arg_types: vec![some_tag("tuple")],
+      }),
+      NativeStructNew => Some(ProcTypeSignature {
+        return_type: some_tag("struct"),
+        arg_types: vec![some_tag("tag"), variadic_dynamic()],
+      }),
+      NativeEnumNew => Some(ProcTypeSignature {
+        return_type: some_tag("enum"),
+        arg_types: vec![some_tag("tag"), variadic_dynamic()],
+      }),
+      NativeStructWithClass => Some(ProcTypeSignature {
+        return_type: some_tag("struct"),
+        arg_types: vec![some_tag("struct"), some_tag("record")],
+      }),
+      NativeEnumWithClass => Some(ProcTypeSignature {
+        return_type: some_tag("enum"),
+        arg_types: vec![some_tag("enum"), some_tag("record")],
       }),
       NativeTupleEnumHasVariant => Some(ProcTypeSignature {
         return_type: some_tag("bool"),

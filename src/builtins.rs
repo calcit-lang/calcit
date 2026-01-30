@@ -130,6 +130,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeTuple => meta::new_tuple(args), // unstable solution for the name
     NativeClassTuple => meta::new_class_tuple(args),
     NativeEnumTuple => meta::new_enum_tuple(args),
+    NativeEnumTupleNew => meta::new_enum_tuple_no_class(args),
     NativeTupleNth => meta::tuple_nth(args),
     NativeTupleAssoc => meta::assoc(args),
     NativeTupleCount => meta::tuple_count(args),
@@ -137,6 +138,10 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeTupleParams => meta::tuple_params(args),
     NativeTupleWithClass => meta::tuple_with_class(args),
     NativeTupleEnum => meta::tuple_enum(args),
+    NativeStructNew => records::new_struct(args),
+    NativeEnumNew => records::new_enum(args),
+    NativeStructWithClass => meta::struct_with_class(args),
+    NativeEnumWithClass => meta::enum_with_class(args),
     NativeTupleEnumHasVariant => meta::tuple_enum_has_variant(args),
     NativeTupleEnumVariantArity => meta::tuple_enum_variant_arity(args),
     NativeTupleValidateEnum => meta::tuple_validate_enum(args),

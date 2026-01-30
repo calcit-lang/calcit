@@ -7,13 +7,29 @@ import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
 
 import { CalcitValue } from "./js-primes.mjs";
-import { CalcitSymbol, CalcitTag, CalcitFn, CalcitRecur, newTag, refsRegistry, toString, getStringName, _$n__$e_, hashFunction } from "./calcit-data.mjs";
+import {
+  CalcitSymbol,
+  CalcitTag,
+  CalcitFn,
+  CalcitRecur,
+  castTag,
+  newTag,
+  refsRegistry,
+  toString,
+  getStringName,
+  _$n__$e_,
+  hashFunction,
+} from "./calcit-data.mjs";
 
 import { CalcitRef } from "./js-ref.mjs";
 import { fieldsEqual, CalcitRecord } from "./js-record.mjs";
+import { CalcitStruct } from "./js-struct.mjs";
+import { CalcitEnum } from "./js-enum.mjs";
 
 export * from "./calcit-data.mjs";
 export * from "./js-record.mjs";
+export * from "./js-struct.mjs";
+export * from "./js-enum.mjs";
 export * from "./js-map.mjs";
 export * from "./js-list.mjs";
 export * from "./js-set.mjs";
@@ -65,6 +81,12 @@ export let type_of = (x: any): CalcitTag => {
   if (x instanceof CalcitRecord) {
     return newTag("record");
   }
+  if (x instanceof CalcitStruct) {
+    return newTag("struct");
+  }
+  if (x instanceof CalcitEnum) {
+    return newTag("enum");
+  }
   if (x instanceof CalcitCirruQuote) {
     return newTag("cirru-quote");
   }
@@ -82,6 +104,74 @@ export let type_of = (x: any): CalcitTag => {
     return newTag("js-object");
   }
   throw new Error(`Unknown data ${x}`);
+};
+
+const list_items = (item: CalcitValue): CalcitValue[] => {
+  if (item instanceof CalcitList || item instanceof CalcitSliceList) {
+    return Array.from(item.items());
+  }
+  throw new Error(`Expected list entry, got: ${item}`);
+};
+
+export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStruct => {
+  const structName = castTag(name);
+  const fields: Array<{ tag: CalcitTag; type: CalcitValue }> = [];
+
+  for (let entry of entries) {
+    const items = list_items(entry);
+    if (items.length !== 2) {
+      throw new Error(`defstruct expects (field type) pairs, got: ${toString(entry, true)}`);
+    }
+    const fieldTag = castTag(items[0]);
+    const fieldType = items[1];
+    fields.push({ tag: fieldTag, type: fieldType });
+  }
+
+  fields.sort((a, b) => a.tag.idx - b.tag.idx);
+  for (let i = 1; i < fields.length; i++) {
+    if (fields[i - 1].tag.value === fields[i].tag.value) {
+      throw new Error(`defstruct duplicated field: ${fields[i].tag.toString()}`);
+    }
+  }
+
+  const fieldTags = fields.map((entry) => entry.tag);
+  const fieldTypes = fields.map((entry) => entry.type);
+  return new CalcitStruct(structName, fieldTags, fieldTypes, null);
+};
+
+export let defenum = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnum => {
+  const enumName = castTag(name);
+  const entries: Array<{ tag: CalcitTag; payload: CalcitSliceList }> = [];
+
+  for (let variant of variants) {
+    const items = list_items(variant);
+    if (items.length === 0) {
+      throw new Error("defenum expects variant tag and payload types, got empty list");
+    }
+    const tag = castTag(items[0]);
+    const payload = new CalcitSliceList(items.slice(1));
+    entries.push({ tag, payload });
+  }
+
+  entries.sort((a, b) => a.tag.idx - b.tag.idx);
+  for (let i = 1; i < entries.length; i++) {
+    if (entries[i - 1].tag.value === entries[i].tag.value) {
+      throw new Error(`defenum duplicated variant: ${entries[i].tag.toString()}`);
+    }
+  }
+
+  const tags = entries.map((entry) => entry.tag);
+  const values = entries.map((entry) => entry.payload);
+  const prototype = new CalcitRecord(enumName, tags, values, null);
+  return new CalcitEnum(prototype, null);
+};
+
+export let _$n_struct_$o__$o_new = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStruct => {
+  return defstruct(name, ...entries);
+};
+
+export let _$n_enum_$o__$o_new = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnum => {
+  return defenum(name, ...variants);
 };
 
 export let print = (...xs: CalcitValue[]): void => {
@@ -306,31 +396,48 @@ export let _$n_tuple_$o_with_class = function (x: CalcitTuple, y: CalcitRecord) 
 export let _$n_tuple_$o_enum = function (x: CalcitTuple) {
   if (arguments.length !== 1) throw new Error("&tuple:enum takes 1 argument");
   if (!(x instanceof CalcitTuple)) throw new Error("&tuple:enum expects a tuple");
-  return x.enumPrototype ?? null;
+  if (x.enumPrototype == null) {
+    return null;
+  }
+  if (x.enumPrototype instanceof CalcitEnum) {
+    return x.enumPrototype;
+  }
+  return new CalcitEnum(x.enumPrototype as CalcitRecord, null);
 };
 
-const assert_enum_tag_args = (procName: string, enumPrototype: CalcitRecord, variantTag: CalcitTag) => {
-  if (!(enumPrototype instanceof CalcitRecord)) {
-    throw new Error(`${procName} expects enum prototype as first argument`);
+const unwrap_enum_prototype = (enumPrototype: CalcitValue, procName: string): CalcitRecord => {
+  if (enumPrototype instanceof CalcitEnum) {
+    return enumPrototype.prototype;
   }
+  if (enumPrototype instanceof CalcitRecord) {
+    return enumPrototype;
+  }
+  throw new Error(`${procName} expects enum prototype as first argument`);
+};
+
+const assert_enum_tag_args = (procName: string, enumPrototype: CalcitValue, variantTag: CalcitTag): CalcitRecord => {
+  const proto = unwrap_enum_prototype(enumPrototype, procName);
   if (!(variantTag instanceof CalcitTag)) {
     throw new Error(`${procName} expects tag as second argument`);
   }
+  return proto;
 };
 
-export let _$n_tuple_$o_enum_has_variant = function (enumPrototype: CalcitRecord, variantTag: CalcitTag) {
+export let _$n_tuple_$o_enum_has_variant_$q_ = function (enumPrototype: CalcitValue, variantTag: CalcitTag) {
   if (arguments.length !== 2) throw new Error("&tuple:enum-has-variant? takes 2 arguments");
-  assert_enum_tag_args("&tuple:enum-has-variant?", enumPrototype, variantTag);
-  return enumPrototype.contains(variantTag);
+  const proto = assert_enum_tag_args("&tuple:enum-has-variant?", enumPrototype, variantTag);
+  return proto.contains(variantTag);
 };
 
-export let _$n_tuple_$o_enum_variant_arity = function (enumPrototype: CalcitRecord, variantTag: CalcitTag) {
-  if (arguments.length !== 2) throw new Error("&tuple:enum-variant-arity takes 2 arguments");
-  assert_enum_tag_args("&tuple:enum-variant-arity", enumPrototype, variantTag);
+export let _$n_tuple_$o_enum_has_variant = _$n_tuple_$o_enum_has_variant_$q_;
 
-  const variant = enumPrototype.getOrNil(variantTag);
+export let _$n_tuple_$o_enum_variant_arity = function (enumPrototype: CalcitValue, variantTag: CalcitTag) {
+  if (arguments.length !== 2) throw new Error("&tuple:enum-variant-arity takes 2 arguments");
+  const proto = assert_enum_tag_args("&tuple:enum-variant-arity", enumPrototype, variantTag);
+
+  const variant = proto.getOrNil(variantTag);
   if (variant === undefined) {
-    throw new Error(`Variant ${variantTag.value} not found in enum ${enumPrototype.name.value}`);
+    throw new Error(`Variant ${variantTag.value} not found in enum ${proto.name.value}`);
   }
 
   if (variant instanceof CalcitSliceList) {
@@ -346,10 +453,10 @@ export let _$n_tuple_$o_validate_enum = function (tuple: CalcitValue, tag: Calci
     return null;
   }
 
-  assert_enum_tag_args("&tuple:validate-enum", tuple.enumPrototype, tag as CalcitTag);
+  const proto = assert_enum_tag_args("&tuple:validate-enum", tuple.enumPrototype as CalcitValue, tag as CalcitTag);
 
   const tagValue = tag as CalcitTag;
-  const variant = tuple.enumPrototype.getOrNil(tagValue);
+  const variant = proto.getOrNil(tagValue);
   if (variant === undefined) {
     throw new Error(`enum does not have variant ${tagValue.value} for ${tuple}`);
   }
@@ -425,6 +532,23 @@ export let _$n_record_$o_with_class = function (xs: CalcitValue, k: CalcitValue)
   if (arguments.length !== 2) throw new Error("&record:with-class takes 2 arguments");
   if (xs instanceof CalcitRecord) return xs.withClass(k);
   throw new Error("&record:with-class expected a record");
+};
+
+export let _$n_struct_$o_with_class = function (xs: CalcitValue, k: CalcitValue) {
+  if (arguments.length !== 2) throw new Error("&struct:with-class takes 2 arguments");
+  if (xs instanceof CalcitStruct && k instanceof CalcitRecord) return xs.withClass(k);
+  if (xs instanceof CalcitStruct) throw new Error("&struct:with-class expected a record as class");
+  throw new Error("&struct:with-class expected a struct");
+};
+
+export let _$n_enum_$o_with_class = function (xs: CalcitValue, k: CalcitValue) {
+  if (arguments.length !== 2) throw new Error("&enum:with-class takes 2 arguments");
+  if (xs instanceof CalcitEnum && k instanceof CalcitRecord) return xs.withClass(k);
+  if (xs instanceof CalcitRecord && k instanceof CalcitRecord) return new CalcitEnum(xs, k);
+  if (xs instanceof CalcitEnum || xs instanceof CalcitRecord) {
+    throw new Error("&enum:with-class expected a record as class");
+  }
+  throw new Error("&enum:with-class expected an enum prototype");
 };
 
 export let _$n_list_$o_assoc_before = function (xs: CalcitList | CalcitSliceList, k: number, v: CalcitValue): CalcitList {
@@ -1323,8 +1447,8 @@ export let js_for_await = async (stream: AsyncIterableIterator<CalcitValue>, f: 
   for await (let item of stream) {
     ret = await f(item);
   }
-  return ret
-}
+  return ret;
+};
 
 export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> => {
   if (xs.length % 2 !== 0) {
@@ -1350,33 +1474,51 @@ export let _$o__$o_ = (tagName: CalcitValue, ...extra: CalcitValue[]): CalcitTup
   return new CalcitTuple(tagName, extra, null);
 };
 
-export let _PCT__$o__$o_ = (klass: CalcitRecord, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
-  return new CalcitTuple(tag, extra, klass);
-};
-
-export let _PCT__PCT__$o__$o_ = (klass: CalcitRecord, enumPrototype: CalcitRecord, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
-  // Runtime validation: check if tag exists in enum and arity matches
-  assert_enum_tag_args("%%::", enumPrototype, tag as CalcitTag);
+export let _PCT__$o__$o_ = (enumPrototype: CalcitValue, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
+  const proto = assert_enum_tag_args("%::", enumPrototype, tag as CalcitTag);
   const tagValue = tag as CalcitTag;
 
-  const variantDefinition = enumPrototype.getOrNil(tagValue);
+  const variantDefinition = proto.getOrNil(tagValue);
   if (variantDefinition === undefined) {
-    throw new Error(`Enum ${enumPrototype.name.value} does not have variant ${tagValue.value}`);
+    throw new Error(`Enum ${proto.name.value} does not have variant ${tagValue.value}`);
   }
 
   if (variantDefinition instanceof CalcitSliceList) {
     const expectedArity = variantDefinition.len();
     const actualArity = extra.length;
     if (expectedArity !== actualArity) {
-      throw new Error(
-        `Variant ${tagValue.value} expects ${expectedArity} payload(s), but got ${actualArity}`
-      );
+      throw new Error(`Variant ${tagValue.value} expects ${expectedArity} payload(s), but got ${actualArity}`);
     }
   } else {
     throw new Error(`Expected variant definition to be a list, got ${variantDefinition}`);
   }
 
-  return new CalcitTuple(tag, extra, klass, enumPrototype);
+  const tupleEnumPrototype = enumPrototype instanceof CalcitEnum ? enumPrototype : proto;
+  return new CalcitTuple(tag, extra, null, tupleEnumPrototype);
+};
+
+export let _PCT__PCT__$o__$o_ = (klass: CalcitRecord, enumPrototype: CalcitValue, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
+  // Runtime validation: check if tag exists in enum and arity matches
+  const proto = assert_enum_tag_args("%%::", enumPrototype, tag as CalcitTag);
+  const tagValue = tag as CalcitTag;
+
+  const variantDefinition = proto.getOrNil(tagValue);
+  if (variantDefinition === undefined) {
+    throw new Error(`Enum ${proto.name.value} does not have variant ${tagValue.value}`);
+  }
+
+  if (variantDefinition instanceof CalcitSliceList) {
+    const expectedArity = variantDefinition.len();
+    const actualArity = extra.length;
+    if (expectedArity !== actualArity) {
+      throw new Error(`Variant ${tagValue.value} expects ${expectedArity} payload(s), but got ${actualArity}`);
+    }
+  } else {
+    throw new Error(`Expected variant definition to be a list, got ${variantDefinition}`);
+  }
+
+  const tupleEnumPrototype = enumPrototype instanceof CalcitEnum ? enumPrototype : proto;
+  return new CalcitTuple(tag, extra, klass, tupleEnumPrototype);
 };
 
 // mutable place for core to register

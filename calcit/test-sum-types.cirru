@@ -4,11 +4,11 @@
   :files $ {}
     |test-sum-types.main $ %{} :FileEntry
       :defs $ {}
-        |ResultEnum $ %{} :CodeEntry (:doc |)
+        |Result $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def ResultEnum $ defrecord! Result
-              :ok $ [] :number
-              :err $ [] :string
+            defenum Result
+              :ok :number
+              :err :string
         |ActionClass $ %{} :CodeEntry (:doc |)
           :code $ quote
             def ActionClass $ defrecord! ActionClass
@@ -19,11 +19,11 @@
         |make-ok $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-ok (value)
-              %%:: ActionClass ResultEnum :ok value
+              &tuple:with-class (%:: Result :ok value) ActionClass
         |make-err $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-err (message)
-              %%:: ActionClass ResultEnum :err message
+              &tuple:with-class (%:: Result :err message) ActionClass
         |summarize $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn summarize (action)
@@ -38,7 +38,7 @@
                   ok-action $ make-ok 42
                   err-action $ make-err "|boom"
                 assert= ActionClass $ &tuple:class ok-action
-                assert= "|(%%:: :ok 42 (:class ActionClass) (:enum Result))" $ str ok-action
+                assert= "|(%:: :ok 42 (:class ActionClass) (:enum Result))" $ str ok-action
                 assert= "|Action ok -> 42" (.describe ok-action)
                 assert= "|Action err -> boom" (.describe err-action)
                 assert= "|handled ok 42" $ summarize ok-action

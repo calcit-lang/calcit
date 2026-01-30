@@ -4,6 +4,11 @@
   :files $ {}
     |test-tuple.main $ %{} :FileEntry
       :defs $ {}
+        |Result $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defenum Result
+              :ok :number
+              :err :string
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing tuple")
@@ -59,6 +64,13 @@
               assert= 4 $ try-size $ :: :dyn 1 2 3
               assert= :many $ try-size $ :: :dyn 1 2 3 4
               assert= :many $ try-size $ :: :dyn 1 2 3 4 5
+              let
+                  ok $ %:: Result :ok 1
+                assert= :enum $ type-of $ &tuple:enum ok
+                assert= "|(%:: :ok 1 (:enum Result))" $ str ok
+                assert= true $ &tuple:enum-has-variant? Result :ok
+                assert= 1 $ &tuple:enum-variant-arity Result :ok
+                assert= nil $ &tuple:validate-enum ok :ok
         |try-size $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn try-size (x)

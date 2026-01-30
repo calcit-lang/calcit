@@ -1,3 +1,4 @@
+mod calcit_struct;
 mod fns;
 mod list;
 mod local;
@@ -26,6 +27,7 @@ use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
+pub use calcit_struct::CalcitStruct;
 pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitMacro, CalcitScope};
 pub use list::CalcitList;
 pub use local::CalcitLocal;
@@ -84,6 +86,10 @@ pub enum Calcit {
   /// with only static and limited keys, for performance and checking
   /// size of keys are values should be kept consistent
   Record(CalcitRecord),
+  /// struct definition value, carries field types and names
+  Struct(CalcitStruct),
+  /// enum definition value, wraps enum prototype and variants
+  Enum(CalcitEnum),
   /// native functions that providing feature from Rust
   Proc(CalcitProc),
   Macro {
@@ -151,27 +157,27 @@ impl fmt::Display for Calcit {
         sum_type,
       }) => match (class, sum_type) {
         (Some(class), Some(sum_type)) => {
-          f.write_str("(%%:: ")?;
-          f.write_str(&tag.to_string())?;
-          for item in extra {
-            f.write_char(' ')?;
-            f.write_str(&item.to_string())?;
-          }
-          f.write_str(&format!(" (:class {}) (:enum {})", class.name, sum_type.name()))?;
-          f.write_str(")")
-        }
-        (Some(class), None) => {
           f.write_str("(%:: ")?;
           f.write_str(&tag.to_string())?;
           for item in extra {
             f.write_char(' ')?;
             f.write_str(&item.to_string())?;
           }
-          f.write_str(&format!(" (:class {})", class.name))?;
+          f.write_str(&format!(" (:class {}) (:enum {})", class.name(), sum_type.name()))?;
+          f.write_str(")")
+        }
+        (Some(class), None) => {
+          f.write_str("(:: ")?;
+          f.write_str(&tag.to_string())?;
+          for item in extra {
+            f.write_char(' ')?;
+            f.write_str(&item.to_string())?;
+          }
+          f.write_str(&format!(" (:class {})", class.name()))?;
           f.write_str(")")
         }
         (None, Some(sum_type)) => {
-          f.write_str("(:: ")?;
+          f.write_str("(%:: ")?;
           f.write_str(&tag.to_string())?;
           for item in extra {
             f.write_char(' ')?;
@@ -243,12 +249,28 @@ impl fmt::Display for Calcit {
         f.write_str(")")?;
         Ok(())
       }
-      Record(CalcitRecord { name, fields, values, .. }) => {
-        f.write_str(&format!("(%{{}} {}", Tag(name.to_owned())))?;
-        for idx in 0..fields.len() {
-          f.write_str(&format!(" ({} {})", Calcit::tag(fields[idx].ref_str()), values[idx]))?;
+      Record(CalcitRecord { struct_ref, values, .. }) => {
+        f.write_str(&format!("(%{{}} {}", Tag(struct_ref.name.to_owned())))?;
+        for idx in 0..struct_ref.fields.len() {
+          f.write_str(&format!(" ({} {})", Calcit::tag(struct_ref.fields[idx].ref_str()), values[idx]))?;
         }
         f.write_str(")")
+      }
+      Struct(CalcitStruct {
+        name, fields, field_types, ..
+      }) => {
+        f.write_str("(%struct ")?;
+        f.write_str(&format!(":{name}"))?;
+        for (k, t) in fields.iter().zip(field_types.iter()) {
+          f.write_char(' ')?;
+          f.write_str(&format!("(:{k} {})", t.to_brief_string()))?;
+        }
+        f.write_char(')')
+      }
+      Enum(enum_def) => {
+        f.write_str("(%enum ")?;
+        f.write_str(&format!(":{}", enum_def.name()))?;
+        f.write_char(')')
       }
       Proc(name) => f.write_str(&format!("(&proc {name})")),
       Macro { info, .. } => {
@@ -452,11 +474,32 @@ impl Hash for Calcit {
           x.hash(_state)
         }
       }
-      Record(CalcitRecord { name, fields, values, .. }) => {
+      Record(CalcitRecord { struct_ref, values, .. }) => {
         "record:".hash(_state);
+        struct_ref.name.hash(_state);
+        struct_ref.fields.hash(_state);
+        values.hash(_state);
+      }
+      Struct(CalcitStruct {
+        name,
+        fields,
+        field_types,
+        class,
+      }) => {
+        "struct:".hash(_state);
         name.hash(_state);
         fields.hash(_state);
-        values.hash(_state);
+        field_types.hash(_state);
+        if let Some(class) = class {
+          class.name().hash(_state);
+          class.fields().hash(_state);
+        }
+      }
+      Enum(enum_def) => {
+        "enum:".hash(_state);
+        enum_def.name().hash(_state);
+        enum_def.prototype().struct_ref.fields.hash(_state);
+        enum_def.prototype().values.hash(_state);
       }
       Proc(name) => {
         "proc:".hash(_state);
@@ -599,12 +642,20 @@ impl Ord for Calcit {
       (Map(_), _) => Less,
       (_, Map(_)) => Greater,
 
-      (Record(CalcitRecord { name: name1, .. }), Record(CalcitRecord { name: name2, .. })) => match name1.cmp(name2) {
+      (Record(CalcitRecord { struct_ref: s1, .. }), Record(CalcitRecord { struct_ref: s2, .. })) => match s1.name.cmp(&s2.name) {
         Equal => unreachable!("TODO records are not cmp ed"),
         ord => ord,
       },
       (Record { .. }, _) => Less,
       (_, Record { .. }) => Greater,
+
+      (Struct(a), Struct(b)) => a.name.cmp(&b.name),
+      (Struct { .. }, _) => Less,
+      (_, Struct { .. }) => Greater,
+
+      (Enum(a), Enum(b)) => a.name().cmp(b.name()),
+      (Enum { .. }, _) => Less,
+      (_, Enum { .. }) => Greater,
 
       (Proc(a), Proc(b)) => a.cmp(b),
       (Proc(_), _) => Less,
@@ -676,6 +727,7 @@ impl PartialEq for Calcit {
       (Set(a), Set(b)) => a == b,
       (Map(a), Map(b)) => a == b,
       (Record(a), Record(b)) => a == b,
+      (Enum(a), Enum(b)) => a.prototype() == b.prototype(),
       (Proc(a), Proc(b)) => a == b,
       (Macro { id: a, .. }, Macro { id: b, .. }) => a == b,
       // functions compared with nanoid
