@@ -534,6 +534,26 @@ defn find-name (user)
   ; user 可能为 nil
 ```
 
+#### 更精确的结构标注（record/tuple）
+
+在 `defstruct/defenum` 新方案下，可以用 `::` 形式提供更精确的类型：
+
+```cirru
+; 结构体 record 约束
+assert-type user $ :: :record Person
+assert-type user $ :: :record Person UserClass
+
+; 枚举 tuple 约束（允许任何变体 tag）
+assert-type result $ :: :tuple Result
+assert-type result $ :: :tuple Result ResultClass
+```
+
+说明：
+
+- `Person` 是 `defstruct` 定义的结构体。
+- `Result` 是 `defenum` 定义的枚举。
+- 可选的 `UserClass` / `ResultClass` 用于附加 class 记录。
+
 也可用于可选参数：
 
 ```cirru

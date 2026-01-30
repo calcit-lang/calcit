@@ -328,82 +328,91 @@ pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&%{{}} expected at least 2 arguments, but received:", xs);
   }
   match &xs[0] {
-    Calcit::Record(
-      record @ CalcitRecord {
-        struct_ref,
-        values: v0,
-        class,
-      },
-    ) => {
-      if (args_size - 1).rem(2) == 0 {
-        let size = (args_size - 1) / 2;
-        if size != struct_ref.fields.len() {
-          return CalcitErr::err_str(
-            CalcitErrKind::Arity,
-            format!(
-              "&%{{}} unexpected number of fields. Expected {}, but received {}",
-              struct_ref.fields.len(),
-              size
-            ),
-          );
-        }
-        let mut values: Vec<Calcit> = (**v0).to_owned();
-
-        for idx in 0..size {
-          let k_idx = idx * 2 + 1;
-          let v_idx = k_idx + 1;
-          match &xs[k_idx] {
-            Calcit::Tag(s) => match record.index_of(s.ref_str()) {
-              Some(pos) => {
-                xs[v_idx].clone_into(&mut values[pos]);
-              }
-              None => {
-                return CalcitErr::err_str(
-                  CalcitErrKind::Type,
-                  format!("&%{{}} unexpected field `{s}` for record: {:?}", struct_ref.fields),
-                );
-              }
-            },
-            Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match record.index_of(s) {
-              Some(pos) => {
-                xs[v_idx].clone_into(&mut values[pos]);
-              }
-              None => {
-                return CalcitErr::err_str(
-                  CalcitErrKind::Type,
-                  format!("&%{{}} unexpected field `{s}` for record: {:?}", struct_ref.fields),
-                );
-              }
-            },
-            a => {
-              let msg = format!(
-                "&%{{}} requires field in string/tag, but received: {}",
-                type_of(&[a.to_owned()])?.lisp_str()
-              );
-              let hint = format_proc_examples_hint(&CalcitProc::NewRecord).unwrap_or_default();
-              return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
-            }
-          }
-        }
-
-        Ok(Calcit::Record(CalcitRecord {
-          struct_ref: struct_ref.to_owned(),
-          values: Arc::new(values),
-          class: class.to_owned(),
-        }))
-      } else {
-        CalcitErr::err_nodes(CalcitErrKind::Arity, "&%{{}} expected pairs, but received:", xs)
-      }
+    Calcit::Struct(struct_def) => {
+      let record = CalcitRecord {
+        struct_ref: Arc::new(struct_def.to_owned()),
+        values: Arc::new(vec![Calcit::Nil; struct_def.fields.len()]),
+        class: struct_def.class.clone(),
+      };
+      call_record_with_prototype(&record, xs)
     }
+    Calcit::Record(record) => call_record_with_prototype(record, xs),
     a => {
       let msg = format!(
-        "&%{{}} requires a record as prototype, but received: {}",
+        "&%{{}} requires a struct as prototype, but received: {}",
         type_of(&[a.to_owned()])?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NewRecord).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
+}
+
+fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let args_size = xs.len();
+  let CalcitRecord {
+    struct_ref,
+    values: v0,
+    class,
+  } = record;
+  if (args_size - 1).rem(2) != 0 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&%{{}} expected pairs, but received:", xs);
+  }
+  let size = (args_size - 1) / 2;
+  if size != struct_ref.fields.len() {
+    return CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!(
+        "&%{{}} unexpected number of fields. Expected {}, but received {}",
+        struct_ref.fields.len(),
+        size
+      ),
+    );
+  }
+  let mut values: Vec<Calcit> = (**v0).to_owned();
+
+  for idx in 0..size {
+    let k_idx = idx * 2 + 1;
+    let v_idx = k_idx + 1;
+    match &xs[k_idx] {
+      Calcit::Tag(s) => match record.index_of(s.ref_str()) {
+        Some(pos) => {
+          xs[v_idx].clone_into(&mut values[pos]);
+        }
+        None => {
+          return CalcitErr::err_str(
+            CalcitErrKind::Type,
+            format!("&%{{}} unexpected field `{s}` for record: {:?}", struct_ref.fields),
+          );
+        }
+      },
+      Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match record.index_of(s) {
+        Some(pos) => {
+          xs[v_idx].clone_into(&mut values[pos]);
+        }
+        None => {
+          return CalcitErr::err_str(
+            CalcitErrKind::Type,
+            format!("&%{{}} unexpected field `{s}` for record: {:?}", struct_ref.fields),
+          );
+        }
+      },
+      a => {
+        let msg = format!(
+          "&%{{}} requires field in string/tag, but received: {}",
+          type_of(&[a.to_owned()])?.lisp_str()
+        );
+        let hint = format_proc_examples_hint(&CalcitProc::NewRecord).unwrap_or_default();
+        return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+      }
+    }
+  }
+
+  Ok(Calcit::Record(CalcitRecord {
+    struct_ref: struct_ref.to_owned(),
+    values: Arc::new(values),
+    class: class.to_owned(),
+  }))
 }
 
 /// takes a record and pairs of key value(flatterned), and update the record. raise error if key not existed in the record

@@ -10,7 +10,7 @@ use std::thread_local;
 
 use cirru_edn::EdnTag;
 
-use super::{Calcit, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitSyntax, CalcitTuple};
+use super::{Calcit, CalcitEnum, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSyntax, CalcitTuple};
 use crate::program;
 
 thread_local! {
@@ -217,10 +217,57 @@ impl CalcitTypeAnnotation {
             }
           }
         }
+
+        if let Some(Calcit::Tag(tag)) = xs.get(1) {
+          let tag_name = tag.ref_str().trim_start_matches(':');
+          if tag_name == "record" {
+            if xs.len() < 3 {
+              eprintln!("[Warn] :: :record expects struct name, got {}", xs.len() as i64 - 2);
+            } else if let Some(record) = resolve_record_annotation(xs.get(2).unwrap(), xs.get(3)) {
+              return Arc::new(CalcitTypeAnnotation::Record(Arc::new(record)));
+            }
+          }
+          if tag_name == "tuple" {
+            if xs.len() < 3 {
+              eprintln!("[Warn] :: :tuple expects enum name, got {}", xs.len() as i64 - 2);
+            } else if let Some(tuple) = resolve_tuple_annotation(xs.get(2).unwrap(), xs.get(3)) {
+              return Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(tuple)));
+            }
+          }
+        }
       }
     }
 
     Arc::new(CalcitTypeAnnotation::from_calcit(form))
+  }
+
+  fn tuple_tag_is_wildcard(tuple: &CalcitTuple) -> bool {
+    match tuple.tag.as_ref() {
+      Calcit::Tag(tag) => tag.ref_str().trim_start_matches(':') == "unknown",
+      _ => false,
+    }
+  }
+
+  fn tuple_matches(actual: &CalcitTuple, expected: &CalcitTuple) -> bool {
+    if let Some(expected_enum) = &expected.sum_type {
+      match &actual.sum_type {
+        Some(actual_enum) if actual_enum.name() == expected_enum.name() => {}
+        _ => return false,
+      }
+    }
+
+    if let Some(expected_class) = &expected.class {
+      match &actual.class {
+        Some(actual_class) if actual_class.name() == expected_class.name() => {}
+        _ => return false,
+      }
+    }
+
+    if Self::tuple_tag_is_wildcard(expected) {
+      return expected.extra.is_empty();
+    }
+
+    actual.tag == expected.tag && actual.extra == expected.extra
   }
 
   /// Render a concise representation used in warnings or logs
@@ -263,7 +310,7 @@ impl CalcitTypeAnnotation {
       | (Self::Buffer, Self::Buffer)
       | (Self::CirruQuote, Self::CirruQuote) => true,
       (Self::Record(a), Self::Record(b)) => a.name() == b.name(),
-      (Self::Tuple(a), Self::Tuple(b)) => a.as_ref() == b.as_ref(),
+      (Self::Tuple(actual), Self::Tuple(expected)) => Self::tuple_matches(actual.as_ref(), expected.as_ref()),
       (Self::Function(a), Self::Function(b)) => a.matches_signature(b.as_ref()),
       (Self::Set, Self::Set) => true,
       (Self::Variadic(a), Self::Variadic(b)) => a.matches_annotation(b),
@@ -479,6 +526,105 @@ impl CalcitTypeAnnotation {
       Self::Optional(_) => 18,
       Self::Dynamic => 19,
     }
+  }
+}
+
+fn resolve_record_annotation(struct_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitRecord> {
+  let struct_def = resolve_struct_def(struct_form)?;
+  let field_count = struct_def.fields.len();
+  let class_record = class_form.and_then(resolve_record_def).map(Arc::new);
+  Some(CalcitRecord {
+    struct_ref: Arc::new(struct_def),
+    values: Arc::new(vec![Calcit::Nil; field_count]),
+    class: class_record,
+  })
+}
+
+fn resolve_tuple_annotation(enum_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitTuple> {
+  let enum_def = resolve_enum_def(enum_form)?;
+  let class_record = class_form.and_then(resolve_record_def).map(Arc::new);
+  Some(CalcitTuple {
+    tag: Arc::new(Calcit::Tag(EdnTag::from("unknown"))),
+    extra: vec![],
+    class: class_record,
+    sum_type: Some(Arc::new(enum_def)),
+  })
+}
+
+fn resolve_struct_def(form: &Calcit) -> Option<CalcitStruct> {
+  match form {
+    Calcit::Struct(struct_def) => Some(struct_def.to_owned()),
+    Calcit::Record(record) => Some(record.struct_ref.as_ref().to_owned()),
+    _ => resolve_calcit_value(form).and_then(|value| match value {
+      Calcit::Struct(struct_def) => Some(struct_def),
+      Calcit::Record(record) => Some(record.struct_ref.as_ref().to_owned()),
+      _ => None,
+    }),
+  }
+}
+
+fn resolve_enum_def(form: &Calcit) -> Option<CalcitEnum> {
+  match form {
+    Calcit::Enum(enum_def) => Some(enum_def.to_owned()),
+    Calcit::Record(record) => CalcitEnum::from_record(record.to_owned()).ok(),
+    _ => resolve_calcit_value(form).and_then(|value| match value {
+      Calcit::Enum(enum_def) => Some(enum_def),
+      Calcit::Record(record) => CalcitEnum::from_record(record).ok(),
+      _ => None,
+    }),
+  }
+}
+
+fn resolve_record_def(form: &Calcit) -> Option<CalcitRecord> {
+  match form {
+    Calcit::Record(record) => Some(record.to_owned()),
+    _ => resolve_calcit_value(form).and_then(|value| match value {
+      Calcit::Record(record) => Some(record),
+      _ => None,
+    }),
+  }
+}
+
+fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
+  match form {
+    Calcit::Import(import) => {
+      let mut short_circuit = false;
+      let mut pushed = false;
+
+      IMPORT_RESOLUTION_STACK.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        if stack
+          .iter()
+          .any(|(ns, def)| ns.as_ref() == import.ns.as_ref() && def.as_ref() == import.def.as_ref())
+        {
+          short_circuit = true;
+        } else {
+          stack.push((import.ns.clone(), import.def.clone()));
+          pushed = true;
+        }
+      });
+
+      if short_circuit {
+        return None;
+      }
+
+      let resolved = program::lookup_evaled_def(import.ns.as_ref(), import.def.as_ref())
+        .or_else(|| program::lookup_def_code(import.ns.as_ref(), import.def.as_ref()))
+        .map(|value| value.to_owned());
+
+      if pushed {
+        IMPORT_RESOLUTION_STACK.with(|stack| {
+          let mut stack = stack.borrow_mut();
+          let _ = stack.pop();
+        });
+      }
+
+      resolved
+    }
+    Calcit::Symbol { sym, info, .. } => program::lookup_evaled_def(info.at_ns.as_ref(), sym)
+      .or_else(|| program::lookup_def_code(info.at_ns.as_ref(), sym))
+      .map(|value| value.to_owned()),
+    _ => None,
   }
 }
 

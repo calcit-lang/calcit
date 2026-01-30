@@ -123,7 +123,10 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
     match load_module_silent(module_path, base_dir, &module_folder) {
       Ok(module_snapshot) => {
         for (ns_name, file_data) in module_snapshot.files {
-          snapshot.files.entry(ns_name).or_insert(file_data);
+          if snapshot.files.contains_key(&ns_name) {
+            return Err(format!("namespace `{ns_name}` already exists when loading module `{module_path}`"));
+          }
+          snapshot.files.insert(ns_name, file_data);
         }
       }
       Err(e) => {

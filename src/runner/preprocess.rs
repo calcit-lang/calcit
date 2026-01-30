@@ -2,7 +2,7 @@ use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal,
-    CalcitProc, CalcitRecord, CalcitScope, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, CalcitTuple,
+    CalcitProc, CalcitRecord, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, CalcitTuple,
     CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType,
   },
   call_stack::{CallStackList, StackKind},
@@ -587,27 +587,6 @@ fn preprocess_list_call(
 
         // Check Proc argument types if available
         if let Some(Calcit::Proc(proc)) = ys.first() {
-          if matches!(proc, CalcitProc::NativeEnumTuple) {
-            gen_check_warning("`%%::` is deprecated, use `%::` instead".to_string(), file_ns, check_warnings);
-          }
-          if matches!(proc, CalcitProc::NativeEnumTuple | CalcitProc::NativeEnumTupleNew) {
-            let enum_arg = if matches!(proc, CalcitProc::NativeEnumTuple) {
-              processed_args.get(1)
-            } else {
-              processed_args.get(0)
-            };
-            if let Some(enum_arg) = enum_arg {
-              if let Some(enum_record) = resolve_record_value(enum_arg, scope_types) {
-                if !is_defenum_prototype(&enum_record) {
-                  gen_check_warning(
-                    "enum prototype defined via defrecord! is deprecated; use defenum instead".to_string(),
-                    file_ns,
-                    check_warnings,
-                  );
-                }
-              }
-            }
-          }
           check_proc_arg_types(proc, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         }
 
@@ -825,11 +804,11 @@ fn check_field_in_record(
   }
 
   // Field not found, generate warning
-  let available_fields: Vec<&str> = record.struct_ref.fields.iter().map(|f| f.ref_str()).collect();
+  let available_fields: Vec<&str> = record.fields().iter().map(|f| f.ref_str()).collect();
   gen_check_warning(
     format!(
       "[Warn] Field `{field_name}` does not exist in record `{}`. Available fields: [{}]",
-      record.struct_ref.name,
+      record.name(),
       available_fields.join(", ")
     ),
     file_ns,
@@ -900,6 +879,10 @@ fn check_proc_arg_types(
       file_ns,
       check_warnings,
     );
+  }
+
+  if matches!(proc, CalcitProc::NativeRecord | CalcitProc::NativeRecordGet) {
+    return;
   }
 
   // Check argument types until we hit variadic marker or run out of args
@@ -1346,18 +1329,12 @@ fn validate_method_call(
 
   // Check if method exists in the class
   let method_str = method_name.as_ref();
-  if class_record.struct_ref.fields.iter().any(|field| field.ref_str() == method_str) {
+  if class_record.fields().iter().any(|field| field.ref_str() == method_str) {
     return Ok(()); // Method found, validation passed
   }
 
   // Method not found, generate error
-  let methods_list = class_record
-    .struct_ref
-    .fields
-    .iter()
-    .map(|f| f.to_string())
-    .collect::<Vec<_>>()
-    .join(" ");
+  let methods_list = class_record.fields().iter().map(|f| f.to_string()).collect::<Vec<_>>().join(" ");
   let type_desc = describe_type(type_value.as_ref());
   Err(CalcitErr::use_msg_stack_location(
     CalcitErrKind::Type,
@@ -1542,8 +1519,23 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
         // Proc call: check if proc has return_type
         Calcit::Proc(proc) => {
           if matches!(proc, CalcitProc::NativeEnumTuple | CalcitProc::NativeEnumTupleNew) {
-            if let Some(tuple_type) = infer_enum_tuple_annotation(xs, scope_types) {
+            if let Some(tuple_type) = infer_enum_tuple_annotation(proc, xs, scope_types) {
               return Some(tuple_type);
+            }
+          }
+          if matches!(proc, CalcitProc::NativeStructNew) {
+            if let Some(struct_type) = infer_struct_literal_type(xs) {
+              return Some(struct_type);
+            }
+          }
+          if matches!(proc, CalcitProc::NativeRecord) {
+            if let Some(record_type) = infer_record_literal_type(xs, scope_types) {
+              return Some(record_type);
+            }
+          }
+          if matches!(proc, CalcitProc::NativeRecordGet) {
+            if let Some(field_type) = infer_record_get_type(xs, scope_types) {
+              return Some(field_type);
             }
           }
           if let Some(type_sig) = proc.get_type_signature() {
@@ -1555,6 +1547,11 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
 
         // Import: could be a function, try to get its return type
         Calcit::Import(CalcitImport { ns, def, .. }) => {
+          if &**ns == calcit::CORE_NS && (&**def == "record-get" || &**def == "&record:get") {
+            if let Some(field_type) = infer_record_get_type(xs, scope_types) {
+              return Some(field_type);
+            }
+          }
           // First check evaled definition (for Proc/Fn that have been evaluated)
           if let Some(evaled) = program::lookup_evaled_def(ns, def) {
             match evaled {
@@ -1609,6 +1606,16 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
         // Direct Fn call: return the function's return type
         Calcit::Fn { info, .. } => Some(info.return_type.clone()),
 
+        // Method access: infer record field type when available
+        Calcit::Method(field_name, calcit::MethodKind::Access | calcit::MethodKind::TagAccess) => {
+          if let Some(receiver) = xs.get(1) {
+            if let Some(field_type) = infer_record_field_type(receiver, field_name.as_ref(), scope_types) {
+              return Some(field_type);
+            }
+          }
+          None
+        }
+
         // Nested List call: the head is a function call expression
         // First infer what type the head returns, then if it's a function, get its return type
         Calcit::List(_) => {
@@ -1632,60 +1639,168 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
   }
 }
 
-fn infer_enum_tuple_annotation(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
-  let head = xs.first()?;
-  match head {
-    Calcit::Proc(CalcitProc::NativeEnumTuple) => {
+fn infer_enum_tuple_annotation(proc: &CalcitProc, xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  let (class_record, enum_proto, tag_arg) = match proc {
+    CalcitProc::NativeEnumTuple => {
       if xs.len() < 4 {
         return None;
       }
-
       let class_arg = xs.get(1)?;
       let enum_arg = xs.get(2)?;
       let tag_arg = xs.get(3);
-
       let class_record = resolve_record_value(class_arg, scope_types);
-      let enum_record = resolve_record_value(enum_arg, scope_types)?;
-      let enum_proto = CalcitEnum::from_record(enum_record).ok()?;
-
-      let tag_value = tag_arg
-        .map(|arg| arg.to_owned())
-        .unwrap_or_else(|| Calcit::Tag(cirru_edn::EdnTag::from("unknown")));
-
-      let tuple = CalcitTuple {
-        tag: Arc::new(tag_value),
-        extra: vec![],
-        class: class_record.map(Arc::new),
-        sum_type: Some(Arc::new(enum_proto)),
-      };
-
-      Some(Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(tuple))))
+      let enum_proto = resolve_enum_value(enum_arg, scope_types)?;
+      (class_record, enum_proto, tag_arg)
     }
-    Calcit::Proc(CalcitProc::NativeEnumTupleNew) => {
+    CalcitProc::NativeEnumTupleNew => {
       if xs.len() < 3 {
         return None;
       }
-
       let enum_arg = xs.get(1)?;
       let tag_arg = xs.get(2);
-
-      let enum_record = resolve_record_value(enum_arg, scope_types)?;
-      let enum_proto = CalcitEnum::from_record(enum_record).ok()?;
-
-      let tag_value = tag_arg
-        .map(|arg| arg.to_owned())
-        .unwrap_or_else(|| Calcit::Tag(cirru_edn::EdnTag::from("unknown")));
-
-      let tuple = CalcitTuple {
-        tag: Arc::new(tag_value),
-        extra: vec![],
-        class: None,
-        sum_type: Some(Arc::new(enum_proto)),
-      };
-
-      Some(Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(tuple))))
+      let enum_proto = resolve_enum_value(enum_arg, scope_types)?;
+      (None, enum_proto, tag_arg)
     }
+    _ => return None,
+  };
+
+  let tag_value = tag_arg
+    .map(|arg| arg.to_owned())
+    .unwrap_or_else(|| Calcit::Tag(cirru_edn::EdnTag::from("unknown")));
+
+  let tuple = CalcitTuple {
+    tag: Arc::new(tag_value),
+    extra: vec![],
+    class: class_record.map(Arc::new),
+    sum_type: Some(Arc::new(enum_proto)),
+  };
+
+  Some(Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(tuple))))
+}
+
+fn infer_record_get_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if xs.len() < 3 {
+    return None;
+  }
+  let record_arg = xs.get(1)?;
+  let field_arg = xs.get(2)?;
+  let field_name = extract_field_name(field_arg)?;
+  infer_record_field_type(record_arg, field_name, scope_types)
+}
+
+fn infer_record_literal_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if xs.len() < 2 {
+    return None;
+  }
+  let proto_arg = xs.get(1)?;
+  let record = resolve_record_value(proto_arg, scope_types)?;
+  Some(Arc::new(CalcitTypeAnnotation::Record(Arc::new(record))))
+}
+
+fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
+  if xs.len() < 2 {
+    return None;
+  }
+
+  let name = parse_struct_name(xs.get(1)?)?;
+  let mut fields: Vec<(cirru_edn::EdnTag, Arc<CalcitTypeAnnotation>)> = Vec::new();
+
+  for item in xs.iter().skip(2) {
+    let (field_name, field_type) = parse_struct_field_entry(item)?;
+    fields.push((field_name, field_type));
+  }
+
+  fields.sort_by(|a, b| a.0.ref_str().cmp(b.0.ref_str()));
+  for idx in 1..fields.len() {
+    if fields[idx - 1].0 == fields[idx].0 {
+      return None;
+    }
+  }
+
+  let field_names: Vec<cirru_edn::EdnTag> = fields.iter().map(|(name, _)| name.to_owned()).collect();
+  let field_types: Vec<Arc<CalcitTypeAnnotation>> = fields.iter().map(|(_, t)| t.to_owned()).collect();
+
+  let struct_def = CalcitStruct {
+    name,
+    fields: Arc::new(field_names.clone()),
+    field_types: Arc::new(field_types),
+    class: None,
+  };
+
+  let record = CalcitRecord {
+    struct_ref: Arc::new(struct_def),
+    values: Arc::new(vec![Calcit::Nil; field_names.len()]),
+    class: None,
+  };
+
+  Some(Arc::new(CalcitTypeAnnotation::Record(Arc::new(record))))
+}
+
+fn parse_struct_name(form: &Calcit) -> Option<cirru_edn::EdnTag> {
+  match form {
+    Calcit::Symbol { sym, .. } | Calcit::Str(sym) => Some(cirru_edn::EdnTag::from(sym.as_ref())),
+    Calcit::Tag(tag) => Some(tag.to_owned()),
     _ => None,
+  }
+}
+
+fn parse_struct_field_entry(form: &Calcit) -> Option<(cirru_edn::EdnTag, Arc<CalcitTypeAnnotation>)> {
+  let Calcit::List(list) = form else {
+    return None;
+  };
+  let head = list.first()?;
+  let is_list_literal = matches!(head, Calcit::Proc(CalcitProc::List))
+    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "[]")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "[]");
+
+  if !is_list_literal {
+    return None;
+  }
+
+  let field_name_form = list.get(1)?;
+  let field_type_form = list.get(2)?;
+  if list.len() != 3 {
+    return None;
+  }
+
+  let field_name = match field_name_form {
+    Calcit::Symbol { sym, .. } | Calcit::Str(sym) => cirru_edn::EdnTag::from(sym.as_ref()),
+    Calcit::Tag(tag) => tag.to_owned(),
+    _ => return None,
+  };
+
+  let field_type = CalcitTypeAnnotation::parse_type_annotation_form(field_type_form);
+  Some((field_name, field_type))
+}
+
+fn infer_record_field_type(receiver: &Calcit, field_name: &str, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  let type_info = resolve_type_value(receiver, scope_types)?;
+  let record = type_info.as_ref().as_record()?;
+  let idx = record.index_of(field_name)?;
+  record.struct_ref.field_types.get(idx).cloned()
+}
+
+fn extract_field_name(field_arg: &Calcit) -> Option<&str> {
+  match field_arg {
+    Calcit::Tag(tag) => Some(tag.ref_str()),
+    Calcit::Str(s) => Some(s.as_ref()),
+    Calcit::Symbol { sym, .. } => Some(sym.as_ref()),
+    _ => None,
+  }
+}
+
+fn resolve_enum_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<CalcitEnum> {
+  match target {
+    Calcit::Enum(enum_def) => Some(enum_def.to_owned()),
+    Calcit::Record(record) => CalcitEnum::from_record(record.to_owned()).ok(),
+    Calcit::Import(CalcitImport { ns, def, .. }) => match program::lookup_evaled_def(ns, def) {
+      Some(Calcit::Enum(enum_def)) => Some(enum_def),
+      Some(Calcit::Record(record)) => CalcitEnum::from_record(record).ok(),
+      _ => None,
+    },
+    _ => resolve_type_value(target, scope_types)
+      .and_then(|t| t.as_record().cloned())
+      .and_then(|record| CalcitEnum::from_record(record).ok()),
   }
 }
 
@@ -1693,22 +1808,29 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
   match target {
     Calcit::Record(record) => Some(record.to_owned()),
     Calcit::Enum(enum_def) => Some(enum_def.prototype().to_owned()),
+    Calcit::Struct(struct_def) => {
+      let values = vec![Calcit::Nil; struct_def.fields.len()];
+      Some(CalcitRecord {
+        struct_ref: Arc::new(struct_def.to_owned()),
+        values: Arc::new(values),
+        class: struct_def.class.clone(),
+      })
+    }
     Calcit::Import(CalcitImport { ns, def, .. }) => match program::lookup_evaled_def(ns, def) {
       Some(Calcit::Record(record)) => Some(record),
       Some(Calcit::Enum(enum_def)) => Some(enum_def.prototype().to_owned()),
+      Some(Calcit::Struct(struct_def)) => {
+        let values = vec![Calcit::Nil; struct_def.fields.len()];
+        Some(CalcitRecord {
+          struct_ref: Arc::new(struct_def.to_owned()),
+          values: Arc::new(values),
+          class: struct_def.class.clone(),
+        })
+      }
       _ => None,
     },
     _ => resolve_type_value(target, scope_types).and_then(|t| t.as_record().map(|r| r.to_owned())),
   }
-}
-
-fn is_defenum_prototype(record: &CalcitRecord) -> bool {
-  record
-    .struct_ref
-    .class
-    .as_ref()
-    .map(|class| class.name().ref_str() == "enum-prototype")
-    .unwrap_or(false)
 }
 
 /// Get the class record from a type value
@@ -1780,14 +1902,6 @@ pub fn preprocess_each_items(
     xs = xs.push_right(form);
     Ok(())
   })?;
-  Ok(Calcit::List(Arc::new(xs.into())))
-}
-
-pub fn preprocess_raw_items(head: &CalcitSyntax, head_ns: &str, args: &CalcitList) -> Result<Calcit, CalcitErr> {
-  let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
-  for item in args.iter() {
-    xs = xs.push_right(item.to_owned());
-  }
   Ok(Calcit::List(Arc::new(xs.into())))
 }
 
@@ -2339,7 +2453,7 @@ mod tests {
     let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(
         EdnTag::from("Person"),
-        vec![EdnTag::from("age"), EdnTag::from("name")], // sorted
+        vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
       class: None,
@@ -2383,7 +2497,7 @@ mod tests {
     let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(
         EdnTag::from("Person"),
-        vec![EdnTag::from("age"), EdnTag::from("name")], // sorted
+        vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
       class: None,
@@ -2557,7 +2671,7 @@ mod tests {
     let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(
         EdnTag::from("Person"),
-        vec![EdnTag::from("age"), EdnTag::from("name")], // sorted
+        vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
       class: None,
@@ -2598,7 +2712,7 @@ mod tests {
     let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(
         EdnTag::from("Person"),
-        vec![EdnTag::from("age"), EdnTag::from("name")], // sorted
+        vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
       class: None,
@@ -2646,7 +2760,7 @@ mod tests {
     let test_record = Arc::new(CalcitTypeAnnotation::Record(Arc::new(CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(
         EdnTag::from("Person"),
-        vec![EdnTag::from("age"), EdnTag::from("name")], // No .slice method
+        vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
       class: None,

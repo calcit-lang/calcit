@@ -1,8 +1,8 @@
 
-{} (:package |app)
-  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
+{} (:package |test-types)
+  :configs $ {} (:init-fn |test-types.main/main!) (:reload-fn |test-types.main/reload!)
   :files $ {}
-    |app.main $ %{} :FileEntry
+    |test-types.main $ %{} :FileEntry
       :defs $ {}
         |add-numbers $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -405,5 +405,5 @@
           :code $ quote (defn reload! () nil)
 
       :ns $ %{} :CodeEntry (:doc |)
-        :code $ quote (ns app.main)
+        :code $ quote (ns test-types.main)
 
