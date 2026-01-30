@@ -42,10 +42,6 @@ pub enum CalcitProc {
   NativeCirruNth,
   #[strum(serialize = "::")]
   NativeTuple,
-  #[strum(serialize = "%::class")]
-  NativeClassTuple,
-  #[strum(serialize = "%%::")]
-  NativeEnumTuple,
   #[strum(serialize = "%::")]
   NativeEnumTupleNew,
   #[strum(serialize = "&tuple:nth")]
@@ -848,14 +844,6 @@ impl CalcitProc {
       NativeTuple => Some(ProcTypeSignature {
         return_type: some_tag("tuple"),
         arg_types: vec![dynamic_tag(), variadic_dynamic()],
-      }),
-      NativeClassTuple => Some(ProcTypeSignature {
-        return_type: some_tag("tuple"),
-        arg_types: vec![some_tag("record"), some_tag("tag"), variadic_dynamic()],
-      }),
-      NativeEnumTuple => Some(ProcTypeSignature {
-        return_type: some_tag("tuple"),
-        arg_types: vec![some_tag("record"), some_tag("record"), some_tag("tag"), variadic_dynamic()],
       }),
       NativeEnumTupleNew => Some(ProcTypeSignature {
         return_type: some_tag("tuple"),

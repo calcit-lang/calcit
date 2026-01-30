@@ -128,8 +128,6 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     IsSpreadingMark => meta::is_spreading_mark(args),
     // tuple
     NativeTuple => meta::new_tuple(args), // unstable solution for the name
-    NativeClassTuple => meta::new_class_tuple(args),
-    NativeEnumTuple => meta::new_enum_tuple(args),
     NativeEnumTupleNew => meta::new_enum_tuple_no_class(args),
     NativeTupleNth => meta::tuple_nth(args),
     NativeTupleAssoc => meta::assoc(args),

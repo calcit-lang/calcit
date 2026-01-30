@@ -2609,8 +2609,6 @@
           :code $ quote &runtime-inplementation
         |%:: $ %{} :CodeEntry (:doc "|internal function for creating enum tuples\nSyntax: (%:: enum tag & values)\nParams: enum (record/enum), tag (tag), values (any, variable number)\nReturns: tuple with enum metadata\nCreates a tagged tuple that carries enum metadata for validation (use &tuple:with-class to attach class)")
           :code $ quote &runtime-inplementation
-        |%%:: $ %{} :CodeEntry (:doc "|DEPRECATED: use %:: instead\nSyntax: (%%:: class enum tag & values)\nParams: class (record), enum (record/enum), tag (tag), values (any, variable number)\nReturns: tuple with class and enum metadata\nCreates a tagged tuple that carries both class data for methods and enum metadata for validation")
-          :code $ quote &runtime-inplementation
         |&tuple:nth $ %{} :CodeEntry (:doc "|internal function for tuple nth operation\nSyntax: (&tuple:nth tuple index)\nParams: tuple (tuple), index (number)\nReturns: value at index or nil\nGets the value at specified index in tuple, returns nil if out of bounds")
           :code $ quote &runtime-inplementation
         |&tuple:assoc $ %{} :CodeEntry (:doc "|internal function for tuple assoc operation\nSyntax: (&tuple:assoc tuple index value)\nParams: tuple (tuple), index (number), value (any)\nReturns: new tuple with updated value\nReturns new tuple with value at index updated")

@@ -1518,7 +1518,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
 
         // Proc call: check if proc has return_type
         Calcit::Proc(proc) => {
-          if matches!(proc, CalcitProc::NativeEnumTuple | CalcitProc::NativeEnumTupleNew) {
+          if matches!(proc, CalcitProc::NativeEnumTupleNew) {
             if let Some(tuple_type) = infer_enum_tuple_annotation(proc, xs, scope_types) {
               return Some(tuple_type);
             }
@@ -1641,17 +1641,6 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
 
 fn infer_enum_tuple_annotation(proc: &CalcitProc, xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   let (class_record, enum_proto, tag_arg) = match proc {
-    CalcitProc::NativeEnumTuple => {
-      if xs.len() < 4 {
-        return None;
-      }
-      let class_arg = xs.get(1)?;
-      let enum_arg = xs.get(2)?;
-      let tag_arg = xs.get(3);
-      let class_record = resolve_record_value(class_arg, scope_types);
-      let enum_proto = resolve_enum_value(enum_arg, scope_types)?;
-      (class_record, enum_proto, tag_arg)
-    }
     CalcitProc::NativeEnumTupleNew => {
       if xs.len() < 3 {
         return None;
