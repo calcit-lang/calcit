@@ -1,3 +1,4 @@
+mod calcit_struct;
 mod fns;
 mod list;
 mod local;
@@ -26,6 +27,7 @@ use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
+pub use calcit_struct::CalcitStruct;
 pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitMacro, CalcitScope};
 pub use list::CalcitList;
 pub use local::CalcitLocal;
@@ -84,6 +86,10 @@ pub enum Calcit {
   /// with only static and limited keys, for performance and checking
   /// size of keys are values should be kept consistent
   Record(CalcitRecord),
+  /// struct definition value, carries field types and names
+  Struct(CalcitStruct),
+  /// enum definition value, wraps enum prototype and variants
+  Enum(CalcitEnum),
   /// native functions that providing feature from Rust
   Proc(CalcitProc),
   Macro {
@@ -151,27 +157,27 @@ impl fmt::Display for Calcit {
         sum_type,
       }) => match (class, sum_type) {
         (Some(class), Some(sum_type)) => {
-          f.write_str("(%%:: ")?;
-          f.write_str(&tag.to_string())?;
-          for item in extra {
-            f.write_char(' ')?;
-            f.write_str(&item.to_string())?;
-          }
-          f.write_str(&format!(" (:class {}) (:enum {})", class.name, sum_type.name()))?;
-          f.write_str(")")
-        }
-        (Some(class), None) => {
           f.write_str("(%:: ")?;
           f.write_str(&tag.to_string())?;
           for item in extra {
             f.write_char(' ')?;
             f.write_str(&item.to_string())?;
           }
-          f.write_str(&format!(" (:class {})", class.name))?;
+          f.write_str(&format!(" (:class {}) (:enum {})", class.name(), sum_type.name()))?;
+          f.write_str(")")
+        }
+        (Some(class), None) => {
+          f.write_str("(:: ")?;
+          f.write_str(&tag.to_string())?;
+          for item in extra {
+            f.write_char(' ')?;
+            f.write_str(&item.to_string())?;
+          }
+          f.write_str(&format!(" (:class {})", class.name()))?;
           f.write_str(")")
         }
         (None, Some(sum_type)) => {
-          f.write_str("(:: ")?;
+          f.write_str("(%:: ")?;
           f.write_str(&tag.to_string())?;
           for item in extra {
             f.write_char(' ')?;
@@ -243,12 +249,28 @@ impl fmt::Display for Calcit {
         f.write_str(")")?;
         Ok(())
       }
-      Record(CalcitRecord { name, fields, values, .. }) => {
-        f.write_str(&format!("(%{{}} {}", Tag(name.to_owned())))?;
-        for idx in 0..fields.len() {
-          f.write_str(&format!(" ({} {})", Calcit::tag(fields[idx].ref_str()), values[idx]))?;
+      Record(CalcitRecord { struct_ref, values, .. }) => {
+        f.write_str(&format!("(%{{}} {}", Tag(struct_ref.name.to_owned())))?;
+        for idx in 0..struct_ref.fields.len() {
+          f.write_str(&format!(" ({} {})", Calcit::tag(struct_ref.fields[idx].ref_str()), values[idx]))?;
         }
         f.write_str(")")
+      }
+      Struct(CalcitStruct {
+        name, fields, field_types, ..
+      }) => {
+        f.write_str("(%struct ")?;
+        f.write_str(&format!(":{name}"))?;
+        for (k, t) in fields.iter().zip(field_types.iter()) {
+          f.write_char(' ')?;
+          f.write_str(&format!("(:{k} {})", t.to_brief_string()))?;
+        }
+        f.write_char(')')
+      }
+      Enum(enum_def) => {
+        f.write_str("(%enum ")?;
+        f.write_str(&format!(":{}", enum_def.name()))?;
+        f.write_char(')')
       }
       Proc(name) => f.write_str(&format!("(&proc {name})")),
       Macro { info, .. } => {
@@ -310,7 +332,9 @@ impl fmt::Display for Calcit {
       }
       Syntax(name, _ns) => f.write_str(&format!("(&syntax {name})")),
       Method(name, method_kind) => match method_kind {
-        MethodKind::Invoke(Some(t)) => f.write_str(&format!("(&invoke {name} :type {})", t.as_ref())),
+        MethodKind::Invoke(t) if !matches!(**t, CalcitTypeAnnotation::Dynamic) => {
+          f.write_str(&format!("(&invoke {name} :type {})", t.as_ref()))
+        }
         _ => f.write_str(&format!("(&{method_kind} {name})")),
       },
       RawCode(_, code) => f.write_str(&format!("(&raw-code {code})")),
@@ -450,11 +474,32 @@ impl Hash for Calcit {
           x.hash(_state)
         }
       }
-      Record(CalcitRecord { name, fields, values, .. }) => {
+      Record(CalcitRecord { struct_ref, values, .. }) => {
         "record:".hash(_state);
+        struct_ref.name.hash(_state);
+        struct_ref.fields.hash(_state);
+        values.hash(_state);
+      }
+      Struct(CalcitStruct {
+        name,
+        fields,
+        field_types,
+        class,
+      }) => {
+        "struct:".hash(_state);
         name.hash(_state);
         fields.hash(_state);
-        values.hash(_state);
+        field_types.hash(_state);
+        if let Some(class) = class {
+          class.name().hash(_state);
+          class.fields().hash(_state);
+        }
+      }
+      Enum(enum_def) => {
+        "enum:".hash(_state);
+        enum_def.name().hash(_state);
+        enum_def.prototype().struct_ref.fields.hash(_state);
+        enum_def.prototype().values.hash(_state);
       }
       Proc(name) => {
         "proc:".hash(_state);
@@ -597,12 +642,20 @@ impl Ord for Calcit {
       (Map(_), _) => Less,
       (_, Map(_)) => Greater,
 
-      (Record(CalcitRecord { name: name1, .. }), Record(CalcitRecord { name: name2, .. })) => match name1.cmp(name2) {
+      (Record(CalcitRecord { struct_ref: s1, .. }), Record(CalcitRecord { struct_ref: s2, .. })) => match s1.name.cmp(&s2.name) {
         Equal => unreachable!("TODO records are not cmp ed"),
         ord => ord,
       },
       (Record { .. }, _) => Less,
       (_, Record { .. }) => Greater,
+
+      (Struct(a), Struct(b)) => a.name.cmp(&b.name),
+      (Struct { .. }, _) => Less,
+      (_, Struct { .. }) => Greater,
+
+      (Enum(a), Enum(b)) => a.name().cmp(b.name()),
+      (Enum { .. }, _) => Less,
+      (_, Enum { .. }) => Greater,
 
       (Proc(a), Proc(b)) => a.cmp(b),
       (Proc(_), _) => Less,
@@ -674,6 +727,7 @@ impl PartialEq for Calcit {
       (Set(a), Set(b)) => a == b,
       (Map(a), Map(b)) => a == b,
       (Record(a), Record(b)) => a == b,
+      (Enum(a), Enum(b)) => a.prototype() == b.prototype(),
       (Proc(a), Proc(b)) => a == b,
       (Macro { id: a, .. }, Macro { id: b, .. }) => a == b,
       // functions compared with nanoid
@@ -812,6 +866,8 @@ pub struct CalcitErr {
   pub warnings: Vec<LocatedWarning>,
   pub location: Option<Arc<NodeLocation>>,
   pub stack: CallStackList,
+  /// Additional hint for error, such as usage examples
+  pub hint: Option<String>,
 }
 
 impl fmt::Display for CalcitErr {
@@ -823,6 +879,9 @@ impl fmt::Display for CalcitErr {
     if !self.warnings.is_empty() {
       f.write_str("\n")?;
       LocatedWarning::print_list(&self.warnings);
+    }
+    if let Some(hint) = &self.hint {
+      write!(f, "\n\n{hint}")?;
     }
     Ok(())
   }
@@ -837,6 +896,7 @@ impl From<String> for CalcitErr {
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
+      hint: None,
     }
   }
 }
@@ -849,6 +909,7 @@ impl CalcitErr {
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
+      hint: None,
     }
   }
   pub fn err_str<T: Into<String>>(kind: CalcitErrKind, msg: T) -> Result<Calcit, Self> {
@@ -858,6 +919,7 @@ impl CalcitErr {
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
+      hint: None,
     })
   }
   /// display nodes in error message
@@ -868,6 +930,7 @@ impl CalcitErr {
       warnings: vec![],
       stack: CallStackList::default(),
       location: None,
+      hint: None,
     })
   }
   pub fn err_str_location<T: Into<String>>(kind: CalcitErrKind, msg: T, location: Option<Arc<NodeLocation>>) -> Result<Calcit, Self> {
@@ -877,6 +940,7 @@ impl CalcitErr {
       warnings: vec![],
       stack: CallStackList::default(),
       location,
+      hint: None,
     })
   }
   pub fn use_msg_stack<T: Into<String>>(kind: CalcitErrKind, msg: T, stack: &CallStackList) -> Self {
@@ -886,6 +950,7 @@ impl CalcitErr {
       warnings: vec![],
       stack: stack.to_owned(),
       location: None,
+      hint: None,
     }
   }
   pub fn use_msg_stack_location<T: Into<String>>(
@@ -900,7 +965,37 @@ impl CalcitErr {
       warnings: vec![],
       stack: stack.to_owned(),
       location: location.map(Arc::new),
+      hint: None,
     }
+  }
+
+  /// Create error with hint (for examples and usage guidance)
+  pub fn err_str_with_hint<T: Into<String>, H: Into<String>>(kind: CalcitErrKind, msg: T, hint: H) -> Result<Calcit, Self> {
+    Err(CalcitErr {
+      kind,
+      msg: msg.into(),
+      warnings: vec![],
+      stack: CallStackList::default(),
+      location: None,
+      hint: Some(hint.into()),
+    })
+  }
+
+  /// Create error with hint and nodes display
+  pub fn err_nodes_with_hint<T: Into<String>, H: Into<String>>(
+    kind: CalcitErrKind,
+    msg: T,
+    nodes: &[Calcit],
+    hint: H,
+  ) -> Result<Calcit, Self> {
+    Err(CalcitErr {
+      kind,
+      msg: format!("{} {}", msg.into(), CalcitList::from(nodes)),
+      warnings: vec![],
+      stack: CallStackList::default(),
+      location: None,
+      hint: Some(hint.into()),
+    })
   }
 }
 
@@ -932,10 +1027,10 @@ impl fmt::Display for NodeLocation {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(
       f,
-      "{}/{} {}",
+      "{}/{} [{}]",
       self.ns,
       self.def,
-      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("-")
+      self.coord.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
     )
   }
 }
@@ -980,7 +1075,7 @@ impl LocatedWarning {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MethodKind {
   /// (.call a) - may carry inferred receiver type for validation
-  Invoke(Option<Arc<CalcitTypeAnnotation>>),
+  Invoke(Arc<CalcitTypeAnnotation>),
   /// (.!f a)
   InvokeNative,
   /// (.?!f a)
@@ -1004,4 +1099,37 @@ impl fmt::Display for MethodKind {
       MethodKind::AccessOptional => write!(f, "access-optional"),
     }
   }
+}
+
+/// Format examples hint from program data for error messages
+/// Returns a formatted string with examples if available, or None
+pub fn format_examples_hint(ns: &str, def: &str) -> Option<String> {
+  use crate::program;
+
+  let examples = program::lookup_def_examples(ns, def)?;
+  if examples.is_empty() {
+    return None;
+  }
+
+  let mut hint = String::from("💡 Usage examples:\n");
+  for (i, example) in examples.iter().enumerate() {
+    // Format each example with cirru-parser
+    if let Ok(formatted) = cirru_parser::format(&[example.clone()], true.into()) {
+      hint.push_str(&format!("\n  Example {}:\n", i + 1));
+      // Indent each line of the example
+      for line in formatted.lines() {
+        hint.push_str("    ");
+        hint.push_str(line);
+        hint.push('\n');
+      }
+    }
+  }
+
+  Some(hint)
+}
+
+/// Helper to format examples hint specifically for a proc
+pub fn format_proc_examples_hint(proc: &CalcitProc) -> Option<String> {
+  let (ns, def) = proc.get_ns_def();
+  format_examples_hint(ns, def)
 }

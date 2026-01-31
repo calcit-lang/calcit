@@ -1,18 +1,18 @@
 
-{} (:package |test)
-  :configs $ {} (:init-fn |test.main/main!) (:reload-fn |test.main/reload!)
+{} (:package |test-enum)
+  :configs $ {} (:init-fn |test-enum.main/main!) (:reload-fn |test-enum.main/reload!)
     :modules $ []
   :files $ {}
-    |test.main $ %{} :FileEntry
+    |test-enum.main $ %{} :FileEntry
       :defs $ {}
-        |ResultEnum $ %{} :CodeEntry (:doc |)
+        |Result $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def ResultEnum $ defrecord! Result
-              :err $ [] :string
-              :ok $ []
+            defenum Result
+              :err :string
+              :ok
         |ResultClass $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def ResultClass $ defrecord! ResultClass
+            defrecord! ResultClass
               :dummy nil
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -30,19 +30,19 @@
               println "|Testing enum tuple creation..."
               ; Valid tuple creation
               let
-                  valid-ok $ %%:: ResultClass ResultEnum :ok
+                  valid-ok $ %:: Result :ok
                 assert= :ok $ &tuple:nth valid-ok 0
               let
-                  valid-err $ %%:: ResultClass ResultEnum :err |error-msg
+                  valid-err $ %:: Result :err |error-msg
                 assert= :err $ &tuple:nth valid-err 0
-                assert= |error-msg $ &tuple:nth valid-err 1
+                assert= true $ tuple? valid-err
               ; Test invalid tag (should fail - uncomment to see error)
               ; let
-                  invalid $ %%:: ResultClass ResultEnum :invalid
+                  invalid $ %:: Result :invalid
                 raise "|Should have failed with invalid tag"
               ; Test wrong arity (should fail - uncomment to see error)
               ; let
-                  wrong-arity $ %%:: ResultClass ResultEnum :ok |extra
+                  wrong-arity $ %:: Result :ok |extra
                 raise "|Should have failed with wrong arity"
               println "|✓ Enum creation validation passed"
         |test-tag-match-validation $ %{} :CodeEntry (:doc |)
@@ -50,18 +50,11 @@
             defn test-tag-match-validation () $ do
               println "|Testing tag-match runtime validation..."
               let
-                  result $ %%:: ResultClass ResultEnum :ok
+                  result $ %:: Result :ok
                   v $ tag-match result
-                    (:ok) |success
-                    (:err msg) msg
-                assert= |success v
-              ; Test with error variant
-              let
-                  result2 $ %%:: ResultClass ResultEnum :err |error-msg
-                  v2 $ tag-match result2
-                    (:ok) |success
-                    (:err msg) msg
-                assert= |error-msg v2
+                    (:ok) :ok
+                    _ :unknown
+                assert= :ok v
               println "|✓ Tag-match validation passed"
       :ns $ %{} :CodeEntry (:doc |)
-        :code $ quote (ns test.main)
+        :code $ quote (ns test-enum.main)

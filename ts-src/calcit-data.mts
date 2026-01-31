@@ -4,6 +4,8 @@ import { overwriteMapComparator } from "./js-map.mjs";
 import { disableListStructureCheck } from "@calcit/ternary-tree";
 
 import { CalcitRecord, fieldsEqual } from "./js-record.mjs";
+import { CalcitStruct } from "./js-struct.mjs";
+import { CalcitEnum } from "./js-enum.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 
 import { CalcitValue, _$n_compare } from "./js-primes.mjs";
@@ -177,6 +179,8 @@ let defaultHash_set = valueHash("set:");
 let defaultHash_list = valueHash("list:");
 let defaultHash_map = valueHash("map:");
 let defaultHash_record = valueHash("record:");
+let defaultHash_struct = valueHash("struct:");
+let defaultHash_enum = valueHash("enum:");
 let defaultHash_cirru_quote = valueHash("cirru-quote:");
 
 let defaultHash_unknown = valueHash("unknown:");
@@ -304,6 +308,28 @@ export let hashFunction = (x: CalcitValue): Hash => {
     x.cachedHash = base;
     return base;
   }
+  if (x instanceof CalcitStruct) {
+    let base = defaultHash_struct;
+    base = mergeValueHash(base, hashFunction(x.name));
+    for (let idx = 0; idx < x.fields.length; idx++) {
+      base = mergeValueHash(base, hashFunction(x.fields[idx]));
+      base = mergeValueHash(base, hashFunction(x.fieldTypes[idx]));
+    }
+    if (x.klass instanceof CalcitRecord) {
+      base = mergeValueHash(base, hashFunction(x.klass));
+    }
+    x.cachedHash = base;
+    return base;
+  }
+  if (x instanceof CalcitEnum) {
+    let base = defaultHash_enum;
+    base = mergeValueHash(base, hashFunction(x.prototype));
+    if (x.klass instanceof CalcitRecord) {
+      base = mergeValueHash(base, hashFunction(x.klass));
+    }
+    x.cachedHash = base;
+    return base;
+  }
   if (x instanceof CalcitCirruQuote) {
     let base = defaultHash_cirru_quote;
     base = hashCirru(base, x.value);
@@ -377,6 +403,12 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
   }
   if (x instanceof CalcitRecord) {
     return x.toString(disableJsDataWarning);
+  }
+  if (x instanceof CalcitStruct) {
+    return x.toString(disableJsDataWarning);
+  }
+  if (x instanceof CalcitEnum) {
+    return x.toString();
   }
   if (x instanceof CalcitRef) {
     return x.toString();

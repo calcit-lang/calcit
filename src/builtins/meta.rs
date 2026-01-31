@@ -1,8 +1,8 @@
 use crate::{
   builtins,
   calcit::{
-    self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitLocal, CalcitRecord, CalcitSymbolInfo,
-    CalcitSyntax, CalcitTuple, GEN_NS, GENERATED_DEF, gen_core_id,
+    self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
+    CalcitSymbolInfo, CalcitSyntax, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF, format_proc_examples_hint, gen_core_id,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -31,9 +31,6 @@ static JS_SYMBOL_INDEX: AtomicUsize = AtomicUsize::new(0);
 pub(crate) static NS_SYMBOL_DICT: LazyLock<Mutex<HashMap<Arc<str>, usize>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "type-of expected 1 argument, but received:", xs);
-  }
   use Calcit::*;
 
   match &xs[0] {
@@ -53,6 +50,8 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Set(..) => Ok(Calcit::tag("set")),
     Map(..) => Ok(Calcit::tag("map")),
     Record { .. } => Ok(Calcit::tag("record")),
+    Struct { .. } => Ok(Calcit::tag("struct")),
+    Enum { .. } => Ok(Calcit::tag("enum")),
     Proc(..) => Ok(Calcit::tag("fn")), // special kind proc, but also fn
     Macro { .. } => Ok(Calcit::tag("macro")),
     Fn { .. } => Ok(Calcit::tag("fn")),
@@ -73,7 +72,7 @@ pub fn recur(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn format_to_lisp(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(v) => Ok(Calcit::Str(v.lisp_str().into())),
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "format-to-lisp expected 1 argument, but received none"),
+    None => crate::builtins::err_arity("format-to-lisp requires 1 argument, but received:", xs),
   }
 }
 
@@ -82,7 +81,7 @@ pub fn format_to_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(v) => cirru_parser::format(&[transform_code_to_cirru(v)], false.into())
       .map(|s| Calcit::Str(s.into()))
       .map_err(|e| CalcitErr::use_str(CalcitErrKind::Syntax, e)),
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "format-to-cirru expected 1 argument, but received none"),
+    None => crate::builtins::err_arity("format-to-cirru requires 1 argument, but received:", xs),
   }
 }
 
@@ -179,11 +178,22 @@ pub fn parse_cirru_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         CalcitErr::err_str(CalcitErrKind::Syntax, "parse-cirru-list failed")
       }
     },
-    Some(a) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("parse-cirru-list expected a string, but received: {a}"),
-    ),
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "parse-cirru-list expected 1 argument, but received none"),
+    Some(a) => {
+      let msg = format!(
+        "parse-cirru-list requires a string, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::ParseCirruList).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    None => {
+      let hint = format_proc_examples_hint(&CalcitProc::ParseCirruList).unwrap_or_default();
+      CalcitErr::err_str_with_hint(
+        CalcitErrKind::Arity,
+        "parse-cirru-list requires 1 argument, but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
@@ -198,8 +208,22 @@ pub fn parse_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         CalcitErr::err_str(CalcitErrKind::Syntax, "parse-cirru failed")
       }
     },
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("parse-cirru expected a string, but received: {a}")),
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "parse-cirru expected 1 argument, but received none"),
+    Some(a) => {
+      let msg = format!(
+        "parse-cirru requires a string, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::ParseCirru).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    None => {
+      let hint = format_proc_examples_hint(&CalcitProc::ParseCirru).unwrap_or_default();
+      CalcitErr::err_str_with_hint(
+        CalcitErrKind::Arity,
+        "parse-cirru requires 1 argument, but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
@@ -234,10 +258,14 @@ pub fn format_cirru_one_liner(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("format-cirru-one-liner failed: {e}")),
     },
-    None => CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      "format-cirru-one-liner expected 1 argument, but received none",
-    ),
+    None => {
+      let hint = format_proc_examples_hint(&CalcitProc::FormatCirruOneLiner).unwrap_or_default();
+      CalcitErr::err_str_with_hint(
+        CalcitErrKind::Arity,
+        "format-cirru-one-liner requires 1 argument, but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
@@ -254,15 +282,36 @@ pub fn parse_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         CalcitErr::err_str(CalcitErrKind::Syntax, "parse-cirru-edn failed")
       }
     },
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("parse-cirru-edn expected a string, but received: {a}")),
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "parse-cirru-edn expected 1 argument, but received none"),
+    Some(a) => {
+      let msg = format!(
+        "parse-cirru-edn requires a string, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::ParseCirruEdn).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    None => {
+      let hint = format_proc_examples_hint(&CalcitProc::ParseCirruEdn).unwrap_or_default();
+      CalcitErr::err_str_with_hint(
+        CalcitErrKind::Arity,
+        "parse-cirru-edn requires 1 argument, but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
 pub fn format_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(a) => Ok(Calcit::Str(cirru_edn::format(&edn::calcit_to_edn(a)?, true)?.into())),
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "format-cirru-edn expected 1 argument, but received none"),
+    None => {
+      let hint = format_proc_examples_hint(&CalcitProc::FormatCirruEdn).unwrap_or_default();
+      CalcitErr::err_str_with_hint(
+        CalcitErrKind::Arity,
+        "format-cirru-edn requires 1 argument, but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
@@ -272,10 +321,14 @@ pub fn cirru_quote_to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::CirruQuote(ys) => Ok(cirru_to_calcit(ys)),
-    a => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&cirru-quote:to-list expected a Cirru quote, but received: {a}"),
-    ),
+    a => {
+      let msg = format!(
+        "&cirru-quote:to-list requires a Cirru quote, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeCirruQuoteToList).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -300,7 +353,11 @@ pub fn turn_symbol(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       location: None,
     }),
     a @ Calcit::Symbol { .. } => Ok(a.to_owned()),
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("turn-symbol cannot convert to symbol: {a}")),
+    a => {
+      let msg = format!("turn-symbol cannot convert to symbol: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let hint = format_proc_examples_hint(&CalcitProc::TurnSymbol).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -312,16 +369,18 @@ pub fn turn_tag(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::Str(s) => Ok(Calcit::tag(s)),
     Calcit::Tag(s) => Ok(Calcit::Tag(s.to_owned())),
     Calcit::Symbol { sym, .. } => Ok(Calcit::tag(sym)),
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("turn-tag cannot convert to tag: {a}")),
+    a => {
+      let msg = format!("turn-tag cannot convert to tag: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let hint = format_proc_examples_hint(&CalcitProc::TurnTag).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
 pub fn new_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
-    CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      format!("tuple expected at least 1 argument, but received: {}", CalcitList::from(xs)),
-    )
+    let msg = format!("tuple requires at least 1 argument (tag), but received: {} arguments", xs.len());
+    CalcitErr::err_str(CalcitErrKind::Arity, msg)
   } else {
     let extra: Vec<Calcit> = if xs.len() == 1 {
       vec![]
@@ -341,69 +400,36 @@ pub fn new_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn new_class_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
     CalcitErr::err_str(
       CalcitErrKind::Arity,
-      format!("tuple expected at least 2 arguments, but received: {}", CalcitList::from(xs)),
+      format!("%:: expected at least 2 arguments, but received: {}", CalcitList::from(xs)),
     )
   } else {
-    let class = xs[0].to_owned();
-    if let Calcit::Record(record) = class {
-      let extra: Vec<Calcit> = if xs.len() == 2 {
-        vec![]
-      } else {
-        let mut ys: Vec<Calcit> = Vec::with_capacity(xs.len() - 1);
-        for item in xs.iter().skip(2) {
-          ys.push(item.to_owned());
-        }
-        ys
-      };
-      Ok(Calcit::Tuple(CalcitTuple {
-        tag: Arc::new(xs[1].to_owned()),
-        extra,
-        class: Some(Arc::new(record)),
-        sum_type: None,
-      }))
-    } else {
-      CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("tuple expected a record as class, but received: {class}"),
-      )
-    }
-  }
-}
-
-pub fn new_enum_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() < 3 {
-    CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      format!("tuple expected at least 3 arguments, but received: {}", CalcitList::from(xs)),
-    )
-  } else {
-    let class_value = xs[0].to_owned();
-    let sum_type_value = xs[1].to_owned();
-    match (class_value, sum_type_value) {
-      (Calcit::Record(class_record), Calcit::Record(enum_record)) => {
+    let enum_value = xs[0].to_owned();
+    match enum_value {
+      Calcit::Record(enum_record) => {
         let enum_proto = match CalcitEnum::from_record(enum_record.clone()) {
           Ok(proto) => proto,
           Err(msg) => {
-            return CalcitErr::err_str(CalcitErrKind::Type, format!("tuple expected a valid enum prototype, but {msg}"));
+            return CalcitErr::err_str(CalcitErrKind::Type, format!("%:: expected a valid enum prototype, but {msg}"));
           }
         };
 
-        // Runtime validation: check tag and arity
-        let tag_value = &xs[2];
+        let tag_value = &xs[1];
         let tag_name = match tag_value {
           Calcit::Tag(t) => t.ref_str(),
           other => {
-            return CalcitErr::err_str(CalcitErrKind::Type, format!("tuple expected a tag, but received: {other}"));
+            let msg = format!("%:: requires a tag, but received: {}", type_of(&[other.to_owned()])?.lisp_str());
+            let hint = format_proc_examples_hint(&CalcitProc::NativeEnumTupleNew).unwrap_or_default();
+            return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
           }
         };
 
         match enum_proto.find_variant_by_name(tag_name) {
           Some(variant) => {
-            let payload_count = xs.len() - 3;
+            let payload_count = xs.len() - 2;
             let expected_arity = variant.arity();
             if payload_count != expected_arity {
               return CalcitErr::err_str(
@@ -420,21 +446,57 @@ pub fn new_enum_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           }
         }
 
-        let extra: Vec<Calcit> = xs.iter().skip(3).cloned().collect();
+        let extra: Vec<Calcit> = xs.iter().skip(2).cloned().collect();
         Ok(Calcit::Tuple(CalcitTuple {
-          tag: Arc::new(xs[2].to_owned()),
+          tag: Arc::new(xs[1].to_owned()),
           extra,
-          class: Some(Arc::new(class_record)),
+          class: None,
           sum_type: Some(Arc::new(enum_proto)),
         }))
       }
-      (Calcit::Record(_), other) => CalcitErr::err_str(
+      Calcit::Enum(enum_def) => {
+        let enum_proto = enum_def.clone();
+
+        let tag_value = &xs[1];
+        let tag_name = match tag_value {
+          Calcit::Tag(t) => t.ref_str(),
+          other => {
+            let msg = format!("%:: requires a tag, but received: {}", type_of(&[other.to_owned()])?.lisp_str());
+            let hint = format_proc_examples_hint(&CalcitProc::NativeEnumTupleNew).unwrap_or_default();
+            return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+          }
+        };
+
+        match enum_proto.find_variant_by_name(tag_name) {
+          Some(variant) => {
+            let payload_count = xs.len() - 2;
+            let expected_arity = variant.arity();
+            if payload_count != expected_arity {
+              return CalcitErr::err_str(
+                CalcitErrKind::Arity,
+                format!("enum variant `{tag_name}` expects {expected_arity} payload(s), but received: {payload_count}"),
+              );
+            }
+          }
+          None => {
+            return CalcitErr::err_str(
+              CalcitErrKind::Type,
+              format!("enum `{}` does not have variant `{}`", enum_proto.name(), tag_name),
+            );
+          }
+        }
+
+        let extra: Vec<Calcit> = xs.iter().skip(2).cloned().collect();
+        Ok(Calcit::Tuple(CalcitTuple {
+          tag: Arc::new(xs[1].to_owned()),
+          extra,
+          class: None,
+          sum_type: Some(Arc::new(enum_proto)),
+        }))
+      }
+      other => CalcitErr::err_str(
         CalcitErrKind::Type,
-        format!("tuple expected a record as enum prototype, but received: {other}"),
-      ),
-      (other, _) => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("tuple expected a record as class, but received: {other}"),
+        format!("%:: expected a record as enum prototype, but received: {other}"),
       ),
     }
   }
@@ -447,10 +509,72 @@ pub fn tuple_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Tuple(t) => match &t.sum_type {
-      Some(enum_proto) => Ok(Calcit::Record(enum_proto.prototype().to_owned())),
+      Some(enum_proto) => Ok(Calcit::Enum((**enum_proto).clone())),
       None => Ok(Calcit::Nil),
     },
-    a => CalcitErr::err_str(CalcitErrKind::Type, format!("&tuple:enum expected a tuple, but received: {a}")),
+    a => {
+      let msg = format!(
+        "&tuple:enum requires a tuple, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleEnum).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+  }
+}
+
+pub fn struct_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:with-class expected 2 arguments, but received:", xs);
+  }
+
+  let struct_value = xs[0].to_owned();
+  let class_value = xs[1].to_owned();
+  match (struct_value, class_value) {
+    (Calcit::Struct(mut struct_def), Calcit::Record(class_record)) => {
+      struct_def.class = Some(Arc::new(class_record));
+      Ok(Calcit::Struct(struct_def))
+    }
+    (Calcit::Struct(_), other) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&struct:with-class expected a record as class, but received: {other}"),
+    ),
+    (other, _) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&struct:with-class expected a struct, but received: {other}"),
+    ),
+  }
+}
+
+pub fn enum_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&enum:with-class expected 2 arguments, but received:", xs);
+  }
+
+  let enum_value = xs[0].to_owned();
+  let class_value = xs[1].to_owned();
+  match (enum_value, class_value) {
+    (Calcit::Record(enum_record), Calcit::Record(class_record)) => Ok(Calcit::Record(CalcitRecord {
+      struct_ref: enum_record.struct_ref,
+      values: enum_record.values,
+      class: Some(Arc::new(class_record)),
+    })),
+    (Calcit::Enum(mut enum_def), Calcit::Record(class_record)) => {
+      enum_def.set_class(Some(Arc::new(class_record)));
+      Ok(Calcit::Enum(enum_def))
+    }
+    (Calcit::Record(_), other) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&enum:with-class expected a record as class, but received: {other}"),
+    ),
+    (Calcit::Enum(_), other) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&enum:with-class expected a record as class, but received: {other}"),
+    ),
+    (other, _) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&enum:with-class expected an enum prototype record, but received: {other}"),
+    ),
   }
 }
 
@@ -478,13 +602,14 @@ pub fn tuple_enum_has_variant(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let enum_proto = parse_enum_record(enum_record, "&tuple:enum-has-variant?")?;
       Ok(Calcit::Bool(enum_proto.find_variant(tag).is_some()))
     }
-    (Calcit::Record(_), other) => CalcitErr::err_str(
+    (Calcit::Enum(enum_def), Calcit::Tag(tag)) => Ok(Calcit::Bool(enum_def.find_variant(tag).is_some())),
+    (Calcit::Record(_) | Calcit::Enum(_), other) => CalcitErr::err_str(
       CalcitErrKind::Type,
       format!("&tuple:enum-has-variant? expected a tag as second argument, but received: {other}"),
     ),
     (other, _) => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("&tuple:enum-has-variant? expected a record as first argument, but received: {other}"),
+      format!("&tuple:enum-has-variant? expected an enum as first argument, but received: {other}"),
     ),
   }
 }
@@ -513,13 +638,24 @@ pub fn tuple_enum_variant_arity(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         ),
       }
     }
-    (Calcit::Record(_), other) => CalcitErr::err_str(
+    (Calcit::Enum(enum_def), Calcit::Tag(tag)) => match enum_def.find_variant(tag) {
+      Some(variant) => Ok(Calcit::Number(variant.arity() as f64)),
+      None => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!(
+          "&tuple:enum-variant-arity: enum `{}` does not have variant `{}`",
+          enum_def.name(),
+          tag
+        ),
+      ),
+    },
+    (Calcit::Record(_) | Calcit::Enum(_), other) => CalcitErr::err_str(
       CalcitErrKind::Type,
       format!("&tuple:enum-variant-arity expected a tag as second argument, but received: {other}"),
     ),
     (other, _) => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("&tuple:enum-variant-arity expected a record as first argument, but received: {other}"),
+      format!("&tuple:enum-variant-arity expected an enum as first argument, but received: {other}"),
     ),
   }
 }
@@ -677,7 +813,7 @@ fn method_record(
       }
     }
     None => {
-      let content = class.fields.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
+      let content = class.fields().iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
       Err(CalcitErr::use_msg_stack(
         CalcitErrKind::Type,
         format!("unknown method `.{name}` for {v0}. Available methods: {content}"),
@@ -688,13 +824,13 @@ fn method_record(
 }
 
 pub fn native_compare(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&compare expected 2 values, but received:", xs);
-  }
-  match xs[0].cmp(&xs[1]) {
-    Ordering::Less => Ok(Calcit::Number(-1.0)),
-    Ordering::Greater => Ok(Calcit::Number(1.0)),
-    Ordering::Equal => Ok(Calcit::Number(0.0)),
+  match (xs.first(), xs.get(1)) {
+    (Some(a), Some(b)) => match a.cmp(b) {
+      Ordering::Less => Ok(Calcit::Number(-1.0)),
+      Ordering::Greater => Ok(Calcit::Number(1.0)),
+      Ordering::Equal => Ok(Calcit::Number(0.0)),
+    },
+    _ => crate::builtins::err_arity("&compare requires 2 arguments, but received:", xs),
   }
 }
 
@@ -718,10 +854,15 @@ pub fn tuple_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&tuple:nth expected a valid index, {e}")),
     },
-    (a, b) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&tuple:nth expected a tuple and an index, but received: {a} {b}"),
-    ),
+    (a, b) => {
+      let msg = format!(
+        "&tuple:nth requires a tuple and an index, but received: {} and {}",
+        type_of(&[a.to_owned()])?.lisp_str(),
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleNth).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -765,7 +906,15 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Err(e) => CalcitErr::err_str(CalcitErrKind::Type, e),
     },
-    (a, b, ..) => CalcitErr::err_str(CalcitErrKind::Type, format!("&tuple:assoc expected a tuple, but received: {a} {b}")),
+    (a, b, ..) => {
+      let msg = format!(
+        "&tuple:assoc requires a tuple and an index, but received: {} and {}",
+        type_of(&[a.to_owned()])?.lisp_str(),
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleAssoc).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -775,7 +924,14 @@ pub fn tuple_count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Tuple(CalcitTuple { extra, .. }) => Ok(Calcit::Number((extra.len() + 1) as f64)),
-    x => CalcitErr::err_str(CalcitErrKind::Type, format!("&tuple:count expected a tuple, but received: {x}")),
+    x => {
+      let msg = format!(
+        "&tuple:count requires a tuple, but received: {}",
+        type_of(&[x.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleCount).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -788,7 +944,14 @@ pub fn tuple_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       None => Ok(Calcit::Nil),
       Some(class) => Ok(Calcit::Record((**class).to_owned())),
     },
-    x => CalcitErr::err_str(CalcitErrKind::Type, format!("&tuple:class expected a tuple, but received: {x}")),
+    x => {
+      let msg = format!(
+        "&tuple:class requires a tuple, but received: {}",
+        type_of(&[x.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleClass).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -805,7 +968,14 @@ pub fn tuple_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::from(ys))
     }
-    x => CalcitErr::err_str(CalcitErrKind::Type, format!("&tuple:params expected a tuple, but received: {x}")),
+    x => {
+      let msg = format!(
+        "&tuple:params requires a tuple, but received: {}",
+        type_of(&[x.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleParams).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
 }
 
@@ -820,19 +990,175 @@ pub fn tuple_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       class: Some(Arc::new(record.to_owned())),
       sum_type: sum_type.to_owned(),
     })),
-    (a, Calcit::Record { .. }) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&tuple:with-class expected a tuple, but received: {a}"),
-    ),
-    (Calcit::Tuple { .. }, b) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&tuple:with-class expected a record for the second argument, but received: {b}"),
-    ),
-    (a, b) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&tuple:with-class expected a tuple and a record, but received: {a} {b}"),
-    ),
+    (a, Calcit::Record { .. }) => {
+      let msg = format!(
+        "&tuple:with-class requires a tuple, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleWithClass).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    (Calcit::Tuple { .. }, b) => {
+      let msg = format!(
+        "&tuple:with-class requires a record for the second argument, but received: {}",
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleWithClass).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    (a, b) => {
+      let msg = format!(
+        "&tuple:with-class requires a tuple and a record, but received: {} and {}",
+        type_of(&[a.to_owned()])?.lisp_str(),
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleWithClass).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
   }
+}
+
+/// Inspect and print class methods information for debugging
+/// Usage: (&inspect-class-methods value "optional note")
+/// Returns the value unchanged while printing class information to stderr
+pub fn inspect_class_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if xs.is_empty() || xs.len() > 2 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "&inspect-class-methods expected 1 or 2 arguments (value, optional note), but received:",
+      xs,
+    );
+  }
+
+  let value = &xs[0];
+  let note = if xs.len() == 2 {
+    match &xs[1] {
+      Calcit::Str(s) => s.as_ref(),
+      _ => "(non-string note)",
+    }
+  } else {
+    ""
+  };
+
+  // Get the class record for this value
+  let class_result: Result<Calcit, CalcitErr> = match value {
+    Calcit::Tuple(CalcitTuple { class: Some(class), .. }) => Ok(Calcit::Record((**class).to_owned())),
+    Calcit::Tuple { .. } => Ok(Calcit::Nil),
+    Calcit::Record(CalcitRecord { class: Some(class), .. }) => Ok(Calcit::Record((**class).to_owned())),
+    Calcit::Record { .. } => Ok(Calcit::Nil),
+    Calcit::List(..) => runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Map(..) => runner::evaluate_symbol_from_program("&core-map-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Number(..) => runner::evaluate_symbol_from_program("&core-number-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Str(..) => runner::evaluate_symbol_from_program("&core-string-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Set(..) => runner::evaluate_symbol_from_program("&core-set-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Nil => runner::evaluate_symbol_from_program("&core-nil-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol_from_program("&core-fn-class", calcit::CORE_NS, None, call_stack),
+    _ => Ok(Calcit::Nil),
+  };
+
+  // Print class information
+  eprintln!("\n&inspect-class-methods");
+  if !note.is_empty() {
+    eprintln!("Note: {note}");
+  }
+  eprintln!("Value type: {}", type_of(&[value.clone()])?);
+  eprintln!("Value: {value}");
+  eprintln!("Method call syntax: `.method self p1 p2`");
+  eprintln!("  - dot is part of the method name, first arg is the receiver");
+
+  match class_result {
+    Ok(Calcit::Record(record)) => {
+      eprintln!("\nClass: {} ({} methods)", record.name(), record.fields().len());
+      eprintln!();
+
+      for (i, field) in record.fields().iter().enumerate() {
+        let method_value = &record.values[i];
+
+        match method_value {
+          Calcit::Fn { info, .. } => {
+            // Extract argument count
+            let arg_count = info.args.param_len();
+
+            // Format arguments
+            let args_str = match info.args.as_ref() {
+              CalcitFnArgs::MarkedArgs(labels) => labels.iter().map(|label| format!("{label}")).collect::<Vec<_>>().join(" "),
+              CalcitFnArgs::Args(indices) => indices.iter().map(|idx| CalcitLocal::read_name(*idx)).collect::<Vec<_>>().join(" "),
+            };
+
+            // Compact output format
+            eprint!("  • .{field} => [fn/{arg_count}");
+            if !args_str.is_empty() {
+              eprint!(" ({args_str})");
+            }
+            eprintln!("]  @{}", info.def_ns);
+
+            // Guidance for more info
+            eprintln!("      → cr query def '{}/{}'", info.def_ns, info.name);
+          }
+          Calcit::Proc(proc_name) => {
+            // Try to get type signature for better hints
+            if let Some(sig) = proc_name.get_type_signature() {
+              let arg_types = sig
+                .arg_types
+                .iter()
+                .map(|t| {
+                  if matches!(**t, CalcitTypeAnnotation::Dynamic) {
+                    "_".to_string()
+                  } else {
+                    t.to_brief_string()
+                  }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+              let return_type = if matches!(*sig.return_type, CalcitTypeAnnotation::Dynamic) {
+                "_".to_string()
+              } else {
+                sig.return_type.to_brief_string()
+              };
+              eprintln!(
+                "  • .{field} => [proc/{}: {proc_name}]  ({arg_types}) -> {return_type}",
+                sig.arg_types.len()
+              );
+            } else {
+              eprintln!("  • .{field} => [proc: {proc_name}]");
+            }
+          }
+          Calcit::Syntax(syntax_name, _) => {
+            eprintln!("  • .{field} => [syntax: {syntax_name}]");
+          }
+          other => {
+            eprintln!("  • .{field} => {other}");
+          }
+        }
+      }
+
+      // Check for nested class
+      if let Some(parent_class) = &record.class {
+        eprintln!();
+        eprintln!("Parent class: {} ({} methods)", parent_class.name(), parent_class.fields().len());
+        eprintln!(
+          "  → Inspect with: (&inspect-class-methods (&tuple:with-class (:: :{}) {}))",
+          parent_class.name(),
+          parent_class.name()
+        );
+      }
+    }
+    Ok(Calcit::Nil) => {
+      eprintln!("\nNo class associated with this value.");
+      eprintln!("  [This value type doesn't have methods]");
+    }
+    Ok(other) => {
+      eprintln!("\nUnexpected class value: {other}");
+    }
+    Err(e) => {
+      eprintln!("\nError retrieving class: {}", e.msg);
+    }
+  }
+
+  eprintln!();
+
+  // Return the original value unchanged
+  Ok(value.clone())
 }
 
 pub fn no_op() -> Result<Calcit, CalcitErr> {
@@ -1017,50 +1343,5 @@ pub fn is_spreading_mark(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Syntax(CalcitSyntax::ArgSpread, _) => Ok(Calcit::Bool(true)),
     _ => Ok(Calcit::Bool(false)),
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use cirru_edn::EdnTag;
-  use std::sync::Arc;
-
-  fn empty_record(name: &str) -> Calcit {
-    Calcit::Record(CalcitRecord {
-      name: EdnTag::new(name),
-      fields: Arc::new(vec![]),
-      values: Arc::new(vec![]),
-      class: None,
-    })
-  }
-
-  #[test]
-  fn builds_enum_tuple_with_metadata() {
-    let enum_record = Calcit::Record(CalcitRecord {
-      name: EdnTag::new("Result"),
-      fields: Arc::new(vec![EdnTag::new("ok"), EdnTag::new("err")]),
-      values: Arc::new(vec![
-        Calcit::from(CalcitList::Vector(vec![])),                      // :ok has no payload
-        Calcit::from(CalcitList::Vector(vec![Calcit::tag("string")])), // :err has one :string payload
-      ]),
-      class: None,
-    });
-
-    let args = vec![empty_record("Action"), enum_record, Calcit::tag("ok")];
-
-    let tuple = new_enum_tuple(&args).expect("enum tuple");
-    match tuple {
-      Calcit::Tuple(CalcitTuple {
-        class, sum_type, extra, ..
-      }) => {
-        assert_eq!(extra.len(), 0); // :ok has no payload
-        let class = class.expect("class metadata");
-        assert_eq!(class.name, EdnTag::new("Action"));
-        let sum_type = sum_type.expect("enum metadata");
-        assert_eq!(sum_type.name(), &EdnTag::new("Result"));
-      }
-      other => panic!("expected tuple, got {other:?}"),
-    }
   }
 }

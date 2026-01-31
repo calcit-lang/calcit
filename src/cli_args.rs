@@ -219,8 +219,8 @@ pub enum QuerySubcommand {
   Usages(QueryUsagesCommand),
   /// search for leaf nodes (strings) in definition
   Search(QuerySearchCommand),
-  /// search for structural patterns (Cirru expr or JSON array) in definition
-  SearchPattern(QuerySearchPatternCommand),
+  /// search for structural expressions (Cirru expr or JSON array) in definition
+  SearchExpr(QuerySearchExprCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -348,9 +348,9 @@ pub struct QuerySearchCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "search-pattern")]
-/// search for structural patterns (Cirru expr or JSON array) across project or in specific namespace/definition
-pub struct QuerySearchPatternCommand {
+#[argh(subcommand, name = "search-expr")]
+/// search for structural expressions (Cirru expr or JSON array) across project or in specific namespace/definition
+pub struct QuerySearchExprCommand {
   /// pattern to search for (Cirru one-liner or JSON array with -j)
   #[argh(positional)]
   pub pattern: String,
@@ -461,6 +461,9 @@ pub struct CirruParseCommand {
   /// parse input as a single-line Cirru expression (one-liner parser, default is multi-line)
   #[argh(switch, short = 'e', long = "expr-one")]
   pub expr_one_liner: bool,
+  /// perform basic syntax validation after parsing (checks keywords, strings, numbers)
+  #[argh(switch, short = 'v', long = "validate")]
+  pub validate: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -904,6 +907,7 @@ pub struct TreeCommand {
 pub enum TreeSubcommand {
   Show(TreeShowCommand),
   Replace(TreeReplaceCommand),
+  ReplaceLeaf(TreeReplaceLeafCommand),
   Delete(TreeDeleteCommand),
   InsertBefore(TreeInsertBeforeCommand),
   InsertAfter(TreeInsertAfterCommand),
@@ -969,6 +973,30 @@ pub struct TreeReplaceCommand {
   /// placeholder for inner branch reference (e.g., "####")
   #[argh(option, long = "refer-inner-placeholder")]
   pub refer_inner_placeholder: Option<String>,
+  /// max depth for result preview (0 = unlimited, default 2)
+  #[argh(option, short = 'd', default = "2")]
+  pub depth: usize,
+}
+
+/// find and replace all matching leaf nodes in definition (no path needed)
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "replace-leaf")]
+pub struct TreeReplaceLeafCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// pattern to search for (exact match on leaf nodes)
+  #[argh(option, long = "pattern")]
+  pub pattern: String,
+  /// replacement value for matched leaf nodes (Cirru format, use |text for strings)
+  #[argh(option, long = "replacement")]
+  pub replacement: String,
+  /// treat replacement as a leaf node (default: true)
+  #[argh(switch, long = "no-leaf")]
+  pub no_leaf: bool,
+  /// treat replacement input as JSON
+  #[argh(switch, short = 'J', long = "json-input")]
+  pub json_input: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,

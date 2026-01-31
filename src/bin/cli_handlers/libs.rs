@@ -126,11 +126,9 @@ fn handle_readme(package: &str, file: Option<&str>) -> Result<(), String> {
 
   if let Ok(content) = std::fs::read_to_string(&local_path) {
     // Print library info header
-    println!("\n{}", "═".repeat(60).dimmed());
-    println!("{} {}", "Package:".bold(), package.cyan().bold());
+    println!("\n{} {}", "Package:".bold(), package.cyan().bold());
     println!("{} {}", "Source:".bold(), "Local".green());
     println!("{} {}", "Path:".bold(), local_path.dimmed());
-    println!("{}", "═".repeat(60).dimmed());
     println!();
 
     // Print file content
@@ -163,14 +161,12 @@ fn handle_readme(package: &str, file: Option<&str>) -> Result<(), String> {
     .or_else(|_| fetch_file_content(&client, &base_url, "master", file_name))?;
 
   // Print library info header
-  println!("\n{}", "═".repeat(60).dimmed());
-  println!("{} {}", "Package:".bold(), lib.package_name.cyan().bold());
+  println!("\n{} {}", "Package:".bold(), lib.package_name.cyan().bold());
   println!("{} {}", "Repository:".bold(), lib.repository);
   if let Some(desc) = &lib.description {
     println!("{} {}", "Description:".bold(), desc);
   }
   println!("{} {}", "File:".bold(), file_name);
-  println!("{}", "═".repeat(60).dimmed());
   println!();
 
   // Print file content

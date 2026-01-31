@@ -24,6 +24,18 @@ pub type SyntaxType = fn(expr: &TernaryTreeList<Calcit>, scope: &CalcitScope, fi
 
 pub(crate) static IMPORTED_PROCS: LazyLock<RwLock<HashMap<Arc<str>, FnType>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
 
+pub(crate) fn err_arity<T: Into<String>>(msg: T, xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  CalcitErr::err_nodes(CalcitErrKind::Arity, msg, xs)
+}
+
+pub(crate) fn err_arity_with_hint<T: Into<String>, H: Into<String>>(msg: T, xs: &[Calcit], hint: H) -> Result<Calcit, CalcitErr> {
+  CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, msg, xs, hint)
+}
+
+pub(crate) fn err_type_with_hint<T: Into<String>, H: Into<String>>(msg: T, hint: H) -> Result<Calcit, CalcitErr> {
+  CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+}
+
 pub fn is_proc_name(s: &str) -> bool {
   let builtin = s.parse::<CalcitProc>();
   if builtin.is_ok() { true } else { is_registered_proc(s) }
@@ -34,8 +46,47 @@ pub fn is_registered_proc(s: &str) -> bool {
   ps.contains_key(s)
 }
 
+fn check_proc_arity(name: CalcitProc, args: &[Calcit]) -> Result<(), CalcitErr> {
+  let Some(signature) = name.get_type_signature() else {
+    return Ok(());
+  };
+
+  let arity = signature.arity();
+  let actual_count = args.len();
+  if let Some(max_count) = arity.max {
+    if actual_count < arity.min || actual_count > max_count {
+      let expected_str = if arity.min == max_count {
+        format!("{}", arity.min)
+      } else {
+        format!("{}~{}", arity.min, max_count)
+      };
+      let hint = crate::calcit::format_proc_examples_hint(&name).unwrap_or_default();
+      return CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        format!("Proc `{name}` expects {expected_str} args, but received:"),
+        args,
+        hint,
+      )
+      .map(|_| ());
+    }
+  } else if actual_count < arity.min {
+    let hint = crate::calcit::format_proc_examples_hint(&name).unwrap_or_default();
+    return CalcitErr::err_nodes_with_hint(
+      CalcitErrKind::Arity,
+      format!("Proc `{name}` expects at least {} args, but received:", arity.min),
+      args,
+      hint,
+    )
+    .map(|_| ());
+  }
+
+  Ok(())
+}
+
 /// make sure that stack information attached in errors from procs
 pub fn handle_proc(name: CalcitProc, args: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  check_proc_arity(name, args)?;
+
   if using_stack() {
     handle_proc_internal(name, args, call_stack).map_err(|e| {
       if e.stack.is_empty() {
@@ -77,8 +128,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     IsSpreadingMark => meta::is_spreading_mark(args),
     // tuple
     NativeTuple => meta::new_tuple(args), // unstable solution for the name
-    NativeClassTuple => meta::new_class_tuple(args),
-    NativeEnumTuple => meta::new_enum_tuple(args),
+    NativeEnumTupleNew => meta::new_enum_tuple_no_class(args),
     NativeTupleNth => meta::tuple_nth(args),
     NativeTupleAssoc => meta::assoc(args),
     NativeTupleCount => meta::tuple_count(args),
@@ -86,11 +136,16 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeTupleParams => meta::tuple_params(args),
     NativeTupleWithClass => meta::tuple_with_class(args),
     NativeTupleEnum => meta::tuple_enum(args),
+    NativeStructNew => records::new_struct(args),
+    NativeEnumNew => records::new_enum(args),
+    NativeStructWithClass => meta::struct_with_class(args),
+    NativeEnumWithClass => meta::enum_with_class(args),
     NativeTupleEnumHasVariant => meta::tuple_enum_has_variant(args),
     NativeTupleEnumVariantArity => meta::tuple_enum_variant_arity(args),
     NativeTupleValidateEnum => meta::tuple_validate_enum(args),
     // effects
     NativeDisplayStack => meta::display_stack(args, call_stack),
+    NativeInspectClassMethods => meta::inspect_class_methods(args, call_stack),
     Raise => effects::raise(args),
     Quit => effects::quit(args),
     GetEnv => effects::get_env(args),

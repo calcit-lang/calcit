@@ -101,6 +101,9 @@ fn main() -> Result<(), String> {
     for module_path in &command.dep {
       let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
       for (k, v) in &module_data.files {
+        if snapshot.files.contains_key(k) {
+          return Err(format!("namespace `{k}` already exists when loading module `{module_path}`"));
+        }
         snapshot.files.insert(k.to_owned(), v.to_owned());
       }
     }
@@ -137,6 +140,9 @@ fn main() -> Result<(), String> {
     for module_path in &snapshot.configs.modules {
       let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
       for (k, v) in &module_data.files {
+        if snapshot.files.contains_key(k) {
+          return Err(format!("namespace `{k}` already exists when loading module `{module_path}`"));
+        }
         snapshot.files.insert(k.to_owned(), v.to_owned());
       }
     }

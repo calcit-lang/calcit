@@ -1,8 +1,8 @@
 
-{} (:package |app)
-  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
+{} (:package |test-types)
+  :configs $ {} (:init-fn |test-types.main/main!) (:reload-fn |test-types.main/reload!)
   :files $ {}
-    |app.main $ %{} :FileEntry
+    |test-types.main $ %{} :FileEntry
       :defs $ {}
         |add-numbers $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -28,11 +28,23 @@
         |test-proc-type $ %{} :CodeEntry (:doc "|Tests Proc (builtin function) type annotation")
           :code $ quote
             defn test-proc-type (p x y)
-              assert-type p :proc
+              assert-type p :fn
               assert-type x :number
               assert-type y :number
               hint-fn $ return-type :number
               p x y
+
+        |typed-only $ %{} :CodeEntry (:doc "|Used to verify arg type hints are collected")
+          :code $ quote
+            defn typed-only (a)
+              assert-type a :number
+              &+ 1 0
+
+        |test-arg-type-hints $ %{} :CodeEntry (:doc "|Trigger type warning for non-variadic arg hints")
+          :code $ quote
+            defn test-arg-type-hints ()
+              typed-only |oops
+              println "|arg type hints check executed"
 
         |show-type-info $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -211,7 +223,7 @@
                       :method $ fn (self) (str "|Hello, I'm " $ :name self)
                 ; 创建 Person 实例
                 let
-                    alice $ %:: Person :name |Alice :age 30
+                  alice $ &tuple:with-class (:: :name |Alice :age 30) Person
                   ; 调用方法
                   let
                       greeting $ .greet alice
@@ -234,6 +246,8 @@
               ; 测试 2: string 对象调用不存在的方法
               ; let
               ;     text |hello
+
+
               ;   assert-type text :string
               ;   .nonexistent text
 
@@ -309,6 +323,51 @@
                   assert= |t str-first
               , "|Typed method access checks passed"
 
+        |Person $ %{} :CodeEntry (:doc "|Struct definition for type checks")
+          :code $ quote
+            defstruct Person
+              :name :string
+              :age nil
+
+        |StructClass $ %{} :CodeEntry (:doc "|Class for struct metadata")
+          :code $ quote
+            defrecord! StructClass
+              :dummy nil
+
+        |Result $ %{} :CodeEntry (:doc "|Enum prototype for type checks")
+          :code $ quote
+            defenum Result
+              :ok :number
+              :err :string
+
+        |ResultClass $ %{} :CodeEntry (:doc "|Class for enum tuple tests")
+          :code $ quote
+            defrecord! ResultClass
+              :describe $ fn (self)
+                tag-match self
+                  (:ok value) (str "|ok " value)
+                  (:err msg) (str "|err " msg)
+
+        |EnumClass $ %{} :CodeEntry (:doc "|Class for enum metadata")
+          :code $ quote
+            defrecord! EnumClass
+              :dummy nil
+
+        |test-defstruct-defenum $ %{} :CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples")
+          :code $ quote
+            defn test-defstruct-defenum ()
+              assert= :struct $ type-of Person
+              assert= :enum $ type-of Result
+              assert= :struct $ type-of $ &struct:with-class Person StructClass
+              let
+                  enum-with-class $ &enum:with-class Result EnumClass
+                  ok $ &tuple:with-class (%:: enum-with-class :ok 1) ResultClass
+                assert= :enum $ type-of enum-with-class
+                assert= ResultClass $ &tuple:class ok
+                assert= enum-with-class $ &tuple:enum ok
+                assert= "|(%:: :ok 1 (:class ResultClass) (:enum Result))" $ str ok
+              , "|defstruct/defenum checks passed"
+
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! ()
@@ -324,6 +383,7 @@
               println $ chained-return-type 3 4
               println $ test-threading-types |world
               println $ test-complex-threading 10 20
+              test-arg-type-hints
               test-builtin-proc-types
               println "|--- Testing typed method calls ---"
               println $ test-list-methods
@@ -333,6 +393,7 @@
               println $ test-typed-method-access
               println "|--- Testing preprocess method validation ---"
               println $ test-preprocess-method-validation
+              println $ test-defstruct-defenum
               ; test-method-type-errors ; Disabled - contains intentional errors
               ; test-proc-type-warnings
               println "|Done!"
@@ -344,5 +405,5 @@
           :code $ quote (defn reload! () nil)
 
       :ns $ %{} :CodeEntry (:doc |)
-        :code $ quote (ns app.main)
+        :code $ quote (ns test-types.main)
 

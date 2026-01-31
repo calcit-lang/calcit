@@ -8,6 +8,8 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use cirru_edn::EdnTag;
 
+use crate::builtins::meta::type_of;
+
 use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitScope};
 use crate::{call_stack::CallStackList, runner};
 
@@ -126,7 +128,14 @@ static ATOM_ID_GEN: AtomicUsize = AtomicUsize::new(0);
 pub fn atom(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(value) => Ok(quick_build_atom(value.to_owned())),
-    _ => CalcitErr::err_str(CalcitErrKind::Arity, "atom expected 1 node, but received none"),
+    _ => {
+      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::Atom).unwrap_or_default();
+      crate::calcit::CalcitErr::err_str_with_hint(
+        crate::calcit::CalcitErrKind::Arity,
+        "atom requires 1 argument (initial value), but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
@@ -150,8 +159,22 @@ pub fn atom_deref(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let pair = (**locked_pair).lock().expect("read pair from block");
       Ok(pair.0.to_owned())
     }
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&atom:deref expected a ref, but received: {a}")),
-    _ => CalcitErr::err_str(CalcitErrKind::Arity, "&atom:deref expected 1 argument, but received none"),
+    Some(a) => {
+      let msg = format!(
+        "&atom:deref requires a ref (atom), but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AtomDeref).unwrap_or_default();
+      crate::calcit::CalcitErr::err_str_with_hint(crate::calcit::CalcitErrKind::Type, msg, hint)
+    }
+    _ => {
+      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AtomDeref).unwrap_or_default();
+      crate::calcit::CalcitErr::err_str_with_hint(
+        crate::calcit::CalcitErrKind::Arity,
+        "&atom:deref requires 1 argument (a ref), but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
@@ -217,16 +240,45 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
     }
     (Some(Calcit::Ref(..)), Some(Calcit::Tag(_)), Some(a)) => {
-      CalcitErr::err_str(CalcitErrKind::Type, format!("add-watch expected a function, but received: {a}"))
+      let msg = format!(
+        "add-watch requires a function as 3rd argument, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AddWatch).unwrap_or_default();
+      crate::calcit::CalcitErr::err_str_with_hint(crate::calcit::CalcitErrKind::Type, msg, hint)
     }
     (Some(Calcit::Ref(..)), Some(a), Some(_)) => {
-      CalcitErr::err_str(CalcitErrKind::Type, format!("add-watch expected a tag, but received: {a}"))
+      let msg = format!(
+        "add-watch requires a tag as 2nd argument (watch key), but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AddWatch).unwrap_or_default();
+      crate::calcit::CalcitErr::err_str_with_hint(crate::calcit::CalcitErrKind::Type, msg, hint)
     }
-    (Some(a), _, _) => CalcitErr::err_str(CalcitErrKind::Type, format!("add-watch expected a ref, but received: {a}")),
-    (a, b, c) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("add-watch expected a ref, a tag, and a function, but received: {a:?} {b:?} {c:?}"),
-    ),
+    (Some(a), _, _) => {
+      let msg = format!(
+        "add-watch requires a ref (atom) as 1st argument, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AddWatch).unwrap_or_default();
+      crate::calcit::CalcitErr::err_str_with_hint(crate::calcit::CalcitErrKind::Type, msg, hint)
+    }
+    (a, b, c) => {
+      let msg = format!(
+        "add-watch requires 3 arguments (ref, tag-key, function), but received: {}",
+        if a.is_none() {
+          0
+        } else if b.is_none() {
+          1
+        } else if c.is_none() {
+          2
+        } else {
+          3
+        }
+      );
+      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AddWatch).unwrap_or_default();
+      crate::calcit::CalcitErr::err_str_with_hint(crate::calcit::CalcitErrKind::Arity, msg, hint)
+    }
   }
 }
 
@@ -246,13 +298,28 @@ pub fn remove_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
       }
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("remove-watch expected a ref and a tag, but received: {a} {b}"),
-    ),
-    (a, b) => CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      format!("remove-watch expected 2 arguments, but received: {a:?} {b:?}"),
-    ),
+    (Some(a), Some(b)) => {
+      let msg = format!(
+        "remove-watch requires a ref and a tag, but received: {} and {}",
+        type_of(&[a.to_owned()])?.lisp_str(),
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::RemoveWatch).unwrap_or_default();
+      crate::calcit::CalcitErr::err_str_with_hint(crate::calcit::CalcitErrKind::Type, msg, hint)
+    }
+    (a, b) => {
+      let msg = format!(
+        "remove-watch requires 2 arguments (ref and tag-key), but received: {} arguments",
+        if a.is_none() {
+          0
+        } else if b.is_none() {
+          1
+        } else {
+          2
+        }
+      );
+      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::RemoveWatch).unwrap_or_default();
+      crate::calcit::CalcitErr::err_str_with_hint(crate::calcit::CalcitErrKind::Arity, msg, hint)
+    }
   }
 }
