@@ -1077,10 +1077,10 @@ fn gen_js_func(
         _ => false,
       };
       if is_hint {
-      if hinted_async(xs) {
-        async_prefix = String::from("async ")
-      }
-      continue;
+        if hinted_async(xs) {
+          async_prefix = String::from("async ")
+        }
+        continue;
       }
     }
     if line == &Calcit::Nil {

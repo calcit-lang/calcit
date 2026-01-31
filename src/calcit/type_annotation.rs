@@ -30,9 +30,11 @@ pub enum CalcitTypeAnnotation {
   Map,
   Record(Arc<CalcitRecord>),
   Tuple(Arc<CalcitTuple>),
+  /// Any tuple type (when specific structure is not known)
+  DynTuple,
   /// function type without a known signature
-  Fn,
-  Function(Arc<CalcitFnTypeAnnotation>),
+  DynFn,
+  Fn(Arc<CalcitFnTypeAnnotation>),
   /// Hashset type
   Set,
   Ref,
@@ -60,7 +62,8 @@ impl CalcitTypeAnnotation {
       "list" => Some(Self::List),
       "map" => Some(Self::Map),
       "set" => Some(Self::Set),
-      "fn" => Some(Self::Fn),
+      "tuple" => Some(Self::DynTuple),
+      "fn" => Some(Self::DynFn),
       "ref" => Some(Self::Ref),
       "buffer" => Some(Self::Buffer),
       "cirru-quote" => Some(Self::CirruQuote),
@@ -78,8 +81,9 @@ impl CalcitTypeAnnotation {
       Self::Tag => Some("tag"),
       Self::List => Some("list"),
       Self::Map => Some("map"),
-      Self::Fn => Some("fn"),
+      Self::DynFn => Some("fn"),
       Self::Set => Some("set"),
+      Self::DynTuple => Some("tuple"),
       Self::Ref => Some("ref"),
       Self::Buffer => Some("buffer"),
       Self::CirruQuote => Some("cirru-quote"),
@@ -279,7 +283,7 @@ impl CalcitTypeAnnotation {
     match self {
       Self::Record(record) => format!("record {}", record.name()),
       Self::Tuple(_) => "tuple".to_string(),
-      Self::Function(signature) => signature.render_signature_brief(),
+      Self::Fn(signature) => signature.render_signature_brief(),
       Self::Variadic(inner) => format!("variadic {}", inner.to_brief_string()),
       Self::Custom(inner) => format!("{inner}"),
       Self::Optional(inner) => format!("optional {}", inner.to_brief_string()),
@@ -305,13 +309,17 @@ impl CalcitTypeAnnotation {
       | (Self::Tag, Self::Tag)
       | (Self::List, Self::List)
       | (Self::Map, Self::Map)
-      | (Self::Fn, Self::Fn)
+      | (Self::DynFn, Self::DynFn)
       | (Self::Ref, Self::Ref)
       | (Self::Buffer, Self::Buffer)
       | (Self::CirruQuote, Self::CirruQuote) => true,
       (Self::Record(a), Self::Record(b)) => a.name() == b.name(),
+      // Tuple type matching: DynTuple matches any Tuple, specific Tuple must match structure
+      (Self::Tuple(_), Self::DynTuple) | (Self::DynTuple, Self::Tuple(_)) | (Self::DynTuple, Self::DynTuple) => true,
       (Self::Tuple(actual), Self::Tuple(expected)) => Self::tuple_matches(actual.as_ref(), expected.as_ref()),
-      (Self::Function(a), Self::Function(b)) => a.matches_signature(b.as_ref()),
+      // Function type matching: DynFn matches any Fn, specific Fn must match signature
+      (Self::Fn(_), Self::DynFn) | (Self::DynFn, Self::Fn(_)) => true,
+      (Self::Fn(a), Self::Fn(b)) => a.matches_signature(b.as_ref()),
       (Self::Set, Self::Set) => true,
       (Self::Variadic(a), Self::Variadic(b)) => a.matches_annotation(b),
       (Self::Custom(a), Self::Custom(b)) => a.as_ref() == b.as_ref(),
@@ -389,7 +397,7 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn from_function_parts(arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: Arc<CalcitTypeAnnotation>) -> Self {
-    Self::Function(Arc::new(CalcitFnTypeAnnotation { arg_types, return_type }))
+    Self::Fn(Arc::new(CalcitFnTypeAnnotation { arg_types, return_type }))
   }
 
   fn from_import(import: &CalcitImport) -> Option<Self> {
@@ -435,7 +443,7 @@ impl CalcitTypeAnnotation {
     match self {
       Self::Record(record) => Calcit::Record((**record).clone()),
       Self::Tuple(tuple) => Calcit::Tuple((**tuple).clone()),
-      Self::Function(_) => Calcit::Tag(EdnTag::from("fn")),
+      Self::Fn(_) => Calcit::Tag(EdnTag::from("fn")),
       Self::Variadic(inner) => Calcit::Tuple(CalcitTuple {
         tag: Arc::new(Calcit::Tag(EdnTag::from("&"))),
         extra: vec![inner.to_calcit()],
@@ -480,7 +488,7 @@ impl CalcitTypeAnnotation {
 
   pub fn as_function(&self) -> Option<&CalcitFnTypeAnnotation> {
     match self {
-      Self::Function(signature) => Some(signature.as_ref()),
+      Self::Fn(signature) => Some(signature.as_ref()),
       Self::Optional(inner) => inner.as_function(),
       _ => None,
     }
@@ -494,7 +502,7 @@ impl CalcitTypeAnnotation {
     match self {
       Self::Record(record) => format!("record {}", record.name()),
       Self::Tuple(tuple) => format!("tuple {:?}", tuple.tag),
-      Self::Function(signature) => signature.describe(),
+      Self::Fn(signature) => signature.describe(),
       Self::Variadic(inner) => format!("variadic {}", inner.describe()),
       Self::Custom(_) => "custom type".to_string(),
       Self::Optional(inner) => format!("optional {}", inner.describe()),
@@ -513,18 +521,19 @@ impl CalcitTypeAnnotation {
       Self::Tag => 5,
       Self::List => 6,
       Self::Map => 7,
-      Self::Fn => 8,
+      Self::DynFn => 8,
       Self::Ref => 9,
       Self::Buffer => 10,
       Self::CirruQuote => 11,
       Self::Record(_) => 12,
       Self::Tuple(_) => 13,
-      Self::Function(_) => 14,
-      Self::Set => 15,
-      Self::Variadic(_) => 16,
-      Self::Custom(_) => 17,
-      Self::Optional(_) => 18,
-      Self::Dynamic => 19,
+      Self::DynTuple => 14,
+      Self::Fn(_) => 15,
+      Self::Set => 16,
+      Self::Variadic(_) => 17,
+      Self::Custom(_) => 18,
+      Self::Optional(_) => 19,
+      Self::Dynamic => 20,
     }
   }
 }
@@ -686,7 +695,7 @@ impl Hash for CalcitTypeAnnotation {
         tuple.tag.hash(state);
         tuple.extra.hash(state);
       }
-      Self::Function(signature) => {
+      Self::Fn(signature) => {
         "function".hash(state);
         signature.arg_types.hash(state);
         signature.return_type.hash(state);
@@ -738,7 +747,7 @@ impl Ord for CalcitTypeAnnotation {
       | (Self::Tag, Self::Tag)
       | (Self::List, Self::List)
       | (Self::Map, Self::Map)
-      | (Self::Fn, Self::Fn)
+      | (Self::DynFn, Self::DynFn)
       | (Self::Ref, Self::Ref)
       | (Self::Buffer, Self::Buffer)
       | (Self::CirruQuote, Self::CirruQuote) => Ordering::Equal,
@@ -756,7 +765,7 @@ impl Ord for CalcitTypeAnnotation {
         let b = b.as_ref();
         a.tag.cmp(&b.tag).then_with(|| a.extra.cmp(&b.extra))
       }
-      (Self::Function(a), Self::Function(b)) => a.arg_types.cmp(&b.arg_types).then_with(|| a.return_type.cmp(&b.return_type)),
+      (Self::Fn(a), Self::Fn(b)) => a.arg_types.cmp(&b.arg_types).then_with(|| a.return_type.cmp(&b.return_type)),
       (Self::Set, Self::Set) => Ordering::Equal,
       (Self::Variadic(a), Self::Variadic(b)) => a.cmp(b),
       (Self::Custom(a), Self::Custom(b)) => a.cmp(b),

@@ -816,6 +816,101 @@ fn check_field_in_record(
   );
 }
 
+/// Check enum tuple construction (%::) for variant existence and payload arity
+fn check_enum_tuple_construction(
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  // %:: takes: (enum-proto, tag, ...payloads)
+  // args here excludes the proc itself, so: (enum-proto, tag, ...payloads)
+  if args.len() < 2 {
+    return; // Not enough args to check
+  }
+
+  let enum_arg = match args.first() {
+    Some(arg) => arg,
+    None => return,
+  };
+
+  let tag_arg = match args.get(1) {
+    Some(arg) => arg,
+    None => return,
+  };
+
+  // Resolve enum prototype
+  let Some(enum_proto) = resolve_enum_value(enum_arg, scope_types) else {
+    return; // Can't resolve enum, skip check
+  };
+
+  // Extract tag name
+  let tag_name = match tag_arg {
+    Calcit::Tag(tag) => tag.ref_str(),
+    Calcit::Symbol { sym, .. } => sym.as_ref(),
+    _ => return, // Dynamic tag, can't check statically
+  };
+
+  // Check if variant exists
+  let Some(variant) = enum_proto.find_variant_by_name(tag_name) else {
+    let available_variants: Vec<&str> = enum_proto.variants().iter().map(|v| v.tag.ref_str()).collect();
+    gen_check_warning(
+      format!(
+        "[Warn] Enum `{}` does not have variant `:{tag_name}`. Available variants: [{}], at {file_ns}/{def_name}",
+        enum_proto.name(),
+        available_variants.join(", ")
+      ),
+      file_ns,
+      check_warnings,
+    );
+    return;
+  };
+
+  // Check payload arity
+  let expected_arity = variant.arity();
+  let actual_arity = args.len().saturating_sub(2); // Subtract enum-proto and tag
+
+  if expected_arity != actual_arity {
+    gen_check_warning(
+      format!(
+        "[Warn] Enum `{}::{}` expects {} payload(s), but got {}, at {file_ns}/{def_name}",
+        enum_proto.name(),
+        tag_name,
+        expected_arity,
+        actual_arity
+      ),
+      file_ns,
+      check_warnings,
+    );
+    return;
+  }
+
+  // Check payload types
+  for (idx, (payload_arg, expected_type)) in args.iter().skip(2).zip(variant.payload_types().iter()).enumerate() {
+    if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      continue; // No type constraint for this payload
+    }
+
+    if let Some(actual_type) = resolve_type_value(payload_arg, scope_types) {
+      if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
+        let expected_str = expected_type.as_ref().to_brief_string();
+        let actual_str = actual_type.as_ref().to_brief_string();
+        gen_check_warning(
+          format!(
+            "[Warn] Enum `{}::{}` payload {} expects type `{expected_str}`, but got `{actual_str}`, at {file_ns}/{def_name}",
+            enum_proto.name(),
+            tag_name,
+            idx + 1
+          ),
+          file_ns,
+          check_warnings,
+        );
+      }
+    }
+  }
+}
+
 /// Check Proc argument types against type signature
 fn check_proc_arg_types(
   proc: &CalcitProc,
@@ -882,6 +977,12 @@ fn check_proc_arg_types(
   }
 
   if matches!(proc, CalcitProc::NativeRecord | CalcitProc::NativeRecordGet) {
+    return;
+  }
+
+  // Check enum tuple construction
+  if matches!(proc, CalcitProc::NativeEnumTupleNew) {
+    check_enum_tuple_construction(args, scope_types, file_ns, def_name, check_warnings);
     return;
   }
 
@@ -1347,8 +1448,8 @@ fn validate_method_call(
 /// Check if a type annotation represents a callable type (function or method)
 fn is_callable_type(type_ann: &CalcitTypeAnnotation) -> bool {
   match type_ann {
-    CalcitTypeAnnotation::Function(_) => true,
-    CalcitTypeAnnotation::Fn => true,
+    CalcitTypeAnnotation::Fn(_) => true,
+    CalcitTypeAnnotation::DynFn => true,
     CalcitTypeAnnotation::Optional(inner) => is_callable_type(inner.as_ref()),
     CalcitTypeAnnotation::Dynamic => true,
     _ => false,
@@ -1511,7 +1612,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
         Calcit::Local(local) => {
           let type_ann = &local.type_info;
           match type_ann.as_ref() {
-            CalcitTypeAnnotation::Function(fn_type) => Some(fn_type.return_type.clone()),
+            CalcitTypeAnnotation::Fn(fn_type) => Some(fn_type.return_type.clone()),
             _ => Some(type_ann.clone()),
           }
         }
@@ -1621,7 +1722,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
         Calcit::List(_) => {
           if let Some(head_type) = infer_type_from_expr(head, scope_types) {
             match head_type.as_ref() {
-              CalcitTypeAnnotation::Function(fn_type) => Some(fn_type.return_type.clone()),
+              CalcitTypeAnnotation::Fn(fn_type) => Some(fn_type.return_type.clone()),
               // If head returns a non-function type, the call will fail at runtime
               // Return the non-callable type so caller can detect this issue
               _ => Some(head_type),
@@ -1782,11 +1883,22 @@ fn resolve_enum_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Calci
   match target {
     Calcit::Enum(enum_def) => Some(enum_def.to_owned()),
     Calcit::Record(record) => CalcitEnum::from_record(record.to_owned()).ok(),
-    Calcit::Import(CalcitImport { ns, def, .. }) => match program::lookup_evaled_def(ns, def) {
-      Some(Calcit::Enum(enum_def)) => Some(enum_def),
-      Some(Calcit::Record(record)) => CalcitEnum::from_record(record).ok(),
-      _ => None,
-    },
+    Calcit::Import(CalcitImport { ns, def, .. }) => {
+      match program::lookup_evaled_def(ns, def) {
+        Some(Calcit::Enum(enum_def)) => Some(enum_def),
+        Some(Calcit::Record(record)) => CalcitEnum::from_record(record).ok(),
+        // Handle Thunk case: force evaluation to get the enum value
+        Some(Calcit::Thunk(thunk)) => {
+          let call_stack = CallStackList::default();
+          match thunk.evaluated(&CalcitScope::default(), &call_stack) {
+            Ok(Calcit::Enum(enum_def)) => Some(enum_def),
+            Ok(Calcit::Record(record)) => CalcitEnum::from_record(record).ok(),
+            _ => None,
+          }
+        }
+        _ => None,
+      }
+    }
     _ => resolve_type_value(target, scope_types)
       .and_then(|t| t.as_record().cloned())
       .and_then(|record| CalcitEnum::from_record(record).ok()),
@@ -1867,7 +1979,7 @@ fn core_class_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation) -> 
     CalcitTypeAnnotation::Set => Some("&core-set-class"),
     CalcitTypeAnnotation::Number => Some("&core-number-class"),
     CalcitTypeAnnotation::Nil => Some("&core-nil-class"),
-    CalcitTypeAnnotation::Fn | CalcitTypeAnnotation::Function(_) => Some("&core-fn-class"),
+    CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-class"),
     CalcitTypeAnnotation::Optional(inner) => core_class_symbol_from_type_annotation(inner.as_ref()),
     _ => None,
   }
@@ -2287,7 +2399,7 @@ mod tests {
     // Check that type info is stored in scope_types
     assert!(scope_types.contains_key("x"), "type should be registered in scope");
     if let Some(type_val) = scope_types.get("x") {
-      assert!(matches!(type_val.as_ref(), CalcitTypeAnnotation::Fn), "type should be fn");
+      assert!(matches!(type_val.as_ref(), CalcitTypeAnnotation::DynFn), "type should be fn");
     }
   }
 
@@ -2428,7 +2540,7 @@ mod tests {
         "type info should persist for later usages"
       );
       // Verify the type value
-      assert!(matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Fn), "type should be fn");
+      assert!(matches!(local.type_info.as_ref(), CalcitTypeAnnotation::DynFn), "type should be fn");
     } else {
       panic!("expected trailing local expression");
     }
@@ -2974,6 +3086,144 @@ mod tests {
     assert!(
       warning_msg.contains("number") && warning_msg.contains("string"),
       "warning should mention type mismatch: {warning_msg}"
+    );
+  }
+
+  #[test]
+  fn checks_enum_tuple_invalid_variant() {
+    use crate::calcit::CalcitEnum;
+    use cirru_edn::EdnTag;
+
+    // Create a test enum: Result with :ok and :err variants
+    let enum_record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(
+        EdnTag::from("Result"),
+        vec![EdnTag::from("err"), EdnTag::from("ok")],
+      )),
+      // :err expects 1 string payload, :ok expects 0 payloads
+      values: Arc::new(vec![
+        Calcit::from(vec![Calcit::tag("string")]), // :err payload types
+        Calcit::from(CalcitList::default()),       // :ok payload types (empty)
+      ]),
+      class: None,
+    };
+    let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
+
+    // Test: create enum tuple with invalid variant :invalid
+    let args = CalcitList::from(
+      &vec![
+        Calcit::Enum(enum_proto), // enum prototype
+        Calcit::tag("invalid"),   // invalid variant tag
+      ][..],
+    );
+
+    let scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+
+    check_enum_tuple_construction(&args, &scope_types, "tests.enum", "demo", &warnings);
+
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should have warning for invalid variant");
+    let warning_msg = warnings_vec[0].to_string();
+    assert!(
+      warning_msg.contains("invalid") && warning_msg.contains("Result"),
+      "warning should mention invalid variant and enum name: {warning_msg}"
+    );
+    assert!(
+      warning_msg.contains("err") || warning_msg.contains("ok"),
+      "warning should list available variants: {warning_msg}"
+    );
+  }
+
+  #[test]
+  fn checks_enum_tuple_wrong_arity() {
+    use crate::calcit::CalcitEnum;
+    use cirru_edn::EdnTag;
+
+    // Create a test enum: Result with :ok (0 payloads) and :err (1 payload)
+    let enum_record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(
+        EdnTag::from("Result"),
+        vec![EdnTag::from("err"), EdnTag::from("ok")],
+      )),
+      values: Arc::new(vec![
+        Calcit::from(vec![Calcit::tag("string")]), // :err expects 1 payload
+        Calcit::from(CalcitList::default()),       // :ok expects 0 payloads
+      ]),
+      class: None,
+    };
+    let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
+
+    // Test: create :err tuple but without the required payload
+    let args = CalcitList::from(
+      &vec![
+        Calcit::Enum(enum_proto), // enum prototype
+        Calcit::tag("err"),       // :err variant expects 1 payload
+                                  // missing payload!
+      ][..],
+    );
+
+    let scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+
+    check_enum_tuple_construction(&args, &scope_types, "tests.enum", "demo", &warnings);
+
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should have warning for wrong arity");
+    let warning_msg = warnings_vec[0].to_string();
+    assert!(
+      warning_msg.contains("err") && warning_msg.contains("Result"),
+      "warning should mention variant and enum name: {warning_msg}"
+    );
+    assert!(
+      warning_msg.contains("expects 1") && warning_msg.contains("got 0"),
+      "warning should mention expected vs actual arity: {warning_msg}"
+    );
+  }
+
+  #[test]
+  fn checks_enum_tuple_payload_type() {
+    use crate::calcit::CalcitEnum;
+    use cirru_edn::EdnTag;
+
+    // Create a test enum: Result with :err (string payload)
+    let enum_record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(
+        EdnTag::from("Result"),
+        vec![EdnTag::from("err"), EdnTag::from("ok")],
+      )),
+      values: Arc::new(vec![
+        Calcit::from(vec![Calcit::tag("string")]), // :err expects string payload
+        Calcit::from(CalcitList::default()),       // :ok expects no payloads
+      ]),
+      class: None,
+    };
+    let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
+
+    // Test: create :err tuple with number instead of string
+    let args = CalcitList::from(
+      &vec![
+        Calcit::Enum(enum_proto), // enum prototype
+        Calcit::tag("err"),       // :err variant
+        Calcit::Number(42.0),     // should be string, not number!
+      ][..],
+    );
+
+    let scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+
+    check_enum_tuple_construction(&args, &scope_types, "tests.enum", "demo", &warnings);
+
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should have warning for payload type mismatch");
+    let warning_msg = warnings_vec[0].to_string();
+    assert!(
+      warning_msg.contains("payload 1"),
+      "warning should mention payload index: {warning_msg}"
+    );
+    assert!(
+      warning_msg.contains("string") && warning_msg.contains("number"),
+      "warning should mention expected and actual types: {warning_msg}"
     );
   }
 }

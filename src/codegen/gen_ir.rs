@@ -345,13 +345,14 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
     CalcitTypeAnnotation::Tag => Edn::tag("tag"),
     CalcitTypeAnnotation::List => Edn::tag("list"),
     CalcitTypeAnnotation::Map => Edn::tag("map"),
-    CalcitTypeAnnotation::Fn => Edn::tag("fn"),
+    CalcitTypeAnnotation::DynFn => Edn::tag("fn"),
     CalcitTypeAnnotation::Ref => Edn::tag("ref"),
     CalcitTypeAnnotation::Buffer => Edn::tag("buffer"),
     CalcitTypeAnnotation::CirruQuote => Edn::tag("cirru-quote"),
     CalcitTypeAnnotation::Record(record) => dump_record_type_summary(record.as_ref()),
     CalcitTypeAnnotation::Tuple(tuple) => dump_tuple_annotation(tuple.as_ref()),
-    CalcitTypeAnnotation::Function(signature) => dump_function_type_annotation(signature.as_ref()),
+    CalcitTypeAnnotation::DynTuple => Edn::tag("tuple"),
+    CalcitTypeAnnotation::Fn(signature) => dump_function_type_annotation(signature.as_ref()),
     CalcitTypeAnnotation::Set => Edn::tag("set"),
     CalcitTypeAnnotation::Variadic(inner) => {
       let mut entries = vec![(Edn::tag("type"), Edn::tag("variadic"))];
