@@ -498,82 +498,94 @@ send-event! $ :: :clipboard/read text
 
 ### 类型标注与检查
 
-Calcit 支持可选的类型标注，用于开发时的类型检查。
+Calcit 提供了静态类型分析系统，可以在预处理阶段发现潜在的类型错误。
 
-#### 函数参数类型 (`assert-type`)
+#### 1. 参数类型标注 (`assert-type`)
 
-```cirru
-defn calculate-total (items discount)
-  assert-type items :list
-  assert-type discount :number
-  ; let 绑定中的变量会自动推断类型
-  let
-      sum $ foldl items 0 &+
-    * sum $ - 1 discount
-```
+使用 `assert-type` 标注参数类型。它可以出现在函数体内的任何位置。
 
-#### 函数返回类型 (`hint-fn`)
+验证示例：
 
 ```cirru
-defn add-numbers (a b)
-  assert-type a :number
-  assert-type b :number
-  hint-fn $ return-type :number
-  &+ a b
+let
+    calculate-total $ fn (items discount)
+      assert-type items :list
+      assert-type discount :number
+      let
+          sum $ foldl items 0 &+
+        * sum $ - 1 discount
+  calculate-total ([] 1 2 3) 0.1
 ```
 
-**常见类型：** `:number` `:string` `:bool` `:list` `:map` `:set` `:tuple` `:keyword` `:nil`
+#### 2. 返回类型标注
 
-#### 可选类型标注（`:optional`）
+有两种方式标注函数返回类型：
 
-用于允许参数或变量为 `nil` 或指定类型。
+- **紧凑模式（推荐）**：紧跟在参数列表后的类型标签。
+- **正式模式**：使用 `hint-fn`（通常放在函数体开头）。
+
+验证示例：
 
 ```cirru
-defn find-name (user)
-  assert-type user :: :optional :record
-  ; user 可能为 nil
+let
+    ; 紧凑模式
+    add $ fn (a b) :number
+      &+ a b
+    ; 正式模式
+    get-name $ fn (user)
+      hint-fn $ return-type :string
+      |demo
+  add 1 2
 ```
 
-#### 更精确的结构标注（record/tuple）
+#### 3. 支持的类型标签
 
-在 `defstruct/defenum` 新方案下，可以用 `::` 形式提供更精确的类型：
+| 标签                | 说明              |
+| ------------------- | ----------------- |
+| `:nil`              | 空值              |
+| `:number`           | 数字              |
+| `:string`           | 字符串            |
+| `:bool`             | 布尔值            |
+| `:symbol`           | 符号              |
+| `:tag`              | 标签 (Keyword)    |
+| `:list`             | 列表              |
+| `:map`              | 哈希映射          |
+| `:set`              | 集合              |
+| `:tuple`            | Tuple             |
+| `:fn`               | 函数              |
+| `:any` / `:dynamic` | 任意类型 (通配符) |
+
+#### 4. 复杂类型标注
+
+- **可选类型**：`:: :optional :string` (可以是 string 或 nil)
+- **变长参数**：`:: :& :number` (参数列表剩余部分均为 number)
+- **结构体/枚举**：使用 `defrecord` 或 `defenum` 定义的名字
+
+验证示例 (使用 `let` 封装多表达式以支持 `cr eval` 验证)：
 
 ```cirru
-; 结构体 record 约束
-assert-type user $ :: :record Person
-assert-type user $ :: :record Person UserClass
+let
+    ; 可选参数
+    greet $ fn (name)
+      assert-type name $ :: :optional :string
+      str "|Hello " (or name "|Guest")
 
-; 枚举 tuple 约束（允许任何变体 tag）
-assert-type result $ :: :tuple Result
-assert-type result $ :: :tuple Result ResultClass
+    ; 变长参数
+    sum $ fn (& xs)
+      assert-type xs $ :: :& :number
+      reduce xs 0 &+
+
+    ; Record 约束 (使用 new-record 创建原型)
+    User $ new-record :User :name
+    get-name $ fn (u)
+      assert-type u User
+      :name u
+  println $ greet |Alice
+  println $ sum 1 2 3
+  println $ get-name (%{} User (:name |Bob))
 ```
 
-说明：
-
-- `Person` 是 `defstruct` 定义的结构体。
-- `Result` 是 `defenum` 定义的枚举。
-- 可选的 `UserClass` / `ResultClass` 用于附加 class 记录。
-
-也可用于可选参数：
-
-```cirru
-defn take (xs ? n)
-  assert-type n :: :optional :number
-  ; n 为空时走默认逻辑
-```
-
-**验证类型：** `cr --check-only` 或 `cr ir -1` 查看 IR 中的类型信息
-
-#### Variadic 参数类型（简要）
-
-仅在少量场景使用。变长参数用 `&`，类型写在对应的 `assert-type` 上：
-
-```cirru
-defn sum (x & ys)
-  assert-type x :number
-  assert-type ys $ :: :& :number
-  reduce ys x &+
-```
+**验证方法**：运行 `cr --check-only` 开启静态分析。
 
 ### 其他易错点
 
