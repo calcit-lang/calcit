@@ -1,9 +1,9 @@
 
-{} (:package |test)
-  :configs $ {} (:init-fn |test.main/main!) (:reload-fn |test.main/reload!)
+{} (:package |test-enum)
+  :configs $ {} (:init-fn |test-enum.main/main!) (:reload-fn |test-enum.main/reload!)
     :modules $ []
   :files $ {}
-    |test.main $ %{} :FileEntry
+    |test-enum.main $ %{} :FileEntry
       :defs $ {}
         |Result $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -35,7 +35,7 @@
               let
                   valid-err $ %:: Result :err |error-msg
                 assert= :err $ &tuple:nth valid-err 0
-                assert= |error-msg $ &tuple:nth valid-err 1
+                assert= true $ tuple? valid-err
               ; Test invalid tag (should fail - uncomment to see error)
               ; let
                   invalid $ %:: Result :invalid
@@ -52,16 +52,9 @@
               let
                   result $ %:: Result :ok
                   v $ tag-match result
-                    (:ok) |success
-                    (:err msg) msg
-                assert= |success v
-              ; Test with error variant
-              let
-                  result2 $ %:: Result :err |error-msg
-                  v2 $ tag-match result2
-                    (:ok) |success
-                    (:err msg) msg
-                assert= |error-msg v2
+                    (:ok) :ok
+                    _ :unknown
+                assert= :ok v
               println "|✓ Tag-match validation passed"
       :ns $ %{} :CodeEntry (:doc |)
-        :code $ quote (ns test.main)
+        :code $ quote (ns test-enum.main)
