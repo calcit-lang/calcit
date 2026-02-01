@@ -2012,6 +2012,22 @@
           :examples $ []
             quote $ assert= true $ record? (new-record :point (:x 1) (:y 2))
             quote $ assert= false $ record? ({} (:x 1))
+        |struct? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a struct definition.")
+          :code $ quote
+            defn struct? (x)
+              hint-fn $ return-type :bool
+              &= (type-of x) :struct
+          :examples $ []
+            quote $ assert= true $ struct? (defstruct Person (:name :string))
+            quote $ assert= false $ struct? (new-record :point (:x 1))
+        |enum? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is an enum definition.")
+          :code $ quote
+            defn enum? (x)
+              hint-fn $ return-type :bool
+              &= (type-of x) :enum
+          :examples $ []
+            quote $ assert= true $ enum? (defenum Result (:ok) (:err :string))
+            quote $ assert= false $ enum? (:: :ok 1)
         |reduce $ %{} :CodeEntry (:doc "|Collection reduction operation\nFunction: Reduces a collection using a specified function, accumulating elements onto an initial value\nParams: xs (collection), x0 (initial accumulator value), f (reduction function that takes accumulator and current element)\nReturns: any type - final accumulated result\nNotes: The reduction function f should accept two parameters (accumulator, current element) and return a new accumulator value")
           :code $ quote
             defn reduce (xs x0 f) (foldl xs x0 f)
