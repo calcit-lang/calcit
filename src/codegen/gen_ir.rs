@@ -337,29 +337,32 @@ fn dump_type_list(xs: &[Arc<CalcitTypeAnnotation>]) -> Edn {
 
 fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
   match type_info {
-    CalcitTypeAnnotation::Nil => Edn::tag("nil"),
-    CalcitTypeAnnotation::Bool => Edn::tag("bool"),
-    CalcitTypeAnnotation::Number => Edn::tag("number"),
-    CalcitTypeAnnotation::String => Edn::tag("string"),
-    CalcitTypeAnnotation::Symbol => Edn::tag("symbol"),
-    CalcitTypeAnnotation::Tag => Edn::tag("tag"),
-    CalcitTypeAnnotation::List => Edn::tag("list"),
-    CalcitTypeAnnotation::Map => Edn::tag("map"),
-    CalcitTypeAnnotation::DynFn => Edn::tag("fn"),
-    CalcitTypeAnnotation::Ref => Edn::tag("ref"),
-    CalcitTypeAnnotation::Buffer => Edn::tag("buffer"),
-    CalcitTypeAnnotation::CirruQuote => Edn::tag("cirru-quote"),
+    CalcitTypeAnnotation::Nil => type_tag_map("nil"),
+    CalcitTypeAnnotation::Bool => type_tag_map("bool"),
+    CalcitTypeAnnotation::Number => type_tag_map("number"),
+    CalcitTypeAnnotation::String => type_tag_map("string"),
+    CalcitTypeAnnotation::Symbol => type_tag_map("symbol"),
+    CalcitTypeAnnotation::Tag => type_tag_map("tag"),
+    CalcitTypeAnnotation::List => type_tag_map("list"),
+    CalcitTypeAnnotation::Map => type_tag_map("map"),
+    CalcitTypeAnnotation::DynFn => type_tag_map("fn"),
+    CalcitTypeAnnotation::Ref => type_tag_map("ref"),
+    CalcitTypeAnnotation::Buffer => type_tag_map("buffer"),
+    CalcitTypeAnnotation::CirruQuote => type_tag_map("cirru-quote"),
     CalcitTypeAnnotation::Record(record) => dump_record_type_summary(record.as_ref()),
     CalcitTypeAnnotation::Tuple(tuple) => dump_tuple_annotation(tuple.as_ref()),
-    CalcitTypeAnnotation::DynTuple => Edn::tag("tuple"),
+    CalcitTypeAnnotation::DynTuple => type_tag_map("tuple"),
     CalcitTypeAnnotation::Fn(signature) => dump_function_type_annotation(signature.as_ref()),
-    CalcitTypeAnnotation::Set => Edn::tag("set"),
+    CalcitTypeAnnotation::Set => type_tag_map("set"),
     CalcitTypeAnnotation::Variadic(inner) => {
       let mut entries = vec![(Edn::tag("type"), Edn::tag("variadic"))];
       entries.push((Edn::tag("inner"), dump_type_annotation(inner.as_ref())));
       Edn::map_from_iter(entries)
     }
-    CalcitTypeAnnotation::Custom(value) => dump_code(value.as_ref()),
+    CalcitTypeAnnotation::Custom(value) => Edn::map_from_iter([
+      (Edn::tag("type"), Edn::tag("custom")),
+      (Edn::tag("value"), dump_code(value.as_ref())),
+    ]),
     CalcitTypeAnnotation::Optional(inner) => {
       let mut entries = vec![(Edn::tag("type"), Edn::tag("optional"))];
       entries.push((Edn::tag("inner"), dump_type_annotation(inner.as_ref())));
@@ -388,7 +391,7 @@ fn dump_tuple_code(tuple: &CalcitTuple) -> Edn {
 }
 
 fn dump_tuple_annotation(tuple: &CalcitTuple) -> Edn {
-  let mut entries = tuple_metadata_entries(tuple);
+  let mut entries = tuple_type_metadata_entries(tuple);
   let mut payload = EdnListView::default();
   for hint in &tuple.extra {
     payload.push(dump_code(hint));
@@ -401,6 +404,20 @@ fn dump_tuple_annotation(tuple: &CalcitTuple) -> Edn {
 fn tuple_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
   let mut entries = vec![
     (Edn::tag("kind"), Edn::tag("tuple")),
+    (Edn::tag("tag"), Edn::Str(tuple.tag.to_string().into())),
+  ];
+  if let Some(class) = &tuple.class {
+    entries.push((Edn::tag("class"), Edn::Str(class.name().ref_str().into())));
+  }
+  if let Some(sum_type) = &tuple.sum_type {
+    entries.push((Edn::tag("enum"), Edn::Str(sum_type.name().ref_str().into())));
+  }
+  entries
+}
+
+fn tuple_type_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
+  let mut entries = vec![
+    (Edn::tag("type"), Edn::tag("tuple")),
     (Edn::tag("tag"), Edn::Str(tuple.tag.to_string().into())),
   ];
   if let Some(class) = &tuple.class {
@@ -427,12 +444,15 @@ fn dump_record_code(record: &CalcitRecord) -> Edn {
 }
 
 fn dump_record_type_summary(record: &CalcitRecord) -> Edn {
-  let mut entries = record_metadata(record);
-  let mut names = EdnListView::default();
-  for field in record.struct_ref.fields.iter() {
-    names.push(Edn::Str(field.ref_str().into()));
+  let mut entries = record_type_metadata(record);
+  let mut fields = EdnListView::default();
+  for (field, field_type) in record.struct_ref.fields.iter().zip(record.struct_ref.field_types.iter()) {
+    fields.push(Edn::map_from_iter([
+      (Edn::tag("field"), Edn::Str(field.ref_str().into())),
+      (Edn::tag("type"), dump_type_annotation(field_type.as_ref())),
+    ]));
   }
-  entries.push((Edn::tag("fields"), names.into()));
+  entries.push((Edn::tag("fields"), fields.into()));
   entries.push((Edn::tag("field-count"), Edn::Number(record.struct_ref.fields.len() as f64)));
   Edn::map_from_iter(entries)
 }
@@ -491,4 +511,19 @@ fn record_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
     entries.push((Edn::tag("class"), Edn::Str(class.name().ref_str().into())));
   }
   entries
+}
+
+fn record_type_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
+  let mut entries = vec![
+    (Edn::tag("type"), Edn::tag("record")),
+    (Edn::tag("name"), Edn::Str(record.name().ref_str().into())),
+  ];
+  if let Some(class) = &record.class {
+    entries.push((Edn::tag("class"), Edn::Str(class.name().ref_str().into())));
+  }
+  entries
+}
+
+fn type_tag_map(type_name: &str) -> Edn {
+  Edn::map_from_iter([(Edn::tag("type"), Edn::tag(type_name))])
 }

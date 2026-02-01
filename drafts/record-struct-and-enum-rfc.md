@@ -25,7 +25,7 @@
 
 新增结构定义语法（以宏形式提供，内部使用 `&struct::new`）：
 
-```
+```cirru
 defstruct Person
   :name :string
   :age :number
@@ -39,7 +39,7 @@ defstruct Person
 
 使用 record 结构示例：
 
-```
+```cirru
 defn make-person (name age position)
   let
       p $ %{} Person (:name name) (:age age) (:position position)
@@ -58,7 +58,7 @@ defn bind-class (p)
 
 新增 enum 语法（以宏形式提供，内部使用 `&enum::new`）：
 
-```
+```cirru
 defenum Result
   :ok
   :err :string
@@ -66,7 +66,7 @@ defenum Result
 
 使用 tuple 示例（废弃 %%::，使用 %:: 表示 enum tuple）：
 
-```
+```cirru
 defn make-ok (value)
   %:: Result :ok value
 
@@ -82,10 +82,121 @@ defn attach-class (t)
 - 在类型标注表达中，允许引用 defstruct/defenum 的名称。
 - 例如：
 
-```
+```cirru
 assert-type user Person
 assert-type result Result
 ```
+
+## IR 类型信息展示约定
+
+为避免复杂类型在 IR 中展示结构差异过大，类型信息统一为“map 结构”，主入口使用 `:type` 字段：
+
+### 1) 基础类型
+
+```cirru
+{} (:type :number)
+{} (:type :string)
+{} (:type :tag)
+{} (:type :bool)
+{} (:type :nil)
+{} (:type :symbol)
+{} (:type :list)
+{} (:type :map)
+{} (:type :set)
+{} (:type :ref)
+{} (:type :buffer)
+{} (:type :cirru-quote)
+```
+
+- 所有基础类型统一为 `{:type <tag>}`。
+- `:dynamic` 仍然以 `nil` 表示（等价“无类型约束”）。
+- `:fn` 与 `:tuple` 若缺少结构信息（DynFn/DynTuple），仅输出 `{:type :fn}` / `{:type :tuple}`。
+
+### 2) 函数类型
+
+```cirru
+{} (:type :fn)
+  :args $ [] ({} (:type :number)) ({} (:type :string))
+  :return $ {} (:type :bool)
+```
+
+补充：Calcit 的 `proc`（内建函数）在类型信息中也会以 `:fn` 形式呈现。
+若存在签名（`arg-types` / `return-type`），展示结构与函数类型一致；
+若缺少签名，则仅输出 `{:type :fn}`。
+
+### 3) Tuple 类型
+
+```cirru
+{} (:type :tuple)
+  :tag |:ok
+  :enum |Result
+  :payload $ [] ({} (:type :number))
+  :payload-size 1
+```
+
+### 4) Record 类型
+
+```cirru
+{} (:type :record)
+  :name |Person
+  :fields $ []
+    {} (:field |name) (:type {} (:type :string))
+    {} (:field |age) (:type {} (:type :number))
+  :field-count 2
+```
+
+### 5) Optional / Variadic
+
+```cirru
+{} (:type :optional)
+  :inner $ {} (:type :string)
+
+{} (:type :variadic)
+  :inner $ {} (:type :number)
+```
+
+### 6) Custom
+
+```cirru
+{} (:type :custom)
+  :value "<任意 IR 值>"
+```
+
+### 7) Struct / Enum 类型
+
+struct 与 enum 已经成为 Calcit 类型的变种，导出类型信息时会直接携带结构信息。
+
+> 说明：当前 `CalcitTypeAnnotation` 仍以 record/tuple 作为结构类型的承载（struct/enum 未单独建 variant），
+> 因此类型标注输出里仍是 `:record` / `:tuple`。下列 `:struct` / `:enum` 示例描述的是值 IR 的结构信息。
+
+struct 类型示例：
+
+```cirru
+{} (:type :struct)
+  :name |Person
+  :fields $ []
+    {} (:field |name) (:type {} (:type :string))
+    {} (:field |age) (:type {} (:type :number))
+  :field-count 2
+```
+
+enum 类型示例（tuple 形态）：
+
+```cirru
+{} (:type :enum)
+  :name |Result
+  :variants $ []
+    {} (:tag |:ok)
+      :payloads $ [] ({} (:type :number))
+    {} (:tag |:err)
+      :payloads $ [] ({} (:type :string))
+  :variant-count 2
+```
+
+### 说明
+
+- 类型信息与运行时值的 IR 结构区分：值仍使用 `:kind` 字段；类型统一使用 `:type` 字段。
+- 复杂类型在嵌套时保持同一结构（`inner`/`args`/`payload` 等字段中依旧是 `{:type ...}`）。
 
 ## 迁移策略
 
@@ -98,13 +209,13 @@ assert-type result Result
 
 旧写法（已移除）：
 
-```
+```cirru
 %[] Result :ok value
 ```
 
 新写法（唯一可用）：
 
-```
+```cirru
 %:: Result :ok value
 ```
 
@@ -112,13 +223,13 @@ assert-type result Result
 
 旧写法（已废弃）：
 
-```
+```cirru
 %%:: Result :ok value ActionClass
 ```
 
 新写法：
 
-```
+```cirru
 &tuple:with-class (%:: Result :ok value) ActionClass
 ```
 
@@ -130,7 +241,7 @@ assert-type result Result
 
 defstruct/defenum 现在是宏，不是语法。字段与变体使用 list 形式传参（等价于 Cirru 解析成 list）。
 
-```
+```cirru
 defstruct Person
   :name :string
   :age :number
