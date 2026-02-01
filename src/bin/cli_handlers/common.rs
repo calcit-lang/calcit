@@ -154,6 +154,11 @@ pub fn parse_input_to_cirru(
 
   // If inline JSON provided, use it (takes precedence)
   if let Some(j) = inline_json {
+    if j.len() > 2000 {
+      eprintln!("\n⚠️  Note: JSON input is very large ({} chars).", j.len());
+      eprintln!("   For large definitions, consider using placeholders and submitting in segments.");
+      eprintln!();
+    }
     let node = json_to_cirru(j)?;
     if leaf {
       match node {
@@ -167,6 +172,11 @@ pub fn parse_input_to_cirru(
     // --leaf: automatically treat raw input as a Cirru leaf node
     Ok(Cirru::Leaf(Arc::from(raw)))
   } else if json_input {
+    if raw.len() > 2000 {
+      eprintln!("\n⚠️  Note: JSON input is very large ({} chars).", raw.len());
+      eprintln!("   For large definitions, consider using placeholders and submitting in segments.");
+      eprintln!();
+    }
     json_to_cirru(raw)
   } else {
     // If input comes from inline `--code/-e`, it's typically single-line.
@@ -184,6 +194,11 @@ pub fn parse_input_to_cirru(
       // Do NOT fall back to Cirru one-liner on JSON parse failure, otherwise invalid JSON
       // can be silently accepted as a Cirru expression.
       if looks_like_json_array || looks_like_json_string {
+        if trimmed.len() > 2000 {
+          eprintln!("\n⚠️  Note: JSON input is very large ({} chars).", trimmed.len());
+          eprintln!("   For large definitions, consider using placeholders and submitting in segments.");
+          eprintln!();
+        }
         return json_to_cirru(trimmed).map_err(|e| format!("Failed to parse JSON from -e/--code: {e}"));
       }
 
@@ -198,6 +213,12 @@ pub fn parse_input_to_cirru(
            Tip: Use `cat -A file` to check for tabs (shown as ^I)."
             .to_string(),
         );
+      }
+
+      if raw.len() > 1000 {
+        eprintln!("\n⚠️  Note: Cirru one-liner input is very large ({} chars).", raw.len());
+        eprintln!("   For large definitions, consider using placeholders and submitting in segments.");
+        eprintln!();
       }
 
       let result = cirru_parser::parse_expr_one_liner(raw).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))?;
