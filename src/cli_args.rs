@@ -559,6 +559,8 @@ pub struct EditCommand {
 pub enum EditSubcommand {
   /// add or update a definition
   Def(EditDefCommand),
+  /// move a definition
+  Mv(EditMvDefCommand),
   /// delete a definition
   RmDef(EditRmDefCommand),
   /// update definition documentation
@@ -618,6 +620,18 @@ pub struct EditDefCommand {
   /// read syntax_tree from stdin (Cirru format by default, use -J for JSON)
   #[argh(switch, short = 's')]
   pub stdin: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "mv")]
+/// move a definition to another namespace or rename it
+pub struct EditMvDefCommand {
+  /// source in format "namespace/definition"
+  #[argh(positional)]
+  pub source: String,
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

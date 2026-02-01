@@ -386,6 +386,7 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 **定义操作：**
 
 - `cr edit def <namespace/definition>` - 添加新定义（若已存在会报错，需用 `cr tree replace` 修改）
+- `cr edit mv <source> <target>` - 移动定义到另一个命名空间或重命名
 - `cr edit rm-def <namespace/definition>` - 删除定义
 - `cr edit doc <namespace/definition> '<doc>'` - 更新定义的文档
 - `cr edit examples <namespace/definition>` - 设置定义的示例代码（批量替换）
@@ -413,6 +414,7 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
   - `--added <namespace/definition>` - 标记新增的定义
   - `--changed <namespace/definition>` - 标记修改的定义
   - `--removed <namespace/definition>` - 标记删除的定义
+  - TIP: 使用 `cr edit mv` 移动定义后，需手动执行 `cr edit inc --removed <source> --added <target>` 以更新 watcher。
   - `--added-ns <namespace>` - 标记新增的命名空间
   - `--removed-ns <namespace>` - 标记删除的命名空间
   - `--ns-updated <namespace>` - 标记命名空间导入变更
@@ -732,6 +734,9 @@ cr tree replace 'app.core/multiply' -p '' -e 'defn multiply (x y z) (* x y z)'
 # 更新文档和示例
 cr edit doc 'app.core/multiply' '乘法函数，返回两个数的积'
 cr edit add-example 'app.core/multiply' -e 'multiply 5 6'
+
+# 移动或重构定义
+cr edit mv 'app.core/multiply' 'app.util/multiply-numbers'
 ````
 
 **修改定义工作流（命令会显示子节点索引和 Next steps）：**

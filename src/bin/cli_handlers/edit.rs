@@ -10,8 +10,8 @@
 
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditDefCommand,
-  EditDocCommand, EditExamplesCommand, EditImportsCommand, EditIncCommand, EditNsDocCommand, EditRmDefCommand, EditRmExampleCommand,
-  EditRmImportCommand, EditRmModuleCommand, EditRmNsCommand, EditSubcommand,
+  EditDocCommand, EditExamplesCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditNsDocCommand, EditRmDefCommand,
+  EditRmExampleCommand, EditRmImportCommand, EditRmModuleCommand, EditRmNsCommand, EditSubcommand,
 };
 use calcit::snapshot::{self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -88,6 +88,7 @@ pub(crate) fn process_node_with_references(
 pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
   match &cmd.subcommand {
     EditSubcommand::Def(opts) => handle_def(opts, snapshot_file),
+    EditSubcommand::Mv(opts) => handle_mv_def(opts, snapshot_file),
     EditSubcommand::RmDef(opts) => handle_rm_def(opts, snapshot_file),
     EditSubcommand::Doc(opts) => handle_doc(opts, snapshot_file),
     EditSubcommand::Examples(opts) => handle_examples(opts, snapshot_file),
@@ -225,6 +226,83 @@ fn handle_rm_def(opts: &EditRmDefCommand, snapshot_file: &str) -> Result<(), Str
     "✓".green(),
     definition.cyan(),
     namespace
+  );
+
+  Ok(())
+}
+
+fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), String> {
+  let (source_ns, source_def) = parse_target(&opts.source)?;
+  let (target_ns, target_def) = parse_target(&opts.target)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+
+  check_ns_editable(&snapshot, source_ns)?;
+  check_ns_editable(&snapshot, target_ns)?;
+
+  if source_ns == target_ns && source_def == target_def {
+    return Err("Source and target are identical; nothing to move.".to_string());
+  }
+
+  if source_ns == target_ns {
+    let file_data = snapshot
+      .files
+      .get_mut(source_ns)
+      .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?;
+
+    if !file_data.defs.contains_key(source_def) {
+      return Err(format!("Definition '{source_def}' not found in namespace '{source_ns}'"));
+    }
+    if file_data.defs.contains_key(target_def) {
+      return Err(format!("Definition '{target_def}' already exists in namespace '{source_ns}'"));
+    }
+
+    let entry = file_data.defs.remove(source_def).expect("checked definition exists");
+    file_data.defs.insert(target_def.to_string(), entry);
+  } else {
+    let source_exists = snapshot
+      .files
+      .get(source_ns)
+      .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?
+      .defs
+      .contains_key(source_def);
+    if !source_exists {
+      return Err(format!("Definition '{source_def}' not found in namespace '{source_ns}'"));
+    }
+
+    let target_exists = snapshot
+      .files
+      .get(target_ns)
+      .ok_or_else(|| format!("Namespace '{target_ns}' not found"))?
+      .defs
+      .contains_key(target_def);
+    if target_exists {
+      return Err(format!("Definition '{target_def}' already exists in namespace '{target_ns}'"));
+    }
+
+    let entry = {
+      let source_file = snapshot
+        .files
+        .get_mut(source_ns)
+        .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?;
+      source_file.defs.remove(source_def).expect("checked definition exists")
+    };
+
+    let target_file = snapshot
+      .files
+      .get_mut(target_ns)
+      .ok_or_else(|| format!("Namespace '{target_ns}' not found"))?;
+    target_file.defs.insert(target_def.to_string(), entry);
+  }
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Moved definition '{}' from '{}' to '{}'",
+    "✓".green(),
+    source_def.cyan(),
+    source_ns.cyan(),
+    format!("{target_ns}/{target_def}").cyan()
   );
 
   Ok(())
