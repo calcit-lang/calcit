@@ -313,6 +313,20 @@ fn handle_error() -> Result<(), String> {
     return Ok(());
   }
 
+  let metadata = fs::metadata(error_file).map_err(|e| format!("Failed to get metadata of error file: {e}"))?;
+  if let Ok(modified) = metadata.modified() {
+    if let Ok(elapsed) = modified.elapsed() {
+      if elapsed.as_secs() > 10 {
+        println!(
+          "{}",
+          format!("Warning: .calcit-error.cirru was modified {} seconds ago.", elapsed.as_secs()).yellow()
+        );
+        println!("{}", "It might be outdated, please recompile or check the watcher.".yellow());
+        println!();
+      }
+    }
+  }
+
   let content = fs::read_to_string(error_file).map_err(|e| format!("Failed to read error file: {e}"))?;
 
   if content.trim().is_empty() {

@@ -254,7 +254,7 @@ fn main() -> Result<(), String> {
 }
 
 pub fn watch_files(entries: ProgramEntries, settings: ToplevelCalcit, assets_watch: Option<String>) {
-  println!("\nRunning: in watch mode...\n");
+  println!("\nRunning: in watch mode... (use --once flag for compiling only once)\n");
   let (tx, rx) = channel();
   let mut debouncer = new_debouncer(Duration::from_millis(200), tx).expect("create watcher");
   let config = notify::Config::default();
