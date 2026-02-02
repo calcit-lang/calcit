@@ -2855,7 +2855,7 @@ mod tests {
       "warning should mention proc arg mismatch: {warning_msg}"
     );
     assert!(
-      warning_msg.contains("optional :number"),
+      warning_msg.contains(":number?"),
       "warning should mention optional actual type: {warning_msg}"
     );
   }

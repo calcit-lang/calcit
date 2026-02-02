@@ -255,8 +255,8 @@ impl CalcitTypeAnnotation {
           return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
         }
         if is_typeref_tag(tag) {
-          let ns = tuple.extra.first().and_then(|x| get_str_from_calcit(x)).unwrap_or_default();
-          let name = tuple.extra.get(1).and_then(|x| get_str_from_calcit(x)).unwrap_or_default();
+          let ns = tuple.extra.first().and_then(get_str_from_calcit).unwrap_or_default();
+          let name = tuple.extra.get(1).and_then(get_str_from_calcit).unwrap_or_default();
           return Arc::new(CalcitTypeAnnotation::TypeRef { ns, name });
         }
       }
@@ -319,8 +319,8 @@ impl CalcitTypeAnnotation {
           return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
         }
         if is_typeref_tag(tag) {
-          let ns = xs.get(1).and_then(|x| get_str_from_calcit(x)).unwrap_or_default();
-          let name = xs.get(2).and_then(|x| get_str_from_calcit(x)).unwrap_or_default();
+          let ns = xs.get(1).and_then(get_str_from_calcit).unwrap_or_default();
+          let name = xs.get(2).and_then(get_str_from_calcit).unwrap_or_default();
           return Arc::new(CalcitTypeAnnotation::TypeRef { ns, name });
         }
         if tag_name == "fn" {
@@ -420,8 +420,8 @@ impl CalcitTypeAnnotation {
             return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
           }
           if tag_name == "typeref" {
-            let ns = xs.get(2).and_then(|x| get_str_from_calcit(x)).unwrap_or_default();
-            let name = xs.get(3).and_then(|x| get_str_from_calcit(x)).unwrap_or_default();
+            let ns = xs.get(2).and_then(get_str_from_calcit).unwrap_or_default();
+            let name = xs.get(3).and_then(get_str_from_calcit).unwrap_or_default();
             return Arc::new(CalcitTypeAnnotation::TypeRef { ns, name });
           }
           if tag_name == "fn" {
@@ -756,7 +756,7 @@ impl CalcitTypeAnnotation {
       Self::Custom(_) => "custom".to_string(),
       Self::Optional(inner) => format!("optional<{}>", inner.describe()),
       Self::Dynamic => "dynamic".to_string(),
-      Self::TypeRef { ns, name } => format!("{}/{}", ns, name),
+      Self::TypeRef { ns, name } => format!("{ns}/{name}"),
       _ => "unknown".to_string(),
     }
   }
