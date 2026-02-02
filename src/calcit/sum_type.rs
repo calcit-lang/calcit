@@ -5,7 +5,7 @@ use cirru_edn::EdnTag;
 
 use crate::calcit::{Calcit, CalcitRecord, CalcitTypeAnnotation};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumVariant {
   pub tag: EdnTag,
   pub payload_types: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
@@ -21,7 +21,7 @@ impl EnumVariant {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalcitEnum {
   prototype: Arc<CalcitRecord>,
   variants: Arc<Vec<EnumVariant>>,

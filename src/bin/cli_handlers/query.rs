@@ -557,12 +557,6 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
   println!("  {} cr query examples {}/{}", "-".dimmed(), namespace, definition);
   println!("  {} cr query usages {}/{}", "-".dimmed(), namespace, definition);
   println!("  {} cr edit doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
-  println!(
-    "  {} Respo: event handlers go inside {} map; strings need {} prefix",
-    "-".dimmed(),
-    "attributes".green(),
-    "|".magenta()
-  );
 
   Ok(())
 }

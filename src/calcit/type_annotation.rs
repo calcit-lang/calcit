@@ -10,7 +10,7 @@ use std::thread_local;
 
 use cirru_edn::EdnTag;
 
-use super::{Calcit, CalcitEnum, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSyntax, CalcitTuple};
+use super::{CORE_NS, Calcit, CalcitEnum, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSyntax, CalcitTuple};
 use crate::program;
 
 thread_local! {
@@ -50,12 +50,10 @@ pub enum CalcitTypeAnnotation {
   Dynamic,
   /// Represents an type that can be nil or the given type
   Optional(Arc<CalcitTypeAnnotation>),
-  /// Reference to an existing type definition (struct or enum)
-  /// Used for struct field types that reference other types
-  TypeRef {
-    ns: Arc<str>,
-    name: Arc<str>,
-  },
+  /// Struct type definition used as a type annotation
+  Struct(Arc<CalcitStruct>),
+  /// Enum type definition used as a type annotation
+  Enum(Arc<CalcitEnum>),
 }
 
 impl CalcitTypeAnnotation {
@@ -183,13 +181,6 @@ impl CalcitTypeAnnotation {
     let is_map_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "map";
     let is_set_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "set";
     let is_ref_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "ref";
-    let is_typeref_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "typeref";
-    let get_str_from_calcit = |x: &Calcit| match x {
-      Calcit::Tag(t) => Some(Arc::from(t.ref_str())),
-      Calcit::Str(s) => Some(s.to_owned()),
-      Calcit::Symbol { sym, .. } => Some(sym.to_owned()),
-      _ => None,
-    };
 
     if matches!(form, Calcit::Nil) {
       return Arc::new(CalcitTypeAnnotation::Dynamic);
@@ -254,11 +245,6 @@ impl CalcitTypeAnnotation {
           }
           return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
         }
-        if is_typeref_tag(tag) {
-          let ns = tuple.extra.first().and_then(get_str_from_calcit).unwrap_or_default();
-          let name = tuple.extra.get(1).and_then(get_str_from_calcit).unwrap_or_default();
-          return Arc::new(CalcitTypeAnnotation::TypeRef { ns, name });
-        }
       }
     }
 
@@ -318,11 +304,6 @@ impl CalcitTypeAnnotation {
           }
           return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
         }
-        if is_typeref_tag(tag) {
-          let ns = xs.get(1).and_then(get_str_from_calcit).unwrap_or_default();
-          let name = xs.get(2).and_then(get_str_from_calcit).unwrap_or_default();
-          return Arc::new(CalcitTypeAnnotation::TypeRef { ns, name });
-        }
         if tag_name == "fn" {
           let args_form = xs.get(1).unwrap_or(&Calcit::Nil);
           let arg_types = if let Calcit::List(args) = args_form {
@@ -376,15 +357,15 @@ impl CalcitTypeAnnotation {
           if tag_name == "record" {
             if xs.len() < 3 {
               eprintln!("[Warn] :: :record expects struct name, got {}", xs.len() as i64 - 2);
-            } else if let Some(record) = resolve_record_annotation(xs.get(2).unwrap(), xs.get(3)) {
-              return Arc::new(CalcitTypeAnnotation::Record(Arc::new(record)));
+            } else if let Some(struct_def) = resolve_struct_annotation(xs.get(2).unwrap(), xs.get(3)) {
+              return Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def)));
             }
           }
           if tag_name == "tuple" {
             if xs.len() < 3 {
               eprintln!("[Warn] :: :tuple expects enum name, got {}", xs.len() as i64 - 2);
-            } else if let Some(tuple) = resolve_tuple_annotation(xs.get(2).unwrap(), xs.get(3)) {
-              return Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(tuple)));
+            } else if let Some(enum_def) = resolve_enum_annotation(xs.get(2).unwrap(), xs.get(3)) {
+              return Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def)));
             }
           }
           if tag_name == "list" {
@@ -419,11 +400,6 @@ impl CalcitTypeAnnotation {
             }
             return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
           }
-          if tag_name == "typeref" {
-            let ns = xs.get(2).and_then(get_str_from_calcit).unwrap_or_default();
-            let name = xs.get(3).and_then(get_str_from_calcit).unwrap_or_default();
-            return Arc::new(CalcitTypeAnnotation::TypeRef { ns, name });
-          }
           if tag_name == "fn" {
             let args_form = xs.get(2).unwrap_or(&Calcit::Nil);
             let arg_types = if let Calcit::List(args) = args_form {
@@ -444,21 +420,13 @@ impl CalcitTypeAnnotation {
       }
     }
 
-    // Handle symbol as type reference (e.g., MyStruct, ns/MyStruct)
-    if let Calcit::Symbol { sym, .. } = form {
-      let sym_str = sym.as_ref();
-      // Check if it's a namespaced type reference (ns/name)
-      if let Some((ns, name)) = sym_str.split_once('/') {
-        return Arc::new(CalcitTypeAnnotation::TypeRef {
-          ns: Arc::from(ns),
-          name: Arc::from(name),
-        });
+    // Resolve symbols or imports to struct/enum definitions for type annotations.
+    if let Some(resolved) = resolve_calcit_value(form) {
+      match resolved {
+        Calcit::Struct(struct_def) => return Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def))),
+        Calcit::Enum(enum_def) => return Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def))),
+        _ => {}
       }
-      // Simple type reference (name)
-      return Arc::new(CalcitTypeAnnotation::TypeRef {
-        ns: Arc::from(""),
-        name: Arc::from(sym_str),
-      });
     }
 
     Arc::new(CalcitTypeAnnotation::from_calcit(form))
@@ -510,6 +478,8 @@ impl CalcitTypeAnnotation {
       Self::Ref(inner) => format!("ref<{}>", inner.to_brief_string()),
       Self::Custom(inner) => format!("{inner}"),
       Self::Optional(inner) => format!("{}?", inner.to_brief_string()),
+      Self::Struct(struct_def) => format!("struct {}", struct_def.name),
+      Self::Enum(enum_def) => format!("enum {}", enum_def.name()),
       Self::Dynamic => "any".to_string(),
       _ => "unknown".to_string(),
     }
@@ -536,6 +506,13 @@ impl CalcitTypeAnnotation {
       (Self::Set(a), Self::Set(b)) => a.matches_annotation(b),
       (Self::Ref(a), Self::Ref(b)) => a.matches_annotation(b),
       (Self::Record(a), Self::Record(b)) => a.name() == b.name(),
+      (Self::Struct(a), Self::Struct(b)) => a.name == b.name,
+      (Self::Enum(a), Self::Enum(b)) => a.name() == b.name(),
+      (Self::Record(a), Self::Struct(b)) => a.struct_ref.name == b.name,
+      (Self::Tuple(a), Self::Enum(b)) => match &a.sum_type {
+        Some(sum_type) => sum_type.name() == b.name(),
+        None => false,
+      },
       // Tuple type matching: DynTuple matches any Tuple, specific Tuple must match structure
       (Self::Tuple(_), Self::DynTuple) | (Self::DynTuple, Self::Tuple(_)) | (Self::DynTuple, Self::DynTuple) => true,
       (Self::Tuple(actual), Self::Tuple(expected)) => Self::tuple_matches(actual.as_ref(), expected.as_ref()),
@@ -568,15 +545,8 @@ impl CalcitTypeAnnotation {
       Calcit::Map(_) => Self::Map(Arc::new(Self::Dynamic), Arc::new(Self::Dynamic)),
       Calcit::Set(_) => Self::Set(Arc::new(Self::Dynamic)),
       Calcit::Record(record) => Self::Record(Arc::new(record.to_owned())),
-      Calcit::Enum(enum_def) => Self::Record(Arc::new(enum_def.prototype().to_owned())),
-      Calcit::Struct(struct_def) => {
-        let values = vec![Calcit::Nil; struct_def.fields.len()];
-        Self::Record(Arc::new(CalcitRecord {
-          struct_ref: Arc::new(struct_def.to_owned()),
-          values: Arc::new(values),
-          class: None,
-        }))
-      }
+      Calcit::Enum(enum_def) => Self::Enum(Arc::new(enum_def.to_owned())),
+      Calcit::Struct(struct_def) => Self::Struct(Arc::new(struct_def.to_owned())),
       Calcit::Tuple(tuple) => {
         // Check for special tuple patterns
         if let Calcit::Tag(tag) = tuple.tag.as_ref() {
@@ -678,6 +648,8 @@ impl CalcitTypeAnnotation {
         class: None,
         sum_type: None,
       }),
+      Self::Struct(struct_def) => Calcit::Struct((**struct_def).clone()),
+      Self::Enum(enum_def) => Calcit::Enum((**enum_def).clone()),
       Self::Dynamic => Calcit::Nil,
       _ => Calcit::Nil,
     }
@@ -755,8 +727,9 @@ impl CalcitTypeAnnotation {
       Self::Variadic(inner) => format!("variadic {}", inner.describe()),
       Self::Custom(_) => "custom".to_string(),
       Self::Optional(inner) => format!("optional<{}>", inner.describe()),
+      Self::Struct(struct_def) => format!("struct {}", struct_def.name),
+      Self::Enum(enum_def) => format!("enum {}", enum_def.name()),
       Self::Dynamic => "dynamic".to_string(),
-      Self::TypeRef { ns, name } => format!("{ns}/{name}"),
       _ => "unknown".to_string(),
     }
   }
@@ -783,31 +756,26 @@ impl CalcitTypeAnnotation {
       Self::Custom(_) => 18,
       Self::Optional(_) => 19,
       Self::Dynamic => 20,
-      Self::TypeRef { .. } => 21,
+      Self::Struct(_) => 21,
+      Self::Enum(_) => 22,
     }
   }
 }
 
-fn resolve_record_annotation(struct_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitRecord> {
-  let struct_def = resolve_struct_def(struct_form)?;
-  let field_count = struct_def.fields.len();
-  let class_record = class_form.and_then(resolve_record_def).map(Arc::new);
-  Some(CalcitRecord {
-    struct_ref: Arc::new(struct_def),
-    values: Arc::new(vec![Calcit::Nil; field_count]),
-    class: class_record,
-  })
+fn resolve_struct_annotation(struct_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitStruct> {
+  let mut struct_def = resolve_struct_def(struct_form)?;
+  if let Some(class_record) = class_form.and_then(resolve_record_def) {
+    struct_def.class = Some(Arc::new(class_record));
+  }
+  Some(struct_def)
 }
 
-fn resolve_tuple_annotation(enum_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitTuple> {
-  let enum_def = resolve_enum_def(enum_form)?;
-  let class_record = class_form.and_then(resolve_record_def).map(Arc::new);
-  Some(CalcitTuple {
-    tag: Arc::new(Calcit::Tag(EdnTag::from("unknown"))),
-    extra: vec![],
-    class: class_record,
-    sum_type: Some(Arc::new(enum_def)),
-  })
+fn resolve_enum_annotation(enum_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitEnum> {
+  let mut enum_def = resolve_enum_def(enum_form)?;
+  if let Some(class_record) = class_form.and_then(resolve_record_def) {
+    enum_def.set_class(Some(Arc::new(class_record)));
+  }
+  Some(enum_def)
 }
 
 fn resolve_struct_def(form: &Calcit) -> Option<CalcitStruct> {
@@ -844,6 +812,141 @@ fn resolve_record_def(form: &Calcit) -> Option<CalcitRecord> {
   }
 }
 
+fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
+  let Calcit::List(items) = code else {
+    return None;
+  };
+  if let Some(head) = items.first() {
+    if matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _))
+      || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote")
+      || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "quote")
+    {
+      if let Some(inner) = items.get(1) {
+        return resolve_type_def_from_code(inner);
+      }
+    }
+  }
+  let head = items.first()?;
+  if is_defstruct_head(head) || is_struct_new_head(head) {
+    return parse_defstruct_code(items.as_ref()).map(Calcit::Struct);
+  }
+  if is_defenum_head(head) || is_enum_new_head(head) {
+    return parse_defenum_code(items.as_ref()).map(Calcit::Enum);
+  }
+  None
+}
+
+fn is_defstruct_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "defstruct")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "defstruct")
+}
+
+fn is_defenum_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "defenum")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "defenum")
+}
+
+fn is_struct_new_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Proc(CalcitProc::NativeStructNew))
+    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "&struct::new")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "&struct::new")
+}
+
+fn is_enum_new_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Proc(CalcitProc::NativeEnumNew))
+    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "&enum::new")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "&enum::new")
+}
+
+fn parse_type_name(form: &Calcit) -> Option<EdnTag> {
+  match form {
+    Calcit::Symbol { sym, .. } | Calcit::Str(sym) => Some(EdnTag::from(sym.as_ref())),
+    Calcit::Tag(tag) => Some(tag.to_owned()),
+    _ => None,
+  }
+}
+
+fn is_list_literal_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Proc(CalcitProc::List))
+    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "[]")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == CORE_NS && &**def == "[]")
+}
+
+fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStruct> {
+  let name_form = items.get(1)?;
+  let name = parse_type_name(name_form)?;
+  let mut fields: Vec<(EdnTag, Arc<CalcitTypeAnnotation>)> = Vec::new();
+
+  for item in items.iter().skip(2) {
+    let Calcit::List(pair) = item else {
+      return None;
+    };
+    let (field_name_form, field_type_form) = match pair.len() {
+      2 => (pair.get(0)?, pair.get(1)?),
+      3 if pair.first().is_some_and(is_list_literal_head) => (pair.get(1)?, pair.get(2)?),
+      _ => return None,
+    };
+    let field_name = parse_type_name(field_name_form)?;
+    let field_type = CalcitTypeAnnotation::parse_type_annotation_form(field_type_form);
+    fields.push((field_name, field_type));
+  }
+
+  fields.sort_by(|a, b| a.0.ref_str().cmp(b.0.ref_str()));
+  for idx in 1..fields.len() {
+    if fields[idx - 1].0 == fields[idx].0 {
+      return None;
+    }
+  }
+
+  let field_names: Vec<EdnTag> = fields.iter().map(|(name, _)| name.to_owned()).collect();
+  let field_types: Vec<Arc<CalcitTypeAnnotation>> = fields.iter().map(|(_, t)| t.to_owned()).collect();
+
+  Some(CalcitStruct {
+    name,
+    fields: Arc::new(field_names),
+    field_types: Arc::new(field_types),
+    class: None,
+  })
+}
+
+fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnum> {
+  let name_form = items.get(1)?;
+  let name = parse_type_name(name_form)?;
+
+  let mut variants: Vec<(EdnTag, Calcit)> = Vec::new();
+  for item in items.iter().skip(2) {
+    let Calcit::List(variant) = item else {
+      return None;
+    };
+    let tag_form = variant.first()?;
+    let tag = parse_type_name(tag_form)?;
+    let payloads: Vec<Calcit> = variant.iter().skip(1).map(|v| v.to_owned()).collect();
+    let payload_value = if payloads.is_empty() {
+      Calcit::Nil
+    } else {
+      Calcit::List(Arc::new(CalcitList::Vector(payloads)))
+    };
+    variants.push((tag, payload_value));
+  }
+
+  variants.sort_by(|a, b| a.0.ref_str().cmp(b.0.ref_str()));
+  for idx in 1..variants.len() {
+    if variants[idx - 1].0 == variants[idx].0 {
+      return None;
+    }
+  }
+
+  let fields: Vec<EdnTag> = variants.iter().map(|(tag, _)| tag.to_owned()).collect();
+  let values: Vec<Calcit> = variants.iter().map(|(_, value)| value.to_owned()).collect();
+  let struct_ref = CalcitStruct::from_fields(name, fields);
+  let record = CalcitRecord {
+    struct_ref: Arc::new(struct_ref),
+    values: Arc::new(values),
+    class: None,
+  };
+  CalcitEnum::from_record(record).ok()
+}
+
 fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
   match form {
     Calcit::Import(import) => {
@@ -868,8 +971,11 @@ fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
       }
 
       let resolved = program::lookup_evaled_def(import.ns.as_ref(), import.def.as_ref())
-        .or_else(|| program::lookup_def_code(import.ns.as_ref(), import.def.as_ref()))
-        .map(|value| value.to_owned());
+        .map(|value| resolve_type_def_from_code(&value).unwrap_or(value))
+        .or_else(|| {
+          program::lookup_def_code(import.ns.as_ref(), import.def.as_ref())
+            .map(|value| resolve_type_def_from_code(&value).unwrap_or(value))
+        });
 
       if pushed {
         IMPORT_RESOLUTION_STACK.with(|stack| {
@@ -881,8 +987,8 @@ fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
       resolved
     }
     Calcit::Symbol { sym, info, .. } => program::lookup_evaled_def(info.at_ns.as_ref(), sym)
-      .or_else(|| program::lookup_def_code(info.at_ns.as_ref(), sym))
-      .map(|value| value.to_owned()),
+      .map(|value| resolve_type_def_from_code(&value).unwrap_or(value))
+      .or_else(|| program::lookup_def_code(info.at_ns.as_ref(), sym).map(|value| resolve_type_def_from_code(&value).unwrap_or(value))),
     _ => None,
   }
 }
@@ -984,10 +1090,15 @@ impl Hash for CalcitTypeAnnotation {
         inner.hash(state);
       }
       Self::Dynamic => "dynamic".hash(state),
-      Self::TypeRef { ns, name } => {
-        "typeref".hash(state);
-        ns.hash(state);
-        name.hash(state);
+      Self::Struct(struct_def) => {
+        "struct".hash(state);
+        struct_def.name.hash(state);
+        struct_def.fields.hash(state);
+        struct_def.field_types.hash(state);
+      }
+      Self::Enum(enum_def) => {
+        "enum".hash(state);
+        enum_def.name().hash(state);
       }
     }
   }
@@ -1038,7 +1149,8 @@ impl Ord for CalcitTypeAnnotation {
       (Self::Custom(a), Self::Custom(b)) => a.cmp(b),
       (Self::Optional(a), Self::Optional(b)) => a.cmp(b),
       (Self::Dynamic, Self::Dynamic) => Ordering::Equal,
-      (Self::TypeRef { ns: ans, name: anm }, Self::TypeRef { ns: bns, name: bnm }) => ans.cmp(bns).then_with(|| anm.cmp(bnm)),
+      (Self::Struct(a), Self::Struct(b)) => a.name.cmp(&b.name).then_with(|| a.fields.cmp(&b.fields)),
+      (Self::Enum(a), Self::Enum(b)) => a.name().cmp(b.name()),
       _ => Ordering::Equal, // other variants already separated by kind order
     }
   }

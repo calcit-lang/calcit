@@ -368,10 +368,13 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
       Edn::map_from_iter(entries)
     }
     CalcitTypeAnnotation::Dynamic => Edn::Nil,
-    CalcitTypeAnnotation::TypeRef { ns, name } => Edn::map_from_iter([
-      (Edn::tag("type"), Edn::tag("type-ref")),
-      (Edn::tag("ns"), Edn::str(ns.to_string())),
-      (Edn::tag("name"), Edn::str(name.to_string())),
+    CalcitTypeAnnotation::Struct(struct_def) => Edn::map_from_iter([
+      (Edn::tag("type"), Edn::tag("struct")),
+      (Edn::tag("value"), dump_struct_code(struct_def.as_ref())),
+    ]),
+    CalcitTypeAnnotation::Enum(enum_def) => Edn::map_from_iter([
+      (Edn::tag("type"), Edn::tag("enum")),
+      (Edn::tag("value"), dump_enum_code(enum_def.as_ref())),
     ]),
   }
 }

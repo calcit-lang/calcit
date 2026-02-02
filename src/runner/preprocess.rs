@@ -1765,24 +1765,6 @@ fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
   }
 }
 
-/// Resolve a TypeRef to its actual type definition
-/// Returns None if the referenced type cannot be found
-#[allow(dead_code)]
-fn resolve_type_ref(type_ref: &CalcitTypeAnnotation, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
-  match type_ref {
-    CalcitTypeAnnotation::TypeRef { ns, name } if ns.is_empty() => {
-      // Unqualified type reference - look up in scope_types
-      scope_types.get(name).cloned()
-    }
-    CalcitTypeAnnotation::TypeRef { ns: _, name } => {
-      // Namespaced type reference - for now, try unqualified lookup
-      // In a full implementation, this would look up in the specified namespace
-      scope_types.get(name).cloned()
-    }
-    _ => Some(Arc::new(type_ref.to_owned())),
-  }
-}
-
 /// Treat variadic locals as list values when resolving expression types.
 ///
 /// This is distinct from `collect_arg_type_hints_from_body`: that function extracts parameter

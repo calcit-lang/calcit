@@ -15,6 +15,7 @@
               test-set-inference
               test-ref-inference
               test-record-inference
+              test-type-ref-combos
 
         |test-list-inference $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -88,15 +89,61 @@
 
         |Person $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord Person :name :age
+            defstruct Person (:name :string) (:age :number) (:address Address)
+
+        |Address $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct Address (:city :string)
+
+        |Status $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defenum Status
+              :ok :number
+              :err :string
+
+        |Job $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct Job (:title :string) (:status Status)
+
+        |PersonWrap $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defenum PersonWrap
+              :person Person
+              :none
+
+        |Outcome $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defenum Outcome
+              :status Status
+              :none
 
         |test-record-inference $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-record-inference ()
               let
-                  p $ %{} Person (:name |n) (:age 20)
-                assert-type p (:: :typeref :test-types-inference.main :Person)
+                  addr $ %{} (new-record :Address :city) (:city |sh)
+                  p $ %{} (new-record :Person :name :age :address) (:name |n) (:age 20) (:address addr)
+                assert-type p Person
                 &inspect-type p
+
+        |test-type-ref-combos $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-type-ref-combos ()
+              let
+                  addr $ %{} (new-record :Address :city) (:city |sh)
+                  person $ %{} (new-record :Person :name :age :address) (:name |n) (:age 20) (:address addr)
+                  job $ %{} (new-record :Job :title :status) (:title |dev) (:status (%:: Status :ok 1))
+                assert-type person Person
+                assert-type job Job
+                &inspect-type person
+                &inspect-type job
+                let
+                    wrapped $ %:: PersonWrap :person person
+                    outcome $ %:: Outcome :status (%:: Status :ok 2)
+                  assert-type wrapped PersonWrap
+                  assert-type outcome Outcome
+                  &inspect-type wrapped
+                  &inspect-type outcome
 
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
