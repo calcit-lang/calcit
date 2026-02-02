@@ -20,14 +20,16 @@ thread_local! {
 /// Unified representation of type annotations propagated through preprocessing
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalcitTypeAnnotation {
-  Nil,
   Bool,
   Number,
   String,
   Symbol,
   Tag,
-  List,
-  Map,
+  /// List type with element type annotation
+  /// `List Dynamic` for dynamic list, `List<T>` for typed list
+  List(Arc<CalcitTypeAnnotation>),
+  /// Map type with key and value type annotations
+  Map(Arc<CalcitTypeAnnotation>, Arc<CalcitTypeAnnotation>),
   Record(Arc<CalcitRecord>),
   Tuple(Arc<CalcitTuple>),
   /// Any tuple type (when specific structure is not known)
@@ -36,8 +38,8 @@ pub enum CalcitTypeAnnotation {
   DynFn,
   Fn(Arc<CalcitFnTypeAnnotation>),
   /// Hashset type
-  Set,
-  Ref,
+  Set(Arc<CalcitTypeAnnotation>),
+  Ref(Arc<CalcitTypeAnnotation>),
   Buffer,
   CirruQuote,
   /// Variadic parameter type constraint (for & args)
@@ -48,23 +50,29 @@ pub enum CalcitTypeAnnotation {
   Dynamic,
   /// Represents an type that can be nil or the given type
   Optional(Arc<CalcitTypeAnnotation>),
+  /// Reference to an existing type definition (struct or enum)
+  /// Used for struct field types that reference other types
+  TypeRef {
+    ns: Arc<str>,
+    name: Arc<str>,
+  },
 }
 
 impl CalcitTypeAnnotation {
   fn builtin_type_from_tag_name(name: &str) -> Option<Self> {
     match name {
-      "nil" => Some(Self::Nil),
+      "nil" => Some(Self::Dynamic),
       "bool" => Some(Self::Bool),
       "number" => Some(Self::Number),
       "string" => Some(Self::String),
       "symbol" => Some(Self::Symbol),
       "tag" => Some(Self::Tag),
-      "list" => Some(Self::List),
-      "map" => Some(Self::Map),
-      "set" => Some(Self::Set),
+      "list" => Some(Self::List(Arc::new(Self::Dynamic))),
+      "map" => Some(Self::Map(Arc::new(Self::Dynamic), Arc::new(Self::Dynamic))),
+      "set" => Some(Self::Set(Arc::new(Self::Dynamic))),
       "tuple" => Some(Self::DynTuple),
       "fn" => Some(Self::DynFn),
-      "ref" => Some(Self::Ref),
+      "ref" => Some(Self::Ref(Arc::new(Self::Dynamic))),
       "buffer" => Some(Self::Buffer),
       "cirru-quote" => Some(Self::CirruQuote),
       _ => None,
@@ -73,18 +81,17 @@ impl CalcitTypeAnnotation {
 
   fn builtin_tag_name(&self) -> Option<&'static str> {
     match self {
-      Self::Nil => Some("nil"),
       Self::Bool => Some("bool"),
       Self::Number => Some("number"),
       Self::String => Some("string"),
       Self::Symbol => Some("symbol"),
       Self::Tag => Some("tag"),
-      Self::List => Some("list"),
-      Self::Map => Some("map"),
+      Self::List(_) => Some("list"),
+      Self::Map(_, _) => Some("map"),
       Self::DynFn => Some("fn"),
-      Self::Set => Some("set"),
+      Self::Set(_) => Some("set"),
       Self::DynTuple => Some("tuple"),
-      Self::Ref => Some("ref"),
+      Self::Ref(_) => Some("ref"),
       Self::Buffer => Some("buffer"),
       Self::CirruQuote => Some("cirru-quote"),
       _ => None,
@@ -172,6 +179,17 @@ impl CalcitTypeAnnotation {
 
   pub fn parse_type_annotation_form(form: &Calcit) -> Arc<CalcitTypeAnnotation> {
     let is_optional_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "optional";
+    let is_list_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "list";
+    let is_map_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "map";
+    let is_set_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "set";
+    let is_ref_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "ref";
+    let is_typeref_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "typeref";
+    let get_str_from_calcit = |x: &Calcit| match x {
+      Calcit::Tag(t) => Some(Arc::from(t.ref_str())),
+      Calcit::Str(s) => Some(s.to_owned()),
+      Calcit::Symbol { sym, .. } => Some(sym.to_owned()),
+      _ => None,
+    };
 
     if matches!(form, Calcit::Nil) {
       return Arc::new(CalcitTypeAnnotation::Dynamic);
@@ -188,10 +206,141 @@ impl CalcitTypeAnnotation {
             return Arc::new(CalcitTypeAnnotation::Optional(inner));
           }
         }
+        // Check for list type: (:list :type)
+        if is_list_tag(tag) {
+          if tuple.extra.len() > 1 {
+            eprintln!("[Warn] :list expects at most 1 argument, got {}", tuple.extra.len());
+          }
+          if let Some(inner_form) = tuple.extra.first() {
+            let inner = Self::parse_type_annotation_form(inner_form);
+            return Arc::new(CalcitTypeAnnotation::List(inner));
+          }
+          // No element type specified, use Dynamic
+          return Arc::new(CalcitTypeAnnotation::List(Arc::new(Self::Dynamic)));
+        }
+        if is_map_tag(tag) {
+          if tuple.extra.len() > 2 {
+            eprintln!("[Warn] :map expects at most 2 arguments, got {}", tuple.extra.len());
+          }
+          let key_type = tuple
+            .extra
+            .first()
+            .map(Self::parse_type_annotation_form)
+            .unwrap_or_else(|| Arc::new(Self::Dynamic));
+          let val_type = tuple
+            .extra
+            .get(1)
+            .map(Self::parse_type_annotation_form)
+            .unwrap_or_else(|| Arc::new(Self::Dynamic));
+          return Arc::new(CalcitTypeAnnotation::Map(key_type, val_type));
+        }
+        if is_set_tag(tag) {
+          if tuple.extra.len() > 1 {
+            eprintln!("[Warn] :set expects at most 1 argument, got {}", tuple.extra.len());
+          }
+          if let Some(inner_form) = tuple.extra.first() {
+            let inner = Self::parse_type_annotation_form(inner_form);
+            return Arc::new(CalcitTypeAnnotation::Set(inner));
+          }
+          return Arc::new(CalcitTypeAnnotation::Set(Arc::new(Self::Dynamic)));
+        }
+        if is_ref_tag(tag) {
+          if tuple.extra.len() > 1 {
+            eprintln!("[Warn] :ref expects at most 1 argument, got {}", tuple.extra.len());
+          }
+          if let Some(inner_form) = tuple.extra.first() {
+            let inner = Self::parse_type_annotation_form(inner_form);
+            return Arc::new(CalcitTypeAnnotation::Ref(inner));
+          }
+          return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
+        }
+        if is_typeref_tag(tag) {
+          let ns = tuple.extra.first().and_then(|x| get_str_from_calcit(x)).unwrap_or_default();
+          let name = tuple.extra.get(1).and_then(|x| get_str_from_calcit(x)).unwrap_or_default();
+          return Arc::new(CalcitTypeAnnotation::TypeRef { ns, name });
+        }
       }
     }
 
     if let Calcit::List(xs) = form {
+      if let Some(Calcit::Tag(tag)) = xs.first() {
+        let tag_name = tag.ref_str().trim_start_matches(':');
+        if is_optional_tag(tag) {
+          if xs.len() != 2 {
+            eprintln!("[Warn] :optional expects 1 argument, got {}", xs.len() as i64 - 1);
+          }
+          if let Some(inner_form) = xs.get(1) {
+            let inner = Self::parse_type_annotation_form(inner_form);
+            return Arc::new(CalcitTypeAnnotation::Optional(inner));
+          }
+        }
+        if is_list_tag(tag) {
+          if xs.len() > 2 {
+            eprintln!("[Warn] :list expects at most 1 argument, got {}", xs.len() as i64 - 1);
+          }
+          if let Some(inner_form) = xs.get(1) {
+            let inner = Self::parse_type_annotation_form(inner_form);
+            return Arc::new(CalcitTypeAnnotation::List(inner));
+          }
+          return Arc::new(CalcitTypeAnnotation::List(Arc::new(Self::Dynamic)));
+        }
+        if is_map_tag(tag) {
+          if xs.len() > 3 {
+            eprintln!("[Warn] :map expects at most 2 arguments, got {}", xs.len() as i64 - 1);
+          }
+          let key_type = xs
+            .get(1)
+            .map(Self::parse_type_annotation_form)
+            .unwrap_or_else(|| Arc::new(Self::Dynamic));
+          let val_type = xs
+            .get(2)
+            .map(Self::parse_type_annotation_form)
+            .unwrap_or_else(|| Arc::new(Self::Dynamic));
+          return Arc::new(CalcitTypeAnnotation::Map(key_type, val_type));
+        }
+        if is_set_tag(tag) {
+          if xs.len() > 2 {
+            eprintln!("[Warn] :set expects at most 1 argument, got {}", xs.len() as i64 - 1);
+          }
+          if let Some(inner_form) = xs.get(1) {
+            let inner = Self::parse_type_annotation_form(inner_form);
+            return Arc::new(CalcitTypeAnnotation::Set(inner));
+          }
+          return Arc::new(CalcitTypeAnnotation::Set(Arc::new(Self::Dynamic)));
+        }
+        if is_ref_tag(tag) {
+          if xs.len() > 2 {
+            eprintln!("[Warn] :ref expects at most 1 argument, got {}", xs.len() as i64 - 1);
+          }
+          if let Some(inner_form) = xs.get(1) {
+            let inner = Self::parse_type_annotation_form(inner_form);
+            return Arc::new(CalcitTypeAnnotation::Ref(inner));
+          }
+          return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
+        }
+        if is_typeref_tag(tag) {
+          let ns = xs.get(1).and_then(|x| get_str_from_calcit(x)).unwrap_or_default();
+          let name = xs.get(2).and_then(|x| get_str_from_calcit(x)).unwrap_or_default();
+          return Arc::new(CalcitTypeAnnotation::TypeRef { ns, name });
+        }
+        if tag_name == "fn" {
+          let args_form = xs.get(1).unwrap_or(&Calcit::Nil);
+          let arg_types = if let Calcit::List(args) = args_form {
+            args.iter().map(Self::parse_type_annotation_form).collect()
+          } else {
+            vec![]
+          };
+          let return_type = xs
+            .get(2)
+            .map(Self::parse_type_annotation_form)
+            .unwrap_or_else(|| Arc::new(Self::Dynamic));
+          return Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+            arg_types,
+            return_type,
+          })));
+        }
+      }
+
       let is_tuple_constructor = match xs.first() {
         Some(Calcit::Proc(CalcitProc::NativeTuple)) => true,
         Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "::" => true,
@@ -238,8 +387,78 @@ impl CalcitTypeAnnotation {
               return Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(tuple)));
             }
           }
+          if tag_name == "list" {
+            if let Some(inner_form) = xs.get(2) {
+              let inner = Self::parse_type_annotation_form(inner_form);
+              return Arc::new(CalcitTypeAnnotation::List(inner));
+            }
+            return Arc::new(CalcitTypeAnnotation::List(Arc::new(Self::Dynamic)));
+          }
+          if tag_name == "map" {
+            let key_type = xs
+              .get(2)
+              .map(Self::parse_type_annotation_form)
+              .unwrap_or_else(|| Arc::new(Self::Dynamic));
+            let val_type = xs
+              .get(3)
+              .map(Self::parse_type_annotation_form)
+              .unwrap_or_else(|| Arc::new(Self::Dynamic));
+            return Arc::new(CalcitTypeAnnotation::Map(key_type, val_type));
+          }
+          if tag_name == "set" {
+            if let Some(inner_form) = xs.get(2) {
+              let inner = Self::parse_type_annotation_form(inner_form);
+              return Arc::new(CalcitTypeAnnotation::Set(inner));
+            }
+            return Arc::new(CalcitTypeAnnotation::Set(Arc::new(Self::Dynamic)));
+          }
+          if tag_name == "ref" {
+            if let Some(inner_form) = xs.get(2) {
+              let inner = Self::parse_type_annotation_form(inner_form);
+              return Arc::new(CalcitTypeAnnotation::Ref(inner));
+            }
+            return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
+          }
+          if tag_name == "typeref" {
+            let ns = xs.get(2).and_then(|x| get_str_from_calcit(x)).unwrap_or_default();
+            let name = xs.get(3).and_then(|x| get_str_from_calcit(x)).unwrap_or_default();
+            return Arc::new(CalcitTypeAnnotation::TypeRef { ns, name });
+          }
+          if tag_name == "fn" {
+            let args_form = xs.get(2).unwrap_or(&Calcit::Nil);
+            let arg_types = if let Calcit::List(args) = args_form {
+              args.iter().map(Self::parse_type_annotation_form).collect()
+            } else {
+              vec![]
+            };
+            let return_type = xs
+              .get(3)
+              .map(Self::parse_type_annotation_form)
+              .unwrap_or_else(|| Arc::new(Self::Dynamic));
+            return Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+              arg_types,
+              return_type,
+            })));
+          }
         }
       }
+    }
+
+    // Handle symbol as type reference (e.g., MyStruct, ns/MyStruct)
+    if let Calcit::Symbol { sym, .. } = form {
+      let sym_str = sym.as_ref();
+      // Check if it's a namespaced type reference (ns/name)
+      if let Some((ns, name)) = sym_str.split_once('/') {
+        return Arc::new(CalcitTypeAnnotation::TypeRef {
+          ns: Arc::from(ns),
+          name: Arc::from(name),
+        });
+      }
+      // Simple type reference (name)
+      return Arc::new(CalcitTypeAnnotation::TypeRef {
+        ns: Arc::from(""),
+        name: Arc::from(sym_str),
+      });
     }
 
     Arc::new(CalcitTypeAnnotation::from_calcit(form))
@@ -284,10 +503,14 @@ impl CalcitTypeAnnotation {
       Self::Record(record) => format!("record {}", record.name()),
       Self::Tuple(_) => "tuple".to_string(),
       Self::Fn(signature) => signature.render_signature_brief(),
-      Self::Variadic(inner) => format!("variadic {}", inner.to_brief_string()),
+      Self::Variadic(inner) => format!("&{}", inner.to_brief_string()),
+      Self::List(inner) => format!("list<{}>", inner.to_brief_string()),
+      Self::Map(k, v) => format!("map<{},{}>", k.to_brief_string(), v.to_brief_string()),
+      Self::Set(inner) => format!("set<{}>", inner.to_brief_string()),
+      Self::Ref(inner) => format!("ref<{}>", inner.to_brief_string()),
       Self::Custom(inner) => format!("{inner}"),
-      Self::Optional(inner) => format!("optional {}", inner.to_brief_string()),
-      Self::Dynamic => "dynamic".to_string(),
+      Self::Optional(inner) => format!("{}?", inner.to_brief_string()),
+      Self::Dynamic => "any".to_string(),
       _ => "unknown".to_string(),
     }
   }
@@ -297,22 +520,21 @@ impl CalcitTypeAnnotation {
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
       (_, Self::Optional(expected_inner)) => match self {
         Self::Optional(actual_inner) => actual_inner.matches_annotation(expected_inner),
-        Self::Nil => true,
         _ => self.matches_annotation(expected_inner),
       },
       (Self::Optional(_), _) => false,
-      (Self::Nil, Self::Nil)
-      | (Self::Bool, Self::Bool)
+      (Self::Bool, Self::Bool)
       | (Self::Number, Self::Number)
       | (Self::String, Self::String)
       | (Self::Symbol, Self::Symbol)
       | (Self::Tag, Self::Tag)
-      | (Self::List, Self::List)
-      | (Self::Map, Self::Map)
       | (Self::DynFn, Self::DynFn)
-      | (Self::Ref, Self::Ref)
       | (Self::Buffer, Self::Buffer)
       | (Self::CirruQuote, Self::CirruQuote) => true,
+      (Self::List(a), Self::List(b)) => a.matches_annotation(b),
+      (Self::Map(ak, av), Self::Map(bk, bv)) => ak.matches_annotation(bk) && av.matches_annotation(bv),
+      (Self::Set(a), Self::Set(b)) => a.matches_annotation(b),
+      (Self::Ref(a), Self::Ref(b)) => a.matches_annotation(b),
       (Self::Record(a), Self::Record(b)) => a.name() == b.name(),
       // Tuple type matching: DynTuple matches any Tuple, specific Tuple must match structure
       (Self::Tuple(_), Self::DynTuple) | (Self::DynTuple, Self::Tuple(_)) | (Self::DynTuple, Self::DynTuple) => true,
@@ -320,7 +542,6 @@ impl CalcitTypeAnnotation {
       // Function type matching: DynFn matches any Fn, specific Fn must match signature
       (Self::Fn(_), Self::DynFn) | (Self::DynFn, Self::Fn(_)) => true,
       (Self::Fn(a), Self::Fn(b)) => a.matches_signature(b.as_ref()),
-      (Self::Set, Self::Set) => true,
       (Self::Variadic(a), Self::Variadic(b)) => a.matches_annotation(b),
       (Self::Custom(a), Self::Custom(b)) => a.as_ref() == b.as_ref(),
       _ => false,
@@ -329,7 +550,7 @@ impl CalcitTypeAnnotation {
 
   pub fn from_calcit(value: &Calcit) -> Self {
     match value {
-      Calcit::Nil => Self::Nil,
+      Calcit::Nil => Self::Dynamic,
       Calcit::Bool(_) => Self::Bool,
       Calcit::Number(_) => Self::Number,
       Calcit::Str(_) => Self::String,
@@ -343,9 +564,9 @@ impl CalcitTypeAnnotation {
           Self::Tag
         }
       }
-      Calcit::List(_) => Self::List,
-      Calcit::Map(_) => Self::Map,
-      Calcit::Set(_) => Self::Set,
+      Calcit::List(_) => Self::List(Arc::new(Self::Dynamic)),
+      Calcit::Map(_) => Self::Map(Arc::new(Self::Dynamic), Arc::new(Self::Dynamic)),
+      Calcit::Set(_) => Self::Set(Arc::new(Self::Dynamic)),
       Calcit::Record(record) => Self::Record(Arc::new(record.to_owned())),
       Calcit::Enum(enum_def) => Self::Record(Arc::new(enum_def.prototype().to_owned())),
       Calcit::Struct(struct_def) => {
@@ -379,7 +600,7 @@ impl CalcitTypeAnnotation {
           Self::Dynamic
         }
       }
-      Calcit::Ref(_, _) => Self::Ref,
+      Calcit::Ref(_, _) => Self::Ref(Arc::new(Self::Dynamic)),
       Calcit::Symbol { .. } => Self::Symbol,
       Calcit::Buffer(_) => Self::Buffer,
       Calcit::CirruQuote(_) => Self::CirruQuote,
@@ -495,8 +716,36 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn describe(&self) -> String {
+    match self {
+      Self::List(inner) => {
+        if matches!(inner.as_ref(), Self::Dynamic) {
+          return "list".to_string();
+        }
+        return format!("list<{}>", inner.describe());
+      }
+      Self::Map(k, v) => {
+        if matches!(k.as_ref(), Self::Dynamic) && matches!(v.as_ref(), Self::Dynamic) {
+          return "map".to_string();
+        }
+        return format!("map<{}, {}>", k.describe(), v.describe());
+      }
+      Self::Set(inner) => {
+        if matches!(inner.as_ref(), Self::Dynamic) {
+          return "set".to_string();
+        }
+        return format!("set<{}>", inner.describe());
+      }
+      Self::Ref(inner) => {
+        if matches!(inner.as_ref(), Self::Dynamic) {
+          return "ref".to_string();
+        }
+        return format!("ref<{}>", inner.describe());
+      }
+      _ => {}
+    }
+
     if let Some(tag) = self.builtin_tag_name() {
-      return format!("{tag} type");
+      return tag.to_string();
     }
 
     match self {
@@ -504,36 +753,37 @@ impl CalcitTypeAnnotation {
       Self::Tuple(tuple) => format!("tuple {:?}", tuple.tag),
       Self::Fn(signature) => signature.describe(),
       Self::Variadic(inner) => format!("variadic {}", inner.describe()),
-      Self::Custom(_) => "custom type".to_string(),
-      Self::Optional(inner) => format!("optional {}", inner.describe()),
-      Self::Dynamic => "dynamic type".to_string(),
-      _ => "unknown type".to_string(),
+      Self::Custom(_) => "custom".to_string(),
+      Self::Optional(inner) => format!("optional<{}>", inner.describe()),
+      Self::Dynamic => "dynamic".to_string(),
+      Self::TypeRef { ns, name } => format!("{}/{}", ns, name),
+      _ => "unknown".to_string(),
     }
   }
 
   fn variant_order(&self) -> u8 {
     match self {
-      Self::Nil => 0,
       Self::Bool => 1,
       Self::Number => 2,
       Self::String => 3,
       Self::Symbol => 4,
       Self::Tag => 5,
-      Self::List => 6,
-      Self::Map => 7,
+      Self::List(_) => 6,
+      Self::Map(_, _) => 7,
       Self::DynFn => 8,
-      Self::Ref => 9,
+      Self::Ref(_) => 9,
       Self::Buffer => 10,
       Self::CirruQuote => 11,
       Self::Record(_) => 12,
       Self::Tuple(_) => 13,
       Self::DynTuple => 14,
       Self::Fn(_) => 15,
-      Self::Set => 16,
+      Self::Set(_) => 16,
       Self::Variadic(_) => 17,
       Self::Custom(_) => 18,
       Self::Optional(_) => 19,
       Self::Dynamic => 20,
+      Self::TypeRef { .. } => 21,
     }
   }
 }
@@ -676,12 +926,21 @@ impl fmt::Display for CalcitTypeAnnotation {
 
 impl Hash for CalcitTypeAnnotation {
   fn hash<H: Hasher>(&self, state: &mut H) {
-    if let Some(tag) = self.builtin_tag_name() {
-      tag.hash(state);
-      return;
-    }
-
     match self {
+      Self::Bool => "bool".hash(state),
+      Self::Number => "number".hash(state),
+      Self::String => "string".hash(state),
+      Self::Symbol => "symbol".hash(state),
+      Self::Tag => "tag".hash(state),
+      Self::List(inner) => {
+        "list".hash(state);
+        inner.hash(state);
+      }
+      Self::Map(k, v) => {
+        "map".hash(state);
+        k.hash(state);
+        v.hash(state);
+      }
       Self::Record(record) => {
         "record".hash(state);
         let record = record.as_ref();
@@ -695,14 +954,23 @@ impl Hash for CalcitTypeAnnotation {
         tuple.tag.hash(state);
         tuple.extra.hash(state);
       }
+      Self::DynTuple => "dyntuple".hash(state),
+      Self::DynFn => "dynfn".hash(state),
       Self::Fn(signature) => {
         "function".hash(state);
         signature.arg_types.hash(state);
         signature.return_type.hash(state);
       }
-      Self::Set => {
+      Self::Set(inner) => {
         "set".hash(state);
+        inner.hash(state);
       }
+      Self::Ref(inner) => {
+        "ref".hash(state);
+        inner.hash(state);
+      }
+      Self::Buffer => "buffer".hash(state),
+      Self::CirruQuote => "cirru-quote".hash(state),
       Self::Variadic(inner) => {
         "variadic".hash(state);
         inner.hash(state);
@@ -715,11 +983,11 @@ impl Hash for CalcitTypeAnnotation {
         "optional".hash(state);
         inner.hash(state);
       }
-      Self::Dynamic => {
-        "dynamic".hash(state);
-      }
-      _ => {
-        "unknown".hash(state);
+      Self::Dynamic => "dynamic".hash(state),
+      Self::TypeRef { ns, name } => {
+        "typeref".hash(state);
+        ns.hash(state);
+        name.hash(state);
       }
     }
   }
@@ -739,18 +1007,16 @@ impl Ord for CalcitTypeAnnotation {
     }
 
     match (self, other) {
-      (Self::Nil, Self::Nil)
-      | (Self::Bool, Self::Bool)
+      (Self::Bool, Self::Bool)
       | (Self::Number, Self::Number)
       | (Self::String, Self::String)
       | (Self::Symbol, Self::Symbol)
       | (Self::Tag, Self::Tag)
-      | (Self::List, Self::List)
-      | (Self::Map, Self::Map)
       | (Self::DynFn, Self::DynFn)
-      | (Self::Ref, Self::Ref)
       | (Self::Buffer, Self::Buffer)
       | (Self::CirruQuote, Self::CirruQuote) => Ordering::Equal,
+      (Self::List(a), Self::List(b)) => a.cmp(b),
+      (Self::Map(ak, av), Self::Map(bk, bv)) => ak.cmp(bk).then_with(|| av.cmp(bv)),
       (Self::Record(a), Self::Record(b)) => {
         let a = a.as_ref();
         let b = b.as_ref();
@@ -766,11 +1032,13 @@ impl Ord for CalcitTypeAnnotation {
         a.tag.cmp(&b.tag).then_with(|| a.extra.cmp(&b.extra))
       }
       (Self::Fn(a), Self::Fn(b)) => a.arg_types.cmp(&b.arg_types).then_with(|| a.return_type.cmp(&b.return_type)),
-      (Self::Set, Self::Set) => Ordering::Equal,
+      (Self::Set(a), Self::Set(b)) => a.cmp(b),
+      (Self::Ref(a), Self::Ref(b)) => a.cmp(b),
       (Self::Variadic(a), Self::Variadic(b)) => a.cmp(b),
       (Self::Custom(a), Self::Custom(b)) => a.cmp(b),
       (Self::Optional(a), Self::Optional(b)) => a.cmp(b),
       (Self::Dynamic, Self::Dynamic) => Ordering::Equal,
+      (Self::TypeRef { ns: ans, name: anm }, Self::TypeRef { ns: bns, name: bnm }) => ans.cmp(bns).then_with(|| anm.cmp(bnm)),
       _ => Ordering::Equal, // other variants already separated by kind order
     }
   }

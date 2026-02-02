@@ -501,8 +501,10 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_each_items(name, name_ns, &args, &mut ctx)?)
         }
-        CalcitSyntax::Quote | CalcitSyntax::Eval | CalcitSyntax::HintFn => {
-          Ok(preprocess_quote(name, name_ns, &args, scope_defs, file_ns)?)
+        CalcitSyntax::Quote | CalcitSyntax::Eval => Ok(preprocess_quote(name, name_ns, &args, scope_defs, file_ns)?),
+        CalcitSyntax::HintFn => {
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          preprocess_hint_fn(name, name_ns, &args, &mut ctx)
         }
         CalcitSyntax::Defatom => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
@@ -520,7 +522,7 @@ fn preprocess_list_call(
         }
         CalcitSyntax::AssertType => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
-          preprocess_asset_type(name, name_ns, &args, &mut ctx)
+          preprocess_assert_type(name, name_ns, &args, &mut ctx)
         }
         CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec()),
         CalcitSyntax::ArgOptional => {
@@ -588,6 +590,60 @@ fn preprocess_list_call(
         // Check Proc argument types if available
         if let Some(Calcit::Proc(proc)) = ys.first() {
           check_proc_arg_types(proc, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+        }
+
+        // Handle &inspect-type: print type information for the given symbol
+        if let Some(Calcit::Proc(CalcitProc::NativeInspectType)) = ys.first() {
+          if let Some(first_arg) = processed_args.first() {
+            // Look up the type of the symbol in scope_types
+            let sym_name = match first_arg {
+              Calcit::Symbol { sym, .. } => Some(sym.as_ref()),
+              Calcit::Local(local) => Some(local.sym.as_ref()),
+              _ => None,
+            };
+            let type_info = if let Some(name) = sym_name {
+              scope_types
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::Dynamic))
+            } else {
+              infer_type_from_expr(first_arg, scope_types).unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::Dynamic))
+            };
+
+            let loc = head.get_location().or_else(|| first_arg.get_location());
+            if let Some(l) = loc {
+              let coord_repr = l.coord.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",");
+              eprintln!(
+                "[&inspect-type] in {}/{} [{}]\n  {} => {}",
+                l.ns,
+                l.def,
+                coord_repr,
+                first_arg,
+                type_info.describe()
+              );
+            } else {
+              eprintln!(
+                "[&inspect-type] in {}/{}\n  {} => {}",
+                file_ns,
+                def_name,
+                first_arg,
+                type_info.describe()
+              );
+            }
+
+            if let Some(Calcit::Tag(tag)) = processed_args.get(1) {
+              if tag.ref_str().trim_start_matches(':') == "fail-on-dynamic" && matches!(*type_info, CalcitTypeAnnotation::Dynamic) {
+                let msg = format!("&inspect-type failed to infer type for {first_arg}");
+                if let Some(loc) = head.get_location() {
+                  gen_check_warning_with_location(msg, loc, check_warnings);
+                } else {
+                  gen_check_warning(msg, file_ns, check_warnings);
+                }
+              }
+            }
+          }
+          // Return nil for &inspect-type
+          return Ok(Calcit::Nil);
         }
 
         if !has_spread {
@@ -1709,6 +1765,24 @@ fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
   }
 }
 
+/// Resolve a TypeRef to its actual type definition
+/// Returns None if the referenced type cannot be found
+#[allow(dead_code)]
+fn resolve_type_ref(type_ref: &CalcitTypeAnnotation, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  match type_ref {
+    CalcitTypeAnnotation::TypeRef { ns, name } if ns.is_empty() => {
+      // Unqualified type reference - look up in scope_types
+      scope_types.get(name).cloned()
+    }
+    CalcitTypeAnnotation::TypeRef { ns: _, name } => {
+      // Namespaced type reference - for now, try unqualified lookup
+      // In a full implementation, this would look up in the specified namespace
+      scope_types.get(name).cloned()
+    }
+    _ => Some(Arc::new(type_ref.to_owned())),
+  }
+}
+
 /// Treat variadic locals as list values when resolving expression types.
 ///
 /// This is distinct from `collect_arg_type_hints_from_body`: that function extracts parameter
@@ -1783,6 +1857,96 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
 
         // Proc call: check if proc has return_type
         Calcit::Proc(proc) => {
+          if matches!(proc, CalcitProc::NativeListNth | CalcitProc::NativeListFirst) {
+            if let Some(first_arg) = xs.get(1) {
+              if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
+                if let CalcitTypeAnnotation::List(element_type) = type_value.as_ref() {
+                  return Some(element_type.clone());
+                }
+              }
+            }
+          }
+          if matches!(
+            proc,
+            CalcitProc::NativeListRest
+              | CalcitProc::NativeListSlice
+              | CalcitProc::NativeListReverse
+              | CalcitProc::NativeListDistinct
+              | CalcitProc::Append
+              | CalcitProc::Prepend
+              | CalcitProc::Butlast
+          ) {
+            if let Some(first_arg) = xs.get(1) {
+              if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
+                if let CalcitTypeAnnotation::List(_) = type_value.as_ref() {
+                  return Some(type_value.clone());
+                }
+              }
+            }
+          }
+          if matches!(proc, CalcitProc::NativeListConcat) {
+            if let Some(first_arg) = xs.get(1) {
+              if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
+                if let CalcitTypeAnnotation::List(_) = type_value.as_ref() {
+                  return Some(type_value.clone());
+                }
+              }
+            }
+          }
+          if matches!(proc, CalcitProc::NativeMapGet) {
+            if let Some(first_arg) = xs.get(1) {
+              if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
+                if let CalcitTypeAnnotation::Map(_key_type, val_type) = type_value.as_ref() {
+                  return Some(val_type.clone());
+                }
+              }
+            }
+          }
+          if matches!(proc, CalcitProc::NativeMapAssoc | CalcitProc::NativeMapDissoc) {
+            if let Some(first_arg) = xs.get(1) {
+              if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
+                if let CalcitTypeAnnotation::Map(_, _) = type_value.as_ref() {
+                  return Some(type_value.clone());
+                }
+              }
+            }
+          }
+          if matches!(proc, CalcitProc::NativeSetToList) {
+            if let Some(first_arg) = xs.get(1) {
+              if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
+                if let CalcitTypeAnnotation::Set(element_type) = type_value.as_ref() {
+                  return Some(Arc::new(CalcitTypeAnnotation::List(element_type.clone())));
+                }
+              }
+            }
+          }
+          if matches!(proc, CalcitProc::NativeInclude | CalcitProc::NativeExclude) {
+            if let Some(first_arg) = xs.get(1) {
+              if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
+                if let CalcitTypeAnnotation::Set(_) = type_value.as_ref() {
+                  return Some(type_value.clone());
+                }
+              }
+            }
+          }
+          if matches!(proc, CalcitProc::AtomDeref) {
+            if let Some(first_arg) = xs.get(1) {
+              if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
+                if let CalcitTypeAnnotation::Ref(element_type) = type_value.as_ref() {
+                  return Some(element_type.clone());
+                }
+              }
+            }
+          }
+          if matches!(proc, CalcitProc::NativeListToSet) {
+            if let Some(first_arg) = xs.get(1) {
+              if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
+                if let CalcitTypeAnnotation::List(element_type) = type_value.as_ref() {
+                  return Some(Arc::new(CalcitTypeAnnotation::Set(element_type.clone())));
+                }
+              }
+            }
+          }
           if matches!(proc, CalcitProc::NativeEnumTupleNew) {
             if let Some(tuple_type) = infer_enum_tuple_annotation(proc, xs, scope_types) {
               return Some(tuple_type);
@@ -2137,12 +2301,11 @@ fn build_core_class_import(class_symbol: &'static str, file_ns: &str) -> Option<
 
 fn core_class_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation) -> Option<&'static str> {
   match type_value {
-    CalcitTypeAnnotation::List => Some("&core-list-class"),
+    CalcitTypeAnnotation::List(_) => Some("&core-list-class"),
     CalcitTypeAnnotation::String => Some("&core-string-class"),
-    CalcitTypeAnnotation::Map => Some("&core-map-class"),
-    CalcitTypeAnnotation::Set => Some("&core-set-class"),
+    CalcitTypeAnnotation::Map(_, _) => Some("&core-map-class"),
+    CalcitTypeAnnotation::Set(_) => Some("&core-set-class"),
     CalcitTypeAnnotation::Number => Some("&core-number-class"),
-    CalcitTypeAnnotation::Nil => Some("&core-nil-class"),
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-class"),
     CalcitTypeAnnotation::Optional(inner) => core_class_symbol_from_type_annotation(inner.as_ref()),
     _ => None,
@@ -2495,7 +2658,21 @@ pub fn preprocess_quasiquote_internal(
   }
 }
 
-pub fn preprocess_asset_type(
+pub fn preprocess_hint_fn(
+  head: &CalcitSyntax,
+  head_ns: &str,
+  args: &CalcitList,
+  _ctx: &mut PreprocessContext,
+) -> Result<Calcit, CalcitErr> {
+  // preserve hint-fn for JS codegen or other metadata needs
+  let mut ys = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
+  for a in args {
+    ys.push(a.to_owned());
+  }
+  Ok(Calcit::from(ys))
+}
+
+pub fn preprocess_assert_type(
   head: &CalcitSyntax,
   head_ns: &str,
   args: &CalcitList,
@@ -2510,41 +2687,41 @@ pub fn preprocess_asset_type(
     ));
   }
 
-  let mut zs: Vec<Calcit> = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
-  args.traverse_result::<CalcitErr>(&mut |a| {
-    let form = preprocess_expr(a, ctx.scope_defs, ctx.scope_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
-    zs.push(form);
-    Ok(())
-  })?;
+  let local_raw = args.get(0).unwrap();
+  let type_form = args.get(1).unwrap();
 
-  let local = match zs.get(1) {
-    Some(Calcit::Local(local)) => local.to_owned(),
+  let local_form = preprocess_expr(
+    local_raw,
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+
+  let local = match local_form {
+    Calcit::Local(local) => local.to_owned(),
     other => {
       return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
         format!("assert-type expected local as first arg, got {other:?}"),
         ctx.call_stack,
-        other.and_then(|node| node.get_location()),
+        other.get_location(),
       ));
     }
   };
-  let type_form = zs.get(2).ok_or_else(|| {
-    CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Arity,
-      "assert-type missing type expression".to_owned(),
-      ctx.call_stack,
-      zs.get(1).and_then(|node| node.get_location()),
-    )
-  })?;
 
   let type_entry = CalcitTypeAnnotation::parse_type_annotation_form(type_form);
   ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
 
-  if let Some(slot) = zs.get_mut(1) {
-    if let Calcit::Local(mut typed_local) = slot.to_owned() {
-      typed_local.type_info = type_entry;
-      *slot = Calcit::Local(typed_local);
-    }
+  let mut zs: Vec<Calcit> = vec![
+    Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
+    Calcit::Local(local),
+    type_form.to_owned(),
+  ];
+
+  if let Some(Calcit::Local(typed_local)) = zs.get_mut(1) {
+    typed_local.type_info = type_entry;
   }
 
   // assert-type is preprocessed away, return nil at runtime

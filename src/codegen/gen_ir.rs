@@ -337,23 +337,22 @@ fn dump_type_list(xs: &[Arc<CalcitTypeAnnotation>]) -> Edn {
 
 fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
   match type_info {
-    CalcitTypeAnnotation::Nil => type_tag_map("nil"),
     CalcitTypeAnnotation::Bool => type_tag_map("bool"),
     CalcitTypeAnnotation::Number => type_tag_map("number"),
     CalcitTypeAnnotation::String => type_tag_map("string"),
     CalcitTypeAnnotation::Symbol => type_tag_map("symbol"),
     CalcitTypeAnnotation::Tag => type_tag_map("tag"),
-    CalcitTypeAnnotation::List => type_tag_map("list"),
-    CalcitTypeAnnotation::Map => type_tag_map("map"),
+    CalcitTypeAnnotation::List(_) => type_tag_map("list"),
+    CalcitTypeAnnotation::Map(_, _) => type_tag_map("map"),
     CalcitTypeAnnotation::DynFn => type_tag_map("fn"),
-    CalcitTypeAnnotation::Ref => type_tag_map("ref"),
+    CalcitTypeAnnotation::Ref(_) => type_tag_map("ref"),
     CalcitTypeAnnotation::Buffer => type_tag_map("buffer"),
     CalcitTypeAnnotation::CirruQuote => type_tag_map("cirru-quote"),
     CalcitTypeAnnotation::Record(record) => dump_record_type_summary(record.as_ref()),
     CalcitTypeAnnotation::Tuple(tuple) => dump_tuple_annotation(tuple.as_ref()),
     CalcitTypeAnnotation::DynTuple => type_tag_map("tuple"),
     CalcitTypeAnnotation::Fn(signature) => dump_function_type_annotation(signature.as_ref()),
-    CalcitTypeAnnotation::Set => type_tag_map("set"),
+    CalcitTypeAnnotation::Set(_) => type_tag_map("set"),
     CalcitTypeAnnotation::Variadic(inner) => {
       let mut entries = vec![(Edn::tag("type"), Edn::tag("variadic"))];
       entries.push((Edn::tag("inner"), dump_type_annotation(inner.as_ref())));
@@ -369,6 +368,11 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
       Edn::map_from_iter(entries)
     }
     CalcitTypeAnnotation::Dynamic => Edn::Nil,
+    CalcitTypeAnnotation::TypeRef { ns, name } => Edn::map_from_iter([
+      (Edn::tag("type"), Edn::tag("type-ref")),
+      (Edn::tag("ns"), Edn::str(ns.to_string())),
+      (Edn::tag("name"), Edn::str(name.to_string())),
+    ]),
   }
 }
 

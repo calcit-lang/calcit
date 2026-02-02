@@ -76,6 +76,8 @@ pub enum CalcitProc {
   NativeDisplayStack,
   #[strum(serialize = "&inspect-class-methods")]
   NativeInspectClassMethods,
+  #[strum(serialize = "&inspect-type")]
+  NativeInspectType,
   #[strum(serialize = "raise")]
   Raise,
   #[strum(serialize = "quit!")]
@@ -425,7 +427,7 @@ fn some_tag(name: &str) -> Arc<CalcitTypeAnnotation> {
 }
 
 fn some_set() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Set)
+  Arc::new(CalcitTypeAnnotation::Set(dynamic_tag()))
 }
 
 fn optional_tag(name: &str) -> Arc<CalcitTypeAnnotation> {
@@ -514,6 +516,10 @@ impl CalcitProc {
       NativeInspectClassMethods => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), optional_tag("string")],
+      }),
+      NativeInspectType => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![dynamic_tag(), optional_tag("tag")],
       }),
       NativeExtractCodeIntoEdn => Some(ProcTypeSignature {
         return_type: dynamic_tag(),

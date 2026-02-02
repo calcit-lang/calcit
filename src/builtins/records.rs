@@ -416,7 +416,6 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
 }
 
 /// takes a record and pairs of key value(flatterned), and update the record. raise error if key not existed in the record
-/// takes a record and pairs of key value(flatterned), and update the record. raise error if key not existed in the record
 pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 3 {
