@@ -145,35 +145,17 @@ impl CalcitTypeAnnotation {
       return None;
     }
 
-    let items = list.skip(1).ok()?.to_vec();
-    for item in &items {
-      if let Calcit::List(inner) = item {
-        let mut inner_idx = 0;
-        while inner_idx < inner.len() {
-          match inner.get(inner_idx) {
-            Some(Calcit::Symbol { sym, .. }) if &**sym == "return-type" => {
-              if let Some(type_expr) = inner.get(inner_idx + 1) {
-                return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
-              }
-            }
-            _ => {}
-          }
-          inner_idx += 1;
+    let items = list.skip(1).ok()?;
+    for item in items.iter() {
+      let Calcit::List(inner) = item else {
+        continue;
+      };
+      let head = inner.first();
+      if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "return-type") {
+        if let Some(type_expr) = inner.get(1) {
+          return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
         }
       }
-    }
-
-    let mut idx = 0;
-    while idx < items.len() {
-      match &items[idx] {
-        Calcit::Symbol { sym, .. } if &**sym == "return-type" => {
-          if let Some(type_expr) = items.get(idx + 1) {
-            return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
-          }
-        }
-        _ => {}
-      }
-      idx += 1;
     }
     None
   }
@@ -194,7 +176,7 @@ impl CalcitTypeAnnotation {
       return None;
     }
 
-    let items = list.skip(1).ok()?.to_vec();
+    let items = list.skip(1).ok()?;
     for item in items.iter() {
       let Calcit::List(inner) = item else {
         continue;
@@ -203,22 +185,6 @@ impl CalcitTypeAnnotation {
       if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "type-vars") {
         let mut vars = vec![];
         for entry in inner.iter().skip(1) {
-          vars.push(Self::parse_type_var_form(entry)?);
-        }
-        return Some(vars);
-      }
-      let is_tuple_head = matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "::")
-        || matches!(head, Some(Calcit::Proc(CalcitProc::NativeTuple)));
-      if !is_tuple_head {
-        continue;
-      }
-
-      if let Some(Calcit::Tag(tag)) = inner.get(1) {
-        if tag.ref_str().trim_start_matches(':') != "generics" {
-          continue;
-        }
-        let mut vars = vec![];
-        for entry in inner.iter().skip(2) {
           vars.push(Self::parse_type_var_form(entry)?);
         }
         return Some(vars);

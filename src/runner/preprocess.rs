@@ -1377,17 +1377,6 @@ fn detect_return_type_hint_from_args(args: &CalcitList) -> Arc<CalcitTypeAnnotat
   Arc::new(CalcitTypeAnnotation::Dynamic)
 }
 
-fn detect_fn_generics_from_args(args: &CalcitList) -> Arc<Vec<Arc<str>>> {
-  for i in 2..args.len() {
-    if let Some(form) = args.get(i) {
-      if let Some(vars) = CalcitTypeAnnotation::extract_generics_from_hint_form(form) {
-        return Arc::new(vars);
-      }
-    }
-  }
-  Arc::new(vec![])
-}
-
 /// Check function return type matches declared return_type
 /// Validates the last expression in function body against the declared return type
 fn check_function_return_type(
@@ -2398,7 +2387,6 @@ pub fn preprocess_defn(
 
       // Check function return type if declared
       // Extract return type hint from original args (before preprocessing)
-      let _fn_generics = detect_fn_generics_from_args(args);
       let return_type_hint = detect_return_type_hint_from_args(args);
       check_function_return_type(
         &processed_body,
