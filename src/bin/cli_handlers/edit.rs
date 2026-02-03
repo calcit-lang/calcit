@@ -6,7 +6,7 @@
 //! Supports code input via:
 //! - `--file <path>` - read from file
 //! - `--json <string>` - inline JSON string
-//! - `--stdin` - read from stdin
+//! - `--code <string>` - inline Cirru string
 
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditDefCommand,
@@ -143,7 +143,7 @@ pub(crate) fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<
 fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
+  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
   let auto_json = opts.code.is_some();
 
   let syntax_tree = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
@@ -374,10 +374,10 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
   }
 
   // Read examples input
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?;
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
   let raw = code_input
     .as_deref()
-    .ok_or("Examples input required: use --file, --code, --json, --stdin, or --clear")?;
+    .ok_or("Examples input required: use --file, --code, --json, or --clear")?;
 
   // Parse examples - expect an array of Cirru expressions
   let examples: Vec<Cirru> = if opts.leaf {
@@ -429,10 +429,10 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
 
   // Read example input
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?;
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
   let raw = code_input
     .as_deref()
-    .ok_or("Example input required: use --file, --code, --json, or --stdin")?;
+    .ok_or("Example input required: use --file, --code, or --json")?;
 
   // Parse example
   let example: Cirru = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, opts.code.is_some())?;
@@ -675,7 +675,7 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   // Create ns code
   let auto_json = opts.code.is_some();
 
-  let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)? {
+  let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code, &opts.json)? {
     parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?
   } else {
     // Default minimal ns declaration: (ns namespace-name)
@@ -714,8 +714,7 @@ fn handle_rm_ns(opts: &EditRmNsCommand, snapshot_file: &str) -> Result<(), Strin
 }
 
 fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), String> {
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?
-    .ok_or("Imports input required: use --file, --code, --json, or --stdin")?;
+  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or("Imports input required: use --file, --code, or --json")?;
   let auto_json = opts.code.is_some();
 
   let mut snapshot = load_snapshot(snapshot_file)?;
@@ -902,8 +901,7 @@ fn build_ns_code(ns_name: &str, rules: &[Cirru]) -> Cirru {
 }
 
 fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result<(), String> {
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?
-    .ok_or("Import rule input required: use --file, --code, --json, or --stdin")?;
+  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or("Import rule input required: use --file, --code, or --json")?;
 
   let auto_json = opts.code.is_some();
 

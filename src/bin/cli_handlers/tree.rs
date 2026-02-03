@@ -6,7 +6,7 @@ use super::tips::{Tips, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
   TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand,
-  TreeWrapCommand,
+  TreeTargetReplaceCommand, TreeWrapCommand,
 };
 
 // Import shared functions from edit module
@@ -33,6 +33,7 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
     TreeSubcommand::SwapNext(opts) => handle_swap_next(opts, snapshot_file),
     TreeSubcommand::SwapPrev(opts) => handle_swap_prev(opts, snapshot_file),
     TreeSubcommand::Wrap(opts) => handle_wrap(opts, snapshot_file),
+    TreeSubcommand::TargetReplace(opts) => handle_target_replace(opts, snapshot_file),
   }
 }
 
@@ -383,7 +384,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   let (namespace, definition) = parse_target(&opts.target)?;
   let path = parse_path(&opts.path)?;
 
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?;
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 
@@ -470,9 +471,10 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
 fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
-  // Parse the replacement value (default to leaf node)
-  let is_leaf = !opts.no_leaf;
-  let replacement_node = parse_input_to_cirru(&opts.replacement, &None, opts.json_input, is_leaf, true)?;
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
+  let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
+
+  let replacement_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -564,6 +566,116 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
   println!("  • Verify: {} '{}/{}'", "cr query def".cyan(), namespace, definition);
   println!("  • Check errors: {}", "cr query error".cyan());
   println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+
+  Ok(())
+}
+
+fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
+  let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
+
+  let replacement_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found"))?;
+
+  // Find all leaf nodes that match the pattern
+  let matches = find_all_leaf_matches(&code_entry.code, &opts.pattern, &[]);
+
+  if matches.is_empty() {
+    return Err(format!(
+      "No matches found for pattern '{}' in '{}/{}'",
+      opts.pattern, namespace, definition
+    ));
+  }
+
+  if matches.len() > 1 {
+    println!(
+      "{} Found {} matches for pattern '{}' in '{}/{}'.",
+      "Notice:".yellow().bold(),
+      matches.len(),
+      opts.pattern.yellow(),
+      namespace,
+      definition
+    );
+    println!("Please use specific path to replace:");
+    println!();
+
+    let replacement_arg = if let Some(c) = &opts.code {
+      format!("-e '{}'", c)
+    } else if let Some(j) = &opts.json {
+      format!("-j '{}'", j)
+    } else if let Some(f) = &opts.file {
+      format!("-f '{}'", f)
+    } else {
+      "-e '...'".to_string()
+    };
+
+    for (i, (path, _)) in matches.iter().enumerate().take(10) {
+      let path_str = path.iter().map(|idx| idx.to_string()).collect::<Vec<_>>().join(",");
+      println!(
+        "  {}. {} {} -p '{}' {}",
+        i + 1,
+        "cr tree replace".cyan(),
+        opts.target,
+        path_str,
+        replacement_arg
+      );
+    }
+
+    if matches.len() > 10 {
+      println!("  ... and {} more", matches.len() - 10);
+    }
+    println!();
+    println!("{}", "Tip: Use 'tree replace-leaf' if you want to replace ALL occurrences.".blue());
+
+    return Err(String::new());
+  }
+
+  // Exactly one match
+  let (path, old_value) = &matches[0];
+  let old_node = Cirru::Leaf(old_value.to_string().into());
+
+  // Process node with replacements if needed
+  let processed_node = if opts.refer_original.is_some() || opts.refer_inner_branch.is_some() {
+    process_node_with_references(
+      &replacement_node,
+      Some(&old_node),
+      &opts.refer_original,
+      &opts.refer_inner_branch,
+      &opts.refer_inner_placeholder,
+    )?
+  } else {
+    replacement_node
+  };
+
+  // Show diff preview
+  println!("{}", show_diff_preview(&old_node, &processed_node, "target-replace", path));
+
+  let new_code = apply_operation_at_path(&code_entry.code, path, "replace", Some(&processed_node))?;
+  code_entry.code = new_code;
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Replaced unique occurrence in '{}/{}' at path [{}]",
+    "✓".green(),
+    namespace,
+    definition,
+    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+  );
 
   Ok(())
 }
@@ -707,7 +819,6 @@ trait InsertOperation {
   fn file(&self) -> &Option<String>;
   fn code(&self) -> &Option<String>;
   fn json(&self) -> &Option<String>;
-  fn stdin(&self) -> bool;
   fn json_input(&self) -> bool;
   fn leaf(&self) -> bool;
   fn refer_original(&self) -> &Option<String>;
@@ -724,9 +835,6 @@ impl InsertOperation for TreeInsertBeforeCommand {
   }
   fn json(&self) -> &Option<String> {
     &self.json
-  }
-  fn stdin(&self) -> bool {
-    self.stdin
   }
   fn json_input(&self) -> bool {
     self.json_input
@@ -755,9 +863,6 @@ impl InsertOperation for TreeInsertAfterCommand {
   fn json(&self) -> &Option<String> {
     &self.json
   }
-  fn stdin(&self) -> bool {
-    self.stdin
-  }
   fn json_input(&self) -> bool {
     self.json_input
   }
@@ -784,9 +889,6 @@ impl InsertOperation for TreeInsertChildCommand {
   }
   fn json(&self) -> &Option<String> {
     &self.json
-  }
-  fn stdin(&self) -> bool {
-    self.stdin
   }
   fn json_input(&self) -> bool {
     self.json_input
@@ -815,9 +917,6 @@ impl InsertOperation for TreeAppendChildCommand {
   fn json(&self) -> &Option<String> {
     &self.json
   }
-  fn stdin(&self) -> bool {
-    self.stdin
-  }
   fn json_input(&self) -> bool {
     self.json_input
   }
@@ -845,8 +944,32 @@ impl InsertOperation for TreeWrapCommand {
   fn json(&self) -> &Option<String> {
     &self.json
   }
-  fn stdin(&self) -> bool {
-    self.stdin
+  fn json_input(&self) -> bool {
+    self.json_input
+  }
+  fn leaf(&self) -> bool {
+    self.leaf
+  }
+  fn refer_original(&self) -> &Option<String> {
+    &self.refer_original
+  }
+  fn refer_inner_branch(&self) -> &Option<String> {
+    &self.refer_inner_branch
+  }
+  fn refer_inner_placeholder(&self) -> &Option<String> {
+    &self.refer_inner_placeholder
+  }
+}
+
+impl InsertOperation for TreeTargetReplaceCommand {
+  fn file(&self) -> &Option<String> {
+    &self.file
+  }
+  fn code(&self) -> &Option<String> {
+    &self.code
+  }
+  fn json(&self) -> &Option<String> {
+    &self.json
   }
   fn json_input(&self) -> bool {
     self.json_input
@@ -876,7 +999,7 @@ fn generic_insert_handler<T: InsertOperation>(
   let (namespace, definition) = parse_target(target)?;
   let path = parse_path(path_str)?;
 
-  let code_input = read_code_input(opts.file(), opts.code(), opts.json(), opts.stdin())?;
+  let code_input = read_code_input(opts.file(), opts.code(), opts.json())?;
 
   let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
 

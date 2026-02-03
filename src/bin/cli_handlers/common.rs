@@ -7,12 +7,11 @@ use std::io::{self, Read};
 use std::sync::Arc;
 
 // Error message constants
-pub const ERR_MULTIPLE_INPUT_SOURCES: &str =
-  "Multiple input sources provided. Use only one of: --stdin/-s, --file/-f, --code/-e, or --json/-j.";
+pub const ERR_MULTIPLE_INPUT_SOURCES: &str = "Multiple input sources provided. Use only one of: --file/-f, --code/-e, or --json/-j.";
 
 pub const ERR_CONFLICTING_INPUT_FLAGS: &str = "Conflicting input flags: --leaf cannot be used with --json-input.";
 
-pub const ERR_CODE_INPUT_REQUIRED: &str = "Code input required: use --file, --code, --json, or --stdin";
+pub const ERR_CODE_INPUT_REQUIRED: &str = "Code input required: use --file, --code, or --json";
 
 pub const ERR_JSON_OBJECTS_NOT_SUPPORTED: &str = "JSON objects not supported, use arrays";
 
@@ -79,27 +78,21 @@ pub fn validate_input_flags(leaf_input: bool, json_input: bool) -> Result<(), St
   Ok(())
 }
 
-/// Read code input from file, inline code, json option, or stdin.
+/// Read code input from file, inline code, or json option.
 /// Exactly one input source should be used.
-pub fn read_code_input(
-  file: &Option<String>,
-  code: &Option<String>,
-  json: &Option<String>,
-  stdin: bool,
-) -> Result<Option<String>, String> {
-  let sources = [stdin, file.is_some(), code.is_some(), json.is_some()];
+pub fn read_code_input(file: &Option<String>, code: &Option<String>, json: &Option<String>) -> Result<Option<String>, String> {
+  let sources = [file.is_some(), code.is_some(), json.is_some()];
   validate_input_sources(&sources)?;
 
-  if stdin {
-    let mut buffer = String::new();
-    io::stdin()
-      .read_to_string(&mut buffer)
-      .map_err(|e| format!("Failed to read from stdin: {e}"))?;
-    Ok(Some(buffer.trim().to_string()))
-  } else if let Some(path) = file {
+  if let Some(path) = file {
     let content = fs::read_to_string(path).map_err(|e| format!("Failed to read file '{path}': {e}"))?;
     Ok(Some(content.trim().to_string()))
   } else if let Some(s) = code {
+    if s.contains('\n') {
+      eprintln!("\n⚠️  Note: Inline code contains newlines. Multi-line code in shell can be error-prone.");
+      eprintln!("   Consider writing to a temporary file and using --file/-f instead.");
+      eprintln!();
+    }
     Ok(Some(s.trim().to_string()))
   } else if let Some(j) = json {
     Ok(Some(j.clone()))
@@ -258,7 +251,7 @@ pub fn parse_input_to_cirru(
          If you want to use JSON input, use one of:\n\
          - inline JSON: cr edit def ns/name -j '[\"defn\", ...]'\n\
          - inline code: cr edit def ns/name -e '[\"defn\", ...]'\n\
-         - file/stdin JSON: add -J or --json-input (e.g. -f code.json -J, or -s -J).\n\
+         - file JSON: add -J or --json-input (e.g. -f code.json -J).\n\
          Note: Cirru's [] list syntax (e.g. '[] 1 2 3') is different and will be parsed correctly."
             .to_string(),
         );

@@ -31,6 +31,14 @@
 - **查示例用法**：可用 `cr query examples <namespace/definition>` 查目标定义的示例。
   - 例：`cargo run --bin cr -- demos/compact.cirru query examples calcit.core/let`
 
+### CLI 修改指南与约束
+
+- **优先使用 `target-replace`**：在 `cr tree` 操作中，优先使用 `target-replace` 而非 `replace`。它基于内容定位，且在不唯一时会报错，比手动指定索引更安全。
+- **全量取消 stdin (-s) 支持**：由于 Shell 重定向和多行输入的复杂性，所有的修改类子命令（`edit` 和 `tree` 系列）已**移除 `--stdin` / `-s` 选项**。
+  - ✅ 使用 `-e 'code'` 或 `-j 'json'` 进行单行输入。
+  - ✅ 使用 `-f file.cirru` 进行多行或复杂结构输入（推荐在 `.calcit-snippets/` 下创建临时文件）。
+- **路径索引动态性**：在 `tree` 系列操作中（如 `delete`, `insert`），操作会引起同级后续节点索引变化。建议**从后往前**操作，或每次修改后使用 `query search` 重新定位。
+
 ## 核心设计约定
 
 ### 类型系统 (CalcitTypeAnnotation)

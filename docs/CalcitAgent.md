@@ -254,9 +254,13 @@ cr query modules
 - `cr tree replace` - 替换节点
 - `cr tree replace-leaf` - 查找并替换所有匹配的 leaf 节点（无需指定路径）
   - `--pattern <pattern>` - 要搜索的模式（精确匹配 leaf 节点）
-  - `--replacement <value>` - 替换值（默认作为 leaf 节点处理）
+  - 使用 `-e, -f, -j` 等通用参数提供替换内容
   - 自动遍历整个定义，一次性替换所有匹配项
-  - 示例：`cr tree replace-leaf 'ns/def' --pattern 'old-name' --replacement 'new-name'`
+  - 示例：`cr tree replace-leaf 'ns/def' --pattern 'old-name' -e 'new-name' --leaf`
+- `cr tree target-replace` - 基于内容的唯一替换（无需指定路径，更安全 ⭐⭐⭐）
+  - `--pattern <pattern>` - 要搜索的模式（精确匹配 leaf 节点）
+  - 使用 `-e, -f, -j` 等通用参数提供替换内容
+  - 逻辑：自动查找叶子节点，若唯一则替换；若不唯一则报错并列出所有位置及修改命令建议。
 - `cr tree delete` - 删除节点
 - `cr tree insert-before/after` - 插入相邻节点
 - `cr tree insert-child/append-child` - 插入子节点
@@ -267,7 +271,9 @@ cr query modules
 
 - `-e '<code>'` - 内联代码（自动识别 Cirru/JSON）
 - `--leaf` - 强制作为 leaf 节点（符号或字符串）
-- `-j '<json>'` / `-f <file>` / `-s` (stdin)
+- `-j '<json>'` / `-f <file>`
+
+多行或者带特殊符号的表达式, 一可以在 `.calcit-snippets/` 创建临时文件, 然后用 `cr cirru parse` 验证语法, 最后用 `-f <file>` 提交, 从而减少错误率. 复杂表达式建议分段, 然后搭配 `cr tree target-replace` 命令来完成多阶段提交.
 
 **推荐工作流（高效定位 ⭐⭐⭐）：**
 
@@ -298,10 +304,19 @@ cr tree replace namespace/def -p '3,2,5,2' --leaf -e 'new-name'
 # ... 继续按序修改
 
 # 或：一次性替换所有匹配项
-cr tree replace-leaf namespace/def --pattern 'old-name' --replacement 'new-name'
+cr tree replace-leaf namespace/def --pattern 'old-name' -e 'new-name' --leaf
 
 
-# ===== 方案 C：结构搜索（查找表达式） =====
+# ===== 方案 C：基于内容的半自动替换（最推荐 ⭐⭐⭐） =====
+
+# 1. 尝试基于叶子节点内容直接替换
+cr tree target-replace namespace/def --pattern 'old-symbol' -e 'new-symbol' --leaf
+
+# 2. 如果存在多个匹配，命令会报错并给出详细指引（包含具体路径的 replace 命令建议）
+# 如果确定要全部替换，可改用 tree replace-leaf
+
+
+# ===== 方案 D：结构搜索（查找表达式） =====
 
 # 1. 搜索包含特定模式的表达式
 cr query search-expr "fn (task)" -f namespace/def -l
@@ -381,11 +396,10 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 
 ### 代码编辑 (`cr edit`)
 
-直接编辑 compact.cirru 项目代码，支持三种输入方式：
+直接编辑 compact.cirru 项目代码，支持两种输入方式：
 
 - `--file <path>` 或 `-f <path>` - 从文件读取（默认 Cirru 格式，使用 `-J` 指定 JSON）
 - `--json <string>` 或 `-j <string>` - 内联 JSON 字符串
-- `--stdin` 或 `-s` - 从标准输入读取（默认 Cirru 格式，使用 `-J` 指定 JSON）
 
 额外支持“内联代码”参数：
 
@@ -394,7 +408,7 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
   - 如果输入“看起来像 JSON”（例如 `-e '"abc"'`，或 `-e '["a"]'` 这类 `[...]` 且包含 `"`），则会按 JSON 解析。
   - ⚠️ 当输入看起来像 JSON 但 JSON 不合法时，会直接报错（不会回退当成 Cirru one-liner）。
 
-对 `--file/--stdin` 输入，还支持以下“格式开关”（与 `-J/--json-input` 类似）：
+对 `--file` 输入，还支持以下“格式开关”（与 `-J/--json-input` 类似）：
 
 - `--leaf`：把输入当成 **leaf 节点**，直接使用 Cirru 符号或 `|text` 字符串，无需 JSON 引号。
   - 传入符号：`-e 'my-symbol'`
@@ -406,13 +420,13 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 
 - **JSON（单行）**：优先用 `-j '<json>'` 或 `-e '<json>'`（不需要 `-J`）。
 - **Cirru 单行表达式**：用 `-e '<expr>'`（`-e` 默认按 one-liner 解析）。
-- **Cirru 多行缩进**：用 `-f file.cirru` 或 `-s`（stdin）。
-- `-J/--json-input` 主要用于 **file/stdin** 读入 JSON（如 `-f code.json -J` 或 `-s -J`）。
+- **Cirru 多行缩进**：用 `-f file.cirru`。
+- `-J/--json-input` 主要用于 **file** 读入 JSON（如 `-f code.json -J`）。
 
 补充：`-e/--code` 只有在 `[...]` 内部包含 `"` 时才会自动按 JSON 解析（例如 `-e '["a"]'`）。
 像 `-e '[]'` / `-e '[ ]'` 会默认按 Cirru one-liner 处理；如果你需要“空 JSON 数组”，用显式 JSON：`-j '[]'`。
 
-如果你想在命令行里明确“这段就是 JSON”，请用 `-j '<json>'`（`-J` 是给 file/stdin 用的）。
+如果你想在命令行里明确“这段就是 JSON”，请用 `-j '<json>'`（`-J` 是给 file 用的）。
 
 **定义操作：**
 
@@ -894,7 +908,7 @@ send-to-component! $ :: :clipboard/read text
 - **JSON 格式 (`-j / --json`, `-J`, `-e`)**: 字数上限 **2000**。
 
 **大资源处理建议：**
-如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符（如 `placeholder`），然后通过 `cr query search` 定一占位符路径，进行精准的分段替换。
+如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符（如 `?PLACEHOLDER_FEATURE`, 注意避免重复），然后通过 `cr query target-replace` 进行精准的分段替换.
 
 ### 5. 推荐工作流程
 
