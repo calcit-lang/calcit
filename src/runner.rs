@@ -33,6 +33,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     | Fn { .. }
     | Struct { .. }
     | Enum { .. }
+    | Trait { .. }
     | Syntax(_, _)
     | Method(..)
     | AnyRef(..) => Ok(expr.to_owned()),

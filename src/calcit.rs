@@ -1,4 +1,5 @@
 mod calcit_struct;
+mod calcit_trait;
 mod fns;
 mod list;
 mod local;
@@ -28,6 +29,7 @@ use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
 pub use calcit_struct::CalcitStruct;
+pub use calcit_trait::CalcitTrait;
 pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitMacro, CalcitScope};
 pub use list::CalcitList;
 pub use local::CalcitLocal;
@@ -90,6 +92,8 @@ pub enum Calcit {
   Struct(CalcitStruct),
   /// enum definition value, wraps enum prototype and variants
   Enum(CalcitEnum),
+  /// trait definition value, carries method signatures
+  Trait(CalcitTrait),
   /// native functions that providing feature from Rust
   Proc(CalcitProc),
   Macro {
@@ -276,6 +280,7 @@ impl fmt::Display for Calcit {
         f.write_str(&format!(":{}", enum_def.name()))?;
         f.write_char(')')
       }
+      Trait(t) => write!(f, "{t}"),
       Proc(name) => f.write_str(&format!("(&proc {name})")),
       Macro { info, .. } => {
         let name = &info.name;
@@ -535,6 +540,10 @@ impl Hash for Calcit {
         "raw-code:".hash(_state);
         code.hash(_state);
       }
+      Trait(t) => {
+        "trait:".hash(_state);
+        t.name.hash(_state);
+      }
       AnyRef(_) => {
         unreachable!("AnyRef should not be used in hashing")
       }
@@ -663,6 +672,10 @@ impl Ord for Calcit {
       (Enum { .. }, _) => Less,
       (_, Enum { .. }) => Greater,
 
+      (Trait(a), Trait(b)) => a.name.cmp(&b.name),
+      (Trait { .. }, _) => Less,
+      (_, Trait { .. }) => Greater,
+
       (Proc(a), Proc(b)) => a.cmp(b),
       (Proc(_), _) => Less,
       (_, Proc(_)) => Greater,
@@ -734,6 +747,7 @@ impl PartialEq for Calcit {
       (Map(a), Map(b)) => a == b,
       (Record(a), Record(b)) => a == b,
       (Enum(a), Enum(b)) => a.prototype() == b.prototype(),
+      (Trait(a), Trait(b)) => a == b,
       (Proc(a), Proc(b)) => a == b,
       (Macro { id: a, .. }, Macro { id: b, .. }) => a == b,
       // functions compared with nanoid

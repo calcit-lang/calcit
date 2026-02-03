@@ -185,6 +185,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     Fn { .. } => Err(format!("data_to_calcit not implemented for fn: {x}")),
     Method(..) => Ok(x.to_owned()),
     RawCode(..) => Ok(x.to_owned()),
+    Trait(_) => Err(format!("data_to_calcit not implemented for trait: {x}")),
     AnyRef(..) => Err(format!("data_to_calcit not implemented for any-ref: {x}")),
   }
 }

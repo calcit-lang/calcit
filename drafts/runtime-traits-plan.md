@@ -2,6 +2,220 @@
 
 > 目标：在运行时提供一套 Trait 机制，即使无法静态检查，也能把错误前移到调用点，并允许类型级别的能力声明（如 `Show`、`Add`、`Multiply` 等）。
 
+## 内置 Trait 设计
+
+参考 Haskell (Eq, Ord, Show, Num, Foldable, Functor) 与 Rust (Display, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Iterator, Add, Mul, From/Into) 的设计，结合 Calcit 的动态类型特性，定义以下内置 Trait：
+
+### 核心 Trait 分类
+
+#### 1. 显示与调试 (Display & Debug)
+
+| Trait     | 方法签名                 | 描述                 | Haskell 对应 | Rust 对应 |
+| --------- | ------------------------ | -------------------- | ------------ | --------- |
+| `Show`    | `(show x) -> :string`    | 人类可读的字符串表示 | `Show`       | `Display` |
+| `Inspect` | `(inspect x) -> :string` | 调试用的详细表示     | `Show`       | `Debug`   |
+
+**默认实现**: 所有内置类型 (`nil`, `bool`, `number`, `string`, `tag`, `symbol`, `list`, `map`, `set`, `tuple`, `record`, `fn`) 都有默认实现。
+
+#### 2. 相等与比较 (Equality & Ordering)
+
+| Trait     | 方法签名                | 描述                   | Haskell 对应 | Rust 对应   |
+| --------- | ----------------------- | ---------------------- | ------------ | ----------- |
+| `Eq`      | `(eq? x y) -> :bool`    | 相等性判断             | `Eq`         | `PartialEq` |
+| `Compare` | `(compare x y) -> :tag` | 返回 `:lt`/`:eq`/`:gt` | `Ord`        | `Ord`       |
+
+**默认实现**:
+
+- `Eq`: 所有值类型
+- `Compare`: `number`, `string`, `tag`, `list`（字典序）
+
+#### 3. 算术运算 (Arithmetic)
+
+| Trait      | 方法签名               | 描述      | Haskell 对应 | Rust 对应 |
+| ---------- | ---------------------- | --------- | ------------ | --------- |
+| `Add`      | `(add x y) -> 'T`      | 加法/拼接 | `Num (+)`    | `Add`     |
+| `Subtract` | `(subtract x y) -> 'T` | 减法      | `Num (-)`    | `Sub`     |
+| `Multiply` | `(multiply x y) -> 'T` | 乘法      | `Num (*)`    | `Mul`     |
+| `Divide`   | `(divide x y) -> 'T`   | 除法      | `Fractional` | `Div`     |
+| `Negate`   | `(negate x) -> 'T`     | 取负      | `Num negate` | `Neg`     |
+
+**默认实现**:
+
+- `number`: 全部算术 Trait
+- `string`: `Add`（字符串拼接）
+- `list`: `Add`（列表连接）
+
+#### 4. 集合操作 (Collection)
+
+| Trait      | 方法签名                      | 描述          | Haskell 对应 | Rust 对应    |
+| ---------- | ----------------------------- | ------------- | ------------ | ------------ |
+| `Len`      | `(len x) -> :number`          | 长度/大小     | `length`     | `len()`      |
+| `Empty`    | `(empty? x) -> :bool`         | 是否为空      | `null`       | `is_empty()` |
+| `Contains` | `(contains? x item) -> :bool` | 包含检查      | `elem`       | `contains()` |
+| `Get`      | `(get x key) -> 'V`           | 按键/索引取值 | `lookup`     | `get()`      |
+
+**默认实现**: `string`, `list`, `map`, `set`
+
+#### 5. 可迭代 (Iterable)
+
+| Trait        | 方法签名                   | 描述      | Haskell 对应 | Rust 对应  |
+| ------------ | -------------------------- | --------- | ------------ | ---------- |
+| `Foldable`   | `(fold x init f) -> 'A`    | 折叠/归约 | `Foldable`   | `fold()`   |
+| `Mappable`   | `(fmap x f) -> 'T`         | 映射转换  | `Functor`    | `map()`    |
+| `Filterable` | `(filter-by x pred) -> 'T` | 过滤      | `filter`     | `filter()` |
+
+**默认实现**: `list`, `map`, `set`
+
+#### 6. 哈希与克隆 (Hash & Clone)
+
+| Trait   | 方法签名              | 描述   | Haskell 对应 | Rust 对应 |
+| ------- | --------------------- | ------ | ------------ | --------- |
+| `Hash`  | `(hash x) -> :number` | 哈希值 | `Hashable`   | `Hash`    |
+| `Clone` | `(clone x) -> 'T`     | 深拷贝 | -            | `Clone`   |
+
+**默认实现**: 所有不可变值类型自动满足（Calcit 默认 immutable）
+
+#### 7. 默认值与转换 (Default & Conversion)
+
+| Trait     | 方法签名                | 描述       | Haskell 对应 | Rust 对应   |
+| --------- | ----------------------- | ---------- | ------------ | ----------- |
+| `Default` | `(default T) -> 'T`     | 类型默认值 | `Default`    | `Default`   |
+| `From`    | `(from T source) -> 'T` | 类型转换   | -            | `From/Into` |
+
+**默认实现**:
+
+- `Default`: `nil`→`nil`, `number`→`0`, `string`→`""`, `list`→`[]`, `map`→`{}`, `set`→`#{}`
+- `From`: 常见转换如 `number->string`, `list->set`, `map->list`
+
+### Trait 定义语法
+
+```cirru
+; 定义 Trait（方法签名声明）
+deftrait Show
+  :methods $ {}
+    :show $ defn show (x) nil  ; nil 表示需要实现
+
+; 定义 Trait（带默认实现）
+deftrait Eq
+  :methods $ {}
+    :eq? $ defn eq? (x y) (&= x y)  ; 使用原始相等
+    :not-eq? $ defn not-eq? (x y) (not (eq? x y))  ; 基于 eq? 的默认实现
+
+; 带多个方法的 Trait
+deftrait Compare
+  :requires ([] Eq)  ; 依赖其他 Trait
+  :methods $ {}
+    :compare $ defn compare (x y) nil
+    :lt? $ defn lt? (x y) (= :lt (compare x y))
+    :gt? $ defn gt? (x y) (= :gt (compare x y))
+    :lte? $ defn lte? (x y) (not (gt? x y))
+    :gte? $ defn gte? (x y) (not (lt? x y))
+```
+
+### Trait 实现语法
+
+使用 `with-traits` 函数式组合的方式为类型添加 Trait 实现：
+
+```cirru
+; 完整示例：为 Point 类型实现 Show 和 Eq trait
+let
+    ; 1. 定义基础 struct
+    Point0 $ defstruct Point (:x :number) (:y :number)
+
+    ShowTrait $ deftrait Show
+      :show $ fn (x) |todo
+
+    EqTrait $ deftrait Eq
+      :eq? $ fn (x y)
+        ; TODO
+        do false
+
+    ; 2. 定义 Show trait 的实现 (record 形式)
+    show-impl $ %{} ShowTrait
+      :show $ fn (p)
+        str "|Point(" (.x p) ", " (.y p) ")"
+
+    ; 3. 定义 Eq trait 的实现
+    eq-impl $ %{} EqTrait
+      :eq? $ fn (a b)
+        and (= (:x a) (:x b)) (= (:y a) (:y b))
+
+    ; 4. 使用 with-traits 组合，得到带 trait 实现的 struct
+    Point $ with-traits Point0 show-impl eq-impl
+
+    ; 5. 用 struct 创建 record 实例
+    p1 $ %{} Point (:x 3) (:y 4)
+    p2 $ %{} Point (:x 3) (:y 4)
+
+  ; 6. 调用 trait 方法
+  println (.show p1)        ; => "Point(3, 4)"
+  println (.eq? p1 p2)      ; => true
+
+; with-traits 可以接受多个 trait impl
+; (with-traits struct-def impl1 impl2 impl3 ...)
+```
+
+### 分派规则
+
+方法调用时的查找顺序：
+
+1. **值自身的 classes** - `with-traits` 附加的实现（优先级最高）
+2. **类型的内置 Trait 实现** - 如 `number` 自动拥有 `Add`
+3. **calcit.core 的默认实现** - 兜底行为
+
+```cirru
+; 分派示例
+.show 42        ; → 查找 number 的 Show 实现 → "42"
+.show my-point  ; → 查找 Point record 的 Show 实现 → "Point(1, 2)"
+
+; 显式 Trait 调用（消歧义）
+Show/show 42
+(trait-call Show :show 42)
+```
+
+### 内置类型的 Trait 实现映射
+
+| 类型     | Show | Inspect | Eq  | Compare | Add | Multiply | Len | Foldable | Mappable | Hash |
+| -------- | ---- | ------- | --- | ------- | --- | -------- | --- | -------- | -------- | ---- |
+| `nil`    | ✓    | ✓       | ✓   | -       | -   | -        | -   | -        | -        | ✓    |
+| `bool`   | ✓    | ✓       | ✓   | -       | -   | -        | -   | -        | -        | ✓    |
+| `number` | ✓    | ✓       | ✓   | ✓       | ✓   | ✓        | -   | -        | -        | ✓    |
+| `string` | ✓    | ✓       | ✓   | ✓       | ✓   | -        | ✓   | ✓        | ✓        | ✓    |
+| `tag`    | ✓    | ✓       | ✓   | ✓       | -   | -        | -   | -        | -        | ✓    |
+| `symbol` | ✓    | ✓       | ✓   | -       | -   | -        | -   | -        | -        | ✓    |
+| `list`   | ✓    | ✓       | ✓   | ✓       | ✓   | -        | ✓   | ✓        | ✓        | ✓    |
+| `map`    | ✓    | ✓       | ✓   | -       | -   | -        | ✓   | ✓        | ✓        | ✓    |
+| `set`    | ✓    | ✓       | ✓   | -       | -   | -        | ✓   | ✓        | ✓        | ✓    |
+| `tuple`  | ✓    | ✓       | ✓   | -       | -   | -        | ✓   | -        | -        | ✓    |
+| `record` | ✓    | ✓       | ✓   | -       | -   | -        | ✓   | -        | -        | ✓    |
+| `fn`     | ✓    | ✓       | -   | -       | -   | -        | -   | -        | -        | -    |
+
+### 实施阶段
+
+#### Phase 1: 基础 Trait 结构
+
+1. ✅ 定义 `CalcitTrait` 数据结构 (src/calcit/calcit_trait.rs)
+2. ✅ 在 `Calcit` enum 中添加 `Trait(CalcitTrait)` 变体
+3. 在 `calcit.core` 中定义 `Show`, `Eq`, `Add`, `Multiply`
+4. 内置类型自动拥有对应实现
+5. `invoke_method` 支持 Trait 方法查找
+
+#### Phase 2: 语法支持
+
+1. `deftrait` 宏定义
+2. `defimpl` 宏定义
+3. `assert-trait` 运行时检查
+4. Trait 方法的显式调用语法
+
+#### Phase 3: 扩展
+
+1. 完整的集合 Trait (`Foldable`, `Mappable`, `Filterable`)
+2. `Default`, `From` 转换 Trait
+3. Trait 继承/组合
+4. 更好的错误消息
+
+---
+
 ## 范围评估
 
 ### 1) 核心数据结构与运行时
