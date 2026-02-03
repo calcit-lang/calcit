@@ -3,6 +3,7 @@
 //! Handles: cr query ns, defs, def, at, peek, examples, find, usages, pkg, config, error, modules
 
 use super::tips::{Tips, tip_prefer_oneliner_json, tip_query_defs_list, tip_query_ns_list};
+use calcit::CalcitTypeAnnotation;
 use calcit::cli_args::{QueryCommand, QuerySubcommand};
 use calcit::load_core_snapshot;
 use calcit::snapshot;
@@ -411,6 +412,12 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
 
   println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
+
+  if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, definition, vec![]) {
+    if let Some(summary) = CalcitTypeAnnotation::summarize_code(&code_data) {
+      println!("{} {}", "Type:".bold(), summary);
+    }
+  }
 
   if !code_entry.doc.is_empty() {
     println!("{} {}", "Doc:".bold(), code_entry.doc);

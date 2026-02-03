@@ -2603,7 +2603,7 @@
           :code $ quote &runtime-inplementation
           :examples $ []
             quote $ ; reset! *my-atom $ {} (:a 2)
-        |hint-fn $ %{} :CodeEntry (:doc "|internal syntax for function hints (currently only used for async)\nSyntax: (hint-fn hint-type fn-expr)\nParams: hint-type (keyword), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, mainly for async operations")
+        |hint-fn $ %{} :CodeEntry (:doc "|internal syntax for function hints (used for async and generics)\nSyntax: (hint-fn hint-data fn-expr)\nParams: hint-data (keyword or list), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, including async markers and generic type metadata (type-vars, return-type)")
           :code $ quote &runtime-inplementation
         |&call-spread $ %{} :CodeEntry (:doc "|internal syntax for handling & spreading in function calls\nSyntax: (&call-spread fn args)\nParams: fn (function), args (list with spread)\nReturns: function call result\nHandles argument spreading in function calls")
           :code $ quote &runtime-inplementation
@@ -2614,6 +2614,8 @@
         |~ $ %{} :CodeEntry (:doc "|internal syntax for interpolating value in macro\nSyntax: (~ expr) inside quasiquote\nParams: expr (expression to evaluate)\nReturns: evaluated expression\nUnquotes expression inside quasiquote")
           :code $ quote &runtime-inplementation
         |~@ $ %{} :CodeEntry (:doc "|internal syntax for spreading interpolate value in macro\nSyntax: (~@ list-expr) inside quasiquote\nParams: list-expr (expression that evaluates to list)\nReturns: spliced list elements\nUnquotes and splices list elements inside quasiquote")
+          :code $ quote &runtime-inplementation
+        |assert-type $ %{} :CodeEntry (:doc "|internal syntax for type assertion at preprocessing stage\nSyntax: (assert-type expr type-expr)\nParams: expr (any), type-expr (type annotation)\nReturns: evaluated result of expr\nAsserts that expr matches the given type annotation during static analysis")
           :code $ quote &runtime-inplementation
 
         ; "=== CalcitProc Internal Definitions ==="

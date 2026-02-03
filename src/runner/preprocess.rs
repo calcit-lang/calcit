@@ -1369,7 +1369,7 @@ fn detect_return_type_hint_from_args(args: &CalcitList) -> Arc<CalcitTypeAnnotat
   // Skip name (index 0) and arg list (index 1), start from body (index 2+)
   for i in 2..args.len() {
     if let Some(form) = args.get(i) {
-      if let Some(hint) = extract_return_type_from_hint_form(form) {
+      if let Some(hint) = CalcitTypeAnnotation::extract_return_type_from_hint_form(form) {
         return hint;
       }
     }
@@ -1380,118 +1380,12 @@ fn detect_return_type_hint_from_args(args: &CalcitList) -> Arc<CalcitTypeAnnotat
 fn detect_fn_generics_from_args(args: &CalcitList) -> Arc<Vec<Arc<str>>> {
   for i in 2..args.len() {
     if let Some(form) = args.get(i) {
-      if let Some(vars) = extract_generics_from_hint_form(form) {
+      if let Some(vars) = CalcitTypeAnnotation::extract_generics_from_hint_form(form) {
         return Arc::new(vars);
       }
     }
   }
   Arc::new(vec![])
-}
-
-/// Extract return-type from a single (hint-fn ...) form
-fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
-  let list = match form {
-    Calcit::List(xs) => xs,
-    _ => return None,
-  };
-
-  // Check if it's a (hint-fn ...) form - could be Syntax (after eval) or Symbol (during preprocess)
-  let is_hint_fn = match list.first() {
-    Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => true,
-    Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn" => true,
-    _ => false,
-  };
-
-  if !is_hint_fn {
-    return None;
-  }
-
-  // Look for return-type directly in the list items (not nested)
-  // Format: (hint-fn return-type :string) or (hint-fn $ return-type :string)
-  let items = list.skip(1).ok()?.to_vec();
-  let mut idx = 0;
-  while idx < items.len() {
-    match &items[idx] {
-      Calcit::Symbol { sym, .. } if &**sym == "return-type" => {
-        if let Some(type_expr) = items.get(idx + 1) {
-          return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
-        }
-      }
-      _ => {}
-    }
-    idx += 1;
-  }
-  None
-}
-
-fn extract_generics_from_hint_form(form: &Calcit) -> Option<Vec<Arc<str>>> {
-  let list = match form {
-    Calcit::List(xs) => xs,
-    _ => return None,
-  };
-
-  let is_hint_fn = match list.first() {
-    Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => true,
-    Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn" => true,
-    _ => false,
-  };
-
-  if !is_hint_fn {
-    return None;
-  }
-
-  let items = list.skip(1).ok()?.to_vec();
-  for item in items.iter() {
-    let Calcit::List(inner) = item else {
-      continue;
-    };
-    let head = inner.first();
-    if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "type-vars") {
-      let mut vars = vec![];
-      for entry in inner.iter().skip(1) {
-        vars.push(parse_type_var_form(entry)?);
-      }
-      return Some(vars);
-    }
-    let is_tuple_head = matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "::")
-      || matches!(head, Some(Calcit::Proc(CalcitProc::NativeTuple)));
-    if !is_tuple_head {
-      continue;
-    }
-
-    if let Some(Calcit::Tag(tag)) = inner.get(1) {
-      if tag.ref_str().trim_start_matches(':') != "generics" {
-        continue;
-      }
-      let mut vars = vec![];
-      for entry in inner.iter().skip(2) {
-        vars.push(parse_type_var_form(entry)?);
-      }
-      return Some(vars);
-    }
-  }
-
-  None
-}
-
-fn parse_type_var_form(form: &Calcit) -> Option<Arc<str>> {
-  let Calcit::List(list) = form else {
-    return None;
-  };
-
-  let head = list.first()?;
-  let is_quote_head = matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _))
-    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote")
-    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "quote");
-
-  if !is_quote_head {
-    return None;
-  }
-
-  match list.get(1) {
-    Some(Calcit::Symbol { sym, .. }) => Some(sym.to_owned()),
-    _ => None,
-  }
 }
 
 /// Check function return type matches declared return_type
@@ -1522,6 +1416,10 @@ fn check_function_return_type(
     // Can't infer type from last expression, skip check
     return;
   };
+
+  if matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
+    return;
+  }
 
   // Compare actual type with expected type
   if !actual_type.as_ref().matches_annotation(declared_return_type.as_ref()) {

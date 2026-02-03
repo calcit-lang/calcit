@@ -129,6 +129,104 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  pub fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+    let list = match form {
+      Calcit::List(xs) => xs,
+      _ => return None,
+    };
+
+    let is_hint_fn = match list.first() {
+      Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => true,
+      Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn" => true,
+      _ => false,
+    };
+
+    if !is_hint_fn {
+      return None;
+    }
+
+    let items = list.skip(1).ok()?.to_vec();
+    for item in &items {
+      if let Calcit::List(inner) = item {
+        let mut inner_idx = 0;
+        while inner_idx < inner.len() {
+          match inner.get(inner_idx) {
+            Some(Calcit::Symbol { sym, .. }) if &**sym == "return-type" => {
+              if let Some(type_expr) = inner.get(inner_idx + 1) {
+                return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
+              }
+            }
+            _ => {}
+          }
+          inner_idx += 1;
+        }
+      }
+    }
+
+    let mut idx = 0;
+    while idx < items.len() {
+      match &items[idx] {
+        Calcit::Symbol { sym, .. } if &**sym == "return-type" => {
+          if let Some(type_expr) = items.get(idx + 1) {
+            return Some(CalcitTypeAnnotation::parse_type_annotation_form(type_expr));
+          }
+        }
+        _ => {}
+      }
+      idx += 1;
+    }
+    None
+  }
+
+  pub fn extract_generics_from_hint_form(form: &Calcit) -> Option<Vec<Arc<str>>> {
+    let list = match form {
+      Calcit::List(xs) => xs,
+      _ => return None,
+    };
+
+    let is_hint_fn = match list.first() {
+      Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => true,
+      Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn" => true,
+      _ => false,
+    };
+
+    if !is_hint_fn {
+      return None;
+    }
+
+    let items = list.skip(1).ok()?.to_vec();
+    for item in items.iter() {
+      let Calcit::List(inner) = item else {
+        continue;
+      };
+      let head = inner.first();
+      if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "type-vars") {
+        let mut vars = vec![];
+        for entry in inner.iter().skip(1) {
+          vars.push(Self::parse_type_var_form(entry)?);
+        }
+        return Some(vars);
+      }
+      let is_tuple_head = matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "::")
+        || matches!(head, Some(Calcit::Proc(CalcitProc::NativeTuple)));
+      if !is_tuple_head {
+        continue;
+      }
+
+      if let Some(Calcit::Tag(tag)) = inner.get(1) {
+        if tag.ref_str().trim_start_matches(':') != "generics" {
+          continue;
+        }
+        let mut vars = vec![];
+        for entry in inner.iter().skip(2) {
+          vars.push(Self::parse_type_var_form(entry)?);
+        }
+        return Some(vars);
+      }
+    }
+    None
+  }
+
   fn parse_generics_list(form: &Calcit) -> Option<Vec<Arc<str>>> {
     let Calcit::List(items) = form else {
       return None;
@@ -140,6 +238,107 @@ impl CalcitTypeAnnotation {
       vars.push(name);
     }
     Some(vars)
+  }
+
+  /// Summarize definition code for `cr query def` output.
+  ///
+  /// Note: editor mode has no macro expansion, so only display what can be
+  /// statically observed (e.g. `hint-fn`, `assert-type`). If no hints are found,
+  /// return `None` to avoid noisy output.
+  pub fn summarize_code(code: &Calcit) -> Option<String> {
+    let mut list: &CalcitList = match code {
+      Calcit::List(xs) => xs,
+      _ => return None,
+    };
+
+    if list.is_empty() {
+      return None;
+    }
+
+    // Snapshot code is often wrapped with (quote ...), unwrap if possible.
+    let is_quote_head = match list.first() {
+      Some(Calcit::Syntax(CalcitSyntax::Quote, _)) => true,
+      Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "quote" => true,
+      Some(Calcit::Import(CalcitImport { ns, def, .. })) if &**ns == CORE_NS && &**def == "quote" => true,
+      _ => false,
+    };
+
+    if is_quote_head {
+      if list.len() == 2 {
+        if let Some(Calcit::List(inner)) = list.get(1) {
+          list = inner;
+        } else {
+          return None;
+        }
+      } else {
+        return None;
+      }
+    }
+
+    let head = list.first()?;
+    let is_defn =
+      matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "defn") || matches!(head, Calcit::Syntax(CalcitSyntax::Defn, _));
+    let is_defmacro = matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "defmacro")
+      || matches!(head, Calcit::Syntax(CalcitSyntax::Defmacro, _));
+    if is_defn || is_defmacro {
+      let mut generics = vec![];
+      let mut return_type = Arc::new(Self::Dynamic);
+      let mut arg_names = vec![];
+      let mut arg_types = HashMap::new();
+
+      if let Some(Calcit::List(args)) = list.get(2) {
+        for arg in args.iter() {
+          if let Calcit::Symbol { sym, .. } = arg {
+            arg_names.push(sym.to_owned());
+          }
+        }
+      }
+
+      // Scan body forms for available hints only; do not expand macros.
+      for i in 3..list.len() {
+        if let Some(form) = list.get(i) {
+          if let Some(g) = Self::extract_generics_from_hint_form(form) {
+            generics = g;
+          }
+          if let Some(ret) = Self::extract_return_type_from_hint_form(form) {
+            return_type = ret;
+          }
+          if let Calcit::List(inner) = form {
+            let is_assert = match inner.first() {
+              Some(Calcit::Syntax(CalcitSyntax::AssertType, _)) => true,
+              Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "assert-type" => true,
+              _ => false,
+            };
+            if is_assert && inner.len() == 3 {
+              if let (Some(Calcit::Symbol { sym, .. }), Some(type_form)) = (inner.get(1), inner.get(2)) {
+                let t = Self::parse_type_annotation_form(type_form);
+                arg_types.insert(sym.to_owned(), t);
+              }
+            }
+          }
+        }
+      }
+
+      let mut final_arg_types = vec![];
+      for name in &arg_names {
+        final_arg_types.push(arg_types.get(name).cloned().unwrap_or_else(|| Arc::new(Self::Dynamic)));
+      }
+
+      let has_hints = !generics.is_empty()
+        || !matches!(return_type.as_ref(), Self::Dynamic)
+        || final_arg_types.iter().any(|t| !matches!(t.as_ref(), Self::Dynamic));
+      if !has_hints {
+        return None;
+      }
+
+      let signature = CalcitFnTypeAnnotation {
+        generics: Arc::new(generics),
+        arg_types: final_arg_types,
+        return_type,
+      };
+      return Some(signature.render_signature_brief());
+    }
+    None
   }
 
   fn parse_struct_annotation_from_tuple(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation>> {
