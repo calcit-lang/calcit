@@ -2043,7 +2043,7 @@ fn infer_enum_tuple_annotation(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   let tuple = CalcitTuple {
     tag: Arc::new(tag_value),
     extra: vec![],
-    class: class_record.map(Arc::new),
+    classes: class_record.map(|c| vec![Arc::new(c)]).unwrap_or_default(),
     sum_type: Some(Arc::new(enum_proto)),
   };
 
@@ -2097,13 +2097,13 @@ fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation
     fields: Arc::new(field_names.clone()),
     field_types: Arc::new(field_types),
     generics: Arc::new(vec![]),
-    class: None,
+    classes: vec![],
   };
 
   let record = CalcitRecord {
     struct_ref: Arc::new(struct_def),
     values: Arc::new(vec![Calcit::Nil; field_names.len()]),
-    class: None,
+    classes: vec![],
   };
 
   Some(Arc::new(CalcitTypeAnnotation::Record(Arc::new(record))))
@@ -2197,7 +2197,7 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
       Some(CalcitRecord {
         struct_ref: Arc::new(struct_def.to_owned()),
         values: Arc::new(values),
-        class: struct_def.class.clone(),
+        classes: struct_def.classes.clone(),
       })
     }
     Calcit::Import(CalcitImport { ns, def, .. }) => match program::lookup_evaled_def(ns, def) {
@@ -2208,7 +2208,7 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
         Some(CalcitRecord {
           struct_ref: Arc::new(struct_def.to_owned()),
           values: Arc::new(values),
-          class: struct_def.class.clone(),
+          classes: struct_def.classes.clone(),
         })
       }
       _ => None,
@@ -2867,7 +2867,7 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      class: None,
+      classes: vec![],
     })));
 
     // Test expression: (assert-type user <record-type>) (&record:get user :name)
@@ -2911,7 +2911,7 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      class: None,
+      classes: vec![],
     })));
 
     // Test expression: (&record:get user :email) with user already typed
@@ -2972,7 +2972,7 @@ mod tests {
     let class_record = CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Greeter"), vec![EdnTag::from("greet")])),
       values: Arc::new(vec![method_import.clone()]),
-      class: None,
+      classes: vec![],
     };
     scope_types.insert(Arc::from("user"), Arc::new(CalcitTypeAnnotation::Record(Arc::new(class_record))));
 
@@ -3026,7 +3026,7 @@ mod tests {
     let class_record = CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Greeter"), vec![EdnTag::from("greet")])),
       values: Arc::new(vec![method_fn.clone()]),
-      class: None,
+      classes: vec![],
     };
 
     let record_ns = "tests.method.class";
@@ -3086,7 +3086,7 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      class: None,
+      classes: vec![],
     })));
 
     // Test expression: (user.-name) - wrapped in a list to trigger method parsing
@@ -3127,7 +3127,7 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      class: None,
+      classes: vec![],
     })));
 
     // Test expression: (user.-email) - invalid field, wrapped in list
@@ -3175,7 +3175,7 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      class: None,
+      classes: vec![],
     })));
 
     // Test expression: (.slice person 1 3) - trying to call non-existent method
@@ -3292,17 +3292,16 @@ mod tests {
     use cirru_parser::Cirru;
 
     // Test defn with wrong return type
-    // (defn wrong-ret () (hint-fn return-type :string) (&+ 1 2))
+    // (defn wrong-ret () (hint-fn (return-type :string)) (&+ 1 2))
     // Should return :number but declares :string
     let expr = Cirru::List(vec![
       Cirru::leaf("defn"),
       Cirru::leaf("wrong-ret"),
       Cirru::List(vec![]), // no args
       Cirru::List(vec![
-        // (hint-fn return-type :string)
+        // (hint-fn (return-type :string))
         Cirru::leaf("hint-fn"),
-        Cirru::leaf("return-type"),
-        Cirru::leaf(":string"),
+        Cirru::List(vec![Cirru::leaf("return-type"), Cirru::leaf(":string")]),
       ]),
       Cirru::List(vec![
         // (&+ 1 2) - returns :number
@@ -3364,7 +3363,7 @@ mod tests {
         id: Arc::from("tests.method/greet"),
         info: method_fn.clone(),
       }]),
-      class: None,
+      classes: vec![],
     };
 
     // Test expression: (.greet user |hello) - wrong argument type
@@ -3418,7 +3417,7 @@ mod tests {
         Calcit::from(vec![Calcit::tag("string")]), // :err payload types
         Calcit::from(CalcitList::default()),       // :ok payload types (empty)
       ]),
-      class: None,
+      classes: vec![],
     };
     let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
 
@@ -3463,7 +3462,7 @@ mod tests {
         Calcit::from(vec![Calcit::tag("string")]), // :err expects 1 payload
         Calcit::from(CalcitList::default()),       // :ok expects 0 payloads
       ]),
-      class: None,
+      classes: vec![],
     };
     let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
 
@@ -3509,7 +3508,7 @@ mod tests {
         Calcit::from(vec![Calcit::tag("string")]), // :err expects string payload
         Calcit::from(CalcitList::default()),       // :ok expects no payloads
       ]),
-      class: None,
+      classes: vec![],
     };
     let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
 
@@ -3548,7 +3547,7 @@ mod tests {
     let tuple_type = CalcitTuple {
       tag: Arc::new(Calcit::Tag(EdnTag::from("point"))),
       extra: vec![Calcit::Number(10.0), Calcit::Number(20.0)],
-      class: None,
+      classes: vec![],
       sum_type: None,
     };
 
@@ -3592,7 +3591,7 @@ mod tests {
     let tuple_type = CalcitTuple {
       tag: Arc::new(Calcit::Tag(EdnTag::from("point"))),
       extra: vec![Calcit::Number(10.0), Calcit::Number(20.0)],
-      class: None,
+      classes: vec![],
       sum_type: None,
     };
 
@@ -3630,7 +3629,7 @@ mod tests {
     let tuple_type = CalcitTuple {
       tag: Arc::new(Calcit::Tag(EdnTag::from("point"))),
       extra: vec![Calcit::Number(10.0), Calcit::Number(20.0)],
-      class: None,
+      classes: vec![],
       sum_type: None,
     };
 

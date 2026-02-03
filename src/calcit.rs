@@ -153,9 +153,9 @@ impl fmt::Display for Calcit {
       Tuple(CalcitTuple {
         tag,
         extra,
-        class,
+        classes,
         sum_type,
-      }) => match (class, sum_type) {
+      }) => match (classes.first(), sum_type) {
         (Some(class), Some(sum_type)) => {
           f.write_str("(%:: ")?;
           f.write_str(&tag.to_string())?;
@@ -489,14 +489,14 @@ impl Hash for Calcit {
         fields,
         field_types,
         generics,
-        class,
+        classes,
       }) => {
         "struct:".hash(_state);
         name.hash(_state);
         fields.hash(_state);
         field_types.hash(_state);
         generics.hash(_state);
-        if let Some(class) = class {
+        for class in classes {
           class.name().hash(_state);
           class.fields().hash(_state);
         }

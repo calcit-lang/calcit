@@ -10,7 +10,8 @@ use super::CalcitStruct;
 pub struct CalcitRecord {
   pub struct_ref: Arc<CalcitStruct>,
   pub values: Arc<Vec<Calcit>>,
-  pub class: Option<Arc<CalcitRecord>>,
+  /// Trait implementations attached to this record (multiple allowed for composition)
+  pub classes: Vec<Arc<CalcitRecord>>,
 }
 
 impl PartialEq for CalcitRecord {
@@ -26,7 +27,7 @@ impl Default for CalcitRecord {
     CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("record"), vec![])),
       values: Arc::new(vec![]),
-      class: None,
+      classes: vec![],
     }
   }
 }
@@ -116,7 +117,7 @@ impl CalcitRecord {
     Ok(CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(new_name_id, next_fields)),
       values: Arc::new(next_values),
-      class: self.class.to_owned(),
+      classes: self.classes.clone(),
     })
   }
 }

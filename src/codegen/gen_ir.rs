@@ -427,7 +427,7 @@ fn tuple_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
     (Edn::tag("kind"), Edn::tag("tuple")),
     (Edn::tag("tag"), Edn::Str(tuple.tag.to_string().into())),
   ];
-  if let Some(class) = &tuple.class {
+  if let Some(class) = tuple.classes.first() {
     entries.push((Edn::tag("class"), Edn::Str(class.name().ref_str().into())));
   }
   if let Some(sum_type) = &tuple.sum_type {
@@ -441,7 +441,7 @@ fn tuple_type_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
     (Edn::tag("type"), Edn::tag("tuple")),
     (Edn::tag("tag"), Edn::Str(tuple.tag.to_string().into())),
   ];
-  if let Some(class) = &tuple.class {
+  if let Some(class) = tuple.classes.first() {
     entries.push((Edn::tag("class"), Edn::Str(class.name().ref_str().into())));
   }
   if let Some(sum_type) = &tuple.sum_type {
@@ -483,7 +483,7 @@ fn dump_struct_code(struct_def: &CalcitStruct) -> Edn {
     (Edn::tag("kind"), Edn::tag("struct")),
     (Edn::tag("name"), Edn::Str(struct_def.name.ref_str().into())),
   ];
-  if let Some(class) = &struct_def.class {
+  if let Some(class) = struct_def.classes.first() {
     entries.push((Edn::tag("class"), Edn::Str(class.name().ref_str().into())));
   }
   let mut fields = EdnListView::default();
@@ -503,7 +503,7 @@ fn dump_enum_code(enum_def: &CalcitEnum) -> Edn {
     (Edn::tag("kind"), Edn::tag("enum")),
     (Edn::tag("name"), Edn::Str(enum_def.name().ref_str().into())),
   ];
-  if let Some(class) = enum_def.class() {
+  if let Some(class) = enum_def.classes().first() {
     entries.push((Edn::tag("class"), Edn::Str(class.name().ref_str().into())));
   }
 
@@ -528,7 +528,7 @@ fn record_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
     (Edn::tag("kind"), Edn::tag("record")),
     (Edn::tag("name"), Edn::Str(record.name().ref_str().into())),
   ];
-  if let Some(class) = &record.class {
+  if let Some(class) = record.classes.first() {
     entries.push((Edn::tag("class"), Edn::Str(class.name().ref_str().into())));
   }
   entries
@@ -539,7 +539,7 @@ fn record_type_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
     (Edn::tag("type"), Edn::tag("record")),
     (Edn::tag("name"), Edn::Str(record.name().ref_str().into())),
   ];
-  if let Some(class) = &record.class {
+  if let Some(class) = record.classes.first() {
     entries.push((Edn::tag("class"), Edn::Str(class.name().ref_str().into())));
   }
   entries

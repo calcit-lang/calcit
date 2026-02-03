@@ -91,7 +91,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       fields,
       field_types,
       generics,
-      class,
+      classes,
     }) => {
       let mut ys = vec![Calcit::Symbol {
         sym: "defstruct".into(),
@@ -128,7 +128,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         ])));
       }
       let struct_value = Calcit::from(ys);
-      if let Some(class_record) = class {
+      if let Some(class_record) = classes.first() {
         Ok(Calcit::from(CalcitList::from(&[
           Calcit::Proc(CalcitProc::NativeStructWithClass),
           struct_value,
@@ -167,7 +167,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         }
       }
       let enum_value = Calcit::from(ys);
-      if let Some(class_record) = enum_def.class() {
+      if let Some(class_record) = enum_def.classes().first() {
         Ok(Calcit::from(CalcitList::from(&[
           Calcit::Proc(CalcitProc::NativeEnumWithClass),
           enum_value,

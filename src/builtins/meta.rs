@@ -394,7 +394,7 @@ pub fn new_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Ok(Calcit::Tuple(CalcitTuple {
       tag: Arc::new(xs[0].to_owned()),
       extra,
-      class: None,
+      classes: vec![],
       sum_type: None,
     }))
   }
@@ -450,7 +450,7 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Tuple(CalcitTuple {
           tag: Arc::new(xs[1].to_owned()),
           extra,
-          class: None,
+          classes: vec![],
           sum_type: Some(Arc::new(enum_proto)),
         }))
       }
@@ -490,7 +490,7 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Tuple(CalcitTuple {
           tag: Arc::new(xs[1].to_owned()),
           extra,
-          class: None,
+          classes: vec![],
           sum_type: Some(Arc::new(enum_proto)),
         }))
       }
@@ -532,7 +532,7 @@ pub fn struct_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let class_value = xs[1].to_owned();
   match (struct_value, class_value) {
     (Calcit::Struct(mut struct_def), Calcit::Record(class_record)) => {
-      struct_def.class = Some(Arc::new(class_record));
+      struct_def.classes = vec![Arc::new(class_record)];
       Ok(Calcit::Struct(struct_def))
     }
     (Calcit::Struct(_), other) => CalcitErr::err_str(
@@ -557,10 +557,10 @@ pub fn enum_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Calcit::Record(enum_record), Calcit::Record(class_record)) => Ok(Calcit::Record(CalcitRecord {
       struct_ref: enum_record.struct_ref,
       values: enum_record.values,
-      class: Some(Arc::new(class_record)),
+      classes: vec![Arc::new(class_record)],
     })),
     (Calcit::Enum(mut enum_def), Calcit::Record(class_record)) => {
-      enum_def.set_class(Some(Arc::new(class_record)));
+      enum_def.set_classes(vec![Arc::new(class_record)]);
       Ok(Calcit::Enum(enum_def))
     }
     (Calcit::Record(_), other) => CalcitErr::err_str(
@@ -709,7 +709,7 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   let v0 = &method_args[0];
   use Calcit::*;
   match v0 {
-    Tuple(CalcitTuple { class, .. }) => match class {
+    Tuple(CalcitTuple { classes, .. }) => match classes.first() {
       Some(record) => method_record(record, v0, name, method_args, call_stack),
       None => Err(CalcitErr::use_msg_stack(
         CalcitErrKind::Type,
@@ -717,7 +717,7 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
         call_stack,
       )),
     },
-    Record(CalcitRecord { class, .. }) => match class {
+    Record(CalcitRecord { classes, .. }) => match classes.first() {
       Some(record) => method_record(record, v0, name, method_args, call_stack),
       None => Err(CalcitErr::use_msg_stack(
         CalcitErrKind::Type,
@@ -875,7 +875,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Calcit::Tuple(CalcitTuple {
         tag,
         extra,
-        class,
+        classes,
         sum_type,
       }),
       Calcit::Number(n),
@@ -885,7 +885,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Ok(Calcit::Tuple(CalcitTuple {
             tag: Arc::new(xs[2].to_owned()),
             extra: extra.to_owned(),
-            class: class.to_owned(),
+            classes: classes.clone(),
             sum_type: sum_type.to_owned(),
           }))
         } else if idx - 1 < extra.len() {
@@ -894,7 +894,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Ok(Calcit::Tuple(CalcitTuple {
             tag: tag.to_owned(),
             extra: new_extra,
-            class: class.to_owned(),
+            classes: classes.clone(),
             sum_type: sum_type.to_owned(),
           }))
         } else {
@@ -940,7 +940,7 @@ pub fn tuple_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:class expected 1 argument, but received:", xs);
   }
   match &xs[0] {
-    Calcit::Tuple(CalcitTuple { class, .. }) => match class {
+    Calcit::Tuple(CalcitTuple { classes, .. }) => match classes.first() {
       None => Ok(Calcit::Nil),
       Some(class) => Ok(Calcit::Record((**class).to_owned())),
     },
@@ -987,7 +987,7 @@ pub fn tuple_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Calcit::Tuple(CalcitTuple { tag, extra, sum_type, .. }), Calcit::Record(record)) => Ok(Calcit::Tuple(CalcitTuple {
       tag: tag.to_owned(),
       extra: extra.to_owned(),
-      class: Some(Arc::new(record.to_owned())),
+      classes: vec![Arc::new(record.to_owned())],
       sum_type: sum_type.to_owned(),
     })),
     (a, Calcit::Record { .. }) => {
@@ -1042,10 +1042,14 @@ pub fn inspect_class_methods(xs: &[Calcit], call_stack: &CallStackList) -> Resul
 
   // Get the class record for this value
   let class_result: Result<Calcit, CalcitErr> = match value {
-    Calcit::Tuple(CalcitTuple { class: Some(class), .. }) => Ok(Calcit::Record((**class).to_owned())),
-    Calcit::Tuple { .. } => Ok(Calcit::Nil),
-    Calcit::Record(CalcitRecord { class: Some(class), .. }) => Ok(Calcit::Record((**class).to_owned())),
-    Calcit::Record { .. } => Ok(Calcit::Nil),
+    Calcit::Tuple(CalcitTuple { classes, .. }) => match classes.first() {
+      Some(class) => Ok(Calcit::Record((**class).to_owned())),
+      None => Ok(Calcit::Nil),
+    },
+    Calcit::Record(CalcitRecord { classes, .. }) => match classes.first() {
+      Some(class) => Ok(Calcit::Record((**class).to_owned())),
+      None => Ok(Calcit::Nil),
+    },
     Calcit::List(..) => runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, None, call_stack),
     Calcit::Map(..) => runner::evaluate_symbol_from_program("&core-map-class", calcit::CORE_NS, None, call_stack),
     Calcit::Number(..) => runner::evaluate_symbol_from_program("&core-number-class", calcit::CORE_NS, None, call_stack),
@@ -1133,7 +1137,7 @@ pub fn inspect_class_methods(xs: &[Calcit], call_stack: &CallStackList) -> Resul
       }
 
       // Check for nested class
-      if let Some(parent_class) = &record.class {
+      if let Some(parent_class) = record.classes.first() {
         eprintln!();
         eprintln!("Parent class: {} ({} methods)", parent_class.name(), parent_class.fields().len());
         eprintln!(

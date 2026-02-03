@@ -95,7 +95,16 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
         Ok(Calcit::Map(zs))
       }
-      (Calcit::Record(record @ CalcitRecord { struct_ref, values, class }), Calcit::Map(ys)) => {
+      (
+        Calcit::Record(
+          record @ CalcitRecord {
+            struct_ref,
+            values,
+            classes,
+          },
+        ),
+        Calcit::Map(ys),
+      ) => {
         let mut new_values = (**values).to_owned();
         for (k, v) in ys {
           match k {
@@ -123,7 +132,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Record(CalcitRecord {
           struct_ref: record.struct_ref.to_owned(),
           values: Arc::new(new_values),
-          class: class.to_owned(),
+          classes: classes.clone(),
         }))
       }
       (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:merge expected 2 maps, but received: {a} {b}")),

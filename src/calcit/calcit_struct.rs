@@ -11,7 +11,8 @@ pub struct CalcitStruct {
   pub fields: Arc<Vec<EdnTag>>,
   pub field_types: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
   pub generics: Arc<Vec<Arc<str>>>,
-  pub class: Option<Arc<CalcitRecord>>,
+  /// Trait implementations attached to this struct (multiple allowed for composition)
+  pub classes: Vec<Arc<CalcitRecord>>,
 }
 
 impl CalcitStruct {
@@ -24,7 +25,7 @@ impl CalcitStruct {
       fields: Arc::new(fields),
       field_types: Arc::new(field_types),
       generics,
-      class: None,
+      classes: vec![],
     }
   }
 }
@@ -35,7 +36,7 @@ impl Hash for CalcitStruct {
     self.fields.hash(state);
     self.field_types.hash(state);
     self.generics.hash(state);
-    if let Some(class) = &self.class {
+    for class in &self.classes {
       class.name().hash(state);
       class.fields().hash(state);
     }

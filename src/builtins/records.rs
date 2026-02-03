@@ -99,7 +99,7 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Record(CalcitRecord {
     struct_ref: Arc::new(CalcitStruct::from_fields(name_id, fields)),
     values: Arc::new(values),
-    class: None,
+    classes: vec![],
   }))
 }
 
@@ -172,7 +172,7 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Record(CalcitRecord {
     struct_ref: Arc::new(CalcitStruct::from_fields(name_id, fields)),
     values: Arc::new(values),
-    class: Some(Arc::new(class)),
+    classes: vec![Arc::new(class)],
   }))
 }
 
@@ -267,7 +267,7 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     fields: Arc::new(field_names),
     field_types: Arc::new(field_types),
     generics: Arc::new(generics),
-    class: None,
+    classes: vec![],
   }))
 }
 
@@ -343,12 +343,12 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let values: Vec<Calcit> = variants.iter().map(|(_, value)| value.to_owned()).collect();
 
   let mut struct_ref = CalcitStruct::from_fields(name_id, fields);
-  struct_ref.class = Some(Arc::new(enum_prototype_marker()));
+  struct_ref.classes = vec![Arc::new(enum_prototype_marker())];
 
   let record = CalcitRecord {
     struct_ref: Arc::new(struct_ref),
     values: Arc::new(values),
-    class: None,
+    classes: vec![],
   };
 
   match CalcitEnum::from_record(record) {
@@ -361,7 +361,7 @@ fn enum_prototype_marker() -> CalcitRecord {
   CalcitRecord {
     struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("enum-prototype"), vec![])),
     values: Arc::new(vec![]),
-    class: None,
+    classes: vec![],
   }
 }
 
@@ -375,7 +375,7 @@ pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let record = CalcitRecord {
         struct_ref: Arc::new(struct_def.to_owned()),
         values: Arc::new(vec![Calcit::Nil; struct_def.fields.len()]),
-        class: struct_def.class.clone(),
+        classes: struct_def.classes.clone(),
       };
       call_record_with_prototype(&record, xs)
     }
@@ -396,7 +396,7 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
   let CalcitRecord {
     struct_ref,
     values: v0,
-    class,
+    classes,
   } = record;
   if (args_size - 1).rem(2) != 0 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&%{{}} expected pairs, but received:", xs);
@@ -454,7 +454,7 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
   Ok(Calcit::Record(CalcitRecord {
     struct_ref: struct_ref.to_owned(),
     values: Arc::new(values),
-    class: class.to_owned(),
+    classes: classes.to_owned(),
   }))
 }
 
@@ -473,7 +473,7 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       record @ CalcitRecord {
         struct_ref,
         values: v0,
-        class,
+        classes,
       },
     ) => {
       if (args_size - 1).rem(2) == 0 {
@@ -520,7 +520,7 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Record(CalcitRecord {
           struct_ref: struct_ref.to_owned(),
           values: Arc::new(values),
-          class: class.to_owned(),
+          classes: classes.to_owned(),
         }))
       } else {
         CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:with expected pairs, but received:", xs)
@@ -543,14 +543,14 @@ pub fn get_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:class expected 1 argument, but received:", xs);
   }
   match &xs[0] {
-    Calcit::Record(CalcitRecord { class, .. }) => match class {
+    Calcit::Record(CalcitRecord { classes, .. }) => match classes.first() {
       Some(c) => Ok(Calcit::Record((**c).to_owned())),
       None => CalcitErr::err_str(
         CalcitErrKind::Type,
         format!("&record:class expected a class, but received nil for {}", &xs[0]),
       ),
     },
-    Calcit::Tuple(CalcitTuple { class, .. }) => match class {
+    Calcit::Tuple(CalcitTuple { classes, .. }) => match classes.first() {
       None => CalcitErr::err_str(
         CalcitErrKind::Type,
         format!("&record:class expected a class, but received nil for {}", &xs[0]),
@@ -586,7 +586,7 @@ pub fn with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     ) => Ok(Calcit::Record(CalcitRecord {
       struct_ref: struct_ref.to_owned(),
       values: v0.to_owned(),
-      class: Some(Arc::new(class.to_owned())),
+      classes: vec![Arc::new(class.to_owned())],
     })),
     (Calcit::Record { .. }, b) => {
       let msg = format!(
@@ -641,7 +641,7 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Record(CalcitRecord {
         struct_ref: record.struct_ref.to_owned(),
         values: Arc::new(new_values),
-        class: record.class.to_owned(),
+        classes: record.classes.to_owned(),
       }))
     }
     (a, b) => {
@@ -822,7 +822,17 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1), xs.get(2)) {
-    (Some(Calcit::Record(record @ CalcitRecord { struct_ref, values, class })), Some(a), Some(b)) => match a {
+    (
+      Some(Calcit::Record(
+        record @ CalcitRecord {
+          struct_ref,
+          values,
+          classes,
+        },
+      )),
+      Some(a),
+      Some(b),
+    ) => match a {
       Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
         Some(pos) => {
           let mut new_values = (**values).to_owned();
@@ -830,7 +840,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Ok(Calcit::Record(CalcitRecord {
             struct_ref: struct_ref.to_owned(),
             values: Arc::new(new_values),
-            class: class.to_owned(),
+            classes: classes.to_owned(),
           }))
         }
         None => CalcitErr::err_str(
@@ -845,7 +855,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Ok(Calcit::Record(CalcitRecord {
             struct_ref: struct_ref.to_owned(),
             values: Arc::new(new_values),
-            class: class.to_owned(),
+            classes: classes.to_owned(),
           }))
         }
         None => CalcitErr::err_str(
