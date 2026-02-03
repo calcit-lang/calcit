@@ -5,9 +5,41 @@ use cirru_edn::EdnTag;
 
 use crate::builtins::meta::type_of;
 use crate::calcit::{
-  Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitTuple, CalcitTypeAnnotation,
-  format_proc_examples_hint,
+  Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSyntax, CalcitTuple,
+  CalcitTypeAnnotation, format_proc_examples_hint,
 };
+
+fn parse_type_var_form(form: &Calcit) -> Option<Arc<str>> {
+  let Calcit::List(list) = form else {
+    return None;
+  };
+
+  let head = list.first()?;
+  let is_quote_head =
+    matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _)) || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote");
+
+  if !is_quote_head {
+    return None;
+  }
+
+  match list.get(1) {
+    Some(Calcit::Symbol { sym, .. }) => Some(sym.to_owned()),
+    _ => None,
+  }
+}
+
+fn parse_generics_list(form: &Calcit) -> Option<Vec<Arc<str>>> {
+  let Calcit::List(items) = form else {
+    return None;
+  };
+
+  let mut vars = Vec::with_capacity(items.len());
+  for item in items.iter() {
+    let name = parse_type_var_form(item)?;
+    vars.push(name);
+  }
+  Some(vars)
+}
 
 pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
@@ -168,8 +200,15 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   };
 
+  let mut generics: Vec<Arc<str>> = vec![];
+  let mut start_idx = 1;
+  if let Some(generics_form) = xs.get(1).and_then(parse_generics_list) {
+    generics = generics_form;
+    start_idx = 2;
+  }
+
   let mut fields: Vec<(EdnTag, Arc<CalcitTypeAnnotation>)> = vec![];
-  for item in xs.iter().skip(1) {
+  for item in xs.iter().skip(start_idx) {
     match item {
       Calcit::List(xs) => match (xs.first(), xs.get(1), xs.get(2)) {
         (Some(name), Some(type_expr), None) => {
@@ -217,6 +256,9 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   }
 
+  generics.sort();
+  generics.dedup();
+
   let field_names: Vec<EdnTag> = fields.iter().map(|(name, _)| name.to_owned()).collect();
   let field_types: Vec<Arc<CalcitTypeAnnotation>> = fields.iter().map(|(_, t)| t.to_owned()).collect();
 
@@ -224,6 +266,7 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     name: name_id,
     fields: Arc::new(field_names),
     field_types: Arc::new(field_types),
+    generics: Arc::new(generics),
     class: None,
   }))
 }

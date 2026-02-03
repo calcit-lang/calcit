@@ -90,6 +90,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       name,
       fields,
       field_types,
+      generics,
       class,
     }) => {
       let mut ys = vec![Calcit::Symbol {
@@ -101,6 +102,25 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         location: None,
       }];
       ys.push(Calcit::Tag(name.to_owned()));
+      if !generics.is_empty() {
+        let items = generics
+          .iter()
+          .map(|name| {
+            Calcit::from(CalcitList::from(&[
+              Calcit::Syntax(CalcitSyntax::Quote, Arc::from("quote")),
+              Calcit::Symbol {
+                sym: name.to_owned(),
+                info: Arc::new(crate::calcit::CalcitSymbolInfo {
+                  at_ns: Arc::from(ns),
+                  at_def: Arc::from(at_def),
+                }),
+                location: None,
+              },
+            ]))
+          })
+          .collect::<Vec<_>>();
+        ys.push(Calcit::from(CalcitList::from(items.as_slice())));
+      }
       for (field, field_type) in fields.iter().zip(field_types.iter()) {
         ys.push(Calcit::from(CalcitList::from(&[
           Calcit::tag(field.ref_str()),

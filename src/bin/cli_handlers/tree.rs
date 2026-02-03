@@ -614,11 +614,11 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
     println!();
 
     let replacement_arg = if let Some(c) = &opts.code {
-      format!("-e '{}'", c)
+      format!("-e '{c}'")
     } else if let Some(j) = &opts.json {
-      format!("-j '{}'", j)
+      format!("-j '{j}'")
     } else if let Some(f) = &opts.file {
-      format!("-f '{}'", f)
+      format!("-f '{f}'")
     } else {
       "-e '...'".to_string()
     };

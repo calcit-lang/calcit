@@ -570,6 +570,7 @@ let
 
 - **紧凑模式（推荐）**：紧跟在参数列表后的类型标签。
 - **正式模式**：使用 `hint-fn`（通常放在函数体开头）。
+  - 泛型变量：`hint-fn (:: :generics 'T 'S)`
 
 验证示例：
 
@@ -582,6 +583,10 @@ let
     get-name $ fn (user)
       hint-fn $ return-type :string
       |demo
+    ; 泛型声明示例
+    id $ fn (x)
+      hint-fn (:: :generics 'T)
+      x
   add 1 2
 ```
 

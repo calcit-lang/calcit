@@ -257,7 +257,11 @@ impl fmt::Display for Calcit {
         f.write_str(")")
       }
       Struct(CalcitStruct {
-        name, fields, field_types, ..
+        name,
+        fields,
+        field_types,
+        generics: _,
+        ..
       }) => {
         f.write_str("(%struct ")?;
         f.write_str(&format!(":{name}"))?;
@@ -484,12 +488,14 @@ impl Hash for Calcit {
         name,
         fields,
         field_types,
+        generics,
         class,
       }) => {
         "struct:".hash(_state);
         name.hash(_state);
         fields.hash(_state);
         field_types.hash(_state);
+        generics.hash(_state);
         if let Some(class) = class {
           class.name().hash(_state);
           class.fields().hash(_state);

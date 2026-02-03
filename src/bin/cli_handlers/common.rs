@@ -3,7 +3,6 @@
 use super::cirru_validator;
 use cirru_parser::Cirru;
 use std::fs;
-use std::io::{self, Read};
 use std::sync::Arc;
 
 // Error message constants

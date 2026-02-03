@@ -1206,6 +1206,8 @@ fn check_proc_arg_types(
     return;
   }
 
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+
   // Check argument types until we hit variadic marker or run out of args
   for (idx, (arg, expected_type)) in args.iter().zip(signature.arg_types.iter()).enumerate() {
     // Skip variadic marker (&) - no checking after this point
@@ -1224,7 +1226,7 @@ fn check_proc_arg_types(
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       // Compare types
-      if !actual_type.as_ref().matches_annotation(base_type.as_ref()) {
+      if !actual_type.as_ref().matches_with_bindings(base_type.as_ref(), &mut bindings) {
         let expected_str = base_type.as_ref().to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
         gen_check_warning(
@@ -1308,6 +1310,8 @@ fn check_user_fn_arg_types(
     }
   }
 
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+
   // Check argument types
   for (idx, (arg, expected_type)) in args.iter().zip(fn_info.arg_types.iter()).enumerate() {
     if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
@@ -1319,7 +1323,7 @@ fn check_user_fn_arg_types(
       // This is a variadic parameter - check all remaining arguments
       for (rest_idx, rest_arg) in args.iter().skip(idx).enumerate() {
         if let Some(actual_type) = resolve_type_value(rest_arg, scope_types) {
-          if !actual_type.as_ref().matches_annotation(inner_type.as_ref()) {
+          if !actual_type.as_ref().matches_with_bindings(inner_type.as_ref(), &mut bindings) {
             let expected_str = inner_type.as_ref().to_brief_string();
             let actual_str = actual_type.as_ref().to_brief_string();
             gen_check_warning(
@@ -1341,7 +1345,7 @@ fn check_user_fn_arg_types(
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
       // Compare types
-      if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
+      if !actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings) {
         let expected_str = expected_type.as_ref().to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
         gen_check_warning(
@@ -1371,6 +1375,17 @@ fn detect_return_type_hint_from_args(args: &CalcitList) -> Arc<CalcitTypeAnnotat
     }
   }
   Arc::new(CalcitTypeAnnotation::Dynamic)
+}
+
+fn detect_fn_generics_from_args(args: &CalcitList) -> Arc<Vec<Arc<str>>> {
+  for i in 2..args.len() {
+    if let Some(form) = args.get(i) {
+      if let Some(vars) = extract_generics_from_hint_form(form) {
+        return Arc::new(vars);
+      }
+    }
+  }
+  Arc::new(vec![])
 }
 
 /// Extract return-type from a single (hint-fn ...) form
@@ -1407,6 +1422,76 @@ fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnn
     idx += 1;
   }
   None
+}
+
+fn extract_generics_from_hint_form(form: &Calcit) -> Option<Vec<Arc<str>>> {
+  let list = match form {
+    Calcit::List(xs) => xs,
+    _ => return None,
+  };
+
+  let is_hint_fn = match list.first() {
+    Some(Calcit::Syntax(CalcitSyntax::HintFn, _)) => true,
+    Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "hint-fn" => true,
+    _ => false,
+  };
+
+  if !is_hint_fn {
+    return None;
+  }
+
+  let items = list.skip(1).ok()?.to_vec();
+  for item in items.iter() {
+    let Calcit::List(inner) = item else {
+      continue;
+    };
+    let head = inner.first();
+    if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "type-vars") {
+      let mut vars = vec![];
+      for entry in inner.iter().skip(1) {
+        vars.push(parse_type_var_form(entry)?);
+      }
+      return Some(vars);
+    }
+    let is_tuple_head = matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "::")
+      || matches!(head, Some(Calcit::Proc(CalcitProc::NativeTuple)));
+    if !is_tuple_head {
+      continue;
+    }
+
+    if let Some(Calcit::Tag(tag)) = inner.get(1) {
+      if tag.ref_str().trim_start_matches(':') != "generics" {
+        continue;
+      }
+      let mut vars = vec![];
+      for entry in inner.iter().skip(2) {
+        vars.push(parse_type_var_form(entry)?);
+      }
+      return Some(vars);
+    }
+  }
+
+  None
+}
+
+fn parse_type_var_form(form: &Calcit) -> Option<Arc<str>> {
+  let Calcit::List(list) = form else {
+    return None;
+  };
+
+  let head = list.first()?;
+  let is_quote_head = matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _))
+    || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote")
+    || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "quote");
+
+  if !is_quote_head {
+    return None;
+  }
+
+  match list.get(1) {
+    Some(Calcit::Symbol { sym, .. }) => Some(sym.to_owned()),
+    _ => None,
+  }
 }
 
 /// Check function return type matches declared return_type
@@ -2124,6 +2209,7 @@ fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation
     name,
     fields: Arc::new(field_names.clone()),
     field_types: Arc::new(field_types),
+    generics: Arc::new(vec![]),
     class: None,
   };
 
@@ -2414,6 +2500,7 @@ pub fn preprocess_defn(
 
       // Check function return type if declared
       // Extract return type hint from original args (before preprocessing)
+      let _fn_generics = detect_fn_generics_from_args(args);
       let return_type_hint = detect_return_type_hint_from_args(args);
       check_function_return_type(
         &processed_body,
@@ -3041,6 +3128,7 @@ mod tests {
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(fn_args),
       body: vec![],
+      generics: Arc::new(vec![]),
       return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
       arg_types,
     });
@@ -3246,6 +3334,7 @@ mod tests {
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(CalcitFnArgs::Args(vec![0, 1])), // two args
       body: vec![Calcit::Nil],
+      generics: Arc::new(vec![]),
       arg_types: vec![
         Arc::new(CalcitTypeAnnotation::from_tag_name("number")),
         Arc::new(CalcitTypeAnnotation::from_tag_name("string")),
@@ -3377,6 +3466,7 @@ mod tests {
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(CalcitFnArgs::Args(vec![1, 2])), // 2 parameters
       body: vec![Calcit::Nil],
+      generics: Arc::new(vec![]),
       return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::Number)],
     });

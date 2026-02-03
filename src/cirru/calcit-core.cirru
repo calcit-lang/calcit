@@ -1094,31 +1094,63 @@
                   ~ $ turn-tag name
                   ~@ $ map pairs &list:first
                 , ~@pairs
-        |defstruct $ %{} :CodeEntry (:doc "|macro for defining record structs\nSyntax: (defstruct Name :field :type ...)\nParams: Name (symbol/tag), field pairs (tag + type)\nReturns: struct definition value\nExpands to &struct::new")
+        |defstruct $ %{} :CodeEntry (:doc "|macro for defining record structs\nSyntax: (defstruct Name [('T 'S)] :field :type ...)\nParams: Name (symbol/tag), optional generics list, field pairs (tag + type)\nReturns: struct definition value\nExpands to &struct::new")
           :code $ quote
             defmacro defstruct (name & pairs)
               assert "|defstruct expects name as tag/symbol" $ or (tag? name) (symbol? name)
               assert "|defstruct expects pairs in list" $ and (list? pairs) (every? pairs list?)
-              assert "|defstruct expects (field type) pairs" $ every? pairs
-                fn (pair)
-                  &let
-                    items $ if
-                      &= [] $ &list:first pair
-                      &list:rest pair
-                      , pair
-                    &= 2 $ count items
               &let
-                normalized $ map pairs
-                  fn (pair)
+                first-pair $ if
+                  empty? pairs
+                  , nil
+                  &list:first pairs
+                &let
+                  generics $ if
+                    list? first-pair
+                    if
+                      every? first-pair
+                        fn (item)
+                          if
+                            list? item
+                            if
+                              &= 2 $ count item
+                              &= 'quote $ &list:first item
+                              , false
+                            , false
+                      first-pair
+                      []
+                    []
+                  &let
+                    field-pairs $ if
+                      empty? generics
+                      , pairs
+                      &list:rest pairs
+                    assert "|defstruct expects (field type) pairs" $ every? field-pairs
+                      fn (pair)
+                        &let
+                          items $ if
+                            &= [] $ &list:first pair
+                            &list:rest pair
+                            , pair
+                          &= 2 $ count items
                     &let
-                      items $ if
-                        &= [] $ &list:first pair
-                        &list:rest pair
-                        , pair
-                      quasiquote $ [] ~@items
-                quasiquote $ &struct::new
-                  ~ $ turn-tag name
-                  ~@ normalized
+                      normalized $ map field-pairs
+                        fn (pair)
+                          &let
+                            items $ if
+                              &= [] $ &list:first pair
+                              &list:rest pair
+                              , pair
+                            quasiquote $ [] ~@items
+                      if
+                        empty? generics
+                        quasiquote $ &struct::new
+                          ~ $ turn-tag name
+                          ~@ normalized
+                        quasiquote $ &struct::new
+                          ~ $ turn-tag name
+                          ~ generics
+                          ~@ normalized
           :examples $ []
             quote $ defstruct Person (:name :string) (:age :number)
         |defenum $ %{} :CodeEntry (:doc "|macro for defining enums\nSyntax: (defenum Name :variant type... ...)\nParams: Name (symbol/tag), variants (tag + payload types)\nReturns: enum prototype value\nExpands to &enum::new")

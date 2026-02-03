@@ -89,7 +89,7 @@
 
         |Person $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defstruct Person (:name :string) (:age :number) (:address Address)
+            defstruct Person (:name :string) (:age :number) (:address (:: Address))
 
         |Address $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -108,7 +108,7 @@
         |PersonWrap $ %{} :CodeEntry (:doc |)
           :code $ quote
             defenum PersonWrap
-              :person Person
+              :person (:: Person)
               :none
 
         |Outcome $ %{} :CodeEntry (:doc |)
@@ -123,7 +123,7 @@
               let
                   addr $ %{} (new-record :Address :city) (:city |sh)
                   p $ %{} (new-record :Person :name :age :address) (:name |n) (:age 20) (:address addr)
-                assert-type p Person
+                assert-type p (:: Person)
                 &inspect-type p
 
         |test-type-ref-combos $ %{} :CodeEntry (:doc |)
@@ -133,8 +133,8 @@
                   addr $ %{} (new-record :Address :city) (:city |sh)
                   person $ %{} (new-record :Person :name :age :address) (:name |n) (:age 20) (:address addr)
                   job $ %{} (new-record :Job :title :status) (:title |dev) (:status (%:: Status :ok 1))
-                assert-type person Person
-                assert-type job Job
+                assert-type person (:: Person)
+                assert-type job (:: Job)
                 &inspect-type person
                 &inspect-type job
                 let

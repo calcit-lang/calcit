@@ -368,10 +368,24 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
       Edn::map_from_iter(entries)
     }
     CalcitTypeAnnotation::Dynamic => Edn::Nil,
+    CalcitTypeAnnotation::TypeVar(name) => Edn::map_from_iter([
+      (Edn::tag("type"), Edn::tag("type-var")),
+      (Edn::tag("value"), Edn::Str(name.to_string().into())),
+    ]),
     CalcitTypeAnnotation::Struct(struct_def) => Edn::map_from_iter([
       (Edn::tag("type"), Edn::tag("struct")),
       (Edn::tag("value"), dump_struct_code(struct_def.as_ref())),
     ]),
+    CalcitTypeAnnotation::AppliedStruct { base, args } => {
+      let mut entries = vec![(Edn::tag("type"), Edn::tag("struct"))];
+      entries.push((Edn::tag("value"), dump_struct_code(base.as_ref())));
+      let mut args_edn = EdnListView::default();
+      for arg in args.iter() {
+        args_edn.push(dump_type_annotation(arg.as_ref()));
+      }
+      entries.push((Edn::tag("args"), args_edn.into()));
+      Edn::map_from_iter(entries)
+    }
     CalcitTypeAnnotation::Enum(enum_def) => Edn::map_from_iter([
       (Edn::tag("type"), Edn::tag("enum")),
       (Edn::tag("value"), dump_enum_code(enum_def.as_ref())),

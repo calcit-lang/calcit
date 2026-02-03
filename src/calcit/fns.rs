@@ -57,6 +57,8 @@ pub struct CalcitFn {
   pub scope: Arc<CalcitScope>,
   pub args: Arc<CalcitFnArgs>,
   pub body: Vec<Calcit>,
+  /// generics declared by hint-fn
+  pub generics: Arc<Vec<Arc<str>>>,
   /// return type declared by hint-fn
   pub return_type: Arc<CalcitTypeAnnotation>,
   /// argument types declared by assert-type

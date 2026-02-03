@@ -10,6 +10,7 @@ pub struct CalcitStruct {
   pub name: EdnTag,
   pub fields: Arc<Vec<EdnTag>>,
   pub field_types: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
+  pub generics: Arc<Vec<Arc<str>>>,
   pub class: Option<Arc<CalcitRecord>>,
 }
 
@@ -17,10 +18,12 @@ impl CalcitStruct {
   pub fn from_fields(name: EdnTag, fields: Vec<EdnTag>) -> Self {
     let dynamic = Arc::new(CalcitTypeAnnotation::Dynamic);
     let field_types = vec![dynamic; fields.len()];
+    let generics = Arc::new(vec![]);
     CalcitStruct {
       name,
       fields: Arc::new(fields),
       field_types: Arc::new(field_types),
+      generics,
       class: None,
     }
   }
@@ -31,6 +34,7 @@ impl Hash for CalcitStruct {
     self.name.hash(state);
     self.fields.hash(state);
     self.field_types.hash(state);
+    self.generics.hash(state);
     if let Some(class) = &self.class {
       class.name().hash(state);
       class.fields().hash(state);
