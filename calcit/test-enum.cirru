@@ -10,9 +10,12 @@
             defenum Result
               :err :string
               :ok
-        |ResultClass $ %{} :CodeEntry (:doc |)
+        |ResultTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! ResultClass
+            deftrait ResultTrait :dummy
+        |ResultImpl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defrecord! ResultImpl
               :dummy nil
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -32,6 +35,10 @@
               let
                   valid-ok $ %:: Result :ok
                 assert= :ok $ &tuple:nth valid-ok 0
+                let
+                    ok-impl $ with-traits valid-ok ResultImpl
+                  assert= ResultImpl $ &list:first $ &tuple:impls ok-impl
+                  assert= "|(%:: :ok (:impls ResultImpl) (:enum Result))" $ str ok-impl
               let
                   valid-err $ %:: Result :err |error-msg
                 assert= :err $ &tuple:nth valid-err 0

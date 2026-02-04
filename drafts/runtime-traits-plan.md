@@ -87,32 +87,19 @@
 - `Default`: `nil`→`nil`, `number`→`0`, `string`→`""`, `list`→`[]`, `map`→`{}`, `set`→`#{}`
 - `From`: 常见转换如 `number->string`, `list->set`, `map->list`
 
-### Trait 定义语法
+### Trait 定义语法（当前实现）
+
+当前 `deftrait` 宏仅用于声明 trait 名称与方法列表，内部调用 `&trait::new`。
 
 ```cirru
-; 定义 Trait（方法签名声明）
-deftrait Show
-  :methods $ {}
-    :show $ defn show (x) nil  ; nil 表示需要实现
-
-; 定义 Trait（带默认实现）
-deftrait Eq
-  :methods $ {}
-    :eq? $ defn eq? (x y) (&= x y)  ; 使用原始相等
-    :not-eq? $ defn not-eq? (x y) (not (eq? x y))  ; 基于 eq? 的默认实现
-
-; 带多个方法的 Trait
-deftrait Compare
-  :requires ([] Eq)  ; 依赖其他 Trait
-  :methods $ {}
-    :compare $ defn compare (x y) nil
-    :lt? $ defn lt? (x y) (= :lt (compare x y))
-    :gt? $ defn gt? (x y) (= :gt (compare x y))
-    :lte? $ defn lte? (x y) (not (gt? x y))
-    :gte? $ defn gte? (x y) (not (lt? x y))
+deftrait Show :show
+deftrait Eq :eq?
+deftrait Compare :compare
 ```
 
-### Trait 实现语法
+> 说明：默认实现、依赖与方法签名描述仍在规划中，尚未落地。
+
+### Trait 实现语法（当前实现）
 
 使用 `with-traits` 函数式组合的方式为类型添加 Trait 实现：
 
@@ -123,12 +110,7 @@ let
     Point0 $ defstruct Point (:x :number) (:y :number)
 
     ShowTrait $ deftrait Show
-      :show $ fn (x) |todo
-
     EqTrait $ deftrait Eq
-      :eq? $ fn (x y)
-        ; TODO
-        do false
 
     ; 2. 定义 Show trait 的实现 (record 形式)
     show-impl $ %{} ShowTrait
@@ -155,7 +137,7 @@ let
 ; (with-traits struct-def impl1 impl2 impl3 ...)
 ```
 
-### 分派规则
+### 分派规则（当前实现）
 
 方法调用时的查找顺序：
 
@@ -190,22 +172,22 @@ Show/show 42
 | `record` | ✓    | ✓       | ✓   | -       | -   | -        | ✓   | -        | -        | ✓    |
 | `fn`     | ✓    | ✓       | -   | -       | -   | -        | -   | -        | -        | -    |
 
-### 实施阶段
+### 实施阶段（对照当前进度）
 
 #### Phase 1: 基础 Trait 结构
 
 1. ✅ 定义 `CalcitTrait` 数据结构 (src/calcit/calcit_trait.rs)
 2. ✅ 在 `Calcit` enum 中添加 `Trait(CalcitTrait)` 变体
-3. 在 `calcit.core` 中定义 `Show`, `Eq`, `Add`, `Multiply`
-4. 内置类型自动拥有对应实现
-5. `invoke_method` 支持 Trait 方法查找
+3. ✅ 在 `calcit.core` 中定义 `Show`, `Eq`, `Add`, `Multiply`
+4. ✅ 内置类型自动拥有对应实现（已在运行时与 JS backend 对齐）
+5. ✅ `invoke_method` 支持 Trait 方法查找
 
 #### Phase 2: 语法支持
 
-1. `deftrait` 宏定义
-2. `defimpl` 宏定义
-3. `assert-trait` 运行时检查
-4. Trait 方法的显式调用语法
+1. ✅ `deftrait` 宏定义（简化为名称 + 方法列表）
+2. ⏳ `defimpl` 宏定义
+3. ⏳ `assert-trait` 运行时检查
+4. ⏳ Trait 方法的显式调用语法
 
 #### Phase 3: 扩展
 
@@ -301,6 +283,27 @@ Show/show 42
 
 - 覆盖更多内建类型能力。
 - 增加 tests（cirru 文件）覆盖 trait 注册、冲突、失败路径。
+
+---
+
+## 当前实现要点（补充）
+
+- `deftrait` 已存在，展开为 `&trait::new`。
+- `with-traits` 已在 Rust 与 JS backend 支持，可对 record/tuple/struct/enum 追加 impl。
+- JS 侧已补齐 `CalcitTrait` 类型、`type-of`、`toString` 与 `&trait::new`、`&record:with-traits` 等对应实现。
+
+---
+
+## Checklist（后续跟踪）
+
+- [ ] 设计并实现 `defimpl` 宏（包含方法名校验/去重规则）
+- [ ] `assert-trait` 运行时检查与错误消息格式
+- [ ] 显式 trait 调用语法（`trait-call` / `Show/show` 语法）
+- [ ] trait 依赖（`requires`）与默认实现（`defaults`）的表达与存储
+- [ ] 统一 `Compare` 的三态返回与 `&compare` 的关系（`<`/`>` 仅数字）
+- [ ] 冲突检测：同一对象多 impl 的覆盖顺序与警告策略
+- [ ] JS backend 与 Rust 行为一致性验证（新增 tests）
+- [ ] 文档示例与 `test-traits.cirru` 覆盖更多失败路径
 
 ## 测试补充建议（cirru）
 

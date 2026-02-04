@@ -588,7 +588,8 @@ export let _$n_struct_$o_with_traits = function (xs: CalcitValue, ...traits: Cal
       throw new Error("&struct:with-traits expects trait impls as records");
     }
   }
-  return new CalcitStruct(xs.name, xs.fields, xs.fieldTypes, xs.impls.concat(traits as CalcitRecord[]));
+  const impls = xs.impls ?? [];
+  return new CalcitStruct(xs.name, xs.fields, xs.fieldTypes, impls.concat(traits as CalcitRecord[]));
 };
 
 export let _$n_enum_$o_with_impls = function (xs: CalcitValue, k: CalcitValue) {
@@ -609,7 +610,8 @@ export let _$n_enum_$o_with_traits = function (xs: CalcitValue, ...traits: Calci
     }
   }
   if (xs instanceof CalcitEnum) {
-    return new CalcitEnum(xs.prototype, xs.impls.concat(traits as CalcitRecord[]));
+    const impls = xs.impls ?? [];
+    return new CalcitEnum(xs.prototype, impls.concat(traits as CalcitRecord[]));
   }
   if (xs instanceof CalcitRecord) {
     return new CalcitRecord(xs.name, xs.fields, xs.values, xs.impls.concat(traits as CalcitRecord[]));

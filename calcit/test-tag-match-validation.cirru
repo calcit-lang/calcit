@@ -9,9 +9,9 @@
             defenum Result
               :err :string :string
               :ok
-        |ResultClass $ %{} :CodeEntry (:doc |)
+        |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! ResultClass
+            defrecord! ResultImpl
               :dummy nil
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote

@@ -9,16 +9,16 @@
             defenum Result
               :err :string
               :ok
-        |ResultClass $ %{} :CodeEntry (:doc |)
+        |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! ResultClass
+            defrecord! ResultImpl
               :dummy nil
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! ()
               println "|Testing %:: call"
               println "|Result:" Result
-              println "|ResultClass:" ResultClass
+              println "|ResultImpl:" ResultImpl
                 ; Direct call to %:: to see if function is invoked
                 println "|Calling %:: ..."
               let

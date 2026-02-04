@@ -223,7 +223,7 @@
                       :method $ fn (self) (str "|Hello, I'm " $ :name self)
                 ; 创建 Person 实例
                 let
-                  alice $ &tuple:with-impls (:: :name |Alice :age 30) Person
+                  alice $ with-traits (:: :name |Alice :age 30) Person
                   ; 调用方法
                   let
                       greeting $ .greet alice
@@ -329,9 +329,9 @@
               :name :string
               :age nil
 
-        |StructClass $ %{} :CodeEntry (:doc "|Class for struct metadata")
+        |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata")
           :code $ quote
-            defrecord! StructClass
+            defrecord! StructImpl
               :dummy nil
 
         |Result $ %{} :CodeEntry (:doc "|Enum prototype for type checks")
@@ -340,17 +340,17 @@
               :ok :number
               :err :string
 
-        |ResultClass $ %{} :CodeEntry (:doc "|Class for enum tuple tests")
+        |ResultImpl $ %{} :CodeEntry (:doc "|Trait impl for enum tuple tests")
           :code $ quote
-            defrecord! ResultClass
+            defrecord! ResultImpl
               :describe $ fn (self)
                 tag-match self
                   (:ok value) (str "|ok " value)
                   (:err msg) (str "|err " msg)
 
-        |EnumClass $ %{} :CodeEntry (:doc "|Class for enum metadata")
+        |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata")
           :code $ quote
-            defrecord! EnumClass
+            defrecord! EnumImpl
               :dummy nil
 
         |test-defstruct-defenum $ %{} :CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples")
@@ -358,14 +358,14 @@
             defn test-defstruct-defenum ()
               assert= :struct $ type-of Person
               assert= :enum $ type-of Result
-              assert= :struct $ type-of $ &struct:with-impls Person StructClass
+              assert= :struct $ type-of $ with-traits Person StructImpl
               let
-                  enum-with-impls $ &enum:with-impls Result EnumClass
-                  ok $ &tuple:with-impls (%:: enum-with-impls :ok 1) ResultClass
+                  enum-with-impls $ with-traits Result EnumImpl
+                  ok $ with-traits (%:: enum-with-impls :ok 1) ResultImpl
                 assert= :enum $ type-of enum-with-impls
-                assert= ResultClass $ &list:first $ &tuple:impls ok
+                assert= ResultImpl $ &list:first $ &tuple:impls ok
                 assert= enum-with-impls $ &tuple:enum ok
-                assert= "|(%:: :ok 1 (:impls ResultClass) (:enum Result))" $ str ok
+                assert= "|(%:: :ok 1 (:impls ResultImpl) (:enum Result))" $ str ok
               , "|defstruct/defenum checks passed"
 
         |main! $ %{} :CodeEntry (:doc |)

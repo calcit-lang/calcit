@@ -76,9 +76,9 @@
                     :deref $ fn (self)
                       tag-match self
                         (:atom x) x
-                assert= 1 $ deref $ &tuple:with-impls (:: :atom 1) %A
-                assert= 1 $ deref $ &tuple:with-impls (:: :atom 1) %A
-                assert= 2 $ deref $ &tuple:with-impls (:: :atom 2) %A
+                assert= 1 $ deref $ with-traits (:: :atom 1) %A
+                assert= 1 $ deref $ with-traits (:: :atom 1) %A
+                assert= 2 $ deref $ with-traits (:: :atom 2) %A
         |test-arguments $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing arguments")
@@ -204,8 +204,8 @@
           :code $ quote
             fn () (log-title "|Testing method")
               let
-                  a $ &tuple:with-impls (:: :calcit/number 0) Num
-                assert= (&tuple:with-impls (:: :calcit/number 2) Num) (-> a .inc .inc)
+                  a $ with-traits (:: :calcit/number 0) Num
+                assert= (with-traits (:: :calcit/number 2) Num) (-> a .inc .inc)
                 assert= |1 $ -> a .inc .show
                 assert-detect record? $ &list:first $ &tuple:impls a
         |test-refs $ %{} :CodeEntry (:doc |)
@@ -224,7 +224,7 @@
               let
                   Deref $ defrecord! Deref
                     :deref $ fn (self) 2
-                  v $ &tuple:with-impls (:: :value 1) Deref
+                  v $ with-traits (:: :value 1) Deref
                 assert= 2 @v
                 assert= (nth v 1) 1
 
@@ -297,7 +297,7 @@
                   a $ :: :a 1
                   %r $ defrecord! %demo
                     :get $ fn (self) 1
-                  b $ &tuple:with-impls a %r
+                  b $ with-traits a %r
                 assert= %r $ &list:first $ &tuple:impls b
                 assert=
                   &tuple:params $ :: :a 1 2 3
