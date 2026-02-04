@@ -117,25 +117,9 @@
         |&compare $ %{} :CodeEntry (:doc "|internal function for native comparison\nSyntax: (&compare a b)\nParams: a (any), b (any)\nReturns: number (-1, 0, or 1)\nPerforms three-way comparison returning -1 (less), 0 (equal), or 1 (greater)")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&core-add-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on list")
-          :code $ quote
-            defrecord! &core-add-list-impl $ :add &list:concat
-          :examples $ []
-        |&core-add-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on number")
-          :code $ quote
-            defrecord! &core-add-number-impl $ :add &+
-          :examples $ []
-        |&core-add-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on string")
-          :code $ quote
-            defrecord! &core-add-string-impl $ :add &str:concat
-          :examples $ []
-        |&core-eq-impl $ %{} :CodeEntry (:doc "|Core trait impl for Eq")
-          :code $ quote
-            defrecord! &core-eq-impl $ :eq? &=
-          :examples $ []
         |&core-fn-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for fn")
           :code $ quote
-            def &core-fn-impls $ [] &core-fn-methods &core-show-impl
+            def &core-fn-impls $ [] &core-fn-methods internal/&core-show-impl
           :examples $ []
         |&core-fn-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -155,25 +139,9 @@
                 defn %*fn:apply (x)
                   g x $ f x
           :examples $ []
-        |&core-len-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on list")
-          :code $ quote
-            defrecord! &core-len-list-impl $ :len &list:count
-          :examples $ []
-        |&core-len-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on map")
-          :code $ quote
-            defrecord! &core-len-map-impl $ :len &map:count
-          :examples $ []
-        |&core-len-set-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on set")
-          :code $ quote
-            defrecord! &core-len-set-impl $ :len &set:count
-          :examples $ []
-        |&core-len-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on string")
-          :code $ quote
-            defrecord! &core-len-string-impl $ :len &str:count
-          :examples $ []
         |&core-list-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for list")
           :code $ quote
-            def &core-list-impls $ [] &core-list-methods &core-show-impl &core-eq-impl &core-add-list-impl &core-len-list-impl
+            def &core-list-impls $ [] &core-list-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-list-impl internal/&core-len-list-impl
           :examples $ []
         |&core-list-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -224,7 +192,7 @@
           :examples $ []
         |&core-map-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for map")
           :code $ quote
-            def &core-map-impls $ [] &core-map-methods &core-show-impl &core-eq-impl &core-len-map-impl
+            def &core-map-impls $ [] &core-map-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-map-impl
           :examples $ []
         |&core-map-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -247,13 +215,9 @@
               :to-pairs to-pairs
               :values vals
           :examples $ []
-        |&core-multiply-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Multiply on number")
-          :code $ quote
-            defrecord! &core-multiply-number-impl $ :multiply &*
-          :examples $ []
         |&core-number-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for number")
           :code $ quote
-            def &core-number-impls $ [] &core-number-methods &core-show-impl &core-eq-impl &core-add-number-impl &core-multiply-number-impl
+            def &core-number-impls $ [] &core-number-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-number-impl internal/&core-multiply-number-impl
           :examples $ []
         |&core-number-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -273,7 +237,7 @@
           :examples $ []
         |&core-set-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for set")
           :code $ quote
-            def &core-set-impls $ [] &core-set-methods &core-show-impl &core-eq-impl &core-len-set-impl
+            def &core-set-impls $ [] &core-set-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-set-impl
           :examples $ []
         |&core-set-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -292,13 +256,9 @@
               :to-set identity
               :union union
           :examples $ []
-        |&core-show-impl $ %{} :CodeEntry (:doc "|Core trait impl for Show")
-          :code $ quote
-            defrecord! &core-show-impl $ :show &str
-          :examples $ []
         |&core-string-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for string")
           :code $ quote
-            def &core-string-impls $ [] &core-string-methods &core-show-impl &core-eq-impl &core-add-string-impl &core-len-string-impl
+            def &core-string-impls $ [] &core-string-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-string-impl internal/&core-len-string-impl
           :examples $ []
         |&core-string-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -368,36 +328,6 @@
           :examples $ []
         |&extract-code-into-edn $ %{} :CodeEntry (:doc "|internal function for extracting code into EDN\nSyntax: (&extract-code-into-edn code)\nParams: code (quoted code)\nReturns: EDN data structure\nExtracts code structure into EDN format for serialization")
           :code $ quote &runtime-inplementation
-          :examples $ []
-        |&field-match-internal $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defmacro &field-match-internal (value & body)
-              if (&list:empty? body)
-                quasiquote $ eprintln "|[Warn] field-match found no matched case, missing `_` case?" ~value
-                &let
-                  pair $ first body
-                  if
-                    not $ list? pair
-                    raise $ str-spaced "|field-match expected arm in list, got:" pair
-                  let
-                      pattern $ &list:nth pair 0
-                    assert "|expected literal or symbol as tag" $ or (tag? pattern) (symbol? pattern)
-                    if (&= pattern '_)
-                      &let ()
-                        assert "|field-match expected a branch after `_`" $ &= 2 (&list:count pair)
-                        if
-                          not $ &= 1 (&list:count body)
-                          eprintln "|[Warn] expected `_` beginning last branch of field-match"
-                        &list:nth pair 1
-                      &let ()
-                        assert "|field-match expected an with (tag new-name body)" $ &= 3 (&list:count pair)
-                        quasiquote $ if
-                          &= ~pattern $ &map:get ~value :tag
-                          &let
-                              ~ $ &list:nth pair 1
-                              , ~value
-                            ~ $ &list:nth pair 2
-                          &field-match-internal ~value $ ~@ (&list:rest body)
           :examples $ []
         |&format-ternary-tree $ %{} :CodeEntry (:doc "|internal function for formatting ternary tree\nSyntax: (&format-ternary-tree tree)\nParams: tree (ternary tree structure)\nReturns: formatted string\nFormats internal ternary tree data structure for debugging")
           :code $ quote &runtime-inplementation
@@ -893,38 +823,6 @@
             quote $ &struct::new :Person ([] :name :string) ([] :age :number)
         |&struct:with-impls $ %{} :CodeEntry (:doc "|internal function for struct with impls operation\nSyntax: (&struct:with-impls struct impls)\nParams: struct (struct), impls (record)\nReturns: struct with trait implementations\nAttaches impls info to a struct definition")
           :code $ quote &runtime-inplementation
-          :examples $ []
-        |&tag-match-internal $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defmacro &tag-match-internal (value t & body)
-              if (&list:empty? body)
-                quasiquote $ raise (str-spaced "|tag-match found no matched case, missing `_` for" ~value)
-                &let
-                  pair $ &list:first body
-                  if
-                    not $ and (list? pair)
-                      &= 2 $ &list:count pair
-                    raise $ str-spaced "|tag-match expected pairs, got:" pair
-                  let
-                      pattern $ &list:nth pair 0
-                      branch $ &list:nth pair 1
-                    if (list? pattern)
-                      &let
-                        k $ &list:first pattern
-                        &let
-                          size $ &list:count pattern
-                          quasiquote $ if
-                            if (identical? ~t ~k)
-                              identical? ~size $ &tuple:count ~value
-                              , false
-                            let
-                              ~ $ map-indexed (&list:rest pattern)
-                                defn %tag-match (idx x)
-                                  [] x $ quasiquote
-                                    &tuple:nth ~value $ ~ (inc idx)
-                              , ~branch
-                            &tag-match-internal ~value ~t $ ~@ (&list:rest body)
-                      if (&= pattern '_) branch $ raise (str-spaced "|unknown supported pattern:" pair)
           :examples $ []
         |&trait::new $ %{} :CodeEntry (:doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value")
           :code $ quote &runtime-inplementation
@@ -1761,53 +1659,23 @@
             defmacro deftrait (name & methods)
               assert "|deftrait expects (method type) pairs" $ every? methods list?
               &let
-                normalize-trait-type $ fn (t0)
-                  if (list? t0)
+                normalized $ map methods
+                  fn (entry)
                     &let
-                      size $ &list:count t0
-                      &let
-                        head $ &list:first t0
-                        &let
-                          second $ if (&>= size 2) (&list:nth t0 1) nil
-                          &let
-                            third $ if (&>= size 3) (&list:nth t0 2) nil
-                            &let
-                              wrap-list $ fn (x)
-                                if (list? x) x $ [] x
-                              if
-                                and (tag? head) (&= head :fn) (&= size 3)
-                                [] :fn ([]) (wrap-list second) (&list:nth t0 2)
-                                if
-                                  and (tag? head) (&= head :fn) (&= size 4)
-                                  [] :fn (wrap-list second) (wrap-list third) (&list:nth t0 3)
-                                  if
-                                    and (tag? second) (&= second :fn) (&= size 4)
-                                    [] head second ([]) (wrap-list third) (&list:nth t0 3)
-                                    if
-                                      and (tag? second) (&= second :fn) (&= size 5)
-                                      [] head second (wrap-list third)
-                                        wrap-list $ &list:nth t0 3
-                                        &list:nth t0 4
-                                      , t0
-                    , t0
-                &let
-                  normalized $ map methods
-                    fn (entry)
-                      &let
-                        items $ if
-                          &= [] $ &list:first entry
-                          &list:rest entry
-                          , entry
-                        assert "|deftrait expects (method type) pairs" $ &= 2 (count items)
-                        let
-                            m0 $ &list:first items
-                            t0 $ &list:nth items 1
-                            t1 $ normalize-trait-type t0
-                          quasiquote $ [] ~m0 (quote ~t1)
-                  quasiquote $ def ~name
-                    &trait::new
-                      ~ $ turn-tag name
-                      [] ~@normalized
+                      items $ if
+                        &= [] $ &list:first entry
+                        &list:rest entry
+                        , entry
+                      assert "|deftrait expects (method type) pairs" $ &= 2 (count items)
+                      let
+                          m0 $ &list:first items
+                          t0 $ &list:nth items 1
+                          t1 $ internal/normalize-trait-type t0
+                        quasiquote $ [] ~m0 (quote ~t1)
+                quasiquote $ def ~name
+                  &trait::new
+                    ~ $ turn-tag name
+                    [] ~@normalized
           :examples $ []
         |deref $ %{} :CodeEntry (:doc "|Reads the current value stored in a reference\nSupports Calcit atoms as well as other host structures that implement deref.")
           :code $ quote
@@ -1998,10 +1866,10 @@
                     v# $ gensym |v
                     quasiquote $ &let (~v# ~value)
                       assert "|expected map value to match" $ map? ~v#
-                      &field-match-internal ~v# ~@body
+                      internal/&field-match-internal ~v# ~@body
                   quasiquote $ &let ()
                     assert "|expected map value to match" $ map? ~value
-                    &field-match-internal ~value ~@body
+                    internal/&field-match-internal ~value ~@body
           :examples $ []
         |filter $ %{} :CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
           :code $ quote
@@ -3159,7 +3027,7 @@
                       &let
                         ~t# $ &tuple:nth ~v# 0
                         &tuple:validate-enum ~v# ~t#
-                        &tag-match-internal ~v# ~t# $ ~@ body
+                        internal/&tag-match-internal ~v# ~t# $ ~@ body
           :examples $ []
             quote $ assert= 11
               tag-match (:: :ok 1)
@@ -3537,6 +3405,140 @@
         :examples $ []
     |calcit.internal $ %{} :FileEntry
       :defs $ {}
+        |&core-add-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on list")
+          :code $ quote
+            defrecord! &core-add-list-impl $ :add &list:concat
+          :examples $ []
+        |&core-add-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on number")
+          :code $ quote
+            defrecord! &core-add-number-impl $ :add &+
+          :examples $ []
+        |&core-add-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on string")
+          :code $ quote
+            defrecord! &core-add-string-impl $ :add &str:concat
+          :examples $ []
+        |&core-eq-impl $ %{} :CodeEntry (:doc "|Core trait impl for Eq")
+          :code $ quote
+            defrecord! &core-eq-impl $ :eq? &=
+          :examples $ []
+        |&core-len-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on list")
+          :code $ quote
+            defrecord! &core-len-list-impl $ :len &list:count
+          :examples $ []
+        |&core-len-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on map")
+          :code $ quote
+            defrecord! &core-len-map-impl $ :len &map:count
+          :examples $ []
+        |&core-len-set-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on set")
+          :code $ quote
+            defrecord! &core-len-set-impl $ :len &set:count
+          :examples $ []
+        |&core-len-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on string")
+          :code $ quote
+            defrecord! &core-len-string-impl $ :len &str:count
+          :examples $ []
+        |&core-multiply-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Multiply on number")
+          :code $ quote
+            defrecord! &core-multiply-number-impl $ :multiply &*
+          :examples $ []
+        |&core-show-impl $ %{} :CodeEntry (:doc "|Core trait impl for Show")
+          :code $ quote
+            defrecord! &core-show-impl $ :show &str
+          :examples $ []
+        |&field-match-internal $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defmacro &field-match-internal (value & body)
+              if (&list:empty? body)
+                quasiquote $ eprintln "|[Warn] field-match found no matched case, missing `_` case?" ~value
+                &let
+                  pair $ first body
+                  if
+                    not $ list? pair
+                    raise $ str-spaced "|field-match expected arm in list, got:" pair
+                  let
+                      pattern $ &list:nth pair 0
+                    assert "|expected literal or symbol as tag" $ or (tag? pattern) (symbol? pattern)
+                    if (&= pattern '_)
+                      &let ()
+                        assert "|field-match expected a branch after `_`" $ &= 2 (&list:count pair)
+                        if
+                          not $ &= 1 (&list:count body)
+                          eprintln "|[Warn] expected `_` beginning last branch of field-match"
+                        &list:nth pair 1
+                      &let ()
+                        assert "|field-match expected an with (tag new-name body)" $ &= 3 (&list:count pair)
+                        quasiquote $ if
+                          &= ~pattern $ &map:get ~value :tag
+                          &let
+                              ~ $ &list:nth pair 1
+                              , ~value
+                            ~ $ &list:nth pair 2
+                          &field-match-internal ~value $ ~@ (&list:rest body)
+          :examples $ []
+        |&tag-match-internal $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defmacro &tag-match-internal (value t & body)
+              if (&list:empty? body)
+                quasiquote $ raise (str-spaced "|tag-match found no matched case, missing `_` for" ~value)
+                &let
+                  pair $ &list:first body
+                  if
+                    not $ and (list? pair)
+                      &= 2 $ &list:count pair
+                    raise $ str-spaced "|tag-match expected pairs, got:" pair
+                  let
+                      pattern $ &list:nth pair 0
+                      branch $ &list:nth pair 1
+                    if (list? pattern)
+                      &let
+                        k $ &list:first pattern
+                        &let
+                          size $ &list:count pattern
+                          quasiquote $ if
+                            if (identical? ~t ~k)
+                              identical? ~size $ &tuple:count ~value
+                              , false
+                            let
+                              ~ $ map-indexed (&list:rest pattern)
+                                defn %tag-match (idx x)
+                                  [] x $ quasiquote
+                                    &tuple:nth ~value $ ~ (inc idx)
+                              , ~branch
+                            &tag-match-internal ~value ~t $ ~@ (&list:rest body)
+                      if (&= pattern '_) branch $ raise (str-spaced "|unknown supported pattern:" pair)
+          :examples $ []
+        |normalize-trait-type $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn normalize-trait-type (t0)
+              if (list? t0)
+                &let
+                  size $ &list:count t0
+                  &let
+                    head $ &list:first t0
+                    &let
+                      second $ if (&>= size 2) (&list:nth t0 1) nil
+                      &let
+                        third $ if (&>= size 3) (&list:nth t0 2) nil
+                        &let
+                          wrap-list $ fn (x)
+                            if (list? x) x $ [] x
+                          if
+                            and (tag? head) (&= head :fn) (&= size 3)
+                            [] :fn ([]) (wrap-list second) (&list:nth t0 2)
+                            if
+                              and (tag? head) (&= head :fn) (&= size 4)
+                              [] :fn (wrap-list second) (wrap-list third) (&list:nth t0 3)
+                              if
+                                and (tag? second) (&= second :fn) (&= size 4)
+                                [] head second ([]) (wrap-list third) (&list:nth t0 3)
+                                if
+                                  and (tag? second) (&= second :fn) (&= size 5)
+                                  [] head second (wrap-list third)
+                                    wrap-list $ &list:nth t0 3
+                                    &list:nth t0 4
+                                  , t0
+                , t0
+          :examples $ []
       :ns $ %{} :CodeEntry (:doc "|internal function and macros for `calcit.core`")
         :code $ quote
           ns calcit.internal $ :require
