@@ -1606,7 +1606,6 @@ let calcit_builtin_impls = {
   set: null as CalcitRecord,
   list: null as CalcitRecord,
   map: null as CalcitRecord,
-  nil: null as CalcitRecord,
   fn: null as CalcitRecord,
 };
 
@@ -1640,9 +1639,6 @@ function lookup_impls(obj: CalcitValue): [CalcitRecord[], string] {
   } else if (obj instanceof CalcitSet) {
     tag = "&core-set-methods";
     impls = [calcit_builtin_impls.set];
-  } else if (obj == null) {
-    tag = "&core-nil-methods";
-    impls = [calcit_builtin_impls.nil];
   } else if (typeof obj === "number") {
     tag = "&core-number-methods";
     impls = [calcit_builtin_impls.number];
@@ -1665,7 +1661,8 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   }
   let impls = pair[0];
   let tag = pair[1];
-  for (let klass of impls) {
+  for (let idx = impls.length - 1; idx >= 0; idx -= 1) {
+    let klass = impls[idx];
     if (klass == null) {
       continue;
     }

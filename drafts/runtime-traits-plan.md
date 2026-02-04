@@ -145,6 +145,13 @@ let
 2. **类型的内置 Trait 实现** - 如 `number` 自动拥有 `Add`
 3. **calcit.core 的默认实现** - 兜底行为
 
+实现存储与查找策略（当前约定）：
+
+- `impl` 保存在数组中，定义更早的在前。
+- `with-traits` 会创建新值，追加实现，不影响原值（Calcit 不可变数据）。
+- 方法查找从数组尾部向前扫描，先命中先调用（后添加覆盖先添加）。
+- 可选替代：在 `with-traits` 执行时为 record/enum 维护方法 hashmap，后写覆盖前写。
+
 ```cirru
 ; 分派示例
 .show 42        ; → 查找 number 的 Show 实现 → "42"
@@ -157,20 +164,18 @@ Show/show 42
 
 ### 内置类型的 Trait 实现映射
 
-| 类型     | Show | Inspect | Eq  | Compare | Add | Multiply | Len | Foldable | Mappable | Hash |
-| -------- | ---- | ------- | --- | ------- | --- | -------- | --- | -------- | -------- | ---- |
-| `nil`    | ✓    | ✓       | ✓   | -       | -   | -        | -   | -        | -        | ✓    |
-| `bool`   | ✓    | ✓       | ✓   | -       | -   | -        | -   | -        | -        | ✓    |
-| `number` | ✓    | ✓       | ✓   | ✓       | ✓   | ✓        | -   | -        | -        | ✓    |
-| `string` | ✓    | ✓       | ✓   | ✓       | ✓   | -        | ✓   | ✓        | ✓        | ✓    |
-| `tag`    | ✓    | ✓       | ✓   | ✓       | -   | -        | -   | -        | -        | ✓    |
-| `symbol` | ✓    | ✓       | ✓   | -       | -   | -        | -   | -        | -        | ✓    |
-| `list`   | ✓    | ✓       | ✓   | ✓       | ✓   | -        | ✓   | ✓        | ✓        | ✓    |
-| `map`    | ✓    | ✓       | ✓   | -       | -   | -        | ✓   | ✓        | ✓        | ✓    |
-| `set`    | ✓    | ✓       | ✓   | -       | -   | -        | ✓   | ✓        | ✓        | ✓    |
-| `tuple`  | ✓    | ✓       | ✓   | -       | -   | -        | ✓   | -        | -        | ✓    |
-| `record` | ✓    | ✓       | ✓   | -       | -   | -        | ✓   | -        | -        | ✓    |
-| `fn`     | ✓    | ✓       | -   | -       | -   | -        | -   | -        | -        | -    |
+- `nil`: Show, Inspect, Eq, Hash
+- `bool`: Show, Inspect, Eq, Hash
+- `number`: Show, Inspect, Eq, Compare, Add, Multiply, Hash
+- `string`: Show, Inspect, Eq, Compare, Add, Len, Foldable, Mappable, Hash
+- `tag`: Show, Inspect, Eq, Compare, Hash
+- `symbol`: Show, Inspect, Eq, Hash
+- `list`: Show, Inspect, Eq, Compare, Add, Len, Foldable, Mappable, Hash
+- `map`: Show, Inspect, Eq, Len, Foldable, Mappable, Hash
+- `set`: Show, Inspect, Eq, Len, Foldable, Mappable, Hash
+- `tuple`: Show, Inspect, Eq, Len, Hash
+- `record`: Show, Inspect, Eq, Len, Hash
+- `fn`: Show, Inspect
 
 ### 实施阶段（对照当前进度）
 

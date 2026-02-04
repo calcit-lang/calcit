@@ -1,7 +1,7 @@
 
 {} (:package |app)
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
-    :modules $ [] |./test-cond.cirru |./test-hygienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-edn.cirru |./test-js.cirru |./test-record.cirru |./test-nil.cirru |./test-fn.cirru |./test-tuple.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-traits.cirru |./util.cirru
+    :modules $ [] |./test-cond.cirru |./test-hygienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-edn.cirru |./test-js.cirru |./test-record.cirru |./test-fn.cirru |./test-tuple.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-traits.cirru |./util.cirru
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
@@ -48,7 +48,6 @@
               test-string/main!
               test-edn/main!
               test-record/main!
-              test-nil/main!
               test-fn/main!
               test-tuple/main!
               test-algebra/main!

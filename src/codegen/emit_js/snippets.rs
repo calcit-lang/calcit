@@ -109,7 +109,6 @@ $procs.register_calcit_builtin_impls({{
   number: _$n_core_number_methods,
   set: _$n_core_set_methods,
   string: _$n_core_string_methods,
-  nil: _$n_core_nil_methods,
   fn: _$n_core_fn_methods,
 }});
 

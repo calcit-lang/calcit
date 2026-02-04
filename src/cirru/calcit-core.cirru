@@ -164,20 +164,6 @@
               :to-map identity
               :to-pairs to-pairs
               :values vals
-        |&core-nil-methods $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defrecord! &core-nil-methods
-              :to-list $ defn &nil:to-list (_) ([])
-              :to-map $ defn &nil:to-map (_) (&{})
-              :pairs-map $ defn &nil:pairs-map (_) (&{})
-              :to-set $ defn &nil:to-set (_) (#{})
-              :to-string $ defn &nil:to-string (_) |
-              :to-number $ defn &nil:to-number (_) 0
-              :map $ defn &nil:map (_ _f) nil
-              :filter $ defn &nil:filter (_ _f) nil
-              :bind $ defn &nil:bind (_ _f) nil
-              :mappend $ defn &nil:mappend (_ x) x
-              :apply $ defn &nil:apply (_ _f) nil
         |&core-number-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             defrecord! &core-number-methods (:ceil ceil)
@@ -311,9 +297,6 @@
         |&core-set-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for set")
           :code $ quote
             def &core-set-impls $ [] &core-set-methods &core-show-impl &core-eq-impl &core-len-set-impl
-        |&core-nil-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for nil")
-          :code $ quote
-            def &core-nil-impls $ [] &core-nil-methods &core-show-impl &core-eq-impl
         |&core-fn-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for fn")
           :code $ quote
             def &core-fn-impls $ [] &core-fn-methods &core-show-impl
@@ -366,7 +349,7 @@
                           &field-match-internal ~value $ ~@ (&list:rest body)
         |&init-builtin-impls! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-nil-impls) (identity &core-fn-impls)
+            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls)
         |&list-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro &list-match-internal (v branch1 pair branch2)

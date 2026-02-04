@@ -973,10 +973,6 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
       let class = &runner::evaluate_symbol_from_program("&core-set-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(class, v0, name, method_args, call_stack)
     }
-    Nil => {
-      let class = runner::evaluate_symbol_from_program("&core-nil-impls", calcit::CORE_NS, None, call_stack)?;
-      method_call(&class, v0, name, method_args, call_stack)
-    }
     Fn { .. } | Proc(..) => {
       let class = runner::evaluate_symbol_from_program("&core-fn-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
@@ -1043,7 +1039,7 @@ fn method_call_impls(
       call_stack,
     ));
   }
-  for imp in impls {
+  for imp in impls.iter().rev() {
     if imp.get(name).is_some() {
       return method_record(imp, v0, name, method_args, call_stack);
     }
@@ -1328,7 +1324,6 @@ pub fn inspect_impl_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result
     Calcit::Number(..) => runner::evaluate_symbol_from_program("&core-number-impls", calcit::CORE_NS, None, call_stack),
     Calcit::Str(..) => runner::evaluate_symbol_from_program("&core-string-impls", calcit::CORE_NS, None, call_stack),
     Calcit::Set(..) => runner::evaluate_symbol_from_program("&core-set-impls", calcit::CORE_NS, None, call_stack),
-    Calcit::Nil => runner::evaluate_symbol_from_program("&core-nil-impls", calcit::CORE_NS, None, call_stack),
     Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol_from_program("&core-fn-impls", calcit::CORE_NS, None, call_stack),
     _ => Ok(Calcit::Nil),
   };

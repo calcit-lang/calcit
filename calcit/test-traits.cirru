@@ -36,7 +36,6 @@
               println "|Testing Show trait..."
 
               ; All types should be showable
-              assert= | $ str nil
               assert= "|true" $ str true
               assert= "|false" $ str false
               assert= "|42" $ str 42
@@ -80,7 +79,6 @@
               println "|Testing Eq trait..."
 
               ; Value equality
-              assert= true $ = nil nil
               assert= true $ = 1 1
               assert= true $ = |hello |hello
               assert= true $ = :tag :tag
