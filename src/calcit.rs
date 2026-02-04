@@ -779,6 +779,7 @@ impl From<&TernaryTreeList<Calcit>> for Calcit {
 }
 
 pub const CORE_NS: &str = "calcit.core";
+pub const CALCIT_INTERNAL_NS: &str = "calcit.internal";
 pub const BUILTIN_IMPLS_ENTRY: &str = "&init-builtin-impls!";
 pub const GEN_NS: &str = "calcit.gen";
 pub const GENERATED_DEF: &str = "gen%";
