@@ -141,7 +141,7 @@
           :examples $ []
         |&core-list-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for list")
           :code $ quote
-            def &core-list-impls $ [] &core-list-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-list-impl internal/&core-len-list-impl
+            def &core-list-impls $ [] &core-list-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-list-impl internal/&core-len-list-impl internal/&core-mappable-list-impl
           :examples $ []
         |&core-list-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -192,7 +192,7 @@
           :examples $ []
         |&core-map-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for map")
           :code $ quote
-            def &core-map-impls $ [] &core-map-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-map-impl
+            def &core-map-impls $ [] &core-map-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-len-map-impl internal/&core-mappable-map-impl
           :examples $ []
         |&core-map-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1057,6 +1057,11 @@
             deftrait Len $ :len
               :: :fn ('T) ('T) :number
           :examples $ []
+        |Mappable $ %{} :CodeEntry (:doc "|Core trait: Mappable")
+          :code $ quote
+            deftrait Mappable $ :map
+              :: :fn ('T) ('T :fn) 'T
+          :examples $ []
         |Multiply $ %{} :CodeEntry (:doc "|Core trait: Multiply")
           :code $ quote
             deftrait Multiply $ :multiply
@@ -1566,6 +1571,38 @@
                   ~@ normalized
           :examples $ []
             quote $ defenum Result (:ok :number) (:err :string)
+        |Option $ %{} :CodeEntry (:doc "|Rust-style Option enum")
+          :code $ quote
+            defenum Option
+              :some :dynamic
+              :none
+          :examples $ []
+        |Result $ %{} :CodeEntry (:doc "|Rust-style Result enum")
+          :code $ quote
+            defenum Result
+              :ok :dynamic
+              :err :dynamic
+          :examples $ []
+        |%some $ %{} :CodeEntry (:doc "|Create Some variant of Option")
+          :code $ quote
+            defn %some (value)
+              %:: Option :some value
+          :examples $ []
+        |%none $ %{} :CodeEntry (:doc "|Create None variant of Option")
+          :code $ quote
+            defn %none ()
+              %:: Option :none
+          :examples $ []
+        |%ok $ %{} :CodeEntry (:doc "|Create Ok variant of Result")
+          :code $ quote
+            defn %ok (value)
+              %:: Result :ok value
+          :examples $ []
+        |%err $ %{} :CodeEntry (:doc "|Create Err variant of Result")
+          :code $ quote
+            defn %err (message)
+              %:: Result :err message
+          :examples $ []
         |defmacro $ %{} :CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -3428,6 +3465,14 @@
         |&core-len-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on map")
           :code $ quote
             defrecord! &core-len-map-impl $ :len &map:count
+          :examples $ []
+        |&core-mappable-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Mappable on list")
+          :code $ quote
+            defrecord! &core-mappable-list-impl $ :map &list:map
+          :examples $ []
+        |&core-mappable-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Mappable on map")
+          :code $ quote
+            defrecord! &core-mappable-map-impl $ :map &map:map
           :examples $ []
         |&core-len-set-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on set")
           :code $ quote

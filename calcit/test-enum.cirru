@@ -5,9 +5,9 @@
   :files $ {}
     |test-enum.main $ %{} :FileEntry
       :defs $ {}
-        |Result $ %{} :CodeEntry (:doc |)
+        |Result0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum Result
+            defenum Result0
               :err :string
               :ok
         |ResultTrait $ %{} :CodeEntry (:doc |)
@@ -34,23 +34,23 @@
               println "|Testing enum tuple creation..."
               ; Valid tuple creation
               let
-                  valid-ok $ %:: Result :ok
+                  valid-ok $ %:: Result0 :ok
                 assert= :ok $ &tuple:nth valid-ok 0
                 let
                     ok-impl $ with-traits valid-ok ResultImpl
                   assert= ResultImpl $ &list:first $ &tuple:impls ok-impl
-                  assert= "|(%:: :ok (:impls ResultImpl) (:enum Result))" $ str ok-impl
+                  assert= "|(%:: :ok (:impls ResultImpl) (:enum Result0))" $ str ok-impl
               let
-                  valid-err $ %:: Result :err |error-msg
+                  valid-err $ %:: Result0 :err |error-msg
                 assert= :err $ &tuple:nth valid-err 0
                 assert= true $ tuple? valid-err
               ; Test invalid tag (should fail - uncomment to see error)
               ; let
-                  invalid $ %:: Result :invalid
+                  invalid $ %:: Result0 :invalid
                 raise "|Should have failed with invalid tag"
               ; Test wrong arity (should fail - uncomment to see error)
               ; let
-                  wrong-arity $ %:: Result :ok |extra
+                  wrong-arity $ %:: Result0 :ok |extra
                 raise "|Should have failed with wrong arity"
               println "|✓ Enum creation validation passed"
         |test-tag-match-validation $ %{} :CodeEntry (:doc |)
@@ -58,7 +58,7 @@
             defn test-tag-match-validation () $ do
               println "|Testing tag-match runtime validation..."
               let
-                  result $ %:: Result :ok
+                  result $ %:: Result0 :ok
                   v $ tag-match result
                     (:ok) :ok
                     _ :unknown
