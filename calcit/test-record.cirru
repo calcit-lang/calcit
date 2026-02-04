@@ -6,7 +6,9 @@
       :defs $ {}
         |BirdClass $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait BirdTrait :show :rename
+            deftrait BirdTrait
+              :show (:: :fn ('T) ('T) :nil)
+              :rename (:: :fn ('T) ('T :string) 'T)
         |BirdImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             def BirdImpl $ defrecord! BirdImpl

@@ -35,10 +35,12 @@ impl Eq for CalcitTrait {}
 
 impl CalcitTrait {
   /// Create a new trait with the given name and methods
-  pub fn new(name: EdnTag, methods: Vec<EdnTag>) -> Self {
+  pub fn new(name: EdnTag, methods: Vec<EdnTag>, method_types: Vec<Arc<CalcitTypeAnnotation>>) -> Self {
     let defaults = vec![None; methods.len()];
-    let dynamic = Arc::new(CalcitTypeAnnotation::Dynamic);
-    let method_types = vec![dynamic; methods.len()];
+    assert!(
+      methods.len() == method_types.len(),
+      "CalcitTrait::new expects method_types to match methods length"
+    );
     CalcitTrait {
       name,
       methods: Arc::new(methods),

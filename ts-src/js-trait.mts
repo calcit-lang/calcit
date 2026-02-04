@@ -4,10 +4,12 @@ import { CalcitValue } from "./js-primes.mjs";
 export class CalcitTrait {
   name: CalcitTag;
   methods: CalcitTag[];
+  methodTypes: CalcitValue[];
 
-  constructor(name: CalcitValue, methods: CalcitValue[]) {
+  constructor(name: CalcitValue, methods: CalcitValue[], methodTypes: CalcitValue[]) {
     this.name = castTag(name);
     this.methods = methods.map(castTag);
+    this.methodTypes = methodTypes;
   }
 
   toString(disableJsDataWarning: boolean = false): string {

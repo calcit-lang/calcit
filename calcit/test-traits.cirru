@@ -51,7 +51,8 @@
 
         |MyFoo $ %{} :CodeEntry (:doc "|Trait for deftrait test")
           :code $ quote
-            deftrait MyFoo :foo
+            deftrait MyFoo
+              :foo (:: :fn ('T) ('T) :string)
           :examples $ []
 
         |MyFooImpl $ %{} :CodeEntry (:doc "|Trait impl for deftrait test")

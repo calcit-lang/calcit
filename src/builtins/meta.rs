@@ -529,6 +529,30 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&trait::new expected 2 arguments, but received:", xs);
   }
+  fn normalize_type_form(form: &Calcit) -> Calcit {
+    match form {
+      Calcit::List(list) => {
+        let mut items: Vec<Calcit> = list.iter().map(normalize_type_form).collect();
+        let is_list_literal = matches!(items.first(), Some(Calcit::Proc(CalcitProc::List)))
+          || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "[]");
+        if is_list_literal {
+          items.remove(0);
+        }
+        Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
+      }
+      Calcit::Tuple(tuple) => {
+        let extra = tuple.extra.iter().map(normalize_type_form).collect::<Vec<_>>();
+        Calcit::Tuple(CalcitTuple {
+          tag: tuple.tag.to_owned(),
+          extra,
+          impls: tuple.impls.to_owned(),
+          sum_type: tuple.sum_type.to_owned(),
+        })
+      }
+      _ => form.to_owned(),
+    }
+  }
+
   let name = match &xs[0] {
     Calcit::Symbol { sym, .. } => cirru_edn::EdnTag::new(sym.as_ref()),
     Calcit::Tag(tag) => tag.to_owned(),
@@ -539,31 +563,93 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       );
     }
   };
-  let methods = match &xs[1] {
+  fn contains_dynamic(annotation: &CalcitTypeAnnotation) -> bool {
+    use CalcitTypeAnnotation as T;
+    match annotation {
+      T::Dynamic => true,
+      T::List(inner) | T::Set(inner) | T::Ref(inner) | T::Variadic(inner) | T::Optional(inner) => contains_dynamic(inner),
+      T::Map(k, v) => contains_dynamic(k) || contains_dynamic(v),
+      T::Fn(info) => info.arg_types.iter().any(|t| contains_dynamic(t)) || contains_dynamic(info.return_type.as_ref()),
+      T::AppliedStruct { args, .. } => args.iter().any(|t| contains_dynamic(t)),
+      _ => false,
+    }
+  }
+
+  let (methods, method_types) = match &xs[1] {
     Calcit::List(list) => {
       let mut items = Vec::with_capacity(list.len());
+      let mut types = Vec::with_capacity(list.len());
       for item in list.iter() {
         match item {
-          Calcit::Tag(tag) => items.push(tag.to_owned()),
-          Calcit::Symbol { sym, .. } => items.push(cirru_edn::EdnTag::new(sym.as_ref())),
+          Calcit::List(entry) => {
+            if entry.len() != 2 {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!("&trait::new expects (method type) pairs, but received: {item}"),
+              );
+            }
+            let name = match entry.first().unwrap() {
+              Calcit::Tag(tag) => tag.to_owned(),
+              Calcit::Symbol { sym, .. } => cirru_edn::EdnTag::new(sym.as_ref()),
+              other => {
+                return CalcitErr::err_str(
+                  CalcitErrKind::Type,
+                  format!("&trait::new expects method names as tags/symbols, but received: {other}"),
+                );
+              }
+            };
+            let type_form = entry.get(1).unwrap();
+            let type_form_value = match type_form {
+              Calcit::CirruQuote(ys) => cirru_to_calcit(ys),
+              _ => type_form.to_owned(),
+            };
+            let type_form_value = normalize_type_form(&type_form_value);
+            let method_type = CalcitTypeAnnotation::parse_type_annotation_form(&type_form_value);
+            if matches!(method_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!("&trait::new does not allow Dynamic in method signatures, use :fn (DynFn) if needed: {type_form_value}"),
+              );
+            }
+            if !matches!(method_type.as_ref(), CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn) {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!("&trait::new expects method type to be :fn or (:: :fn ...), but received: {type_form_value}"),
+              );
+            }
+            if matches!(method_type.as_ref(), CalcitTypeAnnotation::Fn(_)) && contains_dynamic(method_type.as_ref()) {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!("&trait::new does not allow Dynamic inside method signatures: {type_form_value}"),
+              );
+            }
+            items.push(name);
+            types.push(method_type);
+          }
+          Calcit::Tag(_) | Calcit::Symbol { .. } => {
+            return CalcitErr::err_str(
+              CalcitErrKind::Type,
+              format!("&trait::new expects (method type) pairs, but received method name without type: {item}"),
+            );
+          }
           other => {
             return CalcitErr::err_str(
               CalcitErrKind::Type,
-              format!("&trait::new expects method names as tags/symbols, but received: {other}"),
+              format!("&trait::new expects (method type) pairs, but received: {other}"),
             );
           }
         }
       }
-      items
+      (items, types)
     }
     other => {
       return CalcitErr::err_str(
         CalcitErrKind::Type,
-        format!("&trait::new expects a list of method names, but received: {other}"),
+        format!("&trait::new expects a list of method specs, but received: {other}"),
       );
     }
   };
-  Ok(Calcit::Trait(CalcitTrait::new(name, methods)))
+  Ok(Calcit::Trait(CalcitTrait::new(name, methods, method_types)))
 }
 
 fn collect_trait_records(xs: &[Calcit], proc_name: &str) -> Result<Vec<Arc<CalcitRecord>>, CalcitErr> {

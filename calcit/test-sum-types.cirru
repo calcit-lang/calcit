@@ -11,7 +11,8 @@
               :err :string
         |ActionImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait ActionTrait :describe
+            deftrait ActionTrait
+              :describe (:: :fn ('T) ('T) :string)
             defrecord! ActionImpl
               :describe $ fn (self)
                 tag-match self

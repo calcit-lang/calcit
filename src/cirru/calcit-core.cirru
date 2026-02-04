@@ -238,19 +238,24 @@
               :mappend &str:concat
         |Show $ %{} :CodeEntry (:doc "|Core trait: Show")
           :code $ quote
-            deftrait Show :show
+            deftrait Show
+              :show (:: :fn ('T) ('T) :string)
         |Eq $ %{} :CodeEntry (:doc "|Core trait: Eq")
           :code $ quote
-            deftrait Eq :eq?
+            deftrait Eq
+              :eq? (:: :fn ('T) ('T 'T) :bool)
         |Add $ %{} :CodeEntry (:doc "|Core trait: Add")
           :code $ quote
-            deftrait Add :add
+            deftrait Add
+              :add (:: :fn ('T) ('T 'T) 'T)
         |Multiply $ %{} :CodeEntry (:doc "|Core trait: Multiply")
           :code $ quote
-            deftrait Multiply :multiply
+            deftrait Multiply
+              :multiply (:: :fn ('T) ('T 'T) 'T)
         |Len $ %{} :CodeEntry (:doc "|Core trait: Len")
           :code $ quote
-            deftrait Len :len
+            deftrait Len
+              :len (:: :fn ('T) ('T) :number)
         |&core-show-impl $ %{} :CodeEntry (:doc "|Core trait impl for Show")
           :code $ quote
             defrecord! &core-show-impl
@@ -1264,14 +1269,63 @@
                   ~@ normalized
           :examples $ []
             quote $ defenum Result (:ok :number) (:err :string)
-        |deftrait $ %{} :CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name :method1 :method2 ...)\nParams: Name (symbol/tag), methods (list of tags)\nReturns: trait definition value\nExpands to &trait::new")
+        |deftrait $ %{} :CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name (:method (:: :fn (args...) return)) ...)\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new")
           :code $ quote
             defmacro deftrait (name & methods)
-              quasiquote
-                def ~name
-                  &trait::new
-                    ~ $ turn-tag name
-                    [] ~@methods
+              assert "|deftrait expects (method type) pairs" $ every? methods list?
+              &let
+                normalize-trait-type $ fn (t0)
+                  if (list? t0)
+                    &let
+                      size $ &list:count t0
+                      &let
+                        head $ &list:first t0
+                        &let
+                          second $ if
+                            &>= size 2
+                            &list:nth t0 1
+                            , nil
+                          &let
+                            third $ if
+                              &>= size 3
+                              &list:nth t0 2
+                              , nil
+                            &let
+                              wrap-list $ fn (x)
+                                if (list? x) x ([] x)
+                              if
+                                and (tag? head) (&= head :fn) (&= size 3)
+                                [] :fn ([]) (wrap-list second) (&list:nth t0 2)
+                                if
+                                  and (tag? head) (&= head :fn) (&= size 4)
+                                  [] :fn (wrap-list second) (wrap-list third) (&list:nth t0 3)
+                                  if
+                                    and (tag? second) (&= second :fn) (&= size 4)
+                                    [] head second ([]) (wrap-list third) (&list:nth t0 3)
+                                    if
+                                      and (tag? second) (&= second :fn) (&= size 5)
+                                      [] head second (wrap-list third) (wrap-list (&list:nth t0 3)) (&list:nth t0 4)
+                                      , t0
+                    , t0
+                &let
+                  normalized $ map methods
+                    fn (entry)
+                      &let
+                        items $ if
+                          &= [] $ &list:first entry
+                          &list:rest entry
+                          , entry
+                        assert "|deftrait expects (method type) pairs" $ &= 2 $ count items
+                        let
+                            m0 $ &list:first items
+                            t0 $ &list:nth items 1
+                            t1 $ normalize-trait-type t0
+                          quasiquote $ [] ~m0 (quote ~t1)
+                  quasiquote
+                    def ~name
+                      &trait::new
+                        ~ $ turn-tag name
+                        [] ~@normalized
         |destruct-list $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn destruct-list (xs)

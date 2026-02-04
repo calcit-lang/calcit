@@ -12,7 +12,8 @@
               :ok
         |ResultTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait ResultTrait :dummy
+            deftrait ResultTrait
+              :dummy (:: :fn ('T) ('T) :nil)
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defrecord! ResultImpl

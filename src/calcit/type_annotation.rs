@@ -200,8 +200,15 @@ impl CalcitTypeAnnotation {
 
     let mut vars = Vec::with_capacity(items.len());
     for item in items.iter() {
-      let name = Self::parse_type_var_form(item)?;
-      vars.push(name);
+      if let Some(name) = Self::parse_type_var_form(item) {
+        vars.push(name);
+        continue;
+      }
+      if let Calcit::Symbol { sym, .. } = item {
+        vars.push(sym.to_owned());
+        continue;
+      }
+      return None;
     }
     Some(vars)
   }
@@ -480,6 +487,28 @@ impl CalcitTypeAnnotation {
             return Arc::new(CalcitTypeAnnotation::Ref(inner));
           }
           return Arc::new(CalcitTypeAnnotation::Ref(Arc::new(Self::Dynamic)));
+        }
+        if tag.ref_str().trim_start_matches(':') == "fn" {
+          let mut generics: Vec<Arc<str>> = vec![];
+          let (args_form, return_form) = if let Some(generic_vars) = tuple.extra.get(0).and_then(Self::parse_generics_list) {
+            generics = generic_vars;
+            (tuple.extra.get(1).unwrap_or(&Calcit::Nil), tuple.extra.get(2))
+          } else {
+            (tuple.extra.get(0).unwrap_or(&Calcit::Nil), tuple.extra.get(1))
+          };
+          let arg_types = if let Calcit::List(args) = args_form {
+            args.iter().map(Self::parse_type_annotation_form).collect()
+          } else {
+            vec![]
+          };
+          let return_type = return_form
+            .map(Self::parse_type_annotation_form)
+            .unwrap_or_else(|| Arc::new(Self::Dynamic));
+          return Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+            generics: Arc::new(generics),
+            arg_types,
+            return_type,
+          })));
         }
       }
     }

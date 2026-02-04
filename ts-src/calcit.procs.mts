@@ -121,7 +121,17 @@ const list_items = (item: CalcitValue): CalcitValue[] => {
 export let _$n_trait_$o__$o_new = function (name: CalcitValue, methods: CalcitValue): CalcitTrait {
   if (arguments.length !== 2) throw new Error("&trait::new expected 2 arguments");
   const items = list_items(methods);
-  return new CalcitTrait(name, items);
+  const methodNames: CalcitValue[] = [];
+  const methodTypes: CalcitValue[] = [];
+  for (let entry of items) {
+    const pair = list_items(entry);
+    if (pair.length !== 2) {
+      throw new Error(`&trait::new expects (method type) pairs, got: ${toString(entry, true)}`);
+    }
+    methodNames.push(pair[0]);
+    methodTypes.push(pair[1]);
+  }
+  return new CalcitTrait(name, methodNames, methodTypes);
 };
 
 export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStruct => {
