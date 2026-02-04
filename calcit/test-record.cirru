@@ -17,7 +17,7 @@
           :code $ quote (defrecord Cat :name :color)
         |Lagopus $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def Lagopus $ new-class-record BirdClass :Lagopus :name
+            def Lagopus $ new-impl-record BirdClass :Lagopus :name
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (do true)
@@ -29,7 +29,7 @@
                   data $ parse-cirru-edn content
                     {} $ :Lagopus Lagopus
                 println |EDN: data
-                assert= BirdClass $ &record:class data
+                assert= BirdClass $ &list:first $ &record:impls data
               let
                   l1 $ %{} Lagopus (:name |LagopusA)
                 println |EDN: $ format-cirru-edn l1
@@ -93,8 +93,8 @@
                 println l1
                 .show l1
                 -> l1 (.rename |LagopusB) (.show)
-                assert= (&record:class l1)
-                  &record:class $ &record:with-class a1 BirdClass
+                assert= (&record:impls l1)
+                  &record:impls $ &record:with-impls a1 BirdClass
         |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
           :code $ quote
             fn () (log-title "|Testing record-with")

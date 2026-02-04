@@ -11,7 +11,7 @@ pub struct CalcitRecord {
   pub struct_ref: Arc<CalcitStruct>,
   pub values: Arc<Vec<Calcit>>,
   /// Trait implementations attached to this record (multiple allowed for composition)
-  pub classes: Vec<Arc<CalcitRecord>>,
+  pub impls: Vec<Arc<CalcitRecord>>,
 }
 
 impl PartialEq for CalcitRecord {
@@ -27,7 +27,7 @@ impl Default for CalcitRecord {
     CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("record"), vec![])),
       values: Arc::new(vec![]),
-      classes: vec![],
+      impls: vec![],
     }
   }
 }
@@ -117,7 +117,7 @@ impl CalcitRecord {
     Ok(CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(new_name_id, next_fields)),
       values: Arc::new(next_values),
-      classes: self.classes.clone(),
+      impls: self.impls.clone(),
     })
   }
 }

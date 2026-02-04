@@ -306,7 +306,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
           if (!deepEqual(v.fields, fields)) {
             throw new Error(`Fields mismatch for ${name}, expected ${fields}, got ${v.fields}`);
           }
-          return new CalcitRecord(extractFieldTag(name), fields, values, v.klass);
+          return new CalcitRecord(extractFieldTag(name), fields, values, v.impls);
         }
       }
 

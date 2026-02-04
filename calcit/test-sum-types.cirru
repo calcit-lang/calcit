@@ -19,11 +19,11 @@
         |make-ok $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-ok (value)
-              &tuple:with-class (%:: Result :ok value) ActionClass
+              &tuple:with-impls (%:: Result :ok value) ActionClass
         |make-err $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-err (message)
-              &tuple:with-class (%:: Result :err message) ActionClass
+              &tuple:with-impls (%:: Result :err message) ActionClass
         |summarize $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn summarize (action)
@@ -37,7 +37,7 @@
               let
                   ok-action $ make-ok 42
                   err-action $ make-err "|boom"
-                assert= ActionClass $ &tuple:class ok-action
+                assert= ActionClass $ &tuple:impls ok-action
                 assert= "|(%:: :ok 42 (:class ActionClass) (:enum Result))" $ str ok-action
                 assert= "|Action ok -> 42" (.describe ok-action)
                 assert= "|Action err -> boom" (.describe err-action)

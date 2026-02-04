@@ -71,8 +71,8 @@
                       :b $ [] 1 2
                       :a 1
                   , "|{} (:a 1) (:a1 0) (:c 2)\n  :b $ [] 1 2"
-                assert= "|:: :&core-list-class $ [] 1 2 3" $ trim
-                  format-cirru-edn $ :: &core-list-class ([] 1 2 3)
+                assert= "|:: :&core-list-methods $ [] 1 2 3" $ trim
+                  format-cirru-edn $ :: &core-list-methods ([] 1 2 3)
                 assert= "|:: :test" $ trim
                   format-cirru-edn $ :: :test
                 assert= "|:: :test :a :b" $ trim

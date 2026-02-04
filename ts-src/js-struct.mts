@@ -6,22 +6,24 @@ export class CalcitStruct {
   name: CalcitTag;
   fields: CalcitTag[];
   fieldTypes: CalcitValue[];
-  klass: CalcitRecord;
+  impls: CalcitRecord[];
   cachedHash: number;
 
-  constructor(name: CalcitTag, fields: CalcitTag[], fieldTypes: CalcitValue[], klass: CalcitRecord = null) {
+  constructor(name: CalcitTag, fields: CalcitTag[], fieldTypes: CalcitValue[], impls: CalcitRecord[] = []) {
     this.name = name;
     this.fields = fields;
     this.fieldTypes = fieldTypes;
-    this.klass = klass;
+    this.impls = impls;
     this.cachedHash = null;
   }
 
-  withClass(klass: CalcitRecord): CalcitStruct {
-    if (klass instanceof CalcitRecord) {
-      return new CalcitStruct(this.name, this.fields, this.fieldTypes, klass);
+  withImpls(impls: CalcitRecord | CalcitRecord[]): CalcitStruct {
+    if (impls instanceof CalcitRecord) {
+      return new CalcitStruct(this.name, this.fields, this.fieldTypes, [impls]);
+    } else if (Array.isArray(impls)) {
+      return new CalcitStruct(this.name, this.fields, this.fieldTypes, impls);
     }
-    throw new Error("Expected a record as class");
+    throw new Error("Expected a record as implementation");
   }
 
   toString(disableJsDataWarning: boolean = false): string {

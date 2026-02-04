@@ -99,22 +99,22 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Record(CalcitRecord {
     struct_ref: Arc::new(CalcitStruct::from_fields(name_id, fields)),
     values: Arc::new(values),
-    classes: vec![],
+    impls: vec![],
   }))
 }
 
-pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn new_impl_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "new-class-record expected arguments, but received none:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "new-impl-record expected arguments, but received none:", xs);
   }
-  let class = match &xs[0] {
+  let impl_record = match &xs[0] {
     Calcit::Record(class) => class.to_owned(),
     b => {
       let msg = format!(
-        "new-class-record requires a class (record), but received: {}",
+        "new-impl-record requires a trait impl (record), but received: {}",
         type_of(&[b.to_owned()])?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NewClassRecord).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NewImplRecord).unwrap_or_default();
       return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
     }
   };
@@ -123,10 +123,10 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::Tag(k) => k.to_owned(),
     a => {
       let msg = format!(
-        "new-class-record requires a name (symbol or tag), but received: {}",
+        "new-impl-record requires a name (symbol or tag), but received: {}",
         type_of(&[a.to_owned()])?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NewClassRecord).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NewImplRecord).unwrap_or_default();
       return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
     }
   };
@@ -144,10 +144,10 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       a => {
         let msg = format!(
-          "new-class-record fields require tag/string, but received: {}",
+          "new-impl-record fields require tag/string, but received: {}",
           type_of(&[a.to_owned()])?.lisp_str()
         );
-        let hint = format_proc_examples_hint(&CalcitProc::NewClassRecord).unwrap_or_default();
+        let hint = format_proc_examples_hint(&CalcitProc::NewImplRecord).unwrap_or_default();
         return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
       }
     }
@@ -160,7 +160,7 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   for (idx, x) in fields.iter().enumerate() {
     if idx > 0 {
       if x == &prev {
-        return CalcitErr::err_str(CalcitErrKind::Unexpected, format!("new-class-record duplicated field: {x}"));
+        return CalcitErr::err_str(CalcitErrKind::Unexpected, format!("new-impl-record duplicated field: {x}"));
       } else {
         x.clone_into(&mut prev);
         // checked ok
@@ -172,7 +172,7 @@ pub fn new_class_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Record(CalcitRecord {
     struct_ref: Arc::new(CalcitStruct::from_fields(name_id, fields)),
     values: Arc::new(values),
-    classes: vec![Arc::new(class)],
+    impls: vec![Arc::new(impl_record)],
   }))
 }
 
@@ -267,7 +267,7 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     fields: Arc::new(field_names),
     field_types: Arc::new(field_types),
     generics: Arc::new(generics),
-    classes: vec![],
+    impls: vec![],
   }))
 }
 
@@ -343,12 +343,12 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let values: Vec<Calcit> = variants.iter().map(|(_, value)| value.to_owned()).collect();
 
   let mut struct_ref = CalcitStruct::from_fields(name_id, fields);
-  struct_ref.classes = vec![Arc::new(enum_prototype_marker())];
+  struct_ref.impls = vec![Arc::new(enum_prototype_marker())];
 
   let record = CalcitRecord {
     struct_ref: Arc::new(struct_ref),
     values: Arc::new(values),
-    classes: vec![],
+    impls: vec![],
   };
 
   match CalcitEnum::from_record(record) {
@@ -361,7 +361,7 @@ fn enum_prototype_marker() -> CalcitRecord {
   CalcitRecord {
     struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("enum-prototype"), vec![])),
     values: Arc::new(vec![]),
-    classes: vec![],
+    impls: vec![],
   }
 }
 
@@ -375,7 +375,7 @@ pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let record = CalcitRecord {
         struct_ref: Arc::new(struct_def.to_owned()),
         values: Arc::new(vec![Calcit::Nil; struct_def.fields.len()]),
-        classes: struct_def.classes.clone(),
+        impls: struct_def.impls.clone(),
       };
       call_record_with_prototype(&record, xs)
     }
@@ -396,7 +396,7 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
   let CalcitRecord {
     struct_ref,
     values: v0,
-    classes,
+    impls,
   } = record;
   if (args_size - 1).rem(2) != 0 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&%{{}} expected pairs, but received:", xs);
@@ -454,7 +454,7 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
   Ok(Calcit::Record(CalcitRecord {
     struct_ref: struct_ref.to_owned(),
     values: Arc::new(values),
-    classes: classes.to_owned(),
+    impls: impls.to_owned(),
   }))
 }
 
@@ -473,7 +473,7 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       record @ CalcitRecord {
         struct_ref,
         values: v0,
-        classes,
+        impls,
       },
     ) => {
       if (args_size - 1).rem(2) == 0 {
@@ -520,7 +520,7 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Record(CalcitRecord {
           struct_ref: struct_ref.to_owned(),
           values: Arc::new(values),
-          classes: classes.to_owned(),
+          impls: impls.to_owned(),
         }))
       } else {
         CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:with expected pairs, but received:", xs)
@@ -537,74 +537,84 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn get_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn get_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:class expected 1 argument, but received:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:impls expected 1 argument, but received:", xs);
   }
   match &xs[0] {
-    Calcit::Record(CalcitRecord { classes, .. }) => match classes.first() {
-      Some(c) => Ok(Calcit::Record((**c).to_owned())),
-      None => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&record:class expected a class, but received nil for {}", &xs[0]),
-      ),
-    },
-    Calcit::Tuple(CalcitTuple { classes, .. }) => match classes.first() {
-      None => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&record:class expected a class, but received nil for {}", &xs[0]),
-      ),
-      Some(c) => Ok(Calcit::Record((**c).to_owned())),
-    },
+    Calcit::Record(CalcitRecord { impls, .. }) => Ok(Calcit::from(
+      impls.iter().map(|c| Calcit::Record((**c).to_owned())).collect::<Vec<_>>(),
+    )),
+    Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(Calcit::from(
+      impls.iter().map(|c| Calcit::Record((**c).to_owned())).collect::<Vec<_>>(),
+    )),
     a => {
       let msg = format!(
-        "&record:class requires a record as prototype, but received: {}",
+        "&record:impls requires a record as prototype, but received: {}",
         type_of(&[a.to_owned()])?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordClass).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordImpls).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
 }
 
-pub fn with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn with_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
   if args_size < 2 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
-      "&record:with-class expected at least 2 arguments, but received:",
+      "&record:with-impls expected at least 2 arguments, but received:",
       xs,
     );
   }
-  match (&xs[0], &xs[1]) {
-    (
-      Calcit::Record(CalcitRecord {
-        struct_ref, values: v0, ..
-      }),
-      Calcit::Record(class),
-    ) => Ok(Calcit::Record(CalcitRecord {
-      struct_ref: struct_ref.to_owned(),
-      values: v0.to_owned(),
-      classes: vec![Arc::new(class.to_owned())],
-    })),
-    (Calcit::Record { .. }, b) => {
-      let msg = format!(
-        "&record:with-class requires a record as class, but received: {}",
-        type_of(&[b.to_owned()])?.lisp_str()
-      );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWithClass).unwrap_or_default();
-      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+  let Calcit::Record(CalcitRecord {
+    struct_ref, values: v0, ..
+  }) = &xs[0]
+  else {
+    let msg = format!(
+      "&record:with-impls requires a record, but received: {}",
+      type_of(&[xs[0].to_owned()])?.lisp_str()
+    );
+    let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWithImpls).unwrap_or_default();
+    return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+  };
+
+  let impls = match &xs[1] {
+    Calcit::Record(record) => vec![Arc::new(record.to_owned())],
+    Calcit::List(list) => {
+      let mut items: Vec<Arc<CalcitRecord>> = Vec::with_capacity(list.len());
+      for item in list.iter() {
+        match item {
+          Calcit::Record(record) => items.push(Arc::new(record.to_owned())),
+          other => {
+            let msg = format!(
+              "&record:with-impls expects impls as records, but received: {}",
+              type_of(&[other.to_owned()])?.lisp_str()
+            );
+            let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWithImpls).unwrap_or_default();
+            return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+          }
+        }
+      }
+      items
     }
-    (a, _b) => {
+    other => {
       let msg = format!(
-        "&record:with-class requires a record, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
+        "&record:with-impls expects a record or list of records, but received: {}",
+        type_of(&[other.to_owned()])?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWithClass).unwrap_or_default();
-      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWithImpls).unwrap_or_default();
+      return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
     }
-  }
+  };
+
+  Ok(Calcit::Record(CalcitRecord {
+    struct_ref: struct_ref.to_owned(),
+    values: v0.to_owned(),
+    impls,
+  }))
 }
 
 pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -641,7 +651,7 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Record(CalcitRecord {
         struct_ref: record.struct_ref.to_owned(),
         values: Arc::new(new_values),
-        classes: record.classes.to_owned(),
+        impls: record.impls.to_owned(),
       }))
     }
     (a, b) => {
@@ -822,17 +832,7 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1), xs.get(2)) {
-    (
-      Some(Calcit::Record(
-        record @ CalcitRecord {
-          struct_ref,
-          values,
-          classes,
-        },
-      )),
-      Some(a),
-      Some(b),
-    ) => match a {
+    (Some(Calcit::Record(record @ CalcitRecord { struct_ref, values, impls })), Some(a), Some(b)) => match a {
       Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
         Some(pos) => {
           let mut new_values = (**values).to_owned();
@@ -840,7 +840,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Ok(Calcit::Record(CalcitRecord {
             struct_ref: struct_ref.to_owned(),
             values: Arc::new(new_values),
-            classes: classes.to_owned(),
+            impls: impls.to_owned(),
           }))
         }
         None => CalcitErr::err_str(
@@ -855,7 +855,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Ok(Calcit::Record(CalcitRecord {
             struct_ref: struct_ref.to_owned(),
             values: Arc::new(new_values),
-            classes: classes.to_owned(),
+            impls: impls.to_owned(),
           }))
         }
         None => CalcitErr::err_str(

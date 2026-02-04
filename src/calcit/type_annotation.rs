@@ -700,9 +700,9 @@ impl CalcitTypeAnnotation {
       }
     }
 
-    if let Some(expected_class) = expected.classes.first() {
-      match actual.classes.first() {
-        Some(actual_class) if actual_class.name() == expected_class.name() => {}
+    if let Some(expected_impl) = expected.impls.first() {
+      match actual.impls.first() {
+        Some(actual_impl) if actual_impl.name() == expected_impl.name() => {}
         _ => return false,
       }
     }
@@ -998,14 +998,14 @@ impl CalcitTypeAnnotation {
       Self::Variadic(inner) => Calcit::Tuple(CalcitTuple {
         tag: Arc::new(Calcit::Tag(EdnTag::from("&"))),
         extra: vec![inner.to_calcit()],
-        classes: vec![],
+        impls: vec![],
         sum_type: None,
       }),
       Self::Custom(value) => value.as_ref().to_owned(),
       Self::Optional(inner) => Calcit::Tuple(CalcitTuple {
         tag: Arc::new(Calcit::Tag(EdnTag::from("optional"))),
         extra: vec![inner.to_calcit()],
-        classes: vec![],
+        impls: vec![],
         sum_type: None,
       }),
       Self::Struct(struct_def) => Calcit::Struct((**struct_def).clone()),
@@ -1147,7 +1147,7 @@ impl CalcitTypeAnnotation {
 fn resolve_struct_annotation(struct_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitStruct> {
   let mut struct_def = resolve_struct_def(struct_form)?;
   if let Some(class_record) = class_form.and_then(resolve_record_def) {
-    struct_def.classes = vec![Arc::new(class_record)];
+    struct_def.impls = vec![Arc::new(class_record)];
   }
   Some(struct_def)
 }
@@ -1155,7 +1155,7 @@ fn resolve_struct_annotation(struct_form: &Calcit, class_form: Option<&Calcit>) 
 fn resolve_enum_annotation(enum_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitEnum> {
   let mut enum_def = resolve_enum_def(enum_form)?;
   if let Some(class_record) = class_form.and_then(resolve_record_def) {
-    enum_def.set_classes(vec![Arc::new(class_record)]);
+    enum_def.set_impls(vec![Arc::new(class_record)]);
   }
   Some(enum_def)
 }
@@ -1300,7 +1300,7 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStruct> {
     fields: Arc::new(field_names),
     field_types: Arc::new(field_types),
     generics: Arc::new(generics),
-    classes: vec![],
+    impls: vec![],
   })
 }
 
@@ -1337,7 +1337,7 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnum> {
   let record = CalcitRecord {
     struct_ref: Arc::new(struct_ref),
     values: Arc::new(values),
-    classes: vec![],
+    impls: vec![],
   };
   CalcitEnum::from_record(record).ok()
 }

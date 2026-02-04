@@ -413,7 +413,7 @@ fn gen_call_code(
         // for `&call-spread`, just translate as normal call
         CalcitSyntax::CallSpread => gen_call_code(&body, ns, local_defs, xs, file_imports, tags, return_label),
         CalcitSyntax::HintFn => Ok(format!("{return_code}null")),
-        CalcitSyntax::AssertType => Err(String::from("assert-type syntax is not supported during JS codegen yet")),
+        CalcitSyntax::AssertType => Ok(format!("{return_code}null")),
         _ => {
           let args_code = gen_args_code(&body, ns, local_defs, file_imports, tags)?;
           Ok(format!(

@@ -178,7 +178,7 @@ fn main() -> Result<(), String> {
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
     calcit::calcit::CORE_NS,
-    calcit::calcit::BUILTIN_CLASSES_ENTRY,
+    calcit::calcit::BUILTIN_IMPLS_ENTRY,
     check_warnings,
     &CallStackList::default(),
   )

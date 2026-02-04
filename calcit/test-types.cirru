@@ -212,9 +212,9 @@
         |test-record-methods $ %{} :CodeEntry (:doc "|Tests method calls on Record instances with class")
           :code $ quote
             defn test-record-methods ()
-              ; 使用 new-class-record 创建带 class 的 Record
+              ; 使用 new-impl-record 创建带 class 的 Record
               let
-                  Person $ new-class-record :Person
+                  Person $ new-impl-record :Person
                     {} $ :name
                       :get $ fn (self) (:name self)
                     {} $ :age
@@ -223,7 +223,7 @@
                       :method $ fn (self) (str "|Hello, I'm " $ :name self)
                 ; 创建 Person 实例
                 let
-                  alice $ &tuple:with-class (:: :name |Alice :age 30) Person
+                  alice $ &tuple:with-impls (:: :name |Alice :age 30) Person
                   ; 调用方法
                   let
                       greeting $ .greet alice
@@ -301,7 +301,7 @@
               let
                   typed-list $ [] 1 2 3 4 5
                 assert-type typed-list :list
-                ; :list 类型对应 calcit.core/&core-list-class 提供的方法
+                ; :list 类型对应 calcit.core/&core-list-methods 提供的方法
                 let
                     first-elem $ .first typed-list
                     list-size $ .count typed-list
@@ -358,14 +358,14 @@
             defn test-defstruct-defenum ()
               assert= :struct $ type-of Person
               assert= :enum $ type-of Result
-              assert= :struct $ type-of $ &struct:with-class Person StructClass
+              assert= :struct $ type-of $ &struct:with-impls Person StructClass
               let
-                  enum-with-class $ &enum:with-class Result EnumClass
-                  ok $ &tuple:with-class (%:: enum-with-class :ok 1) ResultClass
-                assert= :enum $ type-of enum-with-class
-                assert= ResultClass $ &tuple:class ok
-                assert= enum-with-class $ &tuple:enum ok
-                assert= "|(%:: :ok 1 (:class ResultClass) (:enum Result))" $ str ok
+                  enum-with-impls $ &enum:with-impls Result EnumClass
+                  ok $ &tuple:with-impls (%:: enum-with-impls :ok 1) ResultClass
+                assert= :enum $ type-of enum-with-impls
+                assert= ResultClass $ &list:first $ &tuple:impls ok
+                assert= enum-with-impls $ &tuple:enum ok
+                assert= "|(%:: :ok 1 (:impls ResultClass) (:enum Result))" $ str ok
               , "|defstruct/defenum checks passed"
 
         |main! $ %{} :CodeEntry (:doc |)

@@ -103,14 +103,14 @@ export * from {name};
 pub fn tmpl_classes_registering() -> String {
   format!(
     "
-$procs.register_calcit_builtin_classes({{
-  list: _$n_core_list_class,
-  map: _$n_core_map_class,
-  number: _$n_core_number_class,
-  set: _$n_core_set_class,
-  string: _$n_core_string_class,
-  nil: _$n_core_nil_class,
-  fn: _$n_core_fn_class,
+$procs.register_calcit_builtin_impls({{
+  list: _$n_core_list_methods,
+  map: _$n_core_map_methods,
+  number: _$n_core_number_methods,
+  set: _$n_core_set_methods,
+  string: _$n_core_string_methods,
+  nil: _$n_core_nil_methods,
+  fn: _$n_core_fn_methods,
 }});
 
 let runtimeVersion = $procs.calcit_version;

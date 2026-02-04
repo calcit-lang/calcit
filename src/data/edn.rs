@@ -128,7 +128,7 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     Edn::Tuple(EdnTupleView { tag, extra }) => Calcit::Tuple(CalcitTuple {
       tag: Arc::new(edn_to_calcit(tag, options)),
       extra: extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
-      classes: vec![],
+      impls: vec![],
       sum_type: None,
     }),
     Edn::List(EdnListView(xs)) => {
@@ -166,13 +166,13 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
         Some(Calcit::Record(CalcitRecord {
           struct_ref: pre_struct,
           values: pre_values,
-          classes: pre_classes,
+          impls: pre_impls,
         })) => {
           if fields == **pre_struct.fields {
             Calcit::Record(CalcitRecord {
               struct_ref: pre_struct.to_owned(),
               values: pre_values.to_owned(),
-              classes: pre_classes.clone(),
+              impls: pre_impls.clone(),
             })
           } else {
             unreachable!("record fields mismatch: {:?} vs {:?}", fields, pre_struct.fields)
@@ -181,7 +181,7 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
         _ => Calcit::Record(CalcitRecord {
           struct_ref: Arc::new(CalcitStruct::from_fields(name.to_owned(), fields)),
           values: Arc::new(values),
-          classes: vec![],
+          impls: vec![],
         }),
       }
     }

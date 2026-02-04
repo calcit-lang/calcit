@@ -157,27 +157,27 @@ impl fmt::Display for Calcit {
       Tuple(CalcitTuple {
         tag,
         extra,
-        classes,
+        impls,
         sum_type,
-      }) => match (classes.first(), sum_type) {
-        (Some(class), Some(sum_type)) => {
+      }) => match (impls.first(), sum_type) {
+        (Some(imp), Some(sum_type)) => {
           f.write_str("(%:: ")?;
           f.write_str(&tag.to_string())?;
           for item in extra {
             f.write_char(' ')?;
             f.write_str(&item.to_string())?;
           }
-          f.write_str(&format!(" (:class {}) (:enum {})", class.name(), sum_type.name()))?;
+          f.write_str(&format!(" (:impls {}) (:enum {})", imp.name(), sum_type.name()))?;
           f.write_str(")")
         }
-        (Some(class), None) => {
+        (Some(imp), None) => {
           f.write_str("(:: ")?;
           f.write_str(&tag.to_string())?;
           for item in extra {
             f.write_char(' ')?;
             f.write_str(&item.to_string())?;
           }
-          f.write_str(&format!(" (:class {})", class.name()))?;
+          f.write_str(&format!(" (:impls {})", imp.name()))?;
           f.write_str(")")
         }
         (None, Some(sum_type)) => {
@@ -494,16 +494,16 @@ impl Hash for Calcit {
         fields,
         field_types,
         generics,
-        classes,
+        impls,
       }) => {
         "struct:".hash(_state);
         name.hash(_state);
         fields.hash(_state);
         field_types.hash(_state);
         generics.hash(_state);
-        for class in classes {
-          class.name().hash(_state);
-          class.fields().hash(_state);
+        for imp in impls {
+          imp.name().hash(_state);
+          imp.fields().hash(_state);
         }
       }
       Enum(enum_def) => {
@@ -779,7 +779,7 @@ impl From<&TernaryTreeList<Calcit>> for Calcit {
 }
 
 pub const CORE_NS: &str = "calcit.core";
-pub const BUILTIN_CLASSES_ENTRY: &str = "&init-builtin-classes!";
+pub const BUILTIN_IMPLS_ENTRY: &str = "&init-builtin-impls!";
 pub const GEN_NS: &str = "calcit.gen";
 pub const GENERATED_DEF: &str = "gen%";
 

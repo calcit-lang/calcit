@@ -12,6 +12,7 @@ import { CalcitValue, _$n_compare } from "./js-primes.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitSet, overwriteSetComparator } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitTrait } from "./js-trait.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 import { CirruWriterNode } from "@cirru/writer.ts";
 import { CalcitRef } from "./js-ref.mjs";
@@ -315,8 +316,8 @@ export let hashFunction = (x: CalcitValue): Hash => {
       base = mergeValueHash(base, hashFunction(x.fields[idx]));
       base = mergeValueHash(base, hashFunction(x.fieldTypes[idx]));
     }
-    if (x.klass instanceof CalcitRecord) {
-      base = mergeValueHash(base, hashFunction(x.klass));
+    for (let impl of x.impls) {
+      base = mergeValueHash(base, hashFunction(impl));
     }
     x.cachedHash = base;
     return base;
@@ -324,8 +325,8 @@ export let hashFunction = (x: CalcitValue): Hash => {
   if (x instanceof CalcitEnum) {
     let base = defaultHash_enum;
     base = mergeValueHash(base, hashFunction(x.prototype));
-    if (x.klass instanceof CalcitRecord) {
-      base = mergeValueHash(base, hashFunction(x.klass));
+    for (let impl of x.impls) {
+      base = mergeValueHash(base, hashFunction(impl));
     }
     x.cachedHash = base;
     return base;
@@ -409,6 +410,9 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
   }
   if (x instanceof CalcitEnum) {
     return x.toString();
+  }
+  if (x instanceof CalcitTrait) {
+    return x.toString(disableJsDataWarning);
   }
   if (x instanceof CalcitRef) {
     return x.toString();

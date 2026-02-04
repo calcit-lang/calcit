@@ -2,7 +2,8 @@ use crate::{
   builtins,
   calcit::{
     self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
-    CalcitSymbolInfo, CalcitSyntax, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF, format_proc_examples_hint, gen_core_id,
+    CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF, format_proc_examples_hint,
+    gen_core_id,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -395,7 +396,7 @@ pub fn new_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Ok(Calcit::Tuple(CalcitTuple {
       tag: Arc::new(xs[0].to_owned()),
       extra,
-      classes: vec![],
+      impls: vec![],
       sum_type: None,
     }))
   }
@@ -451,7 +452,7 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Tuple(CalcitTuple {
           tag: Arc::new(xs[1].to_owned()),
           extra,
-          classes: vec![],
+          impls: vec![],
           sum_type: Some(Arc::new(enum_proto)),
         }))
       }
@@ -491,7 +492,7 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Tuple(CalcitTuple {
           tag: Arc::new(xs[1].to_owned()),
           extra,
-          classes: vec![],
+          impls: vec![],
           sum_type: Some(Arc::new(enum_proto)),
         }))
       }
@@ -524,57 +525,209 @@ pub fn tuple_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn struct_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:with-class expected 2 arguments, but received:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&trait::new expected 2 arguments, but received:", xs);
   }
-
-  let struct_value = xs[0].to_owned();
-  let class_value = xs[1].to_owned();
-  match (struct_value, class_value) {
-    (Calcit::Struct(mut struct_def), Calcit::Record(class_record)) => {
-      struct_def.classes = vec![Arc::new(class_record)];
-      Ok(Calcit::Struct(struct_def))
+  let name = match &xs[0] {
+    Calcit::Symbol { sym, .. } => cirru_edn::EdnTag::new(sym.as_ref()),
+    Calcit::Tag(tag) => tag.to_owned(),
+    other => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&trait::new expects a tag/symbol as name, but received: {other}"),
+      );
     }
-    (Calcit::Struct(_), other) => CalcitErr::err_str(
+  };
+  let methods = match &xs[1] {
+    Calcit::List(list) => {
+      let mut items = Vec::with_capacity(list.len());
+      for item in list.iter() {
+        match item {
+          Calcit::Tag(tag) => items.push(tag.to_owned()),
+          Calcit::Symbol { sym, .. } => items.push(cirru_edn::EdnTag::new(sym.as_ref())),
+          other => {
+            return CalcitErr::err_str(
+              CalcitErrKind::Type,
+              format!("&trait::new expects method names as tags/symbols, but received: {other}"),
+            );
+          }
+        }
+      }
+      items
+    }
+    other => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&trait::new expects a list of method names, but received: {other}"),
+      );
+    }
+  };
+  Ok(Calcit::Trait(CalcitTrait::new(name, methods)))
+}
+
+fn collect_trait_records(xs: &[Calcit], proc_name: &str) -> Result<Vec<Arc<CalcitRecord>>, CalcitErr> {
+  let mut traits: Vec<Arc<CalcitRecord>> = Vec::with_capacity(xs.len());
+  for item in xs {
+    match item {
+      Calcit::Record(record) => traits.push(Arc::new(record.to_owned())),
+      other => {
+        return Err(CalcitErr::use_str(
+          CalcitErrKind::Type,
+          format!("{proc_name} expects trait impls as records, but received: {other}"),
+        ));
+      }
+    }
+  }
+  Ok(traits)
+}
+
+pub fn record_with_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() < 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:with-traits expected 2+ arguments, but received:", xs);
+  }
+  match &xs[0] {
+    Calcit::Record(record) => {
+      let mut impls = record.impls.clone();
+      impls.extend(collect_trait_records(&xs[1..], "&record:with-traits")?);
+      Ok(Calcit::Record(CalcitRecord {
+        struct_ref: record.struct_ref.to_owned(),
+        values: record.values.to_owned(),
+        impls,
+      }))
+    }
+    other => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("&struct:with-class expected a record as class, but received: {other}"),
-    ),
-    (other, _) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&struct:with-class expected a struct, but received: {other}"),
+      format!("&record:with-traits expected a record, but received: {other}"),
     ),
   }
 }
 
-pub fn enum_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn tuple_with_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() < 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:with-traits expected 2+ arguments, but received:", xs);
+  }
+  match &xs[0] {
+    Calcit::Tuple(CalcitTuple {
+      tag,
+      extra,
+      impls,
+      sum_type,
+    }) => {
+      let mut next_impls = impls.clone();
+      next_impls.extend(collect_trait_records(&xs[1..], "&tuple:with-traits")?);
+      Ok(Calcit::Tuple(CalcitTuple {
+        tag: tag.to_owned(),
+        extra: extra.to_owned(),
+        impls: next_impls,
+        sum_type: sum_type.to_owned(),
+      }))
+    }
+    other => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&tuple:with-traits expected a tuple, but received: {other}"),
+    ),
+  }
+}
+
+pub fn struct_with_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() < 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:with-traits expected 2+ arguments, but received:", xs);
+  }
+  match &xs[0] {
+    Calcit::Struct(struct_def) => {
+      let mut next = struct_def.to_owned();
+      let mut impls = next.impls.clone();
+      impls.extend(collect_trait_records(&xs[1..], "&struct:with-traits")?);
+      next.impls = impls;
+      Ok(Calcit::Struct(next))
+    }
+    other => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&struct:with-traits expected a struct, but received: {other}"),
+    ),
+  }
+}
+
+pub fn enum_with_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() < 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&enum:with-traits expected 2+ arguments, but received:", xs);
+  }
+  match &xs[0] {
+    Calcit::Record(enum_record) => {
+      let mut impls = enum_record.impls.clone();
+      impls.extend(collect_trait_records(&xs[1..], "&enum:with-traits")?);
+      Ok(Calcit::Record(CalcitRecord {
+        struct_ref: enum_record.struct_ref.to_owned(),
+        values: enum_record.values.to_owned(),
+        impls,
+      }))
+    }
+    Calcit::Enum(enum_def) => {
+      let mut next = enum_def.to_owned();
+      let mut impls = next.impls().to_vec();
+      impls.extend(collect_trait_records(&xs[1..], "&enum:with-traits")?);
+      next.set_impls(impls);
+      Ok(Calcit::Enum(next))
+    }
+    other => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&enum:with-traits expected an enum or enum record, but received: {other}"),
+    ),
+  }
+}
+
+pub fn struct_with_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&enum:with-class expected 2 arguments, but received:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:with-impls expected 2 arguments, but received:", xs);
+  }
+
+  let struct_value = xs[0].to_owned();
+  let impls_value = xs[1].to_owned();
+  match (struct_value, impls_value) {
+    (Calcit::Struct(mut struct_def), Calcit::Record(impl_record)) => {
+      struct_def.impls = vec![Arc::new(impl_record)];
+      Ok(Calcit::Struct(struct_def))
+    }
+    (Calcit::Struct(_), other) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&struct:with-impls expected a record as impl, but received: {other}"),
+    ),
+    (other, _) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&struct:with-impls expected a struct, but received: {other}"),
+    ),
+  }
+}
+
+pub fn enum_with_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&enum:with-impls expected 2 arguments, but received:", xs);
   }
 
   let enum_value = xs[0].to_owned();
-  let class_value = xs[1].to_owned();
-  match (enum_value, class_value) {
-    (Calcit::Record(enum_record), Calcit::Record(class_record)) => Ok(Calcit::Record(CalcitRecord {
+  let impls_value = xs[1].to_owned();
+  match (enum_value, impls_value) {
+    (Calcit::Record(enum_record), Calcit::Record(impl_record)) => Ok(Calcit::Record(CalcitRecord {
       struct_ref: enum_record.struct_ref,
       values: enum_record.values,
-      classes: vec![Arc::new(class_record)],
+      impls: vec![Arc::new(impl_record)],
     })),
-    (Calcit::Enum(mut enum_def), Calcit::Record(class_record)) => {
-      enum_def.set_classes(vec![Arc::new(class_record)]);
+    (Calcit::Enum(mut enum_def), Calcit::Record(impl_record)) => {
+      enum_def.set_impls(vec![Arc::new(impl_record)]);
       Ok(Calcit::Enum(enum_def))
     }
     (Calcit::Record(_), other) => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("&enum:with-class expected a record as class, but received: {other}"),
+      format!("&enum:with-impls expected a record as impl, but received: {other}"),
     ),
     (Calcit::Enum(_), other) => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("&enum:with-class expected a record as class, but received: {other}"),
+      format!("&enum:with-impls expected a record as impl, but received: {other}"),
     ),
     (other, _) => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("&enum:with-class expected an enum prototype record, but received: {other}"),
+      format!("&enum:with-impls expected an enum prototype record, but received: {other}"),
     ),
   }
 }
@@ -710,50 +863,36 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   let v0 = &method_args[0];
   use Calcit::*;
   match v0 {
-    Tuple(CalcitTuple { classes, .. }) => match classes.first() {
-      Some(record) => method_record(record, v0, name, method_args, call_stack),
-      None => Err(CalcitErr::use_msg_stack(
-        CalcitErrKind::Type,
-        format!("invoke-method cannot find class for: {v0}"),
-        call_stack,
-      )),
-    },
-    Record(CalcitRecord { classes, .. }) => match classes.first() {
-      Some(record) => method_record(record, v0, name, method_args, call_stack),
-      None => Err(CalcitErr::use_msg_stack(
-        CalcitErrKind::Type,
-        format!("invoke-method cannot find class for: {v0}"),
-        call_stack,
-      )),
-    },
+    Tuple(CalcitTuple { impls, .. }) => method_call_impls(impls, v0, name, method_args, call_stack),
+    Record(CalcitRecord { impls, .. }) => method_call_impls(impls, v0, name, method_args, call_stack),
 
     // classed should already be preprocessed
     List(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, None, call_stack)?;
+      let class = runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
     Map(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-map-class", calcit::CORE_NS, None, call_stack)?;
+      let class = runner::evaluate_symbol_from_program("&core-map-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
     Number(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-number-class", calcit::CORE_NS, None, call_stack)?;
+      let class = runner::evaluate_symbol_from_program("&core-number-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
     Str(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-string-class", calcit::CORE_NS, None, call_stack)?;
+      let class = runner::evaluate_symbol_from_program("&core-string-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
     Set(..) => {
-      let class = &runner::evaluate_symbol_from_program("&core-set-class", calcit::CORE_NS, None, call_stack)?;
+      let class = &runner::evaluate_symbol_from_program("&core-set-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(class, v0, name, method_args, call_stack)
     }
     Nil => {
-      let class = runner::evaluate_symbol_from_program("&core-nil-class", calcit::CORE_NS, None, call_stack)?;
+      let class = runner::evaluate_symbol_from_program("&core-nil-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
     Fn { .. } | Proc(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-fn-class", calcit::CORE_NS, None, call_stack)?;
+      let class = runner::evaluate_symbol_from_program("&core-fn-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&class, v0, name, method_args, call_stack)
     }
     x => Err(CalcitErr::use_msg_stack_location(
@@ -765,6 +904,34 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   }
 }
 
+fn collect_impl_records_from_value(class: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitRecord>>, CalcitErr> {
+  match class {
+    Calcit::Record(record) => Ok(vec![Arc::new(record.to_owned())]),
+    Calcit::List(list) => {
+      let mut impls: Vec<Arc<CalcitRecord>> = Vec::with_capacity(list.len());
+      for item in list.iter() {
+        match item {
+          Calcit::Record(record) => impls.push(Arc::new(record.to_owned())),
+          other => {
+            return Err(CalcitErr::use_msg_stack(
+              CalcitErrKind::Type,
+              format!("invoke-method expects impl records in list, but received: {other}"),
+              call_stack,
+            ));
+          }
+        }
+      }
+      Ok(impls)
+    }
+    other => Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("invoke-method cannot find class for: {other}"),
+      call_stack,
+      other.get_location(),
+    )),
+  }
+}
+
 fn method_call(
   class: &Calcit,
   v0: &Calcit,
@@ -772,19 +939,41 @@ fn method_call(
   method_args: &[Calcit],
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  // match &class {
-  //   Some(record) => method_record(record, v0, name, method_args, call_stack),
-  //   None => CalcitErr::err_str(format!("cannot find class for method invoking: {v0}")),
-  // }
-  match class {
-    Calcit::Record(record) => method_record(record, v0, name, method_args, call_stack),
-    x => Err(CalcitErr::use_msg_stack_location(
+  let impls = collect_impl_records_from_value(class, call_stack)?;
+  method_call_impls(&impls, v0, name, method_args, call_stack)
+}
+
+fn method_call_impls(
+  impls: &[Arc<CalcitRecord>],
+  v0: &Calcit,
+  name: &str,
+  method_args: &[Calcit],
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  if impls.is_empty() {
+    return Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Type,
       format!("invoke-method cannot find class for: {v0}"),
       call_stack,
-      x.get_location(),
-    )),
+    ));
   }
+  for imp in impls {
+    if imp.get(name).is_some() {
+      return method_record(imp, v0, name, method_args, call_stack);
+    }
+  }
+  let mut fields: Vec<String> = vec![];
+  for imp in impls {
+    for field in imp.fields().iter() {
+      fields.push(field.to_string());
+    }
+  }
+  let content = fields.join(" ");
+  Err(CalcitErr::use_msg_stack(
+    CalcitErrKind::Type,
+    format!("unknown method `.{name}` for {v0}. Available methods: {content}"),
+    call_stack,
+  ))
 }
 
 fn method_record(
@@ -876,7 +1065,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Calcit::Tuple(CalcitTuple {
         tag,
         extra,
-        classes,
+        impls,
         sum_type,
       }),
       Calcit::Number(n),
@@ -886,7 +1075,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Ok(Calcit::Tuple(CalcitTuple {
             tag: Arc::new(xs[2].to_owned()),
             extra: extra.to_owned(),
-            classes: classes.clone(),
+            impls: impls.clone(),
             sum_type: sum_type.to_owned(),
           }))
         } else if idx - 1 < extra.len() {
@@ -895,7 +1084,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Ok(Calcit::Tuple(CalcitTuple {
             tag: tag.to_owned(),
             extra: new_extra,
-            classes: classes.clone(),
+            impls: impls.clone(),
             sum_type: sum_type.to_owned(),
           }))
         } else {
@@ -936,21 +1125,20 @@ pub fn tuple_count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn tuple_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn tuple_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:class expected 1 argument, but received:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:impls expected 1 argument, but received:", xs);
   }
   match &xs[0] {
-    Calcit::Tuple(CalcitTuple { classes, .. }) => match classes.first() {
-      None => Ok(Calcit::Nil),
-      Some(class) => Ok(Calcit::Record((**class).to_owned())),
-    },
+    Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(Calcit::from(
+      impls.iter().map(|imp| Calcit::Record((**imp).to_owned())).collect::<Vec<_>>(),
+    )),
     x => {
       let msg = format!(
-        "&tuple:class requires a tuple, but received: {}",
+        "&tuple:impls requires a tuple, but received: {}",
         type_of(&[x.to_owned()])?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleClass).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleImpls).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -980,40 +1168,40 @@ pub fn tuple_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn tuple_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn tuple_with_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:with-class expected 2 arguments, but received:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:with-impls expected 2 arguments, but received:", xs);
   }
   match (&xs[0], &xs[1]) {
     (Calcit::Tuple(CalcitTuple { tag, extra, sum_type, .. }), Calcit::Record(record)) => Ok(Calcit::Tuple(CalcitTuple {
       tag: tag.to_owned(),
       extra: extra.to_owned(),
-      classes: vec![Arc::new(record.to_owned())],
+      impls: vec![Arc::new(record.to_owned())],
       sum_type: sum_type.to_owned(),
     })),
     (a, Calcit::Record { .. }) => {
       let msg = format!(
-        "&tuple:with-class requires a tuple, but received: {}",
+        "&tuple:with-impls requires a tuple, but received: {}",
         type_of(&[a.to_owned()])?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleWithClass).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleWithImpls).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     (Calcit::Tuple { .. }, b) => {
       let msg = format!(
-        "&tuple:with-class requires a record for the second argument, but received: {}",
+        "&tuple:with-impls requires a record for the second argument, but received: {}",
         type_of(&[b.to_owned()])?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleWithClass).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleWithImpls).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     (a, b) => {
       let msg = format!(
-        "&tuple:with-class requires a tuple and a record, but received: {} and {}",
+        "&tuple:with-impls requires a tuple and a record, but received: {} and {}",
         type_of(&[a.to_owned()])?.lisp_str(),
         type_of(&[b.to_owned()])?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleWithClass).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleWithImpls).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
   }
@@ -1021,12 +1209,12 @@ pub fn tuple_with_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 /// Inspect and print class methods information for debugging
 /// Usage: (&inspect-class-methods value "optional note")
-/// Returns the value unchanged while printing class information to stderr
-pub fn inspect_class_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+/// Returns the value unchanged while printing impl information to stderr
+pub fn inspect_impl_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() || xs.len() > 2 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
-      "&inspect-class-methods expected 1 or 2 arguments (value, optional note), but received:",
+      "&inspect-impl-methods expected 1 or 2 arguments (value, optional note), but received:",
       xs,
     );
   }
@@ -1041,28 +1229,26 @@ pub fn inspect_class_methods(xs: &[Calcit], call_stack: &CallStackList) -> Resul
     ""
   };
 
-  // Get the class record for this value
+  // Get the impl records for this value
   let class_result: Result<Calcit, CalcitErr> = match value {
-    Calcit::Tuple(CalcitTuple { classes, .. }) => match classes.first() {
-      Some(class) => Ok(Calcit::Record((**class).to_owned())),
-      None => Ok(Calcit::Nil),
-    },
-    Calcit::Record(CalcitRecord { classes, .. }) => match classes.first() {
-      Some(class) => Ok(Calcit::Record((**class).to_owned())),
-      None => Ok(Calcit::Nil),
-    },
-    Calcit::List(..) => runner::evaluate_symbol_from_program("&core-list-class", calcit::CORE_NS, None, call_stack),
-    Calcit::Map(..) => runner::evaluate_symbol_from_program("&core-map-class", calcit::CORE_NS, None, call_stack),
-    Calcit::Number(..) => runner::evaluate_symbol_from_program("&core-number-class", calcit::CORE_NS, None, call_stack),
-    Calcit::Str(..) => runner::evaluate_symbol_from_program("&core-string-class", calcit::CORE_NS, None, call_stack),
-    Calcit::Set(..) => runner::evaluate_symbol_from_program("&core-set-class", calcit::CORE_NS, None, call_stack),
-    Calcit::Nil => runner::evaluate_symbol_from_program("&core-nil-class", calcit::CORE_NS, None, call_stack),
-    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol_from_program("&core-fn-class", calcit::CORE_NS, None, call_stack),
+    Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(Calcit::from(
+      impls.iter().map(|imp| Calcit::Record((**imp).to_owned())).collect::<Vec<_>>(),
+    )),
+    Calcit::Record(CalcitRecord { impls, .. }) => Ok(Calcit::from(
+      impls.iter().map(|imp| Calcit::Record((**imp).to_owned())).collect::<Vec<_>>(),
+    )),
+    Calcit::List(..) => runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack),
+    Calcit::Map(..) => runner::evaluate_symbol_from_program("&core-map-impls", calcit::CORE_NS, None, call_stack),
+    Calcit::Number(..) => runner::evaluate_symbol_from_program("&core-number-impls", calcit::CORE_NS, None, call_stack),
+    Calcit::Str(..) => runner::evaluate_symbol_from_program("&core-string-impls", calcit::CORE_NS, None, call_stack),
+    Calcit::Set(..) => runner::evaluate_symbol_from_program("&core-set-impls", calcit::CORE_NS, None, call_stack),
+    Calcit::Nil => runner::evaluate_symbol_from_program("&core-nil-impls", calcit::CORE_NS, None, call_stack),
+    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol_from_program("&core-fn-impls", calcit::CORE_NS, None, call_stack),
     _ => Ok(Calcit::Nil),
   };
 
-  // Print class information
-  eprintln!("\n&inspect-class-methods");
+  // Print impl information
+  eprintln!("\n&inspect-impl-methods");
   if !note.is_empty() {
     eprintln!("Note: {note}");
   }
@@ -1137,19 +1323,19 @@ pub fn inspect_class_methods(xs: &[Calcit], call_stack: &CallStackList) -> Resul
         }
       }
 
-      // Check for nested class
-      if let Some(parent_class) = record.classes.first() {
+      // Check for nested impl
+      if let Some(parent_impl) = record.impls.first() {
         eprintln!();
-        eprintln!("Parent class: {} ({} methods)", parent_class.name(), parent_class.fields().len());
+        eprintln!("Parent impl: {} ({} methods)", parent_impl.name(), parent_impl.fields().len());
         eprintln!(
-          "  → Inspect with: (&inspect-class-methods (&tuple:with-class (:: :{}) {}))",
-          parent_class.name(),
-          parent_class.name()
+          "  → Inspect with: (&inspect-impl-methods (&tuple:with-impls (:: :{}) {}))",
+          parent_impl.name(),
+          parent_impl.name()
         );
       }
     }
     Ok(Calcit::Nil) => {
-      eprintln!("\nNo class associated with this value.");
+      eprintln!("\nNo impl associated with this value.");
       eprintln!("  [This value type doesn't have methods]");
     }
     Ok(other) => {

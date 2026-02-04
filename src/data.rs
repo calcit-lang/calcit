@@ -91,7 +91,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       fields,
       field_types,
       generics,
-      classes,
+      impls,
     }) => {
       let mut ys = vec![Calcit::Symbol {
         sym: "defstruct".into(),
@@ -128,11 +128,11 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         ])));
       }
       let struct_value = Calcit::from(ys);
-      if let Some(class_record) = classes.first() {
+      if let Some(imp_record) = impls.first() {
         Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Proc(CalcitProc::NativeStructWithClass),
+          Calcit::Proc(CalcitProc::NativeStructWithImpls),
           struct_value,
-          Calcit::Record((**class_record).clone()),
+          Calcit::from(vec![Calcit::Record((**imp_record).clone())]),
         ])))
       } else {
         Ok(struct_value)
@@ -167,11 +167,11 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         }
       }
       let enum_value = Calcit::from(ys);
-      if let Some(class_record) = enum_def.classes().first() {
+      if let Some(imp_record) = enum_def.impls().first() {
         Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Proc(CalcitProc::NativeEnumWithClass),
+          Calcit::Proc(CalcitProc::NativeEnumWithImpls),
           enum_value,
-          Calcit::Record((**class_record).clone()),
+          Calcit::from(vec![Calcit::Record((**imp_record).clone())]),
         ])))
       } else {
         Ok(enum_value)

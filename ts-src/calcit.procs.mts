@@ -25,6 +25,7 @@ import { CalcitRef } from "./js-ref.mjs";
 import { fieldsEqual, CalcitRecord } from "./js-record.mjs";
 import { CalcitStruct } from "./js-struct.mjs";
 import { CalcitEnum } from "./js-enum.mjs";
+import { CalcitTrait } from "./js-trait.mjs";
 
 export * from "./calcit-data.mjs";
 export * from "./js-record.mjs";
@@ -35,6 +36,7 @@ export * from "./js-list.mjs";
 export * from "./js-set.mjs";
 export * from "./js-primes.mjs";
 export * from "./js-tuple.mjs";
+export * from "./js-trait.mjs";
 export * from "./custom-formatter.mjs";
 export * from "./js-cirru.mjs";
 export { _$n_compare } from "./js-primes.mjs";
@@ -87,6 +89,9 @@ export let type_of = (x: any): CalcitTag => {
   if (x instanceof CalcitEnum) {
     return newTag("enum");
   }
+  if (x instanceof CalcitTrait) {
+    return newTag("trait");
+  }
   if (x instanceof CalcitCirruQuote) {
     return newTag("cirru-quote");
   }
@@ -111,6 +116,12 @@ const list_items = (item: CalcitValue): CalcitValue[] => {
     return Array.from(item.items());
   }
   throw new Error(`Expected list entry, got: ${item}`);
+};
+
+export let _$n_trait_$o__$o_new = function (name: CalcitValue, methods: CalcitValue): CalcitTrait {
+  if (arguments.length !== 2) throw new Error("&trait::new expected 2 arguments");
+  const items = list_items(methods);
+  return new CalcitTrait(name, items);
 };
 
 export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStruct => {
@@ -249,7 +260,13 @@ export let _$n__$s_ = (x: number, y: number): number => {
 };
 
 export let _$n_str = (x: CalcitValue): string => {
-  return `${x}`;
+  if (x == null) {
+    return "";
+  }
+  if (typeof x === "string") {
+    return x;
+  }
+  return toString(x, false);
 };
 
 export let _$n_str_$o_contains_$q_ = (xs: CalcitValue, x: CalcitValue): boolean => {
@@ -376,9 +393,9 @@ export let _$n_tuple_$o_count = function (xs: CalcitValue) {
   throw new Error("Does not support `count` on this type");
 };
 
-export let _$n_tuple_$o_class = function (x: CalcitTuple) {
-  if (arguments.length !== 1) throw new Error("&tuple:class takes 1 argument");
-  return x.klass;
+export let _$n_tuple_$o_impls = function (x: CalcitTuple) {
+  if (arguments.length !== 1) throw new Error("&tuple:impls takes 1 argument");
+  return new CalcitSliceList(x.impls);
 };
 
 export let _$n_tuple_$o_params = function (x: CalcitTuple) {
@@ -386,11 +403,22 @@ export let _$n_tuple_$o_params = function (x: CalcitTuple) {
   return new CalcitSliceList(x.extra);
 };
 
-export let _$n_tuple_$o_with_class = function (x: CalcitTuple, y: CalcitRecord) {
-  if (arguments.length !== 2) throw new Error("&tuple:with-class takes 2 arguments");
-  if (!(x instanceof CalcitTuple)) throw new Error("&tuple:with-class expects a tuple");
-  if (!(y instanceof CalcitRecord)) throw new Error("&tuple:with-class expects second argument in record");
-  return new CalcitTuple(x.tag, x.extra, y, x.enumPrototype);
+export let _$n_tuple_$o_with_impls = function (x: CalcitTuple, y: CalcitRecord) {
+  if (arguments.length !== 2) throw new Error("&tuple:with-impls takes 2 arguments");
+  if (!(x instanceof CalcitTuple)) throw new Error("&tuple:with-impls expects a tuple");
+  if (!(y instanceof CalcitRecord)) throw new Error("&tuple:with-impls expects second argument in record");
+  return new CalcitTuple(x.tag, x.extra, [y], x.enumPrototype);
+};
+
+export let _$n_tuple_$o_with_traits = function (x: CalcitValue, ...traits: CalcitValue[]) {
+  if (traits.length < 1) throw new Error("&tuple:with-traits takes 2+ arguments");
+  if (!(x instanceof CalcitTuple)) throw new Error("&tuple:with-traits expects a tuple");
+  for (let idx = 0; idx < traits.length; idx++) {
+    if (!(traits[idx] instanceof CalcitRecord)) {
+      throw new Error("&tuple:with-traits expects trait impls as records");
+    }
+  }
+  return new CalcitTuple(x.tag, x.extra, x.impls.concat(traits as CalcitRecord[]), x.enumPrototype);
 };
 
 export let _$n_tuple_$o_enum = function (x: CalcitTuple) {
@@ -522,33 +550,71 @@ export let _$n_record_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: C
   throw new Error("record `assoc` expected a record");
 };
 
-export let _$n_record_$o_class = function (xs: CalcitValue) {
-  if (arguments.length !== 1) throw new Error("&record:class takes 1 argument");
-  if (xs instanceof CalcitRecord) return xs.klass;
-  throw new Error("&record:class expected a record");
+export let _$n_record_$o_impls = function (xs: CalcitValue) {
+  if (arguments.length !== 1) throw new Error("&record:impls takes 1 argument");
+  if (xs instanceof CalcitRecord) return new CalcitSliceList(xs.impls);
+  throw new Error("&record:impls expected a record");
 };
 
-export let _$n_record_$o_with_class = function (xs: CalcitValue, k: CalcitValue) {
-  if (arguments.length !== 2) throw new Error("&record:with-class takes 2 arguments");
-  if (xs instanceof CalcitRecord) return xs.withClass(k);
-  throw new Error("&record:with-class expected a record");
+export let _$n_record_$o_with_impls = function (xs: CalcitValue, k: CalcitValue) {
+  if (arguments.length !== 2) throw new Error("&record:with-impls takes 2 arguments");
+  if (xs instanceof CalcitRecord) return xs.withImpls(k);
+  throw new Error("&record:with-impls expected a record");
 };
 
-export let _$n_struct_$o_with_class = function (xs: CalcitValue, k: CalcitValue) {
-  if (arguments.length !== 2) throw new Error("&struct:with-class takes 2 arguments");
-  if (xs instanceof CalcitStruct && k instanceof CalcitRecord) return xs.withClass(k);
-  if (xs instanceof CalcitStruct) throw new Error("&struct:with-class expected a record as class");
-  throw new Error("&struct:with-class expected a struct");
-};
-
-export let _$n_enum_$o_with_class = function (xs: CalcitValue, k: CalcitValue) {
-  if (arguments.length !== 2) throw new Error("&enum:with-class takes 2 arguments");
-  if (xs instanceof CalcitEnum && k instanceof CalcitRecord) return xs.withClass(k);
-  if (xs instanceof CalcitRecord && k instanceof CalcitRecord) return new CalcitEnum(xs, k);
-  if (xs instanceof CalcitEnum || xs instanceof CalcitRecord) {
-    throw new Error("&enum:with-class expected a record as class");
+export let _$n_record_$o_with_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
+  if (traits.length < 1) throw new Error("&record:with-traits takes 2+ arguments");
+  if (!(xs instanceof CalcitRecord)) throw new Error("&record:with-traits expected a record");
+  for (let idx = 0; idx < traits.length; idx++) {
+    if (!(traits[idx] instanceof CalcitRecord)) {
+      throw new Error("&record:with-traits expects trait impls as records");
+    }
   }
-  throw new Error("&enum:with-class expected an enum prototype");
+  return new CalcitRecord(xs.name, xs.fields, xs.values, xs.impls.concat(traits as CalcitRecord[]));
+};
+
+export let _$n_struct_$o_with_impls = function (xs: CalcitValue, k: CalcitValue) {
+  if (arguments.length !== 2) throw new Error("&struct:with-impls takes 2 arguments");
+  if (xs instanceof CalcitStruct && k instanceof CalcitRecord) return xs.withImpls(k);
+  if (xs instanceof CalcitStruct) throw new Error("&struct:with-impls expected a record as impl");
+  throw new Error("&struct:with-impls expected a struct");
+};
+
+export let _$n_struct_$o_with_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
+  if (traits.length < 1) throw new Error("&struct:with-traits takes 2+ arguments");
+  if (!(xs instanceof CalcitStruct)) throw new Error("&struct:with-traits expected a struct");
+  for (let idx = 0; idx < traits.length; idx++) {
+    if (!(traits[idx] instanceof CalcitRecord)) {
+      throw new Error("&struct:with-traits expects trait impls as records");
+    }
+  }
+  return new CalcitStruct(xs.name, xs.fields, xs.fieldTypes, xs.impls.concat(traits as CalcitRecord[]));
+};
+
+export let _$n_enum_$o_with_impls = function (xs: CalcitValue, k: CalcitValue) {
+  if (arguments.length !== 2) throw new Error("&enum:with-impls takes 2 arguments");
+  if (xs instanceof CalcitEnum && k instanceof CalcitRecord) return xs.withImpls(k);
+  if (xs instanceof CalcitRecord && k instanceof CalcitRecord) return new CalcitEnum(xs, [k]);
+  if (xs instanceof CalcitEnum || xs instanceof CalcitRecord) {
+    throw new Error("&enum:with-impls expected a record as impl");
+  }
+  throw new Error("&enum:with-impls expected an enum prototype");
+};
+
+export let _$n_enum_$o_with_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
+  if (traits.length < 1) throw new Error("&enum:with-traits takes 2+ arguments");
+  for (let idx = 0; idx < traits.length; idx++) {
+    if (!(traits[idx] instanceof CalcitRecord)) {
+      throw new Error("&enum:with-traits expects trait impls as records");
+    }
+  }
+  if (xs instanceof CalcitEnum) {
+    return new CalcitEnum(xs.prototype, xs.impls.concat(traits as CalcitRecord[]));
+  }
+  if (xs instanceof CalcitRecord) {
+    return new CalcitRecord(xs.name, xs.fields, xs.values, xs.impls.concat(traits as CalcitRecord[]));
+  }
+  throw new Error("&enum:with-traits expected an enum or enum record");
 };
 
 export let _$n_list_$o_assoc_before = function (xs: CalcitList | CalcitSliceList, k: number, v: CalcitValue): CalcitList {
@@ -1471,7 +1537,7 @@ export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> =
 };
 
 export let _$o__$o_ = (tagName: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
-  return new CalcitTuple(tagName, extra, null);
+  return new CalcitTuple(tagName, extra, [], null);
 };
 
 export let _PCT__$o__$o_ = (enumPrototype: CalcitValue, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
@@ -1494,10 +1560,10 @@ export let _PCT__$o__$o_ = (enumPrototype: CalcitValue, tag: CalcitValue, ...ext
   }
 
   const tupleEnumPrototype = enumPrototype instanceof CalcitEnum ? enumPrototype : proto;
-  return new CalcitTuple(tag, extra, null, tupleEnumPrototype);
+  return new CalcitTuple(tag, extra, [], tupleEnumPrototype);
 };
 
-export let _PCT__PCT__$o__$o_ = (klass: CalcitRecord, enumPrototype: CalcitValue, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
+export let _PCT__PCT__$o__$o_ = (impl: CalcitRecord, enumPrototype: CalcitValue, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
   // Runtime validation: check if tag exists in enum and arity matches
   const proto = assert_enum_tag_args("%%::", enumPrototype, tag as CalcitTag);
   const tagValue = tag as CalcitTag;
@@ -1518,11 +1584,11 @@ export let _PCT__PCT__$o__$o_ = (klass: CalcitRecord, enumPrototype: CalcitValue
   }
 
   const tupleEnumPrototype = enumPrototype instanceof CalcitEnum ? enumPrototype : proto;
-  return new CalcitTuple(tag, extra, klass, tupleEnumPrototype);
+  return new CalcitTuple(tag, extra, [impl], tupleEnumPrototype);
 };
 
 // mutable place for core to register
-let calcit_builtin_classes = {
+let calcit_builtin_impls = {
   number: null as CalcitRecord,
   string: null as CalcitRecord,
   set: null as CalcitRecord,
@@ -1533,8 +1599,8 @@ let calcit_builtin_classes = {
 };
 
 // need to register code from outside
-export let register_calcit_builtin_classes = (options: typeof calcit_builtin_classes) => {
-  Object.assign(calcit_builtin_classes, options);
+export let register_calcit_builtin_impls = (options: typeof calcit_builtin_impls) => {
+  Object.assign(calcit_builtin_impls, options);
 };
 
 /** method used as closure */
@@ -1544,66 +1610,62 @@ export function invoke_method_closure(p: string) {
   };
 }
 
-function lookup_class(obj: CalcitValue): [CalcitRecord, string] {
-  let klass: CalcitRecord;
+function lookup_impls(obj: CalcitValue): [CalcitRecord[], string] {
+  let impls: CalcitRecord[];
   let tag: string;
   if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
-    tag = "&core-list-class";
-    klass = calcit_builtin_classes.list;
+    tag = "&core-list-methods";
+    impls = [calcit_builtin_impls.list];
   } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
-    tag = "&core-map-class";
-    klass = calcit_builtin_classes.map;
+    tag = "&core-map-methods";
+    impls = [calcit_builtin_impls.map];
   } else if (obj instanceof CalcitRecord) {
-    if (obj.klass instanceof CalcitRecord) {
-      tag = obj.name.toString();
-      klass = obj.klass;
-    } else {
-      throw new Error("Method invoking expected a record as class");
-    }
+    tag = obj.name.toString();
+    impls = obj.impls;
   } else if (obj instanceof CalcitTuple) {
-    if (obj.klass instanceof CalcitRecord) {
-      tag = obj.tag.toString();
-      klass = obj.klass;
-    } else {
-      throw new Error("Method invoking expected a record as class");
-    }
+    tag = obj.tag.toString();
+    impls = obj.impls;
   } else if (obj instanceof CalcitSet) {
-    tag = "&core-set-class";
-    klass = calcit_builtin_classes.set;
+    tag = "&core-set-methods";
+    impls = [calcit_builtin_impls.set];
   } else if (obj == null) {
-    tag = "&core-nil-class";
-    klass = calcit_builtin_classes.nil;
+    tag = "&core-nil-methods";
+    impls = [calcit_builtin_impls.nil];
   } else if (typeof obj === "number") {
-    tag = "&core-number-class";
-    klass = calcit_builtin_classes.number;
+    tag = "&core-number-methods";
+    impls = [calcit_builtin_impls.number];
   } else if (typeof obj === "string") {
-    tag = "&core-string-class";
-    klass = calcit_builtin_classes.string;
+    tag = "&core-string-methods";
+    impls = [calcit_builtin_impls.string];
   } else if (typeof obj === "function") {
-    tag = "&core-fn-class";
-    klass = calcit_builtin_classes.fn;
+    tag = "&core-fn-methods";
+    impls = [calcit_builtin_impls.fn];
   } else {
     return null;
   }
-  return [klass, tag];
+  return [impls, tag];
 }
 
 export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[]) {
-  let pair = lookup_class(obj);
+  let pair = lookup_impls(obj);
   if (pair == null) {
-    throw new Error(`No class for ${obj?.toString() || JSON.stringify(obj)} to lookup .${p}`);
+    throw new Error(`No implementation for ${obj?.toString() || JSON.stringify(obj)} to lookup .${p}`);
   }
-  let klass = pair[0];
+  let impls = pair[0];
   let tag = pair[1];
-  let method = klass.getOrNil(p);
-  if (method == null) {
-    throw new Error(`No method '.${p}' for '${tag}' object '${obj}'.\navailable fields are: ${klass.fields.map((fd: CalcitTag) => fd.value).join(" ")}`);
+  for (let klass of impls) {
+    if (klass == null) {
+      continue;
+    }
+    let method = klass.getOrNil(p);
+    if (method != null) {
+      if (typeof method !== "function") {
+        throw new Error(`Method '.${p}' for '${tag}' is not a function: ${method}`);
+      }
+      return method(obj, ...args);
+    }
   }
-  if (typeof method === "function") {
-    return method(obj, ...args);
-  } else {
-    throw new Error("Method for invoking is not a function");
-  }
+  throw new Error(`No method '.${p}' for '${tag}' object '${obj}'.`);
 }
 
 export let _$n_map_$o_to_list = (m: CalcitValue): CalcitSliceList => {

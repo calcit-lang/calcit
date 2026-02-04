@@ -1447,14 +1447,14 @@ fn check_record_method_args(
     return; // No type info, skip check
   };
 
-  // Get class record for the type
-  let Some(class_record) = get_class_record_from_type(&type_value, &CallStackList::default()) else {
-    return; // No class record, skip check
+  // Get impl records for the type
+  let Some(impl_records) = get_impl_records_from_type(&type_value, &CallStackList::default()) else {
+    return; // No impl record, skip check
   };
 
-  // Get method entry from class record
+  // Get method entry from impl records
   let method_str = method_name.as_ref();
-  let Some(method_entry) = class_record.get(method_str) else {
+  let Some(method_entry) = find_method_entry(&impl_records, method_str) else {
     return; // Method not found (will be caught by validate_method_call)
   };
 
@@ -1535,25 +1535,18 @@ fn check_record_method_args(
   }
 }
 
-fn try_inline_method_call(head: &Calcit, args: &CalcitList, call_stack: &CallStackList, file_ns: &str) -> Option<Calcit> {
+fn try_inline_method_call(head: &Calcit, args: &CalcitList, call_stack: &CallStackList, _file_ns: &str) -> Option<Calcit> {
   match head {
     Calcit::Method(method_name, calcit::MethodKind::Invoke(type_value)) => {
       if matches!(**type_value, CalcitTypeAnnotation::Dynamic) {
         return None;
       }
       let type_ref = type_value.as_ref();
-      let class_record = get_class_record_from_type(type_ref, call_stack)?;
-      let method_entry = class_record.get(method_name.as_ref())?;
+      let impl_records = get_impl_records_from_type(type_ref, call_stack)?;
+      let method_entry = find_method_entry(&impl_records, method_name.as_ref())?;
 
       if let Some(callable_head) = pick_callable_from_method_entry(method_entry) {
         return Some(build_inlined_call(callable_head, args));
-      }
-
-      if matches!(method_entry, Calcit::Fn { .. }) {
-        if let Some(record_ref) = build_record_reference(type_ref, file_ns) {
-          let record_get = build_record_get_callable(record_ref, method_name);
-          return Some(build_inlined_call(record_get, args));
-        }
       }
 
       None
@@ -1578,22 +1571,6 @@ fn build_inlined_call(callable_head: Calcit, args: &CalcitList) -> Calcit {
   Calcit::from(call_nodes)
 }
 
-fn build_record_get_callable(record_ref: Calcit, method_name: &Arc<str>) -> Calcit {
-  let record_proc = Calcit::Proc(CalcitProc::NativeRecordGet);
-  let method_tag = Calcit::Tag(cirru_edn::EdnTag::from(method_name.as_ref()));
-  Calcit::from(vec![record_proc, record_ref, method_tag])
-}
-
-fn build_record_reference(type_value: &CalcitTypeAnnotation, file_ns: &str) -> Option<Calcit> {
-  match type_value {
-    CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
-      Calcit::Import(import) => Some(Calcit::Import(import.to_owned())),
-      _ => None,
-    },
-    _ => build_core_class_import(core_class_symbol_from_type_annotation(type_value)?, file_ns),
-  }
-}
-
 fn validate_method_call(
   head: &Calcit,
   args: &CalcitList,
@@ -1615,19 +1592,28 @@ fn validate_method_call(
     return Ok(()); // No type info, skip validation
   };
 
-  // Get class record for the type
-  let Some(class_record) = get_class_record_from_type(&type_value, call_stack) else {
-    return Ok(()); // No class record, skip validation
+  // Get impl records for the type
+  let Some(impl_records) = get_impl_records_from_type(&type_value, call_stack) else {
+    return Ok(()); // No impl record, skip validation
   };
 
-  // Check if method exists in the class
+  // Check if method exists in the impls
   let method_str = method_name.as_ref();
-  if class_record.fields().iter().any(|field| field.ref_str() == method_str) {
+  if impl_records
+    .iter()
+    .any(|record| record.fields().iter().any(|field| field.ref_str() == method_str))
+  {
     return Ok(()); // Method found, validation passed
   }
 
   // Method not found, generate error
-  let methods_list = class_record.fields().iter().map(|f| f.to_string()).collect::<Vec<_>>().join(" ");
+  let mut methods = vec![];
+  for record in impl_records.iter() {
+    for field in record.fields().iter() {
+      methods.push(field.to_string());
+    }
+  }
+  let methods_list = methods.join(" ");
   let type_desc = describe_type(type_value.as_ref());
   Err(CalcitErr::use_msg_stack_location(
     CalcitErrKind::Type,
@@ -2043,7 +2029,7 @@ fn infer_enum_tuple_annotation(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   let tuple = CalcitTuple {
     tag: Arc::new(tag_value),
     extra: vec![],
-    classes: class_record.map(|c| vec![Arc::new(c)]).unwrap_or_default(),
+    impls: class_record.map(|c| vec![Arc::new(c)]).unwrap_or_default(),
     sum_type: Some(Arc::new(enum_proto)),
   };
 
@@ -2097,13 +2083,13 @@ fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation
     fields: Arc::new(field_names.clone()),
     field_types: Arc::new(field_types),
     generics: Arc::new(vec![]),
-    classes: vec![],
+    impls: vec![],
   };
 
   let record = CalcitRecord {
     struct_ref: Arc::new(struct_def),
     values: Arc::new(vec![Calcit::Nil; field_names.len()]),
-    classes: vec![],
+    impls: vec![],
   };
 
   Some(Arc::new(CalcitTypeAnnotation::Record(Arc::new(record))))
@@ -2197,7 +2183,7 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
       Some(CalcitRecord {
         struct_ref: Arc::new(struct_def.to_owned()),
         values: Arc::new(values),
-        classes: struct_def.classes.clone(),
+        impls: struct_def.impls.clone(),
       })
     }
     Calcit::Import(CalcitImport { ns, def, .. }) => match program::lookup_evaled_def(ns, def) {
@@ -2208,7 +2194,7 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
         Some(CalcitRecord {
           struct_ref: Arc::new(struct_def.to_owned()),
           values: Arc::new(values),
-          classes: struct_def.classes.clone(),
+          impls: struct_def.impls.clone(),
         })
       }
       _ => None,
@@ -2217,27 +2203,45 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
   }
 }
 
-/// Get the class record from a type value
+/// Get the impl records from a type value
 /// - If type_value is already a Record, use it directly
-/// - If type_value is a Tag, map to corresponding core class
+/// - If type_value is a Tag, map to corresponding core impl list
 /// - Otherwise return None
-fn get_class_record_from_type(type_value: &CalcitTypeAnnotation, call_stack: &CallStackList) -> Option<Arc<CalcitRecord>> {
+fn collect_impl_records_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitRecord>>> {
+  match value {
+    Calcit::Record(record) => Some(vec![Arc::new(record.to_owned())]),
+    Calcit::List(list) => {
+      let mut impls: Vec<Arc<CalcitRecord>> = Vec::with_capacity(list.len());
+      for item in list.iter() {
+        if let Calcit::Record(record) = item {
+          impls.push(Arc::new(record.to_owned()));
+        } else {
+          return None;
+        }
+      }
+      Some(impls)
+    }
+    _ => None,
+  }
+}
+
+fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation, call_stack: &CallStackList) -> Option<Vec<Arc<CalcitRecord>>> {
   if let Some(record) = type_value.as_record() {
-    return Some(Arc::new(record.clone()));
+    return Some(vec![Arc::new(record.clone())]);
   }
 
-  if let Some(class_symbol) = core_class_symbol_from_type_annotation(type_value) {
+  if let Some(class_symbol) = core_impl_list_symbol_from_type_annotation(type_value) {
     return match runner::evaluate_symbol_from_program(class_symbol, calcit::CORE_NS, None, call_stack) {
-      Ok(Calcit::Record(record)) => Some(Arc::new(record)),
-      Ok(_) | Err(_) => None,
+      Ok(value) => collect_impl_records_from_value(&value),
+      Err(_) => None,
     };
   }
 
   if let CalcitTypeAnnotation::Custom(value) = type_value {
     if let Calcit::Import(import) = value.as_ref() {
       return match runner::evaluate_symbol_from_program(&import.def, &import.ns, None, call_stack) {
-        Ok(Calcit::Record(record)) => Some(Arc::new(record)),
-        Ok(_) | Err(_) => None,
+        Ok(value) => collect_impl_records_from_value(&value),
+        Err(_) => None,
       };
     }
   }
@@ -2245,26 +2249,26 @@ fn get_class_record_from_type(type_value: &CalcitTypeAnnotation, call_stack: &Ca
   None
 }
 
-fn build_core_class_import(class_symbol: &'static str, file_ns: &str) -> Option<Calcit> {
-  Some(Calcit::Import(CalcitImport {
-    ns: Arc::from(calcit::CORE_NS),
-    def: Arc::from(class_symbol),
-    info: Arc::new(ImportInfo::Core { at_ns: Arc::from(file_ns) }),
-    coord: program::tip_coord(calcit::CORE_NS, class_symbol),
-  }))
-}
-
-fn core_class_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation) -> Option<&'static str> {
+fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation) -> Option<&'static str> {
   match type_value {
-    CalcitTypeAnnotation::List(_) => Some("&core-list-class"),
-    CalcitTypeAnnotation::String => Some("&core-string-class"),
-    CalcitTypeAnnotation::Map(_, _) => Some("&core-map-class"),
-    CalcitTypeAnnotation::Set(_) => Some("&core-set-class"),
-    CalcitTypeAnnotation::Number => Some("&core-number-class"),
-    CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-class"),
-    CalcitTypeAnnotation::Optional(inner) => core_class_symbol_from_type_annotation(inner.as_ref()),
+    CalcitTypeAnnotation::List(_) => Some("&core-list-impls"),
+    CalcitTypeAnnotation::String => Some("&core-string-impls"),
+    CalcitTypeAnnotation::Map(_, _) => Some("&core-map-impls"),
+    CalcitTypeAnnotation::Set(_) => Some("&core-set-impls"),
+    CalcitTypeAnnotation::Number => Some("&core-number-impls"),
+    CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-impls"),
+    CalcitTypeAnnotation::Optional(inner) => core_impl_list_symbol_from_type_annotation(inner.as_ref()),
     _ => None,
   }
+}
+
+fn find_method_entry<'a>(impls: &'a [Arc<CalcitRecord>], name: &str) -> Option<&'a Calcit> {
+  for imp in impls.iter() {
+    if let Some(entry) = imp.get(name) {
+      return Some(entry);
+    }
+  }
+  None
 }
 
 /// Describe the type for error messages
@@ -2867,7 +2871,7 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      classes: vec![],
+      impls: vec![],
     })));
 
     // Test expression: (assert-type user <record-type>) (&record:get user :name)
@@ -2911,7 +2915,7 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      classes: vec![],
+      impls: vec![],
     })));
 
     // Test expression: (&record:get user :email) with user already typed
@@ -2972,7 +2976,7 @@ mod tests {
     let class_record = CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Greeter"), vec![EdnTag::from("greet")])),
       values: Arc::new(vec![method_import.clone()]),
-      classes: vec![],
+      impls: vec![],
     };
     scope_types.insert(Arc::from("user"), Arc::new(CalcitTypeAnnotation::Record(Arc::new(class_record))));
 
@@ -3026,7 +3030,7 @@ mod tests {
     let class_record = CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Greeter"), vec![EdnTag::from("greet")])),
       values: Arc::new(vec![method_fn.clone()]),
-      classes: vec![],
+      impls: vec![],
     };
 
     let record_ns = "tests.method.class";
@@ -3086,7 +3090,7 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      classes: vec![],
+      impls: vec![],
     })));
 
     // Test expression: (user.-name) - wrapped in a list to trigger method parsing
@@ -3127,7 +3131,7 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      classes: vec![],
+      impls: vec![],
     })));
 
     // Test expression: (user.-email) - invalid field, wrapped in list
@@ -3175,7 +3179,7 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      classes: vec![],
+      impls: vec![],
     })));
 
     // Test expression: (.slice person 1 3) - trying to call non-existent method
@@ -3363,7 +3367,7 @@ mod tests {
         id: Arc::from("tests.method/greet"),
         info: method_fn.clone(),
       }]),
-      classes: vec![],
+      impls: vec![],
     };
 
     // Test expression: (.greet user |hello) - wrong argument type
@@ -3417,7 +3421,7 @@ mod tests {
         Calcit::from(vec![Calcit::tag("string")]), // :err payload types
         Calcit::from(CalcitList::default()),       // :ok payload types (empty)
       ]),
-      classes: vec![],
+      impls: vec![],
     };
     let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
 
@@ -3462,7 +3466,7 @@ mod tests {
         Calcit::from(vec![Calcit::tag("string")]), // :err expects 1 payload
         Calcit::from(CalcitList::default()),       // :ok expects 0 payloads
       ]),
-      classes: vec![],
+      impls: vec![],
     };
     let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
 
@@ -3508,7 +3512,7 @@ mod tests {
         Calcit::from(vec![Calcit::tag("string")]), // :err expects string payload
         Calcit::from(CalcitList::default()),       // :ok expects no payloads
       ]),
-      classes: vec![],
+      impls: vec![],
     };
     let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
 
@@ -3547,7 +3551,7 @@ mod tests {
     let tuple_type = CalcitTuple {
       tag: Arc::new(Calcit::Tag(EdnTag::from("point"))),
       extra: vec![Calcit::Number(10.0), Calcit::Number(20.0)],
-      classes: vec![],
+      impls: vec![],
       sum_type: None,
     };
 
@@ -3591,7 +3595,7 @@ mod tests {
     let tuple_type = CalcitTuple {
       tag: Arc::new(Calcit::Tag(EdnTag::from("point"))),
       extra: vec![Calcit::Number(10.0), Calcit::Number(20.0)],
-      classes: vec![],
+      impls: vec![],
       sum_type: None,
     };
 
@@ -3629,7 +3633,7 @@ mod tests {
     let tuple_type = CalcitTuple {
       tag: Arc::new(Calcit::Tag(EdnTag::from("point"))),
       extra: vec![Calcit::Number(10.0), Calcit::Number(20.0)],
-      classes: vec![],
+      impls: vec![],
       sum_type: None,
     };
 

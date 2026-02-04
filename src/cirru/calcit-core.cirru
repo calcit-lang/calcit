@@ -64,9 +64,9 @@
                 quasiquote $ if (&= ~item ~x) ~branch
                   ~ $ if (&list:empty? others) default
                     quasiquote $ &case ~item ~default ~@others
-        |&core-fn-class $ %{} :CodeEntry (:doc |)
+        |&core-fn-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! &core-fn-class
+            defrecord! &core-fn-methods
               :call $ defn &fn:call (f & args) (f & args)
               :call-args $ defn &fn:call-args (f args) (f & args)
               :map $ defn &fn:map (f g)
@@ -81,18 +81,26 @@
               :apply $ defn &fn:apply (f g)
                 defn %*fn:apply (x)
                   g x $ f x
-        |with-class $ %{} :CodeEntry (:doc "|Assign class metadata by value kind\nSyntax: (with-class value klass)\nParams: value (record/tuple/struct/enum), klass (record)\nReturns: value with updated class metadata\nDispatches to &record:with-class, &tuple:with-class, &struct:with-class, &enum:with-class")
+        |with-impls $ %{} :CodeEntry (:doc "|Assign trait implementations by value kind\nSyntax: (with-impls value klasses)\nParams: value (record/tuple/struct/enum), klasses (record or list of records)\nReturns: value with updated trait implementations\nDispatches to &record:with-impls, &tuple:with-impls, &struct:with-impls, &enum:with-impls")
           :code $ quote
-            defn with-class (x klass)
-              assert "|with-class expects a record as class" $ record? klass
-              if (struct? x) (&struct:with-class x klass)
-                if (enum? x) (&enum:with-class x klass)
-                  if (record? x) (&record:with-class x klass)
-                    if (tuple? x) (&tuple:with-class x klass)
-                      raise $ str-spaced "|with-class expects record/tuple/struct/enum, got:" (type-of x)
-        |&core-list-class $ %{} :CodeEntry (:doc |)
+            defn with-impls (x klass)
+              if (struct? x) (&struct:with-impls x klass)
+                if (enum? x) (&enum:with-impls x klass)
+                  if (record? x) (&record:with-impls x klass)
+                    if (tuple? x) (&tuple:with-impls x klass)
+                      raise $ str-spaced "|with-impls expects record/tuple/struct/enum, got:" (type-of x)
+        |with-traits $ %{} :CodeEntry (:doc "|Append trait implementations\nSyntax: (with-traits value & traits)\nParams: value (record/tuple/struct/enum), traits (record, variadic)\nReturns: value with updated trait implementations\nDispatches to &record:with-traits, &tuple:with-traits, &struct:with-traits, &enum:with-traits")
           :code $ quote
-            defrecord! &core-list-class (:any? any?) (:add append) (:append append) (:assoc &list:assoc) (:assoc-after &list:assoc-after) (:assoc-before &list:assoc-before) (:bind mapcat) (:butlast butlast) (:concat &list:concat) (:contains? &list:contains?) (:includes? &list:includes?) (:count &list:count) (:drop drop) (:each each)
+            defn with-traits (x & traits)
+              assert "|with-traits expects records as traits" $ every? traits record?
+              if (struct? x) (&struct:with-traits x & traits)
+                if (enum? x) (&enum:with-traits x & traits)
+                  if (record? x) (&record:with-traits x & traits)
+                    if (tuple? x) (&tuple:with-traits x & traits)
+                      raise $ str-spaced "|with-traits expects record/tuple/struct/enum, got:" (type-of x)
+        |&core-list-methods $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defrecord! &core-list-methods (:any? any?) (:add append) (:append append) (:assoc &list:assoc) (:assoc-after &list:assoc-after) (:assoc-before &list:assoc-before) (:bind mapcat) (:butlast butlast) (:concat &list:concat) (:contains? &list:contains?) (:includes? &list:includes?) (:count &list:count) (:drop drop) (:each each)
               :empty $ defn &list:empty (x) ([])
               :empty? &list:empty?
               :filter &list:filter
@@ -136,9 +144,9 @@
                   defn &fn:ap-gen (f)
                     map xs $ defn &fn:ap-gen (x) (f x)
               :flatten &list:flatten
-        |&core-map-class $ %{} :CodeEntry (:doc |)
+        |&core-map-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! &core-map-class (:add &map:add-entry) (:assoc &map:assoc) (:common-keys &map:common-keys) (:contains? &map:contains?) (:count &map:count) (:destruct &map:destruct) (:diff-keys &map:diff-keys) (:diff-new &map:diff-new) (:dissoc &map:dissoc)
+            defrecord! &core-map-methods (:add &map:add-entry) (:assoc &map:assoc) (:common-keys &map:common-keys) (:contains? &map:contains?) (:count &map:count) (:destruct &map:destruct) (:diff-keys &map:diff-keys) (:diff-new &map:diff-new) (:dissoc &map:dissoc)
               :empty $ defn &map:empty (x) (&{})
               :empty? &map:empty?
               :filter &map:filter
@@ -156,9 +164,9 @@
               :to-map identity
               :to-pairs to-pairs
               :values vals
-        |&core-nil-class $ %{} :CodeEntry (:doc |)
+        |&core-nil-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! &core-nil-class
+            defrecord! &core-nil-methods
               :to-list $ defn &nil:to-list (_) ([])
               :to-map $ defn &nil:to-map (_) (&{})
               :pairs-map $ defn &nil:pairs-map (_) (&{})
@@ -170,9 +178,9 @@
               :bind $ defn &nil:bind (_ _f) nil
               :mappend $ defn &nil:mappend (_ x) x
               :apply $ defn &nil:apply (_ _f) nil
-        |&core-number-class $ %{} :CodeEntry (:doc |)
+        |&core-number-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! &core-number-class (:ceil ceil)
+            defrecord! &core-number-methods (:ceil ceil)
               :empty $ defn &number:empty (x) 0
               :floor floor
               :format &number:format
@@ -185,9 +193,9 @@
               :sqrt sqrt
               :negate negate
               :rem &number:rem
-        |&core-set-class $ %{} :CodeEntry (:doc |)
+        |&core-set-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! &core-set-class (:add include) (:contains? &set:includes?) (:count &set:count) (:destruct &set:destruct) (:difference difference)
+            defrecord! &core-set-methods (:add include) (:contains? &set:includes?) (:count &set:count) (:destruct &set:destruct) (:difference difference)
               :empty $ defn &set:empty (x) (#{})
               :empty? &set:empty?
               :exclude exclude
@@ -201,9 +209,9 @@
               :to-list &set:to-list
               :to-set identity
               :union union
-        |&core-string-class $ %{} :CodeEntry (:doc |)
+        |&core-string-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! &core-string-class (:blank? blank?) (:count &str:count)
+            defrecord! &core-string-methods (:blank? blank?) (:count &str:count)
               :empty $ defn &str:empty (_) |
               :ends-with? ends-with?
               :get &str:nth
@@ -228,6 +236,82 @@
               :get-char-code get-char-code
               :escape &str:escape
               :mappend &str:concat
+        |Show $ %{} :CodeEntry (:doc "|Core trait: Show")
+          :code $ quote
+            deftrait Show :show
+        |Eq $ %{} :CodeEntry (:doc "|Core trait: Eq")
+          :code $ quote
+            deftrait Eq :eq?
+        |Add $ %{} :CodeEntry (:doc "|Core trait: Add")
+          :code $ quote
+            deftrait Add :add
+        |Multiply $ %{} :CodeEntry (:doc "|Core trait: Multiply")
+          :code $ quote
+            deftrait Multiply :multiply
+        |Len $ %{} :CodeEntry (:doc "|Core trait: Len")
+          :code $ quote
+            deftrait Len :len
+        |&core-show-impl $ %{} :CodeEntry (:doc "|Core trait impl for Show")
+          :code $ quote
+            defrecord! &core-show-impl
+              :show &str
+        |&core-eq-impl $ %{} :CodeEntry (:doc "|Core trait impl for Eq")
+          :code $ quote
+            defrecord! &core-eq-impl
+              :eq? &=
+        |&core-add-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on number")
+          :code $ quote
+            defrecord! &core-add-number-impl
+              :add &+
+        |&core-add-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on string")
+          :code $ quote
+            defrecord! &core-add-string-impl
+              :add &str:concat
+        |&core-add-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on list")
+          :code $ quote
+            defrecord! &core-add-list-impl
+              :add &list:concat
+        |&core-multiply-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Multiply on number")
+          :code $ quote
+            defrecord! &core-multiply-number-impl
+              :multiply &*
+        |&core-len-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on list")
+          :code $ quote
+            defrecord! &core-len-list-impl
+              :len &list:count
+        |&core-len-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on map")
+          :code $ quote
+            defrecord! &core-len-map-impl
+              :len &map:count
+        |&core-len-set-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on set")
+          :code $ quote
+            defrecord! &core-len-set-impl
+              :len &set:count
+        |&core-len-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on string")
+          :code $ quote
+            defrecord! &core-len-string-impl
+              :len &str:count
+        |&core-number-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for number")
+          :code $ quote
+            def &core-number-impls $ [] &core-number-methods &core-show-impl &core-eq-impl &core-add-number-impl &core-multiply-number-impl
+        |&core-string-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for string")
+          :code $ quote
+            def &core-string-impls $ [] &core-string-methods &core-show-impl &core-eq-impl &core-add-string-impl &core-len-string-impl
+        |&core-list-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for list")
+          :code $ quote
+            def &core-list-impls $ [] &core-list-methods &core-show-impl &core-eq-impl &core-add-list-impl &core-len-list-impl
+        |&core-map-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for map")
+          :code $ quote
+            def &core-map-impls $ [] &core-map-methods &core-show-impl &core-eq-impl &core-len-map-impl
+        |&core-set-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for set")
+          :code $ quote
+            def &core-set-impls $ [] &core-set-methods &core-show-impl &core-eq-impl &core-len-set-impl
+        |&core-nil-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for nil")
+          :code $ quote
+            def &core-nil-impls $ [] &core-nil-methods &core-show-impl &core-eq-impl
+        |&core-fn-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for fn")
+          :code $ quote
+            def &core-fn-impls $ [] &core-fn-methods &core-show-impl
         |&doseq $ %{} :CodeEntry (:doc "|Side-effect traversal macro. Iterates over a binding pair, executing the body for each element and returning nil.")
           :code $ quote
             defmacro &doseq (pair & body)
@@ -275,9 +359,9 @@
                               , ~value
                             ~ $ &list:nth pair 2
                           &field-match-internal ~value $ ~@ (&list:rest body)
-        |&init-builtin-classes! $ %{} :CodeEntry (:doc |)
+        |&init-builtin-impls! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn &init-builtin-classes! () (; "this function to make sure builtin classes are loaded") (identity &core-number-class) (identity &core-string-class) (identity &core-set-class) (identity &core-list-class) (identity &core-map-class) (identity &core-nil-class) (identity &core-fn-class)
+            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-nil-impls) (identity &core-fn-impls)
         |&list-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro &list-match-internal (v branch1 pair branch2)
@@ -1180,6 +1264,14 @@
                   ~@ normalized
           :examples $ []
             quote $ defenum Result (:ok :number) (:err :string)
+        |deftrait $ %{} :CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name :method1 :method2 ...)\nParams: Name (symbol/tag), methods (list of tags)\nReturns: trait definition value\nExpands to &trait::new")
+          :code $ quote
+            defmacro deftrait (name & methods)
+              quasiquote
+                def ~name
+                  &trait::new
+                    ~ $ turn-tag name
+                    [] ~@methods
         |destruct-list $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn destruct-list (xs)
@@ -2655,9 +2747,9 @@
           :code $ quote &runtime-inplementation
         |&cirru-nth $ %{} :CodeEntry (:doc "|internal function for Cirru nth operation\nSyntax: (&cirru-nth cirru-list index)\nParams: cirru-list (cirru quote list), index (number)\nReturns: cirru node or nil\nGets nth element from Cirru list node, returns nil if index out of bounds")
           :code $ quote &runtime-inplementation
-        |:: $ %{} :CodeEntry (:doc "|internal function for creating tuples\nSyntax: (:: class & values)\nParams: class (any), values (any, variable number)\nReturns: tuple with class and values\nCreates a tuple with specified class and values")
+        |:: $ %{} :CodeEntry (:doc "|internal function for creating tuples\nSyntax: (:: impls & values)\nParams: impls (any), values (any, variable number)\nReturns: tuple with impls and values\nCreates a tuple with specified impls and values")
           :code $ quote &runtime-inplementation
-        |%:: $ %{} :CodeEntry (:doc "|internal function for creating enum tuples\nSyntax: (%:: enum tag & values)\nParams: enum (record/enum), tag (tag), values (any, variable number)\nReturns: tuple with enum metadata\nCreates a tagged tuple that carries enum metadata for validation (use &tuple:with-class to attach class)")
+        |%:: $ %{} :CodeEntry (:doc "|internal function for creating enum tuples\nSyntax: (%:: enum tag & values)\nParams: enum (record/enum), tag (tag), values (any, variable number)\nReturns: tuple with enum metadata\nCreates a tagged tuple that carries enum metadata for validation (use &tuple:with-impls to attach impls)")
           :code $ quote &runtime-inplementation
         |&tuple:nth $ %{} :CodeEntry (:doc "|internal function for tuple nth operation\nSyntax: (&tuple:nth tuple index)\nParams: tuple (tuple), index (number)\nReturns: value at index or nil\nGets the value at specified index in tuple, returns nil if out of bounds")
           :code $ quote &runtime-inplementation
@@ -2665,11 +2757,11 @@
           :code $ quote &runtime-inplementation
         |&tuple:count $ %{} :CodeEntry (:doc "|internal function for tuple count operation\nSyntax: (&tuple:count tuple)\nParams: tuple (tuple)\nReturns: number of elements\nReturns the number of elements in the tuple")
           :code $ quote &runtime-inplementation
-        |&tuple:class $ %{} :CodeEntry (:doc "|internal function for getting tuple class\nSyntax: (&tuple:class tuple)\nParams: tuple (tuple)\nReturns: class of the tuple\nReturns the class/type identifier of the tuple")
+        |&tuple:impls $ %{} :CodeEntry (:doc "|internal function for getting tuple impls\nSyntax: (&tuple:impls tuple)\nParams: tuple (tuple)\nReturns: impls of the tuple\nReturns the impls/type identifier of the tuple")
           :code $ quote &runtime-inplementation
         |&tuple:params $ %{} :CodeEntry (:doc "|internal function for getting tuple params\nSyntax: (&tuple:params tuple)\nParams: tuple (tuple)\nReturns: list of parameter values\nReturns the parameter values of the tuple as a list")
           :code $ quote &runtime-inplementation
-        |&tuple:with-class $ %{} :CodeEntry (:doc "|internal function for tuple with class operation\nSyntax: (&tuple:with-class tuple new-class)\nParams: tuple (tuple), new-class (any)\nReturns: new tuple with updated class\nReturns new tuple with same values but different class")
+        |&tuple:with-impls $ %{} :CodeEntry (:doc "|internal function for tuple with impls operation\nSyntax: (&tuple:with-impls tuple new-impls)\nParams: tuple (tuple), new-impls (any)\nReturns: new tuple with updated impls\nReturns new tuple with same values but different impls")
           :code $ quote &runtime-inplementation
         |&struct::new $ %{} :CodeEntry (:doc "|internal function for creating struct definitions\nSyntax: (&struct::new name (field type) ...)\nParams: name (tag), field pairs (list)\nReturns: struct definition value\nCreates a struct definition with fields and type annotations")
           :code $ quote &runtime-inplementation
@@ -2679,9 +2771,9 @@
           :code $ quote &runtime-inplementation
           :examples $ []
             quote $ &enum::new :Result ([] :ok :number) ([] :err :string)
-        |&struct:with-class $ %{} :CodeEntry (:doc "|internal function for struct with class operation\nSyntax: (&struct:with-class struct class)\nParams: struct (struct), class (record)\nReturns: struct with class metadata\nAttaches class info to a struct definition")
+        |&struct:with-impls $ %{} :CodeEntry (:doc "|internal function for struct with impls operation\nSyntax: (&struct:with-impls struct impls)\nParams: struct (struct), impls (record)\nReturns: struct with trait implementations\nAttaches impls info to a struct definition")
           :code $ quote &runtime-inplementation
-        |&enum:with-class $ %{} :CodeEntry (:doc "|internal function for enum with class operation\nSyntax: (&enum:with-class enum class)\nParams: enum (enum), class (record)\nReturns: enum value with class metadata\nAttaches class info to an enum prototype")
+        |&enum:with-impls $ %{} :CodeEntry (:doc "|internal function for enum with impls operation\nSyntax: (&enum:with-impls enum impls)\nParams: enum (enum), impls (record)\nReturns: enum value with trait implementations\nAttaches impls info to an enum prototype")
           :code $ quote &runtime-inplementation
         |&tuple:enum $ %{} :CodeEntry (:doc "|Get the enum prototype from a tuple\nSyntax: (&tuple:enum tuple)\nParams: tuple (tuple)\nReturns: enum value or nil if not an enum tuple")
           :code $ quote &runtime-inplementation
@@ -2935,6 +3027,8 @@
           :code $ quote &runtime-inplementation
         |&set:destruct $ %{} :CodeEntry (:doc "|internal function for set destructuring\nSyntax: (&set:destruct set pattern)\nParams: set (set), pattern (any)\nReturns: set\nDestructs set according to pattern")
           :code $ quote &runtime-inplementation
+        |&trait::new $ %{} :CodeEntry (:doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value")
+          :code $ quote &runtime-inplementation
         |atom $ %{} :CodeEntry (:doc "|internal function for creating atoms\nSyntax: (atom value)\nParams: value (any)\nReturns: atom\nCreates new atom with initial value")
           :code $ quote &runtime-inplementation
         |&atom:deref $ %{} :CodeEntry (:doc "|internal function for dereferencing atoms\nSyntax: (&atom:deref atom)\nParams: atom (atom)\nReturns: any\nReturns current value of atom")
@@ -2945,15 +3039,15 @@
           :code $ quote &runtime-inplementation
         |new-record $ %{} :CodeEntry (:doc "|internal function for creating new records\nSyntax: (new-record name & key-value-pairs)\nParams: name (keyword), key-value-pairs (any, variadic)\nReturns: record\nCreates new record with name and fields")
           :code $ quote &runtime-inplementation
-        |new-class-record $ %{} :CodeEntry (:doc "|internal function for creating new class records\nSyntax: (new-class-record class & key-value-pairs)\nParams: class (any), key-value-pairs (any, variadic)\nReturns: record\nCreates new record with class and fields")
+        |new-impl-record $ %{} :CodeEntry (:doc "|internal function for creating new impls records\nSyntax: (new-impl-record impls & key-value-pairs)\nParams: impls (any), key-value-pairs (any, variadic)\nReturns: record\nCreates new record with impls and fields")
           :code $ quote &runtime-inplementation
         |&%{} $ %{} :CodeEntry (:doc "|internal function for native record creation\nSyntax: (&%{} name & key-value-pairs)\nParams: name (keyword), key-value-pairs (any, variadic)\nReturns: record\nCreates native record with name and fields")
           :code $ quote &runtime-inplementation
         |&record:with $ %{} :CodeEntry (:doc "|internal function for record with operation\nSyntax: (&record:with record key value & key-values)\nParams: record (record), key (any), value (any), key-values (any, variadic)\nReturns: record\nReturns new record with updated fields")
           :code $ quote &runtime-inplementation
-        |&record:class $ %{} :CodeEntry (:doc "|internal function for getting record class\nSyntax: (&record:class record)\nParams: record (record)\nReturns: any\nReturns class of record")
+        |&record:impls $ %{} :CodeEntry (:doc "|internal function for getting record impls\nSyntax: (&record:impls record)\nParams: record (record)\nReturns: any\nReturns impls of record")
           :code $ quote &runtime-inplementation
-        |&record:with-class $ %{} :CodeEntry (:doc "|internal function for record with class operation\nSyntax: (&record:with-class record class)\nParams: record (record), class (any)\nReturns: record\nReturns new record with specified class")
+        |&record:with-impls $ %{} :CodeEntry (:doc "|internal function for record with impls operation\nSyntax: (&record:with-impls record impls)\nParams: record (record), impls (any)\nReturns: record\nReturns new record with specified impls")
           :code $ quote &runtime-inplementation
         |&record:matches? $ %{} :CodeEntry (:doc "|internal function for checking record matches\nSyntax: (&record:matches? record pattern)\nParams: record (record), pattern (any)\nReturns: boolean\nReturns true if record matches pattern")
           :code $ quote &runtime-inplementation

@@ -8,13 +8,13 @@ import { CalcitEnum } from "./js-enum.mjs";
 export class CalcitTuple {
   tag: CalcitValue;
   extra: CalcitValue[];
-  klass: CalcitRecord;
+  impls: CalcitRecord[];
   enumPrototype: CalcitRecord | CalcitEnum;
   cachedHash: Hash;
-  constructor(tagName: CalcitValue, extra: CalcitValue[], klass: CalcitRecord, enumPrototype: CalcitRecord | CalcitEnum = null) {
+  constructor(tagName: CalcitValue, extra: CalcitValue[], impls: CalcitRecord[] = [], enumPrototype: CalcitRecord | CalcitEnum = null) {
     this.tag = tagName;
     this.extra = extra;
-    this.klass = klass;
+    this.impls = impls;
     this.enumPrototype = enumPrototype;
     this.cachedHash = null;
   }
@@ -29,11 +29,11 @@ export class CalcitTuple {
   }
   assoc(n: number, v: CalcitValue) {
     if (n === 0) {
-      return new CalcitTuple(v, this.extra, this.klass, this.enumPrototype);
+      return new CalcitTuple(v, this.extra, this.impls, this.enumPrototype);
     } else if (n - 1 < this.extra.length) {
       let next_extra = this.extra.slice();
       next_extra[n - 1] = v;
-      return new CalcitTuple(this.tag, next_extra, this.klass, this.enumPrototype);
+      return new CalcitTuple(this.tag, next_extra, this.impls, this.enumPrototype);
     } else {
       throw new Error(`Tuple only have ${this.extra.length} elements`);
     }
@@ -67,14 +67,14 @@ export class CalcitTuple {
     const hasEnum = this.enumPrototype != null;
     const enumName = hasEnum ? (this.enumPrototype instanceof CalcitEnum ? this.enumPrototype.prototype.name.value : this.enumPrototype.name.value) : null;
 
-    if (this.klass instanceof CalcitRecord && hasEnum) {
-      return `(%:: ${content} (:class ${this.klass.name.value}) (:enum ${enumName}))`;
+    if (this.impls.length > 0 && hasEnum) {
+      return `(%:: ${content} (:impls ${this.impls[0].name.value}) (:enum ${enumName}))`;
     }
     if (hasEnum) {
       return `(%:: ${content} (:enum ${enumName}))`;
     }
-    if (this.klass instanceof CalcitRecord) {
-      return `(:: ${content} (:class ${this.klass.name.value}))`;
+    if (this.impls.length > 0) {
+      return `(:: ${content} (:impls ${this.impls[0].name.value}))`;
     }
     return `(:: ${content})`;
   }
