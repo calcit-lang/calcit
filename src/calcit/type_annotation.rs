@@ -490,11 +490,11 @@ impl CalcitTypeAnnotation {
         }
         if tag.ref_str().trim_start_matches(':') == "fn" {
           let mut generics: Vec<Arc<str>> = vec![];
-          let (args_form, return_form) = if let Some(generic_vars) = tuple.extra.get(0).and_then(Self::parse_generics_list) {
+          let (args_form, return_form) = if let Some(generic_vars) = tuple.extra.first().and_then(Self::parse_generics_list) {
             generics = generic_vars;
             (tuple.extra.get(1).unwrap_or(&Calcit::Nil), tuple.extra.get(2))
           } else {
-            (tuple.extra.get(0).unwrap_or(&Calcit::Nil), tuple.extra.get(1))
+            (tuple.extra.first().unwrap_or(&Calcit::Nil), tuple.extra.get(1))
           };
           let arg_types = if let Calcit::List(args) = args_form {
             args.iter().map(Self::parse_type_annotation_form).collect()
