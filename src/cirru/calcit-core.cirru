@@ -1590,32 +1590,32 @@
         |Option $ %{} :CodeEntry (:doc "|Rust-style Option enum")
           :code $ quote
             def Option
-              with-traits (defenum Option (:some :dynamic) (:none)) internal/&core-show-impl internal/&core-eq-impl OptionMappableImpl
+              impl-traits (defenum Option (:some :dynamic) (:none)) internal/&core-show-impl internal/&core-eq-impl OptionMappableImpl
           :examples $ []
         |Result $ %{} :CodeEntry (:doc "|Rust-style Result enum")
           :code $ quote
             def Result
-              with-traits (defenum Result (:ok :dynamic) (:err :dynamic)) internal/&core-show-impl internal/&core-eq-impl ResultMappableImpl
+              impl-traits (defenum Result (:ok :dynamic) (:err :dynamic)) internal/&core-show-impl internal/&core-eq-impl ResultMappableImpl
           :examples $ []
         |%some $ %{} :CodeEntry (:doc "|Create Some variant of Option")
           :code $ quote
             defn %some (value)
-              with-traits (%:: Option :some value) OptionMappableImpl
+              impl-traits (%:: Option :some value) OptionMappableImpl
           :examples $ []
         |%none $ %{} :CodeEntry (:doc "|Create None variant of Option")
           :code $ quote
             defn %none ()
-              with-traits (%:: Option :none) OptionMappableImpl
+              impl-traits (%:: Option :none) OptionMappableImpl
           :examples $ []
         |%ok $ %{} :CodeEntry (:doc "|Create Ok variant of Result")
           :code $ quote
             defn %ok (value)
-              with-traits (%:: Result :ok value) ResultMappableImpl
+              impl-traits (%:: Result :ok value) ResultMappableImpl
           :examples $ []
         |%err $ %{} :CodeEntry (:doc "|Create Err variant of Result")
           :code $ quote
             defn %err (message)
-              with-traits (%:: Result :err message) ResultMappableImpl
+              impl-traits (%:: Result :err message) ResultMappableImpl
           :examples $ []
         |defmacro $ %{} :CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
           :code $ quote &runtime-inplementation
@@ -3376,24 +3376,15 @@
                       , |ms
                   ~ v
           :examples $ []
-        |with-impls $ %{} :CodeEntry (:doc "|Assign trait implementations by value kind\nSyntax: (with-impls value klasses)\nParams: value (record/tuple/struct/enum), klasses (record or list of records)\nReturns: value with updated trait implementations\nDispatches to &record:with-impls, &tuple:with-impls, &struct:with-impls, &enum:with-impls")
+        |impl-traits $ %{} :CodeEntry (:doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (record/tuple/struct/enum), traits (record, variadic)\nReturns: value with updated trait implementations\nDispatches to &record:impl-traits, &tuple:impl-traits, &struct:impl-traits, &enum:impl-traits")
           :code $ quote
-            defn with-impls (x klass)
-              if (struct? x) (&struct:with-impls x klass)
-                if (enum? x) (&enum:with-impls x klass)
-                  if (record? x) (&record:with-impls x klass)
-                    if (tuple? x) (&tuple:with-impls x klass)
-                      raise $ str-spaced "|with-impls expects record/tuple/struct/enum, got:" (type-of x)
-          :examples $ []
-        |with-traits $ %{} :CodeEntry (:doc "|Append trait implementations\nSyntax: (with-traits value & traits)\nParams: value (record/tuple/struct/enum), traits (record, variadic)\nReturns: value with updated trait implementations\nDispatches to &record:with-traits, &tuple:with-traits, &struct:with-traits, &enum:with-traits")
-          :code $ quote
-            defn with-traits (x & traits)
-              assert "|with-traits expects records as traits" $ every? traits record?
-              if (struct? x) (&struct:with-traits x & traits)
-                if (enum? x) (&enum:with-traits x & traits)
-                  if (record? x) (&record:with-traits x & traits)
-                    if (tuple? x) (&tuple:with-traits x & traits)
-                      raise $ str-spaced "|with-traits expects record/tuple/struct/enum, got:" (type-of x)
+            defn impl-traits (x & traits)
+              assert "|impl-traits expects records as traits" $ every? traits record?
+              if (struct? x) (&struct:impl-traits x & traits)
+                if (enum? x) (&enum:impl-traits x & traits)
+                  if (record? x) (&record:impl-traits x & traits)
+                    if (tuple? x) (&tuple:impl-traits x & traits)
+                      raise $ str-spaced "|impl-traits expects record/tuple/struct/enum, got:" (type-of x)
           :examples $ []
         |wo-js-log $ %{} :CodeEntry (:doc |)
           :code $ quote

@@ -54,8 +54,6 @@ pub enum CalcitProc {
   NativeTupleImpls,
   #[strum(serialize = "&tuple:params")]
   NativeTupleParams,
-  #[strum(serialize = "&tuple:with-impls")]
-  NativeTupleWithImpls,
   #[strum(serialize = "&tuple:enum")]
   NativeTupleEnum,
   #[strum(serialize = "&struct::new")]
@@ -64,18 +62,14 @@ pub enum CalcitProc {
   NativeEnumNew,
   #[strum(serialize = "&trait::new")]
   NativeTraitNew,
-  #[strum(serialize = "&struct:with-impls")]
-  NativeStructWithImpls,
-  #[strum(serialize = "&enum:with-impls")]
-  NativeEnumWithImpls,
-  #[strum(serialize = "&record:with-traits")]
-  NativeRecordWithTraits,
-  #[strum(serialize = "&tuple:with-traits")]
-  NativeTupleWithTraits,
-  #[strum(serialize = "&struct:with-traits")]
-  NativeStructWithTraits,
-  #[strum(serialize = "&enum:with-traits")]
-  NativeEnumWithTraits,
+  #[strum(serialize = "&record:impl-traits")]
+  NativeRecordImplTraits,
+  #[strum(serialize = "&tuple:impl-traits")]
+  NativeTupleImplTraits,
+  #[strum(serialize = "&struct:impl-traits")]
+  NativeStructImplTraits,
+  #[strum(serialize = "&enum:impl-traits")]
+  NativeEnumImplTraits,
   #[strum(serialize = "&tuple:enum-has-variant?")]
   NativeTupleEnumHasVariant,
   #[strum(serialize = "&tuple:enum-variant-arity")]
@@ -89,7 +83,7 @@ pub enum CalcitProc {
   #[strum(serialize = "&inspect-type")]
   NativeInspectType,
   #[strum(serialize = "&assert-traits")]
-  NativeAssertTrait,
+  NativeAssertTraits,
   #[strum(serialize = "raise")]
   Raise,
   #[strum(serialize = "quit!")]
@@ -363,8 +357,6 @@ pub enum CalcitProc {
   NativeRecordWith,
   #[strum(serialize = "&record:impls")]
   NativeRecordImpls,
-  #[strum(serialize = "&record:with-impls")]
-  NativeRecordWithImpls,
   #[strum(serialize = "&record:matches?")]
   NativeRecordMatches,
   #[strum(serialize = "&record:from-map")]
@@ -519,7 +511,7 @@ impl CalcitProc {
         return_type: some_tag("nil"),
         arg_types: vec![variadic_dynamic()],
       }),
-      NativeAssertTrait => Some(ProcTypeSignature {
+      NativeAssertTraits => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), dynamic_tag()],
       }),
@@ -893,10 +885,6 @@ impl CalcitProc {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("tuple")],
       }),
-      NativeTupleWithImpls => Some(ProcTypeSignature {
-        return_type: some_tag("tuple"),
-        arg_types: vec![some_tag("tuple"), some_tag("record")],
-      }),
       NativeTupleEnum => Some(ProcTypeSignature {
         return_type: optional_tag("enum"),
         arg_types: vec![some_tag("tuple")],
@@ -913,27 +901,19 @@ impl CalcitProc {
         return_type: some_tag("trait"),
         arg_types: vec![dynamic_tag(), some_tag("list")],
       }),
-      NativeStructWithImpls => Some(ProcTypeSignature {
-        return_type: some_tag("struct"),
-        arg_types: vec![some_tag("struct"), some_tag("record")],
-      }),
-      NativeEnumWithImpls => Some(ProcTypeSignature {
-        return_type: some_tag("enum"),
-        arg_types: vec![some_tag("enum"), some_tag("record")],
-      }),
-      NativeRecordWithTraits => Some(ProcTypeSignature {
+      NativeRecordImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("record"),
         arg_types: vec![some_tag("record"), variadic_dynamic()],
       }),
-      NativeTupleWithTraits => Some(ProcTypeSignature {
+      NativeTupleImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("tuple"),
         arg_types: vec![some_tag("tuple"), variadic_dynamic()],
       }),
-      NativeStructWithTraits => Some(ProcTypeSignature {
+      NativeStructImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("struct"),
         arg_types: vec![some_tag("struct"), variadic_dynamic()],
       }),
-      NativeEnumWithTraits => Some(ProcTypeSignature {
+      NativeEnumImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("enum"),
         arg_types: vec![some_tag("enum"), variadic_dynamic()],
       }),
@@ -998,10 +978,6 @@ impl CalcitProc {
       NativeRecordImpls => Some(ProcTypeSignature {
         return_type: some_tag("list"),
         arg_types: vec![some_tag("record")],
-      }),
-      NativeRecordWithImpls => Some(ProcTypeSignature {
-        return_type: some_tag("record"),
-        arg_types: vec![some_tag("record"), dynamic_tag()],
       }),
       NativeRecordExtendAs => Some(ProcTypeSignature {
         return_type: some_tag("record"),

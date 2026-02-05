@@ -128,12 +128,12 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         ])));
       }
       let struct_value = Calcit::from(ys);
-      if let Some(imp_record) = impls.first() {
-        Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Proc(CalcitProc::NativeStructWithImpls),
-          struct_value,
-          Calcit::from(vec![Calcit::Record((**imp_record).clone())]),
-        ])))
+      if !impls.is_empty() {
+        let mut ys = vec![Calcit::Proc(CalcitProc::NativeStructImplTraits), struct_value];
+        for imp_record in impls {
+          ys.push(Calcit::Record((**imp_record).clone()));
+        }
+        Ok(Calcit::from(CalcitList::from(&ys[..])))
       } else {
         Ok(struct_value)
       }
@@ -167,12 +167,13 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
         }
       }
       let enum_value = Calcit::from(ys);
-      if let Some(imp_record) = enum_def.impls().first() {
-        Ok(Calcit::from(CalcitList::from(&[
-          Calcit::Proc(CalcitProc::NativeEnumWithImpls),
-          enum_value,
-          Calcit::from(vec![Calcit::Record((**imp_record).clone())]),
-        ])))
+      let impls = enum_def.impls();
+      if !impls.is_empty() {
+        let mut ys = vec![Calcit::Proc(CalcitProc::NativeEnumImplTraits), enum_value];
+        for imp_record in impls {
+          ys.push(Calcit::Record((**imp_record).clone()));
+        }
+        Ok(Calcit::from(CalcitList::from(&ys[..])))
       } else {
         Ok(enum_value)
       }

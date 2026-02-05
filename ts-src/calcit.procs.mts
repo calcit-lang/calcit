@@ -461,12 +461,12 @@ export let _$n_tuple_$o_with_impls = function (x: CalcitTuple, y: CalcitRecord) 
   return new CalcitTuple(x.tag, x.extra, [y], x.enumPrototype);
 };
 
-export let _$n_tuple_$o_with_traits = function (x: CalcitValue, ...traits: CalcitValue[]) {
-  if (traits.length < 1) throw new Error("&tuple:with-traits takes 2+ arguments");
-  if (!(x instanceof CalcitTuple)) throw new Error("&tuple:with-traits expects a tuple");
+export let _$n_tuple_$o_impl_traits = function (x: CalcitValue, ...traits: CalcitValue[]) {
+  if (traits.length < 1) throw new Error("&tuple:impl-traits takes 2+ arguments");
+  if (!(x instanceof CalcitTuple)) throw new Error("&tuple:impl-traits expects a tuple");
   for (let idx = 0; idx < traits.length; idx++) {
     if (!(traits[idx] instanceof CalcitRecord)) {
-      throw new Error("&tuple:with-traits expects trait impls as records");
+      throw new Error("&tuple:impl-traits expects trait impls as records");
     }
   }
   return new CalcitTuple(x.tag, x.extra, x.impls.concat(traits as CalcitRecord[]), x.enumPrototype);
@@ -607,57 +607,34 @@ export let _$n_record_$o_impls = function (xs: CalcitValue) {
   throw new Error("&record:impls expected a record");
 };
 
-export let _$n_record_$o_with_impls = function (xs: CalcitValue, k: CalcitValue) {
-  if (arguments.length !== 2) throw new Error("&record:with-impls takes 2 arguments");
-  if (xs instanceof CalcitRecord) return xs.withImpls(k);
-  throw new Error("&record:with-impls expected a record");
-};
-
-export let _$n_record_$o_with_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
-  if (traits.length < 1) throw new Error("&record:with-traits takes 2+ arguments");
-  if (!(xs instanceof CalcitRecord)) throw new Error("&record:with-traits expected a record");
+export let _$n_record_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
+  if (traits.length < 1) throw new Error("&record:impl-traits takes 2+ arguments");
+  if (!(xs instanceof CalcitRecord)) throw new Error("&record:impl-traits expected a record");
   for (let idx = 0; idx < traits.length; idx++) {
     if (!(traits[idx] instanceof CalcitRecord)) {
-      throw new Error("&record:with-traits expects trait impls as records");
+      throw new Error("&record:impl-traits expects trait impls as records");
     }
   }
   return new CalcitRecord(xs.name, xs.fields, xs.values, xs.impls.concat(traits as CalcitRecord[]));
 };
 
-export let _$n_struct_$o_with_impls = function (xs: CalcitValue, k: CalcitValue) {
-  if (arguments.length !== 2) throw new Error("&struct:with-impls takes 2 arguments");
-  if (xs instanceof CalcitStruct && k instanceof CalcitRecord) return xs.withImpls(k);
-  if (xs instanceof CalcitStruct) throw new Error("&struct:with-impls expected a record as impl");
-  throw new Error("&struct:with-impls expected a struct");
-};
-
-export let _$n_struct_$o_with_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
-  if (traits.length < 1) throw new Error("&struct:with-traits takes 2+ arguments");
-  if (!(xs instanceof CalcitStruct)) throw new Error("&struct:with-traits expected a struct");
+export let _$n_struct_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
+  if (traits.length < 1) throw new Error("&struct:impl-traits takes 2+ arguments");
+  if (!(xs instanceof CalcitStruct)) throw new Error("&struct:impl-traits expected a struct");
   for (let idx = 0; idx < traits.length; idx++) {
     if (!(traits[idx] instanceof CalcitRecord)) {
-      throw new Error("&struct:with-traits expects trait impls as records");
+      throw new Error("&struct:impl-traits expects trait impls as records");
     }
   }
   const impls = xs.impls ?? [];
   return new CalcitStruct(xs.name, xs.fields, xs.fieldTypes, impls.concat(traits as CalcitRecord[]));
 };
 
-export let _$n_enum_$o_with_impls = function (xs: CalcitValue, k: CalcitValue) {
-  if (arguments.length !== 2) throw new Error("&enum:with-impls takes 2 arguments");
-  if (xs instanceof CalcitEnum && k instanceof CalcitRecord) return xs.withImpls(k);
-  if (xs instanceof CalcitRecord && k instanceof CalcitRecord) return new CalcitEnum(xs, [k]);
-  if (xs instanceof CalcitEnum || xs instanceof CalcitRecord) {
-    throw new Error("&enum:with-impls expected a record as impl");
-  }
-  throw new Error("&enum:with-impls expected an enum prototype");
-};
-
-export let _$n_enum_$o_with_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
-  if (traits.length < 1) throw new Error("&enum:with-traits takes 2+ arguments");
+export let _$n_enum_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
+  if (traits.length < 1) throw new Error("&enum:impl-traits takes 2+ arguments");
   for (let idx = 0; idx < traits.length; idx++) {
     if (!(traits[idx] instanceof CalcitRecord)) {
-      throw new Error("&enum:with-traits expects trait impls as records");
+      throw new Error("&enum:impl-traits expects trait impls as records");
     }
   }
   if (xs instanceof CalcitEnum) {
@@ -667,7 +644,7 @@ export let _$n_enum_$o_with_traits = function (xs: CalcitValue, ...traits: Calci
   if (xs instanceof CalcitRecord) {
     return new CalcitRecord(xs.name, xs.fields, xs.values, xs.impls.concat(traits as CalcitRecord[]));
   }
-  throw new Error("&enum:with-traits expected an enum or enum record");
+  throw new Error("&enum:impl-traits expected an enum or enum record");
 };
 
 export let _$n_list_$o_assoc_before = function (xs: CalcitList | CalcitSliceList, k: number, v: CalcitValue): CalcitList {

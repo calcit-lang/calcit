@@ -367,7 +367,7 @@ impl CalcitTypeAnnotation {
       _ => return,
     };
 
-    if let Some((target, type_expr)) = Self::extract_assert_trait_args(list).or_else(|| Self::extract_assert_type_args(list)) {
+    if let Some((target, type_expr)) = Self::extract_assert_traits_args(list).or_else(|| Self::extract_assert_type_args(list)) {
       let sym = match target {
         Calcit::Symbol { sym, .. } => sym.to_owned(),
         Calcit::Local(local) => local.sym.to_owned(),
@@ -409,9 +409,9 @@ impl CalcitTypeAnnotation {
     Some((target, type_expr))
   }
 
-  fn extract_assert_trait_args(list: &CalcitList) -> Option<(&Calcit, &Calcit)> {
+  fn extract_assert_traits_args(list: &CalcitList) -> Option<(&Calcit, &Calcit)> {
     match list.first() {
-      Some(Calcit::Syntax(CalcitSyntax::AssertTrait, _)) => {}
+      Some(Calcit::Syntax(CalcitSyntax::AssertTraits, _)) => {}
       Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "assert-traits" => {}
       _ => return None,
     }

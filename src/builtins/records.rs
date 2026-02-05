@@ -560,63 +560,6 @@ pub fn get_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn with_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  let args_size = xs.len();
-  if args_size < 2 {
-    return CalcitErr::err_nodes(
-      CalcitErrKind::Arity,
-      "&record:with-impls expected at least 2 arguments, but received:",
-      xs,
-    );
-  }
-  let Calcit::Record(CalcitRecord {
-    struct_ref, values: v0, ..
-  }) = &xs[0]
-  else {
-    let msg = format!(
-      "&record:with-impls requires a record, but received: {}",
-      type_of(&[xs[0].to_owned()])?.lisp_str()
-    );
-    let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWithImpls).unwrap_or_default();
-    return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
-  };
-
-  let impls = match &xs[1] {
-    Calcit::Record(record) => vec![Arc::new(record.to_owned())],
-    Calcit::List(list) => {
-      let mut items: Vec<Arc<CalcitRecord>> = Vec::with_capacity(list.len());
-      for item in list.iter() {
-        match item {
-          Calcit::Record(record) => items.push(Arc::new(record.to_owned())),
-          other => {
-            let msg = format!(
-              "&record:with-impls expects impls as records, but received: {}",
-              type_of(&[other.to_owned()])?.lisp_str()
-            );
-            let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWithImpls).unwrap_or_default();
-            return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
-          }
-        }
-      }
-      items
-    }
-    other => {
-      let msg = format!(
-        "&record:with-impls expects a record or list of records, but received: {}",
-        type_of(&[other.to_owned()])?.lisp_str()
-      );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordWithImpls).unwrap_or_default();
-      return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
-    }
-  };
-
-  Ok(Calcit::Record(CalcitRecord {
-    struct_ref: struct_ref.to_owned(),
-    values: v0.to_owned(),
-    impls,
-  }))
-}
-
 pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:from-map expected 2 arguments, but received:", xs);

@@ -668,14 +668,14 @@ fn collect_trait_records(xs: &[Calcit], proc_name: &str) -> Result<Vec<Arc<Calci
   Ok(traits)
 }
 
-pub fn record_with_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn record_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:with-traits expected 2+ arguments, but received:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:impl-traits expected 2+ arguments, but received:", xs);
   }
   match &xs[0] {
     Calcit::Record(record) => {
       let mut impls = record.impls.clone();
-      impls.extend(collect_trait_records(&xs[1..], "&record:with-traits")?);
+      impls.extend(collect_trait_records(&xs[1..], "&record:impl-traits")?);
       Ok(Calcit::Record(CalcitRecord {
         struct_ref: record.struct_ref.to_owned(),
         values: record.values.to_owned(),
@@ -684,14 +684,14 @@ pub fn record_with_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     other => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("&record:with-traits expected a record, but received: {other}"),
+      format!("&record:impl-traits expected a record, but received: {other}"),
     ),
   }
 }
 
-pub fn tuple_with_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn tuple_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:with-traits expected 2+ arguments, but received:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:impl-traits expected 2+ arguments, but received:", xs);
   }
   match &xs[0] {
     Calcit::Tuple(CalcitTuple {
@@ -701,7 +701,7 @@ pub fn tuple_with_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       sum_type,
     }) => {
       let mut next_impls = impls.clone();
-      next_impls.extend(collect_trait_records(&xs[1..], "&tuple:with-traits")?);
+      next_impls.extend(collect_trait_records(&xs[1..], "&tuple:impl-traits")?);
       Ok(Calcit::Tuple(CalcitTuple {
         tag: tag.to_owned(),
         extra: extra.to_owned(),
@@ -711,38 +711,38 @@ pub fn tuple_with_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     other => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("&tuple:with-traits expected a tuple, but received: {other}"),
+      format!("&tuple:impl-traits expected a tuple, but received: {other}"),
     ),
   }
 }
 
-pub fn struct_with_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn struct_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:with-traits expected 2+ arguments, but received:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:impl-traits expected 2+ arguments, but received:", xs);
   }
   match &xs[0] {
     Calcit::Struct(struct_def) => {
       let mut next = struct_def.to_owned();
       let mut impls = next.impls.clone();
-      impls.extend(collect_trait_records(&xs[1..], "&struct:with-traits")?);
+      impls.extend(collect_trait_records(&xs[1..], "&struct:impl-traits")?);
       next.impls = impls;
       Ok(Calcit::Struct(next))
     }
     other => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("&struct:with-traits expected a struct, but received: {other}"),
+      format!("&struct:impl-traits expected a struct, but received: {other}"),
     ),
   }
 }
 
-pub fn enum_with_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn enum_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&enum:with-traits expected 2+ arguments, but received:", xs);
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&enum:impl-traits expected 2+ arguments, but received:", xs);
   }
   match &xs[0] {
     Calcit::Record(enum_record) => {
       let mut impls = enum_record.impls.clone();
-      impls.extend(collect_trait_records(&xs[1..], "&enum:with-traits")?);
+      impls.extend(collect_trait_records(&xs[1..], "&enum:impl-traits")?);
       Ok(Calcit::Record(CalcitRecord {
         struct_ref: enum_record.struct_ref.to_owned(),
         values: enum_record.values.to_owned(),
@@ -752,68 +752,13 @@ pub fn enum_with_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::Enum(enum_def) => {
       let mut next = enum_def.to_owned();
       let mut impls = next.impls().to_vec();
-      impls.extend(collect_trait_records(&xs[1..], "&enum:with-traits")?);
+      impls.extend(collect_trait_records(&xs[1..], "&enum:impl-traits")?);
       next.set_impls(impls);
       Ok(Calcit::Enum(next))
     }
     other => CalcitErr::err_str(
       CalcitErrKind::Type,
-      format!("&enum:with-traits expected an enum or enum record, but received: {other}"),
-    ),
-  }
-}
-
-pub fn struct_with_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:with-impls expected 2 arguments, but received:", xs);
-  }
-
-  let struct_value = xs[0].to_owned();
-  let impls_value = xs[1].to_owned();
-  match (struct_value, impls_value) {
-    (Calcit::Struct(mut struct_def), Calcit::Record(impl_record)) => {
-      struct_def.impls = vec![Arc::new(impl_record)];
-      Ok(Calcit::Struct(struct_def))
-    }
-    (Calcit::Struct(_), other) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&struct:with-impls expected a record as impl, but received: {other}"),
-    ),
-    (other, _) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&struct:with-impls expected a struct, but received: {other}"),
-    ),
-  }
-}
-
-pub fn enum_with_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&enum:with-impls expected 2 arguments, but received:", xs);
-  }
-
-  let enum_value = xs[0].to_owned();
-  let impls_value = xs[1].to_owned();
-  match (enum_value, impls_value) {
-    (Calcit::Record(enum_record), Calcit::Record(impl_record)) => Ok(Calcit::Record(CalcitRecord {
-      struct_ref: enum_record.struct_ref,
-      values: enum_record.values,
-      impls: vec![Arc::new(impl_record)],
-    })),
-    (Calcit::Enum(mut enum_def), Calcit::Record(impl_record)) => {
-      enum_def.set_impls(vec![Arc::new(impl_record)]);
-      Ok(Calcit::Enum(enum_def))
-    }
-    (Calcit::Record(_), other) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&enum:with-impls expected a record as impl, but received: {other}"),
-    ),
-    (Calcit::Enum(_), other) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&enum:with-impls expected a record as impl, but received: {other}"),
-    ),
-    (other, _) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&enum:with-impls expected an enum prototype record, but received: {other}"),
+      format!("&enum:impl-traits expected an enum or enum record, but received: {other}"),
     ),
   }
 }
@@ -1250,45 +1195,6 @@ pub fn tuple_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn tuple_with_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:with-impls expected 2 arguments, but received:", xs);
-  }
-  match (&xs[0], &xs[1]) {
-    (Calcit::Tuple(CalcitTuple { tag, extra, sum_type, .. }), Calcit::Record(record)) => Ok(Calcit::Tuple(CalcitTuple {
-      tag: tag.to_owned(),
-      extra: extra.to_owned(),
-      impls: vec![Arc::new(record.to_owned())],
-      sum_type: sum_type.to_owned(),
-    })),
-    (a, Calcit::Record { .. }) => {
-      let msg = format!(
-        "&tuple:with-impls requires a tuple, but received: {}",
-        type_of(&[a.to_owned()])?.lisp_str()
-      );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleWithImpls).unwrap_or_default();
-      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
-    }
-    (Calcit::Tuple { .. }, b) => {
-      let msg = format!(
-        "&tuple:with-impls requires a record for the second argument, but received: {}",
-        type_of(&[b.to_owned()])?.lisp_str()
-      );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleWithImpls).unwrap_or_default();
-      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
-    }
-    (a, b) => {
-      let msg = format!(
-        "&tuple:with-impls requires a tuple and a record, but received: {} and {}",
-        type_of(&[a.to_owned()])?.lisp_str(),
-        type_of(&[b.to_owned()])?.lisp_str()
-      );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeTupleWithImpls).unwrap_or_default();
-      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
-    }
-  }
-}
-
 /// Inspect and print class methods information for debugging
 /// Usage: (&inspect-class-methods value "optional note")
 /// Returns the value unchanged while printing impl information to stderr
@@ -1470,7 +1376,7 @@ fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) ->
   }
 }
 
-pub fn assert_trait(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn assert_traits(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() != 2 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&assert-traits expected 2 arguments, but received:", xs);
   }

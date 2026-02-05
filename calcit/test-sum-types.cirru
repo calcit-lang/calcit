@@ -21,11 +21,11 @@
         |make-ok $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-ok (value)
-              with-traits (%:: Result :ok value) ActionImpl
+              impl-traits (%:: Result :ok value) ActionImpl
         |make-err $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-err (message)
-              with-traits (%:: Result :err message) ActionImpl
+              impl-traits (%:: Result :err message) ActionImpl
         |summarize $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn summarize (action)

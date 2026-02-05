@@ -22,7 +22,7 @@
           :code $ quote (defrecord Cat :name :color)
         |Lagopus $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def Lagopus $ with-traits (new-record :Lagopus :name) BirdImpl
+            def Lagopus $ impl-traits (new-record :Lagopus :name) BirdImpl
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (do true)
@@ -99,7 +99,7 @@
                 .show l1
                 -> l1 (.rename |LagopusB) (.show)
                 assert= (&record:impls l1)
-                  &record:impls $ with-traits a1 BirdImpl
+                  &record:impls $ impl-traits a1 BirdImpl
         |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
           :code $ quote
             fn () (log-title "|Testing record-with")

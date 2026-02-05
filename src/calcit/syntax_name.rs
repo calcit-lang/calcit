@@ -63,7 +63,7 @@ pub enum CalcitSyntax {
   AssertType,
   /// placeholder for trait requirement assertions
   #[strum(serialize = "assert-traits")]
-  AssertTrait,
+  AssertTraits,
 }
 
 impl CalcitSyntax {

@@ -524,9 +524,9 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_assert_type(name, name_ns, &args, &mut ctx)
         }
-        CalcitSyntax::AssertTrait => {
+        CalcitSyntax::AssertTraits => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
-          preprocess_assert_trait(name, name_ns, &args, &mut ctx)
+          preprocess_assert_traits(name, name_ns, &args, &mut ctx)
         }
         CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec()),
         CalcitSyntax::ArgOptional => {
@@ -2766,7 +2766,7 @@ pub fn preprocess_assert_type(
   Ok(Calcit::Nil)
 }
 
-pub fn preprocess_assert_trait(
+pub fn preprocess_assert_traits(
   head: &CalcitSyntax,
   _head_ns: &str,
   args: &CalcitList,
@@ -2840,7 +2840,7 @@ pub fn preprocess_assert_trait(
   )?;
 
   Ok(Calcit::from(vec![
-    Calcit::Proc(CalcitProc::NativeAssertTrait),
+    Calcit::Proc(CalcitProc::NativeAssertTraits),
     Calcit::Local(typed_local),
     trait_value,
   ]))

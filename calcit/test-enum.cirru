@@ -37,7 +37,7 @@
                   valid-ok $ %:: Result0 :ok
                 assert= :ok $ &tuple:nth valid-ok 0
                 let
-                    ok-impl $ with-traits valid-ok ResultImpl
+                    ok-impl $ impl-traits valid-ok ResultImpl
                   assert= ResultImpl $ &list:first $ &tuple:impls ok-impl
                   assert= "|(%:: :ok (:impls ResultImpl) (:enum Result0))" $ str ok-impl
               let

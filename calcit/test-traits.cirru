@@ -74,7 +74,7 @@
               assert= :trait $ type-of MyFoo
               let
                   Person0 $ new-record :Person :name
-                  Person $ with-traits Person0 MyFooImpl
+                  Person $ impl-traits Person0 MyFooImpl
                   p $ %{} Person (:name |Alice)
                 assert= "|foo Alice" $ .foo p
                 println "|  deftrait: ✓"
@@ -205,7 +205,7 @@
                   s |hello
                   opt $ %some 1
                   Person0 $ new-record :Person :name
-                  Person $ with-traits Person0 MyFooImpl
+                  Person $ impl-traits Person0 MyFooImpl
                   p $ %{} Person (:name |Alice)
                 assert= x $ assert-traits x calcit.core/Show
                 assert= xs $ assert-traits xs calcit.core/Mappable

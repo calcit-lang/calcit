@@ -113,7 +113,7 @@ deftrait Compare :compare
 
 ### Trait 实现语法（当前实现）
 
-使用 `with-traits` 函数式组合的方式为类型添加 Trait 实现：
+使用 `impl-traits` 函数式组合的方式为类型添加 Trait 实现：
 
 ```cirru
 ; 完整示例：为 Point 类型实现 Show 和 Eq trait
@@ -134,8 +134,8 @@ let
       :eq? $ fn (a b)
         and (= (:x a) (:x b)) (= (:y a) (:y b))
 
-    ; 4. 使用 with-traits 组合，得到带 trait 实现的 struct
-    Point $ with-traits Point0 show-impl eq-impl
+    ; 4. 使用 impl-traits 组合，得到带 trait 实现的 struct
+    Point $ impl-traits Point0 show-impl eq-impl
 
     ; 5. 用 struct 创建 record 实例
     p1 $ %{} Point (:x 3) (:y 4)
@@ -145,8 +145,8 @@ let
   println (.show p1)        ; => "Point(3, 4)"
   println (.eq? p1 p2)      ; => true
 
-; with-traits 可以接受多个 trait impl
-; (with-traits struct-def impl1 impl2 impl3 ...)
+; impl-traits 可以接受多个 trait impl
+; (impl-traits struct-def impl1 impl2 impl3 ...)
 ```
 
 ### Trait 约束与标注（新增）
@@ -170,16 +170,16 @@ assert-traits x Show
 
 方法调用时的查找顺序：
 
-1. **值自身的 classes** - `with-traits` 附加的实现（优先级最高）
+1. **值自身的 classes** - `impl-traits` 附加的实现（优先级最高）
 2. **类型的内置 Trait 实现** - 如 `number` 自动拥有 `Add`
 3. **calcit.core 的默认实现** - 兜底行为
 
 实现存储与查找策略（当前约定）：
 
 - `impl` 保存在数组中，定义更早的在前。
-- `with-traits` 会创建新值，追加实现，不影响原值（Calcit 不可变数据）。
+- `impl-traits` 会创建新值，追加实现，不影响原值（Calcit 不可变数据）。
 - 方法查找从数组尾部向前扫描，先命中先调用（后添加覆盖先添加）。
-- 可选替代：在 `with-traits` 执行时为 record/enum 维护方法 hashmap，后写覆盖前写。
+- 可选替代：在 `impl-traits` 执行时为 record/enum 维护方法 hashmap，后写覆盖前写。
 
 ```cirru
 ; 分派示例
@@ -216,16 +216,16 @@ Show/show 42
 4. ✅ 内置类型自动拥有对应实现（已在运行时与 JS backend 对齐）
 5. ✅ `invoke_method` 支持 Trait 方法查找
 6. ✅ 从 `class` 系统迁移到 `trait` 和 `impls` (commit 73aa249)
-7. ✅ `with-traits` 函数支持为 record/tuple/struct/enum 追加 impl
+7. ✅ `impl-traits` 函数支持为 record/tuple/struct/enum 追加 impl
 8. ✅ JS backend 完整支持 CalcitTrait 及相关操作
 9. ✅ 移动内部实现到 `calcit.internal` 命名空间以清理代码结构
 
 #### Phase 2: 语法支持 🔄 **部分完成**
 
 1. ✅ `deftrait` 宏定义（支持方法名 + 类型签名）
-2. ✅ 基础 trait 实现语法（通过 record + `with-traits`）
+2. ✅ 基础 trait 实现语法（通过 record + `impl-traits`）
 3. ✅ 测试覆盖：`test-traits.cirru` 包含 Show/Eq/Compare/Add/Len 等基础测试
-4. ⏳ `defimpl` 独立宏定义（当前通过 defrecord + with-traits 实现）
+4. ⏳ `defimpl` 独立宏定义（当前通过 defrecord + impl-traits 实现）
 5. 🔄 `assert-traits` 运行时检查与编译期标注
 6. ⏳ Trait 方法的显式调用语法（如 `Show/show` 或 `trait-call`）
 
@@ -331,8 +331,8 @@ Show/show 42
 ## 当前实现要点（补充）
 
 - `deftrait` 已存在，展开为 `&trait::new`。
-- `with-traits` 已在 Rust 与 JS backend 支持，可对 record/tuple/struct/enum 追加 impl。
-- JS 侧已补齐 `CalcitTrait` 类型、`type-of`、`toString` 与 `&trait::new`、`&record:with-traits` 等对应实现。
+- `impl-traits` 已在 Rust 与 JS backend 支持，可对 record/tuple/struct/enum 追加 impl。
+- JS 侧已补齐 `CalcitTrait` 类型、`type-of`、`toString` 与 `&trait::new`、`&record:impl-traits` 等对应实现。
 
 ---
 
@@ -343,9 +343,9 @@ Show/show 42
 **理由：完善当前已有的 trait 机制，提升用户体验**
 
 - [ ] **`defimpl` 宏**：简化 trait 实现语法
-  - 当前：`defrecord! MyImpl :method (fn ...) ...` + `with-traits`
+  - 当前：`defrecord! MyImpl :method (fn ...) ...` + `impl-traits`
   - 目标：`defimpl MyTrait for MyType :method (fn ...) ...`
-  - 优势：语义更清晰，自动完成 with-traits 步骤
+  - 优势：语义更清晰，自动完成 impl-traits 步骤
 - [ ] **显式 trait 调用语法**：解决方法名冲突
   - 语法选项：`(trait-call Show :show x)` 或 `(Show/show x)`
   - 用例：当一个类型实现多个 trait，且方法名冲突时

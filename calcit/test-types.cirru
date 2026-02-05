@@ -223,7 +223,7 @@
                       :method $ fn (self) (str "|Hello, I'm " $ :name self)
                 ; 创建 Person 实例
                 let
-                  alice $ with-traits (:: :name |Alice :age 30) Person
+                  alice $ impl-traits (:: :name |Alice :age 30) Person
                   ; 调用方法
                   let
                       greeting $ .greet alice
@@ -358,10 +358,10 @@
             defn test-defstruct-defenum ()
               assert= :struct $ type-of Person
               assert= :enum $ type-of Result
-              assert= :struct $ type-of $ with-traits Person StructImpl
+              assert= :struct $ type-of $ impl-traits Person StructImpl
               let
-                  enum-with-impls $ with-traits Result EnumImpl
-                  ok $ with-traits (%:: enum-with-impls :ok 1) ResultImpl
+                  enum-with-impls $ impl-traits Result EnumImpl
+                  ok $ impl-traits (%:: enum-with-impls :ok 1) ResultImpl
                 assert= :enum $ type-of enum-with-impls
                 assert= ResultImpl $ &list:first $ &tuple:impls ok
                 assert= enum-with-impls $ &tuple:enum ok
