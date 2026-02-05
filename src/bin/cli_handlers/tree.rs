@@ -4,9 +4,9 @@ use colored::Colorize;
 use super::common::{ERR_CODE_INPUT_REQUIRED, cirru_to_json, parse_input_to_cirru, parse_path, read_code_input};
 use super::tips::{Tips, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
-  TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
-  TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand,
-  TreeTargetReplaceCommand, TreeWrapCommand,
+  TreeAppendChildCommand, TreeCommand, TreeCpCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand,
+  TreeInsertChildCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeSubcommand, TreeSwapNextCommand,
+  TreeSwapPrevCommand, TreeTargetReplaceCommand, TreeWrapCommand,
 };
 
 // Import shared functions from edit module
@@ -34,6 +34,7 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
     TreeSubcommand::SwapPrev(opts) => handle_swap_prev(opts, snapshot_file),
     TreeSubcommand::Wrap(opts) => handle_wrap(opts, snapshot_file),
     TreeSubcommand::TargetReplace(opts) => handle_target_replace(opts, snapshot_file),
+    TreeSubcommand::Cp(opts) => handle_cp(opts, snapshot_file),
   }
 }
 
@@ -1245,4 +1246,56 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
 
 fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String> {
   generic_insert_handler(&opts.target, &opts.path, "replace", opts, snapshot_file, opts.depth)
+}
+
+fn handle_cp(opts: &TreeCpCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+  let from_path = parse_path(&opts.from)?;
+  let to_path = parse_path(&opts.path)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found"))?;
+
+  let source_node = navigate_to_path(&code_entry.code, &from_path)?.clone();
+
+  let operation = match opts.at.as_str() {
+    "before" => "insert-before",
+    "after" => "insert-after",
+    "prepend-child" => "insert-child",
+    "append-child" => "append-child",
+    "replace" => "replace",
+    other => {
+      return Err(format!(
+        "Unsupported position '{}'. Use: before, after, prepend-child, append-child, replace",
+        other
+      ));
+    }
+  };
+
+  let new_code = apply_operation_at_path(&code_entry.code, &to_path, operation, Some(&source_node))?;
+  code_entry.code = new_code;
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Copied node from [{}] to [{}] ({}) in '{}/{}'",
+    "✓".green(),
+    opts.from,
+    opts.path,
+    opts.at,
+    namespace,
+    definition
+  );
+
+  Ok(())
 }

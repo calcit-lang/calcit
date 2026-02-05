@@ -913,6 +913,7 @@ pub enum TreeSubcommand {
   SwapPrev(TreeSwapPrevCommand),
   Wrap(TreeWrapCommand),
   TargetReplace(TreeTargetReplaceCommand),
+  Cp(TreeCpCommand),
 }
 
 /// view tree node at specific path
@@ -931,6 +932,24 @@ pub struct TreeShowCommand {
   /// also output JSON format for programmatic consumption
   #[argh(switch, short = 'j')]
   pub json: bool,
+}
+
+/// copy node from one path to another position
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "cp")]
+pub struct TreeCpCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// path to the source node (comma-separated indices)
+  #[argh(option, long = "from")]
+  pub from: String,
+  /// path to the destination node (comma-separated indices)
+  #[argh(option, short = 'p', long = "path")]
+  pub path: String,
+  /// position relative to the destination node (before, after, append-child, prepend-child, replace)
+  #[argh(option, long = "at", default = "String::from(\"after\")")]
+  pub at: String,
 }
 
 /// find unique leaf node and replace it; if multiple found, returns error with helpful hints
