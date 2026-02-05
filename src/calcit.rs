@@ -990,6 +990,23 @@ impl CalcitErr {
     }
   }
 
+  pub fn use_msg_stack_location_with_hint<T: Into<String>, H: Into<String>>(
+    kind: CalcitErrKind,
+    msg: T,
+    stack: &CallStackList,
+    location: Option<NodeLocation>,
+    hint: H,
+  ) -> Self {
+    CalcitErr {
+      kind,
+      msg: msg.into(),
+      warnings: vec![],
+      stack: stack.to_owned(),
+      location: location.map(Arc::new),
+      hint: Some(hint.into()),
+    }
+  }
+
   /// Create error with hint (for examples and usage guidance)
   pub fn err_str_with_hint<T: Into<String>, H: Into<String>>(kind: CalcitErrKind, msg: T, hint: H) -> Result<Calcit, Self> {
     Err(CalcitErr {

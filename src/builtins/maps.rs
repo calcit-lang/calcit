@@ -95,16 +95,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
         Ok(Calcit::Map(zs))
       }
-      (
-        Calcit::Record(
-          record @ CalcitRecord {
-            struct_ref,
-            values,
-            impls,
-          },
-        ),
-        Calcit::Map(ys),
-      ) => {
+      (Calcit::Record(record @ CalcitRecord { struct_ref, values, impls }), Calcit::Map(ys)) => {
         let mut new_values = (**values).to_owned();
         for (k, v) in ys {
           match k {

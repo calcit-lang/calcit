@@ -1571,37 +1571,51 @@
                   ~@ normalized
           :examples $ []
             quote $ defenum Result (:ok :number) (:err :string)
+        |OptionMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Option")
+          :code $ quote
+            defrecord! OptionMappableImpl
+              :map $ defn option:map (opt f)
+                tag-match opt
+                  (:some value) (%:: (&tuple:enum opt) :some (f value))
+                  (:none) (%:: (&tuple:enum opt) :none)
+          :examples $ []
+        |ResultMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Result")
+          :code $ quote
+            defrecord! ResultMappableImpl
+              :map $ defn result:map (res f)
+                tag-match res
+                  (:ok value) (%:: (&tuple:enum res) :ok (f value))
+                  (:err err) (%:: (&tuple:enum res) :err err)
+          :examples $ []
         |Option $ %{} :CodeEntry (:doc "|Rust-style Option enum")
           :code $ quote
-            defenum Option
-              :some :dynamic
-              :none
+            def Option
+              with-traits (defenum Option (:some :dynamic) (:none)) internal/&core-show-impl internal/&core-eq-impl OptionMappableImpl
           :examples $ []
         |Result $ %{} :CodeEntry (:doc "|Rust-style Result enum")
           :code $ quote
-            defenum Result
-              :ok :dynamic
-              :err :dynamic
+            def Result
+              with-traits (defenum Result (:ok :dynamic) (:err :dynamic)) internal/&core-show-impl internal/&core-eq-impl ResultMappableImpl
           :examples $ []
         |%some $ %{} :CodeEntry (:doc "|Create Some variant of Option")
           :code $ quote
             defn %some (value)
-              %:: Option :some value
+              with-traits (%:: Option :some value) OptionMappableImpl
           :examples $ []
         |%none $ %{} :CodeEntry (:doc "|Create None variant of Option")
           :code $ quote
             defn %none ()
-              %:: Option :none
+              with-traits (%:: Option :none) OptionMappableImpl
           :examples $ []
         |%ok $ %{} :CodeEntry (:doc "|Create Ok variant of Result")
           :code $ quote
             defn %ok (value)
-              %:: Result :ok value
+              with-traits (%:: Result :ok value) ResultMappableImpl
           :examples $ []
         |%err $ %{} :CodeEntry (:doc "|Create Err variant of Result")
           :code $ quote
             defn %err (message)
-              %:: Result :err message
+              with-traits (%:: Result :err message) ResultMappableImpl
           :examples $ []
         |defmacro $ %{} :CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
           :code $ quote &runtime-inplementation

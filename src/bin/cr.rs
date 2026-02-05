@@ -422,7 +422,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
     }
     Err(failure) => {
       eprintln!("\n{} preprocessing init_fn", "✗".red());
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
       return Err(failure.msg);
     }
   }
@@ -434,7 +434,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
     }
     Err(failure) => {
       eprintln!("\n{} preprocessing reload_fn", "✗".red());
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
       return Err(failure.msg);
     }
   }
@@ -482,7 +482,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
 
       let _ = fs::write(
         &js_file_path,
@@ -500,7 +500,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
       return Err(failure.msg);
     }
   }
@@ -519,7 +519,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {failure}");
-        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None)?;
+        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None, None)?;
         return Err(failure);
       }
     }
@@ -529,7 +529,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {failure}");
-        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None)?;
+        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None, None)?;
         return Err(failure);
       }
     }

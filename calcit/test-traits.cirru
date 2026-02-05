@@ -27,6 +27,9 @@
               ; Test Len/Empty traits
               test-collection-traits
 
+              ; Test Option/Result Mappable
+              test-option-result-map
+
               println "|All trait tests passed!"
           :examples $ []
 
@@ -163,6 +166,27 @@
               assert= false $ contains? (#{} 1 2 3) 4
 
               println "|  Collection traits: ✓"
+          :examples $ []
+
+        |test-option-result-map $ %{} :CodeEntry (:doc "|Test Mappable trait for Option/Result")
+          :code $ quote
+            defn test-option-result-map ()
+              println "|Testing Option/Result Mappable..."
+
+              assert=
+                %some 2
+                .map (%some 1) inc
+              assert=
+                %none
+                .map (%none) inc
+              assert=
+                %ok 2
+                .map (%ok 1) inc
+              assert=
+                %err |oops
+                .map (%err |oops) inc
+
+              println "|  Option/Result map: ✓"
           :examples $ []
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote

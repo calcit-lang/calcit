@@ -10,6 +10,7 @@ use crate::calcit::{
   CalcitScope, CalcitSyntax, MethodKind, NodeLocation,
 };
 use crate::call_stack::{CallStackList, StackKind, using_stack};
+use crate::data::cirru;
 use crate::program;
 use crate::util::string::has_ns_part;
 
@@ -259,12 +260,37 @@ pub fn call_expr(
         )),
       }
     }
-    a => Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Type,
-      format!("cannot be used as operator: {a:?} in {xs}"),
-      call_stack,
-      a.get_location(),
-    )),
+    a => {
+      let location = xs
+        .first()
+        .and_then(|node| node.get_location())
+        .or_else(|| a.get_location())
+        .or_else(|| xs.drop_left().first().and_then(|node| node.get_location()));
+      let expr_one_liner = {
+        let expr = Calcit::from(xs.to_owned());
+        match cirru::calcit_to_cirru(&expr) {
+          Ok(v) => match cirru_parser::format_expr_one_liner(&v) {
+            Ok(s) => s,
+            Err(_) => expr.lisp_str(),
+          },
+          Err(_) => expr.lisp_str(),
+        }
+      };
+      let operator_desc = match cirru::calcit_to_cirru(a) {
+        Ok(v) => match cirru_parser::format_expr_one_liner(&v) {
+          Ok(s) => s,
+          Err(_) => a.lisp_str(),
+        },
+        Err(_) => a.lisp_str(),
+      };
+      Err(CalcitErr::use_msg_stack_location_with_hint(
+        CalcitErrKind::Type,
+        format!("cannot be used as operator: {operator_desc} in {expr_one_liner}"),
+        call_stack,
+        location,
+        "Possible: check if a leading `,` is needed to prevent a single-line call of Cirru syntax.",
+      ))
+    }
   }
 }
 
