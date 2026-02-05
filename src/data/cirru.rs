@@ -26,6 +26,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
       "~" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolate, ns.into())),
       "~@" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, ns.into())),
       "assert-type" => Ok(Calcit::Syntax(CalcitSyntax::AssertType, ns.into())),
+      "assert-traits" => Ok(Calcit::Syntax(CalcitSyntax::AssertTrait, ns.into())),
       "" => Err(String::from("Empty string is invalid")),
       // special tuple syntax
       "::" => Ok(Calcit::Proc(CalcitProc::NativeTuple)),
@@ -304,5 +305,21 @@ mod tests {
     assert!(matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _))));
     assert!(matches!(items.get(1), Some(Calcit::Symbol { .. })));
     assert!(matches!(items.get(2), Some(Calcit::Tag(_))));
+  }
+
+  #[test]
+  fn parses_assert_traits_list() {
+    let expr = Cirru::List(vec![Cirru::leaf("assert-traits"), Cirru::leaf("x"), Cirru::leaf("Show")]);
+
+    let calcit = code_to_calcit(&expr, "tests.ns", "demo", vec![]).expect("parse assert-traits");
+    let list_arc = match calcit {
+      Calcit::List(xs) => xs,
+      other => panic!("expected list, got {other}"),
+    };
+    assert_eq!(list_arc.len(), 3);
+    let items = list_arc.to_vec();
+    assert!(matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertTrait, _))));
+    assert!(matches!(items.get(1), Some(Calcit::Symbol { .. })));
+    assert!(matches!(items.get(2), Some(Calcit::Symbol { .. })));
   }
 }

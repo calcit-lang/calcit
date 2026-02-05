@@ -88,6 +88,8 @@ pub enum CalcitProc {
   NativeInspectImplMethods,
   #[strum(serialize = "&inspect-type")]
   NativeInspectType,
+  #[strum(serialize = "&assert-traits")]
+  NativeAssertTrait,
   #[strum(serialize = "raise")]
   Raise,
   #[strum(serialize = "quit!")]
@@ -96,6 +98,8 @@ pub enum CalcitProc {
   GetEnv,
   #[strum(serialize = "&get-calcit-backend")]
   NativeGetCalcitBackend,
+  #[strum(serialize = "register-calcit-builtin-impls")]
+  RegisterCalcitBuiltinImpls,
   #[strum(serialize = "read-file")]
   ReadFile,
   #[strum(serialize = "write-file")]
@@ -514,6 +518,10 @@ impl CalcitProc {
       NativeDisplayStack => Some(ProcTypeSignature {
         return_type: some_tag("nil"),
         arg_types: vec![variadic_dynamic()],
+      }),
+      NativeAssertTrait => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![dynamic_tag(), dynamic_tag()],
       }),
       NativeCirruType => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
@@ -1080,6 +1088,10 @@ impl CalcitProc {
       NativeFormatTernaryTree => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![some_tag("list")],
+      }),
+      RegisterCalcitBuiltinImpls => Some(ProcTypeSignature {
+        return_type: some_tag("nil"),
+        arg_types: vec![dynamic_tag()],
       }),
 
       // === Special forms and control flow ===

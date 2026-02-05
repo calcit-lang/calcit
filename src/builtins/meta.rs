@@ -1433,6 +1433,95 @@ pub fn inspect_impl_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result
   Ok(value.clone())
 }
 
+fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitRecord>>, CalcitErr> {
+  match value {
+    Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(impls.to_owned()),
+    Calcit::Record(CalcitRecord { impls, .. }) => Ok(impls.to_owned()),
+    Calcit::List(..) => {
+      let class = runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&class, call_stack)
+    }
+    Calcit::Map(..) => {
+      let class = runner::evaluate_symbol_from_program("&core-map-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&class, call_stack)
+    }
+    Calcit::Number(..) => {
+      let class = runner::evaluate_symbol_from_program("&core-number-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&class, call_stack)
+    }
+    Calcit::Str(..) => {
+      let class = runner::evaluate_symbol_from_program("&core-string-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&class, call_stack)
+    }
+    Calcit::Set(..) => {
+      let class = runner::evaluate_symbol_from_program("&core-set-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&class, call_stack)
+    }
+    Calcit::Fn { .. } | Calcit::Proc(..) => {
+      let class = runner::evaluate_symbol_from_program("&core-fn-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&class, call_stack)
+    }
+    other => Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("&assert-traits cannot resolve impls for: {other}"),
+      call_stack,
+      other.get_location(),
+    )),
+  }
+}
+
+pub fn assert_trait(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&assert-traits expected 2 arguments, but received:", xs);
+  }
+
+  let value = &xs[0];
+  let trait_def = match &xs[1] {
+    Calcit::Trait(trait_def) => trait_def.to_owned(),
+    other => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&assert-traits expected a trait definition, but received: {other}"),
+      );
+    }
+  };
+
+  let impls = collect_impl_records_for_value(value, call_stack)?;
+  let mut missing: Vec<String> = Vec::new();
+  for method in trait_def.methods.iter() {
+    let method_name = method.ref_str();
+    let exists = impls.iter().any(|imp| imp.get(method_name).is_some());
+    if !exists {
+      missing.push(method.to_string());
+    }
+  }
+
+  if !missing.is_empty() {
+    let mut fields: Vec<String> = vec![];
+    for imp in impls.iter() {
+      for field in imp.fields().iter() {
+        fields.push(field.to_string());
+      }
+    }
+    let available = fields.join(" ");
+    let missing_list = missing.join(" ");
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("assert-traits failed: {value} does not implement {trait_def}. Missing: {missing_list}. Available: {available}"),
+      call_stack,
+      value.get_location(),
+    ));
+  }
+
+  Ok(value.to_owned())
+}
+
+#[allow(dead_code)]
+pub fn register_calcit_builtin_impls(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  // JS runtime uses this to register builtin impls. Native runtime treats it as a no-op.
+  Ok(Calcit::Nil)
+}
+
 pub fn no_op() -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Nil)
 }
@@ -1475,6 +1564,7 @@ pub fn format_ternary_tree(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&format-ternary-tree expected 1 argument, but received:", xs);
   }
+
   match &xs[0] {
     Calcit::List(ys) => match &**ys {
       CalcitList::List(ys) => Ok(Calcit::Str(ys.format_inline().into())),

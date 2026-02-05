@@ -524,6 +524,10 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_assert_type(name, name_ns, &args, &mut ctx)
         }
+        CalcitSyntax::AssertTrait => {
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          preprocess_assert_trait(name, name_ns, &args, &mut ctx)
+        }
         CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec()),
         CalcitSyntax::ArgOptional => {
           CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be preprocessed as operator", &xs.to_vec())
@@ -1447,6 +1451,60 @@ fn check_record_method_args(
     return; // No type info, skip check
   };
 
+  if let CalcitTypeAnnotation::Trait(trait_def) = type_value.as_ref() {
+    let Some(method_idx) = trait_def.method_index(method_name.as_ref()) else {
+      return;
+    };
+
+    let Some(method_type) = trait_def.method_types.get(method_idx) else {
+      return;
+    };
+
+    let Some(signature) = method_type.as_function() else {
+      return;
+    };
+
+    let Ok(method_args) = args.skip(1) else {
+      return;
+    };
+
+    let expected_count = signature.arg_types.len();
+    let actual_with_receiver = method_args.len() + 1;
+    if expected_count != 0 && expected_count != actual_with_receiver {
+      gen_check_warning(
+        format!(
+          "[Warn] Method `.{method_name}` expects {expected_count} args (including receiver), got {actual_with_receiver} in call at {file_ns}/{def_name}"
+        ),
+        file_ns,
+        check_warnings,
+      );
+      return;
+    }
+
+    let arg_types_without_receiver = signature.arg_types.iter().skip(1);
+    for (idx, (arg, expected_type)) in method_args.iter().zip(arg_types_without_receiver).enumerate() {
+      if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
+        continue;
+      }
+
+      if let Some(actual_type) = resolve_type_value(arg, scope_types) {
+        if !actual_type.as_ref().matches_annotation(expected_type.as_ref()) {
+          let expected_str = expected_type.as_ref().to_brief_string();
+          let actual_str = actual_type.as_ref().to_brief_string();
+          gen_check_warning(
+            format!(
+              "[Warn] Method `.{method_name}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
+              idx + 2
+            ),
+            file_ns,
+            check_warnings,
+          );
+        }
+      }
+    }
+    return;
+  }
+
   // Get impl records for the type
   let Some(impl_records) = get_impl_records_from_type(&type_value, &CallStackList::default()) else {
     return; // No impl record, skip check
@@ -1591,6 +1649,27 @@ fn validate_method_call(
   let Some(type_value) = resolve_type_value(receiver, scope_types) else {
     return Ok(()); // No type info, skip validation
   };
+
+  if let CalcitTypeAnnotation::Trait(trait_def) = type_value.as_ref() {
+    let method_str = method_name.as_ref();
+    if trait_def.methods.iter().any(|method| method.ref_str() == method_str) {
+      return Ok(());
+    }
+
+    let methods_list = trait_def
+      .methods
+      .iter()
+      .map(|method| method.to_string())
+      .collect::<Vec<_>>()
+      .join(" ");
+    let type_desc = describe_type(type_value.as_ref());
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("unknown method `.{method_name}` for {type_desc}. Available methods: {methods_list}"),
+      call_stack,
+      head.get_location(),
+    ));
+  }
 
   // Get impl records for the type
   let Some(impl_records) = get_impl_records_from_type(&type_value, call_stack) else {
@@ -2685,6 +2764,86 @@ pub fn preprocess_assert_type(
 
   // assert-type is preprocessed away, return nil at runtime
   Ok(Calcit::Nil)
+}
+
+pub fn preprocess_assert_trait(
+  head: &CalcitSyntax,
+  _head_ns: &str,
+  args: &CalcitList,
+  ctx: &mut PreprocessContext,
+) -> Result<Calcit, CalcitErr> {
+  if args.len() != 2 {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Arity,
+      format!("{head} expected a local and a trait expression, got {}", args.len()),
+      ctx.call_stack,
+      args.first().and_then(|node| node.get_location()),
+    ));
+  }
+
+  let local_raw = args.get(0).unwrap();
+  let trait_form = args.get(1).unwrap();
+
+  let local_form = preprocess_expr(
+    local_raw,
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+
+  let local = match local_form {
+    Calcit::Local(local) => local.to_owned(),
+    other => {
+      return Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Type,
+        format!("assert-traits expected local as first arg, got {other:?}"),
+        ctx.call_stack,
+        other.get_location(),
+      ));
+    }
+  };
+
+  let parsed_entry = CalcitTypeAnnotation::parse_type_annotation_form(trait_form);
+  let resolved_entry = if matches!(parsed_entry.as_ref(), CalcitTypeAnnotation::Trait(_)) {
+    parsed_entry
+  } else {
+    let resolved = match trait_form {
+      Calcit::Symbol { sym, info, .. } => match runner::parse_ns_def(sym) {
+        Some((ns_part, def_part)) => runner::eval_symbol_from_program(&def_part, &ns_part, ctx.call_stack).ok().flatten(),
+        None => runner::eval_symbol_from_program(sym, &info.at_ns, ctx.call_stack).ok().flatten(),
+      },
+      Calcit::Import(import) => runner::eval_symbol_from_program(&import.def, &import.ns, ctx.call_stack)
+        .ok()
+        .flatten(),
+      _ => None,
+    };
+    match resolved {
+      Some(Calcit::Trait(trait_def)) => Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def))),
+      _ => Arc::new(CalcitTypeAnnotation::Custom(Arc::new(trait_form.to_owned()))),
+    }
+  };
+
+  ctx.scope_types.insert(local.sym.to_owned(), resolved_entry.clone());
+
+  let mut typed_local = local.to_owned();
+  typed_local.type_info = resolved_entry;
+
+  let trait_value = preprocess_expr(
+    trait_form,
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+
+  Ok(Calcit::from(vec![
+    Calcit::Proc(CalcitProc::NativeAssertTrait),
+    Calcit::Local(typed_local),
+    trait_value,
+  ]))
 }
 
 #[cfg(test)]

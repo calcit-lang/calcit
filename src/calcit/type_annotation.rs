@@ -13,7 +13,7 @@ use cirru_edn::EdnTag;
 
 use super::{
   CORE_NS, Calcit, CalcitEnum, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSymbolInfo, CalcitSyntax,
-  CalcitTuple,
+  CalcitTrait, CalcitTuple,
 };
 use crate::program;
 
@@ -67,6 +67,8 @@ pub enum CalcitTypeAnnotation {
     base: Arc<CalcitStruct>,
     args: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
   },
+  /// Trait type annotation for trait objects
+  Trait(Arc<CalcitTrait>),
 }
 
 impl CalcitTypeAnnotation {
@@ -365,7 +367,7 @@ impl CalcitTypeAnnotation {
       _ => return,
     };
 
-    if let Some((target, type_expr)) = Self::extract_assert_type_args(list) {
+    if let Some((target, type_expr)) = Self::extract_assert_trait_args(list).or_else(|| Self::extract_assert_type_args(list)) {
       let sym = match target {
         Calcit::Symbol { sym, .. } => sym.to_owned(),
         Calcit::Local(local) => local.sym.to_owned(),
@@ -399,6 +401,18 @@ impl CalcitTypeAnnotation {
     match list.first() {
       Some(Calcit::Syntax(CalcitSyntax::AssertType, _)) => {}
       Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "assert-type" => {}
+      _ => return None,
+    }
+
+    let target = list.get(1)?;
+    let type_expr = list.get(2)?;
+    Some((target, type_expr))
+  }
+
+  fn extract_assert_trait_args(list: &CalcitList) -> Option<(&Calcit, &Calcit)> {
+    match list.first() {
+      Some(Calcit::Syntax(CalcitSyntax::AssertTrait, _)) => {}
+      Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "assert-traits" => {}
       _ => return None,
     }
 
@@ -702,11 +716,12 @@ impl CalcitTypeAnnotation {
       }
     }
 
-    // Resolve symbols or imports to struct/enum definitions for type annotations.
+    // Resolve symbols or imports to struct/enum/trait definitions for type annotations.
     if let Some(resolved) = resolve_calcit_value(form) {
       match resolved {
         Calcit::Struct(struct_def) => return Arc::new(CalcitTypeAnnotation::Struct(Arc::new(struct_def))),
         Calcit::Enum(enum_def) => return Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_def))),
+        Calcit::Trait(trait_def) => return Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def))),
         _ => {}
       }
     }
@@ -761,6 +776,7 @@ impl CalcitTypeAnnotation {
       Self::Custom(inner) => format!("{inner}"),
       Self::Optional(inner) => format!("{}?", inner.to_brief_string()),
       Self::Struct(struct_def) => format!("struct {}", struct_def.name),
+      Self::Trait(trait_def) => format!("trait {}", trait_def.name),
       Self::TypeVar(name) => format!("'{name}"),
       Self::AppliedStruct { base, args } => {
         if args.is_empty() {
@@ -825,6 +841,7 @@ impl CalcitTypeAnnotation {
       (Self::Struct(a), Self::Struct(b)) => a.name == b.name,
       (Self::Enum(a), Self::Enum(b)) => a.name() == b.name(),
       (Self::Record(a), Self::Struct(b)) => a.struct_ref.name == b.name,
+      (Self::Trait(a), Self::Trait(b)) => a.name == b.name,
       (Self::Record(a), Self::AppliedStruct { base, args }) => {
         if a.struct_ref.name != base.name {
           return false;
@@ -934,6 +951,7 @@ impl CalcitTypeAnnotation {
       Calcit::Symbol { .. } => Self::Symbol,
       Calcit::Buffer(_) => Self::Buffer,
       Calcit::CirruQuote(_) => Self::CirruQuote,
+      Calcit::Trait(trait_def) => Self::Trait(Arc::new(trait_def.to_owned())),
       other => Self::Custom(Arc::new(other.to_owned())),
     }
   }
@@ -1050,6 +1068,7 @@ impl CalcitTypeAnnotation {
         Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
       }
       Self::Enum(enum_def) => Calcit::Enum((**enum_def).clone()),
+      Self::Trait(trait_def) => Calcit::Trait((**trait_def).clone()),
       Self::Dynamic => Calcit::Nil,
       _ => Calcit::Nil,
     }
@@ -1128,6 +1147,7 @@ impl CalcitTypeAnnotation {
       Self::Custom(_) => "custom".to_string(),
       Self::Optional(inner) => format!("optional<{}>", inner.describe()),
       Self::Struct(struct_def) => format!("struct {}", struct_def.name),
+      Self::Trait(trait_def) => format!("trait {}", trait_def.name),
       Self::TypeVar(name) => format!("'{name}"),
       Self::AppliedStruct { base, args } => {
         if args.is_empty() {
@@ -1169,6 +1189,7 @@ impl CalcitTypeAnnotation {
       Self::Struct(_) => 22,
       Self::AppliedStruct { .. } => 23,
       Self::Enum(_) => 24,
+      Self::Trait(_) => 25,
     }
   }
 }
@@ -1536,6 +1557,10 @@ impl Hash for CalcitTypeAnnotation {
         "enum".hash(state);
         enum_def.name().hash(state);
       }
+      Self::Trait(trait_def) => {
+        "trait".hash(state);
+        trait_def.name.hash(state);
+      }
     }
   }
 }
@@ -1587,6 +1612,7 @@ impl Ord for CalcitTypeAnnotation {
       (Self::Dynamic, Self::Dynamic) => Ordering::Equal,
       (Self::Struct(a), Self::Struct(b)) => a.name.cmp(&b.name).then_with(|| a.fields.cmp(&b.fields)),
       (Self::Enum(a), Self::Enum(b)) => a.name().cmp(b.name()),
+      (Self::Trait(a), Self::Trait(b)) => a.name.cmp(&b.name),
       _ => Ordering::Equal, // other variants already separated by kind order
     }
   }

@@ -7,6 +7,7 @@
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! ()
+              &init-builtin-impls!
               println "|Testing built-in traits..."
 
               ; Test Show trait - all types should have it
@@ -29,6 +30,9 @@
 
               ; Test Option/Result Mappable
               test-option-result-map
+
+              ; Test assert-traits
+              test-assert-trait
 
               println "|All trait tests passed!"
           :examples $ []
@@ -187,6 +191,30 @@
                 .map (%err |oops) inc
 
               println "|  Option/Result map: ✓"
+          :examples $ []
+
+        |test-assert-trait $ %{} :CodeEntry (:doc "|Test assert-traits")
+          :code $ quote
+            defn test-assert-trait ()
+              println "|Testing assert-traits..."
+
+              let
+                  x 1
+                  xs $ [] 1 2 3
+                  m $ {} (:a 1) (:b 2)
+                  s |hello
+                  opt $ %some 1
+                  Person0 $ new-record :Person :name
+                  Person $ with-traits Person0 MyFooImpl
+                  p $ %{} Person (:name |Alice)
+                assert= x $ assert-traits x calcit.core/Show
+                assert= xs $ assert-traits xs calcit.core/Mappable
+                assert= m $ assert-traits m calcit.core/Mappable
+                assert= s $ assert-traits s calcit.core/Show
+                assert= opt $ assert-traits opt calcit.core/Mappable
+                assert= p $ assert-traits p MyFoo
+
+              println "|  assert-traits: ✓"
           :examples $ []
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote

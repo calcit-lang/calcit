@@ -152,10 +152,12 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeDisplayStack => meta::display_stack(args, call_stack),
     NativeInspectImplMethods => meta::inspect_impl_methods(args, call_stack),
     NativeInspectType => Ok(Calcit::Nil), // Handled in preprocessing phase
+    NativeAssertTrait => meta::assert_trait(args, call_stack),
     Raise => effects::raise(args),
     Quit => effects::quit(args),
     GetEnv => effects::get_env(args),
     NativeGetCalcitBackend => effects::call_get_calcit_backend(args),
+    RegisterCalcitBuiltinImpls => meta::register_calcit_builtin_impls(args),
     ReadFile => effects::read_file(args),
     WriteFile => effects::write_file(args),
     // external data format
@@ -345,6 +347,11 @@ pub fn handle_syntax(
     AssertType => CalcitErr::err_nodes(
       CalcitErrKind::Unimplemented,
       "`assert-type` is not supported at runtime yet",
+      &nodes.to_vec(),
+    ),
+    AssertTrait => CalcitErr::err_nodes(
+      CalcitErrKind::Unimplemented,
+      "`assert-traits` is not supported at runtime yet",
       &nodes.to_vec(),
     ),
   }

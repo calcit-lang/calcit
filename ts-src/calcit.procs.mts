@@ -134,6 +134,47 @@ export let _$n_trait_$o__$o_new = function (name: CalcitValue, methods: CalcitVa
   return new CalcitTrait(name, methodNames, methodTypes);
 };
 
+export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitValue): CalcitValue {
+  if (arguments.length !== 2) throw new Error("&assert-traits expected 2 arguments");
+  if (!(traitDef instanceof CalcitTrait)) {
+    throw new Error(`&assert-traits expected a trait definition, but received: ${toString(traitDef, true)}`);
+  }
+  const pair = lookup_impls(value);
+  if (pair == null) {
+    throw new Error(`&assert-traits cannot resolve impls for: ${toString(value, true)}`);
+  }
+  const impls = pair[0];
+  const missing: string[] = [];
+  for (let i = 0; i < traitDef.methods.length; i++) {
+    const method = traitDef.methods[i];
+    let exists = false;
+    for (let j = 0; j < impls.length; j++) {
+      const impl = impls[j];
+      if (impl != null && impl.getOrNil(method) != null) {
+        exists = true;
+        break;
+      }
+    }
+    if (!exists) missing.push(method.toString());
+  }
+  if (missing.length > 0) {
+    const available: string[] = [];
+    for (let j = 0; j < impls.length; j++) {
+      const impl = impls[j];
+      if (impl == null) continue;
+      for (let k = 0; k < impl.fields.length; k++) {
+        available.push(impl.fields[k].toString());
+      }
+    }
+    throw new Error(
+      `assert-traits failed: ${toString(value, true)} does not implement ${traitDef.toString()}. Missing: ${missing.join(
+        " "
+      )}. Available: ${available.join(" ")}`
+    );
+  }
+  return value;
+};
+
 export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStruct => {
   const structName = castTag(name);
   const fields: Array<{ tag: CalcitTag; type: CalcitValue }> = [];
@@ -1600,13 +1641,15 @@ export let _PCT__PCT__$o__$o_ = (impl: CalcitRecord, enumPrototype: CalcitValue,
 };
 
 // mutable place for core to register
+type CalcitImplEntry = CalcitRecord | CalcitList | CalcitSliceList | null;
+
 let calcit_builtin_impls = {
-  number: null as CalcitRecord,
-  string: null as CalcitRecord,
-  set: null as CalcitRecord,
-  list: null as CalcitRecord,
-  map: null as CalcitRecord,
-  fn: null as CalcitRecord,
+  number: null as CalcitImplEntry,
+  string: null as CalcitImplEntry,
+  set: null as CalcitImplEntry,
+  list: null as CalcitImplEntry,
+  map: null as CalcitImplEntry,
+  fn: null as CalcitImplEntry,
 };
 
 // need to register code from outside
@@ -1621,15 +1664,24 @@ export function invoke_method_closure(p: string) {
   };
 }
 
+function normalize_builtin_impls(entry: CalcitImplEntry): CalcitRecord[] | null {
+  if (entry == null) return null;
+  if (entry instanceof CalcitRecord) return [entry];
+  if (entry instanceof CalcitList || entry instanceof CalcitSliceList) {
+    return list_items(entry) as CalcitRecord[];
+  }
+  return null;
+}
+
 function lookup_impls(obj: CalcitValue): [CalcitRecord[], string] {
   let impls: CalcitRecord[];
   let tag: string;
   if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
     tag = "&core-list-methods";
-    impls = [calcit_builtin_impls.list];
+    impls = normalize_builtin_impls(calcit_builtin_impls.list);
   } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
     tag = "&core-map-methods";
-    impls = [calcit_builtin_impls.map];
+    impls = normalize_builtin_impls(calcit_builtin_impls.map);
   } else if (obj instanceof CalcitRecord) {
     tag = obj.name.toString();
     impls = obj.impls;
@@ -1638,19 +1690,20 @@ function lookup_impls(obj: CalcitValue): [CalcitRecord[], string] {
     impls = obj.impls;
   } else if (obj instanceof CalcitSet) {
     tag = "&core-set-methods";
-    impls = [calcit_builtin_impls.set];
+    impls = normalize_builtin_impls(calcit_builtin_impls.set);
   } else if (typeof obj === "number") {
     tag = "&core-number-methods";
-    impls = [calcit_builtin_impls.number];
+    impls = normalize_builtin_impls(calcit_builtin_impls.number);
   } else if (typeof obj === "string") {
     tag = "&core-string-methods";
-    impls = [calcit_builtin_impls.string];
+    impls = normalize_builtin_impls(calcit_builtin_impls.string);
   } else if (typeof obj === "function") {
     tag = "&core-fn-methods";
-    impls = [calcit_builtin_impls.fn];
+    impls = normalize_builtin_impls(calcit_builtin_impls.fn);
   } else {
     return null;
   }
+  if (impls == null) return null;
   return [impls, tag];
 }
 

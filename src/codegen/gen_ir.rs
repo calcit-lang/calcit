@@ -390,6 +390,10 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
       (Edn::tag("type"), Edn::tag("enum")),
       (Edn::tag("value"), dump_enum_code(enum_def.as_ref())),
     ]),
+    CalcitTypeAnnotation::Trait(trait_def) => Edn::map_from_iter([
+      (Edn::tag("type"), Edn::tag("trait")),
+      (Edn::tag("value"), Edn::tag(trait_def.name.to_string())),
+    ]),
   }
 }
 
