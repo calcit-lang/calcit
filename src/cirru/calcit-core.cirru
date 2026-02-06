@@ -1072,6 +1072,16 @@
             deftrait Show $ :show
               :: :fn ('T) ('T) :string
           :examples $ []
+        |Serialize $ %{} :CodeEntry (:doc "|Core trait: Serialize")
+          :code $ quote
+            deftrait Serialize $ :serialize
+              :: :fn ('T) ('T) :string
+          :examples $ []
+        |Deserialize $ %{} :CodeEntry (:doc "|Core trait: Deserialize")
+          :code $ quote
+            deftrait Deserialize $ :deserialize
+              :: :fn ('T) (:string) 'T
+          :examples $ []
         |[,] $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro [,] (& body)

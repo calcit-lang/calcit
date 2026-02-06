@@ -8,6 +8,7 @@ import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
 import { CalcitTag, CalcitSymbol, CalcitRecur, newTag } from "./calcit-data.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitEnum } from "./js-enum.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { deepEqual } from "@calcit/ternary-tree/lib/utils.mjs";
 import { atom } from "./js-ref.mjs";
@@ -175,6 +176,18 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     if (x.tag instanceof CalcitSymbol && x.tag.value === "quote") {
       // turn `x.snd` with CalcitList into raw Cirru nodes, which is in plain Array
       return ["quote", toWriterNode(x.get(1) as any)] as CirruEdnFormat;
+    } else if (x.enumPrototype != null) {
+      let enumTag =
+        x.enumPrototype instanceof CalcitEnum
+          ? x.enumPrototype.prototype.name.toString()
+          : x.enumPrototype.name.toString();
+      if (x.tag instanceof CalcitTag) {
+        return ["%::", enumTag, x.tag.toString(), ...x.extra.map(to_cirru_edn)];
+      } else if (x.tag instanceof CalcitRecord) {
+        return ["%::", enumTag, x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
+      } else {
+        throw new Error(`Unsupported tag for EDN: ${x.tag}`);
+      }
     } else if (x.tag instanceof CalcitTag) {
       return ["::", x.tag.toString(), ...x.extra.map(to_cirru_edn)];
     } else if (x.tag instanceof CalcitRecord) {
@@ -209,6 +222,19 @@ let extractFieldTag = (x: string) => {
   } else {
     return newTag(x);
   }
+};
+
+let resolveEnumPrototype = (enumName: string, options: CalcitValue) => {
+  if (options instanceof CalcitMap || options instanceof CalcitSliceMap) {
+    let value = options.get(extractFieldTag(enumName));
+    if (value instanceof CalcitEnum || value instanceof CalcitRecord) {
+      return value;
+    }
+    if (value != null) {
+      throw new Error(`Expected enum prototype for ${enumName}, got: ${value}`);
+    }
+  }
+  return null;
 };
 
 export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): CalcitValue => {
@@ -354,6 +380,25 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
           .filter(notComment)
           .map((x) => extract_cirru_edn(x, options)),
         undefined
+      );
+    }
+    if (x[0] === "%::") {
+      if (x.length < 3) {
+        throw new Error(`%:: expects at least 2 values, got: ${x}`);
+      }
+      let enumName = x[1];
+      if (typeof enumName !== "string") {
+        throw new Error(`Expected string for enum name, got: ${enumName}`);
+      }
+      let enumPrototype = resolveEnumPrototype(enumName, options);
+      return new CalcitTuple(
+        extract_cirru_edn(x[2], options),
+        x
+          .slice(3)
+          .filter(notComment)
+          .map((x) => extract_cirru_edn(x, options)),
+        undefined,
+        enumPrototype
       );
     }
     if (x[0] === "atom") {

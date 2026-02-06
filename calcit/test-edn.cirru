@@ -7,6 +7,11 @@
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
+        |DemoEnum $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defenum DemoEnum
+              :ok
+              :err :string
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing edn")
@@ -77,6 +82,16 @@
                   format-cirru-edn $ :: :test
                 assert= "|:: :test :a :b" $ trim
                   format-cirru-edn $ :: :test :a :b
+                let
+                    enum-ok $ parse-cirru-edn "|%:: :DemoEnum :ok"
+                      {} $ :DemoEnum DemoEnum
+                  assert= :ok $ &tuple:nth enum-ok 0
+                  assert= "|%:: :DemoEnum :ok" $ trim $ format-cirru-edn enum-ok
+                let
+                    enum-err $ parse-cirru-edn "|%:: :DemoEnum :err |oops"
+                      {} $ :DemoEnum DemoEnum
+                  assert= :err $ &tuple:nth enum-err 0
+                  assert= "|%:: :DemoEnum :err |oops" $ trim $ format-cirru-edn enum-err
 
         |test-edn-comment $ %{} :CodeEntry (:doc |)
           :code $ quote
