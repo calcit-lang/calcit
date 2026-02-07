@@ -76,8 +76,7 @@ impl CalcitTrait {
 impl Hash for CalcitTrait {
   fn hash<H: Hasher>(&self, state: &mut H) {
     self.name.hash(state);
-    self.methods.hash(state);
-    // Don't hash defaults or method_types as they contain complex types
+    // Don't hash methods, defaults, or method_types - only name matters for equality
   }
 }
 

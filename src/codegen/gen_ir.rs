@@ -342,10 +342,23 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
     CalcitTypeAnnotation::String => type_tag_map("string"),
     CalcitTypeAnnotation::Symbol => type_tag_map("symbol"),
     CalcitTypeAnnotation::Tag => type_tag_map("tag"),
-    CalcitTypeAnnotation::List(_) => type_tag_map("list"),
-    CalcitTypeAnnotation::Map(_, _) => type_tag_map("map"),
+    CalcitTypeAnnotation::List(inner) => {
+      let mut entries = vec![(Edn::tag("type"), Edn::tag("list"))];
+      entries.push((Edn::tag("inner"), dump_type_annotation(inner.as_ref())));
+      Edn::map_from_iter(entries)
+    }
+    CalcitTypeAnnotation::Map(k, v) => {
+      let mut entries = vec![(Edn::tag("type"), Edn::tag("map"))];
+      entries.push((Edn::tag("key"), dump_type_annotation(k.as_ref())));
+      entries.push((Edn::tag("value"), dump_type_annotation(v.as_ref())));
+      Edn::map_from_iter(entries)
+    }
     CalcitTypeAnnotation::DynFn => type_tag_map("fn"),
-    CalcitTypeAnnotation::Ref(_) => type_tag_map("ref"),
+    CalcitTypeAnnotation::Ref(inner) => {
+      let mut entries = vec![(Edn::tag("type"), Edn::tag("ref"))];
+      entries.push((Edn::tag("inner"), dump_type_annotation(inner.as_ref())));
+      Edn::map_from_iter(entries)
+    }
     CalcitTypeAnnotation::Buffer => type_tag_map("buffer"),
     CalcitTypeAnnotation::CirruQuote => type_tag_map("cirru-quote"),
     CalcitTypeAnnotation::Record(record) => dump_record_type_summary(record.as_ref()),
@@ -438,8 +451,14 @@ fn tuple_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
     (Edn::tag("kind"), Edn::tag("tuple")),
     (Edn::tag("tag"), Edn::Str(tuple.tag.to_string().into())),
   ];
-  if let Some(imp) = tuple.impls.first() {
-    entries.push((Edn::tag("impls"), Edn::Str(imp.name().ref_str().into())));
+  {
+    let mut impls_list = EdnListView::default();
+    for imp in &tuple.impls {
+      impls_list.push(Edn::Str(imp.name().ref_str().into()));
+    }
+    if !impls_list.is_empty() {
+      entries.push((Edn::tag("impls"), impls_list.into()));
+    }
   }
   if let Some(sum_type) = &tuple.sum_type {
     entries.push((Edn::tag("enum"), Edn::Str(sum_type.name().ref_str().into())));
@@ -452,8 +471,14 @@ fn tuple_type_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
     (Edn::tag("type"), Edn::tag("tuple")),
     (Edn::tag("tag"), Edn::Str(tuple.tag.to_string().into())),
   ];
-  if let Some(imp) = tuple.impls.first() {
-    entries.push((Edn::tag("impls"), Edn::Str(imp.name().ref_str().into())));
+  {
+    let mut impls_list = EdnListView::default();
+    for imp in &tuple.impls {
+      impls_list.push(Edn::Str(imp.name().ref_str().into()));
+    }
+    if !impls_list.is_empty() {
+      entries.push((Edn::tag("impls"), impls_list.into()));
+    }
   }
   if let Some(sum_type) = &tuple.sum_type {
     entries.push((Edn::tag("enum"), Edn::Str(sum_type.name().ref_str().into())));
@@ -494,8 +519,14 @@ fn dump_struct_code(struct_def: &CalcitStruct) -> Edn {
     (Edn::tag("kind"), Edn::tag("struct")),
     (Edn::tag("name"), Edn::Str(struct_def.name.ref_str().into())),
   ];
-  if let Some(imp) = struct_def.impls.first() {
-    entries.push((Edn::tag("impls"), Edn::Str(imp.name().ref_str().into())));
+  {
+    let mut impls_list = EdnListView::default();
+    for imp in &struct_def.impls {
+      impls_list.push(Edn::Str(imp.name().ref_str().into()));
+    }
+    if !impls_list.is_empty() {
+      entries.push((Edn::tag("impls"), impls_list.into()));
+    }
   }
   let mut fields = EdnListView::default();
   for (field, field_type) in struct_def.fields.iter().zip(struct_def.field_types.iter()) {
@@ -514,8 +545,14 @@ fn dump_enum_code(enum_def: &CalcitEnum) -> Edn {
     (Edn::tag("kind"), Edn::tag("enum")),
     (Edn::tag("name"), Edn::Str(enum_def.name().ref_str().into())),
   ];
-  if let Some(imp) = enum_def.impls().first() {
-    entries.push((Edn::tag("impls"), Edn::Str(imp.name().ref_str().into())));
+  {
+    let mut impls_list = EdnListView::default();
+    for imp in enum_def.impls() {
+      impls_list.push(Edn::Str(imp.name().ref_str().into()));
+    }
+    if !impls_list.is_empty() {
+      entries.push((Edn::tag("impls"), impls_list.into()));
+    }
   }
 
   let mut variants = EdnListView::default();
@@ -539,8 +576,14 @@ fn record_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
     (Edn::tag("kind"), Edn::tag("record")),
     (Edn::tag("name"), Edn::Str(record.name().ref_str().into())),
   ];
-  if let Some(imp) = record.impls.first() {
-    entries.push((Edn::tag("impls"), Edn::Str(imp.name().ref_str().into())));
+  {
+    let mut impls_list = EdnListView::default();
+    for imp in &record.impls {
+      impls_list.push(Edn::Str(imp.name().ref_str().into()));
+    }
+    if !impls_list.is_empty() {
+      entries.push((Edn::tag("impls"), impls_list.into()));
+    }
   }
   entries
 }
@@ -550,8 +593,14 @@ fn record_type_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
     (Edn::tag("type"), Edn::tag("record")),
     (Edn::tag("name"), Edn::Str(record.name().ref_str().into())),
   ];
-  if let Some(imp) = record.impls.first() {
-    entries.push((Edn::tag("impls"), Edn::Str(imp.name().ref_str().into())));
+  {
+    let mut impls_list = EdnListView::default();
+    for imp in &record.impls {
+      impls_list.push(Edn::Str(imp.name().ref_str().into()));
+    }
+    if !impls_list.is_empty() {
+      entries.push((Edn::tag("impls"), impls_list.into()));
+    }
   }
   entries
 }

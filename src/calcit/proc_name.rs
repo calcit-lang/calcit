@@ -512,8 +512,8 @@ impl CalcitProc {
         arg_types: vec![variadic_dynamic()],
       }),
       NativeAssertTraits => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), dynamic_tag()],
+        return_type: some_tag("nil"),
+        arg_types: vec![dynamic_tag(), some_tag("trait")],
       }),
       NativeCirruType => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
@@ -919,11 +919,11 @@ impl CalcitProc {
       }),
       NativeTupleEnumHasVariant => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
-        arg_types: vec![some_tag("record"), some_tag("tag")],
+        arg_types: vec![some_tag("enum"), some_tag("tag")],
       }),
       NativeTupleEnumVariantArity => Some(ProcTypeSignature {
         return_type: some_tag("number"),
-        arg_types: vec![some_tag("record"), some_tag("tag")],
+        arg_types: vec![some_tag("enum"), some_tag("tag")],
       }),
       NativeTupleValidateEnum => Some(ProcTypeSignature {
         return_type: some_tag("nil"),

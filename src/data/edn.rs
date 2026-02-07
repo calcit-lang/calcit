@@ -177,13 +177,13 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
       match find_record_in_options(&name.arc_str(), options) {
         Some(Calcit::Record(CalcitRecord {
           struct_ref: pre_struct,
-          values: pre_values,
+          values: _pre_values,
           impls: pre_impls,
         })) => {
           if fields == **pre_struct.fields {
             Calcit::Record(CalcitRecord {
               struct_ref: pre_struct.to_owned(),
-              values: pre_values.to_owned(),
+              values: Arc::new(values),
               impls: pre_impls.clone(),
             })
           } else {

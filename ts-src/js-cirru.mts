@@ -177,10 +177,7 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
       // turn `x.snd` with CalcitList into raw Cirru nodes, which is in plain Array
       return ["quote", toWriterNode(x.get(1) as any)] as CirruEdnFormat;
     } else if (x.enumPrototype != null) {
-      let enumTag =
-        x.enumPrototype instanceof CalcitEnum
-          ? x.enumPrototype.prototype.name.toString()
-          : x.enumPrototype.name.toString();
+      let enumTag = x.enumPrototype instanceof CalcitEnum ? x.enumPrototype.prototype.name.toString() : x.enumPrototype.name.toString();
       if (x.tag instanceof CalcitTag) {
         return ["%::", enumTag, x.tag.toString(), ...x.extra.map(to_cirru_edn)];
       } else if (x.tag instanceof CalcitRecord) {
@@ -235,6 +232,23 @@ let resolveEnumPrototype = (enumName: string, options: CalcitValue) => {
     }
   }
   return null;
+};
+
+// local helper to unwrap an enum prototype value to a CalcitRecord prototype
+const unwrap_enum_prototype_local = (enumPrototype: CalcitValue): CalcitRecord => {
+  if (enumPrototype instanceof CalcitEnum) {
+    return enumPrototype.prototype;
+  }
+  if (enumPrototype instanceof CalcitRecord) {
+    return enumPrototype;
+  }
+  throw new Error(`expected enum prototype`);
+};
+
+const tag_to_string = (tag: CalcitValue): string => {
+  if (tag instanceof CalcitTag) return tag.toString();
+  if (tag instanceof CalcitRecord) return tag.name.toString();
+  throw new Error(`Unsupported tag for EDN: ${tag}`);
 };
 
 export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): CalcitValue => {
@@ -379,7 +393,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
           .slice(2)
           .filter(notComment)
           .map((x) => extract_cirru_edn(x, options)),
-        undefined
+        []
       );
     }
     if (x[0] === "%::") {
@@ -391,13 +405,16 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
         throw new Error(`Expected string for enum name, got: ${enumName}`);
       }
       let enumPrototype = resolveEnumPrototype(enumName, options);
+      // unwrap prototype to record then extract name
+      const proto = enumPrototype != null ? unwrap_enum_prototype_local(enumPrototype) : null;
+      const enumTag = proto != null ? proto.name.toString() : enumName;
       return new CalcitTuple(
         extract_cirru_edn(x[2], options),
         x
           .slice(3)
           .filter(notComment)
           .map((x) => extract_cirru_edn(x, options)),
-        undefined,
+        [],
         enumPrototype
       );
     }

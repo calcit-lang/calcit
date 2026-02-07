@@ -196,12 +196,12 @@ Show/show 42
 - `nil`: Show, Inspect, Eq, Hash
 - `bool`: Show, Inspect, Eq, Hash
 - `number`: Show, Inspect, Eq, Compare, Add, Multiply, Hash
-- `string`: Show, Inspect, Eq, Compare, Add, Len, Foldable, Mappable, Hash
+- `string`: Show, Inspect, Eq, Compare, Add, Len, Foldable, Functor, Hash
 - `tag`: Show, Inspect, Eq, Compare, Hash
 - `symbol`: Show, Inspect, Eq, Hash
-- `list`: Show, Inspect, Eq, Compare, Add, Len, Foldable, Mappable, Hash
-- `map`: Show, Inspect, Eq, Len, Foldable, Mappable, Hash
-- `set`: Show, Inspect, Eq, Len, Foldable, Mappable, Hash
+- `list`: Show, Inspect, Eq, Compare, Add, Len, Foldable, Functor, Hash
+- `map`: Show, Inspect, Eq, Len, Foldable, Functor, Hash
+- `set`: Show, Inspect, Eq, Len, Foldable, Functor, Hash
 - `tuple`: Show, Inspect, Eq, Len, Hash
 - `record`: Show, Inspect, Eq, Len, Hash
 - `fn`: Show, Inspect

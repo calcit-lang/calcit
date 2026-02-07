@@ -746,6 +746,7 @@ impl PartialEq for Calcit {
       (Set(a), Set(b)) => a == b,
       (Map(a), Map(b)) => a == b,
       (Record(a), Record(b)) => a == b,
+      (Struct(a), Struct(b)) => a == b,
       (Enum(a), Enum(b)) => a.prototype() == b.prototype(),
       (Trait(a), Trait(b)) => a == b,
       (Proc(a), Proc(b)) => a == b,

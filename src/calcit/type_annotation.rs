@@ -896,6 +896,9 @@ impl CalcitTypeAnnotation {
         if a.struct_ref.name != base.name {
           return false;
         }
+        if args.len() != base.generics.len() {
+          return false;
+        }
         for (idx, arg) in args.iter().enumerate() {
           let expected = base.generics.get(idx);
           if let Some(var_name) = expected {
@@ -1565,6 +1568,7 @@ impl Hash for CalcitTypeAnnotation {
       Self::DynFn => "dynfn".hash(state),
       Self::Fn(signature) => {
         "function".hash(state);
+        signature.generics.hash(state);
         signature.arg_types.hash(state);
         signature.return_type.hash(state);
       }
@@ -1665,7 +1669,11 @@ impl Ord for CalcitTypeAnnotation {
         let b = b.as_ref();
         a.tag.cmp(&b.tag).then_with(|| a.extra.cmp(&b.extra))
       }
-      (Self::Fn(a), Self::Fn(b)) => a.arg_types.cmp(&b.arg_types).then_with(|| a.return_type.cmp(&b.return_type)),
+      (Self::Fn(a), Self::Fn(b)) => a
+        .generics
+        .cmp(&b.generics)
+        .then_with(|| a.arg_types.cmp(&b.arg_types))
+        .then_with(|| a.return_type.cmp(&b.return_type)),
       (Self::Set(a), Self::Set(b)) => a.cmp(b),
       (Self::Ref(a), Self::Ref(b)) => a.cmp(b),
       (Self::Variadic(a), Self::Variadic(b)) => a.cmp(b),

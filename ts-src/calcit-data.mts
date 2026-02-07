@@ -682,6 +682,24 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
     }
     return false;
   }
+  if (x instanceof CalcitStruct) {
+    if (y instanceof CalcitStruct) {
+      return x.name === y.name && fieldsEqual(x.fields, y.fields);
+    }
+    return false;
+  }
+  if (x instanceof CalcitEnum) {
+    if (y instanceof CalcitEnum) {
+      return x.name === y.name;
+    }
+    return false;
+  }
+  if (x instanceof CalcitTrait) {
+    if (y instanceof CalcitTrait) {
+      return x.name === y.name;
+    }
+    return false;
+  }
   throw new Error("Missing handler for this type");
 };
 

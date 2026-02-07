@@ -10,6 +10,9 @@ export class CalcitStruct {
   cachedHash: number;
 
   constructor(name: CalcitTag, fields: CalcitTag[], fieldTypes: CalcitValue[], impls: CalcitRecord[] = []) {
+    if (fields.length !== fieldTypes.length) {
+      throw new Error("CalcitStruct: fields and fieldTypes length mismatch");
+    }
     this.name = name;
     this.fields = fields;
     this.fieldTypes = fieldTypes;
@@ -27,6 +30,9 @@ export class CalcitStruct {
   }
 
   toString(disableJsDataWarning: boolean = false): string {
+    if (this.fields.length !== this.fieldTypes.length) {
+      throw new Error("CalcitStruct: fields and fieldTypes length mismatch");
+    }
     const parts: string[] = ["(%struct :", this.name.value];
     for (let idx = 0; idx < this.fields.length; idx++) {
       const field = this.fields[idx];

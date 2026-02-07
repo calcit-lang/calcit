@@ -53,7 +53,7 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         "new-record requires a name (symbol or tag), but received: {}",
         type_of(&[a.to_owned()])?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::NewRecord).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecord).unwrap_or_default();
       return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
     }
   };
@@ -74,7 +74,7 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           "new-record fields require tag/string, but received: {}",
           type_of(&[a.to_owned()])?.lisp_str()
         );
-        let hint = format_proc_examples_hint(&CalcitProc::NewRecord).unwrap_or_default();
+        let hint = format_proc_examples_hint(&CalcitProc::NativeRecord).unwrap_or_default();
         return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
       }
     }
@@ -177,7 +177,7 @@ pub fn new_impl_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.is_empty() {
+  if xs.len() < 2 {
     let hint = format_proc_examples_hint(&CalcitProc::NativeStructNew).unwrap_or_default();
     return CalcitErr::err_nodes_with_hint(
       CalcitErrKind::Arity,
@@ -272,7 +272,7 @@ pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.is_empty() {
+  if xs.len() < 2 {
     let hint = format_proc_examples_hint(&CalcitProc::NativeEnumNew).unwrap_or_default();
     return CalcitErr::err_nodes_with_hint(
       CalcitErrKind::Arity,

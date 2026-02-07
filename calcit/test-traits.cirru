@@ -139,7 +139,7 @@
               println "|  Add trait: ✓"
           :examples $ []
 
-        |test-collection-traits $ %{} :CodeEntry (:doc "|Test Len/Empty traits for collections")
+        |test-collection-traits $ %{} :CodeEntry (:doc "|Test Len/Empty/Contains traits for collections")
           :code $ quote
             defn test-collection-traits ()
               println "|Testing Collection traits (Len, Empty)..."
