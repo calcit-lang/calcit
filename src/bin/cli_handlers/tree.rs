@@ -1276,8 +1276,7 @@ fn handle_cp(opts: &TreeCpCommand, snapshot_file: &str) -> Result<(), String> {
     "replace" => "replace",
     other => {
       return Err(format!(
-        "Unsupported position '{}'. Use: before, after, prepend-child, append-child, replace",
-        other
+        "Unsupported position '{other}'. Use: before, after, prepend-child, append-child, replace"
       ));
     }
   };

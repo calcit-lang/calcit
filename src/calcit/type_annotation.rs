@@ -69,6 +69,8 @@ pub enum CalcitTypeAnnotation {
   },
   /// Trait type annotation for trait objects
   Trait(Arc<CalcitTrait>),
+  /// Multiple trait constraints recorded in order
+  TraitSet(Arc<Vec<Arc<CalcitTrait>>>),
 }
 
 impl CalcitTypeAnnotation {
@@ -367,7 +369,42 @@ impl CalcitTypeAnnotation {
       _ => return,
     };
 
-    if let Some((target, type_expr)) = Self::extract_assert_traits_args(list).or_else(|| Self::extract_assert_type_args(list)) {
+    if let Some((target, trait_forms)) = Self::extract_assert_traits_args(list) {
+      let sym = match target {
+        Calcit::Symbol { sym, .. } => sym.to_owned(),
+        Calcit::Local(local) => local.sym.to_owned(),
+        _ => return,
+      };
+
+      if let Some(&idx) = param_index.get(&sym) {
+        let mut traits: Vec<Arc<CalcitTrait>> = vec![];
+        let mut non_trait: Option<Arc<CalcitTypeAnnotation>> = None;
+        for form in trait_forms {
+          let parsed = CalcitTypeAnnotation::parse_type_annotation_form(form);
+          match parsed.as_ref() {
+            CalcitTypeAnnotation::Trait(trait_def) => traits.push(trait_def.to_owned()),
+            _ => {
+              if non_trait.is_none() {
+                non_trait = Some(parsed);
+              }
+            }
+          }
+        }
+
+        if !traits.is_empty() {
+          if traits.len() == 1 && non_trait.is_none() {
+            arg_types[idx] = Arc::new(CalcitTypeAnnotation::Trait(traits.remove(0)));
+          } else {
+            arg_types[idx] = Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(traits)));
+          }
+        } else if let Some(fallback) = non_trait {
+          arg_types[idx] = fallback;
+        }
+      }
+      return;
+    }
+
+    if let Some((target, type_expr)) = Self::extract_assert_type_args(list) {
       let sym = match target {
         Calcit::Symbol { sym, .. } => sym.to_owned(),
         Calcit::Local(local) => local.sym.to_owned(),
@@ -409,7 +446,7 @@ impl CalcitTypeAnnotation {
     Some((target, type_expr))
   }
 
-  fn extract_assert_traits_args(list: &CalcitList) -> Option<(&Calcit, &Calcit)> {
+  fn extract_assert_traits_args(list: &CalcitList) -> Option<(&Calcit, Vec<&Calcit>)> {
     match list.first() {
       Some(Calcit::Syntax(CalcitSyntax::AssertTraits, _)) => {}
       Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "assert-traits" => {}
@@ -417,8 +454,14 @@ impl CalcitTypeAnnotation {
     }
 
     let target = list.get(1)?;
-    let type_expr = list.get(2)?;
-    Some((target, type_expr))
+    let mut trait_forms: Vec<&Calcit> = vec![];
+    for item in list.iter().skip(2) {
+      trait_forms.push(item);
+    }
+    if trait_forms.is_empty() {
+      return None;
+    }
+    Some((target, trait_forms))
   }
 
   pub fn parse_type_annotation_form(form: &Calcit) -> Arc<CalcitTypeAnnotation> {
@@ -777,6 +820,10 @@ impl CalcitTypeAnnotation {
       Self::Optional(inner) => format!("{}?", inner.to_brief_string()),
       Self::Struct(struct_def) => format!("struct {}", struct_def.name),
       Self::Trait(trait_def) => format!("trait {}", trait_def.name),
+      Self::TraitSet(traits) => {
+        let rendered = traits.iter().map(|t| t.name.to_string()).collect::<Vec<_>>().join(" ");
+        format!("traits {rendered}")
+      }
       Self::TypeVar(name) => format!("'{name}"),
       Self::AppliedStruct { base, args } => {
         if args.is_empty() {
@@ -842,6 +889,9 @@ impl CalcitTypeAnnotation {
       (Self::Enum(a), Self::Enum(b)) => a.name() == b.name(),
       (Self::Record(a), Self::Struct(b)) => a.struct_ref.name == b.name,
       (Self::Trait(a), Self::Trait(b)) => a.name == b.name,
+      (Self::TraitSet(actual), Self::Trait(expected)) => actual.iter().any(|t| t.name == expected.name),
+      (Self::Trait(actual), Self::TraitSet(expected)) => expected.len() == 1 && expected.iter().any(|t| t.name == actual.name),
+      (Self::TraitSet(actual), Self::TraitSet(expected)) => expected.iter().all(|t| actual.iter().any(|a| a.name == t.name)),
       (Self::Record(a), Self::AppliedStruct { base, args }) => {
         if a.struct_ref.name != base.name {
           return false;
@@ -1069,6 +1119,7 @@ impl CalcitTypeAnnotation {
       }
       Self::Enum(enum_def) => Calcit::Enum((**enum_def).clone()),
       Self::Trait(trait_def) => Calcit::Trait((**trait_def).clone()),
+      Self::TraitSet(_) => Calcit::Nil,
       Self::Dynamic => Calcit::Nil,
       _ => Calcit::Nil,
     }
@@ -1148,6 +1199,10 @@ impl CalcitTypeAnnotation {
       Self::Optional(inner) => format!("optional<{}>", inner.describe()),
       Self::Struct(struct_def) => format!("struct {}", struct_def.name),
       Self::Trait(trait_def) => format!("trait {}", trait_def.name),
+      Self::TraitSet(traits) => {
+        let rendered = traits.iter().map(|t| t.name.to_string()).collect::<Vec<_>>().join(" ");
+        format!("traits {rendered}")
+      }
       Self::TypeVar(name) => format!("'{name}"),
       Self::AppliedStruct { base, args } => {
         if args.is_empty() {
@@ -1190,6 +1245,7 @@ impl CalcitTypeAnnotation {
       Self::AppliedStruct { .. } => 23,
       Self::Enum(_) => 24,
       Self::Trait(_) => 25,
+      Self::TraitSet(_) => 26,
     }
   }
 }
@@ -1561,6 +1617,12 @@ impl Hash for CalcitTypeAnnotation {
         "trait".hash(state);
         trait_def.name.hash(state);
       }
+      Self::TraitSet(traits) => {
+        "traits".hash(state);
+        for t in traits.iter() {
+          t.name.hash(state);
+        }
+      }
     }
   }
 }
@@ -1613,6 +1675,7 @@ impl Ord for CalcitTypeAnnotation {
       (Self::Struct(a), Self::Struct(b)) => a.name.cmp(&b.name).then_with(|| a.fields.cmp(&b.fields)),
       (Self::Enum(a), Self::Enum(b)) => a.name().cmp(b.name()),
       (Self::Trait(a), Self::Trait(b)) => a.name.cmp(&b.name),
+      (Self::TraitSet(a), Self::TraitSet(b)) => a.iter().map(|t| &t.name).cmp(b.iter().map(|t| &t.name)),
       _ => Ordering::Equal, // other variants already separated by kind order
     }
   }

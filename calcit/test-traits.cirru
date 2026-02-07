@@ -208,11 +208,17 @@
                   Person $ impl-traits Person0 MyFooImpl
                   p $ %{} Person (:name |Alice)
                 assert= x $ assert-traits x calcit.core/Show
+                assert= x $ assert-traits x calcit.core/Show calcit.core/Eq
                 assert= xs $ assert-traits xs calcit.core/Mappable
+                assert= xs $ assert-traits xs calcit.core/Mappable calcit.core/Show
                 assert= m $ assert-traits m calcit.core/Mappable
+                assert= m $ assert-traits m calcit.core/Mappable calcit.core/Show
                 assert= s $ assert-traits s calcit.core/Show
+                assert= s $ assert-traits s calcit.core/Show calcit.core/Eq
                 assert= opt $ assert-traits opt calcit.core/Mappable
+                ; "Option only implements Mappable in current impls"
                 assert= p $ assert-traits p MyFoo
+                ; "MyFooImpl only provides :foo, no Show impl"
 
               println "|  assert-traits: ✓"
           :examples $ []

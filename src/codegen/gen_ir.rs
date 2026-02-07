@@ -394,6 +394,13 @@ fn dump_type_annotation(type_info: &CalcitTypeAnnotation) -> Edn {
       (Edn::tag("type"), Edn::tag("trait")),
       (Edn::tag("value"), Edn::tag(trait_def.name.to_string())),
     ]),
+    CalcitTypeAnnotation::TraitSet(traits) => {
+      let mut list = EdnListView::default();
+      for trait_def in traits.iter() {
+        list.push(Edn::tag(trait_def.name.to_string()));
+      }
+      Edn::map_from_iter([(Edn::tag("type"), Edn::tag("traits")), (Edn::tag("value"), list.into())])
+    }
   }
 }
 
