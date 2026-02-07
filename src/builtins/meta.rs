@@ -1041,13 +1041,13 @@ fn method_record(
 }
 
 pub fn native_compare(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  match (xs.first(), xs.get(1)) {
-    (Some(a), Some(b)) => match a.cmp(b) {
-      Ordering::Less => Ok(Calcit::Number(-1.0)),
-      Ordering::Greater => Ok(Calcit::Number(1.0)),
-      Ordering::Equal => Ok(Calcit::Number(0.0)),
-    },
-    _ => crate::builtins::err_arity("&compare requires 2 arguments, but received:", xs),
+  if xs.len() != 2 {
+    return crate::builtins::err_arity("&compare requires 2 arguments, but received:", xs);
+  }
+  match xs[0].cmp(&xs[1]) {
+    Ordering::Less => Ok(Calcit::Number(-1.0)),
+    Ordering::Greater => Ok(Calcit::Number(1.0)),
+    Ordering::Equal => Ok(Calcit::Number(0.0)),
   }
 }
 

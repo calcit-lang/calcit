@@ -17,10 +17,7 @@ pub fn call_include(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Set(ys))
     }
     (Some(_), None) => {
-      let msg = format!(
-        "&include requires 2 arguments, but received: {} arguments",
-        if xs.is_empty() { 0 } else { 1 }
-      );
+      let msg = format!("&include requires 2 arguments, but received: {} arguments", xs.len());
       let hint = format_proc_examples_hint(&CalcitProc::NativeInclude).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Arity, msg, hint)
     }

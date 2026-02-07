@@ -1211,7 +1211,7 @@ fn handle_search_expr(
 
   let pattern_display = pattern_node.format_one_liner().unwrap_or_default();
   if loose {
-    println!("  {} (prefix match)", pattern_display.yellow());
+    println!("  {} (substring match for leaf patterns)", pattern_display.yellow());
   } else {
     println!("  {} (exact match)", pattern_display.yellow());
   }

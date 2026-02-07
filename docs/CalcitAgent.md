@@ -20,7 +20,7 @@ cr tree show 'ns/def' -p '3,2,1'                          # 3. 验证（可选�
 ```bash
 cr query search 'target' -f 'ns/def'                      # 搜索符号/字符串
 cr query search-expr 'fn (x)' -f 'ns/def' -l              # 搜索代码结构
-cr tree replace-leaf 'ns/def' --pattern 'old' --replacement 'new'  # 批量替换
+cr tree replace-leaf 'ns/def' --pattern 'old' -e 'new' --leaf  # 批量替换叶子节点
 ```
 
 ### 效率对比
@@ -883,6 +883,8 @@ cr tree replace app.main/fn -p '2,0' -e 'symbol'  # 结果：["symbol"]
 | `\|a b c`      | `"a b c"`      | 包含空格     |
 | `\|[tag] text` | `"[tag] text"` | 包含特殊字符 |
 
+**不放心修改是否正确？** 每步后用 `tree show` 验证.
+
 **Tuple vs Vector：**
 
 ```cirru
@@ -913,7 +915,7 @@ send-to-component! $ :: :clipboard/read text
 - **JSON 格式 (`-j / --json`, `-J`, `-e`)**: 字数上限 **2000**。
 
 **大资源处理建议：**
-如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符（如 `?PLACEHOLDER_FEATURE`, 注意避免重复），然后通过 `cr query target-replace` 进行精准的分段替换.
+如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符（如 `?PLACEHOLDER_FEATURE`, 注意避免重复），然后通过 `cr tree target-replace` 进行精准的分段替换.
 
 ### 5. 推荐工作流程
 

@@ -16,7 +16,7 @@
 ### cr eval 基础与常见踩坑
 
 - **用途定位**：`cr eval` 适合快速验证语义/类型提示与宏展开，不等同于完整项目运行。
-- **顶层无需额外括号**：Cirru 语法本身就不需要“最外层括号”，顶层可以直接是表达式。可用 `cr cirru parse-oneliner` 观察解析结果。
+- **顶层无需额外括号**：Cirru 语法本身就不需要"最外层括号"，顶层可以直接是表达式。可用 `cr cirru parse -e` 观察解析结果。
   - ✅ `cargo run --bin cr -- demos/compact.cirru eval 'range 3'`
   - ✅ `cargo run --bin cr -- demos/compact.cirru eval 'let ((x 1)) (+ x 2)'`
   - ❌ `cargo run --bin cr -- demos/compact.cirru eval '(range 3)'`（多一层括号会改变调用语义）

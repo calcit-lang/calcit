@@ -1367,15 +1367,13 @@ fn check_user_fn_arg_types(
   }
 }
 
-/// Extract return type hint from defn args
-/// Looks for (hint-fn return-type <type>) pattern
-fn detect_return_type_hint_from_args(args: &CalcitList) -> Arc<CalcitTypeAnnotation> {
-  // Skip name (index 0) and arg list (index 1), start from body (index 2+)
-  for i in 2..args.len() {
-    if let Some(form) = args.get(i) {
-      if let Some(hint) = CalcitTypeAnnotation::extract_return_type_from_hint_form(form) {
-        return hint;
-      }
+/// Extract return type hint from processed function body
+/// Looks for (hint-fn return-type <type>) pattern in processed body forms
+fn detect_return_type_hint_from_processed_body(processed_body: &[Calcit]) -> Arc<CalcitTypeAnnotation> {
+  // Search through all body forms for hint-fn with return-type
+  for form in processed_body {
+    if let Some(hint) = CalcitTypeAnnotation::extract_return_type_from_hint_form(form) {
+      return hint;
     }
   }
   Arc::new(CalcitTypeAnnotation::Dynamic)
@@ -2502,8 +2500,8 @@ pub fn preprocess_defn(
       })?;
 
       // Check function return type if declared
-      // Extract return type hint from original args (before preprocessing)
-      let return_type_hint = detect_return_type_hint_from_args(args);
+      // Extract return type hint from processed body (after preprocessing)
+      let return_type_hint = detect_return_type_hint_from_processed_body(&processed_body);
       check_function_return_type(
         &processed_body,
         &return_type_hint,

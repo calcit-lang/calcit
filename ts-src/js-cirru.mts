@@ -177,7 +177,7 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
       // turn `x.snd` with CalcitList into raw Cirru nodes, which is in plain Array
       return ["quote", toWriterNode(x.get(1) as any)] as CirruEdnFormat;
     } else if (x.enumPrototype != null) {
-      let enumTag = x.enumPrototype instanceof CalcitEnum ? x.enumPrototype.prototype.name.toString() : x.enumPrototype.name.toString();
+      let enumTag = unwrap_enum_prototype_local(x.enumPrototype).name.toString();
       if (x.tag instanceof CalcitTag) {
         return ["%::", enumTag, x.tag.toString(), ...x.extra.map(to_cirru_edn)];
       } else if (x.tag instanceof CalcitRecord) {

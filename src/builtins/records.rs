@@ -413,6 +413,7 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
     );
   }
   let mut values: Vec<Calcit> = (**v0).to_owned();
+  let mut seen_positions: Vec<bool> = vec![false; struct_ref.fields.len()];
 
   for idx in 0..size {
     let k_idx = idx * 2 + 1;
@@ -420,6 +421,10 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
     match &xs[k_idx] {
       Calcit::Tag(s) => match record.index_of(s.ref_str()) {
         Some(pos) => {
+          if seen_positions[pos] {
+            return CalcitErr::err_str(CalcitErrKind::Type, format!("&%{{{{}}}} duplicate field: :{}", s.ref_str()));
+          }
+          seen_positions[pos] = true;
           xs[v_idx].clone_into(&mut values[pos]);
         }
         None => {

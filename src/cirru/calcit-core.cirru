@@ -1914,7 +1914,7 @@
             defn exclude (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
-              assert-type xs $ :: :& :set
+              ; accept any elements, not just sets
               reduce xs base $ fn (acc item) (&exclude acc item)
           :examples $ []
         |field-match $ %{} :CodeEntry (:doc |)
@@ -2196,7 +2196,7 @@
             defn include (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
-              assert-type xs $ :: :& :set
+              ; accept any elements, not just sets
               reduce xs base $ fn (acc item) (&include acc item)
           :examples $ []
             quote $ assert= (#{} 1 2 3 4)
