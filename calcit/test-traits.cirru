@@ -1,0 +1,228 @@
+
+{} (:package |test-traits)
+  :configs $ {} (:init-fn |test-traits.main/main!) (:reload-fn |test-traits.main/main!)
+  :files $ {}
+    |test-traits.main $ %{} :FileEntry
+      :defs $ {}
+        |main! $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn main! ()
+              &init-builtin-impls!
+              println "|Testing built-in traits..."
+
+              ; Test Show trait - all types should have it
+              test-show-trait
+
+              ; Test deftrait macro
+              test-deftrait
+
+              ; Test Eq trait
+              test-eq-trait
+
+              ; Test Compare trait
+              test-compare-trait
+
+              ; Test Add trait
+              test-add-trait
+
+              ; Test Len/Empty traits
+              test-collection-traits
+
+              ; Test Option/Result Mappable
+              test-option-result-map
+
+              ; Test assert-traits
+              test-assert-trait
+
+              println "|All trait tests passed!"
+          :examples $ []
+
+        |test-show-trait $ %{} :CodeEntry (:doc "|Test Show trait for built-in types")
+          :code $ quote
+            defn test-show-trait ()
+              println "|Testing Show trait..."
+
+              ; All types should be showable
+              assert= "|true" $ str true
+              assert= "|false" $ str false
+              assert= "|42" $ str 42
+              assert= "|hello" $ str |hello
+              assert= "|:tag" $ str :tag
+              assert= "|([] 1 2 3)" $ str ([] 1 2 3)
+              assert= "|({} (:a 1))" $ str ({} (:a 1))
+              ; assert= "|(#{} 1 2)" $ str (#{} 1 2)
+
+              println "|  Show trait: ✓"
+          :examples $ []
+
+        |MyFoo $ %{} :CodeEntry (:doc "|Trait for deftrait test")
+          :code $ quote
+            deftrait MyFoo
+              :foo (:: :fn ('T) ('T) :string)
+          :examples $ []
+
+        |MyFooImpl $ %{} :CodeEntry (:doc "|Trait impl for deftrait test")
+          :code $ quote
+            defrecord! MyFooImpl
+              :foo $ fn (p) (str "|foo " (:name p))
+          :examples $ []
+
+        |test-deftrait $ %{} :CodeEntry (:doc "|Test deftrait macro")
+          :code $ quote
+            defn test-deftrait ()
+              println "|Testing deftrait macro..."
+              assert= :trait $ type-of MyFoo
+              let
+                  Person0 $ new-record :Person :name
+                  Person $ impl-traits Person0 MyFooImpl
+                  p $ %{} Person (:name |Alice)
+                assert= "|foo Alice" $ .foo p
+                println "|  deftrait: ✓"
+          :examples $ []
+
+        |test-eq-trait $ %{} :CodeEntry (:doc "|Test Eq trait")
+          :code $ quote
+            defn test-eq-trait ()
+              println "|Testing Eq trait..."
+
+              ; Value equality
+              assert= true $ = 1 1
+              assert= true $ = |hello |hello
+              assert= true $ = :tag :tag
+              assert= true $ = ([] 1 2) ([] 1 2)
+              assert= true $ = ({} (:a 1)) ({} (:a 1))
+
+              ; Inequality
+              assert= false $ = 1 2
+              assert= false $ = |hello |world
+              assert= false $ = ([] 1 2) ([] 1 2 3)
+
+              println "|  Eq trait: ✓"
+          :examples $ []
+
+        |test-compare-trait $ %{} :CodeEntry (:doc "|Test Compare trait")
+          :code $ quote
+            defn test-compare-trait ()
+              println "|Testing Compare trait..."
+
+              ; Number comparison
+              assert= true $ < 1 2
+              assert= true $ > 2 1
+              assert= true $ <= 1 1
+              assert= true $ >= 2 2
+
+              ; String comparison (lexicographic)
+              assert= -1 $ &compare |apple |banana
+              assert= 1 $ &compare |zebra |apple
+
+              ; List comparison (not yet implemented in compare form)
+              ; assert= :lt $ compare ([] 1 2) ([] 1 3)
+
+              println "|  Compare trait: ✓"
+          :examples $ []
+
+        |test-add-trait $ %{} :CodeEntry (:doc "|Test Add trait")
+          :code $ quote
+            defn test-add-trait ()
+              println "|Testing Add trait..."
+
+              ; Number addition
+              assert= 3 $ + 1 2
+              assert= 10 $ + 1 2 3 4
+
+              ; String concatenation (using str)
+              assert= "|hello world" $ str-spaced |hello |world
+
+              ; List concatenation
+              assert= ([] 1 2 3 4) $ &list:concat ([] 1 2) ([] 3 4)
+
+              println "|  Add trait: ✓"
+          :examples $ []
+
+        |test-collection-traits $ %{} :CodeEntry (:doc "|Test Len/Empty/Contains traits for collections")
+          :code $ quote
+            defn test-collection-traits ()
+              println "|Testing Collection traits (Len, Empty)..."
+
+              ; Len trait
+              assert= 0 $ count ([])
+              assert= 3 $ count ([] 1 2 3)
+              assert= 5 $ count |hello
+              assert= 2 $ count ({} (:a 1) (:b 2))
+              assert= 3 $ count (#{} 1 2 3)
+
+              ; Empty trait
+              assert= true $ empty? ([])
+              assert= false $ empty? ([] 1)
+              assert= true $ empty? ({})
+              assert= false $ empty? ({} (:a 1))
+              assert= true $ empty? (#{})
+              assert= false $ empty? (#{} 1)
+              assert= false $ empty? ||
+              assert= false $ empty? |hello
+
+              ; Contains trait
+              assert= true $ contains? ([] 1 2 3) 2
+              assert= false $ contains? ([] 1 2 3) 4
+              assert= true $ contains? ({} (:a 1)) :a
+              assert= false $ contains? ({} (:a 1)) :b
+              assert= true $ contains? (#{} 1 2 3) 2
+              assert= false $ contains? (#{} 1 2 3) 4
+
+              println "|  Collection traits: ✓"
+          :examples $ []
+
+        |test-option-result-map $ %{} :CodeEntry (:doc "|Test Mappable trait for Option/Result")
+          :code $ quote
+            defn test-option-result-map ()
+              println "|Testing Option/Result Mappable..."
+
+              assert=
+                %some 2
+                .map (%some 1) inc
+              assert=
+                %none
+                .map (%none) inc
+              assert=
+                %ok 2
+                .map (%ok 1) inc
+              assert=
+                %err |oops
+                .map (%err |oops) inc
+
+              println "|  Option/Result map: ✓"
+          :examples $ []
+
+        |test-assert-trait $ %{} :CodeEntry (:doc "|Test assert-traits")
+          :code $ quote
+            defn test-assert-trait ()
+              println "|Testing assert-traits..."
+
+              let
+                  x 1
+                  xs $ [] 1 2 3
+                  m $ {} (:a 1) (:b 2)
+                  s |hello
+                  opt $ %some 1
+                  Person0 $ new-record :Person :name
+                  Person $ impl-traits Person0 MyFooImpl
+                  p $ %{} Person (:name |Alice)
+                assert= x $ assert-traits x calcit.core/Show
+                assert= x $ assert-traits x calcit.core/Show calcit.core/Eq
+                assert= xs $ assert-traits xs calcit.core/Mappable
+                assert= xs $ assert-traits xs calcit.core/Mappable calcit.core/Show
+                assert= m $ assert-traits m calcit.core/Mappable
+                assert= m $ assert-traits m calcit.core/Mappable calcit.core/Show
+                assert= s $ assert-traits s calcit.core/Show
+                assert= s $ assert-traits s calcit.core/Show calcit.core/Eq
+                assert= opt $ assert-traits opt calcit.core/Mappable
+                ; "Option only implements Mappable in current impls"
+                assert= p $ assert-traits p MyFoo
+                ; "MyFooImpl only provides :foo, no Show impl"
+
+              println "|  assert-traits: ✓"
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |)
+        :code $ quote
+          ns test-traits.main $ :require
+        :examples $ []

@@ -14,7 +14,7 @@
         |test-apply $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-apply ()
-              assert= nil $ .apply nil ([] inc)
+              assert= ([]) $ .apply ([]) ([] inc)
               assert= ([] 11 12 13 2 4 6)
                 .apply ([] 1 2 3)
                   []
@@ -28,7 +28,7 @@
         |test-bind $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-bind ()
-              assert= nil $ .bind nil inc
+              assert= ([]) $ .bind ([]) inc
               assert= ([] 0 1 0 1 2)
                 .bind ([] 2 3)
                   fn (x) (range x)
@@ -40,7 +40,7 @@
         |test-map $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-map ()
-              assert= nil $ .map nil inc
+              assert= ([]) $ .map ([]) inc
               assert= ([] 11 12)
                 .map (' 1 2)
                   fn (x) (+ x 10)
@@ -57,8 +57,7 @@
         |test-mappend $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-mappend ()
-              assert= 1 $ .mappend nil 1
-              assert= nil $ .mappend nil nil
+              assert= ([]) $ .mappend ([]) ([])
               assert= |abcd $ .mappend |ab |cd
               assert= ([] 1 2 3 4)
                 .mappend ([] 1 2) ([] 3 4)

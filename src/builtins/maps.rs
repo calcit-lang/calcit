@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitRecord};
+use crate::builtins::meta::type_of;
+use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, CalcitRecord, format_proc_examples_hint};
 
 use crate::util::number::is_even;
 
@@ -13,10 +14,12 @@ pub fn call_new_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     Ok(Calcit::Map(ys))
   } else {
-    CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      format!("&{{}} expected an even number of arguments, but received: {}", CalcitList::from(xs)),
-    )
+    let msg = format!(
+      "&{{}} requires an even number of arguments (key-value pairs), but received: {} arguments",
+      xs.len()
+    );
+    let hint = format_proc_examples_hint(&CalcitProc::NativeMap).unwrap_or_default();
+    CalcitErr::err_str_with_hint(CalcitErrKind::Arity, msg, hint)
   }
 }
 
@@ -37,7 +40,11 @@ pub fn dissoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Map(ys.to_owned()))
     }
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:dissoc expected a map, but received: {a}")),
+    Some(a) => {
+      let msg = format!("&map:dissoc requires a map, but received: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapDissoc).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     _ => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:dissoc expected 2 arguments, but received:", xs),
   }
 }
@@ -51,8 +58,29 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         None => Ok(Calcit::Nil),
       }
     }
-    (Some(a), ..) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:get expected a map, but received: {a}")),
-    (None, ..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:get expected 2 arguments, but received:", xs),
+    (Some(_), None) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapGet).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&map:get requires 2 arguments (map and key), but received:",
+        xs,
+        hint,
+      )
+    }
+    (Some(a), Some(_)) => {
+      let msg = format!("&map:get requires a map, but received: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapGet).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    (None, ..) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapGet).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&map:get requires 2 arguments (map and key), but received:",
+        xs,
+        hint,
+      )
+    }
   }
 }
 
@@ -67,17 +95,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
         Ok(Calcit::Map(zs))
       }
-      (
-        Calcit::Record(
-          record @ CalcitRecord {
-            name,
-            fields,
-            values,
-            class,
-          },
-        ),
-        Calcit::Map(ys),
-      ) => {
+      (Calcit::Record(record @ CalcitRecord { struct_ref, values, impls }), Calcit::Map(ys)) => {
         let mut new_values = (**values).to_owned();
         for (k, v) in ys {
           match k {
@@ -86,7 +104,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               None => {
                 return CalcitErr::err_str(
                   CalcitErrKind::Type,
-                  format!("&map:merge invalid field `{s}` for record: {fields:?}"),
+                  format!("&map:merge invalid field `{s}` for record: {:?}", struct_ref.fields),
                 );
               }
             },
@@ -95,7 +113,7 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
               None => {
                 return CalcitErr::err_str(
                   CalcitErrKind::Type,
-                  format!("&map:merge invalid field `{s}` for record: {fields:?}"),
+                  format!("&map:merge invalid field `{s}` for record: {:?}", struct_ref.fields),
                 );
               }
             },
@@ -103,10 +121,9 @@ pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           }
         }
         Ok(Calcit::Record(CalcitRecord {
-          name: name.to_owned(),
-          fields: fields.to_owned(),
+          struct_ref: record.struct_ref.to_owned(),
           values: Arc::new(new_values),
-          class: class.to_owned(),
+          impls: impls.clone(),
         }))
       }
       (a, b) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:merge expected 2 maps, but received: {a} {b}")),
@@ -128,16 +145,30 @@ pub fn to_pairs(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Set(zs))
     }
-    Some(Calcit::Record(CalcitRecord { fields, values, .. })) => {
+    Some(Calcit::Record(CalcitRecord { struct_ref, values, .. })) => {
       let mut zs: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSet::new_sync();
-      for idx in 0..fields.len() {
-        let chunk = vec![Calcit::Tag(fields[idx].to_owned()), values[idx].to_owned()];
+      for idx in 0..struct_ref.fields.len() {
+        let chunk = vec![Calcit::Tag(struct_ref.fields[idx].to_owned()), values[idx].to_owned()];
         zs.insert_mut(Calcit::from(chunk));
       }
       Ok(Calcit::Set(zs))
     }
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:to-pairs expected a map, but received: {a}")),
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "&map:to-pairs expected 1 argument, but received none"),
+    Some(a) => {
+      let msg = format!(
+        "&map:to-pairs requires a map or record, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::ToPairs).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    None => {
+      let hint = format_proc_examples_hint(&CalcitProc::ToPairs).unwrap_or_default();
+      CalcitErr::err_str_with_hint(
+        CalcitErrKind::Arity,
+        "&map:to-pairs requires 1 argument, but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
@@ -152,10 +183,15 @@ pub fn call_merge_non_nil(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::Map(zs))
     }
-    (Some(a), Some(b)) => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&map:merge-non-nil expected 2 maps, but received: {a} {b}"),
-    ),
+    (Some(a), Some(b)) => {
+      let msg = format!(
+        "&map:merge-non-nil requires 2 maps, but received: {} and {}",
+        type_of(&[a.to_owned()])?.lisp_str(),
+        type_of(&[b.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMergeNonNil).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     (_, _) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:merge-non-nil expected 2 arguments, but received:", xs),
   }
 }
@@ -171,32 +207,92 @@ pub fn to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Ok(Calcit::from(ys))
     }
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:to-list expected a map, but received: {a}")),
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "&map:to-list expected a map, but received none"),
+    Some(a) => {
+      let msg = format!(
+        "&map:to-list requires a map, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapToList).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    None => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapToList).unwrap_or_default();
+      CalcitErr::err_str_with_hint(
+        CalcitErrKind::Arity,
+        "&map:to-list requires 1 argument, but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
 pub fn count(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Map(ys)) => Ok(Calcit::Number(ys.size() as f64)),
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:count expected a map, but received: {a}")),
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "&map:count expected 1 argument, but received none"),
+    Some(a) => {
+      let msg = format!("&map:count requires a map, but received: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapCount).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    None => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapCount).unwrap_or_default();
+      CalcitErr::err_str_with_hint(
+        CalcitErrKind::Arity,
+        "&map:count requires 1 argument, but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
 pub fn empty_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Map(ys)) => Ok(Calcit::Bool(ys.is_empty())),
-    Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:empty? expected a map, but received: {a}")),
-    None => CalcitErr::err_str(CalcitErrKind::Arity, "&map:empty? expected 1 argument, but received none"),
+    Some(a) => {
+      let msg = format!("&map:empty? requires a map, but received: {}", type_of(&[a.to_owned()])?.lisp_str());
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapEmpty).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    None => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapEmpty).unwrap_or_default();
+      CalcitErr::err_str_with_hint(
+        CalcitErrKind::Arity,
+        "&map:empty? requires 1 argument, but received none".to_string(),
+        hint,
+      )
+    }
   }
 }
 
 pub fn contains_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(a)) => Ok(Calcit::Bool(xs.contains_key(a))),
-    (Some(a), ..) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:contains? expected a map, but received: {a}")),
-    (None, ..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:contains? expected 2 arguments, but received:", xs),
+    (Some(_), None) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapContains).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&map:contains? requires 2 arguments (map and key), but received:",
+        xs,
+        hint,
+      )
+    }
+    (Some(a), Some(_)) => {
+      let msg = format!(
+        "&map:contains? requires a map, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapContains).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+    (None, ..) => {
+      let hint = format_proc_examples_hint(&CalcitProc::NativeMapContains).unwrap_or_default();
+      CalcitErr::err_nodes_with_hint(
+        CalcitErrKind::Arity,
+        "&map:contains? requires 2 arguments (map and key), but received:",
+        xs,
+        hint,
+      )
+    }
   }
 }
 

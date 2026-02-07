@@ -412,7 +412,8 @@ fn gen_call_code(
         },
         // for `&call-spread`, just translate as normal call
         CalcitSyntax::CallSpread => gen_call_code(&body, ns, local_defs, xs, file_imports, tags, return_label),
-        CalcitSyntax::AssertType => Err(String::from("assert-type syntax is not supported during JS codegen yet")),
+        CalcitSyntax::HintFn => Ok(format!("{return_code}null")),
+        CalcitSyntax::AssertType => Ok(format!("{return_code}null")),
         _ => {
           let args_code = gen_args_code(&body, ns, local_defs, file_imports, tags)?;
           Ok(format!(
@@ -457,6 +458,7 @@ fn gen_call_code(
     Calcit::Symbol { sym: s, .. } | Calcit::Registered(s) => {
       match &**s {
         ";" => Ok(format!("(/* {body} */ null)")),
+        "hint-fn" => Ok(format!("{return_code}null")),
 
         "echo" | "println" => {
           // not core syntax, but treat as macro for better debugging experience
@@ -1068,14 +1070,18 @@ fn gen_js_func(
   let mut async_prefix: String = String::from("");
 
   for line in raw_body {
-    if let Calcit::List(xs) = line
-      && let Some(Calcit::Syntax(sym, _ns)) = xs.first()
-      && sym == &CalcitSyntax::HintFn
-    {
-      if hinted_async(xs) {
-        async_prefix = String::from("async ")
+    if let Calcit::List(xs) = line {
+      let is_hint = match xs.first() {
+        Some(Calcit::Syntax(sym, _ns)) => sym == &CalcitSyntax::HintFn,
+        Some(Calcit::Symbol { sym, .. }) => sym.as_ref() == "hint-fn",
+        _ => false,
+      };
+      if is_hint {
+        if hinted_async(xs) {
+          async_prefix = String::from("async ")
+        }
+        continue;
       }
-      continue;
     }
     if line == &Calcit::Nil {
       continue;

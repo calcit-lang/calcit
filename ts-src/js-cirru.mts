@@ -8,6 +8,7 @@ import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
 import { CalcitTag, CalcitSymbol, CalcitRecur, newTag } from "./calcit-data.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitEnum } from "./js-enum.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { deepEqual } from "@calcit/ternary-tree/lib/utils.mjs";
 import { atom } from "./js-ref.mjs";
@@ -175,6 +176,15 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
     if (x.tag instanceof CalcitSymbol && x.tag.value === "quote") {
       // turn `x.snd` with CalcitList into raw Cirru nodes, which is in plain Array
       return ["quote", toWriterNode(x.get(1) as any)] as CirruEdnFormat;
+    } else if (x.enumPrototype != null) {
+      let enumTag = unwrap_enum_prototype_local(x.enumPrototype).name.toString();
+      if (x.tag instanceof CalcitTag) {
+        return ["%::", enumTag, x.tag.toString(), ...x.extra.map(to_cirru_edn)];
+      } else if (x.tag instanceof CalcitRecord) {
+        return ["%::", enumTag, x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
+      } else {
+        throw new Error(`Unsupported tag for EDN: ${x.tag}`);
+      }
     } else if (x.tag instanceof CalcitTag) {
       return ["::", x.tag.toString(), ...x.extra.map(to_cirru_edn)];
     } else if (x.tag instanceof CalcitRecord) {
@@ -209,6 +219,36 @@ let extractFieldTag = (x: string) => {
   } else {
     return newTag(x);
   }
+};
+
+let resolveEnumPrototype = (enumName: string, options: CalcitValue) => {
+  if (options instanceof CalcitMap || options instanceof CalcitSliceMap) {
+    let value = options.get(extractFieldTag(enumName));
+    if (value instanceof CalcitEnum || value instanceof CalcitRecord) {
+      return value;
+    }
+    if (value != null) {
+      throw new Error(`Expected enum prototype for ${enumName}, got: ${value}`);
+    }
+  }
+  return null;
+};
+
+// local helper to unwrap an enum prototype value to a CalcitRecord prototype
+const unwrap_enum_prototype_local = (enumPrototype: CalcitValue): CalcitRecord => {
+  if (enumPrototype instanceof CalcitEnum) {
+    return enumPrototype.prototype;
+  }
+  if (enumPrototype instanceof CalcitRecord) {
+    return enumPrototype;
+  }
+  throw new Error(`expected enum prototype`);
+};
+
+const tag_to_string = (tag: CalcitValue): string => {
+  if (tag instanceof CalcitTag) return tag.toString();
+  if (tag instanceof CalcitRecord) return tag.name.toString();
+  throw new Error(`Unsupported tag for EDN: ${tag}`);
 };
 
 export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): CalcitValue => {
@@ -306,7 +346,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
           if (!deepEqual(v.fields, fields)) {
             throw new Error(`Fields mismatch for ${name}, expected ${fields}, got ${v.fields}`);
           }
-          return new CalcitRecord(extractFieldTag(name), fields, values, v.klass);
+          return new CalcitRecord(extractFieldTag(name), fields, values, v.impls);
         }
       }
 
@@ -353,7 +393,29 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
           .slice(2)
           .filter(notComment)
           .map((x) => extract_cirru_edn(x, options)),
-        undefined
+        []
+      );
+    }
+    if (x[0] === "%::") {
+      if (x.length < 3) {
+        throw new Error(`%:: expects at least 2 values, got: ${x}`);
+      }
+      let enumName = x[1];
+      if (typeof enumName !== "string") {
+        throw new Error(`Expected string for enum name, got: ${enumName}`);
+      }
+      let enumPrototype = resolveEnumPrototype(enumName, options);
+      // unwrap prototype to record then extract name
+      const proto = enumPrototype != null ? unwrap_enum_prototype_local(enumPrototype) : null;
+      const enumTag = proto != null ? proto.name.toString() : enumName;
+      return new CalcitTuple(
+        extract_cirru_edn(x[2], options),
+        x
+          .slice(3)
+          .filter(notComment)
+          .map((x) => extract_cirru_edn(x, options)),
+        [],
+        enumPrototype
       );
     }
     if (x[0] === "atom") {

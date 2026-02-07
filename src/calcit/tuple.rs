@@ -8,7 +8,8 @@ use super::{CalcitEnum, CalcitRecord};
 pub struct CalcitTuple {
   pub tag: Arc<Calcit>,
   pub extra: Vec<Calcit>,
-  pub class: Option<Arc<CalcitRecord>>,
+  /// Trait implementations attached to this tuple (multiple allowed for composition)
+  pub impls: Vec<Arc<CalcitRecord>>,
   pub sum_type: Option<Arc<CalcitEnum>>,
 }
 

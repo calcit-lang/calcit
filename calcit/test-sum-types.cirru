@@ -4,14 +4,16 @@
   :files $ {}
     |test-sum-types.main $ %{} :FileEntry
       :defs $ {}
-        |ResultEnum $ %{} :CodeEntry (:doc |)
+        |Result $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def ResultEnum $ defrecord! Result
-              :ok $ [] :number
-              :err $ [] :string
-        |ActionClass $ %{} :CodeEntry (:doc |)
+            defenum Result
+              :ok :number
+              :err :string
+        |ActionImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def ActionClass $ defrecord! ActionClass
+            deftrait ActionTrait
+              :describe (:: :fn ('T) ('T) :string)
+            defrecord! ActionImpl
               :describe $ fn (self)
                 tag-match self
                   (:ok value) (str "|Action ok -> " value)
@@ -19,11 +21,11 @@
         |make-ok $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-ok (value)
-              %%:: ActionClass ResultEnum :ok value
+              impl-traits (%:: Result :ok value) ActionImpl
         |make-err $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-err (message)
-              %%:: ActionClass ResultEnum :err message
+              impl-traits (%:: Result :err message) ActionImpl
         |summarize $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn summarize (action)
@@ -37,8 +39,8 @@
               let
                   ok-action $ make-ok 42
                   err-action $ make-err "|boom"
-                assert= ActionClass $ &tuple:class ok-action
-                assert= "|(%%:: :ok 42 (:class ActionClass) (:enum Result))" $ str ok-action
+                assert= ActionImpl $ &list:first $ &tuple:impls ok-action
+                assert= "|(%:: :ok 42 (:impls ActionImpl) (:enum Result))" $ str ok-action
                 assert= "|Action ok -> 42" (.describe ok-action)
                 assert= "|Action err -> boom" (.describe err-action)
                 assert= "|handled ok 42" $ summarize ok-action

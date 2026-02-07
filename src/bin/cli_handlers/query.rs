@@ -2,6 +2,8 @@
 //!
 //! Handles: cr query ns, defs, def, at, peek, examples, find, usages, pkg, config, error, modules
 
+use super::tips::{Tips, tip_prefer_oneliner_json, tip_query_defs_list, tip_query_ns_list};
+use calcit::CalcitTypeAnnotation;
 use calcit::cli_args::{QueryCommand, QuerySubcommand};
 use calcit::load_core_snapshot;
 use calcit::snapshot;
@@ -62,7 +64,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       opts.max_depth,
       opts.start_path.as_deref(),
     ),
-    QuerySubcommand::SearchPattern(opts) => handle_search_pattern(
+    QuerySubcommand::SearchExpr(opts) => handle_search_expr(
       input_path,
       &opts.pattern,
       opts.filter.as_deref(),
@@ -122,7 +124,10 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
     match load_module_silent(module_path, base_dir, &module_folder) {
       Ok(module_snapshot) => {
         for (ns_name, file_data) in module_snapshot.files {
-          snapshot.files.entry(ns_name).or_insert(file_data);
+          if snapshot.files.contains_key(&ns_name) {
+            return Err(format!("namespace `{ns_name}` already exists when loading module `{module_path}`"));
+          }
+          snapshot.files.insert(ns_name, file_data);
         }
       }
       Err(e) => {
@@ -188,11 +193,9 @@ fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool) -> R
     println!("  {}", ns.cyan());
   }
 
-  if !include_deps {
-    println!("\n{}", "Tip: Use `--deps` to include dependency and core namespaces.".dimmed());
-  }
-  println!("{}", "Tip: Use `cr query ns <namespace>` to show namespace details.".dimmed());
-  println!("{}", "Tip: Use `cr query defs <namespace>` to list definitions.".dimmed());
+  let mut tips = Tips::new();
+  tips.append(tip_query_ns_list(include_deps));
+  tips.print();
 
   Ok(())
 }
@@ -254,10 +257,9 @@ fn handle_defs(input_path: &str, namespace: &str) -> Result<(), String> {
     }
   }
 
-  println!(
-    "\n{}",
-    "Tip: Use `cr query peek <ns/def>` for signature, `cr query def <ns/def>` for full code.".dimmed()
-  );
+  let mut tips = Tips::new();
+  tips.append(tip_query_defs_list());
+  tips.print();
 
   Ok(())
 }
@@ -310,6 +312,20 @@ fn handle_error() -> Result<(), String> {
     println!("  • Start watcher: {} or {}", "cr".cyan(), "cr js".cyan());
     println!("  • Run syntax check: {}", "cr --check-only".cyan());
     return Ok(());
+  }
+
+  let metadata = fs::metadata(error_file).map_err(|e| format!("Failed to get metadata of error file: {e}"))?;
+  if let Ok(modified) = metadata.modified() {
+    if let Ok(elapsed) = modified.elapsed() {
+      if elapsed.as_secs() > 10 {
+        println!(
+          "{}",
+          format!("Warning: .calcit-error.cirru was modified {} seconds ago.", elapsed.as_secs()).yellow()
+        );
+        println!("{}", "It might be outdated, please recompile or check the watcher.".yellow());
+        println!();
+      }
+    }
   }
 
   let content = fs::read_to_string(error_file).map_err(|e| format!("Failed to read error file: {e}"))?;
@@ -374,10 +390,10 @@ fn handle_modules(input_path: &str) -> Result<(), String> {
     }
   }
 
-  println!(
-    "\n{}",
-    "Tip: Use `cr query ns` to list namespaces, `cr query defs <namespace>` to list definitions.".dimmed()
-  );
+  // Unified tips output
+  let mut tips = Tips::new();
+  tips.append(tip_query_ns_list(false));
+  tips.print();
 
   Ok(())
 }
@@ -397,6 +413,12 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
 
   println!("{} {}/{}", "Definition:".bold(), namespace.cyan(), definition.green());
 
+  if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, definition, vec![]) {
+    if let Some(summary) = CalcitTypeAnnotation::summarize_code(&code_data) {
+      println!("{} {}", "Type:".bold(), summary);
+    }
+  }
+
   if !code_entry.doc.is_empty() {
     println!("{} {}", "Doc:".bold(), code_entry.doc);
   }
@@ -415,19 +437,18 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
     println!("{}", serde_json::to_string(&json).unwrap());
   }
 
-  let mut tips = vec![format!(
-    "try `cr query search <leaf> -f '{namespace}/{definition}' -l` to quick find coordination of given leaf node."
-  )];
-  tips.push(format!(
-    "use `cr tree show {namespace}/{definition} -p \"0\"` to explore tree for editing."
+  let mut tips = Tips::new();
+  tips.add(format!(
+    "Try `cr query search <leaf> -f '{namespace}/{definition}' -l` to find coordinates of a leaf node"
+  ));
+  tips.add(format!(
+    "Use `cr tree show {namespace}/{definition} -p '0'` to explore tree for editing"
   ));
   if !code_entry.examples.is_empty() {
-    tips.push(format!("use `cr query examples {namespace}/{definition}` to view examples."));
+    tips.add(format!("Use `cr query examples {namespace}/{definition}` to view examples"));
   }
-  if !show_json {
-    tips.push("add `-j` flag to also output JSON format.".to_string());
-  }
-  println!("\n{}", format!("Tips: {}", tips.join(" ")).dimmed());
+  tips.append(tip_prefer_oneliner_json(show_json));
+  tips.print();
 
   Ok(())
 }
@@ -460,10 +481,9 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
 
   if code_entry.examples.is_empty() {
     println!("\n{}", "(no examples)".dimmed());
-    println!(
-      "\n{}",
-      format!("Tip: Use `cr edit examples {namespace}/{definition}` to add examples.").dimmed()
-    );
+    let mut tips = Tips::new();
+    tips.add(format!("Use `cr edit examples {namespace}/{definition}` to add examples."));
+    tips.print();
   } else {
     println!("{} example(s)\n", code_entry.examples.len());
 
@@ -482,10 +502,9 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
       println!();
     }
 
-    println!(
-      "{}",
-      format!("Tip: Use `cr edit examples {namespace}/{definition}` to modify examples.").dimmed()
-    );
+    let mut tips = Tips::new();
+    tips.add(format!("Use `cr edit examples {namespace}/{definition}` to modify examples."));
+    tips.print();
   }
 
   Ok(())
@@ -545,12 +564,6 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
   println!("  {} cr query examples {}/{}", "-".dimmed(), namespace, definition);
   println!("  {} cr query usages {}/{}", "-".dimmed(), namespace, definition);
   println!("  {} cr edit doc {}/{} '<doc>'", "-".dimmed(), namespace, definition);
-  println!(
-    "  {} Respo: event handlers go inside {} map; strings need {} prefix",
-    "-".dimmed(),
-    "attributes".green(),
-    "|".magenta()
-  );
 
   Ok(())
 }
@@ -639,13 +652,14 @@ fn handle_find(input_path: &str, symbol: &str, include_deps: bool) -> Result<(),
 
   if found_definitions.is_empty() && references.is_empty() {
     println!("{}", "No matches found.".yellow());
-    println!("\n{}", "Tip: Try `cr query ns` to see available namespaces.".dimmed());
+    let mut tips = Tips::new();
+    tips.add("Try `cr query ns` to see available namespaces.");
+    tips.print();
   } else if !found_definitions.is_empty() {
     let (first_ns, first_def) = &found_definitions[0];
-    println!(
-      "\n{}",
-      format!("Tip: Use `cr query peek {first_ns}/{first_def}` to see signature.").dimmed()
-    );
+    let mut tips = Tips::new();
+    tips.add(format!("Use `cr query peek {first_ns}/{first_def}` to see signature."));
+    tips.print();
   }
 
   Ok(())
@@ -1057,12 +1071,14 @@ fn handle_search_leaf(
       // Load code_entry to print results
       if let Some(file_data) = snapshot.files.get(ns) {
         if let Some(code_entry) = file_data.defs.get(def_name) {
-          for (path, _node) in results.iter().take(5) {
+          for (path, _node) in results.iter().take(20) {
             if path.is_empty() {
               let content = code_entry.code.format_one_liner().unwrap_or_default();
               println!("    {} {}", "(root)".cyan(), content.dimmed());
             } else {
               let path_str = format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
+              let breadcrumb = get_breadcrumb_from_code(&code_entry.code, path);
+              println!("    {} {}", path_str.cyan(), breadcrumb.dimmed());
 
               // Get parent context
               if let Some(parent) = get_parent_node_from_code(&code_entry.code, path) {
@@ -1072,15 +1088,13 @@ fn handle_search_leaf(
                 } else {
                   parent_oneliner
                 };
-                println!("    {} in {}", path_str.cyan(), display_parent.dimmed());
-              } else {
-                println!("    {}", path_str.cyan());
+                println!("      {} {}", "in".dimmed(), display_parent.dimmed());
               }
             }
           }
 
-          if results.len() > 5 {
-            println!("    {}", format!("... and {} more", results.len() - 5).dimmed());
+          if results.len() > 20 {
+            println!("    {}", format!("... and {} more", results.len() - 20).dimmed());
           }
         }
       }
@@ -1089,7 +1103,21 @@ fn handle_search_leaf(
 
     // Enhanced tips based on search context
     println!("{}", "Next steps:".blue().bold());
-    println!("  • View node: {} '<ns/def>' -p \"<path>\"", "cr tree show".cyan());
+    if all_results.len() == 1 && all_results[0].2.len() == 1 {
+      let (ns, def_name, results) = &all_results[0];
+      let (path, _) = &results[0];
+      let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+      println!("  • View node: {} '{}/{}' -p '{}'", "cr tree show".cyan(), ns, def_name, path_str);
+      println!(
+        "  • Replace: {} '{}/{}' -p '{}' --leaf -e '<new-value>'",
+        "cr tree replace".cyan(),
+        ns,
+        def_name,
+        path_str
+      );
+    } else {
+      println!("  • View node: {} '<ns/def>' -p '<path>'", "cr tree show".cyan());
+    }
 
     // If single definition with multiple matches, suggest batch rename workflow
     if all_results.len() == 1 {
@@ -1107,14 +1135,14 @@ fn handle_search_leaf(
       println!("{}", "Tip for batch rename:".yellow().bold());
       println!("  Replace from largest index first to avoid path changes:");
 
-      // Show first 3 commands as examples (in reverse order)
+      // Show first command as example (in reverse order)
       let mut sorted_results: Vec<_> = results.iter().collect();
       sorted_results.sort_by(|a, b| b.0.cmp(&a.0));
 
-      for (path, _) in sorted_results.iter().take(3) {
+      if let Some((path, _)) = sorted_results.first() {
         let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
         println!(
-          "    {} '{}/{}' -p \"{}\" --leaf -e '<new-value>'",
+          "    {} '{}/{}' -p '{}' --leaf -e '<new-value>'",
           "cr tree replace".cyan(),
           ns,
           def_name,
@@ -1122,8 +1150,8 @@ fn handle_search_leaf(
         );
       }
 
-      if results.len() > 3 {
-        println!("    {}", format!("... ({} more to replace)", results.len() - 3).dimmed());
+      if results.len() > 1 {
+        println!("    {}", format!("... ({} more to replace)", results.len() - 1).dimmed());
       }
 
       println!();
@@ -1154,8 +1182,8 @@ fn handle_search_leaf(
   Ok(())
 }
 
-/// Search for structural patterns across project or in filtered scope
-fn handle_search_pattern(
+/// Search for structural expressions across project or in filtered scope
+fn handle_search_expr(
   input_path: &str,
   pattern: &str,
   filter: Option<&str>,
@@ -1183,7 +1211,7 @@ fn handle_search_pattern(
 
   let pattern_display = pattern_node.format_one_liner().unwrap_or_default();
   if loose {
-    println!("  {} (contains sequence)", pattern_display.yellow());
+    println!("  {} (substring match for leaf patterns)", pattern_display.yellow());
   } else {
     println!("  {} (exact match)", pattern_display.yellow());
   }
@@ -1231,7 +1259,7 @@ fn handle_search_pattern(
         }
       }
 
-      let results = search_pattern_nodes(&code_entry.code, &pattern_node, loose, max_depth, &[]);
+      let results = search_expr_nodes(&code_entry.code, &pattern_node, loose, max_depth, &[]);
 
       if !results.is_empty() {
         all_results.push((ns.clone(), def_name.clone(), results));
@@ -1257,12 +1285,14 @@ fn handle_search_pattern(
       // Load code_entry to print results
       if let Some(file_data) = snapshot.files.get(ns) {
         if let Some(code_entry) = file_data.defs.get(def_name) {
-          for (path, _node) in results.iter().take(5) {
+          for (path, _node) in results.iter().take(20) {
+            let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
             if path.is_empty() {
               let content = code_entry.code.format_one_liner().unwrap_or_default();
               println!("    {} {}", "(root)".cyan(), content.dimmed());
             } else {
-              let path_str = format!("[{}]", path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
+              let breadcrumb = get_breadcrumb_from_code(&code_entry.code, path);
+              println!("    {} path: '{}' context: {}", "•".cyan(), path_str, breadcrumb.dimmed());
 
               // Get parent context
               if let Some(parent) = get_parent_node_from_code(&code_entry.code, path) {
@@ -1272,25 +1302,72 @@ fn handle_search_pattern(
                 } else {
                   parent_oneliner
                 };
-                println!("    {} in {}", path_str.cyan(), display_parent.dimmed());
-              } else {
-                println!("    {}", path_str.cyan());
+                println!("      {} {}", "in:".dimmed(), display_parent.dimmed());
               }
             }
           }
 
-          if results.len() > 5 {
-            println!("    {}", format!("... and {} more", results.len() - 5).dimmed());
+          if results.len() > 20 {
+            println!("    {}", format!("... and {} more", results.len() - 20).dimmed());
           }
         }
       }
       println!();
     }
 
-    println!(
-      "{}",
-      "Tip: Use `cr tree show <namespace>/<definition> -p \"<path>\"` to view matched nodes.".dimmed()
-    );
+    // Enhanced tips based on search context
+    println!("{}", "Next steps:".blue().bold());
+    if all_results.len() == 1 && all_results[0].2.len() == 1 {
+      let (ns, def_name, results) = &all_results[0];
+      let (path, _) = &results[0];
+      let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+      println!("  • View node: {} '{}/{}' -p '{}'", "cr tree show".cyan(), ns, def_name, path_str);
+      println!(
+        "  • Replace: {} '{}/{}' -p '{}' -e '<new-expression>'",
+        "cr tree replace".cyan(),
+        ns,
+        def_name,
+        path_str
+      );
+    } else {
+      println!("  • View node: {} '<ns/def>' -p '<path>'", "cr tree show".cyan());
+    }
+
+    // If single definition with multiple matches, suggest batch replace workflow
+    if all_results.len() == 1 {
+      let (_ns, _def_name, results) = &all_results[0];
+      if results.len() > 1 {
+        println!("  • Batch replace: See tip below for renaming {} occurrences", results.len());
+      }
+    }
+
+    println!();
+
+    // Add batch replace tip for multiple matches in single definition
+    if all_results.len() == 1 && all_results[0].2.len() > 1 {
+      let (ns, def_name, results) = &all_results[0];
+      println!("{}", "Tip for batch replace:".yellow().bold());
+      println!("  Replace from largest index first to avoid path changes:");
+
+      // Show first command as example (in reverse order)
+      let mut sorted_results: Vec<_> = results.iter().collect();
+      sorted_results.sort_by(|a, b| b.0.cmp(&a.0));
+
+      if let Some((path, _)) = sorted_results.first() {
+        let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        println!(
+          "    {} '{}/{}' -p '{}' -e '<new-expression>'",
+          "cr tree replace".cyan(),
+          ns,
+          def_name,
+          path_str
+        );
+      }
+
+      if results.len() > 1 {
+        println!("    {}", format!("... ({} more to replace)", results.len() - 1).dimmed());
+      }
+    }
   }
 
   Ok(())
@@ -1367,14 +1444,46 @@ fn get_parent_node_from_code(code: &Cirru, path: &[usize]) -> Option<Cirru> {
   Some(current.clone())
 }
 
-/// Search for pattern nodes (structural matching)
-fn search_pattern_nodes(
-  node: &Cirru,
-  pattern: &Cirru,
-  loose: bool,
-  max_depth: usize,
-  current_path: &[usize],
-) -> Vec<(Vec<usize>, Cirru)> {
+fn get_breadcrumb_from_code(code: &Cirru, path: &[usize]) -> String {
+  let mut parts = Vec::new();
+  let mut current = code;
+
+  parts.push(preview_cirru_head(current));
+
+  for &idx in path {
+    if let Cirru::List(items) = current {
+      if let Some(next) = items.get(idx) {
+        current = next;
+        parts.push(preview_cirru_head(current));
+      } else {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+
+  parts.join(" → ")
+}
+
+fn preview_cirru_head(node: &Cirru) -> String {
+  match node {
+    Cirru::Leaf(s) => s.to_string(),
+    Cirru::List(items) => {
+      if items.is_empty() {
+        "()".to_string()
+      } else {
+        match &items[0] {
+          Cirru::Leaf(s) => s.to_string(),
+          Cirru::List(_) => "(...)".to_string(),
+        }
+      }
+    }
+  }
+}
+
+/// Search for expression nodes (structural matching)
+fn search_expr_nodes(node: &Cirru, pattern: &Cirru, loose: bool, max_depth: usize, current_path: &[usize]) -> Vec<(Vec<usize>, Cirru)> {
   let mut results = Vec::new();
 
   // Check depth limit
@@ -1398,45 +1507,59 @@ fn search_pattern_nodes(
     for (i, item) in items.iter().enumerate() {
       let mut new_path = current_path.to_vec();
       new_path.push(i);
-      results.extend(search_pattern_nodes(item, pattern, loose, max_depth, &new_path));
+      results.extend(search_expr_nodes(item, pattern, loose, max_depth, &new_path));
     }
   }
 
   results
 }
 
-/// Check if node contains pattern as a contiguous subsequence
+/// Check if node starts with pattern (prefix matching)
+/// In loose mode, pattern must match from the beginning of the list
 fn contains_pattern(node: &Cirru, pattern: &Cirru) -> bool {
   match (node, pattern) {
     // Leaf nodes: check string containment
     (Cirru::Leaf(s), Cirru::Leaf(p)) => s.to_lowercase().contains(&p.as_ref().to_lowercase()),
 
-    // List containing pattern list as subsequence
+    // List: pattern must match from the beginning (prefix match)
     (Cirru::List(items), Cirru::List(pattern_items)) => {
       if pattern_items.is_empty() {
         return true;
       }
 
-      // Check if pattern_items appears as a contiguous subsequence in items
+      // Pattern must not be longer than the actual list
       if pattern_items.len() > items.len() {
         return false;
       }
 
-      for start_idx in 0..=(items.len() - pattern_items.len()) {
-        let mut all_match = true;
-        for (i, pattern_item) in pattern_items.iter().enumerate() {
-          if !matches_exact_structure(&items[start_idx + i], pattern_item) {
-            all_match = false;
-            break;
-          }
-        }
-        if all_match {
-          return true;
+      // Check if pattern matches from the beginning using prefix matching
+      for (i, pattern_item) in pattern_items.iter().enumerate() {
+        if !matches_prefix_structure(&items[i], pattern_item) {
+          return false;
         }
       }
-      false
+      true
     }
 
+    _ => false,
+  }
+}
+
+/// Check if node matches pattern as a prefix (allows node to be longer than pattern)
+fn matches_prefix_structure(node: &Cirru, pattern: &Cirru) -> bool {
+  match (node, pattern) {
+    (Cirru::Leaf(s1), Cirru::Leaf(s2)) => s1.as_ref() == s2.as_ref(),
+    (Cirru::List(items1), Cirru::List(items2)) => {
+      // Pattern must not be longer than node
+      if items2.len() > items1.len() {
+        return false;
+      }
+      // Check if pattern matches the prefix of node
+      items2
+        .iter()
+        .enumerate()
+        .all(|(i, pattern_item)| matches_prefix_structure(&items1[i], pattern_item))
+    }
     _ => false,
   }
 }

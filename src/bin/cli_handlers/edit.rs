@@ -6,12 +6,12 @@
 //! Supports code input via:
 //! - `--file <path>` - read from file
 //! - `--json <string>` - inline JSON string
-//! - `--stdin` - read from stdin
+//! - `--code <string>` - inline Cirru string
 
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditDefCommand,
-  EditDocCommand, EditExamplesCommand, EditImportsCommand, EditIncCommand, EditNsDocCommand, EditRmDefCommand, EditRmExampleCommand,
-  EditRmImportCommand, EditRmModuleCommand, EditRmNsCommand, EditSubcommand,
+  EditDocCommand, EditExamplesCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditNsDocCommand, EditRmDefCommand,
+  EditRmExampleCommand, EditRmImportCommand, EditRmModuleCommand, EditRmNsCommand, EditSubcommand,
 };
 use calcit::snapshot::{self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -21,6 +21,7 @@ use std::fs;
 use std::sync::Arc;
 
 use super::common::{ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_input_to_cirru, read_code_input};
+use super::tips::Tips;
 
 /// Parse "namespace/definition" format into (namespace, definition)
 pub(crate) fn parse_target(target: &str) -> Result<(&str, &str), String> {
@@ -87,6 +88,7 @@ pub(crate) fn process_node_with_references(
 pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
   match &cmd.subcommand {
     EditSubcommand::Def(opts) => handle_def(opts, snapshot_file),
+    EditSubcommand::Mv(opts) => handle_mv_def(opts, snapshot_file),
     EditSubcommand::RmDef(opts) => handle_rm_def(opts, snapshot_file),
     EditSubcommand::Doc(opts) => handle_doc(opts, snapshot_file),
     EditSubcommand::Examples(opts) => handle_examples(opts, snapshot_file),
@@ -141,7 +143,7 @@ pub(crate) fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<
 fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
+  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
   let auto_json = opts.code.is_some();
 
   let syntax_tree = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
@@ -163,8 +165,8 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   if exists {
     return Err(format!(
       "Definition '{definition}' already exists in namespace '{namespace}'.\n\
-       To replace the entire definition, use: cr tree replace {namespace}/{definition} -p \"\" -e '<code>'\n\
-       To modify parts of the definition, use: cr tree replace {namespace}/{definition} -p \"<path>\" -e '<code>'"
+       To replace the entire definition, use: cr tree replace {namespace}/{definition} -p '' -e '<code>'\n\
+       To modify parts of the definition, use: cr tree replace {namespace}/{definition} -p '<path>' -e '<code>'"
     ));
   }
 
@@ -191,11 +193,12 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     definition
   );
   println!();
-  println!(
-    "{}",
-    format!("Tip: Use single quotes around '{namespace}/{definition}' to avoid shell escaping issues.").dimmed()
-  );
-
+  let mut tips = Tips::new();
+  tips.add(format!(
+    "Use single quotes around '{namespace}/{definition}' to avoid shell escaping issues."
+  ));
+  tips.add(format!("Example: cr tree show '{namespace}/{definition}'"));
+  tips.print();
   Ok(())
 }
 
@@ -223,6 +226,83 @@ fn handle_rm_def(opts: &EditRmDefCommand, snapshot_file: &str) -> Result<(), Str
     "✓".green(),
     definition.cyan(),
     namespace
+  );
+
+  Ok(())
+}
+
+fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), String> {
+  let (source_ns, source_def) = parse_target(&opts.source)?;
+  let (target_ns, target_def) = parse_target(&opts.target)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+
+  check_ns_editable(&snapshot, source_ns)?;
+  check_ns_editable(&snapshot, target_ns)?;
+
+  if source_ns == target_ns && source_def == target_def {
+    return Err("Source and target are identical; nothing to move.".to_string());
+  }
+
+  if source_ns == target_ns {
+    let file_data = snapshot
+      .files
+      .get_mut(source_ns)
+      .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?;
+
+    if !file_data.defs.contains_key(source_def) {
+      return Err(format!("Definition '{source_def}' not found in namespace '{source_ns}'"));
+    }
+    if file_data.defs.contains_key(target_def) {
+      return Err(format!("Definition '{target_def}' already exists in namespace '{source_ns}'"));
+    }
+
+    let entry = file_data.defs.remove(source_def).expect("checked definition exists");
+    file_data.defs.insert(target_def.to_string(), entry);
+  } else {
+    let source_exists = snapshot
+      .files
+      .get(source_ns)
+      .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?
+      .defs
+      .contains_key(source_def);
+    if !source_exists {
+      return Err(format!("Definition '{source_def}' not found in namespace '{source_ns}'"));
+    }
+
+    let target_exists = snapshot
+      .files
+      .get(target_ns)
+      .ok_or_else(|| format!("Namespace '{target_ns}' not found"))?
+      .defs
+      .contains_key(target_def);
+    if target_exists {
+      return Err(format!("Definition '{target_def}' already exists in namespace '{target_ns}'"));
+    }
+
+    let entry = {
+      let source_file = snapshot
+        .files
+        .get_mut(source_ns)
+        .ok_or_else(|| format!("Namespace '{source_ns}' not found"))?;
+      source_file.defs.remove(source_def).expect("checked definition exists")
+    };
+
+    let target_file = snapshot
+      .files
+      .get_mut(target_ns)
+      .ok_or_else(|| format!("Namespace '{target_ns}' not found"))?;
+    target_file.defs.insert(target_def.to_string(), entry);
+  }
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Moved definition '{}' from '{}' to '{}'",
+    "✓".green(),
+    source_def.cyan(),
+    source_ns.cyan(),
+    format!("{target_ns}/{target_def}").cyan()
   );
 
   Ok(())
@@ -294,10 +374,10 @@ fn handle_examples(opts: &EditExamplesCommand, snapshot_file: &str) -> Result<()
   }
 
   // Read examples input
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?;
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
   let raw = code_input
     .as_deref()
-    .ok_or("Examples input required: use --file, --code, --json, --stdin, or --clear")?;
+    .ok_or("Examples input required: use --file, --code, --json, or --clear")?;
 
   // Parse examples - expect an array of Cirru expressions
   let examples: Vec<Cirru> = if opts.leaf {
@@ -349,10 +429,10 @@ fn handle_add_example(opts: &EditAddExampleCommand, snapshot_file: &str) -> Resu
     .ok_or_else(|| format!("Definition '{definition}' not found in namespace '{namespace}'"))?;
 
   // Read example input
-  let code_input = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?;
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
   let raw = code_input
     .as_deref()
-    .ok_or("Example input required: use --file, --code, --json, or --stdin")?;
+    .ok_or("Example input required: use --file, --code, or --json")?;
 
   // Parse example
   let example: Cirru = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, opts.code.is_some())?;
@@ -595,7 +675,7 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   // Create ns code
   let auto_json = opts.code.is_some();
 
-  let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)? {
+  let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code, &opts.json)? {
     parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?
   } else {
     // Default minimal ns declaration: (ns namespace-name)
@@ -634,8 +714,7 @@ fn handle_rm_ns(opts: &EditRmNsCommand, snapshot_file: &str) -> Result<(), Strin
 }
 
 fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), String> {
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?
-    .ok_or("Imports input required: use --file, --code, --json, or --stdin")?;
+  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or("Imports input required: use --file, --code, or --json")?;
   let auto_json = opts.code.is_some();
 
   let mut snapshot = load_snapshot(snapshot_file)?;
@@ -822,8 +901,7 @@ fn build_ns_code(ns_name: &str, rules: &[Cirru]) -> Cirru {
 }
 
 fn handle_add_import(opts: &EditAddImportCommand, snapshot_file: &str) -> Result<(), String> {
-  let raw = read_code_input(&opts.file, &opts.code, &opts.json, opts.stdin)?
-    .ok_or("Import rule input required: use --file, --code, --json, or --stdin")?;
+  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or("Import rule input required: use --file, --code, or --json")?;
 
   let auto_json = opts.code.is_some();
 

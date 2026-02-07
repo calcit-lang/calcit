@@ -105,16 +105,37 @@ pub fn show_stack(stack: &CallStackList) {
 }
 
 pub fn display_stack(failure: &str, stack: &CallStackList, location: Option<&Arc<NodeLocation>>) -> Result<(), String> {
-  display_stack_with_docs(failure, stack, location)
+  display_stack_with_docs(failure, stack, location, None)
 }
 
-pub fn display_stack_with_docs(failure: &str, stack: &CallStackList, location: Option<&Arc<NodeLocation>>) -> Result<(), String> {
+pub fn display_stack_with_docs(
+  failure: &str,
+  stack: &CallStackList,
+  location: Option<&Arc<NodeLocation>>,
+  hint: Option<&str>,
+) -> Result<(), String> {
+  let fallback_location: Option<Arc<NodeLocation>> = location.cloned().or_else(|| {
+    stack
+      .0
+      .first()
+      .map(|s| Arc::new(NodeLocation::new(s.ns.to_owned(), s.def.to_owned(), Arc::new(vec![]))))
+  });
   eprintln!("\nFailure: {failure}");
+  if let Some(l) = fallback_location.as_deref() {
+    eprintln!("  at {l}");
+  }
+  if let Some(h) = hint {
+    eprintln!("\n{h}");
+  }
   eprintln!("\ncall stack:");
 
   for s in &stack.0 {
     let is_macro = s.kind == StackKind::Macro;
-    eprintln!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" });
+    let stack_location = s.code.get_location().or_else(|| s.args.first().and_then(|arg| arg.get_location()));
+    match stack_location {
+      Some(l) => eprintln!("  {}/{}{} @ {l}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" }),
+      None => eprintln!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" }),
+    }
   }
 
   let mut stack_list = EdnListView::default();
@@ -123,11 +144,19 @@ pub fn display_stack_with_docs(failure: &str, stack: &CallStackList, location: O
     for v in s.args.iter() {
       args.push(edn::calcit_to_edn(v)?);
     }
+    let stack_location = s.code.get_location().or_else(|| s.args.first().and_then(|arg| arg.get_location()));
     let mut info_map = vec![
       (Edn::tag("def"), format!("{}/{}", s.ns, s.def).into()),
       (Edn::tag("code"), cirru::calcit_to_cirru(&s.code)?.into()),
       (Edn::tag("args"), args.into()),
       (Edn::tag("kind"), Edn::tag(s.kind.to_string())),
+      (
+        Edn::tag("location"),
+        match stack_location {
+          Some(l) => l.into(),
+          None => Edn::Nil,
+        },
+      ),
     ];
 
     // Add documentation if available from program data
@@ -151,11 +180,18 @@ pub fn display_stack_with_docs(failure: &str, stack: &CallStackList, location: O
   let content = cirru_edn::format(
     &Edn::map_from_iter([
       (Edn::tag("message"), failure.into()),
+      (
+        Edn::tag("hint"),
+        match hint {
+          Some(h) => h.into(),
+          None => Edn::Nil,
+        },
+      ),
       (Edn::tag("stack"), stack_list.into()),
       (
         Edn::tag("location"),
-        match location {
-          Some(l) => (&**l).into(),
+        match fallback_location.as_deref() {
+          Some(l) => l.into(),
           None => Edn::Nil,
         },
       ),

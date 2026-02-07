@@ -1,7 +1,7 @@
 
 {} (:package |app)
   :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
-    :modules $ [] |./test-cond.cirru |./test-hygienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-edn.cirru |./test-js.cirru |./test-record.cirru |./test-nil.cirru |./test-fn.cirru |./test-tuple.cirru |./test-algebra.cirru |./util.cirru
+    :modules $ [] |./test-cond.cirru |./test-hygienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-edn.cirru |./test-js.cirru |./test-record.cirru |./test-fn.cirru |./test-tuple.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-traits.cirru |./util.cirru
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
@@ -48,10 +48,14 @@
               test-string/main!
               test-edn/main!
               test-record/main!
-              test-nil/main!
               test-fn/main!
               test-tuple/main!
               test-algebra/main!
+              test-types/main!
+              test-types-inference/main!
+              test-generics/main!
+              test-enum/main!
+              test-traits/main!
               test-buffer
               test-atom
               inside-js: $ test-js/main!
@@ -71,14 +75,18 @@
                     :deref $ fn (self)
                       tag-match self
                         (:atom x) x
-                assert= 1 $ deref $ %:: %A :atom 1
-                assert= 1 $ deref $ %:: %A :atom 1
-                assert= 2 $ deref $ %:: %A :atom 2
+                assert= 1 $ deref $ impl-traits (:: :atom 1) %A
+                assert= 1 $ deref $ impl-traits (:: :atom 1) %A
+                assert= 2 $ deref $ impl-traits (:: :atom 2) %A
         |test-arguments $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing arguments")
               let
-                  f1 $ fn (a ? b c) ([] a b c)
+                  f1 $ fn (a ? b c)
+                    assert-type a :tag
+                    assert-type b $ :: :optional :tag
+                    assert-type c $ :: :optional :tag
+                    [] a b c
                 assert= (f1 :a) ([] :a nil nil)
                 assert= (f1 :a :b) ([] :a :b nil)
                 assert= (f1 :a :b :c) ([] :a :b :c)
@@ -195,10 +203,10 @@
           :code $ quote
             fn () (log-title "|Testing method")
               let
-                  a $ %:: Num :calcit/number 0
-                assert= (%:: Num :calcit/number 2) (-> a .inc .inc)
+                  a $ impl-traits (:: :calcit/number 0) Num
+                assert= (impl-traits (:: :calcit/number 2) Num) (-> a .inc .inc)
                 assert= |1 $ -> a .inc .show
-                assert-detect record? $ &tuple:class a
+                assert-detect record? $ &list:first $ &tuple:impls a
         |test-refs $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
@@ -215,7 +223,7 @@
               let
                   Deref $ defrecord! Deref
                     :deref $ fn (self) 2
-                  v $ %:: Deref :value 1
+                  v $ impl-traits (:: :value 1) Deref
                 assert= 2 @v
                 assert= (nth v 1) 1
 
@@ -288,14 +296,14 @@
                   a $ :: :a 1
                   %r $ defrecord! %demo
                     :get $ fn (self) 1
-                  b $ &tuple:with-class a %r
-                assert= %r $ &tuple:class b
+                  b $ impl-traits a %r
+                assert= %r $ &list:first $ &tuple:impls b
                 assert=
                   &tuple:params $ :: :a 1 2 3
                   [] 1 2 3
-                assert= "|(%:: :a 1 (:class %demo))" $ str b
+                assert= "|(:: :a 1 (:impls %demo))" $ str b
               assert= "|(:: :a :b :c)" $ str (:: :a :b :c)
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
-          ns app.main $ :require (test-cond.main :as test-cond) (test-hygienic.main :as test-hygienic) (test-lens.main :as test-lens) (test-list.main :as test-list) (test-macro.main :as test-macro) (test-map.main :as test-map) (test-math.main :as test-math) (test-recursion.main :as test-recursion) (test-set.main :as test-set) (test-string.main :as test-string) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-record.main :as test-record) (test-nil.main :as test-nil) (test-fn.main :as test-fn) (test-tuple.main :as test-tuple) (test-algebra.main :as test-algebra)
+          ns app.main $ :require (test-cond.main :as test-cond) (test-hygienic.main :as test-hygienic) (test-lens.main :as test-lens) (test-list.main :as test-list) (test-macro.main :as test-macro) (test-map.main :as test-map) (test-math.main :as test-math) (test-recursion.main :as test-recursion) (test-set.main :as test-set) (test-string.main :as test-string) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-record.main :as test-record) (test-nil.main :as test-nil) (test-fn.main :as test-fn) (test-tuple.main :as test-tuple) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-generics.main :as test-generics) (test-traits.main :as test-traits)
             util.core :refer $ log-title inside-eval: inside-js:

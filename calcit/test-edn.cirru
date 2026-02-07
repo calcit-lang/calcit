@@ -7,6 +7,11 @@
         |log-title $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn log-title (title) (println) (println title) (println)
+        |DemoEnum $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defenum DemoEnum
+              :ok
+              :err :string
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing edn")
@@ -71,12 +76,22 @@
                       :b $ [] 1 2
                       :a 1
                   , "|{} (:a 1) (:a1 0) (:c 2)\n  :b $ [] 1 2"
-                assert= "|:: :&core-list-class $ [] 1 2 3" $ trim
-                  format-cirru-edn $ :: &core-list-class ([] 1 2 3)
+                assert= "|:: :&core-list-methods $ [] 1 2 3" $ trim
+                  format-cirru-edn $ :: &core-list-methods ([] 1 2 3)
                 assert= "|:: :test" $ trim
                   format-cirru-edn $ :: :test
                 assert= "|:: :test :a :b" $ trim
                   format-cirru-edn $ :: :test :a :b
+                let
+                    enum-ok $ parse-cirru-edn "|%:: :DemoEnum :ok"
+                      {} $ :DemoEnum DemoEnum
+                  assert= :ok $ &tuple:nth enum-ok 0
+                  assert= "|%:: :DemoEnum :ok" $ trim $ format-cirru-edn enum-ok
+                let
+                    enum-err $ parse-cirru-edn "|%:: :DemoEnum :err |oops"
+                      {} $ :DemoEnum DemoEnum
+                  assert= :err $ &tuple:nth enum-err 0
+                  assert= "|%:: :DemoEnum :err |oops" $ trim $ format-cirru-edn enum-err
 
         |test-edn-comment $ %{} :CodeEntry (:doc |)
           :code $ quote

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::calcit::{self, CalcitImport, CalcitList, CalcitLocal, CalcitTuple};
+use crate::calcit::{self, CalcitEnum, CalcitImport, CalcitList, CalcitLocal, CalcitStruct, CalcitTuple};
 use crate::calcit::{Calcit, CalcitRecord};
 use crate::{calcit::MethodKind, data::cirru};
 
@@ -41,10 +41,10 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       }
       Ok(ys.into())
     }
-    Record(CalcitRecord { name, fields, values, .. }) => {
-      let mut entries = EdnRecordView::new(name.to_owned());
-      for idx in 0..fields.len() {
-        entries.insert(fields[idx].to_owned(), calcit_to_edn(&values[idx])?);
+    Record(CalcitRecord { struct_ref, values, .. }) => {
+      let mut entries = EdnRecordView::new(struct_ref.name.to_owned());
+      for idx in 0..struct_ref.fields.len() {
+        entries.insert(struct_ref.fields[idx].to_owned(), calcit_to_edn(&values[idx])?);
       }
       Ok(entries.into())
     }
@@ -57,7 +57,8 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
     }
     Proc(name) => Ok(Edn::Symbol(name.as_ref().into())),
     Syntax(name, _ns) => Ok(Edn::sym(name.as_ref())),
-    Tuple(CalcitTuple { tag, extra, .. }) => {
+    Tuple(CalcitTuple { tag, extra, sum_type, .. }) => {
+      let enum_tag = sum_type.as_ref().map(|enum_def| Edn::Tag(enum_def.name().to_owned()));
       match &**tag {
         Symbol { sym, .. } => {
           if &**sym == "quote" {
@@ -70,19 +71,27 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             Err(format!("unknown tag for EDN: {sym}")) // TODO more types to handle
           }
         }
-        Record(CalcitRecord { name, .. }) => {
+        Record(CalcitRecord { struct_ref, .. }) => {
           let mut extra_values = vec![];
           for item in extra {
             extra_values.push(calcit_to_edn(item)?);
           }
-          Ok(Edn::tuple(Edn::Tag(name.to_owned()), extra_values))
+          let tag_value = Edn::Tag(struct_ref.name.to_owned());
+          Ok(match enum_tag.clone() {
+            Some(enum_tag) => Edn::enum_tuple(enum_tag, tag_value, extra_values),
+            None => Edn::tuple(tag_value, extra_values),
+          })
         }
         Tag(tag) => {
           let mut extra_values = vec![];
           for item in extra {
             extra_values.push(calcit_to_edn(item)?);
           }
-          Ok(Edn::tuple(Edn::Tag(tag.to_owned()), extra_values))
+          let tag_value = Edn::Tag(tag.to_owned());
+          Ok(match enum_tag.clone() {
+            Some(enum_tag) => Edn::enum_tuple(enum_tag, tag_value, extra_values),
+            None => Edn::tuple(tag_value, extra_values),
+          })
         }
         v => {
           Err(format!("EDN tuple expected 'quote or record, unknown tag: {v}"))
@@ -125,12 +134,15 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
     Edn::Tag(s) => Calcit::Tag(s.to_owned()),
     Edn::Str(s) => Calcit::Str((**s).into()),
     Edn::Quote(nodes) => Calcit::CirruQuote(nodes.to_owned()),
-    Edn::Tuple(EdnTupleView { tag, extra }) => Calcit::Tuple(CalcitTuple {
-      tag: Arc::new(edn_to_calcit(tag, options)),
-      extra: extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
-      class: None,
-      sum_type: None,
-    }),
+    Edn::Tuple(EdnTupleView { tag, enum_tag, extra }) => {
+      let sum_type = enum_tag.as_ref().and_then(|enum_tag| resolve_enum_tag(enum_tag, options));
+      Calcit::Tuple(CalcitTuple {
+        tag: Arc::new(edn_to_calcit(tag, options)),
+        extra: extra.iter().map(|x| edn_to_calcit(x, options)).collect(),
+        impls: vec![],
+        sum_type,
+      })
+    }
     Edn::List(EdnListView(xs)) => {
       let mut ys: Vec<Calcit> = vec![];
       for x in xs {
@@ -164,27 +176,24 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
 
       match find_record_in_options(&name.arc_str(), options) {
         Some(Calcit::Record(CalcitRecord {
-          name: pre_name,
-          fields: pre_fields,
-          values: pre_values,
-          class: pre_class,
+          struct_ref: pre_struct,
+          values: _pre_values,
+          impls: pre_impls,
         })) => {
-          if fields == **pre_fields {
+          if fields == **pre_struct.fields {
             Calcit::Record(CalcitRecord {
-              name: pre_name.to_owned(),
-              fields: pre_fields.to_owned(),
-              values: pre_values.to_owned(),
-              class: pre_class.to_owned(),
+              struct_ref: pre_struct.to_owned(),
+              values: Arc::new(values),
+              impls: pre_impls.clone(),
             })
           } else {
-            unreachable!("record fields mismatch: {:?} vs {:?}", fields, pre_fields)
+            unreachable!("record fields mismatch: {:?} vs {:?}", fields, pre_struct.fields)
           }
         }
         _ => Calcit::Record(CalcitRecord {
-          name: name.to_owned(),
-          fields: Arc::new(fields),
+          struct_ref: Arc::new(CalcitStruct::from_fields(name.to_owned(), fields)),
           values: Arc::new(values),
-          class: None,
+          impls: vec![],
         }),
       }
     }
@@ -197,6 +206,26 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
 fn find_record_in_options<'a>(name: &str, options: &'a Calcit) -> Option<&'a Calcit> {
   match options {
     Calcit::Map(ys) => ys.get(&Calcit::Tag(name.into())),
+    _ => None,
+  }
+}
+
+fn find_enum_in_options<'a>(name: &str, options: &'a Calcit) -> Option<&'a Calcit> {
+  match options {
+    Calcit::Map(ys) => ys.get(&Calcit::Tag(name.into())),
+    _ => None,
+  }
+}
+
+fn resolve_enum_tag(enum_tag: &Edn, options: &Calcit) -> Option<Arc<CalcitEnum>> {
+  let enum_name = match enum_tag {
+    Edn::Tag(tag) => tag.ref_str(),
+    Edn::Symbol(sym) => sym.as_ref(),
+    Edn::Str(s) => s.as_ref(),
+    _ => return None,
+  };
+  match find_enum_in_options(enum_name, options) {
+    Some(Calcit::Enum(enum_def)) => Some(Arc::new(enum_def.to_owned())),
     _ => None,
   }
 }

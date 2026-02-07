@@ -101,6 +101,9 @@ fn main() -> Result<(), String> {
     for module_path in &command.dep {
       let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
       for (k, v) in &module_data.files {
+        if snapshot.files.contains_key(k) {
+          return Err(format!("namespace `{k}` already exists when loading module `{module_path}`"));
+        }
         snapshot.files.insert(k.to_owned(), v.to_owned());
       }
     }
@@ -137,6 +140,9 @@ fn main() -> Result<(), String> {
     for module_path in &snapshot.configs.modules {
       let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
       for (k, v) in &module_data.files {
+        if snapshot.files.contains_key(k) {
+          return Err(format!("namespace `{k}` already exists when loading module `{module_path}`"));
+        }
         snapshot.files.insert(k.to_owned(), v.to_owned());
       }
     }
@@ -172,7 +178,7 @@ fn main() -> Result<(), String> {
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
     calcit::calcit::CORE_NS,
-    calcit::calcit::BUILTIN_CLASSES_ENTRY,
+    calcit::calcit::BUILTIN_IMPLS_ENTRY,
     check_warnings,
     &CallStackList::default(),
   )
@@ -248,7 +254,7 @@ fn main() -> Result<(), String> {
 }
 
 pub fn watch_files(entries: ProgramEntries, settings: ToplevelCalcit, assets_watch: Option<String>) {
-  println!("\nRunning: in watch mode...\n");
+  println!("\nRunning: in watch mode... (use --once flag if you want to exit fast)\n");
   let (tx, rx) = channel();
   let mut debouncer = new_debouncer(Duration::from_millis(200), tx).expect("create watcher");
   let config = notify::Config::default();
@@ -416,7 +422,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
     }
     Err(failure) => {
       eprintln!("\n{} preprocessing init_fn", "✗".red());
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
       return Err(failure.msg);
     }
   }
@@ -428,7 +434,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
     }
     Err(failure) => {
       eprintln!("\n{} preprocessing reload_fn", "✗".red());
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
       return Err(failure.msg);
     }
   }
@@ -476,7 +482,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
 
       let _ = fs::write(
         &js_file_path,
@@ -494,7 +500,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
     Ok(_) => (),
     Err(failure) => {
       eprintln!("\nfailed preprocessing, {failure}");
-      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref())?;
+      call_stack::display_stack_with_docs(&failure.msg, &failure.stack, failure.location.as_ref(), failure.hint.as_deref())?;
       return Err(failure.msg);
     }
   }
@@ -513,7 +519,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {failure}");
-        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None)?;
+        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None, None)?;
         return Err(failure);
       }
     }
@@ -523,7 +529,7 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool) -> Resu
       Ok(_) => (),
       Err(failure) => {
         eprintln!("\nfailed codegen, {failure}");
-        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None)?;
+        call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None, None)?;
         return Err(failure);
       }
     }

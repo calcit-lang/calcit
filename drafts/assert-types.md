@@ -29,7 +29,6 @@ defn f1 (x y)
 #### 2.0.2 类型表示方式
 
 - **内置类型**：使用 Tag 直接表示
-
   - `:number` - 数字类型
   - `:string` - 字符串类型
   - `:bool` - 布尔类型
@@ -41,7 +40,6 @@ defn f1 (x y)
   - `:proc (arg-types...) return-type` - Proc 类型（带签名）
 
 - **自定义类型**：使用 Record 定义来表示
-
   - `:User` - 当前 namespace 中定义的 Record
   - 类型信息通过 `defrecord` 关联的元数据获取
 
@@ -132,25 +130,21 @@ defn add-numbers (a b)
 **重要说明**：Calcit 的类型系统是一个**轻量级类型检测机制**，专为 Calcit 语言的特定需求设计，具有以下定位：
 
 1. **显式标注，不做推断**：
-
    - 类型信息通过 `assert-type` 和 `hint-fn` **手动声明**
    - **不实现类型推断**（Type Inference）：不会自动分析代码推导变量类型
    - 设计目标是为 preprocess 阶段提供辅助信息，而非构建完整的类型系统
 
 2. **辅助性质，非强制约束**：
-
    - 主要用于在编译/预处理阶段提供**早期错误检测**（如 Record 字段访问验证）
    - 类型信息用于优化代码生成和方法调用解析
    - 不影响运行时行为（除非显式添加运行时检查）
 
 3. **Calcit 语言专属**：
-
    - 针对 Calcit 的 Record、Tuple、动态方法调用等特性定制
    - 不追求通用类型系统的完整性（如 Haskell/OCaml 风格）
    - 优先保证与现有 Calcit 代码的兼容性
 
 4. **Proc (内置函数) 类型检查支持**：
-
    - Calcit 的内置函数（Proc）现在也支持类型签名
    - 通过 `CalcitProc::get_type_signature()` 方法提供类型信息
    - 在预处理阶段自动检查 Proc 调用的参数类型
@@ -397,19 +391,16 @@ pub struct FnInfo {
 1. **作用域跟踪**：`preprocess_expr` 需要传递一个类型映射表 `ScopeTypes = HashMap<Arc<str>, Arc<Calcit>>`。
 
 2. **`assert-type` 处理**：
-
    - 识别 `assert-type var type` 语法节点
    - 解析 `var` 对应的变量名，将 `type` 表达式求值并记录到 `ScopeTypes` 映射中
    - `assert-type` 在预处理后可以作为 No-op 或保留作为运行时断言
 
 3. **`hint-fn` 处理**：
-
    - 识别 `hint-fn $ return-type type` 语法
    - 将返回值类型信息关联到当前函数定义的元数据中
    - 可扩展支持其他函数级别的提示（如 `hint-fn $ pure true`）
 
 4. **Local 生成**：
-
    - 当预处理器将 `Symbol` 转换为 `Local` 时，从 `ScopeTypes` 中查询并填充 `type_info`
    - 确保类型信息在作用域内正确传播
 
@@ -492,10 +483,10 @@ defn handle-result (result)
 
 说明：上述 `Result` 定义中，`V1` 表示某个具体的 Record 类型（例如用户自定义的 `Record`），而 `:string` 则表示内置的字符串类型标记。
 
-为了承载这些 enum 元数据，tuple 构造函数新增 `%%::` 形式：
+为了承载这些 enum 元数据，tuple 构造函数使用 `%::` 形式：
 
 ```cirru
-%%:: Action Result :ok payload
+&tuple:with-class (%:: Result :ok payload) Action
 ```
 
 它会把 `Action` 作为 class/trait，同时把 `Result` 作为 sum type。对应实现中，`CalcitTuple` 增加了 `sum_type` 字段，以便方法分派(`class`)和 `tag-match` 校验(`sum_type`)可以同时使用这些信息。

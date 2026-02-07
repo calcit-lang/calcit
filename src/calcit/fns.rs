@@ -42,9 +42,10 @@ impl CalcitFnArgs {
     }
   }
 
-  /// Produce a Vec<Option<...>> aligned with current parameter arity for storing type hints.
-  pub fn empty_arg_types(&self) -> Vec<Option<Arc<CalcitTypeAnnotation>>> {
-    vec![None; self.param_len()]
+  /// Produce a Vec<Arc<...>> aligned with current parameter arity for storing type hints.
+  pub fn empty_arg_types(&self) -> Vec<Arc<CalcitTypeAnnotation>> {
+    let data = Arc::new(CalcitTypeAnnotation::Dynamic);
+    vec![data; self.param_len()]
   }
 }
 
@@ -56,10 +57,12 @@ pub struct CalcitFn {
   pub scope: Arc<CalcitScope>,
   pub args: Arc<CalcitFnArgs>,
   pub body: Vec<Calcit>,
+  /// generics declared by hint-fn
+  pub generics: Arc<Vec<Arc<str>>>,
   /// return type declared by hint-fn
-  pub return_type: Option<Arc<CalcitTypeAnnotation>>,
+  pub return_type: Arc<CalcitTypeAnnotation>,
   /// argument types declared by assert-type
-  pub arg_types: Vec<Option<Arc<CalcitTypeAnnotation>>>,
+  pub arg_types: Vec<Arc<CalcitTypeAnnotation>>,
 }
 
 #[cfg(test)]
@@ -71,7 +74,12 @@ mod tests {
     let args = CalcitFnArgs::Args(vec![1, 2, 3]);
     assert_eq!(args.param_len(), 3);
     assert_eq!(args.empty_arg_types().len(), 3);
-    assert!(args.empty_arg_types().iter().all(|item| item.is_none()));
+    assert!(
+      args
+        .empty_arg_types()
+        .iter()
+        .all(|item| matches!(**item, CalcitTypeAnnotation::Dynamic))
+    );
   }
 
   #[test]
@@ -84,7 +92,12 @@ mod tests {
     ]);
     assert_eq!(args.param_len(), 2, "only locals should be counted toward arity");
     assert_eq!(args.empty_arg_types().len(), 2);
-    assert!(args.empty_arg_types().iter().all(|item| item.is_none()));
+    assert!(
+      args
+        .empty_arg_types()
+        .iter()
+        .all(|item| matches!(**item, CalcitTypeAnnotation::Dynamic))
+    );
   }
 }
 

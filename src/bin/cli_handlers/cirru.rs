@@ -4,9 +4,11 @@
 
 use calcit::cli_args::{CirruCommand, CirruSubcommand};
 
+use super::cirru_validator;
+
 pub fn handle_cirru_command(cmd: &CirruCommand) -> Result<(), String> {
   match &cmd.subcommand {
-    CirruSubcommand::Parse(opts) => handle_parse(&opts.code, opts.expr_one_liner),
+    CirruSubcommand::Parse(opts) => handle_parse(&opts.code, opts.expr_one_liner, opts.validate),
     CirruSubcommand::Format(opts) => handle_format(&opts.json),
     CirruSubcommand::ParseEdn(opts) => handle_parse_edn(&opts.edn),
     CirruSubcommand::ShowGuide(_) => handle_show_guide(),
@@ -34,7 +36,7 @@ fn json_to_cirru(json: &serde_json::Value) -> Result<cirru_parser::Cirru, String
   }
 }
 
-fn handle_parse(code: &str, expr_one_liner: bool) -> Result<(), String> {
+fn handle_parse(code: &str, expr_one_liner: bool, validate: bool) -> Result<(), String> {
   if expr_one_liner {
     let trimmed = code.trim();
     if trimmed.is_empty() {
@@ -50,6 +52,12 @@ fn handle_parse(code: &str, expr_one_liner: bool) -> Result<(), String> {
 
     let cirru_expr =
       cirru_parser::parse_expr_one_liner(code).map_err(|e| format!("Failed to parse Cirru one-liner expression: {e}"))?;
+
+    // Validate basic Cirru syntax if requested
+    if validate {
+      cirru_validator::validate_cirru_syntax(&cirru_expr)?;
+    }
+
     let json_result = cirru_to_json(&cirru_expr);
     let json_str = serde_json::to_string_pretty(&json_result).map_err(|e| format!("Failed to serialize JSON: {e}"))?;
     println!("{json_str}");
@@ -74,6 +82,13 @@ fn handle_parse(code: &str, expr_one_liner: bool) -> Result<(), String> {
   }
 
   let cirru_data = cirru_parser::parse(code).map_err(|e| format!("Failed to parse Cirru code: {e}"))?;
+
+  // Validate basic Cirru syntax if requested
+  if validate {
+    for node in &cirru_data {
+      cirru_validator::validate_cirru_syntax(node)?;
+    }
+  }
 
   let json_result = if cirru_data.len() == 1 {
     cirru_to_json(&cirru_data[0])

@@ -4,25 +4,25 @@
   :files $ {}
     |test-invalid-tag.main $ %{} :FileEntry
       :defs $ {}
-        |ResultEnum $ %{} :CodeEntry (:doc |)
+        |Result $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def ResultEnum $ defrecord! Result
-              :err $ [] :string
-              :ok $ []
-        |ResultClass $ %{} :CodeEntry (:doc |)
+            defenum Result
+              :err :string
+              :ok
+        |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def ResultClass $ defrecord! ResultClass
+            defrecord! ResultImpl
               :dummy nil
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! ()
-              println "|Testing %%:: call"
-              println "|ResultEnum:" ResultEnum
-              println "|ResultClass:" ResultClass
-              ; Direct call to %%:: to see if function is invoked
-              println "|Calling %%:: ..."
+              println "|Testing %:: call"
+              println "|Result:" Result
+              println "|ResultImpl:" ResultImpl
+                ; Direct call to %:: to see if function is invoked
+                println "|Calling %:: ..."
               let
-                  result $ %%:: ResultClass ResultEnum :invalid
+                  result $ %:: Result :invalid
                 println "|Should not reach here:" result
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote (defn reload! () nil)

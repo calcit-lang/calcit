@@ -4,12 +4,15 @@ import { overwriteMapComparator } from "./js-map.mjs";
 import { disableListStructureCheck } from "@calcit/ternary-tree";
 
 import { CalcitRecord, fieldsEqual } from "./js-record.mjs";
+import { CalcitStruct } from "./js-struct.mjs";
+import { CalcitEnum } from "./js-enum.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 
 import { CalcitValue, _$n_compare } from "./js-primes.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitSet, overwriteSetComparator } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
+import { CalcitTrait } from "./js-trait.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 import { CirruWriterNode } from "@cirru/writer.ts";
 import { CalcitRef } from "./js-ref.mjs";
@@ -177,6 +180,8 @@ let defaultHash_set = valueHash("set:");
 let defaultHash_list = valueHash("list:");
 let defaultHash_map = valueHash("map:");
 let defaultHash_record = valueHash("record:");
+let defaultHash_struct = valueHash("struct:");
+let defaultHash_enum = valueHash("enum:");
 let defaultHash_cirru_quote = valueHash("cirru-quote:");
 
 let defaultHash_unknown = valueHash("unknown:");
@@ -304,6 +309,28 @@ export let hashFunction = (x: CalcitValue): Hash => {
     x.cachedHash = base;
     return base;
   }
+  if (x instanceof CalcitStruct) {
+    let base = defaultHash_struct;
+    base = mergeValueHash(base, hashFunction(x.name));
+    for (let idx = 0; idx < x.fields.length; idx++) {
+      base = mergeValueHash(base, hashFunction(x.fields[idx]));
+      base = mergeValueHash(base, hashFunction(x.fieldTypes[idx]));
+    }
+    for (let impl of x.impls) {
+      base = mergeValueHash(base, hashFunction(impl));
+    }
+    x.cachedHash = base;
+    return base;
+  }
+  if (x instanceof CalcitEnum) {
+    let base = defaultHash_enum;
+    base = mergeValueHash(base, hashFunction(x.prototype));
+    for (let impl of x.impls) {
+      base = mergeValueHash(base, hashFunction(impl));
+    }
+    x.cachedHash = base;
+    return base;
+  }
   if (x instanceof CalcitCirruQuote) {
     let base = defaultHash_cirru_quote;
     base = hashCirru(base, x.value);
@@ -376,6 +403,15 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
     return x.toString(disableJsDataWarning);
   }
   if (x instanceof CalcitRecord) {
+    return x.toString(disableJsDataWarning);
+  }
+  if (x instanceof CalcitStruct) {
+    return x.toString(disableJsDataWarning);
+  }
+  if (x instanceof CalcitEnum) {
+    return x.toString();
+  }
+  if (x instanceof CalcitTrait) {
     return x.toString(disableJsDataWarning);
   }
   if (x instanceof CalcitRef) {
@@ -643,6 +679,24 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
         }
       }
       return true;
+    }
+    return false;
+  }
+  if (x instanceof CalcitStruct) {
+    if (y instanceof CalcitStruct) {
+      return x.name === y.name && fieldsEqual(x.fields, y.fields);
+    }
+    return false;
+  }
+  if (x instanceof CalcitEnum) {
+    if (y instanceof CalcitEnum) {
+      return x.name === y.name;
+    }
+    return false;
+  }
+  if (x instanceof CalcitTrait) {
+    if (y instanceof CalcitTrait) {
+      return x.name === y.name;
     }
     return false;
   }

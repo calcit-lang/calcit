@@ -4,17 +4,19 @@ use cirru_edn::EdnTag;
 
 use crate::Calcit;
 
+use super::CalcitStruct;
+
 #[derive(Debug, Clone)]
 pub struct CalcitRecord {
-  pub name: EdnTag,
-  pub fields: Arc<Vec<EdnTag>>,
+  pub struct_ref: Arc<CalcitStruct>,
   pub values: Arc<Vec<Calcit>>,
-  pub class: Option<Arc<CalcitRecord>>,
+  /// Trait implementations attached to this record (multiple allowed for composition)
+  pub impls: Vec<Arc<CalcitRecord>>,
 }
 
 impl PartialEq for CalcitRecord {
   fn eq(&self, other: &Self) -> bool {
-    self.name == other.name && self.fields == other.fields && self.values == other.values
+    self.struct_ref.name == other.struct_ref.name && self.struct_ref.fields == other.struct_ref.fields && self.values == other.values
   }
 }
 
@@ -23,18 +25,25 @@ impl Eq for CalcitRecord {}
 impl Default for CalcitRecord {
   fn default() -> CalcitRecord {
     CalcitRecord {
-      name: EdnTag::new("record"),
-      fields: Arc::new(vec![]),
+      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("record"), vec![])),
       values: Arc::new(vec![]),
-      class: None,
+      impls: vec![],
     }
   }
 }
 
 impl CalcitRecord {
+  pub fn name(&self) -> &EdnTag {
+    &self.struct_ref.name
+  }
+
+  pub fn fields(&self) -> &Arc<Vec<EdnTag>> {
+    &self.struct_ref.fields
+  }
+
   /// returns position of target
   pub fn index_of(&self, y: &str) -> Option<usize> {
-    let xs: &[EdnTag] = &self.fields;
+    let xs: &[EdnTag] = &self.struct_ref.fields;
     if xs.is_empty() {
       return None;
     }
@@ -66,11 +75,11 @@ impl CalcitRecord {
   }
 
   pub fn extend_field(&self, new_field: &EdnTag, new_tag: &Calcit, new_value: &Calcit) -> Result<CalcitRecord, String> {
-    let mut next_fields: Vec<EdnTag> = Vec::with_capacity(self.fields.len());
-    let mut next_values: Vec<Calcit> = Vec::with_capacity(self.fields.len());
+    let mut next_fields: Vec<EdnTag> = Vec::with_capacity(self.struct_ref.fields.len());
+    let mut next_values: Vec<Calcit> = Vec::with_capacity(self.struct_ref.fields.len());
     let mut inserted: bool = false;
 
-    for (i, k) in self.fields.iter().enumerate() {
+    for (i, k) in self.struct_ref.fields.iter().enumerate() {
       if inserted {
         next_fields.push(k.to_owned());
         next_values.push(self.values[i].to_owned());
@@ -106,10 +115,9 @@ impl CalcitRecord {
     };
 
     Ok(CalcitRecord {
-      name: new_name_id,
-      fields: Arc::new(next_fields),
+      struct_ref: Arc::new(CalcitStruct::from_fields(new_name_id, next_fields)),
       values: Arc::new(next_values),
-      class: self.class.to_owned(),
+      impls: self.impls.clone(),
     })
   }
 }

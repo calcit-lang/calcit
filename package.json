@@ -1,9 +1,9 @@
 {
   "name": "@calcit/procs",
-  "version": "0.10.8",
+  "version": "0.11.0-a7",
   "main": "./lib/calcit.procs.mjs",
   "devDependencies": {
-    "@types/node": "^25.0.6",
+    "@types/node": "^25.0.9",
     "typescript": "^5.9.3"
   },
   "scripts": {
@@ -19,11 +19,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/calcit-lang/calcit"
+    "url": "git+https://github.com/calcit-lang/calcit.git"
   },
   "dependencies": {
     "@calcit/ternary-tree": "0.0.25",
-    "@cirru/parser.ts": "^0.0.7",
+    "@cirru/parser.ts": "^0.0.8",
     "@cirru/writer.ts": "^0.1.7"
-  }
+  },
+  "packageManager": "yarn@4.12.0"
 }

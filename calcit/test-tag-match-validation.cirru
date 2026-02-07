@@ -4,14 +4,14 @@
   :files $ {}
     |test-tag-match-validation.main $ %{} :FileEntry
       :defs $ {}
-        |ResultEnum $ %{} :CodeEntry (:doc |)
+        |Result $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def ResultEnum $ defrecord! Result
-              :err $ [] :string :string
-              :ok $ []
-        |ResultClass $ %{} :CodeEntry (:doc |)
+            defenum Result
+              :err :string :string
+              :ok
+        |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def ResultClass $ defrecord! ResultClass
+            defrecord! ResultImpl
               :dummy nil
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -28,13 +28,13 @@
             defn test-valid-matches ()
               println "|  Testing valid tag-match patterns..."
               let
-                  ok-tuple $ %%:: ResultClass ResultEnum :ok
+                  ok-tuple $ %:: Result :ok
                   result $ tag-match ok-tuple
                     (:ok) |ok
                     (:err msg) (str |err: msg)
                 assert= |ok result
               let
-                  err-tuple $ %%:: ResultClass ResultEnum :err |failed |reason
+                  err-tuple $ %:: Result :err |failed |reason
                   result $ tag-match err-tuple
                     (:ok) |ok
                     (:err msg reason) (str-spaced |err: msg reason)
@@ -46,7 +46,7 @@
               println "|  Testing invalid tag detection..."
               ; Create a valid enum tuple then corrupt its tag
               let
-                  ok-tuple $ %%:: ResultClass ResultEnum :ok
+                  ok-tuple $ %:: Result :ok
                   invalid-with-enum $ &tuple:assoc ok-tuple 0 :invalid
                 try
                   tag-match invalid-with-enum
@@ -62,7 +62,7 @@
             defn test-wrong-arity ()
               println "|  Testing wrong arity detection..."
               let
-                  err-tuple $ %%:: ResultClass ResultEnum :err |failed |reason
+                  err-tuple $ %:: Result :err |failed |reason
                   wrong-arity $ &tuple:assoc err-tuple 0 :ok
                 println "|    Tuple:" wrong-arity
                 println "|    Testing enum arity mismatch..."

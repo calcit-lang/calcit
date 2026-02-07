@@ -180,11 +180,11 @@ export let load_console_formatter_$x_ = () => {
             );
           }
           if (obj instanceof CalcitRecord) {
-            if (obj.klass) {
+            if (obj.impls.length > 0) {
               let ret: any[] = div(
                 { color: hsl(280, 80, 60, 0.4), maxWidth: "100%" },
                 span({}, "%{}"),
-                span({ marginLeft: "6px" }, embedObject(obj.klass)),
+                span({ marginLeft: "6px" }, embedObject(obj.impls[0])),
                 span({ marginLeft: "6px" }, embedObject(obj.name)),
                 span({ marginLeft: "6px" }, `...`)
               );
@@ -195,11 +195,11 @@ export let load_console_formatter_$x_ = () => {
             }
           }
           if (obj instanceof CalcitTuple) {
-            if (obj.klass) {
+            if (obj.impls.length > 0) {
               let ret: any[] = div(
                 { marginRight: "16px" },
                 div({ display: "inline-block", color: hsl(300, 100, 40) }, "%::"),
-                div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.klass)),
+                div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.impls[0])),
                 div({ marginLeft: "6px", display: "inline-block" }, embedObject(obj.tag))
               );
               for (let idx = 0; idx < obj.extra.length; idx++) {

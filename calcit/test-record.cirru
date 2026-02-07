@@ -6,7 +6,12 @@
       :defs $ {}
         |BirdClass $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def BirdClass $ %{} BirdShape
+            deftrait BirdTrait
+              :show (:: :fn ('T) ('T) :nil)
+              :rename (:: :fn ('T) ('T :string) 'T)
+        |BirdImpl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def BirdImpl $ defrecord! BirdImpl
               :show $ fn (self)
                 println $ :name self
               :rename $ fn (self name) (assoc self :name name)
@@ -17,7 +22,7 @@
           :code $ quote (defrecord Cat :name :color)
         |Lagopus $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def Lagopus $ new-class-record BirdClass :Lagopus :name
+            def Lagopus $ impl-traits (new-record :Lagopus :name) BirdImpl
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (do true)
@@ -29,7 +34,7 @@
                   data $ parse-cirru-edn content
                     {} $ :Lagopus Lagopus
                 println |EDN: data
-                assert= BirdClass $ &record:class data
+                assert= BirdImpl $ &list:first $ &record:impls data
               let
                   l1 $ %{} Lagopus (:name |LagopusA)
                 println |EDN: $ format-cirru-edn l1
@@ -93,13 +98,13 @@
                 println l1
                 .show l1
                 -> l1 (.rename |LagopusB) (.show)
-                assert= (&record:class l1)
-                  &record:class $ &record:with-class a1 BirdClass
+                assert= (&record:impls l1)
+                  &record:impls $ impl-traits a1 BirdImpl
         |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
           :code $ quote
             fn () (log-title "|Testing record-with")
               let
-                  Person $ new-record :City :name :age :position
+                  Person $ new-record :Person :name :age :position
                   p1 $ %{} Person (:name |Chen) (:age 20) (:position :hangzhou)
                   p2 $ record-with p1 (:age 21) (:position :shanghai)
                 ; println |P2 p2
