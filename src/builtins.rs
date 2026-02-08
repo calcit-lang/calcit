@@ -147,7 +147,8 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeTupleValidateEnum => meta::tuple_validate_enum(args),
     // effects
     NativeDisplayStack => meta::display_stack(args, call_stack),
-    NativeInspectImplMethods => meta::inspect_impl_methods(args, call_stack),
+    NativeMethodsOf => meta::methods_of(args, call_stack),
+    NativeInspectMethods => meta::inspect_methods(args, call_stack),
     NativeInspectType => Ok(Calcit::Nil), // Handled in preprocessing phase
     NativeAssertTraits => meta::assert_traits(args, call_stack),
     Raise => effects::raise(args),
@@ -287,7 +288,6 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     RemoveWatch => refs::remove_watch(args),
     // records
     NewRecord => records::new_record(args),
-    NewImplRecord => records::new_impl_record(args),
     NativeRecord => records::call_record(args),
     NativeRecordWith => records::record_with(args),
     NativeRecordImpls => records::get_impls(args),

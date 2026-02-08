@@ -1691,7 +1691,7 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   }
   let impls = pair[0];
   let tag = pair[1];
-  // builtin class impl lists are ordered by priority in calcit-core.
+  // builtin impl lists are ordered by priority in calcit-core.
   // user-defined values use impl-traits append, so later impls override earlier ones.
   let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
   let idx = reverse ? impls.length - 1 : 0;
@@ -1709,6 +1709,76 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
     idx += reverse ? -1 : 1;
   }
   throw new Error(`No method '.${p}' for '${tag}' object '${obj}'.`);
+}
+
+export function _$n_methods_of(obj: CalcitValue): CalcitSliceList {
+  if (arguments.length !== 1) throw new Error("&methods-of expected 1 argument");
+  let pair = lookup_impls(obj);
+  if (pair == null) {
+    throw new Error(`&methods-of cannot resolve impls for: ${toString(obj, true)}`);
+  }
+  let impls = pair[0];
+  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
+  let seen = new Set<string>();
+  let ys: CalcitValue[] = [];
+
+  let idx = reverse ? impls.length - 1 : 0;
+  while (reverse ? idx >= 0 : idx < impls.length) {
+    let impl = impls[idx];
+    if (impl != null) {
+      for (let k = 0; k < impl.fields.length; k++) {
+        let name = "." + impl.fields[k].value;
+        if (!seen.has(name)) {
+          seen.add(name);
+          ys.push(name);
+        }
+      }
+    }
+    idx += reverse ? -1 : 1;
+  }
+  return new CalcitSliceList(ys);
+}
+
+export function _$n_inspect_methods(obj: CalcitValue, note: CalcitValue): CalcitValue {
+  if (arguments.length !== 2) throw new Error("&inspect-methods expected 2 arguments");
+  let pair = lookup_impls(obj);
+  if (pair == null) {
+    throw new Error(`&inspect-methods cannot resolve impls for: ${toString(obj, true)}`);
+  }
+  let impls = pair[0];
+  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
+
+  console.log("\n&inspect-methods");
+  console.log(`Note: ${toString(note, true)}`);
+  console.log(`Value type: ${type_of(obj).toString()}`);
+  console.log(`Value: ${toString(obj, true)}`);
+  console.log("Method call syntax: `.method self p1 p2`");
+  console.log("  - dot is part of the method name, first arg is the receiver\n");
+
+  let implsInOrder: CalcitRecord[] = [];
+  let idx = reverse ? impls.length - 1 : 0;
+  while (reverse ? idx >= 0 : idx < impls.length) {
+    let impl = impls[idx];
+    if (impl != null) implsInOrder.push(impl);
+    idx += reverse ? -1 : 1;
+  }
+
+  console.log(`Impl records (high → low precedence): ${implsInOrder.length}`);
+  for (let i = 0; i < implsInOrder.length; i++) {
+    let impl = implsInOrder[i];
+    let names: string[] = [];
+    for (let k = 0; k < impl.fields.length; k++) {
+      names.push("." + impl.fields[k].value);
+    }
+    console.log(`  #${i}: ${impl.name.toString()}  (${names.join(" ")})`);
+  }
+
+  let ms = _$n_methods_of(obj);
+  console.log(`\nAll methods (unique, high → low): ${ms.len()}`);
+  console.log("  " + (Array.from(ms.items()) as string[]).join(" "));
+  console.log("\n");
+
+  return obj;
 }
 
 export let _$n_map_$o_to_list = (m: CalcitValue): CalcitSliceList => {

@@ -242,7 +242,8 @@ assert-traits x Show
 1. ✅ `deftrait` 宏定义（支持方法名 + 类型签名）
 2. ✅ 基础 trait 实现语法（通过 record + `impl-traits`）
 3. ✅ 测试覆盖：`test-traits.cirru` 包含 Show/Eq/Compare/Add/Len 等基础测试
-4. ⏳ `defimpl` 独立宏定义（当前通过 defrecord + impl-traits 实现）
+4. ✅ `defimpl` 最小宏定义（当前展开为 `defrecord!`，用于更清晰地定义 impl record）
+5. ⏳ `defimpl ... for ...`（让宏直接表达“trait + 目标类型/值”，并减少手写 `impl-traits` 的样板）
 5. ✅ `assert-traits` 运行时检查与编译期标注（当前限制：第一个参数需要是 local；preprocess 展开为 `&assert-traits`）
 6. ⏳ Trait 方法的显式调用语法（如 `Show/show` 或 `trait-call`）
 
@@ -366,7 +367,7 @@ assert-traits x Show
 1. **清理与基线（半天内）**
 
 - [ ] 把这轮 traits 改动按边界整理成 3 组：语义实现 / 测试 / 文档（便于 review）。
-- [ ] 检查是否有生成物被误纳入改动（如 `js-out/` 等）；如发现噪音目录，补齐 `.gitignore` 或在构建脚本中明确产物目录。
+- [x] 检查是否有生成物被误纳入改动（如 `js-out/` 等）：当前工作区改动仅包含计划/测试/core，未发现产物噪音需要纳入跟踪。
 
 2. **固化“分派优先级”规范 + 回归测试（1 天）**
 
@@ -378,7 +379,8 @@ assert-traits x Show
 
 3. **补齐语言层能力：`defimpl` + 显式 trait-call（2～4 天）**
 
-- [ ] `defimpl`：让“写 impl record”有标准入口，减少手写 record 的样板。
+- [x] `defimpl`（v0）：让“写 impl record”有标准入口，减少手写 `defrecord!` 的样板。
+- [ ] `defimpl ... for ...`：让宏直接表达“trait + 目标类型/值”，并自动完成挂载（减少手写 `impl-traits`）。
 - [ ] 显式 trait-call（如 `Show/show` 或 `trait-call`）：提供绕开 `.method` 分派的稳定通道，便于 debug override 链。
 - [ ] 验收：同一段代码在 preprocess 校验、Rust runtime、JS runtime 行为一致。
 
@@ -390,7 +392,7 @@ assert-traits x Show
 5. **冲突策略与可观测性（可选，2～3 天）**
 
 - [ ] 提供“冲突诊断”开关：当同名方法多次出现时，打印候选列表/命中来源（对 last-wins 特别有帮助）。
-- [ ] 可选 debug proc：返回某值当前 impl 链与可用方法集合，帮助定位“为什么命中这个实现”。
+- [x] 可选 debug proc：`&methods-of` / `&inspect-methods`，返回/打印某值当前 impl 链与可用方法集合，帮助定位“为什么命中这个实现”。
 
 ---
 
@@ -401,10 +403,10 @@ assert-traits x Show
 **理由：完善当前已有的 trait 机制，提升用户体验**
 
 - [ ] **`defimpl` 宏**：简化 trait 实现语法
-  - 当前：`defrecord! MyImpl :method (fn ...) ...` + `impl-traits`
-  - 目标：`defimpl MyTrait for MyType :method (fn ...) ...`
+  - 当前（已实现 v0）：`defimpl MyTrait MyImpl (:method value) ...`（展开为 `defrecord!`，产出“impl record”）
+  - 仍待补齐：`defimpl MyTrait for MyType ...`（自动挂载/注册，减少显式 `impl-traits`）
   - 优势：语义更清晰，自动完成 impl-traits 步骤
-  - 验收：宏展开在 Rust/JS 下语义一致；错误信息包含 trait/类型/缺失方法；新增 `test-traits.cirru` 覆盖正常与冲突路径
+  - 验收：宏展开在 Rust/JS 下语义一致；错误信息包含 trait/类型/缺失方法；`test-traits.cirru` 覆盖正常/冲突路径
 - [ ] **显式 trait 调用语法**：解决方法名冲突
   - 语法选项：`(trait-call Show :show x)` 或 `(Show/show x)`
   - 用例：当一个类型实现多个 trait，且方法名冲突时
@@ -513,7 +515,7 @@ assert-traits x Show
 
 以下是原计划中的项目，已整合到上面的分类中（按真实实现状态更新）：
 
-- [ ] `defimpl` 宏（包含方法名校验/去重规则）→ 短期优先
+- [ ] `defimpl ... for ...`（包含方法名校验/去重规则）→ 短期优先（注：defimpl v0 已存在，仅产出 impl record）
 - [x] `assert-traits` 运行时检查与错误消息格式（已实现；当前限制：第一个参数需要是 local）
 - [ ] 显式 trait 调用语法（`trait-call` / `Show/show` 语法）→ 短期优先
 - [ ] trait 依赖（`requires`）与默认实现（`defaults`）的表达与存储 → 中期实现

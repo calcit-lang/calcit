@@ -209,22 +209,15 @@
                   assert= true starts
               , "|String method checks passed"
 
-        |test-record-methods $ %{} :CodeEntry (:doc "|Tests method calls on Record instances with class")
+        |test-record-methods $ %{} :CodeEntry (:doc "|Tests method calls on Record instances with impls")
           :code $ quote
             defn test-record-methods ()
-              ; 使用 new-impl-record 创建带 class 的 Record
+              ; 使用 impl-traits 挂载实现 Record methods
               let
-                  Person $ new-impl-record :Person
-                    {} $ :name
-                      :get $ fn (self) (:name self)
-                    {} $ :age
-                      :get $ fn (self) (:age self)
-                    {} $ :greet
-                      :method $ fn (self) (str "|Hello, I'm " $ :name self)
-                ; 创建 Person 实例
+                  PersonImpl $ defrecord! PersonImpl
+                    :greet $ fn (self) (str "|Hello, I'm " $ :name self)
                 let
-                  alice $ impl-traits (:: :name |Alice :age 30) Person
-                  ; 调用方法
+                    alice $ impl-traits (:: :name |Alice :age 30) PersonImpl
                   let
                       greeting $ .greet alice
                     println "|greeting:" greeting

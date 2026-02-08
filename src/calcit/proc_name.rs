@@ -78,8 +78,10 @@ pub enum CalcitProc {
   NativeTupleValidateEnum,
   #[strum(serialize = "&display-stack")]
   NativeDisplayStack,
-  #[strum(serialize = "&inspect-impl-methods")]
-  NativeInspectImplMethods,
+  #[strum(serialize = "&methods-of")]
+  NativeMethodsOf,
+  #[strum(serialize = "&inspect-methods")]
+  NativeInspectMethods,
   #[strum(serialize = "&inspect-type")]
   NativeInspectType,
   #[strum(serialize = "&assert-traits")]
@@ -349,8 +351,6 @@ pub enum CalcitProc {
   // records
   #[strum(serialize = "new-record")]
   NewRecord,
-  #[strum(serialize = "new-impl-record")]
-  NewImplRecord,
   #[strum(serialize = "&%{}")]
   NativeRecord,
   #[strum(serialize = "&record:with")]
@@ -511,6 +511,14 @@ impl CalcitProc {
         return_type: some_tag("nil"),
         arg_types: vec![variadic_dynamic()],
       }),
+      NativeMethodsOf => Some(ProcTypeSignature {
+        return_type: some_tag("list"),
+        arg_types: vec![dynamic_tag()],
+      }),
+      NativeInspectMethods => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![dynamic_tag(), optional_tag("string")],
+      }),
       NativeAssertTraits => Some(ProcTypeSignature {
         return_type: some_tag("nil"),
         arg_types: vec![dynamic_tag(), some_tag("trait")],
@@ -522,10 +530,6 @@ impl CalcitProc {
       NativeResetGenSymIndex => Some(ProcTypeSignature {
         return_type: some_tag("nil"),
         arg_types: vec![],
-      }),
-      NativeInspectImplMethods => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![dynamic_tag(), optional_tag("string")],
       }),
       NativeInspectType => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
@@ -971,7 +975,7 @@ impl CalcitProc {
         return_type: some_tag("tag"),
         arg_types: vec![some_tag("record")],
       }),
-      NewRecord | NewImplRecord => Some(ProcTypeSignature {
+      NewRecord => Some(ProcTypeSignature {
         return_type: some_tag("record"),
         arg_types: vec![some_tag("tag"), variadic_dynamic()],
       }),

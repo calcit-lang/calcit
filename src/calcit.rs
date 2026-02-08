@@ -447,7 +447,7 @@ impl Hash for Calcit {
         "tuple:".hash(_state);
         tag.hash(_state);
         extra.hash(_state);
-        // _class is internal prototype data, not used in hashing
+        // enum prototype is internal metadata, not used in hashing
       }
       Buffer(buf) => {
         "buffer:".hash(_state);

@@ -50,7 +50,7 @@ pub enum CalcitTypeAnnotation {
   CirruQuote,
   /// Variadic parameter type constraint (for & args)
   Variadic(Arc<CalcitTypeAnnotation>),
-  /// Fallback for shapes that are not yet modeled explicitly in class Record
+  /// Fallback for shapes that are not yet modeled explicitly as a record type
   Custom(Arc<Calcit>),
   /// No checking at static analaysis time
   Dynamic,

@@ -2663,9 +2663,6 @@
             quote $ assert= -5 (negate 5)
             quote $ assert= 3 (negate -3)
             quote $ assert= 0 (negate 0)
-        |new-impl-record $ %{} :CodeEntry (:doc "|internal function for creating new impls records\nSyntax: (new-impl-record impls & key-value-pairs)\nParams: impls (any), key-value-pairs (any, variadic)\nReturns: record\nCreates new record with impls and fields")
-          :code $ quote &runtime-inplementation
-          :examples $ []
         |new-record $ %{} :CodeEntry (:doc "|internal function for creating new records\nSyntax: (new-record name & key-value-pairs)\nParams: name (keyword), key-value-pairs (any, variadic)\nReturns: record\nCreates new record with name and fields")
           :code $ quote &runtime-inplementation
           :examples $ []

@@ -1,7 +1,7 @@
 use crate::{
   builtins,
   calcit::{
-    self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
+    self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
     CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF, format_proc_examples_hint,
     gen_core_id,
   },
@@ -898,42 +898,42 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
     Tuple(CalcitTuple { impls, .. }) => method_call_impls(impls, v0, name, method_args, call_stack, true),
     Record(CalcitRecord { impls, .. }) => method_call_impls(impls, v0, name, method_args, call_stack, true),
 
-    // classed should already be preprocessed
+    // builtin values should already be preprocessed
     List(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack)?;
-      method_call(&class, v0, name, method_args, call_stack)
+      let impls_value = runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
     }
     Map(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-map-impls", calcit::CORE_NS, None, call_stack)?;
-      method_call(&class, v0, name, method_args, call_stack)
+      let impls_value = runner::evaluate_symbol_from_program("&core-map-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
     }
     Number(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-number-impls", calcit::CORE_NS, None, call_stack)?;
-      method_call(&class, v0, name, method_args, call_stack)
+      let impls_value = runner::evaluate_symbol_from_program("&core-number-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
     }
     Str(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-string-impls", calcit::CORE_NS, None, call_stack)?;
-      method_call(&class, v0, name, method_args, call_stack)
+      let impls_value = runner::evaluate_symbol_from_program("&core-string-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
     }
     Set(..) => {
-      let class = &runner::evaluate_symbol_from_program("&core-set-impls", calcit::CORE_NS, None, call_stack)?;
-      method_call(class, v0, name, method_args, call_stack)
+      let impls_value = &runner::evaluate_symbol_from_program("&core-set-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(impls_value, v0, name, method_args, call_stack)
     }
     Fn { .. } | Proc(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-fn-impls", calcit::CORE_NS, None, call_stack)?;
-      method_call(&class, v0, name, method_args, call_stack)
+      let impls_value = runner::evaluate_symbol_from_program("&core-fn-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
     }
     x => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
-      format!("invoke-method cannot decide a class from: {x}"),
+      format!("invoke-method cannot resolve impls for value: {x}"),
       call_stack,
       x.get_location(),
     )),
   }
 }
 
-fn collect_impl_records_from_value(class: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitRecord>>, CalcitErr> {
-  match class {
+fn collect_impl_records_from_value(impls_value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitRecord>>, CalcitErr> {
+  match impls_value {
     Calcit::Record(record) => Ok(vec![Arc::new(record.to_owned())]),
     Calcit::List(list) => {
       let mut impls: Vec<Arc<CalcitRecord>> = Vec::with_capacity(list.len());
@@ -953,7 +953,7 @@ fn collect_impl_records_from_value(class: &Calcit, call_stack: &CallStackList) -
     }
     other => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
-      format!("invoke-method cannot find class for: {other}"),
+      format!("invoke-method cannot resolve impls from: {other}"),
       call_stack,
       other.get_location(),
     )),
@@ -961,13 +961,13 @@ fn collect_impl_records_from_value(class: &Calcit, call_stack: &CallStackList) -
 }
 
 fn method_call(
-  class: &Calcit,
+  impls_value: &Calcit,
   v0: &Calcit,
   name: &str,
   method_args: &[Calcit],
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let impls = collect_impl_records_from_value(class, call_stack)?;
+  let impls = collect_impl_records_from_value(impls_value, call_stack)?;
   // builtin impl lists are ordered by priority in calcit-core
   method_call_impls(&impls, v0, name, method_args, call_stack, false)
 }
@@ -983,7 +983,7 @@ fn method_call_impls(
   if impls.is_empty() {
     return Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Type,
-      format!("invoke-method cannot find class for: {v0}"),
+      format!("invoke-method cannot resolve impls for: {v0}"),
       call_stack,
     ));
   }
@@ -1015,13 +1015,13 @@ fn method_call_impls(
 }
 
 fn method_record(
-  class: &CalcitRecord,
+  impl_record: &CalcitRecord,
   v0: &Calcit,
   name: &str,
   method_args: &[Calcit],
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  match class.get(name) {
+  match impl_record.get(name) {
     Some(v) => {
       match v {
         // dirty copy...
@@ -1041,7 +1041,7 @@ fn method_record(
       }
     }
     None => {
-      let content = class.fields().iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
+      let content = impl_record.fields().iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
       Err(CalcitErr::use_msg_stack(
         CalcitErrKind::Type,
         format!("unknown method `.{name}` for {v0}. Available methods: {content}"),
@@ -1206,14 +1206,93 @@ pub fn tuple_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-/// Inspect and print class methods information for debugging
-/// Usage: (&inspect-class-methods value "optional note")
-/// Returns the value unchanged while printing impl information to stderr
-pub fn inspect_impl_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitRecord>>, CalcitErr> {
+  match value {
+    Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(impls.to_owned()),
+    Calcit::Record(CalcitRecord { impls, .. }) => Ok(impls.to_owned()),
+    Calcit::List(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&impls_value, call_stack)
+    }
+    Calcit::Map(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-map-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&impls_value, call_stack)
+    }
+    Calcit::Number(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-number-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&impls_value, call_stack)
+    }
+    Calcit::Str(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-string-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&impls_value, call_stack)
+    }
+    Calcit::Set(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-set-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&impls_value, call_stack)
+    }
+    Calcit::Fn { .. } | Calcit::Proc(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-fn-impls", calcit::CORE_NS, None, call_stack)?;
+      collect_impl_records_from_value(&impls_value, call_stack)
+    }
+    other => Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("&assert-traits cannot resolve impls for: {other}"),
+      call_stack,
+      other.get_location(),
+    )),
+  }
+}
+
+fn iter_impls_in_precedence_order<'a>(
+  value: &'a Calcit,
+  impls: &'a [Arc<CalcitRecord>],
+) -> Box<dyn Iterator<Item = &'a Arc<CalcitRecord>> + 'a> {
+  match value {
+    // user values are last-wins, so higher precedence is later entries
+    Calcit::Tuple(..) | Calcit::Record(..) => Box::new(impls.iter().rev()),
+    // builtin core impl lists are first-wins and order-sensitive
+    _ => Box::new(impls.iter()),
+  }
+}
+
+fn collect_method_names(value: &Calcit, impls: &[Arc<CalcitRecord>]) -> Vec<String> {
+  let mut seen: HashMap<String, ()> = HashMap::new();
+  let mut methods: Vec<String> = Vec::new();
+
+  for imp in iter_impls_in_precedence_order(value, impls) {
+    for field in imp.fields().iter() {
+      let name = format!(".{}", field.ref_str());
+      if !seen.contains_key(&name) {
+        seen.insert(name.clone(), ());
+        methods.push(name);
+      }
+    }
+  }
+
+  methods
+}
+
+/// Returns a list of method names (with leading dot) that can be invoked on a value at runtime.
+/// Usage: (&methods-of value)
+pub fn methods_of(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&methods-of expected 1 argument, but received:", xs);
+  }
+
+  let value = &xs[0];
+  let impls = collect_impl_records_for_value(value, call_stack)?;
+  let methods = collect_method_names(value, &impls);
+  Ok(Calcit::from(methods.into_iter().map(|s| Calcit::Str(s.into())).collect::<Vec<_>>()))
+}
+
+/// Inspect and print method information for debugging.
+/// Usage: (&inspect-methods value "optional note")
+/// Returns the value unchanged while printing method information to stderr.
+pub fn inspect_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() || xs.len() > 2 {
     return CalcitErr::err_nodes(
       CalcitErrKind::Arity,
-      "&inspect-impl-methods expected 1 or 2 arguments (value, optional note), but received:",
+      "&inspect-methods expected 1 or 2 arguments (value, optional note), but received:",
       xs,
     );
   }
@@ -1228,25 +1307,10 @@ pub fn inspect_impl_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result
     ""
   };
 
-  // Get the impl records for this value
-  let class_result: Result<Calcit, CalcitErr> = match value {
-    Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(Calcit::from(
-      impls.iter().map(|imp| Calcit::Record((**imp).to_owned())).collect::<Vec<_>>(),
-    )),
-    Calcit::Record(CalcitRecord { impls, .. }) => Ok(Calcit::from(
-      impls.iter().map(|imp| Calcit::Record((**imp).to_owned())).collect::<Vec<_>>(),
-    )),
-    Calcit::List(..) => runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack),
-    Calcit::Map(..) => runner::evaluate_symbol_from_program("&core-map-impls", calcit::CORE_NS, None, call_stack),
-    Calcit::Number(..) => runner::evaluate_symbol_from_program("&core-number-impls", calcit::CORE_NS, None, call_stack),
-    Calcit::Str(..) => runner::evaluate_symbol_from_program("&core-string-impls", calcit::CORE_NS, None, call_stack),
-    Calcit::Set(..) => runner::evaluate_symbol_from_program("&core-set-impls", calcit::CORE_NS, None, call_stack),
-    Calcit::Fn { .. } | Calcit::Proc(..) => runner::evaluate_symbol_from_program("&core-fn-impls", calcit::CORE_NS, None, call_stack),
-    _ => Ok(Calcit::Nil),
-  };
+  let impls = collect_impl_records_for_value(value, call_stack)?;
+  let methods = collect_method_names(value, &impls);
 
-  // Print impl information
-  eprintln!("\n&inspect-impl-methods");
+  eprintln!("\n&inspect-methods");
   if !note.is_empty() {
     eprintln!("Note: {note}");
   }
@@ -1255,136 +1319,18 @@ pub fn inspect_impl_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result
   eprintln!("Method call syntax: `.method self p1 p2`");
   eprintln!("  - dot is part of the method name, first arg is the receiver");
 
-  match class_result {
-    Ok(Calcit::Record(record)) => {
-      eprintln!("\nClass: {} ({} methods)", record.name(), record.fields().len());
-      eprintln!();
-
-      for (i, field) in record.fields().iter().enumerate() {
-        let method_value = &record.values[i];
-
-        match method_value {
-          Calcit::Fn { info, .. } => {
-            // Extract argument count
-            let arg_count = info.args.param_len();
-
-            // Format arguments
-            let args_str = match info.args.as_ref() {
-              CalcitFnArgs::MarkedArgs(labels) => labels.iter().map(|label| format!("{label}")).collect::<Vec<_>>().join(" "),
-              CalcitFnArgs::Args(indices) => indices.iter().map(|idx| CalcitLocal::read_name(*idx)).collect::<Vec<_>>().join(" "),
-            };
-
-            // Compact output format
-            eprint!("  • .{field} => [fn/{arg_count}");
-            if !args_str.is_empty() {
-              eprint!(" ({args_str})");
-            }
-            eprintln!("]  @{}", info.def_ns);
-
-            // Guidance for more info
-            eprintln!("      → cr query def '{}/{}'", info.def_ns, info.name);
-          }
-          Calcit::Proc(proc_name) => {
-            // Try to get type signature for better hints
-            if let Some(sig) = proc_name.get_type_signature() {
-              let arg_types = sig
-                .arg_types
-                .iter()
-                .map(|t| {
-                  if matches!(**t, CalcitTypeAnnotation::Dynamic) {
-                    "_".to_string()
-                  } else {
-                    t.to_brief_string()
-                  }
-                })
-                .collect::<Vec<_>>()
-                .join(" ");
-              let return_type = if matches!(*sig.return_type, CalcitTypeAnnotation::Dynamic) {
-                "_".to_string()
-              } else {
-                sig.return_type.to_brief_string()
-              };
-              eprintln!(
-                "  • .{field} => [proc/{}: {proc_name}]  ({arg_types}) -> {return_type}",
-                sig.arg_types.len()
-              );
-            } else {
-              eprintln!("  • .{field} => [proc: {proc_name}]");
-            }
-          }
-          Calcit::Syntax(syntax_name, _) => {
-            eprintln!("  • .{field} => [syntax: {syntax_name}]");
-          }
-          other => {
-            eprintln!("  • .{field} => {other}");
-          }
-        }
-      }
-
-      // Check for nested impl
-      if let Some(parent_impl) = record.impls.first() {
-        eprintln!();
-        eprintln!("Parent impl: {} ({} methods)", parent_impl.name(), parent_impl.fields().len());
-        eprintln!(
-          "  → Inspect with: (&inspect-impl-methods (&tuple:with-impls (:: :{}) {}))",
-          parent_impl.name(),
-          parent_impl.name()
-        );
-      }
-    }
-    Ok(Calcit::Nil) => {
-      eprintln!("\nNo impl associated with this value.");
-      eprintln!("  [This value type doesn't have methods]");
-    }
-    Ok(other) => {
-      eprintln!("\nUnexpected class value: {other}");
-    }
-    Err(e) => {
-      eprintln!("\nError retrieving class: {}", e.msg);
-    }
+  eprintln!("\nImpl records (high → low precedence): {}", impls.len());
+  for (idx, imp) in iter_impls_in_precedence_order(value, &impls).enumerate() {
+    let mut method_keys = imp.fields().iter().map(|x| format!(".{}", x.ref_str())).collect::<Vec<_>>();
+    method_keys.sort();
+    eprintln!("  #{idx}: {}  ({})", imp.name(), method_keys.join(" "));
   }
 
+  eprintln!("\nAll methods (unique, high → low): {}", methods.len());
+  eprintln!("  {}", methods.join(" "));
   eprintln!();
 
-  // Return the original value unchanged
-  Ok(value.clone())
-}
-
-fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitRecord>>, CalcitErr> {
-  match value {
-    Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(impls.to_owned()),
-    Calcit::Record(CalcitRecord { impls, .. }) => Ok(impls.to_owned()),
-    Calcit::List(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&class, call_stack)
-    }
-    Calcit::Map(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-map-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&class, call_stack)
-    }
-    Calcit::Number(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-number-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&class, call_stack)
-    }
-    Calcit::Str(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-string-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&class, call_stack)
-    }
-    Calcit::Set(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-set-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&class, call_stack)
-    }
-    Calcit::Fn { .. } | Calcit::Proc(..) => {
-      let class = runner::evaluate_symbol_from_program("&core-fn-impls", calcit::CORE_NS, None, call_stack)?;
-      collect_impl_records_from_value(&class, call_stack)
-    }
-    other => Err(CalcitErr::use_msg_stack_location(
-      CalcitErrKind::Type,
-      format!("&assert-traits cannot resolve impls for: {other}"),
-      call_stack,
-      other.get_location(),
-    )),
-  }
+  Ok(value.to_owned())
 }
 
 pub fn assert_traits(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {

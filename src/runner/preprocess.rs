@@ -2390,7 +2390,7 @@ fn find_method_entry<'a>(impls: &'a [Arc<CalcitRecord>], name: &str, last_wins: 
 }
 
 fn find_method_entry_for_type<'a>(type_ref: &CalcitTypeAnnotation, impls: &'a [Arc<CalcitRecord>], name: &str) -> Option<&'a Calcit> {
-  // builtin class impl lists are ordered by priority in calcit-core
+  // builtin impl lists are ordered by priority in calcit-core
   let last_wins = core_impl_list_symbol_from_type_annotation(type_ref).is_none();
   // user-defined values: impl-traits appends, so later impls override earlier ones
   find_method_entry(impls, name, last_wins)
@@ -3250,15 +3250,15 @@ mod tests {
       info: fn_info,
     };
 
-    let class_record = CalcitRecord {
+    let impl_record = CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Greeter"), vec![EdnTag::from("greet")])),
       values: Arc::new(vec![method_fn.clone()]),
       impls: vec![],
     };
 
-    let record_ns = "tests.method.class";
-    let record_def = "&test-greeter-class";
-    program::write_evaled_def(record_ns, record_def, Calcit::Record(class_record)).expect("register record class");
+    let record_ns = "tests.method.impls";
+    let record_def = "&test-greeter-impls";
+    program::write_evaled_def(record_ns, record_def, Calcit::Record(impl_record)).expect("register record impls");
 
     let record_import = Calcit::Import(CalcitImport {
       ns: Arc::from(record_ns),

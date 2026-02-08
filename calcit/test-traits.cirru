@@ -39,6 +39,9 @@
               ; Test assert-traits
               test-assert-trait
 
+              ; Debug helpers: methods introspection
+              test-method-introspection
+
               println "|All trait tests passed!"
           :examples $ []
 
@@ -333,6 +336,32 @@
                       , :true
 
               println "|  assert-traits: ✓"
+          :examples $ []
+
+        |test-method-introspection $ %{} :CodeEntry (:doc "|Test runtime method introspection helpers")
+          :code $ quote
+            defn test-method-introspection ()
+              println "|Testing method introspection..."
+              let
+                  xs $ [] 1 2
+                  ms $ &methods-of xs
+                assert= :list $ type-of ms
+                assert= true $ includes? ms "|.add"
+                assert= true $ includes? ms "|.count"
+                assert= true $ includes? ms "|.includes?"
+
+                ; `&inspect-methods` returns the original value unchanged
+                assert= xs $ &inspect-methods xs "|list"
+
+              let
+                  Person0 $ new-record :Person :name
+                  Person $ impl-traits Person0 MyFooImpl
+                  p $ %{} Person (:name |Alice)
+                  ms2 $ &methods-of p
+                assert= true $ includes? ms2 "|.foo"
+                assert= p $ &inspect-methods p "|record"
+
+              println "|  method introspection: ✓"
           :examples $ []
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
