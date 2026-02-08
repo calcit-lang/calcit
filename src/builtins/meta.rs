@@ -1272,6 +1272,99 @@ fn collect_method_names(value: &Calcit, impls: &[Arc<CalcitRecord>]) -> Vec<Stri
   methods
 }
 
+fn trait_method_names(trait_def: &CalcitTrait) -> String {
+  trait_def
+    .methods
+    .iter()
+    .map(|x| format!(":{}", x.ref_str()))
+    .collect::<Vec<_>>()
+    .join(" ")
+}
+
+/// Explicit trait method call that bypasses `.method` dispatch.
+/// Usage: (&trait-call Trait :method receiver & args)
+///
+/// Notes:
+/// - It selects the impl record by matching impl-record name with `Trait.name`.
+/// - It still applies the same precedence rule as `.method` within the impl list.
+pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if xs.len() < 3 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "&trait-call expected 3+ arguments (trait, method, receiver, & args), but received:",
+      xs,
+    );
+  }
+
+  let trait_def = match &xs[0] {
+    Calcit::Trait(trait_def) => trait_def.to_owned(),
+    other => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&trait-call expected a trait definition as first argument, but received: {other}"),
+      );
+    }
+  };
+
+  let method_name = match &xs[1] {
+    Calcit::Tag(tag) => tag.ref_str().to_string(),
+    Calcit::Symbol { sym, .. } => sym.as_ref().to_string(),
+    Calcit::Str(s) => s.as_ref().to_string(),
+    other => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&trait-call expected method name as tag/symbol/string, but received: {other}"),
+      );
+    }
+  };
+
+  if !trait_def.has_method(&method_name) {
+    return Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Type,
+      format!(
+        "&trait-call: trait {} does not define method :{}. Available methods: {}",
+        trait_def.name,
+        method_name,
+        trait_method_names(&trait_def)
+      ),
+      call_stack,
+    ));
+  }
+
+  let receiver = &xs[2];
+  let impls = collect_impl_records_for_value(receiver, call_stack)?;
+
+  let mut selected_impl: Option<&Arc<CalcitRecord>> = None;
+  for imp in iter_impls_in_precedence_order(receiver, &impls) {
+    if imp.name() == &trait_def.name {
+      selected_impl = Some(imp);
+      break;
+    }
+  }
+
+  let mut method_args: Vec<Calcit> = Vec::with_capacity(xs.len().saturating_sub(2));
+  method_args.push(receiver.to_owned());
+  method_args.extend_from_slice(&xs[3..]);
+
+  if let Some(impl_record) = selected_impl {
+    return method_record(impl_record.as_ref(), receiver, &method_name, &method_args, call_stack);
+  }
+
+  if let Some(default_impl) = trait_def.get_default(&method_name) {
+    return runner::run_fn(&method_args, default_impl, call_stack);
+  }
+
+  Err(CalcitErr::use_msg_stack_location(
+    CalcitErrKind::Type,
+    format!(
+      "&trait-call: cannot find impl for trait {} on {receiver}. Hint: use `defimpl` to create impl records tagged by trait.",
+      trait_def.name
+    ),
+    call_stack,
+    receiver.get_location(),
+  ))
+}
+
 /// Returns a list of method names (with leading dot) that can be invoked on a value at runtime.
 /// Usage: (&methods-of value)
 pub fn methods_of(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {

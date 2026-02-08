@@ -1781,6 +1781,44 @@ export function _$n_inspect_methods(obj: CalcitValue, note: CalcitValue): Calcit
   return obj;
 }
 
+export function _$n_trait_call(traitDef: CalcitValue, method: CalcitValue, obj: CalcitValue, ...args: CalcitValue[]) {
+  if (arguments.length < 3) {
+    throw new Error("&trait-call expected 3+ arguments (trait, method, receiver, & args)");
+  }
+  if (!(traitDef instanceof CalcitTrait)) {
+    throw new Error(`&trait-call expected a trait definition as first argument, but received: ${toString(traitDef, true)}`);
+  }
+  const methodName = getStringName(method);
+  const traitHasMethod = traitDef.methods.some((m) => m.value === methodName);
+  if (!traitHasMethod) {
+    const ms = traitDef.methods.map((m) => m.toString()).join(" ");
+    throw new Error(`&trait-call: trait ${traitDef.name.toString()} does not define method :${methodName}. Available methods: ${ms}`);
+  }
+  const pair = lookup_impls(obj);
+  if (pair == null) {
+    throw new Error(`&trait-call cannot resolve impls for: ${toString(obj, true)}`);
+  }
+  const impls = pair[0];
+  const reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
+  let idx = reverse ? impls.length - 1 : 0;
+  while (reverse ? idx >= 0 : idx < impls.length) {
+    const impl = impls[idx];
+    if (impl != null && impl.name.value === traitDef.name.value) {
+      const fn = impl.getOrNil(methodName);
+      if (fn != null) {
+        if (typeof fn !== "function") {
+          throw new Error(`&trait-call: method :${methodName} for trait ${traitDef.name.toString()} is not a function: ${toString(fn, true)}`);
+        }
+        return fn(obj, ...args);
+      }
+    }
+    idx += reverse ? -1 : 1;
+  }
+  throw new Error(
+    `&trait-call: cannot find impl for trait ${traitDef.name.toString()} on ${toString(obj, true)}. Hint: use defimpl to create impl records tagged by trait.`
+  );
+}
+
 export let _$n_map_$o_to_list = (m: CalcitValue): CalcitSliceList => {
   if (m instanceof CalcitMap || m instanceof CalcitSliceMap) {
     let ys = [];

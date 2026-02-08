@@ -1747,7 +1747,11 @@
               assert "|defimpl expects (:method value) pairs" $ every? pairs
                 fn (pair)
                   tag? $ &list:first pair
-              quasiquote $ defrecord! ~name ~@pairs
+              quasiquote $ %{}
+                new-record
+                  ~ $ turn-tag trait
+                  ~@ $ map pairs &list:first
+                , ~@pairs
           :examples $ []
         |deref $ %{} :CodeEntry (:doc "|Reads the current value stored in a reference\nSupports Calcit atoms as well as other host structures that implement deref.")
           :code $ quote

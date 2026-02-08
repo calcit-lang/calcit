@@ -20,6 +20,7 @@
               test-impl-precedence-order
               test-tuple-impl-precedence-order
               test-cross-trait-method-conflict
+              test-explicit-trait-call
 
               ; Test Eq trait
               test-eq-trait
@@ -113,13 +114,13 @@
 
         |MyZapAImpl $ %{} :CodeEntry (:doc "|Trait A impl for cross-trait method conflict test")
           :code $ quote
-            defrecord! MyZapAImpl
+            defimpl MyZapA MyZapAImpl
               :zap $ fn (_x) "|zapA"
           :examples $ []
 
         |MyZapBImpl $ %{} :CodeEntry (:doc "|Trait B impl for cross-trait method conflict test")
           :code $ quote
-            defrecord! MyZapBImpl
+            defimpl MyZapB MyZapBImpl
               :zap $ fn (_x) "|zapB"
           :examples $ []
 
@@ -182,6 +183,30 @@
                 assert= "|zapB" $ .zap ta
                 assert= "|zapA" $ .zap tb
               println "|  cross-trait conflict: ✓"
+          :examples $ []
+
+        |test-explicit-trait-call $ %{} :CodeEntry (:doc "|Test explicit trait-call for disambiguation")
+          :code $ quote
+            defn test-explicit-trait-call ()
+              println "|Testing explicit trait-call..."
+              let
+                  Person0 $ new-record :Person :name
+                  Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
+                  p $ %{} Person (:name |Alice)
+                ; `.zap` follows normal dispatch (last-wins for user impls)
+                assert= "|zapB" $ .zap p
+                ; `&trait-call` selects by trait, bypassing `.method` ambiguity
+                assert= "|zapA" $ &trait-call MyZapA :zap p
+                assert= "|zapB" $ &trait-call MyZapB :zap p
+
+              let
+                  t0 $ :: :demo 1
+                  t $ impl-traits t0 MyZapAImpl MyZapBImpl
+                assert= "|zapB" $ .zap t
+                assert= "|zapA" $ &trait-call MyZapA :zap t
+                assert= "|zapB" $ &trait-call MyZapB :zap t
+
+              println "|  explicit trait-call: ✓"
           :examples $ []
 
         |test-eq-trait $ %{} :CodeEntry (:doc "|Test Eq trait")

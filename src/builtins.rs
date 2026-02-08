@@ -149,6 +149,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeDisplayStack => meta::display_stack(args, call_stack),
     NativeMethodsOf => meta::methods_of(args, call_stack),
     NativeInspectMethods => meta::inspect_methods(args, call_stack),
+    NativeTraitCall => meta::trait_call(args, call_stack),
     NativeInspectType => Ok(Calcit::Nil), // Handled in preprocessing phase
     NativeAssertTraits => meta::assert_traits(args, call_stack),
     Raise => effects::raise(args),

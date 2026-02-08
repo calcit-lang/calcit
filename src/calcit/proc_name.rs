@@ -82,6 +82,8 @@ pub enum CalcitProc {
   NativeMethodsOf,
   #[strum(serialize = "&inspect-methods")]
   NativeInspectMethods,
+  #[strum(serialize = "&trait-call")]
+  NativeTraitCall,
   #[strum(serialize = "&inspect-type")]
   NativeInspectType,
   #[strum(serialize = "&assert-traits")]
@@ -518,6 +520,10 @@ impl CalcitProc {
       NativeInspectMethods => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), optional_tag("string")],
+      }),
+      NativeTraitCall => Some(ProcTypeSignature {
+        return_type: dynamic_tag(),
+        arg_types: vec![some_tag("trait"), dynamic_tag(), dynamic_tag(), variadic_dynamic()],
       }),
       NativeAssertTraits => Some(ProcTypeSignature {
         return_type: some_tag("nil"),
