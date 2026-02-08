@@ -19,6 +19,7 @@
               ; Test impl precedence order
               test-impl-precedence-order
               test-tuple-impl-precedence-order
+              test-cross-trait-method-conflict
 
               ; Test Eq trait
               test-eq-trait
@@ -67,7 +68,7 @@
 
         |MyFooImpl $ %{} :CodeEntry (:doc "|Trait impl for deftrait test")
           :code $ quote
-            defrecord! MyFooImpl
+            defimpl MyFoo MyFooImpl
               :foo $ fn (p) (str "|foo " (:name p))
           :examples $ []
 
@@ -93,6 +94,30 @@
           :code $ quote
             defrecord! MyBarImpl2
               :bar $ fn (_x) "|bar2"
+          :examples $ []
+
+        |MyZapA $ %{} :CodeEntry (:doc "|Trait A for cross-trait method conflict test")
+          :code $ quote
+            deftrait MyZapA
+              :zap (:: :fn ('T) ('T) :string)
+          :examples $ []
+
+        |MyZapB $ %{} :CodeEntry (:doc "|Trait B for cross-trait method conflict test")
+          :code $ quote
+            deftrait MyZapB
+              :zap (:: :fn ('T) ('T) :string)
+          :examples $ []
+
+        |MyZapAImpl $ %{} :CodeEntry (:doc "|Trait A impl for cross-trait method conflict test")
+          :code $ quote
+            defrecord! MyZapAImpl
+              :zap $ fn (_x) "|zapA"
+          :examples $ []
+
+        |MyZapBImpl $ %{} :CodeEntry (:doc "|Trait B impl for cross-trait method conflict test")
+          :code $ quote
+            defrecord! MyZapBImpl
+              :zap $ fn (_x) "|zapB"
           :examples $ []
 
         |test-deftrait $ %{} :CodeEntry (:doc "|Test deftrait macro")
@@ -131,6 +156,29 @@
                   t $ impl-traits t0 MyBarImpl MyBarImpl2
                 assert= "|bar2" $ .bar t
               println "|  tuple precedence: ✓"
+          :examples $ []
+
+        |test-cross-trait-method-conflict $ %{} :CodeEntry (:doc "|Test method conflict across traits")
+          :code $ quote
+            defn test-cross-trait-method-conflict ()
+              println "|Testing cross-trait method conflict..."
+              let
+                  Person0 $ new-record :Person :name
+                  ; two different traits provide the same method name `:zap`
+                  ; impl-traits appends impls, so later ones override earlier ones
+                  PersonA $ impl-traits Person0 MyZapAImpl MyZapBImpl
+                  PersonB $ impl-traits Person0 MyZapBImpl MyZapAImpl
+                  pa $ %{} PersonA (:name |Alice)
+                  pb $ %{} PersonB (:name |Bob)
+
+                  t0 $ :: :demo 1
+                  ta $ impl-traits t0 MyZapAImpl MyZapBImpl
+                  tb $ impl-traits t0 MyZapBImpl MyZapAImpl
+                assert= "|zapB" $ .zap pa
+                assert= "|zapA" $ .zap pb
+                assert= "|zapB" $ .zap ta
+                assert= "|zapA" $ .zap tb
+              println "|  cross-trait conflict: ✓"
           :examples $ []
 
         |test-eq-trait $ %{} :CodeEntry (:doc "|Test Eq trait")

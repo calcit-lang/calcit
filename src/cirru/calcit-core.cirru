@@ -1738,6 +1738,17 @@
                     ~ $ turn-tag name
                     [] ~@normalized
           :examples $ []
+        |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl records\nSyntax: (defimpl Trait ImplName (:method value) ...)\nParams: Trait (symbol/tag), ImplName (symbol/tag), method pairs\nReturns: impl record value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to defrecord! (so method registration behaves the same)")
+          :code $ quote
+            defmacro defimpl (trait name & pairs)
+              assert "|defimpl expects trait as tag/symbol" $ or (tag? trait) (symbol? trait)
+              assert "|defimpl expects name as tag/symbol" $ or (tag? name) (symbol? name)
+              assert "|defimpl expects method pairs" $ and (list? pairs) (every? pairs list?)
+              assert "|defimpl expects (:method value) pairs" $ every? pairs
+                fn (pair)
+                  tag? $ &list:first pair
+              quasiquote $ defrecord! ~name ~@pairs
+          :examples $ []
         |deref $ %{} :CodeEntry (:doc "|Reads the current value stored in a reference\nSupports Calcit atoms as well as other host structures that implement deref.")
           :code $ quote
             defn deref (*a)
