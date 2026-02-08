@@ -16,6 +16,10 @@
               ; Test deftrait macro
               test-deftrait
 
+              ; Test impl precedence order
+              test-impl-precedence-order
+              test-tuple-impl-precedence-order
+
               ; Test Eq trait
               test-eq-trait
 
@@ -67,6 +71,30 @@
               :foo $ fn (p) (str "|foo " (:name p))
           :examples $ []
 
+        |MyFooImpl2 $ %{} :CodeEntry (:doc "|Trait impl for override test")
+          :code $ quote
+            defrecord! MyFooImpl2
+              :foo $ fn (p) (str "|foo2 " (:name p))
+          :examples $ []
+
+        |MyBar $ %{} :CodeEntry (:doc "|Trait for tuple override test")
+          :code $ quote
+            deftrait MyBar
+              :bar (:: :fn ('T) ('T) :string)
+          :examples $ []
+
+        |MyBarImpl $ %{} :CodeEntry (:doc "|Trait impl for tuple override test")
+          :code $ quote
+            defrecord! MyBarImpl
+              :bar $ fn (_x) "|bar1"
+          :examples $ []
+
+        |MyBarImpl2 $ %{} :CodeEntry (:doc "|Trait impl for tuple override test")
+          :code $ quote
+            defrecord! MyBarImpl2
+              :bar $ fn (_x) "|bar2"
+          :examples $ []
+
         |test-deftrait $ %{} :CodeEntry (:doc "|Test deftrait macro")
           :code $ quote
             defn test-deftrait ()
@@ -78,6 +106,31 @@
                   p $ %{} Person (:name |Alice)
                 assert= "|foo Alice" $ .foo p
                 println "|  deftrait: ✓"
+          :examples $ []
+
+        |test-impl-precedence-order $ %{} :CodeEntry (:doc "|Test impl precedence order")
+          :code $ quote
+            defn test-impl-precedence-order ()
+              println "|Testing impl precedence order..."
+              let
+                  Person0 $ new-record :Person :name
+                  ; impl-traits appends impls, so later ones override earlier ones
+                  Person $ impl-traits Person0 MyFooImpl MyFooImpl2
+                  p $ %{} Person (:name |Alice)
+                assert= "|foo2 Alice" $ .foo p
+              println "|  precedence: ✓"
+          :examples $ []
+
+        |test-tuple-impl-precedence-order $ %{} :CodeEntry (:doc "|Test tuple impl precedence order")
+          :code $ quote
+            defn test-tuple-impl-precedence-order ()
+              println "|Testing tuple impl precedence order..."
+              let
+                  t0 $ :: :demo 1
+                  ; impl-traits appends impls, so later ones override earlier ones
+                  t $ impl-traits t0 MyBarImpl MyBarImpl2
+                assert= "|bar2" $ .bar t
+              println "|  tuple precedence: ✓"
           :examples $ []
 
         |test-eq-trait $ %{} :CodeEntry (:doc "|Test Eq trait")
@@ -135,6 +188,11 @@
 
               ; List concatenation
               assert= ([] 1 2 3 4) $ &list:concat ([] 1 2) ([] 3 4)
+
+              ; Regression: list `.add` should keep list-method semantics.
+              ; It must not be shadowed by Add trait `:add` in `&core-list-impls`.
+              assert= ([] 1 2)
+                .add ([] 1) 2
 
               println "|  Add trait: ✓"
           :examples $ []
@@ -219,6 +277,12 @@
                 ; "Option only implements Mappable in current impls"
                 assert= p $ assert-traits p MyFoo
                 ; "MyFooImpl only provides :foo, no Show impl"
+
+                assert= :true $ try
+                  do (assert-traits p calcit.core/Show) :false
+                  fn (e)
+                    do
+                      , :true
 
               println "|  assert-traits: ✓"
           :examples $ []

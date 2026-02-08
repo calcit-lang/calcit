@@ -1507,7 +1507,7 @@ fn check_record_method_args(
 
   // Get method entry from impl records
   let method_str = method_name.as_ref();
-  let Some(method_entry) = find_method_entry(&impl_records, method_str) else {
+  let Some(method_entry) = find_method_entry_for_type(type_value.as_ref(), &impl_records, method_str) else {
     return; // Method not found (will be caught by validate_method_call)
   };
 
@@ -1596,7 +1596,7 @@ fn try_inline_method_call(head: &Calcit, args: &CalcitList, call_stack: &CallSta
       }
       let type_ref = type_value.as_ref();
       let impl_records = get_impl_records_from_type(type_ref, call_stack)?;
-      let method_entry = find_method_entry(&impl_records, method_name.as_ref())?;
+      let method_entry = find_method_entry_for_type(type_ref, &impl_records, method_name.as_ref())?;
 
       if let Some(callable_head) = pick_callable_from_method_entry(method_entry) {
         return Some(build_inlined_call(callable_head, args));
@@ -2372,13 +2372,28 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
   }
 }
 
-fn find_method_entry<'a>(impls: &'a [Arc<CalcitRecord>], name: &str) -> Option<&'a Calcit> {
-  for imp in impls.iter() {
-    if let Some(entry) = imp.get(name) {
-      return Some(entry);
+fn find_method_entry<'a>(impls: &'a [Arc<CalcitRecord>], name: &str, last_wins: bool) -> Option<&'a Calcit> {
+  if last_wins {
+    for imp in impls.iter().rev() {
+      if let Some(entry) = imp.get(name) {
+        return Some(entry);
+      }
+    }
+  } else {
+    for imp in impls.iter() {
+      if let Some(entry) = imp.get(name) {
+        return Some(entry);
+      }
     }
   }
   None
+}
+
+fn find_method_entry_for_type<'a>(type_ref: &CalcitTypeAnnotation, impls: &'a [Arc<CalcitRecord>], name: &str) -> Option<&'a Calcit> {
+  // builtin class impl lists are ordered by priority in calcit-core
+  let last_wins = core_impl_list_symbol_from_type_annotation(type_ref).is_none();
+  // user-defined values: impl-traits appends, so later impls override earlier ones
+  find_method_entry(impls, name, last_wins)
 }
 
 /// Describe the type for error messages

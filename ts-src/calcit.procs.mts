@@ -1691,18 +1691,22 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
   }
   let impls = pair[0];
   let tag = pair[1];
-  for (let idx = impls.length - 1; idx >= 0; idx -= 1) {
+  // builtin class impl lists are ordered by priority in calcit-core.
+  // user-defined values use impl-traits append, so later impls override earlier ones.
+  let reverse = obj instanceof CalcitRecord || obj instanceof CalcitTuple;
+  let idx = reverse ? impls.length - 1 : 0;
+  while (reverse ? idx >= 0 : idx < impls.length) {
     let klass = impls[idx];
-    if (klass == null) {
-      continue;
-    }
-    let method = klass.getOrNil(p);
-    if (method != null) {
-      if (typeof method !== "function") {
-        throw new Error(`Method '.${p}' for '${tag}' is not a function: ${method}`);
+    if (klass != null) {
+      let method = klass.getOrNil(p);
+      if (method != null) {
+        if (typeof method !== "function") {
+          throw new Error(`Method '.${p}' for '${tag}' is not a function: ${method}`);
+        }
+        return method(obj, ...args);
       }
-      return method(obj, ...args);
     }
+    idx += reverse ? -1 : 1;
   }
   throw new Error(`No method '.${p}' for '${tag}' object '${obj}'.`);
 }

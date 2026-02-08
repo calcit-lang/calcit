@@ -139,7 +139,7 @@
                 defn %*fn:apply (x)
                   g x $ f x
           :examples $ []
-        |&core-list-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for list")
+        |&core-list-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add.")
           :code $ quote
             def &core-list-impls $ [] &core-list-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-list-impl internal/&core-len-list-impl internal/&core-mappable-list-impl
           :examples $ []

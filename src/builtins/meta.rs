@@ -894,8 +894,9 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   let v0 = &method_args[0];
   use Calcit::*;
   match v0 {
-    Tuple(CalcitTuple { impls, .. }) => method_call_impls(impls, v0, name, method_args, call_stack),
-    Record(CalcitRecord { impls, .. }) => method_call_impls(impls, v0, name, method_args, call_stack),
+    // user-defined values: impl-traits appends, so later impls override earlier ones
+    Tuple(CalcitTuple { impls, .. }) => method_call_impls(impls, v0, name, method_args, call_stack, true),
+    Record(CalcitRecord { impls, .. }) => method_call_impls(impls, v0, name, method_args, call_stack, true),
 
     // classed should already be preprocessed
     List(..) => {
@@ -967,7 +968,8 @@ fn method_call(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let impls = collect_impl_records_from_value(class, call_stack)?;
-  method_call_impls(&impls, v0, name, method_args, call_stack)
+  // builtin impl lists are ordered by priority in calcit-core
+  method_call_impls(&impls, v0, name, method_args, call_stack, false)
 }
 
 fn method_call_impls(
@@ -976,6 +978,7 @@ fn method_call_impls(
   name: &str,
   method_args: &[Calcit],
   call_stack: &CallStackList,
+  last_wins: bool,
 ) -> Result<Calcit, CalcitErr> {
   if impls.is_empty() {
     return Err(CalcitErr::use_msg_stack(
@@ -984,9 +987,17 @@ fn method_call_impls(
       call_stack,
     ));
   }
-  for imp in impls.iter().rev() {
-    if imp.get(name).is_some() {
-      return method_record(imp, v0, name, method_args, call_stack);
+  if last_wins {
+    for imp in impls.iter().rev() {
+      if imp.get(name).is_some() {
+        return method_record(imp, v0, name, method_args, call_stack);
+      }
+    }
+  } else {
+    for imp in impls.iter() {
+      if imp.get(name).is_some() {
+        return method_record(imp, v0, name, method_args, call_stack);
+      }
     }
   }
   let mut fields: Vec<String> = vec![];

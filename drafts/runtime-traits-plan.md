@@ -2,6 +2,8 @@
 
 > 目标：在运行时提供一套 Trait 机制，即使无法静态检查，也能把错误前移到调用点，并允许类型级别的能力声明（如 `Show`、`Add`、`Multiply` 等）。
 
+> 文档说明（更新于 2026-02-08）：本文件用于“解释当前实现 + 修正计划”。其中“当前实现/分派规则”以现有 Rust runtime / preprocess / JS backend 的真实行为为准；计划部分提供分阶段目标与验收口径。
+
 ## 内置 Trait 设计
 
 参考 Haskell (Eq, Ord, Show, Num, Foldable, Functor) 与 Rust (Display, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Iterator, Add, Mul, From/Into) 的设计，结合 Calcit 的动态类型特性，定义以下内置 Trait：
@@ -156,6 +158,11 @@ let
 - **编译期标记**：将本地变量标注为 trait 类型，供方法解析与类型提示使用。
 - **运行时检查**：确保值确实实现该 trait（缺失方法时直接报错）。
 
+补充（与当前实现一致）：
+
+- `assert-traits` 是一个语法（syntax），会在 preprocess 阶段被展开为对内建过程 `&assert-traits` 的调用；runtime 并不直接执行 `assert-traits` 语法本身。
+- 当前实现要求第一个参数必须是 **local**，用于把 type-info 写回作用域类型表并用于后续方法校验/类型提示。
+
 ```cirru
 ; 在调用点标注并断言 trait 能力
 assert-traits x Show
@@ -168,27 +175,37 @@ assert-traits x Show
 
 ### 分派规则（当前实现）
 
-方法调用时的查找顺序：
+当前 `.method` 调用（包含 trait 方法）本质上是对“impl records 列表”的查找。
 
-1. **值自身的 classes** - `impl-traits` 附加的实现（优先级最高）
-2. **类型的内置 Trait 实现** - 如 `number` 自动拥有 `Add`
-3. **calcit.core 的默认实现** - 兜底行为
+分派来源与优先级：
 
-实现存储与查找策略（当前约定）：
+| 场景 | impl 来源 | 覆盖策略 | 扫描方向 | 备注 |
+| --- | --- | --- | --- | --- |
+| 用户自定义值 | Record/Tuple/Struct/Enum 实例的 `impls`（由 `impl-traits` 追加） | **last-wins** | 从尾到头 | 支持“后追加覆盖前实现”（append-to-override） |
+| 内置类型 | `calcit.core` 中的 `&core-*-impls`（core impl list） | **first-wins** | 从头到尾 | 保持 core 列表顺序语义（如 list `.add` vs Add trait `:add`） |
 
-- `impl` 保存在数组中，定义更早的在前。
-- `impl-traits` 会创建新值，追加实现，不影响原值（Calcit 不可变数据）。
-- 方法查找从数组尾部向前扫描，先命中先调用（后添加覆盖先添加）。
-- 可选替代：在 `impl-traits` 执行时为 record/enum 维护方法 hashmap，后写覆盖前写。
+1. **用户自定义值的 `impls`（Record/Tuple/Struct/Enum 实例）**
+
+- `impl-traits` 会把新的 impl record **追加** 到值的 `impls` 末尾（不可变地返回新值）。
+- 查找策略：**last-wins**（从尾到头扫描，先命中先调用）。
+- 目的：支持稳定的“后追加覆盖前已有实现”的工作流。
+
+2. **内置类型的 core impl 列表（list/map/number/string/set/fn 等）**
+
+- runtime 会把值映射到 `calcit.core` 中的 `&core-*-impls`（这是一个 record 或 record 列表）。
+- 查找策略：**first-wins**（从头到尾扫描，先命中先调用）。
+- 目的：保持 `calcit.core` 中现有 impl 列表的顺序语义（已存在依赖顺序的案例：list 的 `.add` 与 Add trait 的 `:add` 同名时，core 列表顺序决定行为）。
+
+一致性要求：preprocess 的方法校验/内联与 JS backend 的 `invoke_method` 需要与上述规则保持一致（当前已对齐）。
 
 ```cirru
 ; 分派示例
 .show 42        ; → 查找 number 的 Show 实现 → "42"
 .show my-point  ; → 查找 Point record 的 Show 实现 → "Point(1, 2)"
 
-; 显式 Trait 调用（消歧义）
-Show/show 42
-(trait-call Show :show 42)
+; 显式 Trait 调用（计划，用于消歧义）
+; (trait-call Show :show 42)
+; (Show/show 42)
 ```
 
 ### 内置类型的 Trait 实现映射
@@ -226,7 +243,7 @@ Show/show 42
 2. ✅ 基础 trait 实现语法（通过 record + `impl-traits`）
 3. ✅ 测试覆盖：`test-traits.cirru` 包含 Show/Eq/Compare/Add/Len 等基础测试
 4. ⏳ `defimpl` 独立宏定义（当前通过 defrecord + impl-traits 实现）
-5. 🔄 `assert-traits` 运行时检查与编译期标注
+5. ✅ `assert-traits` 运行时检查与编译期标注（当前限制：第一个参数需要是 local；preprocess 展开为 `&assert-traits`）
 6. ⏳ Trait 方法的显式调用语法（如 `Show/show` 或 `trait-call`）
 
 #### Phase 3: 扩展 📋 **待实现**
@@ -292,15 +309,18 @@ Show/show 42
 
 ## Breaking Changes 预估
 
-- `Calcit` 匹配逻辑：新增变种会导致编译错误与运行时路径调整。
+- `Calcit` 匹配逻辑：新增变种会导致编译错误与运行时路径调整（该变更已发生）。
 - 内建操作行为：如果 `+/*` 改为 trait 分派，某些动态调用会改变错误时机。
-- `method` 分派：若 trait 与 class record 方法冲突，需要定义优先级（可能改变现有行为）。
+- `method` 分派：同名方法在不同 impl 记录之间的覆盖策略会改变行为（当前已确定规则，见“分派规则”）。
 - `str`/`format` 与 `Show` 的统一：输出可能略有不同。
 
 ## 设计决策待确认
 
-1. Trait 分派优先级：
-   - 内建实现 vs trait 实现 vs record method
+1. Trait 分派优先级与覆盖策略：
+
+- 已确定：用户自定义值 `impls` 采用 last-wins；内置类型 core impl 列表采用 first-wins。
+- 待补：提供显式调用语法（`trait-call` / `Show/show`）用于消歧义，以及冲突时的告警/错误策略。
+
 2. Trait 的定义方式：
    - 新语法 `deftrait` / `defimpl` vs 复用 record/defn
 3. Trait 是否支持泛型：
@@ -333,6 +353,43 @@ Show/show 42
 - `deftrait` 已存在，展开为 `&trait::new`。
 - `impl-traits` 已在 Rust 与 JS backend 支持，可对 record/tuple/struct/enum 追加 impl。
 - JS 侧已补齐 `CalcitTrait` 类型、`type-of`、`toString` 与 `&trait::new`、`&record:impl-traits` 等对应实现。
+- `.method` 分派采用“混合优先级”：用户自定义值（record/tuple/struct/enum 实例）为 last-wins，内置类型 core impl 列表为 first-wins。
+- `assert-traits` 已作为 preprocess 语法落地：写入 local 的 type-info，并展开为 `&assert-traits` 做运行时检查（当前限制：第一个参数需要是 local）。
+
+---
+
+## 近期执行计划（从简单稳定开始）
+
+> 目标：先把行为与回归边界钉死，再推进语言层能力（`defimpl` / 显式 trait-call）。
+
+1) **清理与基线（半天内）**
+
+- [ ] 把这轮 traits 改动按边界整理成 3 组：语义实现 / 测试 / 文档（便于 review）。
+- [ ] 检查是否有生成物被误纳入改动（如 `js-out/` 等）；如发现噪音目录，补齐 `.gitignore` 或在构建脚本中明确产物目录。
+
+2) **固化“分派优先级”规范 + 回归测试（1 天）**
+
+- [x] 文档固化规则：builtin core impl list = first-wins；record/tuple impls = last-wins（append-to-override）。
+- [x] 回归：core list 的 `.add` 不被 Add trait `:add` 覆盖（靠 core 列表顺序 + first-wins）。
+- [x] 回归：record 上 `impl-traits` 追加实现能稳定覆盖旧实现（last-wins）。
+- [ ] 回归：tuple 上 `impl-traits` 覆盖链同样稳定（last-wins）。
+- [ ] 再补 1 个“更尖锐”的 Rust/JS 共用断言（同一用例必须在 `yarn check-all` 下两端一致）。
+
+3) **补齐语言层能力：`defimpl` + 显式 trait-call（2～4 天）**
+
+- [ ] `defimpl`：让“写 impl record”有标准入口，减少手写 record 的样板。
+- [ ] 显式 trait-call（如 `Show/show` 或 `trait-call`）：提供绕开 `.method` 分派的稳定通道，便于 debug override 链。
+- [ ] 验收：同一段代码在 preprocess 校验、Rust runtime、JS runtime 行为一致。
+
+4) **`assert-traits` 易用性补强（可选，1～2 天）**
+
+- [ ] 支持 `assert-traits` 的第一个参数是任意表达式：preprocess 自动提升为临时 local 再做检查（纯语法糖）。
+- [ ] 验收：`assert-traits (+ 1 2) ...` 可用，且错误位置/提示依然清晰。
+
+5) **冲突策略与可观测性（可选，2～3 天）**
+
+- [ ] 提供“冲突诊断”开关：当同名方法多次出现时，打印候选列表/命中来源（对 last-wins 特别有帮助）。
+- [ ] 可选 debug proc：返回某值当前 impl 链与可用方法集合，帮助定位“为什么命中这个实现”。
 
 ---
 
@@ -346,13 +403,16 @@ Show/show 42
   - 当前：`defrecord! MyImpl :method (fn ...) ...` + `impl-traits`
   - 目标：`defimpl MyTrait for MyType :method (fn ...) ...`
   - 优势：语义更清晰，自动完成 impl-traits 步骤
+  - 验收：宏展开在 Rust/JS 下语义一致；错误信息包含 trait/类型/缺失方法；新增 `test-traits.cirru` 覆盖正常与冲突路径
 - [ ] **显式 trait 调用语法**：解决方法名冲突
   - 语法选项：`(trait-call Show :show x)` 或 `(Show/show x)`
   - 用例：当一个类型实现多个 trait，且方法名冲突时
-- [ ] **`assert-traits` 运行时检查**：前移错误发现时机
+  - 验收：可在运行时绕开 `.method` 的歧义（不受 impl 覆盖影响）；preprocess 能做方法存在性与参数数量/类型校验；Rust/JS 行为一致
+- [x] **`assert-traits` 运行时检查**：前移错误发现时机（已实现；当前限制：第一个参数需要是 local）
   - 语法：`(assert-traits x Show)` 或 `(requires x Show)`
   - 在函数入口检查参数是否满足 trait 约束
   - 提供清晰的错误消息
+  - 下一步：扩展到函数参数/模式绑定等更多场景（不止 local）
 
 ### 🔧 中期实现（3-4周）
 
@@ -425,13 +485,15 @@ Show/show 42
 
 **下一步行动（按优先级）：**
 
-1. **立即开始**：`defimpl` 宏 + `assert-traits` 检查
-   - 这两个功能用户需求高，实现相对独立
-   - 可以显著改善开发体验
+1. **先做（低风险）**：清理基线 + 补齐“分派优先级”尖锐回归
+  - 把行为边界钉死，避免后续 `defimpl` / trait-call 引入难定位回归
 
-2. **接下来**：显式 trait 调用语法
-   - 解决方法名冲突的实际问题
-   - 为后续 trait 组合打基础
+2. **然后（核心能力）**：`defimpl` 宏
+  - 降低写 impl 的样板，提高可读性
+
+3. **再做（可观测性/可维护）**：显式 trait 调用语法
+  - 解决方法名冲突与 override 链难 debug 的实际问题
+  - 为后续 trait 组合打基础
 
 3. **然后**：Trait 依赖 + 默认实现
    - 这是更复杂的功能，依赖前面的基础
@@ -445,11 +507,11 @@ Show/show 42
 
 ## 原有 Checklist（归档）
 
-以下是原计划中的项目，已整合到上面的分类中：
+以下是原计划中的项目，已整合到上面的分类中（按真实实现状态更新）：
 
-- [x] ~~设计并实现 `defimpl` 宏（包含方法名校验/去重规则）~~ → 短期优先
-- [x] ~~`assert-traits` 运行时检查与错误消息格式~~ → 短期优先
-- [x] ~~显式 trait 调用语法（`trait-call` / `Show/show` 语法）~~ → 短期优先
+- [ ] `defimpl` 宏（包含方法名校验/去重规则）→ 短期优先
+- [x] `assert-traits` 运行时检查与错误消息格式（已实现；当前限制：第一个参数需要是 local）
+- [ ] 显式 trait 调用语法（`trait-call` / `Show/show` 语法）→ 短期优先
 - [ ] trait 依赖（`requires`）与默认实现（`defaults`）的表达与存储 → 中期实现
 - [ ] 统一 `Compare` 的三态返回与 `&compare` 的关系（`<`/`>` 仅数字）→ 中期实现
 - [ ] 冲突检测：同一对象多 impl 的覆盖顺序与警告策略 → 中期实现
