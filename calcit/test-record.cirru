@@ -11,7 +11,7 @@
               :rename :fn
         |BirdImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl BirdTrait BirdImpl
+            defimpl BirdImpl BirdTrait
               :show $ fn (self)
                 println $ :name self
               :rename $ fn (self name) (assoc self :name name)

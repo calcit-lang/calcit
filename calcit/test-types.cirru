@@ -214,7 +214,7 @@
             defn test-record-methods ()
               ; 使用 impl-traits 挂载实现 Record methods
               let
-                  PersonImpl $ defimpl :PersonImpl PersonImpl
+                  PersonImpl $ defimpl PersonImpl :PersonImpl
                     :greet $ fn (self) (str "|Hello, I'm " $ :name self)
                 let
                     alice $ impl-traits (:: :name |Alice :age 30) PersonImpl
@@ -324,7 +324,7 @@
 
         |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata")
           :code $ quote
-            defimpl :StructImpl StructImpl
+            defimpl StructImpl :StructImpl
               :dummy nil
 
         |Result $ %{} :CodeEntry (:doc "|Enum prototype for type checks")
@@ -340,7 +340,7 @@
 
         |ResultImpl $ %{} :CodeEntry (:doc "|Trait impl for enum tuple tests")
           :code $ quote
-            defimpl ResultTrait ResultImpl
+            defimpl ResultImpl ResultTrait
               :describe $ fn (self)
                 tag-match self
                   (:ok value) (str "|ok " value)
@@ -348,7 +348,7 @@
 
         |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata")
           :code $ quote
-            defimpl :EnumImpl EnumImpl
+            defimpl EnumImpl :EnumImpl
               :dummy nil
 
         |test-defstruct-defenum $ %{} :CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples")

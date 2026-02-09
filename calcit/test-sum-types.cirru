@@ -11,13 +11,14 @@
               :err :string
         |ActionImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait ActionTrait
-              :describe :fn
-            defimpl ActionTrait ActionImpl
-              :describe $ fn (self)
-                tag-match self
-                  (:ok value) (str "|Action ok -> " value)
-                  (:err message) (str "|Action err -> " message)
+            let
+                ActionTrait $ deftrait ActionTrait
+                  :describe :fn
+              defimpl ActionImpl ActionTrait
+                :describe $ fn (self)
+                  tag-match self
+                    (:ok value) (str "|Action ok -> " value)
+                    (:err message) (str "|Action err -> " message)
         |make-ok $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-ok (value)

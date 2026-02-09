@@ -16,7 +16,7 @@
               :dummy :fn
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl ResultTrait ResultImpl
+            defimpl ResultImpl ResultTrait
               :dummy nil
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote

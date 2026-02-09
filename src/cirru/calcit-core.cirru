@@ -1771,11 +1771,11 @@
                     ~ $ turn-tag name
                     [] ~@normalized
           :examples $ []
-        |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl values\nSyntax: (defimpl Trait ImplName (:method value) ...), (defimpl Trait ImplName (:: :method value) ...), or (defimpl Trait ImplName :method value ...)\nParams: Trait (symbol/tag), ImplName (symbol/tag), method pairs\nReturns: impl value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to &impl::new")
+        |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl values\nSyntax: (defimpl ImplName Trait (:method value) ...), (defimpl ImplName Trait (:: :method value) ...), or (defimpl ImplName Trait :method value ...)\nParams: ImplName (symbol/tag), Trait (symbol/tag), method pairs\nReturns: impl value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to &impl::new")
           :code $ quote
-            defmacro defimpl (trait name & pairs)
-              assert "|defimpl expects trait as tag/symbol" $ or (tag? trait) (symbol? trait)
+            defmacro defimpl (name trait & pairs)
               assert "|defimpl expects name as tag/symbol" $ or (tag? name) (symbol? name)
+              assert "|defimpl expects trait as tag/symbol" $ or (tag? trait) (symbol? trait)
               quasiquote $ def ~name
                 &impl::new
                   ~ $ if (tag? trait) (turn-tag trait) trait

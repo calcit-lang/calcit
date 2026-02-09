@@ -72,13 +72,13 @@
 
         |MyFooImpl $ %{} :CodeEntry (:doc "|Trait impl for deftrait test")
           :code $ quote
-            defimpl MyFoo MyFooImpl
+            defimpl MyFooImpl MyFoo
               :foo $ fn (p) (str "|foo " (:name p))
           :examples $ []
 
         |MyFooImpl2 $ %{} :CodeEntry (:doc "|Trait impl for override test")
           :code $ quote
-            defimpl MyFoo MyFooImpl2
+            defimpl MyFooImpl2 MyFoo
               :foo $ fn (p) (str "|foo2 " (:name p))
           :examples $ []
 
@@ -90,13 +90,13 @@
 
         |MyBarImpl $ %{} :CodeEntry (:doc "|Trait impl for tuple override test")
           :code $ quote
-            defimpl MyBar MyBarImpl
+            defimpl MyBarImpl MyBar
               :bar $ fn (_x) "|bar1"
           :examples $ []
 
         |MyBarImpl2 $ %{} :CodeEntry (:doc "|Trait impl for tuple override test")
           :code $ quote
-            defimpl MyBar MyBarImpl2
+            defimpl MyBarImpl2 MyBar
               :bar $ fn (_x) "|bar2"
           :examples $ []
 
@@ -114,13 +114,13 @@
 
         |MyZapAImpl $ %{} :CodeEntry (:doc "|Trait A impl for cross-trait method conflict test")
           :code $ quote
-            defimpl MyZapA MyZapAImpl
+            defimpl MyZapAImpl MyZapA
               :zap $ fn (_x) "|zapA"
           :examples $ []
 
         |MyZapBImpl $ %{} :CodeEntry (:doc "|Trait B impl for cross-trait method conflict test")
           :code $ quote
-            defimpl MyZapB MyZapBImpl
+            defimpl MyZapBImpl MyZapB
               :zap $ fn (_x) "|zapB"
           :examples $ []
 

@@ -16,7 +16,7 @@
               :show :fn
         |Num $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl NumTrait Num
+            defimpl Num NumTrait
               :inc $ fn (x) (update x 1 inc)
               :show $ fn (x)
                 str $ &tuple:nth x 1
@@ -76,7 +76,7 @@
                 assert= 1 $ deref *a
                 assert= 1 $ &atom:deref *a
               let
-                  %A $ defimpl :%A %A
+                  %A $ defimpl %A :%A
                     :deref $ fn (self)
                       tag-match self
                         (:atom x) x
@@ -227,7 +227,7 @@
                 assert= 2 @*l
 
               let
-                  Deref $ defimpl :Deref Deref
+                  Deref $ defimpl Deref :Deref
                     :deref $ fn (self) 2
                   v $ impl-traits (:: :value 1) Deref
                 assert= 2 @v
@@ -300,7 +300,7 @@
               assert= false $ = (:: :t 1) (:: :t 1 2)
               let
                   a $ :: :a 1
-                  %r $ defimpl :%demo %r
+                  %r $ defimpl %r :%demo
                     :get $ fn (self) 1
                   b $ impl-traits a %r
                 assert= true $ any? (&tuple:impls b)
