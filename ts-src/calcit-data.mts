@@ -4,6 +4,7 @@ import { overwriteMapComparator } from "./js-map.mjs";
 import { disableListStructureCheck } from "@calcit/ternary-tree";
 
 import { CalcitRecord, fieldsEqual } from "./js-record.mjs";
+import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitStruct } from "./js-struct.mjs";
 import { CalcitEnum } from "./js-enum.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
@@ -82,6 +83,9 @@ export let isNestedCalcitData = (x: CalcitValue): boolean => {
   if (x instanceof CalcitRecord) {
     return x.fields.length > 0;
   }
+  if (x instanceof CalcitImpl) {
+    return x.fields.length > 0;
+  }
   if (x instanceof CalcitSet) {
     return false;
   }
@@ -97,6 +101,9 @@ export let tipNestedCalcitData = (x: CalcitValue): string => {
   }
   if (x instanceof CalcitRecord) {
     return "'%{}...";
+  }
+  if (x instanceof CalcitImpl) {
+    return "'%impl...";
   }
   if (x instanceof CalcitSet) {
     return "'#{}...";
@@ -180,6 +187,7 @@ let defaultHash_set = valueHash("set:");
 let defaultHash_list = valueHash("list:");
 let defaultHash_map = valueHash("map:");
 let defaultHash_record = valueHash("record:");
+let defaultHash_impl = valueHash("impl:");
 let defaultHash_struct = valueHash("struct:");
 let defaultHash_enum = valueHash("enum:");
 let defaultHash_cirru_quote = valueHash("cirru-quote:");
@@ -309,6 +317,16 @@ export let hashFunction = (x: CalcitValue): Hash => {
     x.cachedHash = base;
     return base;
   }
+  if (x instanceof CalcitImpl) {
+    let base = defaultHash_impl;
+    base = mergeValueHash(base, hashFunction(x.name));
+    for (let idx = 0; idx < x.fields.length; idx++) {
+      base = mergeValueHash(base, hashFunction(x.fields[idx]));
+      base = mergeValueHash(base, hashFunction(x.values[idx]));
+    }
+    x.cachedHash = base;
+    return base;
+  }
   if (x instanceof CalcitStruct) {
     let base = defaultHash_struct;
     base = mergeValueHash(base, hashFunction(x.name));
@@ -403,6 +421,9 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
     return x.toString(disableJsDataWarning);
   }
   if (x instanceof CalcitRecord) {
+    return x.toString(disableJsDataWarning);
+  }
+  if (x instanceof CalcitImpl) {
     return x.toString(disableJsDataWarning);
   }
   if (x instanceof CalcitStruct) {
@@ -664,6 +685,26 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   }
   if (x instanceof CalcitRecord) {
     if (y instanceof CalcitRecord) {
+      if (x.name !== y.name) {
+        return false;
+      }
+      if (!fieldsEqual(x.fields, y.fields)) {
+        return false;
+      }
+      if (x.values.length !== y.values.length) {
+        return false;
+      }
+      for (let idx = 0; idx < x.fields.length; idx++) {
+        if (!_$n__$e_(x.values[idx], y.values[idx])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+  if (x instanceof CalcitImpl) {
+    if (y instanceof CalcitImpl) {
       if (x.name !== y.name) {
         return false;
       }

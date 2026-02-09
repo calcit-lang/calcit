@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use crate::Calcit;
 
-use super::{CalcitEnum, CalcitRecord};
+use super::{CalcitEnum, CalcitImpl};
 
 #[derive(Debug, Clone)]
 pub struct CalcitTuple {
   pub tag: Arc<Calcit>,
   pub extra: Vec<Calcit>,
   /// Trait implementations attached to this tuple (multiple allowed for composition)
-  pub impls: Vec<Arc<CalcitRecord>>,
+  pub impls: Vec<Arc<CalcitImpl>>,
   pub sum_type: Option<Arc<CalcitEnum>>,
 }
 

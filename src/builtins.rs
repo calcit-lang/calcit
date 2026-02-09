@@ -138,6 +138,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeStructNew => records::new_struct(args),
     NativeEnumNew => records::new_enum(args),
     NativeTraitNew => meta::trait_new(args),
+    NativeImplNew => records::new_impl(args),
     NativeRecordImplTraits => meta::record_impl_traits(args),
     NativeTupleImplTraits => meta::tuple_impl_traits(args),
     NativeStructImplTraits => meta::struct_impl_traits(args),

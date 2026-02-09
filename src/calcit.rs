@@ -1,3 +1,4 @@
+mod calcit_impl;
 mod calcit_struct;
 mod calcit_trait;
 mod fns;
@@ -28,6 +29,7 @@ use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
+pub use calcit_impl::CalcitImpl;
 pub use calcit_struct::CalcitStruct;
 pub use calcit_trait::CalcitTrait;
 pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitMacro, CalcitScope};
@@ -94,6 +96,8 @@ pub enum Calcit {
   Enum(CalcitEnum),
   /// trait definition value, carries method signatures
   Trait(CalcitTrait),
+  /// trait implementation value, carries methods and target trait name
+  Impl(CalcitImpl),
   /// native functions that providing feature from Rust
   Proc(CalcitProc),
   Macro {
@@ -281,6 +285,18 @@ impl fmt::Display for Calcit {
         f.write_char(')')
       }
       Trait(t) => write!(f, "{t}"),
+      Impl(impl_def) => {
+        f.write_str("(%impl ")?;
+        f.write_str(&format!(":{}", impl_def.name()))?;
+        for idx in 0..impl_def.fields().len() {
+          f.write_str(&format!(
+            " ({} {})",
+            Calcit::tag(impl_def.fields()[idx].ref_str()),
+            impl_def.values[idx]
+          ))?;
+        }
+        f.write_str(")")
+      }
       Proc(name) => f.write_str(&format!("(&proc {name})")),
       Macro { info, .. } => {
         let name = &info.name;
@@ -544,6 +560,12 @@ impl Hash for Calcit {
         "trait:".hash(_state);
         t.name.hash(_state);
       }
+      Impl(impl_def) => {
+        "impl:".hash(_state);
+        impl_def.name.hash(_state);
+        impl_def.fields.hash(_state);
+        impl_def.values.hash(_state);
+      }
       AnyRef(_) => {
         unreachable!("AnyRef should not be used in hashing")
       }
@@ -676,6 +698,9 @@ impl Ord for Calcit {
       (Trait { .. }, _) => Less,
       (_, Trait { .. }) => Greater,
 
+      (Impl(a), Impl(b)) => a.name.cmp(&b.name),
+      (Impl { .. }, _) => Less,
+      (_, Impl { .. }) => Greater,
       (Proc(a), Proc(b)) => a.cmp(b),
       (Proc(_), _) => Less,
       (_, Proc(_)) => Greater,
@@ -749,6 +774,7 @@ impl PartialEq for Calcit {
       (Struct(a), Struct(b)) => a == b,
       (Enum(a), Enum(b)) => a.prototype() == b.prototype(),
       (Trait(a), Trait(b)) => a == b,
+      (Impl(a), Impl(b)) => a == b,
       (Proc(a), Proc(b)) => a == b,
       (Macro { id: a, .. }, Macro { id: b, .. }) => a == b,
       // functions compared with nanoid

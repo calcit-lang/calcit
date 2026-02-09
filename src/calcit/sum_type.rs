@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use crate::calcit::{Calcit, CalcitRecord, CalcitTypeAnnotation};
+use crate::calcit::{Calcit, CalcitImpl, CalcitRecord, CalcitTypeAnnotation};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumVariant {
@@ -26,7 +26,7 @@ pub struct CalcitEnum {
   prototype: Arc<CalcitRecord>,
   variants: Arc<Vec<EnumVariant>>,
   /// Trait implementations attached to this enum (multiple allowed for composition)
-  impls: Vec<Arc<CalcitRecord>>,
+  impls: Vec<Arc<CalcitImpl>>,
   /// Precomputed index for O(1) lookup by tag name; avoids linear scans on frequent queries.
   variant_index: Arc<HashMap<String, usize>>,
 }
@@ -55,11 +55,11 @@ impl CalcitEnum {
     &self.prototype
   }
 
-  pub fn impls(&self) -> &[Arc<CalcitRecord>] {
+  pub fn impls(&self) -> &[Arc<CalcitImpl>] {
     &self.impls
   }
 
-  pub fn set_impls(&mut self, impls: Vec<Arc<CalcitRecord>>) {
+  pub fn set_impls(&mut self, impls: Vec<Arc<CalcitImpl>>) {
     self.impls = impls;
   }
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::calcit::{self, CalcitEnum, CalcitImport, CalcitList, CalcitLocal, CalcitStruct, CalcitTuple};
+use crate::calcit::{self, CalcitEnum, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitStruct, CalcitTuple};
 use crate::calcit::{Calcit, CalcitRecord};
 use crate::{calcit::MethodKind, data::cirru};
 
@@ -48,6 +48,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
       }
       Ok(entries.into())
     }
+    Impl(..) => Ok(Edn::str(x.to_string())),
     Fn { info, .. } => {
       let def_ns = &info.def_ns;
       let name = &info.name;
@@ -77,6 +78,17 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
             extra_values.push(calcit_to_edn(item)?);
           }
           let tag_value = Edn::Tag(struct_ref.name.to_owned());
+          Ok(match enum_tag.clone() {
+            Some(enum_tag) => Edn::enum_tuple(enum_tag, tag_value, extra_values),
+            None => Edn::tuple(tag_value, extra_values),
+          })
+        }
+        Impl(CalcitImpl { name, .. }) => {
+          let mut extra_values = vec![];
+          for item in extra {
+            extra_values.push(calcit_to_edn(item)?);
+          }
+          let tag_value = Edn::Tag(name.to_owned());
           Ok(match enum_tag.clone() {
             Some(enum_tag) => Edn::enum_tuple(enum_tag, tag_value, extra_values),
             None => Edn::tuple(tag_value, extra_values),

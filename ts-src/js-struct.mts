@@ -1,15 +1,15 @@
 import { CalcitTag, toString } from "./calcit-data.mjs";
 import { CalcitValue } from "./js-primes.mjs";
-import { CalcitRecord } from "./js-record.mjs";
+import { CalcitImpl } from "./js-impl.mjs";
 
 export class CalcitStruct {
   name: CalcitTag;
   fields: CalcitTag[];
   fieldTypes: CalcitValue[];
-  impls: CalcitRecord[];
+  impls: CalcitImpl[];
   cachedHash: number;
 
-  constructor(name: CalcitTag, fields: CalcitTag[], fieldTypes: CalcitValue[], impls: CalcitRecord[] = []) {
+  constructor(name: CalcitTag, fields: CalcitTag[], fieldTypes: CalcitValue[], impls: CalcitImpl[] = []) {
     if (fields.length !== fieldTypes.length) {
       throw new Error("CalcitStruct: fields and fieldTypes length mismatch");
     }
@@ -20,13 +20,13 @@ export class CalcitStruct {
     this.cachedHash = null;
   }
 
-  withImpls(impls: CalcitRecord | CalcitRecord[]): CalcitStruct {
-    if (impls instanceof CalcitRecord) {
+  withImpls(impls: CalcitImpl | CalcitImpl[]): CalcitStruct {
+    if (impls instanceof CalcitImpl) {
       return new CalcitStruct(this.name, this.fields, this.fieldTypes, [impls]);
     } else if (Array.isArray(impls)) {
       return new CalcitStruct(this.name, this.fields, this.fieldTypes, impls);
     }
-    throw new Error("Expected a record as implementation");
+    throw new Error("Expected an impl as implementation");
   }
 
   toString(disableJsDataWarning: boolean = false): string {

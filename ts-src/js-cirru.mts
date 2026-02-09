@@ -9,6 +9,7 @@ import { CalcitSet } from "./js-set.mjs";
 import { CalcitTag, CalcitSymbol, CalcitRecur, newTag } from "./calcit-data.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
 import { CalcitEnum } from "./js-enum.mjs";
+import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { deepEqual } from "@calcit/ternary-tree/lib/utils.mjs";
 import { atom } from "./js-ref.mjs";
@@ -182,12 +183,16 @@ export let to_cirru_edn = (x: CalcitValue): CirruEdnFormat => {
         return ["%::", enumTag, x.tag.toString(), ...x.extra.map(to_cirru_edn)];
       } else if (x.tag instanceof CalcitRecord) {
         return ["%::", enumTag, x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
+      } else if (x.tag instanceof CalcitImpl) {
+        return ["%::", enumTag, x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
       } else {
         throw new Error(`Unsupported tag for EDN: ${x.tag}`);
       }
     } else if (x.tag instanceof CalcitTag) {
       return ["::", x.tag.toString(), ...x.extra.map(to_cirru_edn)];
     } else if (x.tag instanceof CalcitRecord) {
+      return ["::", x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
+    } else if (x.tag instanceof CalcitImpl) {
       return ["::", x.tag.name.toString(), ...x.extra.map(to_cirru_edn)];
     } else {
       throw new Error(`Unsupported tag for EDN: ${x.tag}`);

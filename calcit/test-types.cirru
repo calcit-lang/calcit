@@ -214,7 +214,7 @@
             defn test-record-methods ()
               ; 使用 impl-traits 挂载实现 Record methods
               let
-                  PersonImpl $ defrecord! PersonImpl
+                  PersonImpl $ defimpl PersonImpl PersonImpl
                     :greet $ fn (self) (str "|Hello, I'm " $ :name self)
                 let
                     alice $ impl-traits (:: :name |Alice :age 30) PersonImpl
@@ -324,7 +324,7 @@
 
         |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata")
           :code $ quote
-            defrecord! StructImpl
+            defimpl StructImpl StructImpl
               :dummy nil
 
         |Result $ %{} :CodeEntry (:doc "|Enum prototype for type checks")
@@ -335,7 +335,7 @@
 
         |ResultImpl $ %{} :CodeEntry (:doc "|Trait impl for enum tuple tests")
           :code $ quote
-            defrecord! ResultImpl
+            defimpl ResultImpl ResultImpl
               :describe $ fn (self)
                 tag-match self
                   (:ok value) (str "|ok " value)
@@ -343,7 +343,7 @@
 
         |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata")
           :code $ quote
-            defrecord! EnumImpl
+            defimpl EnumImpl EnumImpl
               :dummy nil
 
         |test-defstruct-defenum $ %{} :CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples")
@@ -356,7 +356,8 @@
                   enum-with-impls $ impl-traits Result EnumImpl
                   ok $ impl-traits (%:: enum-with-impls :ok 1) ResultImpl
                 assert= :enum $ type-of enum-with-impls
-                assert= ResultImpl $ &list:first $ &tuple:impls ok
+                assert= true $ any? (&tuple:impls ok)
+                  fn (impl) $ includes? (str impl) |ResultImpl
                 assert= enum-with-impls $ &tuple:enum ok
                 assert= "|(%:: :ok 1 (:impls ResultImpl) (:enum Result))" $ str ok
               , "|defstruct/defenum checks passed"

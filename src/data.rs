@@ -131,7 +131,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       if !impls.is_empty() {
         let mut ys = vec![Calcit::Proc(CalcitProc::NativeStructImplTraits), struct_value];
         for imp_record in impls {
-          ys.push(Calcit::Record((**imp_record).clone()));
+          ys.push(Calcit::Impl((**imp_record).clone()));
         }
         Ok(Calcit::from(CalcitList::from(&ys[..])))
       } else {
@@ -171,7 +171,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
       if !impls.is_empty() {
         let mut ys = vec![Calcit::Proc(CalcitProc::NativeEnumImplTraits), enum_value];
         for imp_record in impls {
-          ys.push(Calcit::Record((**imp_record).clone()));
+          ys.push(Calcit::Impl((**imp_record).clone()));
         }
         Ok(Calcit::from(CalcitList::from(&ys[..])))
       } else {
@@ -187,6 +187,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     Method(..) => Ok(x.to_owned()),
     RawCode(..) => Ok(x.to_owned()),
     Trait(_) => Err(format!("data_to_calcit not implemented for trait: {x}")),
+    Impl(_) => Err(format!("data_to_calcit not implemented for impl: {x}")),
     AnyRef(..) => Err(format!("data_to_calcit not implemented for any-ref: {x}")),
   }
 }

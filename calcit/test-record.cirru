@@ -11,7 +11,7 @@
               :rename (:: :fn ('T) ('T :string) 'T)
         |BirdImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def BirdImpl $ defrecord! BirdImpl
+            defimpl BirdTrait BirdImpl
               :show $ fn (self)
                 println $ :name self
               :rename $ fn (self name) (assoc self :name name)
@@ -34,7 +34,8 @@
                   data $ parse-cirru-edn content
                     {} $ :Lagopus Lagopus
                 println |EDN: data
-                assert= BirdImpl $ &list:first $ &record:impls data
+                assert= true $ any? (&record:impls data)
+                  fn (impl) $ includes? (str impl) |BirdTrait
               let
                   l1 $ %{} Lagopus (:name |LagopusA)
                 println |EDN: $ format-cirru-edn l1

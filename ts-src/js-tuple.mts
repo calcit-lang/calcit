@@ -2,16 +2,17 @@ import { Hash } from "@calcit/ternary-tree";
 
 import { CalcitValue } from "./js-primes.mjs";
 import { _$n__$e_, newTag, toString } from "./calcit-data.mjs";
+import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitRecord } from "./js-record.mjs";
 import { CalcitEnum } from "./js-enum.mjs";
 
 export class CalcitTuple {
   tag: CalcitValue;
   extra: CalcitValue[];
-  impls: CalcitRecord[];
+  impls: CalcitImpl[];
   enumPrototype: CalcitRecord | CalcitEnum;
   cachedHash: Hash;
-  constructor(tagName: CalcitValue, extra: CalcitValue[], impls: CalcitRecord[] = [], enumPrototype: CalcitRecord | CalcitEnum = null) {
+  constructor(tagName: CalcitValue, extra: CalcitValue[], impls: CalcitImpl[] = [], enumPrototype: CalcitRecord | CalcitEnum = null) {
     this.tag = tagName;
     this.extra = extra;
     this.impls = impls;

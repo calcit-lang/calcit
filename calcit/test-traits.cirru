@@ -78,7 +78,7 @@
 
         |MyFooImpl2 $ %{} :CodeEntry (:doc "|Trait impl for override test")
           :code $ quote
-            defrecord! MyFooImpl2
+            defimpl MyFoo MyFooImpl2
               :foo $ fn (p) (str "|foo2 " (:name p))
           :examples $ []
 
@@ -90,13 +90,13 @@
 
         |MyBarImpl $ %{} :CodeEntry (:doc "|Trait impl for tuple override test")
           :code $ quote
-            defrecord! MyBarImpl
+            defimpl MyBar MyBarImpl
               :bar $ fn (_x) "|bar1"
           :examples $ []
 
         |MyBarImpl2 $ %{} :CodeEntry (:doc "|Trait impl for tuple override test")
           :code $ quote
-            defrecord! MyBarImpl2
+            defimpl MyBar MyBarImpl2
               :bar $ fn (_x) "|bar2"
           :examples $ []
 

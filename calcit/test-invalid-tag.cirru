@@ -11,7 +11,9 @@
               :ok
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! ResultImpl
+            deftrait ResultTrait
+              :dummy (:: :fn ('T) ('T) :nil)
+            defimpl ResultTrait ResultImpl
               :dummy nil
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote

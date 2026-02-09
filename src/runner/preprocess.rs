@@ -1,9 +1,9 @@
 use crate::{
   builtins::{is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
-    self, Calcit, CalcitArgLabel, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal,
-    CalcitProc, CalcitRecord, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo, CalcitTrait,
-    CalcitTuple, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType,
+    self, Calcit, CalcitArgLabel, CalcitEnum, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImpl, CalcitImport, CalcitList,
+    CalcitLocal, CalcitProc, CalcitRecord, CalcitScope, CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitThunk, CalcitThunkInfo,
+    CalcitTrait, CalcitTuple, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning, NodeLocation, RawCodeType,
   },
   call_stack::{CallStackList, StackKind},
   codegen, program, runner,
@@ -2280,16 +2280,15 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
 /// - If type_value is already a Record, use it directly
 /// - If type_value is a Tag, map to corresponding core impl list
 /// - Otherwise return None
-fn collect_impl_records_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitRecord>>> {
+fn collect_impl_records_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitImpl>>> {
   match value {
-    Calcit::Record(record) => Some(vec![Arc::new(record.to_owned())]),
+    Calcit::Impl(imp) => Some(vec![Arc::new(imp.to_owned())]),
     Calcit::List(list) => {
-      let mut impls: Vec<Arc<CalcitRecord>> = Vec::with_capacity(list.len());
+      let mut impls: Vec<Arc<CalcitImpl>> = Vec::with_capacity(list.len());
       for item in list.iter() {
-        if let Calcit::Record(record) = item {
-          impls.push(Arc::new(record.to_owned()));
-        } else {
-          return None;
+        match item {
+          Calcit::Impl(imp) => impls.push(Arc::new(imp.to_owned())),
+          _ => return None,
         }
       }
       Some(impls)
@@ -2298,9 +2297,9 @@ fn collect_impl_records_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitRecor
   }
 }
 
-fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation, call_stack: &CallStackList) -> Option<Vec<Arc<CalcitRecord>>> {
+fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation, call_stack: &CallStackList) -> Option<Vec<Arc<CalcitImpl>>> {
   if let Some(record) = type_value.as_record() {
-    return Some(vec![Arc::new(record.clone())]);
+    return Some(record.impls.to_owned());
   }
 
   if let Some(class_symbol) = core_impl_list_symbol_from_type_annotation(type_value) {
@@ -2372,7 +2371,7 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
   }
 }
 
-fn find_method_entry<'a>(impls: &'a [Arc<CalcitRecord>], name: &str, last_wins: bool) -> Option<&'a Calcit> {
+fn find_method_entry<'a>(impls: &'a [Arc<CalcitImpl>], name: &str, last_wins: bool) -> Option<&'a Calcit> {
   if last_wins {
     for imp in impls.iter().rev() {
       if let Some(entry) = imp.get(name) {
@@ -2389,7 +2388,7 @@ fn find_method_entry<'a>(impls: &'a [Arc<CalcitRecord>], name: &str, last_wins: 
   None
 }
 
-fn find_method_entry_for_type<'a>(type_ref: &CalcitTypeAnnotation, impls: &'a [Arc<CalcitRecord>], name: &str) -> Option<&'a Calcit> {
+fn find_method_entry_for_type<'a>(type_ref: &CalcitTypeAnnotation, impls: &'a [Arc<CalcitImpl>], name: &str) -> Option<&'a Calcit> {
   // builtin impl lists are ordered by priority in calcit-core
   let last_wins = core_impl_list_symbol_from_type_annotation(type_ref).is_none();
   // user-defined values: impl-traits appends, so later impls override earlier ones
@@ -3196,10 +3195,16 @@ mod tests {
       coord: None,
     });
 
+    let method_impl = CalcitImpl {
+      name: EdnTag::from("Greeter"),
+      fields: Arc::new(vec![EdnTag::from("greet")]),
+      values: Arc::new(vec![method_import.clone()]),
+    };
+
     let class_record = CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Greeter"), vec![EdnTag::from("greet")])),
       values: Arc::new(vec![method_import.clone()]),
-      impls: vec![],
+      impls: vec![Arc::new(method_impl)],
     };
     scope_types.insert(Arc::from("user"), Arc::new(CalcitTypeAnnotation::Record(Arc::new(class_record))));
 
@@ -3584,13 +3589,21 @@ mod tests {
     });
 
     // Create a record with the method
+    let method_value = Calcit::Fn {
+      id: Arc::from("tests.method/greet"),
+      info: method_fn.clone(),
+    };
+
+    let method_impl = CalcitImpl {
+      name: EdnTag::from("Person"),
+      fields: Arc::new(vec![EdnTag::from("greet")]),
+      values: Arc::new(vec![method_value.clone()]),
+    };
+
     let class_record = CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Person"), vec![EdnTag::from("greet")])),
-      values: Arc::new(vec![Calcit::Fn {
-        id: Arc::from("tests.method/greet"),
-        info: method_fn.clone(),
-      }]),
-      impls: vec![],
+      values: Arc::new(vec![method_value]),
+      impls: vec![Arc::new(method_impl)],
     };
 
     // Test expression: (.greet user |hello) - wrong argument type

@@ -5,8 +5,8 @@ use cirru_edn::EdnTag;
 
 use crate::builtins::meta::type_of;
 use crate::calcit::{
-  Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSyntax, CalcitTuple,
-  CalcitTypeAnnotation, format_proc_examples_hint,
+  Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSyntax,
+  CalcitTuple, CalcitTypeAnnotation, format_proc_examples_hint,
 };
 
 fn parse_type_var_form(form: &Calcit) -> Option<Arc<str>> {
@@ -100,6 +100,90 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     struct_ref: Arc::new(CalcitStruct::from_fields(name_id, fields)),
     values: Arc::new(values),
     impls: vec![],
+  }))
+}
+
+pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.is_empty() {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&impl::new expected arguments, but received none:", xs);
+  }
+  let name_id: EdnTag = match &xs[0] {
+    Calcit::Symbol { sym, .. } => EdnTag(sym.to_owned()),
+    Calcit::Tag(k) => k.to_owned(),
+    Calcit::Str(s) => EdnTag(s.to_owned()),
+    a => {
+      let msg = format!(
+        "&impl::new requires a name (symbol/tag/string), but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeImplNew).unwrap_or_default();
+      return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+    }
+  };
+
+  if xs.len() == 1 {
+    return Ok(Calcit::Impl(CalcitImpl {
+      name: name_id,
+      fields: Arc::new(vec![]),
+      values: Arc::new(vec![]),
+    }));
+  }
+
+  let mut entries: Vec<(EdnTag, Calcit)> = Vec::with_capacity(xs.len().saturating_sub(1));
+  for item in xs.iter().skip(1) {
+    let (name, value) = match item {
+      Calcit::List(pair) => match (pair.first(), pair.get(1), pair.get(2)) {
+        (Some(name), Some(value), None) => (name, value),
+        _ => {
+          let msg = format!("&impl::new expects (field value) pairs, but received: {item}");
+          let hint = format_proc_examples_hint(&CalcitProc::NativeImplNew).unwrap_or_default();
+          return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+        }
+      },
+      Calcit::Tuple(tuple) => match (tuple.extra.first(), tuple.extra.get(1)) {
+        (Some(value), None) => (tuple.tag.as_ref(), value),
+        _ => {
+          let msg = format!("&impl::new expects (field value) pairs, but received: {item}");
+          let hint = format_proc_examples_hint(&CalcitProc::NativeImplNew).unwrap_or_default();
+          return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+        }
+      },
+      other => {
+        let msg = format!("&impl::new expects pair lists or tuples, but received: {other}");
+        let hint = format_proc_examples_hint(&CalcitProc::NativeImplNew).unwrap_or_default();
+        return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+      }
+    };
+
+    let field_name = match name {
+      Calcit::Symbol { sym, .. } | Calcit::Str(sym) => EdnTag(sym.to_owned()),
+      Calcit::Tag(tag) => tag.to_owned(),
+      other => {
+        let msg = format!("&impl::new field expects tag/symbol/string, but received: {other}");
+        let hint = format_proc_examples_hint(&CalcitProc::NativeImplNew).unwrap_or_default();
+        return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
+      }
+    };
+    entries.push((field_name, value.to_owned()));
+  }
+
+  entries.sort_by(|a, b| a.0.ref_str().cmp(b.0.ref_str()));
+  for idx in 1..entries.len() {
+    if entries[idx - 1].0 == entries[idx].0 {
+      return CalcitErr::err_str(
+        CalcitErrKind::Unexpected,
+        format!("&impl::new duplicated field: {}", entries[idx].0),
+      );
+    }
+  }
+
+  let fields: Vec<EdnTag> = entries.iter().map(|(tag, _)| tag.to_owned()).collect();
+  let values: Vec<Calcit> = entries.into_iter().map(|(_, v)| v).collect();
+
+  Ok(Calcit::Impl(CalcitImpl {
+    name: name_id,
+    fields: Arc::new(fields),
+    values: Arc::new(values),
   }))
 }
 
@@ -284,11 +368,11 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-fn enum_prototype_marker() -> CalcitRecord {
-  CalcitRecord {
-    struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("enum-prototype"), vec![])),
+fn enum_prototype_marker() -> CalcitImpl {
+  CalcitImpl {
+    name: EdnTag::new("enum-prototype"),
+    fields: Arc::new(vec![]),
     values: Arc::new(vec![]),
-    impls: vec![],
   }
 }
 
@@ -476,10 +560,10 @@ pub fn get_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Record(CalcitRecord { impls, .. }) => Ok(Calcit::from(
-      impls.iter().map(|c| Calcit::Record((**c).to_owned())).collect::<Vec<_>>(),
+      impls.iter().map(|c| Calcit::Impl((**c).to_owned())).collect::<Vec<_>>(),
     )),
     Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(Calcit::from(
-      impls.iter().map(|c| Calcit::Record((**c).to_owned())).collect::<Vec<_>>(),
+      impls.iter().map(|c| Calcit::Impl((**c).to_owned())).collect::<Vec<_>>(),
     )),
     a => {
       let msg = format!(

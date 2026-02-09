@@ -1,7 +1,7 @@
 use crate::{
   builtins,
   calcit::{
-    self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
+    self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
     CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF, format_proc_examples_hint,
     gen_core_id,
   },
@@ -63,6 +63,7 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Import { .. } => Ok(Calcit::tag("import")),
     Registered(..) => Ok(Calcit::tag("registered")),
     Trait(..) => Ok(Calcit::tag("trait")),
+    Impl(..) => Ok(Calcit::tag("impl")),
     AnyRef(..) => Ok(Calcit::tag("any-ref")),
   }
 }
@@ -652,15 +653,15 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Trait(CalcitTrait::new(name, methods, method_types)))
 }
 
-fn collect_trait_records(xs: &[Calcit], proc_name: &str) -> Result<Vec<Arc<CalcitRecord>>, CalcitErr> {
-  let mut traits: Vec<Arc<CalcitRecord>> = Vec::with_capacity(xs.len());
+fn collect_trait_records(xs: &[Calcit], proc_name: &str) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
+  let mut traits: Vec<Arc<CalcitImpl>> = Vec::with_capacity(xs.len());
   for item in xs {
     match item {
-      Calcit::Record(record) => traits.push(Arc::new(record.to_owned())),
+      Calcit::Impl(imp) => traits.push(Arc::new(imp.to_owned())),
       other => {
         return Err(CalcitErr::use_str(
           CalcitErrKind::Type,
-          format!("{proc_name} expects trait impls as records, but received: {other}"),
+          format!("{proc_name} expects trait impls as impls, but received: {other}"),
         ));
       }
     }
@@ -932,18 +933,18 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   }
 }
 
-fn collect_impl_records_from_value(impls_value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitRecord>>, CalcitErr> {
+fn collect_impl_records_from_value(impls_value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
   match impls_value {
-    Calcit::Record(record) => Ok(vec![Arc::new(record.to_owned())]),
+    Calcit::Impl(imp) => Ok(vec![Arc::new(imp.to_owned())]),
     Calcit::List(list) => {
-      let mut impls: Vec<Arc<CalcitRecord>> = Vec::with_capacity(list.len());
+      let mut impls: Vec<Arc<CalcitImpl>> = Vec::with_capacity(list.len());
       for item in list.iter() {
         match item {
-          Calcit::Record(record) => impls.push(Arc::new(record.to_owned())),
+          Calcit::Impl(imp) => impls.push(Arc::new(imp.to_owned())),
           other => {
             return Err(CalcitErr::use_msg_stack(
               CalcitErrKind::Type,
-              format!("invoke-method expects impl records in list, but received: {other}"),
+              format!("invoke-method expects impls in list, but received: {other}"),
               call_stack,
             ));
           }
@@ -973,7 +974,7 @@ fn method_call(
 }
 
 fn method_call_impls(
-  impls: &[Arc<CalcitRecord>],
+  impls: &[Arc<CalcitImpl>],
   v0: &Calcit,
   name: &str,
   method_args: &[Calcit],
@@ -1015,7 +1016,7 @@ fn method_call_impls(
 }
 
 fn method_record(
-  impl_record: &CalcitRecord,
+  impl_record: &CalcitImpl,
   v0: &Calcit,
   name: &str,
   method_args: &[Calcit],
@@ -1169,7 +1170,7 @@ pub fn tuple_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(Calcit::from(
-      impls.iter().map(|imp| Calcit::Record((**imp).to_owned())).collect::<Vec<_>>(),
+      impls.iter().map(|imp| Calcit::Impl((**imp).to_owned())).collect::<Vec<_>>(),
     )),
     x => {
       let msg = format!(
@@ -1206,7 +1207,7 @@ pub fn tuple_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitRecord>>, CalcitErr> {
+fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
   match value {
     Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(impls.to_owned()),
     Calcit::Record(CalcitRecord { impls, .. }) => Ok(impls.to_owned()),
@@ -1245,8 +1246,8 @@ fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) ->
 
 fn iter_impls_in_precedence_order<'a>(
   value: &'a Calcit,
-  impls: &'a [Arc<CalcitRecord>],
-) -> Box<dyn Iterator<Item = &'a Arc<CalcitRecord>> + 'a> {
+  impls: &'a [Arc<CalcitImpl>],
+) -> Box<dyn Iterator<Item = &'a Arc<CalcitImpl>> + 'a> {
   match value {
     // user values are last-wins, so higher precedence is later entries
     Calcit::Tuple(..) | Calcit::Record(..) => Box::new(impls.iter().rev()),
@@ -1255,7 +1256,7 @@ fn iter_impls_in_precedence_order<'a>(
   }
 }
 
-fn collect_method_names(value: &Calcit, impls: &[Arc<CalcitRecord>]) -> Vec<String> {
+fn collect_method_names(value: &Calcit, impls: &[Arc<CalcitImpl>]) -> Vec<String> {
   let mut seen: HashMap<String, ()> = HashMap::new();
   let mut methods: Vec<String> = Vec::new();
 
@@ -1334,7 +1335,7 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   let receiver = &xs[2];
   let impls = collect_impl_records_for_value(receiver, call_stack)?;
 
-  let mut selected_impl: Option<&Arc<CalcitRecord>> = None;
+  let mut selected_impl: Option<&Arc<CalcitImpl>> = None;
   for imp in iter_impls_in_precedence_order(receiver, &impls) {
     if imp.name() == &trait_def.name {
       selected_impl = Some(imp);
@@ -1357,7 +1358,7 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   Err(CalcitErr::use_msg_stack_location(
     CalcitErrKind::Type,
     format!(
-      "&trait-call: cannot find impl for trait {} on {receiver}. Hint: use `defimpl` to create impl records tagged by trait.",
+      "&trait-call: cannot find impl for trait {} on {receiver}. Hint: use `defimpl` to create impls tagged by trait.",
       trait_def.name
     ),
     call_stack,

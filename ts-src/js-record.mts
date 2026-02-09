@@ -1,5 +1,6 @@
 import { initTernaryTreeMap, Hash, insert } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes.mjs";
+import { CalcitImpl } from "./js-impl.mjs";
 import { newTag, castTag, toString, CalcitTag, getStringName, findInFields } from "./calcit-data.mjs";
 
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
@@ -8,9 +9,9 @@ export class CalcitRecord {
   name: CalcitTag;
   fields: Array<CalcitTag>;
   values: Array<CalcitValue>;
-  impls: Array<CalcitRecord>;
+  impls: Array<CalcitImpl>;
   cachedHash: Hash;
-  constructor(name: CalcitTag, fields: Array<CalcitTag>, values?: Array<CalcitValue>, impls?: Array<CalcitRecord>) {
+  constructor(name: CalcitTag, fields: Array<CalcitTag>, values?: Array<CalcitValue>, impls?: Array<CalcitImpl>) {
     this.name = name;
     let fieldNames = fields.map(castTag);
     this.fields = fields;
@@ -75,10 +76,10 @@ export class CalcitRecord {
     return parts.join("");
   }
   withImpls(impl: CalcitValue): CalcitRecord {
-    if (impl instanceof CalcitRecord) {
+    if (impl instanceof CalcitImpl) {
       return new CalcitRecord(this.name, this.fields, this.values, [impl]);
     } else {
-      throw new Error("Expected a record");
+      throw new Error("Expected an impl");
     }
   }
 }
@@ -96,7 +97,7 @@ export let new_record = (name: CalcitValue, ...fields: Array<CalcitValue>): Calc
   return new CalcitRecord(castTag(name), fieldNames);
 };
 
-export let new_impl_record = (impl: CalcitRecord, name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
+export let new_impl_record = (impl: CalcitImpl, name: CalcitValue, ...fields: Array<CalcitValue>): CalcitValue => {
   let fieldNames = fields.map(castTag).sort((x, y) => {
     if (x.idx < y.idx) {
       return -1;

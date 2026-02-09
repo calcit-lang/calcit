@@ -115,7 +115,7 @@ deftrait Compare :compare
 
 ### Trait 实现语法（当前实现）
 
-使用 `impl-traits` 函数式组合的方式为类型添加 Trait 实现：
+使用 `impl-traits` 函数式组合的方式为类型添加 Trait 实现（当前仍以 record 承载 impl，计划升级为独立 impl 结构，见后文）：
 
 ```cirru
 ; 完整示例：为 Point 类型实现 Show 和 Eq trait
@@ -244,8 +244,8 @@ assert-traits x Show
 3. ✅ 测试覆盖：`test-traits.cirru` 包含 Show/Eq/Compare/Add/Len 等基础测试
 4. ✅ `defimpl` 最小宏定义（当前展开为 `defrecord!`，用于更清晰地定义 impl record）
 5. ⏳ `defimpl ... for ...`（让宏直接表达“trait + 目标类型/值”，并减少手写 `impl-traits` 的样板）
-5. ✅ `assert-traits` 运行时检查与编译期标注（当前限制：第一个参数需要是 local；preprocess 展开为 `&assert-traits`）
-6. ⏳ Trait 方法的显式调用语法（如 `Show/show` 或 `trait-call`）
+6. ✅ `assert-traits` 运行时检查与编译期标注（当前限制：第一个参数需要是 local；preprocess 展开为 `&assert-traits`）
+7. ⏳ Trait 方法的显式调用语法（如 `Show/show` 或 `trait-call`）
 
 #### Phase 3: 扩展 📋 **待实现**
 
@@ -262,10 +262,10 @@ assert-traits x Show
 
 ### 1) 核心数据结构与运行时
 
-- **`Calcit` 新增变种**：`Trait`（以及可能的 `TraitImpl` 数据结构）。
+- **`Calcit` 新增变种**：`Trait`（已完成），新增 `Impl` 变种用于承载 trait impl（从 record 迁移）。
 - **运行时上下文**：不单独引入 registry，内置 Trait 直接放在 `calcit.core`，其他 Trait 作为普通值附着在各自命名空间上。
 - **调用分派**：方法调用/操作符调用在当前命名空间与 `calcit.core` 中解析 Trait 值，再执行绑定实现。
-- **Trait 实现承载**：Traits 以组合方式使用，携带实现时统一使用 `Vec`；即便内置类型，查询 trait 实现也返回数组，内部实现目前用 record 承载。
+- **Trait 实现承载**：Traits 以组合方式使用，携带实现时统一使用 `Vec`；计划引入 `CalcitImpl` 作为一等结构，替代 record 承载（同时保留向后兼容的过渡层）。
 - **错误模型**：为 trait 查找失败、约束不满足等错误引入新的错误类别与消息格式。
 
 ### 2) 标准库/内建能力定义
@@ -310,7 +310,7 @@ assert-traits x Show
 
 ## Breaking Changes 预估
 
-- `Calcit` 匹配逻辑：新增变种会导致编译错误与运行时路径调整（该变更已发生）。
+- `Calcit` 匹配逻辑：新增 `Impl` 变种会导致编译错误与运行时路径调整（允许少量 breaking）。
 - 内建操作行为：如果 `+/*` 改为 trait 分派，某些动态调用会改变错误时机。
 - `method` 分派：同名方法在不同 impl 记录之间的覆盖策略会改变行为（当前已确定规则，见“分派规则”）。
 - `str`/`format` 与 `Show` 的统一：输出可能略有不同。
@@ -340,6 +340,7 @@ assert-traits x Show
 ### Phase 2：语言层支持
 
 - `deftrait` / `defimpl` 语法与 runtime 注册。
+- 迁移 trait impl 承载：record -> `CalcitImpl`（保留兼容路径，逐步淘汰 record impl）。
 - `assert-traits` / `requires` 运行时检查。
 
 ### Phase 3：扩展与稳定
@@ -352,7 +353,7 @@ assert-traits x Show
 ## 当前实现要点（补充）
 
 - `deftrait` 已存在，展开为 `&trait::new`。
-- `defimpl` 已存在（最小实现）：展开为 `defrecord!`，用于更清晰地定义“trait impl record”。
+- `defimpl` 已存在（最小实现）：展开为 `defrecord!`，用于更清晰地定义“trait impl record”（计划引入 `CalcitImpl` 后更新宏展开目标）。
 - `impl-traits` 已在 Rust 与 JS backend 支持，可对 record/tuple/struct/enum 追加 impl。
 - JS 侧已补齐 `CalcitTrait` 类型、`type-of`、`toString` 与 `&trait::new`、`&record:impl-traits` 等对应实现。
 - `.method` 分派采用“混合优先级”：用户自定义值（record/tuple/struct/enum 实例）为 last-wins，内置类型 core impl 列表为 first-wins。

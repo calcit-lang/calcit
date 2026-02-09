@@ -11,7 +11,7 @@
           :code $ quote (defatom *ref-demo 0)
         |Num $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def Num $ %{} %Num
+            defimpl Num Num
               :inc $ fn (x) (update x 1 inc)
               :show $ fn (x)
                 str $ &tuple:nth x 1
@@ -71,7 +71,7 @@
                 assert= 1 $ deref *a
                 assert= 1 $ &atom:deref *a
               let
-                  %A $ defrecord! %A
+                  %A $ defimpl :%A %A
                     :deref $ fn (self)
                       tag-match self
                         (:atom x) x
@@ -206,7 +206,8 @@
                   a $ impl-traits (:: :calcit/number 0) Num
                 assert= (impl-traits (:: :calcit/number 2) Num) (-> a .inc .inc)
                 assert= |1 $ -> a .inc .show
-                assert-detect record? $ &list:first $ &tuple:impls a
+                assert= true $ any? (&tuple:impls a)
+                  fn (impl) $ includes? (str impl) |Num
         |test-refs $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
@@ -221,7 +222,7 @@
                 assert= 2 @*l
 
               let
-                  Deref $ defrecord! Deref
+                  Deref $ defimpl :Deref Deref
                     :deref $ fn (self) 2
                   v $ impl-traits (:: :value 1) Deref
                 assert= 2 @v
@@ -294,10 +295,11 @@
               assert= false $ = (:: :t 1) (:: :t 1 2)
               let
                   a $ :: :a 1
-                  %r $ defrecord! %demo
+                  %r $ defimpl :%demo %r
                     :get $ fn (self) 1
                   b $ impl-traits a %r
-                assert= %r $ &list:first $ &tuple:impls b
+                assert= true $ any? (&tuple:impls b)
+                  fn (impl) $ includes? (str impl) |%demo
                 assert=
                   &tuple:params $ :: :a 1 2 3
                   [] 1 2 3

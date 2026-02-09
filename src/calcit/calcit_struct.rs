@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use cirru_edn::EdnTag;
 
-use super::{CalcitRecord, CalcitTypeAnnotation};
+use super::{CalcitImpl, CalcitTypeAnnotation};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalcitStruct {
@@ -12,7 +12,7 @@ pub struct CalcitStruct {
   pub field_types: Arc<Vec<Arc<CalcitTypeAnnotation>>>,
   pub generics: Arc<Vec<Arc<str>>>,
   /// Trait implementations attached to this struct (multiple allowed for composition)
-  pub impls: Vec<Arc<CalcitRecord>>,
+  pub impls: Vec<Arc<CalcitImpl>>,
 }
 
 impl CalcitStruct {

@@ -4,14 +4,14 @@ use cirru_edn::EdnTag;
 
 use crate::Calcit;
 
-use super::CalcitStruct;
+use super::{CalcitImpl, CalcitStruct};
 
 #[derive(Debug, Clone)]
 pub struct CalcitRecord {
   pub struct_ref: Arc<CalcitStruct>,
   pub values: Arc<Vec<Calcit>>,
   /// Trait implementations attached to this record (multiple allowed for composition)
-  pub impls: Vec<Arc<CalcitRecord>>,
+  pub impls: Vec<Arc<CalcitImpl>>,
 }
 
 impl PartialEq for CalcitRecord {

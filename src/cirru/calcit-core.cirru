@@ -123,19 +123,19 @@
           :examples $ []
         |&core-fn-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! &core-fn-methods
-              :call $ defn &fn:call (f & args) (f & args)
-              :call-args $ defn &fn:call-args (f args) (f & args)
-              :map $ defn &fn:map (f g)
+            def &core-fn-methods $ &impl::new :&core-fn-methods
+              :: :call $ defn &fn:call (f & args) (f & args)
+              :: :call-args $ defn &fn:call-args (f args) (f & args)
+              :: :map $ defn &fn:map (f g)
                 defn &fn:map (x)
                   f $ g x
-              :bind $ defn &fn:bind (m f)
+              :: :bind $ defn &fn:bind (m f)
                 defn %&fn:bind (x)
                   f (m x) x
-              :mappend $ defn &fn:mappend (f g)
+              :: :mappend $ defn &fn:mappend (f g)
                 defn %&fn:mappend (x)
                   .mappend (f x) (g x)
-              :apply $ defn &fn:apply (f g)
+              :: :apply $ defn &fn:apply (f g)
                 defn %*fn:apply (x)
                   g x $ f x
           :examples $ []
@@ -145,50 +145,64 @@
           :examples $ []
         |&core-list-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! &core-list-methods (:any? any?) (:add append) (:append append) (:assoc &list:assoc) (:assoc-after &list:assoc-after) (:assoc-before &list:assoc-before) (:bind mapcat) (:butlast butlast) (:concat &list:concat) (:contains? &list:contains?) (:includes? &list:includes?) (:count &list:count) (:drop drop) (:each each)
-              :empty $ defn &list:empty (x) ([])
-              :empty? &list:empty?
-              :filter &list:filter
-              :filter-not filter-not
-              :find find
-              :find-index find-index
-              :find-last &list:find-last
-              :find-last-index &list:find-last-index
-              :foldl $ defn method:foldl (xs v0 f) (foldl xs v0 f)
-              :get &list:nth
-              :get-in get-in
-              :group-by group-by
-              :index-of index-of
-              :join join
-              :join-str join-str
-              :last-index-of &list:last-index-of
-              :map &list:map
-              :map-indexed map-indexed
-              :mappend $ defn &list:mappend (x y) (&list:concat x y)
-              :max &list:max
-              :min &list:min
-              :nth &list:nth
-              :pairs-map pairs-map
-              :prepend prepend
-              :reduce reduce
-              :reverse &list:reverse
-              :slice &list:slice
-              :sort $ defn method:sort (x y) (sort x y)
-              :sort-by &list:sort-by
-              :take take
-              :take-last take-last
-              :to-set &list:to-set
-              :first &list:first
-              :rest &list:rest
-              :dissoc &list:dissoc
-              :to-list identity
-              :map-pair &list:map-pair
-              :filter-pair &list:filter-pair
-              :apply $ defn &fn:apply (xs fs)
+            def &core-list-methods $ &impl::new :&core-list-methods
+              :: :any? any?
+              :: :add append
+              :: :append append
+              :: :assoc &list:assoc
+              :: :assoc-after &list:assoc-after
+              :: :assoc-before &list:assoc-before
+              :: :bind mapcat
+              :: :butlast butlast
+              :: :concat &list:concat
+              :: :contains? &list:contains?
+              :: :includes? &list:includes?
+              :: :count &list:count
+              :: :drop drop
+              :: :each each
+              :: :empty $ defn &list:empty (x) ([])
+              :: :empty? &list:empty?
+              :: :filter &list:filter
+              :: :filter-not filter-not
+              :: :find find
+              :: :find-index find-index
+              :: :find-last &list:find-last
+              :: :find-last-index &list:find-last-index
+              :: :foldl $ defn method:foldl (xs v0 f) (foldl xs v0 f)
+              :: :get &list:nth
+              :: :get-in get-in
+              :: :group-by group-by
+              :: :index-of index-of
+              :: :join join
+              :: :join-str join-str
+              :: :last-index-of &list:last-index-of
+              :: :map &list:map
+              :: :map-indexed map-indexed
+              :: :mappend $ defn &list:mappend (x y) (&list:concat x y)
+              :: :max &list:max
+              :: :min &list:min
+              :: :nth &list:nth
+              :: :pairs-map pairs-map
+              :: :prepend prepend
+              :: :reduce reduce
+              :: :reverse &list:reverse
+              :: :slice &list:slice
+              :: :sort $ defn method:sort (x y) (sort x y)
+              :: :sort-by &list:sort-by
+              :: :take take
+              :: :take-last take-last
+              :: :to-set &list:to-set
+              :: :first &list:first
+              :: :rest &list:rest
+              :: :dissoc &list:dissoc
+              :: :to-list identity
+              :: :map-pair &list:map-pair
+              :: :filter-pair &list:filter-pair
+              :: :apply $ defn &fn:apply (xs fs)
                 &list:concat & $ map fs
                   defn &fn:ap-gen (f)
                     map xs $ defn &fn:ap-gen (x) (f x)
-              :flatten &list:flatten
+              :: :flatten &list:flatten
           :examples $ []
         |&core-map-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for map")
           :code $ quote
@@ -196,24 +210,33 @@
           :examples $ []
         |&core-map-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! &core-map-methods (:add &map:add-entry) (:assoc &map:assoc) (:common-keys &map:common-keys) (:contains? &map:contains?) (:count &map:count) (:destruct &map:destruct) (:diff-keys &map:diff-keys) (:diff-new &map:diff-new) (:dissoc &map:dissoc)
-              :empty $ defn &map:empty (x) (&{})
-              :empty? &map:empty?
-              :filter &map:filter
-              :filter-kv &map:filter-kv
-              :get &map:get
-              :get-in get-in
-              :includes? &map:includes?
-              :keys keys
-              :map &map:map
-              :map-kv map-kv
-              :map-list &map:map-list
-              :mappend merge
-              :merge merge
-              :to-list &map:to-list
-              :to-map identity
-              :to-pairs to-pairs
-              :values vals
+            def &core-map-methods $ &impl::new :&core-map-methods
+              :: :add &map:add-entry
+              :: :assoc &map:assoc
+              :: :common-keys &map:common-keys
+              :: :contains? &map:contains?
+              :: :count &map:count
+              :: :destruct &map:destruct
+              :: :diff-keys &map:diff-keys
+              :: :diff-new &map:diff-new
+              :: :dissoc &map:dissoc
+              :: :empty $ defn &map:empty (x) (&{})
+              :: :empty? &map:empty?
+              :: :filter &map:filter
+              :: :filter-kv &map:filter-kv
+              :: :get &map:get
+              :: :get-in get-in
+              :: :includes? &map:includes?
+              :: :keys keys
+              :: :map &map:map
+              :: :map-kv map-kv
+              :: :map-list &map:map-list
+              :: :mappend merge
+              :: :merge merge
+              :: :to-list &map:to-list
+              :: :to-map identity
+              :: :to-pairs to-pairs
+              :: :values vals
           :examples $ []
         |&core-number-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for number")
           :code $ quote
@@ -221,19 +244,20 @@
           :examples $ []
         |&core-number-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! &core-number-methods (:ceil ceil)
-              :empty $ defn &number:empty (x) 0
-              :floor floor
-              :format &number:format
-              :display-by &number:display-by
-              :inc inc
-              :pow pow
-              :round round
-              :round? round?
-              :fract &number:fract
-              :sqrt sqrt
-              :negate negate
-              :rem &number:rem
+            def &core-number-methods $ &impl::new :&core-number-methods
+              :: :ceil ceil
+              :: :empty $ defn &number:empty (x) 0
+              :: :floor floor
+              :: :format &number:format
+              :: :display-by &number:display-by
+              :: :inc inc
+              :: :pow pow
+              :: :round round
+              :: :round? round?
+              :: :fract &number:fract
+              :: :sqrt sqrt
+              :: :negate negate
+              :: :rem &number:rem
           :examples $ []
         |&core-set-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for set")
           :code $ quote
@@ -241,20 +265,25 @@
           :examples $ []
         |&core-set-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! &core-set-methods (:add include) (:contains? &set:includes?) (:count &set:count) (:destruct &set:destruct) (:difference difference)
-              :empty $ defn &set:empty (x) (#{})
-              :empty? &set:empty?
-              :exclude exclude
-              :filter &set:filter
-              :include include
-              :includes? &set:includes?
-              :intersection intersection
-              :mappend union
-              :max &set:max
-              :min &set:min
-              :to-list &set:to-list
-              :to-set identity
-              :union union
+            def &core-set-methods $ &impl::new :&core-set-methods
+              :: :add include
+              :: :contains? &set:includes?
+              :: :count &set:count
+              :: :destruct &set:destruct
+              :: :difference difference
+              :: :empty $ defn &set:empty (x) (#{})
+              :: :empty? &set:empty?
+              :: :exclude exclude
+              :: :filter &set:filter
+              :: :include include
+              :: :includes? &set:includes?
+              :: :intersection intersection
+              :: :mappend union
+              :: :max &set:max
+              :: :min &set:min
+              :: :to-list &set:to-list
+              :: :to-set identity
+              :: :union union
           :examples $ []
         |&core-string-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for string")
           :code $ quote
@@ -262,31 +291,33 @@
           :examples $ []
         |&core-string-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! &core-string-methods (:blank? blank?) (:count &str:count)
-              :empty $ defn &str:empty (_) |
-              :ends-with? ends-with?
-              :get &str:nth
-              :parse-float parse-float
-              :replace &str:replace
-              :split split
-              :split-lines split-lines
-              :starts-with? starts-with?
-              :strip-prefix strip-prefix
-              :strip-suffix strip-suffix
-              :slice &str:slice
-              :trim trim
-              :empty? &str:empty?
-              :contains? &str:contains?
-              :includes? &str:includes?
-              :nth &str:nth
-              :first &str:first
-              :rest &str:rest
-              :pad-left &str:pad-left
-              :pad-right &str:pad-right
-              :find-index &str:find-index
-              :get-char-code get-char-code
-              :escape &str:escape
-              :mappend &str:concat
+            def &core-string-methods $ &impl::new :&core-string-methods
+              :: :blank? blank?
+              :: :count &str:count
+              :: :empty $ defn &str:empty (_) |
+              :: :ends-with? ends-with?
+              :: :get &str:nth
+              :: :parse-float parse-float
+              :: :replace &str:replace
+              :: :split split
+              :: :split-lines split-lines
+              :: :starts-with? starts-with?
+              :: :strip-prefix strip-prefix
+              :: :strip-suffix strip-suffix
+              :: :slice &str:slice
+              :: :trim trim
+              :: :empty? &str:empty?
+              :: :contains? &str:contains?
+              :: :includes? &str:includes?
+              :: :nth &str:nth
+              :: :first &str:first
+              :: :rest &str:rest
+              :: :pad-left &str:pad-left
+              :: :pad-right &str:pad-right
+              :: :find-index &str:find-index
+              :: :get-char-code get-char-code
+              :: :escape &str:escape
+              :: :mappend &str:concat
           :examples $ []
         |&data-to-code $ %{} :CodeEntry (:doc "|internal function for converting data to code\nSyntax: (&data-to-code data)\nParams: data (EDN data)\nReturns: quoted code\nConverts EDN data structure back to executable code")
           :code $ quote &runtime-inplementation
@@ -1583,19 +1614,21 @@
             quote $ defenum Result (:ok :number) (:err :string)
         |OptionMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Option")
           :code $ quote
-            defrecord! OptionMappableImpl
-              :map $ defn option:map (opt f)
-                tag-match opt
-                  (:some value) (%:: (&tuple:enum opt) :some (f value))
-                  (:none) (%:: (&tuple:enum opt) :none)
+            def OptionMappableImpl
+              &impl::new :OptionMappableImpl
+                :: :map $ defn option:map (opt f)
+                  tag-match opt
+                    (:some value) (%:: (&tuple:enum opt) :some (f value))
+                    (:none) (%:: (&tuple:enum opt) :none)
           :examples $ []
         |ResultMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Result")
           :code $ quote
-            defrecord! ResultMappableImpl
-              :map $ defn result:map (res f)
-                tag-match res
-                  (:ok value) (%:: (&tuple:enum res) :ok (f value))
-                  (:err err) (%:: (&tuple:enum res) :err err)
+            def ResultMappableImpl
+              &impl::new :ResultMappableImpl
+                :: :map $ defn result:map (res f)
+                  tag-match res
+                    (:ok value) (%:: (&tuple:enum res) :ok (f value))
+                    (:err err) (%:: (&tuple:enum res) :err err)
           :examples $ []
         |Option $ %{} :CodeEntry (:doc "|Rust-style Option enum")
           :code $ quote
@@ -1738,20 +1771,51 @@
                     ~ $ turn-tag name
                     [] ~@normalized
           :examples $ []
-        |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl records\nSyntax: (defimpl Trait ImplName (:method value) ...)\nParams: Trait (symbol/tag), ImplName (symbol/tag), method pairs\nReturns: impl record value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to defrecord! (so method registration behaves the same)")
+        |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl values\nSyntax: (defimpl Trait ImplName (:method value) ...), (defimpl Trait ImplName (:: :method value) ...), or (defimpl Trait ImplName :method value ...)\nParams: Trait (symbol/tag), ImplName (symbol/tag), method pairs\nReturns: impl value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to &impl::new")
           :code $ quote
             defmacro defimpl (trait name & pairs)
               assert "|defimpl expects trait as tag/symbol" $ or (tag? trait) (symbol? trait)
               assert "|defimpl expects name as tag/symbol" $ or (tag? name) (symbol? name)
-              assert "|defimpl expects method pairs" $ and (list? pairs) (every? pairs list?)
-              assert "|defimpl expects (:method value) pairs" $ every? pairs
-                fn (pair)
-                  tag? $ &list:first pair
-              quasiquote $ %{}
-                new-record
+              quasiquote $ def ~name
+                &impl::new
                   ~ $ turn-tag trait
-                  ~@ $ map pairs &list:first
-                , ~@pairs
+                  ~@
+                    if (every? pairs list?)
+                      do
+                        assert "|defimpl expects method pairs" $ and (list? pairs) (every? pairs list?)
+                        assert "|defimpl expects (:method value) pairs" $ every? pairs
+                          fn (pair)
+                            or
+                              tag? $ &list:first pair
+                              tag? $ &list:nth pair 1
+                        map pairs
+                          fn (pair)
+                            &let
+                              items $ if
+                                &= [] $ &list:first pair
+                                &list:rest pair
+                                if
+                                  &= (quote ::) $ &list:first pair
+                                  &list:rest pair
+                                  , pair
+                              assert "|defimpl expects (:method value) pairs" $ &= 2 (count items)
+                              quasiquote $ [] ~@items
+                      do
+                        assert "|defimpl expects even number of items" $ &= 0
+                          &number:rem (count pairs) 2
+                        map (section-by pairs 2)
+                          fn (pair)
+                            &let
+                              items $ if
+                                &= [] $ &list:first pair
+                                &list:rest pair
+                                if
+                                  &= (quote ::) $ &list:first pair
+                                  &list:rest pair
+                                  , pair
+                              assert "|defimpl expects (:method value) pairs" $ &= 2 (count items)
+                              assert "|defimpl expects :method as tag" $ tag? (&list:first items)
+                              quasiquote $ [] ~@items
           :examples $ []
         |deref $ %{} :CodeEntry (:doc "|Reads the current value stored in a reference\nSupports Calcit atoms as well as other host structures that implement deref.")
           :code $ quote
@@ -3398,10 +3462,12 @@
                       , |ms
                   ~ v
           :examples $ []
-        |impl-traits $ %{} :CodeEntry (:doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (record/tuple/struct/enum), traits (record, variadic)\nReturns: value with updated trait implementations\nDispatches to &record:impl-traits, &tuple:impl-traits, &struct:impl-traits, &enum:impl-traits")
+        |impl-traits $ %{} :CodeEntry (:doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (record/tuple/struct/enum), traits (impl, variadic)\nReturns: value with updated trait implementations\nDispatches to &record:impl-traits, &tuple:impl-traits, &struct:impl-traits, &enum:impl-traits")
           :code $ quote
             defn impl-traits (x & traits)
-              assert "|impl-traits expects records as traits" $ every? traits record?
+              assert "|impl-traits expects impl values" $ every? traits
+                fn (trait)
+                  = :impl $ type-of trait
               if (struct? x) (&struct:impl-traits x & traits)
                 if (enum? x) (&enum:impl-traits x & traits)
                   if (record? x) (&record:impl-traits x & traits)
@@ -3471,51 +3537,63 @@
       :defs $ {}
         |&core-add-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on list")
           :code $ quote
-            defrecord! &core-add-list-impl $ :add &list:concat
+            def &core-add-list-impl $ &impl::new :&core-add-list-impl
+              :: :add &list:concat
           :examples $ []
         |&core-add-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on number")
           :code $ quote
-            defrecord! &core-add-number-impl $ :add &+
+            def &core-add-number-impl $ &impl::new :&core-add-number-impl
+              :: :add &+
           :examples $ []
         |&core-add-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on string")
           :code $ quote
-            defrecord! &core-add-string-impl $ :add &str:concat
+            def &core-add-string-impl $ &impl::new :&core-add-string-impl
+              :: :add &str:concat
           :examples $ []
         |&core-eq-impl $ %{} :CodeEntry (:doc "|Core trait impl for Eq")
           :code $ quote
-            defrecord! &core-eq-impl $ :eq? &=
+            def &core-eq-impl $ &impl::new :&core-eq-impl
+              :: :eq? &=
           :examples $ []
         |&core-len-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on list")
           :code $ quote
-            defrecord! &core-len-list-impl $ :len &list:count
+            def &core-len-list-impl $ &impl::new :&core-len-list-impl
+              :: :len &list:count
           :examples $ []
         |&core-len-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on map")
           :code $ quote
-            defrecord! &core-len-map-impl $ :len &map:count
+            def &core-len-map-impl $ &impl::new :&core-len-map-impl
+              :: :len &map:count
           :examples $ []
         |&core-mappable-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Mappable on list")
           :code $ quote
-            defrecord! &core-mappable-list-impl $ :map &list:map
+            def &core-mappable-list-impl $ &impl::new :&core-mappable-list-impl
+              :: :map &list:map
           :examples $ []
         |&core-mappable-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Mappable on map")
           :code $ quote
-            defrecord! &core-mappable-map-impl $ :map &map:map
+            def &core-mappable-map-impl $ &impl::new :&core-mappable-map-impl
+              :: :map &map:map
           :examples $ []
         |&core-len-set-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on set")
           :code $ quote
-            defrecord! &core-len-set-impl $ :len &set:count
+            def &core-len-set-impl $ &impl::new :&core-len-set-impl
+              :: :len &set:count
           :examples $ []
         |&core-len-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on string")
           :code $ quote
-            defrecord! &core-len-string-impl $ :len &str:count
+            def &core-len-string-impl $ &impl::new :&core-len-string-impl
+              :: :len &str:count
           :examples $ []
         |&core-multiply-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Multiply on number")
           :code $ quote
-            defrecord! &core-multiply-number-impl $ :multiply &*
+            def &core-multiply-number-impl $ &impl::new :&core-multiply-number-impl
+              :: :multiply &*
           :examples $ []
         |&core-show-impl $ %{} :CodeEntry (:doc "|Core trait impl for Show")
           :code $ quote
-            defrecord! &core-show-impl $ :show &str
+            def &core-show-impl $ &impl::new :&core-show-impl
+              :: :show &str
           :examples $ []
         |&field-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote

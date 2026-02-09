@@ -12,8 +12,8 @@ use std::thread_local;
 use cirru_edn::EdnTag;
 
 use super::{
-  CORE_NS, Calcit, CalcitEnum, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSymbolInfo, CalcitSyntax,
-  CalcitTrait, CalcitTuple,
+  CORE_NS, Calcit, CalcitEnum, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSymbolInfo,
+  CalcitSyntax, CalcitTrait, CalcitTuple,
 };
 use crate::program;
 
@@ -1256,7 +1256,7 @@ impl CalcitTypeAnnotation {
 fn resolve_struct_annotation(struct_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitStruct> {
   let mut struct_def = resolve_struct_def(struct_form)?;
   if let Some(class_record) = class_form.and_then(resolve_record_def) {
-    struct_def.impls = vec![Arc::new(class_record)];
+    struct_def.impls = vec![Arc::new(CalcitImpl::from_record(&class_record))];
   }
   Some(struct_def)
 }
@@ -1264,7 +1264,7 @@ fn resolve_struct_annotation(struct_form: &Calcit, class_form: Option<&Calcit>) 
 fn resolve_enum_annotation(enum_form: &Calcit, class_form: Option<&Calcit>) -> Option<CalcitEnum> {
   let mut enum_def = resolve_enum_def(enum_form)?;
   if let Some(class_record) = class_form.and_then(resolve_record_def) {
-    enum_def.set_impls(vec![Arc::new(class_record)]);
+    enum_def.set_impls(vec![Arc::new(CalcitImpl::from_record(&class_record))]);
   }
   Some(enum_def)
 }

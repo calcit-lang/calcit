@@ -2,6 +2,7 @@ import { CalcitTag, CalcitSymbol, CalcitFn, CalcitRecur } from "./calcit-data.mj
 import { CalcitRef } from "./js-ref.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitRecord } from "./js-record.mjs";
+import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitStruct } from "./js-struct.mjs";
 import { CalcitEnum } from "./js-enum.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
@@ -25,6 +26,7 @@ export type CalcitValue =
   | CalcitFn
   | CalcitRecur // should not be exposed to function
   | CalcitRecord
+  | CalcitImpl
   | CalcitStruct
   | CalcitEnum
   | CalcitCirruQuote
@@ -54,6 +56,7 @@ enum PseudoTypeIndex {
   set,
   map,
   record,
+  impl,
   struct,
   enum_type,
   fn,
@@ -76,6 +79,7 @@ let typeAsInt = (x: CalcitValue): number => {
   if (x instanceof CalcitSet) return PseudoTypeIndex.set;
   if (x instanceof CalcitMap || x instanceof CalcitSliceMap) return PseudoTypeIndex.map;
   if (x instanceof CalcitRecord) return PseudoTypeIndex.record;
+  if (x instanceof CalcitImpl) return PseudoTypeIndex.impl;
   if (x instanceof CalcitStruct) return PseudoTypeIndex.struct;
   if (x instanceof CalcitEnum) return PseudoTypeIndex.enum_type;
   if (x instanceof CalcitCirruQuote) return PseudoTypeIndex.cirru_quote;

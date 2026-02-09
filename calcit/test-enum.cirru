@@ -16,7 +16,7 @@
               :dummy (:: :fn ('T) ('T) :nil)
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defrecord! ResultImpl
+            defimpl ResultTrait ResultImpl
               :dummy nil
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -38,8 +38,9 @@
                 assert= :ok $ &tuple:nth valid-ok 0
                 let
                     ok-impl $ impl-traits valid-ok ResultImpl
-                  assert= ResultImpl $ &list:first $ &tuple:impls ok-impl
-                  assert= "|(%:: :ok (:impls ResultImpl) (:enum Result0))" $ str ok-impl
+                  assert= true $ any? (&tuple:impls ok-impl)
+                    fn (impl) $ includes? (str impl) |ResultTrait
+                  assert= "|(%:: :ok (:impls ResultTrait) (:enum Result0))" $ str ok-impl
               let
                   valid-err $ %:: Result0 :err |error-msg
                 assert= :err $ &tuple:nth valid-err 0
