@@ -235,9 +235,10 @@ export let defenum = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnum
 
 export let _$n_impl_$o__$o_new = (name: CalcitValue, ...pairs: CalcitValue[]): CalcitImpl => {
   if (name === undefined) throw new Error("&impl::new expected arguments");
-  const implName = castTag(name);
+  const origin = name instanceof CalcitTrait ? name : null;
+  const implName = origin ? origin.name : castTag(name);
   if (pairs.length === 0) {
-    return new CalcitImpl(implName, [], []);
+    return new CalcitImpl(implName, [], [], origin);
   }
   const entries: Array<{ tag: CalcitTag; value: CalcitValue }> = [];
   for (let idx = 0; idx < pairs.length; idx++) {
@@ -268,7 +269,7 @@ export let _$n_impl_$o__$o_new = (name: CalcitValue, ...pairs: CalcitValue[]): C
   }
   const fields = entries.map((entry) => entry.tag);
   const values = entries.map((entry) => entry.value);
-  return new CalcitImpl(implName, fields, values);
+  return new CalcitImpl(implName, fields, values, origin);
 };
 
 export let _$n_struct_$o__$o_new = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStruct => {
@@ -679,6 +680,14 @@ export let _$n_enum_$o_impl_traits = function (xs: CalcitValue, ...traits: Calci
     return new CalcitRecord(xs.name, xs.fields, xs.values, xs.impls.concat(addedImpls));
   }
   throw new Error("&enum:impl-traits expected an enum or enum record");
+};
+
+export let _$n_impl_$o_origin = function (impl: CalcitValue): CalcitValue {
+  if (arguments.length !== 1) throw new Error("&impl:origin expected 1 argument");
+  if (impl instanceof CalcitImpl) {
+    return impl.origin ?? null;
+  }
+  throw new Error(`&impl:origin expected an impl, but received: ${toString(impl, true)}`);
 };
 
 export let _$n_list_$o_assoc_before = function (xs: CalcitList | CalcitSliceList, k: number, v: CalcitValue): CalcitList {
@@ -1808,7 +1817,8 @@ export function _$n_inspect_methods(obj: CalcitValue, note: CalcitValue): Calcit
     for (let k = 0; k < impl.fields.length; k++) {
       names.push("." + impl.fields[k].value);
     }
-    console.log(`  #${i}: ${impl.name.toString()}  (${names.join(" ")})`);
+    const originName = impl.origin != null ? impl.origin.name.toString() : impl.name.toString();
+    console.log(`  #${i}: ${originName}  (${names.join(" ")})`);
   }
 
   let ms = _$n_methods_of(obj);
@@ -1841,7 +1851,7 @@ export function _$n_trait_call(traitDef: CalcitValue, method: CalcitValue, obj: 
   let idx = reverse ? impls.length - 1 : 0;
   while (reverse ? idx >= 0 : idx < impls.length) {
     const impl = impls[idx];
-    if (impl != null && impl.name.value === traitDef.name.value) {
+    if (impl != null && impl.origin != null && impl.origin.name.value === traitDef.name.value) {
       const fn = impl.getOrNil(methodName);
       if (fn != null) {
         if (typeof fn !== "function") {

@@ -1,15 +1,18 @@
 import { Hash } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes.mjs";
 import { CalcitTag, castTag, findInFields, toString } from "./calcit-data.mjs";
+import type { CalcitTrait } from "./js-trait.mjs";
 
 export class CalcitImpl {
   name: CalcitTag;
+  origin: CalcitTrait | null;
   fields: Array<CalcitTag>;
   values: Array<CalcitValue>;
   cachedHash: Hash;
 
-  constructor(name: CalcitTag, fields: Array<CalcitTag>, values: Array<CalcitValue>) {
+  constructor(name: CalcitTag, fields: Array<CalcitTag>, values: Array<CalcitValue>, origin: CalcitTrait | null = null) {
     this.name = name;
+    this.origin = origin;
     this.fields = fields;
     this.values = values;
     this.cachedHash = null;

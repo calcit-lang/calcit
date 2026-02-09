@@ -1778,7 +1778,7 @@
               assert "|defimpl expects name as tag/symbol" $ or (tag? name) (symbol? name)
               quasiquote $ def ~name
                 &impl::new
-                  ~ $ turn-tag trait
+                  ~ $ if (tag? trait) (turn-tag trait) trait
                   ~@
                     if (every? pairs list?)
                       do

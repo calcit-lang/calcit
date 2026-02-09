@@ -2,11 +2,12 @@ use std::{cmp::Ordering, sync::Arc};
 
 use cirru_edn::EdnTag;
 
-use super::Calcit;
+use super::{Calcit, CalcitTrait};
 
 #[derive(Debug, Clone)]
 pub struct CalcitImpl {
   pub name: EdnTag,
+  pub origin: Option<Arc<CalcitTrait>>,
   pub fields: Arc<Vec<EdnTag>>,
   pub values: Arc<Vec<Calcit>>,
 }
@@ -15,6 +16,7 @@ impl CalcitImpl {
   pub fn from_record(record: &crate::calcit::CalcitRecord) -> Self {
     CalcitImpl {
       name: record.struct_ref.name.to_owned(),
+      origin: None,
       fields: record.struct_ref.fields.to_owned(),
       values: record.values.to_owned(),
     }
@@ -22,6 +24,14 @@ impl CalcitImpl {
 
   pub fn name(&self) -> &EdnTag {
     &self.name
+  }
+
+  pub fn origin(&self) -> Option<&Arc<CalcitTrait>> {
+    self.origin.as_ref()
+  }
+
+  pub fn trait_name(&self) -> Option<&EdnTag> {
+    self.origin.as_ref().map(|trait_def| &trait_def.name)
   }
 
   pub fn fields(&self) -> &Arc<Vec<EdnTag>> {
@@ -63,7 +73,10 @@ impl CalcitImpl {
 
 impl PartialEq for CalcitImpl {
   fn eq(&self, other: &Self) -> bool {
-    self.name == other.name && self.fields == other.fields && self.values == other.values
+    self.name == other.name
+      && self.origin.as_ref().map(|t| &t.name) == other.origin.as_ref().map(|t| &t.name)
+      && self.fields == other.fields
+      && self.values == other.values
   }
 }
 

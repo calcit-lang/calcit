@@ -173,10 +173,14 @@ Calcit 程序使用 `cr` 命令：
   - 用法：`&inspect-methods value "|optional note"`
   - 用途：调试动态分派/traits override 链，适合临时插入 pipeline
 
+- `&impl:origin` - 读取 impl record 的 trait 来源（返回 trait 值或 nil）
+  - 用法：`&impl:origin impl`
+  - 用途：调试/断言 impl 与 trait 的关联关系（配合 `&tuple:impls` 或 `&methods-of` 使用）
+
 - `&trait-call` - 显式调用某个 trait 的方法实现（同名方法消歧/绕开 `.method` 分派）
   - 用法：`&trait-call Trait :method receiver & args`
   - 说明：会按当前 value 的 impl precedence 扫描，但只匹配“属于该 trait”的 impl 记录；若 trait 定义了 default 实现则会回退调用
-  - 前置条件：建议用 `defimpl` 创建 impl（impl record 会带 trait identity，供 `&trait-call` 定位）
+  - 前置条件：建议用 `defimpl` 创建 impl（impl record 会保存 trait origin，供 `&trait-call` 定位）
 
 ### 文档子命令 (`cr docs`)
 

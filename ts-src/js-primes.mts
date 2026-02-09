@@ -9,6 +9,7 @@ import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet as CalcitSet } from "./js-set.mjs";
 import { CalcitTuple } from "./js-tuple.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
+import { CalcitTrait } from "./js-trait.mjs";
 
 export type CalcitValue =
   | string
@@ -27,6 +28,7 @@ export type CalcitValue =
   | CalcitRecur // should not be exposed to function
   | CalcitRecord
   | CalcitImpl
+  | CalcitTrait
   | CalcitStruct
   | CalcitEnum
   | CalcitCirruQuote

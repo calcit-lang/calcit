@@ -4,11 +4,11 @@
   :files $ {}
     |test-record.main $ %{} :FileEntry
       :defs $ {}
-        |BirdClass $ %{} :CodeEntry (:doc |)
+        |BirdTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait BirdTrait
-              :show (:: :fn ('T) ('T) :nil)
-              :rename (:: :fn ('T) ('T :string) 'T)
+              :show :fn
+              :rename :fn
         |BirdImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl BirdTrait BirdImpl
@@ -35,7 +35,7 @@
                     {} $ :Lagopus Lagopus
                 println |EDN: data
                 assert= true $ any? (&record:impls data)
-                  fn (impl) $ includes? (str impl) |BirdTrait
+                  fn (impl) $ = (&impl:origin impl) BirdTrait
               let
                   l1 $ %{} Lagopus (:name |LagopusA)
                 println |EDN: $ format-cirru-edn l1

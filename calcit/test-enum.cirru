@@ -13,7 +13,7 @@
         |ResultTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait ResultTrait
-              :dummy (:: :fn ('T) ('T) :nil)
+              :dummy :fn
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl ResultTrait ResultImpl

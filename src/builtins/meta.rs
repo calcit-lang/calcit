@@ -764,6 +764,19 @@ pub fn enum_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn impl_origin(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&impl:origin expected 1 argument, but received:", xs);
+  }
+  match &xs[0] {
+    Calcit::Impl(imp) => match &imp.origin {
+      Some(trait_def) => Ok(Calcit::Trait(trait_def.as_ref().to_owned())),
+      None => Ok(Calcit::Nil),
+    },
+    other => CalcitErr::err_str(CalcitErrKind::Type, format!("&impl:origin expected an impl, but received: {other}")),
+  }
+}
+
 fn parse_enum_record(enum_record: &CalcitRecord, proc_name: &str) -> Result<CalcitEnum, CalcitErr> {
   match CalcitEnum::from_record(enum_record.to_owned()) {
     Ok(proto) => Ok(proto),
@@ -1337,7 +1350,7 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
 
   let mut selected_impl: Option<&Arc<CalcitImpl>> = None;
   for imp in iter_impls_in_precedence_order(receiver, &impls) {
-    if imp.name() == &trait_def.name {
+    if imp.trait_name() == Some(&trait_def.name) {
       selected_impl = Some(imp);
       break;
     }
@@ -1417,7 +1430,8 @@ pub fn inspect_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calc
   for (idx, imp) in iter_impls_in_precedence_order(value, &impls).enumerate() {
     let mut method_keys = imp.fields().iter().map(|x| format!(".{}", x.ref_str())).collect::<Vec<_>>();
     method_keys.sort();
-    eprintln!("  #{idx}: {}  ({})", imp.name(), method_keys.join(" "));
+    let origin_label = imp.trait_name().unwrap_or_else(|| imp.name());
+    eprintln!("  #{idx}: {}  ({})", origin_label, method_keys.join(" "));
   }
 
   eprintln!("\nAll methods (unique, high → low): {}", methods.len());

@@ -9,9 +9,14 @@
           :code $ quote (defrecord %Num :inc :show)
         |*ref-demo $ %{} :CodeEntry (:doc |)
           :code $ quote (defatom *ref-demo 0)
+        |NumTrait $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            deftrait NumTrait
+              :inc :fn
+              :show :fn
         |Num $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl Num Num
+            defimpl NumTrait Num
               :inc $ fn (x) (update x 1 inc)
               :show $ fn (x)
                 str $ &tuple:nth x 1
@@ -207,7 +212,7 @@
                 assert= (impl-traits (:: :calcit/number 2) Num) (-> a .inc .inc)
                 assert= |1 $ -> a .inc .show
                 assert= true $ any? (&tuple:impls a)
-                  fn (impl) $ includes? (str impl) |Num
+                  fn (impl) $ = (&impl:origin impl) NumTrait
         |test-refs $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)

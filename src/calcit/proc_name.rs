@@ -72,6 +72,8 @@ pub enum CalcitProc {
   NativeStructImplTraits,
   #[strum(serialize = "&enum:impl-traits")]
   NativeEnumImplTraits,
+  #[strum(serialize = "&impl:origin")]
+  NativeImplOrigin,
   #[strum(serialize = "&tuple:enum-has-variant?")]
   NativeTupleEnumHasVariant,
   #[strum(serialize = "&tuple:enum-variant-arity")]
@@ -916,6 +918,10 @@ impl CalcitProc {
       NativeImplNew => Some(ProcTypeSignature {
         return_type: some_tag("impl"),
         arg_types: vec![dynamic_tag(), variadic_dynamic()],
+      }),
+      NativeImplOrigin => Some(ProcTypeSignature {
+        return_type: optional_tag("trait"),
+        arg_types: vec![some_tag("impl")],
       }),
       NativeRecordImplTraits => Some(ProcTypeSignature {
         return_type: some_tag("record"),

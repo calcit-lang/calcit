@@ -3197,6 +3197,7 @@ mod tests {
 
     let method_impl = CalcitImpl {
       name: EdnTag::from("Greeter"),
+      origin: None,
       fields: Arc::new(vec![EdnTag::from("greet")]),
       values: Arc::new(vec![method_import.clone()]),
     };
@@ -3596,6 +3597,7 @@ mod tests {
 
     let method_impl = CalcitImpl {
       name: EdnTag::from("Person"),
+      origin: None,
       fields: Arc::new(vec![EdnTag::from("greet")]),
       values: Arc::new(vec![method_value.clone()]),
     };

@@ -67,7 +67,7 @@
         |MyFoo $ %{} :CodeEntry (:doc "|Trait for deftrait test")
           :code $ quote
             deftrait MyFoo
-              :foo (:: :fn ('T) ('T) :string)
+              :foo :fn
           :examples $ []
 
         |MyFooImpl $ %{} :CodeEntry (:doc "|Trait impl for deftrait test")
@@ -85,7 +85,7 @@
         |MyBar $ %{} :CodeEntry (:doc "|Trait for tuple override test")
           :code $ quote
             deftrait MyBar
-              :bar (:: :fn ('T) ('T) :string)
+              :bar :fn
           :examples $ []
 
         |MyBarImpl $ %{} :CodeEntry (:doc "|Trait impl for tuple override test")
@@ -103,13 +103,13 @@
         |MyZapA $ %{} :CodeEntry (:doc "|Trait A for cross-trait method conflict test")
           :code $ quote
             deftrait MyZapA
-              :zap (:: :fn ('T) ('T) :string)
+              :zap :fn
           :examples $ []
 
         |MyZapB $ %{} :CodeEntry (:doc "|Trait B for cross-trait method conflict test")
           :code $ quote
             deftrait MyZapB
-              :zap (:: :fn ('T) ('T) :string)
+              :zap :fn
           :examples $ []
 
         |MyZapAImpl $ %{} :CodeEntry (:doc "|Trait A impl for cross-trait method conflict test")

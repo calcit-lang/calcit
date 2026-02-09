@@ -12,7 +12,7 @@
         |ActionImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait ActionTrait
-              :describe (:: :fn ('T) ('T) :string)
+              :describe :fn
             defimpl ActionTrait ActionImpl
               :describe $ fn (self)
                 tag-match self
@@ -40,7 +40,7 @@
                   ok-action $ make-ok 42
                   err-action $ make-err "|boom"
                 assert= true $ any? (&tuple:impls ok-action)
-                  fn (impl) $ includes? (str impl) |ActionTrait
+                  fn (impl) $ = (&impl:origin impl) ActionTrait
                 assert= "|(%:: :ok 42 (:impls ActionTrait) (:enum Result))" $ str ok-action
                 assert= "|Action ok -> 42" (.describe ok-action)
                 assert= "|Action err -> boom" (.describe err-action)

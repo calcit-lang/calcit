@@ -320,6 +320,9 @@ export let hashFunction = (x: CalcitValue): Hash => {
   if (x instanceof CalcitImpl) {
     let base = defaultHash_impl;
     base = mergeValueHash(base, hashFunction(x.name));
+    if (x.origin != null) {
+      base = mergeValueHash(base, hashFunction(x.origin));
+    }
     for (let idx = 0; idx < x.fields.length; idx++) {
       base = mergeValueHash(base, hashFunction(x.fields[idx]));
       base = mergeValueHash(base, hashFunction(x.values[idx]));
@@ -706,6 +709,12 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   if (x instanceof CalcitImpl) {
     if (y instanceof CalcitImpl) {
       if (x.name !== y.name) {
+        return false;
+      }
+      if ((x.origin == null) !== (y.origin == null)) {
+        return false;
+      }
+      if (x.origin != null && y.origin != null && x.origin.name.value !== y.origin.name.value) {
         return false;
       }
       if (!fieldsEqual(x.fields, y.fields)) {

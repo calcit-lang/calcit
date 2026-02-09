@@ -214,7 +214,7 @@
             defn test-record-methods ()
               ; 使用 impl-traits 挂载实现 Record methods
               let
-                  PersonImpl $ defimpl PersonImpl PersonImpl
+                  PersonImpl $ defimpl :PersonImpl PersonImpl
                     :greet $ fn (self) (str "|Hello, I'm " $ :name self)
                 let
                     alice $ impl-traits (:: :name |Alice :age 30) PersonImpl
@@ -324,7 +324,7 @@
 
         |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata")
           :code $ quote
-            defimpl StructImpl StructImpl
+            defimpl :StructImpl StructImpl
               :dummy nil
 
         |Result $ %{} :CodeEntry (:doc "|Enum prototype for type checks")
@@ -333,9 +333,14 @@
               :ok :number
               :err :string
 
+        |ResultTrait $ %{} :CodeEntry (:doc "|Trait definition for enum tuple tests")
+          :code $ quote
+            deftrait ResultTrait
+              :describe :fn
+
         |ResultImpl $ %{} :CodeEntry (:doc "|Trait impl for enum tuple tests")
           :code $ quote
-            defimpl ResultImpl ResultImpl
+            defimpl ResultTrait ResultImpl
               :describe $ fn (self)
                 tag-match self
                   (:ok value) (str "|ok " value)
@@ -343,7 +348,7 @@
 
         |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata")
           :code $ quote
-            defimpl EnumImpl EnumImpl
+            defimpl :EnumImpl EnumImpl
               :dummy nil
 
         |test-defstruct-defenum $ %{} :CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples")
@@ -357,9 +362,9 @@
                   ok $ impl-traits (%:: enum-with-impls :ok 1) ResultImpl
                 assert= :enum $ type-of enum-with-impls
                 assert= true $ any? (&tuple:impls ok)
-                  fn (impl) $ includes? (str impl) |ResultImpl
+                  fn (impl) $ = (&impl:origin impl) ResultTrait
                 assert= enum-with-impls $ &tuple:enum ok
-                assert= "|(%:: :ok 1 (:impls ResultImpl) (:enum Result))" $ str ok
+                assert= "|(%:: :ok 1 (:impls ResultTrait) (:enum Result))" $ str ok
               , "|defstruct/defenum checks passed"
 
         |main! $ %{} :CodeEntry (:doc |)

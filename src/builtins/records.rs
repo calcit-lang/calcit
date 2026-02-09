@@ -107,13 +107,14 @@ pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&impl::new expected arguments, but received none:", xs);
   }
-  let name_id: EdnTag = match &xs[0] {
-    Calcit::Symbol { sym, .. } => EdnTag(sym.to_owned()),
-    Calcit::Tag(k) => k.to_owned(),
-    Calcit::Str(s) => EdnTag(s.to_owned()),
+  let (name_id, origin) = match &xs[0] {
+    Calcit::Trait(trait_def) => (trait_def.name.to_owned(), Some(Arc::new(trait_def.to_owned()))),
+    Calcit::Symbol { sym, .. } => (EdnTag(sym.to_owned()), None),
+    Calcit::Tag(k) => (k.to_owned(), None),
+    Calcit::Str(s) => (EdnTag(s.to_owned()), None),
     a => {
       let msg = format!(
-        "&impl::new requires a name (symbol/tag/string), but received: {}",
+        "&impl::new requires a trait or name (symbol/tag/string), but received: {}",
         type_of(&[a.to_owned()])?.lisp_str()
       );
       let hint = format_proc_examples_hint(&CalcitProc::NativeImplNew).unwrap_or_default();
@@ -124,6 +125,7 @@ pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() == 1 {
     return Ok(Calcit::Impl(CalcitImpl {
       name: name_id,
+      origin,
       fields: Arc::new(vec![]),
       values: Arc::new(vec![]),
     }));
@@ -182,6 +184,7 @@ pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
   Ok(Calcit::Impl(CalcitImpl {
     name: name_id,
+    origin,
     fields: Arc::new(fields),
     values: Arc::new(values),
   }))
@@ -371,6 +374,7 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 fn enum_prototype_marker() -> CalcitImpl {
   CalcitImpl {
     name: EdnTag::new("enum-prototype"),
+    origin: None,
     fields: Arc::new(vec![]),
     values: Arc::new(vec![]),
   }
