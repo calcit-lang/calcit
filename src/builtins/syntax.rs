@@ -88,7 +88,7 @@ fn detect_return_type_hint(forms: &[Calcit]) -> Arc<CalcitTypeAnnotation> {
       return hint;
     }
   }
-  Arc::new(CalcitTypeAnnotation::Dynamic)
+  crate::calcit::DYNAMIC_TYPE.clone()
 }
 
 fn detect_fn_generics(forms: &[Calcit]) -> Arc<Vec<Arc<str>>> {
@@ -307,7 +307,7 @@ mod tests {
         at_def: Arc::from(def),
       }),
       location: None,
-      type_info: Arc::new(CalcitTypeAnnotation::Dynamic),
+      type_info: crate::calcit::DYNAMIC_TYPE.clone(),
     })
   }
 

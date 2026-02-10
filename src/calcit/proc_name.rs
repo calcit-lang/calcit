@@ -451,7 +451,7 @@ fn optional_dynamic() -> Arc<CalcitTypeAnnotation> {
 }
 
 fn dynamic_tag() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Dynamic)
+  crate::calcit::type_annotation::DYNAMIC_TYPE.clone()
 }
 
 fn variadic_dynamic() -> Arc<CalcitTypeAnnotation> {

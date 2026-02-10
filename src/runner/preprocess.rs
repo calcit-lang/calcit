@@ -194,10 +194,7 @@ pub fn preprocess_expr(
         let at_def = &info.at_def;
         // println!("def {} - {} {} {}", def, def_ns, file_ns, at_def);
         if scope_defs.contains(def) {
-          let type_info = scope_types
-            .get(def)
-            .cloned()
-            .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::Dynamic));
+          let type_info = scope_types.get(def).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
           Ok(Calcit::Local(CalcitLocal {
             idx: CalcitLocal::track_sym(def),
             sym: def.to_owned(),
@@ -606,12 +603,9 @@ fn preprocess_list_call(
               _ => None,
             };
             let type_info = if let Some(name) = sym_name {
-              scope_types
-                .get(name)
-                .cloned()
-                .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::Dynamic))
+              scope_types.get(name).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone())
             } else {
-              infer_type_from_expr(first_arg, scope_types).unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::Dynamic))
+              infer_type_from_expr(first_arg, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone())
             };
 
             let loc = head.get_location().or_else(|| first_arg.get_location());
@@ -1376,7 +1370,7 @@ fn detect_return_type_hint_from_processed_body(processed_body: &[Calcit]) -> Arc
       return hint;
     }
   }
-  Arc::new(CalcitTypeAnnotation::Dynamic)
+  crate::calcit::DYNAMIC_TYPE.clone()
 }
 
 /// Check function return type matches declared return_type
@@ -2481,7 +2475,7 @@ pub fn preprocess_defn(
                 at_def: info.at_def.to_owned(),
               }),
               location: arg_location.to_owned(),
-              type_info: Arc::new(CalcitTypeAnnotation::Dynamic),
+              type_info: crate::calcit::DYNAMIC_TYPE.clone(),
             });
             // println!("created local: {:?}", s);
             zs.push(s);
@@ -2594,7 +2588,7 @@ pub fn preprocess_core_let(
         let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
 
         // Try to infer type from the binding expression
-        let inferred_type = infer_type_from_expr(&form, &body_types).unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::Dynamic));
+        let inferred_type = infer_type_from_expr(&form, &body_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone());
 
         let name = Calcit::Local(CalcitLocal {
           idx: CalcitLocal::track_sym(sym),
@@ -2885,7 +2879,7 @@ pub fn preprocess_assert_traits(
       Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(trait_defs)))
     }
   } else {
-    fallback_entry.unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::Dynamic))
+    fallback_entry.unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone())
   };
 
   ctx.scope_types.insert(local.sym.to_owned(), resolved_entry.clone());
@@ -3248,7 +3242,7 @@ mod tests {
       args: Arc::new(fn_args),
       body: vec![],
       generics: Arc::new(vec![]),
-      return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
       arg_types,
     });
     let method_fn = Calcit::Fn {
@@ -3458,7 +3452,7 @@ mod tests {
         Arc::new(CalcitTypeAnnotation::from_tag_name("number")),
         Arc::new(CalcitTypeAnnotation::from_tag_name("string")),
       ],
-      return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
     };
 
     // Create arguments: ("|hello" 42) - reversed types
@@ -3585,7 +3579,7 @@ mod tests {
       args: Arc::new(CalcitFnArgs::Args(vec![1, 2])), // 2 parameters
       body: vec![Calcit::Nil],
       generics: Arc::new(vec![]),
-      return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
+      return_type: crate::calcit::DYNAMIC_TYPE.clone(),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::Number)],
     });
 

@@ -17,9 +17,13 @@ use super::{
 };
 use crate::program;
 
+use std::sync::LazyLock;
+
 thread_local! {
   static IMPORT_RESOLUTION_STACK: RefCell<Vec<(Arc<str>, Arc<str>)>> = const { RefCell::new(vec![]) };
 }
+
+pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::Dynamic));
 
 pub(crate) type TypeBindings = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
@@ -82,12 +86,12 @@ impl CalcitTypeAnnotation {
       "string" => Some(Self::String),
       "symbol" => Some(Self::Symbol),
       "tag" => Some(Self::Tag),
-      "list" => Some(Self::List(Arc::new(Self::Dynamic))),
-      "map" => Some(Self::Map(Arc::new(Self::Dynamic), Arc::new(Self::Dynamic))),
-      "set" => Some(Self::Set(Arc::new(Self::Dynamic))),
+      "list" => Some(Self::List(DYNAMIC_TYPE.clone())),
+      "map" => Some(Self::Map(DYNAMIC_TYPE.clone(), DYNAMIC_TYPE.clone())),
+      "set" => Some(Self::Set(DYNAMIC_TYPE.clone())),
       "tuple" => Some(Self::DynTuple),
       "fn" => Some(Self::DynFn),
-      "ref" => Some(Self::Ref(Arc::new(Self::Dynamic))),
+      "ref" => Some(Self::Ref(DYNAMIC_TYPE.clone())),
       "buffer" => Some(Self::Buffer),
       "cirru-quote" => Some(Self::CirruQuote),
       _ => None,
@@ -338,8 +342,7 @@ impl CalcitTypeAnnotation {
   /// arg types are sourced from `assert-type` inside function bodies. If no `assert-type` is found,
   /// the parameter stays `dynamic` and no checking occurs.
   pub fn collect_arg_type_hints_from_body(body_items: &[Calcit], params: &[Arc<str>]) -> Vec<Arc<CalcitTypeAnnotation>> {
-    let dynamic = Arc::new(CalcitTypeAnnotation::Dynamic);
-    let mut arg_types = vec![dynamic.clone(); params.len()];
+    let mut arg_types = vec![DYNAMIC_TYPE.clone(); params.len()];
     if params.is_empty() {
       return arg_types;
     }
@@ -472,7 +475,7 @@ impl CalcitTypeAnnotation {
     let is_ref_tag = |tag: &EdnTag| tag.ref_str().trim_start_matches(':') == "ref";
 
     if matches!(form, Calcit::Nil) {
-      return Arc::new(CalcitTypeAnnotation::Dynamic);
+      return DYNAMIC_TYPE.clone();
     }
 
     if let Some(type_var) = Self::parse_type_var_form(form) {

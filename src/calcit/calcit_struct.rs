@@ -17,8 +17,7 @@ pub struct CalcitStruct {
 
 impl CalcitStruct {
   pub fn from_fields(name: EdnTag, fields: Vec<EdnTag>) -> Self {
-    let dynamic = Arc::new(CalcitTypeAnnotation::Dynamic);
-    let field_types = vec![dynamic; fields.len()];
+    let field_types = vec![super::DYNAMIC_TYPE.clone(); fields.len()];
     let generics = Arc::new(vec![]);
     CalcitStruct {
       name,

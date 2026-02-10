@@ -42,13 +42,18 @@
   - `edit mv <source> <target>`：移动或重命名定义。
   - `tree cp <target> --from <path> -p <path> [--at <pos>]`：在 AST 节点间复制内容，支持 `before`, `after` (默认), `prepend-child`, `append-child`, `replace`。
 
-## 核心设计约定
+## 性能与资源验证
 
-### 类型系统 (CalcitTypeAnnotation)
+### 技术基准
 
-- **去 Option 化**：`CalcitFn`, `ProcTypeSignature`, `CalcitLocal`, `MethodKind` 等结构中，类型标注统一使用 `Arc<CalcitTypeAnnotation>`，不再使用 `Option`。
-- **默认通配符**：使用 `CalcitTypeAnnotation::Dynamic` 作为强制性的默认值（替代 `None`），在检查中作为通识通配符。
-- **性能优化**：初始化类型列表时，应当共享同一个 `Dynamic` 的 `Arc` 实例（避免 RC 对象重复创建，符合 Clippy 规范）。
+- **启动耗时验证**：使用 `time ./target/release/cr calcit/test.cirru -1`。核心库加载应控制在 **~10ms**。若数值大幅增加，需检查 `build.rs` 的序列化或 `include_bytes!` 是否失效。
+- **构建体积监控**：使用 `ls -lh target/release/cr` 观察产物。目标应控制在 **5MB** 以内。引入新依赖前务必检查其 Transitive Dependencies，优先选择同步轻量库（如 `ureq`）。
+- **IO 纯净度检测**：确保 stdout 仅保留程序逻辑输出。版本信息、预热日志、告警均应通过 `eprintln!` 输出至 stderr。验证：`./cr -v > /dev/null` 不应有任何输出。
+
+### 内存性能检查
+
+- **高频分配规约**：在 Preprocessing 阶段，严禁在循环内调用 `Arc::new(CalcitTypeAnnotation::Dynamic)`。应始终 clone 单例 `crate::calcit::DYNAMIC_TYPE`。
+- **验证手段**：对于大规模 Cirru 项目的预处理，可通过 `repeat 10 { time ./target/release/cr ... }` 观察耗时抖动。若抖动剧烈，通常预示着堆内存申请频率过高或冷热数据加载策略存在问题。
 
 ## 项目结构概览
 

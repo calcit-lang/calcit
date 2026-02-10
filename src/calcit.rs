@@ -42,7 +42,7 @@ pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
 pub use syntax_name::CalcitSyntax;
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
-pub use type_annotation::{CalcitFnTypeAnnotation, CalcitTypeAnnotation};
+pub use type_annotation::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, DYNAMIC_TYPE};
 
 use crate::builtins::ValueAndListeners;
 use crate::call_stack::CallStackList;

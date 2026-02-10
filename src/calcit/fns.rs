@@ -44,8 +44,7 @@ impl CalcitFnArgs {
 
   /// Produce a Vec<Arc<...>> aligned with current parameter arity for storing type hints.
   pub fn empty_arg_types(&self) -> Vec<Arc<CalcitTypeAnnotation>> {
-    let data = Arc::new(CalcitTypeAnnotation::Dynamic);
-    vec![data; self.param_len()]
+    vec![super::DYNAMIC_TYPE.clone(); self.param_len()]
   }
 }
 
