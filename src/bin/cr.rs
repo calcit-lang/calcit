@@ -59,8 +59,11 @@ fn main() -> Result<(), String> {
   let is_eval_mode = matches!(&cli_args.subcommand, Some(CalcitCommand::Eval(_)));
   let assets_watch = cli_args.watch_dir.to_owned();
 
-  println!("{}", format!("calcit version: {}", cli_args::CALCIT_VERSION).dimmed());
+  if !cli_args.version {
+    eprintln!("{}", format!("calcit version: {}", cli_args::CALCIT_VERSION).dimmed());
+  }
   if cli_args.version {
+    println!("{}", cli_args::CALCIT_VERSION);
     return Ok(());
   }
 
@@ -75,7 +78,7 @@ fn main() -> Result<(), String> {
   let module_folder = home_dir()
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
     .expect("failed to load $HOME");
-  println!(
+  eprintln!(
     "{}",
     format!("module folder: {}", module_folder.to_str().expect("extract path")).dimmed()
   );
@@ -413,7 +416,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   let started_time = Instant::now();
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
-  println!("{}", "Check-only mode: validating code...".dimmed());
+  eprintln!("{}", "Check-only mode: validating code...".dimmed());
 
   // preprocess init_fn
   match runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default()) {
