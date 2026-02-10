@@ -351,7 +351,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
           if (!deepEqual(v.fields, fields)) {
             throw new Error(`Fields mismatch for ${name}, expected ${fields}, got ${v.fields}`);
           }
-          return new CalcitRecord(extractFieldTag(name), fields, values, v.impls);
+          return new CalcitRecord(extractFieldTag(name), fields, values, v.structRef);
         }
       }
 
@@ -397,8 +397,7 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
         x
           .slice(2)
           .filter(notComment)
-          .map((x) => extract_cirru_edn(x, options)),
-        []
+          .map((x) => extract_cirru_edn(x, options))
       );
     }
     if (x[0] === "%::") {
@@ -419,7 +418,6 @@ export let extract_cirru_edn = (x: CirruEdnFormat, options: CalcitValue): Calcit
           .slice(3)
           .filter(notComment)
           .map((x) => extract_cirru_edn(x, options)),
-        [],
         enumPrototype
       );
     }

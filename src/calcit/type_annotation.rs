@@ -790,8 +790,8 @@ impl CalcitTypeAnnotation {
       }
     }
 
-    if let Some(expected_impl) = expected.impls.first() {
-      match actual.impls.first() {
+    if let Some(expected_impl) = expected.impls().first() {
+      match actual.impls().first() {
         Some(actual_impl) if actual_impl.name() == expected_impl.name() => {}
         _ => return false,
       }
@@ -1101,14 +1101,12 @@ impl CalcitTypeAnnotation {
       Self::Variadic(inner) => Calcit::Tuple(CalcitTuple {
         tag: Arc::new(Calcit::Tag(EdnTag::from("&"))),
         extra: vec![inner.to_calcit()],
-        impls: vec![],
         sum_type: None,
       }),
       Self::Custom(value) => value.as_ref().to_owned(),
       Self::Optional(inner) => Calcit::Tuple(CalcitTuple {
         tag: Arc::new(Calcit::Tag(EdnTag::from("optional"))),
         extra: vec![inner.to_calcit()],
-        impls: vec![],
         sum_type: None,
       }),
       Self::Struct(struct_def) => Calcit::Struct((**struct_def).clone()),
@@ -1449,7 +1447,6 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnum> {
   let record = CalcitRecord {
     struct_ref: Arc::new(struct_ref),
     values: Arc::new(values),
-    impls: vec![],
   };
   CalcitEnum::from_record(record).ok()
 }

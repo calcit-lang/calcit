@@ -453,7 +453,7 @@ fn tuple_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
   ];
   {
     let mut impls_list = EdnListView::default();
-    for imp in &tuple.impls {
+    for imp in tuple.impls() {
       impls_list.push(Edn::Str(imp.name().ref_str().into()));
     }
     if !impls_list.is_empty() {
@@ -473,7 +473,7 @@ fn tuple_type_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
   ];
   {
     let mut impls_list = EdnListView::default();
-    for imp in &tuple.impls {
+    for imp in tuple.impls() {
       impls_list.push(Edn::Str(imp.name().ref_str().into()));
     }
     if !impls_list.is_empty() {
@@ -578,7 +578,7 @@ fn record_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
   ];
   {
     let mut impls_list = EdnListView::default();
-    for imp in &record.impls {
+    for imp in &record.struct_ref.impls {
       impls_list.push(Edn::Str(imp.name().ref_str().into()));
     }
     if !impls_list.is_empty() {
@@ -595,7 +595,7 @@ fn record_type_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
   ];
   {
     let mut impls_list = EdnListView::default();
-    for imp in &record.impls {
+    for imp in &record.struct_ref.impls {
       impls_list.push(Edn::Str(imp.name().ref_str().into()));
     }
     if !impls_list.is_empty() {

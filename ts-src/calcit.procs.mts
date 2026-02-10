@@ -230,7 +230,7 @@ export let defenum = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnum
   const tags = entries.map((entry) => entry.tag);
   const values = entries.map((entry) => entry.payload);
   const prototype = new CalcitRecord(enumName, tags, values, null);
-  return new CalcitEnum(prototype, null);
+  return new CalcitEnum(prototype);
 };
 
 export let _$n_impl_$o__$o_new = (name: CalcitValue, ...pairs: CalcitValue[]): CalcitImpl => {
@@ -509,14 +509,26 @@ export let _$n_tuple_$o_with_impls = function (x: CalcitTuple, y: CalcitValue) {
   if (arguments.length !== 2) throw new Error("&tuple:with-impls takes 2 arguments");
   if (!(x instanceof CalcitTuple)) throw new Error("&tuple:with-impls expects a tuple");
   const impl = coerce_impl(y, "&tuple:with-impls");
-  return new CalcitTuple(x.tag, x.extra, [impl], x.enumPrototype);
+  let proto = x.enumPrototype;
+  if (proto == null) {
+    proto = new CalcitEnum(new CalcitRecord(newTag("anonymous-tuple"), [], [], new CalcitStruct(newTag("anonymous-tuple"), [], [])));
+  }
+  return new CalcitTuple(x.tag, x.extra, proto.withImpls(impl));
 };
 
 export let _$n_tuple_$o_impl_traits = function (x: CalcitValue, ...traits: CalcitValue[]) {
   if (traits.length < 1) throw new Error("&tuple:impl-traits takes 2+ arguments");
   if (!(x instanceof CalcitTuple)) throw new Error("&tuple:impl-traits expects a tuple");
   const impls = traits.map((trait) => coerce_impl(trait, "&tuple:impl-traits"));
-  return new CalcitTuple(x.tag, x.extra, x.impls.concat(impls), x.enumPrototype);
+  let proto = x.enumPrototype;
+  if (proto == null) {
+    const tagName = x.tag instanceof CalcitTag ? x.tag : newTag("tag");
+    const anyTypes = new CalcitSliceList(new Array(x.extra.length).fill(newTag("any")));
+    proto = new CalcitEnum(
+      new CalcitRecord(newTag("anonymous-tuple"), [tagName], [anyTypes], new CalcitStruct(newTag("anonymous-tuple"), [tagName], [anyTypes]))
+    );
+  }
+  return new CalcitTuple(x.tag, x.extra, proto.withImpls(impls));
 };
 
 export let _$n_tuple_$o_enum = function (x: CalcitTuple) {
@@ -528,7 +540,7 @@ export let _$n_tuple_$o_enum = function (x: CalcitTuple) {
   if (x.enumPrototype instanceof CalcitEnum) {
     return x.enumPrototype;
   }
-  return new CalcitEnum(x.enumPrototype as CalcitRecord, null);
+  return new CalcitEnum(x.enumPrototype as CalcitRecord);
 };
 
 const unwrap_enum_prototype = (enumPrototype: CalcitValue, procName: string): CalcitRecord => {
@@ -650,7 +662,7 @@ export let _$n_record_$o_assoc = function (xs: CalcitValue, k: CalcitValue, v: C
 
 export let _$n_record_$o_impls = function (xs: CalcitValue) {
   if (arguments.length !== 1) throw new Error("&record:impls takes 1 argument");
-  if (xs instanceof CalcitRecord) return new CalcitSliceList(xs.impls);
+  if (xs instanceof CalcitRecord) return new CalcitSliceList(xs.structRef.impls);
   throw new Error("&record:impls expected a record");
 };
 
@@ -658,7 +670,8 @@ export let _$n_record_$o_impl_traits = function (xs: CalcitValue, ...traits: Cal
   if (traits.length < 1) throw new Error("&record:impl-traits takes 2+ arguments");
   if (!(xs instanceof CalcitRecord)) throw new Error("&record:impl-traits expected a record");
   const impls = traits.map((trait) => coerce_impl(trait, "&record:impl-traits"));
-  return new CalcitRecord(xs.name, xs.fields, xs.values, xs.impls.concat(impls));
+  const nextStruct = new CalcitStruct(xs.name, xs.fields, xs.structRef.fieldTypes, xs.structRef.impls.concat(impls));
+  return new CalcitRecord(xs.name, xs.fields, xs.values, nextStruct);
 };
 
 export let _$n_struct_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
@@ -673,11 +686,11 @@ export let _$n_enum_$o_impl_traits = function (xs: CalcitValue, ...traits: Calci
   if (traits.length < 1) throw new Error("&enum:impl-traits takes 2+ arguments");
   const addedImpls = traits.map((trait) => coerce_impl(trait, "&enum:impl-traits"));
   if (xs instanceof CalcitEnum) {
-    const baseImpls = xs.impls ?? [];
-    return new CalcitEnum(xs.prototype, baseImpls.concat(addedImpls));
+    return xs.withImpls(addedImpls);
   }
   if (xs instanceof CalcitRecord) {
-    return new CalcitRecord(xs.name, xs.fields, xs.values, xs.impls.concat(addedImpls));
+    const nextStruct = new CalcitStruct(xs.name, xs.fields, xs.structRef.fieldTypes, xs.structRef.impls.concat(addedImpls));
+    return new CalcitRecord(xs.name, xs.fields, xs.values, nextStruct);
   }
   throw new Error("&enum:impl-traits expected an enum or enum record");
 };
@@ -1610,7 +1623,7 @@ export let _$n_js_object = (...xs: CalcitValue[]): Record<string, CalcitValue> =
 };
 
 export let _$o__$o_ = (tagName: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
-  return new CalcitTuple(tagName, extra, [], null);
+  return new CalcitTuple(tagName, extra, null);
 };
 
 export let _PCT__$o__$o_ = (enumPrototype: CalcitValue, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
@@ -1633,7 +1646,7 @@ export let _PCT__$o__$o_ = (enumPrototype: CalcitValue, tag: CalcitValue, ...ext
   }
 
   const tupleEnumPrototype = enumPrototype instanceof CalcitEnum ? enumPrototype : proto;
-  return new CalcitTuple(tag, extra, [], tupleEnumPrototype);
+  return new CalcitTuple(tag, extra, tupleEnumPrototype);
 };
 
 export let _PCT__PCT__$o__$o_ = (impl: CalcitValue, enumPrototype: CalcitValue, tag: CalcitValue, ...extra: CalcitValue[]): CalcitTuple => {
@@ -1656,9 +1669,9 @@ export let _PCT__PCT__$o__$o_ = (impl: CalcitValue, enumPrototype: CalcitValue, 
     throw new Error(`Expected variant definition to be a list, got ${variantDefinition}`);
   }
 
-  const tupleEnumPrototype = enumPrototype instanceof CalcitEnum ? enumPrototype : proto;
+  const tupleEnumPrototype = enumPrototype instanceof CalcitEnum ? enumPrototype : (proto as any);
   const implValue = coerce_impl(impl, "%:: with impl");
-  return new CalcitTuple(tag, extra, [implValue], tupleEnumPrototype);
+  return new CalcitTuple(tag, extra, tupleEnumPrototype.withImpls(implValue));
 };
 
 // mutable place for core to register
@@ -1708,7 +1721,7 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
     impls = normalize_builtin_impls(calcit_builtin_impls.map);
   } else if (obj instanceof CalcitRecord) {
     tag = obj.name.toString();
-    impls = obj.impls;
+    impls = obj.structRef.impls;
   } else if (obj instanceof CalcitTuple) {
     tag = obj.tag.toString();
     impls = obj.impls;

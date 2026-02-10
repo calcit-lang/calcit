@@ -180,11 +180,11 @@ export let load_console_formatter_$x_ = () => {
             );
           }
           if (obj instanceof CalcitRecord) {
-            if (obj.impls.length > 0) {
+            if (obj.structRef.impls.length > 0) {
               let ret: any[] = div(
                 { color: hsl(280, 80, 60, 0.4), maxWidth: "100%" },
                 span({}, "%{}"),
-                span({ marginLeft: "6px" }, embedObject(obj.impls[0])),
+                span({ marginLeft: "6px" }, embedObject(obj.structRef.impls[0])),
                 span({ marginLeft: "6px" }, embedObject(obj.name)),
                 span({ marginLeft: "6px" }, `...`)
               );

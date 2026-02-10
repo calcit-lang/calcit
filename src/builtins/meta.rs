@@ -2,8 +2,8 @@ use crate::{
   builtins,
   calcit::{
     self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
-    CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF, format_proc_examples_hint,
-    gen_core_id,
+    CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF,
+    format_proc_examples_hint, gen_core_id,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -16,6 +16,7 @@ use crate::{
   util::number::f64_to_usize,
 };
 
+use cirru_edn::EdnTag;
 use cirru_parser::Cirru;
 
 use std::sync::atomic::AtomicUsize;
@@ -397,7 +398,6 @@ pub fn new_tuple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Ok(Calcit::Tuple(CalcitTuple {
       tag: Arc::new(xs[0].to_owned()),
       extra,
-      impls: vec![],
       sum_type: None,
     }))
   }
@@ -453,7 +453,6 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Tuple(CalcitTuple {
           tag: Arc::new(xs[1].to_owned()),
           extra,
-          impls: vec![],
           sum_type: Some(Arc::new(enum_proto)),
         }))
       }
@@ -493,7 +492,6 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Tuple(CalcitTuple {
           tag: Arc::new(xs[1].to_owned()),
           extra,
-          impls: vec![],
           sum_type: Some(Arc::new(enum_proto)),
         }))
       }
@@ -542,13 +540,10 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
       }
       Calcit::Tuple(tuple) => {
-        let extra = tuple.extra.iter().map(normalize_type_form).collect::<Vec<_>>();
-        Calcit::Tuple(CalcitTuple {
-          tag: tuple.tag.to_owned(),
-          extra,
-          impls: tuple.impls.to_owned(),
-          sum_type: tuple.sum_type.to_owned(),
-        })
+        let tag = tuple.tag.to_owned();
+        let extra = tuple.extra.to_owned();
+        let sum_type = tuple.sum_type.to_owned();
+        Calcit::Tuple(CalcitTuple { tag, extra, sum_type })
       }
       _ => form.to_owned(),
     }
@@ -675,12 +670,14 @@ pub fn record_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Record(record) => {
-      let mut impls = record.impls.clone();
+      let mut impls = record.struct_ref.impls.clone();
       impls.extend(collect_trait_records(&xs[1..], "&record:impl-traits")?);
+      let mut next_struct = (*record.struct_ref).clone();
+      next_struct.impls = impls;
+
       Ok(Calcit::Record(CalcitRecord {
-        struct_ref: record.struct_ref.to_owned(),
+        struct_ref: Arc::new(next_struct),
         values: record.values.to_owned(),
-        impls,
       }))
     }
     other => CalcitErr::err_str(
@@ -695,19 +692,35 @@ pub fn tuple_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:impl-traits expected 2+ arguments, but received:", xs);
   }
   match &xs[0] {
-    Calcit::Tuple(CalcitTuple {
-      tag,
-      extra,
-      impls,
-      sum_type,
-    }) => {
-      let mut next_impls = impls.clone();
-      next_impls.extend(collect_trait_records(&xs[1..], "&tuple:impl-traits")?);
+    Calcit::Tuple(tuple) => {
+      let mut next_sum_type = match &tuple.sum_type {
+        Some(s) => (**s).clone(),
+        None => {
+          let tag_name = match &*tuple.tag {
+            Calcit::Tag(t) => t.to_owned(),
+            _ => EdnTag::from("tag"),
+          };
+          let record = CalcitRecord {
+            struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("anonymous-tuple"), vec![tag_name])),
+            values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::from(
+              &vec![Calcit::tag("any"); tuple.extra.len()][..],
+            )))]),
+          };
+          CalcitEnum::from_record(record).map_err(|msg| {
+            CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Type,
+              format!("failed to create anonymous enum for tuple, {msg}"),
+              &CallStackList::default(),
+              tuple.tag.get_location(),
+            )
+          })?
+        }
+      };
+      next_sum_type.impls.extend(collect_trait_records(&xs[1..], "&tuple:impl-traits")?);
       Ok(Calcit::Tuple(CalcitTuple {
-        tag: tag.to_owned(),
-        extra: extra.to_owned(),
-        impls: next_impls,
-        sum_type: sum_type.to_owned(),
+        tag: tuple.tag.to_owned(),
+        extra: tuple.extra.to_owned(),
+        sum_type: Some(Arc::new(next_sum_type)),
       }))
     }
     other => CalcitErr::err_str(
@@ -724,9 +737,9 @@ pub fn struct_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::Struct(struct_def) => {
       let mut next = struct_def.to_owned();
-      let mut impls = next.impls.clone();
-      impls.extend(collect_trait_records(&xs[1..], "&struct:impl-traits")?);
-      next.impls = impls;
+      let mut next_impls = next.impls.clone();
+      next_impls.extend(collect_trait_records(&xs[1..], "&struct:impl-traits")?);
+      next.impls = next_impls;
       Ok(Calcit::Struct(next))
     }
     other => CalcitErr::err_str(
@@ -741,21 +754,20 @@ pub fn enum_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&enum:impl-traits expected 2+ arguments, but received:", xs);
   }
   match &xs[0] {
-    Calcit::Record(enum_record) => {
-      let mut impls = enum_record.impls.clone();
-      impls.extend(collect_trait_records(&xs[1..], "&enum:impl-traits")?);
-      Ok(Calcit::Record(CalcitRecord {
-        struct_ref: enum_record.struct_ref.to_owned(),
-        values: enum_record.values.to_owned(),
-        impls,
-      }))
-    }
     Calcit::Enum(enum_def) => {
       let mut next = enum_def.to_owned();
-      let mut impls = next.impls().to_vec();
-      impls.extend(collect_trait_records(&xs[1..], "&enum:impl-traits")?);
-      next.set_impls(impls);
+      next.impls.extend(collect_trait_records(&xs[1..], "&enum:impl-traits")?);
       Ok(Calcit::Enum(next))
+    }
+    Calcit::Record(record) => {
+      let mut impls = record.struct_ref.impls.clone();
+      impls.extend(collect_trait_records(&xs[1..], "&enum:impl-traits")?);
+      let mut next_struct = (*record.struct_ref).clone();
+      next_struct.impls = impls;
+      Ok(Calcit::Record(CalcitRecord {
+        struct_ref: Arc::new(next_struct),
+        values: record.values.to_owned(),
+      }))
     }
     other => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -909,8 +921,8 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   use Calcit::*;
   match v0 {
     // user-defined values: impl-traits appends, so later impls override earlier ones
-    Tuple(CalcitTuple { impls, .. }) => method_call_impls(impls, v0, name, method_args, call_stack, true),
-    Record(CalcitRecord { impls, .. }) => method_call_impls(impls, v0, name, method_args, call_stack, true),
+    Tuple(tuple) => method_call_impls(tuple.impls(), v0, name, method_args, call_stack, true),
+    Record(record) => method_call_impls(&record.struct_ref.impls, v0, name, method_args, call_stack, true),
 
     // builtin values should already be preprocessed
     List(..) => {
@@ -1113,21 +1125,12 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:assoc expected 3 arguments, but received:", xs);
   }
   match (&xs[0], &xs[1]) {
-    (
-      Calcit::Tuple(CalcitTuple {
-        tag,
-        extra,
-        impls,
-        sum_type,
-      }),
-      Calcit::Number(n),
-    ) => match f64_to_usize(*n) {
+    (Calcit::Tuple(CalcitTuple { tag, extra, sum_type }), Calcit::Number(n)) => match f64_to_usize(*n) {
       Ok(idx) => {
         if idx == 0 {
           Ok(Calcit::Tuple(CalcitTuple {
             tag: Arc::new(xs[2].to_owned()),
             extra: extra.to_owned(),
-            impls: impls.clone(),
             sum_type: sum_type.to_owned(),
           }))
         } else if idx - 1 < extra.len() {
@@ -1136,7 +1139,6 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Ok(Calcit::Tuple(CalcitTuple {
             tag: tag.to_owned(),
             extra: new_extra,
-            impls: impls.clone(),
             sum_type: sum_type.to_owned(),
           }))
         } else {
@@ -1182,8 +1184,8 @@ pub fn tuple_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&tuple:impls expected 1 argument, but received:", xs);
   }
   match &xs[0] {
-    Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(Calcit::from(
-      impls.iter().map(|imp| Calcit::Impl((**imp).to_owned())).collect::<Vec<_>>(),
+    Calcit::Tuple(tuple) => Ok(Calcit::from(
+      tuple.impls().iter().map(|imp| Calcit::Impl((**imp).to_owned())).collect::<Vec<_>>(),
     )),
     x => {
       let msg = format!(
@@ -1222,8 +1224,8 @@ pub fn tuple_params(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 fn collect_impl_records_for_value(value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
   match value {
-    Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(impls.to_owned()),
-    Calcit::Record(CalcitRecord { impls, .. }) => Ok(impls.to_owned()),
+    Calcit::Tuple(tuple) => Ok(tuple.impls().to_owned()),
+    Calcit::Record(record) => Ok(record.struct_ref.impls.to_owned()),
     Calcit::List(..) => {
       let impls_value = runner::evaluate_symbol_from_program("&core-list-impls", calcit::CORE_NS, None, call_stack)?;
       collect_impl_records_from_value(&impls_value, call_stack)

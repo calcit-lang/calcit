@@ -25,7 +25,7 @@ use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
 
 thread_local! {
-  static INLINE_ALL_ARGS: Cell<bool> = Cell::new(false);
+  static INLINE_ALL_ARGS: Cell<bool> = const { Cell::new(false) };
 }
 
 struct ImportsDict(HashSet<CalcitImport>);
@@ -1061,7 +1061,7 @@ fn gen_call_args_with_temps(
         };
 
         if spreading {
-          write!(args_code, "...{}listToArray({})", var_prefix, arg_code).expect("write");
+          write!(args_code, "...{var_prefix}listToArray({arg_code})").expect("write");
           spreading = false;
         } else {
           args_code.push_str(&arg_code);

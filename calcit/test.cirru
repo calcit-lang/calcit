@@ -308,7 +308,7 @@
                 assert=
                   &tuple:params $ :: :a 1 2 3
                   [] 1 2 3
-                assert= "|(:: :a 1 (:impls %demo))" $ str b
+                assert= "|(%:: :a 1 (:enum anonymous-tuple))" $ str b
               assert= "|(:: :a :b :c)" $ str (:: :a :b :c)
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote

@@ -26,7 +26,7 @@ pub struct CalcitEnum {
   prototype: Arc<CalcitRecord>,
   variants: Arc<Vec<EnumVariant>>,
   /// Trait implementations attached to this enum (multiple allowed for composition)
-  impls: Vec<Arc<CalcitImpl>>,
+  pub impls: Vec<Arc<CalcitImpl>>,
   /// Precomputed index for O(1) lookup by tag name; avoids linear scans on frequent queries.
   variant_index: Arc<HashMap<String, usize>>,
 }
@@ -38,7 +38,7 @@ impl CalcitEnum {
 
   pub fn from_arc(record: Arc<CalcitRecord>) -> Result<Self, String> {
     let (variants, variant_index) = Self::collect_variants(&record)?;
-    let impls = record.impls.clone();
+    let impls = record.struct_ref.impls.clone();
     Ok(Self {
       prototype: record,
       variants: Arc::new(variants),
@@ -141,7 +141,6 @@ mod tests {
         vec![EdnTag::new("err"), EdnTag::new("ok")],
       )),
       values: Arc::new(vec![list_from(vec![Calcit::tag("string")]), empty_list()]),
-      impls: vec![],
     }
   }
 

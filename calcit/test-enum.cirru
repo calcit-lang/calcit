@@ -40,7 +40,7 @@
                     ok-impl $ impl-traits valid-ok ResultImpl
                   assert= true $ any? (&tuple:impls ok-impl)
                     fn (impl) $ includes? (str impl) |ResultTrait
-                  assert= "|(%:: :ok (:impls ResultTrait) (:enum Result0))" $ str ok-impl
+                  assert= "|(%:: :ok (:enum Result0))" $ str ok-impl
               let
                   valid-err $ %:: Result0 :err |error-msg
                 assert= :err $ &tuple:nth valid-err 0

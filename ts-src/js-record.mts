@@ -5,13 +5,15 @@ import { newTag, castTag, toString, CalcitTag, getStringName, findInFields } fro
 
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 
+import { CalcitStruct } from "./js-struct.mjs";
+
 export class CalcitRecord {
   name: CalcitTag;
   fields: Array<CalcitTag>;
   values: Array<CalcitValue>;
-  impls: Array<CalcitImpl>;
+  structRef: CalcitStruct;
   cachedHash: Hash;
-  constructor(name: CalcitTag, fields: Array<CalcitTag>, values?: Array<CalcitValue>, impls?: Array<CalcitImpl>) {
+  constructor(name: CalcitTag, fields: Array<CalcitTag>, values?: Array<CalcitValue>, structRef?: CalcitStruct) {
     this.name = name;
     let fieldNames = fields.map(castTag);
     this.fields = fields;
@@ -24,7 +26,7 @@ export class CalcitRecord {
       this.values = new Array(fieldNames.length);
     }
     this.cachedHash = null;
-    this.impls = impls || [];
+    this.structRef = structRef || new CalcitStruct(name, fields, new Array(fields.length).fill(null));
   }
   get(k: CalcitValue) {
     let field = castTag(k);
@@ -54,7 +56,7 @@ export class CalcitRecord {
         values[idx] = this.values[idx];
       }
     }
-    return new CalcitRecord(this.name, this.fields, values, this.impls);
+    return new CalcitRecord(this.name, this.fields, values, this.structRef);
   }
   /** return -1 for missing */
   findIndex(k: CalcitValue) {
@@ -75,12 +77,17 @@ export class CalcitRecord {
     parts.push(")");
     return parts.join("");
   }
-  withImpls(impl: CalcitValue): CalcitRecord {
+  withImpls(impl: CalcitValue | CalcitImpl[]): CalcitRecord {
+    let nextImpls: CalcitImpl[];
     if (impl instanceof CalcitImpl) {
-      return new CalcitRecord(this.name, this.fields, this.values, [impl]);
+      nextImpls = [impl];
+    } else if (Array.isArray(impl)) {
+      nextImpls = impl;
     } else {
-      throw new Error("Expected an impl");
+      throw new Error("Expected an impl or array of impls");
     }
+    let nextStruct = new CalcitStruct(this.name, this.fields, this.structRef.fieldTypes, this.structRef.impls.concat(nextImpls));
+    return new CalcitRecord(this.name, this.fields, this.values, nextStruct);
   }
 }
 
@@ -107,7 +114,9 @@ export let new_impl_record = (impl: CalcitImpl, name: CalcitValue, ...fields: Ar
       throw new Error(`Unexpected duplication in record fields: ${x.toString()}`);
     }
   });
-  return new CalcitRecord(castTag(name), fieldNames, undefined, [impl]);
+  let nameTag = castTag(name);
+  let structRef = new CalcitStruct(nameTag, fieldNames, new Array(fieldNames.length).fill(null), [impl]);
+  return new CalcitRecord(nameTag, fieldNames, undefined, structRef);
 };
 
 export let fieldsEqual = (xs: Array<CalcitTag>, ys: Array<CalcitTag>): boolean => {
@@ -155,7 +164,7 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
       values[i] = xs[idx * 2 + 1];
     }
 
-    return new CalcitRecord(proto.name, proto.fields, values, proto.impls);
+    return new CalcitRecord(proto.name, proto.fields, values, proto.structRef);
   } else {
     throw new Error("Expected prototype to be a record");
   }
@@ -177,7 +186,7 @@ export let _$n_record_$o_with = (proto: CalcitValue, ...xs: Array<CalcitValue>):
       }
       values[idx] = v;
     }
-    return new CalcitRecord(proto.name, proto.fields, values, proto.impls);
+    return new CalcitRecord(proto.name, proto.fields, values, proto.structRef);
   } else {
     throw new Error("Expected prototype to be a record");
   }

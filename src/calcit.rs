@@ -158,46 +158,21 @@ impl fmt::Display for Calcit {
       },
       CirruQuote(code) => f.write_str(&format!("(&cirru-quote {code})")),
       Ref(name, _locked_pair) => f.write_str(&format!("(&ref {name} ...)")),
-      Tuple(CalcitTuple {
-        tag,
-        extra,
-        impls,
-        sum_type,
-      }) => match (impls.first(), sum_type) {
-        (Some(imp), Some(sum_type)) => {
+      Tuple(tuple) => match &tuple.sum_type {
+        Some(sum_type) => {
           f.write_str("(%:: ")?;
-          f.write_str(&tag.to_string())?;
-          for item in extra {
-            f.write_char(' ')?;
-            f.write_str(&item.to_string())?;
-          }
-          f.write_str(&format!(" (:impls {}) (:enum {})", imp.name(), sum_type.name()))?;
-          f.write_str(")")
-        }
-        (Some(imp), None) => {
-          f.write_str("(:: ")?;
-          f.write_str(&tag.to_string())?;
-          for item in extra {
-            f.write_char(' ')?;
-            f.write_str(&item.to_string())?;
-          }
-          f.write_str(&format!(" (:impls {})", imp.name()))?;
-          f.write_str(")")
-        }
-        (None, Some(sum_type)) => {
-          f.write_str("(%:: ")?;
-          f.write_str(&tag.to_string())?;
-          for item in extra {
+          f.write_str(&tuple.tag.to_string())?;
+          for item in &tuple.extra {
             f.write_char(' ')?;
             f.write_str(&item.to_string())?;
           }
           f.write_str(&format!(" (:enum {})", sum_type.name()))?;
           f.write_str(")")
         }
-        (None, None) => {
+        None => {
           f.write_str("(:: ")?;
-          f.write_str(&tag.to_string())?;
-          for item in extra {
+          f.write_str(&tuple.tag.to_string())?;
+          for item in &tuple.extra {
             f.write_char(' ')?;
             f.write_str(&item.to_string())?;
           }
@@ -459,7 +434,7 @@ impl Hash for Calcit {
         "ref:".hash(_state);
         name.hash(_state);
       }
-      Tuple(CalcitTuple { tag, extra, .. }) => {
+      Tuple(CalcitTuple { tag, extra, sum_type: _ }) => {
         "tuple:".hash(_state);
         tag.hash(_state);
         extra.hash(_state);

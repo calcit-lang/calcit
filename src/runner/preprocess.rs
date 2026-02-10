@@ -2076,7 +2076,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
 }
 
 fn infer_enum_tuple_annotation(proc: &CalcitProc, xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
-  let (class_record, enum_proto, tag_arg) = match proc {
+  let (enum_proto, tag_arg) = match proc {
     CalcitProc::NativeEnumTupleNew => {
       if xs.len() < 3 {
         return None;
@@ -2084,7 +2084,7 @@ fn infer_enum_tuple_annotation(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       let enum_arg = xs.get(1)?;
       let tag_arg = xs.get(2);
       let enum_proto = resolve_enum_value(enum_arg, scope_types)?;
-      (None, enum_proto, tag_arg)
+      (enum_proto, tag_arg)
     }
     _ => return None,
   };
@@ -2096,7 +2096,6 @@ fn infer_enum_tuple_annotation(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   let tuple = CalcitTuple {
     tag: Arc::new(tag_value),
     extra: vec![],
-    impls: class_record.map(|c| vec![Arc::new(c)]).unwrap_or_default(),
     sum_type: Some(Arc::new(enum_proto)),
   };
 
@@ -2156,7 +2155,6 @@ fn infer_struct_literal_type(xs: &CalcitList) -> Option<Arc<CalcitTypeAnnotation
   let record = CalcitRecord {
     struct_ref: Arc::new(struct_def),
     values: Arc::new(vec![Calcit::Nil; field_names.len()]),
-    impls: vec![],
   };
 
   Some(Arc::new(CalcitTypeAnnotation::Record(Arc::new(record))))
@@ -2250,7 +2248,6 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
       Some(CalcitRecord {
         struct_ref: Arc::new(struct_def.to_owned()),
         values: Arc::new(values),
-        impls: struct_def.impls.clone(),
       })
     }
     Calcit::Import(CalcitImport { ns, def, .. }) => match program::lookup_evaled_def(ns, def) {
@@ -2261,7 +2258,6 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
         Some(CalcitRecord {
           struct_ref: Arc::new(struct_def.to_owned()),
           values: Arc::new(values),
-          impls: struct_def.impls.clone(),
         })
       }
       _ => None,
@@ -2293,7 +2289,7 @@ fn collect_impl_records_from_value(value: &Calcit) -> Option<Vec<Arc<CalcitImpl>
 
 fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation, call_stack: &CallStackList) -> Option<Vec<Arc<CalcitImpl>>> {
   if let Some(record) = type_value.as_record() {
-    return Some(record.impls.to_owned());
+    return Some(record.struct_ref.impls.to_owned());
   }
 
   if let Some(class_symbol) = core_impl_list_symbol_from_type_annotation(type_value) {
@@ -3087,7 +3083,6 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      impls: vec![],
     })));
 
     // Test expression: (assert-type user <record-type>) (&record:get user :name)
@@ -3131,7 +3126,6 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      impls: vec![],
     })));
 
     // Test expression: (&record:get user :email) with user already typed
@@ -3197,9 +3191,14 @@ mod tests {
     };
 
     let class_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Greeter"), vec![EdnTag::from("greet")])),
+      struct_ref: Arc::new(CalcitStruct {
+        name: EdnTag::from("Greeter"),
+        fields: Arc::new(vec![EdnTag::from("greet")]),
+        field_types: Arc::new(vec![calcit::DYNAMIC_TYPE.clone()]),
+        generics: Arc::new(vec![]),
+        impls: vec![Arc::new(method_impl)],
+      }),
       values: Arc::new(vec![method_import.clone()]),
-      impls: vec![Arc::new(method_impl)],
     };
     scope_types.insert(Arc::from("user"), Arc::new(CalcitTypeAnnotation::Record(Arc::new(class_record))));
 
@@ -3253,7 +3252,6 @@ mod tests {
     let impl_record = CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Greeter"), vec![EdnTag::from("greet")])),
       values: Arc::new(vec![method_fn.clone()]),
-      impls: vec![],
     };
 
     let record_ns = "tests.method.impls";
@@ -3313,7 +3311,6 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      impls: vec![],
     })));
 
     // Test expression: (user.-name) - wrapped in a list to trigger method parsing
@@ -3354,7 +3351,6 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      impls: vec![],
     })));
 
     // Test expression: (user.-email) - invalid field, wrapped in list
@@ -3402,7 +3398,6 @@ mod tests {
         vec![EdnTag::from("age"), EdnTag::from("name")],
       )),
       values: Arc::new(vec![Calcit::Nil, Calcit::Nil]),
-      impls: vec![],
     })));
 
     // Test expression: (.slice person 1 3) - trying to call non-existent method
@@ -3597,9 +3592,14 @@ mod tests {
     };
 
     let class_record = CalcitRecord {
-      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::from("Person"), vec![EdnTag::from("greet")])),
+      struct_ref: Arc::new(CalcitStruct {
+        name: EdnTag::from("Person"),
+        fields: Arc::new(vec![EdnTag::from("greet")]),
+        field_types: Arc::new(vec![calcit::DYNAMIC_TYPE.clone()]),
+        generics: Arc::new(vec![]),
+        impls: vec![Arc::new(method_impl)],
+      }),
       values: Arc::new(vec![method_value]),
-      impls: vec![Arc::new(method_impl)],
     };
 
     // Test expression: (.greet user |hello) - wrong argument type
@@ -3653,7 +3653,6 @@ mod tests {
         Calcit::from(vec![Calcit::tag("string")]), // :err payload types
         Calcit::from(CalcitList::default()),       // :ok payload types (empty)
       ]),
-      impls: vec![],
     };
     let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
 
@@ -3698,7 +3697,6 @@ mod tests {
         Calcit::from(vec![Calcit::tag("string")]), // :err expects 1 payload
         Calcit::from(CalcitList::default()),       // :ok expects 0 payloads
       ]),
-      impls: vec![],
     };
     let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
 
@@ -3744,7 +3742,6 @@ mod tests {
         Calcit::from(vec![Calcit::tag("string")]), // :err expects string payload
         Calcit::from(CalcitList::default()),       // :ok expects no payloads
       ]),
-      impls: vec![],
     };
     let enum_proto = CalcitEnum::from_record(enum_record.clone()).expect("valid enum");
 
@@ -3783,7 +3780,6 @@ mod tests {
     let tuple_type = CalcitTuple {
       tag: Arc::new(Calcit::Tag(EdnTag::from("point"))),
       extra: vec![Calcit::Number(10.0), Calcit::Number(20.0)],
-      impls: vec![],
       sum_type: None,
     };
 
@@ -3827,7 +3823,6 @@ mod tests {
     let tuple_type = CalcitTuple {
       tag: Arc::new(Calcit::Tag(EdnTag::from("point"))),
       extra: vec![Calcit::Number(10.0), Calcit::Number(20.0)],
-      impls: vec![],
       sum_type: None,
     };
 
@@ -3865,7 +3860,6 @@ mod tests {
     let tuple_type = CalcitTuple {
       tag: Arc::new(Calcit::Tag(EdnTag::from("point"))),
       extra: vec![Calcit::Number(10.0), Calcit::Number(20.0)],
-      impls: vec![],
       sum_type: None,
     };
 

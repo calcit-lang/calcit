@@ -364,7 +364,7 @@
                 assert= true $ any? (&tuple:impls ok)
                   fn (impl) $ = (&impl:origin impl) ResultTrait
                 assert= enum-with-impls $ &tuple:enum ok
-                assert= "|(%:: :ok 1 (:impls ResultTrait) (:enum Result))" $ str ok
+                assert= "|(%:: :ok 1 (:enum Result))" $ str ok
               , "|defstruct/defenum checks passed"
 
         |main! $ %{} :CodeEntry (:doc |)

@@ -6,7 +6,7 @@ use cirru_edn::EdnTag;
 use crate::builtins::meta::type_of;
 use crate::calcit::{
   Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSyntax,
-  CalcitTuple, CalcitTypeAnnotation, format_proc_examples_hint,
+  CalcitTypeAnnotation, format_proc_examples_hint,
 };
 
 fn parse_type_var_form(form: &Calcit) -> Option<Arc<str>> {
@@ -99,7 +99,6 @@ pub fn new_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::Record(CalcitRecord {
     struct_ref: Arc::new(CalcitStruct::from_fields(name_id, fields)),
     values: Arc::new(values),
-    impls: vec![],
   }))
 }
 
@@ -362,7 +361,6 @@ pub fn new_enum(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let record = CalcitRecord {
     struct_ref: Arc::new(struct_ref),
     values: Arc::new(values),
-    impls: vec![],
   };
 
   match CalcitEnum::from_record(record) {
@@ -390,7 +388,6 @@ pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let record = CalcitRecord {
         struct_ref: Arc::new(struct_def.to_owned()),
         values: Arc::new(vec![Calcit::Nil; struct_def.fields.len()]),
-        impls: struct_def.impls.clone(),
       };
       call_record_with_prototype(&record, xs)
     }
@@ -408,11 +405,7 @@ pub fn call_record(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let args_size = xs.len();
-  let CalcitRecord {
-    struct_ref,
-    values: v0,
-    impls,
-  } = record;
+  let CalcitRecord { struct_ref, values: v0 } = record;
   if (args_size - 1).rem(2) != 0 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&%{{}} expected pairs, but received:", xs);
   }
@@ -474,7 +467,6 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
   Ok(Calcit::Record(CalcitRecord {
     struct_ref: struct_ref.to_owned(),
     values: Arc::new(values),
-    impls: impls.to_owned(),
   }))
 }
 
@@ -489,13 +481,7 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     );
   }
   match &xs[0] {
-    Calcit::Record(
-      record @ CalcitRecord {
-        struct_ref,
-        values: v0,
-        impls,
-      },
-    ) => {
+    Calcit::Record(record @ CalcitRecord { struct_ref, values: v0 }) => {
       if (args_size - 1).rem(2) == 0 {
         let size = (args_size - 1) / 2;
         let mut values: Vec<Calcit> = (**v0).to_owned();
@@ -540,7 +526,6 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         Ok(Calcit::Record(CalcitRecord {
           struct_ref: struct_ref.to_owned(),
           values: Arc::new(values),
-          impls: impls.to_owned(),
         }))
       } else {
         CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:with expected pairs, but received:", xs)
@@ -563,11 +548,16 @@ pub fn get_impls(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:impls expected 1 argument, but received:", xs);
   }
   match &xs[0] {
-    Calcit::Record(CalcitRecord { impls, .. }) => Ok(Calcit::from(
-      impls.iter().map(|c| Calcit::Impl((**c).to_owned())).collect::<Vec<_>>(),
+    Calcit::Record(record) => Ok(Calcit::from(
+      record
+        .struct_ref
+        .impls
+        .iter()
+        .map(|x| Calcit::Impl((**x).to_owned()))
+        .collect::<Vec<Calcit>>(),
     )),
-    Calcit::Tuple(CalcitTuple { impls, .. }) => Ok(Calcit::from(
-      impls.iter().map(|c| Calcit::Impl((**c).to_owned())).collect::<Vec<_>>(),
+    Calcit::Tuple(tuple) => Ok(Calcit::from(
+      tuple.impls().iter().map(|c| Calcit::Impl((**c).to_owned())).collect::<Vec<_>>(),
     )),
     a => {
       let msg = format!(
@@ -614,7 +604,6 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::Record(CalcitRecord {
         struct_ref: record.struct_ref.to_owned(),
         values: Arc::new(new_values),
-        impls: record.impls.to_owned(),
       }))
     }
     (a, b) => {
@@ -795,7 +784,7 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1), xs.get(2)) {
-    (Some(Calcit::Record(record @ CalcitRecord { struct_ref, values, impls })), Some(a), Some(b)) => match a {
+    (Some(Calcit::Record(record @ CalcitRecord { struct_ref, values })), Some(a), Some(b)) => match a {
       Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match record.index_of(s) {
         Some(pos) => {
           let mut new_values = (**values).to_owned();
@@ -803,7 +792,6 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Ok(Calcit::Record(CalcitRecord {
             struct_ref: struct_ref.to_owned(),
             values: Arc::new(new_values),
-            impls: impls.to_owned(),
           }))
         }
         None => CalcitErr::err_str(
@@ -818,7 +806,6 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           Ok(Calcit::Record(CalcitRecord {
             struct_ref: struct_ref.to_owned(),
             values: Arc::new(new_values),
-            impls: impls.to_owned(),
           }))
         }
         None => CalcitErr::err_str(
