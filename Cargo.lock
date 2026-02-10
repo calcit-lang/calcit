@@ -101,7 +101,7 @@ checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 
 [[package]]
 name = "calcit"
-version = "0.11.0-a11"
+version = "0.11.0"
 dependencies = [
  "argh",
  "bisection_key",

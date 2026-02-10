@@ -63,4 +63,5 @@ jobs:
       - name: "generate procs.mjs"
         run: yarn && yarn tsc
 
-      - run: npm publish --provenance --access public --tag next
+      # - run: npm publish --provenance --access public --tag next
+      - run: npm publish --provenance --access public
