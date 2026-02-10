@@ -6,7 +6,7 @@ mod snippets;
 use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
@@ -23,6 +23,10 @@ use crate::call_stack::StackKind;
 use crate::codegen::skip_arity_check;
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
+
+thread_local! {
+  static INLINE_ALL_ARGS: Cell<bool> = Cell::new(false);
+}
 
 struct ImportsDict(HashSet<CalcitImport>);
 
@@ -192,20 +196,37 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
 
 fn make_let_with_bind(left: &str, right: &str, body: &str, has_await: bool) -> String {
   let (await_mark, async_mark) = if has_await { ("await ", "async ") } else { ("", "") };
-  format!("{await_mark}({async_mark}function __bind__({left}){{\n{body} }})({right})")
+  let body = indent_block(body, "  ");
+  format!("{await_mark}({async_mark}function __bind__({left}){{\n{body}\n}})({right})")
 }
 
 fn make_let_with_wrapper(left: &str, right: &str, body: &str, has_await: bool) -> String {
   let (await_mark, async_mark) = if has_await { ("await ", "async ") } else { ("", "") };
-  format!("{await_mark}({async_mark}function __let__(){{ \nlet {left} = {right};\n {body} }})()")
+  let body = indent_block(&format!("let {left} = {right};\n{body}"), "  ");
+  format!("{await_mark}({async_mark}function __let__(){{\n{body}\n}})()")
 }
 
 fn make_fn_wrapper(body: &str, is_async: bool) -> String {
+  let body = indent_block(body, "  ");
   if is_async {
     format!("await (async function _async_fn_(){{\n{body}\n}})()")
   } else {
     format!("(function _fn_(){{\n{body}\n}})()")
   }
+}
+
+fn indent_block(body: &str, indent: &str) -> String {
+  body
+    .lines()
+    .map(|line| {
+      if line.trim().is_empty() {
+        String::from("")
+      } else {
+        format!("{indent}{line}")
+      }
+    })
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 fn to_js_code(
@@ -304,6 +325,22 @@ fn to_js_code(
   }
 }
 
+fn to_js_code_inline(
+  xs: &Calcit,
+  ns: &str,
+  local_defs: &HashSet<Arc<str>>,
+  file_imports: &RefCell<ImportsDict>,
+  tags: &RefCell<HashSet<EdnTag>>,
+  return_label: Option<&str>,
+) -> Result<String, String> {
+  INLINE_ALL_ARGS.with(|flag| {
+    let previous = flag.replace(true);
+    let result = to_js_code(xs, ns, local_defs, file_imports, tags, return_label);
+    flag.set(previous);
+    result
+  })
+}
+
 fn gen_call_code(
   ys: &CalcitList,
   ns: &str,
@@ -326,31 +363,7 @@ fn gen_call_code(
   match &head {
     Calcit::Syntax(s, ..) => {
       match &s {
-        CalcitSyntax::If => {
-          if let Some(Calcit::List(ys)) = body.get(2)
-            && let Some(Calcit::Syntax(syn, ..)) = ys.first()
-            && syn == &CalcitSyntax::If
-          {
-            return gen_if_code(&body, local_defs, xs, ns, file_imports, tags, return_label);
-          }
-          if return_label.is_some() {
-            return gen_if_code(&body, local_defs, xs, ns, file_imports, tags, return_label);
-          }
-          match (body.first(), body.get(1)) {
-            (Some(condition), Some(true_branch)) => {
-              gen_stack::push_call_stack(ns, "if", StackKind::Codegen, xs.to_owned(), &[]);
-              let false_code = match body.get(2) {
-                Some(fal) => to_js_code(fal, ns, local_defs, file_imports, tags, None)?,
-                None => String::from("null"),
-              };
-              let cond_code = to_js_code(condition, ns, local_defs, file_imports, tags, None)?;
-              let true_code = to_js_code(true_branch, ns, local_defs, file_imports, tags, None)?;
-              gen_stack::pop_call_stack();
-              Ok(format!("{return_code}( {cond_code} ? {true_code} : {false_code} )"))
-            }
-            (_, _) => Err(format!("if expected 2~3 nodes, got: {body}")),
-          }
-        }
+        CalcitSyntax::If => gen_if_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
         CalcitSyntax::CoreLet => gen_let_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
 
         CalcitSyntax::Quote => match body.first() {
@@ -390,9 +403,6 @@ fn gen_call_code(
           }
           (_, _) => Err(format!("defn expected name arguments, got: {}", Calcit::from(body))),
         },
-
-        CalcitSyntax::Defmacro => Ok(format!("/* Unexpected macro {xs} */")),
-        CalcitSyntax::Quasiquote => Ok(format!("(/* Unexpected quasiquote {} */ null)", xs.lisp_str())),
         CalcitSyntax::Try => match (body.first(), body.get(1)) {
           (Some(expr), Some(handler)) => {
             gen_stack::push_call_stack(ns, "try", StackKind::Codegen, xs.to_owned(), &[]);
@@ -415,13 +425,9 @@ fn gen_call_code(
         CalcitSyntax::HintFn => Ok(format!("{return_code}null")),
         CalcitSyntax::AssertType => Ok(format!("{return_code}null")),
         _ => {
-          let args_code = gen_args_code(&body, ns, local_defs, file_imports, tags)?;
-          Ok(format!(
-            "{}{}({})",
-            return_code,
-            to_js_code(&head, ns, local_defs, file_imports, tags, None)?,
-            args_code
-          ))
+          let (prelude, args_code) = gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some())?;
+          let call_code = format!("{}({})", to_js_code(&head, ns, local_defs, file_imports, tags, None)?, args_code);
+          Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
         }
       }
     }
@@ -447,13 +453,9 @@ fn gen_call_code(
       }
     }
     Calcit::Proc(_) => {
-      let args_code = gen_args_code(&body, ns, local_defs, file_imports, tags)?;
-      Ok(format!(
-        "{}{}({})",
-        return_code,
-        to_js_code(&head, ns, local_defs, file_imports, tags, None)?,
-        args_code
-      ))
+      let (prelude, args_code) = gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some())?;
+      let call_code = format!("{}({})", to_js_code(&head, ns, local_defs, file_imports, tags, None)?, args_code);
+      Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
     }
     Calcit::Symbol { sym: s, .. } | Calcit::Registered(s) => {
       match &**s {
@@ -486,18 +488,18 @@ fn gen_call_code(
         "new" => match body.first() {
           Some(ctor) => {
             let args = body.drop_left();
-            let args_code = gen_args_code(&args, ns, local_defs, file_imports, tags)?;
-            Ok(format!(
-              "{}new {}({})",
-              return_code,
-              to_js_code(ctor, ns, local_defs, file_imports, tags, None)?,
-              args_code
-            ))
+            let (prelude, args_code) = gen_call_args_with_temps(&args, ns, local_defs, file_imports, tags, return_label.is_some())?;
+            let call_code = format!("new {}({})", to_js_code(ctor, ns, local_defs, file_imports, tags, None)?, args_code);
+            Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&args)))
           }
           None => Err(format!("`new` expected constructor, got nothing, {xs}")),
         },
         "js-await" => match body.first() {
-          Some(body) => Ok(format!("(await {})", to_js_code(body, ns, local_defs, file_imports, tags, None)?,)),
+          Some(body) => Ok(format!(
+            "{}(await {})",
+            return_code,
+            to_js_code(body, ns, local_defs, file_imports, tags, None)?
+          )),
           None => Err(format!("`new` expected constructor, got nothing, {xs}")),
         },
         "instance?" => match (body.first(), body.get(1)) {
@@ -524,13 +526,9 @@ fn gen_call_code(
         },
         _ => {
           // TODO
-          let args_code = gen_args_code(&body, ns, local_defs, file_imports, tags)?;
-          Ok(format!(
-            "{}{}({})",
-            return_code,
-            to_js_code(&head, ns, local_defs, file_imports, tags, None)?,
-            args_code
-          ))
+          let (prelude, args_code) = gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some())?;
+          let call_code = format!("{}({})", to_js_code(&head, ns, local_defs, file_imports, tags, None)?, args_code);
+          Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
         }
       }
     }
@@ -562,14 +560,22 @@ fn gen_call_code(
       MethodKind::InvokeNative => {
         if !body.is_empty() {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
-          let args_code = gen_args_code(&body.skip(1).expect("get args"), ns, local_defs, file_imports, tags)?;
+          let (prelude, args_code) = gen_call_args_with_temps(
+            &body.skip(1).expect("get args"),
+            ns,
+            local_defs,
+            file_imports,
+            tags,
+            return_label.is_some(),
+          )?;
 
           let caller = if matches_js_var(name) {
             format!("{obj}.{name}")
           } else {
             format!("{obj}[{}]", escape_cirru_str(name))
           };
-          Ok(format!("{return_code}{caller}({args_code})"))
+          let call_code = format!("{caller}({args_code})");
+          Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
         } else {
           Err(format!("invoke-native expected at least 1 object, got: {xs}"))
         }
@@ -577,14 +583,22 @@ fn gen_call_code(
       MethodKind::InvokeNativeOptional => {
         if !body.is_empty() {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
-          let args_code = gen_args_code(&body.skip(1).expect("get args"), ns, local_defs, file_imports, tags)?;
+          let (prelude, args_code) = gen_call_args_with_temps(
+            &body.skip(1).expect("get args"),
+            ns,
+            local_defs,
+            file_imports,
+            tags,
+            return_label.is_some(),
+          )?;
 
           let caller = if matches_js_var(name) {
             format!("{obj}.{name}")
           } else {
             format!("{obj}[{}]", escape_cirru_str(name))
           };
-          Ok(format!("{return_code}{caller}?.({args_code})"))
+          let call_code = format!("{caller}?.({args_code})");
+          Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
         } else {
           Err(format!("invoke-native-optional expected at least 1 object, got: {xs}"))
         }
@@ -593,16 +607,17 @@ fn gen_call_code(
         let proc_prefix = get_proc_prefix(ns);
         if !body.is_empty() {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
-          let args_code = gen_args_code(&body.skip(1).expect("get args"), ns, local_defs, file_imports, tags)?;
+          let (prelude, args_code) = gen_call_args_with_temps(
+            &body.skip(1).expect("get args"),
+            ns,
+            local_defs,
+            file_imports,
+            tags,
+            return_label.is_some(),
+          )?;
 
-          Ok(format!(
-            "{}{}invoke_method({},{},{})",
-            return_code,
-            proc_prefix,
-            escape_cirru_str(name),
-            obj,
-            args_code
-          ))
+          let call_code = format!("{}invoke_method({},{},{})", proc_prefix, escape_cirru_str(name), obj, args_code);
+          Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
         } else {
           Err(format!("expected at least 1 object, got: {xs}"))
         }
@@ -618,13 +633,9 @@ fn gen_call_code(
       }
     },
     _ => {
-      let args_code = gen_args_code(&body, ns, local_defs, file_imports, tags)?;
-      Ok(format!(
-        "{}{}({})",
-        return_code,
-        to_js_code(&head, ns, local_defs, file_imports, tags, None)?,
-        args_code
-      ))
+      let (prelude, args_code) = gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some())?;
+      let call_code = format!("{}({})", to_js_code(&head, ns, local_defs, file_imports, tags, None)?, args_code);
+      Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
     }
   }
 }
@@ -723,8 +734,10 @@ fn gen_let_code(
             body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, Some(return_label))?);
             body_part.push('\n');
           } else {
-            body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, None)?);
-            body_part.push_str(";\n");
+            let line = to_js_code(x, ns, &scoped_defs, file_imports, tags, Some(""))?;
+            body_part.push_str("{\n");
+            body_part.push_str(&line);
+            body_part.push_str(";\n}\n");
           }
         }
         break;
@@ -737,8 +750,10 @@ fn gen_let_code(
             body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, Some(return_label))?);
             body_part.push('\n');
           } else {
-            body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, None)?);
-            body_part.push_str(";\n");
+            let line = to_js_code(x, ns, &scoped_defs, file_imports, tags, Some(""))?;
+            body_part.push_str("{\n");
+            body_part.push_str(&line);
+            body_part.push_str(";\n}\n");
           }
         }
         break;
@@ -766,8 +781,10 @@ fn gen_let_code(
                   }
                   body_part.push('\n');
                 } else {
-                  body_part.push_str(&to_js_code(x, ns, &scoped_defs, file_imports, tags, None)?);
-                  body_part.push_str(";\n");
+                  let line = to_js_code(x, ns, &scoped_defs, file_imports, tags, Some(""))?;
+                  body_part.push_str("{\n");
+                  body_part.push_str(&line);
+                  body_part.push_str(";\n}\n");
                 }
               }
 
@@ -849,6 +866,44 @@ fn gen_if_code(
 
     let return_label = base_return_label.unwrap_or("return ");
 
+    if base_return_label.is_none() && !has_await {
+      let mut expr = String::from("");
+      let mut depth = 0;
+      loop {
+        let cond_code = to_js_code(&cond_node, ns, local_defs, file_imports, tags, None)?;
+        let true_code = to_js_code_inline(&true_node, ns, local_defs, file_imports, tags, None)?;
+        write!(expr, "({cond_code} ? {true_code} : ").expect("write");
+        depth += 1;
+
+        if let Some(false_node) = some_false_node {
+          if let Calcit::List(ys) = false_node
+            && let Some(Calcit::Syntax(syn, _ns)) = ys.first()
+            && syn == &CalcitSyntax::If
+          {
+            if ys.len() < 3 || ys.len() > 4 {
+              return Err(format!("if expected 2~3 nodes, got: {}", Calcit::List(ys.to_owned())));
+            }
+            ys[1].clone_into(&mut cond_node);
+            ys[2].clone_into(&mut true_node);
+            some_false_node = ys.get(3);
+            continue;
+          }
+
+          let false_code = to_js_code_inline(false_node, ns, local_defs, file_imports, tags, None)?;
+          expr.push_str(&false_code);
+        } else {
+          expr.push_str("null");
+        }
+
+        for _ in 0..depth {
+          expr.push(')');
+        }
+        break;
+      }
+
+      return Ok(expr);
+    }
+
     loop {
       let cond_code = to_js_code(&cond_node, ns, local_defs, file_imports, tags, None)?;
       let true_code = to_js_code(&true_node, ns, local_defs, file_imports, tags, Some(return_label))?;
@@ -883,6 +938,134 @@ fn gen_if_code(
       Ok(chunk)
     } else {
       Ok(make_fn_wrapper(&chunk, has_await))
+    }
+  }
+}
+
+/// check if it's a simple expression that doesn't need a temporary variable
+fn is_simple_expr(x: &Calcit) -> bool {
+  match x {
+    Calcit::Local { .. }
+    | Calcit::Symbol { .. }
+    | Calcit::Number(_)
+    | Calcit::Bool(_)
+    | Calcit::Nil
+    | Calcit::Str(_)
+    | Calcit::Tag(_)
+    | Calcit::Import(_)
+    | Calcit::Fn { .. }
+    | Calcit::Thunk(..)
+    | Calcit::Proc(..)
+    | Calcit::Method(..) => true,
+    Calcit::Syntax(..) => true,
+    Calcit::List(xs) => xs.is_empty(),
+    _ => false,
+  }
+}
+
+fn is_expr_depth_at_most(x: &Calcit, depth: usize) -> bool {
+  if depth == 0 {
+    return is_simple_expr(x);
+  }
+  match x {
+    Calcit::List(xs) => {
+      if xs.is_empty() {
+        return true;
+      }
+      let next_depth = if xs.len() <= 4 && depth < 4 { depth + 1 } else { depth };
+      xs.iter().all(|item| is_expr_depth_at_most(item, next_depth - 1))
+    }
+    _ => is_simple_expr(x),
+  }
+}
+
+fn is_complex_syntax(x: &Calcit) -> bool {
+  match x {
+    Calcit::List(xs) => match xs.first() {
+      Some(Calcit::Syntax(syn, _)) => matches!(
+        syn,
+        CalcitSyntax::If | CalcitSyntax::Try | CalcitSyntax::CoreLet | CalcitSyntax::Defn | CalcitSyntax::Defmacro
+      ),
+      Some(Calcit::Proc(CalcitProc::Raise)) => true,
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
+fn gen_call_args_with_temps(
+  body: &CalcitList,
+  ns: &str,
+  local_defs: &HashSet<Arc<str>>,
+  file_imports: &RefCell<ImportsDict>,
+  tags: &RefCell<HashSet<EdnTag>>,
+  aggressive: bool,
+) -> Result<(String, String), String> {
+  let mut prelude = String::from("");
+  let mut args_code = String::from("");
+  let mut spreading = false;
+  let var_prefix = if ns == calcit::CORE_NS { "" } else { "$clt." };
+  let max_depth = if aggressive {
+    0
+  } else if body.len() <= 2 {
+    2
+  } else if body.len() > 4 {
+    0
+  } else {
+    1
+  };
+
+  for x in body {
+    match x {
+      Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
+        spreading = true;
+      }
+      _ => {
+        if !args_code.is_empty() {
+          args_code.push_str(", ");
+        }
+
+        let inline_all = INLINE_ALL_ARGS.with(|flag| flag.get());
+        let should_inline = if is_complex_syntax(x) {
+          false
+        } else if inline_all {
+          true
+        } else {
+          is_expr_depth_at_most(x, max_depth)
+        };
+
+        let arg_code = if should_inline {
+          to_js_code(x, ns, local_defs, file_imports, tags, None)?
+        } else {
+          let tmp = escape_var(&js_gensym("tmp"));
+          let expr = to_js_code(x, ns, local_defs, file_imports, tags, None)?;
+          writeln!(prelude, "let {tmp} = {expr};").expect("write");
+          tmp
+        };
+
+        if spreading {
+          write!(args_code, "...{}listToArray({})", var_prefix, arg_code).expect("write");
+          spreading = false;
+        } else {
+          args_code.push_str(&arg_code);
+        }
+      }
+    }
+  }
+
+  Ok((prelude, args_code))
+}
+
+fn wrap_call_with_prelude(prelude: String, call_code: String, return_label: Option<&str>, has_await: bool) -> String {
+  if prelude.is_empty() {
+    match return_label {
+      Some(label) => format!("{label}{call_code}"),
+      None => call_code,
+    }
+  } else {
+    match return_label {
+      Some(label) => format!("{prelude}{label}{call_code}"),
+      None => make_fn_wrapper(&format!("{prelude}return {call_code};"), has_await),
     }
   }
 }
@@ -941,13 +1124,10 @@ fn list_to_js_code(
       result.push_str(&line);
       result.push('\n');
     } else {
-      let line = to_js_code(x, ns, &local_defs, file_imports, tags, None)?;
-      // if is_let_call(&x) {
-      //   result.push_str(&make_curly_wrapper(&line));
-      // } else {
+      let line = to_js_code(x, ns, &local_defs, file_imports, tags, Some(""))?;
+      result.push_str("{\n");
       result.push_str(&line);
-      // }
-      result.push_str(";\n");
+      result.push_str(";\n}\n");
     }
   }
   Ok(result)

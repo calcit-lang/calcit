@@ -21,26 +21,19 @@ pub fn tmpl_fn_wrapper(body: String) -> String {
 }
 
 pub fn tmpl_args_fewer_than(args_count: usize) -> String {
-  format!(
-    "
-if (arguments.length < {args_count}) throw new Error('too few arguments');"
-  )
+  format!("if (arguments.length < {args_count}) throw new Error('too few arguments');")
 }
 
 pub fn tmpl_args_between(a: usize, b: usize) -> String {
   format!(
-    "
-if (arguments.length < {a}) throw new Error('too few arguments');
+    "if (arguments.length < {a}) throw new Error('too few arguments');
 if (arguments.length > {b}) throw new Error('too many arguments');"
   )
 }
 
 pub fn tmpl_args_exact(name: &str, args_count: usize, at_ns: &str) -> String {
   let proc_ns = get_proc_prefix(at_ns);
-  format!(
-    "
-  if (arguments.length !== {args_count}) throw {proc_ns}_args_throw('{name}', {args_count}, arguments.length);"
-  )
+  format!("if (arguments.length !== {args_count}) throw {proc_ns}_args_throw('{name}', {args_count}, arguments.length);")
 }
 
 pub struct RecurPrefixes {
