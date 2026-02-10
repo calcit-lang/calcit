@@ -13,6 +13,7 @@
               test-data-gen
               test-regexp
               test-property
+              test-tag-keys
               when (> 1 2)
                 raise $ str "|error of math" 2 1
                 raise "|base error"
@@ -201,6 +202,13 @@
                 assert= 1 $ js-get a |b
                 js-delete a |b
                 assert= nil $ js-get a |b
+        |test-tag-keys $ %{} :CodeEntry (:doc "|tag keys for js")
+          :code $ quote
+            fn ()
+              assert= "|a_b" $ turn-string :a_b
+              assert= "|a-b" $ turn-string :a-b
+              assert= "|a?b" $ turn-string :a?b
+              assert= "|ab!" $ turn-string :ab!
         |test-for-await $ %{} :CodeEntry (:doc "|for await")
           :code $ quote
             fn ()

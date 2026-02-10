@@ -119,7 +119,7 @@ pub fn tmpl_tags_init(arr: &str, prefix: &str) -> String {
   format!(
     "
 {arr}.forEach(x => {{
-  _tag[x] = {prefix}newTag(x);
+  _t_[x] = {prefix}newTag(x);
 }});
 "
   )
