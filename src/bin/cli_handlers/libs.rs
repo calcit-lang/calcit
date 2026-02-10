@@ -60,18 +60,9 @@ pub fn handle_libs_command(cmd: &LibsCommand) -> Result<(), String> {
 fn fetch_registry() -> Result<LibraryRegistry, String> {
   let url = "https://libs.calcit-lang.org/base.cirru";
 
-  let client = reqwest::blocking::Client::new();
+  let response = ureq::get(url).call().map_err(|e| format!("Failed to connect to library registry: {e}"))?;
 
-  let response = client
-    .get(url)
-    .send()
-    .map_err(|e| format!("Failed to connect to library registry: {e}"))?;
-
-  if !response.status().is_success() {
-    return Err(format!("Failed to fetch libraries: HTTP status {}", response.status()));
-  }
-
-  let text = response.text().map_err(|e| format!("Failed to read response text: {e}"))?;
+  let text = response.into_string().map_err(|e| format!("Failed to read response text: {e}"))?;
 
   // Parse Cirru EDN format
   let edn = cirru_edn::parse(&text).map_err(|e| format!("Failed to parse Cirru EDN: {e}"))?;
@@ -151,14 +142,13 @@ fn handle_readme(package: &str, file: Option<&str>) -> Result<(), String> {
   // Convert GitHub URL to raw file URL
   let base_url = github_to_raw_base(&lib.repository)?;
 
-  let client = reqwest::blocking::Client::builder()
+  let agent = ureq::AgentBuilder::new()
     .user_agent("calcit-cli")
-    .build()
-    .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+    .build();
 
   // Try main branch first, then master
-  let content = fetch_file_content(&client, &base_url, "main", file_name)
-    .or_else(|_| fetch_file_content(&client, &base_url, "master", file_name))?;
+  let content = fetch_file_content(&agent, &base_url, "main", file_name)
+    .or_else(|_| fetch_file_content(&agent, &base_url, "master", file_name))?;
 
   // Print library info header
   println!("\n{} {}", "Package:".bold(), lib.package_name.cyan().bold());
@@ -186,16 +176,12 @@ fn github_to_raw_base(repo_url: &str) -> Result<String, String> {
   Ok(format!("https://raw.githubusercontent.com/{path}"))
 }
 
-fn fetch_file_content(client: &reqwest::blocking::Client, base_url: &str, branch: &str, file_name: &str) -> Result<String, String> {
+fn fetch_file_content(agent: &ureq::Agent, base_url: &str, branch: &str, file_name: &str) -> Result<String, String> {
   let url = format!("{base_url}/{branch}/{file_name}");
 
-  let response = client.get(&url).send().map_err(|e| format!("Failed to fetch file: {e}"))?;
+  let response = agent.get(&url).call().map_err(|e| format!("Failed to fetch file: {e}"))?;
 
-  if !response.status().is_success() {
-    return Err(format!("File not found at {} (HTTP {})", url, response.status()));
-  }
-
-  response.text().map_err(|e| format!("Failed to read file: {e}"))
+  response.into_string().map_err(|e| format!("Failed to read file: {e}"))
 }
 
 fn handle_search(keyword: &str) -> Result<(), String> {
