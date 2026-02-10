@@ -25,13 +25,15 @@ use crate::util::string::strip_shebang;
 
 pub fn load_core_snapshot() -> Result<snapshot::Snapshot, String> {
   // load core libs
-  let bytes = include_bytes!("./cirru/calcit-core.cirru");
-  let core_content = String::from_utf8_lossy(bytes).to_string();
-  let core_data = cirru_edn::parse(&core_content).map_err(|e| {
+  let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/calcit-core.rmp"));
+  let mut snapshot: snapshot::Snapshot = rmp_serde::from_slice(bytes).map_err(|e| {
     eprintln!("\n{e}");
-    "Failed to parse core snapshot".to_string()
+    "Failed to deserialize core snapshot".to_string()
   })?;
-  snapshot::load_snapshot_data(&core_data, "calcit-internal://calcit-core.cirru")
+  let path = "calcit-internal://calcit-core.cirru";
+  let meta_ns = format!("{}.$meta", snapshot.package);
+  snapshot.files.insert(meta_ns.to_owned(), snapshot::gen_meta_ns(&meta_ns, path));
+  Ok(snapshot)
 }
 
 #[derive(Clone, Debug)]
