@@ -178,6 +178,8 @@ fn main() -> Result<(), String> {
 
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
 
+  runner::preprocess::set_check_dyn_trait(cli_args.check_dyn_trait);
+
   // make sure builtin classes are touched
   runner::preprocess::preprocess_ns_def(
     calcit::calcit::CORE_NS,

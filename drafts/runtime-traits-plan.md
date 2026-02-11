@@ -163,6 +163,39 @@ let
 - `assert-traits` 是一个语法（syntax），会在 preprocess 阶段被展开为对内建过程 `&assert-traits` 的调用；runtime 并不直接执行 `assert-traits` 语法本身。
 - 当前实现要求第一个参数必须是 **local**，用于把 type-info 写回作用域类型表并用于后续方法校验/类型提示。
 
+**行为细则（基于当前实现，补充更具体的定义）：**
+
+1. **两种写法与作用范围**
+
+- **函数 body 顶层写法**（推荐，作为函数前置约束）：
+  - 写在函数 body 顶层的 `assert-traits x Trait` 被视为“参数/局部的全局约束”。
+  - 静态分析会把它当作参数类型提示来源（与 `assert-type` 同级别），影响整个函数体内的 `.method` 校验与提示。
+  - 运行时会在执行到该表达式时进行检查（缺失方法则抛错）。
+
+- **函数 body 内部嵌套写法**（表达式/返回值约束）：
+  - `assert-traits` 作为表达式参与计算时，主要用于约束该表达式（及其返回值链路）；适用于在局部链路上增加约束，减少 `let _ ...` 这类“仅为检查而写”的绑定。
+  - 当前实现的参数类型提示扫描会遍历函数体中的 `assert-traits`，因此严格来说嵌套写法也可能被识别为参数提示；但约定上仅将顶层写法视为“函数级前置约束”。
+
+2. **静态分析（preprocess）行为**
+
+- 会在当前作用域把 local 的 type-info 写入 `scope_types`，供后续 `.method` 校验/补全使用。
+- `assert-traits` 参数中的 trait 解析规则：
+  - 能解析为 trait 定义的，进入 trait 集合。
+  - 若解析不到 trait，会降级为自定义类型标注，仅用于类型提示（不参与方法校验）。
+- 多个 trait 通过 **append** 形成 `TraitSet`；当多次 `assert-traits` 作用于同一个 local 时，后者的 type-info 会覆盖前者。
+
+3. **运行时行为**
+
+- 预处理会把 `assert-traits` 展开成一连串 `&assert-traits` 调用，运行时逐个检查 trait 是否实现。
+- 检查顺序按写入顺序执行；当 trait 列表存在重复方法时，实际方法分派仍遵循 impl 分派规则（user impls last-wins / core impls first-wins）。
+- **内置类型限制**：list/map/set/string/number 等内置数据结构的 impl 列表是固定的，`assert-traits` **不会** 在运行时扩充它们的可用方法，只做“默认实现是否存在”的校验。
+- **静态/运行时不一致**：由于静态分析信息有限，preprocess 的 trait 标注可能比运行时更宽松；当前允许这种不一致存在。
+
+4. **顺序与覆盖**
+
+- trait 信息的记录是 **append 模式**，但对方法分派的“命中优先级”仍以 impl 链为准；当存在多重 trait/impl 时，**从末尾开始命中**（last-wins）是用户自定义 impl 的生效方向。
+- `assert-traits` 只影响“能不能调用/能否单态化”的判断，不改变实际方法分派的实现来源。
+
 ```cirru
 ; 在调用点标注并断言 trait 能力
 assert-traits x Show
@@ -378,19 +411,25 @@ assert-traits x Show
 - [x] 回归：tuple 上 `impl-traits` 覆盖链同样稳定（last-wins）。
 - [x] 再补 1 个“更尖锐”的 Rust/JS 共用断言：不同 trait 提供同名方法时，仍以 `impl-traits` 追加顺序决定命中（覆盖 record + tuple）。
 
-3. **补齐语言层能力：`defimpl` + 显式 trait-call（2～4 天）**
+3. **动态 trait 调用告警（1 天）**
+
+- [x] 引入 `--check-dyn-trait`：在 `cr` 正常执行流程中，对无法单态化的 `.method` 调用给出 warning。
+- [x] 规则：当 receiver 无法解析到具体 impl（类型为 `:dynamic`/未知），且未被 `assert-traits` 标注时触发告警。
+- [x] 验收：warning 包含方法名与位置；`assert-traits` 后 warning 消失；Rust/JS 预处理行为一致。
+
+4. **补齐语言层能力：`defimpl` + 显式 trait-call（2～4 天）**
 
 - [x] `defimpl`（v0）：让“写 impl record”有标准入口，减少手写 `defrecord!` 的样板。
 - [ ] `defimpl ... for ...`：让宏直接表达“trait + 目标类型/值”，并自动完成挂载（减少手写 `impl-traits`）。
 - [ ] 显式 trait-call（如 `Show/show` 或 `trait-call`）：提供绕开 `.method` 分派的稳定通道，便于 debug override 链。
 - [ ] 验收：同一段代码在 preprocess 校验、Rust runtime、JS runtime 行为一致。
 
-4. **`assert-traits` 易用性补强（可选，1～2 天）**
+5. **`assert-traits` 易用性补强（可选，1～2 天）**
 
 - [ ] 支持 `assert-traits` 的第一个参数是任意表达式：preprocess 自动提升为临时 local 再做检查（纯语法糖）。
 - [ ] 验收：`assert-traits (+ 1 2) ...` 可用，且错误位置/提示依然清晰。
 
-5. **冲突策略与可观测性（可选，2～3 天）**
+6. **冲突策略与可观测性（可选，2～3 天）**
 
 - [ ] 提供“冲突诊断”开关：当同名方法多次出现时，打印候选列表/命中来源（对 last-wins 特别有帮助）。
 - [x] 可选 debug proc：`&methods-of` / `&inspect-methods`，返回/打印某值当前 impl 链与可用方法集合，帮助定位“为什么命中这个实现”。

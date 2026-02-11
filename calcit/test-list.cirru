@@ -84,7 +84,10 @@
           :code $ quote
             defn test-groups ()
               assert=
-                group-by (range 10) (\ .rem % 3)
+                group-by (range 10)
+                  fn (x)
+                    assert-type x :number
+                    .rem x 3
                 {}
                   0 $ [] 0 3 6 9
                   1 $ [] 1 4 7
@@ -366,7 +369,9 @@
                   2 $ [] 2
                   0 $ [] 3
                 .group-by ([] 1 2 3 4)
-                  fn (x) (.rem x 3)
+                  fn (x)
+                    assert-type x :number
+                    .rem x 3
               assert= 0 $ .index-of ([] :a :b :c :d) :a
               assert= nil $ .index-of ([] :a :b :c :d) :e
               assert= ([] 1 :sep 2 :sep 3 :sep 4 :sep 5)

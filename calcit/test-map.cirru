@@ -140,8 +140,13 @@
                 .assoc (&{} :a 1) :b 2
               assert= true $ .contains? (&{} :a 1) :a
               assert= false $ .contains? (&{} :a 1) :b
-              assert= 2 $ .count
-                {} (:a 1) (:b 2)
+              let
+                  m $ {} (:a 1) (:b 2)
+                inside-eval:
+                  assert= m $ assert-traits m calcit.core/Len
+                  assert= 2 $ .len m
+                inside-js:
+                  assert= 2 $ .count m
               assert= (&{} :a 1)
                 .dissoc (&{} :a 1 :b 2) :b
               assert= (&{} :a 1)
@@ -170,14 +175,15 @@
                     [] (first entry)
                       + 10 $ last entry
               ; "not so stable, :bbbb is rare so it could be larger"
-              assert=
-                [] ([] :a 11) ([] :bbbb 12)
-                .sort-by
-                  .map-list (&{} :a 1 :bbbb 2)
+              let
+                  mapped $ .map-list (&{} :a 1 :bbbb 2)
                     fn (entry)
                       [] (first entry)
                         + 10 $ last entry
-                  , first
+                  _ $ assert-type mapped :list
+                assert=
+                  [] ([] :a 11) ([] :bbbb 12)
+                  .sort-by mapped first
               assert=
                 {} $ :a 11
                 .map-kv
@@ -199,10 +205,20 @@
               assert=
                 [] $ [] :a 1
                 .to-list $ {} (:a 1)
-              assert= 2 $ .count
-                .to-list $ {} (:a 1) (:b 2)
-              assert= 2 $ .count
-                .to-pairs $ {} (:a 1) (:b 2)
+              let
+                  pairs $ .to-list $ {} (:a 1) (:b 2)
+                inside-eval:
+                  assert= pairs $ assert-traits pairs calcit.core/Len
+                  assert= 2 $ .len pairs
+                inside-js:
+                  assert= 2 $ .count pairs
+              let
+                  pairs $ .to-pairs $ {} (:a 1) (:b 2)
+                inside-eval:
+                  assert= pairs $ assert-traits pairs calcit.core/Len
+                  assert= 2 $ .len pairs
+                inside-js:
+                  assert= 2 $ .count pairs
               assert= (&{} :a 1 :b 2)
                 unselect-keys (&{} :a 1 :b 2 :c 3) ([] :c)
               assert= (#{} 1 2 3)
@@ -222,7 +238,7 @@
                   , 2
               assert= 3 $ count
                 .destruct $ &{} :a 1 :b 2 :c 3
-              assert= 2 $ .count
+              assert= 2 $ count
                 last $ .destruct (&{} :a 1 :b 2 :c 3)
               assert= (&{} :c 3)
                 .diff-new (&{} :a 1 :b 2 :c 3) (&{} :a 2 :b 3)

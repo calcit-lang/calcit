@@ -11,12 +11,23 @@ use crate::{
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{cell::RefCell, vec};
 
 use im_ternary_tree::TernaryTreeList;
 use strum::ParseError;
 
 type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
+
+static CHECK_DYN_TRAIT: AtomicBool = AtomicBool::new(false);
+
+pub fn set_check_dyn_trait(enabled: bool) {
+  CHECK_DYN_TRAIT.store(enabled, Ordering::SeqCst);
+}
+
+fn check_dyn_trait_enabled() -> bool {
+  CHECK_DYN_TRAIT.load(Ordering::Relaxed)
+}
 
 fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::from_tag_name(name))
@@ -586,6 +597,10 @@ fn preprocess_list_call(
               }
             }
           }
+        }
+
+        if let Some(call_head) = ys.first() {
+          warn_on_dynamic_trait_call(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         }
 
         // Check Proc argument types if available
@@ -1582,6 +1597,51 @@ fn check_record_method_args(
   }
 }
 
+fn warn_on_dynamic_trait_call(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if file_ns == calcit::CORE_NS {
+    return;
+  }
+
+  if !check_dyn_trait_enabled() {
+    return;
+  }
+
+  let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = head else {
+    return;
+  };
+
+  let Some(receiver) = args.first() else {
+    return;
+  };
+
+  let receiver_type = resolve_type_value(receiver, scope_types);
+  let warn = match receiver_type.as_ref().map(|value| value.as_ref()) {
+    None => true,
+    Some(ann) if is_trait_annotation(ann) => false,
+    Some(ann) => is_dynamic_annotation(ann),
+  };
+
+  if !warn {
+    return;
+  }
+
+  let message =
+    format!("[Warn] dynamic trait call `.{method_name}` cannot be monomorphized in {file_ns}/{def_name}; add assert-traits to clarify");
+
+  if let Some(loc) = head.get_location().or_else(|| receiver.get_location()) {
+    gen_check_warning_with_location(message, loc, check_warnings);
+  } else {
+    gen_check_warning(message, file_ns, check_warnings);
+  }
+}
+
 fn try_inline_method_call(head: &Calcit, args: &CalcitList, call_stack: &CallStackList, _file_ns: &str) -> Option<Calcit> {
   match head {
     Calcit::Method(method_name, calcit::MethodKind::Invoke(type_value)) => {
@@ -2320,6 +2380,16 @@ fn trait_list_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<Cal
   }
 }
 
+fn is_trait_annotation(type_value: &CalcitTypeAnnotation) -> bool {
+  matches!(type_value, CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_))
+    || matches!(type_value, CalcitTypeAnnotation::Optional(inner) if is_trait_annotation(inner.as_ref()))
+}
+
+fn is_dynamic_annotation(type_value: &CalcitTypeAnnotation) -> bool {
+  matches!(type_value, CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
+    || matches!(type_value, CalcitTypeAnnotation::Optional(inner) if is_dynamic_annotation(inner.as_ref()))
+}
+
 fn find_trait_method_type<'a>(
   traits: &'a [Arc<CalcitTrait>],
   method_name: &str,
@@ -2905,6 +2975,24 @@ mod tests {
   use crate::calcit::{CalcitFn, CalcitFnArgs, CalcitRecord, CalcitScope, CalcitStruct};
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
+
+  struct DynTraitCheckGuard {
+    prev: bool,
+  }
+
+  impl DynTraitCheckGuard {
+    fn new(enabled: bool) -> Self {
+      let prev = check_dyn_trait_enabled();
+      set_check_dyn_trait(enabled);
+      Self { prev }
+    }
+  }
+
+  impl Drop for DynTraitCheckGuard {
+    fn drop(&mut self) {
+      set_check_dyn_trait(self.prev);
+    }
+  }
 
   #[test]
   fn passes_assert_type_through_preprocess() {
@@ -3896,5 +3984,30 @@ mod tests {
 
     let warnings_vec = warnings.borrow();
     assert!(warnings_vec.is_empty(), "should skip check for dynamic index");
+  }
+
+  #[test]
+  fn warns_on_dynamic_trait_call() {
+    let _guard = DynTraitCheckGuard::new(true);
+
+    let expr = Cirru::List(vec![Cirru::leaf(".greet"), Cirru::leaf("user")]);
+    let code = code_to_calcit(&expr, "tests.trait", "demo", vec![]).expect("parse cirru");
+
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(Arc::from("user"));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let _resolved =
+      preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.trait", &warnings, &stack).expect("preprocess method call");
+
+    let warnings_vec = warnings.borrow();
+    assert!(!warnings_vec.is_empty(), "should warn on dynamic trait call");
+    let warning_msg = warnings_vec[0].to_string();
+    assert!(
+      warning_msg.contains("dynamic trait call") && warning_msg.contains(".greet"),
+      "warning should mention method: {warning_msg}"
+    );
   }
 }

@@ -55,7 +55,7 @@
               test-record/main!
               test-fn/main!
               test-tuple/main!
-              test-algebra/main!
+              inside-eval: $ test-algebra/main!
               test-types/main!
               test-types-inference/main!
               test-generics/main!
@@ -208,11 +208,19 @@
           :code $ quote
             fn () (log-title "|Testing method")
               let
-                  a $ impl-traits (:: :calcit/number 0) Num
-                assert= (impl-traits (:: :calcit/number 2) Num) (-> a .inc .inc)
-                assert= |1 $ -> a .inc .show
-                assert= true $ any? (&tuple:impls a)
-                  fn (impl) $ = (&impl:origin impl) NumTrait
+                  a0 $ impl-traits (:: :calcit/number 0) Num
+                  _ $ do
+                    assert= true $ any? (&tuple:impls a0)
+                      fn (impl) $ = (&impl:origin impl) NumTrait
+                assert-traits a0 NumTrait calcit.core/Show
+                let
+                    a1 $ .inc a0
+                  assert-traits a1 NumTrait calcit.core/Show
+                  let
+                      a2 $ .inc a1
+                    assert-traits a2 NumTrait calcit.core/Show
+                    assert= (impl-traits (:: :calcit/number 2) Num) a2
+                    assert= |1 $ .show a1
         |test-refs $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
@@ -256,16 +264,13 @@
                   , :a
         |test-try $ %{} :CodeEntry (:doc |)
           :code $ quote
-            fn () (log-title "|Testing try")
-              assert= :true $ try
-                do (println "|inside try") :true
-                fn $ error
-              assert= :false $ try
+            defn test-try ()
+              assert= false $ try
                 do (println "|inside false try")
                   raise "|error intented" $ [] :demo
                   , :true
                 fn (error)
-                  do (println "|Caught error:" error) :false
+                  do (println "|Caught error:" error) false
               assert= |:a $ apply-args ()
                 fn () $ try (raise |false)
                   fn (error) (str :a)

@@ -9,6 +9,7 @@
         |hole-series $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn hole-series (x)
+              assert-type x :number
               if (&<= x 0) (raise "\"unexpected small number")
                 if (&= x 1) 0 $ if (&= x 2) 1
                   let

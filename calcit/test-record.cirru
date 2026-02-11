@@ -96,11 +96,17 @@
               let
                   l1 $ %{} Lagopus (:name |LagopusA)
                   a1 $ new-record :A :name
-                println l1
-                .show l1
-                -> l1 (.rename |LagopusB) (.show)
-                assert= (&record:impls l1)
-                  &record:impls $ impl-traits a1 BirdImpl
+                  l1t l1
+                assert-traits l1t BirdTrait
+                let
+                    l2 $ .rename l1t |LagopusB
+                    l2t l2
+                  assert-traits l2t BirdTrait
+                  println l1
+                  .show l1t
+                  .show l2t
+                  assert= (&record:impls l1)
+                    &record:impls $ impl-traits a1 BirdImpl
         |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
           :code $ quote
             fn () (log-title "|Testing record-with")

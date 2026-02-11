@@ -158,6 +158,7 @@
                   t0 $ :: :demo 1
                   ; impl-traits appends impls, so later ones override earlier ones
                   t $ impl-traits t0 MyBarImpl MyBarImpl2
+                assert-traits t MyBar
                 assert= "|bar2" $ .bar t
               println "|  tuple precedence: ✓"
           :examples $ []
@@ -178,6 +179,10 @@
                   t0 $ :: :demo 1
                   ta $ impl-traits t0 MyZapAImpl MyZapBImpl
                   tb $ impl-traits t0 MyZapBImpl MyZapAImpl
+                assert-traits pa MyZapA MyZapB
+                assert-traits pb MyZapA MyZapB
+                assert-traits ta MyZapA MyZapB
+                assert-traits tb MyZapA MyZapB
                 assert= "|zapB" $ .zap pa
                 assert= "|zapA" $ .zap pb
                 assert= "|zapB" $ .zap ta
@@ -193,6 +198,7 @@
                   Person0 $ new-record :Person :name
                   Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
                   p $ %{} Person (:name |Alice)
+                assert-traits p MyZapA MyZapB
                 ; `.zap` follows normal dispatch (last-wins for user impls)
                 assert= "|zapB" $ .zap p
                 ; `&trait-call` selects by trait, bypassing `.method` ambiguity
@@ -202,6 +208,7 @@
               let
                   t0 $ :: :demo 1
                   t $ impl-traits t0 MyZapAImpl MyZapBImpl
+                assert-traits t MyZapA MyZapB
                 assert= "|zapB" $ .zap t
                 assert= "|zapA" $ &trait-call MyZapA :zap t
                 assert= "|zapB" $ &trait-call MyZapB :zap t
@@ -311,18 +318,27 @@
             defn test-option-result-map ()
               println "|Testing Option/Result Mappable..."
 
-              assert=
-                %some 2
-                .map (%some 1) inc
-              assert=
-                %none
-                .map (%none) inc
-              assert=
-                %ok 2
-                .map (%ok 1) inc
-              assert=
-                %err |oops
-                .map (%err |oops) inc
+              let
+                  opt-some $ %some 1
+                  opt-none $ %none
+                  res-ok $ %ok 1
+                  res-err $ %err |oops
+                assert-traits opt-some calcit.core/Mappable
+                assert-traits opt-none calcit.core/Mappable
+                assert-traits res-ok calcit.core/Mappable
+                assert-traits res-err calcit.core/Mappable
+                assert=
+                  %some 2
+                  .map opt-some inc
+                assert=
+                  %none
+                  .map opt-none inc
+                assert=
+                  %ok 2
+                  .map res-ok inc
+                assert=
+                  %err |oops
+                  .map res-err inc
 
               println "|  Option/Result map: ✓"
           :examples $ []

@@ -13,6 +13,7 @@
     "eval": "cargo run --bin cr -- eval",
     "check-all": "yarn compile && yarn try-rs && yarn try-js && yarn try-ir",
     "try-rs": "cargo run --bin cr -- calcit/test.cirru -1",
+    "try-rs-dyn-trait": "cargo run --bin cr -- calcit/test.cirru -1 --check-dyn-trait",
     "try-js-brk": "cargo run --bin cr -- calcit/test.cirru -1 js && node --inspect-brk js-out/main.mjs",
     "try-js": "cargo run --bin cr -- calcit/test.cirru -1 js && node js-out/main.mjs",
     "try-ir": "cargo run --bin cr -- calcit/test.cirru -1 js"
