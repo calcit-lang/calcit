@@ -147,6 +147,8 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeTupleEnumHasVariant => meta::tuple_enum_has_variant(args),
     NativeTupleEnumVariantArity => meta::tuple_enum_variant_arity(args),
     NativeTupleValidateEnum => meta::tuple_validate_enum(args),
+    NativeImplGet => meta::impl_get(args),
+    NativeImplNth => meta::impl_nth(args),
     // effects
     NativeDisplayStack => meta::display_stack(args, call_stack),
     NativeMethodsOf => meta::methods_of(args, call_stack),

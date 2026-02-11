@@ -451,15 +451,6 @@ fn tuple_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
     (Edn::tag("kind"), Edn::tag("tuple")),
     (Edn::tag("tag"), Edn::Str(tuple.tag.to_string().into())),
   ];
-  {
-    let mut impls_list = EdnListView::default();
-    for imp in tuple.impls() {
-      impls_list.push(Edn::Str(imp.name().ref_str().into()));
-    }
-    if !impls_list.is_empty() {
-      entries.push((Edn::tag("impls"), impls_list.into()));
-    }
-  }
   if let Some(sum_type) = &tuple.sum_type {
     entries.push((Edn::tag("enum"), Edn::Str(sum_type.name().ref_str().into())));
   }
@@ -471,15 +462,6 @@ fn tuple_type_metadata_entries(tuple: &CalcitTuple) -> Vec<(Edn, Edn)> {
     (Edn::tag("type"), Edn::tag("tuple")),
     (Edn::tag("tag"), Edn::Str(tuple.tag.to_string().into())),
   ];
-  {
-    let mut impls_list = EdnListView::default();
-    for imp in tuple.impls() {
-      impls_list.push(Edn::Str(imp.name().ref_str().into()));
-    }
-    if !impls_list.is_empty() {
-      entries.push((Edn::tag("impls"), impls_list.into()));
-    }
-  }
   if let Some(sum_type) = &tuple.sum_type {
     entries.push((Edn::tag("enum"), Edn::Str(sum_type.name().ref_str().into())));
   }
@@ -572,36 +554,18 @@ fn dump_enum_code(enum_def: &CalcitEnum) -> Edn {
 }
 
 fn record_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
-  let mut entries = vec![
+  let entries = vec![
     (Edn::tag("kind"), Edn::tag("record")),
     (Edn::tag("name"), Edn::Str(record.name().ref_str().into())),
   ];
-  {
-    let mut impls_list = EdnListView::default();
-    for imp in &record.struct_ref.impls {
-      impls_list.push(Edn::Str(imp.name().ref_str().into()));
-    }
-    if !impls_list.is_empty() {
-      entries.push((Edn::tag("impls"), impls_list.into()));
-    }
-  }
   entries
 }
 
 fn record_type_metadata(record: &CalcitRecord) -> Vec<(Edn, Edn)> {
-  let mut entries = vec![
+  let entries = vec![
     (Edn::tag("type"), Edn::tag("record")),
     (Edn::tag("name"), Edn::Str(record.name().ref_str().into())),
   ];
-  {
-    let mut impls_list = EdnListView::default();
-    for imp in &record.struct_ref.impls {
-      impls_list.push(Edn::Str(imp.name().ref_str().into()));
-    }
-    if !impls_list.is_empty() {
-      entries.push((Edn::tag("impls"), impls_list.into()));
-    }
-  }
   entries
 }
 

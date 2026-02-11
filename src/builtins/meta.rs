@@ -789,6 +789,62 @@ pub fn impl_origin(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+pub fn impl_get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&impl:get expected 2 arguments, but received:", xs);
+  }
+  let name = match &xs[1] {
+    Calcit::Tag(tag) => tag.ref_str(),
+    Calcit::Str(s) => s.as_ref(),
+    Calcit::Symbol { sym, .. } => sym.as_ref(),
+    other => {
+      let msg = format!(
+        "&impl:get expects method name as tag/string/symbol, but received: {}",
+        type_of(&[other.to_owned()])?.lisp_str()
+      );
+      return CalcitErr::err_str(CalcitErrKind::Type, msg);
+    }
+  };
+
+  match &xs[0] {
+    Calcit::Impl(imp) => match imp.get(name) {
+      Some(value) => Ok(value.to_owned()),
+      None => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&impl:get cannot find method `{name}` in impl `{}`", imp.name),
+      ),
+    },
+    other => CalcitErr::err_str(CalcitErrKind::Type, format!("&impl:get expected an impl, but received: {other}")),
+  }
+}
+
+pub fn impl_nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&impl:nth expected 2 arguments, but received:", xs);
+  }
+  let index = match &xs[1] {
+    Calcit::Number(n) if n.fract() == 0.0 && *n >= 0.0 => *n as usize,
+    other => {
+      let msg = format!(
+        "&impl:nth expects a non-negative integer index, but received: {}",
+        type_of(&[other.to_owned()])?.lisp_str()
+      );
+      return CalcitErr::err_str(CalcitErrKind::Type, msg);
+    }
+  };
+
+  match &xs[0] {
+    Calcit::Impl(imp) => match imp.values.get(index) {
+      Some(value) => Ok(value.to_owned()),
+      None => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("&impl:nth index {index} out of bounds for impl `{}`", imp.name),
+      ),
+    },
+    other => CalcitErr::err_str(CalcitErrKind::Type, format!("&impl:nth expected an impl, but received: {other}")),
+  }
+}
+
 fn parse_enum_record(enum_record: &CalcitRecord, proc_name: &str) -> Result<CalcitEnum, CalcitErr> {
   match CalcitEnum::from_record(enum_record.to_owned()) {
     Ok(proto) => Ok(proto),

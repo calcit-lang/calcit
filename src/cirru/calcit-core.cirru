@@ -737,6 +737,12 @@
         |&record:impls $ %{} :CodeEntry (:doc "|internal function for getting record impls\nSyntax: (&record:impls record)\nParams: record (record)\nReturns: any\nReturns impls of record")
           :code $ quote &runtime-inplementation
           :examples $ []
+        |&impl:get $ %{} :CodeEntry (:doc "|internal function for getting impl entry by name\nSyntax: (&impl:get impl name)\nParams: impl (impl), name (tag/string/symbol)\nReturns: any\nReturns impl entry value by method name")
+          :code $ quote &runtime-inplementation
+          :examples $ []
+        |&impl:nth $ %{} :CodeEntry (:doc "|internal function for getting impl entry by index\nSyntax: (&impl:nth impl index)\nParams: impl (impl), index (number)\nReturns: any\nReturns impl entry value by index")
+          :code $ quote &runtime-inplementation
+          :examples $ []
         |&record:matches? $ %{} :CodeEntry (:doc "|internal function for checking record matches\nSyntax: (&record:matches? record pattern)\nParams: record (record), pattern (any)\nReturns: boolean\nReturns true if record matches pattern")
           :code $ quote &runtime-inplementation
           :examples $ []

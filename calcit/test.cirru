@@ -34,7 +34,7 @@
             def AtomBox $ impl-traits AtomBox0 %A
         |NumBox0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum NumBox (:calcit/number :number)
+            defenum NumBox (:number :number)
         |NumBox $ %{} :CodeEntry (:doc |)
           :code $ quote
             def NumBox $ impl-traits NumBox0 Num
@@ -241,18 +241,23 @@
           :code $ quote
             fn () (log-title "|Testing method")
               let
-                  a0 $ %:: NumBox :calcit/number 0
+                  a0 $ %:: NumBox :number 0
                   _ $ do
-                    assert= true $ any? (&tuple:impls a0)
-                      fn (impl) $ = (&impl:origin impl) NumTrait
+                    assert-type a0 NumBox
+                    let
+                        a0-tuple a0
+                      assert-type a0-tuple :tuple
+                      assert= true $ any? (&tuple:impls a0-tuple)
+                        fn (impl) $ = (&impl:origin impl) NumTrait
                 assert-traits a0 NumTrait calcit.core/Show
                 let
                     a1 $ .inc a0
+                  assert-type a1 NumBox
                   assert-traits a1 NumTrait calcit.core/Show
                   let
                       a2 $ .inc a1
                     assert-traits a2 NumTrait calcit.core/Show
-                    assert= (%:: NumBox :calcit/number 2) a2
+                    assert= (%:: NumBox :number 2) a2
                     assert= |1 $ .show a1
         |test-refs $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -269,6 +274,7 @@
 
               let
                   v $ %:: ValueBox :value 1
+                assert-type v ValueBox
                 assert= 2 @v
                 assert= (nth v 1) 1
 

@@ -40,7 +40,6 @@ fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
 /// Extract type information from a Calcit definition
 /// Functions and procs are converted into `CalcitTypeAnnotation::Function` to retain argument/return hints
 /// Other values fall back to their concrete annotation (tag/record/tuple/custom)
-/// Context for preprocessing operations, bundled to avoid too many parameters
 pub struct PreprocessContext<'a> {
   scope_defs: &'a HashSet<Arc<str>>,
   scope_types: &'a mut ScopeTypes,
@@ -1672,12 +1671,8 @@ fn try_inline_method_call(
         return None;
       }
       let type_ref = resolved_type.as_ref();
-      let Some(impl_records) = get_impl_records_from_type(type_ref, call_stack) else {
-        return None;
-      };
-      let Some(method_entry) = find_method_entry_for_type(type_ref, &impl_records, method_name.as_ref()) else {
-        return None;
-      };
+      let impl_records = get_impl_records_from_type(type_ref, call_stack)?;
+      let (_impl_index, _impl_record, method_entry) = find_method_entry_with_impl(type_ref, &impl_records, method_name.as_ref())?;
 
       if let Some(callable_head) = pick_callable_from_method_entry(method_entry) {
         return Some(build_inlined_call(callable_head, args));
@@ -1691,9 +1686,8 @@ fn try_inline_method_call(
 
 fn pick_callable_from_method_entry(entry: &Calcit) -> Option<Calcit> {
   match entry {
-    Calcit::Import(..) | Calcit::Proc(..) | Calcit::Fn { .. } | Calcit::Registered(..) | Calcit::Symbol { .. } => {
-      Some(entry.to_owned())
-    }
+    // Avoid inlining Fn literals: JS codegen would embed large function bodies and lose closure semantics.
+    Calcit::Import(..) | Calcit::Proc(..) | Calcit::Registered(..) | Calcit::Symbol { .. } => Some(entry.to_owned()),
     _ => None,
   }
 }
@@ -1705,6 +1699,28 @@ fn build_inlined_call(callable_head: Calcit, args: &CalcitList) -> Calcit {
     call_nodes.push(item.to_owned());
   }
   Calcit::from(call_nodes)
+}
+
+fn find_method_entry_with_impl<'a>(
+  type_ref: &CalcitTypeAnnotation,
+  impls: &'a [Arc<CalcitImpl>],
+  name: &str,
+) -> Option<(usize, &'a Arc<CalcitImpl>, &'a Calcit)> {
+  let last_wins = core_impl_list_symbol_from_type_annotation(type_ref).is_none();
+  if last_wins {
+    for (idx, imp) in impls.iter().enumerate().rev() {
+      if let Some(entry) = imp.get(name) {
+        return Some((idx, imp, entry));
+      }
+    }
+  } else {
+    for (idx, imp) in impls.iter().enumerate() {
+      if let Some(entry) = imp.get(name) {
+        return Some((idx, imp, entry));
+      }
+    }
+  }
+  None
 }
 
 fn validate_method_call(

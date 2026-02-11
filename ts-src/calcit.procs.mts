@@ -703,6 +703,25 @@ export let _$n_impl_$o_origin = function (impl: CalcitValue): CalcitValue {
   throw new Error(`&impl:origin expected an impl, but received: ${toString(impl, true)}`);
 };
 
+export let _$n_impl_$o_get = function (impl: CalcitValue, name: CalcitValue): CalcitValue {
+  if (arguments.length !== 2) throw new Error("&impl:get expected 2 arguments");
+  if (!(impl instanceof CalcitImpl)) {
+    throw new Error(`&impl:get expected an impl as first argument, but received: ${toString(impl, true)}`);
+  }
+  return impl.get(name);
+};
+
+export let _$n_impl_$o_nth = function (impl: CalcitValue, index: CalcitValue): CalcitValue {
+  if (arguments.length !== 2) throw new Error("&impl:nth expected 2 arguments");
+  if (!(impl instanceof CalcitImpl)) {
+    throw new Error(`&impl:nth expected an impl as first argument, but received: ${toString(impl, true)}`);
+  }
+  if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {
+    throw new Error(`&impl:nth expected a non-negative integer index, but received: ${toString(index, true)}`);
+  }
+  return impl.values[index];
+};
+
 export let _$n_list_$o_assoc_before = function (xs: CalcitList | CalcitSliceList, k: number, v: CalcitValue): CalcitList {
   if (arguments.length !== 3) {
     throw new Error("assoc takes 3 arguments");
