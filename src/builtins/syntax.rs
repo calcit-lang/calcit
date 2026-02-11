@@ -429,7 +429,11 @@ pub fn syntax_if(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_sta
 pub fn eval(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let v = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
-    runner::evaluate_expr(&v, scope, file_ns, call_stack)
+    let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
+    let mut scope_types = HashMap::new();
+    let resolved = runner::preprocess::preprocess_expr(&v, &HashSet::new(), &mut scope_types, file_ns, check_warnings, call_stack)?;
+    LocatedWarning::print_list(&check_warnings.borrow());
+    runner::evaluate_expr(&resolved, scope, file_ns, call_stack)
   } else {
     CalcitErr::err_nodes(CalcitErrKind::Arity, "eval expected 1 argument, but received:", &expr.to_vec())
   }

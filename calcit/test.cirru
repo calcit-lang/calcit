@@ -20,6 +20,44 @@
               :inc $ fn (x) (update x 1 inc)
               :show $ fn (x)
                 str $ &tuple:nth x 1
+        |%A $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defimpl %A :%A
+              :deref $ fn (self)
+                tag-match self
+                  (:atom x) x
+        |AtomBox0 $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defenum AtomBox (:atom :dynamic)
+        |AtomBox $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def AtomBox $ impl-traits AtomBox0 %A
+        |NumBox0 $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defenum NumBox (:calcit/number :number)
+        |NumBox $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def NumBox $ impl-traits NumBox0 Num
+        |Deref $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defimpl Deref :Deref
+              :deref $ fn (self) 2
+        |ValueBox0 $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defenum ValueBox (:value :dynamic)
+        |ValueBox $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def ValueBox $ impl-traits ValueBox0 Deref
+        |%r $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defimpl %r :%demo
+              :get $ fn (self) 1
+        |Demo0 $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defenum Demo (:a :dynamic)
+        |Demo $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def Demo $ impl-traits Demo0 %r
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! ()
@@ -75,15 +113,9 @@
                   *a $ atom 1
                 assert= 1 $ deref *a
                 assert= 1 $ &atom:deref *a
-              let
-                  %A $ defimpl %A :%A
-                    :deref $ fn (self)
-                      tag-match self
-                        (:atom x) x
-                  AtomBox $ impl-traits (defenum AtomBox (:atom :dynamic)) %A
-                assert= 1 $ deref $ %:: AtomBox :atom 1
-                assert= 1 $ deref $ %:: AtomBox :atom 1
-                assert= 2 $ deref $ %:: AtomBox :atom 2
+              assert= 1 $ deref $ %:: AtomBox :atom 1
+              assert= 1 $ deref $ %:: AtomBox :atom 1
+              assert= 2 $ deref $ %:: AtomBox :atom 2
         |test-arguments $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing arguments")
@@ -209,7 +241,6 @@
           :code $ quote
             fn () (log-title "|Testing method")
               let
-                  NumBox $ impl-traits (defenum NumBox (:calcit/number :number)) Num
                   a0 $ %:: NumBox :calcit/number 0
                   _ $ do
                     assert= true $ any? (&tuple:impls a0)
@@ -237,9 +268,6 @@
                 assert= 2 @*l
 
               let
-                  Deref $ defimpl Deref :Deref
-                    :deref $ fn (self) 2
-                  ValueBox $ impl-traits (defenum ValueBox (:value :dynamic)) Deref
                   v $ %:: ValueBox :value 1
                 assert= 2 @v
                 assert= (nth v 1) 1
@@ -308,10 +336,6 @@
               assert= false $ = (:: :t 1) (:: :t 1 2)
               let
                   a $ :: :a 1
-                  %r $ defimpl %r :%demo
-                    :get $ fn (self) 1
-                  Demo0 $ defenum Demo (:a :dynamic)
-                  Demo $ impl-traits Demo0 %r
                   b $ %:: Demo :a 1
                 assert= true $ any? (&tuple:impls b)
                   fn (impl) $ includes? (str impl) |%demo

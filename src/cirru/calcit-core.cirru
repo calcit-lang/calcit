@@ -134,7 +134,15 @@
                   f (m x) x
               :: :mappend $ defn &fn:mappend (f g)
                 defn %&fn:mappend (x)
-                  .mappend (f x) (g x)
+                  &let
+                    v1 $ f x
+                    &let
+                      v2 $ g x
+                      if (list? v1) (&list:concat v1 v2)
+                        if (map? v1) (merge v1 v2)
+                          if (set? v1) (union v1 v2)
+                            if (string? v1) (&str:concat v1 v2)
+                              .mappend v1 v2
               :: :apply $ defn &fn:apply (f g)
                 defn %*fn:apply (x)
                   g x $ f x
@@ -1300,7 +1308,9 @@
                 raise $ str-spaced "|assoc does not work on nil for:" args
                 if (tuple? x) (&tuple:assoc x & args)
                   if (list? x) (&list:assoc x & args)
-                    if (record? x) (&record:assoc x & args) (.assoc x & args)
+                    if (record? x) (&record:assoc x & args)
+                      if (map? x) (&map:assoc x & args)
+                        .assoc x & args
           :examples $ []
             quote $ assert= (&{} :a 1 :b 2)
               assoc (&{} :a 1) :b 2
@@ -1434,7 +1444,7 @@
               list-match args
                 () $ []
                 (a0 as)
-                  do (assert-type a0 :list) (.concat a0 & as)
+                  do (assert-type a0 :list) (&list:concat a0 & as)
           :examples $ []
             quote $ assert= ([] 1 2 3 4 5)
               concat ([] 1 2) ([] 3 4) ([] 5)
@@ -1537,7 +1547,10 @@
                   if (tuple? x)
                     and (&>= k 0)
                       &< k $ &tuple:count x
-                    .contains? x k
+                    if (map? x) (&map:contains? x k)
+                      if (set? x) (&set:includes? x k)
+                        if (string? x) (&str:contains? x k)
+                          .contains? x k
           :examples $ []
             quote $ assert= true
               contains? ([] :a :b) 1
@@ -1557,7 +1570,10 @@
               hint-fn $ return-type :number
               if (nil? x) 0 $ if (tuple? x) (&tuple:count x)
                 if (list? x) (&list:count x)
-                  if (record? x) (&record:count x) (.count x)
+                  if (record? x) (&record:count x)
+                    if (map? x) (&map:count x)
+                      if (set? x) (&set:count x)
+                        if (string? x) (&str:count x) (.count x)
           :examples $ []
             quote $ assert= 4
               count $ [] 1 2 3 4
@@ -1716,7 +1732,7 @@
                             &= 'quote $ &list:first item
                             , false
                           , false
-                      first-pair
+                      , first-pair
                       []
                     []
                   &let
@@ -1868,7 +1884,8 @@
         |dissoc $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn dissoc (x & args)
-              if (nil? x) nil $ if (list? x) (&list:dissoc x & args) (.dissoc x & args)
+              if (nil? x) nil $ if (list? x) (&list:dissoc x & args)
+                if (map? x) (&map:dissoc x & args) (.dissoc x & args)
           :examples $ []
         |dissoc-in $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1944,7 +1961,13 @@
           :code $ quote
             defn empty? (x)
               hint-fn $ return-type :bool
-              if (nil? x) true $ if (list? x) (&list:empty? x) (.empty? x)
+              if (nil? x) true $ if (list? x) (&list:empty? x)
+                if (map? x) (&map:empty? x)
+                  if (set? x) (&set:empty? x)
+                    if (string? x) (&str:empty? x)
+                      if (record? x) (&= 0 (&record:count x))
+                        if (tuple? x) (&= 0 (&tuple:count x))
+                          .empty? x
           :examples $ []
             quote $ assert= true
               empty? $ []
@@ -2013,7 +2036,11 @@
           :examples $ []
         |filter $ %{} :CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
           :code $ quote
-            defn filter (xs f) (assert-type f :fn) (.filter xs f)
+            defn filter (xs f) (assert-type f :fn)
+              if (nil? xs) nil $ if (list? xs) (&list:filter xs f)
+                if (map? xs) (&map:filter xs f)
+                  if (set? xs) (&set:filter xs f)
+                    .filter xs f
           :examples $ []
             quote $ assert= ([] 2 4)
               filter ([] 1 2 3 4 5)
@@ -2026,8 +2053,9 @@
         |filter-not $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn filter-not (xs f) (assert-type f :fn)
-              .filter xs $ defn %filter-not (x)
-                not $ f x
+              if (nil? xs) nil
+                filter xs $ defn %filter-not (x)
+                  not $ f x
           :examples $ []
         |find $ %{} :CodeEntry (:doc "|Find the first element in a collection that satisfies the predicate f")
           :code $ quote
@@ -2054,7 +2082,8 @@
           :code $ quote
             defn first (x)
               if (nil? x) nil $ if (tuple? x) (&tuple:nth x 0)
-                if (list? x) (&list:nth x 0) (.first x)
+                if (list? x) (&list:first x)
+                  if (string? x) (&str:first x) (.first x)
           :examples $ []
             quote $ assert= 1
               first $ [] 1 2 3
@@ -2286,7 +2315,11 @@
           :code $ quote
             defn includes? (x k)
               hint-fn $ return-type :bool
-              if (nil? x) false $ if (list? x) (&list:includes? x k) (.includes? x k)
+              if (nil? x) false $ if (list? x) (&list:includes? x k)
+                if (map? x) (&map:includes? x k)
+                  if (set? x) (&set:includes? x k)
+                    if (string? x) (&str:includes? x k)
+                      .includes? x k
           :examples $ []
         |index-of $ %{} :CodeEntry (:doc "|Find the first index of an item in a list, returns nil if not found")
           :code $ quote
@@ -2767,7 +2800,8 @@
           :code $ quote
             defn nth (x i) (assert-type i :number)
               if (tuple? x) (&tuple:nth x i)
-                if (list? x) (&list:nth x i) (.nth x i)
+                if (list? x) (&list:nth x i)
+                  if (string? x) (&str:nth x i) (.nth x i)
           :examples $ []
             quote $ assert= 2
               nth ([] 1 2 3) 1
@@ -3016,7 +3050,12 @@
           :code $ quote
             defn slice (xs n ? m) (assert-type n :number)
               assert-type m $ :: :optional :number
-              if (nil? xs) nil $ .slice xs n m
+              if (nil? xs) nil
+                if (list? xs)
+                  &list:slice xs n m
+                  if (string? xs)
+                    &str:slice xs n m
+                    .slice xs n m
           :examples $ []
             quote $ assert= ([] 2 3)
               slice ([] 1 2 3 4) 1 3

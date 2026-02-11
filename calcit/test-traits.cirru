@@ -130,6 +130,32 @@
               :zap $ fn (_x) "|zapB"
           :examples $ []
 
+        |Demo0 $ %{} :CodeEntry (:doc "|Enum prototype for tuple trait tests")
+          :code $ quote
+            defenum Demo
+              :demo :dynamic
+          :examples $ []
+
+        |DemoBar $ %{} :CodeEntry (:doc "|Enum with MyBar impls")
+          :code $ quote
+            def DemoBar $ impl-traits Demo0 MyBarImpl MyBarImpl2
+          :examples $ []
+
+        |DemoZapA $ %{} :CodeEntry (:doc "|Enum with MyZapA then MyZapB")
+          :code $ quote
+            def DemoZapA $ impl-traits Demo0 MyZapAImpl MyZapBImpl
+          :examples $ []
+
+        |DemoZapB $ %{} :CodeEntry (:doc "|Enum with MyZapB then MyZapA")
+          :code $ quote
+            def DemoZapB $ impl-traits Demo0 MyZapBImpl MyZapAImpl
+          :examples $ []
+
+        |DemoZap $ %{} :CodeEntry (:doc "|Enum with MyZapA/MyZapB")
+          :code $ quote
+            def DemoZap $ impl-traits Demo0 MyZapAImpl MyZapBImpl
+          :examples $ []
+
         |test-deftrait $ %{} :CodeEntry (:doc "|Test deftrait macro")
           :code $ quote
             defn test-deftrait ()
@@ -159,10 +185,7 @@
             defn test-tuple-impl-precedence-order ()
               println "|Testing tuple impl precedence order..."
               let
-                  Demo0 $ defenum Demo (:demo :dynamic)
-                  ; impl-traits appends impls, so later ones override earlier ones
-                  Demo $ impl-traits Demo0 MyBarImpl MyBarImpl2
-                  t $ %:: Demo :demo 1
+                  t $ %:: DemoBar :demo 1
                 assert-traits t MyBar
                 assert= "|bar2" $ .bar t
               println "|  tuple precedence: ✓"
@@ -180,11 +203,8 @@
                   pa $ %{} PersonA (:name |Alice)
                   pb $ %{} PersonB (:name |Bob)
 
-                  Demo0 $ defenum Demo (:demo :dynamic)
-                  DemoA $ impl-traits Demo0 MyZapAImpl MyZapBImpl
-                  DemoB $ impl-traits Demo0 MyZapBImpl MyZapAImpl
-                  ta $ %:: DemoA :demo 1
-                  tb $ %:: DemoB :demo 1
+                  ta $ %:: DemoZapA :demo 1
+                  tb $ %:: DemoZapB :demo 1
                 assert-traits pa MyZapA MyZapB
                 assert-traits pb MyZapA MyZapB
                 assert-traits ta MyZapA MyZapB
@@ -211,9 +231,7 @@
                 assert= "|zapB" $ &trait-call MyZapB :zap p
 
               let
-                  Demo0 $ defenum Demo (:demo :dynamic)
-                  Demo $ impl-traits Demo0 MyZapAImpl MyZapBImpl
-                  t $ %:: Demo :demo 1
+                  t $ %:: DemoZap :demo 1
                 assert-traits t MyZapA MyZapB
                 assert= "|zapB" $ .zap t
                 assert= "|zapA" $ &trait-call MyZapA :zap t
