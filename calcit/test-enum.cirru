@@ -35,9 +35,10 @@
               ; Valid tuple creation
               let
                   valid-ok $ %:: Result0 :ok
+                  Result1 $ impl-traits Result0 ResultImpl
                 assert= :ok $ &tuple:nth valid-ok 0
                 let
-                    ok-impl $ impl-traits valid-ok ResultImpl
+                    ok-impl $ %:: Result1 :ok
                   assert= true $ any? (&tuple:impls ok-impl)
                     fn (impl) $ includes? (str impl) |ResultTrait
                   assert= "|(%:: :ok (:enum Result0))" $ str ok-impl

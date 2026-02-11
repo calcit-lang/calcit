@@ -135,20 +135,28 @@ export let fieldsEqual = (xs: Array<CalcitTag>, ys: Array<CalcitTag>): boolean =
 };
 
 export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => {
+  let recordProto: CalcitRecord;
   if (proto instanceof CalcitRecord) {
+    recordProto = proto;
+  } else if (proto instanceof CalcitStruct) {
+    recordProto = new CalcitRecord(proto.name, proto.fields, new Array(proto.fields.length).fill(null), proto);
+  } else {
+    throw new Error("Expected prototype to be a record");
+  }
+  {
     if (xs.length % 2 !== 0) {
       throw new Error("Expected even number of key/value");
     }
-    if (xs.length !== proto.fields.length * 2) {
+    if (xs.length !== recordProto.fields.length * 2) {
       throw new Error("fields size does not match");
     }
 
-    let values = new Array(proto.fields.length);
+    let values = new Array(recordProto.fields.length);
 
-    for (let i = 0; i < proto.fields.length; i++) {
+    for (let i = 0; i < recordProto.fields.length; i++) {
       let idx = -1;
-      let k = proto.fields[i];
-      for (let j = 0; j < proto.fields.length; j++) {
+      let k = recordProto.fields[i];
+      for (let j = 0; j < recordProto.fields.length; j++) {
         if (k === castTag(xs[j * 2])) {
           idx = j;
           break;
@@ -164,9 +172,7 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
       values[i] = xs[idx * 2 + 1];
     }
 
-    return new CalcitRecord(proto.name, proto.fields, values, proto.structRef);
-  } else {
-    throw new Error("Expected prototype to be a record");
+    return new CalcitRecord(recordProto.name, recordProto.fields, values, recordProto.structRef);
   }
 };
 

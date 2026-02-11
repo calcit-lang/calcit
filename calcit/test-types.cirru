@@ -216,12 +216,13 @@
               let
                   PersonImpl $ defimpl PersonImpl :PersonImpl
                     :greet $ fn (self) (str "|Hello, I'm " $ :name self)
+                  Person0 $ new-record :Person :name :age
+                  Person $ impl-traits Person0 PersonImpl
+                  alice $ %{} Person (:name |Alice) (:age 30)
                 let
-                    alice $ impl-traits (:: :name |Alice :age 30) PersonImpl
-                  let
-                      greeting $ .greet alice
-                    println "|greeting:" greeting
-                    assert= "|Hello, I'm Alice" greeting
+                    greeting $ .greet alice
+                  println "|greeting:" greeting
+                  assert= "|Hello, I'm Alice" greeting
               , "|Record method checks passed"
 
         |test-method-type-errors $ %{} :CodeEntry (:doc "|Tests that invalid method calls are caught in preprocess")
@@ -359,11 +360,12 @@
               assert= :struct $ type-of $ impl-traits Person StructImpl
               let
                   enum-with-impls $ impl-traits Result EnumImpl
-                  ok $ impl-traits (%:: enum-with-impls :ok 1) ResultImpl
+                  enum-with-result-impls $ impl-traits enum-with-impls ResultImpl
+                  ok $ %:: enum-with-result-impls :ok 1
                 assert= :enum $ type-of enum-with-impls
                 assert= true $ any? (&tuple:impls ok)
                   fn (impl) $ = (&impl:origin impl) ResultTrait
-                assert= enum-with-impls $ &tuple:enum ok
+                assert= enum-with-result-impls $ &tuple:enum ok
                 assert= "|(%:: :ok 1 (:enum Result))" $ str ok
               , "|defstruct/defenum checks passed"
 

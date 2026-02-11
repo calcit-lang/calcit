@@ -19,14 +19,17 @@
                   tag-match self
                     (:ok value) (str "|Action ok -> " value)
                     (:err message) (str "|Action err -> " message)
+        |ActionResult $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def ActionResult $ impl-traits Result ActionImpl
         |make-ok $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-ok (value)
-              impl-traits (%:: Result :ok value) ActionImpl
+              %:: ActionResult :ok value
         |make-err $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn make-err (message)
-              impl-traits (%:: Result :err message) ActionImpl
+              %:: ActionResult :err message
         |summarize $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn summarize (action)

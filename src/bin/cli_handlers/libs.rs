@@ -60,7 +60,9 @@ pub fn handle_libs_command(cmd: &LibsCommand) -> Result<(), String> {
 fn fetch_registry() -> Result<LibraryRegistry, String> {
   let url = "https://libs.calcit-lang.org/base.cirru";
 
-  let response = ureq::get(url).call().map_err(|e| format!("Failed to connect to library registry: {e}"))?;
+  let response = ureq::get(url)
+    .call()
+    .map_err(|e| format!("Failed to connect to library registry: {e}"))?;
 
   let text = response.into_string().map_err(|e| format!("Failed to read response text: {e}"))?;
 
@@ -142,13 +144,11 @@ fn handle_readme(package: &str, file: Option<&str>) -> Result<(), String> {
   // Convert GitHub URL to raw file URL
   let base_url = github_to_raw_base(&lib.repository)?;
 
-  let agent = ureq::AgentBuilder::new()
-    .user_agent("calcit-cli")
-    .build();
+  let agent = ureq::AgentBuilder::new().user_agent("calcit-cli").build();
 
   // Try main branch first, then master
-  let content = fetch_file_content(&agent, &base_url, "main", file_name)
-    .or_else(|_| fetch_file_content(&agent, &base_url, "master", file_name))?;
+  let content =
+    fetch_file_content(&agent, &base_url, "main", file_name).or_else(|_| fetch_file_content(&agent, &base_url, "master", file_name))?;
 
   // Print library info header
   println!("\n{} {}", "Package:".bold(), lib.package_name.cyan().bold());

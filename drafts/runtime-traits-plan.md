@@ -151,6 +151,8 @@ let
 ; (impl-traits struct-def impl1 impl2 impl3 ...)
 ```
 
+**约束（更新）**：`impl-traits` 只接受 **struct/enum** 作为输入。record/tuple 是实例值，必须从已经挂载 impl 的 struct/enum 创建（如 `%{} Struct ...` 或 `%:: Enum ...`）。
+
 ### Trait 约束与标注（新增）
 
 `assert-traits` 用于在编译期提供“trait 标注”，并在运行时进行检查：
@@ -183,6 +185,13 @@ let
   - 能解析为 trait 定义的，进入 trait 集合。
   - 若解析不到 trait，会降级为自定义类型标注，仅用于类型提示（不参与方法校验）。
 - 多个 trait 通过 **append** 形成 `TraitSet`；当多次 `assert-traits` 作用于同一个 local 时，后者的 type-info 会覆盖前者。
+- 若 local 已有**具体类型**标注（如 record/struct/enum 或内置类型），`assert-traits` 不会覆盖该具体类型，以保证后续方法内联与 impl 查找仍可进行。
+
+**静态分析可执行边界（重要）**
+
+- 只有顶层 `ns/def` 可在构建快照阶段执行；`defn`/`defmacro`/thunk 内部表达式不会被执行，只做浅层预处理。
+- 因此 `defstruct`/`defenum`/`impl-traits` 若写在函数体内，静态分析阶段无法拿到 impl 列表，也就无法做方法内联与精确分派。
+- 建议把结构定义与 impl 绑定放在**顶层定义**（单独 `def`），使 preprocess 可稳定使用这些值进行分析与优化。
 
 3. **运行时行为**
 

@@ -80,9 +80,10 @@
                     :deref $ fn (self)
                       tag-match self
                         (:atom x) x
-                assert= 1 $ deref $ impl-traits (:: :atom 1) %A
-                assert= 1 $ deref $ impl-traits (:: :atom 1) %A
-                assert= 2 $ deref $ impl-traits (:: :atom 2) %A
+                  AtomBox $ impl-traits (defenum AtomBox (:atom :dynamic)) %A
+                assert= 1 $ deref $ %:: AtomBox :atom 1
+                assert= 1 $ deref $ %:: AtomBox :atom 1
+                assert= 2 $ deref $ %:: AtomBox :atom 2
         |test-arguments $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing arguments")
@@ -208,7 +209,8 @@
           :code $ quote
             fn () (log-title "|Testing method")
               let
-                  a0 $ impl-traits (:: :calcit/number 0) Num
+                  NumBox $ impl-traits (defenum NumBox (:calcit/number :number)) Num
+                  a0 $ %:: NumBox :calcit/number 0
                   _ $ do
                     assert= true $ any? (&tuple:impls a0)
                       fn (impl) $ = (&impl:origin impl) NumTrait
@@ -219,7 +221,7 @@
                   let
                       a2 $ .inc a1
                     assert-traits a2 NumTrait calcit.core/Show
-                    assert= (impl-traits (:: :calcit/number 2) Num) a2
+                    assert= (%:: NumBox :calcit/number 2) a2
                     assert= |1 $ .show a1
         |test-refs $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -237,7 +239,8 @@
               let
                   Deref $ defimpl Deref :Deref
                     :deref $ fn (self) 2
-                  v $ impl-traits (:: :value 1) Deref
+                  ValueBox $ impl-traits (defenum ValueBox (:value :dynamic)) Deref
+                  v $ %:: ValueBox :value 1
                 assert= 2 @v
                 assert= (nth v 1) 1
 
@@ -307,13 +310,15 @@
                   a $ :: :a 1
                   %r $ defimpl %r :%demo
                     :get $ fn (self) 1
-                  b $ impl-traits a %r
+                  Demo0 $ defenum Demo (:a :dynamic)
+                  Demo $ impl-traits Demo0 %r
+                  b $ %:: Demo :a 1
                 assert= true $ any? (&tuple:impls b)
                   fn (impl) $ includes? (str impl) |%demo
                 assert=
                   &tuple:params $ :: :a 1 2 3
                   [] 1 2 3
-                assert= "|(%:: :a 1 (:enum anonymous-tuple))" $ str b
+                assert= "|(%:: :a 1 (:enum Demo))" $ str b
               assert= "|(:: :a :b :c)" $ str (:: :a :b :c)
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote

@@ -1643,22 +1643,22 @@
         |%some $ %{} :CodeEntry (:doc "|Create Some variant of Option")
           :code $ quote
             defn %some (value)
-              impl-traits (%:: Option :some value) OptionMappableImpl
+              %:: Option :some value
           :examples $ []
         |%none $ %{} :CodeEntry (:doc "|Create None variant of Option")
           :code $ quote
             defn %none ()
-              impl-traits (%:: Option :none) OptionMappableImpl
+              %:: Option :none
           :examples $ []
         |%ok $ %{} :CodeEntry (:doc "|Create Ok variant of Result")
           :code $ quote
             defn %ok (value)
-              impl-traits (%:: Result :ok value) ResultMappableImpl
+              %:: Result :ok value
           :examples $ []
         |%err $ %{} :CodeEntry (:doc "|Create Err variant of Result")
           :code $ quote
             defn %err (message)
-              impl-traits (%:: Result :err message) ResultMappableImpl
+              %:: Result :err message
           :examples $ []
         |defmacro $ %{} :CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
           :code $ quote &runtime-inplementation
@@ -3462,7 +3462,7 @@
                       , |ms
                   ~ v
           :examples $ []
-        |impl-traits $ %{} :CodeEntry (:doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (record/tuple/struct/enum), traits (impl, variadic)\nReturns: value with updated trait implementations\nDispatches to &record:impl-traits, &tuple:impl-traits, &struct:impl-traits, &enum:impl-traits")
+        |impl-traits $ %{} :CodeEntry (:doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (struct/enum), traits (impl, variadic)\nReturns: value with updated trait implementations\nDispatches to &struct:impl-traits, &enum:impl-traits")
           :code $ quote
             defn impl-traits (x & traits)
               assert "|impl-traits expects impl values" $ every? traits
@@ -3470,9 +3470,7 @@
                   = :impl $ type-of trait
               if (struct? x) (&struct:impl-traits x & traits)
                 if (enum? x) (&enum:impl-traits x & traits)
-                  if (record? x) (&record:impl-traits x & traits)
-                    if (tuple? x) (&tuple:impl-traits x & traits)
-                      raise $ str-spaced "|impl-traits expects record/tuple/struct/enum, got:" (type-of x)
+                  raise $ str-spaced "|impl-traits expects struct/enum, got:" (type-of x)
           :examples $ []
         |wo-js-log $ %{} :CodeEntry (:doc |)
           :code $ quote

@@ -2938,14 +2938,61 @@ pub fn preprocess_assert_traits(
     }
   }
 
-  let resolved_entry = if !trait_defs.is_empty() {
-    if trait_defs.len() == 1 && fallback_entry.is_none() {
+  let existing_entry = ctx.scope_types.get(&local.sym).cloned().or_else(|| {
+    if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
+      None
+    } else {
+      Some(local.type_info.clone())
+    }
+  });
+
+  let resolved_entry = if let Some(existing) = existing_entry.as_ref() {
+    let ann = existing.as_ref();
+    if !is_dynamic_annotation(ann) && !is_trait_annotation(ann) {
+      existing.clone()
+    } else if let Some(fallback) = fallback_entry.as_ref() {
+      let fallback_ann = fallback.as_ref();
+      if !is_dynamic_annotation(fallback_ann) && !is_trait_annotation(fallback_ann) {
+        fallback.clone()
+      } else if !trait_defs.is_empty() {
+        if trait_defs.len() == 1 {
+          Arc::new(CalcitTypeAnnotation::Trait(trait_defs.remove(0)))
+        } else {
+          Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(trait_defs)))
+        }
+      } else {
+        fallback.clone()
+      }
+    } else if !trait_defs.is_empty() {
+      if trait_defs.len() == 1 {
+        Arc::new(CalcitTypeAnnotation::Trait(trait_defs.remove(0)))
+      } else {
+        Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(trait_defs)))
+      }
+    } else {
+      crate::calcit::DYNAMIC_TYPE.clone()
+    }
+  } else if let Some(fallback) = fallback_entry.as_ref() {
+    let fallback_ann = fallback.as_ref();
+    if !is_dynamic_annotation(fallback_ann) && !is_trait_annotation(fallback_ann) {
+      fallback.clone()
+    } else if !trait_defs.is_empty() {
+      if trait_defs.len() == 1 {
+        Arc::new(CalcitTypeAnnotation::Trait(trait_defs.remove(0)))
+      } else {
+        Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(trait_defs)))
+      }
+    } else {
+      fallback.clone()
+    }
+  } else if !trait_defs.is_empty() {
+    if trait_defs.len() == 1 {
       Arc::new(CalcitTypeAnnotation::Trait(trait_defs.remove(0)))
     } else {
       Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(trait_defs)))
     }
   } else {
-    fallback_entry.unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone())
+    crate::calcit::DYNAMIC_TYPE.clone()
   };
 
   ctx.scope_types.insert(local.sym.to_owned(), resolved_entry.clone());

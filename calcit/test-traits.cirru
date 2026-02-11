@@ -76,6 +76,12 @@
               :foo $ fn (p) (str "|foo " (:name p))
           :examples $ []
 
+        |Person0 $ %{} :CodeEntry (:doc "|Struct used in trait tests")
+          :code $ quote
+            defstruct Person0
+              :name :string
+          :examples $ []
+
         |MyFooImpl2 $ %{} :CodeEntry (:doc "|Trait impl for override test")
           :code $ quote
             defimpl MyFooImpl2 MyFoo
@@ -130,7 +136,6 @@
               println "|Testing deftrait macro..."
               assert= :trait $ type-of MyFoo
               let
-                  Person0 $ new-record :Person :name
                   Person $ impl-traits Person0 MyFooImpl
                   p $ %{} Person (:name |Alice)
                 assert= "|foo Alice" $ .foo p
@@ -142,7 +147,6 @@
             defn test-impl-precedence-order ()
               println "|Testing impl precedence order..."
               let
-                  Person0 $ new-record :Person :name
                   ; impl-traits appends impls, so later ones override earlier ones
                   Person $ impl-traits Person0 MyFooImpl MyFooImpl2
                   p $ %{} Person (:name |Alice)
@@ -155,9 +159,10 @@
             defn test-tuple-impl-precedence-order ()
               println "|Testing tuple impl precedence order..."
               let
-                  t0 $ :: :demo 1
+                  Demo0 $ defenum Demo (:demo :dynamic)
                   ; impl-traits appends impls, so later ones override earlier ones
-                  t $ impl-traits t0 MyBarImpl MyBarImpl2
+                  Demo $ impl-traits Demo0 MyBarImpl MyBarImpl2
+                  t $ %:: Demo :demo 1
                 assert-traits t MyBar
                 assert= "|bar2" $ .bar t
               println "|  tuple precedence: ✓"
@@ -168,7 +173,6 @@
             defn test-cross-trait-method-conflict ()
               println "|Testing cross-trait method conflict..."
               let
-                  Person0 $ new-record :Person :name
                   ; two different traits provide the same method name `:zap`
                   ; impl-traits appends impls, so later ones override earlier ones
                   PersonA $ impl-traits Person0 MyZapAImpl MyZapBImpl
@@ -176,9 +180,11 @@
                   pa $ %{} PersonA (:name |Alice)
                   pb $ %{} PersonB (:name |Bob)
 
-                  t0 $ :: :demo 1
-                  ta $ impl-traits t0 MyZapAImpl MyZapBImpl
-                  tb $ impl-traits t0 MyZapBImpl MyZapAImpl
+                  Demo0 $ defenum Demo (:demo :dynamic)
+                  DemoA $ impl-traits Demo0 MyZapAImpl MyZapBImpl
+                  DemoB $ impl-traits Demo0 MyZapBImpl MyZapAImpl
+                  ta $ %:: DemoA :demo 1
+                  tb $ %:: DemoB :demo 1
                 assert-traits pa MyZapA MyZapB
                 assert-traits pb MyZapA MyZapB
                 assert-traits ta MyZapA MyZapB
@@ -195,7 +201,6 @@
             defn test-explicit-trait-call ()
               println "|Testing explicit trait-call..."
               let
-                  Person0 $ new-record :Person :name
                   Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
                   p $ %{} Person (:name |Alice)
                 assert-traits p MyZapA MyZapB
@@ -206,8 +211,9 @@
                 assert= "|zapB" $ &trait-call MyZapB :zap p
 
               let
-                  t0 $ :: :demo 1
-                  t $ impl-traits t0 MyZapAImpl MyZapBImpl
+                  Demo0 $ defenum Demo (:demo :dynamic)
+                  Demo $ impl-traits Demo0 MyZapAImpl MyZapBImpl
+                  t $ %:: Demo :demo 1
                 assert-traits t MyZapA MyZapB
                 assert= "|zapB" $ .zap t
                 assert= "|zapA" $ &trait-call MyZapA :zap t
@@ -354,7 +360,6 @@
                   m $ {} (:a 1) (:b 2)
                   s |hello
                   opt $ %some 1
-                  Person0 $ new-record :Person :name
                   Person $ impl-traits Person0 MyFooImpl
                   p $ %{} Person (:name |Alice)
                 assert= x $ assert-traits x calcit.core/Show
@@ -395,7 +400,6 @@
                 assert= xs $ &inspect-methods xs "|list"
 
               let
-                  Person0 $ new-record :Person :name
                   Person $ impl-traits Person0 MyFooImpl
                   p $ %{} Person (:name |Alice)
                   ms2 $ &methods-of p

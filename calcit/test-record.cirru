@@ -18,11 +18,19 @@
         |BirdShape $ %{} :CodeEntry (:doc |)
           :code $ quote
             def BirdShape $ new-record :BirdShape :show :rename
+        |A0 $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct A0
+              :name :string
         |Cat $ %{} :CodeEntry (:doc |)
           :code $ quote (defrecord Cat :name :color)
+        |Lagopus0 $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct Lagopus0
+              :name :string
         |Lagopus $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def Lagopus $ impl-traits (new-record :Lagopus :name) BirdImpl
+            def Lagopus $ impl-traits Lagopus0 BirdImpl
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (do true)
@@ -30,9 +38,9 @@
           :code $ quote
             fn ()
               let
-                  content "|%{} :Lagopus (:name |La)"
+                  content "|%{} :Lagopus0 (:name |La)"
                   data $ parse-cirru-edn content
-                    {} $ :Lagopus Lagopus
+                    {} $ :Lagopus0 (%{} Lagopus (:name nil))
                 println |EDN: data
                 assert= true $ any? (&record:impls data)
                   fn (impl) $ = (&impl:origin impl) BirdTrait
@@ -95,7 +103,9 @@
             fn () (log-title "|Test record polymorphism") (println Lagopus)
               let
                   l1 $ %{} Lagopus (:name |LagopusA)
-                  a1 $ new-record :A :name
+                  a1 A0
+                  a2 $ impl-traits a1 BirdImpl
+                  a1r $ %{} a2 (:name |Demo)
                   l1t l1
                 assert-traits l1t BirdTrait
                 let
@@ -106,7 +116,7 @@
                   .show l1t
                   .show l2t
                   assert= (&record:impls l1)
-                    &record:impls $ impl-traits a1 BirdImpl
+                    &record:impls a1r
         |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
           :code $ quote
             fn () (log-title "|Testing record-with")

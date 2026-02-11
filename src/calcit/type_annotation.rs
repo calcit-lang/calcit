@@ -367,6 +367,20 @@ impl CalcitTypeAnnotation {
     param_index: &std::collections::HashMap<Arc<str>, usize>,
     arg_types: &mut [Arc<CalcitTypeAnnotation>],
   ) {
+    fn is_trait_annotation(ann: &CalcitTypeAnnotation) -> bool {
+      matches!(ann, CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_))
+        || matches!(ann, CalcitTypeAnnotation::Optional(inner) if is_trait_annotation(inner.as_ref()))
+    }
+
+    fn is_dynamic_annotation(ann: &CalcitTypeAnnotation) -> bool {
+      matches!(ann, CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
+        || matches!(ann, CalcitTypeAnnotation::Optional(inner) if is_dynamic_annotation(inner.as_ref()))
+    }
+
+    fn is_concrete_annotation(ann: &CalcitTypeAnnotation) -> bool {
+      !is_dynamic_annotation(ann) && !is_trait_annotation(ann)
+    }
+
     let list = match form {
       Calcit::List(xs) => xs,
       _ => return,
@@ -380,6 +394,9 @@ impl CalcitTypeAnnotation {
       };
 
       if let Some(&idx) = param_index.get(&sym) {
+        if is_concrete_annotation(arg_types[idx].as_ref()) {
+          return;
+        }
         let mut traits: Vec<Arc<CalcitTrait>> = vec![];
         let mut non_trait: Option<Arc<CalcitTypeAnnotation>> = None;
         for form in trait_forms {
