@@ -313,6 +313,34 @@ fn to_js_code(
           Err(format!("Does not expect native method as closure: {kind}"))
         }
       }
+      Calcit::Fn { info, .. } => {
+        let passed_defs = PassedDefs {
+          ns,
+          local_defs,
+          file_imports,
+        };
+        if let Some(def_ref) = info.def_ref.as_ref() {
+          let is_local_def = passed_defs.local_defs.contains(&def_ref.def_name);
+          let has_top_level_def = program::has_def_code(def_ref.def_ns.as_ref(), def_ref.def_name.as_ref());
+          if def_ref.is_macro_gen || (!is_local_def && !has_top_level_def) {
+            return Err(format!(
+              "cannot emit JS for function literal without resolvable def: {}/{} (used_in_impl: {})",
+              info.def_ns, info.name, info.usage.used_in_impl
+            ));
+          }
+          return gen_symbol_code(
+            def_ref.def_name.as_ref(),
+            def_ref.def_ns.as_ref(),
+            def_ref.def_name.as_ref(),
+            xs,
+            &passed_defs,
+          );
+        }
+        Err(format!(
+          "cannot emit JS for function literal without def reference: {}/{} (used_in_impl: {})",
+          info.def_ns, info.name, info.usage.used_in_impl
+        ))
+      }
       Calcit::Syntax(s, ..) => {
         let proc_prefix = get_proc_prefix(ns);
         Ok(format!("{proc_prefix}{}", escape_var(s.as_ref())))
@@ -677,8 +705,12 @@ fn gen_symbol_code(s: &str, def_ns: &str, at_def: &str, xs: &Calcit, passed_defs
   } else if passed_defs.local_defs.contains(s) {
     Ok(escape_var(s))
   } else if def_ns == calcit::CORE_NS {
-    // local variales inside calcit.core also uses this ns
-    eprintln!("[Warn] detected variable inside core not resolved");
+    if !program::has_def_code(calcit::CORE_NS, s) {
+      eprintln!(
+        "[Warn] unresolved core symbol `{s}` during JS codegen in {}/{at_def}",
+        passed_defs.ns
+      );
+    }
     Ok(format!("{var_prefix}{}", escape_var(s)))
   } else if def_ns.is_empty() {
     Err(format!("Unexpected ns at symbol, {xs}"))

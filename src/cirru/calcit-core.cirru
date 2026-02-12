@@ -126,26 +126,42 @@
             def &core-fn-methods $ &impl::new :&core-fn-methods
               :: :call $ defn &fn:call (f & args) (f & args)
               :: :call-args $ defn &fn:call-args (f args) (f & args)
-              :: :map $ defn &fn:map (f g)
-                defn &fn:map (x)
-                  f $ g x
-              :: :bind $ defn &fn:bind (m f)
-                defn %&fn:bind (x)
-                  f (m x) x
-              :: :mappend $ defn &fn:mappend (f g)
-                defn %&fn:mappend (x)
+              :: :map &fn:map
+              :: :bind &fn:bind
+              :: :mappend &fn:mappend
+              :: :apply &fn:apply
+          :examples $ []
+        |&fn:map $ %{} :CodeEntry (:doc "|internal helper for fn :map method entry")
+          :code $ quote
+            defn &fn:map (f g)
+              fn (x)
+                f $ g x
+          :examples $ []
+        |&fn:bind $ %{} :CodeEntry (:doc "|internal helper for fn :bind method entry")
+          :code $ quote
+            defn &fn:bind (m f)
+              fn (x)
+                f (m x) x
+          :examples $ []
+        |&fn:mappend $ %{} :CodeEntry (:doc "|internal helper for fn :mappend method entry")
+          :code $ quote
+            defn &fn:mappend (f g)
+              fn (x)
+                &let
+                  v1 $ f x
                   &let
-                    v1 $ f x
-                    &let
-                      v2 $ g x
-                      if (list? v1) (&list:concat v1 v2)
-                        if (map? v1) (merge v1 v2)
-                          if (set? v1) (union v1 v2)
-                            if (string? v1) (&str:concat v1 v2)
-                              .mappend v1 v2
-              :: :apply $ defn &fn:apply (f g)
-                defn %*fn:apply (x)
-                  g x $ f x
+                    v2 $ g x
+                    if (list? v1) (&list:concat v1 v2)
+                      if (map? v1) (merge v1 v2)
+                        if (set? v1) (union v1 v2)
+                          if (string? v1) (&str:concat v1 v2)
+                            .mappend v1 v2
+          :examples $ []
+        |&fn:apply $ %{} :CodeEntry (:doc "|internal helper for fn :apply method entry")
+          :code $ quote
+            defn &fn:apply (f g)
+              fn (x)
+                g x $ f x
           :examples $ []
         |&core-list-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add.")
           :code $ quote
@@ -186,7 +202,7 @@
               :: :last-index-of &list:last-index-of
               :: :map &list:map
               :: :map-indexed map-indexed
-              :: :mappend $ defn &list:mappend (x y) (&list:concat x y)
+              :: :mappend &list:mappend
               :: :max &list:max
               :: :min &list:min
               :: :nth &list:nth
@@ -206,11 +222,20 @@
               :: :to-list identity
               :: :map-pair &list:map-pair
               :: :filter-pair &list:filter-pair
-              :: :apply $ defn &fn:apply (xs fs)
-                &list:concat & $ map fs
-                  defn &fn:ap-gen (f)
-                    map xs $ defn &fn:ap-gen (x) (f x)
+              :: :apply &list:apply
               :: :flatten &list:flatten
+          :examples $ []
+        |&list:apply $ %{} :CodeEntry (:doc "|internal helper for list :apply method entry")
+          :code $ quote
+            defn &list:apply (xs fs)
+              &list:concat & $ map fs
+                fn (f)
+                  map xs $ fn (x) (f x)
+          :examples $ []
+        |&list:mappend $ %{} :CodeEntry (:doc "|internal helper for list :mappend method entry")
+          :code $ quote
+            defn &list:mappend (x y)
+              &list:concat x y
           :examples $ []
         |&core-map-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for map")
           :code $ quote
@@ -228,7 +253,7 @@
               :: :diff-keys &map:diff-keys
               :: :diff-new &map:diff-new
               :: :dissoc &map:dissoc
-              :: :empty $ defn &map:empty (x) (&{})
+              :: :empty &map:empty
               :: :empty? &map:empty?
               :: :filter &map:filter
               :: :filter-kv &map:filter-kv
@@ -591,6 +616,10 @@
           :examples $ []
         |&map:dissoc $ %{} :CodeEntry (:doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (map), key (any), keys (any, variadic)\nReturns: map\nReturns new map without specified keys")
           :code $ quote &runtime-inplementation
+          :examples $ []
+        |&map:empty $ %{} :CodeEntry (:doc "|internal helper for producing an empty map value while preserving method signature shape")
+          :code $ quote
+            defn &map:empty (_xs) (&{})
           :examples $ []
         |&map:empty? $ %{} :CodeEntry (:doc "|internal function for checking if map is empty\nSyntax: (&map:empty? map)\nParams: map (map)\nReturns: boolean\nReturns true if map has no entries")
           :code $ quote &runtime-inplementation

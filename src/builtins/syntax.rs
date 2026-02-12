@@ -11,8 +11,8 @@ use crate::builtins;
 use crate::builtins::meta::{NS_SYMBOL_DICT, type_of};
 
 use crate::calcit::{
-  self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitList, CalcitLocal, CalcitMacro, CalcitProc, CalcitSymbolInfo,
-  CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
+  self, CalcitArgLabel, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitList, CalcitLocal, CalcitMacro,
+  CalcitProc, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
 };
 use crate::calcit::{Calcit, CalcitErr, CalcitScope, gen_core_id};
 use crate::call_stack::CallStackList;
@@ -32,11 +32,20 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
         }
       };
       let arg_types = detect_arg_type_hints(&body_items, &param_symbols);
+      let is_macro_gen = s.as_ref().contains('%');
       Ok(Calcit::Fn {
         id: gen_core_id(),
         info: Arc::new(CalcitFn {
           name: s.to_owned(),
           def_ns: Arc::from(file_ns),
+          def_ref: Some(CalcitFnDefRef {
+            def_ns: Arc::from(file_ns),
+            def_name: s.to_owned(),
+            coord: None,
+            is_defn: true,
+            is_macro_gen,
+          }),
+          usage: CalcitFnUsageMeta::default(),
           scope: Arc::new(scope.to_owned()),
           args: Arc::new(parsed_args),
           body: body_items,

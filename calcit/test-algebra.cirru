@@ -1,6 +1,6 @@
 
 {} (:package |test-algebra)
-  :configs $ {} (:init-fn |test-algebra/main!) (:reload-fn |test-algebra/reload!)
+  :configs $ {} (:init-fn |test-algebra.main/main!) (:reload-fn |test-algebra.main/reload!)
     :modules $ [] |./util.cirru
   :files $ {}
     |test-algebra.main $ %{} :FileEntry
@@ -21,6 +21,35 @@
           :code $ quote
             deftrait AlgebraMappend
               :mappend :fn
+        |AlgebraBox0 $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct AlgebraBox0
+              :value :dynamic
+        |AlgebraBoxMapImpl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defimpl AlgebraBoxMapImpl AlgebraMap
+              :map $ fn (box f)
+                assoc box :value $ f (:value box)
+        |AlgebraBoxBindImpl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defimpl AlgebraBoxBindImpl AlgebraBind
+              :bind $ fn (box f)
+                f $ :value box
+        |AlgebraBoxApplyImpl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defimpl AlgebraBoxApplyImpl AlgebraApply
+              :apply $ fn (box fs)
+                let
+                    f $ :value fs
+                  assoc box :value $ f (:value box)
+        |AlgebraBoxMappendImpl $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defimpl AlgebraBoxMappendImpl AlgebraMappend
+              :mappend $ fn (a b)
+                assoc a :value $ + (:value a) (:value b)
+        |AlgebraBox $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def AlgebraBox $ impl-traits AlgebraBox0 AlgebraBoxMapImpl AlgebraBoxBindImpl AlgebraBoxApplyImpl AlgebraBoxMappendImpl
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () (log-title "|Testing algebra") (; "\"Experimental code, to simulate usages like Monad") (test-map) (test-bind) (test-apply) (test-mappend)
@@ -31,115 +60,43 @@
           :code $ quote
             defn test-apply ()
               let
-                  xs $ []
-                assert-traits xs AlgebraApply
-                assert= ([]) $ .apply xs ([] inc)
-              let
-                  ys $ [] 1 2 3
-                assert-traits ys AlgebraApply
-                assert= ([] 11 12 13 2 4 6)
-                  .apply ys
-                    []
-                      fn (x) (+ x 10)
-                      fn (x) (* x 2)
-              let
-                  f1 $ fn (x) (+ x 10)
-                  f2 $ fn (y z) (* 2 y z)
-                assert-traits f1 AlgebraApply
-                assert-traits f2 AlgebraApply
+                  b1 $ %{} AlgebraBox (:value 3)
+                  bf $ %{} AlgebraBox (:value $ fn (x) (* x 4))
+                assert-traits b1 AlgebraApply
+                assert-traits bf AlgebraApply
                 let
-                    f3 $ .apply f1 f2
-                  assert= 78 $ f3 3
+                    b2 $ &trait-call AlgebraApply :apply b1 bf
+                  assert= 12 $ :value b2
         |test-bind $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-bind ()
               let
-                  xs $ []
-                assert-traits xs AlgebraBind
-                assert= ([]) $ .bind xs inc
-              let
-                  ys $ [] 2 3
-                assert-traits ys AlgebraBind
-                assert= ([] 0 1 0 1 2)
-                  .bind ys
-                    fn (x) (range x)
-              let
-                  f1 $ fn (x) (+ x 10)
-                  f2 $ fn (x y) (* 2 x y)
-                assert-traits f1 AlgebraBind
-                assert-traits f2 AlgebraBind
+                  b1 $ %{} AlgebraBox (:value 5)
+                assert-traits b1 AlgebraBind
                 let
-                    f3 $ .bind f1 f2
-                  assert= 78 $ f3 3
+                    b2 $ &trait-call AlgebraBind :bind b1 $ fn (x)
+                      %{} AlgebraBox (:value $ + x 20)
+                  assert= 25 $ :value b2
         |test-map $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-map ()
               let
-                  xs $ []
-                assert-traits xs AlgebraMap
-                assert= ([]) $ .map xs inc
-              let
-                  ys $ ' 1 2
-                assert-traits ys AlgebraMap
-                assert= ([] 11 12)
-                  .map ys
-                    fn (x) (+ x 10)
-              let
-                  m $ &{} :a 1 :b 2
-                assert-traits m AlgebraMap
-                assert= (&{} :a 2 :b 3)
-                  .map m
-                    fn (pair)
-                      [] (first pair)
-                        inc $ last pair
-              let
-                  f1 $ fn (x) (+ x 10)
-                  f2 $ fn (x) (* x 2)
-                assert-traits f1 AlgebraMap
-                assert-traits f2 AlgebraMap
+                  b1 $ %{} AlgebraBox (:value 2)
+                assert-traits b1 AlgebraMap
                 let
-                    f3 $ .map f1 f2
-                  assert= 16 $ f3 3
+                    b2 $ &trait-call AlgebraMap :map b1 $ fn (x) (+ x 10)
+                  assert= 12 $ :value b2
         |test-mappend $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-mappend ()
               let
-                  xs $ []
-                assert-traits xs AlgebraMappend
-                assert= ([]) $ .mappend xs ([])
-              let
-                  s1 |ab
-                assert-traits s1 AlgebraMappend
-                assert= |abcd $ .mappend s1 |cd
-              let
-                  xs $ [] 1 2
-                assert-traits xs AlgebraMappend
-                assert= ([] 1 2 3 4)
-                  .mappend xs ([] 3 4)
-              let
-                  s1 $ #{} 1 2
-                assert-traits s1 AlgebraMappend
-                assert= (#{} 1 2 3 4)
-                  .mappend s1 (#{} 3 4)
-              let
-                  m1 $ &{} :a 1
-                assert-traits m1 AlgebraMappend
-                assert= (&{} :a 1 :b 2)
-                  .mappend m1 (&{} :b 2)
-              let
-                  f1 $ fn (x)
-                    let
-                        _ $ assert-type x :string
-                      .slice x 1
-                  f2 $ fn (x)
-                    let
-                        _ $ assert-type x :string
-                      .slice x 0 $ dec (count x)
-                assert-traits f1 AlgebraMappend
-                assert-traits f2 AlgebraMappend
+                  b1 $ %{} AlgebraBox (:value 3)
+                  b2 $ %{} AlgebraBox (:value 4)
+                assert-traits b1 AlgebraMappend
+                assert-traits b2 AlgebraMappend
                 let
-                    f3 $ .mappend f1 f2
-                  assert= |234123 $ f3 |1234
+                    b3 $ &trait-call AlgebraMappend :mappend b1 b2
+                  assert= 7 $ :value b3
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-algebra $ :require

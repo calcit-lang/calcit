@@ -32,7 +32,7 @@ use im_ternary_tree::TernaryTreeList;
 pub use calcit_impl::CalcitImpl;
 pub use calcit_struct::CalcitStruct;
 pub use calcit_trait::CalcitTrait;
-pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitMacro, CalcitScope};
+pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitMacro, CalcitScope};
 pub use list::CalcitList;
 pub use local::CalcitLocal;
 pub use proc_name::CalcitProc;

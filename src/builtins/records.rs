@@ -9,6 +9,20 @@ use crate::calcit::{
   CalcitTypeAnnotation, format_proc_examples_hint,
 };
 
+fn mark_fn_used_in_impl(value: &Calcit) -> Calcit {
+  match value {
+    Calcit::Fn { id, info } => {
+      let mut updated = info.as_ref().to_owned();
+      updated.usage.used_in_impl = true;
+      Calcit::Fn {
+        id: id.to_owned(),
+        info: Arc::new(updated),
+      }
+    }
+    _ => value.to_owned(),
+  }
+}
+
 fn parse_type_var_form(form: &Calcit) -> Option<Arc<str>> {
   let Calcit::List(list) = form else {
     return None;
@@ -165,7 +179,8 @@ pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
       }
     };
-    entries.push((field_name, value.to_owned()));
+    let value = mark_fn_used_in_impl(value);
+    entries.push((field_name, value));
   }
 
   entries.sort_by(|a, b| a.0.ref_str().cmp(b.0.ref_str()));

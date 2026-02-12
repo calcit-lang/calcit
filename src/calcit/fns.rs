@@ -53,6 +53,10 @@ pub struct CalcitFn {
   pub name: Arc<str>,
   /// where it was defined
   pub def_ns: Arc<str>,
+  /// reference to a top-level defn when available
+  pub def_ref: Option<CalcitFnDefRef>,
+  /// usage metadata for codegen and diagnostics
+  pub usage: CalcitFnUsageMeta,
   pub scope: Arc<CalcitScope>,
   pub args: Arc<CalcitFnArgs>,
   pub body: Vec<Calcit>,
@@ -62,6 +66,32 @@ pub struct CalcitFn {
   pub return_type: Arc<CalcitTypeAnnotation>,
   /// argument types declared by assert-type
   pub arg_types: Vec<Arc<CalcitTypeAnnotation>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CalcitFnDefRef {
+  pub def_ns: Arc<str>,
+  pub def_name: Arc<str>,
+  pub coord: Option<(u16, u16)>,
+  pub is_defn: bool,
+  pub is_macro_gen: bool,
+}
+
+impl Default for CalcitFnDefRef {
+  fn default() -> Self {
+    CalcitFnDefRef {
+      def_ns: Arc::from(""),
+      def_name: Arc::from(""),
+      coord: None,
+      is_defn: false,
+      is_macro_gen: false,
+    }
+  }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CalcitFnUsageMeta {
+  pub used_in_impl: bool,
 }
 
 #[cfg(test)]

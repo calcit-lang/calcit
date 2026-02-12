@@ -1653,7 +1653,7 @@ fn try_inline_method_call(
   args: &CalcitList,
   scope_types: &ScopeTypes,
   call_stack: &CallStackList,
-  _file_ns: &str,
+  file_ns: &str,
 ) -> Option<Calcit> {
   match head {
     Calcit::Method(method_name, calcit::MethodKind::Invoke(type_value)) => {
@@ -1674,7 +1674,7 @@ fn try_inline_method_call(
       let impl_records = get_impl_records_from_type(type_ref, call_stack)?;
       let (_impl_index, _impl_record, method_entry) = find_method_entry_with_impl(type_ref, &impl_records, method_name.as_ref())?;
 
-      if let Some(callable_head) = pick_callable_from_method_entry(method_entry) {
+      if let Some(callable_head) = pick_callable_from_method_entry(method_entry, file_ns) {
         return Some(build_inlined_call(callable_head, args));
       }
 
@@ -1684,10 +1684,18 @@ fn try_inline_method_call(
   }
 }
 
-fn pick_callable_from_method_entry(entry: &Calcit) -> Option<Calcit> {
+fn pick_callable_from_method_entry(entry: &Calcit, _file_ns: &str) -> Option<Calcit> {
   match entry {
     // Avoid inlining Fn literals: JS codegen would embed large function bodies and lose closure semantics.
     Calcit::Import(..) | Calcit::Proc(..) | Calcit::Registered(..) | Calcit::Symbol { .. } => Some(entry.to_owned()),
+    Calcit::Fn { info, .. }
+      if info
+        .def_ref
+        .as_ref()
+        .is_some_and(|def_ref| !def_ref.is_macro_gen && program::has_def_code(def_ref.def_ns.as_ref(), def_ref.def_name.as_ref())) =>
+    {
+      Some(entry.to_owned())
+    }
     _ => None,
   }
 }
@@ -3133,10 +3141,14 @@ pub fn preprocess_assert_traits(
 
     let resolved = match trait_form {
       Calcit::Symbol { sym, info, .. } => match runner::parse_ns_def(sym) {
-        Some((ns_part, def_part)) => runner::eval_symbol_from_program(&def_part, &ns_part, ctx.call_stack).ok().flatten(),
-        None => runner::eval_symbol_from_program(sym, &info.at_ns, ctx.call_stack).ok().flatten(),
+        Some((ns_part, def_part)) => preprocess_ns_def(&ns_part, &def_part, ctx.check_warnings, ctx.call_stack)
+          .ok()
+          .flatten(),
+        None => preprocess_ns_def(&info.at_ns, sym, ctx.check_warnings, ctx.call_stack)
+          .ok()
+          .flatten(),
       },
-      Calcit::Import(import) => runner::eval_symbol_from_program(&import.def, &import.ns, ctx.call_stack)
+      Calcit::Import(import) => preprocess_ns_def(&import.ns, &import.def, ctx.check_warnings, ctx.call_stack)
         .ok()
         .flatten(),
       _ => None,
@@ -3583,6 +3595,8 @@ mod tests {
     let fn_info = Arc::new(CalcitFn {
       name: Arc::from("greet"),
       def_ns: Arc::from("tests.method.ns"),
+      def_ref: None,
+      usage: crate::calcit::CalcitFnUsageMeta::default(),
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(fn_args),
       body: vec![],
@@ -3785,6 +3799,8 @@ mod tests {
     let fn_info = CalcitFn {
       name: Arc::from("demo-fn"),
       def_ns: Arc::from("tests.user_fn"),
+      def_ref: None,
+      usage: crate::calcit::CalcitFnUsageMeta::default(),
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(CalcitFnArgs::Args(vec![0, 1])), // two args
       body: vec![Calcit::Nil],
@@ -3916,6 +3932,8 @@ mod tests {
     let method_fn = Arc::new(CalcitFn {
       name: Arc::from("greet"),
       def_ns: Arc::from("tests.method"),
+      def_ref: None,
+      usage: crate::calcit::CalcitFnUsageMeta::default(),
       scope: Arc::new(CalcitScope::default()),
       args: Arc::new(CalcitFnArgs::Args(vec![1, 2])), // 2 parameters
       body: vec![Calcit::Nil],
