@@ -422,7 +422,7 @@ assert-traits x Show
 
 3. **动态 trait 调用告警（1 天）**
 
-- [x] 引入 `--check-dyn-trait`：在 `cr` 正常执行流程中，对无法单态化的 `.method` 调用给出 warning。
+- [x] 引入 `--warn-dyn-method`：在 `cr` 正常执行流程中，对无法单态化的 `.method` 调用给出 warning。
 - [x] 规则：当 receiver 无法解析到具体 impl（类型为 `:dynamic`/未知），且未被 `assert-traits` 标注时触发告警。
 - [x] 验收：warning 包含方法名与位置；`assert-traits` 后 warning 消失；Rust/JS 预处理行为一致。
 

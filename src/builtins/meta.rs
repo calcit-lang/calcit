@@ -974,12 +974,12 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
     ));
   }
   let v0 = &method_args[0];
-  if runner::preprocess::is_check_dyn_trait_enabled() {
+  if runner::preprocess::is_warn_dyn_method_enabled() {
     let value_type = type_of(&[v0.to_owned()])
       .map(|t| t.lisp_str())
       .unwrap_or_else(|_| "<unknown>".to_string());
     eprintln!(
-      "[check-dyn-trait] runtime invoke-method lookup for .{name} on {value_type} {v0}",
+      "[warn-dyn-method] runtime invoke-method lookup for .{name} on {value_type} {v0}",
       v0 = v0.lisp_str()
     );
   }

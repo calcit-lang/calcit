@@ -19,18 +19,18 @@ use strum::ParseError;
 
 type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
-static CHECK_DYN_TRAIT: AtomicBool = AtomicBool::new(false);
+static WARN_DYN_METHOD: AtomicBool = AtomicBool::new(false);
 
-pub fn set_check_dyn_trait(enabled: bool) {
-  CHECK_DYN_TRAIT.store(enabled, Ordering::SeqCst);
+pub fn set_warn_dyn_method(enabled: bool) {
+  WARN_DYN_METHOD.store(enabled, Ordering::SeqCst);
 }
 
-fn check_dyn_trait_enabled() -> bool {
-  CHECK_DYN_TRAIT.load(Ordering::Relaxed)
+fn warn_dyn_method_enabled() -> bool {
+  WARN_DYN_METHOD.load(Ordering::Relaxed)
 }
 
-pub fn is_check_dyn_trait_enabled() -> bool {
-  check_dyn_trait_enabled()
+pub fn is_warn_dyn_method_enabled() -> bool {
+  warn_dyn_method_enabled()
 }
 
 fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
@@ -1615,7 +1615,7 @@ fn warn_on_dynamic_trait_call(
     return;
   }
 
-  if !check_dyn_trait_enabled() {
+  if !warn_dyn_method_enabled() {
     return;
   }
 
@@ -3246,21 +3246,21 @@ mod tests {
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
 
-  struct DynTraitCheckGuard {
+  struct WarnDynMethodGuard {
     prev: bool,
   }
 
-  impl DynTraitCheckGuard {
+  impl WarnDynMethodGuard {
     fn new(enabled: bool) -> Self {
-      let prev = check_dyn_trait_enabled();
-      set_check_dyn_trait(enabled);
+      let prev = warn_dyn_method_enabled();
+      set_warn_dyn_method(enabled);
       Self { prev }
     }
   }
 
-  impl Drop for DynTraitCheckGuard {
+  impl Drop for WarnDynMethodGuard {
     fn drop(&mut self) {
-      set_check_dyn_trait(self.prev);
+      set_warn_dyn_method(self.prev);
     }
   }
 

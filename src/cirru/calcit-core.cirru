@@ -184,7 +184,7 @@
               :: :count &list:count
               :: :drop drop
               :: :each each
-              :: :empty $ defn &list:empty (x) ([])
+              :: :empty &list:empty
               :: :empty? &list:empty?
               :: :filter &list:filter
               :: :filter-not filter-not
@@ -192,7 +192,7 @@
               :: :find-index find-index
               :: :find-last &list:find-last
               :: :find-last-index &list:find-last-index
-              :: :foldl $ defn method:foldl (xs v0 f) (foldl xs v0 f)
+              :: :foldl foldl
               :: :get &list:nth
               :: :get-in get-in
               :: :group-by group-by
@@ -211,7 +211,7 @@
               :: :reduce reduce
               :: :reverse &list:reverse
               :: :slice &list:slice
-              :: :sort $ defn method:sort (x y) (sort x y)
+              :: :sort sort
               :: :sort-by &list:sort-by
               :: :take take
               :: :take-last take-last
@@ -231,6 +231,10 @@
               &list:concat & $ map fs
                 fn (f)
                   map xs $ fn (x) (f x)
+          :examples $ []
+        |&list:empty $ %{} :CodeEntry (:doc "|internal helper for list :empty method entry")
+          :code $ quote
+            defn &list:empty (_xs) ([])
           :examples $ []
         |&list:mappend $ %{} :CodeEntry (:doc "|internal helper for list :mappend method entry")
           :code $ quote
@@ -279,7 +283,7 @@
           :code $ quote
             def &core-number-methods $ &impl::new :&core-number-methods
               :: :ceil ceil
-              :: :empty $ defn &number:empty (x) 0
+              :: :empty &number:empty
               :: :floor floor
               :: :format &number:format
               :: :display-by &number:display-by
@@ -304,7 +308,7 @@
               :: :count &set:count
               :: :destruct &set:destruct
               :: :difference difference
-              :: :empty $ defn &set:empty (x) (#{})
+              :: :empty &set:empty
               :: :empty? &set:empty?
               :: :exclude exclude
               :: :filter &set:filter
@@ -327,7 +331,7 @@
             def &core-string-methods $ &impl::new :&core-string-methods
               :: :blank? blank?
               :: :count &str:count
-              :: :empty $ defn &str:empty (_) |
+              :: :empty &str:empty
               :: :ends-with? ends-with?
               :: :get &str:nth
               :: :parse-float parse-float
@@ -704,6 +708,10 @@
         |&number:display-by $ %{} :CodeEntry (:doc "|internal function for number display by base\nSyntax: (&number:display-by n base)\nParams: n (number), base (integer)\nReturns: string\nDisplays number in specified base (2-36)")
           :code $ quote &runtime-inplementation
           :examples $ []
+        |&number:empty $ %{} :CodeEntry (:doc "|internal helper for number :empty method entry")
+          :code $ quote
+            defn &number:empty (_x) 0
+          :examples $ []
         |&number:format $ %{} :CodeEntry (:doc "|internal function for number formatting\nSyntax: (&number:format n)\nParams: n (number)\nReturns: string\nFormats number as string representation")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -793,6 +801,10 @@
         |&set:destruct $ %{} :CodeEntry (:doc "|internal function for set destructuring\nSyntax: (&set:destruct set pattern)\nParams: set (set), pattern (any)\nReturns: set\nDestructs set according to pattern")
           :code $ quote &runtime-inplementation
           :examples $ []
+        |&set:empty $ %{} :CodeEntry (:doc "|internal helper for set :empty method entry")
+          :code $ quote
+            defn &set:empty (_xs) (#{})
+          :examples $ []
         |&set:empty? $ %{} :CodeEntry (:doc "|internal function for checking if set is empty\nSyntax: (&set:empty? set)\nParams: set (set)\nReturns: boolean\nReturns true if set has no elements")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -833,6 +845,10 @@
           :examples $ []
         |&str $ %{} :CodeEntry (:doc "|internal function for string conversion\nSyntax: (&str value)\nParams: value (any)\nReturns: string\nConverts value to string representation")
           :code $ quote &runtime-inplementation
+          :examples $ []
+        |&str:empty $ %{} :CodeEntry (:doc "|internal helper for string :empty method entry")
+          :code $ quote
+            defn &str:empty (_) |
           :examples $ []
         |&str-spaced $ %{} :CodeEntry (:doc "|Internal function for joining strings with spaces, used by str-spaced")
           :code $ quote

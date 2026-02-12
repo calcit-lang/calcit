@@ -19,9 +19,9 @@ pub struct ToplevelCalcit {
   /// skip arity check in js codegen
   #[argh(switch)]
   pub skip_arity_check: bool,
-  /// warn on dynamic trait method calls that cannot be monomorphized
+  /// warn on dynamic method calls that cannot be monomorphized
   #[argh(switch)]
-  pub check_dyn_trait: bool,
+  pub warn_dyn_method: bool,
   /// entry file path, defaults to "js-out/"
   #[argh(option, default = "String::from(\"js-out/\")")]
   pub emit_path: String,
