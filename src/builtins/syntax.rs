@@ -502,19 +502,26 @@ pub fn quasiquote(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_st
 }
 
 fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<SpanResult, CalcitErr> {
-  if !has_unquote(c) {
-    return Ok(SpanResult::Single(c.to_owned()));
-  }
+  let (result, _touched) = replace_code_single_pass(c, scope, file_ns, call_stack)?;
+  Ok(result)
+}
+
+fn replace_code_single_pass(
+  c: &Calcit,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<(SpanResult, bool), CalcitErr> {
   match c {
     Calcit::List(ys) => match (ys.first(), ys.get(1)) {
       (Some(Calcit::Syntax(CalcitSyntax::MacroInterpolate, _)), Some(expr)) => {
         let value = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
-        Ok(SpanResult::Single(value))
+        Ok((SpanResult::Single(value), true))
       }
       (Some(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, _)), Some(expr)) => {
         let ret = runner::evaluate_expr(expr, scope, file_ns, call_stack)?;
         match ret {
-          Calcit::List(zs) => Ok(SpanResult::Range(zs.to_owned())),
+          Calcit::List(zs) => Ok((SpanResult::Range(zs.to_owned()), true)),
           _ => Err(CalcitErr::use_str(
             CalcitErrKind::Type,
             format!("unquote-slice unknown result, but received: {ret}"),
@@ -523,22 +530,31 @@ fn replace_code(c: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &Cal
       }
       (_, _) => {
         let mut ret: Vec<Calcit> = vec![];
-        ys.traverse_result::<CalcitErr>(&mut |y| match replace_code(y, scope, file_ns, call_stack)? {
-          SpanResult::Single(z) => {
-            ret.push(z);
-            Ok(())
-          }
-          SpanResult::Range(pieces) => {
-            pieces.traverse(&mut |z| {
-              ret.push(z.to_owned());
-            });
-            Ok(())
+        let mut touched = false;
+        ys.traverse_result::<CalcitErr>(&mut |y| {
+          let (piece, changed) = replace_code_single_pass(y, scope, file_ns, call_stack)?;
+          touched = touched || changed;
+          match piece {
+            SpanResult::Single(z) => {
+              ret.push(z);
+              Ok(())
+            }
+            SpanResult::Range(pieces) => {
+              pieces.traverse(&mut |z| {
+                ret.push(z.to_owned());
+              });
+              Ok(())
+            }
           }
         })?;
-        Ok(SpanResult::Single(Calcit::from(CalcitList::Vector(ret))))
+        if touched {
+          Ok((SpanResult::Single(Calcit::from(CalcitList::Vector(ret))), true))
+        } else {
+          Ok((SpanResult::Single(c.to_owned()), false))
+        }
       }
     },
-    _ => Ok(SpanResult::Single(c.to_owned())),
+    _ => Ok((SpanResult::Single(c.to_owned()), false)),
   }
 }
 
@@ -558,6 +574,28 @@ pub fn has_unquote(xs: &Calcit) -> bool {
   }
 }
 
+fn detect_macro_head_name(code: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Option<Arc<str>> {
+  let Calcit::List(xs) = code else {
+    return None;
+  };
+  if xs.is_empty() {
+    return None;
+  }
+  let head_value = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack).ok()?;
+  match head_value {
+    Calcit::Macro { info, .. } => Some(info.name.to_owned()),
+    _ => None,
+  }
+}
+
+fn print_macroexpand_chain(label: &str, chain: &[Arc<str>]) {
+  if chain.len() < 2 {
+    return;
+  }
+  let chain_text = chain.iter().map(|s| s.as_ref()).collect::<Vec<_>>().join(" -> ");
+  eprintln!("[{label}] expansion chain: {chain_text}");
+}
+
 pub fn macroexpand(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if expr.len() == 1 {
     let quoted_code = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
@@ -570,6 +608,7 @@ pub fn macroexpand(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
         let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
           Calcit::Macro { info, .. } => {
+            let mut chain: Vec<Arc<str>> = vec![info.name.to_owned()];
             // mutable operation
             let mut rest_nodes: Vec<Calcit> = xs.drop_left().to_vec();
             let mut body_scope = scope.to_owned();
@@ -582,7 +621,13 @@ pub fn macroexpand(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call_s
                 Calcit::Recur(rest_code) => {
                   (*rest_code).clone_into(&mut rest_nodes);
                 }
-                _ => return Ok(v),
+                _ => {
+                  if let Some(next_macro) = detect_macro_head_name(&v, scope, file_ns, call_stack) {
+                    chain.push(next_macro);
+                  }
+                  print_macroexpand_chain("macroexpand", &chain);
+                  return Ok(v);
+                }
               }
             }
           }
@@ -612,9 +657,15 @@ pub fn macroexpand_1(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, call
         let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
           Calcit::Macro { info, .. } => {
+            let mut chain: Vec<Arc<str>> = vec![info.name.to_owned()];
             let mut body_scope = scope.to_owned();
             runner::bind_marked_args(&mut body_scope, &info.args, &xs.drop_left().to_vec(), call_stack)?;
-            runner::evaluate_lines(&info.body.to_vec(), &body_scope, &info.def_ns, call_stack)
+            let expanded = runner::evaluate_lines(&info.body.to_vec(), &body_scope, &info.def_ns, call_stack)?;
+            if let Some(next_macro) = detect_macro_head_name(&expanded, scope, file_ns, call_stack) {
+              chain.push(next_macro);
+            }
+            print_macroexpand_chain("macroexpand-1", &chain);
+            Ok(expanded)
           }
           _ => Ok(quoted_code),
         }
@@ -642,6 +693,7 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
         let v = runner::evaluate_expr(&xs[0], scope, file_ns, call_stack)?;
         match v {
           Calcit::Macro { info, .. } => {
+            let mut chain: Vec<Arc<str>> = vec![info.name.to_owned()];
             // mutable operation
             let mut rest_nodes: Vec<Calcit> = xs.drop_left().to_vec();
             let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
@@ -656,6 +708,10 @@ pub fn macroexpand_all(expr: &CalcitList, scope: &CalcitScope, file_ns: &str, ca
                   rest_nodes = (*rest_code).to_vec();
                 }
                 _ => {
+                  if let Some(next_macro) = detect_macro_head_name(&v, scope, file_ns, call_stack) {
+                    chain.push(next_macro);
+                  }
+                  print_macroexpand_chain("macroexpand-all", &chain);
                   let mut scope_types = HashMap::new();
                   let resolved =
                     runner::preprocess::preprocess_expr(&v, &HashSet::new(), &mut scope_types, file_ns, check_warnings, call_stack)?;

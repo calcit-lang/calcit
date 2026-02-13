@@ -2009,6 +2009,20 @@
             quote $ assert= 42 (either nil 42 nil)
             quote $ assert= false (either false true)
             quote $ assert= |backup (either nil nil |backup)
+        |with-gensyms $ %{} :CodeEntry (:doc "|Macro helper for hygienic local names\nSyntax: (with-gensyms (a b ...) body...)\nBinds each symbol to a fresh gensym and evaluates body with those bindings.")
+          :code $ quote
+            defmacro with-gensyms (names & body)
+              assert "|with-gensyms expects a list of symbols" $ and
+                list? names
+                every? names symbol?
+              reduce
+                reverse names
+                quasiquote $ do (~@ body)
+                fn (acc n)
+                  quasiquote $ let ((~n (gensym))) ~acc
+          :examples $ []
+            quote $ with-gensyms (v)
+              quasiquote $ &let (~v 1) ~v
         |empty $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn empty (x)

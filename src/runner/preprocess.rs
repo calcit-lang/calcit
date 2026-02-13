@@ -607,6 +607,15 @@ fn preprocess_list_call(
 
         if let Some(call_head) = ys.first() {
           warn_on_dynamic_trait_call(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
+          warn_on_method_name_conflict(
+            call_head,
+            &processed_args,
+            scope_types,
+            file_ns,
+            def_name.as_ref(),
+            check_warnings,
+            call_stack,
+          );
         }
 
         // Check Proc argument types if available
@@ -896,6 +905,53 @@ fn check_recur_arity_in_expr(
       // For other types, we don't need to recurse into them
       // because recur can only appear in certain contexts
     }
+  }
+}
+
+fn check_impl_traits_top_level_in_expr(expr: &Calcit, file_ns: &str, def_name: &str, check_warnings: &RefCell<Vec<LocatedWarning>>) {
+  if !warn_dyn_method_enabled() {
+    return;
+  }
+
+  match expr {
+    Calcit::List(xs) => {
+      if xs.is_empty() {
+        return;
+      }
+
+      if let Some(Calcit::Syntax(s, _)) = xs.first() {
+        if s == &CalcitSyntax::Quote || s == &CalcitSyntax::Quasiquote {
+          return;
+        }
+      }
+
+      let is_impl_traits = matches!(
+        xs.first(),
+        Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "impl-traits"
+      ) || matches!(xs.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "impl-traits");
+
+      if is_impl_traits {
+        let msg = format!(
+          "[Warn] `impl-traits` inside {}/{} may block preprocess specialization; prefer top-level `def` bindings",
+          file_ns, def_name
+        );
+        if let Some(loc) = expr.get_location() {
+          gen_check_warning_with_location(msg, loc.clone(), check_warnings);
+        } else {
+          gen_check_warning(msg, file_ns, check_warnings);
+        }
+      }
+
+      for item in xs.iter() {
+        check_impl_traits_top_level_in_expr(item, file_ns, def_name, check_warnings);
+      }
+    }
+    Calcit::Fn { info, .. } => {
+      for body_expr in &info.body {
+        check_impl_traits_top_level_in_expr(body_expr, file_ns, def_name, check_warnings);
+      }
+    }
+    _ => {}
   }
 }
 
@@ -1640,6 +1696,98 @@ fn warn_on_dynamic_trait_call(
 
   let message =
     format!("[Warn] dynamic trait call `.{method_name}` cannot be monomorphized in {file_ns}/{def_name}; add assert-traits to clarify");
+
+  if let Some(loc) = head.get_location().or_else(|| receiver.get_location()) {
+    gen_check_warning_with_location(message, loc, check_warnings);
+  } else {
+    gen_check_warning(message, file_ns, check_warnings);
+  }
+}
+
+fn warn_on_method_name_conflict(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) {
+  if file_ns == calcit::CORE_NS {
+    return;
+  }
+
+  if !warn_dyn_method_enabled() {
+    return;
+  }
+
+  let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = head else {
+    return;
+  };
+
+  let Some(receiver) = args.first() else {
+    return;
+  };
+
+  let Some(type_value) = resolve_type_value(receiver, scope_types) else {
+    return;
+  };
+
+  let Some(impl_records) = get_impl_records_from_type(type_value.as_ref(), call_stack) else {
+    return;
+  };
+
+  if impl_records.len() < 2 {
+    return;
+  }
+
+  let last_wins = core_impl_list_symbol_from_type_annotation(type_value.as_ref()).is_none();
+  let matched_impls: Vec<&Arc<CalcitImpl>> = if last_wins {
+    impl_records
+      .iter()
+      .rev()
+      .filter(|imp| imp.get(method_name.as_ref()).is_some() && imp.origin().is_some())
+      .collect()
+  } else {
+    impl_records
+      .iter()
+      .filter(|imp| imp.get(method_name.as_ref()).is_some() && imp.origin().is_some())
+      .collect()
+  };
+
+  if matched_impls.len() < 2 {
+    return;
+  }
+
+  let mut trait_names: Vec<String> = vec![];
+  let mut seen = HashSet::new();
+  for imp in &matched_impls {
+    if let Some(origin) = imp.origin() {
+      let trait_name = origin.name.to_string();
+      if seen.insert(trait_name.clone()) {
+        trait_names.push(trait_name);
+      }
+    }
+  }
+
+  if trait_names.len() < 2 {
+    return;
+  }
+
+  let selected_trait = matched_impls
+    .first()
+    .and_then(|imp| imp.origin())
+    .map(|origin| origin.name.to_string())
+    .unwrap_or_else(|| "<unknown>".to_string());
+
+  let message = format!(
+    "[Warn] method `.{}` has multiple trait candidates ({}) in {}/{}; current dispatch picks `{}` by precedence, use `&trait-call` to disambiguate",
+    method_name,
+    trait_names.join(", "),
+    file_ns,
+    def_name,
+    selected_trait,
+  );
 
   if let Some(loc) = head.get_location().or_else(|| receiver.get_location()) {
     gen_check_warning_with_location(message, loc, check_warnings);
@@ -2827,6 +2975,10 @@ pub fn preprocess_defn(
         for body_expr in &processed_body {
           check_recur_arity_in_expr(body_expr, expected_arity, ctx.file_ns, def_name.as_ref(), ctx.check_warnings);
         }
+      }
+
+      for body_expr in &processed_body {
+        check_impl_traits_top_level_in_expr(body_expr, ctx.file_ns, def_name.as_ref(), ctx.check_warnings);
       }
 
       Ok(Calcit::List(Arc::new(xs.into())))
