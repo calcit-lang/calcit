@@ -1681,21 +1681,27 @@
             quote $ defenum Result (:ok :number) (:err :string)
         |OptionMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Option")
           :code $ quote
-            def OptionMappableImpl
-              &impl::new :OptionMappableImpl
-                :: :map $ defn option:map (opt f)
-                  tag-match opt
-                    (:some value) (%:: (&tuple:enum opt) :some (f value))
-                    (:none) (%:: (&tuple:enum opt) :none)
+            defimpl OptionMappableImpl Mappable
+              :map option:map
           :examples $ []
         |ResultMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Result")
           :code $ quote
-            def ResultMappableImpl
-              &impl::new :ResultMappableImpl
-                :: :map $ defn result:map (res f)
-                  tag-match res
-                    (:ok value) (%:: (&tuple:enum res) :ok (f value))
-                    (:err err) (%:: (&tuple:enum res) :err err)
+            defimpl ResultMappableImpl Mappable
+              :map result:map
+          :examples $ []
+        |option:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Option")
+          :code $ quote
+            defn option:map (opt f)
+              tag-match opt
+                (:some value) (%:: (&tuple:enum opt) :some (f value))
+                (:none) (%:: (&tuple:enum opt) :none)
+          :examples $ []
+        |result:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Result")
+          :code $ quote
+            defn result:map (res f)
+              tag-match res
+                (:ok value) (%:: (&tuple:enum res) :ok (f value))
+                (:err err) (%:: (&tuple:enum res) :err err)
           :examples $ []
         |Option $ %{} :CodeEntry (:doc "|Rust-style Option enum")
           :code $ quote

@@ -73,10 +73,7 @@ impl CalcitImpl {
 
 impl PartialEq for CalcitImpl {
   fn eq(&self, other: &Self) -> bool {
-    self.name == other.name
-      && self.origin.as_ref().map(|t| &t.name) == other.origin.as_ref().map(|t| &t.name)
-      && self.fields == other.fields
-      && self.values == other.values
+    self.name == other.name && self.origin == other.origin && self.fields == other.fields && self.values == other.values
   }
 }
 

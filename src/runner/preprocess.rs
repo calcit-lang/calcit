@@ -2501,11 +2501,24 @@ fn get_impl_records_from_type(type_value: &CalcitTypeAnnotation, call_stack: &Ca
   }
 
   if let CalcitTypeAnnotation::Custom(value) = type_value {
-    if let Calcit::Import(import) = value.as_ref() {
-      return match runner::evaluate_symbol_from_program(&import.def, &import.ns, None, call_stack) {
-        Ok(value) => collect_impl_records_from_value(&value, call_stack),
-        Err(_) => None,
-      };
+    match value.as_ref() {
+      Calcit::Import(import) => {
+        return match runner::evaluate_symbol_from_program(&import.def, &import.ns, None, call_stack) {
+          Ok(value) => collect_impl_records_from_value(&value, call_stack),
+          Err(_) => None,
+        };
+      }
+      Calcit::Symbol { sym, info, .. } => {
+        let (target_ns, target_def) = match runner::parse_ns_def(sym) {
+          Some((ns_part, def_part)) => (ns_part, def_part),
+          None => (info.at_ns.to_owned(), sym.to_owned()),
+        };
+        return match runner::evaluate_symbol_from_program(&target_def, &target_ns, None, call_stack) {
+          Ok(value) => collect_impl_records_from_value(&value, call_stack),
+          Err(_) => None,
+        };
+      }
+      _ => {}
     }
   }
 
@@ -4264,7 +4277,7 @@ mod tests {
 
   #[test]
   fn warns_on_dynamic_trait_call() {
-    let _guard = DynTraitCheckGuard::new(true);
+    let _guard = WarnDynMethodGuard::new(true);
 
     let expr = Cirru::List(vec![Cirru::leaf(".greet"), Cirru::leaf("user")]);
     let code = code_to_calcit(&expr, "tests.trait", "demo", vec![]).expect("parse cirru");

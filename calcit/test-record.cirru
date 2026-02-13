@@ -1,6 +1,7 @@
 
 {} (:package |test-record)
   :configs $ {} (:init-fn |test-record.main/main!) (:reload-fn |test-record.main/reload!)
+    :modules $ [] |./util.cirru
   :files $ {}
     |test-record.main $ %{} :FileEntry
       :defs $ {}
@@ -182,4 +183,4 @@
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-record.main $ :require
-            [] util.core :refer $ [] log-title inside-js:
+            util.core :refer $ log-title inside-js:

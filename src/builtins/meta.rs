@@ -1366,7 +1366,7 @@ fn trait_method_names(trait_def: &CalcitTrait) -> String {
 /// Usage: (&trait-call Trait :method receiver & args)
 ///
 /// Notes:
-/// - It selects the impl record by matching impl-record name with `Trait.name`.
+/// - It selects the impl record by matching `impl.origin` with the target trait.
 /// - It still applies the same precedence rule as `.method` within the impl list.
 pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
@@ -1417,7 +1417,7 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
 
   let mut selected_impl: Option<&Arc<CalcitImpl>> = None;
   for imp in iter_impls_in_precedence_order(receiver, &impls) {
-    if imp.trait_name() == Some(&trait_def.name) {
+    if imp.origin().is_some_and(|origin| origin.as_ref() == &trait_def) {
       selected_impl = Some(imp);
       break;
     }

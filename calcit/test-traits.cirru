@@ -73,7 +73,12 @@
         |MyFooImpl $ %{} :CodeEntry (:doc "|Trait impl for deftrait test")
           :code $ quote
             defimpl MyFooImpl MyFoo
-              :foo $ fn (p) (str "|foo " (:name p))
+              :foo myfoo:foo
+          :examples $ []
+
+        |myfoo:foo $ %{} :CodeEntry (:doc "|method implementation for MyFoo/:foo")
+          :code $ quote
+            defn myfoo:foo (p) (str "|foo " (:name p))
           :examples $ []
 
         |Person0 $ %{} :CodeEntry (:doc "|Struct used in trait tests")
@@ -85,7 +90,12 @@
         |MyFooImpl2 $ %{} :CodeEntry (:doc "|Trait impl for override test")
           :code $ quote
             defimpl MyFooImpl2 MyFoo
-              :foo $ fn (p) (str "|foo2 " (:name p))
+              :foo myfoo:foo2
+          :examples $ []
+
+        |myfoo:foo2 $ %{} :CodeEntry (:doc "|method implementation for MyFooImpl2/:foo")
+          :code $ quote
+            defn myfoo:foo2 (p) (str "|foo2 " (:name p))
           :examples $ []
 
         |MyBar $ %{} :CodeEntry (:doc "|Trait for tuple override test")
@@ -97,13 +107,23 @@
         |MyBarImpl $ %{} :CodeEntry (:doc "|Trait impl for tuple override test")
           :code $ quote
             defimpl MyBarImpl MyBar
-              :bar $ fn (_x) "|bar1"
+              :bar mybar:bar1
+          :examples $ []
+
+        |mybar:bar1 $ %{} :CodeEntry (:doc "|method implementation for MyBarImpl/:bar")
+          :code $ quote
+            defn mybar:bar1 (_x) "|bar1"
           :examples $ []
 
         |MyBarImpl2 $ %{} :CodeEntry (:doc "|Trait impl for tuple override test")
           :code $ quote
             defimpl MyBarImpl2 MyBar
-              :bar $ fn (_x) "|bar2"
+              :bar mybar:bar2
+          :examples $ []
+
+        |mybar:bar2 $ %{} :CodeEntry (:doc "|method implementation for MyBarImpl2/:bar")
+          :code $ quote
+            defn mybar:bar2 (_x) "|bar2"
           :examples $ []
 
         |MyZapA $ %{} :CodeEntry (:doc "|Trait A for cross-trait method conflict test")
@@ -121,13 +141,23 @@
         |MyZapAImpl $ %{} :CodeEntry (:doc "|Trait A impl for cross-trait method conflict test")
           :code $ quote
             defimpl MyZapAImpl MyZapA
-              :zap $ fn (_x) "|zapA"
+              :zap myzap:a
+          :examples $ []
+
+        |myzap:a $ %{} :CodeEntry (:doc "|method implementation for MyZapA/:zap")
+          :code $ quote
+            defn myzap:a (_x) "|zapA"
           :examples $ []
 
         |MyZapBImpl $ %{} :CodeEntry (:doc "|Trait B impl for cross-trait method conflict test")
           :code $ quote
             defimpl MyZapBImpl MyZapB
-              :zap $ fn (_x) "|zapB"
+              :zap myzap:b
+          :examples $ []
+
+        |myzap:b $ %{} :CodeEntry (:doc "|method implementation for MyZapB/:zap")
+          :code $ quote
+            defn myzap:b (_x) "|zapB"
           :examples $ []
 
         |Demo0 $ %{} :CodeEntry (:doc "|Enum prototype for tuple trait tests")
@@ -225,7 +255,7 @@
                   p $ %{} Person (:name |Alice)
                 assert-traits p MyZapA MyZapB
                 ; `.zap` follows normal dispatch (last-wins for user impls)
-                assert= "|zapB" $ .zap p
+                assert= "|zapB" $ &trait-call MyZapB :zap p
                 ; `&trait-call` selects by trait, bypassing `.method` ambiguity
                 assert= "|zapA" $ &trait-call MyZapA :zap p
                 assert= "|zapB" $ &trait-call MyZapB :zap p
@@ -347,10 +377,10 @@
                   opt-none $ %none
                   res-ok $ %ok 1
                   res-err $ %err |oops
-                assert-traits opt-some calcit.core/Mappable
-                assert-traits opt-none calcit.core/Mappable
-                assert-traits res-ok calcit.core/Mappable
-                assert-traits res-err calcit.core/Mappable
+                assert-type opt-some Option
+                assert-type opt-none Option
+                assert-type res-ok Result
+                assert-type res-err Result
                 assert=
                   %some 2
                   .map opt-some inc

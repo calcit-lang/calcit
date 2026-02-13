@@ -23,11 +23,20 @@ pub struct CalcitTrait {
   pub requires: Arc<Vec<Arc<CalcitTrait>>>,
 }
 
-// Manual implementation since CalcitFn doesn't implement Eq/PartialEq
+// Manual implementation since CalcitFn doesn't implement Eq/Hash.
+// For defaults, compare/hash only availability (Some/None) per slot.
 impl PartialEq for CalcitTrait {
   fn eq(&self, other: &Self) -> bool {
-    // Traits are equal if they have the same name
     self.name == other.name
+      && self.methods == other.methods
+      && self.method_types == other.method_types
+      && self.requires == other.requires
+      && self.defaults.len() == other.defaults.len()
+      && self
+        .defaults
+        .iter()
+        .zip(other.defaults.iter())
+        .all(|(left, right)| left.is_some() == right.is_some())
   }
 }
 
@@ -76,7 +85,13 @@ impl CalcitTrait {
 impl Hash for CalcitTrait {
   fn hash<H: Hasher>(&self, state: &mut H) {
     self.name.hash(state);
-    // Don't hash methods, defaults, or method_types - only name matters for equality
+    self.methods.hash(state);
+    self.method_types.hash(state);
+    self.requires.hash(state);
+    self.defaults.len().hash(state);
+    for default_impl in self.defaults.iter() {
+      default_impl.is_some().hash(state);
+    }
   }
 }
 

@@ -65,7 +65,7 @@
                 assert-traits b1 AlgebraApply
                 assert-traits bf AlgebraApply
                 let
-                    b2 $ &trait-call AlgebraApply :apply b1 bf
+                    b2 $ .apply b1 bf
                   assert= 12 $ :value b2
         |test-bind $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -74,7 +74,7 @@
                   b1 $ %{} AlgebraBox (:value 5)
                 assert-traits b1 AlgebraBind
                 let
-                    b2 $ &trait-call AlgebraBind :bind b1 $ fn (x)
+                    b2 $ .bind b1 $ fn (x)
                       %{} AlgebraBox (:value $ + x 20)
                   assert= 25 $ :value b2
         |test-map $ %{} :CodeEntry (:doc |)
@@ -84,7 +84,7 @@
                   b1 $ %{} AlgebraBox (:value 2)
                 assert-traits b1 AlgebraMap
                 let
-                    b2 $ &trait-call AlgebraMap :map b1 $ fn (x) (+ x 10)
+                    b2 $ .map b1 $ fn (x) (+ x 10)
                   assert= 12 $ :value b2
         |test-mappend $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -95,7 +95,7 @@
                 assert-traits b1 AlgebraMappend
                 assert-traits b2 AlgebraMappend
                 let
-                    b3 $ &trait-call AlgebraMappend :mappend b1 b2
+                    b3 $ .mappend b1 b2
                   assert= 7 $ :value b3
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
