@@ -1,4 +1,6 @@
-use crate::{builtins::meta::js_gensym, codegen::emit_js::get_proc_prefix};
+use crate::builtins::meta::js_gensym;
+
+use super::runtime::get_proc_prefix;
 
 pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -127,4 +129,49 @@ if (runtimeVersion !== cli_version) {{
 
 pub fn tmpl_tags_init(arr: &str, prefix: &str) -> String {
   format!("\nconst _t_ = {prefix}init_tags({arr});\n")
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn import_procs_includes_init_tags() {
+    let code = tmpl_import_procs("\"@calcit/procs\"".to_owned());
+    assert!(code.contains("init_tags"));
+  }
+
+  #[test]
+  fn tags_init_uses_runtime_helper() {
+    let code = tmpl_tags_init("[\"a\",\"b\"]", "$clt.");
+    assert!(code.contains("const _t_ = $clt.init_tags([\"a\",\"b\"]);"));
+  }
+
+  #[test]
+  fn args_fewer_than_zero_arity_returns_empty() {
+    let code = tmpl_args_fewer_than("f%", 0, "app.main");
+    assert!(code.is_empty());
+  }
+
+  #[test]
+  fn tail_recursion_uses_periodic_watchdog_and_replaced_assign_template() {
+    let code = tmpl_tail_recursion(
+      "f".to_owned(),
+      "a, b".to_owned(),
+      "if (arguments.length !== 2) throw new Error('x');".to_owned(),
+      "".to_owned(),
+      "a = {ret_var}.args[0];\nb = {ret_var}.args[1];".to_owned(),
+      "%%ret%% = 1;".to_owned(),
+      RecurPrefixes {
+        var_prefix: "$clt.".to_owned(),
+        async_prefix: "".to_owned(),
+        return_mark: "%%ret%%".to_owned(),
+      },
+    );
+
+    assert!(code.contains("& 1023"));
+    assert!(code.contains("args.length"));
+    assert!(code.contains("args[0]"));
+    assert!(!code.contains("{ret_var}"));
+  }
 }

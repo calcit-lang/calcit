@@ -41,6 +41,8 @@ export * from "./js-tuple.mjs";
 export * from "./js-trait.mjs";
 export * from "./custom-formatter.mjs";
 export * from "./js-cirru.mjs";
+export * from "./js-arity-helpers.mjs";
+export * from "./js-tag-helpers.mjs";
 export { _$n_compare } from "./js-primes.mjs";
 
 import { CalcitList, CalcitSliceList, foldl } from "./js-list.mjs";
@@ -2045,33 +2047,6 @@ export let gensym = unavailableProc;
 export let macroexpand = unavailableProc;
 export let macroexpand_all = unavailableProc;
 export let _$n_get_calcit_running_mode = unavailableProc;
-
-export let _args_throw = (name: string, expected: number, got: number) => {
-  return new Error(`\`${name}\` expected ${expected} params, got ${got}`);
-};
-
-export let _args_fewer_throw = (name: string, min: number, got: number) => {
-  return new Error(`\`${name}\` expected at least ${min} params, got ${got}`);
-};
-
-export let _args_between_throw = (name: string, min: number, max: number, got: number) => {
-  return new Error(`\`${name}\` expected ${min}-${max} params, got ${got}`);
-};
-
-let _tag_cache: Record<string, CalcitTag> = {};
-export let init_tags = (arr: string[]) => {
-  let tags: Record<string, CalcitTag> = {};
-  for (let idx = 0; idx < arr.length; idx++) {
-    let name = arr[idx];
-    let item = _tag_cache[name];
-    if (item === undefined) {
-      item = newTag(name);
-      _tag_cache[name] = item;
-    }
-    tags[name] = item;
-  }
-  return tags;
-};
 
 // already handled in code emitter
 export let raise = unavailableProc;

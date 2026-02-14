@@ -1,13 +1,19 @@
+mod args;
+mod deps;
 pub mod gen_stack;
+mod helpers;
 mod internal_states;
+mod paths;
+mod runtime;
 use std::fmt::Write;
 mod snippets;
+mod symbols;
+mod tags;
 
-use cirru_parser::Cirru;
 use im_ternary_tree::TernaryTreeList;
 
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -23,6 +29,12 @@ use crate::call_stack::StackKind;
 use crate::codegen::skip_arity_check;
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};
+use args::{gen_args_code, gen_call_args_with_temps};
+use deps::{contains_symbol, sort_by_deps};
+use helpers::{cirru_to_js, is_js_unavailable_procs, write_file_if_changed};
+use paths::{to_js_import_name, to_mjs_filename};
+use runtime::{get_proc_prefix, is_cirru_string};
+use symbols::{escape_cirru_str, escape_var};
 
 thread_local! {
   static INLINE_ALL_ARGS: Cell<bool> = const { Cell::new(false) };
@@ -42,62 +54,6 @@ impl ImportsDict {
 
   fn is_empty(&self) -> bool {
     self.0.is_empty()
-  }
-}
-
-fn to_js_import_name(ns: &str, mjs_mode: bool) -> String {
-  let mut xs: String = String::from("./");
-  xs.push_str(ns);
-  if mjs_mode {
-    xs.push_str(".mjs");
-  }
-  // currently use `import "./ns.name"`
-  wrap_js_str(&xs)
-}
-
-fn to_mjs_filename(ns: &str) -> String {
-  let mut xs: String = String::from(ns);
-  xs.push_str(".mjs");
-  xs
-}
-
-fn escape_var(name: &str) -> String {
-  if has_ns_part(name) {
-    unreachable!("Invalid variable name `{}`, use `escape_ns_var` instead", name);
-  }
-  match name {
-    "if" => String::from("_IF_"),
-    "do" => String::from("_DO_"),
-    "else" => String::from("_ELSE_"),
-    "let" => String::from("_LET_"),
-    "case" => String::from("_CASE_"),
-    "-" => String::from("_SUB_"),
-    _ => name
-      .replace('-', "_")
-      // dot might be part of variable `\.`. not confused with syntax
-      .replace('.', "_DOT_")
-      .replace('?', "_$q_")
-      .replace('+', "_ADD_")
-      .replace('^', "_CRT_")
-      .replace('*', "_$s_")
-      .replace('&', "_$n_")
-      .replace("{}", "_$M_")
-      .replace("[]", "_$L_")
-      .replace('{', "_CURL_")
-      .replace('}', "_CURR_")
-      .replace('\'', "_SQUO_")
-      .replace('[', "_SQRL_")
-      .replace(']', "_SQRR_")
-      .replace('!', "_$x_")
-      .replace('%', "_PCT_")
-      .replace('/', "_SLSH_")
-      .replace('=', "_$e_")
-      .replace('>', "_GT_")
-      .replace('<', "_LT_")
-      .replace(':', "_$o_")
-      .replace(';', "_SCOL_")
-      .replace('#', "_SHA_")
-      .replace('\\', "_BSL_"),
   }
 }
 
@@ -133,42 +89,6 @@ fn is_preferred_js_proc(name: &str) -> bool {
   )
 }
 
-fn escape_cirru_str(s: &str) -> String {
-  let mut result = String::from('"');
-  for c in s.chars() {
-    match c {
-      // disabled since not sure if useful for Cirru
-      // of '\0'..'\31', '\127'..'\255':
-      //   add(result, "\\x")
-      //   add(result, toHex(ord(c), 2))
-      '\\' => result.push_str("\\\\"),
-      '\"' => result.push_str("\\\""),
-      '\n' => result.push_str("\\n"),
-      '\t' => result.push_str("\\t"),
-      _ => result.push(c),
-    }
-  }
-  result.push('"');
-  result
-}
-
-fn is_simple_tag_name(name: &str) -> bool {
-  let mut chars = name.chars();
-  match chars.next() {
-    Some(c) if c.is_ascii_alphabetic() => (),
-    _ => return false,
-  }
-  chars.all(|c| c.is_ascii_alphanumeric())
-}
-
-fn tag_access(name: &str) -> String {
-  if is_simple_tag_name(name) {
-    format!("_t_.{name}")
-  } else {
-    format!("_t_[{}]", wrap_js_str(name))
-  }
-}
-
 fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -> Result<String, String> {
   match xs {
     Calcit::Symbol { sym, .. } => Ok(format!("new {var_prefix}CalcitSymbol({})", escape_cirru_str(sym))),
@@ -192,7 +112,7 @@ fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -
     Calcit::Tag(s) => {
       let mut tags = tags.borrow_mut();
       tags.insert(s.to_owned());
-      Ok(tag_access(s.ref_str()))
+      Ok(tags::tag_access(s.ref_str()))
     }
     Calcit::CirruQuote(code) => Ok(format!("new {var_prefix}CalcitCirruQuote({})", cirru_to_js(code)?)),
     Calcit::Method(name, kind) => {
@@ -352,7 +272,7 @@ fn to_js_code(
       Calcit::Tag(s) => {
         let mut tags = tags.borrow_mut();
         tags.insert(s.to_owned());
-        Ok(tag_access(s.ref_str()))
+        Ok(tags::tag_access(s.ref_str()))
       }
       Calcit::List(_) => unreachable!("[Error] list handled in another branch"),
       Calcit::CirruQuote(code) => {
@@ -398,6 +318,7 @@ fn gen_call_code(
   let return_code = return_label.unwrap_or("");
   let var_prefix = if ns == calcit::CORE_NS { "" } else { "$clt." };
   let proc_prefix = get_proc_prefix(ns);
+  let inline_all = INLINE_ALL_ARGS.with(|flag| flag.get());
   if ys.is_empty() {
     eprintln!("[Warn] Unexpected empty list inside {xs}");
     return Ok(String::from("()"));
@@ -470,7 +391,8 @@ fn gen_call_code(
         CalcitSyntax::HintFn => Ok(format!("{return_code}null")),
         CalcitSyntax::AssertType => Ok(format!("{return_code}null")),
         _ => {
-          let (prelude, args_code) = gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some())?;
+          let (prelude, args_code) =
+            gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
           let call_code = format!("{}({})", to_js_code(&head, ns, local_defs, file_imports, tags, None)?, args_code);
           Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
         }
@@ -498,7 +420,8 @@ fn gen_call_code(
       }
     }
     Calcit::Proc(_) => {
-      let (prelude, args_code) = gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some())?;
+      let (prelude, args_code) =
+        gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
       let call_code = format!("{}({})", to_js_code(&head, ns, local_defs, file_imports, tags, None)?, args_code);
       Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
     }
@@ -533,7 +456,8 @@ fn gen_call_code(
         "new" => match body.first() {
           Some(ctor) => {
             let args = body.drop_left();
-            let (prelude, args_code) = gen_call_args_with_temps(&args, ns, local_defs, file_imports, tags, return_label.is_some())?;
+            let (prelude, args_code) =
+              gen_call_args_with_temps(&args, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
             let call_code = format!("new {}({})", to_js_code(ctor, ns, local_defs, file_imports, tags, None)?, args_code);
             Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&args)))
           }
@@ -571,7 +495,8 @@ fn gen_call_code(
         },
         _ => {
           // TODO
-          let (prelude, args_code) = gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some())?;
+          let (prelude, args_code) =
+            gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
           let call_code = format!("{}({})", to_js_code(&head, ns, local_defs, file_imports, tags, None)?, args_code);
           Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
         }
@@ -612,6 +537,7 @@ fn gen_call_code(
             file_imports,
             tags,
             return_label.is_some(),
+            inline_all,
           )?;
 
           let caller = if matches_js_var(name) {
@@ -635,6 +561,7 @@ fn gen_call_code(
             file_imports,
             tags,
             return_label.is_some(),
+            inline_all,
           )?;
 
           let caller = if matches_js_var(name) {
@@ -659,6 +586,7 @@ fn gen_call_code(
             file_imports,
             tags,
             return_label.is_some(),
+            inline_all,
           )?;
 
           let call_code = format!("{}invoke_method({},{},{})", proc_prefix, escape_cirru_str(name), obj, args_code);
@@ -670,7 +598,7 @@ fn gen_call_code(
       MethodKind::TagAccess => {
         if body.len() == 1 {
           let obj = to_js_code(&body[0], ns, local_defs, file_imports, tags, None)?;
-          let tag = tag_access(name);
+          let tag = tags::tag_access(name);
           Ok(format!("{obj}.get({tag})"))
         } else {
           Err(format!("tag-accessor takes only 1 argument, {xs}"))
@@ -678,7 +606,8 @@ fn gen_call_code(
       }
     },
     _ => {
-      let (prelude, args_code) = gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some())?;
+      let (prelude, args_code) =
+        gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
       let call_code = format!("{}({})", to_js_code(&head, ns, local_defs, file_imports, tags, None)?, args_code);
       Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
     }
@@ -991,120 +920,6 @@ fn gen_if_code(
   }
 }
 
-/// check if it's a simple expression that doesn't need a temporary variable
-fn is_simple_expr(x: &Calcit) -> bool {
-  match x {
-    Calcit::Local { .. }
-    | Calcit::Symbol { .. }
-    | Calcit::Number(_)
-    | Calcit::Bool(_)
-    | Calcit::Nil
-    | Calcit::Str(_)
-    | Calcit::Tag(_)
-    | Calcit::Import(_)
-    | Calcit::Fn { .. }
-    | Calcit::Thunk(..)
-    | Calcit::Proc(..)
-    | Calcit::Method(..) => true,
-    Calcit::Syntax(..) => true,
-    Calcit::List(xs) => xs.is_empty(),
-    _ => false,
-  }
-}
-
-fn is_expr_depth_at_most(x: &Calcit, depth: usize) -> bool {
-  if depth == 0 {
-    return is_simple_expr(x);
-  }
-  match x {
-    Calcit::List(xs) => {
-      if xs.is_empty() {
-        return true;
-      }
-      let next_depth = if xs.len() <= 4 && depth < 4 { depth + 1 } else { depth };
-      xs.iter().all(|item| is_expr_depth_at_most(item, next_depth - 1))
-    }
-    _ => is_simple_expr(x),
-  }
-}
-
-fn is_complex_syntax(x: &Calcit) -> bool {
-  match x {
-    Calcit::List(xs) => match xs.first() {
-      Some(Calcit::Syntax(syn, _)) => matches!(
-        syn,
-        CalcitSyntax::If | CalcitSyntax::Try | CalcitSyntax::CoreLet | CalcitSyntax::Defn | CalcitSyntax::Defmacro
-      ),
-      Some(Calcit::Proc(CalcitProc::Raise)) => true,
-      _ => false,
-    },
-    _ => false,
-  }
-}
-
-fn gen_call_args_with_temps(
-  body: &CalcitList,
-  ns: &str,
-  local_defs: &HashSet<Arc<str>>,
-  file_imports: &RefCell<ImportsDict>,
-  tags: &RefCell<HashSet<EdnTag>>,
-  aggressive: bool,
-) -> Result<(String, String), String> {
-  let mut prelude = String::from("");
-  let mut args_code = String::from("");
-  let mut spreading = false;
-  let var_prefix = if ns == calcit::CORE_NS { "" } else { "$clt." };
-  let max_depth = if aggressive {
-    0
-  } else if body.len() <= 2 {
-    2
-  } else if body.len() > 4 {
-    0
-  } else {
-    1
-  };
-
-  for x in body {
-    match x {
-      Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
-        spreading = true;
-      }
-      _ => {
-        if !args_code.is_empty() {
-          args_code.push_str(", ");
-        }
-
-        let inline_all = INLINE_ALL_ARGS.with(|flag| flag.get());
-        let should_inline = if is_complex_syntax(x) {
-          false
-        } else if inline_all {
-          true
-        } else {
-          is_expr_depth_at_most(x, max_depth)
-        };
-
-        let arg_code = if should_inline {
-          to_js_code(x, ns, local_defs, file_imports, tags, None)?
-        } else {
-          let tmp = escape_var(&js_gensym("tmp"));
-          let expr = to_js_code(x, ns, local_defs, file_imports, tags, None)?;
-          writeln!(prelude, "let {tmp} = {expr};").expect("write");
-          tmp
-        };
-
-        if spreading {
-          write!(args_code, "...{var_prefix}listToArray({arg_code})").expect("write");
-          spreading = false;
-        } else {
-          args_code.push_str(&arg_code);
-        }
-      }
-    }
-  }
-
-  Ok((prelude, args_code))
-}
-
 fn wrap_call_with_prelude(prelude: String, call_code: String, return_label: Option<&str>, has_await: bool) -> String {
   if prelude.is_empty() {
     match return_label {
@@ -1117,43 +932,6 @@ fn wrap_call_with_prelude(prelude: String, call_code: String, return_label: Opti
       None => make_fn_wrapper(&format!("{prelude}return {call_code};"), has_await),
     }
   }
-}
-
-fn gen_args_code(
-  body: &CalcitList,
-  ns: &str,
-  local_defs: &HashSet<Arc<str>>,
-  file_imports: &RefCell<ImportsDict>,
-  tags: &RefCell<HashSet<EdnTag>>,
-) -> Result<String, String> {
-  let mut result = String::from("");
-  let var_prefix = if ns == "calcit.core" { "" } else { "$clt." };
-  let mut spreading = false;
-  for x in body {
-    match x {
-      Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
-        spreading = true;
-      }
-      _ => {
-        if !result.is_empty() {
-          result.push_str(", ");
-        }
-        if spreading {
-          write!(
-            result,
-            "...{}listToArray({})",
-            var_prefix,
-            to_js_code(x, ns, local_defs, file_imports, tags, None)?
-          )
-          .expect("write");
-          spreading = false
-        } else {
-          result.push_str(&to_js_code(x, ns, local_defs, file_imports, tags, None)?);
-        }
-      }
-    }
-  }
-  Ok(result)
 }
 
 fn list_to_js_code(
@@ -1397,91 +1175,6 @@ fn hinted_async(xs: &CalcitList) -> bool {
   false
 }
 
-fn contains_symbol(xs: &Calcit, y: &str) -> bool {
-  match xs {
-    Calcit::Symbol { sym, .. } => &**sym == y,
-    Calcit::Local(CalcitLocal { sym, .. }) => sym.as_ref() == y,
-    Calcit::Import(CalcitImport { def, .. }) => &**def == y,
-    Calcit::Thunk(thunk) => contains_symbol(thunk.get_code(), y),
-    Calcit::Fn { info, .. } => {
-      for x in &*info.body {
-        if contains_symbol(x, y) {
-          return true;
-        }
-      }
-      false
-    }
-    Calcit::List(zs) => {
-      for z in &**zs {
-        if contains_symbol(z, y) {
-          return true;
-        }
-      }
-      false
-    }
-    _ => false,
-  }
-}
-
-fn sort_by_deps(deps: &HashMap<Arc<str>, Calcit>) -> Vec<Arc<str>> {
-  let mut deps_graph: HashMap<Arc<str>, HashSet<Arc<str>>> = HashMap::new();
-  let mut def_names: Vec<Arc<str>> = Vec::with_capacity(deps.len());
-  for (k, v) in deps {
-    def_names.push(k.to_owned());
-    let mut deps_info: HashSet<Arc<str>> = HashSet::new();
-    for k2 in deps.keys() {
-      if k2 == k {
-        continue;
-      }
-      // println "checking ", k, " -> ", k2, " .. ", v.containsSymbol(k2)
-      if contains_symbol(v, k2) {
-        deps_info.insert(k2.to_owned());
-      }
-    }
-    deps_graph.insert(k.to_owned(), deps_info);
-  }
-  // println!("\ndefs graph {:?}", deps_graph);
-  def_names.sort(); // alphabet order first
-
-  let mut result: Vec<Arc<str>> = Vec::with_capacity(def_names.len());
-  'outer: for x in def_names {
-    for (idx, y) in result.iter().enumerate() {
-      if depends_on(y, &x, &deps_graph, 3) {
-        result.insert(idx, x.to_owned());
-        continue 'outer;
-      }
-    }
-    result.push(x.to_owned());
-  }
-  // println!("\ndef names {:?}", def_names);
-
-  result
-}
-
-// could be slow, need real topology sorting
-fn depends_on(x: &str, y: &str, deps: &HashMap<Arc<str>, HashSet<Arc<str>>>, decay: usize) -> bool {
-  if decay == 0 {
-    false
-  } else {
-    for item in &deps[x] {
-      if &**item == y || depends_on(item, y, deps, decay - 1) {
-        return true;
-      } else {
-        // nothing
-      }
-    }
-    false
-  }
-}
-
-fn write_file_if_changed(filename: &Path, content: &str) -> Result<bool, String> {
-  if filename.exists() && fs::read_to_string(filename).map_err(|e| e.to_string())? == content {
-    return Ok(false);
-  }
-  let _ = fs::write(filename, content);
-  Ok(true)
-}
-
 pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
   let code_emit_path = Path::new(emit_path);
   if !code_emit_path.exists() {
@@ -1692,39 +1385,4 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
   let _ = internal_states::finish_compilation();
 
   Ok(())
-}
-
-fn is_js_unavailable_procs(name: &str) -> bool {
-  matches!(
-    name,
-    "&reset-gensym-index!" | "gensym" | "macroexpand" | "macroexpand-all" | "to-cirru-edn" | "extract-cirru-edn"
-  )
-}
-
-#[inline(always)]
-fn is_cirru_string(s: &str) -> bool {
-  s.starts_with('|') || s.starts_with('"')
-}
-
-#[inline(always)]
-fn get_proc_prefix(ns: &str) -> &str {
-  if ns == calcit::CORE_NS { "$procs." } else { "$clt." }
-}
-
-fn cirru_to_js(code: &Cirru) -> Result<String, String> {
-  match code {
-    Cirru::List(xs) => {
-      let mut chunk = "[".to_owned();
-      for x in xs {
-        chunk.push_str(&cirru_to_js(x)?);
-        chunk.push(',');
-      }
-      if chunk.ends_with(',') {
-        chunk.pop();
-      }
-      chunk.push(']');
-      Ok(chunk)
-    }
-    Cirru::Leaf(s) => Ok(format!("\"{}\"", s.escape_default())),
-  }
 }
