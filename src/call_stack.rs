@@ -115,6 +115,10 @@ pub fn display_stack_with_docs(
   hint: Option<&str>,
 ) -> Result<(), String> {
   let fallback_location: Option<Arc<NodeLocation>> = location.cloned().or_else(|| {
+    if let Some(loc) = find_preferred_macro_location(stack) {
+      return Some(Arc::new(loc));
+    }
+
     let mut candidates: Vec<Arc<NodeLocation>> = vec![];
     for s in &stack.0 {
       if let Some(loc) = find_location_in_calcit(&s.code).or_else(|| s.args.iter().find_map(find_location_in_calcit)) {
@@ -141,7 +145,6 @@ pub fn display_stack_with_docs(
   if let Some(h) = hint {
     eprintln!("\n{h}");
   } else {
-    eprintln!("\nhelp: use expected/actual info to make a minimal fix, then re-run eval.");
     if let Some((ns, def, examples)) = find_stack_examples(stack) {
       eprintln!("examples: cargo run --bin cr -- demos/compact.cirru query examples {}/{}", ns, def);
       if !examples.is_empty() {
@@ -202,27 +205,19 @@ pub fn display_stack_with_docs(
     stack_list.push(info);
   }
 
-  let content = cirru_edn::format(
-    &Edn::map_from_iter([
-      (Edn::tag("message"), failure.into()),
-      (
-        Edn::tag("hint"),
-        match hint {
-          Some(h) => h.into(),
-          None => Edn::Nil,
-        },
-      ),
-      (Edn::tag("stack"), stack_list.into()),
-      (
-        Edn::tag("location"),
-        match fallback_location.as_deref() {
-          Some(l) => l.into(),
-          None => Edn::Nil,
-        },
-      ),
-    ]),
-    true,
-  )?;
+  let mut snapshot_fields = vec![(Edn::tag("message"), failure.into()), (Edn::tag("stack"), stack_list.into())];
+  if let Some(h) = hint {
+    snapshot_fields.push((Edn::tag("hint"), h.into()));
+  }
+  snapshot_fields.push((
+    Edn::tag("location"),
+    match fallback_location.as_deref() {
+      Some(l) => l.into(),
+      None => Edn::Nil,
+    },
+  ));
+
+  let content = cirru_edn::format(&Edn::map_from_iter(snapshot_fields), true)?;
   let _ = fs::write(ERROR_SNAPSHOT, content);
   eprintln!("\nrun `cat {ERROR_SNAPSHOT}` to read stack details.");
   Ok(())
@@ -238,7 +233,51 @@ fn find_location_in_calcit(v: &Calcit) -> Option<NodeLocation> {
   }
 }
 
+fn find_preferred_macro_location(stack: &CallStackList) -> Option<NodeLocation> {
+  let mut macro_locations: Vec<NodeLocation> = vec![];
+  for item in &stack.0 {
+    if item.kind != StackKind::Macro {
+      continue;
+    }
+    if let Some(loc) = find_location_in_calcit(&item.code).or_else(|| item.args.iter().find_map(find_location_in_calcit)) {
+      macro_locations.push(loc);
+    }
+  }
+
+  macro_locations
+    .iter()
+    .find(|loc| loc.ns.as_ref() != crate::calcit::CORE_NS)
+    .cloned()
+    .or_else(|| macro_locations.into_iter().next())
+}
+
 fn find_stack_examples(stack: &CallStackList) -> Option<(String, String, Vec<String>)> {
+  let mut macro_fallback: Option<(String, String, Vec<String>)> = None;
+
+  for item in &stack.0 {
+    if item.kind != StackKind::Macro {
+      continue;
+    }
+    if is_internal_macro_ns(&item.ns) {
+      if macro_fallback.is_none() {
+        macro_fallback = lookup_macro_examples_target(item);
+      }
+      continue;
+    }
+
+    if is_macro_called_from_user(item) {
+      if let Some(target) = lookup_macro_examples_target(item) {
+        return Some(target);
+      }
+    } else if macro_fallback.is_none() {
+      macro_fallback = lookup_macro_examples_target(item);
+    }
+  }
+
+  if macro_fallback.is_some() {
+    return macro_fallback;
+  }
+
   for item in &stack.0 {
     if let Some(examples) = crate::program::lookup_def_examples(&item.ns, &item.def) {
       if examples.is_empty() {
@@ -255,4 +294,34 @@ fn find_stack_examples(stack: &CallStackList) -> Option<(String, String, Vec<Str
     }
   }
   None
+}
+
+fn lookup_macro_examples_target(item: &CalcitStack) -> Option<(String, String, Vec<String>)> {
+  if let Some(examples) = crate::program::lookup_def_examples(&item.ns, &item.def) {
+    if examples.is_empty() {
+      return Some((item.ns.to_string(), item.def.to_string(), vec![]));
+    }
+    let mut rendered = vec![];
+    for example in examples.iter().take(2) {
+      rendered.push(match cirru_parser::format_expr_one_liner(example) {
+        Ok(v) => v.to_string(),
+        Err(_) => example.to_string(),
+      });
+    }
+    return Some((item.ns.to_string(), item.def.to_string(), rendered));
+  }
+  if crate::program::has_def_code(&item.ns, &item.def) {
+    return Some((item.ns.to_string(), item.def.to_string(), vec![]));
+  }
+  None
+}
+
+fn is_macro_called_from_user(item: &CalcitStack) -> bool {
+  find_location_in_calcit(&item.code)
+    .or_else(|| item.args.iter().find_map(find_location_in_calcit))
+    .is_some_and(|loc| loc.ns.as_ref() != crate::calcit::CORE_NS)
+}
+
+fn is_internal_macro_ns(ns: &str) -> bool {
+  ns == "calcit.internal" || ns.starts_with("calcit.internal.")
 }

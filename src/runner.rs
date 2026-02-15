@@ -551,7 +551,7 @@ pub fn bind_marked_args(
           if pop_args_idx.0 < args.len() {
             return Err(CalcitErr::use_msg_stack(
               CalcitErrKind::Arity,
-              format!("extra args `{args:?}` after spreading in `{args:?}`",),
+              format!("invalid argument declaration after `&` in signature `{}`", render_marked_args(args)),
               call_stack,
             ));
           }
@@ -559,7 +559,7 @@ pub fn bind_marked_args(
         _ => {
           return Err(CalcitErr::use_msg_stack(
             CalcitErrKind::Arity,
-            format!("invalid control insode spreading mode: {args:?}"),
+            format!("invalid argument declaration after `&` in signature `{}`", render_marked_args(args)),
             call_stack,
           ));
         }
@@ -578,7 +578,11 @@ pub fn bind_marked_args(
             } else {
               return Err(CalcitErr::use_msg_stack(
                 CalcitErrKind::Arity,
-                format!("too few values `{values:?}` passed to args `{args:?}`"),
+                format!(
+                  "too few values `{values:?}` for arguments `{}`; missing required argument `{}`",
+                  render_marked_args(args),
+                  CalcitLocal::read_name(*idx)
+                ),
                 call_stack,
               ));
             }
@@ -591,12 +595,29 @@ pub fn bind_marked_args(
   if pop_values_idx.0 >= values.len() {
     Ok(())
   } else {
+    let extra_count = values.len() - pop_values_idx.0;
     Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Arity,
-      format!("extra args `{args:?}` not handled while passing values `{values:?}` to args `{args:?}`",),
+      format!(
+        "too many values `{values:?}` for arguments `{}`; {} extra value(s) are not handled",
+        render_marked_args(args),
+        extra_count
+      ),
       call_stack,
     ))
   }
+}
+
+fn render_marked_args(args: &[CalcitArgLabel]) -> String {
+  let mut parts: Vec<String> = vec![];
+  for arg in args {
+    match arg {
+      CalcitArgLabel::RestMark => parts.push("&".to_owned()),
+      CalcitArgLabel::OptionalMark => parts.push("?".to_owned()),
+      CalcitArgLabel::Idx(idx) => parts.push(CalcitLocal::read_name(*idx).to_string()),
+    }
+  }
+  format!("({})", parts.join(" "))
 }
 
 pub fn evaluate_lines(lines: &[Calcit], scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {

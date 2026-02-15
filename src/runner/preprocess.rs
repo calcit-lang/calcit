@@ -2782,6 +2782,13 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   if args.len() < 2 {
     return preprocess_each_items(head, head_ns, args, ctx);
   }
+  if args.len() > 3 {
+    return Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Syntax,
+      format!("if expects 2 or 3 arguments, got {}", args.len()),
+      ctx.call_stack,
+    ));
+  }
 
   let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
   let cond_form = preprocess_expr(
@@ -4450,5 +4457,29 @@ mod tests {
       warning_msg.contains("dynamic trait call") && warning_msg.contains(".greet"),
       "warning should mention method: {warning_msg}"
     );
+  }
+
+  #[test]
+  fn fails_fast_on_if_with_too_many_arguments() {
+    let expr = Cirru::List(vec![
+      Cirru::leaf("if"),
+      Cirru::leaf("true"),
+      Cirru::leaf("1"),
+      Cirru::leaf("2"),
+      Cirru::leaf("3"),
+    ]);
+    let code = code_to_calcit(&expr, "tests.if", "demo", vec![]).expect("parse cirru");
+
+    let scope_defs: HashSet<Arc<str>> = HashSet::new();
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+
+    let result = preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.if", &warnings, &stack);
+    assert!(result.is_err(), "preprocess should reject if with too many arguments");
+    if let Err(err) = result {
+      let msg = format!("{err}");
+      assert!(msg.contains("if expects 2 or 3 arguments"), "error should mention if arity: {msg}");
+    }
   }
 }

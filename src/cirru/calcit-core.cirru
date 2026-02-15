@@ -2790,11 +2790,13 @@
                   pattern1 $ &list:nth values 1
                   &let
                     pattern2 $ &list:nth values 2
-                    assert "|patterns in list" $ and (list? pattern1) (list? pattern2)
-                      &> (count pattern1) 1
-                      list? $ &list:nth pattern1 0
-                      list? $ &list:nth pattern2 0
-                      &> (count pattern2) 1
+                    if
+                      not $ and (list? pattern1) (list? pattern2)
+                        &> (count pattern1) 1
+                        list? $ &list:nth pattern1 0
+                        list? $ &list:nth pattern2 0
+                        &> (count pattern2) 1
+                      raise $ str-spaced "|list-match expects 2 branches: (() body...) and ((head tail) body...), got:" pattern1 pattern2
                     &let
                       v# $ gensym |v
                       quasiquote $ &let (~v# ~xs)
@@ -2817,7 +2819,7 @@
                               ~ $ &list:slice pattern2 1
                               ~ $ &list:nth pattern1 0
                               ~ $ &list:slice pattern1 1
-                            raise "|expected empty and destruction branches"
+                            raise $ str-spaced "|list-match expects one empty branch and one destructuring branch, got:" pattern1 pattern2
           :examples $ []
             quote $ assert= :something
               list-match ([] 1)
