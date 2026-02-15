@@ -115,10 +115,24 @@ pub fn display_stack_with_docs(
   hint: Option<&str>,
 ) -> Result<(), String> {
   let fallback_location: Option<Arc<NodeLocation>> = location.cloned().or_else(|| {
-    stack
-      .0
-      .first()
-      .map(|s| Arc::new(NodeLocation::new(s.ns.to_owned(), s.def.to_owned(), Arc::new(vec![]))))
+    let mut candidates: Vec<Arc<NodeLocation>> = vec![];
+    for s in &stack.0 {
+      if let Some(loc) = find_location_in_calcit(&s.code).or_else(|| s.args.iter().find_map(find_location_in_calcit)) {
+        candidates.push(Arc::new(loc));
+      }
+    }
+
+    candidates
+      .iter()
+      .find(|loc| loc.ns.as_ref() != crate::calcit::CORE_NS)
+      .cloned()
+      .or_else(|| candidates.into_iter().next())
+      .or_else(|| {
+        stack
+          .0
+          .first()
+          .map(|s| Arc::new(NodeLocation::new(s.ns.to_owned(), s.def.to_owned(), Arc::new(vec![]))))
+      })
   });
   eprintln!("\nFailure: {failure}");
   if let Some(l) = fallback_location.as_deref() {
@@ -126,12 +140,23 @@ pub fn display_stack_with_docs(
   }
   if let Some(h) = hint {
     eprintln!("\n{h}");
+  } else {
+    eprintln!("\nhelp: use expected/actual info to make a minimal fix, then re-run eval.");
+    if let Some((ns, def, examples)) = find_stack_examples(stack) {
+      eprintln!("examples: cargo run --bin cr -- demos/compact.cirru query examples {}/{}", ns, def);
+      if !examples.is_empty() {
+        eprintln!("sample examples:");
+        for line in examples.iter().take(2) {
+          eprintln!("  - {line}");
+        }
+      }
+    }
   }
   eprintln!("\ncall stack:");
 
   for s in &stack.0 {
     let is_macro = s.kind == StackKind::Macro;
-    let stack_location = s.code.get_location().or_else(|| s.args.first().and_then(|arg| arg.get_location()));
+    let stack_location = find_location_in_calcit(&s.code).or_else(|| s.args.iter().find_map(find_location_in_calcit));
     match stack_location {
       Some(l) => eprintln!("  {}/{}{} @ {l}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" }),
       None => eprintln!("  {}/{}{}", s.ns, s.def, if is_macro { "\t ~macro" } else { "" }),
@@ -144,7 +169,7 @@ pub fn display_stack_with_docs(
     for v in s.args.iter() {
       args.push(edn::calcit_to_edn(v)?);
     }
-    let stack_location = s.code.get_location().or_else(|| s.args.first().and_then(|arg| arg.get_location()));
+    let stack_location = find_location_in_calcit(&s.code).or_else(|| s.args.iter().find_map(find_location_in_calcit));
     let mut info_map = vec![
       (Edn::tag("def"), format!("{}/{}", s.ns, s.def).into()),
       (Edn::tag("code"), cirru::calcit_to_cirru(&s.code)?.into()),
@@ -204,3 +229,30 @@ pub fn display_stack_with_docs(
 }
 
 const ERROR_SNAPSHOT: &str = ".calcit-error.cirru";
+
+fn find_location_in_calcit(v: &Calcit) -> Option<NodeLocation> {
+  match v {
+    Calcit::List(items) => items.iter().find_map(find_location_in_calcit),
+    Calcit::Recur(items) => items.iter().find_map(find_location_in_calcit),
+    _ => v.get_location(),
+  }
+}
+
+fn find_stack_examples(stack: &CallStackList) -> Option<(String, String, Vec<String>)> {
+  for item in &stack.0 {
+    if let Some(examples) = crate::program::lookup_def_examples(&item.ns, &item.def) {
+      if examples.is_empty() {
+        continue;
+      }
+      let mut rendered = vec![];
+      for example in examples.iter().take(2) {
+        rendered.push(match cirru_parser::format_expr_one_liner(example) {
+          Ok(v) => v.to_string(),
+          Err(_) => example.to_string(),
+        });
+      }
+      return Some((item.ns.to_string(), item.def.to_string(), rendered));
+    }
+  }
+  None
+}

@@ -196,22 +196,34 @@
 
 核心方向（为 AI “错误左移 + 用法发现”服务）：
 
-1. **把错误变成契约**：
-  - 将“预期失败/预期告警”场景转为可重复检查（负向测试契约），避免回归时 AI 只能依赖模糊日志。
-2. **把契约变成分层入口**：
-  - 保留 `test.cirru` 作为主路径正向回归；
-  - 新增独立入口的“shift-left 契约检查”脚本，用于验证错误信息与阻断行为是否稳定。
-3. **把分歧变成可定位信号**：
-  - 优先统一错误文本的结构（场景 + 期望 + 实际 + 定位），降低 AI 修复时的歧义。
+1. **把左移内建到语言管线**：
 
-近期执行（已落地/可直接使用）：
+- 在 reader / macroexpand / preprocess / eval 各阶段输出结构化诊断，避免问题漏到下游才暴露。
 
-- [x] 新增 `yarn check-shift-left`（`scripts/check-shift-left.mjs`），覆盖：
-  - 正向基线：`calcit/test.cirru -1` 必须通过；
-  - 负向契约：`test-proc-type-warnings` / `test-method-validation` / `test-ir-type-info` 必须失败且命中关键诊断文本。
+2. **把诊断做成机器可消费格式**：
+
+- 每条错误/告警包含固定字段：阶段、错误码、主消息、期望、实际、定位信息、建议修复动作。
+
+3. **把“正确用法”绑定到报错上下文**：
+
+- 对常见误用（let 绑定、method 调用、trait 实现、tag-match、可调用对象）附上最小可运行示例或提示入口。
+
+近期执行（已调整）：
+
+- [x] 移除价值较低的独立错误脚本，避免维护“脚本层契约”偏离语言内核演进目标。
+- [x] 结构化诊断 v1 已起步：`LocatedWarning` 增加 `code/hint` 字段，并在 preprocess callable 检查接入首批错误码。
+- [x] 已回退复杂诊断输出，当前统一使用文本诊断与 call stack/examples 指引。
+- [x] `eval` 场景已补充 fallback 映射：参数类型错(`P_ARG_TYPE_MISMATCH`)与非可调用操作符(`P_NON_OPERATOR`)可直接结构化输出。
+- [x] 增加宏诊断协议（code/expected/actual/action/bad/good/rule）与 CLI 解析，输出 `learning` 字段提升 LLM 学习效率。
+- [x] 扩展高频宏入口 shape 校验（fail-fast），减少错误下沉到 `if` 等下游展开节点。
+- [x] 修复兼容性回归并恢复主路径：`fn ()` 保持返回 `nil`，`defrecord` 保持扁平字段写法兼容（如 `defrecord Cat :name :color`）。
+- [x] 保留并强化主路径回归：`test.cirru` + `yarn check-all`（已恢复通过）。
 
 下一步建议（优先级顺序）：
 
-- [ ] 给 `check-shift-left` 再补 2~3 个稳定负向用例（例如 tag-match/arity 相关），先修复不稳定输入文件再纳入。
-- [ ] 梳理一份“诊断文案规范表”（错误类别、必须字段、示例）并用于后续错误信息统一。
-- [ ] 在 guidebook 补一节 “AI 友好排错路径”，把常见失败 -> 命令 -> 预期输出串成最短闭环。
+- [ ] 将当前 warning 结构扩展为统一 `CalcitDiagnostic`（含 phase/expected/actual/action），并继续覆盖 preprocess 其余高频场景。
+- [ ] 为高频误用继续补齐错误码与修复提示模板（trait/tag-match/arity 等）。
+- [ ] 为 eval 运行时错误补齐更多 fallback 规则（如 arity/tag-match）并加最小回归样例。
+- [ ] 将宏诊断协议推广到更多核心宏（if/defn/assert-\*），并补 macro-level golden 诊断样例。
+- [ ] guidebook 增加 “AI 友好排错路径” 与 “从错误到修复”最短闭环示例。
+- [ ] 补充“宏入口校验兼容矩阵”文档，明确哪些宏允许空 body/扁平字段等历史语法，防止后续误收紧。

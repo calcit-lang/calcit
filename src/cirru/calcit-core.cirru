@@ -15,12 +15,17 @@
         |%<- $ %{} :CodeEntry (:doc "|pass value as `%` into several expressions, in reversed order")
           :code $ quote
             defmacro %<- (& xs)
+              if (&list:empty? xs)
+                raise "|%<- expects at least 1 expression"
               quasiquote $ ->%
                 ~@ $ reverse xs
           :examples $ []
         |%{} $ %{} :CodeEntry (:doc "|Low-level helper for constructing records and attaching metadata\nWraps `&%{` so higher-level macros like `defrecord!` can register methods.")
           :code $ quote
             defmacro %{} (R & xs)
+              if
+                not $ and (list? xs) (every? xs list?)
+                raise $ str-spaced "|%{} expects field entries in list, got:" xs
               &let
                 args $ &list:concat & xs
                 quasiquote $ &%{} ~R ~@args
@@ -994,6 +999,14 @@
               if (&list:empty? xs) (quasiquote ~base)
                 &let
                   x0 $ &list:first xs
+                  if
+                    and (list? x0) (&list:empty? x0)
+                    raise "|-> expects non-empty list step"
+                  if
+                    and
+                      not $ list? x0
+                      not $ symbol? x0
+                    raise $ str-spaced "|-> expects symbol or list step, got:" x0
                   if (list? x0)
                     recur
                       &list:concat
@@ -1022,6 +1035,14 @@
               if (&list:empty? xs) (quasiquote ~base)
                 &let
                   x0 $ &list:first xs
+                  if
+                    and (list? x0) (&list:empty? x0)
+                    raise "|->> expects non-empty list step"
+                  if
+                    and
+                      not $ list? x0
+                      not $ symbol? x0
+                    raise $ str-spaced "|->> expects symbol or list step, got:" x0
                   if (list? x0)
                     &call-spread recur (append x0 base) & $ &list:rest xs
                     &call-spread recur ([] x0 base) & $ &list:rest xs
@@ -1043,6 +1064,9 @@
         |: $ %{} :CodeEntry (:doc "|Macro sugar for tagged tuples\nExpands to `::` while passing the tag through `turn-tag`, so both keywords and bare symbols may be used.")
           :code $ quote
             defmacro : (tag & args)
+              if
+                not $ or (tag? tag) (symbol? tag) (string? tag)
+                raise $ str-spaced "|: expects tag/symbol/string for tag, got:" tag
               quasiquote $ ::
                 ~ $ turn-tag tag
                 ~@ args
@@ -1070,6 +1094,8 @@
         |<- $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro <- (& xs)
+              if (&list:empty? xs)
+                raise "|<- expects at least 1 expression"
               quasiquote $ ->
                 ~@ $ reverse xs
           :examples $ []
@@ -1186,6 +1212,9 @@
         |[][] $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro [][] (& xs)
+              if
+                not $ and (list? xs) (every? xs list?)
+                raise $ str-spaced "|[][] expects list items, got:" xs
               &let
                 items $ map xs
                   fn (ys)
@@ -1195,11 +1224,18 @@
         |\ $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro \ (& xs)
+              if (&list:empty? xs)
+                raise "|\\ expects function body"
               quasiquote $ defn %\ (? % %2) ~xs
           :examples $ []
         |\. $ %{} :CodeEntry (:doc "|this syntax is bared used, deprecating")
           :code $ quote
             defmacro \. (args-alias & xs)
+              if
+                not $ or (symbol? args-alias) (string? args-alias)
+                raise $ str-spaced "|\\. expects symbol/string arg alias, got:" args-alias
+              if (&list:empty? xs)
+                raise "|\\. expects function body"
               &let
                 args $ ->% (turn-string args-alias) (split % |,) (map % turn-symbol)
                 &let
@@ -1231,18 +1267,24 @@
           :examples $ []
         |and $ %{} :CodeEntry (:doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right.")
           :code $ quote
-            defmacro and (item & xs)
+            defmacro and (& xs)
               if (&list:empty? xs)
-                if (list? item)
-                  &let
-                    v1# $ gensym |v1
-                    quasiquote $ &let (~v1# ~item) (if ~v1# ~v1# false)
-                  quasiquote $ if ~item ~item false
-                quasiquote $ if ~item
-                  and
-                    ~ $ &list:first xs
-                    ~@ $ &list:rest xs
-                  , false
+                raise "|and expects at least 1 expression"
+              &let
+                item $ &list:first xs
+                &let
+                  rest-xs $ &list:rest xs
+                  if (&list:empty? rest-xs)
+                    if (list? item)
+                      &let
+                        v1# $ gensym |v1
+                        quasiquote $ &let (~v1# ~item) (if ~v1# ~v1# false)
+                      quasiquote $ if ~item ~item false
+                    quasiquote $ if ~item
+                      and
+                        ~ $ &list:first rest-xs
+                        ~@ $ &list:rest rest-xs
+                      , false
           :examples $ []
             quote $ assert= false (and true false true)
             quote $ assert= |done (and true |done)
@@ -1282,6 +1324,9 @@
         |apply-args $ %{} :CodeEntry (:doc "|macro that applies a function to arguments, handles empty argument list specially")
           :code $ quote
             defmacro apply-args (args f)
+              if
+                not $ list? args
+                raise $ str-spaced "|apply-args expects list args, got:" args
               if
                 &= [] $ &list:first args
                 quasiquote $ ~f
@@ -1433,6 +1478,9 @@
         |call-w-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro call-w-log (f & xs)
+              if
+                not $ or (symbol? f) (list? f)
+                raise $ str-spaced "|call-w-log expects function expression, got:" f
               let
                   v $ if
                     = :eval $ &get-calcit-running-mode
@@ -1452,11 +1500,24 @@
         |call-wo-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro call-wo-log (f & xs)
+              if
+                not $ or (symbol? f) (list? f)
+                raise $ str-spaced "|call-wo-log expects function expression, got:" f
               quasiquote $ ~f ~@xs
           :examples $ []
         |case $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro case (item & patterns)
+              if (&list:empty? patterns)
+                raise "|case expects at least 1 pattern"
+              if
+                not $ and (list? patterns) (every? patterns list?)
+                raise $ str-spaced "|case expects pattern pairs in list, got:" patterns
+              if
+                not $ every? patterns
+                  fn (pair)
+                    &= 2 $ &list:count pair
+                raise $ str-spaced "|case expects each pattern as pair, got:" patterns
               &let
                 v $ gensym |v
                 quasiquote $ &let (~v ~item) (&case ~v nil ~@patterns)
@@ -1466,6 +1527,14 @@
             defmacro case-default (item default & patterns)
               if (&list:empty? patterns)
                 raise $ str-spaced "|Expected patterns for case-default, got empty after:" default
+              if
+                not $ and (list? patterns) (every? patterns list?)
+                raise $ str-spaced "|case-default expects pattern pairs in list, got:" patterns
+              if
+                not $ every? patterns
+                  fn (pair)
+                    &= 2 $ &list:count pair
+                raise $ str-spaced "|case-default expects each pattern as pair, got:" patterns
               &let
                 v $ gensym |v
                 quasiquote $ &let (~v ~item) (&case ~v ~default ~@patterns)
@@ -1501,23 +1570,27 @@
               concat ([] 1 2) ([] 3 4) ([] 5)
         |cond $ %{} :CodeEntry (:doc "|Multi-branch conditional macro. Evaluates condition/result pairs in order and returns the first truthy branch; use `true` as a default guard.")
           :code $ quote
-            defmacro cond (pair & else)
-              if
-                not $ and (list? pair)
-                  &= 2 $ &list:count pair
-                raise $ str-spaced "|expects a pair, got:" pair
+            defmacro cond (& pairs)
+              if (&list:empty? pairs)
+                raise "|cond expects at least 1 (condition branch) pair"
               &let
-                expr $ &list:nth pair 0
+                pair $ &list:first pairs
+                if
+                  not $ and (list? pair)
+                    &= 2 $ &list:count pair
+                  raise $ str-spaced "|cond expects a pair, got:" pair
                 &let
-                  branch $ &list:nth pair 1
-                  if
-                    if (empty? else) (= true expr) false
-                    , branch $ quasiquote
-                      if ~expr ~branch $ ~
-                        if (&list:empty? else) nil $ quasiquote
-                          cond
-                            ~ $ &list:nth else 0
-                            ~@ $ &list:rest else
+                  else $ &list:rest pairs
+                  &let
+                    expr $ &list:nth pair 0
+                    &let
+                      branch $ &list:nth pair 1
+                      if
+                        if (empty? else) (= true expr) false
+                        , branch $ quasiquote
+                          if ~expr ~branch $ ~
+                            if (&list:empty? else) nil $ quasiquote
+                              cond ~@else
           :examples $ []
             quote $ assert= :small
               cond
@@ -1746,6 +1819,14 @@
         |defn-w-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro defn-w-log (f-name args & body)
+              if
+                not $ symbol? f-name
+                raise $ str-spaced "|defn-w-log expects function name symbol, got:" f-name
+              if
+                not $ list? args
+                raise $ str-spaced "|defn-w-log expects args in list, got:" args
+              if (&list:empty? body)
+                raise "|defn-w-log expects function body"
               quasiquote $ defn ~f-name ~args
                 &let
                   ~f-name $ defn ~f-name ~args ~@body
@@ -1754,11 +1835,27 @@
         |defn-wo-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro defn-wo-log (f-name args & body)
+              if
+                not $ symbol? f-name
+                raise $ str-spaced "|defn-wo-log expects function name symbol, got:" f-name
+              if
+                not $ list? args
+                raise $ str-spaced "|defn-wo-log expects args in list, got:" args
+              if (&list:empty? body)
+                raise "|defn-wo-log expects function body"
               quasiquote $ defn ~f-name ~args ~@body
           :examples $ []
         |defrecord $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro defrecord (name & xs)
+              if
+                not $ or (tag? name) (symbol? name)
+                raise $ str-spaced "|defrecord expects name as tag/symbol, got:" name
+              if
+                not $ every? xs
+                  fn (field)
+                    or (tag? field) (symbol? field) (string? field)
+                raise $ str-spaced "|defrecord expects field names as tag/symbol/string, got:" xs
               quasiquote $ new-record
                 ~ $ turn-tag name
                 , ~@xs
@@ -1766,6 +1863,22 @@
         |defrecord! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro defrecord! (name & pairs)
+              if
+                not $ or (tag? name) (symbol? name)
+                raise $ str-spaced "|defrecord! expects name as tag/symbol, got:" name
+              if
+                not $ and (list? pairs) (every? pairs list?)
+                raise $ str-spaced "|defrecord! expects field pairs in list, got:" pairs
+              if
+                not $ every? pairs
+                  fn (pair)
+                    and
+                      &= 2 $ &list:count pair
+                      or
+                        tag? $ &list:first pair
+                        symbol? $ &list:first pair
+                        string? $ &list:first pair
+                raise $ str-spaced "|defrecord! expects each field as (tag/symbol/string value), got:" pairs
               quasiquote $ %{}
                 new-record
                   ~ $ turn-tag name
@@ -1990,21 +2103,27 @@
                 fn (x) (&+ x 1)
         |either $ %{} :CodeEntry (:doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value.")
           :code $ quote
-            defmacro either (item & xs)
-              if (&list:empty? xs) item $ if (list? item)
+            defmacro either (& xs)
+              if (&list:empty? xs)
+                raise "|either expects at least 1 expression"
+              &let
+                item $ &list:first xs
                 &let
-                  v1# $ gensym |v1
-                  quasiquote $ &let (~v1# ~item)
-                    if (nil? ~v1#)
+                  rest-xs $ &list:rest xs
+                  if (&list:empty? rest-xs) item $ if (list? item)
+                    &let
+                      v1# $ gensym |v1
+                      quasiquote $ &let (~v1# ~item)
+                        if (nil? ~v1#)
+                          either
+                            ~ $ &list:first rest-xs
+                            ~@ $ &list:rest rest-xs
+                          ~ v1#
+                    quasiquote $ if (nil? ~item)
                       either
-                        ~ $ &list:first xs
-                        ~@ $ &list:rest xs
-                      ~ v1#
-                quasiquote $ if (nil? ~item)
-                  either
-                    ~ $ &list:first xs
-                    ~@ $ &list:rest xs
-                  ~ item
+                        ~ $ &list:first rest-xs
+                        ~@ $ &list:rest rest-xs
+                      ~ item
           :examples $ []
             quote $ assert= 42 (either nil 42 nil)
             quote $ assert= false (either false true)
@@ -2094,7 +2213,7 @@
           :code $ quote
             defmacro field-match (value & body)
               if (&list:empty? body)
-                quasiquote $ eprintln "|[Error] field-match expected patterns for matching" ~value
+                raise "|field-match expected patterns for matching"
                 if (list? value)
                   &let
                     v# $ gensym |v
@@ -2172,7 +2291,12 @@
         |fn $ %{} :CodeEntry (:doc "|macro for anonymous functions\nSyntax: (fn (args...) body...)\nParams: args (parameter list), body (expressions)\nReturns: anonymous function\nCreates an anonymous function, shorter than defn")
           :code $ quote
             defmacro fn (args & body)
-              quasiquote $ defn f% ~args ~@body
+              if
+                not $ list? args
+                raise $ str-spaced "|fn expects args in list, got:" args
+              if (&list:empty? body)
+                quasiquote $ defn f% ~args nil
+                quasiquote $ defn f% ~args ~@body
           :examples $ []
             quote $ map ([] 1 2 3)
               fn (x) (* x 2)
@@ -2359,8 +2483,22 @@
                 , v |missing
         |if-not $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defmacro if-not (condition true-branch ? false-branch)
-              quasiquote $ if ~condition ~false-branch ~true-branch
+            defmacro if-not (& xs)
+              if
+                not $ or
+                  &= 2 $ &list:count xs
+                  &= 3 $ &list:count xs
+                raise $ str-spaced "|if-not expects (condition then) or (condition then else), got:" xs
+              &let
+                condition $ &list:nth xs 0
+                &let
+                  true-branch $ &list:nth xs 1
+                  &let
+                    false-branch $ if
+                      &= 3 $ &list:count xs
+                      &list:nth xs 2
+                      , nil
+                    quasiquote $ if ~condition ~false-branch ~true-branch
           :examples $ []
         |inc $ %{} :CodeEntry (:doc "|Increments a number by 1")
           :code $ quote
@@ -2469,6 +2607,14 @@
         |js-object $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro js-object (& xs)
+              if
+                not $ and (list? xs) (every? xs list?)
+                raise $ str-spaced "|js-object expects entries in list, got:" xs
+              if
+                not $ every? xs
+                  fn (entry)
+                    &= 2 $ &list:count entry
+                raise $ str-spaced "|js-object expects each entry as pair, got:" xs
               &let
                 ys $ &list:concat & xs
                 quasiquote $ &js-object ~@ys
@@ -2634,35 +2780,44 @@
           :examples $ []
         |list-match $ %{} :CodeEntry (:doc "|Two-branch list destructuring macro. Provides separate clauses for the empty list and a head/tail pattern, useful for simple recursion or guards.")
           :code $ quote
-            defmacro list-match (xs pattern1 pattern2)
-              assert "|patterns in list" $ and (list? pattern1) (list? pattern2)
-                &> (count pattern1) 1
-                list? $ &list:nth pattern1 0
-                list? $ &list:nth pattern2 0
-                &> (count pattern2) 1
+            defmacro list-match (& values)
+              if
+                not $ &= 3 $ &list:count values
+                raise $ str-spaced "|list-match expects exactly 3 arguments, got:" values
               &let
-                v# $ gensym |v
-                quasiquote $ &let (~v# ~xs)
-                  if
-                    not $ list? ~v#
-                    raise "|expected a list in list-match"
-                  ~ $ if
-                    and
-                      empty? $ &list:nth pattern1 0
-                      &= 2 $ count (&list:nth pattern2 0)
-                    quasiquote $ &list-match-internal ~v#
-                      ~ $ &list:slice pattern1 1
-                      ~ $ &list:nth pattern2 0
-                      ~ $ &list:slice pattern2 1
-                    if
-                      and
-                        empty? $ &list:nth pattern2 0
-                        &= 2 $ count (&list:nth pattern1 0)
-                      quasiquote $ &list-match-internal ~v#
-                        ~ $ &list:slice pattern2 1
-                        ~ $ &list:nth pattern1 0
-                        ~ $ &list:slice pattern1 1
-                      raise "|expected empty and destruction branches"
+                xs $ &list:nth values 0
+                &let
+                  pattern1 $ &list:nth values 1
+                  &let
+                    pattern2 $ &list:nth values 2
+                    assert "|patterns in list" $ and (list? pattern1) (list? pattern2)
+                      &> (count pattern1) 1
+                      list? $ &list:nth pattern1 0
+                      list? $ &list:nth pattern2 0
+                      &> (count pattern2) 1
+                    &let
+                      v# $ gensym |v
+                      quasiquote $ &let (~v# ~xs)
+                        if
+                          not $ list? ~v#
+                          raise "|expected a list in list-match"
+                        ~ $ if
+                          and
+                            empty? $ &list:nth pattern1 0
+                            &= 2 $ count (&list:nth pattern2 0)
+                          quasiquote $ &list-match-internal ~v#
+                            ~ $ &list:slice pattern1 1
+                            ~ $ &list:nth pattern2 0
+                            ~ $ &list:slice pattern2 1
+                          if
+                            and
+                              empty? $ &list:nth pattern2 0
+                              &= 2 $ count (&list:nth pattern1 0)
+                            quasiquote $ &list-match-internal ~v#
+                              ~ $ &list:slice pattern2 1
+                              ~ $ &list:nth pattern1 0
+                              ~ $ &list:slice pattern1 1
+                            raise "|expected empty and destruction branches"
           :examples $ []
             quote $ assert= :something
               list-match ([] 1)
@@ -2985,7 +3140,7 @@
           :code $ quote
             defmacro record-match (value & body)
               if (&list:empty? body)
-                quasiquote $ eprintln "|[Error] record-match expected patterns for matching" ~value
+                raise "|record-match expected patterns for matching"
                 if (list? value)
                   &let
                     v# $ gensym |v
@@ -3262,7 +3417,7 @@
           :code $ quote
             defmacro tag-match (value & body)
               if (&list:empty? body)
-                quasiquote $ eprintln "|[Error] tag-match expected some patterns and matches" ~value
+                raise "|tag-match expected some patterns and matches"
                 &let
                   t# $ gensym |tag
                   &let
@@ -3335,16 +3490,22 @@
         |thread-as $ %{} :CodeEntry (:doc "|a alias for `->%`")
           :code $ quote
             defmacro thread-as (& xs)
+              if (&list:empty? xs)
+                raise "|thread-as expects at least 1 expression"
               quasiquote $ ->% ~@xs
           :examples $ []
         |thread-first $ %{} :CodeEntry (:doc "|a alias for `->`")
           :code $ quote
             defmacro thread-first (& xs)
+              if (&list:empty? xs)
+                raise "|thread-first expects at least 1 expression"
               quasiquote $ -> ~@xs
           :examples $ []
         |thread-last $ %{} :CodeEntry (:doc "|a alias for `->>`")
           :code $ quote
             defmacro thread-last (& xs)
+              if (&list:empty? xs)
+                raise "|thread-last expects at least 1 expression"
               quasiquote $ ->> ~@xs
           :examples $ []
         |to-lispy-string $ %{} :CodeEntry (:doc "|internal function for converting to Lisp string\nSyntax: (to-lispy-string value)\nParams: value (any)\nReturns: string\nConverts value to Lisp-style string representation")
@@ -3516,6 +3677,8 @@
         |when $ %{} :CodeEntry (:doc "|Conditional macro that evaluates its body only when the test expression is truthy, returning the last body value.")
           :code $ quote
             defmacro when (condition & body)
+              if (&list:empty? body)
+                raise "|when expects at least 1 body expression"
               if
                 &= 1 $ &list:count body
                 quasiquote $ if ~condition
@@ -3547,6 +3710,8 @@
         |when-not $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro when-not (condition & body)
+              if (&list:empty? body)
+                raise "|when-not expects at least 1 body expression"
               if
                 &= 1 $ &list:count body
                 quasiquote $ if (not ~condition)

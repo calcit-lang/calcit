@@ -836,20 +836,6 @@ impl Calcit {
   }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub fn gen_core_id() -> Arc<str> {
-  use std::time::{SystemTime, UNIX_EPOCH};
-
-  let c = ID_GEN.fetch_add(1, SeqCst);
-  let start = SystemTime::now();
-  let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
-  let in_ms = since_the_epoch.as_millis();
-
-  format!("gen_id_{c}_{in_ms}").into()
-}
-
-/// time lib not available for WASM. TODO id may not be unique
-#[cfg(target_arch = "wasm32")]
 pub fn gen_core_id() -> Arc<str> {
   let c = ID_GEN.fetch_add(1, SeqCst);
   format!("gen_id_{c}").into()
@@ -935,6 +921,7 @@ impl CalcitErr {
       hint: None,
     }
   }
+
   pub fn err_str<T: Into<String>>(kind: CalcitErrKind, msg: T) -> Result<Calcit, Self> {
     Err(CalcitErr {
       kind,
@@ -945,7 +932,7 @@ impl CalcitErr {
       hint: None,
     })
   }
-  /// display nodes in error message
+
   pub fn err_nodes<T: Into<String>>(kind: CalcitErrKind, msg: T, nodes: &[Calcit]) -> Result<Calcit, Self> {
     Err(CalcitErr {
       kind,
@@ -956,6 +943,7 @@ impl CalcitErr {
       hint: None,
     })
   }
+
   pub fn err_str_location<T: Into<String>>(kind: CalcitErrKind, msg: T, location: Option<Arc<NodeLocation>>) -> Result<Calcit, Self> {
     Err(CalcitErr {
       kind,
@@ -1086,18 +1074,75 @@ impl NodeLocation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LocatedWarning(String, NodeLocation);
+pub struct LocatedWarning {
+  message: String,
+  location: NodeLocation,
+  code: Option<String>,
+  hint: Option<String>,
+}
 
 impl Display for LocatedWarning {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "{} @{}", self.0, self.1)
+    if let Some(code) = &self.code {
+      write!(f, "[{code}] {} @{}", self.message, self.location)?;
+    } else {
+      write!(f, "{} @{}", self.message, self.location)?;
+    }
+    if let Some(hint) = &self.hint {
+      write!(f, "\n  hint: {hint}")?;
+    }
+    Ok(())
   }
 }
 
 /// warning from static checking of macro expanding
 impl LocatedWarning {
   pub fn new(msg: String, location: NodeLocation) -> Self {
-    LocatedWarning(msg, location)
+    LocatedWarning {
+      message: msg,
+      location,
+      code: None,
+      hint: None,
+    }
+  }
+
+  pub fn new_with_detail(msg: String, location: NodeLocation, code: Option<String>, hint: Option<String>) -> Self {
+    LocatedWarning {
+      message: msg,
+      location,
+      code,
+      hint,
+    }
+  }
+
+  pub fn as_json(&self) -> serde_json::Value {
+    let code = self.code_value();
+    serde_json::json!({
+      "message": &self.message,
+      "location": {
+        "ns": self.location.ns.to_string(),
+        "def": self.location.def.to_string(),
+        "coord": self.location.coord.to_vec()
+      },
+      "code": code,
+      "hint": &self.hint,
+    })
+  }
+
+  pub fn message(&self) -> &str {
+    &self.message
+  }
+
+  pub fn code(&self) -> Option<&str> {
+    self.code.as_deref()
+  }
+
+  pub fn hint(&self) -> Option<&str> {
+    self.hint.as_deref()
+  }
+
+  fn code_value(&self) -> Option<String> {
+    self.code.clone()
   }
 
   /// create an empty list
@@ -1172,4 +1217,35 @@ pub fn format_examples_hint(ns: &str, def: &str) -> Option<String> {
 pub fn format_proc_examples_hint(proc: &CalcitProc) -> Option<String> {
   let (ns, def) = proc.get_ns_def();
   format_examples_hint(ns, def)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn infers_warning_arity_from_expects_message() {
+    let warning = LocatedWarning::new_with_detail(
+      String::from("[Warn] sample"),
+      NodeLocation::new(Arc::from("app.main"), Arc::from("gen%"), Arc::from(vec![])),
+      Some(String::from("P_SAMPLE")),
+      Some(String::from("hint text")),
+    );
+    let payload = warning.as_json();
+
+    assert_eq!(payload.get("code").and_then(|v| v.as_str()), Some("P_SAMPLE"));
+    assert_eq!(payload.get("hint").and_then(|v| v.as_str()), Some("hint text"));
+  }
+
+  #[test]
+  fn infers_warning_arity_from_expected_message() {
+    let warning = LocatedWarning::new(
+      String::from("[Warn] fn expected 3 arguments, but received: 2"),
+      NodeLocation::new(Arc::from("app.main"), Arc::from("gen%"), Arc::from(vec![])),
+    );
+    let payload = warning.as_json();
+
+    assert_eq!(payload.get("code").and_then(|v| v.as_str()), None);
+    assert_eq!(payload.get("hint").and_then(|v| v.as_str()), None);
+  }
 }

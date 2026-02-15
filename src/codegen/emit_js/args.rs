@@ -1,6 +1,6 @@
-use std::fmt::Write;
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::fmt::Write;
 use std::sync::Arc;
 
 use cirru_edn::EdnTag;
@@ -8,8 +8,8 @@ use cirru_edn::EdnTag;
 use crate::builtins::meta::js_gensym;
 use crate::calcit::{self, Calcit, CalcitList, CalcitProc, CalcitSyntax};
 
-use super::{to_js_code, ImportsDict};
 use super::symbols::escape_var;
+use super::{ImportsDict, to_js_code};
 
 pub(super) fn gen_args_code(
   body: &CalcitList,
@@ -176,10 +176,7 @@ mod tests {
 
   #[test]
   fn wraps_spread_with_list_to_array() {
-    let body = CalcitList::from(&[
-      Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::from("app.main")),
-      Calcit::Number(1.0),
-    ]);
+    let body = CalcitList::from(&[Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::from("app.main")), Calcit::Number(1.0)]);
     let local_defs: HashSet<Arc<str>> = HashSet::new();
     let file_imports = RefCell::new(ImportsDict::new());
     let tags = RefCell::new(HashSet::new());
