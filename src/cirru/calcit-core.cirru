@@ -1960,8 +1960,12 @@
         |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl values\nSyntax: (defimpl ImplName Trait (:method value) ...), (defimpl ImplName Trait (:: :method value) ...), or (defimpl ImplName Trait :method value ...)\nParams: ImplName (symbol/tag), Trait (symbol/tag), method pairs\nReturns: impl value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to &impl::new")
           :code $ quote
             defmacro defimpl (name trait & pairs)
-              assert "|defimpl expects name as tag/symbol" $ or (tag? name) (symbol? name)
-              assert "|defimpl expects trait as tag/symbol" $ or (tag? trait) (symbol? trait)
+              if
+                not $ or (tag? name) (symbol? name)
+                raise $ str-spaced "|defimpl misuse. Expected: first argument is impl name (symbol/tag). Actual:" name "|Fix: rewrite as (defimpl ImplName Trait ...)."
+              if
+                not $ or (tag? trait) (symbol? trait)
+                raise $ str-spaced "|defimpl misuse. Expected: second argument is trait (symbol/tag). Actual:" trait "|Fix: rewrite as (defimpl ImplName Trait ...)."
               quasiquote $ def ~name
                 &impl::new
                   ~ $ if (tag? trait) (turn-tag trait) trait
@@ -3742,12 +3746,14 @@
         |impl-traits $ %{} :CodeEntry (:doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (struct/enum), traits (impl, variadic)\nReturns: value with updated trait implementations\nDispatches to &struct:impl-traits, &enum:impl-traits")
           :code $ quote
             defn impl-traits (x & traits)
-              assert "|impl-traits expects impl values" $ every? traits
-                fn (trait)
-                  = :impl $ type-of trait
+              if
+                not $ every? traits
+                  fn (trait)
+                    = :impl $ type-of trait
+                raise "|impl-traits misuse. Expected: impl arguments are :impl values. Actual: found non-impl argument. Fix: pass values created by `defimpl`."
               if (struct? x) (&struct:impl-traits x & traits)
                 if (enum? x) (&enum:impl-traits x & traits)
-                  raise $ str-spaced "|impl-traits expects struct/enum, got:" (type-of x)
+                  raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
           :examples $ []
         |wo-js-log $ %{} :CodeEntry (:doc |)
           :code $ quote

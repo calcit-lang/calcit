@@ -3271,7 +3271,10 @@ pub fn preprocess_assert_traits(
   if args.len() < 2 {
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
-      format!("{head} expected a local and one or more trait expressions, got {}", args.len()),
+      format!(
+        "assert-traits misuse. Expected: (assert-traits local trait ...). Actual: {head} with {} argument(s). Fix: bind target value to a local in let, then pass that local as first argument.",
+        args.len()
+      ),
       ctx.call_stack,
       args.first().and_then(|node| node.get_location()),
     ));
@@ -3294,7 +3297,9 @@ pub fn preprocess_assert_traits(
     other => {
       return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
-        format!("assert-traits expected local as first arg, got {other:?}"),
+        format!(
+          "assert-traits misuse. Expected: first argument is a local symbol. Actual: {other}. Fix: rewrite to `let ((x expr)) (assert-traits x Trait ...)`."
+        ),
         ctx.call_stack,
         other.get_location(),
       ));
