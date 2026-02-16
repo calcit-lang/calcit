@@ -1,6 +1,6 @@
 # Calcit 局部变量类型标记方案评估
 
-本文档评估在 Calcit 中为 `Local` 变量补充类型信息的技术方案及工作量。涉及任务进度与交付计划请参阅 `drafts/generic-types-plan.md`。
+本文档评估在 Calcit 中为 `Local` 变量补充类型信息的技术方案及工作量。涉及任务进度与交付计划请参阅 `drafts/assert-types-plan.md`。
 
 ## 1. 核心目标
 

@@ -9,7 +9,7 @@
         |#{} $ %{} :CodeEntry (:doc "|internal function for creating sets\nSyntax: (#{} & elements)\nParams: elements (any, variadic)\nReturns: set\nCreates new set from provided elements")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |%:: $ %{} :CodeEntry (:doc "|internal function for creating enum tuples\nSyntax: (%:: enum tag & values)\nParams: enum (record/enum), tag (tag), values (any, variable number)\nReturns: tuple with enum metadata\nCreates a tagged tuple that carries enum metadata for validation (use &tuple:with-impls to attach impls)")
+        |%:: $ %{} :CodeEntry (:doc "|internal function for creating enum tuples\nSyntax: (%:: enum tag & values)\nParams: enum (record/enum), tag (tag), values (any, variable number)\nReturns: tuple with enum metadata\nCreates a tagged tuple that carries enum metadata for validation (use &tuple:impl-traits to attach impls)")
           :code $ quote &runtime-inplementation
           :examples $ []
         |%<- $ %{} :CodeEntry (:doc "|pass value as `%` into several expressions, in reversed order")
@@ -393,7 +393,7 @@
           :code $ quote &runtime-inplementation
           :examples $ []
             quote $ &enum::new :Result ([] :ok :number) ([] :err :string)
-        |&enum:with-impls $ %{} :CodeEntry (:doc "|internal function for enum with impls operation\nSyntax: (&enum:with-impls enum impls)\nParams: enum (enum), impls (record)\nReturns: enum value with trait implementations\nAttaches impls info to an enum prototype")
+        |&enum:impl-traits $ %{} :CodeEntry (:doc "|internal function for enum trait impl attachment\nSyntax: (&enum:impl-traits enum impls)\nParams: enum (enum), impls (record)\nReturns: enum value with trait implementations\nAttaches impls info to an enum prototype")
           :code $ quote &runtime-inplementation
           :examples $ []
         |&exclude $ %{} :CodeEntry (:doc "|internal function for excluding from set\nSyntax: (&exclude set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element excluded")
@@ -794,7 +794,7 @@
         |&record:with $ %{} :CodeEntry (:doc "|internal function for record with operation\nSyntax: (&record:with record key value & key-values)\nParams: record (record), key (any), value (any), key-values (any, variadic)\nReturns: record\nReturns new record with updated fields")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&record:with-impls $ %{} :CodeEntry (:doc "|internal function for record with impls operation\nSyntax: (&record:with-impls record impls)\nParams: record (record), impls (any)\nReturns: record\nReturns new record with specified impls")
+        |&record:impl-traits $ %{} :CodeEntry (:doc "|internal function for record trait impl attachment\nSyntax: (&record:impl-traits record impls)\nParams: record (record), impls (any)\nReturns: record\nReturns new record with specified impls")
           :code $ quote &runtime-inplementation
           :examples $ []
         |&reset-gensym-index! $ %{} :CodeEntry (:doc "|internal function for resetting gensym index\nSyntax: (&reset-gensym-index!)\nParams: none\nReturns: nil\nResets the global gensym counter to 0 for deterministic symbol generation")
@@ -916,7 +916,7 @@
           :code $ quote &runtime-inplementation
           :examples $ []
             quote $ &struct::new :Person ([] :name :string) ([] :age :number)
-        |&struct:with-impls $ %{} :CodeEntry (:doc "|internal function for struct with impls operation\nSyntax: (&struct:with-impls struct impls)\nParams: struct (struct), impls (record)\nReturns: struct with trait implementations\nAttaches impls info to a struct definition")
+        |&struct:impl-traits $ %{} :CodeEntry (:doc "|internal function for struct trait impl attachment\nSyntax: (&struct:impl-traits struct impls)\nParams: struct (struct), impls (record)\nReturns: struct with trait implementations\nAttaches impls info to a struct definition")
           :code $ quote &runtime-inplementation
           :examples $ []
         |&trait::new $ %{} :CodeEntry (:doc "|internal function for creating trait values\nSyntax: (&trait::new name methods)\nParams: name (tag/symbol), methods (list of tags)\nReturns: trait\nCreates a trait definition value")
@@ -949,7 +949,7 @@
         |&tuple:validate-enum $ %{} :CodeEntry (:doc "|Validate enum tuple tag/arity if enum metadata exists\nSyntax: (&tuple:validate-enum tuple tag)\nParams: tuple (tuple), tag (tag)\nReturns: nil\nRaises error on invalid tag or arity")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&tuple:with-impls $ %{} :CodeEntry (:doc "|internal function for tuple with impls operation\nSyntax: (&tuple:with-impls tuple new-impls)\nParams: tuple (tuple), new-impls (any)\nReturns: new tuple with updated impls\nReturns new tuple with same values but different impls")
+        |&tuple:impl-traits $ %{} :CodeEntry (:doc "|internal function for tuple trait impl attachment\nSyntax: (&tuple:impl-traits tuple new-impls)\nParams: tuple (tuple), new-impls (any)\nReturns: new tuple with updated impls\nReturns new tuple with same values but different impls")
           :code $ quote &runtime-inplementation
           :examples $ []
         |&union $ %{} :CodeEntry (:doc "|internal function for set union\nSyntax: (&union set1 set2 & sets)\nParams: set1 (set), set2 (set), sets (set, variadic)\nReturns: set\nReturns union of all sets")
@@ -3751,7 +3751,7 @@
           :examples $ []
         |wo-js-log $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defmacro w-js-log (x) x
+            defmacro wo-js-log (x) x
           :examples $ []
         |wo-log $ %{} :CodeEntry (:doc |)
           :code $ quote

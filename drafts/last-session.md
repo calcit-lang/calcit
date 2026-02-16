@@ -1,5 +1,9 @@
 # Enum Tuple Runtime Validation - Session Summary
 
+> 状态：**历史会话快照（归档）**。
+>
+> 说明：本文记录 2026-01-15 的阶段性结果，包含 `%%::` 等历史上下文，不应视为当前规范。涉及当前行为请以 `drafts/record-struct-and-enum-plan.md` 与 `drafts/runtime-traits-plan.md` 为准。
+
 ## 已完成的工作
 
 ### 1. Rust 侧实现
@@ -27,7 +31,7 @@
 ### 3. 核心库更新
 
 - ✅ **函数定义** (`src/cirru/calcit-core.cirru`):
-  - 添加 `&tuple:enum`, `&tuple:enum-has-variant?`, `&tuple:enum-variant-arity` 标记为 `&runtime-inplementation`
+  - 添加 `&tuple:enum`, `&tuple:enum-has-variant?`, `&tuple:enum-variant-arity` 标记为 `&runtime-implementation`（文档口径）
 
 ### 4. 测试状态
 
@@ -88,7 +92,6 @@ Edn::Tuple(EdnTupleView { tag, extra }) => Calcit::Tuple(CalcitTuple {
 需要修改的文件：
 
 1. `src/data/edn.rs` - 反序列化逻辑
-
    - 解析 tuple 的 `:enum` 标签
    - 在 program/snapshot 中查找对应的 enum 定义
    - 恢复 `sum_type` 字段
@@ -176,12 +179,10 @@ Edn::Tuple(EdnTupleView { tag, extra }) => Calcit::Tuple(CalcitTuple {
 ## 后续步骤
 
 1. **确认需求优先级**：
-
    - 是否需要立即修复 EDN 反序列化？
    - 或者当前的创建时验证已经足够？
 
 2. **如果修复 EDN**：
-
    - 研究 `edn_to_calcit` 函数调用链
    - 设计上下文传递机制
    - 实现 enum 定义查找

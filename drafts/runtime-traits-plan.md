@@ -581,6 +581,33 @@ assert-traits x Show
   - 未实现时的错误提示
   - 多实现冲突/重复注册
 
+## 附录：符号解析与 runtime-resolved symbols
+
+补充说明：在 trait/runtime 相关排障里，经常会遇到“文档里能看到/看不到某个符号”的认知差异。这里统一记录符号解析口径。
+
+目前符号大致分为：
+
+- raw syntax symbols（例如 `&` `?` `~` `~@`）
+- data symbol（通常由 `turn-symbol` 创建）
+- local variables
+- local definitions
+- imported variables
+- namespaced imported symbols
+- imported default variables
+- imported host variables
+
+当前它们在实现层很多都共享 `Calcit::Symbol{..}` 路径（这是已知历史包袱，后续仍需重构）。
+
+另外有一类 **runtime-resolved symbols**：由 parser/runtime 直接识别，不一定在 `calcit.core` 里作为普通 `CodeEntry` 出现。
+
+- syntax symbols 来自 `CalcitSyntax`（例如 `assert-traits`）
+- proc symbols 来自 `CalcitProc`（例如 `&trait-call`、`&inspect-type`、`register-calcit-builtin-impls`）
+
+因此检查符号可用性时，建议同时看：
+
+- `src/cirru/calcit-core.cirru`（macro/def 暴露面）
+- `src/calcit/syntax_name.rs` 与 `src/calcit/proc_name.rs`（runtime-native 符号）
+
 ---
 
 > 备注：该方案涉及 runtime/stdlib/codegen 全链路改造，建议先从最小可运行集开始迭代。
