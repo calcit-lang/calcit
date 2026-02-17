@@ -140,6 +140,10 @@
                 [] $ [] |def |f ([] |a |b) ([] |+ |a |b)
               assert= (parse-cirru-list "|{,} :a 1 :b false")
                 [] $ [] |{,} |:a |1 |:b |false
+              assert= (parse-cirru-list "|&call-dylib-edn 1")
+                [] $ [] |&call-dylib-edn |1
+              assert= (parse-cirru-list "|&call-dylib-edn-fn x")
+                [] $ [] |&call-dylib-edn-fn |x
               assert= (parse-cirru-edn "|{} (:a 1) (:b ([] 3 |4 nil))")
                 {} (:a 1)
                   :b $ [] 3 |4 nil

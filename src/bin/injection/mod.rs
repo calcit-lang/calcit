@@ -7,6 +7,7 @@ use std::thread;
 
 use calcit::{
   builtins,
+  builtins::{RegisteredProcDescriptor, RegisteredProcPlatform, RegisteredProcStability},
   calcit::{Calcit, CalcitErr, CalcitErrKind},
   call_stack::{CallStackList, display_stack},
   data::edn::{calcit_to_edn, edn_to_calcit},
@@ -38,12 +39,45 @@ fn load_dylib(lib_name: &str) -> Arc<libloading::Library> {
 const ABI_VERSION: &str = "0.0.9";
 
 pub fn inject_platform_apis() {
-  builtins::register_import_proc("&call-dylib-edn", call_dylib_edn);
+  builtins::register_import_proc_with_descriptor(
+    "&call-dylib-edn",
+    call_dylib_edn,
+    RegisteredProcDescriptor {
+      arity_min: 2,
+      arity_max: None,
+      platforms: vec![RegisteredProcPlatform::Native],
+      stability: RegisteredProcStability::Public,
+      docs_hint: Some(Arc::from("Fix: use native runtime and pass (lib-name method ...args).")),
+      callback_last: false,
+    },
+  );
   builtins::register_import_proc("echo", stdout_println);
   builtins::register_import_proc("println", stdout_println);
   builtins::register_import_proc("eprintln", stderr_println);
-  builtins::register_import_proc("&call-dylib-edn-fn", call_dylib_edn_fn);
-  builtins::register_import_proc("&blocking-dylib-edn-fn", blocking_dylib_edn_fn);
+  builtins::register_import_proc_with_descriptor(
+    "&call-dylib-edn-fn",
+    call_dylib_edn_fn,
+    RegisteredProcDescriptor {
+      arity_min: 3,
+      arity_max: None,
+      platforms: vec![RegisteredProcPlatform::Native],
+      stability: RegisteredProcStability::Experimental,
+      docs_hint: Some(Arc::from("Fix: use native runtime and put callback fn as last argument.")),
+      callback_last: true,
+    },
+  );
+  builtins::register_import_proc_with_descriptor(
+    "&blocking-dylib-edn-fn",
+    blocking_dylib_edn_fn,
+    RegisteredProcDescriptor {
+      arity_min: 3,
+      arity_max: None,
+      platforms: vec![RegisteredProcPlatform::Native],
+      stability: RegisteredProcStability::Experimental,
+      docs_hint: Some(Arc::from("Fix: use native runtime and put callback fn as last argument.")),
+      callback_last: true,
+    },
+  );
   builtins::register_import_proc("async-sleep", builtins::meta::async_sleep);
   builtins::register_import_proc("on-control-c", on_ctrl_c);
   eprintln!("{}", "registered platform APIs".dimmed());
@@ -52,12 +86,18 @@ pub fn inject_platform_apis() {
 // &call-dylib-edn
 pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
-    return CalcitErr::err_str(CalcitErrKind::Arity, format!("&call-dylib-edn expected >2 arguments, got: {xs:?}"));
+    return CalcitErr::err_str(
+      CalcitErrKind::Arity,
+      format!("&call-dylib-edn expected >2 arguments, got: {xs:?}"),
+    );
   }
   let lib_name: String = if let Calcit::Str(s) = &xs[0] {
     (**s).to_owned()
   } else {
-    return CalcitErr::err_str(CalcitErrKind::Type, format!("&call-dylib-edn expected a lib_name, got: {}", xs[0]));
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&call-dylib-edn expected a lib_name, got: {}", xs[0]),
+    );
   };
 
   let method: String = if let Calcit::Str(s) = &xs[1] {

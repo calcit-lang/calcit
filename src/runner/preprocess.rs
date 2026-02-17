@@ -157,188 +157,190 @@ pub fn preprocess_expr(
   match expr {
     Calcit::Symbol {
       sym: def, info, location, ..
-    } => match runner::parse_ns_def(def) {
-      Some((ns_alias, def_part)) => {
-        if &*ns_alias == "js" {
-          Ok(Calcit::RawCode(RawCodeType::Js, def_part))
-          // TODO js syntax to handle in future
-        } else if let Some(target_ns) = program::lookup_ns_target_in_import(&info.at_ns, &ns_alias) {
-          // make sure the target is preprocessed
-          let _macro_fn = preprocess_ns_def(&target_ns, &def_part, check_warnings, call_stack)?;
+    } => {
+      match runner::parse_ns_def(def) {
+        Some((ns_alias, def_part)) => {
+          if &*ns_alias == "js" {
+            Ok(Calcit::RawCode(RawCodeType::Js, def_part))
+            // TODO js syntax to handle in future
+          } else if let Some(target_ns) = program::lookup_ns_target_in_import(&info.at_ns, &ns_alias) {
+            // make sure the target is preprocessed
+            let _macro_fn = preprocess_ns_def(&target_ns, &def_part, check_warnings, call_stack)?;
 
-          let form = Calcit::Import(CalcitImport {
-            ns: target_ns.to_owned(),
-            def: def_part.to_owned(),
-            info: Arc::new(ImportInfo::NsAs {
-              alias: ns_alias.to_owned(),
-              at_def: info.at_def.to_owned(),
-              at_ns: ns_alias,
-            }),
-            coord: program::tip_coord(&target_ns, &def_part),
-          });
-          Ok(form)
-        } else if program::has_def_code(&ns_alias, &def_part) {
-          // refer to namespace/def directly for some usages
-
-          // make sure the target is preprocessed
-          let _macro_fn = preprocess_ns_def(&ns_alias, &def_part, check_warnings, call_stack)?;
-
-          let form = Calcit::Import(CalcitImport {
-            ns: ns_alias.to_owned(),
-            def: def_part.to_owned(),
-            info: Arc::new(ImportInfo::NsReferDef {
-              at_ns: info.at_ns.to_owned(),
-              at_def: info.at_def.to_owned(),
-            }),
-            coord: program::tip_coord(&ns_alias, &def_part),
-          });
-
-          Ok(form)
-        } else {
-          Err(CalcitErr::use_msg_stack_location(
-            CalcitErrKind::Var,
-            format!("unknown ns target: {def}"),
-            call_stack,
-            expr.get_location(),
-          ))
-        }
-      }
-      None => {
-        let def_ns = &info.at_ns;
-        let at_def = &info.at_def;
-        // println!("def {} - {} {} {}", def, def_ns, file_ns, at_def);
-        if scope_defs.contains(def) {
-          let type_info = scope_types.get(def).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
-          Ok(Calcit::Local(CalcitLocal {
-            idx: CalcitLocal::track_sym(def),
-            sym: def.to_owned(),
-            info: Arc::new(CalcitSymbolInfo {
-              at_ns: def_ns.to_owned(),
-              at_def: at_def.to_owned(),
-            }),
-            location: location.to_owned(),
-            type_info,
-          }))
-        } else if CalcitSyntax::is_valid(def) {
-          Ok(Calcit::Syntax(
-            def.parse().map_err(|e: ParseError| {
-              CalcitErr::use_msg_stack_location(
-                CalcitErrKind::Syntax,
-                def.to_string() + " " + &e.to_string(),
-                call_stack,
-                expr.get_location(),
-              )
-            })?,
-            def_ns.to_owned(),
-          ))
-        } else if *def == info.at_def {
-          // call function from same file
-          // println!("same file: {}/{} at {}/{}", def_ns, def, file_ns, at_def);
-
-          // make sure the target is preprocessed
-          let _macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
-
-          let form = Calcit::Import(CalcitImport {
-            ns: def_ns.to_owned(),
-            def: def.to_owned(),
-            info: Arc::new(ImportInfo::SameFile {
-              at_def: info.at_def.to_owned(),
-            }),
-            coord: program::tip_coord(def_ns, def),
-          });
-          Ok(form)
-        } else if let Ok(p) = def.parse::<CalcitProc>() {
-          Ok(Calcit::Proc(p))
-        } else if program::has_def_code(calcit::CORE_NS, def) {
-          // println!("find in core def: {}", def);
-
-          // make sure the target is preprocessed
-          let _macro_fn = preprocess_ns_def(calcit::CORE_NS, def, check_warnings, call_stack)?;
-
-          let form = Calcit::Import(CalcitImport {
-            ns: calcit::CORE_NS.into(),
-            def: def.to_owned(),
-            info: Arc::new(ImportInfo::Core { at_ns: file_ns.into() }),
-            coord: program::tip_coord(calcit::CORE_NS, def),
-          });
-          Ok(form)
-        } else if program::has_def_code(def_ns, def) {
-          // same file
-          // println!("again same file: {}/{} at {}/{}", def_ns, def, file_ns, at_def);
-
-          // make sure the target is preprocessed
-          let _macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
-
-          let form = Calcit::Import(CalcitImport {
-            ns: def_ns.to_owned(),
-            def: def.to_owned(),
-            info: Arc::new(if &**def_ns == file_ns {
-              ImportInfo::SameFile {
+            let form = Calcit::Import(CalcitImport {
+              ns: target_ns.to_owned(),
+              def: def_part.to_owned(),
+              info: Arc::new(ImportInfo::NsAs {
+                alias: ns_alias.to_owned(),
                 at_def: info.at_def.to_owned(),
-              }
-            } else {
-              ImportInfo::NsReferDef {
-                at_ns: file_ns.into(),
+                at_ns: ns_alias,
+              }),
+              coord: program::tip_coord(&target_ns, &def_part),
+            });
+            Ok(form)
+          } else if program::has_def_code(&ns_alias, &def_part) {
+            // refer to namespace/def directly for some usages
+
+            // make sure the target is preprocessed
+            let _macro_fn = preprocess_ns_def(&ns_alias, &def_part, check_warnings, call_stack)?;
+
+            let form = Calcit::Import(CalcitImport {
+              ns: ns_alias.to_owned(),
+              def: def_part.to_owned(),
+              info: Arc::new(ImportInfo::NsReferDef {
+                at_ns: info.at_ns.to_owned(),
+                at_def: info.at_def.to_owned(),
+              }),
+              coord: program::tip_coord(&ns_alias, &def_part),
+            });
+
+            Ok(form)
+          } else {
+            Err(CalcitErr::use_msg_stack_location(
+              CalcitErrKind::Var,
+              format!("unknown ns target: {def}"),
+              call_stack,
+              expr.get_location(),
+            ))
+          }
+        }
+        None => {
+          let def_ns = &info.at_ns;
+          let at_def = &info.at_def;
+          // println!("def {} - {} {} {}", def, def_ns, file_ns, at_def);
+          if scope_defs.contains(def) {
+            let type_info = scope_types.get(def).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+            Ok(Calcit::Local(CalcitLocal {
+              idx: CalcitLocal::track_sym(def),
+              sym: def.to_owned(),
+              info: Arc::new(CalcitSymbolInfo {
+                at_ns: def_ns.to_owned(),
                 at_def: at_def.to_owned(),
-              }
-            }),
-            coord: program::tip_coord(def_ns, def),
-          });
-          Ok(form)
-        } else if is_registered_proc(def) {
-          Ok(Calcit::Registered(def.to_owned()))
-        } else {
-          match program::lookup_def_target_in_import(def_ns, def) {
-            // referred to another namespace/def
-            Some(target_ns) => {
-              // effect
-              // TODO js syntax to handle in future
+              }),
+              location: location.to_owned(),
+              type_info,
+            }))
+          } else if CalcitSyntax::is_valid(def) {
+            Ok(Calcit::Syntax(
+              def.parse().map_err(|e: ParseError| {
+                CalcitErr::use_msg_stack_location(
+                  CalcitErrKind::Syntax,
+                  def.to_string() + " " + &e.to_string(),
+                  call_stack,
+                  expr.get_location(),
+                )
+              })?,
+              def_ns.to_owned(),
+            ))
+          } else if *def == info.at_def {
+            // call function from same file
+            // println!("same file: {}/{} at {}/{}", def_ns, def, file_ns, at_def);
 
-              // make sure the target is preprocessed
-              let _macro_fn = preprocess_ns_def(&target_ns, def, check_warnings, call_stack)?;
+            // make sure the target is preprocessed
+            let _macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
 
-              let form = Calcit::Import(CalcitImport {
-                ns: target_ns.to_owned(),
-                def: def.to_owned(),
-                info: Arc::new(ImportInfo::NsReferDef {
-                  at_ns: def_ns.to_owned(),
+            let form = Calcit::Import(CalcitImport {
+              ns: def_ns.to_owned(),
+              def: def.to_owned(),
+              info: Arc::new(ImportInfo::SameFile {
+                at_def: info.at_def.to_owned(),
+              }),
+              coord: program::tip_coord(def_ns, def),
+            });
+            Ok(form)
+          } else if let Ok(p) = def.parse::<CalcitProc>() {
+            Ok(Calcit::Proc(p))
+          } else if program::has_def_code(calcit::CORE_NS, def) {
+            // println!("find in core def: {}", def);
+
+            // make sure the target is preprocessed
+            let _macro_fn = preprocess_ns_def(calcit::CORE_NS, def, check_warnings, call_stack)?;
+
+            let form = Calcit::Import(CalcitImport {
+              ns: calcit::CORE_NS.into(),
+              def: def.to_owned(),
+              info: Arc::new(ImportInfo::Core { at_ns: file_ns.into() }),
+              coord: program::tip_coord(calcit::CORE_NS, def),
+            });
+            Ok(form)
+          } else if program::has_def_code(def_ns, def) {
+            // same file
+            // println!("again same file: {}/{} at {}/{}", def_ns, def, file_ns, at_def);
+
+            // make sure the target is preprocessed
+            let _macro_fn = preprocess_ns_def(def_ns, def, check_warnings, call_stack)?;
+
+            let form = Calcit::Import(CalcitImport {
+              ns: def_ns.to_owned(),
+              def: def.to_owned(),
+              info: Arc::new(if &**def_ns == file_ns {
+                ImportInfo::SameFile {
+                  at_def: info.at_def.to_owned(),
+                }
+              } else {
+                ImportInfo::NsReferDef {
+                  at_ns: file_ns.into(),
                   at_def: at_def.to_owned(),
-                }),
-                coord: program::tip_coord(&target_ns, def),
-              });
-              Ok(form)
-            }
-            None if codegen::codegen_mode() && is_js_syntax_procs(def) => Ok(expr.to_owned()),
-            None => {
-              let from_default = program::lookup_default_target_in_import(def_ns, def);
-              if let Some(target_ns) = from_default {
-                Ok(Calcit::Import(CalcitImport {
+                }
+              }),
+              coord: program::tip_coord(def_ns, def),
+            });
+            Ok(form)
+          } else if is_registered_proc(def) {
+            Ok(Calcit::Registered(def.to_owned()))
+          } else {
+            match program::lookup_def_target_in_import(def_ns, def) {
+              // referred to another namespace/def
+              Some(target_ns) => {
+                // effect
+                // TODO js syntax to handle in future
+
+                // make sure the target is preprocessed
+                let _macro_fn = preprocess_ns_def(&target_ns, def, check_warnings, call_stack)?;
+
+                let form = Calcit::Import(CalcitImport {
                   ns: target_ns.to_owned(),
-                  def: Arc::from("default"),
-                  info: Arc::new(ImportInfo::JsDefault {
-                    alias: def.to_owned(),
-                    at_ns: file_ns.into(),
+                  def: def.to_owned(),
+                  info: Arc::new(ImportInfo::NsReferDef {
+                    at_ns: def_ns.to_owned(),
                     at_def: at_def.to_owned(),
                   }),
-                  coord: None,
-                }))
-              } else {
-                let mut names: Vec<Arc<str>> = Vec::with_capacity(scope_defs.len());
-                for def in scope_defs {
-                  names.push(def.to_owned());
+                  coord: program::tip_coord(&target_ns, def),
+                });
+                Ok(form)
+              }
+              None if codegen::codegen_mode() && is_js_syntax_procs(def) => Ok(expr.to_owned()),
+              None => {
+                let from_default = program::lookup_default_target_in_import(def_ns, def);
+                if let Some(target_ns) = from_default {
+                  Ok(Calcit::Import(CalcitImport {
+                    ns: target_ns.to_owned(),
+                    def: Arc::from("default"),
+                    info: Arc::new(ImportInfo::JsDefault {
+                      alias: def.to_owned(),
+                      at_ns: file_ns.into(),
+                      at_def: at_def.to_owned(),
+                    }),
+                    coord: None,
+                  }))
+                } else {
+                  let mut names: Vec<Arc<str>> = Vec::with_capacity(scope_defs.len());
+                  for def in scope_defs {
+                    names.push(def.to_owned());
+                  }
+                  gen_check_warning_with_location(
+                    format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" ")),
+                    NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
+                    check_warnings,
+                  );
+                  Ok(expr.to_owned())
                 }
-                gen_check_warning_with_location(
-                  format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" ")),
-                  NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
-                  check_warnings,
-                );
-                Ok(expr.to_owned())
               }
             }
           }
         }
       }
-    },
+    }
     Calcit::List(xs) => {
       if xs.is_empty() {
         Ok(expr.to_owned())

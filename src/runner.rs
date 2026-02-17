@@ -4,7 +4,7 @@ pub mod track;
 use std::sync::Arc;
 use std::vec;
 
-use crate::builtins::{self, IMPORTED_PROCS};
+use crate::builtins;
 use crate::calcit::{
   CORE_NS, Calcit, CalcitArgLabel, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc,
   CalcitScope, CalcitSyntax, MethodKind, NodeLocation,
@@ -240,26 +240,23 @@ pub fn call_expr(
       }
     }
     Calcit::Registered(alias) => {
-      // call directly to reduce clone
-      let ps = IMPORTED_PROCS.read().expect("read procs");
-      match ps.get(alias) {
-        Some(f) => {
-          let values = if spreading {
-            evaluate_spreaded_args(rest_nodes, scope, file_ns, call_stack)?
-          } else {
-            evaluate_args(rest_nodes, scope, file_ns, call_stack)?
-          };
-          // weird, but it's faster to pass `values` than passing `&values`
-          // also println slows down code a bit. could't figure out, didn't read asm either
-          f(values, call_stack)
+      let values = if spreading {
+        evaluate_spreaded_args(rest_nodes, scope, file_ns, call_stack)?
+      } else {
+        evaluate_args(rest_nodes, scope, file_ns, call_stack)?
+      };
+      builtins::call_registered_proc(alias, values, call_stack).map_err(|e| {
+        if e.kind == CalcitErrKind::Var {
+          CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Var,
+            format!("cannot evaluate symbol directly: {file_ns}/{alias}"),
+            call_stack,
+            xs.first().and_then(|node| node.get_location()),
+          )
+        } else {
+          e
         }
-        None => Err(CalcitErr::use_msg_stack_location(
-          CalcitErrKind::Var,
-          format!("cannot evaluate symbol directly: {file_ns}/{alias}"),
-          call_stack,
-          xs.first().and_then(|node| node.get_location()),
-        )),
-      }
+      })
     }
     a => {
       let location = xs
@@ -328,6 +325,8 @@ pub fn evaluate_symbol(
         Ok(v.to_owned())
       } else if let Ok(p) = sym.parse::<CalcitProc>() {
         Ok(Calcit::Proc(p))
+      } else if builtins::is_registered_proc(sym) {
+        Ok(Calcit::Registered(sym.into()))
       } else if let Some(v) = eval_symbol_from_program(sym, CORE_NS, call_stack)? {
         Ok(v)
       } else if let Some(v) = eval_symbol_from_program(sym, file_ns, call_stack)? {
