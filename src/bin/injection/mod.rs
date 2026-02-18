@@ -26,14 +26,32 @@ type EdnFfiFn = fn(
 static DYLIBS: LazyLock<Mutex<HashMap<String, Arc<libloading::Library>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// load dylib, cache it
-fn load_dylib(lib_name: &str) -> Arc<libloading::Library> {
-  let mut dylibs = DYLIBS.lock().unwrap();
+fn load_dylib(lib_name: &str) -> Result<Arc<libloading::Library>, CalcitErr> {
+  let mut dylibs = DYLIBS
+    .lock()
+    .map_err(|_| CalcitErr::use_str(CalcitErrKind::Unexpected, "failed to lock dylib cache"))?;
   if let Some(lib) = dylibs.get(lib_name) {
-    return lib.to_owned();
+    return Ok(lib.to_owned());
   }
-  let lib = unsafe { libloading::Library::new(lib_name).expect("dylib not found") };
-  dylibs.insert(lib_name.to_owned(), Arc::new(lib));
-  dylibs.get(lib_name).unwrap().to_owned()
+  let lib = unsafe { libloading::Library::new(lib_name) }
+    .map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, format!("failed to load dylib `{lib_name}`: {e}")))?;
+  let lib = Arc::new(lib);
+  dylibs.insert(lib_name.to_owned(), lib.to_owned());
+  Ok(lib)
+}
+
+fn ensure_abi_compatible(lib: &libloading::Library, lib_name: &str) -> Result<(), CalcitErr> {
+  let lookup_version: libloading::Symbol<fn() -> String> = unsafe { lib.get("abi_version".as_bytes()) }.map_err(|e| {
+    CalcitErr::use_str(
+      CalcitErrKind::Unexpected,
+      format!("failed to lookup `abi_version` in `{lib_name}`: {e}"),
+    )
+  })?;
+  let current = lookup_version();
+  if current != ABI_VERSION {
+    return CalcitErr::err_str(CalcitErrKind::Unexpected, format!("ABI versions mismatch: {current} {ABI_VERSION}")).map(|_| ());
+  }
+  Ok(())
 }
 
 const ABI_VERSION: &str = "0.0.9";
@@ -107,16 +125,14 @@ pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
     ys.push(calcit_to_edn(&v)?);
   }
 
-  let lib = load_dylib(&lib_name);
-  let lookup_version: libloading::Symbol<fn() -> String> =
-    unsafe { lib.get("abi_version".as_bytes()).expect("request for ABI_VERSION") };
-  if lookup_version() != ABI_VERSION {
-    return CalcitErr::err_str(
+  let lib = load_dylib(&lib_name)?;
+  ensure_abi_compatible(&lib, &lib_name)?;
+  let func: libloading::Symbol<EdnFfi> = unsafe { lib.get(method.as_bytes()) }.map_err(|e| {
+    CalcitErr::use_str(
       CalcitErrKind::Unexpected,
-      format!("ABI versions mismatch: {} {ABI_VERSION}", lookup_version()),
-    );
-  }
-  let func: libloading::Symbol<EdnFfi> = unsafe { lib.get(method.as_bytes()).expect("dy function not found") };
+      format!("failed to load FFI symbol `{method}` in `{lib_name}`: {e}"),
+    )
+  })?;
   let ret = func(ys.to_owned())?;
   Ok(edn_to_calcit(&ret, &Calcit::Nil))
 }
@@ -190,20 +206,23 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
 
   track::track_task_add();
 
-  let lib = load_dylib(&lib_name);
-
-  let lookup_version: libloading::Symbol<fn() -> String> =
-    unsafe { lib.get("abi_version".as_bytes()).expect("request for ABI_VERSION") };
-  if lookup_version() != ABI_VERSION {
-    return CalcitErr::err_str(
-      CalcitErrKind::Unexpected,
-      format!("ABI versions mismatch: {} {ABI_VERSION}", lookup_version()),
-    );
-  }
+  let lib = load_dylib(&lib_name)?;
+  ensure_abi_compatible(&lib, &lib_name)?;
   let copied_stack_1 = Arc::new(call_stack.to_owned());
+  let method_name = method.clone();
+  let lib_name_for_thread = lib_name.clone();
 
   let _handle = thread::spawn(move || {
-    let func: libloading::Symbol<EdnFfiFn> = unsafe { lib.get(method.as_bytes()).expect("dy function not found") };
+    let func: libloading::Symbol<EdnFfiFn> = match unsafe { lib.get(method_name.as_bytes()) } {
+      Ok(f) => f,
+      Err(e) => {
+        track::track_task_release();
+        return CalcitErr::err_str(
+          CalcitErrKind::Unexpected,
+          format!("failed to load FFI symbol `{method_name}` in `{lib_name_for_thread}`: {e}"),
+        );
+      }
+    };
     let copied_stack = copied_stack_1.to_owned();
     match func(
       ys.to_owned(),
@@ -222,8 +241,7 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
             }
           }
         } else {
-          // handled above
-          unreachable!("expected last argument to be callback fn, got: {}", callback);
+          Err(format!("expected last argument to be callback fn, got: {callback}"))
         }
       }),
       Arc::new(track::track_task_release),
@@ -287,22 +305,17 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
 
   track::track_task_add();
 
-  let lib = unsafe {
-    let lib_tmp = libloading::Library::new(lib_name).expect("dylib not found");
-
-    let lookup_version: libloading::Symbol<fn() -> String> = lib_tmp.get("abi_version".as_bytes()).expect("request for ABI_VERSION");
-    if lookup_version() != ABI_VERSION {
-      return CalcitErr::err_str(
-        CalcitErrKind::Unexpected,
-        format!("ABI versions mismatch: {} {ABI_VERSION}", lookup_version()),
-      );
-    }
-
-    lib_tmp
-  };
+  let lib = unsafe { libloading::Library::new(&lib_name) }
+    .map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, format!("failed to load dylib `{lib_name}`: {e}")))?;
+  ensure_abi_compatible(&lib, &lib_name)?;
   let copied_stack = Arc::new(call_stack.to_owned());
 
-  let func: libloading::Symbol<EdnFfiFn> = unsafe { lib.get(method.as_bytes()).expect("dy function not found") };
+  let func: libloading::Symbol<EdnFfiFn> = unsafe { lib.get(method.as_bytes()) }.map_err(|e| {
+    CalcitErr::use_str(
+      CalcitErrKind::Unexpected,
+      format!("failed to load FFI symbol `{method}` in `{lib_name}`: {e}"),
+    )
+  })?;
   match func(
     ys.to_owned(),
     Arc::new(move |ps: Vec<Edn>| -> Result<Edn, String> {
@@ -320,8 +333,7 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
           }
         }
       } else {
-        // handled above
-        unreachable!("expected last argument to be callback fn, got: {}", callback);
+        Err(format!("expected last argument to be callback fn, got: {callback}"))
       }
     }),
     Arc::new(track::track_task_release),
@@ -351,7 +363,7 @@ pub fn on_ctrl_c(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, 
         eprintln!("error: {e}");
       }
     })
-    .expect("Error setting Ctrl-C handler");
+    .map_err(|e| CalcitErr::use_str(CalcitErrKind::Unexpected, format!("failed to set Ctrl-C handler: {e}")))?;
     Ok(Calcit::Nil)
   } else {
     CalcitErr::err_str(CalcitErrKind::Arity, format!("on-control-c expected a callback function {xs:?}"))

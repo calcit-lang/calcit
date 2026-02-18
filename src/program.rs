@@ -247,9 +247,9 @@ pub fn lookup_evaled_def(ns: &str, def: &str) -> Option<Calcit> {
 
 pub fn load_by_index(ns_idx: u16, ns: &str, def_idx: u16, def: &str) -> Option<Calcit> {
   let s2 = PROGRAM_EVALED_DATA_STATE.read().expect("read program data");
-  let (file, ns_cache) = s2.load(ns_idx);
+  let (file, ns_cache) = s2.load(ns_idx).ok()?;
   if ns == ns_cache {
-    let (value, def_cache) = file.load(def_idx);
+    let (value, def_cache) = file.load(def_idx).ok()?;
     if def == def_cache { Some(value.to_owned()) } else { None }
   } else {
     None

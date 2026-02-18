@@ -95,7 +95,7 @@ impl CalcitRecord {
             next_values.push(self.values[i].to_owned());
           }
           Ordering::Equal => {
-            unreachable!("does not equal")
+            return Err(format!("extend-field expected a new field, but `{}` already exists", new_field.ref_str()));
           }
         }
       }
@@ -115,5 +115,21 @@ impl CalcitRecord {
       struct_ref: Arc::new(CalcitStruct::from_fields(new_name_id, next_fields)),
       values: Arc::new(next_values),
     })
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn extend_field_returns_err_on_duplicate_field() {
+    let record = CalcitRecord {
+      struct_ref: Arc::new(CalcitStruct::from_fields(EdnTag::new("Person"), vec![EdnTag::new("age")])),
+      values: Arc::new(vec![Calcit::Number(1.0)]),
+    };
+
+    let result = record.extend_field(&EdnTag::new("age"), &Calcit::tag("Person2"), &Calcit::Number(2.0));
+    assert!(result.is_err());
   }
 }

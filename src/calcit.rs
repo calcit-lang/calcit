@@ -542,7 +542,7 @@ impl Hash for Calcit {
         impl_def.values.hash(_state);
       }
       AnyRef(_) => {
-        unreachable!("AnyRef should not be used in hashing")
+        "any-ref:".hash(_state);
       }
     }
   }
@@ -635,29 +635,15 @@ impl Ord for Calcit {
       (List(_), _) => Less,
       (_, List(_)) => Greater,
 
-      (Set(a), Set(b)) => match a.size().cmp(&b.size()) {
-        Equal => {
-          if a == b {
-            Equal
-          } else {
-            unreachable!("TODO sets are not cmp ed")
-          }
-        }
-        a => a,
-      },
+      (Set(a), Set(b)) => compare_set_values(a, b),
       (Set(_), _) => Less,
       (_, Set(_)) => Greater,
 
-      (Map(a), Map(b)) => {
-        unreachable!("TODO maps are not cmp ed {:?} {:?}", a, b)
-      }
+      (Map(a), Map(b)) => compare_map_values(a, b),
       (Map(_), _) => Less,
       (_, Map(_)) => Greater,
 
-      (Record(CalcitRecord { struct_ref: s1, .. }), Record(CalcitRecord { struct_ref: s2, .. })) => match s1.name.cmp(&s2.name) {
-        Equal => unreachable!("TODO records are not cmp ed"),
-        ord => ord,
-      },
+      (Record(a), Record(b)) => compare_record_values(a, b),
       (Record { .. }, _) => Less,
       (_, Record { .. }) => Greater,
 
@@ -703,8 +689,53 @@ impl Ord for Calcit {
       (RawCode(..), _) => Less,
       (_, RawCode(..)) => Greater,
 
-      (AnyRef(_), AnyRef(_)) => unreachable!("AnyRef should not be used in cmp"),
+      (AnyRef(a), AnyRef(b)) => compare_any_ref_values(a, b),
     }
+  }
+}
+
+fn compare_any_ref_values(a: &EdnAnyRef, b: &EdnAnyRef) -> Ordering {
+  if a == b {
+    Equal
+  } else {
+    format!("{:p}", Arc::as_ptr(&a.0)).cmp(&format!("{:p}", Arc::as_ptr(&b.0)))
+  }
+}
+
+fn compare_set_values(a: &rpds::HashTrieSetSync<Calcit>, b: &rpds::HashTrieSetSync<Calcit>) -> Ordering {
+  match a.size().cmp(&b.size()) {
+    Equal => {
+      let mut left: Vec<&Calcit> = a.iter().collect();
+      let mut right: Vec<&Calcit> = b.iter().collect();
+      left.sort_unstable();
+      right.sort_unstable();
+      left.cmp(&right)
+    }
+    ord => ord,
+  }
+}
+
+fn compare_map_values(a: &rpds::HashTrieMapSync<Calcit, Calcit>, b: &rpds::HashTrieMapSync<Calcit, Calcit>) -> Ordering {
+  match a.size().cmp(&b.size()) {
+    Equal => {
+      let mut left: Vec<(&Calcit, &Calcit)> = a.iter().collect();
+      let mut right: Vec<(&Calcit, &Calcit)> = b.iter().collect();
+      let sort_pair = |(ka, va): &(&Calcit, &Calcit), (kb, vb): &(&Calcit, &Calcit)| ka.cmp(kb).then(va.cmp(vb));
+      left.sort_unstable_by(sort_pair);
+      right.sort_unstable_by(sort_pair);
+      left.cmp(&right)
+    }
+    ord => ord,
+  }
+}
+
+fn compare_record_values(a: &CalcitRecord, b: &CalcitRecord) -> Ordering {
+  match a.struct_ref.name.cmp(&b.struct_ref.name) {
+    Equal => match a.struct_ref.fields.cmp(&b.struct_ref.fields) {
+      Equal => a.values.cmp(&b.values),
+      ord => ord,
+    },
+    ord => ord,
   }
 }
 
@@ -1222,6 +1253,8 @@ pub fn format_proc_examples_hint(proc: &CalcitProc) -> Option<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::collections::hash_map::DefaultHasher;
+  use std::hash::{Hash, Hasher};
 
   #[test]
   fn infers_warning_arity_from_expects_message() {
@@ -1247,5 +1280,71 @@ mod tests {
 
     assert_eq!(payload.get("code").and_then(|v| v.as_str()), None);
     assert_eq!(payload.get("hint").and_then(|v| v.as_str()), None);
+  }
+
+  #[test]
+  fn cmp_sets_does_not_panic_on_same_size() {
+    let mut left = rpds::HashTrieSet::new_sync();
+    left.insert_mut(Calcit::Number(1.0));
+    left.insert_mut(Calcit::Number(3.0));
+
+    let mut right = rpds::HashTrieSet::new_sync();
+    right.insert_mut(Calcit::Number(2.0));
+    right.insert_mut(Calcit::Number(3.0));
+
+    let lv = Calcit::Set(left);
+    let rv = Calcit::Set(right);
+    let ord = lv.cmp(&rv);
+    assert_eq!(ord, rv.cmp(&lv).reverse());
+  }
+
+  #[test]
+  fn cmp_maps_does_not_panic_on_same_size() {
+    let mut left = rpds::HashTrieMap::new_sync();
+    left.insert_mut(Calcit::tag("a"), Calcit::Number(1.0));
+    left.insert_mut(Calcit::tag("b"), Calcit::Number(2.0));
+
+    let mut right = rpds::HashTrieMap::new_sync();
+    right.insert_mut(Calcit::tag("a"), Calcit::Number(1.0));
+    right.insert_mut(Calcit::tag("b"), Calcit::Number(3.0));
+
+    let lv = Calcit::Map(left);
+    let rv = Calcit::Map(right);
+    let ord = lv.cmp(&rv);
+    assert_eq!(ord, rv.cmp(&lv).reverse());
+  }
+
+  #[test]
+  fn cmp_records_compares_values_when_same_name() {
+    let struct_ref = Arc::new(CalcitStruct::from_fields(EdnTag::new("Person"), vec![EdnTag::new("age")]));
+    let left = Calcit::Record(CalcitRecord {
+      struct_ref: struct_ref.clone(),
+      values: Arc::new(vec![Calcit::Number(1.0)]),
+    });
+    let right = Calcit::Record(CalcitRecord {
+      struct_ref,
+      values: Arc::new(vec![Calcit::Number(2.0)]),
+    });
+
+    let ord = left.cmp(&right);
+    assert_eq!(ord, right.cmp(&left).reverse());
+  }
+
+  #[test]
+  fn cmp_any_ref_does_not_panic() {
+    let left = Calcit::AnyRef(EdnAnyRef::new(1_i64));
+    let right = Calcit::AnyRef(EdnAnyRef::new(2_i64));
+
+    let ord = left.cmp(&right);
+    assert_eq!(ord, right.cmp(&left).reverse());
+  }
+
+  #[test]
+  fn hash_any_ref_does_not_panic() {
+    let value = Calcit::AnyRef(EdnAnyRef::new(1_i64));
+
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    let _hash = hasher.finish();
   }
 }

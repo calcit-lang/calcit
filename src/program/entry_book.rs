@@ -65,13 +65,13 @@ where
     self.0.iter().map(|piece| piece.key.to_owned()).collect()
   }
 
-  pub fn load(&self, idx: u16) -> (&T, &str) {
+  pub fn load(&self, idx: u16) -> Result<(&T, &str), String> {
     match self.0.get(idx as usize) {
       Some(piece) => match &piece.value {
-        Some(v) => (v, &*piece.key),
-        None => unreachable!("given index {} is invalid in current book of size {}", idx, self.0.len()),
+        Some(v) => Ok((v, &*piece.key)),
+        None => Err(format!("given index {} is invalid in current book of size {}", idx, self.0.len())),
       },
-      None => unreachable!("given index {} is invalid in current book of size {}", idx, self.0.len()),
+      None => Err(format!("given index {} is invalid in current book of size {}", idx, self.0.len())),
     }
   }
 

@@ -33,8 +33,10 @@ impl CalcitLocal {
 
   pub fn read_name(idx: u16) -> String {
     let locals = LOCAL_NAMES.read().expect("read local names");
-    let (_, s) = locals.load(idx);
-    s.to_string()
+    match locals.load(idx) {
+      Ok((_, s)) => s.to_string(),
+      Err(_) => format!("<local:{idx}>"),
+    }
   }
 
   /// display local variables from numbers
