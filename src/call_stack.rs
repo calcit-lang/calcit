@@ -144,14 +144,12 @@ pub fn display_stack_with_docs(
   }
   if let Some(h) = hint {
     eprintln!("\n{h}");
-  } else {
-    if let Some((ns, def, examples)) = find_stack_examples(stack) {
-      eprintln!("examples: cargo run --bin cr -- demos/compact.cirru query examples {}/{}", ns, def);
-      if !examples.is_empty() {
-        eprintln!("sample examples:");
-        for line in examples.iter().take(2) {
-          eprintln!("  - {line}");
-        }
+  } else if let Some((ns, def, examples)) = find_stack_examples(stack) {
+    eprintln!("examples: cargo run --bin cr -- demos/compact.cirru query examples {ns}/{def}");
+    if !examples.is_empty() {
+      eprintln!("sample examples:");
+      for line in examples.iter().take(2) {
+        eprintln!("  - {line}");
       }
     }
   }

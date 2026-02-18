@@ -10,18 +10,19 @@
 
 ## 文档状态
 
-| 文件                                    | 状态          | 建议                                                                           |
-| --------------------------------------- | ------------- | ------------------------------------------------------------------------------ |
-| `assert-types-plan.md`                  | Active        | 类型标注主计划文档，持续维护。                                                 |
-| `assert-types.md`                       | Review-needed | 技术背景较完整，但篇幅大且部分描述偏阶段性，引用时建议抽取成专题文档。         |
-| `generics-struct-fn-proc-plan.md`       | Active        | 泛型 struct/fn/proc 设计草案，适合继续拆任务推进。                             |
-| `runtime-traits-plan.md`                | Active        | runtime traits 主设计文档，当前阶段的核心参考。                                |
+| 文件                                    | 状态          | 建议                                                                               |
+| --------------------------------------- | ------------- | ---------------------------------------------------------------------------------- |
+| `assert-types-plan.md`                  | Active        | 类型标注主计划文档，持续维护。                                                     |
+| `assert-types.md`                       | Review-needed | 技术背景较完整，但篇幅大且部分描述偏阶段性，引用时建议抽取成专题文档。             |
+| `generics-struct-fn-proc-plan.md`       | Active        | 泛型 struct/fn/proc 设计草案，适合继续拆任务推进。                                 |
+| `runtime-traits-plan.md`                | Active        | runtime traits 主设计文档，当前阶段的核心参考。                                    |
 | `register-platform-api-rfc.md`          | Active        | register/host capability 规范化 RFC，内容与当前旧 FFI 命名及 descriptor 机制对齐。 |
-| `project-modernization-roadmap.md`      | Review-needed | 里程碑记录详尽，但包含大量“已完成”条目，建议后续拆分为 `done` 与 `next` 两段。 |
-| `macro-trait-improvements-checklist.md` | Archived      | 本轮 checklist 基本完成，建议保留存档，不再继续追加。                          |
-| `record-struct-and-enum-plan.md`        | Review-needed | 迁移计划多项已完成，可作为变更历史，但需和当前语义再次对齐。                   |
-| `record-struct-and-enum-rfc.md`         | Archived      | RFC 历史提案，保留用于背景追溯。                                               |
-| `last-session.md`                       | Archived      | 会话快照，存在历史上下文（含旧语法/阶段结论）。                                |
+| `language-theory-evolution-plan.md`     | Active        | 从 law 层、抽象层、类型驱动错误三方面推进语言演进的分阶段路线图。                  |
+| `project-modernization-roadmap.md`      | Review-needed | 里程碑记录详尽，但包含大量“已完成”条目，建议后续拆分为 `done` 与 `next` 两段。     |
+| `macro-trait-improvements-checklist.md` | Archived      | 本轮 checklist 基本完成，建议保留存档，不再继续追加。                              |
+| `record-struct-and-enum-plan.md`        | Review-needed | 迁移计划多项已完成，可作为变更历史，但需和当前语义再次对齐。                       |
+| `record-struct-and-enum-rfc.md`         | Archived      | RFC 历史提案，保留用于背景追溯。                                                   |
+| `last-session.md`                       | Archived      | 会话快照，存在历史上下文（含旧语法/阶段结论）。                                    |
 
 ## 下一步整理建议
 

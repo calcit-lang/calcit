@@ -934,8 +934,7 @@ fn check_impl_traits_top_level_in_expr(expr: &Calcit, file_ns: &str, def_name: &
 
       if is_impl_traits {
         let msg = format!(
-          "[Warn] `impl-traits` inside {}/{} may block preprocess specialization; prefer top-level `def` bindings",
-          file_ns, def_name
+          "[Warn] `impl-traits` inside {file_ns}/{def_name} may block preprocess specialization; prefer top-level `def` bindings"
         );
         if let Some(loc) = expr.get_location() {
           gen_check_warning_with_location(msg, loc.clone(), check_warnings);

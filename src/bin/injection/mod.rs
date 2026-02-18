@@ -86,18 +86,12 @@ pub fn inject_platform_apis() {
 // &call-dylib-edn
 pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
-    return CalcitErr::err_str(
-      CalcitErrKind::Arity,
-      format!("&call-dylib-edn expected >2 arguments, got: {xs:?}"),
-    );
+    return CalcitErr::err_str(CalcitErrKind::Arity, format!("&call-dylib-edn expected >2 arguments, got: {xs:?}"));
   }
   let lib_name: String = if let Calcit::Str(s) = &xs[0] {
     (**s).to_owned()
   } else {
-    return CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&call-dylib-edn expected a lib_name, got: {}", xs[0]),
-    );
+    return CalcitErr::err_str(CalcitErrKind::Type, format!("&call-dylib-edn expected a lib_name, got: {}", xs[0]));
   };
 
   let method: String = if let Calcit::Str(s) = &xs[1] {

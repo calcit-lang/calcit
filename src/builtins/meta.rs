@@ -645,6 +645,7 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       );
     }
   };
+
   Ok(Calcit::Trait(CalcitTrait::new(name, methods, method_types)))
 }
 

@@ -609,7 +609,7 @@ mod tests {
 
   fn unique_name(prefix: &str) -> String {
     let id = TEST_PROC_COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}-{}", id)
+    format!("{prefix}-{id}")
   }
 
   fn dummy_proc(_xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
