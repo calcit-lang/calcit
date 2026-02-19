@@ -101,7 +101,7 @@ checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 
 [[package]]
 name = "calcit"
-version = "0.11.1"
+version = "0.11.2"
 dependencies = [
  "argh",
  "bisection_key",
@@ -448,9 +448,9 @@ dependencies = [
 
 [[package]]
 name = "im_ternary_tree"
-version = "0.0.19"
+version = "0.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a482b99c5d10bbd48a300ea9dc8956685cfa0bd7bc6bb9fb194d4cc96d89601"
+checksum = "095dd3c9192b9cdc754f22c3d116d5fad36859fcdb25f00e332af99a88de6015"
 
 [[package]]
 name = "inotify"
