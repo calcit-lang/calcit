@@ -1005,7 +1005,7 @@
                   if
                     and
                       not $ list? x0
-                      not $ symbol? x0
+                      not $ or (symbol? x0) (= (type-of x0) :method)
                     raise $ str-spaced "|-> expects symbol or list step, got:" x0
                   if (list? x0)
                     recur
@@ -1041,7 +1041,7 @@
                   if
                     and
                       not $ list? x0
-                      not $ symbol? x0
+                      not $ or (symbol? x0) (= (type-of x0) :method)
                     raise $ str-spaced "|->> expects symbol or list step, got:" x0
                   if (list? x0)
                     &call-spread recur (append x0 base) & $ &list:rest xs

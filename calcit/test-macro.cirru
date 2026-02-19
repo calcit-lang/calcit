@@ -239,6 +239,11 @@
                   quote $ b a c
                 assert=
                   macroexpand $ quote
+                    -> event .-target .-checked
+                  quote $ .-checked
+                    .-target event
+                assert=
+                  macroexpand $ quote
                     -> a (b c) (d e f)
                   quote $ d (b a c) e f
                 assert=
