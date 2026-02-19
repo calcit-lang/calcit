@@ -727,7 +727,7 @@ impl CalcitProc {
       }),
       Sort => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![some_tag("list"), dynamic_tag()],
+        arg_types: vec![some_tag("list"), optional_tag("dynamic")],
       }),
       NativeListConcat => Some(ProcTypeSignature {
         return_type: some_tag("list"),

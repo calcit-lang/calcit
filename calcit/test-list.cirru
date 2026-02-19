@@ -463,9 +463,13 @@
                 interleave ([] :a :b :c :d) ([] 1 2 3 4)
         |test-sort $ %{} :CodeEntry (:doc |)
           :code $ quote
-            fn () $ assert=
-              sort ([] 4 3 2 1) (\ &- % %2)
-              [] 1 2 3 4
+            fn ()
+              assert=
+                sort $ [] 4 3 2 1
+                [] 1 2 3 4
+              assert=
+                sort ([] 4 3 2 1) (\ &- % %2)
+                [] 1 2 3 4
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-list.main $ :require

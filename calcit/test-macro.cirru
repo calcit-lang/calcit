@@ -244,6 +244,14 @@
                     .-target event
                 assert=
                   macroexpand $ quote
+                    -> files &map:to-list
+                  quote $ &map:to-list files
+                assert=
+                  macroexpand $ quote
+                    -> files :defs
+                  quote $ :defs files
+                assert=
+                  macroexpand $ quote
                     -> a (b c) (d e f)
                   quote $ d (b a c) e f
                 assert=
@@ -265,6 +273,14 @@
                   macroexpand $ quote
                     ->> a $ b c
                   quote $ b c a
+                assert=
+                  macroexpand $ quote
+                    ->> files &map:to-list
+                  quote $ &map:to-list files
+                assert=
+                  macroexpand $ quote
+                    ->> files :defs
+                  quote $ :defs files
                 assert=
                   macroexpand $ quote
                     ->> a (b c) (d e f)

@@ -95,7 +95,10 @@ impl CalcitRecord {
             next_values.push(self.values[i].to_owned());
           }
           Ordering::Equal => {
-            return Err(format!("extend-field expected a new field, but `{}` already exists", new_field.ref_str()));
+            return Err(format!(
+              "extend-field expected a new field, but `{}` already exists",
+              new_field.ref_str()
+            ));
           }
         }
       }

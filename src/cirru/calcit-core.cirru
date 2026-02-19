@@ -993,6 +993,15 @@
           :examples $ []
             quote $ assert= 5 (- 10 3 2)
             quote $ assert= -5 (- 5)
+        |thread-step? $ %{} :CodeEntry (:doc "|Check whether a value is a valid thread-macro step form")
+          :code $ quote
+            defn thread-step? (x)
+              or
+                symbol? x
+                tag? x
+                = (type-of x) :method
+                = (type-of x) :fn
+          :examples $ []
         |-> $ %{} :CodeEntry (:doc "|Thread-first macro\nSyntax: (-> value step1 step2 ...)\nEvaluates the value through each step by inserting it as the first argument and returns the final result.")
           :code $ quote
             defmacro -> (base & xs)
@@ -1005,8 +1014,8 @@
                   if
                     and
                       not $ list? x0
-                      not $ or (symbol? x0) (= (type-of x0) :method)
-                    raise $ str-spaced "|-> expects symbol or list step, got:" x0
+                      not $ thread-step? x0
+                    raise $ str-spaced "|-> expects symbol/tag/fn/method or list step, got:" x0
                   if (list? x0)
                     recur
                       &list:concat
@@ -1041,8 +1050,8 @@
                   if
                     and
                       not $ list? x0
-                      not $ or (symbol? x0) (= (type-of x0) :method)
-                    raise $ str-spaced "|->> expects symbol or list step, got:" x0
+                      not $ thread-step? x0
+                    raise $ str-spaced "|->> expects symbol/tag/fn/method or list step, got:" x0
                   if (list? x0)
                     &call-spread recur (append x0 base) & $ &list:rest xs
                     &call-spread recur ([] x0 base) & $ &list:rest xs
