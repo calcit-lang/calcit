@@ -776,6 +776,13 @@
         |&record:get-name $ %{} :CodeEntry (:doc "|internal function for getting record name\nSyntax: (&record:get-name record)\nParams: record (record)\nReturns: keyword\nReturns name of record")
           :code $ quote &runtime-inplementation
           :examples $ []
+        |&record:struct $ %{} :CodeEntry (:doc "|internal function for getting record source struct\nSyntax: (&record:struct record)\nParams: record (record)\nReturns: struct or nil\nReturns source struct definition of record, or nil when unavailable")
+          :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ let
+                User $ defstruct User (:name :string)
+                u $ %{} User (:name |Alice)
+              assert= User $ &record:struct u
         |&record:impls $ %{} :CodeEntry (:doc "|internal function for getting record impls\nSyntax: (&record:impls record)\nParams: record (record)\nReturns: any\nReturns impls of record")
           :code $ quote &runtime-inplementation
           :examples $ []

@@ -71,6 +71,9 @@
                 assert= true $ &tuple:enum-has-variant? Result :ok
                 assert= 1 $ &tuple:enum-variant-arity Result :ok
                 assert= nil $ &tuple:validate-enum ok :ok
+              let
+                  plain $ :: :plain 1
+                assert= nil $ &tuple:enum plain
         |try-size $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn try-size (x)

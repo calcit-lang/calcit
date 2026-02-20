@@ -85,6 +85,10 @@
                   kitty $ %{} Cat (:name |kitty) (:color :red)
                 assert= :red $ &record:get kitty :color
                 assert= true $ &record:matches? kitty Cat
+                assert= true $ struct? (&record:struct kitty)
+                assert= (&record:struct kitty) (&record:struct Cat)
+                assert= true $ &record:matches? kitty
+                  %{} (&record:struct kitty) (:name |kitty) (:color :red)
                 assert= (&record:to-map kitty) (&{} :name |kitty :color :red)
                 assert= 2 $ &record:count kitty
                 assert= true $ &record:contains? kitty :color

@@ -206,6 +206,14 @@ export let _$n_record_$o_get_name = (x: CalcitRecord): CalcitTag => {
   }
 };
 
+export let _$n_record_$o_struct = (x: CalcitRecord): CalcitValue => {
+  if (x instanceof CalcitRecord) {
+    return x.structRef ?? null;
+  } else {
+    throw new Error("Expected a record");
+  }
+};
+
 export let _$n_record_$o_from_map = (proto: CalcitValue, data: CalcitValue): CalcitValue => {
   if (!(proto instanceof CalcitRecord)) throw new Error("Expected prototype to be record");
 

@@ -498,6 +498,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeRecordImpls => records::get_impls(args),
     NativeRecordFromMap => records::record_from_map(args),
     NativeRecordGetName => records::get_record_name(args),
+    NativeRecordStruct => records::get_record_struct(args),
     NativeRecordToMap => records::turn_map(args),
     NativeRecordMatches => records::matches(args),
     NativeRecordCount => records::count(args),

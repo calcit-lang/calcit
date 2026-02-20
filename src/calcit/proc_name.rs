@@ -373,6 +373,8 @@ pub enum CalcitProc {
   NativeRecordFromMap,
   #[strum(serialize = "&record:get-name")]
   NativeRecordGetName,
+  #[strum(serialize = "&record:struct")]
+  NativeRecordStruct,
   #[strum(serialize = "&record:to-map")]
   NativeRecordToMap,
   #[strum(serialize = "&record:count")]
@@ -1003,6 +1005,10 @@ impl CalcitProc {
       }),
       NativeRecordGetName => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
+        arg_types: vec![some_tag("record")],
+      }),
+      NativeRecordStruct => Some(ProcTypeSignature {
+        return_type: optional_tag("struct"),
         arg_types: vec![some_tag("record")],
       }),
       NewRecord => Some(ProcTypeSignature {

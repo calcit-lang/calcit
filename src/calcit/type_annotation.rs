@@ -78,6 +78,13 @@ pub enum CalcitTypeAnnotation {
 }
 
 impl CalcitTypeAnnotation {
+  fn custom_keyword_matches(custom: &Calcit, keyword: &str) -> bool {
+    match custom {
+      Calcit::Tag(tag) => tag.ref_str().trim_start_matches(':') == keyword,
+      _ => false,
+    }
+  }
+
   fn builtin_type_from_tag_name(name: &str) -> Option<Self> {
     match name {
       "nil" => Some(Self::Dynamic),
@@ -912,6 +919,16 @@ impl CalcitTypeAnnotation {
       (Self::TraitSet(actual), Self::Trait(expected)) => actual.iter().any(|t| t.name == expected.name),
       (Self::Trait(actual), Self::TraitSet(expected)) => expected.len() == 1 && expected.iter().any(|t| t.name == actual.name),
       (Self::TraitSet(actual), Self::TraitSet(expected)) => expected.iter().all(|t| actual.iter().any(|a| a.name == t.name)),
+      (Self::Record(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "record") => true,
+      (Self::Struct(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "struct") => true,
+      (Self::Enum(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "enum") => true,
+      (Self::Trait(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "trait") => true,
+      (Self::TraitSet(_), Self::Custom(expected)) if Self::custom_keyword_matches(expected, "trait") => true,
+      (Self::Custom(actual), Self::Custom(expected))
+        if Self::custom_keyword_matches(expected, "impl") && matches!(actual.as_ref(), Calcit::Impl(_)) =>
+      {
+        true
+      }
       (Self::Record(a), Self::AppliedStruct { base, args }) => {
         if a.struct_ref.name != base.name {
           return false;
@@ -1034,7 +1051,10 @@ impl CalcitTypeAnnotation {
     if tag_name == "any" || tag_name == "dynamic" {
       Self::Dynamic
     } else {
-      Self::builtin_type_from_tag_name(tag_name).unwrap_or(Self::Tag)
+      Self::builtin_type_from_tag_name(tag_name).unwrap_or_else(|| match tag_name {
+        "record" | "struct" | "enum" | "trait" | "impl" => Self::Custom(Arc::new(Calcit::tag(tag_name))),
+        _ => Self::Tag,
+      })
     }
   }
 

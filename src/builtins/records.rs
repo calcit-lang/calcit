@@ -649,6 +649,24 @@ pub fn get_record_name(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   }
 }
+
+pub fn get_record_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 1 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:struct expected a record, but received:", xs);
+  }
+  match &xs[0] {
+    Calcit::Record(CalcitRecord { struct_ref, .. }) => Ok(Calcit::Struct(struct_ref.as_ref().to_owned())),
+    a => {
+      let msg = format!(
+        "&record:struct requires a record, but received: {}",
+        type_of(&[a.to_owned()])?.lisp_str()
+      );
+      let hint = format_proc_examples_hint(&CalcitProc::NativeRecordStruct).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
+  }
+}
+
 pub fn turn_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&record:to-map expected 1 argument, but received:", xs);
