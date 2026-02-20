@@ -64,7 +64,10 @@ fn fetch_registry() -> Result<LibraryRegistry, String> {
     .call()
     .map_err(|e| format!("Failed to connect to library registry: {e}"))?;
 
-  let text = response.into_string().map_err(|e| format!("Failed to read response text: {e}"))?;
+  let text = response
+    .into_body()
+    .read_to_string()
+    .map_err(|e| format!("Failed to read response text: {e}"))?;
 
   // Parse Cirru EDN format
   let edn = cirru_edn::parse(&text).map_err(|e| format!("Failed to parse Cirru EDN: {e}"))?;
@@ -144,7 +147,7 @@ fn handle_readme(package: &str, file: Option<&str>) -> Result<(), String> {
   // Convert GitHub URL to raw file URL
   let base_url = github_to_raw_base(&lib.repository)?;
 
-  let agent = ureq::AgentBuilder::new().user_agent("calcit-cli").build();
+  let agent = ureq::Agent::config_builder().user_agent("calcit-cli").build().new_agent();
 
   // Try main branch first, then master
   let content =
@@ -181,7 +184,10 @@ fn fetch_file_content(agent: &ureq::Agent, base_url: &str, branch: &str, file_na
 
   let response = agent.get(&url).call().map_err(|e| format!("Failed to fetch file: {e}"))?;
 
-  response.into_string().map_err(|e| format!("Failed to read file: {e}"))
+  response
+    .into_body()
+    .read_to_string()
+    .map_err(|e| format!("Failed to read file: {e}"))
 }
 
 fn handle_search(keyword: &str) -> Result<(), String> {
