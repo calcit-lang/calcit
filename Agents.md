@@ -41,6 +41,11 @@
 - **常用的编辑操作**：
   - `edit mv <source> <target>`：移动或重命名定义。
   - `tree cp <target> --from <path> -p <path> [--at <pos>]`：在 AST 节点间复制内容，支持 `before`, `after` (默认), `prepend-child`, `append-child`, `replace`。
+- **`cr edit` 命名空间 import 操作格式**（三个命令的 `-e` 输入格式不同，混淆会导致静默损坏）：
+  - `edit add-ns <ns>`：推荐不传 `-e`，创建空 ns 再逐条 `add-import`。若传 `-e`，必须是完整 `ns` 表达式且内部名称与位置参数完全一致。
+  - `edit imports <ns> -e 'src-ns :refer $ sym'`：**不含 `:require` 前缀**，直接是规则体；多条规则用 `-f file`（每行一条）或 `-j '[["src",":refer",["sym"]],...]'`。
+  - `edit add-import <ns> -e 'src-ns :refer $ sym'`：格式与 `imports` 单条规则相同；已存在同名来源时加 `-o` 覆盖。
+  - 优先用 `add-import`（带校验和覆盖保护），`imports` 只在需要全量重置所有 import 时使用。
 
 ## 性能与资源验证
 

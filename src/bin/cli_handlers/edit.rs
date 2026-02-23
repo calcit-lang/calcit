@@ -676,7 +676,23 @@ fn handle_add_ns(opts: &EditAddNsCommand, snapshot_file: &str) -> Result<(), Str
   let auto_json = opts.code.is_some();
 
   let ns_code = if let Some(raw) = read_code_input(&opts.file, &opts.code, &opts.json)? {
-    parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?
+    let code = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
+    // Validate: if input looks like a `ns` expression, the name inside must match
+    if let Cirru::List(ref items) = code {
+      if let Some(Cirru::Leaf(kw)) = items.first() {
+        if kw.as_ref() == "ns" {
+          if let Some(Cirru::Leaf(ns_in_expr)) = items.get(1) {
+            if ns_in_expr.as_ref() != opts.namespace.as_str() {
+              return Err(format!(
+                "Namespace name mismatch: positional argument is '{}' but ns expression contains '{}'. They must be identical.",
+                opts.namespace, ns_in_expr
+              ));
+            }
+          }
+        }
+      }
+    }
+    code
   } else {
     // Default minimal ns declaration: (ns namespace-name)
     Cirru::List(vec![Cirru::Leaf(Arc::from("ns")), Cirru::Leaf(Arc::from(opts.namespace.as_str()))])
@@ -738,34 +754,47 @@ fn handle_imports(opts: &EditImportsCommand, snapshot_file: &str) -> Result<(), 
     cirru_to_json_value(&cirru_node)
   };
 
-  // Build new ns code with imports
-  // Format: (ns namespace :require import1 import2 ...)
+  // Build new ns code with imports.
+  // Always use build_ns_code to produce the correct nested structure:
+  //   ["ns", "namespace", [":require", rule1, rule2, ...]]
   let ns_name = &opts.namespace;
 
-  let mut ns_code_items = vec![Cirru::Leaf(Arc::from("ns")), Cirru::Leaf(Arc::from(ns_name.as_str()))];
-
-  if let serde_json::Value::Array(imports) = imports_json {
-    if !imports.is_empty() {
-      ns_code_items.push(Cirru::Leaf(Arc::from(":require")));
-      for import in imports {
-        use super::common::json_value_to_cirru;
-        let import_cirru = json_value_to_cirru(&import)?;
-        ns_code_items.push(import_cirru);
+  let rules: Vec<Cirru> = if let serde_json::Value::Array(ref elems) = imports_json {
+    use super::common::json_value_to_cirru;
+    if elems.is_empty() {
+      vec![]
+    } else {
+      // Detect: array-of-arrays => multiple rules; array-of-strings => single flat rule
+      let first_is_array = elems.first().map(|e| e.is_array()).unwrap_or(false);
+      if first_is_array {
+        // Each element is one import rule
+        elems.iter().map(json_value_to_cirru).collect::<Result<Vec<_>, _>>()?
+      } else {
+        // The whole array is a single import rule (e.g. from `-e 'src-ns :refer $ sym'`)
+        // Guard: user may have accidentally included ':require' prefix
+        if let Some(serde_json::Value::String(first_str)) = elems.first() {
+          if first_str == ":require" {
+            return Err(
+              "Do not include ':require' as a prefix in the imports input. \
+               Pass rules directly, e.g. -e 'src-ns :refer $ sym' or use -f for multiple rules."
+                .to_string(),
+            );
+          }
+        }
+        vec![json_value_to_cirru(&imports_json)?]
       }
     }
   } else {
-    return Err("Imports must be a JSON/Cirru array (e.g. [(require ...)]).".to_string());
-  }
+    return Err("Imports must be a Cirru list or JSON array of import rules.".to_string());
+  };
 
   // Extract old imports for comparison
   let old_imports = extract_require_list(&file_data.ns.code);
-  let _old_import_rules = extract_require_rules(&file_data.ns.code);
 
-  file_data.ns.code = Cirru::List(ns_code_items);
+  file_data.ns.code = build_ns_code(ns_name, &rules);
 
   // Extract new imports
   let new_imports = extract_require_list(&file_data.ns.code);
-  let _new_import_rules = extract_require_rules(&file_data.ns.code);
 
   save_snapshot(&snapshot, snapshot_file)?;
 

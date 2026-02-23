@@ -452,10 +452,19 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 
 **命名空间操作：**
 
+> ⚠️ **关键：各命令的 `-e` 期望格式不同，不可混用，详见下方「命名空间操作陷阱」**
+
 - `cr edit add-ns <namespace>` - 添加命名空间
+  - 无 `-e`：创建空 ns（推荐；再用 `add-import` 逐条添加）
+  - `-e 'ns my.ns $ :require ...'`：需传完整 `ns` 表达式，名称必须与位置参数一致
 - `cr edit rm-ns <namespace>` - 删除命名空间
-- `cr edit imports <namespace>` - 更新导入规则（全量替换）
-- `cr edit add-import <namespace>` - 添加单个 import 规则
+- `cr edit imports <namespace>` - 更新导入规则（**全量替换**所有 import）
+  - `-e 'source-ns :refer $ sym1 sym2'`：单条规则（**不含** `:require` 前缀）
+  - `-f rules.cirru`：多条规则文件，每行一条（推荐多条场景）
+  - `-j '[["src-ns",":refer",["sym"]],...]'`：JSON 数组格式，每元素为一条规则
+- `cr edit add-import <namespace>` - 添加单个 import 规则（**不替换**已有规则）
+  - `-e 'source-ns :refer $ sym1 sym2'`：单条规则
+  - `-o` / `--overwrite`：覆盖已存在的同名源 ns 规则
 - `cr edit rm-import <namespace> <source_ns>` - 移除指定来源的 import 规则
 - `cr edit ns-doc <namespace> '<doc>'` - 更新命名空间文档
 
@@ -813,23 +822,25 @@ cr tree replace 'ns/def' -p '<path>' --leaf -e '<value>'
 
 # 4. 检查结果
 cr query error
-# 添加命名空间
+# 添加命名空间（推荐：先创建空 ns，再逐条 add-import）
 cr edit add-ns app.util
+cr edit add-import app.util -e 'calcit.core :refer $ echo'
 
-# 添加导入规则
+# 添加导入规则（单条）
 cr edit add-import app.main -e 'app.util :refer $ helper'
+# 覆盖已有同名 import
+cr edit add-import app.main -e 'app.util :refer $ helper util-fn' -o
 
 # 移除导入规则
 cr edit rm-import app.main app.util
 
+# 全量替换 imports（单条用 -e，多条用 -f 文件或 -j JSON）
+cr edit imports app.main -e 'app.util :refer $ helper'          # 单条
+cr edit imports app.main -f my-imports.cirru                    # 多条（每行一条规则）
+cr edit imports app.main -j '[["app.lib",":as","lib"],["app.util",":refer",["helper"]]]'  # JSON
+
 # 更新项目配置
 cr edit config init-fn app.main/main!
-```
-
-**更新命名空间导入（全量替换）：**
-
-```bash
-cr edit imports app.main -j '[["app.lib", ":as", "lib"], ["app.util", ":refer", ["helper"]]]'
 ```
 
 ---
@@ -930,7 +941,74 @@ send-to-component! $ :: :clipboard/read text
 **大资源处理建议：**
 如果需要修改复杂的长函数，不要尝试一次性替换整个定义。应先构建主体结构，使用占位符（如 `?PLACEHOLDER_FEATURE`, 注意避免重复），然后通过 `cr tree target-replace` 进行精准的分段替换.
 
-### 5. 推荐工作流程
+### 5. 命名空间操作陷阱 ⭐⭐⭐
+
+**三个命令的 `-e` 期望格式完全不同，是最常见的混淆来源：**
+
+| 命令                     | `-e` 期望内容                                                     | 错误用法                                               |
+| ------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------ |
+| `add-ns <ns> -e ...`     | **完整 `ns` 表达式**：`ns my.ns $ :require ...`                   | ❌ 传 import 规则（静默成功但 ns 代码损坏）            |
+| `imports <ns> -e ...`    | **单条 import 规则**（无 `:require` 前缀）：`src-ns :refer $ sym` | ❌ 带 `:require` 前缀（导致 `:require :require` 重复） |
+| `add-import <ns> -e ...` | **单条 import 规则**（同上）：`src-ns :refer $ sym`               | 同 imports                                             |
+
+**具体陷阱：**
+
+❌ **陷阱1：`add-ns -e` 传了 import 规则而非完整 `ns` 表达式**
+
+```bash
+# ❌ 错误：ns 代码会变成 'respo.core :refer $ defcomp'（缺 ns 关键字！）
+cr edit add-ns my.ns -e 'respo.core :refer $ defcomp'
+
+# ✅ 正确：无代码时先建空 ns，再 add-import
+cr edit add-ns my.ns
+cr edit add-import my.ns -e 'respo.core :refer $ defcomp'
+
+# ✅ 也正确：传完整 ns 表达式（名称必须与位置参数一致）
+cr edit add-ns my.ns -e 'ns my.ns $ :require respo.core :refer $ defcomp'
+```
+
+❌ **陷阱2：`imports -e` 带了 `:require` 前缀**（现在会报错）
+
+```bash
+# ❌ 错误：现在会报错 "Do not include ':require' as a prefix"
+cr edit imports my.ns -e ':require respo.core :refer $ sym'
+
+# ✅ 正确：直接传规则，不加 :require
+cr edit imports my.ns -e 'respo.core :refer $ sym'
+```
+
+❌ **陷阱3：`add-ns -e` 中 ns 名称与位置参数不一致**（现在会报错）
+
+```bash
+# ❌ 错误：现在会报错 "Namespace name mismatch"
+cr edit add-ns my.ns -e 'ns wrong.ns $ :require ...'
+```
+
+❌ **陷阱4：想添加多条 imports 时用 `-e` 而非 `-f`**
+
+```bash
+# ❌ 无法在单个 -e 中写多条规则（会合并为一条）
+cr edit imports my.ns -e 'respo.core :refer $ div\nrespo.util.format :refer $ hsl'
+
+# ✅ 多条规则用文件（每行一条规则，无需 :require 前缀）
+printf 'respo.core :refer $ div\nrespo.util.format :refer $ hsl\n' > /tmp/imports.cirru
+cr edit imports my.ns -f /tmp/imports.cirru
+
+# ✅ 或用 JSON 格式
+cr edit imports my.ns -j '[["respo.core",":refer",["div"]],["respo.util.format",":refer",["hsl"]]]'
+
+# ✅ 或逐条 add-import（推荐，更安全）
+cr edit add-import my.ns -e 'respo.core :refer $ div'
+cr edit add-import my.ns -e 'respo.util.format :refer $ hsl'
+```
+
+**最佳实践：优先用 `add-import`（更安全，带校验）：**
+
+- `add-import` 会验证 source-ns 格式，有 `--overwrite` 保护
+- `imports` 全量替换，一旦格式错误会覆盖所有 imports
+- 只有需要完全重置所有 imports 时才用 `imports`
+
+### 6. 推荐工作流程
 
 **基本流程（search 快速定位 ⭐⭐⭐）：**
 
@@ -954,7 +1032,7 @@ cr query error
 - 需要批量重命名？搜索后按提示从大到小路径依次修改
 - 不确定修改是否正确？每步后用 `tree show` 验证
 
-### 6. Shell 特殊字符转义 ⭐⭐
+### 7. Shell 特殊字符转义 ⭐⭐
 
 Calcit 函数名中的 `?`, `->`, `!` 等字符在 bash/zsh 中有特殊含义，需要用单引号包裹：
 
