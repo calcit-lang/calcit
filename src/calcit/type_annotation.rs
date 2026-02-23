@@ -1342,6 +1342,10 @@ fn resolve_record_def(form: &Calcit) -> Option<CalcitRecord> {
 }
 
 fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
+  // Unwrap thunks: defstruct/defenum definitions are stored as unevaluated thunks
+  if let Calcit::Thunk(thunk) = code {
+    return resolve_type_def_from_code(thunk.get_code());
+  }
   let Calcit::List(items) = code else {
     return None;
   };

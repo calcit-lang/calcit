@@ -359,10 +359,10 @@ pub enum CalcitProc {
   #[strum(serialize = "remove-watch")]
   RemoveWatch,
   // records
-  #[strum(serialize = "new-record")]
-  NewRecord,
   #[strum(serialize = "&%{}")]
   NativeRecord,
+  #[strum(serialize = "&%{}?")]
+  NativeRecordPartial,
   #[strum(serialize = "&record:with")]
   NativeRecordWith,
   #[strum(serialize = "&record:impls")]
@@ -969,7 +969,11 @@ impl CalcitProc {
       // === Record operations ===
       NativeRecord => Some(ProcTypeSignature {
         return_type: some_tag("record"),
-        arg_types: vec![some_tag("record"), variadic_dynamic()],
+        arg_types: vec![some_tag("struct"), variadic_dynamic()],
+      }),
+      NativeRecordPartial => Some(ProcTypeSignature {
+        return_type: some_tag("record"),
+        arg_types: vec![some_tag("struct"), variadic_dynamic()],
       }),
       NativeRecordWith => Some(ProcTypeSignature {
         return_type: some_tag("record"),
@@ -1001,7 +1005,7 @@ impl CalcitProc {
       }),
       NativeRecordFromMap => Some(ProcTypeSignature {
         return_type: some_tag("record"),
-        arg_types: vec![some_tag("record"), some_tag("map")],
+        arg_types: vec![some_tag("struct"), some_tag("map")],
       }),
       NativeRecordGetName => Some(ProcTypeSignature {
         return_type: some_tag("tag"),
@@ -1010,10 +1014,6 @@ impl CalcitProc {
       NativeRecordStruct => Some(ProcTypeSignature {
         return_type: optional_tag("struct"),
         arg_types: vec![some_tag("record")],
-      }),
-      NewRecord => Some(ProcTypeSignature {
-        return_type: some_tag("record"),
-        arg_types: vec![some_tag("tag"), variadic_dynamic()],
       }),
       NativeRecordImpls => Some(ProcTypeSignature {
         return_type: some_tag("list"),

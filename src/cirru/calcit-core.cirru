@@ -15,12 +15,27 @@
         |%<- $ %{} :CodeEntry (:doc "|pass value as `%` into several expressions, in reversed order")
           :code $ quote
             defmacro %<- (& xs)
-              if (&list:empty? xs)
-                raise "|%<- expects at least 1 expression"
+              if (&list:empty? xs) (raise "|%<- expects at least 1 expression")
               quasiquote $ ->%
                 ~@ $ reverse xs
           :examples $ []
-        |%{} $ %{} :CodeEntry (:doc "|Low-level helper for constructing records and attaching metadata\nWraps `&%{` so higher-level macros like `defrecord!` can register methods.")
+        |%err $ %{} :CodeEntry (:doc "|Create Err variant of Result")
+          :code $ quote
+            defn %err (message) (%:: Result :err message)
+          :examples $ []
+        |%none $ %{} :CodeEntry (:doc "|Create None variant of Option")
+          :code $ quote
+            defn %none () $ %:: Option :none
+          :examples $ []
+        |%ok $ %{} :CodeEntry (:doc "|Create Ok variant of Result")
+          :code $ quote
+            defn %ok (value) (%:: Result :ok value)
+          :examples $ []
+        |%some $ %{} :CodeEntry (:doc "|Create Some variant of Option")
+          :code $ quote
+            defn %some (value) (%:: Option :some value)
+          :examples $ []
+        |%{} $ %{} :CodeEntry (:doc "|Macro for constructing struct-based records\nSyntax: (%{} StructName & field-value-pairs)\nParams: StructName (struct from defstruct), field-value-pairs (key-value list pairs, variadic)\nReturns: record")
           :code $ quote
             defmacro %{} (R & xs)
               if
@@ -31,15 +46,30 @@
                 quasiquote $ &%{} ~R ~@args
           :examples $ []
             quote $ let
-                rec $ %{} (new-record :point) ([] :x 1) ([] :y 2)
-              assert= :point $ &tuple:nth rec 0
-            quote $ assert=
-              new-record :point (:x 1) (:y 2)
-              %{} (new-record :point) ([] :x 1) ([] :y 2)
+                Point $ defstruct Point (:x :number) (:y :number)
+                rec $ %{} Point ([] :x 1) ([] :y 2)
+              assert= 1 $ :x rec
+        |%{}? $ %{} :CodeEntry (:doc "|Partial record constructor — allows omitting optional fields\nOmitted fields default to nil when using a struct prototype.\nSyntax: (%{}? R & field-value-pairs)\nParams: R (struct), field-value-pairs (key-value list pairs, variadic)\nReturns: record")
+          :code $ quote
+            defmacro %{}? (R & xs)
+              if
+                not $ and (list? xs) (every? xs list?)
+                raise $ str-spaced "|%{}? expects field entries in list, got:" xs
+              &let
+                args $ &list:concat & xs
+                quasiquote $ &%{}? ~R ~@args
+          :examples $ []
+            quote $ let
+                Point $ defstruct Point (:x :number) (:y :number)
+                p $ %{}? Point (:x 1)
+              assert= nil $ :y p
         |& $ %{} :CodeEntry (:doc "|internal syntax for spreading in function definition and call\nSyntax: (& rest-args) in params or (f & args) in calls\nParams: varies based on context\nReturns: varies based on context\nMarks rest parameters or argument spreading")
           :code $ quote &runtime-inplementation
           :examples $ []
         |&%{} $ %{} :CodeEntry (:doc "|internal function for native record creation\nSyntax: (&%{} name & key-value-pairs)\nParams: name (keyword), key-value-pairs (any, variadic)\nReturns: record\nCreates native record with name and fields")
+          :code $ quote &runtime-inplementation
+          :examples $ []
+        |&%{}? $ %{} :CodeEntry (:doc "|internal function for partial record construction\nSyntax: (&%{}? proto & key-value-pairs)\nParams: proto (struct), key-value-pairs (any, variadic)\nReturns: record\nMissing fields default to nil.")
           :code $ quote &runtime-inplementation
           :examples $ []
         |&* $ %{} :CodeEntry (:doc "|internal function for multiplication\nSyntax: (&* a b)\nParams: a (number), b (number)\nReturns: number\nMultiplies two numbers together, supports integers and floats")
@@ -136,115 +166,13 @@
               :: :mappend &fn:mappend
               :: :apply &fn:apply
           :examples $ []
-        |&fn:map $ %{} :CodeEntry (:doc "|internal helper for fn :map method entry")
-          :code $ quote
-            defn &fn:map (f g)
-              fn (x)
-                f $ g x
-          :examples $ []
-        |&fn:bind $ %{} :CodeEntry (:doc "|internal helper for fn :bind method entry")
-          :code $ quote
-            defn &fn:bind (m f)
-              fn (x)
-                f (m x) x
-          :examples $ []
-        |&fn:mappend $ %{} :CodeEntry (:doc "|internal helper for fn :mappend method entry")
-          :code $ quote
-            defn &fn:mappend (f g)
-              fn (x)
-                &let
-                  v1 $ f x
-                  &let
-                    v2 $ g x
-                    if (list? v1) (&list:concat v1 v2)
-                      if (map? v1) (merge v1 v2)
-                        if (set? v1) (union v1 v2)
-                          if (string? v1) (&str:concat v1 v2)
-                            .mappend v1 v2
-          :examples $ []
-        |&fn:apply $ %{} :CodeEntry (:doc "|internal helper for fn :apply method entry")
-          :code $ quote
-            defn &fn:apply (f g)
-              fn (x)
-                g x $ f x
-          :examples $ []
         |&core-list-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add.")
           :code $ quote
             def &core-list-impls $ [] &core-list-methods internal/&core-show-impl internal/&core-eq-impl internal/&core-add-list-impl internal/&core-len-list-impl internal/&core-mappable-list-impl
           :examples $ []
         |&core-list-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-list-methods $ &impl::new :&core-list-methods
-              :: :any? any?
-              :: :add append
-              :: :append append
-              :: :assoc &list:assoc
-              :: :assoc-after &list:assoc-after
-              :: :assoc-before &list:assoc-before
-              :: :bind mapcat
-              :: :butlast butlast
-              :: :concat &list:concat
-              :: :contains? &list:contains?
-              :: :includes? &list:includes?
-              :: :count &list:count
-              :: :drop drop
-              :: :each each
-              :: :empty &list:empty
-              :: :empty? &list:empty?
-              :: :filter &list:filter
-              :: :filter-not filter-not
-              :: :find find
-              :: :find-index find-index
-              :: :find-last &list:find-last
-              :: :find-last-index &list:find-last-index
-              :: :foldl foldl
-              :: :get &list:nth
-              :: :get-in get-in
-              :: :group-by group-by
-              :: :index-of index-of
-              :: :join join
-              :: :join-str join-str
-              :: :last-index-of &list:last-index-of
-              :: :map &list:map
-              :: :map-indexed map-indexed
-              :: :mappend &list:mappend
-              :: :max &list:max
-              :: :min &list:min
-              :: :nth &list:nth
-              :: :pairs-map pairs-map
-              :: :prepend prepend
-              :: :reduce reduce
-              :: :reverse &list:reverse
-              :: :slice &list:slice
-              :: :sort sort
-              :: :sort-by &list:sort-by
-              :: :take take
-              :: :take-last take-last
-              :: :to-set &list:to-set
-              :: :first &list:first
-              :: :rest &list:rest
-              :: :dissoc &list:dissoc
-              :: :to-list identity
-              :: :map-pair &list:map-pair
-              :: :filter-pair &list:filter-pair
-              :: :apply &list:apply
-              :: :flatten &list:flatten
-          :examples $ []
-        |&list:apply $ %{} :CodeEntry (:doc "|internal helper for list :apply method entry")
-          :code $ quote
-            defn &list:apply (xs fs)
-              &list:concat & $ map fs
-                fn (f)
-                  map xs $ fn (x) (f x)
-          :examples $ []
-        |&list:empty $ %{} :CodeEntry (:doc "|internal helper for list :empty method entry")
-          :code $ quote
-            defn &list:empty (_xs) ([])
-          :examples $ []
-        |&list:mappend $ %{} :CodeEntry (:doc "|internal helper for list :mappend method entry")
-          :code $ quote
-            defn &list:mappend (x y)
-              &list:concat x y
+            def &core-list-methods $ &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :foldl foldl) (:: :get &list:nth) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :join join) (:: :join-str join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth &list:nth) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce reduce) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first &list:first) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
         |&core-map-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for map")
           :code $ quote
@@ -252,33 +180,7 @@
           :examples $ []
         |&core-map-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-map-methods $ &impl::new :&core-map-methods
-              :: :add &map:add-entry
-              :: :assoc &map:assoc
-              :: :common-keys &map:common-keys
-              :: :contains? &map:contains?
-              :: :count &map:count
-              :: :destruct &map:destruct
-              :: :diff-keys &map:diff-keys
-              :: :diff-new &map:diff-new
-              :: :dissoc &map:dissoc
-              :: :empty &map:empty
-              :: :empty? &map:empty?
-              :: :filter &map:filter
-              :: :filter-kv &map:filter-kv
-              :: :get &map:get
-              :: :get-in get-in
-              :: :includes? &map:includes?
-              :: :keys keys
-              :: :map &map:map
-              :: :map-kv map-kv
-              :: :map-list &map:map-list
-              :: :mappend merge
-              :: :merge merge
-              :: :to-list &map:to-list
-              :: :to-map identity
-              :: :to-pairs to-pairs
-              :: :values vals
+            def &core-map-methods $ &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct &map:destruct) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :get &map:get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :values vals)
           :examples $ []
         |&core-number-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for number")
           :code $ quote
@@ -286,20 +188,7 @@
           :examples $ []
         |&core-number-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-number-methods $ &impl::new :&core-number-methods
-              :: :ceil ceil
-              :: :empty &number:empty
-              :: :floor floor
-              :: :format &number:format
-              :: :display-by &number:display-by
-              :: :inc inc
-              :: :pow pow
-              :: :round round
-              :: :round? round?
-              :: :fract &number:fract
-              :: :sqrt sqrt
-              :: :negate negate
-              :: :rem &number:rem
+            def &core-number-methods $ &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :round? round?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem)
           :examples $ []
         |&core-set-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for set")
           :code $ quote
@@ -307,25 +196,7 @@
           :examples $ []
         |&core-set-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-set-methods $ &impl::new :&core-set-methods
-              :: :add include
-              :: :contains? &set:includes?
-              :: :count &set:count
-              :: :destruct &set:destruct
-              :: :difference difference
-              :: :empty &set:empty
-              :: :empty? &set:empty?
-              :: :exclude exclude
-              :: :filter &set:filter
-              :: :include include
-              :: :includes? &set:includes?
-              :: :intersection intersection
-              :: :mappend union
-              :: :max &set:max
-              :: :min &set:min
-              :: :to-list &set:to-list
-              :: :to-set identity
-              :: :union union
+            def &core-set-methods $ &impl::new :&core-set-methods (:: :add include) (:: :contains? &set:includes?) (:: :count &set:count) (:: :destruct &set:destruct) (:: :difference difference) (:: :empty &set:empty) (:: :empty? &set:empty?) (:: :exclude exclude) (:: :filter &set:filter) (:: :include include) (:: :includes? &set:includes?) (:: :intersection intersection) (:: :mappend union) (:: :max &set:max) (:: :min &set:min) (:: :to-list &set:to-list) (:: :to-set identity) (:: :union union)
           :examples $ []
         |&core-string-impls $ %{} :CodeEntry (:doc "|Built-in implementation list for string")
           :code $ quote
@@ -333,33 +204,7 @@
           :examples $ []
         |&core-string-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def &core-string-methods $ &impl::new :&core-string-methods
-              :: :blank? blank?
-              :: :count &str:count
-              :: :empty &str:empty
-              :: :ends-with? ends-with?
-              :: :get &str:nth
-              :: :parse-float parse-float
-              :: :replace &str:replace
-              :: :split split
-              :: :split-lines split-lines
-              :: :starts-with? starts-with?
-              :: :strip-prefix strip-prefix
-              :: :strip-suffix strip-suffix
-              :: :slice &str:slice
-              :: :trim trim
-              :: :empty? &str:empty?
-              :: :contains? &str:contains?
-              :: :includes? &str:includes?
-              :: :nth &str:nth
-              :: :first &str:first
-              :: :rest &str:rest
-              :: :pad-left &str:pad-left
-              :: :pad-right &str:pad-right
-              :: :find-index &str:find-index
-              :: :get-char-code get-char-code
-              :: :escape &str:escape
-              :: :mappend &str:concat
+            def &core-string-methods $ &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get &str:nth) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth &str:nth) (:: :first &str:first) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index &str:find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat)
           :examples $ []
         |&data-to-code $ %{} :CodeEntry (:doc "|internal function for converting data to code\nSyntax: (&data-to-code data)\nParams: data (EDN data)\nReturns: quoted code\nConverts EDN data structure back to executable code")
           :code $ quote &runtime-inplementation
@@ -402,6 +247,37 @@
         |&extract-code-into-edn $ %{} :CodeEntry (:doc "|internal function for extracting code into EDN\nSyntax: (&extract-code-into-edn code)\nParams: code (quoted code)\nReturns: EDN data structure\nExtracts code structure into EDN format for serialization")
           :code $ quote &runtime-inplementation
           :examples $ []
+        |&fn:apply $ %{} :CodeEntry (:doc "|internal helper for fn :apply method entry")
+          :code $ quote
+            defn &fn:apply (f g)
+              fn (x)
+                g x $ f x
+          :examples $ []
+        |&fn:bind $ %{} :CodeEntry (:doc "|internal helper for fn :bind method entry")
+          :code $ quote
+            defn &fn:bind (m f)
+              fn (x)
+                f (m x) x
+          :examples $ []
+        |&fn:map $ %{} :CodeEntry (:doc "|internal helper for fn :map method entry")
+          :code $ quote
+            defn &fn:map (f g)
+              fn (x)
+                f $ g x
+          :examples $ []
+        |&fn:mappend $ %{} :CodeEntry (:doc "|internal helper for fn :mappend method entry")
+          :code $ quote
+            defn &fn:mappend (f g)
+              fn (x)
+                &let
+                  v1 $ f x
+                  &let
+                    v2 $ g x
+                    if (list? v1) (&list:concat v1 v2)
+                      if (map? v1) (merge v1 v2)
+                        if (set? v1) (union v1 v2)
+                          if (string? v1) (&str:concat v1 v2) (.mappend v1 v2)
+          :examples $ []
         |&format-ternary-tree $ %{} :CodeEntry (:doc "|internal function for formatting ternary tree\nSyntax: (&format-ternary-tree tree)\nParams: tree (ternary tree structure)\nReturns: formatted string\nFormats internal ternary tree data structure for debugging")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -417,12 +293,22 @@
         |&hash $ %{} :CodeEntry (:doc "|internal function for hashing\nSyntax: (&hash value)\nParams: value (any)\nReturns: number (hash code)\nComputes hash code for any Calcit value for use in hash tables")
           :code $ quote &runtime-inplementation
           :examples $ []
+        |&impl:get $ %{} :CodeEntry (:doc "|internal function for getting impl entry by name\nSyntax: (&impl:get impl name)\nParams: impl (impl), name (tag/string/symbol)\nReturns: any\nReturns impl entry value by method name")
+          :code $ quote &runtime-inplementation
+          :examples $ []
+        |&impl:nth $ %{} :CodeEntry (:doc "|internal function for getting impl entry by index\nSyntax: (&impl:nth impl index)\nParams: impl (impl), index (number)\nReturns: any\nReturns impl entry value by index")
+          :code $ quote &runtime-inplementation
+          :examples $ []
         |&include $ %{} :CodeEntry (:doc "|internal function for including in set\nSyntax: (&include set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element included")
           :code $ quote &runtime-inplementation
           :examples $ []
         |&init-builtin-impls! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity Add) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show) (if (&= (&get-calcit-backend) :js) (register-calcit-builtin-impls (&js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls)) nil)
+            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity Add) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
+              if
+                &= (&get-calcit-backend) :js
+                register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls
+                , nil
           :examples $ []
         |&let $ %{} :CodeEntry (:doc "|internal syntax for local binding (binds only 1 local)\nSyntax: (&let [binding value] body)\nParams: binding (symbol), value (any), body (expression)\nReturns: result of body with binding in scope\nCreates a local binding for a single variable")
           :code $ quote &runtime-inplementation
@@ -445,6 +331,13 @@
                       ~ $ &list:nth pair 1
                       &list:slice ~v 1
                     &let () ~@branch2
+          :examples $ []
+        |&list:apply $ %{} :CodeEntry (:doc "|internal helper for list :apply method entry")
+          :code $ quote
+            defn &list:apply (xs fs)
+              &list:concat & $ map fs
+                fn (f)
+                  map xs $ fn (x) (f x)
           :examples $ []
         |&list:assoc $ %{} :CodeEntry (:doc "|internal function for list association\nSyntax: (&list:assoc list index element)\nParams: list (list), index (number), element (any)\nReturns: list\nReturns new list with element at specified index")
           :code $ quote &runtime-inplementation
@@ -469,6 +362,10 @@
           :examples $ []
         |&list:distinct $ %{} :CodeEntry (:doc "|internal function for getting distinct list elements\nSyntax: (&list:distinct list)\nParams: list (list)\nReturns: list\nReturns new list with duplicate elements removed")
           :code $ quote &runtime-inplementation
+          :examples $ []
+        |&list:empty $ %{} :CodeEntry (:doc "|internal helper for list :empty method entry")
+          :code $ quote
+            defn &list:empty (_xs) ([])
           :examples $ []
         |&list:empty? $ %{} :CodeEntry (:doc "|internal function for checking if list is empty\nSyntax: (&list:empty? list)\nParams: list (list)\nReturns: boolean\nReturns true if list has no elements")
           :code $ quote &runtime-inplementation
@@ -551,6 +448,10 @@
                     = 2 $ count pair
                   f (nth pair 0) (nth pair 1)
                 raise $ str-spaced "|expected list or map from `map-pair`, got:" xs
+          :examples $ []
+        |&list:mappend $ %{} :CodeEntry (:doc "|internal helper for list :mappend method entry")
+          :code $ quote
+            defn &list:mappend (x y) (&list:concat x y)
           :examples $ []
         |&list:max $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -748,7 +649,7 @@
                           ~@ $ &list:slice pair 2
                       &let ()
                         assert "|record-match expected an with (proto new-name & body)" $ &<= 3 (&list:count pair)
-                        quasiquote $ if (&record:matches? ~pattern ~value)
+                        quasiquote $ if (&record:matches? ~value ~pattern)
                           &let
                               ~ $ &list:nth pair 1
                               , ~value
@@ -776,6 +677,15 @@
         |&record:get-name $ %{} :CodeEntry (:doc "|internal function for getting record name\nSyntax: (&record:get-name record)\nParams: record (record)\nReturns: keyword\nReturns name of record")
           :code $ quote &runtime-inplementation
           :examples $ []
+        |&record:impl-traits $ %{} :CodeEntry (:doc "|internal function for record trait impl attachment\nSyntax: (&record:impl-traits record impls)\nParams: record (record), impls (any)\nReturns: record\nReturns new record with specified impls")
+          :code $ quote &runtime-inplementation
+          :examples $ []
+        |&record:impls $ %{} :CodeEntry (:doc "|internal function for getting record impls\nSyntax: (&record:impls record)\nParams: record (record)\nReturns: any\nReturns impls of record")
+          :code $ quote &runtime-inplementation
+          :examples $ []
+        |&record:matches? $ %{} :CodeEntry (:doc "|internal function for checking record matches\nSyntax: (&record:matches? record pattern)\nParams: record (record), pattern (any)\nReturns: boolean\nReturns true if record matches pattern")
+          :code $ quote &runtime-inplementation
+          :examples $ []
         |&record:struct $ %{} :CodeEntry (:doc "|internal function for getting record source struct\nSyntax: (&record:struct record)\nParams: record (record)\nReturns: struct or nil\nReturns source struct definition of record, or nil when unavailable")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -783,25 +693,10 @@
                 User $ defstruct User (:name :string)
                 u $ %{} User (:name |Alice)
               assert= User $ &record:struct u
-        |&record:impls $ %{} :CodeEntry (:doc "|internal function for getting record impls\nSyntax: (&record:impls record)\nParams: record (record)\nReturns: any\nReturns impls of record")
-          :code $ quote &runtime-inplementation
-          :examples $ []
-        |&impl:get $ %{} :CodeEntry (:doc "|internal function for getting impl entry by name\nSyntax: (&impl:get impl name)\nParams: impl (impl), name (tag/string/symbol)\nReturns: any\nReturns impl entry value by method name")
-          :code $ quote &runtime-inplementation
-          :examples $ []
-        |&impl:nth $ %{} :CodeEntry (:doc "|internal function for getting impl entry by index\nSyntax: (&impl:nth impl index)\nParams: impl (impl), index (number)\nReturns: any\nReturns impl entry value by index")
-          :code $ quote &runtime-inplementation
-          :examples $ []
-        |&record:matches? $ %{} :CodeEntry (:doc "|internal function for checking record matches\nSyntax: (&record:matches? record pattern)\nParams: record (record), pattern (any)\nReturns: boolean\nReturns true if record matches pattern")
-          :code $ quote &runtime-inplementation
-          :examples $ []
         |&record:to-map $ %{} :CodeEntry (:doc "|internal function for converting record to map\nSyntax: (&record:to-map record)\nParams: record (record)\nReturns: map\nConverts record to map")
           :code $ quote &runtime-inplementation
           :examples $ []
         |&record:with $ %{} :CodeEntry (:doc "|internal function for record with operation\nSyntax: (&record:with record key value & key-values)\nParams: record (record), key (any), value (any), key-values (any, variadic)\nReturns: record\nReturns new record with updated fields")
-          :code $ quote &runtime-inplementation
-          :examples $ []
-        |&record:impl-traits $ %{} :CodeEntry (:doc "|internal function for record trait impl attachment\nSyntax: (&record:impl-traits record impls)\nParams: record (record), impls (any)\nReturns: record\nReturns new record with specified impls")
           :code $ quote &runtime-inplementation
           :examples $ []
         |&reset-gensym-index! $ %{} :CodeEntry (:doc "|internal function for resetting gensym index\nSyntax: (&reset-gensym-index!)\nParams: none\nReturns: nil\nResets the global gensym counter to 0 for deterministic symbol generation")
@@ -858,10 +753,6 @@
         |&str $ %{} :CodeEntry (:doc "|internal function for string conversion\nSyntax: (&str value)\nParams: value (any)\nReturns: string\nConverts value to string representation")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&str:empty $ %{} :CodeEntry (:doc "|internal helper for string :empty method entry")
-          :code $ quote
-            defn &str:empty (_) |
-          :examples $ []
         |&str-spaced $ %{} :CodeEntry (:doc "|Internal function for joining strings with spaces, used by str-spaced")
           :code $ quote
             defn &str-spaced (head? x0 & xs)
@@ -885,6 +776,10 @@
           :examples $ []
         |&str:count $ %{} :CodeEntry (:doc "|internal function for string character count\nSyntax: (&str:count s)\nParams: s (string)\nReturns: number\nReturns number of characters in string")
           :code $ quote &runtime-inplementation
+          :examples $ []
+        |&str:empty $ %{} :CodeEntry (:doc "|internal helper for string :empty method entry")
+          :code $ quote
+            defn &str:empty (_) |
           :examples $ []
         |&str:empty? $ %{} :CodeEntry (:doc "|internal function for checking if string is empty\nSyntax: (&str:empty? s)\nParams: s (string)\nReturns: boolean\nReturns true if string has zero length")
           :code $ quote &runtime-inplementation
@@ -944,6 +839,9 @@
         |&tuple:enum-variant-arity $ %{} :CodeEntry (:doc "|Get the arity of a variant in an enum\nSyntax: (&tuple:enum-variant-arity enum tag)\nParams: enum (enum), tag (tag)\nReturns: number - number of payload fields for the variant")
           :code $ quote &runtime-inplementation
           :examples $ []
+        |&tuple:impl-traits $ %{} :CodeEntry (:doc "|internal function for tuple trait impl attachment\nSyntax: (&tuple:impl-traits tuple new-impls)\nParams: tuple (tuple), new-impls (any)\nReturns: new tuple with updated impls\nReturns new tuple with same values but different impls")
+          :code $ quote &runtime-inplementation
+          :examples $ []
         |&tuple:impls $ %{} :CodeEntry (:doc "|internal function for getting tuple impls\nSyntax: (&tuple:impls tuple)\nParams: tuple (tuple)\nReturns: impls of the tuple\nReturns the impls/type identifier of the tuple")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -954,9 +852,6 @@
           :code $ quote &runtime-inplementation
           :examples $ []
         |&tuple:validate-enum $ %{} :CodeEntry (:doc "|Validate enum tuple tag/arity if enum metadata exists\nSyntax: (&tuple:validate-enum tuple tag)\nParams: tuple (tuple), tag (tag)\nReturns: nil\nRaises error on invalid tag or arity")
-          :code $ quote &runtime-inplementation
-          :examples $ []
-        |&tuple:impl-traits $ %{} :CodeEntry (:doc "|internal function for tuple trait impl attachment\nSyntax: (&tuple:impl-traits tuple new-impls)\nParams: tuple (tuple), new-impls (any)\nReturns: new tuple with updated impls\nReturns new tuple with same values but different impls")
           :code $ quote &runtime-inplementation
           :examples $ []
         |&union $ %{} :CodeEntry (:doc "|internal function for set union\nSyntax: (&union set1 set2 & sets)\nParams: set1 (set), set2 (set), sets (set, variadic)\nReturns: set\nReturns union of all sets")
@@ -1000,15 +895,6 @@
           :examples $ []
             quote $ assert= 5 (- 10 3 2)
             quote $ assert= -5 (- 5)
-        |thread-step? $ %{} :CodeEntry (:doc "|Check whether a value is a valid thread-macro step form")
-          :code $ quote
-            defn thread-step? (x)
-              or
-                symbol? x
-                tag? x
-                = (type-of x) :method
-                = (type-of x) :fn
-          :examples $ []
         |-> $ %{} :CodeEntry (:doc "|Thread-first macro\nSyntax: (-> value step1 step2 ...)\nEvaluates the value through each step by inserting it as the first argument and returns the final result.")
           :code $ quote
             defmacro -> (base & xs)
@@ -1110,8 +996,7 @@
         |<- $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro <- (& xs)
-              if (&list:empty? xs)
-                raise "|<- expects at least 1 expression"
+              if (&list:empty? xs) (raise "|<- expects at least 1 expression")
               quasiquote $ ->
                 ~@ $ reverse xs
           :examples $ []
@@ -1179,6 +1064,11 @@
             deftrait Add $ :add
               :: :fn ('T) ('T 'T) 'T
           :examples $ []
+        |Deserialize $ %{} :CodeEntry (:doc "|Core trait: Deserialize")
+          :code $ quote
+            deftrait Deserialize $ :deserialize
+              :: :fn ('T) (:string) 'T
+          :examples $ []
         |Eq $ %{} :CodeEntry (:doc "|Core trait: Eq")
           :code $ quote
             deftrait Eq $ :eq?
@@ -1199,20 +1089,35 @@
             deftrait Multiply $ :multiply
               :: :fn ('T) ('T 'T) 'T
           :examples $ []
-        |Show $ %{} :CodeEntry (:doc "|Core trait: Show")
+        |Option $ %{} :CodeEntry (:doc "|Rust-style Option enum")
           :code $ quote
-            deftrait Show $ :show
-              :: :fn ('T) ('T) :string
+            def Option $ impl-traits
+              defenum Option (:some :dynamic) (:none)
+              , internal/&core-show-impl internal/&core-eq-impl OptionMappableImpl
+          :examples $ []
+        |OptionMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Option")
+          :code $ quote
+            defimpl OptionMappableImpl Mappable $ :map option:map
+          :examples $ []
+        |Result $ %{} :CodeEntry (:doc "|Rust-style Result enum")
+          :code $ quote
+            def Result $ impl-traits
+              defenum Result (:ok :dynamic) (:err :dynamic)
+              , internal/&core-show-impl internal/&core-eq-impl ResultMappableImpl
+          :examples $ []
+        |ResultMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Result")
+          :code $ quote
+            defimpl ResultMappableImpl Mappable $ :map result:map
           :examples $ []
         |Serialize $ %{} :CodeEntry (:doc "|Core trait: Serialize")
           :code $ quote
             deftrait Serialize $ :serialize
               :: :fn ('T) ('T) :string
           :examples $ []
-        |Deserialize $ %{} :CodeEntry (:doc "|Core trait: Deserialize")
+        |Show $ %{} :CodeEntry (:doc "|Core trait: Show")
           :code $ quote
-            deftrait Deserialize $ :deserialize
-              :: :fn ('T) (:string) 'T
+            deftrait Show $ :show
+              :: :fn ('T) ('T) :string
           :examples $ []
         |[,] $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -1240,8 +1145,7 @@
         |\ $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro \ (& xs)
-              if (&list:empty? xs)
-                raise "|\\ expects function body"
+              if (&list:empty? xs) (raise "|\\ expects function body")
               quasiquote $ defn %\ (? % %2) ~xs
           :examples $ []
         |\. $ %{} :CodeEntry (:doc "|this syntax is bared used, deprecating")
@@ -1250,8 +1154,7 @@
               if
                 not $ or (symbol? args-alias) (string? args-alias)
                 raise $ str-spaced "|\\. expects symbol/string arg alias, got:" args-alias
-              if (&list:empty? xs)
-                raise "|\\. expects function body"
+              if (&list:empty? xs) (raise "|\\. expects function body")
               &let
                 args $ ->% (turn-string args-alias) (split % |,) (map % turn-symbol)
                 &let
@@ -1284,8 +1187,7 @@
         |and $ %{} :CodeEntry (:doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right.")
           :code $ quote
             defmacro and (& xs)
-              if (&list:empty? xs)
-                raise "|and expects at least 1 expression"
+              if (&list:empty? xs) (raise "|and expects at least 1 expression")
               &let
                 item $ &list:first xs
                 &let
@@ -1421,8 +1323,7 @@
                 if (tuple? x) (&tuple:assoc x & args)
                   if (list? x) (&list:assoc x & args)
                     if (record? x) (&record:assoc x & args)
-                      if (map? x) (&map:assoc x & args)
-                        .assoc x & args
+                      if (map? x) (&map:assoc x & args) (.assoc x & args)
           :examples $ []
             quote $ assert= (&{} :a 1 :b 2)
               assoc (&{} :a 1) :b 2
@@ -1524,8 +1425,7 @@
         |case $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro case (item & patterns)
-              if (&list:empty? patterns)
-                raise "|case expects at least 1 pattern"
+              if (&list:empty? patterns) (raise "|case expects at least 1 pattern")
               if
                 not $ and (list? patterns) (every? patterns list?)
                 raise $ str-spaced "|case expects pattern pairs in list, got:" patterns
@@ -1587,8 +1487,7 @@
         |cond $ %{} :CodeEntry (:doc "|Multi-branch conditional macro. Evaluates condition/result pairs in order and returns the first truthy branch; use `true` as a default guard.")
           :code $ quote
             defmacro cond (& pairs)
-              if (&list:empty? pairs)
-                raise "|cond expects at least 1 (condition branch) pair"
+              if (&list:empty? pairs) (raise "|cond expects at least 1 (condition branch) pair")
               &let
                 pair $ &list:first pairs
                 if
@@ -1605,8 +1504,7 @@
                         if (empty? else) (= true expr) false
                         , branch $ quasiquote
                           if ~expr ~branch $ ~
-                            if (&list:empty? else) nil $ quasiquote
-                              cond ~@else
+                            if (&list:empty? else) nil $ quasiquote (cond ~@else)
           :examples $ []
             quote $ assert= :small
               cond
@@ -1689,8 +1587,7 @@
                       &< k $ &tuple:count x
                     if (map? x) (&map:contains? x k)
                       if (set? x) (&set:includes? x k)
-                        if (string? x) (&str:contains? x k)
-                          .contains? x k
+                        if (string? x) (&str:contains? x k) (.contains? x k)
           :examples $ []
             quote $ assert= true
               contains? ([] :a :b) 1
@@ -1768,59 +1665,53 @@
                   ~@ normalized
           :examples $ []
             quote $ defenum Result (:ok :number) (:err :string)
-        |OptionMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Option")
+        |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl values\nSyntax: (defimpl ImplName Trait (:method value) ...), (defimpl ImplName Trait (:: :method value) ...), or (defimpl ImplName Trait :method value ...)\nParams: ImplName (symbol/tag), Trait (symbol/tag), method pairs\nReturns: impl value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to &impl::new")
           :code $ quote
-            defimpl OptionMappableImpl Mappable
-              :map option:map
-          :examples $ []
-        |ResultMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Result")
-          :code $ quote
-            defimpl ResultMappableImpl Mappable
-              :map result:map
-          :examples $ []
-        |option:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Option")
-          :code $ quote
-            defn option:map (opt f)
-              tag-match opt
-                (:some value) (%:: (&tuple:enum opt) :some (f value))
-                (:none) (%:: (&tuple:enum opt) :none)
-          :examples $ []
-        |result:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Result")
-          :code $ quote
-            defn result:map (res f)
-              tag-match res
-                (:ok value) (%:: (&tuple:enum res) :ok (f value))
-                (:err err) (%:: (&tuple:enum res) :err err)
-          :examples $ []
-        |Option $ %{} :CodeEntry (:doc "|Rust-style Option enum")
-          :code $ quote
-            def Option
-              impl-traits (defenum Option (:some :dynamic) (:none)) internal/&core-show-impl internal/&core-eq-impl OptionMappableImpl
-          :examples $ []
-        |Result $ %{} :CodeEntry (:doc "|Rust-style Result enum")
-          :code $ quote
-            def Result
-              impl-traits (defenum Result (:ok :dynamic) (:err :dynamic)) internal/&core-show-impl internal/&core-eq-impl ResultMappableImpl
-          :examples $ []
-        |%some $ %{} :CodeEntry (:doc "|Create Some variant of Option")
-          :code $ quote
-            defn %some (value)
-              %:: Option :some value
-          :examples $ []
-        |%none $ %{} :CodeEntry (:doc "|Create None variant of Option")
-          :code $ quote
-            defn %none ()
-              %:: Option :none
-          :examples $ []
-        |%ok $ %{} :CodeEntry (:doc "|Create Ok variant of Result")
-          :code $ quote
-            defn %ok (value)
-              %:: Result :ok value
-          :examples $ []
-        |%err $ %{} :CodeEntry (:doc "|Create Err variant of Result")
-          :code $ quote
-            defn %err (message)
-              %:: Result :err message
+            defmacro defimpl (name trait & pairs)
+              if
+                not $ or (tag? name) (symbol? name)
+                raise $ str-spaced "|defimpl misuse. Expected: first argument is impl name (symbol/tag). Actual:" name "|Fix: rewrite as (defimpl ImplName Trait ...)."
+              if
+                not $ or (tag? trait) (symbol? trait)
+                raise $ str-spaced "|defimpl misuse. Expected: second argument is trait (symbol/tag). Actual:" trait "|Fix: rewrite as (defimpl ImplName Trait ...)."
+              quasiquote $ def ~name
+                &impl::new
+                  ~ $ if (tag? trait) (turn-tag trait) trait
+                  ~@ $ if (every? pairs list?)
+                    do
+                      assert "|defimpl expects method pairs" $ and (list? pairs) (every? pairs list?)
+                      assert "|defimpl expects (:method value) pairs" $ every? pairs
+                        fn (pair)
+                          or
+                            tag? $ &list:first pair
+                            tag? $ &list:nth pair 1
+                      map pairs $ fn (pair)
+                        &let
+                          items $ if
+                            &= [] $ &list:first pair
+                            &list:rest pair
+                            if
+                              &= (quote ::) (&list:first pair)
+                              &list:rest pair
+                              , pair
+                          assert "|defimpl expects (:method value) pairs" $ &= 2 (count items)
+                          quasiquote $ [] ~@items
+                    do
+                      assert "|defimpl expects even number of items" $ &= 0
+                        &number:rem (count pairs) 2
+                      map (section-by pairs 2)
+                        fn (pair)
+                          &let
+                            items $ if
+                              &= [] $ &list:first pair
+                              &list:rest pair
+                              if
+                                &= (quote ::) (&list:first pair)
+                                &list:rest pair
+                                , pair
+                            assert "|defimpl expects (:method value) pairs" $ &= 2 (count items)
+                            assert "|defimpl expects :method as tag" $ tag? (&list:first items)
+                            quasiquote $ [] ~@items
           :examples $ []
         |defmacro $ %{} :CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
           :code $ quote &runtime-inplementation
@@ -1841,8 +1732,7 @@
               if
                 not $ list? args
                 raise $ str-spaced "|defn-w-log expects args in list, got:" args
-              if (&list:empty? body)
-                raise "|defn-w-log expects function body"
+              if (&list:empty? body) (raise "|defn-w-log expects function body")
               quasiquote $ defn ~f-name ~args
                 &let
                   ~f-name $ defn ~f-name ~args ~@body
@@ -1857,49 +1747,8 @@
               if
                 not $ list? args
                 raise $ str-spaced "|defn-wo-log expects args in list, got:" args
-              if (&list:empty? body)
-                raise "|defn-wo-log expects function body"
+              if (&list:empty? body) (raise "|defn-wo-log expects function body")
               quasiquote $ defn ~f-name ~args ~@body
-          :examples $ []
-        |defrecord $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defmacro defrecord (name & xs)
-              if
-                not $ or (tag? name) (symbol? name)
-                raise $ str-spaced "|defrecord expects name as tag/symbol, got:" name
-              if
-                not $ every? xs
-                  fn (field)
-                    or (tag? field) (symbol? field) (string? field)
-                raise $ str-spaced "|defrecord expects field names as tag/symbol/string, got:" xs
-              quasiquote $ new-record
-                ~ $ turn-tag name
-                , ~@xs
-          :examples $ []
-        |defrecord! $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defmacro defrecord! (name & pairs)
-              if
-                not $ or (tag? name) (symbol? name)
-                raise $ str-spaced "|defrecord! expects name as tag/symbol, got:" name
-              if
-                not $ and (list? pairs) (every? pairs list?)
-                raise $ str-spaced "|defrecord! expects field pairs in list, got:" pairs
-              if
-                not $ every? pairs
-                  fn (pair)
-                    and
-                      &= 2 $ &list:count pair
-                      or
-                        tag? $ &list:first pair
-                        symbol? $ &list:first pair
-                        string? $ &list:first pair
-                raise $ str-spaced "|defrecord! expects each field as (tag/symbol/string value), got:" pairs
-              quasiquote $ %{}
-                new-record
-                  ~ $ turn-tag name
-                  ~@ $ map pairs &list:first
-                , ~@pairs
           :examples $ []
         |defstruct $ %{} :CodeEntry (:doc "|macro for defining record structs\nSyntax: (defstruct Name [('T 'S)] :field :type ...)\nParams: Name (symbol/tag), optional generics list, field pairs (tag + type)\nReturns: struct definition value\nExpands to &struct::new")
           :code $ quote
@@ -1911,16 +1760,11 @@
                 &let
                   generics $ if (list? first-pair)
                     if
-                      every? first-pair $ fn (item)
-                        if (list? item)
-                          if
-                            &= 2 $ count item
-                            &= 'quote $ &list:first item
-                            , false
-                          , false
-                      , first-pair
-                      []
-                    []
+                      and
+                        not $ empty? first-pair
+                        not $ tag? (&list:first first-pair)
+                      , first-pair $ []
+                    , []
                   &let
                     field-pairs $ if (empty? generics) pairs (&list:rest pairs)
                     assert "|defstruct expects (field type) pairs" $ every? field-pairs
@@ -1946,7 +1790,7 @@
                           ~@ normalized
                         quasiquote $ &struct::new
                           ~ $ turn-tag name
-                          ~ generics
+                          ~ $ &list:concat ([]) generics
                           ~@ normalized
           :examples $ []
             quote $ defstruct Person (:name :string) (:age :number)
@@ -1972,56 +1816,6 @@
                   &trait::new
                     ~ $ turn-tag name
                     [] ~@normalized
-          :examples $ []
-        |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl values\nSyntax: (defimpl ImplName Trait (:method value) ...), (defimpl ImplName Trait (:: :method value) ...), or (defimpl ImplName Trait :method value ...)\nParams: ImplName (symbol/tag), Trait (symbol/tag), method pairs\nReturns: impl value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to &impl::new")
-          :code $ quote
-            defmacro defimpl (name trait & pairs)
-              if
-                not $ or (tag? name) (symbol? name)
-                raise $ str-spaced "|defimpl misuse. Expected: first argument is impl name (symbol/tag). Actual:" name "|Fix: rewrite as (defimpl ImplName Trait ...)."
-              if
-                not $ or (tag? trait) (symbol? trait)
-                raise $ str-spaced "|defimpl misuse. Expected: second argument is trait (symbol/tag). Actual:" trait "|Fix: rewrite as (defimpl ImplName Trait ...)."
-              quasiquote $ def ~name
-                &impl::new
-                  ~ $ if (tag? trait) (turn-tag trait) trait
-                  ~@
-                    if (every? pairs list?)
-                      do
-                        assert "|defimpl expects method pairs" $ and (list? pairs) (every? pairs list?)
-                        assert "|defimpl expects (:method value) pairs" $ every? pairs
-                          fn (pair)
-                            or
-                              tag? $ &list:first pair
-                              tag? $ &list:nth pair 1
-                        map pairs
-                          fn (pair)
-                            &let
-                              items $ if
-                                &= [] $ &list:first pair
-                                &list:rest pair
-                                if
-                                  &= (quote ::) $ &list:first pair
-                                  &list:rest pair
-                                  , pair
-                              assert "|defimpl expects (:method value) pairs" $ &= 2 (count items)
-                              quasiquote $ [] ~@items
-                      do
-                        assert "|defimpl expects even number of items" $ &= 0
-                          &number:rem (count pairs) 2
-                        map (section-by pairs 2)
-                          fn (pair)
-                            &let
-                              items $ if
-                                &= [] $ &list:first pair
-                                &list:rest pair
-                                if
-                                  &= (quote ::) $ &list:first pair
-                                  &list:rest pair
-                                  , pair
-                              assert "|defimpl expects (:method value) pairs" $ &= 2 (count items)
-                              assert "|defimpl expects :method as tag" $ tag? (&list:first items)
-                              quasiquote $ [] ~@items
           :examples $ []
         |deref $ %{} :CodeEntry (:doc "|Reads the current value stored in a reference\nSupports Calcit atoms as well as other host structures that implement deref.")
           :code $ quote
@@ -2124,8 +1918,7 @@
         |either $ %{} :CodeEntry (:doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value.")
           :code $ quote
             defmacro either (& xs)
-              if (&list:empty? xs)
-                raise "|either expects at least 1 expression"
+              if (&list:empty? xs) (raise "|either expects at least 1 expression")
               &let
                 item $ &list:first xs
                 &let
@@ -2148,20 +1941,6 @@
             quote $ assert= 42 (either nil 42 nil)
             quote $ assert= false (either false true)
             quote $ assert= |backup (either nil nil |backup)
-        |with-gensyms $ %{} :CodeEntry (:doc "|Macro helper for hygienic local names\nSyntax: (with-gensyms (a b ...) body...)\nBinds each symbol to a fresh gensym and evaluates body with those bindings.")
-          :code $ quote
-            defmacro with-gensyms (names & body)
-              assert "|with-gensyms expects a list of symbols" $ and
-                list? names
-                every? names symbol?
-              reduce
-                reverse names
-                quasiquote $ do (~@ body)
-                fn (acc n)
-                  quasiquote $ let ((~n (gensym))) ~acc
-          :examples $ []
-            quote $ with-gensyms (v)
-              quasiquote $ &let (~v 1) ~v
         |empty $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn empty (x)
@@ -2175,8 +1954,10 @@
                 if (map? x) (&map:empty? x)
                   if (set? x) (&set:empty? x)
                     if (string? x) (&str:empty? x)
-                      if (record? x) (&= 0 (&record:count x))
-                        if (tuple? x) (&= 0 (&tuple:count x))
+                      if (record? x)
+                        &= 0 $ &record:count x
+                        if (tuple? x)
+                          &= 0 $ &tuple:count x
                           .empty? x
           :examples $ []
             quote $ assert= true
@@ -2232,8 +2013,7 @@
         |field-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro field-match (value & body)
-              if (&list:empty? body)
-                raise "|field-match expected patterns for matching"
+              if (&list:empty? body) (raise "|field-match expected patterns for matching")
                 if (list? value)
                   &let
                     v# $ gensym |v
@@ -2249,8 +2029,7 @@
             defn filter (xs f) (assert-type f :fn)
               if (nil? xs) nil $ if (list? xs) (&list:filter xs f)
                 if (map? xs) (&map:filter xs f)
-                  if (set? xs) (&set:filter xs f)
-                    .filter xs f
+                  if (set? xs) (&set:filter xs f) (.filter xs f)
           :examples $ []
             quote $ assert= ([] 2 4)
               filter ([] 1 2 3 4 5)
@@ -2263,8 +2042,8 @@
         |filter-not $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn filter-not (xs f) (assert-type f :fn)
-              if (nil? xs) nil
-                filter xs $ defn %filter-not (x)
+              if (nil? xs) nil $ filter xs
+                defn %filter-not (x)
                   not $ f x
           :examples $ []
         |find $ %{} :CodeEntry (:doc "|Find the first element in a collection that satisfies the predicate f")
@@ -2520,6 +2299,18 @@
                       , nil
                     quasiquote $ if ~condition ~false-branch ~true-branch
           :examples $ []
+        |impl-traits $ %{} :CodeEntry (:doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (struct/enum), traits (impl, variadic)\nReturns: value with updated trait implementations\nDispatches to &struct:impl-traits, &enum:impl-traits")
+          :code $ quote
+            defn impl-traits (x & traits)
+              if
+                not $ every? traits
+                  fn (trait)
+                    = :impl $ type-of trait
+                raise "|impl-traits misuse. Expected: impl arguments are :impl values. Actual: found non-impl argument. Fix: pass values created by `defimpl`."
+              if (struct? x) (&struct:impl-traits x & traits)
+                if (enum? x) (&enum:impl-traits x & traits)
+                  raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
+          :examples $ []
         |inc $ %{} :CodeEntry (:doc "|Increments a number by 1")
           :code $ quote
             defn inc (x)
@@ -2547,8 +2338,7 @@
               if (nil? x) false $ if (list? x) (&list:includes? x k)
                 if (map? x) (&map:includes? x k)
                   if (set? x) (&set:includes? x k)
-                    if (string? x) (&str:includes? x k)
-                      .includes? x k
+                    if (string? x) (&str:includes? x k) (.includes? x k)
           :examples $ []
         |index-of $ %{} :CodeEntry (:doc "|Find the first index of an item in a list, returns nil if not found")
           :code $ quote
@@ -2802,7 +2592,7 @@
           :code $ quote
             defmacro list-match (& values)
               if
-                not $ &= 3 $ &list:count values
+                not $ &= 3 (&list:count values)
                 raise $ str-spaced "|list-match expects exactly 3 arguments, got:" values
               &let
                 xs $ &list:nth values 0
@@ -3012,9 +2802,6 @@
             quote $ assert= -5 (negate 5)
             quote $ assert= 3 (negate -3)
             quote $ assert= 0 (negate 0)
-        |new-record $ %{} :CodeEntry (:doc "|internal function for creating new records\nSyntax: (new-record name & key-value-pairs)\nParams: name (keyword), key-value-pairs (any, variadic)\nReturns: record\nCreates new record with name and fields")
-          :code $ quote &runtime-inplementation
-          :examples $ []
         |nil? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is nil")
           :code $ quote
             defn nil? (x)
@@ -3063,6 +2850,15 @@
             quote $ assert= true (number? 123)
             quote $ assert= true (number? 3.14)
             quote $ assert= false (number? |text)
+        |option:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Option")
+          :code $ quote
+            defn option:map (opt f)
+              tag-match opt
+                  :some value
+                  %:: (&tuple:enum opt) :some $ f value
+                (:none)
+                  %:: (&tuple:enum opt) :none
+          :examples $ []
         |optionally $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn optionally (s)
@@ -3161,8 +2957,7 @@
         |record-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro record-match (value & body)
-              if (&list:empty? body)
-                raise "|record-match expected patterns for matching"
+              if (&list:empty? body) (raise "|record-match expected patterns for matching")
                 if (list? value)
                   &let
                     v# $ gensym |v
@@ -3186,14 +2981,12 @@
               quasiquote $ &record:with ~record
                 ~@ $ &list:concat & pairs
           :examples $ []
-        |record? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a record created with `new-record` or `defrecord`.")
+        |record? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a struct-based record (created with defstruct + %{}).")
           :code $ quote
             defn record? (x)
               hint-fn $ return-type :bool
               &= (type-of x) :record
           :examples $ []
-            quote $ assert= true
-              record? $ new-record :point (:x 1) (:y 2)
             quote $ assert= false
               record? $ {} (:x 1)
         |recur $ %{} :CodeEntry (:doc "|internal function for tail recursion\nSyntax: (recur args...)\nParams: args (any, variable number)\nReturns: recur structure for tail call optimization\nEnables tail call optimization by marking recursive calls")
@@ -3238,6 +3031,15 @@
             quote $ assert= ([] 2 3)
               rest $ [] 1 2 3
             quote $ assert= nil (rest nil)
+        |result:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Result")
+          :code $ quote
+            defn result:map (res f)
+              tag-match res
+                  :ok value
+                  %:: (&tuple:enum res) :ok $ f value
+                (:err err)
+                  %:: (&tuple:enum res) :err err
+          :examples $ []
         |reverse $ %{} :CodeEntry (:doc "|Reverse the order of elements in a list")
           :code $ quote
             defn reverse (x)
@@ -3298,12 +3100,8 @@
           :code $ quote
             defn slice (xs n ? m) (assert-type n :number)
               assert-type m $ :: :optional :number
-              if (nil? xs) nil
-                if (list? xs)
-                  &list:slice xs n m
-                  if (string? xs)
-                    &str:slice xs n m
-                    .slice xs n m
+              if (nil? xs) nil $ if (list? xs) (&list:slice xs n m)
+                if (string? xs) (&str:slice xs n m) (.slice xs n m)
           :examples $ []
             quote $ assert= ([] 2 3)
               slice ([] 1 2 3 4) 1 3
@@ -3411,7 +3209,7 @@
             quote $ assert= true
               struct? $ defstruct Person (:name :string)
             quote $ assert= false
-              struct? $ new-record :point (:x 1)
+              struct? $ {} (:x 1)
         |swap! $ %{} :CodeEntry (:doc "|Atomically updates a reference by applying a function to its current value and storing the result.")
           :code $ quote
             defmacro swap! (a f & args)
@@ -3438,8 +3236,7 @@
         |tag-match $ %{} :CodeEntry (:doc "|Pattern matching on tagged tuples, dispatches based on the first element of the tuple")
           :code $ quote
             defmacro tag-match (value & body)
-              if (&list:empty? body)
-                raise "|tag-match expected some patterns and matches"
+              if (&list:empty? body) (raise "|tag-match expected some patterns and matches")
                 &let
                   t# $ gensym |tag
                   &let
@@ -3512,23 +3309,27 @@
         |thread-as $ %{} :CodeEntry (:doc "|a alias for `->%`")
           :code $ quote
             defmacro thread-as (& xs)
-              if (&list:empty? xs)
-                raise "|thread-as expects at least 1 expression"
+              if (&list:empty? xs) (raise "|thread-as expects at least 1 expression")
               quasiquote $ ->% ~@xs
           :examples $ []
         |thread-first $ %{} :CodeEntry (:doc "|a alias for `->`")
           :code $ quote
             defmacro thread-first (& xs)
-              if (&list:empty? xs)
-                raise "|thread-first expects at least 1 expression"
+              if (&list:empty? xs) (raise "|thread-first expects at least 1 expression")
               quasiquote $ -> ~@xs
           :examples $ []
         |thread-last $ %{} :CodeEntry (:doc "|a alias for `->>`")
           :code $ quote
             defmacro thread-last (& xs)
-              if (&list:empty? xs)
-                raise "|thread-last expects at least 1 expression"
+              if (&list:empty? xs) (raise "|thread-last expects at least 1 expression")
               quasiquote $ ->> ~@xs
+          :examples $ []
+        |thread-step? $ %{} :CodeEntry (:doc "|Check whether a value is a valid thread-macro step form")
+          :code $ quote
+            defn thread-step? (x)
+              or (symbol? x) (tag? x)
+                = (type-of x) :method
+                = (type-of x) :fn
           :examples $ []
         |to-lispy-string $ %{} :CodeEntry (:doc "|internal function for converting to Lisp string\nSyntax: (to-lispy-string value)\nParams: value (any)\nReturns: string\nConverts value to Lisp-style string representation")
           :code $ quote &runtime-inplementation
@@ -3699,8 +3500,7 @@
         |when $ %{} :CodeEntry (:doc "|Conditional macro that evaluates its body only when the test expression is truthy, returning the last body value.")
           :code $ quote
             defmacro when (condition & body)
-              if (&list:empty? body)
-                raise "|when expects at least 1 body expression"
+              if (&list:empty? body) (raise "|when expects at least 1 body expression")
               if
                 &= 1 $ &list:count body
                 quasiquote $ if ~condition
@@ -3732,8 +3532,7 @@
         |when-not $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro when-not (condition & body)
-              if (&list:empty? body)
-                raise "|when-not expects at least 1 body expression"
+              if (&list:empty? body) (raise "|when-not expects at least 1 body expression")
               if
                 &= 1 $ &list:count body
                 quasiquote $ if (not ~condition)
@@ -3759,18 +3558,19 @@
                       , |ms
                   ~ v
           :examples $ []
-        |impl-traits $ %{} :CodeEntry (:doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (struct/enum), traits (impl, variadic)\nReturns: value with updated trait implementations\nDispatches to &struct:impl-traits, &enum:impl-traits")
+        |with-gensyms $ %{} :CodeEntry (:doc "|Macro helper for hygienic local names\nSyntax: (with-gensyms (a b ...) body...)\nBinds each symbol to a fresh gensym and evaluates body with those bindings.")
           :code $ quote
-            defn impl-traits (x & traits)
-              if
-                not $ every? traits
-                  fn (trait)
-                    = :impl $ type-of trait
-                raise "|impl-traits misuse. Expected: impl arguments are :impl values. Actual: found non-impl argument. Fix: pass values created by `defimpl`."
-              if (struct? x) (&struct:impl-traits x & traits)
-                if (enum? x) (&enum:impl-traits x & traits)
-                  raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
+            defmacro with-gensyms (names & body)
+              assert "|with-gensyms expects a list of symbols" $ and (list? names) (every? names symbol?)
+              reduce (reverse names)
+                quasiquote $ do (~@ body)
+                fn (acc n)
+                  quasiquote $ let
+                      ~n $ gensym
+                    , ~acc
           :examples $ []
+            quote $ with-gensyms (v)
+              quasiquote $ &let (~v 1) ~v
         |wo-js-log $ %{} :CodeEntry (:doc |)
           :code $ quote
             defmacro wo-js-log (x) x
@@ -3834,63 +3634,51 @@
       :defs $ {}
         |&core-add-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on list")
           :code $ quote
-            def &core-add-list-impl $ &impl::new :&core-add-list-impl
-              :: :add &list:concat
+            def &core-add-list-impl $ &impl::new :&core-add-list-impl (:: :add &list:concat)
           :examples $ []
         |&core-add-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on number")
           :code $ quote
-            def &core-add-number-impl $ &impl::new :&core-add-number-impl
-              :: :add &+
+            def &core-add-number-impl $ &impl::new :&core-add-number-impl (:: :add &+)
           :examples $ []
         |&core-add-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Add on string")
           :code $ quote
-            def &core-add-string-impl $ &impl::new :&core-add-string-impl
-              :: :add &str:concat
+            def &core-add-string-impl $ &impl::new :&core-add-string-impl (:: :add &str:concat)
           :examples $ []
         |&core-eq-impl $ %{} :CodeEntry (:doc "|Core trait impl for Eq")
           :code $ quote
-            def &core-eq-impl $ &impl::new :&core-eq-impl
-              :: :eq? &=
+            def &core-eq-impl $ &impl::new :&core-eq-impl (:: :eq? &=)
           :examples $ []
         |&core-len-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on list")
           :code $ quote
-            def &core-len-list-impl $ &impl::new :&core-len-list-impl
-              :: :len &list:count
+            def &core-len-list-impl $ &impl::new :&core-len-list-impl (:: :len &list:count)
           :examples $ []
         |&core-len-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on map")
           :code $ quote
-            def &core-len-map-impl $ &impl::new :&core-len-map-impl
-              :: :len &map:count
-          :examples $ []
-        |&core-mappable-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Mappable on list")
-          :code $ quote
-            def &core-mappable-list-impl $ &impl::new :&core-mappable-list-impl
-              :: :map &list:map
-          :examples $ []
-        |&core-mappable-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Mappable on map")
-          :code $ quote
-            def &core-mappable-map-impl $ &impl::new :&core-mappable-map-impl
-              :: :map &map:map
+            def &core-len-map-impl $ &impl::new :&core-len-map-impl (:: :len &map:count)
           :examples $ []
         |&core-len-set-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on set")
           :code $ quote
-            def &core-len-set-impl $ &impl::new :&core-len-set-impl
-              :: :len &set:count
+            def &core-len-set-impl $ &impl::new :&core-len-set-impl (:: :len &set:count)
           :examples $ []
         |&core-len-string-impl $ %{} :CodeEntry (:doc "|Core trait impl for Len on string")
           :code $ quote
-            def &core-len-string-impl $ &impl::new :&core-len-string-impl
-              :: :len &str:count
+            def &core-len-string-impl $ &impl::new :&core-len-string-impl (:: :len &str:count)
+          :examples $ []
+        |&core-mappable-list-impl $ %{} :CodeEntry (:doc "|Core trait impl for Mappable on list")
+          :code $ quote
+            def &core-mappable-list-impl $ &impl::new :&core-mappable-list-impl (:: :map &list:map)
+          :examples $ []
+        |&core-mappable-map-impl $ %{} :CodeEntry (:doc "|Core trait impl for Mappable on map")
+          :code $ quote
+            def &core-mappable-map-impl $ &impl::new :&core-mappable-map-impl (:: :map &map:map)
           :examples $ []
         |&core-multiply-number-impl $ %{} :CodeEntry (:doc "|Core trait impl for Multiply on number")
           :code $ quote
-            def &core-multiply-number-impl $ &impl::new :&core-multiply-number-impl
-              :: :multiply &*
+            def &core-multiply-number-impl $ &impl::new :&core-multiply-number-impl (:: :multiply &*)
           :examples $ []
         |&core-show-impl $ %{} :CodeEntry (:doc "|Core trait impl for Show")
           :code $ quote
-            def &core-show-impl $ &impl::new :&core-show-impl
-              :: :show &str
+            def &core-show-impl $ &impl::new :&core-show-impl (:: :show &str)
           :examples $ []
         |&field-match-internal $ %{} :CodeEntry (:doc |)
           :code $ quote

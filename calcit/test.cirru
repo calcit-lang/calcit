@@ -1,63 +1,75 @@
 
-{} (:package |app)
-  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |app)
+  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/reload!) (:version |0.0.0)
     :modules $ [] |./test-cond.cirru |./test-hygienic.cirru |./test-lens.cirru |./test-list.cirru |./test-macro.cirru |./test-map.cirru |./test-math.cirru |./test-recursion.cirru |./test-set.cirru |./test-string.cirru |./test-edn.cirru |./test-js.cirru |./test-record.cirru |./test-fn.cirru |./test-tuple.cirru |./test-algebra.cirru |./test-types.cirru |./test-types-inference.cirru |./test-generics.cirru |./test-enum.cirru |./test-traits.cirru |./test-doc-smoke.cirru |./util.cirru
+  :entries $ {}
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
-        |%Num $ %{} :CodeEntry (:doc |)
-          :code $ quote (defrecord %Num :inc :show)
+        |%A $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defimpl %A :%A $ :deref
+              fn (self)
+                tag-match self $
+                  :atom x
+                  , x
+          :examples $ []
+        |%r $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defimpl %r :%demo $ :get
+              fn (self) 1
+          :examples $ []
         |*ref-demo $ %{} :CodeEntry (:doc |)
           :code $ quote (defatom *ref-demo 0)
-        |NumTrait $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |AtomBox $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait NumTrait
-              :inc :fn
-              :show :fn
+            def AtomBox $ impl-traits AtomBox0 %A
+          :examples $ []
+        |AtomBox0 $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defenum AtomBox $ :atom :dynamic
+          :examples $ []
+        |Demo $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            def Demo $ impl-traits Demo0 %r
+          :examples $ []
+        |Demo0 $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defenum Demo $ :a :dynamic
+          :examples $ []
+        |Deref $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defimpl Deref :Deref $ :deref
+              fn (self) 2
+          :examples $ []
         |Num $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl Num NumTrait
               :inc $ fn (x) (update x 1 inc)
               :show $ fn (x)
                 str $ &tuple:nth x 1
-        |%A $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defimpl %A :%A
-              :deref $ fn (self)
-                tag-match self
-                  (:atom x) x
-        |AtomBox0 $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defenum AtomBox (:atom :dynamic)
-        |AtomBox $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            def AtomBox $ impl-traits AtomBox0 %A
-        |NumBox0 $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defenum NumBox (:number :number)
+          :examples $ []
         |NumBox $ %{} :CodeEntry (:doc |)
           :code $ quote
             def NumBox $ impl-traits NumBox0 Num
-        |Deref $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |NumBox0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl Deref :Deref
-              :deref $ fn (self) 2
-        |ValueBox0 $ %{} :CodeEntry (:doc |)
+            defenum NumBox $ :number :number
+          :examples $ []
+        |NumTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defenum ValueBox (:value :dynamic)
+            deftrait NumTrait (:inc :fn) (:show :fn)
+          :examples $ []
         |ValueBox $ %{} :CodeEntry (:doc |)
           :code $ quote
             def ValueBox $ impl-traits ValueBox0 Deref
-        |%r $ %{} :CodeEntry (:doc |)
+          :examples $ []
+        |ValueBox0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl %r :%demo
-              :get $ fn (self) 1
-        |Demo0 $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            defenum Demo (:a :dynamic)
-        |Demo $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            def Demo $ impl-traits Demo0 %r
+            defenum ValueBox $ :value :dynamic
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! ()
@@ -104,9 +116,23 @@
               test-atom
               inside-js: $ test-js/main!
               do true
+          :examples $ []
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
+          :examples $ []
+        |test-arguments $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            fn () (log-title "|Testing arguments")
+              let
+                  f1 $ fn (a ? b c) (assert-type a :tag)
+                    assert-type b $ :: :optional :tag
+                    assert-type c $ :: :optional :tag
+                    [] a b c
+                assert= (f1 :a) ([] :a nil nil)
+                assert= (f1 :a :b) ([] :a :b nil)
+                assert= (f1 :a :b :c) ([] :a :b :c)
+          :examples $ []
         |test-atom $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
@@ -114,25 +140,15 @@
                   *a $ atom 1
                 assert= 1 $ deref *a
                 assert= 1 $ &atom:deref *a
-              assert= 1 $ deref $ %:: AtomBox :atom 1
-              assert= 1 $ deref $ %:: AtomBox :atom 1
-              assert= 2 $ deref $ %:: AtomBox :atom 2
-        |test-arguments $ %{} :CodeEntry (:doc |)
-          :code $ quote
-            fn () (log-title "|Testing arguments")
-              let
-                  f1 $ fn (a ? b c)
-                    assert-type a :tag
-                    assert-type b $ :: :optional :tag
-                    assert-type c $ :: :optional :tag
-                    [] a b c
-                assert= (f1 :a) ([] :a nil nil)
-                assert= (f1 :a :b) ([] :a :b nil)
-                assert= (f1 :a :b :c) ([] :a :b :c)
+              assert= 1 $ deref (%:: AtomBox :atom 1)
+              assert= 1 $ deref (%:: AtomBox :atom 1)
+              assert= 2 $ deref (%:: AtomBox :atom 2)
+          :examples $ []
         |test-buffer $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title |Buffer)
               println "|buffer value:" $ &buffer 0x11 |11
+          :examples $ []
         |test-cirru-parser $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing Cirru parser")
@@ -159,6 +175,7 @@
                 tagging-edn $ {} (|a 1)
                   :b $ []
                     {} (|c 3) (4 5)
+          :examples $ []
         |test-detects $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-detects ()
@@ -207,17 +224,19 @@
                 {,} :a $ [] 1
                 [] :a 1
               assert= false $ some-in? ([] 1 2 3) ([] :a)
-              assert= 1
-                non-nil! 1
+              assert= 1 $ non-nil! 1
+          :examples $ []
         |test-display-stack $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing display stack") (&display-stack "|show stack here")
+          :examples $ []
         |test-effect $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing effect")
               println "|Env mode:" $ get-env |mode
               println "|Env mode:" $ get-env |m0 "|default m0"
               eprintln "|stdout message"
+          :examples $ []
         |test-fn $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing fn")
@@ -228,6 +247,7 @@
                 coll-f $ fn (& xs) xs
                 assert= ([] 1 2 3 4 5)
                   coll-f 1 & ([] 2 3 4) 5
+          :examples $ []
         |test-fn-eq $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing equality of functions")
@@ -237,23 +257,25 @@
                 assert= a a
                 assert= b b
                 assert= false $ &= a b
+          :examples $ []
         |test-if $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing if with nil")
               assert= (if false 1) (if nil 1)
               assert= (if false 1 2) (if nil 1 2)
+          :examples $ []
         |test-method $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing method")
               let
                   a0 $ %:: NumBox :number 0
-                  _ $ do
-                    assert-type a0 NumBox
+                  _ $ do (assert-type a0 NumBox)
                     let
                         a0-tuple a0
                       assert-type a0-tuple :tuple
                       assert= true $ any? (&tuple:impls a0-tuple)
-                        fn (impl) $ = (&impl:origin impl) NumTrait
+                        fn (impl)
+                          = (&impl:origin impl) NumTrait
                 assert-traits a0 NumTrait calcit.core/Show
                 let
                     a1 $ .inc a0
@@ -264,6 +286,7 @@
                     assert-traits a2 NumTrait calcit.core/Show
                     assert= (%:: NumBox :number 2) a2
                     assert= |1 $ .show a1
+          :examples $ []
         |test-refs $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing refs") (assert= 0 @*ref-demo)
@@ -276,21 +299,19 @@
                   *l $ atom 1
                 reset! *l 2
                 assert= 2 @*l
-
               let
                   v $ %:: ValueBox :value 1
                 assert-type v ValueBox
                 assert= 2 @v
                 assert= (nth v 1) 1
-
               let
                   *b $ atom 0
                   *c $ atom 0
-                add-watch *b :change $ fn (current prev)
-                  reset! *c current
+                add-watch *b :change $ fn (current prev) (reset! *c current)
                 reset! *b 1
                 assert= 1 @*b
                 assert= 1 @*c
+          :examples $ []
         |test-tag $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-tag ()
@@ -304,6 +325,7 @@
                 .map
                   [] $ &{} :a 1
                   , :a
+          :examples $ []
         |test-try $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn test-try ()
@@ -317,6 +339,7 @@
                 fn () $ try (raise |false)
                   fn (error) (str :a)
               println "|Finished testing try"
+          :examples $ []
         |test-tuple $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing tuple")
@@ -349,13 +372,16 @@
                   a $ :: :a 1
                   b $ %:: Demo :a 1
                 assert= true $ any? (&tuple:impls b)
-                  fn (impl) $ includes? (str impl) |%demo
+                  fn (impl)
+                    includes? (str impl) |%demo
                 assert=
                   &tuple:params $ :: :a 1 2 3
                   [] 1 2 3
                 assert= "|(%:: :a 1 (:enum Demo))" $ str b
               assert= "|(:: :a :b :c)" $ str (:: :a :b :c)
+          :examples $ []
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns app.main $ :require (test-cond.main :as test-cond) (test-hygienic.main :as test-hygienic) (test-lens.main :as test-lens) (test-list.main :as test-list) (test-macro.main :as test-macro) (test-map.main :as test-map) (test-math.main :as test-math) (test-recursion.main :as test-recursion) (test-set.main :as test-set) (test-string.main :as test-string) (test-edn.main :as test-edn) (test-js.main :as test-js) (test-record.main :as test-record) (test-nil.main :as test-nil) (test-fn.main :as test-fn) (test-tuple.main :as test-tuple) (test-algebra.main :as test-algebra) (test-types.main :as test-types) (test-types-inference.main :as test-types-inference) (test-enum.main :as test-enum) (test-generics.main :as test-generics) (test-traits.main :as test-traits) (test-doc-smoke.main :as test-doc-smoke)
             util.core :refer $ log-title inside-eval: inside-js:
+        :examples $ []

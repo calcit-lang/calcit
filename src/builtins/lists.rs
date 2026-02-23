@@ -633,32 +633,6 @@ pub fn sort(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitE
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::calcit::CalcitProc;
-
-  #[test]
-  fn sort_returns_error_when_comparator_not_number() {
-    let values = Calcit::from(vec![Calcit::Number(3.0), Calcit::Number(1.0), Calcit::Number(2.0)]);
-    let comparator = Calcit::Proc(CalcitProc::Not);
-
-    let result = sort(&[values, comparator], &CallStackList::default());
-    assert!(result.is_err());
-  }
-
-  #[test]
-  fn sort_accepts_single_argument_natural_order() {
-    let values = Calcit::from(vec![Calcit::Number(3.0), Calcit::Number(1.0), Calcit::Number(2.0)]);
-
-    let result = sort(&[values], &CallStackList::default()).expect("sort should support single list argument");
-    assert_eq!(
-      result,
-      Calcit::from(vec![Calcit::Number(1.0), Calcit::Number(2.0), Calcit::Number(3.0)])
-    );
-  }
-}
-
 pub fn first(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_str(CalcitErrKind::Arity, "&list:first expected 1 argument, but received none");
@@ -830,5 +804,31 @@ pub fn distinct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Ok(Calcit::from(CalcitList::List(zs)))
     }
     a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:distinct expected a list, but received: {a}")),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::calcit::CalcitProc;
+
+  #[test]
+  fn sort_returns_error_when_comparator_not_number() {
+    let values = Calcit::from(vec![Calcit::Number(3.0), Calcit::Number(1.0), Calcit::Number(2.0)]);
+    let comparator = Calcit::Proc(CalcitProc::Not);
+
+    let result = sort(&[values, comparator], &CallStackList::default());
+    assert!(result.is_err());
+  }
+
+  #[test]
+  fn sort_accepts_single_argument_natural_order() {
+    let values = Calcit::from(vec![Calcit::Number(3.0), Calcit::Number(1.0), Calcit::Number(2.0)]);
+
+    let result = sort(&[values], &CallStackList::default()).expect("sort should support single list argument");
+    assert_eq!(
+      result,
+      Calcit::from(vec![Calcit::Number(1.0), Calcit::Number(2.0), Calcit::Number(3.0)])
+    );
   }
 }

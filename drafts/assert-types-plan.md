@@ -66,7 +66,7 @@ scope_types.insert(Arc::from("user"), Arc::new(test_record));
 
 ### 阶段 4 剩余工作
 
-1. **Record 字面量推断**：识别 `&new-record`/`&%{}` 构造，自动写入 `ScopeTypes`。
+1. **Record 字面量推断**：识别 `defstruct`/`%{}` 构造，自动写入 `ScopeTypes`。
 2. **Enum 变体验证**：校验 `tag-match`/`defenum` 变体名称与参数个数。
 3. **`hint-fn` 元信息消费**：
    - 批量补齐 `return-type` 注解（核心库以外）。

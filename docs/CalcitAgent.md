@@ -623,7 +623,7 @@ let
 
 - **可选类型**：`:: :optional :string` (可以是 string 或 nil)
 - **变长参数**：`:: :& :number` (参数列表剩余部分均为 number)
-- **结构体/枚举**：使用 `defrecord` 或 `defenum` 定义的名字
+- **结构体/枚举**：使用 `defstruct` 或 `defenum` 定义的名字
 
 验证示例 (使用 `let` 封装多表达式以支持 `cr eval` 验证)：
 
@@ -639,11 +639,11 @@ let
       assert-type xs $ :: :& :number
       reduce xs 0 &+
 
-    ; Record 约束 (使用 new-record 创建原型)
-    User $ new-record :User :name
+    ; Record 约束 (使用 defstruct 定义结构体)
+    User $ defstruct User (:name :string)
     get-name $ fn (u)
       assert-type u User
-      :name u
+      get u :name
   println $ greet |Alice
   println $ sum 1 2 3
   println $ get-name (%{} User (:name |Bob))

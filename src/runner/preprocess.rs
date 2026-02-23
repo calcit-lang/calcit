@@ -1266,7 +1266,10 @@ fn check_proc_arg_types(
     );
   }
 
-  if matches!(proc, CalcitProc::NativeRecord | CalcitProc::NativeRecordGet) {
+  if matches!(
+    proc,
+    CalcitProc::NativeRecord | CalcitProc::NativeRecordPartial | CalcitProc::NativeRecordGet
+  ) {
     return;
   }
 
@@ -2247,7 +2250,7 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
               return Some(struct_type);
             }
           }
-          if matches!(proc, CalcitProc::NativeRecord) {
+          if matches!(proc, CalcitProc::NativeRecord | CalcitProc::NativeRecordPartial) {
             if let Some(record_type) = infer_record_literal_type(xs, scope_types) {
               return Some(record_type);
             }
@@ -2573,18 +2576,36 @@ fn resolve_record_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<Cal
       }
       _ => None,
     },
-    Calcit::Import(CalcitImport { ns, def, .. }) => match program::lookup_evaled_def(ns, def) {
-      Some(Calcit::Record(record)) => Some(record),
-      Some(Calcit::Enum(enum_def)) => Some(enum_def.prototype().to_owned()),
-      Some(Calcit::Struct(struct_def)) => {
-        let values = vec![Calcit::Nil; struct_def.fields.len()];
-        Some(CalcitRecord {
-          struct_ref: Arc::new(struct_def.to_owned()),
-          values: Arc::new(values),
-        })
+    Calcit::Import(CalcitImport { ns, def, .. }) => {
+      let evaled = program::lookup_evaled_def(ns, def);
+      match evaled {
+        Some(Calcit::Record(record)) => Some(record),
+        Some(Calcit::Enum(enum_def)) => Some(enum_def.prototype().to_owned()),
+        Some(Calcit::Struct(struct_def)) => {
+          let values = vec![Calcit::Nil; struct_def.fields.len()];
+          Some(CalcitRecord {
+            struct_ref: Arc::new(struct_def.to_owned()),
+            values: Arc::new(values),
+          })
+        }
+        Some(Calcit::Thunk(thunk)) => {
+          let call_stack = CallStackList::default();
+          match thunk.evaluated(&CalcitScope::default(), &call_stack) {
+            Ok(Calcit::Record(record)) => Some(record),
+            Ok(Calcit::Enum(enum_def)) => Some(enum_def.prototype().to_owned()),
+            Ok(Calcit::Struct(struct_def)) => {
+              let values = vec![Calcit::Nil; struct_def.fields.len()];
+              Some(CalcitRecord {
+                struct_ref: Arc::new(struct_def.to_owned()),
+                values: Arc::new(values),
+              })
+            }
+            _ => None,
+          }
+        }
+        _ => None,
       }
-      _ => None,
-    },
+    }
     _ => resolve_type_value(target, scope_types).and_then(|t| t.as_record().map(|r| r.to_owned())),
   }
 }

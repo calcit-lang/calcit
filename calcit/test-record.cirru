@@ -1,67 +1,96 @@
 
-{} (:package |test-record)
-  :configs $ {} (:init-fn |test-record.main/main!) (:reload-fn |test-record.main/reload!)
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |test-record)
+  :configs $ {} (:init-fn |test-record.main/main!) (:reload-fn |test-record.main/reload!) (:version |0.0.0)
     :modules $ [] |./util.cirru
+  :entries $ {}
   :files $ {}
     |test-record.main $ %{} :FileEntry
       :defs $ {}
-        |BirdTrait $ %{} :CodeEntry (:doc |)
+        |A $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait BirdTrait
-              :show :fn
-              :rename :fn
+            defstruct A $ :a :dynamic
+          :examples $ []
+        |A0 $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct A0 $ :name :string
+          :examples $ []
+        |B $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct B $ :b :dynamic
+          :examples $ []
         |BirdImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl BirdImpl BirdTrait
               :show $ fn (self)
                 println $ :name self
               :rename $ fn (self name) (assoc self :name name)
+          :examples $ []
         |BirdShape $ %{} :CodeEntry (:doc |)
           :code $ quote
-            def BirdShape $ new-record :BirdShape :show :rename
-        |A0 $ %{} :CodeEntry (:doc |)
+            defstruct BirdShape (:show :fn) (:rename :fn)
+          :examples $ []
+        |BirdTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defstruct A0
-              :name :string
+            deftrait BirdTrait (:show :fn) (:rename :fn)
+          :examples $ []
+        |C $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct C $ :c :dynamic
+          :examples $ []
         |Cat $ %{} :CodeEntry (:doc |)
-          :code $ quote (defrecord Cat :name :color)
-        |Lagopus0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defstruct Lagopus0
-              :name :string
+            defstruct Cat (:name :string) (:color :tag)
+          :examples $ []
+        |City $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct City (:name :string) (:province :string)
+          :examples $ []
+        |Demo $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct Demo (:a :dynamic) (:b :dynamic) (:c :dynamic) (:d :dynamic)
+          :examples $ []
         |Lagopus $ %{} :CodeEntry (:doc |)
           :code $ quote
             def Lagopus $ impl-traits Lagopus0 BirdImpl
+          :examples $ []
+        |Lagopus0 $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct Lagopus0 $ :name :string
+          :examples $ []
+        |Person $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defstruct Person (:name :string) (:age :number) (:position :tag)
+          :examples $ []
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (do true)
+            defn main! () (test-record) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-record-with) (test-partial-record) (do true)
+          :examples $ []
         |test-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn ()
               let
                   content "|%{} :Lagopus0 (:name |La)"
                   data $ parse-cirru-edn content
-                    {} $ :Lagopus0 (%{} Lagopus (:name nil))
+                    {} $ :Lagopus0
+                      %{} Lagopus $ :name nil
                 println |EDN: data
                 assert= true $ any? (&record:impls data)
-                  fn (impl) $ = (&impl:origin impl) BirdTrait
+                  fn (impl)
+                    = (&impl:origin impl) BirdTrait
               let
                   l1 $ %{} Lagopus (:name |LagopusA)
                 println |EDN: $ format-cirru-edn l1
               let
-                  Demo $ new-record :Demo :a :b :c :d
                   data $ %{} Demo (:a 1)
                     :b $ [] 2 3
                     :c 4
                     :d 5
                 assert= "|%{} :Demo (:a 1) (:c 4) (:d 5)\n  :b $ [] 2 3" $ trim (format-cirru-edn data)
+          :examples $ []
         |test-match $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing record match")
               let
-                  A $ new-record :A :a
-                  B $ new-record :B :b
-                  C $ new-record :C :c
                   a1 $ %{} A (:a 1)
                   b1 $ %{} B (:b 2)
                   c1 $ %{} C (:c 3)
@@ -77,16 +106,16 @@
                   A aa $ :a aa
                   B bb $ :b bb
                   _ o (println |others) :other
+          :examples $ []
         |test-methods $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing record methods")
-              assert= :Cat $ &record:get-name Cat
-              let
-                  kitty $ %{} Cat (:name |kitty) (:color :red)
+              &let
+                kitty $ %{} Cat (:name |kitty) (:color :red)
+                assert= :Cat $ &record:get-name kitty
                 assert= :red $ &record:get kitty :color
-                assert= true $ &record:matches? kitty Cat
+                assert= true $ = (&record:struct kitty) Cat
                 assert= true $ struct? (&record:struct kitty)
-                assert= (&record:struct kitty) (&record:struct Cat)
                 assert= true $ &record:matches? kitty
                   %{} (&record:struct kitty) (:name |kitty) (:color :red)
                 assert= (&record:to-map kitty) (&{} :name |kitty :color :red)
@@ -94,15 +123,31 @@
                 assert= true $ &record:contains? kitty :color
                 assert= false $ &record:contains? kitty :age
                 assert=
-                  %{} kitty (:name |kitty) (:color :blue)
+                  %{} Cat (:name |kitty) (:color :blue)
                   &record:assoc kitty :color :blue
                 assert=
-                  &record:from-map kitty $ &{} :name |kitty :color :red
-                  %{} kitty (:name |kitty) (:color :red)
+                  &record:from-map Cat $ &{} :name |kitty :color :red
+                  %{} Cat (:name |kitty) (:color :red)
                 &let
                   persian $ &record:extend-as kitty :Persian :age 10
                   assert= 10 $ &record:get persian :age
                   assert= :Persian $ &record:get-name persian
+          :examples $ []
+        |test-partial-record $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            fn () (log-title "|Testing partial record")
+              let
+                  p1 $ %{}? Person (:name |Chen)
+                  p2 $ %{}? Person (:name |Chen) (:age 20) (:position :mainland)
+                  p3 $ %{}? Person (:age 31)
+                assert= |Chen $ get p1 :name
+                assert= nil $ get p1 :age
+                assert= nil $ get p1 :position
+                assert= 20 $ get p2 :age
+                assert= nil $ get p3 :name
+                assert= 31 $ get p3 :age
+                assert= nil $ get p3 :position
+          :examples $ []
         |test-polymorphism $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Test record polymorphism") (println Lagopus)
@@ -120,36 +165,21 @@
                   println l1
                   .show l1t
                   .show l2t
-                  assert= (&record:impls l1)
-                    &record:impls a1r
-        |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
-          :code $ quote
-            fn () (log-title "|Testing record-with")
-              let
-                  Person $ new-record :Person :name :age :position
-                  p1 $ %{} Person (:name |Chen) (:age 20) (:position :hangzhou)
-                  p2 $ record-with p1 (:age 21) (:position :shanghai)
-                ; println |P2 p2
-                assert= 20 $ get p1 :age
-                assert= 21 $ get p2 :age
-                assert= :hangzhou $ get p1 :position
-                assert= :shanghai $ get p2 :position
-                assert= |Chen $ get p2 :name
+                  assert= (&record:impls l1) (&record:impls a1r)
+          :examples $ []
         |test-record $ %{} :CodeEntry (:doc |)
           :code $ quote
             fn () (log-title "|Testing record")
               let
-                  Person $ new-record :Person :name :age :position
-                  City $ new-record :City :name :province
                   p1 $ %{} Person (:name |Chen) (:age 20) (:position :mainland)
                   p2 $ &%{} Person :name |Chen :age 20 :position :mainland
                   p0 $ &%{} Person :name nil :age nil :position nil
                   p3 $ &%{} Person :name |Chen :age 23 :position :mainland
                   c1 $ %{} City (:name |Shanghai) (:province |Shanghai)
-                assert= Person p0
-                assert= nil $ get Person :age
-                assert= nil $ get Person 'age
-                assert= nil $ get Person |age
+                assert= true $ = (&record:struct p0) Person
+                assert= nil $ get p0 :age
+                assert= nil $ get p0 :name
+                assert= nil $ get p0 :position
                 assert= 20 $ get p1 :age
                 assert= 20 $ get p2 :age
                 assert= 23 $ get p3 :age
@@ -174,17 +204,31 @@
                 assert-detect not $ = p1 p3
                 assert-detect not $ = p1 c1
                 assert=
-                  %{} p1 (:age 23) (:name |Ye) (:position :mainland)
+                  %{} Person (:age 23) (:name |Ye) (:position :mainland)
                   merge p1 $ {} (:age 23) (:name |Ye)
                 assert=
-                  %{} p1 (:age 23) (:name |Ye) (:position :mainland)
+                  %{} Person (:age 23) (:name |Ye) (:position :mainland)
                   merge p1 $ {} (:age 23) (:name |Ye)
                 assert-detect identity $ contains? p1 :name
                 assert-detect not $ contains? p1 :surname
                 assert= 3 $ count p1
                 assert= 21 $ get (update p1 :age inc) :age
-                assert= Cat $ new-record 'Cat :name :color
+          :examples $ []
+        |test-record-with $ %{} :CodeEntry (:doc "|test record-with")
+          :code $ quote
+            fn () (log-title "|Testing record-with")
+              let
+                  p1 $ %{} Person (:name |Chen) (:age 20) (:position :hangzhou)
+                  p2 $ record-with p1 (:age 21) (:position :shanghai)
+                ; println |P2 p2
+                assert= 20 $ get p1 :age
+                assert= 21 $ get p2 :age
+                assert= :hangzhou $ get p1 :position
+                assert= :shanghai $ get p2 :position
+                assert= |Chen $ get p2 :name
+          :examples $ []
       :ns $ %{} :CodeEntry (:doc |)
         :code $ quote
           ns test-record.main $ :require
             util.core :refer $ log-title inside-js:
+        :examples $ []

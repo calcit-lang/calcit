@@ -492,8 +492,8 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     AddWatch => refs::add_watch(args),
     RemoveWatch => refs::remove_watch(args),
     // records
-    NewRecord => records::new_record(args),
     NativeRecord => records::call_record(args),
+    NativeRecordPartial => records::call_record_partial(args),
     NativeRecordWith => records::record_with(args),
     NativeRecordImpls => records::get_impls(args),
     NativeRecordFromMap => records::record_from_map(args),

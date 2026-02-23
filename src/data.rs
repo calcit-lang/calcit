@@ -69,14 +69,21 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     }
     Record(CalcitRecord { struct_ref, values, .. }) => {
       let mut ys = vec![Calcit::Symbol {
-        sym: "defrecord!".into(),
+        sym: "%{}".into(),
         info: Arc::new(crate::calcit::CalcitSymbolInfo {
           at_ns: Arc::from(ns),
           at_def: Arc::from(at_def),
         }),
         location: None,
       }];
-      ys.push(Calcit::Tag(struct_ref.name.to_owned()));
+      ys.push(Calcit::Symbol {
+        sym: struct_ref.name.ref_str().into(),
+        info: Arc::new(crate::calcit::CalcitSymbolInfo {
+          at_ns: Arc::from(ns),
+          at_def: Arc::from(at_def),
+        }),
+        location: None,
+      });
       let size = struct_ref.fields.len();
       for i in 0..size {
         ys.push(Calcit::from(CalcitList::from(&[
