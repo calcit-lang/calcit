@@ -87,7 +87,6 @@ impl CalcitTypeAnnotation {
 
   fn builtin_type_from_tag_name(name: &str) -> Option<Self> {
     match name {
-      "nil" => Some(Self::Dynamic),
       "bool" => Some(Self::Bool),
       "number" => Some(Self::Number),
       "string" => Some(Self::String),
@@ -861,7 +860,7 @@ impl CalcitTypeAnnotation {
         }
       }
       Self::Enum(enum_def) => format!("enum {}", enum_def.name()),
-      Self::Dynamic => "any".to_string(),
+      Self::Dynamic => "dynamic".to_string(),
       _ => "unknown".to_string(),
     }
   }
@@ -1000,7 +999,7 @@ impl CalcitTypeAnnotation {
       Calcit::Str(_) => Self::String,
       Calcit::Tag(tag) => {
         let tag_name = tag.ref_str().trim_start_matches(':');
-        if tag_name == "any" || tag_name == "dynamic" {
+        if tag_name == "dynamic" {
           Self::Dynamic
         } else if let Some(builtin) = Self::builtin_type_from_tag_name(tag_name) {
           builtin
@@ -1048,7 +1047,7 @@ impl CalcitTypeAnnotation {
 
   pub fn from_tag_name(name: &str) -> Self {
     let tag_name = name.trim_start_matches(':');
-    if tag_name == "any" || tag_name == "dynamic" {
+    if tag_name == "dynamic" {
       Self::Dynamic
     } else {
       Self::builtin_type_from_tag_name(tag_name).unwrap_or_else(|| match tag_name {
@@ -1161,7 +1160,7 @@ impl CalcitTypeAnnotation {
       Self::Enum(enum_def) => Calcit::Enum((**enum_def).clone()),
       Self::Trait(trait_def) => Calcit::Trait((**trait_def).clone()),
       Self::TraitSet(_) => Calcit::Nil,
-      Self::Dynamic => Calcit::Nil,
+      Self::Dynamic => Calcit::Tag(EdnTag::from("dynamic")),
       _ => Calcit::Nil,
     }
   }
@@ -1566,6 +1565,26 @@ mod tests {
     let arg_types = CalcitTypeAnnotation::collect_arg_type_hints_from_body(&body_items, &params);
 
     assert!(matches!(arg_types[0].as_ref(), CalcitTypeAnnotation::Number));
+  }
+
+  #[test]
+  fn dynamic_serializes_to_dynamic_tag() {
+    let dynamic = CalcitTypeAnnotation::Dynamic;
+    assert_eq!(dynamic.to_calcit(), Calcit::Tag(EdnTag::from("dynamic")));
+    assert_eq!(dynamic.to_brief_string(), "dynamic");
+  }
+
+  #[test]
+  fn any_is_not_dynamic_alias() {
+    assert!(matches!(
+      CalcitTypeAnnotation::from_tag_name("dynamic"),
+      CalcitTypeAnnotation::Dynamic
+    ));
+    assert!(!matches!(CalcitTypeAnnotation::from_tag_name("any"), CalcitTypeAnnotation::Dynamic));
+    assert!(!matches!(
+      CalcitTypeAnnotation::from_calcit(&Calcit::Tag(EdnTag::from("any"))),
+      CalcitTypeAnnotation::Dynamic
+    ));
   }
 }
 

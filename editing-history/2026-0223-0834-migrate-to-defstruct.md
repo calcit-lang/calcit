@@ -69,15 +69,15 @@ defmacro %{}? (R & xs)
 
 ## 修改文件
 
-| 文件                          | 变更内容                                                                                                                                           |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/calcit/proc_name.rs`     | 新增 `NativeRecordPartial` 枚举变体与类型签名；移除 `NewRecord` 变体                                                                               |
+| 文件                          | 变更内容                                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `src/calcit/proc_name.rs`     | 新增 `NativeRecordPartial` 枚举变体与类型签名；移除 `NewRecord` 变体                                          |
 | `src/builtins/records.rs`     | 新增 `call_record_partial`（struct-only）；`matches` 调整为 `(record, record/struct)`；移除 `new_record` 函数 |
-| `src/builtins.rs`             | 分发 `NativeRecordPartial`；移除 `NewRecord` 分发                                                                                                  |
-| `src/runner/preprocess.rs`    | arity 检查豁免新增 `NativeRecordPartial`                                                                                                           |
-| `src/cirru/calcit-core.cirru` | 新增 `%{}?` 宏定义与 `&%{}?` 文档条目；`defrecord`/`defrecord!` 改为 raise error；删除 `new-record` 定义                                           |
-| `calcit/test-record.cirru`    | Cat/BirdShape/Person/City/A/B/C/Demo 全部改为 `defstruct`；删除所有 `new-record` let 绑定；修复各测试函数体                                        |
-| `docs/CalcitAgent.md`         | 类型标注示例中 `new-record` 改为 `defstruct`                                                                                                       |
+| `src/builtins.rs`             | 分发 `NativeRecordPartial`；移除 `NewRecord` 分发                                                             |
+| `src/runner/preprocess.rs`    | arity 检查豁免新增 `NativeRecordPartial`                                                                      |
+| `src/cirru/calcit-core.cirru` | 新增 `%{}?` 宏定义与 `&%{}?` 文档条目；`defrecord`/`defrecord!` 改为 raise error；删除 `new-record` 定义      |
+| `calcit/test-record.cirru`    | Cat/BirdShape/Person/City/A/B/C/Demo 全部改为 `defstruct`；删除所有 `new-record` let 绑定；修复各测试函数体   |
+| `docs/CalcitAgent.md`         | 类型标注示例中 `new-record` 改为 `defstruct`                                                                  |
 
 ---
 
