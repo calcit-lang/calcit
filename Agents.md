@@ -22,7 +22,8 @@
   - ❌ `cargo run --bin cr -- demos/compact.cirru eval '(range 3)'`（多一层括号会改变调用语义）
 - **`let` 绑定语法**：必须用成对列表，形如 `((name value))`。
   - ✅ `let ((x 1)) x`
-  - ❌ `let (x 1) x`（会触发“expects pairs in list for let”）
+  - ❌ `let (x 1) x`（会触发"expects pairs in list for let"）
+- **`$ (expr)` 双重求值陷阱**：在 `let` 绑定中，`x $ (f a)` 会被解析为"先求 `(f a)` 再以结果为操作符再调用一次"，触发"cannot be used as operator"。原因是 `$` 后接 `(...)` 形成了两层调用。正确写法是省略 `$`，直接写 `x (f a)` 或 `x f a`。独立一行的 `(expr)` 同理（等同于把结果再调用一次），需加前导 `,` 或改写为非括号形式。
 - **告警会使 eval 失败**：有类型告警时，`cr eval` 会以错误退出（这是预期行为，便于阻断不安全用法）。
   - 例：`cargo run --bin cr -- demos/compact.cirru eval '&list:nth 1 0'` 会提示 `:list` vs `:number` 的类型告警。
 - **assert-type 仅做检查**：`assert-type` 在预处理阶段生效，不会改变运行值。
