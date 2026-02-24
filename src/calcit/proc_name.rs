@@ -689,7 +689,11 @@ impl CalcitProc {
         return_type: some_tag("bool"),
         arg_types: vec![some_tag("string")],
       }),
-      NativeStrContains | NativeStrIncludes => Some(ProcTypeSignature {
+      NativeStrContains => Some(ProcTypeSignature {
+        return_type: some_tag("bool"),
+        arg_types: vec![some_tag("string"), some_tag("number")],
+      }),
+      NativeStrIncludes => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![some_tag("string"), some_tag("string")],
       }),
