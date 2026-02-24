@@ -1659,7 +1659,18 @@
                         &= [] $ &list:first variant
                         &list:rest variant
                         , variant
-                      quasiquote $ [] ~@items
+                      &let
+                        variant-tag $ &list:first items
+                        &let
+                          payload-forms $ map (&list:rest items)
+                            fn (t)
+                              if (list? t)
+                                quasiquote $ quote $ ~ t
+                                , t
+                          quasiquote
+                            []
+                              ~ variant-tag
+                              ~@ payload-forms
                 quasiquote $ &enum::new
                   ~ $ turn-tag name
                   ~@ normalized
@@ -1783,7 +1794,19 @@
                               &= [] $ &list:first pair
                               &list:rest pair
                               , pair
-                            quasiquote $ [] ~@items
+                            &let
+                              field-name $ &list:first items
+                              &let
+                                type-form $ last items
+                                if (list? type-form)
+                                  quasiquote
+                                    []
+                                      ~ field-name
+                                      quote $ ~ type-form
+                                  quasiquote
+                                    []
+                                      ~ field-name
+                                      ~ type-form
                       if (empty? generics)
                         quasiquote $ &struct::new
                           ~ $ turn-tag name
