@@ -46,10 +46,10 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       handle_examples(input_path, ns, def)
     }
     QuerySubcommand::Find(opts) => {
-      if opts.fuzzy {
-        handle_fuzzy_search(input_path, &opts.symbol, opts.deps, opts.limit)
-      } else {
+      if opts.exact {
         handle_find(input_path, &opts.symbol, opts.deps)
+      } else {
+        handle_fuzzy_search(input_path, &opts.symbol, opts.deps, opts.limit)
       }
     }
     QuerySubcommand::Usages(opts) => {
@@ -60,7 +60,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       input_path,
       &opts.pattern,
       opts.filter.as_deref(),
-      opts.loose,
+      !opts.exact,
       opts.max_depth,
       opts.start_path.as_deref(),
     ),
@@ -68,7 +68,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       input_path,
       &opts.pattern,
       opts.filter.as_deref(),
-      opts.loose,
+      !opts.exact,
       opts.max_depth,
       opts.json,
     ),
@@ -339,7 +339,7 @@ fn handle_error() -> Result<(), String> {
     println!("{content}");
     println!();
     println!("{}", "Next steps to fix:".blue().bold());
-    println!("  • Search for error location: {} '<symbol>' -l", "cr query search".cyan());
+    println!("  • Search for error location: {} '<symbol>'", "cr query search".cyan());
     println!("  • View definition: {} '<ns/def>'", "cr query def".cyan());
     println!("  • Find usages: {} '<ns/def>'", "cr query usages".cyan());
     println!();
@@ -439,7 +439,7 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, show_json: bo
 
   let mut tips = Tips::new();
   tips.add(format!(
-    "Try `cr query search <leaf> -f '{namespace}/{definition}' -l` to find coordinates of a leaf node"
+    "Try `cr query search <leaf> -f '{namespace}/{definition}'` to find coordinates of a leaf node"
   ));
   tips.add(format!(
     "Use `cr tree show {namespace}/{definition} -p '0'` to explore tree for editing"
@@ -1159,7 +1159,7 @@ fn handle_search_leaf(
       println!(
         "{}",
         format!(
-          "   Alternative: Re-search after each change: {} '{}' -f '{}/{}' -l",
+          "   Alternative: Re-search after each change: {} '{}' -f '{}/{}'",
           "cr query search".cyan(),
           pattern,
           ns,

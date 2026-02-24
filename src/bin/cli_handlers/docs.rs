@@ -7,6 +7,7 @@ use colored::Colorize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 #[derive(Debug, Clone)]
 pub struct GuideDoc {
@@ -20,6 +21,7 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
     DocsSubcommand::Search(opts) => handle_search(&opts.keyword, opts.context, opts.filename.as_deref()),
     DocsSubcommand::Read(opts) => handle_read(&opts.filename, opts.start, opts.lines),
     DocsSubcommand::List(_) => handle_list(),
+    DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry),
   }
 }
 
@@ -225,4 +227,190 @@ fn handle_list() -> Result<(), String> {
   println!("{}", "    'cr docs search <keyword>' to search content".dimmed());
 
   Ok(())
+}
+
+/// Check mode for a cirru code block in markdown.
+///
+/// - `cirru`          → Run: parse + preprocess + eval
+/// - `cirru.no-run`   → NoRun: parse + preprocess (type-check), skip eval
+/// - `cirru.no-check` → NoCheck: parse only (syntax validation)
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum CirruCheckMode {
+  Run,
+  NoRun,
+  NoCheck,
+}
+
+impl std::fmt::Display for CirruCheckMode {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      CirruCheckMode::Run => write!(f, "run"),
+      CirruCheckMode::NoRun => write!(f, "no-run"),
+      CirruCheckMode::NoCheck => write!(f, "no-check"),
+    }
+  }
+}
+
+/// Extract cirru code blocks from markdown content.
+/// Recognizes:  ```cirru  ```cirru.no-run  ```cirru.no-check
+/// Returns (line_number, check_mode, code_content) triples.
+fn extract_cirru_blocks(content: &str) -> Vec<(usize, CirruCheckMode, String)> {
+  let mut blocks = Vec::new();
+  let mut in_block = false;
+  let mut in_non_cirru_block = false;
+  let mut block_start_line = 0;
+  let mut block_mode = CirruCheckMode::Run;
+  let mut block_lines: Vec<&str> = Vec::new();
+
+  for (idx, line) in content.lines().enumerate() {
+    let trimmed = line.trim();
+    if !in_block && !in_non_cirru_block && trimmed.starts_with("```") {
+      if trimmed == "```cirru" {
+        in_block = true;
+        block_start_line = idx + 1; // 1-based
+        block_mode = CirruCheckMode::Run;
+        block_lines.clear();
+      } else if trimmed == "```cirru.no-run" {
+        in_block = true;
+        block_start_line = idx + 1;
+        block_mode = CirruCheckMode::NoRun;
+        block_lines.clear();
+      } else if trimmed == "```cirru.no-check" {
+        in_block = true;
+        block_start_line = idx + 1;
+        block_mode = CirruCheckMode::NoCheck;
+        block_lines.clear();
+      } else {
+        // other fenced block (```json, ```bash, etc.) — skip entirely
+        in_non_cirru_block = true;
+      }
+    } else if (in_block || in_non_cirru_block) && trimmed == "```" {
+      if in_block && !block_lines.is_empty() {
+        blocks.push((block_start_line, block_mode, block_lines.join("\n")));
+      }
+      in_block = false;
+      in_non_cirru_block = false;
+    } else if in_block {
+      block_lines.push(line);
+    }
+  }
+
+  blocks
+}
+
+fn handle_check_md(file_path: &str, entry: &str) -> Result<(), String> {
+  let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read file '{file_path}': {e}"))?;
+
+  let blocks = extract_cirru_blocks(&content);
+
+  if blocks.is_empty() {
+    println!("{}", "No cirru code blocks found in the file.".yellow());
+    return Ok(());
+  }
+
+  // Resolve the cr binary path (use current executable)
+  let cr_bin = std::env::current_exe().map_err(|e| format!("Failed to get current executable path: {e}"))?;
+
+  if !Path::new(entry).exists() {
+    return Err(format!(
+      "Entry file '{entry}' not found. Use -d to specify a valid entry .cirru file."
+    ));
+  }
+
+  println!("{} {} (entry: {})", "Checking".bold(), file_path.cyan(), entry.dimmed());
+  println!("{}", "-".repeat(60).dimmed());
+
+  let mut passed = 0;
+  let mut failed = 0;
+  let total = blocks.len();
+
+  for (line_num, mode, code) in &blocks {
+    // Show a brief preview of the code block
+    let preview: String = code.lines().next().unwrap_or("").chars().take(60).collect();
+    let preview_suffix = if code.lines().count() > 1 || preview.len() >= 60 {
+      "..."
+    } else {
+      ""
+    };
+
+    let mode_label = match mode {
+      CirruCheckMode::Run => "",
+      CirruCheckMode::NoRun => "[no-run] ",
+      CirruCheckMode::NoCheck => "[no-check] ",
+    };
+
+    let output = match mode {
+      CirruCheckMode::Run => {
+        // parse + preprocess + eval
+        Command::new(&cr_bin)
+          .arg(entry)
+          .arg("eval")
+          .arg("--")
+          .arg(code)
+          .output()
+          .map_err(|e| format!("Failed to run eval: {e}"))?
+      }
+      CirruCheckMode::NoRun => {
+        // parse + preprocess (--check-only), skip eval
+        Command::new(&cr_bin)
+          .arg("--check-only")
+          .arg(entry)
+          .arg("eval")
+          .arg("--")
+          .arg(code)
+          .output()
+          .map_err(|e| format!("Failed to run check-only: {e}"))?
+      }
+      CirruCheckMode::NoCheck => {
+        // parse only via `cr cirru parse` (multi-line indentation parser)
+        Command::new(&cr_bin)
+          .arg("cirru")
+          .arg("parse")
+          .arg(code)
+          .output()
+          .map_err(|e| format!("Failed to run cirru parse: {e}"))?
+      }
+    };
+
+    if output.status.success() {
+      passed += 1;
+      println!(
+        "  {} L{}: {}{}{}",
+        "✓".green(),
+        format!("{line_num}").dimmed(),
+        mode_label.dimmed(),
+        preview.dimmed(),
+        preview_suffix.dimmed()
+      );
+    } else {
+      failed += 1;
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      // Extract the error line (usually the line with "Error:" or "Failure:")
+      let error_msg: String = stderr
+        .lines()
+        .find(|l| l.contains("Error:") || l.contains("Failure:"))
+        .or_else(|| stderr.lines().rev().find(|l| !l.trim().is_empty()))
+        .unwrap_or("(unknown error)")
+        .to_string();
+      println!(
+        "  {} L{}: {}{}{}",
+        "✗".red(),
+        format!("{line_num}").yellow(),
+        mode_label,
+        preview,
+        preview_suffix
+      );
+      println!("    {}", error_msg.red());
+    }
+  }
+
+  println!("{}", "-".repeat(60).dimmed());
+  let summary = format!("Results: {total} blocks, {passed} passed, {failed} failed");
+  if failed > 0 {
+    println!("{}", summary.red().bold());
+    Err(format!("{failed} code block(s) failed"))
+  } else {
+    println!("{}", summary.green().bold());
+    Ok(())
+  }
 }

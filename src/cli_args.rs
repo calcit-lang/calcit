@@ -301,18 +301,18 @@ pub struct QueryExamplesCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "find")]
-/// find symbol across namespaces; use --fuzzy for pattern matching
+/// find symbol across namespaces (fuzzy match by default; use --exact for precise match)
 pub struct QueryFindCommand {
-  /// symbol name to search for (exact match by default, pattern if --fuzzy)
+  /// symbol name or pattern to search for (fuzzy match by default)
   #[argh(positional)]
   pub symbol: String,
   /// include dependency namespaces in search
   #[argh(switch)]
   pub deps: bool,
-  /// fuzzy search: match pattern against "namespace/definition" paths
-  #[argh(switch, short = 'f')]
-  pub fuzzy: bool,
-  /// maximum number of results for fuzzy search (default 20)
+  /// exact match: only match definitions with this exact name
+  #[argh(switch)]
+  pub exact: bool,
+  /// maximum number of results (default 20)
   #[argh(option, short = 'n', default = "20")]
   pub limit: usize,
 }
@@ -331,7 +331,7 @@ pub struct QueryUsagesCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "search")]
-/// search for leaf nodes (strings) across project or in specific namespace/definition
+/// search for leaf nodes (strings) across project or in specific namespace/definition (fuzzy match by default)
 pub struct QuerySearchCommand {
   /// string pattern to search for in leaf nodes
   #[argh(positional)]
@@ -339,9 +339,9 @@ pub struct QuerySearchCommand {
   /// filter search to specific namespace or namespace/definition (optional)
   #[argh(option, short = 'f', long = "filter")]
   pub filter: Option<String>,
-  /// loose match: find nodes containing the pattern (not exact match)
-  #[argh(switch, short = 'l')]
-  pub loose: bool,
+  /// exact match: only match nodes equal to the pattern (default is contains-match)
+  #[argh(switch)]
+  pub exact: bool,
   /// maximum search depth (0 = unlimited)
   #[argh(option, short = 'd', default = "0")]
   pub max_depth: usize,
@@ -352,7 +352,7 @@ pub struct QuerySearchCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "search-expr")]
-/// search for structural expressions (Cirru expr or JSON array) across project or in specific namespace/definition
+/// search for structural expressions (Cirru expr or JSON array) across project or in specific namespace/definition (fuzzy match by default)
 pub struct QuerySearchExprCommand {
   /// pattern to search for (Cirru one-liner or JSON array with -j)
   #[argh(positional)]
@@ -360,9 +360,9 @@ pub struct QuerySearchExprCommand {
   /// filter search to specific namespace or namespace/definition (optional)
   #[argh(option, short = 'f', long = "filter")]
   pub filter: Option<String>,
-  /// loose match: find sequences containing the pattern (not exact match)
-  #[argh(switch, short = 'l')]
-  pub loose: bool,
+  /// exact match: only match structurally identical expressions (default is prefix/contains match)
+  #[argh(switch)]
+  pub exact: bool,
   /// maximum search depth (0 = unlimited)
   #[argh(option, short = 'd', default = "0")]
   pub max_depth: usize,
@@ -392,6 +392,8 @@ pub enum DocsSubcommand {
   Read(DocsReadCommand),
   /// list all guidebook documentation topics
   List(DocsListCommand),
+  /// check ```cirru code blocks in a markdown file via eval
+  CheckMd(DocsCheckMdCommand),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -428,6 +430,18 @@ pub struct DocsReadCommand {
 #[argh(subcommand, name = "list")]
 /// list all guidebook documentation topics
 pub struct DocsListCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "check-md")]
+/// check ```cirru code blocks in a markdown file via eval
+pub struct DocsCheckMdCommand {
+  /// path to the markdown file to check
+  #[argh(positional)]
+  pub file: String,
+  /// entry .cirru file for eval context (default: demos/compact.cirru)
+  #[argh(option, short = 'd', default = "String::from(\"demos/compact.cirru\")")]
+  pub entry: String,
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Cirru subcommand - syntax tools
