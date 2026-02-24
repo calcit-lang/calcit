@@ -3,7 +3,7 @@ use crate::{
   calcit::{
     self, Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitProc, CalcitRecord,
     CalcitStruct, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTuple, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF,
-    format_proc_examples_hint, gen_core_id,
+    brief_type_of_value, format_proc_examples_hint, gen_core_id, value_matches_type_annotation,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -440,6 +440,25 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                 format!("enum variant `{tag_name}` expects {expected_arity} payload(s), but received: {payload_count}"),
               );
             }
+            // Validate payload types against enum variant type annotations
+            for (idx, (payload, expected_type)) in xs.iter().skip(2).zip(variant.payload_types().iter()).enumerate() {
+              if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+                && !value_matches_type_annotation(payload, expected_type)
+              {
+                return CalcitErr::err_str(
+                  CalcitErrKind::Type,
+                  format!(
+                    "%:: enum `{}::{}` payload {} expects type `{}`, but received `{}` ({})",
+                    enum_proto.name(),
+                    tag_name,
+                    idx + 1,
+                    expected_type.to_brief_string(),
+                    brief_type_of_value(payload),
+                    payload.lisp_str()
+                  ),
+                );
+              }
+            }
           }
           None => {
             return CalcitErr::err_str(
@@ -478,6 +497,25 @@ pub fn new_enum_tuple_no_class(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                 CalcitErrKind::Arity,
                 format!("enum variant `{tag_name}` expects {expected_arity} payload(s), but received: {payload_count}"),
               );
+            }
+            // Validate payload types against enum variant type annotations
+            for (idx, (payload, expected_type)) in xs.iter().skip(2).zip(variant.payload_types().iter()).enumerate() {
+              if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+                && !value_matches_type_annotation(payload, expected_type)
+              {
+                return CalcitErr::err_str(
+                  CalcitErrKind::Type,
+                  format!(
+                    "%:: enum `{}::{}` payload {} expects type `{}`, but received `{}` ({})",
+                    enum_proto.name(),
+                    tag_name,
+                    idx + 1,
+                    expected_type.to_brief_string(),
+                    brief_type_of_value(payload),
+                    payload.lisp_str()
+                  ),
+                );
+              }
             }
           }
           None => {

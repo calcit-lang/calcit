@@ -6,7 +6,7 @@ use cirru_edn::EdnTag;
 use crate::builtins::meta::type_of;
 use crate::calcit::{
   Calcit, CalcitEnum, CalcitErr, CalcitErrKind, CalcitImpl, CalcitList, CalcitProc, CalcitRecord, CalcitStruct, CalcitSyntax,
-  CalcitTypeAnnotation, format_proc_examples_hint,
+  CalcitTypeAnnotation, brief_type_of_value, format_proc_examples_hint, value_matches_type_annotation,
 };
 
 fn mark_fn_used_in_impl(value: &Calcit) -> Calcit {
@@ -381,6 +381,23 @@ pub fn call_record_partial(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           return CalcitErr::err_str(CalcitErrKind::Type, format!("&%{{}}? duplicate field: :{field_name}"));
         }
         seen_positions[pos] = true;
+        // Validate field value type against struct field_types
+        if let Some(expected_type) = base_struct.field_types.get(pos) {
+          if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+            && !value_matches_type_annotation(&xs[v_idx], expected_type)
+          {
+            return CalcitErr::err_str(
+              CalcitErrKind::Type,
+              format!(
+                "&%{{}}? field `{}` expects type `{}`, but received `{}` ({})",
+                field_name,
+                expected_type.to_brief_string(),
+                brief_type_of_value(&xs[v_idx]),
+                xs[v_idx].lisp_str()
+              ),
+            );
+          }
+        }
         xs[v_idx].clone_into(&mut base_values[pos]);
       }
       None => {
@@ -455,6 +472,23 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
             return CalcitErr::err_str(CalcitErrKind::Type, format!("&%{{{{}}}} duplicate field: :{}", s.ref_str()));
           }
           seen_positions[pos] = true;
+          // Validate field value type against struct field_types
+          if let Some(expected_type) = struct_ref.field_types.get(pos) {
+            if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+              && !value_matches_type_annotation(&xs[v_idx], expected_type)
+            {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!(
+                  "&%{{}} field `{}` expects type `{}`, but received `{}` ({})",
+                  s.ref_str(),
+                  expected_type.to_brief_string(),
+                  brief_type_of_value(&xs[v_idx]),
+                  xs[v_idx].lisp_str()
+                ),
+              );
+            }
+          }
           xs[v_idx].clone_into(&mut values[pos]);
         }
         None => {
@@ -466,6 +500,23 @@ fn call_record_with_prototype(record: &CalcitRecord, xs: &[Calcit]) -> Result<Ca
       },
       Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match record.index_of(s) {
         Some(pos) => {
+          // Validate field value type against struct field_types
+          if let Some(expected_type) = struct_ref.field_types.get(pos) {
+            if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+              && !value_matches_type_annotation(&xs[v_idx], expected_type)
+            {
+              return CalcitErr::err_str(
+                CalcitErrKind::Type,
+                format!(
+                  "&%{{}} field `{}` expects type `{}`, but received `{}` ({})",
+                  s,
+                  expected_type.to_brief_string(),
+                  brief_type_of_value(&xs[v_idx]),
+                  xs[v_idx].lisp_str()
+                ),
+              );
+            }
+          }
           xs[v_idx].clone_into(&mut values[pos]);
         }
         None => {
@@ -514,6 +565,23 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           match &xs[k_idx] {
             Calcit::Tag(s) => match record.index_of(s.ref_str()) {
               Some(pos) => {
+                // Validate field value type against struct field_types
+                if let Some(expected_type) = struct_ref.field_types.get(pos) {
+                  if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+                    && !value_matches_type_annotation(&xs[v_idx], expected_type)
+                  {
+                    return CalcitErr::err_str(
+                      CalcitErrKind::Type,
+                      format!(
+                        "&record:with field `{}` expects type `{}`, but received `{}` ({})",
+                        s.ref_str(),
+                        expected_type.to_brief_string(),
+                        brief_type_of_value(&xs[v_idx]),
+                        xs[v_idx].lisp_str()
+                      ),
+                    );
+                  }
+                }
                 xs[v_idx].clone_into(&mut values[pos]);
               }
               None => {
@@ -525,6 +593,23 @@ pub fn record_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             },
             Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match record.index_of(s) {
               Some(pos) => {
+                // Validate field value type against struct field_types
+                if let Some(expected_type) = struct_ref.field_types.get(pos) {
+                  if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+                    && !value_matches_type_annotation(&xs[v_idx], expected_type)
+                  {
+                    return CalcitErr::err_str(
+                      CalcitErrKind::Type,
+                      format!(
+                        "&record:with field `{}` expects type `{}`, but received `{}` ({})",
+                        s,
+                        expected_type.to_brief_string(),
+                        brief_type_of_value(&xs[v_idx]),
+                        xs[v_idx].lisp_str()
+                      ),
+                    );
+                  }
+                }
                 xs[v_idx].clone_into(&mut values[pos]);
               }
               None => {
@@ -625,7 +710,24 @@ pub fn record_from_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           }
         };
         match struct_ref.fields.iter().position(|f| f.ref_str() == key.as_ref()) {
-          Some(idx) => new_values[idx] = v.to_owned(),
+          Some(idx) => {
+            // Validate field value type against struct field_types
+            if let Some(expected_type) = struct_ref.field_types.get(idx) {
+              if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) && !value_matches_type_annotation(v, expected_type) {
+                return CalcitErr::err_str(
+                  CalcitErrKind::Type,
+                  format!(
+                    "&record:from-map field `{}` expects type `{}`, but received `{}` ({})",
+                    key,
+                    expected_type.to_brief_string(),
+                    brief_type_of_value(v),
+                    v.lisp_str()
+                  ),
+                );
+              }
+            }
+            new_values[idx] = v.to_owned();
+          }
           None => {
             return CalcitErr::err_str(
               CalcitErrKind::Type,

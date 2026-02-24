@@ -55,11 +55,11 @@
           :examples $ []
         |Lagopus0 $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defstruct Lagopus0 $ :name :string
+            defstruct Lagopus0 $ :name (:optional :string)
           :examples $ []
         |Person $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defstruct Person (:name :string) (:age :number) (:position :tag)
+            defstruct Person (:name (:optional :string)) (:age (:optional :number)) (:position (:optional :tag))
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote

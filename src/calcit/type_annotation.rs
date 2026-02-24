@@ -1810,3 +1810,105 @@ impl CalcitFnTypeAnnotation {
     self.return_type.matches_with_bindings(other.return_type.as_ref(), &mut bindings)
   }
 }
+
+/// Check if a runtime `Calcit` value matches the expected `CalcitTypeAnnotation`.
+/// Used for runtime type validation when creating records (`%{}`) and enum tuples (`%::`).
+/// Returns `true` if the value is compatible with the declared type.
+/// `Dynamic` types always match. `Nil` matches `Optional` types.
+pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
+  match expected {
+    CalcitTypeAnnotation::Dynamic => true,
+    CalcitTypeAnnotation::Optional(inner) => matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner),
+    CalcitTypeAnnotation::Bool => matches!(value, Calcit::Bool(_)),
+    CalcitTypeAnnotation::Number => matches!(value, Calcit::Number(_)),
+    CalcitTypeAnnotation::String => matches!(value, Calcit::Str(_)),
+    CalcitTypeAnnotation::Symbol => matches!(value, Calcit::Symbol { .. }),
+    CalcitTypeAnnotation::Tag => matches!(value, Calcit::Tag(_)),
+    CalcitTypeAnnotation::List(_) => matches!(value, Calcit::List(_)),
+    CalcitTypeAnnotation::Map(_, _) => matches!(value, Calcit::Map(_)),
+    CalcitTypeAnnotation::Set(_) => matches!(value, Calcit::Set(_)),
+    CalcitTypeAnnotation::Ref(_) => matches!(value, Calcit::Ref(..)),
+    CalcitTypeAnnotation::Buffer => matches!(value, Calcit::Buffer(_)),
+    CalcitTypeAnnotation::CirruQuote => matches!(value, Calcit::CirruQuote(_)),
+    CalcitTypeAnnotation::DynTuple => matches!(value, Calcit::Tuple(_)),
+    CalcitTypeAnnotation::Tuple(expected_tuple) => match value {
+      Calcit::Tuple(t) => {
+        // Check tag matches if the expected tuple has a specific tag
+        t.tag == expected_tuple.tag
+      }
+      _ => false,
+    },
+    CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => matches!(value, Calcit::Fn { .. } | Calcit::Proc(_)),
+    CalcitTypeAnnotation::Struct(expected_struct) => match value {
+      Calcit::Struct(s) => s.name == expected_struct.name,
+      Calcit::Record(r) => r.struct_ref.name == expected_struct.name,
+      _ => false,
+    },
+    CalcitTypeAnnotation::Enum(expected_enum) => match value {
+      Calcit::Enum(e) => e.name() == expected_enum.name(),
+      Calcit::Tuple(t) => t.sum_type.as_ref().is_some_and(|st| st.name() == expected_enum.name()),
+      _ => false,
+    },
+    CalcitTypeAnnotation::Record(expected_record) => match value {
+      Calcit::Record(r) => r.name() == expected_record.name(),
+      _ => false,
+    },
+    CalcitTypeAnnotation::AppliedStruct { base, .. } => match value {
+      Calcit::Record(r) => r.struct_ref.name == base.name,
+      _ => false,
+    },
+    CalcitTypeAnnotation::Trait(expected_trait) => match value {
+      Calcit::Record(r) => r.struct_ref.impls.iter().any(|imp| imp.name() == &expected_trait.name),
+      Calcit::Tuple(t) => t.impls().iter().any(|imp| imp.name() == &expected_trait.name),
+      _ => false,
+    },
+    CalcitTypeAnnotation::TraitSet(traits) => match value {
+      Calcit::Record(r) => traits.iter().all(|t| r.struct_ref.impls.iter().any(|imp| imp.name() == &t.name)),
+      Calcit::Tuple(t) => traits.iter().all(|tr| t.impls().iter().any(|imp| imp.name() == &tr.name)),
+      _ => false,
+    },
+    CalcitTypeAnnotation::Custom(custom) => match custom.as_ref() {
+      Calcit::Tag(tag) => match tag.ref_str() {
+        "any" => true,
+        "nil" => matches!(value, Calcit::Nil),
+        "record" => matches!(value, Calcit::Record(_)),
+        "struct" => matches!(value, Calcit::Struct(_)),
+        "enum" => matches!(value, Calcit::Enum(_)),
+        _ => true, // unknown custom types: be permissive
+      },
+      _ => true,
+    },
+    // Generic type variables cannot be checked at runtime; allow any value
+    CalcitTypeAnnotation::TypeVar(_) => true,
+    CalcitTypeAnnotation::Variadic(inner) => matches!(value, Calcit::List(_)) || value_matches_type_annotation(value, inner),
+  }
+}
+
+/// Return a brief human-readable type name for a runtime `Calcit` value, used in error messages.
+pub fn brief_type_of_value(value: &Calcit) -> &'static str {
+  match value {
+    Calcit::Nil => "nil",
+    Calcit::Bool(_) => "bool",
+    Calcit::Number(_) => "number",
+    Calcit::Str(_) => "string",
+    Calcit::Symbol { .. } | Calcit::Local { .. } | Calcit::Import { .. } => "symbol",
+    Calcit::Tag(_) => "tag",
+    Calcit::List(_) => "list",
+    Calcit::Map(_) => "map",
+    Calcit::Set(_) => "set",
+    Calcit::Ref(..) => "ref",
+    Calcit::Buffer(_) => "buffer",
+    Calcit::CirruQuote(_) => "cirru-quote",
+    Calcit::Tuple(_) => "tuple",
+    Calcit::Record(_) => "record",
+    Calcit::Struct(_) => "struct",
+    Calcit::Enum(_) => "enum",
+    Calcit::Fn { .. } | Calcit::Proc(_) => "fn",
+    Calcit::Macro { .. } => "macro",
+    Calcit::Syntax(..) => "syntax",
+    Calcit::Method(..) => "method",
+    Calcit::Trait(_) => "trait",
+    Calcit::Impl(_) => "impl",
+    _ => "unknown",
+  }
+}
