@@ -163,7 +163,23 @@ pub fn call_expr(
           ))
         }
       } else {
-        CalcitErr::err_str(CalcitErrKind::Unexpected, format!("unknown method for rust runtime: {kind}"))
+        Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Unexpected,
+          format!(
+            "method kind `{kind}` (`.{prefix}{name}`) is only available in JS codegen, not supported in Rust runtime. \
+             Use `cr js` to compile to JS, or avoid `.!` / `.-` syntax in server-side code. \
+             Expression: {xs}",
+            prefix = match kind {
+              MethodKind::InvokeNative => "!",
+              MethodKind::InvokeNativeOptional => "?!",
+              MethodKind::Access => "-",
+              MethodKind::AccessOptional => "?-",
+              _ => "?",
+            },
+          ),
+          call_stack,
+          xs.first().and_then(|node| node.get_location()),
+        ))
       }
     }
     Calcit::Fn { info, .. } => {
