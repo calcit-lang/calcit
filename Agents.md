@@ -24,6 +24,10 @@
   - ✅ `let ((x 1)) x`
   - ❌ `let (x 1) x`（会触发"expects pairs in list for let"）
 - **`$ (expr)` 双重求值陷阱**：在 `let` 绑定中，`x $ (f a)` 会被解析为"先求 `(f a)` 再以结果为操作符再调用一次"，触发"cannot be used as operator"。原因是 `$` 后接 `(...)` 形成了两层调用。正确写法是省略 `$`，直接写 `x (f a)` 或 `x f a`。独立一行的 `(expr)` 同理（等同于把结果再调用一次），需加前导 `,` 或改写为非括号形式。
+- **末尾符号被当作函数调用**：在 `fn` 或 `let` 的最后一行，单个符号（变量名）会被当作调用（如 `acc` → 触发 "cannot be used as operator"）。需用 `, acc` 加逗号前缀传递值，或将其包在 `println` 等函数调用中返回。
+  - ❌ `fn (acc item) if flag (acc) acc`（末尾 `acc` 被当作调用）
+  - ✅ `fn (acc item) if flag (acc) , acc`（`, acc` 表示"按值传递"）
+- **`foldl` 初始空集合语法**：`foldl xs [] $ fn ...` 中，`[]` 会因 `$` 右结合被解析为 `([] (fn ...))` 而非空列表。正确写法是先绑定 `init $ []`，再传 `init`；或对空 map 同理使用 `init $ {}`。
 - **告警会使 eval 失败**：有类型告警时，`cr eval` 会以错误退出（这是预期行为，便于阻断不安全用法）。
   - 例：`cargo run --bin cr -- demos/compact.cirru eval '&list:nth 1 0'` 会提示 `:list` vs `:number` 的类型告警。
 - **assert-type 仅做检查**：`assert-type` 在预处理阶段生效，不会改变运行值。
