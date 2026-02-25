@@ -21,7 +21,7 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
     DocsSubcommand::Search(opts) => handle_search(&opts.keyword, opts.context, opts.filename.as_deref()),
     DocsSubcommand::Read(opts) => handle_read(&opts.filename, opts.start, opts.lines),
     DocsSubcommand::List(_) => handle_list(),
-    DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry),
+    DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep),
   }
 }
 
@@ -298,7 +298,7 @@ fn extract_cirru_blocks(content: &str) -> Vec<(usize, CirruCheckMode, String)> {
   blocks
 }
 
-fn handle_check_md(file_path: &str, entry: &str) -> Result<(), String> {
+fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), String> {
   let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read file '{file_path}': {e}"))?;
 
   let blocks = extract_cirru_blocks(&content);
@@ -317,12 +317,37 @@ fn handle_check_md(file_path: &str, entry: &str) -> Result<(), String> {
     ));
   }
 
-  println!("{} {} (entry: {})", "Checking".bold(), file_path.cyan(), entry.dimmed());
+  let deps_preview = if deps.is_empty() {
+    "none".dimmed().to_string()
+  } else {
+    deps.join(", ").dimmed().to_string()
+  };
+  println!(
+    "{} {} (entry: {}, deps: {})",
+    "Checking".bold(),
+    file_path.cyan(),
+    entry.dimmed(),
+    deps_preview
+  );
   println!("{}", "-".repeat(60).dimmed());
 
   let mut passed = 0;
   let mut failed = 0;
   let total = blocks.len();
+  let run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::Run).count();
+  let no_run_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoRun).count();
+  let no_check_count = blocks.iter().filter(|(_, mode, _)| *mode == CirruCheckMode::NoCheck).count();
+
+  if run_count < no_check_count {
+    println!(
+      "{}",
+      format!(
+        "Tip: check-mode balance is skewed (cirru: {run_count}, cirru.no-run: {no_run_count}, cirru.no-check: {no_check_count}). Prefer `cirru` first, then `cirru.no-run`, and use `cirru.no-check` only when necessary."
+      )
+      .yellow()
+    );
+    println!("{}", "-".repeat(60).dimmed());
+  }
 
   for (line_num, mode, code) in &blocks {
     // Show a brief preview of the code block
@@ -342,20 +367,21 @@ fn handle_check_md(file_path: &str, entry: &str) -> Result<(), String> {
     let output = match mode {
       CirruCheckMode::Run => {
         // parse + preprocess + eval
-        Command::new(&cr_bin)
-          .arg(entry)
-          .arg("eval")
-          .arg("--")
-          .arg(code)
-          .output()
-          .map_err(|e| format!("Failed to run eval: {e}"))?
+        let mut cmd = Command::new(&cr_bin);
+        cmd.arg(entry).arg("eval");
+        for dep in deps {
+          cmd.arg("--dep").arg(dep);
+        }
+        cmd.arg("--").arg(code).output().map_err(|e| format!("Failed to run eval: {e}"))?
       }
       CirruCheckMode::NoRun => {
         // parse + preprocess (--check-only), skip eval
-        Command::new(&cr_bin)
-          .arg("--check-only")
-          .arg(entry)
-          .arg("eval")
+        let mut cmd = Command::new(&cr_bin);
+        cmd.arg("--check-only").arg(entry).arg("eval");
+        for dep in deps {
+          cmd.arg("--dep").arg(dep);
+        }
+        cmd
           .arg("--")
           .arg(code)
           .output()

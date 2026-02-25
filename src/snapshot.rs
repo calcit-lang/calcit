@@ -213,9 +213,24 @@ impl Default for Snapshot {
 pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
   match cirru_parser::parse(raw) {
     Ok(lines) => {
+      let mut ns_code: Cirru = vec!["ns", "app.main"].into();
+      let mut body_start = 0;
+      if let Some(Cirru::List(items)) = lines.first()
+        && let Some(Cirru::Leaf(head)) = items.first()
+        && &**head == "ns"
+      {
+        if items.len() < 2 {
+          return Err("Invalid `ns` expression in snippet: expected namespace after `ns`".to_string());
+        }
+        let mut merged_ns = vec![Cirru::leaf("ns"), Cirru::leaf("app.main")];
+        merged_ns.extend(items.iter().skip(2).cloned());
+        ns_code = Cirru::List(merged_ns);
+        body_start = 1;
+      }
+
       let mut def_dict: HashMap<String, CodeEntry> = HashMap::with_capacity(2);
       let mut func_code = vec![Cirru::leaf("defn"), "main!".into(), Cirru::List(vec![])];
-      for line in lines {
+      for line in lines.into_iter().skip(body_start) {
         func_code.push(line.to_owned());
       }
       def_dict.insert("main!".into(), CodeEntry::from_code(Cirru::List(func_code)));
@@ -224,7 +239,7 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
         CodeEntry::from_code(vec![Cirru::leaf("defn"), "reload!".into(), Cirru::List(vec![])].into()),
       );
       Ok(FileInSnapShot {
-        ns: CodeEntry::from_code(vec!["ns", "app.main"].into()),
+        ns: CodeEntry::from_code(ns_code),
         defs: def_dict,
       })
     }

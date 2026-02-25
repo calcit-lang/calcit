@@ -16,6 +16,11 @@
 ### cr eval 基础与常见踩坑
 
 - **用途定位**：`cr eval` 适合快速验证语义/类型提示与宏展开，不等同于完整项目运行。
+- **可加载外部模块**：`cr eval` 支持重复传入 `--dep`，可加载多个模块目录（路径以 `/` 结尾时会自动读取其中的 `compact.cirru`）。
+  - ✅ `cargo run --bin cr -- demos/compact.cirru eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'`
+- **首表达式 `ns` 会注入当前 eval 程序**：当 snippet 第一个表达式是 `ns` 时，会把 `ns <NS> ...` 从第 3 个节点开始（通常是 `:require` 等规则）合并到运行用的 `ns app.main`，用于在 eval 中显式导入命名空间。
+- **`docs check-md` 也支持依赖模块**：`cr docs check-md` 可通过多次 `--dep` 传参，内部会透传给 `eval`/`--check-only`。这样 markdown 代码块可配合首行 `ns ... :require ...` 访问模块函数。
+  - ✅ `cargo run --bin cr -- demos/compact.cirru docs check-md docs/CalcitAgent.md --dep ~/.config/calcit/modules/respo.calcit/`
 - **顶层无需额外括号**：Cirru 语法本身就不需要"最外层括号"，顶层可以直接是表达式。可用 `cr cirru parse -e` 观察解析结果。
   - ✅ `cargo run --bin cr -- demos/compact.cirru eval 'range 3'`
   - ✅ `cargo run --bin cr -- demos/compact.cirru eval 'let ((x 1)) (+ x 2)'`
