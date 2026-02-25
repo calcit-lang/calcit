@@ -459,7 +459,7 @@ fn run_check_only(entries: &ProgramEntries) -> Result<(), String> {
   // Report warnings
   let warnings = check_warnings.borrow();
   if !warnings.is_empty() {
-    println!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
+    eprintln!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
     LocatedWarning::print_list(&warnings);
     return Err(format!("Found {} warnings during preprocessing", warnings.len()));
   }

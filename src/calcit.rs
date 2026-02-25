@@ -1185,7 +1185,7 @@ impl LocatedWarning {
 
   pub fn print_list(list: &Vec<Self>) {
     for warn in list {
-      println!("{warn}");
+      eprintln!("{warn}");
     }
   }
 }

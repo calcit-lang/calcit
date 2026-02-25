@@ -411,13 +411,6 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
     } else {
       failed += 1;
       let stderr = String::from_utf8_lossy(&output.stderr);
-      // Extract the error line (usually the line with "Error:" or "Failure:")
-      let error_msg: String = stderr
-        .lines()
-        .find(|l| l.contains("Error:") || l.contains("Failure:"))
-        .or_else(|| stderr.lines().rev().find(|l| !l.trim().is_empty()))
-        .unwrap_or("(unknown error)")
-        .to_string();
       println!(
         "  {} L{}: {}{}{}",
         "✗".red(),
@@ -426,7 +419,13 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
         preview,
         preview_suffix
       );
-      println!("    {}", error_msg.red());
+
+      for line in stderr.lines() {
+        let lower = line.to_lowercase();
+        if lower.contains("warn") || lower.contains("error") {
+          println!("    {}", line.red());
+        }
+      }
     }
   }
 
