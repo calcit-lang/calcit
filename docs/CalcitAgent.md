@@ -72,14 +72,18 @@ Calcit 程序使用 `cr` 命令：
 
 ### 主要运行命令
 
-- `cr` 或 `cr compact.cirru` - 代码解释执行，默认读取 config 执行 init-fn 定义的入口
-- `cr compact.cirru js` - 编译生成 JavaScript 代码
-- `cr -1 <filepath>` - 执行一次然后退出（不进入监听模式）
+- `cr` 或 `cr compact.cirru` - 代码解释执行，默认读取 config 执行 init-fn 定义的入口（默认单次执行后退出）
+- `cr -w` 或 `cr --watch` - 解释执行监听模式（显式启用监听）
+- `cr compact.cirru js` - 编译生成 JavaScript 代码（默认单次编译）
+- `cr compact.cirru js -w` / `cr compact.cirru js --watch` - JS 监听编译模式
+- `cr compact.cirru ir` - 生成 program-ir.cirru（默认单次生成）
+- `cr compact.cirru ir -w` / `cr compact.cirru ir --watch` - IR 监听生成模式
+- `cr -1 <filepath>` - 执行一次然后退出（兼容参数，当前默认行为已是 once）
 - `cr --check-only` - 仅检查代码正确性，不执行程序
   - 对 init_fn 和 reload_fn 进行预处理验证
   - 输出：预处理进度、warnings、检查耗时
   - 用于 CI/CD 或快速验证代码修改
-- `cr js -1` - 检查代码正确性，生成 JavaScript(不进入监听模式)
+- `cr js -1` - 检查代码正确性，生成 JavaScript(兼容参数，默认已是单次)
 - `cr js --check-only` - 检查代码正确性，不生成 JavaScript
 - `cr eval '<code>' [--dep <module>...]` - 执行一段 Calcit 代码片段，用于快速验证写法
   - `--dep` 参数可以加载 `~/.config/calcit/modules/` 中的模块（直接使用模块名）
@@ -673,7 +677,8 @@ let
 
 ## 开发调试
 
-简单脚本用 `cr -1 <filepath>` 直接执行。编译 JavaScript 用 `cr -1 <filepath> js` 执行一次编译。
+简单脚本可直接使用 `cr <filepath>` 执行（默认单次）。编译 JavaScript 用 `cr <filepath> js` 执行一次编译。
+若需要监听模式，显式添加 `-w` / `--watch`（如 `cr -w <filepath>`、`cr <filepath> js -w`）。
 
 Calcit snapshot 文件中 config 有 `init-fn` 和 `reload-fn` 配置：
 
@@ -684,26 +689,28 @@ Calcit snapshot 文件中 config 有 `init-fn` 和 `reload-fn` 配置：
 
 ```bash
 # 1. 启动监听模式（用户自行使用）
-cr        # 解释执行模式
-cr js     # JS 编译模式
+cr -w        # 解释执行监听模式
+cr js -w     # JS 编译监听模式
+cr ir -w     # IR 生成监听模式
 
 # 2. 修改代码后触发增量更新（详见"增量触发更新"章节）
 cr edit inc --changed ns/def
 
 # 3. 一次性执行/编译（用于简单脚本）
-cr -1          # 执行一次
-cr -1 js       # 编译一次
+cr             # 执行一次
+cr js          # 编译一次
+cr ir          # 生成一次 IR
 ```
 
 ### 增量触发更新（推荐）⭐⭐⭐
 
-当使用监听模式（`cr` 或 `cr js`）开发时，推荐使用 `cr edit inc` 命令触发增量更新，而非全量重新编译/执行：
+当使用监听模式（`cr -w` / `cr js -w` / `cr ir -w`）开发时，推荐使用 `cr edit inc` 命令触发增量更新，而非全量重新编译/执行：
 
 **工作流程：**
 
 ```bash
 # 【终端 1】启动 watcher（监听模式）
-cr        # 或 cr js
+cr -w        # 或 cr js -w / cr ir -w
 
 # 【终端 2】修改代码后触发增量更新
 # 修改定义

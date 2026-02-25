@@ -203,8 +203,12 @@ fn main() -> Result<(), String> {
   let task = if check_only {
     run_check_only(&entries)
   } else if let Some(CalcitCommand::EmitJs(js_options)) = &cli_args.subcommand {
+    if !js_options.watch {
+      // `cr js` defaults to once mode; use --watch/-w to keep watching
+      eval_once = true;
+    }
     if js_options.once {
-      // redundant config, during watching mode, emit once
+      // kept for compatibility, force once mode
       eval_once = true;
     }
     if cli_args.skip_arity_check {
@@ -212,8 +216,12 @@ fn main() -> Result<(), String> {
     }
     run_codegen(&entries, &cli_args.emit_path, false)
   } else if let Some(CalcitCommand::EmitIr(ir_options)) = &cli_args.subcommand {
+    if !ir_options.watch {
+      // `cr ir` defaults to once mode; use --watch/-w to keep watching
+      eval_once = true;
+    }
     if ir_options.once {
-      // redundant config, during watching mode, emit once
+      // kept for compatibility, force once mode
       eval_once = true;
     }
     run_codegen(&entries, &cli_args.emit_path, true)
@@ -225,6 +233,10 @@ fn main() -> Result<(), String> {
       AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
     }
   } else {
+    if !cli_args.watch {
+      // direct run defaults to once mode; use --watch/-w to keep watching
+      eval_once = true;
+    }
     let started_time = Instant::now();
 
     let v = calcit::run_program_with_docs(entries.init_ns.to_owned(), entries.init_def.to_owned(), &[]).map_err(|e| {
@@ -259,7 +271,7 @@ fn main() -> Result<(), String> {
 }
 
 pub fn watch_files(entries: ProgramEntries, settings: ToplevelCalcit, assets_watch: Option<String>) {
-  println!("\nRunning: in watch mode... (use --once flag if you want to exit fast)\n");
+  println!("\nRunning: in watch mode...\n");
   let (tx, rx) = channel();
   let mut debouncer = new_debouncer(Duration::from_millis(200), tx).expect("create watcher");
   let config = notify::Config::default();

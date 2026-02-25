@@ -7,9 +7,12 @@ pub const CALCIT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub struct ToplevelCalcit {
   #[argh(subcommand)]
   pub subcommand: Option<CalcitCommand>,
-  /// skip watching mode, just run once
+  /// run once and exit (kept for compatibility)
   #[argh(switch, short = '1')]
   pub once: bool,
+  /// enable watch mode for direct run mode (default behavior is run once)
+  #[argh(switch, short = 'w')]
+  pub watch: bool,
   /// check-only mode: validate without execution or codegen
   #[argh(switch)]
   pub check_only: bool,
@@ -77,9 +80,12 @@ pub enum CalcitCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "js")]
 pub struct EmitJsCommand {
-  /// skip watching mode, just run once
+  /// run once and exit (kept for compatibility)
   #[argh(switch, short = '1')]
   pub once: bool,
+  /// enable watch mode (default behavior is run once)
+  #[argh(switch, short = 'w')]
+  pub watch: bool,
   /// check-only mode for JS emit
   #[argh(switch)]
   pub check_only: bool,
@@ -89,9 +95,12 @@ pub struct EmitJsCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "ir")]
 pub struct EmitIrCommand {
-  /// skip watching mode, just run once
+  /// run once and exit (kept for compatibility)
   #[argh(switch, short = '1')]
   pub once: bool,
+  /// enable watch mode (default behavior is run once)
+  #[argh(switch, short = 'w')]
+  pub watch: bool,
 }
 
 /// run program
