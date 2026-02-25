@@ -10,6 +10,7 @@
 ### 1. `docs/features/static-analysis.md`
 
 **双重求值 Bug 修复**：
+
 - 原始代码：`assert= a ([] "b" 2 "a" 2)` 使用了导致误报的冗余赋值写法。
 - 修复为直接 `assert= (get xs :xs) ys` 模式，规避了 `$ (expr)` 双重求值陷阱。
 - 将 4 个 `cirru.no-check` 块正确转换为可运行/可类型检查的 `cirru` 块。
@@ -20,6 +21,7 @@
 ### 2. `docs/features/tuples.md`
 
 **伪代码替换**：
+
 - 将 5 个含 `&tuple:with-class` 调用的 `cirru.no-check` 块全部移除或替换。
 - `&tuple:with-class` 已从语言中删除，不再作为公共 API 存在。
 - 涉及内部机制的 3 个伪代码块改为 `text` 或 `code` 块并加注释。
