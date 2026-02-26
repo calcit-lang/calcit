@@ -196,11 +196,16 @@ Calcit 程序使用 `cr` 命令：
   - 输出：匹配行及其上下文，带行号和高亮
   - 示例：`cr docs search 'macro' -c 10` 或 `cr docs search 'defn' -f macros.md`
 
-- `cr docs read <filename> [-s <start>] [-n <lines>]` - 阅读指定文档
+- `cr docs read <filename> [<heading> ...]` - 按 Markdown 标题阅读文档
+  - 不传标题时：列出文档内所有标题
+  - 传入一个或多个标题关键词时：按标题做模糊匹配并输出对应章节内容
+  - 示例：`cr docs read macros.md` 或 `cr docs read run.md eval options`
+
+- `cr docs read-lines <filename> [-s <start>] [-n <lines>]` - 按行读取文档（兼容旧行为）
   - `-s <start>` - 起始行号（默认 0）
   - `-n <lines>` - 读取行数（默认 80）
   - 输出：文档内容、当前范围、是否有更多内容
-  - 示例：`cr docs read macros.md` 或 `cr docs read intro.md -s 20 -n 30`
+  - 示例：`cr docs read-lines intro.md -s 20 -n 30`
 
 - `cr docs list` - 列出所有可用文档
 
@@ -777,7 +782,8 @@ cr        # 或 cr js
 遇到疑问时使用：
 
 - `cr docs search <keyword>` - 搜索 Calcit 教程内容
-- `cr docs read <filename>` - 阅读完整文档
+- `cr docs read <filename> [<heading> ...]` - 按标题查看章节（不传标题时列标题）
+- `cr docs read-lines <filename> -s <start> -n <lines>` - 按行读取文档
 - `cr docs list` - 查看所有可用文档
 - `cr query ns <ns>` - 查看命名空间说明和函数文档
 - `cr query peek <ns/def>` - 快速查看定义签名

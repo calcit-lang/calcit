@@ -397,8 +397,10 @@ pub struct DocsCommand {
 pub enum DocsSubcommand {
   /// search guidebook documentation by keyword
   Search(DocsSearchCommand),
-  /// read a specific guidebook document
+  /// read markdown headings or sections by heading query
   Read(DocsReadCommand),
+  /// read a specific line range from a guidebook document
+  ReadLines(DocsReadLinesCommand),
   /// list all guidebook documentation topics
   List(DocsListCommand),
   /// check ```cirru code blocks in a markdown file via eval
@@ -422,8 +424,23 @@ pub struct DocsSearchCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "read")]
-/// read a specific guidebook document
+/// read markdown headings or sections by heading query
 pub struct DocsReadCommand {
+  /// filename to read (e.g., "syntax.md")
+  #[argh(positional)]
+  pub filename: String,
+  /// heading keyword(s) for fuzzy match, can pass multiple; if omitted, list all markdown headings
+  #[argh(positional)]
+  pub headings: Vec<String>,
+  /// do not include nested subheadings when showing matched parent heading content
+  #[argh(switch)]
+  pub no_subheadings: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "read-lines")]
+/// read a specific line range from a guidebook document
+pub struct DocsReadLinesCommand {
   /// filename to read (e.g., "syntax.md")
   #[argh(positional)]
   pub filename: String,

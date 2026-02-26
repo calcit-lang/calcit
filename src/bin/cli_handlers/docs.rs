@@ -1,6 +1,6 @@
 //! Docs subcommand handlers
 //!
-//! Handles: cr docs search, read, list
+//! Handles: cr docs search, read, read-lines, list
 
 use calcit::cli_args::{DocsCommand, DocsSubcommand};
 use colored::Colorize;
@@ -26,13 +26,107 @@ pub struct GuideDoc {
   content: String,
 }
 
+#[derive(Debug, Clone)]
+struct HeadingSection {
+  line: usize,
+  level: usize,
+  title: String,
+  content_start: usize,
+  content_end: usize,
+}
+
 pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
   match &cmd.subcommand {
     DocsSubcommand::Search(opts) => handle_search(&opts.keyword, opts.context, opts.filename.as_deref()),
-    DocsSubcommand::Read(opts) => handle_read(&opts.filename, opts.start, opts.lines),
+    DocsSubcommand::Read(opts) => handle_read(&opts.filename, &opts.headings, !opts.no_subheadings),
+    DocsSubcommand::ReadLines(opts) => handle_read_lines(&opts.filename, opts.start, opts.lines),
     DocsSubcommand::List(_) => handle_list(),
     DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep),
   }
+}
+
+fn find_doc_by_filename<'a>(guide_docs: &'a HashMap<String, GuideDoc>, filename: &str) -> Result<&'a GuideDoc, String> {
+  guide_docs
+    .values()
+    .find(|d| d.filename == filename || d.filename.contains(filename))
+    .ok_or_else(|| format!("Document '{filename}' not found. Use 'cr docs list' to see available documents."))
+}
+
+fn extract_markdown_headings(content: &str) -> Vec<(usize, usize, String)> {
+  let mut results: Vec<(usize, usize, String)> = vec![];
+  let mut in_fence = false;
+
+  for (idx, line) in content.lines().enumerate() {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("```") {
+      in_fence = !in_fence;
+      continue;
+    }
+    if in_fence || !trimmed.starts_with('#') {
+      continue;
+    }
+
+    let level = trimmed.chars().take_while(|c| *c == '#').count();
+    let after_hash = trimmed.chars().nth(level);
+    if level == 0 || after_hash != Some(' ') {
+      continue;
+    }
+
+    let title = trimmed[level + 1..].trim();
+    if title.is_empty() {
+      continue;
+    }
+
+    results.push((idx + 1, level, title.to_owned()));
+  }
+
+  results
+}
+
+fn build_heading_sections(content: &str) -> Vec<HeadingSection> {
+  let lines: Vec<&str> = content.lines().collect();
+  let total_lines = lines.len();
+  let headings = extract_markdown_headings(content);
+  let mut sections: Vec<HeadingSection> = vec![];
+
+  for (idx, (line, level, title)) in headings.iter().enumerate() {
+    let mut content_end = total_lines;
+    for (next_line, next_level, _) in headings.iter().skip(idx + 1) {
+      if *next_level <= *level {
+        content_end = next_line.saturating_sub(1);
+        break;
+      }
+    }
+
+    sections.push(HeadingSection {
+      line: *line,
+      level: *level,
+      title: title.to_owned(),
+      content_start: line + 1,
+      content_end,
+    });
+  }
+
+  sections
+}
+
+fn collapse_nested_sections(indices: &[usize], sections: &[HeadingSection]) -> Vec<usize> {
+  let mut sorted: Vec<usize> = indices.to_vec();
+  sorted.sort_by_key(|idx| sections[*idx].line);
+
+  let mut kept: Vec<usize> = vec![];
+  for idx in sorted {
+    let current = &sections[idx];
+    let covered_by_parent = kept.iter().any(|kept_idx| {
+      let parent = &sections[*kept_idx];
+      parent.line <= current.line && parent.content_end >= current.content_end
+    });
+    if !covered_by_parent {
+      kept.push(idx);
+    }
+  }
+
+  kept
 }
 
 fn get_guidebook_dir() -> Result<std::path::PathBuf, String> {
@@ -167,14 +261,122 @@ fn handle_search(keyword: &str, context_lines: usize, filename_filter: Option<&s
   Ok(())
 }
 
-fn handle_read(filename: &str, start: usize, lines_to_read: usize) -> Result<(), String> {
+fn handle_read(filename: &str, heading_queries: &[String], include_subheadings: bool) -> Result<(), String> {
+  let guide_docs = load_guidebook_docs()?;
+  let doc = find_doc_by_filename(&guide_docs, filename)?;
+  let lines: Vec<&str> = doc.content.lines().collect();
+  let sections = build_heading_sections(&doc.content);
+
+  println!("{} ({})", doc.filename.cyan().bold(), doc.path.dimmed());
+  println!("{}", "=".repeat(60).dimmed());
+
+  if sections.is_empty() {
+    println!("{}", "No Markdown headings found in this document.".yellow());
+    println!(
+      "{}",
+      "Tip: Use 'cr docs read-lines <filename> -s 0 -n 80' for line-based reading.".dimmed()
+    );
+    return Ok(());
+  }
+
+  if heading_queries.is_empty() {
+    println!("{}", "Headings:".bold());
+    for section in &sections {
+      println!(
+        "  {}\t{}{}",
+        format!("L{}", section.line).dimmed(),
+        "#".repeat(section.level).dimmed(),
+        format_args!(" {}", section.title)
+      );
+    }
+    println!();
+    println!(
+      "{}",
+      "Tip: Use 'cr docs read <filename> <heading-keyword> [more-keywords...]' for fuzzy heading matching.".dimmed()
+    );
+    println!("{}", "     Use '--no-subheadings' to show only direct section content.".dimmed());
+    println!(
+      "{}",
+      "     Use 'cr docs read-lines <filename> -s <start> -n <lines>' for line-based reading.".dimmed()
+    );
+    return Ok(());
+  }
+
+  let mut selected_indices: Vec<usize> = vec![];
+  let mut unmatched: Vec<String> = vec![];
+
+  for query in heading_queries {
+    let query_lower = query.to_lowercase();
+    let mut found = false;
+    for (idx, section) in sections.iter().enumerate() {
+      if section.title.to_lowercase().contains(&query_lower) {
+        found = true;
+        if !selected_indices.contains(&idx) {
+          selected_indices.push(idx);
+        }
+      }
+    }
+    if !found {
+      unmatched.push(query.to_owned());
+    }
+  }
+
+  if selected_indices.is_empty() {
+    return Err(format!(
+      "No heading matched: {}. Use 'cr docs read {filename}' to list available headings.",
+      heading_queries.join(", ")
+    ));
+  }
+
+  let selected_indices = if include_subheadings {
+    collapse_nested_sections(&selected_indices, &sections)
+  } else {
+    selected_indices
+  };
+
+  for idx in selected_indices {
+    let section = &sections[idx];
+    println!(
+      "{} {} ({})",
+      "#".repeat(section.level).cyan().bold(),
+      section.title.cyan().bold(),
+      format!("L{}", section.line).dimmed()
+    );
+    println!("{}", "-".repeat(60).dimmed());
+
+    let section_end = if include_subheadings {
+      section.content_end
+    } else if idx + 1 < sections.len() {
+      sections[idx + 1].line.saturating_sub(1)
+    } else {
+      lines.len()
+    };
+
+    if section.content_start > section_end || section.content_start > lines.len() {
+      println!("{}", "(empty section)".dimmed());
+    } else {
+      let start = section.content_start;
+      let end = section_end.min(lines.len());
+      for line_num in start..=end {
+        if let Some(line) = lines.get(line_num - 1) {
+          println!("{} {}", format!("{line_num:4}:").dimmed(), line);
+        }
+      }
+    }
+    println!();
+  }
+
+  if !unmatched.is_empty() {
+    println!("{}", format!("No match for heading query: {}", unmatched.join(", ")).yellow());
+  }
+
+  Ok(())
+}
+
+fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize) -> Result<(), String> {
   let guide_docs = load_guidebook_docs()?;
 
-  // Try to find the document by exact filename match or contains
-  let doc = guide_docs
-    .values()
-    .find(|d| d.filename == filename || d.filename.contains(filename))
-    .ok_or_else(|| format!("Document '{filename}' not found. Use 'cr docs list' to see available documents."))?;
+  let doc = find_doc_by_filename(&guide_docs, filename)?;
 
   let all_lines: Vec<&str> = doc.content.lines().collect();
   let total_lines = all_lines.len();
@@ -208,7 +410,7 @@ fn handle_read(filename: &str, start: usize, lines_to_read: usize) -> Result<(),
 
   println!(
     "{}",
-    "Tip: Use -s <start> -n <lines> to read specific range (e.g., 'cr docs read file.md -s 20 -n 30')".dimmed()
+    "Tip: Use -s <start> -n <lines> to read specific range (e.g., 'cr docs read-lines file.md -s 20 -n 30')".dimmed()
   );
 
   Ok(())
@@ -233,7 +435,15 @@ fn handle_list() -> Result<(), String> {
   }
 
   println!("\n{} {} topics", "Total:".dimmed(), docs.len());
-  println!("{}", "Use 'cr docs read <filename>' to read a document".dimmed());
+  println!("{}", "Use 'cr docs read <filename>' to list headings in a document".dimmed());
+  println!(
+    "{}",
+    "    'cr docs read <filename> <heading-keyword>' to read matched sections".dimmed()
+  );
+  println!(
+    "{}",
+    "    'cr docs read-lines <filename> -s <start> -n <lines>' for line-based reading".dimmed()
+  );
   println!("{}", "    'cr docs search <keyword>' to search content".dimmed());
 
   Ok(())
