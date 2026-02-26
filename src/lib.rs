@@ -106,7 +106,19 @@ pub fn load_module(path: &str, base_dir: &Path, module_folder: &Path) -> Result<
     module_folder.join(&file_path).as_path().to_owned()
   };
 
-  println!("loading: {}", file_path.as_str());
+  let display_path = if file_path.starts_with("./") {
+    file_path.clone()
+  } else if file_path.starts_with('/') {
+    if let Ok(stripped) = Path::new(&file_path).strip_prefix(module_folder) {
+      format!("<mods>/{}", stripped.display())
+    } else {
+      file_path.clone()
+    }
+  } else {
+    format!("<mods>/{file_path}")
+  };
+
+  println!("loading: {display_path}");
 
   let mut content = fs::read_to_string(&fullpath).unwrap_or_else(|_| panic!("expected Cirru snapshot {fullpath:?}"));
   strip_shebang(&mut content);

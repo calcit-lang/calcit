@@ -4,10 +4,20 @@
 
 use calcit::cli_args::{DocsCommand, DocsSubcommand};
 use colored::Colorize;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
-use std::process::Command;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::Once;
+
+use calcit::ProgramEntries;
+use calcit::calcit::LocatedWarning;
+use calcit::call_stack::CallStackList;
+use calcit::program;
+use calcit::runner;
+use calcit::snapshot;
+use calcit::util;
 
 #[derive(Debug, Clone)]
 pub struct GuideDoc {
@@ -298,6 +308,150 @@ fn extract_cirru_blocks(content: &str) -> Vec<(usize, CirruCheckMode, String)> {
   blocks
 }
 
+fn ensure_runtime_initialized() {
+  static RUNTIME_INIT: Once = Once::new();
+  RUNTIME_INIT.call_once(|| {
+    calcit::builtins::effects::init_effects_states();
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::injection::inject_platform_apis();
+  });
+}
+
+fn module_folder() -> Result<PathBuf, String> {
+  let home = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable".to_string())?;
+  Ok(Path::new(&home).join(".config/calcit/modules/"))
+}
+
+fn display_path_with_default_modules(path: &str, default_modules: &Path) -> String {
+  if let Ok(stripped) = Path::new(path).strip_prefix(default_modules) {
+    format!("<mods>/{}", stripped.display())
+  } else {
+    path.to_owned()
+  }
+}
+
+fn display_path_for_check_md(path: &str, default_modules: &Path, cwd: Option<&Path>) -> String {
+  let raw = Path::new(path);
+  if raw.is_absolute()
+    && let Some(current_dir) = cwd
+    && let Ok(stripped) = raw.strip_prefix(current_dir)
+  {
+    return stripped.display().to_string();
+  }
+  display_path_with_default_modules(path, default_modules)
+}
+
+fn load_shared_files_for_check_md(entry: &str, deps: &[String]) -> Result<HashMap<String, snapshot::FileInSnapShot>, String> {
+  ensure_runtime_initialized();
+
+  let entry_path = PathBuf::from(entry);
+  let base_dir = entry_path.parent().unwrap_or(Path::new("."));
+  let module_folder = module_folder()?;
+
+  let mut shared_files: HashMap<String, snapshot::FileInSnapShot> = HashMap::new();
+
+  for module_path in deps {
+    let module_data = calcit::load_module(module_path, base_dir, &module_folder)?;
+    for (k, v) in &module_data.files {
+      if shared_files.contains_key(k) {
+        return Err(format!("namespace `{k}` already exists when loading module `{module_path}`"));
+      }
+      shared_files.insert(k.to_owned(), v.to_owned());
+    }
+  }
+
+  let core_snapshot = calcit::load_core_snapshot()?;
+  for (k, v) in core_snapshot.files {
+    shared_files.insert(k.to_owned(), v.to_owned());
+  }
+
+  Ok(shared_files)
+}
+
+fn build_entries_from_snapshot(snapshot: &snapshot::Snapshot) -> Result<ProgramEntries, String> {
+  let config_init = snapshot.configs.init_fn.to_string();
+  let config_reload = snapshot.configs.reload_fn.to_string();
+  let (init_ns, init_def) = util::string::extract_ns_def(&config_init)?;
+  let (reload_ns, reload_def) = util::string::extract_ns_def(&config_reload)?;
+
+  Ok(ProgramEntries {
+    init_fn: Arc::from(config_init),
+    reload_fn: Arc::from(config_reload),
+    init_def: Arc::from(init_def),
+    init_ns: Arc::from(init_ns),
+    reload_ns: Arc::from(reload_ns),
+    reload_def: Arc::from(reload_def),
+  })
+}
+
+fn prepare_program_for_snippet(shared_files: &HashMap<String, snapshot::FileInSnapShot>, code: &str) -> Result<ProgramEntries, String> {
+  ensure_runtime_initialized();
+
+  let mut snapshot = snapshot::Snapshot::default();
+  let main_file = snapshot::create_file_from_snippet(code)?;
+  snapshot.files.insert(String::from("app.main"), main_file);
+
+  for (k, v) in shared_files {
+    snapshot.files.insert(k.to_owned(), v.to_owned());
+  }
+
+  {
+    let mut prgm = program::PROGRAM_CODE_DATA.write().map_err(|_| "open program data".to_string())?;
+    *prgm = program::extract_program_data(&snapshot)?;
+  }
+
+  let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
+  runner::preprocess::preprocess_ns_def(
+    calcit::calcit::CORE_NS,
+    calcit::calcit::BUILTIN_IMPLS_ENTRY,
+    check_warnings,
+    &CallStackList::default(),
+  )
+  .map_err(|e| e.msg)?;
+
+  build_entries_from_snapshot(&snapshot)
+}
+
+fn run_check_only_in_process(entries: &ProgramEntries) -> Result<(), String> {
+  let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
+
+  runner::preprocess::preprocess_ns_def(&entries.init_ns, &entries.init_def, check_warnings, &CallStackList::default())
+    .map_err(|failure| failure.msg)?;
+
+  runner::preprocess::preprocess_ns_def(&entries.reload_ns, &entries.reload_def, check_warnings, &CallStackList::default())
+    .map_err(|failure| failure.msg)?;
+
+  let warnings = check_warnings.borrow();
+  if !warnings.is_empty() {
+    let mut lines = vec![format!("Warnings: ({} warnings)", warnings.len())];
+    lines.extend(warnings.iter().map(|w| w.to_string()));
+    return Err(lines.join("\n"));
+  }
+
+  Ok(())
+}
+
+fn run_eval_in_process(entries: &ProgramEntries) -> Result<(), String> {
+  match calcit::run_program_with_docs(entries.init_ns.to_owned(), entries.init_def.to_owned(), &[]) {
+    Ok(_) => Ok(()),
+    Err(e) => {
+      let mut lines: Vec<String> = vec![];
+      if !e.warnings.is_empty() {
+        lines.push(format!("Warnings: ({} warnings)", e.warnings.len()));
+        lines.extend(e.warnings.iter().map(|w| w.to_string()));
+      }
+      lines.push(format!("Error: {}", e.msg));
+      Err(lines.join("\n"))
+    }
+  }
+}
+
+fn run_parse_only_in_process(code: &str) -> Result<(), String> {
+  cirru_parser::parse(code)
+    .map(|_| ())
+    .map_err(|e| format!("Error: Failed to parse code snippet: {e}"))
+}
+
 fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), String> {
   let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read file '{file_path}': {e}"))?;
 
@@ -308,25 +462,35 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
     return Ok(());
   }
 
-  // Resolve the cr binary path (use current executable)
-  let cr_bin = std::env::current_exe().map_err(|e| format!("Failed to get current executable path: {e}"))?;
-
   if !Path::new(entry).exists() {
     return Err(format!(
       "Entry file '{entry}' not found. Use -d to specify a valid entry .cirru file."
     ));
   }
 
+  let shared_files = load_shared_files_for_check_md(entry, deps)?;
+
+  let default_modules = module_folder()?;
+  let current_dir = std::env::current_dir().ok();
+
+  let entry_preview = display_path_for_check_md(entry, &default_modules, current_dir.as_deref());
+
   let deps_preview = if deps.is_empty() {
     "none".dimmed().to_string()
   } else {
-    deps.join(", ").dimmed().to_string()
+    deps
+      .iter()
+      .map(|dep| display_path_for_check_md(dep, &default_modules, current_dir.as_deref()))
+      .collect::<Vec<_>>()
+      .join(", ")
+      .dimmed()
+      .to_string()
   };
   println!(
     "{} {} (entry: {}, deps: {})",
     "Checking".bold(),
     file_path.cyan(),
-    entry.dimmed(),
+    entry_preview.dimmed(),
     deps_preview
   );
   println!("{}", "-".repeat(60).dimmed());
@@ -364,41 +528,19 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
       CirruCheckMode::NoCheck => "[no-check] ",
     };
 
-    let output = match mode {
+    let check_result = match mode {
       CirruCheckMode::Run => {
-        // parse + preprocess + eval
-        let mut cmd = Command::new(&cr_bin);
-        cmd.arg(entry).arg("eval");
-        for dep in deps {
-          cmd.arg("--dep").arg(dep);
-        }
-        cmd.arg("--").arg(code).output().map_err(|e| format!("Failed to run eval: {e}"))?
+        let entries = prepare_program_for_snippet(&shared_files, code)?;
+        run_eval_in_process(&entries)
       }
       CirruCheckMode::NoRun => {
-        // parse + preprocess (--check-only), skip eval
-        let mut cmd = Command::new(&cr_bin);
-        cmd.arg("--check-only").arg(entry).arg("eval");
-        for dep in deps {
-          cmd.arg("--dep").arg(dep);
-        }
-        cmd
-          .arg("--")
-          .arg(code)
-          .output()
-          .map_err(|e| format!("Failed to run check-only: {e}"))?
+        let entries = prepare_program_for_snippet(&shared_files, code)?;
+        run_check_only_in_process(&entries)
       }
-      CirruCheckMode::NoCheck => {
-        // parse only via `cr cirru parse` (multi-line indentation parser)
-        Command::new(&cr_bin)
-          .arg("cirru")
-          .arg("parse")
-          .arg(code)
-          .output()
-          .map_err(|e| format!("Failed to run cirru parse: {e}"))?
-      }
+      CirruCheckMode::NoCheck => run_parse_only_in_process(code),
     };
 
-    if output.status.success() {
+    if check_result.is_ok() {
       passed += 1;
       println!(
         "  {} L{}: {}{}{}",
@@ -410,7 +552,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String]) -> Result<(), 
       );
     } else {
       failed += 1;
-      let stderr = String::from_utf8_lossy(&output.stderr);
+      let stderr = check_result.err().unwrap_or_else(|| "Error: Unknown error".to_string());
       println!(
         "  {} L{}: {}{}{}",
         "✗".red(),
