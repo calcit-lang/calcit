@@ -997,6 +997,7 @@ pub enum TreeSubcommand {
   SwapPrev(TreeSwapPrevCommand),
   Wrap(TreeWrapCommand),
   TargetReplace(TreeTargetReplaceCommand),
+  Rewrite(TreeStructuralCommand),
   Cp(TreeCpCommand),
 }
 
@@ -1036,6 +1037,39 @@ pub struct TreeCpCommand {
   pub at: String,
 }
 
+/// rewrite node using references; requires `--with name=path` (use `replace` if no references)
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "rewrite")]
+pub struct TreeStructuralCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  #[argh(option, short = 'p')]
+  pub path: String,
+  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
+  #[argh(option, short = 'f')]
+  pub file: Option<String>,
+  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
+  #[argh(option, short = 'e', long = "code")]
+  pub code: Option<String>,
+  /// syntax_tree as inline JSON string
+  #[argh(option, short = 'j')]
+  pub json: Option<String>,
+  /// treat file input as JSON
+  #[argh(switch, short = 'J', long = "json-input")]
+  pub json_input: bool,
+  /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
+  /// bind placeholder to original-node path: `--with self=.` , `--with rhs=2`
+  #[argh(option, short = 'w', long = "with")]
+  pub with: Vec<String>,
+  /// max depth for result preview (0 = unlimited, default 2)
+  #[argh(option, short = 'd', default = "2")]
+  pub depth: usize,
+}
+
 /// find unique leaf node and replace it; if multiple found, returns error with helpful hints
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "target-replace")]
@@ -1061,15 +1095,6 @@ pub struct TreeTargetReplaceCommand {
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
-  /// placeholder to refer to the original node (e.g., "$$$$")
-  #[argh(option, long = "refer-original")]
-  pub refer_original: Option<String>,
-  /// comma-separated path to inner branch of original node (e.g., "1,2,3")
-  #[argh(option, long = "refer-inner-branch")]
-  pub refer_inner_branch: Option<String>,
-  /// placeholder for inner branch reference (e.g., "####")
-  #[argh(option, long = "refer-inner-placeholder")]
-  pub refer_inner_placeholder: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
@@ -1100,15 +1125,6 @@ pub struct TreeReplaceCommand {
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
-  /// placeholder to refer to the original node (e.g., "$$$$")
-  #[argh(option, long = "refer-original")]
-  pub refer_original: Option<String>,
-  /// comma-separated path to inner branch of original node (e.g., "1,2,3")
-  #[argh(option, long = "refer-inner-branch")]
-  pub refer_inner_branch: Option<String>,
-  /// placeholder for inner branch reference (e.g., "####")
-  #[argh(option, long = "refer-inner-placeholder")]
-  pub refer_inner_placeholder: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
@@ -1185,15 +1201,6 @@ pub struct TreeInsertBeforeCommand {
   /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
-  /// placeholder to refer to the original node (e.g., "$$$$")
-  #[argh(option, long = "refer-original")]
-  pub refer_original: Option<String>,
-  /// comma-separated path to inner branch of original node (e.g., "1,2,3")
-  #[argh(option, long = "refer-inner-branch")]
-  pub refer_inner_branch: Option<String>,
-  /// placeholder for inner branch reference (e.g., "####")
-  #[argh(option, long = "refer-inner-placeholder")]
-  pub refer_inner_placeholder: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
@@ -1225,15 +1232,6 @@ pub struct TreeInsertAfterCommand {
   /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
-  /// placeholder to refer to the original node (e.g., "$$$$")
-  #[argh(option, long = "refer-original")]
-  pub refer_original: Option<String>,
-  /// comma-separated path to inner branch of original node (e.g., "1,2,3")
-  #[argh(option, long = "refer-inner-branch")]
-  pub refer_inner_branch: Option<String>,
-  /// placeholder for inner branch reference (e.g., "####")
-  #[argh(option, long = "refer-inner-placeholder")]
-  pub refer_inner_placeholder: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
@@ -1265,15 +1263,6 @@ pub struct TreeInsertChildCommand {
   /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
-  /// placeholder to refer to the original node (e.g., "$$$$")
-  #[argh(option, long = "refer-original")]
-  pub refer_original: Option<String>,
-  /// comma-separated path to inner branch of original node (e.g., "1,2,3")
-  #[argh(option, long = "refer-inner-branch")]
-  pub refer_inner_branch: Option<String>,
-  /// placeholder for inner branch reference (e.g., "####")
-  #[argh(option, long = "refer-inner-placeholder")]
-  pub refer_inner_placeholder: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
@@ -1305,15 +1294,6 @@ pub struct TreeAppendChildCommand {
   /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
-  /// placeholder to refer to the original node (e.g., "$$$$")
-  #[argh(option, long = "refer-original")]
-  pub refer_original: Option<String>,
-  /// comma-separated path to inner branch of original node (e.g., "1,2,3")
-  #[argh(option, long = "refer-inner-branch")]
-  pub refer_inner_branch: Option<String>,
-  /// placeholder for inner branch reference (e.g., "####")
-  #[argh(option, long = "refer-inner-placeholder")]
-  pub refer_inner_placeholder: Option<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,
@@ -1349,7 +1329,7 @@ pub struct TreeSwapPrevCommand {
   pub depth: usize,
 }
 
-/// wrap node with new structure (use refer-original placeholder for original node)
+/// wrap node with new structure (use --with name=path to reference original node)
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "wrap")]
 pub struct TreeWrapCommand {
@@ -1375,15 +1355,9 @@ pub struct TreeWrapCommand {
   /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
-  /// placeholder to refer to the original node (e.g., "$$$$")
-  #[argh(option, long = "refer-original")]
-  pub refer_original: Option<String>,
-  /// comma-separated path to inner branch of original node (e.g., "1,2,3")
-  #[argh(option, long = "refer-inner-branch")]
-  pub refer_inner_branch: Option<String>,
-  /// placeholder for inner branch reference (e.g., "####")
-  #[argh(option, long = "refer-inner-placeholder")]
-  pub refer_inner_placeholder: Option<String>,
+  /// reference original node or its part by name (format: name=path)
+  #[argh(option, short = 'w', long = "with")]
+  pub with: Vec<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,

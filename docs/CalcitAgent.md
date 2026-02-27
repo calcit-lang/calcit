@@ -360,27 +360,27 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 
 **结构化变更示例：**
 
-这些高级操作允许你在修改时引用原始节点及其内部结构：
+这些高级操作允许你在修改时引用原始节点及其内部结构。**注意：** `cr tree rewrite` 专门用于“引用驱动”的结构替换，必须传至少一个 `--with name=path`。如果不需要引用原节点，直接使用 `cr tree replace`。
 
-- **包裹节点**（使用 `cr tree wrap` 或 `cr tree replace` 的 `--refer-original`）：
+- **包裹节点**（使用 `cr tree wrap` 或 `cr tree rewrite` 的 `--with`）：
 
   ```bash
   # 将路径 "3,2" 的节点包裹在 println 中
-  cr tree wrap ns/def -p '3,2' -e 'println $$$$' --refer-original '$$$$'
+  cr tree wrap ns/def -p '3,2' -e 'println self' --with 'self=.'
   ```
 
-- **重构并复用原子节点**（使用 `--refer-inner-branch`）：
+- **重构并复用原子节点**（使用 `cr tree rewrite` 的 `--with`）：
   - 假设原节点是 `+ 1 2` (路径 "3,1")，其子节点索引 1 是 `1`，索引 2 是 `2`
   - 将其重构为 `* 2 10`：
 
   ```bash
-  cr tree replace ns/def -p '3,1' -e '(* #### 10)' --refer-inner-branch '2' --refer-inner-placeholder '####'
+  cr tree rewrite ns/def -p '3,1' -e '* rhs 10' --with 'rhs=2'
   ```
 
-- **多处重用原始节点**：
+- **多处重用原始节点**（引用占位符）：
   ```bash
-  # 将节点 x 变为 (+ x x)
-  cr tree replace ns/def -p '2' -e '(+ $ $)' --refer-original '$'
+  # 使用 rewrite 命令将节点 x 变为 `+ x x`
+  cr tree rewrite ns/def -p '2' -e '+ self self' --with 'self=.'
   ```
   详细参数和示例使用 `cr tree <command> --help` 查看。
 

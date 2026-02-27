@@ -190,7 +190,10 @@ pub fn print_markdown_read_tips(command_prefix: &str, with_file_option: bool) {
       "     Use '--full' to print the whole file (works with -f <path> too).".dimmed()
     );
   } else {
-    println!("{}", format!("     Use '{command_prefix} --full' to print the whole file.").dimmed());
+    println!(
+      "{}",
+      format!("     Use '{command_prefix} --full' to print the whole file.").dimmed()
+    );
   }
   println!(
     "{}",
@@ -234,7 +237,13 @@ pub fn render_markdown_sections(content: &str, heading_queries: &[String], optio
     selected_indices
   };
 
-  print_selected_sections(&lines, &sections, &selected_indices, options.include_subheadings, options.with_lines);
+  print_selected_sections(
+    &lines,
+    &sections,
+    &selected_indices,
+    options.include_subheadings,
+    options.with_lines,
+  );
 
   if !unmatched.is_empty() {
     println!("{}", format!("No match for heading query: {}", unmatched.join(", ")).yellow());

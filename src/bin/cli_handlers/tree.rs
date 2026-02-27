@@ -5,8 +5,8 @@ use super::common::{ERR_CODE_INPUT_REQUIRED, cirru_to_json, parse_input_to_cirru
 use super::tips::{Tips, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
   TreeAppendChildCommand, TreeCommand, TreeCpCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand,
-  TreeInsertChildCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeSubcommand, TreeSwapNextCommand,
-  TreeSwapPrevCommand, TreeTargetReplaceCommand, TreeWrapCommand,
+  TreeInsertChildCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeStructuralCommand, TreeSubcommand,
+  TreeSwapNextCommand, TreeSwapPrevCommand, TreeTargetReplaceCommand, TreeWrapCommand,
 };
 
 // Import shared functions from edit module
@@ -34,8 +34,34 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
     TreeSubcommand::SwapPrev(opts) => handle_swap_prev(opts, snapshot_file),
     TreeSubcommand::Wrap(opts) => handle_wrap(opts, snapshot_file),
     TreeSubcommand::TargetReplace(opts) => handle_target_replace(opts, snapshot_file),
+    TreeSubcommand::Rewrite(opts) => handle_rewrite(opts, snapshot_file),
     TreeSubcommand::Cp(opts) => handle_cp(opts, snapshot_file),
   }
+}
+
+fn parse_with_references(with_strs: &[String], original_node: &Cirru) -> Result<std::collections::BTreeMap<String, Cirru>, String> {
+  let mut references = std::collections::BTreeMap::new();
+
+  for s in with_strs {
+    let (name, path_str) = s
+      .split_once('=')
+      .ok_or_else(|| format!("Invalid --with format '{s}'. Expected 'name=path', e.g. --with self=. --with arg=1,0"))?;
+
+    if name.trim().is_empty() {
+      return Err(format!("Invalid --with format '{s}': name cannot be empty"));
+    }
+
+    let path = if path_str.trim() == "." {
+      vec![]
+    } else {
+      parse_path(path_str.trim())?
+    };
+
+    let node = navigate_to_path(original_node, &path)?;
+    references.insert(name.trim().to_string(), node.clone());
+  }
+
+  Ok(references)
 }
 
 /// Format a Cirru node for preview display
@@ -404,31 +430,87 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
     .get_mut(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
-  // Get original node for reference if needed
-  let original_node = if opts.refer_original.is_some() || opts.refer_inner_branch.is_some() {
-    Some(navigate_to_path(&code_entry.code, &path)?)
-  } else {
-    None
-  };
+  // Save original for comparison
+  let old_node = navigate_to_path(&code_entry.code, &path)?;
 
-  // Process node with replacements if needed
-  let processed_node = if opts.refer_original.is_some() || opts.refer_inner_branch.is_some() {
-    process_node_with_references(
-      &new_node,
-      original_node.as_ref(),
-      &opts.refer_original,
-      &opts.refer_inner_branch,
-      &opts.refer_inner_placeholder,
-    )?
-  } else {
-    new_node
-  };
+  // Show diff preview
+  println!("{}", show_diff_preview(&old_node, &new_node, "replace", &path));
+  // Tips: root-edit guidance
+  if let Some(t) = tip_root_edit(path.is_empty()) {
+    let mut tips = Tips::new();
+    tips.add(t);
+    tips.print();
+  }
+
+  let new_code = apply_operation_at_path(&code_entry.code, &path, "replace", Some(&new_node))?;
+  code_entry.code = new_code.clone();
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Applied 'replace' at path [{}] in '{}/{}'",
+    "✓".green(),
+    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
+    namespace,
+    definition
+  );
+  println!();
+  println!("{}:", "From".yellow().bold());
+  println!("{}", format_preview_with_type(&old_node, 20));
+  println!();
+  println!("{}:", "To".green().bold());
+  let new_node = navigate_to_path(&new_code, &path)?;
+  println!("{}", format_preview_with_type(&new_node, 20));
+  println!();
+  println!("{}", "Next steps:".blue().bold());
+  println!(
+    "  • Verify: {} '{}' -p '{}'",
+    "cr tree show".cyan(),
+    format_args!("{}/{}", namespace, definition),
+    path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+  );
+  println!("  • Check errors: {}", "cr query error".cyan());
+  println!("  • Find usages: {} '{}/{}'", "cr query usages".cyan(), namespace, definition);
+
+  Ok(())
+}
+
+fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(), String> {
+  if opts.with.is_empty() {
+    return Err("`tree rewrite` needs at least one `--with name=path`; for plain replacement use `tree replace`.".to_string());
+  }
+
+  let (namespace, definition) = parse_target(&opts.target)?;
+  let path = parse_path(&opts.path)?;
+
+  let code_input = read_code_input(&opts.file, &opts.code, &opts.json)?;
+
+  let raw = code_input.as_deref().ok_or(ERR_CODE_INPUT_REQUIRED)?;
+
+  let new_node = parse_input_to_cirru(raw, &opts.json, opts.json_input, opts.leaf, true)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found"))?;
+
+  let original_node = navigate_to_path(&code_entry.code, &path)?;
+  let references = parse_with_references(&opts.with, &original_node)?;
+  let processed_node = process_node_with_references(&new_node, &references)?;
 
   // Save original for comparison
   let old_node = navigate_to_path(&code_entry.code, &path)?;
 
   // Show diff preview
-  println!("{}", show_diff_preview(&old_node, &processed_node, "replace", &path));
+  println!("{}", show_diff_preview(&old_node, &processed_node, "rewrite", &path));
   // Tips: root-edit guidance
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
@@ -442,7 +524,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   save_snapshot(&snapshot, snapshot_file)?;
 
   println!(
-    "{} Applied 'replace' at path [{}] in '{}/{}'",
+    "{} Applied 'rewrite' at path [{}] in '{}/{}'",
     "✓".green(),
     path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","),
     namespace,
@@ -649,23 +731,10 @@ fn handle_target_replace(opts: &TreeTargetReplaceCommand, snapshot_file: &str) -
   let (path, old_value) = &matches[0];
   let old_node = Cirru::Leaf(old_value.to_string().into());
 
-  // Process node with replacements if needed
-  let processed_node = if opts.refer_original.is_some() || opts.refer_inner_branch.is_some() {
-    process_node_with_references(
-      &replacement_node,
-      Some(&old_node),
-      &opts.refer_original,
-      &opts.refer_inner_branch,
-      &opts.refer_inner_placeholder,
-    )?
-  } else {
-    replacement_node
-  };
-
   // Show diff preview
-  println!("{}", show_diff_preview(&old_node, &processed_node, "target-replace", path));
+  println!("{}", show_diff_preview(&old_node, &replacement_node, "target-replace", path));
 
-  let new_code = apply_operation_at_path(&code_entry.code, path, "replace", Some(&processed_node))?;
+  let new_code = apply_operation_at_path(&code_entry.code, path, "replace", Some(&replacement_node))?;
   code_entry.code = new_code;
 
   save_snapshot(&snapshot, snapshot_file)?;
@@ -822,9 +891,9 @@ trait InsertOperation {
   fn json(&self) -> &Option<String>;
   fn json_input(&self) -> bool;
   fn leaf(&self) -> bool;
-  fn refer_original(&self) -> &Option<String>;
-  fn refer_inner_branch(&self) -> &Option<String>;
-  fn refer_inner_placeholder(&self) -> &Option<String>;
+  fn with(&self) -> &[String] {
+    &[]
+  }
 }
 
 impl InsertOperation for TreeInsertBeforeCommand {
@@ -842,15 +911,6 @@ impl InsertOperation for TreeInsertBeforeCommand {
   }
   fn leaf(&self) -> bool {
     self.leaf
-  }
-  fn refer_original(&self) -> &Option<String> {
-    &self.refer_original
-  }
-  fn refer_inner_branch(&self) -> &Option<String> {
-    &self.refer_inner_branch
-  }
-  fn refer_inner_placeholder(&self) -> &Option<String> {
-    &self.refer_inner_placeholder
   }
 }
 
@@ -870,15 +930,6 @@ impl InsertOperation for TreeInsertAfterCommand {
   fn leaf(&self) -> bool {
     self.leaf
   }
-  fn refer_original(&self) -> &Option<String> {
-    &self.refer_original
-  }
-  fn refer_inner_branch(&self) -> &Option<String> {
-    &self.refer_inner_branch
-  }
-  fn refer_inner_placeholder(&self) -> &Option<String> {
-    &self.refer_inner_placeholder
-  }
 }
 
 impl InsertOperation for TreeInsertChildCommand {
@@ -896,15 +947,6 @@ impl InsertOperation for TreeInsertChildCommand {
   }
   fn leaf(&self) -> bool {
     self.leaf
-  }
-  fn refer_original(&self) -> &Option<String> {
-    &self.refer_original
-  }
-  fn refer_inner_branch(&self) -> &Option<String> {
-    &self.refer_inner_branch
-  }
-  fn refer_inner_placeholder(&self) -> &Option<String> {
-    &self.refer_inner_placeholder
   }
 }
 
@@ -924,15 +966,6 @@ impl InsertOperation for TreeAppendChildCommand {
   fn leaf(&self) -> bool {
     self.leaf
   }
-  fn refer_original(&self) -> &Option<String> {
-    &self.refer_original
-  }
-  fn refer_inner_branch(&self) -> &Option<String> {
-    &self.refer_inner_branch
-  }
-  fn refer_inner_placeholder(&self) -> &Option<String> {
-    &self.refer_inner_placeholder
-  }
 }
 
 impl InsertOperation for TreeWrapCommand {
@@ -951,14 +984,8 @@ impl InsertOperation for TreeWrapCommand {
   fn leaf(&self) -> bool {
     self.leaf
   }
-  fn refer_original(&self) -> &Option<String> {
-    &self.refer_original
-  }
-  fn refer_inner_branch(&self) -> &Option<String> {
-    &self.refer_inner_branch
-  }
-  fn refer_inner_placeholder(&self) -> &Option<String> {
-    &self.refer_inner_placeholder
+  fn with(&self) -> &[String] {
+    &self.with
   }
 }
 
@@ -978,14 +1005,26 @@ impl InsertOperation for TreeTargetReplaceCommand {
   fn leaf(&self) -> bool {
     self.leaf
   }
-  fn refer_original(&self) -> &Option<String> {
-    &self.refer_original
+}
+
+impl InsertOperation for TreeStructuralCommand {
+  fn file(&self) -> &Option<String> {
+    &self.file
   }
-  fn refer_inner_branch(&self) -> &Option<String> {
-    &self.refer_inner_branch
+  fn code(&self) -> &Option<String> {
+    &self.code
   }
-  fn refer_inner_placeholder(&self) -> &Option<String> {
-    &self.refer_inner_placeholder
+  fn json(&self) -> &Option<String> {
+    &self.json
+  }
+  fn json_input(&self) -> bool {
+    self.json_input
+  }
+  fn leaf(&self) -> bool {
+    self.leaf
+  }
+  fn with(&self) -> &[String] {
+    &self.with
   }
 }
 
@@ -1019,24 +1058,12 @@ fn generic_insert_handler<T: InsertOperation>(
     .get_mut(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
-  // Get original node for reference if needed
-  let original_node = if opts.refer_original().is_some() || opts.refer_inner_branch().is_some() {
-    Some(navigate_to_path(&code_entry.code, &path)?)
-  } else {
-    None
-  };
-
-  // Process node with replacements if needed
-  let processed_node = if opts.refer_original().is_some() || opts.refer_inner_branch().is_some() {
-    process_node_with_references(
-      &new_node,
-      original_node.as_ref(),
-      opts.refer_original(),
-      opts.refer_inner_branch(),
-      opts.refer_inner_placeholder(),
-    )?
-  } else {
+  let processed_node = if opts.with().is_empty() {
     new_node
+  } else {
+    let original_node = navigate_to_path(&code_entry.code, &path)?;
+    let references = parse_with_references(opts.with(), &original_node)?;
+    process_node_with_references(&new_node, &references)?
   };
 
   // Save parent before insertion for comparison

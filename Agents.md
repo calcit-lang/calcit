@@ -54,6 +54,7 @@
   - ✅ 使用 `-e 'code'` 或 `-j 'json'` 进行单行输入。
   - ✅ 使用 `-f file.cirru` 进行多行或复杂结构输入（推荐在 `.calcit-snippets/` 下创建临时文件）。
 - **路径索引动态性**：在 `tree` 系列操作中（如 `delete`, `insert`），操作会引起同级后续节点索引变化。建议**从后往前**操作，或每次修改后使用 `query search` 重新定位。
+- **结构引用替换 (`tree rewrite`)**：`tree replace` 仅支持简单替换。涉及引用原始节点及其内容的复杂替换（使用 `--with name=path`）已统一移动至 `cr tree rewrite` 命令。
 - **常用的编辑操作**：
   - `edit mv <source> <target>`：移动或重命名定义。
   - `tree cp <target> --from <path> -p <path> [--at <pos>]`：在 AST 节点间复制内容，支持 `before`, `after` (默认), `prepend-child`, `append-child`, `replace`。

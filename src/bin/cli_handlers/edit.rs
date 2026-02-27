@@ -33,53 +33,19 @@ pub(crate) fn parse_target(target: &str) -> Result<(&str, &str), String> {
 /// Process a node by replacing placeholders with references to original node or its branches
 pub(crate) fn process_node_with_references(
   node: &Cirru,
-  original_node: Option<&Cirru>,
-  refer_original: &Option<String>,
-  refer_inner_branch: &Option<String>,
-  refer_inner_placeholder: &Option<String>,
+  references: &std::collections::BTreeMap<String, Cirru>,
 ) -> Result<Cirru, String> {
-  let original = original_node.ok_or("Original node required for reference replacement")?;
-
-  // Parse inner branch if provided
-  let inner_branch_info: Option<(String, Vec<usize>)> = match (refer_inner_branch, refer_inner_placeholder) {
-    (Some(path_str), Some(placeholder)) => {
-      let path: Vec<usize> = path_str
-        .split(',')
-        .map(|s| s.trim().parse::<usize>())
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Invalid inner branch path '{path_str}': {e}"))?;
-      Some((placeholder.clone(), path))
-    }
-    (Some(_), None) => {
-      return Err("--refer-inner-branch requires --refer-inner-placeholder".to_string());
-    }
-    (None, Some(_)) => {
-      return Err("--refer-inner-placeholder requires --refer-inner-branch".to_string());
-    }
-    (None, None) => None,
-  };
-
   match node {
     Cirru::Leaf(s) => {
-      // Check if this leaf matches the refer_original placeholder
-      if let Some(placeholder) = refer_original {
-        if s.as_ref() == placeholder {
-          return Ok(original.clone());
-        }
-      }
-      // Check if this leaf matches the refer_inner_branch placeholder
-      if let Some((placeholder, path)) = &inner_branch_info {
-        if s.as_ref() == placeholder {
-          return navigate_to_path(original, path);
-        }
+      // Check if this leaf matches any of the placeholders
+      if let Some(replacement) = references.get(s.as_ref()) {
+        return Ok(replacement.clone());
       }
       Ok(node.clone())
     }
     Cirru::List(items) => {
-      let processed_items: Result<Vec<Cirru>, String> = items
-        .iter()
-        .map(|item| process_node_with_references(item, Some(original), refer_original, refer_inner_branch, refer_inner_placeholder))
-        .collect();
+      let processed_items: Result<Vec<Cirru>, String> =
+        items.iter().map(|item| process_node_with_references(item, references)).collect();
       Ok(Cirru::List(processed_items?))
     }
   }
