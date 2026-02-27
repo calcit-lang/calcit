@@ -782,7 +782,9 @@ cr        # 或 cr js
 遇到疑问时使用：
 
 - `cr docs search <keyword>` - 搜索 Calcit 教程内容
+- `cr docs agents [<heading> ...] [--full]` - 读取 Agent 指南（优先本地缓存，按天自动刷新）
 - `cr docs read <filename> [<heading> ...]` - 按标题查看章节（不传标题时列标题）
+- `cr docs read <filename> --full` - 直接读取整份文档内容
 - `cr docs read-lines <filename> -s <start> -n <lines>` - 按行读取文档
 - `cr docs list` - 查看所有可用文档
 - `cr query ns <ns>` - 查看命名空间说明和函数文档
@@ -799,12 +801,14 @@ cr        # 或 cr js
 
 ## 代码修改示例
 
-**添加新函数：**
+### 添加新函数
 
-````bash
+```bash
 # Cirru one liner
 cr edit def app.core/multiply -e 'defn multiply (x y) (* x y)'
-# 基本操作：**
+```
+
+### 基本操作
 
 ```bash
 # 添加新函数（命令会提示 Next steps）
@@ -819,9 +823,9 @@ cr edit add-example 'app.core/multiply' -e 'multiply 5 6'
 
 # 移动或重构定义
 cr edit mv 'app.core/multiply' 'app.util/multiply-numbers'
-````
+```
 
-**修改定义工作流（命令会显示子节点索引和 Next steps）：**
+### 修改定义工作流（命令会显示子节点索引和 Next steps）
 
 ```bash
 # 1. 搜索定位

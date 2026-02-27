@@ -399,6 +399,8 @@ pub enum DocsSubcommand {
   Search(DocsSearchCommand),
   /// read markdown headings or sections by heading query
   Read(DocsReadCommand),
+  /// read cached Agents guide (auto-refresh daily)
+  Agents(DocsAgentsCommand),
   /// read a specific line range from a guidebook document
   ReadLines(DocsReadLinesCommand),
   /// list all guidebook documentation topics
@@ -435,6 +437,30 @@ pub struct DocsReadCommand {
   /// do not include nested subheadings when showing matched parent heading content
   #[argh(switch)]
   pub no_subheadings: bool,
+  /// show full file content directly
+  #[argh(switch)]
+  pub full: bool,
+  /// show line numbers in heading list and section titles
+  #[argh(switch)]
+  pub with_lines: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "agents")]
+/// read Agents.md with local cache (~/.config/calcit/Agents.md), refresh if older than 1 day
+pub struct DocsAgentsCommand {
+  /// heading keyword(s) for fuzzy match, can pass multiple; if omitted, list all markdown headings
+  #[argh(positional)]
+  pub headings: Vec<String>,
+  /// do not include nested subheadings when showing matched parent heading content
+  #[argh(switch)]
+  pub no_subheadings: bool,
+  /// show full file content directly
+  #[argh(switch)]
+  pub full: bool,
+  /// show line numbers in heading list and section titles
+  #[argh(switch)]
+  pub with_lines: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

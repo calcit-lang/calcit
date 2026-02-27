@@ -10,6 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Once;
+use std::time::{Duration, SystemTime};
 
 use calcit::ProgramEntries;
 use calcit::calcit::LocatedWarning;
@@ -38,11 +39,194 @@ struct HeadingSection {
 pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
   match &cmd.subcommand {
     DocsSubcommand::Search(opts) => handle_search(&opts.keyword, opts.context, opts.filename.as_deref()),
-    DocsSubcommand::Read(opts) => handle_read(&opts.filename, &opts.headings, !opts.no_subheadings),
+    DocsSubcommand::Read(opts) => handle_read(&opts.filename, &opts.headings, !opts.no_subheadings, opts.full, opts.with_lines),
+    DocsSubcommand::Agents(opts) => handle_agents(&opts.headings, !opts.no_subheadings, opts.full, opts.with_lines),
     DocsSubcommand::ReadLines(opts) => handle_read_lines(&opts.filename, opts.start, opts.lines),
     DocsSubcommand::List(_) => handle_list(),
     DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep),
   }
+}
+
+const AGENTS_DOC_URL: &str = "https://repo.calcit-lang.org/calcit/docs/CalcitAgent.md";
+
+fn get_agents_cache_path() -> Result<PathBuf, String> {
+  let home_dir = std::env::var("HOME").map_err(|_| "Unable to get HOME environment variable".to_string())?;
+  Ok(Path::new(&home_dir).join(".config/calcit/Agents.md"))
+}
+
+fn needs_agents_refresh(cache_path: &Path) -> bool {
+  if !cache_path.exists() {
+    return true;
+  }
+
+  let metadata = match fs::metadata(cache_path) {
+    Ok(m) => m,
+    Err(_) => return true,
+  };
+
+  let modified = match metadata.modified() {
+    Ok(m) => m,
+    Err(_) => return true,
+  };
+
+  let now = SystemTime::now();
+  match now.duration_since(modified) {
+    Ok(age) => age > Duration::from_secs(24 * 60 * 60),
+    Err(_) => true,
+  }
+}
+
+fn download_agents_doc() -> Result<String, String> {
+  let response = ureq::get(AGENTS_DOC_URL)
+    .call()
+    .map_err(|e| format!("Failed to download Agents.md: {e}"))?;
+
+  response
+    .into_body()
+    .read_to_string()
+    .map_err(|e| format!("Failed to read Agents.md response: {e}"))
+}
+
+fn ensure_agents_cache() -> Result<(PathBuf, bool), String> {
+  let cache_path = get_agents_cache_path()?;
+  let should_refresh = needs_agents_refresh(&cache_path);
+
+  if should_refresh {
+    let content = download_agents_doc()?;
+    if let Some(parent) = cache_path.parent() {
+      fs::create_dir_all(parent).map_err(|e| format!("Failed to create cache directory {:?}: {e}", parent))?;
+    }
+    fs::write(&cache_path, content).map_err(|e| format!("Failed to write Agents cache {:?}: {e}", cache_path))?;
+  }
+
+  Ok((cache_path, should_refresh))
+}
+
+fn handle_read_content(
+  display_title: &str,
+  display_path: &str,
+  content: &str,
+  heading_queries: &[String],
+  include_subheadings: bool,
+  full: bool,
+  with_lines: bool,
+  command_hint: &str,
+) -> Result<(), String> {
+  let lines: Vec<&str> = content.lines().collect();
+  let sections = build_heading_sections(content);
+
+  println!("{} ({})", display_title.cyan().bold(), display_path.dimmed());
+  println!("{}", "=".repeat(60).dimmed());
+
+  if full {
+    println!("{content}");
+    return Ok(());
+  }
+
+  if sections.is_empty() {
+    println!("{}", "No Markdown headings found in this document.".yellow());
+    return Ok(());
+  }
+
+  if heading_queries.is_empty() {
+    println!("{}", "Headings:".bold());
+    for section in &sections {
+      if with_lines {
+        println!(
+          "  {}\t{}{}",
+          format!("L{}", section.line).dimmed(),
+          "#".repeat(section.level).dimmed(),
+          format_args!(" {}", section.title)
+        );
+      } else {
+        println!("  {} {}", "#".repeat(section.level).dimmed(), section.title);
+      }
+    }
+    println!();
+    println!(
+      "{}",
+      format!("Tip: Use 'cr docs {command_hint} <heading-keyword> [more-keywords...]' for fuzzy heading matching.").dimmed()
+    );
+    println!("{}", "     Use '--no-subheadings' to show only direct section content.".dimmed());
+    println!(
+      "{}",
+      format!("     Use 'cr docs {command_hint} --full' to print the whole file.").dimmed()
+    );
+    println!(
+      "{}",
+      format!("     Use 'cr docs {command_hint} --with-lines' to show heading line numbers.").dimmed()
+    );
+    return Ok(());
+  }
+
+  let mut selected_indices: Vec<usize> = vec![];
+  let mut unmatched: Vec<String> = vec![];
+
+  for query in heading_queries {
+    let query_lower = query.to_lowercase();
+    let mut found = false;
+    for (idx, section) in sections.iter().enumerate() {
+      if section.title.to_lowercase().contains(&query_lower) {
+        found = true;
+        if !selected_indices.contains(&idx) {
+          selected_indices.push(idx);
+        }
+      }
+    }
+    if !found {
+      unmatched.push(query.to_owned());
+    }
+  }
+
+  if selected_indices.is_empty() {
+    return Err("No heading matched in Agents.md. Run 'cr docs agents' to list available headings.".to_string());
+  }
+
+  let selected_indices = if include_subheadings {
+    collapse_nested_sections(&selected_indices, &sections)
+  } else {
+    selected_indices
+  };
+
+  for idx in selected_indices {
+    let section = &sections[idx];
+    if with_lines {
+      println!(
+        "{} {} ({})",
+        "#".repeat(section.level).cyan().bold(),
+        section.title.cyan().bold(),
+        format!("L{}", section.line).dimmed()
+      );
+    } else {
+      println!("{} {}", "#".repeat(section.level).cyan().bold(), section.title.cyan().bold());
+    }
+    println!("{}", "-".repeat(60).dimmed());
+
+    let section_end = if include_subheadings {
+      section.content_end
+    } else if idx + 1 < sections.len() {
+      sections[idx + 1].line.saturating_sub(1)
+    } else {
+      lines.len()
+    };
+
+    if section.content_start > section_end || section.content_start > lines.len() {
+      println!("{}", "(empty section)".dimmed());
+    } else {
+      let start = section.content_start;
+      let end = section_end.min(lines.len());
+      for line in &lines[start - 1..end] {
+        println!("{line}");
+      }
+    }
+    println!();
+  }
+
+  if !unmatched.is_empty() {
+    println!("{}", format!("No match for heading query: {}", unmatched.join(", ")).yellow());
+  }
+
+  Ok(())
 }
 
 fn find_doc_by_filename<'a>(guide_docs: &'a HashMap<String, GuideDoc>, filename: &str) -> Result<&'a GuideDoc, String> {
@@ -261,116 +445,63 @@ fn handle_search(keyword: &str, context_lines: usize, filename_filter: Option<&s
   Ok(())
 }
 
-fn handle_read(filename: &str, heading_queries: &[String], include_subheadings: bool) -> Result<(), String> {
+fn handle_agents(heading_queries: &[String], include_subheadings: bool, full: bool, with_lines: bool) -> Result<(), String> {
+  let (cache_path, refreshed) = ensure_agents_cache()?;
+  if refreshed {
+    println!("{}", format!("Refreshed Agents doc cache from: {AGENTS_DOC_URL}").dimmed());
+  }
+  let content = fs::read_to_string(&cache_path).map_err(|e| format!("Failed to read Agents cache {:?}: {e}", cache_path))?;
+  let byte_len = content.len();
+  let line_len = content.lines().count();
+
+  println!("{} {}", "Agent file:".dimmed(), cache_path.to_string_lossy().cyan());
+  println!(
+    "{} {} bytes, {} lines",
+    "Agent length:".dimmed(),
+    byte_len.to_string().cyan(),
+    line_len.to_string().cyan()
+  );
+
+  handle_read_content(
+    "Agents.md",
+    &cache_path.to_string_lossy(),
+    &content,
+    heading_queries,
+    include_subheadings,
+    full,
+    with_lines,
+    "agents",
+  )
+}
+
+fn handle_read(
+  filename: &str,
+  heading_queries: &[String],
+  include_subheadings: bool,
+  full: bool,
+  with_lines: bool,
+) -> Result<(), String> {
   let guide_docs = load_guidebook_docs()?;
   let doc = find_doc_by_filename(&guide_docs, filename)?;
-  let lines: Vec<&str> = doc.content.lines().collect();
-  let sections = build_heading_sections(&doc.content);
+  let result = handle_read_content(
+    &doc.filename,
+    &doc.path,
+    &doc.content,
+    heading_queries,
+    include_subheadings,
+    full,
+    with_lines,
+    "read",
+  );
 
-  println!("{} ({})", doc.filename.cyan().bold(), doc.path.dimmed());
-  println!("{}", "=".repeat(60).dimmed());
-
-  if sections.is_empty() {
-    println!("{}", "No Markdown headings found in this document.".yellow());
-    println!(
-      "{}",
-      "Tip: Use 'cr docs read-lines <filename> -s 0 -n 80' for line-based reading.".dimmed()
-    );
-    return Ok(());
-  }
-
-  if heading_queries.is_empty() {
-    println!("{}", "Headings:".bold());
-    for section in &sections {
-      println!(
-        "  {}\t{}{}",
-        format!("L{}", section.line).dimmed(),
-        "#".repeat(section.level).dimmed(),
-        format_args!(" {}", section.title)
-      );
-    }
-    println!();
-    println!(
-      "{}",
-      "Tip: Use 'cr docs read <filename> <heading-keyword> [more-keywords...]' for fuzzy heading matching.".dimmed()
-    );
-    println!("{}", "     Use '--no-subheadings' to show only direct section content.".dimmed());
-    println!(
-      "{}",
-      "     Use 'cr docs read-lines <filename> -s <start> -n <lines>' for line-based reading.".dimmed()
-    );
-    return Ok(());
-  }
-
-  let mut selected_indices: Vec<usize> = vec![];
-  let mut unmatched: Vec<String> = vec![];
-
-  for query in heading_queries {
-    let query_lower = query.to_lowercase();
-    let mut found = false;
-    for (idx, section) in sections.iter().enumerate() {
-      if section.title.to_lowercase().contains(&query_lower) {
-        found = true;
-        if !selected_indices.contains(&idx) {
-          selected_indices.push(idx);
-        }
-      }
-    }
-    if !found {
-      unmatched.push(query.to_owned());
-    }
-  }
-
-  if selected_indices.is_empty() {
+  if result.is_err() && !heading_queries.is_empty() {
     return Err(format!(
       "No heading matched: {}. Use 'cr docs read {filename}' to list available headings.",
       heading_queries.join(", ")
     ));
   }
 
-  let selected_indices = if include_subheadings {
-    collapse_nested_sections(&selected_indices, &sections)
-  } else {
-    selected_indices
-  };
-
-  for idx in selected_indices {
-    let section = &sections[idx];
-    println!(
-      "{} {} ({})",
-      "#".repeat(section.level).cyan().bold(),
-      section.title.cyan().bold(),
-      format!("L{}", section.line).dimmed()
-    );
-    println!("{}", "-".repeat(60).dimmed());
-
-    let section_end = if include_subheadings {
-      section.content_end
-    } else if idx + 1 < sections.len() {
-      sections[idx + 1].line.saturating_sub(1)
-    } else {
-      lines.len()
-    };
-
-    if section.content_start > section_end || section.content_start > lines.len() {
-      println!("{}", "(empty section)".dimmed());
-    } else {
-      let start = section.content_start;
-      let end = section_end.min(lines.len());
-      for line_num in start..=end {
-        if let Some(line) = lines.get(line_num - 1) {
-          println!("{} {}", format!("{line_num:4}:").dimmed(), line);
-        }
-      }
-    }
-    println!();
-  }
-
-  if !unmatched.is_empty() {
-    println!("{}", format!("No match for heading query: {}", unmatched.join(", ")).yellow());
-  }
-
-  Ok(())
+  result
 }
 
 fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize) -> Result<(), String> {
