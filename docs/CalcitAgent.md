@@ -169,22 +169,14 @@ Calcit 程序使用 `cr` 命令：
 
 ### LLM 辅助：动态方法提示
 
-- `&methods-of` - 返回某个值在运行时可用的方法名列表（字符串，包含前导点）
-  - 用法：`&methods-of value`
-  - 返回：`[] |.foo |.bar ...`
+在运行时调试 trait 分派时，可使用以下内置函数（低频场景，需运行期有值后调用）：
 
-- `&inspect-methods` - 打印某个值在运行时可用的方法与 impl 记录来源（不改变原值）
-  - 用法：`&inspect-methods value "|optional note"`
-  - 用途：调试动态分派/traits override 链，适合临时插入 pipeline
+- `&methods-of value` — 列出某值的可用方法名（返回字符串列表 `[] |.foo |.bar ...`）
+- `&inspect-methods value` — 打印方法与 impl 来源（调试 trait override 链，可临时插入 pipeline）
+- `&impl:origin impl` — 读取 impl record 的 trait 来源
+- `&trait-call Trait :method receiver & args` — 显式消歧：只调用属于指定 trait 的方法实现
 
-- `&impl:origin` - 读取 impl record 的 trait 来源（返回 trait 值或 nil）
-  - 用法：`&impl:origin impl`
-  - 用途：调试/断言 impl 与 trait 的关联关系（配合 `&tuple:impls` 或 `&methods-of` 使用）
-
-- `&trait-call` - 显式调用某个 trait 的方法实现（同名方法消歧/绕开 `.method` 分派）
-  - 用法：`&trait-call Trait :method receiver & args`
-  - 说明：会按当前 value 的 impl precedence 扫描，但只匹配“属于该 trait”的 impl 记录；若 trait 定义了 default 实现则会回退调用
-  - 前置条件：建议用 `defimpl` 创建 impl（impl record 会保存 trait origin，供 `&trait-call` 定位）
+> 📖 深入了解 trait 实现机制：`cr docs read traits.md` 或 `cr docs search 'trait-call'`
 
 ### 文档子命令 (`cr docs`)
 
@@ -1209,6 +1201,104 @@ cr eval 'thread-first x (+ 1) (* 2)'  # 用 thread-first 代替 ->
 
 **建议：** 命令行中优先使用英文名称（`thread-first` 而非 `->`），更清晰且无需转义。
 
+
+---
+
+## 🔄 完整功能开发示例
+
+以下展示从零开始添加新函数的完整流程，是最常见的日常开发场景。
+
+### 步骤 1：确认目标命名空间和现有代码
+
+```bash
+# 查看命名空间列表
+cr query ns
+
+# 查看某个 ns 已有的定义
+cr query defs app.util
+
+# 快速了解某个定义（不展开完整代码）
+cr query peek 'app.util/format-date'
+
+# 如有疑问，读取完整代码
+cr query def 'app.util/format-date'
+```
+
+### 步骤 2：用 eval 快速验证写法
+
+在真正写入项目前，先用 `cr eval` 验证逻辑思路：
+
+```bash
+# 验证基础函数调用
+cr eval 'string->number |123'
+
+# 验证带 let 的表达式
+cr eval 'let ((x 10) (y 20)) (+ x y)'
+
+# 验证列表操作
+cr eval 'let ((xs (list 1 2 3))) (map xs (fn (x) (* x 2)))'
+
+# 加载项目依赖模块后测试
+cr eval --dep calcit.std 'str/split |hello world | '
+```
+
+> 💡 `cr eval` 有类型警告时会失败退出——正好可以提前发现用法错误。
+
+### 步骤 3：添加新定义
+
+```bash
+# 在已有命名空间中添加新函数
+cr edit def 'app.util/calculate-discount' -e 'defn calculate-discount (price rate) (* price (- 1 rate))'
+
+# 验证定义写入成功
+cr query def 'app.util/calculate-discount'
+```
+
+### 步骤 4：在调用方添加 import 并使用
+
+```bash
+# 查看调用方当前 imports
+cr query ns app.core
+
+# 添加 import（首选 add-import，更安全）
+cr edit add-import 'app.core' -e 'app.util :refer $ calculate-discount'
+
+# 在函数体中使用新定义（先定位插入位置）
+cr query search 'total-price' -f 'app.core/checkout'
+# 输出：[3,2,1] in (let ((total-price ...)) ...)
+
+# 修改调用
+cr tree replace 'app.core/checkout' -p '3,2,1' -e 'calculate-discount total-price 0.1'
+```
+
+### 步骤 5：触发热更新并验证
+
+```bash
+# 推送增量更新（触发 watcher 热加载）
+cr edit inc --changed 'app.util/calculate-discount'
+cr edit inc --changed 'app.core/checkout'
+
+# 等待 ~300ms 后检查是否有错误
+cr query error
+
+# 如无错误，用 --check-only 整体验证
+cr --check-only
+```
+
+### 常见失误快速修复
+
+```bash
+# 忘记 import → unknown symbol
+cr edit add-import 'app.core' -e 'app.util :refer $ calculate-discount'
+
+# 定义名拼写错误 → 重命名
+cr edit rename 'app.util/calculte-discount' 'calculate-discount'
+
+# 函数参数顺序传错 → 定位并修改调用
+cr query search 'calculate-discount' -f 'app.core/checkout'
+cr tree replace 'app.core/checkout' -p '3,2,1' --leaf -e 'calculate-discount'
+```
+
 ---
 
 ## 💡 Calcit vs Clojure 关键差异
@@ -1234,11 +1324,61 @@ cr eval 'thread-first x (+ 1) (* 2)'  # 用 thread-first 代替 ->
 
 ## 常见错误排查
 
-| 错误信息                     | 原因                    | 解决方法                          |
-| ---------------------------- | ----------------------- | --------------------------------- |
-| `Path index X out of bounds` | 路径已过期              | 重新运行 `cr query search`        |
-| `tag-match expected tuple`   | 传入 vector 而非 tuple  | 改用 `::`                         |
-| 字符串被拆分                 | 没有用 `\|` 或 `"` 包裹 | 使用 `\|complete string`          |
-| `unexpected format`          | 语法错误                | 用 `cr cirru parse '<code>'` 验证 |
+### 快速诊断流程
 
-**调试命令：** `cr query error`（会显示详细的错误堆栈和提示）
+当 watcher 提示有错误或行为异常时，按以下顺序排查：
+
+```bash
+# 1. 查看最新错误堆栈（首选）
+cr query error
+# 输出示例：
+#   Error in app.core/process-data
+#   CalcitErr: unknown symbol: proess-item   ← 拼写错误
+#   at app.core/render → app.core/process-data → ...
+
+# 2. 用 --check-only 快速全量验证（不执行程序）
+cr --check-only
+
+# 3. 用 cr eval 隔离验证单个函数写法
+cr eval 'let ((x 1)) (+ x 2)'
+```
+
+### 错误信息对照表
+
+| 错误信息                              | 原因                         | 解决方法                                              |
+| ------------------------------------- | ---------------------------- | ----------------------------------------------------- |
+| `Path index X out of bounds`          | 路径索引已过期（操作后变化） | 重新运行 `cr query search` 获取最新路径               |
+| `tag-match expected tuple`            | 传入 vector 而非 tuple       | 改用 `::` 语法，如 `:: :event-name data`              |
+| `unknown symbol: xxx`                 | 符号未定义或未 import        | `cr query find xxx` 确认位置，`cr edit add-import` 引入 |
+| `expects pairs in list for let`       | `let` 绑定语法错误           | 改为 `let ((x val)) body`（双层括号）                 |
+| `cannot be used as operator`          | 末尾符号被当作函数调用       | 改用 `, acc` 前缀传递值，或用函数包裹                 |
+| `unknown data for foldl-shortcut`     | 参数顺序错误（Calcit vs Clojure 差异） | Calcit 集合在第一位：`map data fn`            |
+| `Do not include ':require' as prefix` | `cr edit imports` 格式错误   | 去掉 `:require` 前缀，直接传 `src-ns :refer $ sym`   |
+| `Namespace name mismatch`             | `add-ns -e` 名称不一致       | ns 表达式名称必须与位置参数完全一致                   |
+| 字符串被拆分成多个 token              | 没有用 `\|` 或 `"` 包裹     | 使用 `\|complete string` 或 `"complete string`        |
+| `unexpected format`                   | Cirru 语法错误               | 用 `cr cirru parse '<code>'` 验证语法                 |
+| `Type warning` 导致 eval 失败         | 类型不匹配（阻断执行）       | 检查参数类型标注，或用 `assert-type` 确认预期类型     |
+
+### 调试常用命令
+
+```bash
+# 查看完整错误栈（最详细）
+cr query error
+
+# 检查某个定义的代码和内容
+cr query def 'ns/def'
+cr tree show 'ns/def'
+
+# 验证 Cirru 语法
+cr cirru parse 'defn add (a b) (+ a b)'
+
+# 快速测试某个想法（不影响项目代码）
+cr eval 'range 5'
+cr eval 'let ((xs (list 1 2 3))) (map xs number->string)'
+
+# 检查定义是否存在
+cr query find 'my-function'
+cr query defs 'my.namespace'
+```
+
+> 💡 **错误文件备份**：`.calcit-error.cirru` 会保存最近一次的完整错误堆栈（包含 chain 信息），比 `cr query error` 更完整。
