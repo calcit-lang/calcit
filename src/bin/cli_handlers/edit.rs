@@ -11,8 +11,8 @@
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditCpCommand,
   EditDefCommand, EditDocCommand, EditExamplesCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditMvNodeCommand,
-  EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmModuleCommand, EditRmNsCommand,
-  EditSplitDefCommand, EditSubcommand,
+  EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmModuleCommand,
+  EditRmNsCommand, EditSplitDefCommand, EditSubcommand,
 };
 use calcit::snapshot::{self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -272,8 +272,7 @@ fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), S
   if to_path_is_inside_from(&from_path, &to_path) {
     return Err(format!(
       "Cannot move node at [{}] into its own subtree at [{}]",
-      opts.from,
-      opts.path
+      opts.from, opts.path
     ));
   }
 
@@ -336,8 +335,7 @@ fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), St
   if file_data.defs.contains_key(&opts.new_name) {
     return Err(format!(
       "Definition '{}' already exists in namespace '{}'. Use 'cr edit mv-def' to move to a different namespace.",
-      opts.new_name,
-      namespace
+      opts.new_name, namespace
     ));
   }
 
@@ -363,7 +361,10 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
   let new_name = opts.new_name.trim();
 
   if path.is_empty() {
-    return Err("Cannot split at the root path: the root IS the definition. Use 'cr edit def' to create a new definition from scratch.".to_string());
+    return Err(
+      "Cannot split at the root path: the root IS the definition. Use 'cr edit def' to create a new definition from scratch."
+        .to_string(),
+    );
   }
   if new_name.is_empty() {
     return Err("New definition name cannot be empty".to_string());
@@ -423,7 +424,6 @@ fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(
   );
   Ok(())
 }
-
 
 fn handle_rm_def(opts: &EditRmDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;

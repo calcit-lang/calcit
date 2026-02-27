@@ -86,9 +86,10 @@ Calcit 程序使用 `cr` 命令：
 - `cr js -1` - 检查代码正确性，生成 JavaScript(兼容参数，默认已是单次)
 - `cr js --check-only` - 检查代码正确性，不生成 JavaScript
 - `cr eval '<code>' [--dep <module>...]` - 执行一段 Calcit 代码片段，用于快速验证写法
-  - `--dep` 参数可以加载 `~/.config/calcit/modules/` 中的模块（直接使用模块名）
-  - 示例：`cr eval 'echo 1' --dep calcit.std`
-  - 可多次使用 `--dep` 加载多个模块
+  - **不需要**项目 `compact.cirru`：core 内置函数（`range`、`+`、`map` 等）直接可用
+  - 项目自定义函数不可直接 eval（代码未加载），需用 `--dep` 加载外部模块
+  - `--dep` 参数可以加载 `~/.config/calcit/modules/` 中的模块（直接使用模块名），可多次使用
+  - 示例：`cr eval 'range 5'`、`cr eval 'echo 1' --dep calcit.std`
 
 ### 查询子命令 (`cr query`)
 
@@ -200,6 +201,8 @@ Calcit 程序使用 `cr` 命令：
   - 示例：`cr docs read-lines intro.md -s 20 -n 30`
 
 - `cr docs list` - 列出所有可用文档
+- `cr docs agents [<heading> ...] [--full]` - 读取 Agent 指南（即本文档，优先本地缓存，按天自动刷新）
+  - 不传标题时列出所有标题；传关键词时按标题模糊匹配输出对应章节
 
 ### Cirru 语法工具 (`cr cirru`)
 
@@ -234,7 +237,9 @@ Calcit 程序使用 `cr` 命令：
 - `cr libs scan-md <module>` - 扫描本地模块目录下的所有 `.md` 文件
   - 递归扫描子目录
   - 显示相对路径列表
-- `caps` - 安装/更新依赖
+- `caps` - 安装/更新项目模块依赖（独立工具，非 `cr` 子命令）
+  - 读取 `compact.cirru` 中的 `:modules` 配置，将依赖安装到 `~/.config/calcit/modules/`
+  - 示例：`caps`（在项目根目录运行）
 
 **查看已安装模块：**
 
@@ -274,10 +279,13 @@ cr query modules
   - `--pattern <pattern>` - 要搜索的模式（精确匹配 leaf 节点）
   - 使用 `-e, -f, -j` 等通用参数提供替换内容
   - 逻辑：自动查找叶子节点，若唯一则替换；若不唯一则报错并列出所有位置及修改命令建议。
-- `cr tree delete` - 删除节点
-- `cr tree insert-before/after` - 插入相邻节点
-- `cr tree insert-child/append-child` - 插入子节点
-- `cr tree swap-next/prev` - 交换相邻节点
+- `cr tree delete <ns/def> -p '<path>'` - 删除指定路径节点（⚠️ 后续同级索引自动减小）
+  - 示例：`cr tree delete app.core/fn -p '3,2'`
+- `cr tree insert-before <ns/def> -p '<path>'` / `cr tree insert-after` - 在路径节点的前/后插入兄弟节点
+  - 示例：`cr tree insert-before app.core/fn -p '3,2' -e 'new-expr'`
+- `cr tree insert-child <ns/def> -p '<path>'` / `cr tree append-child` - 在某节点内部最前/最后插入子节点
+  - 示例：`cr tree append-child app.core/fn -p '3' --leaf -e 'new-arg'`
+- `cr tree swap-next <ns/def> -p '<path>'` / `cr tree swap-prev` - 将节点与其下一个/上一个兄弟节点交换位置
 - `cr tree rewrite` - 用引用原节点的新结构替换节点（`--with` 必须；需引用子节点时使用）
 - `cr tree wrap` - 快捷包裹节点：将 `self` 替换为原节点（`rewrite --with self=.` 的语法糖）
 - `cr tree unwrap` - 将节点的所有子节点展开拼接到父节点中（拆包），原节点消失
@@ -1201,7 +1209,6 @@ cr eval 'thread-first x (+ 1) (* 2)'  # 用 thread-first 代替 ->
 
 **建议：** 命令行中优先使用英文名称（`thread-first` 而非 `->`），更清晰且无需转义。
 
-
 ---
 
 ## 🔄 完整功能开发示例
@@ -1345,19 +1352,19 @@ cr eval 'let ((x 1)) (+ x 2)'
 
 ### 错误信息对照表
 
-| 错误信息                              | 原因                         | 解决方法                                              |
-| ------------------------------------- | ---------------------------- | ----------------------------------------------------- |
-| `Path index X out of bounds`          | 路径索引已过期（操作后变化） | 重新运行 `cr query search` 获取最新路径               |
-| `tag-match expected tuple`            | 传入 vector 而非 tuple       | 改用 `::` 语法，如 `:: :event-name data`              |
-| `unknown symbol: xxx`                 | 符号未定义或未 import        | `cr query find xxx` 确认位置，`cr edit add-import` 引入 |
-| `expects pairs in list for let`       | `let` 绑定语法错误           | 改为 `let ((x val)) body`（双层括号）                 |
-| `cannot be used as operator`          | 末尾符号被当作函数调用       | 改用 `, acc` 前缀传递值，或用函数包裹                 |
-| `unknown data for foldl-shortcut`     | 参数顺序错误（Calcit vs Clojure 差异） | Calcit 集合在第一位：`map data fn`            |
-| `Do not include ':require' as prefix` | `cr edit imports` 格式错误   | 去掉 `:require` 前缀，直接传 `src-ns :refer $ sym`   |
-| `Namespace name mismatch`             | `add-ns -e` 名称不一致       | ns 表达式名称必须与位置参数完全一致                   |
-| 字符串被拆分成多个 token              | 没有用 `\|` 或 `"` 包裹     | 使用 `\|complete string` 或 `"complete string`        |
-| `unexpected format`                   | Cirru 语法错误               | 用 `cr cirru parse '<code>'` 验证语法                 |
-| `Type warning` 导致 eval 失败         | 类型不匹配（阻断执行）       | 检查参数类型标注，或用 `assert-type` 确认预期类型     |
+| 错误信息                              | 原因                                   | 解决方法                                                |
+| ------------------------------------- | -------------------------------------- | ------------------------------------------------------- |
+| `Path index X out of bounds`          | 路径索引已过期（操作后变化）           | 重新运行 `cr query search` 获取最新路径                 |
+| `tag-match expected tuple`            | 传入 vector 而非 tuple                 | 改用 `::` 语法，如 `:: :event-name data`                |
+| `unknown symbol: xxx`                 | 符号未定义或未 import                  | `cr query find xxx` 确认位置，`cr edit add-import` 引入 |
+| `expects pairs in list for let`       | `let` 绑定语法错误                     | 改为 `let ((x val)) body`（双层括号）                   |
+| `cannot be used as operator`          | 末尾符号被当作函数调用                 | 改用 `, acc` 前缀传递值，或用函数包裹                   |
+| `unknown data for foldl-shortcut`     | 参数顺序错误（Calcit vs Clojure 差异） | Calcit 集合在第一位：`map data fn`                      |
+| `Do not include ':require' as prefix` | `cr edit imports` 格式错误             | 去掉 `:require` 前缀，直接传 `src-ns :refer $ sym`      |
+| `Namespace name mismatch`             | `add-ns -e` 名称不一致                 | ns 表达式名称必须与位置参数完全一致                     |
+| 字符串被拆分成多个 token              | 没有用 `\|` 或 `"` 包裹                | 使用 `\|complete string` 或 `"complete string`          |
+| `unexpected format`                   | Cirru 语法错误                         | 用 `cr cirru parse '<code>'` 验证语法                   |
+| `Type warning` 导致 eval 失败         | 类型不匹配（阻断执行）                 | 检查参数类型标注，或用 `assert-type` 确认预期类型       |
 
 ### 调试常用命令
 
@@ -1381,4 +1388,4 @@ cr query find 'my-function'
 cr query defs 'my.namespace'
 ```
 
-> 💡 **错误文件备份**：`.calcit-error.cirru` 会保存最近一次的完整错误堆栈（包含 chain 信息），比 `cr query error` 更完整。
+> 💡 **错误文件备份**：`.calcit-error.cirru` 会保存最近一次的完整错误堆栈（包含 chain 信息），比 `cr query error` 更完整。直接用 `cat .calcit-error.cirru` 读取，或 `cr query error`（从此文件读取并格式化输出）。
