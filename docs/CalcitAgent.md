@@ -286,7 +286,8 @@ cr query modules
 - `cr tree insert-before/after` - 插入相邻节点
 - `cr tree insert-child/append-child` - 插入子节点
 - `cr tree swap-next/prev` - 交换相邻节点
-- `cr tree wrap` - 用新结构包装节点
+- `cr tree rewrite` - 用引用原节点的新结构替换节点（`--with` 必须）
+- `cr tree unwrap` - 将节点的所有子节点展开拼接到父节点中（拆包），原节点消失
 
 **输入方式（通用）：**
 
@@ -360,29 +361,47 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 
 **结构化变更示例：**
 
-这些高级操作允许你在修改时引用原始节点及其内部结构。**注意：** `cr tree rewrite` 专门用于“引用驱动”的结构替换，必须传至少一个 `--with name=path`。如果不需要引用原节点，直接使用 `cr tree replace`。
+`cr tree rewrite` 用于在替换时引用原节点及其子节点，必须传至少一个 `--with name=path`（不需要引用时直接用 `replace`）。`--with` 格式：`name=path`，`.` 表示原节点本身，数字表示子节点索引。
 
-- **包裹节点**（使用 `cr tree wrap` 或 `cr tree rewrite` 的 `--with`）：
+- **包裹节点**（用 `rewrite`，`self=.` 引用原节点）：
 
   ```bash
   # 将路径 "3,2" 的节点包裹在 println 中
-  cr tree wrap ns/def -p '3,2' -e 'println self' --with 'self=.'
+  cr tree rewrite ns/def -p '3,2' -e 'println self' -w 'self=.'
   ```
 
-- **重构并复用原子节点**（使用 `cr tree rewrite` 的 `--with`）：
-  - 假设原节点是 `+ 1 2` (路径 "3,1")，其子节点索引 1 是 `1`，索引 2 是 `2`
-  - 将其重构为 `* 2 10`：
+- **引用原节点局部**（`rhs=2` 引用子节点索引 2）：
+  - 假设原节点是 `+ 1 2`（路径 `3,1`），子节点索引 2 是 `2`
+  - 将其重构为 `* rhs 10`：
 
   ```bash
-  cr tree rewrite ns/def -p '3,1' -e '* rhs 10' --with 'rhs=2'
+  cr tree rewrite ns/def -p '3,1' -e '* rhs 10' -w 'rhs=2'
   ```
 
-- **多处重用原始节点**（引用占位符）：
+- **多处重用原节点**：
+
   ```bash
-  # 使用 rewrite 命令将节点 x 变为 `+ x x`
-  cr tree rewrite ns/def -p '2' -e '+ self self' --with 'self=.'
+  # 将节点变为 `+ x x`（self 引用原节点本身）
+  cr tree rewrite ns/def -p '2' -e '+ self self' -w 'self=.'
   ```
+
+- **拆包节点**（`unwrap`）——将节点的所有子节点展开拼接到父节点中，原节点消失：
+
+  ```bash
+  # 将路径 "3,2" 的节点拆包，所有子节点直接插入到原位置
+  cr tree unwrap ns/def -p '3,2'
+  ```
+
   详细参数和示例使用 `cr tree <command> --help` 查看。
+
+- **提取子表达式为新定义**（`split-def`）——将某路径的子表达式提取为同 ns 的新定义，原位替换为新名字：
+
+  ```bash
+  # 将路径 "3,2" 的子表达式提取为新定义 compute-helper（同 namespace）
+  cr edit split-def app.util/process -p '3,2' -n compute-helper
+  ```
+
+  详细参数使用 `cr edit split-def --help` 查看。
 
 ### 复杂表达式分段组装策略 (Incremental Assembly) ⭐⭐⭐
 
@@ -451,8 +470,12 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 
 **定义操作：**
 
-- `cr edit def <namespace/definition>` - 添加新定义（若已存在会报错，需用 `cr tree replace` 修改）
-- `cr edit mv <source> <target>` - 移动定义到另一个命名空间或重命名
+- `cr edit def <namespace/definition>` - 添加新定义（默认若已存在会报错；加 `--overwrite` 可强制覆盖）
+- `cr edit rename <namespace/definition> <new-name>` - 在当前命名空间内重命名定义（不可覆盖）
+- `cr edit mv-def <source> <target>` - 将定义移动到另一个命名空间（跨命名空间移动）
+- `cr edit cp <ns/def> --from <path> -p <path> [--at <pos>]` - 在定义内复制 AST 节点到另一位置
+- `cr edit mv <ns/def> --from <path> -p <path> [--at <pos>]` - 在定义内移动 AST 节点（复制后删除原位置；自动防止移入自身子树）
+- `cr edit split-def <ns/def> -p <path> -n <new-name>` - 将定义内某路径的子表达式提取为同命名空间内的新定义，原位置替换为新定义名称（新名称不可与已有定义重名）
 - `cr edit rm-def <namespace/definition>` - 删除定义
 - `cr edit doc <namespace/definition> '<doc>'` - 更新定义的文档
 - `cr edit examples <namespace/definition>` - 设置定义的示例代码（批量替换）
@@ -858,6 +881,107 @@ cr edit imports app.main -j '[["app.lib",":as","lib"],["app.util",":refer",["hel
 
 # 更新项目配置
 cr edit config init-fn app.main/main!
+```
+
+---
+
+---
+
+## 🔧 实战重构场景
+
+以下是开发中最常见的局部修复和重构操作，帮助 Agent 快速找到对应命令。
+
+### 提取子表达式为新定义（`edit split-def`）
+
+**场景：** 函数体内某个嵌套子表达式太复杂，想拆成独立的命名定义。
+
+```bash
+# 1. 搜索并定位目标子表达式
+cr query search-expr 'complex-call arg1' -f 'app.core/process-data' -l
+# 输出示例：[3,2,1] in (let ((x ...)) ...)
+
+# 2. 提取为新定义（原位置自动替换为新名字 extracted-calc）
+cr edit split-def 'app.core/process-data' -p '3,2,1' -n extracted-calc
+
+# 3. 查看结果
+cr query def 'app.core/extracted-calc'   # 新定义
+cr query def 'app.core/process-data'     # 原定义（原位已变成 extracted-calc）
+
+# 4. 如需给新定义加函数签名（用 tree replace 重构根节点）
+cr tree replace 'app.core/extracted-calc' -p '' -e 'defn extracted-calc (x) body-expr'
+```
+
+**注意：**`split-def` 仅创建新定义并替换引用，不会自动在其他 ns 添加 import。对外暴露时记得 `cr edit add-import`。
+
+### 重命名定义（`edit rename`）
+
+**场景：** 定义名字需要在同一命名空间内改名。
+
+```bash
+# 1. 确认有哪些地方引用到
+cr query usages 'app.core/old-name'
+
+# 2. 重命名（不允许覆盖已有定义）
+cr edit rename 'app.core/old-name' 'new-name'
+
+# 3. 批量更新所有引用（search 会自动提示批量命令）
+cr query search 'old-name'   # 找到所有引用位置
+cr tree replace-leaf 'app.core/caller-fn' --pattern 'old-name' -e 'new-name' --leaf
+```
+
+### 迁移定义到另一命名空间（`edit mv-def`）
+
+**场景：** 某函数放错了命名空间，需要迁移。
+
+```bash
+# 移动定义
+cr edit mv-def 'app.core/helper-fn' 'app.util/helper-fn'
+
+# 在使用方添加 import
+cr edit add-import 'app.main' -e 'app.util :refer $ helper-fn'
+
+# 通知 watcher（热更新场景）
+cr edit inc --removed 'app.core/helper-fn' --added 'app.util/helper-fn'
+```
+
+### 在定义内移动 / 复制 AST 节点（`edit mv` / `edit cp`）
+
+**场景：** 函数体内某个子表达式需要移到另一位置，或复制用于多处。
+
+```bash
+# 定位节点
+cr query search-expr 'process item' -f 'app.core/main-fn' -l
+# 输出：[3,1,2]
+
+# 移动（原位置消失）
+cr edit mv 'app.core/main-fn' --from '3,1,2' -p '3,2' --at before
+
+# 复制（原位置保留，新位置多一份）
+cr edit cp 'app.core/main-fn' --from '3,1,2' -p '3,2' --at after
+```
+
+### 包裹 / 拆包表达式（`tree rewrite` / `tree unwrap`）
+
+**场景：** 临时包裹一层 `println` 调试，或反向拆掉不再需要的包装层。
+
+```bash
+# 包裹：将路径 "3,2" 的节点包进 println
+cr tree rewrite 'app.core/main-fn' -p '3,2' -e 'println self' -w 'self=.'
+
+# 拆包：删除路径 "3,2" 的节点，其所有子节点展开到原位置
+cr tree unwrap 'app.core/main-fn' -p '3,2'
+```
+
+### 批量重命名局部变量（`tree replace-leaf` / `tree target-replace`）
+
+**场景：** 某函数内某个局部变量名需要统一改掉。
+
+```bash
+# 若只有一处：内容定位直接替换（最安全 ⭐）
+cr tree target-replace 'app.core/process' --pattern 'old-var' -e 'new-var' --leaf
+
+# 若多处：一次性全部替换
+cr tree replace-leaf 'app.core/process' --pattern 'old-var' -e 'new-var' --leaf
 ```
 
 ---

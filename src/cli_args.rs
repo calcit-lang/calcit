@@ -643,8 +643,8 @@ pub struct EditCommand {
 pub enum EditSubcommand {
   /// add or update a definition
   Def(EditDefCommand),
-  /// move a definition
-  Mv(EditMvDefCommand),
+  /// move a definition to another namespace
+  MvDef(EditMvDefCommand),
   /// delete a definition
   RmDef(EditRmDefCommand),
   /// update definition documentation
@@ -675,6 +675,14 @@ pub enum EditSubcommand {
   Config(EditConfigCommand),
   /// describe incremental code changes and export them to .calcit-error.cirru
   Inc(EditIncCommand),
+  /// copy node from one path to another within a definition
+  Cp(EditCpCommand),
+  /// move node from one path to another within a definition (removes source)
+  Mv(EditMvNodeCommand),
+  /// rename a definition within its namespace (no overwrite)
+  Rename(EditRenameCommand),
+  /// extract a sub-expression into a new definition and replace in-place with the new name
+  SplitDef(EditSplitDefCommand),
 }
 
 // --- Definition operations ---
@@ -701,10 +709,13 @@ pub struct EditDefCommand {
   /// treat input as a Cirru leaf node (single symbol or string, no JSON quotes; e.g. --leaf -e 'sym' or --leaf -e '|text')
   #[argh(switch, long = "leaf")]
   pub leaf: bool,
+  /// overwrite existing definition if it already exists
+  #[argh(switch, long = "overwrite")]
+  pub overwrite: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "mv")]
+#[argh(subcommand, name = "mv-def")]
 /// move a definition to another namespace or rename it
 pub struct EditMvDefCommand {
   /// source in format "namespace/definition"
@@ -995,10 +1006,9 @@ pub enum TreeSubcommand {
   AppendChild(TreeAppendChildCommand),
   SwapNext(TreeSwapNextCommand),
   SwapPrev(TreeSwapPrevCommand),
-  Wrap(TreeWrapCommand),
+  Unwrap(TreeUnwrapCommand),
   TargetReplace(TreeTargetReplaceCommand),
   Rewrite(TreeStructuralCommand),
-  Cp(TreeCpCommand),
 }
 
 /// view tree node at specific path
@@ -1019,10 +1029,10 @@ pub struct TreeShowCommand {
   pub json: bool,
 }
 
-/// copy node from one path to another position
+/// copy node from one path to another within a definition
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "cp")]
-pub struct TreeCpCommand {
+pub struct EditCpCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
@@ -1035,6 +1045,51 @@ pub struct TreeCpCommand {
   /// position relative to the destination node (before, after, append-child, prepend-child, replace)
   #[argh(option, long = "at", default = "String::from(\"after\")")]
   pub at: String,
+}
+
+/// move node from one path to another within a definition (removes source)
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "mv")]
+pub struct EditMvNodeCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// path to the source node (comma-separated indices)
+  #[argh(option, long = "from")]
+  pub from: String,
+  /// path to the destination node (comma-separated indices)
+  #[argh(option, short = 'p', long = "path")]
+  pub path: String,
+  /// position relative to the destination node (before, after, append-child, prepend-child, replace)
+  #[argh(option, long = "at", default = "String::from(\"after\")")]
+  pub at: String,
+}
+
+/// rename a definition within its namespace (no overwrite)
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "rename")]
+pub struct EditRenameCommand {
+  /// source in format "namespace/definition"
+  #[argh(positional)]
+  pub source: String,
+  /// new definition name (within same namespace)
+  #[argh(positional)]
+  pub new_name: String,
+}
+
+/// extract a sub-expression into a new definition and replace the original location with the new name
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "split-def")]
+pub struct EditSplitDefCommand {
+  /// source definition in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// path to the node to extract (comma-separated indices, e.g. "3,2,1")
+  #[argh(option, short = 'p', long = "path")]
+  pub path: String,
+  /// name for the new extracted definition (within the same namespace)
+  #[argh(option, short = 'n', long = "name")]
+  pub new_name: String,
 }
 
 /// rewrite node using references; requires `--with name=path` (use `replace` if no references)
@@ -1329,35 +1384,16 @@ pub struct TreeSwapPrevCommand {
   pub depth: usize,
 }
 
-/// wrap node with new structure (use --with name=path to reference original node)
+/// splice all children of a node into its parent (inverse of wrap/rewrite)
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "wrap")]
-pub struct TreeWrapCommand {
+#[argh(subcommand, name = "unwrap")]
+pub struct TreeUnwrapCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// path to the node (comma-separated indices, e.g. "2,1,0")
+  /// path to the node to unwrap (comma-separated indices, e.g. "2,1,0")
   #[argh(option, short = 'p')]
   pub path: String,
-  /// read syntax_tree from file (Cirru format by default, use -J for JSON)
-  #[argh(option, short = 'f')]
-  pub file: Option<String>,
-  /// syntax_tree as inline Cirru text (or JSON when used with -J/--json-input)
-  #[argh(option, short = 'e', long = "code")]
-  pub code: Option<String>,
-  /// syntax_tree as inline JSON string
-  #[argh(option, short = 'j')]
-  pub json: Option<String>,
-  /// parse input as a single-line Cirru expression (one-liner parser)
-  /// treat file input as JSON
-  #[argh(switch, short = 'J', long = "json-input")]
-  pub json_input: bool,
-  /// treat file input as a leaf node (for strings, use Cirru syntax: |text or "text)
-  #[argh(switch, long = "leaf")]
-  pub leaf: bool,
-  /// reference original node or its part by name (format: name=path)
-  #[argh(option, short = 'w', long = "with")]
-  pub with: Vec<String>,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,

@@ -9,9 +9,10 @@
 //! - `--code <string>` - inline Cirru string
 
 use calcit::cli_args::{
-  EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditDefCommand,
-  EditDocCommand, EditExamplesCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditNsDocCommand, EditRmDefCommand,
-  EditRmExampleCommand, EditRmImportCommand, EditRmModuleCommand, EditRmNsCommand, EditSubcommand,
+  EditAddExampleCommand, EditAddImportCommand, EditAddModuleCommand, EditAddNsCommand, EditCommand, EditConfigCommand, EditCpCommand,
+  EditDefCommand, EditDocCommand, EditExamplesCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand, EditMvNodeCommand,
+  EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmModuleCommand, EditRmNsCommand,
+  EditSplitDefCommand, EditSubcommand,
 };
 use calcit::snapshot::{self, ChangesDict, CodeEntry, FileChangeInfo, FileInSnapShot, Snapshot, save_snapshot_to_file};
 use cirru_parser::Cirru;
@@ -20,7 +21,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::sync::Arc;
 
-use super::common::{ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_input_to_cirru, read_code_input};
+use super::common::{ERR_CODE_INPUT_REQUIRED, json_value_to_cirru, parse_input_to_cirru, parse_path, read_code_input};
 use super::tips::Tips;
 
 /// Parse "namespace/definition" format into (namespace, definition)
@@ -54,8 +55,12 @@ pub(crate) fn process_node_with_references(
 pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
   match &cmd.subcommand {
     EditSubcommand::Def(opts) => handle_def(opts, snapshot_file),
-    EditSubcommand::Mv(opts) => handle_mv_def(opts, snapshot_file),
+    EditSubcommand::MvDef(opts) => handle_mv_def(opts, snapshot_file),
     EditSubcommand::RmDef(opts) => handle_rm_def(opts, snapshot_file),
+    EditSubcommand::Cp(opts) => handle_cp_node(opts, snapshot_file),
+    EditSubcommand::Mv(opts) => handle_mv_node(opts, snapshot_file),
+    EditSubcommand::Rename(opts) => handle_rename(opts, snapshot_file),
+    EditSubcommand::SplitDef(opts) => handle_split_def(opts, snapshot_file),
     EditSubcommand::Doc(opts) => handle_doc(opts, snapshot_file),
     EditSubcommand::Examples(opts) => handle_examples(opts, snapshot_file),
     EditSubcommand::AddExample(opts) => handle_add_example(opts, snapshot_file),
@@ -128,11 +133,10 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   // Check if definition exists
   let exists = file_data.defs.contains_key(definition);
 
-  if exists {
+  if exists && !opts.overwrite {
     return Err(format!(
       "Definition '{definition}' already exists in namespace '{namespace}'.\n\
-       To replace the entire definition, use: cr tree replace {namespace}/{definition} -p '' -e '<code>'\n\
-       To modify parts of the definition, use: cr tree replace {namespace}/{definition} -p '<path>' -e '<code>'"
+       Use --overwrite to replace it, or use: cr tree replace {namespace}/{definition} -p '' -e '<code>'"
     ));
   }
 
@@ -167,6 +171,259 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   tips.print();
   Ok(())
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AST node copy / move helpers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Returns true if `to_path` is inside the subtree rooted at `from_path`
+fn to_path_is_inside_from(from_path: &[usize], to_path: &[usize]) -> bool {
+  to_path.len() > from_path.len() && to_path[..from_path.len()] == *from_path
+}
+
+/// After inserting at `to_path` with `operation`, compute the adjusted source path
+/// (the source index may shift if insertion happened at a sibling position before it).
+fn compute_adjusted_from_path(from_path: &[usize], to_path: &[usize], operation: &str) -> Vec<usize> {
+  let mut adjusted = from_path.to_vec();
+  // Only insert-before and insert-after affect sibling indices
+  if operation != "insert-before" && operation != "insert-after" {
+    return adjusted;
+  }
+  // Must be the same depth and same parent
+  if from_path.len() != to_path.len() {
+    return adjusted;
+  }
+  let parent_depth = from_path.len() - 1;
+  if from_path[..parent_depth] != to_path[..parent_depth] {
+    return adjusted;
+  }
+  let from_idx = from_path[parent_depth];
+  let to_idx = to_path[parent_depth];
+  // Effective insertion position
+  let insert_pos = if operation == "insert-before" { to_idx } else { to_idx + 1 };
+  if insert_pos <= from_idx {
+    adjusted[parent_depth] += 1;
+  }
+  adjusted
+}
+
+fn map_at_to_operation(at: &str) -> Result<&'static str, String> {
+  match at {
+    "before" => Ok("insert-before"),
+    "after" => Ok("insert-after"),
+    "prepend-child" => Ok("insert-child"),
+    "append-child" => Ok("append-child"),
+    "replace" => Ok("replace"),
+    other => Err(format!(
+      "Unsupported position '{other}'. Use: before, after, prepend-child, append-child, replace"
+    )),
+  }
+}
+
+fn handle_cp_node(opts: &EditCpCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+  let from_path = parse_path(&opts.from)?;
+  let to_path = parse_path(&opts.path)?;
+
+  let operation = map_at_to_operation(&opts.at)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found"))?;
+
+  let source_node = navigate_to_path(&code_entry.code, &from_path)?.clone();
+  let new_code = apply_operation_at_path(&code_entry.code, &to_path, operation, Some(&source_node))?;
+  code_entry.code = new_code;
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Copied node from [{}] to [{}] ({}) in '{}/{}'",
+    "✓".green(),
+    opts.from,
+    opts.path,
+    opts.at,
+    namespace,
+    definition
+  );
+  Ok(())
+}
+
+fn handle_mv_node(opts: &EditMvNodeCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+  let from_path = parse_path(&opts.from)?;
+  let to_path = parse_path(&opts.path)?;
+
+  if from_path.is_empty() {
+    return Err("Cannot move root node".to_string());
+  }
+  if from_path == to_path {
+    return Err("Source and destination paths are identical; nothing to move.".to_string());
+  }
+  if to_path_is_inside_from(&from_path, &to_path) {
+    return Err(format!(
+      "Cannot move node at [{}] into its own subtree at [{}]",
+      opts.from,
+      opts.path
+    ));
+  }
+
+  let operation = map_at_to_operation(&opts.at)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found"))?;
+
+  // Step 1: read source node
+  let source_node = navigate_to_path(&code_entry.code, &from_path)?.clone();
+
+  // Step 2: insert at destination
+  let after_insert = apply_operation_at_path(&code_entry.code, &to_path, operation, Some(&source_node))?;
+
+  // Step 3: compute adjusted source path (insertion may have shifted sibling indices)
+  let adjusted_from = compute_adjusted_from_path(&from_path, &to_path, operation);
+
+  // Step 4: delete source at adjusted path
+  let final_code = apply_operation_at_path(&after_insert, &adjusted_from, "delete", None)?;
+  code_entry.code = final_code;
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Moved node from [{}] to [{}] ({}) in '{}/{}'",
+    "✓".green(),
+    opts.from,
+    opts.path,
+    opts.at,
+    namespace,
+    definition
+  );
+  Ok(())
+}
+
+fn handle_rename(opts: &EditRenameCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.source)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  if !file_data.defs.contains_key(definition) {
+    return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
+  }
+  if file_data.defs.contains_key(&opts.new_name) {
+    return Err(format!(
+      "Definition '{}' already exists in namespace '{}'. Use 'cr edit mv-def' to move to a different namespace.",
+      opts.new_name,
+      namespace
+    ));
+  }
+
+  let entry = file_data.defs.remove(definition).expect("checked exists");
+  file_data.defs.insert(opts.new_name.clone(), entry);
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Renamed '{}' to '{}' in namespace '{}'",
+    "✓".green(),
+    definition.cyan(),
+    opts.new_name.cyan(),
+    namespace
+  );
+
+  Ok(())
+}
+
+fn handle_split_def(opts: &EditSplitDefCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+  let path = parse_path(&opts.path)?;
+  let new_name = opts.new_name.trim();
+
+  if path.is_empty() {
+    return Err("Cannot split at the root path: the root IS the definition. Use 'cr edit def' to create a new definition from scratch.".to_string());
+  }
+  if new_name.is_empty() {
+    return Err("New definition name cannot be empty".to_string());
+  }
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  if !file_data.defs.contains_key(definition) {
+    return Err(format!("Definition '{definition}' not found in namespace '{namespace}'"));
+  }
+  if file_data.defs.contains_key(new_name) {
+    return Err(format!(
+      "Definition '{new_name}' already exists in namespace '{namespace}'. Choose a different name or remove the existing one first."
+    ));
+  }
+
+  // Extract the sub-expression at path
+  let extracted = navigate_to_path(&file_data.defs[definition].code, &path)?.clone();
+
+  // Replace the path in the original definition with the new name (a leaf)
+  let new_ref = Cirru::Leaf(Arc::from(new_name));
+  let updated_code = apply_operation_at_path(&file_data.defs[definition].code, &path, "replace", Some(&new_ref))?;
+
+  // Write updated code back to original definition
+  file_data.defs.get_mut(definition).expect("checked exists").code = updated_code;
+
+  // Create the new definition with the extracted sub-expression as its body
+  let new_entry = CodeEntry::from_code(extracted);
+  file_data.defs.insert(new_name.to_string(), new_entry);
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!(
+    "{} Extracted node at [{}] from '{}/{}' → new definition '{}'",
+    "✓".green(),
+    opts.path,
+    namespace,
+    definition.cyan(),
+    new_name.cyan()
+  );
+  println!();
+  println!("{}", "Next steps:".blue().bold());
+  println!("  • Inspect new def:  {} '{}/{}'", "cr query def".cyan(), namespace, new_name);
+  println!("  • Inspect source:   {} '{}/{}'", "cr query def".cyan(), namespace, definition);
+  println!(
+    "  • Wrap in defn:     {} '{}/{}' -p '' -e 'defn {} ...'",
+    "cr tree replace".cyan(),
+    namespace,
+    new_name,
+    new_name
+  );
+  Ok(())
+}
+
 
 fn handle_rm_def(opts: &EditRmDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
