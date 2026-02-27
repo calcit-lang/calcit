@@ -4,9 +4,9 @@ use colored::Colorize;
 use super::common::{ERR_CODE_INPUT_REQUIRED, cirru_to_json, parse_input_to_cirru, parse_path, read_code_input};
 use super::tips::{Tips, tip_prefer_oneliner_json, tip_root_edit};
 use crate::cli_args::{
-  TreeAppendChildCommand, TreeCommand, TreeCpCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand,
-  TreeInsertChildCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeStructuralCommand, TreeSubcommand,
-  TreeSwapNextCommand, TreeSwapPrevCommand, TreeTargetReplaceCommand, TreeWrapCommand,
+  TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
+  TreeRaiseCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeShowCommand, TreeStructuralCommand, TreeSubcommand,
+  TreeSwapNextCommand, TreeSwapPrevCommand, TreeTargetReplaceCommand, TreeUnwrapCommand, TreeWrapCommand,
 };
 
 // Import shared functions from edit module
@@ -32,10 +32,11 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
     TreeSubcommand::AppendChild(opts) => handle_append_child(opts, snapshot_file),
     TreeSubcommand::SwapNext(opts) => handle_swap_next(opts, snapshot_file),
     TreeSubcommand::SwapPrev(opts) => handle_swap_prev(opts, snapshot_file),
+    TreeSubcommand::Unwrap(opts) => handle_unwrap(opts, snapshot_file),
+    TreeSubcommand::Raise(opts) => handle_raise(opts, snapshot_file),
     TreeSubcommand::Wrap(opts) => handle_wrap(opts, snapshot_file),
     TreeSubcommand::TargetReplace(opts) => handle_target_replace(opts, snapshot_file),
     TreeSubcommand::Rewrite(opts) => handle_rewrite(opts, snapshot_file),
-    TreeSubcommand::Cp(opts) => handle_cp(opts, snapshot_file),
   }
 }
 
@@ -968,27 +969,6 @@ impl InsertOperation for TreeAppendChildCommand {
   }
 }
 
-impl InsertOperation for TreeWrapCommand {
-  fn file(&self) -> &Option<String> {
-    &self.file
-  }
-  fn code(&self) -> &Option<String> {
-    &self.code
-  }
-  fn json(&self) -> &Option<String> {
-    &self.json
-  }
-  fn json_input(&self) -> bool {
-    self.json_input
-  }
-  fn leaf(&self) -> bool {
-    self.leaf
-  }
-  fn with(&self) -> &[String] {
-    &self.with
-  }
-}
-
 impl InsertOperation for TreeTargetReplaceCommand {
   fn file(&self) -> &Option<String> {
     &self.file
@@ -1271,14 +1251,50 @@ fn generic_swap_handler(target: &str, path_str: &str, operation: &str, snapshot_
   Ok(())
 }
 
-fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_insert_handler(&opts.target, &opts.path, "replace", opts, snapshot_file, opts.depth)
+/// Splice all children of the node at `path` into the parent list, removing the wrapper node.
+/// e.g. parent `(foo (a b c) d)` with unwrap of `(a b c)` gives `(foo a b c d)`.
+fn splice_at_path(code: &Cirru, path: &[usize]) -> Result<Cirru, String> {
+  if path.is_empty() {
+    return Err("Cannot unwrap root node (no parent to splice into)".to_string());
+  }
+  splice_recursive(code, path, 0)
 }
 
-fn handle_cp(opts: &TreeCpCommand, snapshot_file: &str) -> Result<(), String> {
+fn splice_recursive(code: &Cirru, path: &[usize], depth: usize) -> Result<Cirru, String> {
+  match code {
+    Cirru::Leaf(_) => Err(format!("Cannot navigate into leaf node at depth {depth}")),
+    Cirru::List(items) => {
+      let idx = path[depth];
+      if idx >= items.len() {
+        return Err(format!("Path index {} out of bounds (list has {} items)", idx, items.len()));
+      }
+      if depth == path.len() - 1 {
+        // At parent level: splice children of items[idx] in place
+        let splice_children = match &items[idx] {
+          Cirru::List(children) => children.clone(),
+          Cirru::Leaf(_) => return Err("Node at path is a leaf; cannot unwrap".to_string()),
+        };
+        let mut new_items: Vec<Cirru> = Vec::with_capacity(items.len() - 1 + splice_children.len());
+        new_items.extend_from_slice(&items[..idx]);
+        new_items.extend(splice_children);
+        new_items.extend_from_slice(&items[idx + 1..]);
+        Ok(Cirru::List(new_items))
+      } else {
+        let mut new_items = items.clone();
+        new_items[idx] = splice_recursive(&items[idx], path, depth + 1)?;
+        Ok(Cirru::List(new_items))
+      }
+    }
+  }
+}
+
+fn handle_unwrap(opts: &TreeUnwrapCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
-  let from_path = parse_path(&opts.from)?;
-  let to_path = parse_path(&opts.path)?;
+  let path = parse_path(&opts.path)?;
+
+  if path.is_empty() {
+    return Err("Cannot unwrap root node (no parent to splice into)".to_string());
+  }
 
   let mut snapshot = load_snapshot(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
@@ -1293,35 +1309,152 @@ fn handle_cp(opts: &TreeCpCommand, snapshot_file: &str) -> Result<(), String> {
     .get_mut(definition)
     .ok_or_else(|| format!("Definition '{definition}' not found"))?;
 
-  let source_node = navigate_to_path(&code_entry.code, &from_path)?.clone();
-
-  let operation = match opts.at.as_str() {
-    "before" => "insert-before",
-    "after" => "insert-after",
-    "prepend-child" => "insert-child",
-    "append-child" => "append-child",
-    "replace" => "replace",
-    other => {
-      return Err(format!(
-        "Unsupported position '{other}'. Use: before, after, prepend-child, append-child, replace"
-      ));
-    }
+  let node = navigate_to_path(&code_entry.code, &path)?;
+  let children = match &node {
+    Cirru::List(children) => children.clone(),
+    _ => return Err(format!("Node at path [{}] is a leaf; cannot unwrap", opts.path)),
   };
 
-  let new_code = apply_operation_at_path(&code_entry.code, &to_path, operation, Some(&source_node))?;
+  if children.is_empty() {
+    return Err(format!("Node at path [{}] has no children to splice", opts.path));
+  }
+
+  let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+  println!(
+    "\n{}: unwrap [{}] in '{}/{}', splicing {} children into parent",
+    "Preview".blue().bold(),
+    path_str,
+    namespace,
+    definition,
+    children.len()
+  );
+  println!("{}:", "Before".dimmed());
+  println!("{}", format_preview_with_type(&node, opts.depth));
+  println!("{} (spliced):", "After".cyan().bold());
+  for (i, child) in children.iter().enumerate() {
+    println!("  [{}] {}", i, format_preview_with_type(child, opts.depth));
+  }
+  println!();
+
+  let new_code = splice_at_path(&code_entry.code, &path)?;
+  code_entry.code = new_code;
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!("{} Unwrapped node at [{}] in '{}/{}'", "✓".green(), path_str, namespace, definition);
+
+  Ok(())
+}
+
+fn handle_raise(opts: &TreeRaiseCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+  let path = parse_path(&opts.path)?;
+
+  if path.is_empty() {
+    return Err("Cannot raise root node (no parent to replace). Path must have at least one element.".to_string());
+  }
+
+  let parent_path = &path[..path.len() - 1];
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found"))?;
+
+  let child_node = navigate_to_path(&code_entry.code, &path)?.clone();
+  let parent_node = navigate_to_path(&code_entry.code, parent_path)?;
+
+  let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+  let parent_path_str = parent_path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+
+  println!(
+    "\n{}: raise [{}] in '{}/{}', replacing parent [{}]",
+    "Preview".blue().bold(),
+    path_str,
+    namespace,
+    definition,
+    if parent_path_str.is_empty() { "(root)" } else { &parent_path_str }
+  );
+  println!("{}:", "Before (parent)".dimmed());
+  println!("{}", format_preview_with_type(&parent_node, opts.depth));
+  println!("{}:", "After (raised child)".cyan().bold());
+  println!("{}", format_preview_with_type(&child_node, opts.depth));
+  println!();
+
+  let new_code = apply_operation_at_path(&code_entry.code, parent_path, "replace", Some(&child_node))?;
   code_entry.code = new_code;
 
   save_snapshot(&snapshot, snapshot_file)?;
 
   println!(
-    "{} Copied node from [{}] to [{}] ({}) in '{}/{}'",
+    "{} Raised node [{}] to replace parent [{}] in '{}/{}'",
     "✓".green(),
-    opts.from,
-    opts.path,
-    opts.at,
+    path_str,
+    if parent_path_str.is_empty() { "(root)" } else { &parent_path_str },
     namespace,
     definition
   );
+
+  Ok(())
+}
+
+fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String> {
+  let (namespace, definition) = parse_target(&opts.target)?;
+  let path = parse_path(&opts.path)?;
+
+  let raw = read_code_input(&opts.file, &opts.code, &opts.json)?.ok_or(ERR_CODE_INPUT_REQUIRED)?;
+  let auto_json = opts.code.is_some();
+  let template = parse_input_to_cirru(&raw, &opts.json, opts.json_input, opts.leaf, auto_json)?;
+
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  check_ns_editable(&snapshot, namespace)?;
+
+  let file_data = snapshot
+    .files
+    .get_mut(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  let code_entry = file_data
+    .defs
+    .get_mut(definition)
+    .ok_or_else(|| format!("Definition '{definition}' not found"))?;
+
+  let original_node = navigate_to_path(&code_entry.code, &path)?.clone();
+
+  // `self` always refers to the original node (equivalent to rewrite --with self=.)
+  let mut references = std::collections::BTreeMap::new();
+  references.insert("self".to_string(), original_node.clone());
+
+  let new_node = process_node_with_references(&template, &references)?;
+
+  let path_str = path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+  println!(
+    "\n{}: wrap [{}] in '{}/{}'",
+    "Preview".blue().bold(),
+    path_str,
+    namespace,
+    definition
+  );
+  println!("{}:", "Before".dimmed());
+  println!("{}", format_preview_with_type(&original_node, opts.depth));
+  println!("{}:", "After".cyan().bold());
+  println!("{}", format_preview_with_type(&new_node, opts.depth));
+  println!();
+
+  let new_code = apply_operation_at_path(&code_entry.code, &path, "replace", Some(&new_node))?;
+  code_entry.code = new_code;
+
+  save_snapshot(&snapshot, snapshot_file)?;
+
+  println!("{} Wrapped node at [{}] in '{}/{}'", "✓".green(), path_str, namespace, definition);
 
   Ok(())
 }

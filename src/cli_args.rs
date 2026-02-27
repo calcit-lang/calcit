@@ -1007,6 +1007,8 @@ pub enum TreeSubcommand {
   SwapNext(TreeSwapNextCommand),
   SwapPrev(TreeSwapPrevCommand),
   Unwrap(TreeUnwrapCommand),
+  Raise(TreeRaiseCommand),
+  Wrap(TreeWrapCommand),
   TargetReplace(TreeTargetReplaceCommand),
   Rewrite(TreeStructuralCommand),
 }
@@ -1394,6 +1396,51 @@ pub struct TreeUnwrapCommand {
   /// path to the node to unwrap (comma-separated indices, e.g. "2,1,0")
   #[argh(option, short = 'p')]
   pub path: String,
+  /// max depth for result preview (0 = unlimited, default 2)
+  #[argh(option, short = 'd', default = "2")]
+  pub depth: usize,
+}
+
+/// replace the parent node with this child node (Paredit raise-sexp)
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "raise")]
+pub struct TreeRaiseCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// path to the child node to raise (must have at least one element; its parent will be replaced)
+  #[argh(option, short = 'p')]
+  pub path: String,
+  /// max depth for result preview (0 = unlimited, default 2)
+  #[argh(option, short = 'd', default = "2")]
+  pub depth: usize,
+}
+
+/// wrap the node at path inside a new expression, using `self` as placeholder for the original node
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "wrap")]
+pub struct TreeWrapCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// path to the node to wrap (comma-separated indices, e.g. "2,1,0")
+  #[argh(option, short = 'p')]
+  pub path: String,
+  /// wrapping expression with `self` as placeholder for the original node (e.g. 'println self')
+  #[argh(option, short = 'e', long = "code")]
+  pub code: Option<String>,
+  /// read wrapping expression from file (Cirru format by default, use -J for JSON)
+  #[argh(option, short = 'f')]
+  pub file: Option<String>,
+  /// wrapping expression as inline JSON string
+  #[argh(option, short = 'j')]
+  pub json: Option<String>,
+  /// treat file input as JSON
+  #[argh(switch, short = 'J', long = "json-input")]
+  pub json_input: bool,
+  /// treat input as a Cirru leaf node
+  #[argh(switch, long = "leaf")]
+  pub leaf: bool,
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, short = 'd', default = "2")]
   pub depth: usize,

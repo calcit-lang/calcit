@@ -286,8 +286,10 @@ cr query modules
 - `cr tree insert-before/after` - 插入相邻节点
 - `cr tree insert-child/append-child` - 插入子节点
 - `cr tree swap-next/prev` - 交换相邻节点
-- `cr tree rewrite` - 用引用原节点的新结构替换节点（`--with` 必须）
+- `cr tree rewrite` - 用引用原节点的新结构替换节点（`--with` 必须；需引用子节点时使用）
+- `cr tree wrap` - 快捷包裹节点：将 `self` 替换为原节点（`rewrite --with self=.` 的语法糖）
 - `cr tree unwrap` - 将节点的所有子节点展开拼接到父节点中（拆包），原节点消失
+- `cr tree raise` - 用指定子节点替换其父节点（Paredit raise-sexp）
 
 **输入方式（通用）：**
 
@@ -363,10 +365,13 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
 
 `cr tree rewrite` 用于在替换时引用原节点及其子节点，必须传至少一个 `--with name=path`（不需要引用时直接用 `replace`）。`--with` 格式：`name=path`，`.` 表示原节点本身，数字表示子节点索引。
 
-- **包裹节点**（用 `rewrite`，`self=.` 引用原节点）：
+- **包裹节点**（推荐用 `wrap`，`self` 作为占位符）：
 
   ```bash
-  # 将路径 "3,2" 的节点包裹在 println 中
+  # 将路径 "3,2" 的节点包裹在 println 中（self = 原节点）
+  cr tree wrap ns/def -p '3,2' -e 'println self'
+
+  # 等价的完整写法（需要引用子节点时才用 rewrite）
   cr tree rewrite ns/def -p '3,2' -e 'println self' -w 'self=.'
   ```
 
@@ -393,6 +398,14 @@ cr tree replace namespace/def -p '3,2,2,5,2,4,1,2' -e 'let ((x 1)) (+ x task)'
   ```
 
   详细参数和示例使用 `cr tree <command> --help` 查看。
+
+- **提升子节点替换父节点**（`raise`）——用某子节点整体替换掉其父节点（Paredit `raise-sexp`）：
+
+  ```bash
+  # 路径 "3,2" 的节点整体替换掉其父节点 "3"
+  # 使用场景：去掉 let 外层只保留返回值，或去掉 if 只保留 then/else 分支
+  cr tree raise ns/def -p '3,2'
+  ```
 
 - **提取子表达式为新定义**（`split-def`）——将某路径的子表达式提取为同 ns 的新定义，原位替换为新名字：
 
@@ -960,16 +973,23 @@ cr edit mv 'app.core/main-fn' --from '3,1,2' -p '3,2' --at before
 cr edit cp 'app.core/main-fn' --from '3,1,2' -p '3,2' --at after
 ```
 
-### 包裹 / 拆包表达式（`tree rewrite` / `tree unwrap`）
+### 包裹 / 拆包 / 提升节点（`tree wrap` / `tree unwrap` / `tree raise`）
 
-**场景：** 临时包裹一层 `println` 调试，或反向拆掉不再需要的包装层。
+**场景：** 临时包裹一层 `println` 调试、反向拆掉包装层、或用子节点替换掉父节点。
 
 ```bash
-# 包裹：将路径 "3,2" 的节点包进 println
-cr tree rewrite 'app.core/main-fn' -p '3,2' -e 'println self' -w 'self=.'
+# 包裹（wrap）：将节点包进新表达式，self = 原节点
+cr tree wrap 'app.core/main-fn' -p '3,2' -e 'println self'
 
-# 拆包：删除路径 "3,2" 的节点，其所有子节点展开到原位置
+# 包裹成 let 绑定（self = 原表达式）
+cr tree wrap 'app.core/main-fn' -p '3,2' -e 'let ((result self)) result'
+
+# 拆包（unwrap）：删除该节点，所有子节点展开到原位置
 cr tree unwrap 'app.core/main-fn' -p '3,2'
+
+# 提升（raise）：用该子节点整体替换其父节点
+# 场景：去掉 if 只保留 then 分支，或去掉 let 只保留最终返回值
+cr tree raise 'app.core/main-fn' -p '3,2,1'
 ```
 
 ### 批量重命名局部变量（`tree replace-leaf` / `tree target-replace`）
