@@ -20,6 +20,8 @@ use calcit::runner;
 use calcit::snapshot;
 use calcit::util;
 
+use super::markdown_read::{RenderMarkdownOptions, render_markdown_sections};
+
 #[derive(Debug, Clone)]
 pub struct GuideDoc {
   filename: String,
@@ -27,13 +29,16 @@ pub struct GuideDoc {
   content: String,
 }
 
-#[derive(Debug, Clone)]
-struct HeadingSection {
-  line: usize,
-  level: usize,
-  title: String,
-  content_start: usize,
-  content_end: usize,
+struct ReadRenderOptions<'a> {
+  display_title: &'a str,
+  display_path: &'a str,
+  command_hint: &'a str,
+  no_match_error: &'a str,
+  content: &'a str,
+  heading_queries: &'a [String],
+  include_subheadings: bool,
+  full: bool,
+  with_lines: bool,
 }
 
 pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
@@ -94,139 +99,34 @@ fn ensure_agents_cache() -> Result<(PathBuf, bool), String> {
   if should_refresh {
     let content = download_agents_doc()?;
     if let Some(parent) = cache_path.parent() {
-      fs::create_dir_all(parent).map_err(|e| format!("Failed to create cache directory {:?}: {e}", parent))?;
+      fs::create_dir_all(parent).map_err(|e| format!("Failed to create cache directory {parent:?}: {e}"))?;
     }
-    fs::write(&cache_path, content).map_err(|e| format!("Failed to write Agents cache {:?}: {e}", cache_path))?;
+    fs::write(&cache_path, content).map_err(|e| format!("Failed to write Agents cache {cache_path:?}: {e}"))?;
   }
 
   Ok((cache_path, should_refresh))
 }
 
-fn handle_read_content(
-  display_title: &str,
-  display_path: &str,
-  content: &str,
-  heading_queries: &[String],
-  include_subheadings: bool,
-  full: bool,
-  with_lines: bool,
-  command_hint: &str,
-) -> Result<(), String> {
-  let lines: Vec<&str> = content.lines().collect();
-  let sections = build_heading_sections(content);
+fn handle_read_content(options: ReadRenderOptions<'_>) -> Result<(), String> {
+  let command_prefix = format!("cr docs {}", options.command_hint);
 
-  println!("{} ({})", display_title.cyan().bold(), display_path.dimmed());
+  println!("{} ({})", options.display_title.cyan().bold(), options.display_path.dimmed());
   println!("{}", "=".repeat(60).dimmed());
 
-  if full {
-    println!("{content}");
-    return Ok(());
-  }
-
-  if sections.is_empty() {
-    println!("{}", "No Markdown headings found in this document.".yellow());
-    return Ok(());
-  }
-
-  if heading_queries.is_empty() {
-    println!("{}", "Headings:".bold());
-    for section in &sections {
-      if with_lines {
-        println!(
-          "  {}\t{}{}",
-          format!("L{}", section.line).dimmed(),
-          "#".repeat(section.level).dimmed(),
-          format_args!(" {}", section.title)
-        );
-      } else {
-        println!("  {} {}", "#".repeat(section.level).dimmed(), section.title);
-      }
-    }
-    println!();
-    println!(
-      "{}",
-      format!("Tip: Use 'cr docs {command_hint} <heading-keyword> [more-keywords...]' for fuzzy heading matching.").dimmed()
-    );
-    println!("{}", "     Use '--no-subheadings' to show only direct section content.".dimmed());
-    println!(
-      "{}",
-      format!("     Use 'cr docs {command_hint} --full' to print the whole file.").dimmed()
-    );
-    println!(
-      "{}",
-      format!("     Use 'cr docs {command_hint} --with-lines' to show heading line numbers.").dimmed()
-    );
-    return Ok(());
-  }
-
-  let mut selected_indices: Vec<usize> = vec![];
-  let mut unmatched: Vec<String> = vec![];
-
-  for query in heading_queries {
-    let query_lower = query.to_lowercase();
-    let mut found = false;
-    for (idx, section) in sections.iter().enumerate() {
-      if section.title.to_lowercase().contains(&query_lower) {
-        found = true;
-        if !selected_indices.contains(&idx) {
-          selected_indices.push(idx);
-        }
-      }
-    }
-    if !found {
-      unmatched.push(query.to_owned());
-    }
-  }
-
-  if selected_indices.is_empty() {
-    return Err("No heading matched in Agents.md. Run 'cr docs agents' to list available headings.".to_string());
-  }
-
-  let selected_indices = if include_subheadings {
-    collapse_nested_sections(&selected_indices, &sections)
-  } else {
-    selected_indices
-  };
-
-  for idx in selected_indices {
-    let section = &sections[idx];
-    if with_lines {
-      println!(
-        "{} {} ({})",
-        "#".repeat(section.level).cyan().bold(),
-        section.title.cyan().bold(),
-        format!("L{}", section.line).dimmed()
-      );
-    } else {
-      println!("{} {}", "#".repeat(section.level).cyan().bold(), section.title.cyan().bold());
-    }
-    println!("{}", "-".repeat(60).dimmed());
-
-    let section_end = if include_subheadings {
-      section.content_end
-    } else if idx + 1 < sections.len() {
-      sections[idx + 1].line.saturating_sub(1)
-    } else {
-      lines.len()
-    };
-
-    if section.content_start > section_end || section.content_start > lines.len() {
-      println!("{}", "(empty section)".dimmed());
-    } else {
-      let start = section.content_start;
-      let end = section_end.min(lines.len());
-      for line in &lines[start - 1..end] {
-        println!("{line}");
-      }
-    }
-    println!();
-  }
-
-  if !unmatched.is_empty() {
-    println!("{}", format!("No match for heading query: {}", unmatched.join(", ")).yellow());
-  }
-
-  Ok(())
+  render_markdown_sections(
+    options.content,
+    options.heading_queries,
+    RenderMarkdownOptions {
+      include_subheadings: options.include_subheadings,
+      full: options.full,
+      with_lines: options.with_lines,
+      command_prefix: &command_prefix,
+      with_file_option: false,
+      no_headings_message: "No Markdown headings found in this document.",
+      print_full_when_no_headings: false,
+      no_match_error: options.no_match_error,
+    },
+  )
 }
 
 fn find_doc_by_filename<'a>(guide_docs: &'a HashMap<String, GuideDoc>, filename: &str) -> Result<&'a GuideDoc, String> {
@@ -234,83 +134,6 @@ fn find_doc_by_filename<'a>(guide_docs: &'a HashMap<String, GuideDoc>, filename:
     .values()
     .find(|d| d.filename == filename || d.filename.contains(filename))
     .ok_or_else(|| format!("Document '{filename}' not found. Use 'cr docs list' to see available documents."))
-}
-
-fn extract_markdown_headings(content: &str) -> Vec<(usize, usize, String)> {
-  let mut results: Vec<(usize, usize, String)> = vec![];
-  let mut in_fence = false;
-
-  for (idx, line) in content.lines().enumerate() {
-    let trimmed = line.trim_start();
-    if trimmed.starts_with("```") {
-      in_fence = !in_fence;
-      continue;
-    }
-    if in_fence || !trimmed.starts_with('#') {
-      continue;
-    }
-
-    let level = trimmed.chars().take_while(|c| *c == '#').count();
-    let after_hash = trimmed.chars().nth(level);
-    if level == 0 || after_hash != Some(' ') {
-      continue;
-    }
-
-    let title = trimmed[level + 1..].trim();
-    if title.is_empty() {
-      continue;
-    }
-
-    results.push((idx + 1, level, title.to_owned()));
-  }
-
-  results
-}
-
-fn build_heading_sections(content: &str) -> Vec<HeadingSection> {
-  let lines: Vec<&str> = content.lines().collect();
-  let total_lines = lines.len();
-  let headings = extract_markdown_headings(content);
-  let mut sections: Vec<HeadingSection> = vec![];
-
-  for (idx, (line, level, title)) in headings.iter().enumerate() {
-    let mut content_end = total_lines;
-    for (next_line, next_level, _) in headings.iter().skip(idx + 1) {
-      if *next_level <= *level {
-        content_end = next_line.saturating_sub(1);
-        break;
-      }
-    }
-
-    sections.push(HeadingSection {
-      line: *line,
-      level: *level,
-      title: title.to_owned(),
-      content_start: line + 1,
-      content_end,
-    });
-  }
-
-  sections
-}
-
-fn collapse_nested_sections(indices: &[usize], sections: &[HeadingSection]) -> Vec<usize> {
-  let mut sorted: Vec<usize> = indices.to_vec();
-  sorted.sort_by_key(|idx| sections[*idx].line);
-
-  let mut kept: Vec<usize> = vec![];
-  for idx in sorted {
-    let current = &sections[idx];
-    let covered_by_parent = kept.iter().any(|kept_idx| {
-      let parent = &sections[*kept_idx];
-      parent.line <= current.line && parent.content_end >= current.content_end
-    });
-    if !covered_by_parent {
-      kept.push(idx);
-    }
-  }
-
-  kept
 }
 
 fn get_guidebook_dir() -> Result<std::path::PathBuf, String> {
@@ -450,7 +273,7 @@ fn handle_agents(heading_queries: &[String], include_subheadings: bool, full: bo
   if refreshed {
     println!("{}", format!("Refreshed Agents doc cache from: {AGENTS_DOC_URL}").dimmed());
   }
-  let content = fs::read_to_string(&cache_path).map_err(|e| format!("Failed to read Agents cache {:?}: {e}", cache_path))?;
+  let content = fs::read_to_string(&cache_path).map_err(|e| format!("Failed to read Agents cache {cache_path:?}: {e}"))?;
   let byte_len = content.len();
   let line_len = content.lines().count();
 
@@ -462,16 +285,18 @@ fn handle_agents(heading_queries: &[String], include_subheadings: bool, full: bo
     line_len.to_string().cyan()
   );
 
-  handle_read_content(
-    "Agents.md",
-    &cache_path.to_string_lossy(),
-    &content,
+  let cache_display = cache_path.to_string_lossy().to_string();
+  handle_read_content(ReadRenderOptions {
+    display_title: "Agents.md",
+    display_path: &cache_display,
+    command_hint: "agents",
+    no_match_error: "No heading matched in Agents.md. Run 'cr docs agents' to list available headings.",
+    content: &content,
     heading_queries,
     include_subheadings,
     full,
     with_lines,
-    "agents",
-  )
+  })
 }
 
 fn handle_read(
@@ -483,16 +308,17 @@ fn handle_read(
 ) -> Result<(), String> {
   let guide_docs = load_guidebook_docs()?;
   let doc = find_doc_by_filename(&guide_docs, filename)?;
-  let result = handle_read_content(
-    &doc.filename,
-    &doc.path,
-    &doc.content,
+  let result = handle_read_content(ReadRenderOptions {
+    display_title: &doc.filename,
+    display_path: &doc.path,
+    command_hint: "read",
+    no_match_error: "No heading matched in document.",
+    content: &doc.content,
     heading_queries,
     include_subheadings,
     full,
     with_lines,
-    "read",
-  );
+  });
 
   if result.is_err() && !heading_queries.is_empty() {
     return Err(format!(

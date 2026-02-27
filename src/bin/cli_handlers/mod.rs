@@ -8,6 +8,7 @@ mod common;
 mod docs;
 mod edit;
 mod libs;
+mod markdown_read;
 mod query;
 mod tips;
 mod tree;

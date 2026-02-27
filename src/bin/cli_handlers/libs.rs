@@ -6,6 +6,8 @@ use calcit::cli_args::{LibsCommand, LibsSubcommand};
 use colored::Colorize;
 use serde::Deserialize;
 
+use super::markdown_read::{RenderMarkdownOptions, render_markdown_sections};
+
 /// Library entry from the registry
 #[derive(Debug, Clone, Deserialize)]
 pub struct LibraryEntry {
@@ -48,10 +50,26 @@ pub struct LibraryRegistry {
   pub libraries: Vec<LibraryEntry>,
 }
 
+struct ReadmeHeader<'a> {
+  package: &'a str,
+  source: Option<&'a str>,
+  path: Option<&'a str>,
+  repository: Option<&'a str>,
+  description: Option<&'a str>,
+  file: Option<&'a str>,
+}
+
 pub fn handle_libs_command(cmd: &LibsCommand) -> Result<(), String> {
   match &cmd.subcommand {
     None => handle_list_libs(),
-    Some(LibsSubcommand::Readme(opts)) => handle_readme(&opts.package, opts.file.as_deref()),
+    Some(LibsSubcommand::Readme(opts)) => handle_readme(
+      &opts.package,
+      opts.file.as_deref(),
+      &opts.headings,
+      !opts.no_subheadings,
+      opts.full,
+      opts.with_lines,
+    ),
     Some(LibsSubcommand::Search(opts)) => handle_search(&opts.keyword),
     Some(LibsSubcommand::ScanMd(opts)) => handle_scan_md(&opts.module),
   }
@@ -112,7 +130,36 @@ fn handle_list_libs() -> Result<(), String> {
   Ok(())
 }
 
-fn handle_readme(package: &str, file: Option<&str>) -> Result<(), String> {
+fn print_readme_header(header: ReadmeHeader<'_>) {
+  println!("\n{} {}", "Package:".bold(), header.package.cyan().bold());
+
+  if let Some(source) = header.source {
+    println!("{} {}", "Source:".bold(), source.green());
+  }
+  if let Some(path) = header.path {
+    println!("{} {}", "Path:".bold(), path.dimmed());
+  }
+  if let Some(repository) = header.repository {
+    println!("{} {}", "Repository:".bold(), repository);
+  }
+  if let Some(description) = header.description {
+    println!("{} {}", "Description:".bold(), description);
+  }
+  if let Some(file) = header.file {
+    println!("{} {}", "File:".bold(), file);
+  }
+
+  println!();
+}
+
+fn handle_readme(
+  package: &str,
+  file: Option<&str>,
+  heading_queries: &[String],
+  include_subheadings: bool,
+  full: bool,
+  with_lines: bool,
+) -> Result<(), String> {
   let file_name = file.unwrap_or("README.md");
   println!("{}", format!("Looking for {file_name} in '{package}'...").dimmed());
 
@@ -120,16 +167,35 @@ fn handle_readme(package: &str, file: Option<&str>) -> Result<(), String> {
   let home_dir = std::env::var("HOME").map_err(|_| "Failed to get HOME directory".to_string())?;
   let local_path = format!("{home_dir}/.config/calcit/modules/{package}/{file_name}");
 
-  if let Ok(content) = std::fs::read_to_string(&local_path) {
-    // Print library info header
-    println!("\n{} {}", "Package:".bold(), package.cyan().bold());
-    println!("{} {}", "Source:".bold(), "Local".green());
-    println!("{} {}", "Path:".bold(), local_path.dimmed());
-    println!();
+  let render_readme = |content: &str| -> Result<(), String> {
+    let no_match_error = format!("No heading matched in {file_name}. Use 'cr libs readme {package} -f {file_name}' to list headings.");
+    render_markdown_sections(
+      content,
+      heading_queries,
+      RenderMarkdownOptions {
+        include_subheadings,
+        full,
+        with_lines,
+        command_prefix: "cr libs readme <package>",
+        with_file_option: true,
+        no_headings_message: "No Markdown headings found, printing full file.",
+        print_full_when_no_headings: true,
+        no_match_error: &no_match_error,
+      },
+    )
+  };
 
-    // Print file content
-    println!("{content}");
-    return Ok(());
+  if let Ok(content) = std::fs::read_to_string(&local_path) {
+    print_readme_header(ReadmeHeader {
+      package,
+      source: Some("Local"),
+      path: Some(&local_path),
+      repository: None,
+      description: None,
+      file: None,
+    });
+
+    return render_readme(&content);
   }
 
   // If not found locally, try fetching from GitHub
@@ -153,19 +219,16 @@ fn handle_readme(package: &str, file: Option<&str>) -> Result<(), String> {
   let content =
     fetch_file_content(&agent, &base_url, "main", file_name).or_else(|_| fetch_file_content(&agent, &base_url, "master", file_name))?;
 
-  // Print library info header
-  println!("\n{} {}", "Package:".bold(), lib.package_name.cyan().bold());
-  println!("{} {}", "Repository:".bold(), lib.repository);
-  if let Some(desc) = &lib.description {
-    println!("{} {}", "Description:".bold(), desc);
-  }
-  println!("{} {}", "File:".bold(), file_name);
-  println!();
+  print_readme_header(ReadmeHeader {
+    package: &lib.package_name,
+    source: None,
+    path: None,
+    repository: Some(&lib.repository),
+    description: lib.description.as_deref(),
+    file: Some(file_name),
+  });
 
-  // Print file content
-  println!("{content}");
-
-  Ok(())
+  render_readme(&content)
 }
 
 fn github_to_raw_base(repo_url: &str) -> Result<String, String> {

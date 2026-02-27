@@ -591,9 +591,21 @@ pub struct LibsReadmeCommand {
   /// package name to look up
   #[argh(positional)]
   pub package: String,
+  /// heading keyword(s) for fuzzy match, can pass multiple; if omitted, list markdown headings
+  #[argh(positional)]
+  pub headings: Vec<String>,
   /// optional file path relative to package directory (e.g., "Skills.md")
   #[argh(option, short = 'f')]
   pub file: Option<String>,
+  /// do not include nested subheadings when showing matched parent heading content
+  #[argh(switch)]
+  pub no_subheadings: bool,
+  /// show full file content directly
+  #[argh(switch)]
+  pub full: bool,
+  /// show line numbers in heading list and section titles
+  #[argh(switch)]
+  pub with_lines: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
