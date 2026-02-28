@@ -147,6 +147,7 @@ Calcit 程序使用 `cr` 命令：
 
 - `cr query search <pattern> [-f <filter>] [-l]` - 搜索叶子节点（符号/字符串），比逐层导航快 10 倍
   - **搜索范围**：默认包含项目代码、全部 modules 依赖和 calcit.core 内置函数（无需 `--deps` 标志）
+  - `--entry <name>`：额外加载 `entries.<name>.modules` 里的依赖（用于 entry 级依赖场景）
   - `-f <filter>` - 过滤到特定命名空间或定义（可缩小范围提升速度）
   - `-l / --loose`：宽松匹配，包含模式
   - `-d <max-depth>`：限制搜索深度
@@ -161,6 +162,7 @@ Calcit 程序使用 `cr` 命令：
 
 - `cr query search-expr <pattern> [-f <filter>] [-l] [-j]` - 搜索结构表达式（List）
   - **搜索范围**：同 `search`，默认包含全部依赖和 calcit.core
+  - `--entry <name>`：同上，额外加载指定 entry 的 modules
   - `-l / --loose`：宽松匹配，从头部开始的前缀匹配（嵌套表达式也支持前缀）
   - `-j / --json`：将模式解析为 JSON 数组
   - 示例：

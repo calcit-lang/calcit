@@ -357,6 +357,9 @@ pub struct QuerySearchCommand {
   /// start search from specific path (comma-separated indices, e.g. "2,1,0")
   #[argh(option, short = 'p', long = "start-path")]
   pub start_path: Option<String>,
+  /// include modules configured for a specific entry in `entries`
+  #[argh(option, long = "entry")]
+  pub entry: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -378,6 +381,9 @@ pub struct QuerySearchExprCommand {
   /// treat pattern as JSON array instead of Cirru expr
   #[argh(switch, short = 'j')]
   pub json: bool,
+  /// include modules configured for a specific entry in `entries`
+  #[argh(option, long = "entry")]
+  pub entry: Option<String>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

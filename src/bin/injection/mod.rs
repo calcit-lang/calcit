@@ -79,7 +79,7 @@ pub fn inject_platform_apis() {
       arity_min: 3,
       arity_max: None,
       platforms: vec![RegisteredProcPlatform::Native],
-      stability: RegisteredProcStability::Experimental,
+      stability: RegisteredProcStability::Public,
       docs_hint: Some(Arc::from("Fix: use native runtime and put callback fn as last argument.")),
       callback_last: true,
     },
@@ -91,7 +91,7 @@ pub fn inject_platform_apis() {
       arity_min: 3,
       arity_max: None,
       platforms: vec![RegisteredProcPlatform::Native],
-      stability: RegisteredProcStability::Experimental,
+      stability: RegisteredProcStability::Public,
       docs_hint: Some(Arc::from("Fix: use native runtime and put callback fn as last argument.")),
       callback_last: true,
     },
@@ -260,7 +260,7 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
   Ok(Calcit::Nil)
 }
 
-/// (experimental) pass callback function to FFI function, blocking the thread,
+/// pass callback function to FFI function, blocking the thread,
 /// used by calcit-paint, where main thread is required
 pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {

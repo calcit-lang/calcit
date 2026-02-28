@@ -10,6 +10,7 @@ use calcit::snapshot;
 use calcit::util::string::strip_shebang;
 use cirru_parser::Cirru;
 use colored::Colorize;
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -63,6 +64,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       !opts.exact,
       opts.max_depth,
       opts.start_path.as_deref(),
+      opts.entry.as_deref(),
     ),
     QuerySubcommand::SearchExpr(opts) => handle_search_expr(
       input_path,
@@ -71,6 +73,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
       !opts.exact,
       opts.max_depth,
       opts.json,
+      opts.entry.as_deref(),
     ),
   }
 }
@@ -101,6 +104,10 @@ fn load_module_silent(path: &str, base_dir: &Path, module_folder: &Path) -> Resu
 }
 
 fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
+  load_snapshot_with_entry(input_path, None)
+}
+
+fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<snapshot::Snapshot, String> {
   if !Path::new(input_path).exists() {
     return Err(format!("{input_path} does not exist"));
   }
@@ -114,13 +121,29 @@ fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
   })?;
   let mut snapshot = snapshot::load_snapshot_data(&data, input_path)?;
 
+  let mut modules_to_load = snapshot.configs.modules.clone();
+  if let Some(entry_name) = entry {
+    let entry_config = snapshot.entries.get(entry_name).ok_or_else(|| {
+      let available = if snapshot.entries.is_empty() {
+        "(none)".to_owned()
+      } else {
+        snapshot.entries.keys().cloned().collect::<Vec<_>>().join(", ")
+      };
+      format!("Entry '{entry_name}' not found. Available entries: {available}")
+    })?;
+    modules_to_load.extend(entry_config.modules.clone());
+  }
+
+  let mut seen_modules = HashSet::new();
+  modules_to_load.retain(|module_path| seen_modules.insert(module_path.to_owned()));
+
   // Load modules (dependencies) silently
   let base_dir = Path::new(input_path).parent().unwrap_or(Path::new("."));
   let module_folder = dirs::home_dir()
     .map(|buf| buf.as_path().join(".config/calcit/modules/"))
     .unwrap_or_else(|| Path::new(".").to_owned());
 
-  for module_path in &snapshot.configs.modules.clone() {
+  for module_path in &modules_to_load {
     match load_module_silent(module_path, base_dir, &module_folder) {
       Ok(module_snapshot) => {
         for (ns_name, file_data) in module_snapshot.files {
@@ -947,8 +970,9 @@ fn handle_search_leaf(
   loose: bool,
   max_depth: usize,
   start_path: Option<&str>,
+  entry: Option<&str>,
 ) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+  let snapshot = load_snapshot_with_entry(input_path, entry)?;
 
   // Parse start_path if provided
   let parsed_start_path: Option<Vec<usize>> = if let Some(path_str) = start_path {
@@ -973,6 +997,9 @@ fn handle_search_leaf(
     println!("  {} {}", "Filter:".dimmed(), filter_str.cyan());
   } else {
     println!("  {} {}", "Scope:".dimmed(), "entire project".cyan());
+  }
+  if let Some(entry_name) = entry {
+    println!("  {} {}", "Entry:".dimmed(), entry_name.cyan());
   }
 
   if let Some(ref path) = parsed_start_path {
@@ -1190,8 +1217,9 @@ fn handle_search_expr(
   loose: bool,
   max_depth: usize,
   json: bool,
+  entry: Option<&str>,
 ) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+  let snapshot = load_snapshot_with_entry(input_path, entry)?;
 
   // Parse pattern
   let pattern_node = if json {
@@ -1220,6 +1248,9 @@ fn handle_search_expr(
     println!("  {} {}", "Filter:".dimmed(), filter_str.cyan());
   } else {
     println!("  {} {}", "Scope:".dimmed(), "entire project".cyan());
+  }
+  if let Some(entry_name) = entry {
+    println!("  {} {}", "Entry:".dimmed(), entry_name.cyan());
   }
   println!();
 
