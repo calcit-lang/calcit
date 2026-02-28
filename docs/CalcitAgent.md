@@ -137,27 +137,30 @@ Calcit 程序使用 `cr` 命令：
   - 默认精确匹配：返回定义位置 + 所有引用位置（带上下文预览）
   - `-f` / `--fuzzy`：模糊搜索，匹配 "namespace/definition" 格式的路径
   - `-n <limit>`：限制模糊搜索结果数量（默认 20）
-  - `--deps`：包含核心命名空间（calcit.\* 开头）
+  - `--deps`：扩展到 `calcit.*` 内置核心命名空间（默认已包含项目 modules 依赖）
 - `cr query usages <namespace/definition> [--deps]` - 查找定义的所有使用位置
   - 返回：引用该定义的所有位置（带上下文预览）
   - 用于理解代码影响范围，重构前的影响分析
+  - `--deps`：同上，扩展到 `calcit.*` 核心命名空间
 
 **代码模式搜索（快速定位 ⭐⭐⭐）：**
 
 - `cr query search <pattern> [-f <filter>] [-l]` - 搜索叶子节点（符号/字符串），比逐层导航快 10 倍
-  - `-f <filter>` - 过滤到特定命名空间或定义
+  - **搜索范围**：默认包含项目代码、全部 modules 依赖和 calcit.core 内置函数（无需 `--deps` 标志）
+  - `-f <filter>` - 过滤到特定命名空间或定义（可缩小范围提升速度）
   - `-l / --loose`：宽松匹配，包含模式
   - `-d <max-depth>`：限制搜索深度
   - `-p <start-path>`：从指定路径开始搜索（如 `"3,2,1"`）
   - 返回：完整路径 + 父级上下文，多个匹配时自动显示批量替换命令
   - 示例：
-    - `cr query search 'println' -f app.main/main!` - 精确搜索
+    - `cr query search 'println' -f app.main/main!` - 精确搜索（过滤到某定义）
     - `cr query search 'comp-' -f app.ui/layout -l` - 模糊搜索（所有 comp- 开头）
-    - `cr query search 'task-id' -f app.comp/render` - 返回所有匹配位置并自动排序
+    - `cr query search 'task-id'` - 全项目搜索（含 modules）
 
 **高级结构搜索（搜索代码结构 ⭐⭐⭐）：**
 
 - `cr query search-expr <pattern> [-f <filter>] [-l] [-j]` - 搜索结构表达式（List）
+  - **搜索范围**：同 `search`，默认包含全部依赖和 calcit.core
   - `-l / --loose`：宽松匹配，从头部开始的前缀匹配（嵌套表达式也支持前缀）
   - `-j / --json`：将模式解析为 JSON 数组
   - 示例：
