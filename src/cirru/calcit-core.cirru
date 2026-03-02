@@ -363,9 +363,11 @@
         |&list:distinct $ %{} :CodeEntry (:doc "|internal function for getting distinct list elements\nSyntax: (&list:distinct list)\nParams: list (list)\nReturns: list\nReturns new list with duplicate elements removed")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&list:empty $ %{} :CodeEntry (:doc "|internal helper for list :empty method entry")
+        |&list:empty $ %{} :CodeEntry (:doc "||internal helper for list :empty method entry")
           :code $ quote
-            defn &list:empty (_xs) ([])
+            defn &list:empty (_xs)
+              hint-fn $ return-type :list
+              []
           :examples $ []
         |&list:empty? $ %{} :CodeEntry (:doc "|internal function for checking if list is empty\nSyntax: (&list:empty? list)\nParams: list (list)\nReturns: boolean\nReturns true if list has no elements")
           :code $ quote &runtime-inplementation
@@ -527,9 +529,11 @@
         |&map:dissoc $ %{} :CodeEntry (:doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (map), key (any), keys (any, variadic)\nReturns: map\nReturns new map without specified keys")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&map:empty $ %{} :CodeEntry (:doc "|internal helper for producing an empty map value while preserving method signature shape")
+        |&map:empty $ %{} :CodeEntry (:doc "||internal helper for producing an empty map value while preserving method signature shape")
           :code $ quote
-            defn &map:empty (_xs) (&{})
+            defn &map:empty (_xs)
+              hint-fn $ return-type :map
+              &{}
           :examples $ []
         |&map:empty? $ %{} :CodeEntry (:doc "|internal function for checking if map is empty\nSyntax: (&map:empty? map)\nParams: map (map)\nReturns: boolean\nReturns true if map has no entries")
           :code $ quote &runtime-inplementation
@@ -596,6 +600,7 @@
         |&max $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &max (a b)
+              hint-fn $ return-type :number
               assert "|expects numbers for &max" $ if (number? a) (number? b)
               if (&> a b) a b
           :examples $ []
@@ -608,15 +613,18 @@
         |&min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &min (a b)
+              hint-fn $ return-type :number
               assert "|expects numbers for &min" $ if (number? a) (number? b)
               if (&< a b) a b
           :examples $ []
         |&number:display-by $ %{} :CodeEntry (:doc "|internal function for number display by base\nSyntax: (&number:display-by n base)\nParams: n (number), base (integer)\nReturns: string\nDisplays number in specified base (2-36)")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&number:empty $ %{} :CodeEntry (:doc "|internal helper for number :empty method entry")
+        |&number:empty $ %{} :CodeEntry (:doc "||internal helper for number :empty method entry")
           :code $ quote
-            defn &number:empty (_x) 0
+            defn &number:empty (_x)
+              hint-fn $ return-type :number
+              , 0
           :examples $ []
         |&number:format $ %{} :CodeEntry (:doc "|internal function for number formatting\nSyntax: (&number:format n)\nParams: n (number)\nReturns: string\nFormats number as string representation")
           :code $ quote &runtime-inplementation
@@ -708,9 +716,11 @@
         |&set:destruct $ %{} :CodeEntry (:doc "|internal function for set destructuring\nSyntax: (&set:destruct set pattern)\nParams: set (set), pattern (any)\nReturns: set\nDestructs set according to pattern")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&set:empty $ %{} :CodeEntry (:doc "|internal helper for set :empty method entry")
+        |&set:empty $ %{} :CodeEntry (:doc "||internal helper for set :empty method entry")
           :code $ quote
-            defn &set:empty (_xs) (#{})
+            defn &set:empty (_xs)
+              hint-fn $ return-type :set
+              #{}
           :examples $ []
         |&set:empty? $ %{} :CodeEntry (:doc "|internal function for checking if set is empty\nSyntax: (&set:empty? set)\nParams: set (set)\nReturns: boolean\nReturns true if set has no elements")
           :code $ quote &runtime-inplementation
@@ -777,9 +787,11 @@
         |&str:count $ %{} :CodeEntry (:doc "|internal function for string character count\nSyntax: (&str:count s)\nParams: s (string)\nReturns: number\nReturns number of characters in string")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&str:empty $ %{} :CodeEntry (:doc "|internal helper for string :empty method entry")
+        |&str:empty $ %{} :CodeEntry (:doc "||internal helper for string :empty method entry")
           :code $ quote
-            defn &str:empty (_) |
+            defn &str:empty (_)
+              hint-fn $ return-type :string
+              , |
           :examples $ []
         |&str:empty? $ %{} :CodeEntry (:doc "|internal function for checking if string is empty\nSyntax: (&str:empty? s)\nParams: s (string)\nReturns: boolean\nReturns true if string has zero length")
           :code $ quote &runtime-inplementation
@@ -877,14 +889,18 @@
             quote $ assert= 24 (* 2 3 4)
             quote $ assert= 30 (* 5 6)
             quote $ assert= 1 (* 1)
-        |+ $ %{} :CodeEntry (:doc "|Mathematical addition operation\nFunction: Calculates the sum of one or more numbers\nParams: x (number), ys (variadic args, list of numbers)\nReturns: number - sum of all arguments\nNotes: Supports any number of arguments, requires at least one argument")
+        |+ $ %{} :CodeEntry (:doc "||Mathematical addition operation\\nFunction: Calculates the sum of one or more numbers\\nParams: x (number), ys (variadic args, list of numbers)\\nReturns: number - sum of all arguments\\nNotes: Supports any number of arguments, requires at least one argument")
           :code $ quote
-            defn + (x & ys) (assert-type x :number)
+            defn + (x & ys)
+              hint-fn $ return-type :number
+              assert-type x :number
               assert-type ys $ :: :& :number
               reduce ys x &+
           :examples $ []
-            quote $ assert= 6 (+ 1 2 3)
-            quote $ assert= 15 (+ 5 10)
+            quote $ quote
+              assert= 6 $ + 1 2 3
+            quote $ quote
+              assert= 15 $ + 5 10
         |- $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn - (x & ys)
@@ -1382,11 +1398,13 @@
         |bool? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn bool? (x)
+              hint-fn $ return-type :bool
               &= (type-of x) :bool
           :examples $ []
         |buffer? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn buffer? (x)
+              hint-fn $ return-type :bool
               &= (type-of x) :buffer
           :examples $ []
         |butlast $ %{} :CodeEntry (:doc "|internal function for getting all but last element\nSyntax: (butlast list)\nParams: list (list)\nReturns: list\nReturns new list without the last element")
@@ -1529,6 +1547,7 @@
         |contains-in? $ %{} :CodeEntry (:doc "|Checks whether a nested path exists within maps, records, tuples, or lists. Returns true only when every hop succeeds.")
           :code $ quote
             defn contains-in? (xs path)
+              hint-fn $ return-type :bool
               list-match path
                 () true
                 (p0 ps)
@@ -1567,6 +1586,7 @@
         |contains-symbol? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn contains-symbol? (xs y)
+              hint-fn $ return-type :bool
               if (list? xs)
                 apply-args (xs)
                   defn %contains-symbol? (body)
@@ -1665,12 +1685,9 @@
                           payload-forms $ map (&list:rest items)
                             fn (t)
                               if (list? t)
-                                quasiquote $ quote $ ~ t
+                                quasiquote $ quote (~ t)
                                 , t
-                          quasiquote
-                            []
-                              ~ variant-tag
-                              ~@ payload-forms
+                          quasiquote $ [] (~ variant-tag) (~@ payload-forms)
                 quasiquote $ &enum::new
                   ~ $ turn-tag name
                   ~@ normalized
@@ -1799,14 +1816,9 @@
                               &let
                                 type-form $ last items
                                 if (list? type-form)
-                                  quasiquote
-                                    []
-                                      ~ field-name
-                                      quote $ ~ type-form
-                                  quasiquote
-                                    []
-                                      ~ field-name
-                                      ~ type-form
+                                  quasiquote $ [] (~ field-name)
+                                    quote $ ~ type-form
+                                  quasiquote $ [] (~ field-name) (~ type-form)
                       if (empty? generics)
                         quasiquote $ &struct::new
                           ~ $ turn-tag name
@@ -2699,6 +2711,7 @@
         |macro? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn macro? (x)
+              hint-fn $ return-type :bool
               &= (type-of x) :macro
           :examples $ []
         |macroexpand $ %{} :CodeEntry (:doc "|internal syntax for expanding macros until recursive calls are resolved\nSyntax: (macroexpand expr)\nParams: expr (macro call)\nReturns: fully expanded code\nExpands macros recursively until no more macro calls remain")
@@ -2919,6 +2932,7 @@
         |pairs-map $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn pairs-map (xs)
+              hint-fn $ return-type :map
               reduce xs ({})
                 defn %pairs-map (acc pair)
                   assert "|expects pair for pairs-map" $ if (list? pair)
@@ -2963,7 +2977,9 @@
           :examples $ []
         |range-bothway $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn range-bothway (x ? y) (assert-type x :number)
+            defn range-bothway (x ? y)
+              hint-fn $ return-type :list
+              assert-type x :number
               assert-type y $ :: :optional :number
               if (some? y)
                 do (assert-type y :number)
@@ -3133,6 +3149,7 @@
         |some-in? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn some-in? (x path)
+              hint-fn $ return-type :bool
               if (nil? x) false $ list-match path
                 () true
                 (k ps)
@@ -3246,6 +3263,7 @@
         |symbol? $ %{} :CodeEntry (:doc "|Predicate that checks whether a value is a symbol literal (as opposed to strings, keywords, or other data).")
           :code $ quote
             defn symbol? (x)
+              hint-fn $ return-type :bool
               &= (type-of x) :symbol
           :examples $ []
             quote $ assert= true
@@ -3254,6 +3272,7 @@
         |syntax? $ %{} :CodeEntry (:doc "|detecting syntax element")
           :code $ quote
             defn syntax? (x)
+              hint-fn $ return-type :bool
               &= (type-of x) :syntax
           :examples $ []
         |tag-match $ %{} :CodeEntry (:doc "|Pattern matching on tagged tuples, dispatches based on the first element of the tuple")
@@ -3350,6 +3369,7 @@
         |thread-step? $ %{} :CodeEntry (:doc "|Check whether a value is a valid thread-macro step form")
           :code $ quote
             defn thread-step? (x)
+              hint-fn $ return-type :bool
               or (symbol? x) (tag? x)
                 = (type-of x) :method
                 = (type-of x) :fn
@@ -3378,7 +3398,9 @@
               tuple? $ [] :a :b
         |turn-str $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn turn-str (x) (turn-string x)
+            defn turn-str (x)
+              hint-fn $ return-type :string
+              turn-string x
           :examples $ []
         |turn-string $ %{} :CodeEntry (:doc "|internal function for converting to string\nSyntax: (turn-string value)\nParams: value (any)\nReturns: string\nConverts value to string representation")
           :code $ quote &runtime-inplementation
