@@ -96,7 +96,7 @@ pub fn main() -> Result<(), String> {
 
     match &cli_args.subcommand {
       Some(SubCommand::Outdated(_)) => {
-        let updated = outdated_tags(deps.dependencies)?;
+        let updated = outdated_tags(deps.dependencies, &cli_args.input)?;
         if updated {
           // Re-read deps.cirru and download updated dependencies
           println!("\nDownloading updated dependencies...");
@@ -109,6 +109,38 @@ pub fn main() -> Result<(), String> {
           let updated_deps: PackageDeps = parsed.try_into()?;
           download_deps(updated_deps.dependencies, cli_args)?;
         }
+      }
+      Some(SubCommand::Add(opts)) => {
+        if opts.packages.is_empty() {
+          return Err("no packages to add".to_string());
+        }
+
+        let mut updated_deps = deps;
+        for raw in &opts.packages {
+          let org_and_folder = normalize_package_name(raw)?;
+          updated_deps
+            .dependencies
+            .insert(org_and_folder.into(), opts.version.to_owned().into());
+        }
+
+        write_deps_file(&cli_args.input, &updated_deps)?;
+        println!("updated {}", cli_args.input.green());
+        download_deps(updated_deps.dependencies, cli_args)?;
+      }
+      Some(SubCommand::Remove(opts)) => {
+        if opts.packages.is_empty() {
+          return Err("no packages to remove".to_string());
+        }
+
+        let mut updated_deps = deps;
+        for raw in &opts.packages {
+          let org_and_folder = normalize_package_name(raw)?;
+          updated_deps.dependencies.remove(org_and_folder.as_str());
+        }
+
+        write_deps_file(&cli_args.input, &updated_deps)?;
+        println!("updated {}", cli_args.input.green());
+        download_deps(updated_deps.dependencies, cli_args)?;
       }
       Some(SubCommand::Download(dep_names)) => {
         unreachable!("already handled: {:?}", dep_names);
@@ -290,6 +322,8 @@ enum SubCommand {
   /// show outdated versions
   Outdated(OutdatedCaps),
   Download(DownloadCaps),
+  Add(AddCaps),
+  Remove(RemoveCaps),
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -302,6 +336,27 @@ struct OutdatedCaps {}
 #[argh(subcommand, name = "download")]
 struct DownloadCaps {
   /// packages to download, in format of `org/repo@branch`
+  #[argh(positional)]
+  packages: Vec<String>,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// add dependencies to deps.cirru then run default download flow
+#[argh(subcommand, name = "add")]
+struct AddCaps {
+  /// packages in format `org/repo` or github URL
+  #[argh(positional)]
+  packages: Vec<String>,
+  /// version/branch written to deps.cirru
+  #[argh(option, short = 'r', default = "\"main\".to_string()")]
+  version: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+/// remove dependencies from deps.cirru then run default download flow
+#[argh(subcommand, name = "remove")]
+struct RemoveCaps {
+  /// packages in format `org/repo` or github URL
   #[argh(positional)]
   packages: Vec<String>,
 }
@@ -336,6 +391,50 @@ fn indent4(msg: &str) -> String {
   format!("\n{ret}\n")
 }
 
+fn normalize_package_name(raw: &str) -> Result<String, String> {
+  let mut s = raw.trim().to_string();
+
+  if let Some(rest) = s.strip_prefix("https://github.com/") {
+    s = rest.to_string();
+  } else if let Some(rest) = s.strip_prefix("http://github.com/") {
+    s = rest.to_string();
+  } else if let Some(rest) = s.strip_prefix("git@github.com:") {
+    s = rest.to_string();
+  }
+
+  if s.ends_with(".git") {
+    s.truncate(s.len() - 4);
+  }
+  s = s.trim_end_matches('/').to_string();
+
+  let segments: Vec<&str> = s.split('/').filter(|x| !x.is_empty()).collect();
+  if segments.len() < 2 {
+    return Err(format!("invalid package '{raw}', expected org/repo or github URL"));
+  }
+
+  Ok(format!("{}/{}", segments[0], segments[1]))
+}
+
+fn write_deps_file(deps_file: &str, deps: &PackageDeps) -> Result<(), String> {
+  let mut updated_edn = Edn::Map(cirru_edn::EdnMapView::default());
+
+  if let Edn::Map(ref mut map) = updated_edn {
+    if let Some(ref version) = deps.calcit_version {
+      map.insert(Edn::tag("calcit-version"), Edn::str(version.as_str()));
+    }
+
+    let mut deps_map = cirru_edn::EdnMapView::default();
+    for (k, v) in &deps.dependencies {
+      deps_map.insert(Edn::str(&**k), Edn::str(&**v));
+    }
+    map.insert(Edn::tag("dependencies"), Edn::Map(deps_map));
+  }
+
+  let updated_content = cirru_edn::format(&updated_edn, false)?;
+  fs::write(deps_file, updated_content).map_err(|e| e.to_string())?;
+  Ok(())
+}
+
 /// calcit dynamic libs uses a `build.sh` script to build Rust `.so` files
 fn call_build_script(folder_path: &Path) -> Result<String, String> {
   let output = std::process::Command::new("sh")
@@ -357,7 +456,7 @@ fn call_build_script(folder_path: &Path) -> Result<String, String> {
 /// also git fetch to read latest tag from remote,
 /// then we can compare, get outdated version printed
 /// Returns true if deps.cirru was updated
-fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>) -> Result<bool, String> {
+fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>, deps_file: &str) -> Result<bool, String> {
   print_column("package".dimmed(), "expected".dimmed(), "latest".dimmed(), "hint".dimmed());
   println!();
 
@@ -396,7 +495,7 @@ fn outdated_tags(deps: HashMap<Arc<str>, Arc<str>>) -> Result<bool, String> {
     let input = input.trim();
 
     if input.is_empty() || input.to_lowercase() == "y" || input.to_lowercase() == "yes" {
-      update_deps_file(&outdated_packages)?;
+      update_deps_file(&outdated_packages, deps_file)?;
       println!("deps.cirru updated successfully!");
       return Ok(true);
     }
@@ -434,8 +533,7 @@ fn show_package_versions(org_and_folder: Arc<str>, version: Arc<str>) -> Result<
   }
 }
 
-fn update_deps_file(outdated_packages: &[(Arc<str>, Arc<str>, String)]) -> Result<(), String> {
-  let deps_file = "deps.cirru";
+fn update_deps_file(outdated_packages: &[(Arc<str>, Arc<str>, String)], deps_file: &str) -> Result<(), String> {
   if !Path::new(deps_file).exists() {
     return Err("deps.cirru file not found".to_string());
   }
@@ -453,27 +551,7 @@ fn update_deps_file(outdated_packages: &[(Arc<str>, Arc<str>, String)]) -> Resul
     deps.dependencies.insert(org_and_folder.clone(), new_version.clone().into());
   }
 
-  // Convert back to EDN and then to string
-  let mut updated_edn = Edn::Map(cirru_edn::EdnMapView::default());
-
-  if let Edn::Map(ref mut map) = updated_edn {
-    // Add calcit-version if it exists
-    if let Some(ref version) = deps.calcit_version {
-      map.insert(Edn::tag("calcit-version"), Edn::str(version.as_str()));
-    }
-
-    // Add dependencies
-    let mut deps_map = cirru_edn::EdnMapView::default();
-    for (k, v) in &deps.dependencies {
-      deps_map.insert(Edn::str(&**k), Edn::str(&**v));
-    }
-    map.insert(Edn::tag("dependencies"), Edn::Map(deps_map));
-  }
-
-  let updated_content = cirru_edn::format(&updated_edn, false)?;
-
-  fs::write(deps_file, updated_content).map_err(|e| e.to_string())?;
-  Ok(())
+  write_deps_file(deps_file, &deps)
 }
 
 fn print_column(pkg: ColoredString, expected: ColoredString, latest: ColoredString, hint: ColoredString) {

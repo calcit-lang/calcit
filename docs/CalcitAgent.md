@@ -242,9 +242,13 @@ Calcit 程序使用 `cr` 命令：
 - `cr libs scan-md <module>` - 扫描本地模块目录下的所有 `.md` 文件
   - 递归扫描子目录
   - 显示相对路径列表
-- `caps` - 安装/更新项目模块依赖（独立工具，非 `cr` 子命令）
-  - 读取 `compact.cirru` 中的 `:modules` 配置，将依赖安装到 `~/.config/calcit/modules/`
-  - 示例：`caps`（在项目根目录运行）
+- `caps` - 安装/更新依赖（默认读取 `deps.cirru`，也可传自定义文件路径）
+  - 独立工具（非 `cr` 子命令）
+  - `caps`：按 `deps.cirru` 当前依赖执行更新
+  - `caps add <group>/<repo>`：添加依赖并执行默认更新流程
+  - `caps remove <group>/<repo>`：移除依赖并执行默认更新流程
+  - `caps add/remove` 同时支持完整 GitHub 地址（如 `https://github.com/calcit-lang/memof`）
+  - `caps add -r <version>`：写入指定分支/版本（默认 `main`）
 
 **查看已安装模块：**
 
