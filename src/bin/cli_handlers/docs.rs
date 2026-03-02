@@ -45,7 +45,7 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
   match &cmd.subcommand {
     DocsSubcommand::Search(opts) => handle_search(&opts.keyword, opts.context, opts.filename.as_deref()),
     DocsSubcommand::Read(opts) => handle_read(&opts.filename, &opts.headings, !opts.no_subheadings, opts.full, opts.with_lines),
-    DocsSubcommand::Agents(opts) => handle_agents(&opts.headings, !opts.no_subheadings, opts.full, opts.with_lines),
+    DocsSubcommand::Agents(opts) => handle_agents(&opts.headings, !opts.no_subheadings, opts.full, opts.with_lines, opts.refresh),
     DocsSubcommand::ReadLines(opts) => handle_read_lines(&opts.filename, opts.start, opts.lines),
     DocsSubcommand::List(_) => handle_list(),
     DocsSubcommand::CheckMd(opts) => handle_check_md(&opts.file, &opts.entry, &opts.dep),
@@ -92,9 +92,9 @@ fn download_agents_doc() -> Result<String, String> {
     .map_err(|e| format!("Failed to read Agents.md response: {e}"))
 }
 
-fn ensure_agents_cache() -> Result<(PathBuf, bool), String> {
+fn ensure_agents_cache(force_refresh: bool) -> Result<(PathBuf, bool), String> {
   let cache_path = get_agents_cache_path()?;
-  let should_refresh = needs_agents_refresh(&cache_path);
+  let should_refresh = force_refresh || needs_agents_refresh(&cache_path);
 
   if should_refresh {
     let content = download_agents_doc()?;
@@ -268,10 +268,20 @@ fn handle_search(keyword: &str, context_lines: usize, filename_filter: Option<&s
   Ok(())
 }
 
-fn handle_agents(heading_queries: &[String], include_subheadings: bool, full: bool, with_lines: bool) -> Result<(), String> {
-  let (cache_path, refreshed) = ensure_agents_cache()?;
+fn handle_agents(
+  heading_queries: &[String],
+  include_subheadings: bool,
+  full: bool,
+  with_lines: bool,
+  force_refresh: bool,
+) -> Result<(), String> {
+  let (cache_path, refreshed) = ensure_agents_cache(force_refresh)?;
   if refreshed {
-    println!("{}", format!("Refreshed Agents doc cache from: {AGENTS_DOC_URL}").dimmed());
+    if force_refresh {
+      println!("{}", format!("Force refreshed Agents doc cache from: {AGENTS_DOC_URL}").dimmed());
+    } else {
+      println!("{}", format!("Refreshed Agents doc cache from: {AGENTS_DOC_URL}").dimmed());
+    }
   }
   let content = fs::read_to_string(&cache_path).map_err(|e| format!("Failed to read Agents cache {cache_path:?}: {e}"))?;
   let byte_len = content.len();

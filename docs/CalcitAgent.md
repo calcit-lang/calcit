@@ -306,7 +306,7 @@ cr query modules
 - `--leaf` - 强制作为 leaf 节点（符号或字符串）
 - `-j '<json>'` / `-f <file>`
 
-多行或者带特殊符号的表达式, 一可以在 `.calcit-snippets/` 创建临时文件, 然后用 `cr cirru parse` 验证语法, 最后用 `-f <file>` 提交, 从而减少错误率. 复杂表达式建议分段, 然后搭配 `cr tree target-replace` 命令来完成多阶段提交.
+简单更新尽量用结构化的 API 操作. 多行或者带特殊符号的表达式, 可以在 `.calcit-snippets/` 创建临时文件, 然后用 `cr cirru parse` 验证语法, 最后用 `-f <file>` 提交, 从而减少错误率. 复杂表达式建议分段, 然后搭配 `cr tree target-replace` 命令来完成多阶段提交.
 
 **推荐工作流（高效定位 ⭐⭐⭐）：**
 

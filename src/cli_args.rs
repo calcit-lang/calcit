@@ -467,6 +467,9 @@ pub struct DocsAgentsCommand {
   /// show line numbers in heading list and section titles
   #[argh(switch)]
   pub with_lines: bool,
+  /// force refresh from remote and ignore cache age
+  #[argh(switch)]
+  pub refresh: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
