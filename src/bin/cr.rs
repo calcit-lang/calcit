@@ -870,7 +870,7 @@ fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -
     {
       continue;
     }
-    if !options.deps && !(ns == pkg || ns.starts_with(&format!("{pkg}."))) {
+    if !(options.deps || ns == pkg || ns.starts_with(&format!("{pkg}."))) {
       continue;
     }
 
@@ -911,7 +911,7 @@ fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -
   println!("- namespaces: {}", ns_set.len());
   println!("- defs: {}", rows.len());
   if let Some(raw) = &options.only {
-    println!("- only: {}", raw);
+    println!("- only: {raw}");
   }
   println!(
     "- levels: full={} partial={} none={}",
@@ -953,11 +953,11 @@ fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -
         } else {
           println!("  return:");
           for item in &row.return_type_hints {
-            println!("    - {}", item);
+            println!("    - {item}");
           }
         }
 
-        println!("  params ({}/{}):", typed_params, total_params);
+        println!("  params ({typed_params}/{total_params}):");
         if total_params == 0 {
           println!("    - (no params)");
         } else {
@@ -966,13 +966,13 @@ fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -
               Some(types) if !types.is_empty() => {
                 println!("    - {} => {}", name, types.join(" | "));
               }
-              _ => println!("    - {} => (no assert-type)", name),
+              _ => println!("    - {name} => (no assert-type)"),
             }
           }
         }
       }
       DefKind::Macro => {
-        println!("  params ({}/{}):", typed_params, total_params);
+        println!("  params ({typed_params}/{total_params}):");
         if total_params == 0 {
           println!("    - (no params)");
         } else {
@@ -981,7 +981,7 @@ fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -
               Some(types) if !types.is_empty() => {
                 println!("    - {} => {}", name, types.join(" | "));
               }
-              _ => println!("    - {} => (no assert-type)", name),
+              _ => println!("    - {name} => (no assert-type)"),
             }
           }
         }
@@ -1197,8 +1197,7 @@ fn parse_coverage_levels(raw: &str) -> Result<BTreeSet<CoverageLevel>, String> {
       }
       _ => {
         return Err(format!(
-          "Unknown coverage level `{}` in --only. Expected comma-separated values from: none,partial,full",
-          token
+          "Unknown coverage level `{token}` in --only. Expected comma-separated values from: none,partial,full"
         ));
       }
     }
