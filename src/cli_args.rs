@@ -121,7 +121,7 @@ pub struct EvalCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure (call-graph, count-calls, check-examples)
+/// analyze code structure (call-graph, count-calls, check-examples, check-types)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -136,6 +136,26 @@ pub enum AnalyzeSubcommand {
   CountCalls(CountCallsCommand),
   /// check examples in namespace
   CheckExamples(CheckExamplesCommand),
+  /// check type-information coverage in namespace definitions
+  CheckTypes(CheckTypesCommand),
+}
+
+/// check type-information coverage in namespace definitions
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "check-types")]
+pub struct CheckTypesCommand {
+  /// exact namespace to analyze
+  #[argh(option)]
+  pub ns: Option<String>,
+  /// namespace prefix scope filter
+  #[argh(option)]
+  pub ns_prefix: Option<String>,
+  /// coverage levels to include, comma-separated: none,partial,full
+  #[argh(option)]
+  pub only: Option<String>,
+  /// include dependency/core namespaces
+  #[argh(switch)]
+  pub deps: bool,
 }
 
 /// check examples in namespace

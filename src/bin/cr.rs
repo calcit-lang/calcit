@@ -1,4 +1,6 @@
 use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,7 +15,7 @@ mod cli_handlers;
 
 use calcit::calcit::LocatedWarning;
 use calcit::call_stack::CallStackList;
-use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CountCallsCommand, ToplevelCalcit};
+use calcit::cli_args::{AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CheckTypesCommand, CountCallsCommand, ToplevelCalcit};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
 use colored::Colorize;
@@ -231,6 +233,7 @@ fn main() -> Result<(), String> {
       AnalyzeSubcommand::CallGraph(call_graph_options) => run_call_graph(&entries, call_graph_options, &snapshot),
       AnalyzeSubcommand::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
       AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(&check_options.ns, &snapshot),
+      AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot),
     }
   } else {
     if !cli_args.watch {
@@ -796,4 +799,444 @@ fn run_count_calls(entries: &ProgramEntries, options: &CountCallsCommand) -> Res
   }
 
   Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DefKind {
+  Data,
+  Fn,
+  Macro,
+  Other,
+}
+
+impl DefKind {
+  fn as_str(self) -> &'static str {
+    match self {
+      DefKind::Data => "data",
+      DefKind::Fn => "fn",
+      DefKind::Macro => "macro",
+      DefKind::Other => "other",
+    }
+  }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum CoverageLevel {
+  None,
+  Partial,
+  Full,
+}
+
+impl CoverageLevel {
+  fn as_str(self) -> &'static str {
+    match self {
+      CoverageLevel::None => "none",
+      CoverageLevel::Partial => "partial",
+      CoverageLevel::Full => "full",
+    }
+  }
+}
+
+#[derive(Debug, Clone)]
+struct TypeCoverageRow {
+  ns: String,
+  def: String,
+  kind: DefKind,
+  level: CoverageLevel,
+  params: Vec<String>,
+  param_annotations: BTreeMap<String, Vec<String>>,
+  return_type_hints: Vec<String>,
+  data_type: Option<String>,
+}
+
+fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  if let Some(ns) = &options.ns
+    && !snapshot.files.contains_key(ns)
+  {
+    return Err(format!("Namespace not found: {ns}"));
+  }
+
+  let mut rows: Vec<TypeCoverageRow> = Vec::new();
+  let pkg = snapshot.package.as_str();
+
+  for (ns, file) in &snapshot.files {
+    if let Some(exact) = &options.ns
+      && ns != exact
+    {
+      continue;
+    }
+    if let Some(prefix) = &options.ns_prefix
+      && !ns.starts_with(prefix)
+    {
+      continue;
+    }
+    if !options.deps && !(ns == pkg || ns.starts_with(&format!("{pkg}."))) {
+      continue;
+    }
+
+    for (def_name, entry) in &file.defs {
+      rows.push(analyze_code_entry(ns, def_name, entry));
+    }
+  }
+
+  if let Some(raw) = &options.only {
+    let selected = parse_coverage_levels(raw)?;
+    rows.retain(|row| selected.contains(&row.level));
+  }
+
+  rows.sort_by(|a, b| {
+    a.ns
+      .cmp(&b.ns)
+      .then(a.level.cmp(&b.level))
+      .then(a.kind.as_str().cmp(b.kind.as_str()))
+      .then(a.def.cmp(&b.def))
+  });
+
+  if rows.is_empty() {
+    println!("No definitions found in selected namespace scope.");
+    return Ok(());
+  }
+
+  let mut level_count: BTreeMap<&'static str, usize> = BTreeMap::new();
+  let mut kind_count: BTreeMap<&'static str, usize> = BTreeMap::new();
+  let mut ns_set: BTreeSet<String> = BTreeSet::new();
+
+  for row in &rows {
+    *level_count.entry(row.level.as_str()).or_insert(0) += 1;
+    *kind_count.entry(row.kind.as_str()).or_insert(0) += 1;
+    ns_set.insert(row.ns.clone());
+  }
+
+  println!("Type coverage check");
+  println!("- namespaces: {}", ns_set.len());
+  println!("- defs: {}", rows.len());
+  if let Some(raw) = &options.only {
+    println!("- only: {}", raw);
+  }
+  println!(
+    "- levels: full={} partial={} none={}",
+    level_count.get("full").copied().unwrap_or(0),
+    level_count.get("partial").copied().unwrap_or(0),
+    level_count.get("none").copied().unwrap_or(0)
+  );
+  println!(
+    "- kinds: fn={} macro={} data={} other={}",
+    kind_count.get("fn").copied().unwrap_or(0),
+    kind_count.get("macro").copied().unwrap_or(0),
+    kind_count.get("data").copied().unwrap_or(0),
+    kind_count.get("other").copied().unwrap_or(0)
+  );
+  println!();
+
+  let mut current_ns: Option<&str> = None;
+
+  for row in &rows {
+    let typed_params = count_typed_params(&row.params, &row.param_annotations);
+    let total_params = row.params.len();
+
+    if current_ns != Some(row.ns.as_str()) {
+      println!("namespace: {}", row.ns);
+      current_ns = Some(row.ns.as_str());
+    }
+
+    println!("- def: {}", row.def);
+    println!("  kind: {}", row.kind.as_str());
+    println!("  coverage: {}", row.level.as_str());
+
+    match row.kind {
+      DefKind::Data => {
+        println!("  data-type: {}", row.data_type.clone().unwrap_or_else(|| "unknown".to_string()));
+      }
+      DefKind::Fn => {
+        if row.return_type_hints.is_empty() {
+          println!("  return: (no hint)");
+        } else {
+          println!("  return:");
+          for item in &row.return_type_hints {
+            println!("    - {}", item);
+          }
+        }
+
+        println!("  params ({}/{}):", typed_params, total_params);
+        if total_params == 0 {
+          println!("    - (no params)");
+        } else {
+          for name in &row.params {
+            match row.param_annotations.get(name) {
+              Some(types) if !types.is_empty() => {
+                println!("    - {} => {}", name, types.join(" | "));
+              }
+              _ => println!("    - {} => (no assert-type)", name),
+            }
+          }
+        }
+      }
+      DefKind::Macro => {
+        println!("  params ({}/{}):", typed_params, total_params);
+        if total_params == 0 {
+          println!("    - (no params)");
+        } else {
+          for name in &row.params {
+            match row.param_annotations.get(name) {
+              Some(types) if !types.is_empty() => {
+                println!("    - {} => {}", name, types.join(" | "));
+              }
+              _ => println!("    - {} => (no assert-type)", name),
+            }
+          }
+        }
+      }
+      DefKind::Other => {
+        println!("  details: no type pattern recognized");
+      }
+    }
+
+    println!();
+  }
+
+  Ok(())
+}
+
+fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> TypeCoverageRow {
+  let (kind, params, param_annotations, return_type_hints, data_type, level) = match &entry.code {
+    Cirru::List(xs) => match xs.first() {
+      Some(Cirru::Leaf(head)) if &**head == "defn" => {
+        let args = xs.get(2);
+        let body = &xs[3..];
+        let params = extract_param_symbols(args);
+        let param_annotations = extract_assert_type_annotations(body);
+        let return_type_hints = extract_return_type_hints(body);
+        let typed_count = count_typed_params(&params, &param_annotations);
+        let ret_typed = !return_type_hints.is_empty();
+        let level = if ret_typed && (params.is_empty() || typed_count == params.len()) {
+          CoverageLevel::Full
+        } else if ret_typed || typed_count > 0 {
+          CoverageLevel::Partial
+        } else {
+          CoverageLevel::None
+        };
+        (DefKind::Fn, params, param_annotations, return_type_hints, None, level)
+      }
+      Some(Cirru::Leaf(head)) if &**head == "defmacro" => {
+        let args = xs.get(2);
+        let body = &xs[3..];
+        let params = extract_param_symbols(args);
+        let param_annotations = extract_assert_type_annotations(body);
+        let typed_count = count_typed_params(&params, &param_annotations);
+        let level = if !params.is_empty() && typed_count == params.len() {
+          CoverageLevel::Full
+        } else if typed_count > 0 {
+          CoverageLevel::Partial
+        } else {
+          CoverageLevel::None
+        };
+        (DefKind::Macro, params, param_annotations, Vec::new(), None, level)
+      }
+      Some(Cirru::Leaf(head)) if &**head == "def" => {
+        let inferred = xs.get(2).and_then(infer_data_type);
+        let level = if inferred.is_some() {
+          CoverageLevel::Full
+        } else {
+          CoverageLevel::None
+        };
+        (DefKind::Data, Vec::new(), BTreeMap::new(), Vec::new(), inferred, level)
+      }
+      _ => (DefKind::Other, Vec::new(), BTreeMap::new(), Vec::new(), None, CoverageLevel::None),
+    },
+    _ => (DefKind::Other, Vec::new(), BTreeMap::new(), Vec::new(), None, CoverageLevel::None),
+  };
+
+  TypeCoverageRow {
+    ns: ns.to_owned(),
+    def: def_name.to_owned(),
+    kind,
+    level,
+    params,
+    param_annotations,
+    return_type_hints,
+    data_type,
+  }
+}
+
+fn extract_param_symbols(args: Option<&Cirru>) -> Vec<String> {
+  let mut out: Vec<String> = vec![];
+  if let Some(node) = args {
+    collect_param_symbols(node, &mut out);
+  }
+  dedup_keep_order(out)
+}
+
+fn collect_param_symbols(node: &Cirru, out: &mut Vec<String>) {
+  match node {
+    Cirru::Leaf(s) => {
+      let name = s.as_ref();
+      if name == "&" || name == "?" || name == "[]" || name == "," {
+        return;
+      }
+      if name.starts_with('|') || name.starts_with(':') || name.chars().all(|c| c.is_ascii_digit()) {
+        return;
+      }
+      out.push(name.to_string());
+    }
+    Cirru::List(xs) => {
+      for x in xs {
+        collect_param_symbols(x, out);
+      }
+    }
+  }
+}
+
+fn extract_assert_type_annotations(nodes: &[Cirru]) -> BTreeMap<String, Vec<String>> {
+  let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
+  for node in nodes {
+    collect_assert_type_annotations(node, &mut out);
+  }
+
+  for items in out.values_mut() {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    items.retain(|v| seen.insert(v.to_owned()));
+  }
+
+  out
+}
+
+fn collect_assert_type_annotations(node: &Cirru, out: &mut BTreeMap<String, Vec<String>>) {
+  match node {
+    Cirru::Leaf(_) => {}
+    Cirru::List(xs) => {
+      if let Some(Cirru::Leaf(head)) = xs.first()
+        && &**head == "assert-type"
+        && let Some(Cirru::Leaf(symbol)) = xs.get(1)
+        && let Some(ty_node) = xs.get(2)
+      {
+        out.entry(symbol.to_string()).or_default().push(render_cirru_inline(ty_node));
+      }
+
+      for x in xs {
+        collect_assert_type_annotations(x, out);
+      }
+    }
+  }
+}
+
+fn extract_return_type_hints(nodes: &[Cirru]) -> Vec<String> {
+  let mut out: Vec<String> = Vec::new();
+  for node in nodes {
+    collect_return_type_hints(node, &mut out);
+  }
+
+  let mut seen: BTreeSet<String> = BTreeSet::new();
+  out.retain(|v| seen.insert(v.to_owned()));
+  out
+}
+
+fn collect_return_type_hints(node: &Cirru, out: &mut Vec<String>) {
+  match node {
+    Cirru::Leaf(_) => {}
+    Cirru::List(xs) => {
+      if let Some(Cirru::Leaf(head)) = xs.first()
+        && &**head == "return-type"
+        && let Some(ty_node) = xs.get(1)
+      {
+        out.push(render_cirru_inline(ty_node));
+      }
+
+      for x in xs {
+        collect_return_type_hints(x, out);
+      }
+    }
+  }
+}
+
+fn count_typed_params(params: &[String], annotations: &BTreeMap<String, Vec<String>>) -> usize {
+  params
+    .iter()
+    .filter(|name| annotations.get(*name).is_some_and(|items| !items.is_empty()))
+    .count()
+}
+
+fn dedup_keep_order(items: Vec<String>) -> Vec<String> {
+  let mut seen: BTreeSet<String> = BTreeSet::new();
+  let mut out: Vec<String> = Vec::new();
+  for item in items {
+    if seen.insert(item.to_owned()) {
+      out.push(item);
+    }
+  }
+  out
+}
+
+fn render_cirru_inline(node: &Cirru) -> String {
+  match node {
+    Cirru::Leaf(s) => s.to_string(),
+    Cirru::List(xs) => {
+      let parts = xs.iter().map(render_cirru_inline).collect::<Vec<_>>().join(" ");
+      format!("({parts})")
+    }
+  }
+}
+
+fn parse_coverage_levels(raw: &str) -> Result<BTreeSet<CoverageLevel>, String> {
+  let mut selected: BTreeSet<CoverageLevel> = BTreeSet::new();
+
+  for part in raw.split(',') {
+    let token = part.trim().to_ascii_lowercase();
+    if token.is_empty() {
+      continue;
+    }
+
+    match token.as_str() {
+      "none" => {
+        selected.insert(CoverageLevel::None);
+      }
+      "partial" => {
+        selected.insert(CoverageLevel::Partial);
+      }
+      "full" => {
+        selected.insert(CoverageLevel::Full);
+      }
+      _ => {
+        return Err(format!(
+          "Unknown coverage level `{}` in --only. Expected comma-separated values from: none,partial,full",
+          token
+        ));
+      }
+    }
+  }
+
+  if selected.is_empty() {
+    return Err("`--only` is empty. Use one or more of: none,partial,full".to_string());
+  }
+
+  Ok(selected)
+}
+
+fn infer_data_type(node: &Cirru) -> Option<String> {
+  match node {
+    Cirru::Leaf(s) => {
+      let raw = s.as_ref();
+      if raw == "nil" {
+        Some("nil".to_string())
+      } else if raw == "true" || raw == "false" {
+        Some("bool".to_string())
+      } else if raw.starts_with('|') {
+        Some("string".to_string())
+      } else if raw.starts_with(':') {
+        Some("tag".to_string())
+      } else if raw.parse::<f64>().is_ok() {
+        Some("number".to_string())
+      } else {
+        None
+      }
+    }
+    Cirru::List(xs) => match xs.first() {
+      Some(Cirru::Leaf(head)) if &**head == "[]" => Some("list".to_string()),
+      Some(Cirru::Leaf(head)) if &**head == "{}" || &**head == "&{}" => Some("map".to_string()),
+      Some(Cirru::Leaf(head)) if &**head == "#{}" => Some("set".to_string()),
+      Some(Cirru::Leaf(head)) if &**head == "::" => Some("tuple".to_string()),
+      Some(Cirru::Leaf(head)) if &**head == "defn" || &**head == "fn" => Some("fn".to_string()),
+      Some(Cirru::Leaf(head)) if &**head == "defmacro" => Some("macro".to_string()),
+      _ => None,
+    },
+  }
 }

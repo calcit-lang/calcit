@@ -21,19 +21,30 @@
           :examples $ []
         |%err $ %{} :CodeEntry (:doc "|Create Err variant of Result")
           :code $ quote
-            defn %err (message) (%:: Result :err message)
+            defn %err (message)
+              hint-fn $ return-type :tuple
+              assert-type message :dynamic
+              %:: Result :err message
           :examples $ []
         |%none $ %{} :CodeEntry (:doc "|Create None variant of Option")
           :code $ quote
-            defn %none () $ %:: Option :none
+            defn %none ()
+              hint-fn $ return-type :tuple
+              %:: Option :none
           :examples $ []
         |%ok $ %{} :CodeEntry (:doc "|Create Ok variant of Result")
           :code $ quote
-            defn %ok (value) (%:: Result :ok value)
+            defn %ok (value)
+              hint-fn $ return-type :tuple
+              assert-type value :dynamic
+              %:: Result :ok value
           :examples $ []
         |%some $ %{} :CodeEntry (:doc "|Create Some variant of Option")
           :code $ quote
-            defn %some (value) (%:: Option :some value)
+            defn %some (value)
+              hint-fn $ return-type :tuple
+              assert-type value :dynamic
+              %:: Option :some value
           :examples $ []
         |%{} $ %{} :CodeEntry (:doc "|Macro for constructing struct-based records\nSyntax: (%{} StructName & field-value-pairs)\nParams: StructName (struct from defstruct), field-value-pairs (key-value list pairs, variadic)\nReturns: record")
           :code $ quote
@@ -250,24 +261,36 @@
         |&fn:apply $ %{} :CodeEntry (:doc "|internal helper for fn :apply method entry")
           :code $ quote
             defn &fn:apply (f g)
+              hint-fn $ return-type :fn
+              assert-type f :fn
+              assert-type g :fn
               fn (x)
                 g x $ f x
           :examples $ []
         |&fn:bind $ %{} :CodeEntry (:doc "|internal helper for fn :bind method entry")
           :code $ quote
             defn &fn:bind (m f)
+              hint-fn $ return-type :fn
+              assert-type m :fn
+              assert-type f :fn
               fn (x)
                 f (m x) x
           :examples $ []
         |&fn:map $ %{} :CodeEntry (:doc "|internal helper for fn :map method entry")
           :code $ quote
             defn &fn:map (f g)
+              hint-fn $ return-type :fn
+              assert-type f :fn
+              assert-type g :fn
               fn (x)
                 f $ g x
           :examples $ []
         |&fn:mappend $ %{} :CodeEntry (:doc "|internal helper for fn :mappend method entry")
           :code $ quote
             defn &fn:mappend (f g)
+              hint-fn $ return-type :fn
+              assert-type f :fn
+              assert-type g :fn
               fn (x)
                 &let
                   v1 $ f x
@@ -304,7 +327,21 @@
           :examples $ []
         |&init-builtin-impls! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn &init-builtin-impls! () (; "this function to make sure builtin impls are loaded") (identity &core-number-impls) (identity &core-string-impls) (identity &core-set-impls) (identity &core-list-impls) (identity &core-map-impls) (identity &core-fn-impls) (identity Add) (identity Eq) (identity Len) (identity Mappable) (identity Multiply) (identity Show)
+            defn &init-builtin-impls! ()
+              hint-fn $ return-type :dynamic
+              ; "this function to make sure builtin impls are loaded"
+              identity &core-number-impls
+              identity &core-string-impls
+              identity &core-set-impls
+              identity &core-list-impls
+              identity &core-map-impls
+              identity &core-fn-impls
+              identity Add
+              identity Eq
+              identity Len
+              identity Mappable
+              identity Multiply
+              identity Show
               if
                 &= (&get-calcit-backend) :js
                 register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls
@@ -335,6 +372,9 @@
         |&list:apply $ %{} :CodeEntry (:doc "|internal helper for list :apply method entry")
           :code $ quote
             defn &list:apply (xs fs)
+              hint-fn $ return-type :list
+              assert-type xs :list
+              assert-type fs :list
               &list:concat & $ map fs
                 fn (f)
                   map xs $ fn (x) (f x)
@@ -367,6 +407,7 @@
           :code $ quote
             defn &list:empty (_xs)
               hint-fn $ return-type :list
+              assert-type _xs :list
               []
           :examples $ []
         |&list:empty? $ %{} :CodeEntry (:doc "|internal function for checking if list is empty\nSyntax: (&list:empty? list)\nParams: list (list)\nReturns: boolean\nReturns true if list has no elements")
@@ -386,6 +427,7 @@
           :code $ quote
             defn &list:filter-pair (xs f)
               hint-fn $ return-type :list
+              assert-type xs :dynamic
               assert-type f :fn
               if (list? xs)
                 &list:filter xs $ defn %filter-pair (pair)
@@ -397,12 +439,18 @@
         |&list:find-last $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:find-last (xs f)
+              hint-fn $ return-type :dynamic
+              assert-type xs :list
+              assert-type f :fn
               foldr-shortcut xs nil nil $ fn (_acc x)
                 if (f x) (:: true x) (:: false nil)
           :examples $ []
         |&list:find-last-index $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:find-last-index (xs f)
+              hint-fn $ return-type :dynamic
+              assert-type xs :list
+              assert-type f :fn
               foldr-shortcut xs
                 dec $ count xs
                 , nil $ fn (idx x)
@@ -415,6 +463,8 @@
         |&list:flatten $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:flatten (xs)
+              hint-fn $ return-type :list
+              assert-type xs :dynamic
               if (list? xs)
                 &list:concat & $ map xs &list:flatten
                 [] xs
@@ -425,6 +475,9 @@
         |&list:last-index-of $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:last-index-of (xs item)
+              hint-fn $ return-type :dynamic
+              assert-type xs :list
+              assert-type item :dynamic
               foldr-shortcut xs
                 dec $ count xs
                 , nil $ fn (idx x)
@@ -444,6 +497,9 @@
         |&list:map-pair $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:map-pair (xs f)
+              hint-fn $ return-type :list
+              assert-type xs :dynamic
+              assert-type f :fn
               if (list? xs)
                 map xs $ defn %map-pair (pair)
                   assert "|expected a pair" $ and (list? pair)
@@ -453,11 +509,17 @@
           :examples $ []
         |&list:mappend $ %{} :CodeEntry (:doc "|internal helper for list :mappend method entry")
           :code $ quote
-            defn &list:mappend (x y) (&list:concat x y)
+            defn &list:mappend (x y)
+              hint-fn $ return-type :list
+              assert-type x :list
+              assert-type y :list
+              &list:concat x y
           :examples $ []
         |&list:max $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:max (xs)
+              hint-fn $ return-type :dynamic
+              assert-type xs :list
               list-match xs
                 () nil
                 (x0 xss)
@@ -466,6 +528,8 @@
         |&list:min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:min (xs)
+              hint-fn $ return-type :dynamic
+              assert-type xs :list
               list-match xs
                 () nil
                 (x0 xss)
@@ -486,6 +550,9 @@
         |&list:sort-by $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &list:sort-by (xs f)
+              hint-fn $ return-type :list
+              assert-type xs :list
+              assert-type f :dynamic
               if (tag? f)
                 sort xs $ defn %&list:sort-by (a b)
                   &compare (get a f) (get b f)
@@ -533,6 +600,7 @@
           :code $ quote
             defn &map:empty (_xs)
               hint-fn $ return-type :map
+              assert-type _xs :map
               &{}
           :examples $ []
         |&map:empty? $ %{} :CodeEntry (:doc "|internal function for checking if map is empty\nSyntax: (&map:empty? map)\nParams: map (map)\nReturns: boolean\nReturns true if map has no entries")
@@ -546,6 +614,7 @@
               assert-type f :fn
               reduce xs (&{})
                 defn %&map:filter (acc x)
+                  hint-fn $ return-type :map
                   if (f x)
                     &map:assoc acc (nth x 0) (nth x 1)
                     , acc
@@ -558,6 +627,7 @@
               assert-type f :fn
               reduce xs (&{})
                 defn %map:filter-kv (acc x)
+                  hint-fn $ return-type :map
                   if
                     f (nth x 0) (nth x 1)
                     &map:assoc acc (nth x 0) (nth x 1)
@@ -577,6 +647,7 @@
               assert-type f :fn
               foldl xs ({})
                 defn &map:map (acc pair)
+                  hint-fn $ return-type :map
                   &let
                     result $ f pair
                     assert "|expected pair returned when mapping hashmap" $ and (list? result)
@@ -587,10 +658,12 @@
           :code $ quote
             defn &map:map-list (xs f)
               hint-fn $ return-type :list
+              assert-type xs :map
               assert-type f :fn
               if (map? xs)
                 foldl xs ([])
                   defn %&map:map-list (acc pair)
+                    hint-fn $ return-type :list
                     append acc $ f pair
                 raise $ str-spaced "|&map:map-list expected a map, got:" xs
           :examples $ []
@@ -601,6 +674,8 @@
           :code $ quote
             defn &max (a b)
               hint-fn $ return-type :number
+              assert-type a :number
+              assert-type b :number
               assert "|expects numbers for &max" $ if (number? a) (number? b)
               if (&> a b) a b
           :examples $ []
@@ -614,6 +689,8 @@
           :code $ quote
             defn &min (a b)
               hint-fn $ return-type :number
+              assert-type a :number
+              assert-type b :number
               assert "|expects numbers for &min" $ if (number? a) (number? b)
               if (&< a b) a b
           :examples $ []
@@ -624,6 +701,7 @@
           :code $ quote
             defn &number:empty (_x)
               hint-fn $ return-type :number
+              assert-type _x :number
               , 0
           :examples $ []
         |&number:format $ %{} :CodeEntry (:doc "|internal function for number formatting\nSyntax: (&number:format n)\nParams: n (number)\nReturns: string\nFormats number as string representation")
@@ -720,6 +798,7 @@
           :code $ quote
             defn &set:empty (_xs)
               hint-fn $ return-type :set
+              assert-type _xs :set
               #{}
           :examples $ []
         |&set:empty? $ %{} :CodeEntry (:doc "|internal function for checking if set is empty\nSyntax: (&set:empty? set)\nParams: set (set)\nReturns: boolean\nReturns true if set has no elements")
@@ -733,6 +812,7 @@
               assert-type f :fn
               reduce xs (#{})
                 defn %&set:filter (acc x)
+                  hint-fn $ return-type :set
                   if (f x) (&include acc x) acc
           :examples $ []
         |&set:includes? $ %{} :CodeEntry (:doc "|internal function for checking if set includes element\nSyntax: (&set:includes? set element)\nParams: set (set), element (any)\nReturns: boolean\nReturns true if set includes element")
@@ -744,6 +824,8 @@
         |&set:max $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &set:max (xs)
+              hint-fn $ return-type :dynamic
+              assert-type xs :set
               &let
                 pair $ &set:destruct xs
                 if (nil? pair) nil $ reduce (nth pair 1) (nth pair 0)
@@ -752,6 +834,8 @@
         |&set:min $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn &set:min (xs)
+              hint-fn $ return-type :dynamic
+              assert-type xs :set
               &let
                 pair $ &set:destruct xs
                 if (nil? pair) nil $ reduce (nth pair 1) (nth pair 0)
@@ -766,6 +850,10 @@
         |&str-spaced $ %{} :CodeEntry (:doc "|Internal function for joining strings with spaces, used by str-spaced")
           :code $ quote
             defn &str-spaced (head? x0 & xs)
+              hint-fn $ return-type :string
+              assert-type head? :bool
+              assert-type x0 :dynamic
+              assert-type xs $ :: :& :dynamic
               if (&list:empty? xs)
                 if head? (&str x0)
                   if (nil? x0) | $ &str:concat "| " x0
@@ -791,6 +879,7 @@
           :code $ quote
             defn &str:empty (_)
               hint-fn $ return-type :string
+              assert-type _ :string
               , |
           :examples $ []
         |&str:empty? $ %{} :CodeEntry (:doc "|internal function for checking if string is empty\nSyntax: (&str:empty? s)\nParams: s (string)\nReturns: boolean\nReturns true if string has zero length")
@@ -977,7 +1066,11 @@
             quote $ / 8
         |/= $ %{} :CodeEntry (:doc "|not equal")
           :code $ quote
-            defn /= (a b) (not= a b)
+            defn /= (a b)
+              hint-fn $ return-type :bool
+              assert-type a :dynamic
+              assert-type b :dynamic
+              not= a b
           :examples $ []
         |: $ %{} :CodeEntry (:doc "|Macro sugar for tagged tuples\nExpands to `::` while passing the tag through `turn-tag`, so both keywords and bare symbols may be used.")
           :code $ quote
@@ -1034,6 +1127,8 @@
           :code $ quote
             defn = (x & ys)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
+              assert-type ys $ :: :& :dynamic
               if
                 &= 1 $ &list:count ys
                 &= x $ &list:first ys
@@ -1226,6 +1321,7 @@
           :code $ quote
             defn any? (xs f)
               hint-fn $ return-type :bool
+              assert-type xs :dynamic
               assert-type f :fn
               foldl-shortcut xs false false $ defn %any? (acc x)
                 if (f x) (:: true true) (:: false acc)
@@ -1247,7 +1343,11 @@
           :examples $ []
         |apply $ %{} :CodeEntry (:doc "|calls a function with arguments from a list, spreads the list as individual arguments")
           :code $ quote
-            defn apply (f args) (assert-type f :fn) (assert-type args :list) (f & args)
+            defn apply (f args)
+              hint-fn $ return-type :dynamic
+              assert-type f :fn
+              assert-type args :list
+              f & args
           :examples $ []
             quote $ assert= 6
               apply + $ [] 1 2 3
@@ -1334,6 +1434,9 @@
         |assoc $ %{} :CodeEntry (:doc "|associates a key-value pair to a collection, works on maps, lists, tuples, and records")
           :code $ quote
             defn assoc (x & args)
+              hint-fn $ return-type :dynamic
+              assert-type x :dynamic
+              assert-type args $ :: :& :dynamic
               if (nil? x)
                 raise $ str-spaced "|assoc does not work on nil for:" args
                 if (tuple? x) (&tuple:assoc x & args)
@@ -1350,6 +1453,10 @@
         |assoc-in $ %{} :CodeEntry (:doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed")
           :code $ quote
             defn assoc-in (data path v)
+              hint-fn $ return-type :dynamic
+              assert-type data :dynamic
+              assert-type path :list
+              assert-type v :dynamic
               list-match path
                 () v
                 (p0 ps)
@@ -1399,12 +1506,14 @@
           :code $ quote
             defn bool? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :bool
           :examples $ []
         |buffer? $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn buffer? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :buffer
           :examples $ []
         |butlast $ %{} :CodeEntry (:doc "|internal function for getting all but last element\nSyntax: (butlast list)\nParams: list (list)\nReturns: list\nReturns new list without the last element")
@@ -1489,12 +1598,14 @@
           :code $ quote
             defn cirru-quote? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :cirru-quote
           :examples $ []
         |concat $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn concat (& args)
               hint-fn $ return-type :list
+              assert-type args $ :: :& :list
               list-match args
                 () $ []
                 (a0 as)
@@ -1537,6 +1648,8 @@
             defn conj (xs y0 & ys)
               hint-fn $ return-type :list
               assert-type xs :list
+              assert-type y0 :dynamic
+              assert-type ys $ :: :& :dynamic
               if (empty? ys) (append xs y0)
                 recur (append xs y0) & ys
           :examples $ []
@@ -1548,6 +1661,8 @@
           :code $ quote
             defn contains-in? (xs path)
               hint-fn $ return-type :bool
+              assert-type xs :dynamic
+              assert-type path :list
               list-match path
                 () true
                 (p0 ps)
@@ -1587,6 +1702,8 @@
           :code $ quote
             defn contains-symbol? (xs y)
               hint-fn $ return-type :bool
+              assert-type xs :dynamic
+              assert-type y :dynamic
               if (list? xs)
                 apply-args (xs)
                   defn %contains-symbol? (body)
@@ -1600,6 +1717,8 @@
           :code $ quote
             defn contains? (x k)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
+              assert-type k :dynamic
               if (nil? x) false $ if (list? x) (&list:contains? x k)
                 if (record? x) (&record:contains? x k)
                   if (tuple? x)
@@ -1625,6 +1744,7 @@
           :code $ quote
             defn count (x)
               hint-fn $ return-type :number
+              assert-type x :dynamic
               if (nil? x) 0 $ if (tuple? x) (&tuple:count x)
                 if (list? x) (&list:count x)
                   if (record? x) (&record:count x)
@@ -1855,6 +1975,8 @@
         |deref $ %{} :CodeEntry (:doc "|Reads the current value stored in a reference\nSupports Calcit atoms as well as other host structures that implement deref.")
           :code $ quote
             defn deref (*a)
+              hint-fn $ return-type :dynamic
+              assert-type *a :dynamic
               if (ref? *a) (&atom:deref *a) (.deref *a)
           :examples $ []
             quote $ do (defatom *state 1)
@@ -1864,12 +1986,16 @@
         |destruct-list $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn destruct-list (xs)
+              hint-fn $ return-type :tuple
+              assert-type xs :list
               if (empty? xs) (:: :none)
                 :: :some (nth xs 0) (&list:slice xs 1)
           :examples $ []
         |destruct-map $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn destruct-map (xs)
+              hint-fn $ return-type :tuple
+              assert-type xs :map
               &let
                 pair $ &map:destruct xs
                 if (nil? pair) (:: :none) (:: :some & pair)
@@ -1877,6 +2003,8 @@
         |destruct-set $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn destruct-set (xs)
+              hint-fn $ return-type :tuple
+              assert-type xs :set
               &let
                 pair $ &set:destruct xs
                 if (nil? pair) (:: :none)
@@ -1885,6 +2013,8 @@
         |destruct-str $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn destruct-str (s)
+              hint-fn $ return-type :tuple
+              assert-type s :string
               if (&= s |) (:: :none)
                 :: :some (nth s 0) (&str:slice s 1)
           :examples $ []
@@ -1903,12 +2033,18 @@
         |dissoc $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn dissoc (x & args)
+              hint-fn $ return-type :dynamic
+              assert-type x :dynamic
+              assert-type args $ :: :& :dynamic
               if (nil? x) nil $ if (list? x) (&list:dissoc x & args)
                 if (map? x) (&map:dissoc x & args) (.dissoc x & args)
           :examples $ []
         |dissoc-in $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn dissoc-in (data path)
+              hint-fn $ return-type :dynamic
+              assert-type data :dynamic
+              assert-type path :list
               list-match path
                 () nil
                 (p0 ps)
@@ -1939,12 +2075,16 @@
           :code $ quote
             defn drop (xs n)
               hint-fn $ return-type :list
+              assert-type xs :list
               assert-type n :number
               slice xs n $ &list:count xs
           :examples $ []
         |each $ %{} :CodeEntry (:doc "|Iterate over a collection and apply function f for side effects, returns nil")
           :code $ quote
-            defn each (xs f) (assert-type f :fn)
+            defn each (xs f)
+              hint-fn $ return-type :nil
+              assert-type xs :dynamic
+              assert-type f :fn
               foldl xs nil $ defn %each (_acc x) (f x)
           :examples $ []
             quote $ assert= nil
@@ -1979,12 +2119,15 @@
         |empty $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn empty (x)
+              hint-fn $ return-type :dynamic
+              assert-type x :dynamic
               if (nil? x) nil $ if (list? x) ([]) (.empty x)
           :examples $ []
         |empty? $ %{} :CodeEntry (:doc "|Checks whether a collection or string is empty\nNil values are considered empty, otherwise delegates to the underlying data structure.")
           :code $ quote
             defn empty? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               if (nil? x) true $ if (list? x) (&list:empty? x)
                 if (map? x) (&map:empty? x)
                   if (set? x) (&set:empty? x)
@@ -2006,6 +2149,7 @@
           :code $ quote
             defn enum? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :enum
           :examples $ []
             quote $ assert= true
@@ -2026,6 +2170,7 @@
           :code $ quote
             defn every? (xs f)
               hint-fn $ return-type :bool
+              assert-type xs :dynamic
               assert-type f :fn
               foldl-shortcut xs true true $ defn %every? (acc x)
                 if (f x) (:: false acc) (:: true false)
@@ -2042,6 +2187,7 @@
             defn exclude (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
+              assert-type xs $ :: :& :dynamic
               ; accept any elements, not just sets
               reduce xs base $ fn (acc item) (&exclude acc item)
           :examples $ []
@@ -2061,7 +2207,10 @@
           :examples $ []
         |filter $ %{} :CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
           :code $ quote
-            defn filter (xs f) (assert-type f :fn)
+            defn filter (xs f)
+              hint-fn $ return-type :dynamic
+              assert-type xs :dynamic
+              assert-type f :fn
               if (nil? xs) nil $ if (list? xs) (&list:filter xs f)
                 if (map? xs) (&map:filter xs f)
                   if (set? xs) (&set:filter xs f) (.filter xs f)
@@ -2076,14 +2225,20 @@
                   &> (&str:count s) 1
         |filter-not $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn filter-not (xs f) (assert-type f :fn)
+            defn filter-not (xs f)
+              hint-fn $ return-type :dynamic
+              assert-type xs :dynamic
+              assert-type f :fn
               if (nil? xs) nil $ filter xs
                 defn %filter-not (x)
                   not $ f x
           :examples $ []
         |find $ %{} :CodeEntry (:doc "|Find the first element in a collection that satisfies the predicate f")
           :code $ quote
-            defn find (xs f) (assert-type f :fn)
+            defn find (xs f)
+              hint-fn $ return-type :dynamic
+              assert-type xs :dynamic
+              assert-type f :fn
               foldl-shortcut xs 0 nil $ defn %find (_acc x)
                 if (f x) (:: true x) (:: false nil)
           :examples $ []
@@ -2097,6 +2252,7 @@
           :code $ quote
             defn find-index (xs f)
               hint-fn $ return-type :number
+              assert-type xs :dynamic
               assert-type f :fn
               foldl-shortcut xs 0 nil $ defn %find-index (idx x)
                 if (f x) (:: true idx)
@@ -2105,6 +2261,8 @@
         |first $ %{} :CodeEntry (:doc "|Returns the first element of a list, tuple, string, or other sequential structure\nNil inputs return nil, and empty collections also produce nil.")
           :code $ quote
             defn first (x)
+              hint-fn $ return-type :dynamic
+              assert-type x :dynamic
               if (nil? x) nil $ if (tuple? x) (&tuple:nth x 0)
                 if (list? x) (&list:first x)
                   if (string? x) (&str:first x) (.first x)
@@ -2140,6 +2298,7 @@
           :code $ quote
             defn fn? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               if
                 &= (type-of x) :fn
                 , true $ &= (type-of x) :proc
@@ -2153,6 +2312,10 @@
         |foldl' $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn foldl' (xs acc f)
+              hint-fn $ return-type :dynamic
+              assert-type xs :list
+              assert-type acc :dynamic
+              assert-type f :fn
               list-match xs
                 () acc
                 (x0 xss)
@@ -2161,6 +2324,10 @@
         |foldl-compare $ %{} :CodeEntry (:doc "|Helper used by comparison operators to ensure a relation holds across an entire list, short-circuiting on the first failure.")
           :code $ quote
             defn foldl-compare (xs acc f)
+              hint-fn $ return-type :bool
+              assert-type xs :list
+              assert-type acc :dynamic
+              assert-type f :fn
               if (&list:empty? xs) true $ if
                 f acc $ &list:first xs
                 recur (&list:rest xs) (&list:first xs) f
@@ -2194,6 +2361,8 @@
         |frequencies $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn frequencies (xs0)
+              hint-fn $ return-type :map
+              assert-type xs0 :list
               assert "|expects a list for frequencies" $ list? xs0
               apply-args
                   {}
@@ -2217,6 +2386,9 @@
         |get $ %{} :CodeEntry (:doc "|Reads a value from collections or strings by key or index. Handles maps, lists, tuples, records, and strings; nil bases return nil.")
           :code $ quote
             defn get (base k)
+              hint-fn $ return-type :dynamic
+              assert-type base :dynamic
+              assert-type k :dynamic
               if (nil? base) nil $ if (string? base) (&str:nth base k)
                 if (map? base) (&map:get base k)
                   if (list? base) (&list:nth base k)
@@ -2237,6 +2409,9 @@
         |get-in $ %{} :CodeEntry (:doc "|Get value from nested data structure using a path of keys")
           :code $ quote
             defn get-in (base path)
+              hint-fn $ return-type :dynamic
+              assert-type base :dynamic
+              assert-type path :list
               if
                 not $ list? path
                 raise $ str-spaced "|expects path in a list, got:" path
@@ -2261,10 +2436,16 @@
         |group-by $ %{} :CodeEntry (:doc "|Group elements by the result of applying function f to each element")
           :code $ quote
             defn group-by (xs0 f)
+              hint-fn $ return-type :map
+              assert-type xs0 :list
+              assert-type f :fn
               apply-args
                   {}
                   , xs0
                 defn %group-by (acc xs)
+                  hint-fn $ return-type :map
+                  assert-type acc :map
+                  assert-type xs :list
                   list-match xs
                     () acc
                     (x0 xss)
@@ -2284,7 +2465,10 @@
           :examples $ []
         |identity $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn identity (x) x
+            defn identity (x)
+              hint-fn $ return-type :dynamic
+              assert-type x :dynamic
+              , x
           :examples $ []
         |if $ %{} :CodeEntry (:doc "|internal syntax for conditional expressions\nSyntax: (if condition then-expr else-expr)\nParams: condition (any), then-expr (any), else-expr (any, optional)\nReturns: value of then-expr if condition is truthy, else-expr otherwise\nEvaluates condition and returns appropriate branch")
           :code $ quote &runtime-inplementation
@@ -2337,6 +2521,9 @@
         |impl-traits $ %{} :CodeEntry (:doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (struct/enum), traits (impl, variadic)\nReturns: value with updated trait implementations\nDispatches to &struct:impl-traits, &enum:impl-traits")
           :code $ quote
             defn impl-traits (x & traits)
+              hint-fn $ return-type :dynamic
+              assert-type x :dynamic
+              assert-type traits $ :: :& :dynamic
               if
                 not $ every? traits
                   fn (trait)
@@ -2350,6 +2537,7 @@
           :code $ quote
             defn inc (x)
               hint-fn $ return-type :number
+              assert-type x :number
               &+ x 1
           :examples $ []
             quote $ assert= 6 (inc 5)
@@ -2359,6 +2547,7 @@
             defn include (base & xs)
               hint-fn $ return-type :set
               assert-type base :set
+              assert-type xs $ :: :& :dynamic
               ; accept any elements, not just sets
               reduce xs base $ fn (acc item) (&include acc item)
           :examples $ []
@@ -2370,6 +2559,8 @@
           :code $ quote
             defn includes? (x k)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
+              assert-type k :dynamic
               if (nil? x) false $ if (list? x) (&list:includes? x k)
                 if (map? x) (&map:includes? x k)
                   if (set? x) (&set:includes? x k)
@@ -2379,6 +2570,8 @@
           :code $ quote
             defn index-of (xs item)
               hint-fn $ return-type :number
+              assert-type xs :list
+              assert-type item :dynamic
               foldl-shortcut xs 0 nil $ defn %index-of (idx x)
                 if (&= item x) (:: true idx)
                   :: false $ &+ 1 idx
@@ -2391,10 +2584,16 @@
           :code $ quote
             defn interleave (xs0 ys0)
               hint-fn $ return-type :list
+              assert-type xs0 :list
+              assert-type ys0 :list
               apply-args
                   []
                   , xs0 ys0
                 defn %interleave (acc xs ys)
+                  hint-fn $ return-type :list
+                  assert-type acc :list
+                  assert-type xs :list
+                  assert-type ys :list
                   if
                     if (&list:empty? xs) true $ &list:empty? ys
                     , acc $ recur
@@ -2419,10 +2618,16 @@
           :code $ quote
             defn join (xs0 sep)
               hint-fn $ return-type :list
+              assert-type xs0 :list
+              assert-type sep :dynamic
               apply-args
                   []
                   , xs0 true
                 defn %join (acc xs beginning?)
+                  hint-fn $ return-type :list
+                  assert-type acc :list
+                  assert-type xs :list
+                  assert-type beginning? :bool
                   list-match xs
                     () acc
                     (x0 xss)
@@ -2440,6 +2645,10 @@
               assert-type sep :string
               apply-args (| xs0 true)
                 defn %join-str (acc xs beginning?)
+                  hint-fn $ return-type :string
+                  assert-type acc :string
+                  assert-type xs :list
+                  assert-type beginning? :bool
                   list-match xs
                     () acc
                     (x0 xss)
@@ -2468,16 +2677,18 @@
           :code $ quote
             defn keys (x)
               hint-fn $ return-type :set
+              assert-type x :map
               map (to-pairs x) &list:first
           :examples $ []
         |keys-non-nil $ %{} :CodeEntry (:doc "|Get keys from a map that have non-nil values")
           :code $ quote
             defn keys-non-nil (x)
               hint-fn $ return-type :set
+              assert-type x :map
               apply-args
                   #{}
                   to-pairs x
-                fn (acc pairs)
+                fn (acc pairs) (assert-type acc :set) (assert-type pairs :set)
                   if (&set:empty? pairs) acc $ &let
                     set-pair $ &set:destruct pairs
                     &let
@@ -2496,6 +2707,8 @@
         |last $ %{} :CodeEntry (:doc "|Returns the last element of a list-like collection\nReturns nil when the collection is empty.")
           :code $ quote
             defn last (xs)
+              hint-fn $ return-type :dynamic
+              assert-type xs :dynamic
               if (empty? xs) nil $ nth xs
                 &- (count xs) 1
           :examples $ []
@@ -2678,6 +2891,7 @@
           :code $ quote
             defn list? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :list
           :examples $ []
             quote $ list? ([] 1 2 3)
@@ -2712,6 +2926,7 @@
           :code $ quote
             defn macro? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :macro
           :examples $ []
         |macroexpand $ %{} :CodeEntry (:doc "|internal syntax for expanding macros until recursive calls are resolved\nSyntax: (macroexpand expr)\nParams: expr (macro call)\nReturns: fully expanded code\nExpands macros recursively until no more macro calls remain")
@@ -2725,11 +2940,14 @@
           :examples $ []
         |map $ %{} :CodeEntry (:doc "|Collection mapping function. Applies a function to each element of a list, set, or map, returning a structure of the same shape.")
           :code $ quote
-            defn map (xs f) (assert-type f :fn)
+            defn map (xs f) (assert-type f :fn) (assert-type xs :dynamic)
+              hint-fn $ return-type :dynamic
               if (list? xs) (&list:map xs f)
                 if (set? xs)
                   foldl xs (#{})
                     defn %map (acc x)
+                      hint-fn $ return-type :set
+                      assert-type acc :set
                       include acc $ f x
                   if (map? xs) (&map:map xs f)
                     raise $ str-spaced "|expected list or set for map function, got:" xs
@@ -2742,9 +2960,12 @@
           :code $ quote
             defn map-indexed (xs f)
               hint-fn $ return-type :list
+              assert-type xs :dynamic
               assert-type f :fn
               foldl xs ([])
                 defn %map-indexed (acc x)
+                  hint-fn $ return-type :list
+                  assert-type acc :list
                   append acc $ f (count acc) x
           :examples $ []
             quote $ assert= ([] 10 21 32)
@@ -2762,6 +2983,9 @@
               assert-type f :fn
               foldl xs ({})
                 defn %map-kv (acc pair)
+                  hint-fn $ return-type :map
+                  assert-type acc :map
+                  assert-type pair :list
                   &let
                     result $ f (nth pair 0) (nth pair 1)
                     if (list? result)
@@ -2776,6 +3000,7 @@
           :code $ quote
             defn map? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :map
           :examples $ []
             quote $ assert= true
@@ -2786,6 +3011,7 @@
           :code $ quote
             defn mapcat (xs f)
               hint-fn $ return-type :list
+              assert-type xs :list
               assert-type f :fn
               &list:concat & $ map xs f
           :examples $ []
@@ -2801,6 +3027,7 @@
             defn merge (x0 & xs)
               hint-fn $ return-type :map
               assert-type x0 :map
+              assert-type xs $ :: :& :map
               reduce xs x0 &merge
           :examples $ []
             quote $ assert=
@@ -2819,6 +3046,7 @@
             defn merge-non-nil (x0 & xs)
               hint-fn $ return-type :map
               assert-type x0 :map
+              assert-type xs $ :: :& :map
               reduce xs x0 &merge-non-nil
           :examples $ []
         |min $ %{} :CodeEntry (:doc |)
@@ -2842,6 +3070,7 @@
           :code $ quote
             defn nil? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :nil
           :examples $ []
             quote $ assert= true (nil? nil)
@@ -2849,6 +3078,8 @@
         |non-nil! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn non-nil! (x)
+              hint-fn $ return-type :dynamic
+              assert-type x :dynamic
               if (nil? x) (raise "|expected non nil value") x
           :examples $ []
         |not $ %{} :CodeEntry (:doc "|internal function for logical not\nSyntax: (not value)\nParams: value (any)\nReturns: boolean\nReturns true if value is falsy (nil or false), false otherwise")
@@ -2858,6 +3089,8 @@
           :code $ quote
             defn not= (x y)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
+              assert-type y :dynamic
               not $ &= x y
           :examples $ []
             quote $ assert= true (not= 1 2)
@@ -2869,7 +3102,10 @@
           :examples $ []
         |nth $ %{} :CodeEntry (:doc "|Returns the element at index `i` from a list, tuple, or sequential data structure\nRaises if the index is outside the available range.")
           :code $ quote
-            defn nth (x i) (assert-type i :number)
+            defn nth (x i)
+              hint-fn $ return-type :dynamic
+              assert-type x :dynamic
+              assert-type i :number
               if (tuple? x) (&tuple:nth x i)
                 if (list? x) (&list:nth x i)
                   if (string? x) (&str:nth x i) (.nth x i)
@@ -2881,6 +3117,7 @@
           :code $ quote
             defn number? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :number
           :examples $ []
             quote $ assert= true (number? 123)
@@ -2889,6 +3126,9 @@
         |option:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Option")
           :code $ quote
             defn option:map (opt f)
+              hint-fn $ return-type :tuple
+              assert-type opt :tuple
+              assert-type f :fn
               tag-match opt
                   :some value
                   %:: (&tuple:enum opt) :some $ f value
@@ -2898,6 +3138,8 @@
         |optionally $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn optionally (s)
+              hint-fn $ return-type :tuple
+              assert-type s :dynamic
               if (nil? s) (:: :none) (:: :some s)
           :examples $ []
         |or $ %{} :CodeEntry (:doc "|Logical disjunction macro. Skips evaluating later forms once a truthy (non-nil, non-false) value is found, preserving the first truthy result.")
@@ -2933,8 +3175,12 @@
           :code $ quote
             defn pairs-map (xs)
               hint-fn $ return-type :map
+              assert-type xs :list
               reduce xs ({})
                 defn %pairs-map (acc pair)
+                  hint-fn $ return-type :map
+                  assert-type acc :map
+                  assert-type pair :list
                   assert "|expects pair for pairs-map" $ if (list? pair)
                     &= 2 $ &list:count pair
                     , false
@@ -3024,6 +3270,7 @@
           :code $ quote
             defn record? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :record
           :examples $ []
             quote $ assert= false
@@ -3033,7 +3280,12 @@
           :examples $ []
         |reduce $ %{} :CodeEntry (:doc "|Collection reduction operation\nFunction: Reduces a collection using a specified function, accumulating elements onto an initial value\nParams: xs (collection), x0 (initial accumulator value), f (reduction function that takes accumulator and current element)\nReturns: any type - final accumulated result\nNotes: The reduction function f should accept two parameters (accumulator, current element) and return a new accumulator value")
           :code $ quote
-            defn reduce (xs x0 f) (foldl xs x0 f)
+            defn reduce (xs x0 f)
+              hint-fn $ return-type :dynamic
+              assert-type xs :dynamic
+              assert-type x0 :dynamic
+              assert-type f :fn
+              foldl xs x0 f
           :examples $ []
             quote $ assert= 6
               reduce ([] 1 2 3) 0 +
@@ -3041,6 +3293,7 @@
           :code $ quote
             defn ref? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :ref
           :examples $ []
         |remove-watch $ %{} :CodeEntry (:doc "|internal function for removing atom watchers\nSyntax: (remove-watch atom key)\nParams: atom (atom), key (any)\nReturns: atom\nRemoves watcher with specified key from atom")
@@ -3050,11 +3303,15 @@
           :code $ quote
             defn repeat (x n0)
               hint-fn $ return-type :list
+              assert-type x :dynamic
               assert-type n0 :number
               apply-args
                   []
                   , n0
                 defn %repeat (acc n)
+                  hint-fn $ return-type :list
+                  assert-type acc :list
+                  assert-type n :number
                   if (&<= n 0) acc $ recur (append acc x) (&- n 1)
           :examples $ []
         |reset! $ %{} :CodeEntry (:doc "|internal syntax for resetting atom values\nSyntax: (reset! atom new-value)\nParams: atom (atom reference), new-value (any)\nReturns: new value\nSets atom to new value and returns it")
@@ -3065,6 +3322,8 @@
         |rest $ %{} :CodeEntry (:doc "|Returns the collection without its first element\nNil input returns nil; lists delegate to &list:rest.")
           :code $ quote
             defn rest (x)
+              hint-fn $ return-type :dynamic
+              assert-type x :dynamic
               if (nil? x) nil $ if (list? x) (&list:rest x) (.rest x)
           :examples $ []
             quote $ assert= ([] 2 3)
@@ -3073,6 +3332,9 @@
         |result:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Result")
           :code $ quote
             defn result:map (res f)
+              hint-fn $ return-type :tuple
+              assert-type res :dynamic
+              assert-type f :fn
               tag-match res
                   :ok value
                   %:: (&tuple:enum res) :ok $ f value
@@ -3099,6 +3361,9 @@
         |section-by $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn section-by (xs0 n)
+              hint-fn $ return-type :list
+              assert-type xs0 :dynamic
+              assert-type n :number
               if (>= n 1)
                 apply-args
                     []
@@ -3115,15 +3380,20 @@
         |select-keys $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn select-keys (m xs)
+              hint-fn $ return-type :map
+              assert-type m :dynamic
               assert "|expected map for selecting" $ map? m
+              assert-type xs :list
               foldl xs (&{})
                 defn %select-keys (acc k)
+                  hint-fn $ return-type :map
                   &map:assoc acc k $ &map:get m k
           :examples $ []
         |set? $ %{} :CodeEntry (:doc "|Check if a value is a set")
           :code $ quote
             defn set? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :set
           :examples $ []
             quote $ assert= true
@@ -3137,7 +3407,10 @@
           :examples $ []
         |slice $ %{} :CodeEntry (:doc "|Extract a slice from a collection from index n to m")
           :code $ quote
-            defn slice (xs n ? m) (assert-type n :number)
+            defn slice (xs n ? m)
+              hint-fn $ return-type :dynamic
+              assert-type xs :dynamic
+              assert-type n :number
               assert-type m $ :: :optional :number
               if (nil? xs) nil $ if (list? xs) (&list:slice xs n m)
                 if (string? xs) (&str:slice xs n m) (.slice xs n m)
@@ -3150,6 +3423,8 @@
           :code $ quote
             defn some-in? (x path)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
+              assert-type path :list
               if (nil? x) false $ list-match path
                 () true
                 (k ps)
@@ -3167,6 +3442,7 @@
           :code $ quote
             defn some? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               not $ nil? x
           :examples $ []
             quote $ assert= true (some? 0)
@@ -3190,6 +3466,8 @@
           :code $ quote
             defn str (x0 & xs)
               hint-fn $ return-type :string
+              assert-type x0 :dynamic
+              assert-type xs $ :: :& :dynamic
               if (&list:empty? xs) (&str x0)
                 &str:concat x0 $ str & xs
           :examples $ []
@@ -3201,6 +3479,7 @@
           :code $ quote
             defn str-spaced (& xs)
               hint-fn $ return-type :string
+              assert-type xs $ :: :& :dynamic
               &str-spaced true & xs
           :examples $ []
             quote $ assert= "|a b c" (str-spaced |a |b |c)
@@ -3209,6 +3488,7 @@
           :code $ quote
             defn string? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :string
           :examples $ []
             quote $ assert= true (string? |hello)
@@ -3244,6 +3524,7 @@
           :code $ quote
             defn struct? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :struct
           :examples $ []
             quote $ assert= true
@@ -3264,6 +3545,7 @@
           :code $ quote
             defn symbol? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :symbol
           :examples $ []
             quote $ assert= true
@@ -3273,6 +3555,7 @@
           :code $ quote
             defn syntax? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :syntax
           :examples $ []
         |tag-match $ %{} :CodeEntry (:doc "|Pattern matching on tagged tuples, dispatches based on the first element of the tuple")
@@ -3306,6 +3589,7 @@
           :code $ quote
             defn tag? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :tag
           :examples $ []
             quote $ assert= true (tag? :keyword)
@@ -3314,6 +3598,8 @@
         |tagging-edn $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn tagging-edn (data)
+              hint-fn $ return-type :dynamic
+              assert-type data :dynamic
               if (list? data) (map data tagging-edn)
                 if (map? data)
                   map-kv data $ defn %tagging (k v)
@@ -3370,6 +3656,7 @@
           :code $ quote
             defn thread-step? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               or (symbol? x) (tag? x)
                 = (type-of x) :method
                 = (type-of x) :fn
@@ -3390,6 +3677,7 @@
           :code $ quote
             defn tuple? (x)
               hint-fn $ return-type :bool
+              assert-type x :dynamic
               &= (type-of x) :tuple
           :examples $ []
             quote $ assert= true
@@ -3400,6 +3688,7 @@
           :code $ quote
             defn turn-str (x)
               hint-fn $ return-type :string
+              assert-type x :dynamic
               turn-string x
           :examples $ []
         |turn-string $ %{} :CodeEntry (:doc "|internal function for converting to string\nSyntax: (turn-string value)\nParams: value (any)\nReturns: string\nConverts value to string representation")
@@ -3429,12 +3718,22 @@
         |unselect-keys $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn unselect-keys (m xs)
+              hint-fn $ return-type :map
+              assert-type m :dynamic
               assert "|expected map for unselecting" $ map? m
-              foldl xs m $ defn %unselect-keys (acc k) (&map:dissoc acc k)
+              assert-type xs :list
+              foldl xs m $ defn %unselect-keys (acc k)
+                hint-fn $ return-type :map
+                assert-type acc :map
+                &map:dissoc acc k
           :examples $ []
         |update $ %{} :CodeEntry (:doc "|Applies a function to the value at a given key or index, returning a collection with the updated slot.")
           :code $ quote
-            defn update (x k f) (assert-type f :fn)
+            defn update (x k f)
+              hint-fn $ return-type :dynamic
+              assert-type x :dynamic
+              assert-type k :dynamic
+              assert-type f :fn
               if (map? x)
                 if (contains? x k)
                   assoc x k $ f (&map:get x k)
@@ -3465,7 +3764,11 @@
                 , :missing inc
         |update-in $ %{} :CodeEntry (:doc "|Walks a path of keys inside nested maps/lists and applies a function to the value, creating intermediate maps as needed.")
           :code $ quote
-            defn update-in (data path f) (assert-type f :fn)
+            defn update-in (data path f)
+              hint-fn $ return-type :dynamic
+              assert-type data :dynamic
+              assert-type path :list
+              assert-type f :fn
               list-match path
                 () $ f data
                 (p0 ps)
@@ -3495,7 +3798,8 @@
         |vals $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn vals (x)
-              hint-fn $ return-type :set
+              hint-fn $ return-type :list
+              assert-type x :map
               map (to-pairs x) last
           :examples $ []
             quote $ assert= ([] 1 2)
@@ -3630,6 +3934,9 @@
         |zipmap $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn zipmap (xs0 ys0)
+              hint-fn $ return-type :map
+              assert-type xs0 :list
+              assert-type ys0 :list
               apply-args
                   {}
                   , xs0 ys0
@@ -3646,7 +3953,9 @@
             defmacro {,} (& body)
               &let
                 xs $ &list:filter body
-                  defn &{,} (x) (not= x ',)
+                  defn &{,} (x)
+                    hint-fn $ return-type :bool
+                    not= x ',
                 quasiquote $ pairs-map
                   section-by ([] ~@xs) 2
           :examples $ []
@@ -3790,6 +4099,7 @@
         |normalize-trait-type $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn normalize-trait-type (t0)
+              hint-fn $ return-type :dynamic
               if (list? t0)
                 &let
                   size $ &list:count t0
