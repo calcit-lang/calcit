@@ -24,8 +24,12 @@ use notify::RecursiveMode;
 use notify_debouncer_mini::new_debouncer;
 
 use calcit::{
-  ProgramEntries, builtins, call_stack, cli_args, codegen, codegen::COMPILE_ERRORS_FILE, codegen::emit_js::gen_stack, program, runner,
-  snapshot, util,
+  ProgramEntries, builtins,
+  calcit::{CalcitProc, CalcitSyntax, ProcTypeSignature, SyntaxTypeSignature},
+  call_stack, cli_args, codegen,
+  codegen::COMPILE_ERRORS_FILE,
+  codegen::emit_js::gen_stack,
+  program, runner, snapshot, util,
 };
 use cirru_parser::Cirru;
 
@@ -806,6 +810,8 @@ enum DefKind {
   Data,
   Fn,
   Macro,
+  Proc,
+  Syntax,
   Other,
 }
 
@@ -815,6 +821,8 @@ impl DefKind {
       DefKind::Data => "data",
       DefKind::Fn => "fn",
       DefKind::Macro => "macro",
+      DefKind::Proc => "proc",
+      DefKind::Syntax => "syntax",
       DefKind::Other => "other",
     }
   }
@@ -920,9 +928,11 @@ fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -
     level_count.get("none").copied().unwrap_or(0)
   );
   println!(
-    "- kinds: fn={} macro={} data={} other={}",
+    "- kinds: fn={} macro={} proc={} syntax={} data={} other={}",
     kind_count.get("fn").copied().unwrap_or(0),
     kind_count.get("macro").copied().unwrap_or(0),
+    kind_count.get("proc").copied().unwrap_or(0),
+    kind_count.get("syntax").copied().unwrap_or(0),
     kind_count.get("data").copied().unwrap_or(0),
     kind_count.get("other").copied().unwrap_or(0)
   );
@@ -986,6 +996,54 @@ fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -
           }
         }
       }
+      DefKind::Proc => {
+        if row.return_type_hints.is_empty() {
+          println!("  return: (no hint)");
+        } else {
+          println!("  return:");
+          for item in &row.return_type_hints {
+            println!("    - {item}");
+          }
+        }
+
+        println!("  params ({typed_params}/{total_params}):");
+        if total_params == 0 {
+          println!("    - (no params)");
+        } else {
+          for name in &row.params {
+            match row.param_annotations.get(name) {
+              Some(types) if !types.is_empty() => {
+                println!("    - {} => {}", name, types.join(" | "));
+              }
+              _ => println!("    - {name} => (no assert-type)"),
+            }
+          }
+        }
+      }
+      DefKind::Syntax => {
+        if row.return_type_hints.is_empty() {
+          println!("  return: (no hint)");
+        } else {
+          println!("  return:");
+          for item in &row.return_type_hints {
+            println!("    - {item}");
+          }
+        }
+
+        println!("  params ({typed_params}/{total_params}):");
+        if total_params == 0 {
+          println!("    - (no params)");
+        } else {
+          for name in &row.params {
+            match row.param_annotations.get(name) {
+              Some(types) if !types.is_empty() => {
+                println!("    - {} => {}", name, types.join(" | "));
+              }
+              _ => println!("    - {name} => (no assert-type)"),
+            }
+          }
+        }
+      }
       DefKind::Other => {
         println!("  details: no type pattern recognized");
       }
@@ -997,7 +1055,95 @@ fn run_check_types(options: &CheckTypesCommand, snapshot: &snapshot::Snapshot) -
   Ok(())
 }
 
+fn analyze_builtin_syntax(def_name: &str, sig: &SyntaxTypeSignature) -> TypeCoverageRow {
+  let params: Vec<String> = sig.param_names.iter().map(|s| s.to_string()).collect();
+
+  let param_annotations: BTreeMap<String, Vec<String>> = sig
+    .param_types
+    .iter()
+    .zip(sig.param_names.iter())
+    .map(|(t, name)| {
+      let type_str = t.describe();
+      (name.to_string(), vec![type_str])
+    })
+    .collect();
+
+  let return_type_hints = vec![sig.return_type.describe()];
+
+  let typed_count = param_annotations.values().filter(|v| !v.is_empty()).count();
+  let level = if params.is_empty() || typed_count == params.len() {
+    CoverageLevel::Full
+  } else if typed_count > 0 {
+    CoverageLevel::Partial
+  } else {
+    CoverageLevel::None
+  };
+
+  TypeCoverageRow {
+    ns: calcit::calcit::CORE_NS.to_owned(),
+    def: def_name.to_owned(),
+    kind: DefKind::Syntax,
+    level,
+    params,
+    param_annotations,
+    return_type_hints,
+    data_type: None,
+  }
+}
+
+fn analyze_builtin_proc(def_name: &str, sig: &ProcTypeSignature) -> TypeCoverageRow {
+  let params: Vec<String> = sig.arg_types.iter().enumerate().map(|(i, _)| format!("arg{i}")).collect();
+
+  let param_annotations: BTreeMap<String, Vec<String>> = sig
+    .arg_types
+    .iter()
+    .enumerate()
+    .map(|(i, t)| {
+      let name = format!("arg{i}");
+      let type_str = t.describe();
+      (name, vec![type_str])
+    })
+    .collect();
+
+  let return_type_hints = vec![sig.return_type.describe()];
+
+  let typed_count = param_annotations.values().filter(|v| !v.is_empty()).count();
+  let level = if params.is_empty() || typed_count == params.len() {
+    CoverageLevel::Full
+  } else if typed_count > 0 {
+    CoverageLevel::Partial
+  } else {
+    CoverageLevel::None
+  };
+
+  TypeCoverageRow {
+    ns: calcit::calcit::CORE_NS.to_owned(),
+    def: def_name.to_owned(),
+    kind: DefKind::Proc,
+    level,
+    params,
+    param_annotations,
+    return_type_hints,
+    data_type: None,
+  }
+}
+
 fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> TypeCoverageRow {
+  // First check if this is a builtin proc in calcit.core
+  if ns == calcit::calcit::CORE_NS {
+    if let Ok(proc) = (*def_name).parse::<CalcitProc>() {
+      if let Some(sig) = proc.get_type_signature() {
+        return analyze_builtin_proc(def_name, &sig);
+      }
+    }
+    // Then check if this is a builtin syntax
+    if let Ok(syntax) = (*def_name).parse::<CalcitSyntax>() {
+      if let Some(sig) = syntax.get_type_signature() {
+        return analyze_builtin_syntax(def_name, &sig);
+      }
+    }
+  }
+
   let (kind, params, param_annotations, return_type_hints, data_type, level) = match &entry.code {
     Cirru::List(xs) => match xs.first() {
       Some(Cirru::Leaf(head)) if &**head == "defn" => {
@@ -1030,20 +1176,16 @@ fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> 
         } else {
           CoverageLevel::None
         };
-        (DefKind::Macro, params, param_annotations, Vec::new(), None, level)
+        (DefKind::Macro, params, param_annotations, Vec::new(), None, CoverageLevel::Full)
       }
       Some(Cirru::Leaf(head)) if &**head == "def" => {
         let inferred = xs.get(2).and_then(infer_data_type);
-        let level = if inferred.is_some() {
-          CoverageLevel::Full
-        } else {
-          CoverageLevel::None
-        };
+        let level = CoverageLevel::Full;
         (DefKind::Data, Vec::new(), BTreeMap::new(), Vec::new(), inferred, level)
       }
-      _ => (DefKind::Other, Vec::new(), BTreeMap::new(), Vec::new(), None, CoverageLevel::None),
+      _ => (DefKind::Other, Vec::new(), BTreeMap::new(), Vec::new(), None, CoverageLevel::Full),
     },
-    _ => (DefKind::Other, Vec::new(), BTreeMap::new(), Vec::new(), None, CoverageLevel::None),
+    _ => (DefKind::Other, Vec::new(), BTreeMap::new(), Vec::new(), None, CoverageLevel::Full),
   };
 
   TypeCoverageRow {

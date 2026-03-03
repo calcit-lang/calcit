@@ -35,11 +35,11 @@ pub use calcit_trait::CalcitTrait;
 pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitFnDefRef, CalcitFnUsageMeta, CalcitMacro, CalcitScope};
 pub use list::CalcitList;
 pub use local::CalcitLocal;
-pub use proc_name::CalcitProc;
+pub use proc_name::{CalcitProc, ProcTypeSignature};
 pub use record::CalcitRecord;
 pub use sum_type::{CalcitEnum, EnumVariant};
 pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
-pub use syntax_name::CalcitSyntax;
+pub use syntax_name::{CalcitSyntax, SyntaxTypeSignature};
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub use tuple::CalcitTuple;
 pub use type_annotation::{
