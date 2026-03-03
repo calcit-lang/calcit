@@ -1168,14 +1168,6 @@ fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry) -> 
         let body = &xs[3..];
         let params = extract_param_symbols(args);
         let param_annotations = extract_assert_type_annotations(body);
-        let typed_count = count_typed_params(&params, &param_annotations);
-        let level = if !params.is_empty() && typed_count == params.len() {
-          CoverageLevel::Full
-        } else if typed_count > 0 {
-          CoverageLevel::Partial
-        } else {
-          CoverageLevel::None
-        };
         (DefKind::Macro, params, param_annotations, Vec::new(), None, CoverageLevel::Full)
       }
       Some(Cirru::Leaf(head)) if &**head == "def" => {

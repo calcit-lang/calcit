@@ -1469,6 +1469,11 @@ fn check_function_return_type(
     return;
   }
 
+  // If return type contains TypeVars, skip check (resolved at call-site)
+  if declared_return_type.contains_type_var() {
+    return;
+  }
+
   // If function body is empty, can't infer return type
   if fn_body.is_empty() {
     return;
@@ -2067,6 +2072,42 @@ fn normalize_variadic_as_list(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTyp
   }
 }
 
+/// Given a function's type info and the actual call arguments, resolve a generic return type.
+/// If the return type contains TypeVars, match actual arg types against declared arg types
+/// to build bindings, then substitute TypeVars in the return type.
+/// Returns `None` if the return type has no TypeVars or resolution fails.
+fn resolve_generic_return_type(
+  fn_info: &crate::calcit::CalcitFn,
+  call_args: &CalcitList,
+  scope_types: &ScopeTypes,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  // Only attempt resolution when there are generics and the return type contains TypeVars
+  if fn_info.generics.is_empty() || !fn_info.return_type.contains_type_var() {
+    return None;
+  }
+
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+
+  // Match each actual argument against the declared argument type to build bindings
+  for (arg, expected_type) in call_args.iter().zip(fn_info.arg_types.iter()) {
+    if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
+      continue;
+    }
+    if let Some(actual_type) = resolve_type_value(arg, scope_types) {
+      // Use matches_with_bindings to populate TypeVar bindings
+      actual_type.as_ref().matches_with_bindings(expected_type.as_ref(), &mut bindings);
+    }
+  }
+
+  if bindings.is_empty() {
+    return None;
+  }
+
+  let resolved = fn_info.return_type.substitute_type_vars(&bindings);
+  // Only return if we actually resolved something (no remaining TypeVars)
+  if resolved.contains_type_var() { None } else { Some(resolved) }
+}
+
 /// Infer type from an expression (for &let bindings)
 /// Supports:
 /// - Literals (number, string, bool, nil)
@@ -2278,7 +2319,16 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
           if let Some(evaled) = program::lookup_evaled_def(ns, def) {
             match evaled {
               // For compiled functions, get return_type from info
-              Calcit::Fn { info, .. } => return Some(info.return_type.clone()),
+              Calcit::Fn { info, .. } => {
+                // Try to resolve generic return type using call arguments
+                if info.return_type.contains_type_var() {
+                  let call_args = xs.drop_left();
+                  if let Some(resolved) = resolve_generic_return_type(&info, &call_args, scope_types) {
+                    return Some(resolved);
+                  }
+                }
+                return Some(info.return_type.clone());
+              }
               // For builtin procs, get type signature
               Calcit::Proc(proc) => {
                 if let Some(type_sig) = proc.get_type_signature() {
@@ -2309,6 +2359,12 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
             }
             // For compiled functions in code, get return_type from info
             if let Calcit::Fn { info, .. } = code {
+              if info.return_type.contains_type_var() {
+                let call_args = xs.drop_left();
+                if let Some(resolved) = resolve_generic_return_type(&info, &call_args, scope_types) {
+                  return Some(resolved);
+                }
+              }
               return Some(info.return_type.clone());
             }
           }
@@ -2320,13 +2376,27 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
         Calcit::Symbol { sym, info, .. } => {
           // Try to lookup in program
           if let Some(Calcit::Fn { info: fn_info, .. }) = program::lookup_def_code(&info.at_ns, sym) {
+            if fn_info.return_type.contains_type_var() {
+              let call_args = xs.drop_left();
+              if let Some(resolved) = resolve_generic_return_type(&fn_info, &call_args, scope_types) {
+                return Some(resolved);
+              }
+            }
             return Some(fn_info.return_type.clone());
           }
           None
         }
 
         // Direct Fn call: return the function's return type
-        Calcit::Fn { info, .. } => Some(info.return_type.clone()),
+        Calcit::Fn { info, .. } => {
+          if info.return_type.contains_type_var() {
+            let call_args = xs.drop_left();
+            if let Some(resolved) = resolve_generic_return_type(info, &call_args, scope_types) {
+              return Some(resolved);
+            }
+          }
+          Some(info.return_type.clone())
+        }
 
         // Method access: infer record field type when available
         Calcit::Method(field_name, calcit::MethodKind::Access | calcit::MethodKind::TagAccess) => {

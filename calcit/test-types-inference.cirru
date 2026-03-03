@@ -35,11 +35,21 @@
           :examples $ []
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-fn-inference) (test-map-inference) (test-set-inference) (test-ref-inference) (test-record-inference) (test-type-ref-combos)
+            defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-fn-inference) (test-map-inference) (test-set-inference) (test-ref-inference) (test-record-inference) (test-type-ref-combos) (test-generics-identity)
           :examples $ []
         |reload! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn reload! () $ :: :unit
+          :examples $ []
+        |test-generics-identity $ %{} :CodeEntry (:doc |)
+          :code $ quote
+            defn test-generics-identity () $ let
+                n $ identity 42
+                s $ identity |hello
+              assert-type n :number
+              assert-type s :string
+              &inspect-type n
+              &inspect-type s
           :examples $ []
         |test-fn-inference $ %{} :CodeEntry (:doc |)
           :code $ quote

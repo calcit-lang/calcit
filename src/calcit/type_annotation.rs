@@ -196,7 +196,7 @@ impl CalcitTypeAnnotation {
         continue;
       };
       let head = inner.first();
-      if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "type-vars") {
+      if matches!(head, Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "type-vars" || sym.as_ref() == "generics") {
         let mut vars = vec![];
         for entry in inner.iter().skip(1) {
           vars.push(Self::parse_type_var_form(entry)?);
@@ -862,6 +862,52 @@ impl CalcitTypeAnnotation {
       Self::Enum(enum_def) => format!("enum {}", enum_def.name()),
       Self::Dynamic => "dynamic".to_string(),
       _ => "unknown".to_string(),
+    }
+  }
+
+  /// Substitute all `TypeVar` occurrences with their bound types from `bindings`.
+  /// Returns a new annotation with variables resolved; unbound variables remain as-is.
+  pub fn substitute_type_vars(&self, bindings: &TypeBindings) -> Arc<CalcitTypeAnnotation> {
+    match self {
+      Self::TypeVar(name) => bindings.get(name).cloned().unwrap_or_else(|| Arc::new(self.clone())),
+      Self::List(inner) => Arc::new(Self::List(inner.substitute_type_vars(bindings))),
+      Self::Map(k, v) => Arc::new(Self::Map(k.substitute_type_vars(bindings), v.substitute_type_vars(bindings))),
+      Self::Set(inner) => Arc::new(Self::Set(inner.substitute_type_vars(bindings))),
+      Self::Ref(inner) => Arc::new(Self::Ref(inner.substitute_type_vars(bindings))),
+      Self::Optional(inner) => Arc::new(Self::Optional(inner.substitute_type_vars(bindings))),
+      Self::Variadic(inner) => Arc::new(Self::Variadic(inner.substitute_type_vars(bindings))),
+      Self::Fn(sig) => {
+        let new_args = sig.arg_types.iter().map(|a| a.substitute_type_vars(bindings)).collect();
+        let new_ret = sig.return_type.substitute_type_vars(bindings);
+        Arc::new(Self::Fn(Arc::new(CalcitFnTypeAnnotation {
+          generics: sig.generics.clone(),
+          arg_types: new_args,
+          return_type: new_ret,
+        })))
+      }
+      Self::AppliedStruct { base, args } => {
+        let new_args: Vec<_> = args.iter().map(|a| a.substitute_type_vars(bindings)).collect();
+        Arc::new(Self::AppliedStruct {
+          base: base.clone(),
+          args: Arc::new(new_args),
+        })
+      }
+      // Leaf types: no TypeVars inside
+      _ => Arc::new(self.clone()),
+    }
+  }
+
+  /// Check whether this annotation contains any `TypeVar`.
+  pub fn contains_type_var(&self) -> bool {
+    match self {
+      Self::TypeVar(_) => true,
+      Self::List(inner) | Self::Set(inner) | Self::Ref(inner) | Self::Optional(inner) | Self::Variadic(inner) => {
+        inner.contains_type_var()
+      }
+      Self::Map(k, v) => k.contains_type_var() || v.contains_type_var(),
+      Self::Fn(sig) => sig.arg_types.iter().any(|a| a.contains_type_var()) || sig.return_type.contains_type_var(),
+      Self::AppliedStruct { args, .. } => args.iter().any(|a| a.contains_type_var()),
+      _ => false,
     }
   }
 

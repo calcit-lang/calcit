@@ -18,14 +18,14 @@
 
 统一形式：
 
-- `(:: Job 'T 'S)`
+- `:: Job 'T 'S`
 - 无泛型参数也写 `(:: Job)`
 
 ### 函数定义 (fn)
 
 通过 `hint-fn` 声明泛型变量：
 
-- `hint-fn (:: :generics 'T 'S)`
+- `hint-fn (generics 'T 'S)`
 - 此声明仅用于建立函数体内类型变量的自由绑定。
 - `hint-fn` 的其它条目（如 `return-type`）保持兼容。
 
@@ -89,7 +89,7 @@
 在 `preprocess` 中：
 
 - 扫描 `hint-fn` 的 top-level items。
-- 遇到 `(:: :generics 'T 'S)` 时，将泛型变量存入当前函数签名上下文。
+- 遇到 `(generics 'T 'S)` 时，将泛型变量存入当前函数签名上下文。
 
 ### Proc `:fn` 签名扩展
 
@@ -153,4 +153,4 @@
 - Proc 签名：
   - `:: :fn ('T) ('T) 'T`
 - Fn 注释：
-  - `hint-fn (:: :generics 'T)` + `return-type` 组合
+  - `hint-fn (generics 'T)` + `return-type` 组合

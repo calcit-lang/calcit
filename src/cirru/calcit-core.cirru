@@ -2082,9 +2082,8 @@
         |each $ %{} :CodeEntry (:doc "|Iterate over a collection and apply function f for side effects, returns nil")
           :code $ quote
             defn each (xs f)
-              hint-fn $ return-type :nil
               assert-type xs :dynamic
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T) :dynamic
               foldl xs nil $ defn %each (_acc x) (f x)
           :examples $ []
             quote $ assert= nil
@@ -2169,9 +2168,8 @@
         |every? $ %{} :CodeEntry (:doc "|Checks whether every element of a collection satisfies a predicate, short-circuiting on the first failure.")
           :code $ quote
             defn every? (xs f)
-              hint-fn $ return-type :bool
-              assert-type xs :dynamic
-              assert-type f :fn
+              assert-type xs $ :: :list :dynamic
+              assert-type f $ :: :fn ('T) ('T) :bool
               foldl-shortcut xs true true $ defn %every? (acc x)
                 if (f x) (:: false acc) (:: true false)
           :examples $ []
@@ -2208,9 +2206,8 @@
         |filter $ %{} :CodeEntry (:doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible.")
           :code $ quote
             defn filter (xs f)
-              hint-fn $ return-type :dynamic
               assert-type xs :dynamic
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T) :bool
               if (nil? xs) nil $ if (list? xs) (&list:filter xs f)
                 if (map? xs) (&map:filter xs f)
                   if (set? xs) (&set:filter xs f) (.filter xs f)
@@ -2226,9 +2223,8 @@
         |filter-not $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn filter-not (xs f)
-              hint-fn $ return-type :dynamic
               assert-type xs :dynamic
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T) :bool
               if (nil? xs) nil $ filter xs
                 defn %filter-not (x)
                   not $ f x
@@ -2236,9 +2232,8 @@
         |find $ %{} :CodeEntry (:doc "|Find the first element in a collection that satisfies the predicate f")
           :code $ quote
             defn find (xs f)
-              hint-fn $ return-type :dynamic
               assert-type xs :dynamic
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T) :bool
               foldl-shortcut xs 0 nil $ defn %find (_acc x)
                 if (f x) (:: true x) (:: false nil)
           :examples $ []
@@ -2251,9 +2246,8 @@
         |find-index $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn find-index (xs f)
-              hint-fn $ return-type :number
               assert-type xs :dynamic
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T) :bool
               foldl-shortcut xs 0 nil $ defn %find-index (idx x)
                 if (f x) (:: true idx)
                   :: false $ &+ 1 idx
@@ -2312,10 +2306,9 @@
         |foldl' $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn foldl' (xs acc f)
-              hint-fn $ return-type :dynamic
               assert-type xs :list
               assert-type acc :dynamic
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T 'U) 'T
               list-match xs
                 () acc
                 (x0 xss)
@@ -2324,10 +2317,9 @@
         |foldl-compare $ %{} :CodeEntry (:doc "|Helper used by comparison operators to ensure a relation holds across an entire list, short-circuiting on the first failure.")
           :code $ quote
             defn foldl-compare (xs acc f)
-              hint-fn $ return-type :bool
               assert-type xs :list
               assert-type acc :dynamic
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T 'T) :bool
               if (&list:empty? xs) true $ if
                 f acc $ &list:first xs
                 recur (&list:rest xs) (&list:first xs) f
@@ -2436,9 +2428,8 @@
         |group-by $ %{} :CodeEntry (:doc "|Group elements by the result of applying function f to each element")
           :code $ quote
             defn group-by (xs0 f)
-              hint-fn $ return-type :map
               assert-type xs0 :list
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T) 'T
               apply-args
                   {}
                   , xs0
@@ -2466,8 +2457,8 @@
         |identity $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn identity (x)
-              hint-fn $ return-type :dynamic
-              assert-type x :dynamic
+              hint-fn (generics 'T) $ return-type 'T
+              assert-type x 'T
               , x
           :examples $ []
         |if $ %{} :CodeEntry (:doc "|internal syntax for conditional expressions\nSyntax: (if condition then-expr else-expr)\nParams: condition (any), then-expr (any), else-expr (any, optional)\nReturns: value of then-expr if condition is truthy, else-expr otherwise\nEvaluates condition and returns appropriate branch")
@@ -2940,7 +2931,9 @@
           :examples $ []
         |map $ %{} :CodeEntry (:doc "|Collection mapping function. Applies a function to each element of a list, set, or map, returning a structure of the same shape.")
           :code $ quote
-            defn map (xs f) (assert-type f :fn) (assert-type xs :dynamic)
+            defn map (xs f)
+              assert-type f $ :: :fn ('T) ('T) 'T
+              assert-type xs :dynamic
               hint-fn $ return-type :dynamic
               if (list? xs) (&list:map xs f)
                 if (set? xs)
@@ -2959,9 +2952,8 @@
         |map-indexed $ %{} :CodeEntry (:doc "|Map over a collection with index, f takes index and value")
           :code $ quote
             defn map-indexed (xs f)
-              hint-fn $ return-type :list
               assert-type xs :dynamic
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) (:number 'T) 'T
               foldl xs ([])
                 defn %map-indexed (acc x)
                   hint-fn $ return-type :list
@@ -2978,9 +2970,8 @@
         |map-kv $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn map-kv (xs f)
-              hint-fn $ return-type :map
               assert-type xs :map
-              assert-type f :fn
+              assert-type f $ :: :fn ('T 'U) ('T 'U) 'U
               foldl xs ({})
                 defn %map-kv (acc pair)
                   hint-fn $ return-type :map
@@ -3010,9 +3001,8 @@
         |mapcat $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn mapcat (xs f)
-              hint-fn $ return-type :list
               assert-type xs :list
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T) (:: :list 'T)
               &list:concat & $ map xs f
           :examples $ []
         |max $ %{} :CodeEntry (:doc |)
@@ -3126,9 +3116,8 @@
         |option:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Option")
           :code $ quote
             defn option:map (opt f)
-              hint-fn $ return-type :tuple
               assert-type opt :tuple
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T) 'T
               tag-match opt
                   :some value
                   %:: (&tuple:enum opt) :some $ f value
@@ -3281,10 +3270,9 @@
         |reduce $ %{} :CodeEntry (:doc "|Collection reduction operation\nFunction: Reduces a collection using a specified function, accumulating elements onto an initial value\nParams: xs (collection), x0 (initial accumulator value), f (reduction function that takes accumulator and current element)\nReturns: any type - final accumulated result\nNotes: The reduction function f should accept two parameters (accumulator, current element) and return a new accumulator value")
           :code $ quote
             defn reduce (xs x0 f)
-              hint-fn $ return-type :dynamic
               assert-type xs :dynamic
               assert-type x0 :dynamic
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T 'U) 'T
               foldl xs x0 f
           :examples $ []
             quote $ assert= 6
@@ -3332,9 +3320,8 @@
         |result:map $ %{} :CodeEntry (:doc "|Mappable map implementation for Result")
           :code $ quote
             defn result:map (res f)
-              hint-fn $ return-type :tuple
               assert-type res :dynamic
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T) 'T
               tag-match res
                   :ok value
                   %:: (&tuple:enum res) :ok $ f value
@@ -3730,10 +3717,9 @@
         |update $ %{} :CodeEntry (:doc "|Applies a function to the value at a given key or index, returning a collection with the updated slot.")
           :code $ quote
             defn update (x k f)
-              hint-fn $ return-type :dynamic
               assert-type x :dynamic
               assert-type k :dynamic
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T) 'T
               if (map? x)
                 if (contains? x k)
                   assoc x k $ f (&map:get x k)
@@ -3765,10 +3751,9 @@
         |update-in $ %{} :CodeEntry (:doc "|Walks a path of keys inside nested maps/lists and applies a function to the value, creating intermediate maps as needed.")
           :code $ quote
             defn update-in (data path f)
-              hint-fn $ return-type :dynamic
               assert-type data :dynamic
               assert-type path :list
-              assert-type f :fn
+              assert-type f $ :: :fn ('T) ('T) 'T
               list-match path
                 () $ f data
                 (p0 ps)
