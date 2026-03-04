@@ -13,11 +13,11 @@
         |ResultTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait ResultTrait
-              :dummy :fn
+              .dummy :fn
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl ResultImpl ResultTrait
-              :dummy nil
+              .dummy nil
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! () $ do

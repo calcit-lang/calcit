@@ -316,9 +316,23 @@
         |&hash $ %{} :CodeEntry (:doc "|internal function for hashing\nSyntax: (&hash value)\nParams: value (any)\nReturns: number (hash code)\nComputes hash code for any Calcit value for use in hash tables")
           :code $ quote &runtime-inplementation
           :examples $ []
-        |&impl:get $ %{} :CodeEntry (:doc "|internal function for getting impl entry by name\nSyntax: (&impl:get impl name)\nParams: impl (impl), name (tag/string/symbol)\nReturns: any\nReturns impl entry value by method name")
+        |&impl::new $ %{} :CodeEntry (:doc "|internal function for creating trait impl records\nSyntax: (&impl::new trait-or-name (method value) ...)\nParams: trait-or-name (trait/tag/symbol/string), method entries (pairs)\nReturns: impl\nAccepts method key as .method, :tag, symbol, or string")
           :code $ quote &runtime-inplementation
           :examples $ []
+            quote $ do
+              deftrait DemoTrait $ .show :fn
+              &impl::new DemoTrait
+                :: .show $ fn (x) x
+            quote $ &impl::new :DemoImpl
+              [] :show $ fn (x) x
+        |&impl:get $ %{} :CodeEntry (:doc "|internal function for getting impl entry by name\nSyntax: (&impl:get impl name)\nParams: impl (impl), name (tag/string/symbol/.method)\nReturns: any\nReturns impl entry value by method name")
+          :code $ quote &runtime-inplementation
+          :examples $ []
+            quote $ do
+              deftrait DemoTrait $ .show :fn
+              def DemoImpl $ &impl::new DemoTrait
+                :: .show $ fn (x) x
+              fn? $ &impl:get DemoImpl .show
         |&impl:nth $ %{} :CodeEntry (:doc "|internal function for getting impl entry by index\nSyntax: (&impl:nth impl index)\nParams: impl (impl), index (number)\nReturns: any\nReturns impl entry value by index")
           :code $ quote &runtime-inplementation
           :examples $ []
@@ -1172,32 +1186,42 @@
           :examples $ []
         |Add $ %{} :CodeEntry (:doc "|Core trait: Add")
           :code $ quote
-            deftrait Add $ :add
+            deftrait Add $ .add
               :: :fn ('T) ('T 'T) 'T
+          :examples $ []
+        |Contains $ %{} :CodeEntry (:doc "|Core trait: Contains")
+          :code $ quote
+            deftrait Contains $ .contains?
+              :: :fn ('T) ('T :dynamic) :bool
+          :examples $ []
+        |Countable $ %{} :CodeEntry (:doc "|Core trait: Countable")
+          :code $ quote
+            deftrait Countable $ .count
+              :: :fn ('T) ('T) :number
           :examples $ []
         |Deserialize $ %{} :CodeEntry (:doc "|Core trait: Deserialize")
           :code $ quote
-            deftrait Deserialize $ :deserialize
+            deftrait Deserialize $ .deserialize
               :: :fn ('T) (:string) 'T
           :examples $ []
         |Eq $ %{} :CodeEntry (:doc "|Core trait: Eq")
           :code $ quote
-            deftrait Eq $ :eq?
+            deftrait Eq $ .eq?
               :: :fn ('T) ('T 'T) :bool
           :examples $ []
         |Len $ %{} :CodeEntry (:doc "|Core trait: Len")
           :code $ quote
-            deftrait Len $ :len
+            deftrait Len $ .len
               :: :fn ('T) ('T) :number
           :examples $ []
         |Mappable $ %{} :CodeEntry (:doc "|Core trait: Mappable")
           :code $ quote
-            deftrait Mappable $ :map
+            deftrait Mappable $ .map
               :: :fn ('T) ('T :fn) 'T
           :examples $ []
         |Multiply $ %{} :CodeEntry (:doc "|Core trait: Multiply")
           :code $ quote
-            deftrait Multiply $ :multiply
+            deftrait Multiply $ .multiply
               :: :fn ('T) ('T 'T) 'T
           :examples $ []
         |Option $ %{} :CodeEntry (:doc "|Rust-style Option enum")
@@ -1208,7 +1232,7 @@
           :examples $ []
         |OptionMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Option")
           :code $ quote
-            defimpl OptionMappableImpl Mappable $ :map option:map
+            defimpl OptionMappableImpl Mappable $ .map option:map
           :examples $ []
         |Result $ %{} :CodeEntry (:doc "|Rust-style Result enum")
           :code $ quote
@@ -1218,16 +1242,16 @@
           :examples $ []
         |ResultMappableImpl $ %{} :CodeEntry (:doc "|Trait impl for Mappable on Result")
           :code $ quote
-            defimpl ResultMappableImpl Mappable $ :map result:map
+            defimpl ResultMappableImpl Mappable $ .map result:map
           :examples $ []
         |Serialize $ %{} :CodeEntry (:doc "|Core trait: Serialize")
           :code $ quote
-            deftrait Serialize $ :serialize
+            deftrait Serialize $ .serialize
               :: :fn ('T) ('T) :string
           :examples $ []
         |Show $ %{} :CodeEntry (:doc "|Core trait: Show")
           :code $ quote
-            deftrait Show $ :show
+            deftrait Show $ .show
               :: :fn ('T) ('T) :string
           :examples $ []
         |[,] $ %{} :CodeEntry (:doc |)
@@ -1813,7 +1837,7 @@
                   ~@ normalized
           :examples $ []
             quote $ defenum Result (:ok :number) (:err :string)
-        |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl values\nSyntax: (defimpl ImplName Trait (:method value) ...), (defimpl ImplName Trait (:: :method value) ...), or (defimpl ImplName Trait :method value ...)\nParams: ImplName (symbol/tag), Trait (symbol/tag), method pairs\nReturns: impl value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to &impl::new")
+        |defimpl $ %{} :CodeEntry (:doc "|macro for defining trait impl values\nSyntax: (defimpl ImplName Trait (.method value) ...), (defimpl ImplName Trait (:: .method value) ...), or legacy (defimpl ImplName Trait :method value ...)\nParams: ImplName (symbol/tag), Trait (symbol/tag), method pairs\nReturns: impl value\nNotes: this macro does not attach impl to a target type/value; use `impl-traits` separately\nExpands to &impl::new")
           :code $ quote
             defmacro defimpl (name trait & pairs)
               if
@@ -1830,9 +1854,19 @@
                       assert "|defimpl expects method pairs" $ and (list? pairs) (every? pairs list?)
                       assert "|defimpl expects (:method value) pairs" $ every? pairs
                         fn (pair)
-                          or
-                            tag? $ &list:first pair
-                            tag? $ &list:nth pair 1
+                          &let
+                            items $ if
+                              &= [] $ &list:first pair
+                              &list:rest pair
+                              if
+                                &= (quote ::) (&list:first pair)
+                                &list:rest pair
+                                , pair
+                            and
+                              &= 2 $ count items
+                              or
+                                tag? $ &list:first items
+                                &= :method $ type-of (&list:first items)
                       map pairs $ fn (pair)
                         &let
                           items $ if
@@ -1842,8 +1876,20 @@
                               &= (quote ::) (&list:first pair)
                               &list:rest pair
                               , pair
-                          assert "|defimpl expects (:method value) pairs" $ &= 2 (count items)
-                          quasiquote $ [] ~@items
+                          do
+                            assert "|defimpl expects (:method value) pairs" $ &= 2 (count items)
+                            let
+                                k0 $ &list:first items
+                                v0 $ &list:nth items 1
+                                key $ if (tag? k0) k0
+                                  if
+                                    &= :method $ type-of k0
+                                    let
+                                        s $ format-to-lisp k0
+                                      turn-tag $ &str:slice s 9
+                                        &- (count s) 1
+                                    raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
+                              quasiquote $ [] ~key ~v0
                     do
                       assert "|defimpl expects even number of items" $ &= 0
                         &number:rem (count pairs) 2
@@ -1857,9 +1903,20 @@
                                 &= (quote ::) (&list:first pair)
                                 &list:rest pair
                                 , pair
-                            assert "|defimpl expects (:method value) pairs" $ &= 2 (count items)
-                            assert "|defimpl expects :method as tag" $ tag? (&list:first items)
-                            quasiquote $ [] ~@items
+                            do
+                              assert "|defimpl expects (:method value) pairs" $ &= 2 (count items)
+                              let
+                                  k0 $ &list:first items
+                                  v0 $ &list:nth items 1
+                                  key $ if (tag? k0) k0
+                                    if
+                                      &= :method $ type-of k0
+                                      let
+                                          s $ format-to-lisp k0
+                                        turn-tag $ &str:slice s 9
+                                          &- (count s) 1
+                                      raise $ str-spaced "|defimpl expects method key as :tag or .method, got:" k0
+                                quasiquote $ [] ~key ~v0
           :examples $ []
         |defmacro $ %{} :CodeEntry (:doc "|internal syntax for defining macros\nSyntax: (defmacro name [args] body)\nParams: name (symbol), args (list of symbols), body (expression)\nReturns: macro definition\nDefines a macro that transforms code at compile time")
           :code $ quote &runtime-inplementation
@@ -1949,7 +2006,7 @@
                           ~@ normalized
           :examples $ []
             quote $ defstruct Person (:name :string) (:age :number)
-        |deftrait $ %{} :CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name (:method (:: :fn (args...) return)) ...)\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new")
+        |deftrait $ %{} :CodeEntry (:doc "|macro for defining traits\nSyntax: (deftrait Name (.method (:: :fn (args...) return)) ...), legacy :method is also accepted\nParams: Name (symbol/tag), methods (list of (tag type))\nNotes: use :fn (tag) for DynFn when signature is intentionally omitted\nReturns: trait definition value\nExpands to &trait::new")
           :code $ quote
             defmacro deftrait (name & methods)
               assert "|deftrait expects (method type) pairs" $ every? methods list?
@@ -1961,12 +2018,21 @@
                         &= [] $ &list:first entry
                         &list:rest entry
                         , entry
-                      assert "|deftrait expects (method type) pairs" $ &= 2 (count items)
-                      let
-                          m0 $ &list:first items
-                          t0 $ &list:nth items 1
-                          t1 $ internal/normalize-trait-type t0
-                        quasiquote $ [] ~m0 (quote ~t1)
+                      do
+                        assert "|deftrait expects (method type) pairs" $ &= 2 (count items)
+                        let
+                            m0 $ &list:first items
+                            t0 $ &list:nth items 1
+                            k0 $ if (tag? m0) m0
+                              if
+                                &= :method $ type-of m0
+                                let
+                                    s $ format-to-lisp m0
+                                  turn-tag $ &str:slice s 9
+                                    &- (count s) 1
+                                raise $ str-spaced "|deftrait expects method key as :tag or .method, got:" m0
+                            t1 $ internal/normalize-trait-type t0
+                          quasiquote $ [] ~k0 (quote ~t1)
                 quasiquote $ def ~name
                   &trait::new
                     ~ $ turn-tag name

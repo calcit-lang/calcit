@@ -12,9 +12,9 @@
         |ResultImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait ResultTrait
-              :dummy :fn
+              .dummy :fn
             defimpl ResultImpl ResultTrait
-              :dummy nil
+              .dummy nil
         |main! $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn main! ()

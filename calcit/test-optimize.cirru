@@ -7,11 +7,11 @@
         |ShowTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait ShowTrait
-              :show :fn
+              .show :fn
         |ShowImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl ShowImpl ShowTrait
-              :show $ fn (self)
+              .show $ fn (self)
                 str "|Person: " (&record:get self :name)
         |Person0 $ %{} :CodeEntry (:doc |)
           :code $ quote

@@ -409,6 +409,8 @@ fn preprocess_list_call(
     Some(Calcit::Macro { info, .. }) => {
       let mut current_values: Vec<Calcit> = args.to_vec();
 
+      warn_on_trait_impl_method_tag_syntax(info.as_ref(), &args, file_ns, def_name.as_ref(), check_warnings);
+
       // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
       // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
 
@@ -1712,6 +1714,48 @@ fn warn_on_dynamic_trait_call(
     gen_check_warning_with_location(message, loc, check_warnings);
   } else {
     gen_check_warning(message, file_ns, check_warnings);
+  }
+}
+
+fn warn_on_trait_impl_method_tag_syntax(
+  macro_info: &crate::calcit::CalcitMacro,
+  args: &CalcitList,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if file_ns == calcit::CORE_NS {
+    return;
+  }
+
+  if macro_info.def_ns.as_ref() != calcit::CORE_NS {
+    return;
+  }
+
+  let (macro_name, pair_start_idx) = match macro_info.name.as_ref() {
+    "deftrait" => ("deftrait", 1),
+    "defimpl" => ("defimpl", 2),
+    _ => return,
+  };
+
+  for entry in args.iter().skip(pair_start_idx) {
+    let Calcit::List(pair) = entry else {
+      continue;
+    };
+
+    let Some(Calcit::Tag(method_name)) = pair.first() else {
+      continue;
+    };
+
+    let message = format!(
+      "[Warn] `{macro_name}` method key `:{method_name}` in {file_ns}/{def_name} uses legacy tag style; prefer dot method key `.{method_name}` for migration (`:{method_name}` remains compatible)"
+    );
+
+    if let Some(loc) = entry.get_location() {
+      gen_check_warning_with_location(message, loc, check_warnings);
+    } else {
+      gen_check_warning(message, file_ns, check_warnings);
+    }
   }
 }
 
@@ -3527,7 +3571,7 @@ pub fn preprocess_assert_traits(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::calcit::{CalcitFn, CalcitFnArgs, CalcitRecord, CalcitScope, CalcitStruct};
+  use crate::calcit::{CalcitFn, CalcitFnArgs, CalcitMacro, CalcitRecord, CalcitScope, CalcitStruct};
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
 
@@ -4040,6 +4084,43 @@ mod tests {
     assert!(
       warnings_vec.is_empty(),
       "should not have warnings for valid field access, got: {warnings_vec:?}"
+    );
+  }
+
+  #[test]
+  fn warns_on_trait_impl_method_tag_syntax() {
+    let _warn_guard = WarnDynMethodGuard::new(true);
+
+    let expr = Cirru::List(vec![
+      Cirru::leaf("defimpl"),
+      Cirru::leaf("MyFooImpl"),
+      Cirru::leaf("MyFoo"),
+      Cirru::List(vec![Cirru::leaf(":foo"), Cirru::leaf("myfoo:foo")]),
+    ]);
+    let code = code_to_calcit(&expr, "tests.trait", "demo", vec![]).expect("parse cirru");
+
+    let args = match code {
+      Calcit::List(xs) => CalcitList::from(xs.drop_left()),
+      other => panic!("expected list form, got {other}"),
+    };
+
+    let macro_info = CalcitMacro {
+      name: Arc::from("defimpl"),
+      def_ns: Arc::from(calcit::CORE_NS),
+      args: Arc::new(vec![]),
+      body: Arc::new(vec![]),
+    };
+
+    let warnings = RefCell::new(vec![]);
+
+    warn_on_trait_impl_method_tag_syntax(&macro_info, &args, "tests.trait", "demo", &warnings);
+
+    let warning_msgs: Vec<String> = warnings.borrow().iter().map(|w| w.to_string()).collect();
+    assert!(
+      warning_msgs
+        .iter()
+        .any(|msg| msg.contains("defimpl") && msg.contains("legacy tag style") && msg.contains(".foo")),
+      "expected migration warning for trait/impl method key, got: {warning_msgs:?}"
     );
   }
 

@@ -13,9 +13,9 @@
           :code $ quote
             let
                 ActionTrait $ deftrait ActionTrait
-                  :describe :fn
+                  .describe :fn
               defimpl ActionImpl ActionTrait
-                :describe $ fn (self)
+                .describe $ fn (self)
                   tag-match self
                     (:ok value) (str "|Action ok -> " value)
                     (:err message) (str "|Action err -> " message)

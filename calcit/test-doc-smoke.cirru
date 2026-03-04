@@ -6,12 +6,12 @@
         |DocTrait $ %{} :CodeEntry (:doc "|Doc smoke trait")
           :code $ quote
             deftrait DocTrait
-              :label :fn
+              .label :fn
           :examples $ []
         |DocTraitImpl $ %{} :CodeEntry (:doc "|Doc smoke impl")
           :code $ quote
             defimpl DocTraitImpl DocTrait
-              :label $ fn (x)
+              .label $ fn (x)
                 str-spaced |doc (:name x)
           :examples $ []
         |DocPerson0 $ %{} :CodeEntry (:doc "|Doc smoke struct")
@@ -29,6 +29,7 @@
             defn main! ()
               println "|Testing doc smoke cases..."
               test-defimpl-order
+              test-native-impl-new-dot-method
               test-assert-traits-local
               test-impl-traits-struct-enum-only
               println "|Doc smoke cases passed"
@@ -41,6 +42,18 @@
           :code $ quote
             defn test-defimpl-order ()
               assert= DocTrait $ &impl:origin DocTraitImpl
+          :examples $ []
+        |test-native-impl-new-dot-method $ %{} :CodeEntry (:doc "|&impl::new accepts .method field keys")
+          :code $ quote
+            defn test-native-impl-new-dot-method ()
+              let
+                  DotImpl $ &impl::new DocTrait
+                    :: .label $ fn (x)
+                      str-spaced |native-dot (:name x)
+                  DotPerson $ impl-traits DocPerson0 DotImpl
+                  p $ %{} DotPerson (:name |Bob)
+                assert= DocTrait $ &impl:origin DotImpl
+                assert= "|native-dot Bob" $ .label p
           :examples $ []
         |test-assert-traits-local $ %{} :CodeEntry (:doc "|assert-traits local first arg smoke")
           :code $ quote

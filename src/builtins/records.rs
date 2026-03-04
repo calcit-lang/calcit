@@ -112,8 +112,9 @@ pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     let field_name = match name {
       Calcit::Symbol { sym, .. } | Calcit::Str(sym) => EdnTag(sym.to_owned()),
       Calcit::Tag(tag) => tag.to_owned(),
+      Calcit::Method(sym, _) => EdnTag(sym.to_owned()),
       other => {
-        let msg = format!("&impl::new field expects tag/symbol/string, but received: {other}");
+        let msg = format!("&impl::new field expects tag/symbol/string/.method, but received: {other}");
         let hint = format_proc_examples_hint(&CalcitProc::NativeImplNew).unwrap_or_default();
         return CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint);
       }

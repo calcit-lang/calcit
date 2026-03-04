@@ -8,19 +8,19 @@
         |AlgebraApply $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait AlgebraApply
-              :apply :fn
+              .apply :fn
         |AlgebraBind $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait AlgebraBind
-              :bind :fn
+              .bind :fn
         |AlgebraMap $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait AlgebraMap
-              :map :fn
+              .map :fn
         |AlgebraMappend $ %{} :CodeEntry (:doc |)
           :code $ quote
             deftrait AlgebraMappend
-              :mappend :fn
+              .mappend :fn
         |AlgebraBox0 $ %{} :CodeEntry (:doc |)
           :code $ quote
             defstruct AlgebraBox0
@@ -28,24 +28,24 @@
         |AlgebraBoxMapImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl AlgebraBoxMapImpl AlgebraMap
-              :map $ fn (box f)
+              .map $ fn (box f)
                 assoc box :value $ f (:value box)
         |AlgebraBoxBindImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl AlgebraBoxBindImpl AlgebraBind
-              :bind $ fn (box f)
+              .bind $ fn (box f)
                 f $ :value box
         |AlgebraBoxApplyImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl AlgebraBoxApplyImpl AlgebraApply
-              :apply $ fn (box fs)
+              .apply $ fn (box fs)
                 let
                     f $ :value fs
                   assoc box :value $ f (:value box)
         |AlgebraBoxMappendImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl AlgebraBoxMappendImpl AlgebraMappend
-              :mappend $ fn (a b)
+              .mappend $ fn (a b)
                 assoc a :value $ + (:value a) (:value b)
         |AlgebraBox $ %{} :CodeEntry (:doc |)
           :code $ quote

@@ -168,6 +168,12 @@ export let castTag = (x: CalcitValue): CalcitTag => {
   if (x instanceof CalcitSymbol) {
     return newTag(x.value);
   }
+  if (typeof x === "function") {
+    const methodName = (x as { __calcitMethodName?: unknown }).__calcitMethodName;
+    if (typeof methodName === "string") {
+      return newTag(methodName);
+    }
+  }
   throw new Error(`Cannot cast this to tag: ${x}`);
 };
 

@@ -8,7 +8,7 @@
       :defs $ {}
         |%A $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl %A :%A $ :deref
+            defimpl %A :%A $ .deref
               fn (self)
                 tag-match self $
                   :atom x
@@ -16,7 +16,7 @@
           :examples $ []
         |%r $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl %r :%demo $ :get
+            defimpl %r :%demo $ .get
               fn (self) 1
           :examples $ []
         |*ref-demo $ %{} :CodeEntry (:doc |)
@@ -40,14 +40,14 @@
           :examples $ []
         |Deref $ %{} :CodeEntry (:doc |)
           :code $ quote
-            defimpl Deref :Deref $ :deref
+            defimpl Deref :Deref $ .deref
               fn (self) 2
           :examples $ []
         |Num $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl Num NumTrait
-              :inc $ fn (x) (update x 1 inc)
-              :show $ fn (x)
+              .inc $ fn (x) (update x 1 inc)
+              .show $ fn (x)
                 str $ &tuple:nth x 1
           :examples $ []
         |NumBox $ %{} :CodeEntry (:doc |)
@@ -60,7 +60,7 @@
           :examples $ []
         |NumTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait NumTrait (:inc :fn) (:show :fn)
+            deftrait NumTrait (.inc :fn) (.show :fn)
           :examples $ []
         |ValueBox $ %{} :CodeEntry (:doc |)
           :code $ quote

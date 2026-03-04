@@ -8,7 +8,7 @@
       :defs $ {}
         |EnumImpl $ %{} :CodeEntry (:doc "|Trait impl for enum metadata")
           :code $ quote
-            defimpl EnumImpl :EnumImpl $ :dummy nil
+            defimpl EnumImpl :EnumImpl $ .dummy nil
           :examples $ []
         |Person $ %{} :CodeEntry (:doc "|Struct definition for type checks")
           :code $ quote
@@ -20,7 +20,7 @@
           :examples $ []
         |ResultImpl $ %{} :CodeEntry (:doc "|Trait impl for enum tuple tests")
           :code $ quote
-            defimpl ResultImpl ResultTrait $ :describe
+            defimpl ResultImpl ResultTrait $ .describe
               fn (self)
                 tag-match self
                     :ok value
@@ -29,11 +29,11 @@
           :examples $ []
         |ResultTrait $ %{} :CodeEntry (:doc "|Trait definition for enum tuple tests")
           :code $ quote
-            deftrait ResultTrait $ :describe :fn
+            deftrait ResultTrait $ .describe :fn
           :examples $ []
         |StructImpl $ %{} :CodeEntry (:doc "|Trait impl for struct metadata")
           :code $ quote
-            defimpl StructImpl :StructImpl $ :dummy nil
+            defimpl StructImpl :StructImpl $ .dummy nil
           :examples $ []
         |add-numbers $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -259,7 +259,7 @@
             defn test-record-methods () (; "使用" impl-traits "挂载实现" Record methods)
               let
                   PersonImpl $ defimpl PersonImpl :PersonImpl
-                    :greet $ fn (self)
+                    .greet $ fn (self)
                       str "|Hello, I'm " $ :name self
                   Person $ impl-traits Person PersonImpl
                   alice $ %{} Person (:name |Alice) (:age 30)

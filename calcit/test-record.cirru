@@ -21,9 +21,9 @@
         |BirdImpl $ %{} :CodeEntry (:doc |)
           :code $ quote
             defimpl BirdImpl BirdTrait
-              :show $ fn (self)
+              .show $ fn (self)
                 println $ :name self
-              :rename $ fn (self name) (assoc self :name name)
+              .rename $ fn (self name) (assoc self :name name)
           :examples $ []
         |BirdShape $ %{} :CodeEntry (:doc |)
           :code $ quote
@@ -31,7 +31,7 @@
           :examples $ []
         |BirdTrait $ %{} :CodeEntry (:doc |)
           :code $ quote
-            deftrait BirdTrait (:show :fn) (:rename :fn)
+            deftrait BirdTrait (.show :fn) (.rename :fn)
           :examples $ []
         |C $ %{} :CodeEntry (:doc |)
           :code $ quote

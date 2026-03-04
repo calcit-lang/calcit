@@ -1714,9 +1714,11 @@ export let register_calcit_builtin_impls = (options: typeof calcit_builtin_impls
 
 /** method used as closure */
 export function invoke_method_closure(p: string) {
-  return (obj: CalcitValue, ...args: CalcitValue[]) => {
+  const f = (obj: CalcitValue, ...args: CalcitValue[]) => {
     return invoke_method(p, obj, ...args);
   };
+  (f as { __calcitMethodName?: string }).__calcitMethodName = p;
+  return f;
 }
 
 function normalize_builtin_impls(entry: CalcitImplEntry): CalcitImpl[] | null {
