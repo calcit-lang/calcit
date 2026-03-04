@@ -2122,8 +2122,8 @@
         |distinct $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn distinct (x)
-              hint-fn $ return-type :list
-              assert-type x :list
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type x $ :: :list 'T
               &list:distinct x
           :examples $ []
         |do $ %{} :CodeEntry (:doc "|Evaluates expressions sequentially and returns the last result\nUseful for grouping side effects or multiple steps where only the final value matters.")
@@ -2140,8 +2140,8 @@
         |drop $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn drop (xs n)
-              hint-fn $ return-type :list
-              assert-type xs :list
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type xs $ :: :list 'T
               assert-type n :number
               slice xs n $ &list:count xs
           :examples $ []
@@ -3356,8 +3356,8 @@
         |repeat $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn repeat (x n0)
-              hint-fn $ return-type :list
-              assert-type x :dynamic
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type x 'T
               assert-type n0 :number
               apply-args
                   []
@@ -3397,8 +3397,8 @@
         |reverse $ %{} :CodeEntry (:doc "|Reverse the order of elements in a list")
           :code $ quote
             defn reverse (x)
-              hint-fn $ return-type :list
-              assert-type x :list
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type x $ :: :list 'T
               &list:reverse x
           :examples $ []
             quote $ assert= ([] 3 2 1)
@@ -3664,8 +3664,8 @@
         |take $ %{} :CodeEntry (:doc "|Take the first n elements from a list")
           :code $ quote
             defn take (xs n)
-              hint-fn $ return-type :list
-              assert-type xs :list
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type xs $ :: :list 'T
               assert-type n :number
               if
                 >= n $ &list:count xs
@@ -3678,8 +3678,8 @@
         |take-last $ %{} :CodeEntry (:doc |)
           :code $ quote
             defn take-last (xs n)
-              hint-fn $ return-type :list
-              assert-type xs :list
+              hint-fn (generics 'T) $ return-type (:: :list 'T)
+              assert-type xs $ :: :list 'T
               assert-type n :number
               if
                 >= n $ &list:count xs

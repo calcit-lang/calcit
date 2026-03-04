@@ -2282,9 +2282,15 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
               | CalcitProc::NativeListSlice
               | CalcitProc::NativeListReverse
               | CalcitProc::NativeListDistinct
+              | CalcitProc::NativeListConcat
               | CalcitProc::Append
               | CalcitProc::Prepend
               | CalcitProc::Butlast
+              | CalcitProc::Sort
+              | CalcitProc::NativeListAssoc
+              | CalcitProc::NativeListAssocBefore
+              | CalcitProc::NativeListAssocAfter
+              | CalcitProc::NativeListDissoc
           ) {
             if let Some(first_arg) = xs.get(1) {
               if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
@@ -2294,14 +2300,13 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
               }
             }
           }
-          if matches!(proc, CalcitProc::NativeListConcat) {
-            if let Some(first_arg) = xs.get(1) {
-              if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
-                if let CalcitTypeAnnotation::List(_) = type_value.as_ref() {
-                  return Some(type_value.clone());
-                }
-              }
-            }
+          // Range always returns List(Number)
+          if matches!(proc, CalcitProc::Range) {
+            return Some(Arc::new(CalcitTypeAnnotation::List(tag_annotation("number"))));
+          }
+          // Split/SplitLines always return List(String)
+          if matches!(proc, CalcitProc::Split | CalcitProc::SplitLines) {
+            return Some(Arc::new(CalcitTypeAnnotation::List(tag_annotation("string"))));
           }
           if matches!(proc, CalcitProc::NativeMapGet) {
             if let Some(first_arg) = xs.get(1) {
@@ -2312,7 +2317,14 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
               }
             }
           }
-          if matches!(proc, CalcitProc::NativeMapAssoc | CalcitProc::NativeMapDissoc) {
+          if matches!(
+            proc,
+            CalcitProc::NativeMapAssoc
+              | CalcitProc::NativeMapDissoc
+              | CalcitProc::NativeMerge
+              | CalcitProc::NativeMergeNonNil
+              | CalcitProc::NativeMapDiffNew
+          ) {
             if let Some(first_arg) = xs.get(1) {
               if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
                 if let CalcitTypeAnnotation::Map(_, _) = type_value.as_ref() {
@@ -2320,6 +2332,10 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
                 }
               }
             }
+          }
+          // MapToList converts Map(K, V) → List(Dynamic)
+          if matches!(proc, CalcitProc::NativeMapToList) {
+            return Some(tag_annotation("list"));
           }
           if matches!(proc, CalcitProc::NativeSetToList) {
             if let Some(first_arg) = xs.get(1) {
@@ -2330,7 +2346,14 @@ fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<C
               }
             }
           }
-          if matches!(proc, CalcitProc::NativeInclude | CalcitProc::NativeExclude) {
+          if matches!(
+            proc,
+            CalcitProc::NativeInclude
+              | CalcitProc::NativeExclude
+              | CalcitProc::NativeDifference
+              | CalcitProc::NativeUnion
+              | CalcitProc::NativeSetIntersection
+          ) {
             if let Some(first_arg) = xs.get(1) {
               if let Some(type_value) = resolve_type_value(first_arg, scope_types) {
                 if let CalcitTypeAnnotation::Set(_) = type_value.as_ref() {
@@ -3113,7 +3136,7 @@ pub fn preprocess_defn(
           )),
         }
       })?;
-      xs = xs.push_right(Calcit::from(zs));
+      xs = xs.push_right(Calcit::from(zs.clone()));
 
       let mut to_skip = 2;
       let mut processed_body: Vec<Calcit> = vec![];
@@ -4100,7 +4123,7 @@ mod tests {
     let code = code_to_calcit(&expr, "tests.trait", "demo", vec![]).expect("parse cirru");
 
     let args = match code {
-      Calcit::List(xs) => CalcitList::from(xs.drop_left()),
+      Calcit::List(xs) => xs.drop_left(),
       other => panic!("expected list form, got {other}"),
     };
 

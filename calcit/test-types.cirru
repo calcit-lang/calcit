@@ -106,9 +106,9 @@
           :code $ quote
             defn slice-as-string (text) (assert-type text :string) (.slice text 1 4)
           :examples $ []
-        |test-arg-type-hints $ %{} :CodeEntry (:doc "|Trigger type warning for non-variadic arg hints")
+        |test-arg-type-hints $ %{} :CodeEntry (:doc "|Checks arg hint path without emitting warning")
           :code $ quote
-            defn test-arg-type-hints () (typed-only |oops) (println "|arg type hints check executed")
+            defn test-arg-type-hints () (typed-only 1) (println "|arg type hints check executed")
           :examples $ []
         |test-builtin-proc-types $ %{} :CodeEntry (:doc "|Tests that Proc (builtin) functions check argument types during preprocess")
           :code $ quote

@@ -31,7 +31,21 @@ pub fn defn(expr: &CalcitList, scope: &CalcitScope, file_ns: &str) -> Result<Cal
           return CalcitErr::err_str(CalcitErrKind::Type, format!("defn args parse error: {err}"));
         }
       };
-      let arg_types = detect_arg_type_hints(&body_items, &param_symbols);
+      let mut arg_types = detect_arg_type_hints(&body_items, &param_symbols);
+      // Fallback: if all arg_types are Dynamic (assert-type was preprocessed away),
+      // extract types from Local nodes in the preprocessed args list
+      if file_ns != calcit::CORE_NS && arg_types.iter().all(|t| matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic)) {
+        let from_locals = extract_arg_types_from_locals(xs, &param_symbols);
+        if from_locals.iter().any(|t| !matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic)) {
+          arg_types = from_locals;
+        }
+      }
+      if file_ns != calcit::CORE_NS && arg_types.iter().all(|t| matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic)) {
+        let from_body = extract_arg_types_from_processed_body(&body_items, &param_symbols);
+        if from_body.iter().any(|t| !matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic)) {
+          arg_types = from_body;
+        }
+      }
       let is_macro_gen = s.as_ref().contains('%');
       Ok(Calcit::Fn {
         id: gen_core_id(),
@@ -111,6 +125,47 @@ fn detect_fn_generics(forms: &[Calcit]) -> Arc<Vec<Arc<str>>> {
 
 fn detect_arg_type_hints(forms: &[Calcit], params: &[Arc<str>]) -> Vec<Arc<CalcitTypeAnnotation>> {
   CalcitTypeAnnotation::collect_arg_type_hints_from_body(forms, params)
+}
+
+/// Extract arg types from preprocessed Local nodes in the args list.
+/// After preprocessing, `preprocess_defn` may update arg Local nodes with
+/// resolved type_info from assert-type. This reads those types directly.
+fn extract_arg_types_from_locals(args: &CalcitList, params: &[Arc<str>]) -> Vec<Arc<CalcitTypeAnnotation>> {
+  let mut result = vec![crate::calcit::DYNAMIC_TYPE.clone(); params.len()];
+  let mut param_idx = 0;
+  for item in args.iter() {
+    if let Calcit::Local(local) = item {
+      if param_idx < params.len() && local.sym == params[param_idx] {
+        result[param_idx] = local.type_info.clone();
+        param_idx += 1;
+      }
+    } else if matches!(
+      item,
+      Calcit::Syntax(CalcitSyntax::ArgSpread, _) | Calcit::Syntax(CalcitSyntax::ArgOptional, _)
+    ) {
+      // Skip marker syntax nodes
+      continue;
+    }
+  }
+  result
+}
+
+/// Extract arg types from top-level preprocessed body forms.
+/// `assert-type` on a local becomes a typed `Calcit::Local` form after preprocessing.
+/// This intentionally scans only top-level forms to avoid deep recursive walks.
+fn extract_arg_types_from_processed_body(forms: &[Calcit], params: &[Arc<str>]) -> Vec<Arc<CalcitTypeAnnotation>> {
+  let mut result = vec![crate::calcit::DYNAMIC_TYPE.clone(); params.len()];
+  for form in forms {
+    if let Calcit::Local(local) = form {
+      if matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic) {
+        continue;
+      }
+      if let Some(idx) = params.iter().position(|sym| sym == &local.sym) {
+        result[idx] = local.type_info.clone();
+      }
+    }
+  }
+  result
 }
 
 fn collect_param_symbols(args: &CalcitList) -> Result<Vec<Arc<str>>, String> {
